@@ -50,8 +50,8 @@ export const AGENDA_SECTIONS = [
 ];
 
 export const ROW = {
-  learnerId: 'felix',
-  learnerName: 'Felix',
+  learnerId: 'learner4',
+  learnerName: 'Learner4',
   sessions: SESSIONS,
   processedToday: [],
   effectiveScoreTotals: { correct: 15, total: 17, percent: 88.24 },
@@ -61,4 +61,4 @@ export const ROW = {
   correctToday: 15,
 };
 
-export const KIDS = [{ id: 'felix', name: 'Felix' }];
+export const KIDS = [{ id: 'learner4', name: 'Learner4' }];

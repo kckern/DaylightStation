@@ -133,11 +133,11 @@ evidence.
 CLI writes are dry-run unless `--apply` is present:
 
 ```bash
-SCHOOL_PIN=... node cli/school.mjs ops enroll milo \
+SCHOOL_PIN=... node cli/school.mjs ops enroll learner3 \
   --syllabus come-follow-me-ot-2026-lower \
   --teacher kckern --pin-env SCHOOL_PIN
 
-SCHOOL_PIN=... node cli/school.mjs ops rematerialize milo \
+SCHOOL_PIN=... node cli/school.mjs ops rematerialize learner3 \
   --syllabus come-follow-me-ot-2026-lower \
   --teacher kckern --pin-env SCHOOL_PIN --apply
 ```

@@ -260,7 +260,7 @@ export class ResolveAccessCode {
         offered: projection.actions.map((a) => a.kind),
       });
       // How often a child picks up work from a previous day, which is the
-      // question Felix's eight-day resume raised and nothing could answer:
+      // question Learner-Four's eight-day resume raised and nothing could answer:
       // the ordinary `code.resolved` line above says `state: 'reprinted'`
       // without saying reprinted from WHEN. Logged whenever the card decided
       // the work was old enough to name a date, so the log and the paper

@@ -109,10 +109,10 @@ describe('courses', () => {
 describe('guest preview', () => {
   it('derives a fresh day without reading or writing learner evidence', () => {
     const ds = new FakeDatastore();
-    ds.appendEvent('milo', 'test-korean', {
-      at: new Date(AT).toISOString(), day: 9, seq: 1, rung: 'repetition', attributedTo: 'milo',
+    ds.appendEvent('learner3', 'test-korean', {
+      at: new Date(AT).toISOString(), day: 9, seq: 1, rung: 'repetition', attributedTo: 'learner3',
     });
-    ds.writeProgress('milo', 'test-korean', {
+    ds.writeProgress('learner3', 'test-korean', {
       corpus: 'test-korean', day: 9, daily_limit: 1, last_activity: new Date(AT).toISOString(),
     });
     const readProgress = vi.spyOn(ds, 'readProgress');

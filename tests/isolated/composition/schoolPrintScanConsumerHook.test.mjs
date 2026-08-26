@@ -71,7 +71,7 @@ function fakeHook({ rejects = false, rejectIndexes = null } = {}) {
 
 const singleCard = (over = {}) => ({
   cardId: '0123456', recordId: 'r1', documentId: 'civilization/atlas/ws-one',
-  rev: 'rev1', variant: 0, learnerId: 'milo', sessionId: 'ses-one',
+  rev: 'rev1', variant: 0, learnerId: 'learner3', sessionId: 'ses-one',
   revisionSuperseded: false, results: [], totalPoints: 6, earnedPoints: 5,
   ...over,
 });
@@ -107,7 +107,7 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
     expect(gradingHook.calls[0]).toMatchObject({
       result: 'graded',
       testId: '0123456',
-      learnerId: 'milo',
+      learnerId: 'learner3',
       earned: 5,
       total: 6,
       percent: 83.33,
@@ -239,7 +239,7 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
     expect(gradingHook.calls[0]).toMatchObject({
       result: 'review',
       testId: '0123456',
-      learnerId: 'milo',
+      learnerId: 'learner3',
       sessionId: 'ses-one',
       pendingReview: 2,
       reasons: ['ambiguous', 'free_response'],
@@ -274,7 +274,7 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
         execute: async () => ({
           results: [
             {
-              cardId: '0123456', recordId: 'r1', documentId: 'd1', rev: 'a', variant: 0, learnerId: 'milo',
+              cardId: '0123456', recordId: 'r1', documentId: 'd1', rev: 'a', variant: 0, learnerId: 'learner3',
               error: { code: 'ALLOCATION_ROW_MAPPING_DRIFT' },
             },
           ],
@@ -288,7 +288,7 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
 
     expect(gradingHook.calls).toHaveLength(1);
     expect(gradingHook.calls[0]).toMatchObject({
-      result: 'refused', testId: '0123456', code: 'ALLOCATION_ROW_MAPPING_DRIFT', learnerId: 'milo',
+      result: 'refused', testId: '0123456', code: 'ALLOCATION_ROW_MAPPING_DRIFT', learnerId: 'learner3',
     });
     // `recordId` is deliberately NOT sent — SchoolGradingHookAdapter's
     // `toVariables()` has no `record_id` key in its 11-key contract, so it

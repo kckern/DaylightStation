@@ -19,7 +19,7 @@ const PREVIEW_CARD = {
   ok: true,
   preview: true,
   context: {
-    learner: { id: 'milo', displayName: 'Milo', avatar: { kind: 'learner', id: 'milo' } },
+    learner: { id: 'learner3', displayName: 'Learner3', avatar: { kind: 'learner', id: 'learner3' } },
     taxonomy: {
       subject: { id: 'arts', label: 'Arts & Culture' },
       course: { id: 'plex:675689', title: 'Hoffman Academy', artwork: { kind: 'course-poster', courseId: 'plex:675689' } },
@@ -41,7 +41,7 @@ const PREVIEW_CARD = {
 
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'milo', name: 'Milo', birthyear: 2016 }] })),
+    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'learner3', name: 'Learner3', birthyear: 2016 }] })),
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     surfaceProfile: vi.fn(async () => ({ ok: true, status: 200, data: { surfaceId: 'screen-browser' } })),
     materials: vi.fn(async () => ({ ok: true, status: 200, data: { materials: [] } })),

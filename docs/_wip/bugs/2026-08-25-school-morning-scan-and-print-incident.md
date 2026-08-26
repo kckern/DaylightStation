@@ -244,9 +244,9 @@ line, then the container was redeployed (`docker stop/rm` + `deploy-daylight`; p
 `docker restart` is not in the NOPASSWD sudoers on this host) to clear the in-memory
 config/content cache.
 
-**Verified fixed:** `GET /api/v1/school/lifecycle/learners/milo/completion` now
+**Verified fixed:** `GET /api/v1/school/lifecycle/learners/learner3/completion` now
 returns `"state":"complete"`, `"faults":[]` — the `plan_error` fault that blocked
-Milo's piano-games unlock is gone. `felix` similarly shows `"faults":[]`.
+Learner3's piano-games unlock is gone. `learner4` similarly shows `"faults":[]`.
 
 **Verified improved, not fully clean:** `school.agenda.plan-errors` dropped from
 ~41/hr (9 non-preview + 32 preview) to ~16/hr, but **0 non-preview + 4 preview**
@@ -329,7 +329,7 @@ wrong.
 ### L-4 — **CLOSED [rev2]**: S\*\*\*\* has no assignment plan at all
 
 08:18:18 — `school.card.agenda-printed { created: 0, offers: 0 }`, a card with nothing on
-it. `<household>/school/plans/learners/` contains **only `felix.yml` and `milo.yml`**.
+it. `<household>/school/plans/learners/` contains **only `learner4.yml` and `learner3.yml`**.
 S\*\*\*\* and A\*\*\* have no plan file, so there is nothing to build an agenda from. Not
 an O-2 symptom; a missing-data problem. S\*\*\*\*'s blank card also carries no code.
 

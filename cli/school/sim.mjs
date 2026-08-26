@@ -363,7 +363,7 @@ export async function main(argv = process.argv.slice(2)) {
     }
     const complete = await worksheetInstances.findBySession(lowerOffer.sessionId);
     if (!complete || complete.enrollmentId !== course.enrollment.enrollmentId) {
-      throw new Error('issued worksheet instance is not bound to Milo enrollment');
+      throw new Error('issued worksheet instance is not bound to Learner-Three enrollment');
     }
     const source = await repository.getPublished(complete.documentId, complete.documentRevision);
     fs.writeFileSync(path.join(output, 'worksheet-instance.yml'), yaml.dump(complete, { lineWidth: -1, noRefs: true }));

@@ -71,23 +71,23 @@ describe('PianoLessonCeremonyBridge', () => {
   });
 
   it('announces on both limbs when an enrolled learner satisfies the day', async () => {
-    await ctx.bus.emit('piano.lesson.completed', { userId: 'felix', plexId: 'plex:9001', title: 'Unit 3 Lesson 7' });
+    await ctx.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9001', title: 'Unit 3 Lesson 7' });
 
     expect(ctx.bus.sent).toHaveLength(1);
     expect(ctx.bus.sent[0].topic).toBe('school');
     expect(ctx.bus.sent[0].payload).toMatchObject({
-      event: 'piano-lesson-complete', learnerId: 'felix', lesson: 'Unit 3 Lesson 7', courseId: COURSE,
+      event: 'piano-lesson-complete', learnerId: 'learner4', lesson: 'Unit 3 Lesson 7', courseId: COURSE,
     });
 
     expect(ctx.fired).toHaveLength(1);
     expect(ctx.fired[0]).toMatchObject({
-      result: 'satisfied', learnerId: 'felix', subject: 'arts', course: COURSE, lesson: 'Unit 3 Lesson 7',
+      result: 'satisfied', learnerId: 'learner4', subject: 'arts', course: COURSE, lesson: 'Unit 3 Lesson 7',
     });
     // The HA script gets the display name, not the id — it is read aloud or
-    // shown on a phone, where "felix" is worse than "FELIX!".
-    expect(ctx.fired[0].student).toBe('FELIX!');
+    // shown on a phone, where "learner4" is worse than "LEARNER4!".
+    expect(ctx.fired[0].student).toBe('LEARNER4!');
     expect(ctx.evidence[0]).toMatchObject({
-      learnerId: 'felix', verification: 'verified',
+      learnerId: 'learner4', verification: 'verified',
       learning: { subjectId: 'arts', courseId: COURSE, unitId: 'plex:season:3', lessonId: 'plex:9001' },
       measures: { completions: 1 },
       source: { surface: 'piano-kiosk', transport: 'playback' },
@@ -101,7 +101,7 @@ describe('PianoLessonCeremonyBridge', () => {
       eventBus: fakeBus(),
       assignments: {
         get: async () => null,
-        list: async () => [{ learnerId: 'felix', programs: ENROLLED }],
+        list: async () => [{ learnerId: 'learner4', programs: ENROLLED }],
       },
       launcher: {
         id: 'piano-course',
@@ -120,8 +120,8 @@ describe('PianoLessonCeremonyBridge', () => {
     await bridge.reconcile();
 
     expect([...rows.keys()]).toEqual([
-      'piano-lesson:felix:plex:9001',
-      'piano-lesson:felix:plex:9002',
+      'piano-lesson:learner4:plex:9001',
+      'piano-lesson:learner4:plex:9002',
     ]);
     expect([...rows.values()].map((row) => row.learning)).toEqual([
       expect.objectContaining({ courseId: COURSE, unitId: 'plex:season:3', lessonId: 'plex:9001' }),
@@ -130,8 +130,8 @@ describe('PianoLessonCeremonyBridge', () => {
   });
 
   it('fires once per learner per study day, not once per lesson', async () => {
-    await ctx.bus.emit('piano.lesson.completed', { userId: 'felix', plexId: 'plex:9001', title: 'one' });
-    await ctx.bus.emit('piano.lesson.completed', { userId: 'felix', plexId: 'plex:9002', title: 'two' });
+    await ctx.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9001', title: 'one' });
+    await ctx.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9002', title: 'two' });
     expect(ctx.fired).toHaveLength(1);
     expect(ctx.bus.sent).toHaveLength(1);
     expect(ctx.evidence).toHaveLength(2);
@@ -147,28 +147,28 @@ describe('PianoLessonCeremonyBridge', () => {
   it('stays silent when the completion did not satisfy the day', async () => {
     // e.g. the lesson belonged to a different course than the assigned one.
     const c = build({ status: { doneToday: false, progressLabel: '11/344' } });
-    await c.bus.emit('piano.lesson.completed', { userId: 'felix', plexId: 'plex:9001' });
+    await c.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9001' });
     expect(c.fired).toHaveLength(0);
     expect(c.bus.sent).toHaveLength(0);
   });
 
   it('does not celebrate an EXCUSED day — nothing was accomplished', async () => {
-    const c = build({ status: { doneToday: true, excused: true, progressLabel: 'waiting for milo' } });
-    await c.bus.emit('piano.lesson.completed', { userId: 'felix', plexId: 'plex:9001' });
+    const c = build({ status: { doneToday: true, excused: true, progressLabel: 'waiting for learner3' } });
+    await c.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9001' });
     expect(c.fired).toHaveLength(0);
     expect(c.bus.sent).toHaveLength(0);
   });
 
   it('stays silent when the course could not be read', async () => {
     const c = build({ status: { error: true } });
-    await c.bus.emit('piano.lesson.completed', { userId: 'felix', plexId: 'plex:9001' });
+    await c.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9001' });
     expect(c.fired).toHaveLength(0);
     expect(c.bus.sent).toHaveLength(0);
   });
 
   it('still shows the Portal banner when Home Assistant refuses', async () => {
     const c = build({ hookResult: { ok: false, error: 'HA down' } });
-    await c.bus.emit('piano.lesson.completed', { userId: 'felix', plexId: 'plex:9001' });
+    await c.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9001' });
     expect(c.bus.sent).toHaveLength(1);
   });
 
@@ -183,7 +183,7 @@ describe('PianoLessonCeremonyBridge', () => {
       logger: { warn() {}, info() {} },
     });
     bridge.start();
-    await bus.emit('piano.lesson.completed', { userId: 'felix', plexId: 'plex:9001' });
+    await bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9001' });
     expect(bus.sent).toHaveLength(1);
   });
 
@@ -198,7 +198,7 @@ describe('PianoLessonCeremonyBridge', () => {
       logger: { warn() {}, info() {} },
     });
     bridge.start();
-    await bus.emit('piano.lesson.completed', { userId: 'felix', plexId: 'plex:9001' });
+    await bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9001' });
     expect(bus.sent).toHaveLength(1);
   });
 

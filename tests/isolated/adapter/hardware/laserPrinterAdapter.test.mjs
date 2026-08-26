@@ -204,7 +204,7 @@ describe('LaserPrinterAdapter.printPdf — capability negotiation (the fix)', ()
       documentFormatPreferred: 'application/pdf',
     });
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
-    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two' });
+    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner2' });
     httpServer.close();
 
     expect(result.ok).toBe(true);
@@ -226,7 +226,7 @@ describe('LaserPrinterAdapter.printPdf — capability negotiation (the fix)', ()
       urfSupported: ['V1.4', 'RS300-600', 'W8'],
     });
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
-    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
+    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2' });
     httpServer.close();
 
     expect(result.ok).toBe(true);
@@ -253,7 +253,7 @@ describe('LaserPrinterAdapter.printPdf — capability negotiation (the fix)', ()
       ],
     });
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
-    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
+    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2' });
     httpServer.close();
 
     expect(result.ok).toBe(true);
@@ -322,7 +322,7 @@ describe('LaserPrinterAdapter — Incident #3: Validate-Job before every real Pr
     const { httpServer, port, printJobs, validateJobs } = await ippServer(brotherCaps); // default validateJob: () => true
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {}, warn() {} } });
 
-    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
+    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2' });
     httpServer.close();
 
     expect(result.ok).toBe(true);
@@ -349,7 +349,7 @@ describe('LaserPrinterAdapter — Incident #3: Validate-Job before every real Pr
     });
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {}, warn() {} } });
 
-    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
+    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2' });
     httpServer.close();
 
     expect(result.ok).toBe(true);
@@ -381,7 +381,7 @@ describe('LaserPrinterAdapter — Incident #3: Validate-Job before every real Pr
     });
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {}, warn() {} } });
 
-    await expect(p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' }))
+    await expect(p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2' }))
       .rejects.toMatchObject({ code: 'PRINT_VALIDATE_FAILED' });
     httpServer.close();
 
@@ -460,7 +460,7 @@ describe('LaserPrinterAdapter.printPdf — duplex honesty (applied in the raster
     const { logger, calls } = collectingLogger();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
 
-    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
+    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2', duplex: true });
     httpServer.close();
 
     expect(result.ok).toBe(true);
@@ -477,7 +477,7 @@ describe('LaserPrinterAdapter.printPdf — duplex honesty (applied in the raster
     const { logger, calls } = collectingLogger();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
 
-    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
+    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner2', duplex: true });
     httpServer.close();
 
     // The print still SUCCEEDS — an un-duplexed sheet beats no sheet.
@@ -496,7 +496,7 @@ describe('LaserPrinterAdapter.printPdf — duplex honesty (applied in the raster
     const { logger, calls } = collectingLogger();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
 
-    await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
+    await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2' });
     httpServer.close();
 
     expect(calls.some((c) => c.event?.startsWith('laser-printer.duplex'))).toBe(false);
@@ -507,7 +507,7 @@ describe('LaserPrinterAdapter.printPdf — duplex honesty (applied in the raster
     const { logger, calls } = collectingLogger();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
 
-    await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
+    await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2', duplex: true });
     httpServer.close();
 
     const sent = calls.find((c) => c.event === 'laser-printer.job-sent');
@@ -525,7 +525,7 @@ describe('LaserPrinterAdapter.printPdf — raw 9100 transport (opt-in, still cap
     const { port: rawPort, received } = await rawSink();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port: ippPort, rawPort, rawTransport: true, logger: { info() {} } });
 
-    const result = await p.printPdf(PDF, { jobName: 't', user: 'learner-two' });
+    const result = await p.printPdf(PDF, { jobName: 't', user: 'learner2' });
     httpServer.close();
 
     expect(result.ok).toBe(true);

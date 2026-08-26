@@ -44,7 +44,7 @@
 - Produces: timeline rows gain `lessonTitle`, `courseId`, `courseTitle`, `moduleTitle`, `subject`, `posterUrl` — the same names `GetTeacherToday` emits and `SessionList`/`LessonIdentity` already render.
 
 **Steps:**
-- [ ] **Step 1:** In the existing test file (follow its established runner/imports — it already constructs `GetLearnerTimeline`), add a test: construct with a fake `curriculum` `{ getUnit: (id) => ({ unitId: id, title: 'Illinois', courseId: 'atlas-us' }), listWorks: () => [{ work: 'atlas-us', title: 'United States Regions and States', subject: 'civilization', modules: [] }] }` and a sessions store returning one row `{ sessionId: 's1', learnerId: 'milo', unitId: 'u1', state: 'closed', updatedAt: '2026-08-24T15:20:00Z' }`. Assert the returned item has `lessonTitle: 'Illinois'` and `courseTitle: 'United States Regions and States'`. Add a second test: with `curriculum: null` the row still returns (no throw, titles absent).
+- [ ] **Step 1:** In the existing test file (follow its established runner/imports — it already constructs `GetLearnerTimeline`), add a test: construct with a fake `curriculum` `{ getUnit: (id) => ({ unitId: id, title: 'Illinois', courseId: 'atlas-us' }), listWorks: () => [{ work: 'atlas-us', title: 'United States Regions and States', subject: 'civilization', modules: [] }] }` and a sessions store returning one row `{ sessionId: 's1', learnerId: 'learner3', unitId: 'u1', state: 'closed', updatedAt: '2026-08-24T15:20:00Z' }`. Assert the returned item has `lessonTitle: 'Illinois'` and `courseTitle: 'United States Regions and States'`. Add a second test: with `curriculum: null` the row still returns (no throw, titles absent).
 - [ ] **Step 2:** Run the file's test command → Expected: FAIL (fields undefined).
 - [ ] **Step 3:** Implement: `GetLearnerTimeline` constructor accepts optional `curriculum`. In `execute`, after paging, map rows:
 
@@ -210,7 +210,7 @@ const recordedAnswerLine = (item, question) => {
 
 - [ ] Run `npm run test:unit:vitest` → Expected: PASS (compare failures, if any, against a pre-existing-failure baseline captured before Wave 1 started).
 - [ ] Build, gate-check (fitness session + Player idle), deploy, verify `/build.txt`.
-- [ ] Playwright re-screenshot `/school/teacher/students/milo/history` (desktop): assert page text contains NO "Lesson title unavailable" and NO "— engine"; screenshot session detail: answers numbered 1-6.
+- [ ] Playwright re-screenshot `/school/teacher/students/learner3/history` (desktop): assert page text contains NO "Lesson title unavailable" and NO "— engine"; screenshot session detail: answers numbered 1-6.
 - [ ] Commit any test-baseline notes; move to Wave 2.
 
 ---
@@ -363,7 +363,7 @@ const recordedAnswerLine = (item, question) => {
 ### Wave 3 ship gate
 
 - [ ] Full vitest → PASS vs baseline. Build → gate-check → deploy → `/build.txt`.
-- [ ] Playwright: `/school/teacher/curriculum` desktop fullPage height < 5,000px; matrix shows courses as rows; `/students/milo/courses` has no matrix; phone catalog has no horizontal body scroll.
+- [ ] Playwright: `/school/teacher/curriculum` desktop fullPage height < 5,000px; matrix shows courses as rows; `/students/learner3/courses` has no matrix; phone catalog has no horizontal body scroll.
 
 ---
 
@@ -421,7 +421,7 @@ const recordedAnswerLine = (item, question) => {
 - Test: `teacherUrl.test.js` (exists — extend), `TeacherConsole.test.jsx`
 
 **Steps:**
-- [ ] **Step 1:** Tests: `teacherSessionPath('milo','s1',BASE,{from:'today'})` ends `?from=today`; SessionInspector back with `?from=today` in `window.location.search` navigates to the dashboard, without it → history (assert `navigate` target). Ghost button: session detail renders a link `Completion credit — use Student operations` pointing at `${base}/students/{ownerId}/operations` (no more `disabled` button). ReportCardView: a course row shows `100% · 12 of 12 units` shape when both are known (pick actual field names from the component when writing the test).
+- [ ] **Step 1:** Tests: `teacherSessionPath('learner3','s1',BASE,{from:'today'})` ends `?from=today`; SessionInspector back with `?from=today` in `window.location.search` navigates to the dashboard, without it → history (assert `navigate` target). Ghost button: session detail renders a link `Completion credit — use Student operations` pointing at `${base}/students/{ownerId}/operations` (no more `disabled` button). ReportCardView: a course row shows `100% · 12 of 12 units` shape when both are known (pick actual field names from the component when writing the test).
 - [ ] **Step 2:** Run → FAIL. Implement each. `parseTeacherPath` ignores search (it takes pathname) — read `window.location.search` at the back-handler site instead; keep the helper signature additive.
 - [ ] **Step 3:** Run → PASS. Commit: `fix(school): origin-aware session back, live completion-credit link, report card units`
 

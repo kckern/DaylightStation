@@ -38,11 +38,11 @@ describe('YamlPianoAttemptStore', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'piano-attempts-'));
     scratch.push(root);
     const store = new YamlPianoAttemptStore({ usersDir: root });
-    store.save('felix', { attempt_id: 'attempt-conflict', status: 'timeout' });
-    expect(() => store.save('felix', { attempt_id: 'attempt-conflict', status: 'aborted' })).toThrow(expect.objectContaining({
+    store.save('learner4', { attempt_id: 'attempt-conflict', status: 'timeout' });
+    expect(() => store.save('learner4', { attempt_id: 'attempt-conflict', status: 'aborted' })).toThrow(expect.objectContaining({
       code: 'idempotency_conflict', status: 409,
     }));
-    expect(store.listRecent('felix')).toHaveLength(1);
+    expect(store.listRecent('learner4')).toHaveLength(1);
   });
 
   it('finds an idempotent retry across UTC day directories', () => {
@@ -51,9 +51,9 @@ describe('YamlPianoAttemptStore', () => {
     let now = new Date('2026-08-09T23:59:59.000Z');
     const store = new YamlPianoAttemptStore({ usersDir: root, clock: () => now });
     const payload = { attempt_id: 'attempt-midnight', status: 'completed', score: 1 };
-    const first = store.save('felix', payload);
+    const first = store.save('learner4', payload);
     now = new Date('2026-08-10T00:00:01.000Z');
-    expect(store.save('felix', payload)).toEqual(first);
-    expect(store.listRecent('felix')).toHaveLength(1);
+    expect(store.save('learner4', payload)).toEqual(first);
+    expect(store.listRecent('learner4')).toHaveLength(1);
   });
 });

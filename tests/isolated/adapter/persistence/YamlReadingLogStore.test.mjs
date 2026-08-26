@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
+import yaml from 'js-yaml';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { YamlReadingLogStore } from '#adapters/persistence/yaml/YamlReadingLogStore.mjs';
@@ -126,6 +127,121 @@ describe('YamlReadingLogStore', () => {
       expect(entries.filter((n) => n.includes('.corrupt-'))).toHaveLength(1);
       expect((await store.listForDay('learner-c', '2026-08-26')).map((r) => r.title)).toEqual(['One', 'Two']);
     });
+  });
+
+  describe('partially bad shard — a reads[] holding one entry we do not recognise', () => {
+    // The hand-merge `programs.md` tells an operator to perform is exactly how
+    // this arises: a salvaged row pasted back as a bare title rather than a map.
+    const PARTIAL = [
+      'learnerId: learner-c',
+      'studyDay: 2026-08-26',
+      'reads:',
+      '  - The Jungle Book',
+      "  - at: '2026-08-26T18:00:00.000Z'",
+      '    title: Two',
+      '',
+    ].join('\n');
+
+    it('carries the unrecognised entry through the rewrite instead of deleting it', async () => {
+      const logger = recordingLogger();
+      const file = await seed('learner-c', '2026-08-26', PARTIAL);
+      const store = new YamlReadingLogStore({
+        configService: { getHouseholdPath: () => dir }, logger, clock: () => new Date(FROZEN),
+      });
+
+      await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: FROZEN, contentId: 'plex:3', title: 'Three' });
+
+      const written = yaml.load(await readFile(file, 'utf8'));
+      expect(written.reads).toHaveLength(3);
+      expect(written.reads[0]).toBe('The Jungle Book');
+      expect(written.reads[1]).toMatchObject({ title: 'Two' });
+      expect(written.reads[2]).toMatchObject({ title: 'Three' });
+    });
+
+    it('logs the unrecognised entry rather than dropping it in silence', async () => {
+      const logger = recordingLogger();
+      await seed('learner-c', '2026-08-26', PARTIAL);
+      const store = new YamlReadingLogStore({
+        configService: { getHouseholdPath: () => dir }, logger, clock: () => new Date(FROZEN),
+      });
+
+      expect((await store.listForDay('learner-c', '2026-08-26')).map((r) => r.title)).toEqual(['Two']);
+      const warned = logger.calls.warn.find(([event]) => event === 'school.reading-log.unrecognised-entries');
+      expect(warned).toBeTruthy();
+      expect(warned[1]).toMatchObject({ learnerId: 'learner-c', studyDay: '2026-08-26', unrecognised: 1 });
+    });
+
+    it('does not side-file it — the document IS a reading log, one row aside', async () => {
+      await seed('learner-c', '2026-08-26', PARTIAL);
+      const store = new YamlReadingLogStore({
+        configService: { getHouseholdPath: () => dir }, logger: silent, clock: () => new Date(FROZEN),
+      });
+      await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: FROZEN, contentId: 'plex:3', title: 'Three' });
+      expect(await readdir(path.join(dir, 'learner-c'))).toEqual(['2026-08-26.yml']);
+    });
+  });
+
+  describe('a shard whose bytes cannot be rescued', () => {
+    // A directory where the shard should be: `fileExists` says yes, the read
+    // fails (EISDIR). Deterministic, and unlike chmod 000 it holds as root.
+    const seedUnreadable = async () => {
+      await mkdir(path.join(dir, 'learner-c', '2026-08-26.yml'), { recursive: true });
+    };
+
+    it('append throws rather than replace what it could not read', async () => {
+      const logger = recordingLogger();
+      await seedUnreadable();
+      const store = new YamlReadingLogStore({
+        configService: { getHouseholdPath: () => dir }, logger, clock: () => new Date(FROZEN),
+      });
+      await expect(store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: FROZEN, contentId: 'plex:1' }))
+        .rejects.toThrow(/refusing to overwrite/);
+      expect(logger.calls.error.map(([event]) => event)).toContain('school.reading-log.unreadable');
+    });
+
+    it('listForDay still answers [] and warns', async () => {
+      const logger = recordingLogger();
+      await seedUnreadable();
+      const store = new YamlReadingLogStore({
+        configService: { getHouseholdPath: () => dir }, logger, clock: () => new Date(FROZEN),
+      });
+      expect(await store.listForDay('learner-c', '2026-08-26')).toEqual([]);
+      expect(logger.calls.warn.map(([event]) => event)).toContain('school.reading-log.read-failed');
+    });
+  });
+
+  it('never overwrites an earlier rescue — a second side-file de-collides', async () => {
+    const CORRUPT_A = 'reads: [ first unterminated\n';
+    const CORRUPT_B = 'reads: [ second unterminated\n';
+    const file = await seed('learner-c', '2026-08-26', CORRUPT_A);
+    const store = new YamlReadingLogStore({
+      configService: { getHouseholdPath: () => dir }, logger: silent, clock: () => new Date(FROZEN),
+    });
+
+    await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: FROZEN, contentId: 'plex:1', title: 'One' });
+    // Same frozen instant, a second corruption: the first rescue must survive.
+    await writeFile(file, CORRUPT_B, 'utf8');
+    await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: FROZEN, contentId: 'plex:2', title: 'Two' });
+
+    expect(await readFile(`${file}.corrupt-${STAMP}`, 'utf8')).toBe(CORRUPT_A);
+    expect(await readFile(`${file}.corrupt-${STAMP}-2`, 'utf8')).toBe(CORRUPT_B);
+    expect((await store.listForDay('learner-c', '2026-08-26')).map((r) => r.title)).toEqual(['Two']);
+  });
+
+  it('replaces a zero-byte shard but says so — a truncated file already lost its rows', async () => {
+    const logger = recordingLogger();
+    await seed('learner-c', '2026-08-26', '');
+    const store = new YamlReadingLogStore({
+      configService: { getHouseholdPath: () => dir }, logger, clock: () => new Date(FROZEN),
+    });
+
+    expect(await store.listForDay('learner-c', '2026-08-26')).toEqual([]);
+    expect(logger.calls.warn.map(([event]) => event)).toContain('school.reading-log.empty');
+
+    await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: FROZEN, contentId: 'plex:1', title: 'One' });
+    expect((await store.listForDay('learner-c', '2026-08-26')).map((r) => r.title)).toEqual(['One']);
+    // Nothing to preserve, so nothing is side-filed.
+    expect(await readdir(path.join(dir, 'learner-c'))).toEqual(['2026-08-26.yml']);
   });
 
   it('does not treat a missing file as corrupt — no side-file, no error log', async () => {

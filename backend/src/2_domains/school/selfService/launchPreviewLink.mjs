@@ -9,7 +9,7 @@
  * and no more. It is not a credential, it grants nothing, and it expires never
  * because there is nothing in it to expire.
  *
- * WHY THE PAYLOAD IS ENCODED AT ALL. A plain `/launch-preview/felix/scripture`
+ * WHY THE PAYLOAD IS ENCODED AT ALL. A plain `/launch-preview/learner4/scripture`
  * would read, to anyone walking past a Portal, as a route a child could type —
  * and the whole point of the panel is that codes are the only way in. An opaque
  * blob reads as what it is: a thing a grown-up was handed by a tool.

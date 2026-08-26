@@ -67,7 +67,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⢤⡆⠀⠀⠀⠀⢰⡤
 
 SCHOOLCALC_SCREEN label=load-ASCHL pc=019A executionWindow=true
-T (1,1)-/c:WHO IS STUDYING | (102,1)-/c:CHOOSE | (9,10)+/c:SOREN | (9,16)+/c:ALAN | (9,22)+/c:MILO | (9,28)+/c:FELIX | (9,34)+/c:GUEST | (1,57)-/c:SELECT | (105,57)-/c:GUEST; S (61,1)-:◌ (0,10)+:❯
+T (1,1)-/c:WHO IS STUDYING | (102,1)-/c:CHOOSE | (9,10)+/c:LEARNER1 | (9,16)+/c:LEARNER2 | (9,22)+/c:LEARNER3 | (9,28)+/c:LEARNER4 | (9,34)+/c:GUEST | (1,57)-/c:SELECT | (105,57)-/c:GUEST; S (61,1)-:◌ (0,10)+:❯
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 ⠇⠅⠇⠅⠯⠪⠿⠿⠗⠐⠟⠰⠿⠿⠟⠰⠷⠰⠧⠣⠇⠪⠷⠱⠗⠐⠇⠅⠯⠂⠷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠺⠨⠸⠕⠽⠕⠽⠃⠾⠀⠺⠿
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇
@@ -88,7 +88,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠁⠀⠁⠀⠁
 
 SCHOOLCALC_SCREEN label=wait-600 pc=019A executionWindow=true
-T (1,1)-/c:SUBJECTS | (106,1)-/c:SOREN | (10,10)+/c:MATH | (10,16)+/c:SCIENCE | (10,22)+/c:HISTORY | (10,28)+/c:ARTS & CULTURE | (4,58)-/c:OPEN | (30,58)-/c:BACK | (55,58)-/c:USER | (104,58)-/c:OFF; S (0,10)+:❯
+T (1,1)-/c:SUBJECTS | (106,1)-/c:LEARNER1 | (10,10)+/c:MATH | (10,16)+/c:SCIENCE | (10,22)+/c:HISTORY | (10,28)+/c:ARTS & CULTURE | (4,58)-/c:OPEN | (30,58)-/c:BACK | (55,58)-/c:USER | (104,58)-/c:OFF; S (0,10)+:❯
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 
@@ -100,7 +100,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⣶⣶⡲⣲⢰⣶⠰⢶⢐⢰⣶⣶⡆⣶⣶⠰⣶⢲⢲⡲⢶⢰⢴⣶⣶⣶⣶⣆⢆⡶⢶⡆⠶⡆⡶⣶⣶⣶⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⡲⣲⢰⣶⠀⠐⠒⠒⠒⠒⠒⠒
 
 SCHOOLCALC_SCREEN label=f3 pc=019A executionWindow=true
-T (1,1)-/c:MY PROGRESS | (106,1)-/c:SOREN | (2,10)+/c:RECENT FIND TEN PERCENT | (2,21)+/c:SCORE | (114,21)+/c:80% | (2,31)+/c:DONE   1 | (70,31)+/c:QUEUED | (96,31)+/c:0 | (2,41)+/c:CABLE: OFFLINE | (30,57)-/c:BACK | (104,57)-/c:SWITCH; S [none]
+T (1,1)-/c:MY PROGRESS | (106,1)-/c:LEARNER1 | (2,10)+/c:RECENT FIND TEN PERCENT | (2,21)+/c:SCORE | (114,21)+/c:80% | (2,31)+/c:DONE   1 | (70,31)+/c:QUEUED | (96,31)+/c:0 | (2,41)+/c:CABLE: OFFLINE | (30,57)-/c:BACK | (104,57)-/c:SWITCH; S [none]
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 
@@ -112,7 +112,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⠿⠰⠿⠱⠹⠵⠾⠸⠺⠿⠿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⠷⠾⠸⠸⠆⠾⠆⠾⠵⠾⠸⠸
 
 SCHOOLCALC_SCREEN label=wait-600 pc=019A executionWindow=true
-T (1,1)-/c:MY PROGRESS | (106,1)-/c:SOREN | (2,10)+/c:RECENT FIND TEN PERCENT | (2,21)+/c:SCORE | (114,21)+/c:80% | (2,31)+/c:DONE   1 | (70,31)+/c:QUEUED | (96,31)+/c:0 | (2,41)+/c:CABLE: OFFLINE | (30,57)-/c:BACK | (104,57)-/c:SWITCH; S [none]
+T (1,1)-/c:MY PROGRESS | (106,1)-/c:LEARNER1 | (2,10)+/c:RECENT FIND TEN PERCENT | (2,21)+/c:SCORE | (114,21)+/c:80% | (2,31)+/c:DONE   1 | (70,31)+/c:QUEUED | (96,31)+/c:0 | (2,41)+/c:CABLE: OFFLINE | (30,57)-/c:BACK | (104,57)-/c:SWITCH; S [none]
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 
@@ -133,7 +133,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠁⠀⠁⠀⠁
 
 SCHOOLCALC_SCREEN label=wait-300 pc=019A executionWindow=true
-T (1,1)-/c:SUBJECTS | (106,1)-/c:SOREN | (10,10)+/c:MATH | (10,16)+/c:SCIENCE | (10,22)+/c:HISTORY | (10,28)+/c:ARTS & CULTURE | (4,58)-/c:OPEN | (30,58)-/c:BACK | (55,58)-/c:USER | (104,58)-/c:OFF; S (0,10)+:❯
+T (1,1)-/c:SUBJECTS | (106,1)-/c:LEARNER1 | (10,10)+/c:MATH | (10,16)+/c:SCIENCE | (10,22)+/c:HISTORY | (10,28)+/c:ARTS & CULTURE | (4,58)-/c:OPEN | (30,58)-/c:BACK | (55,58)-/c:USER | (104,58)-/c:OFF; S (0,10)+:❯
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 
@@ -145,7 +145,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⣶⣶⡲⣲⢰⣶⠰⢶⢐⢰⣶⣶⡆⣶⣶⠰⣶⢲⢲⡲⢶⢰⢴⣶⣶⣶⣶⣆⢆⡶⢶⡆⠶⡆⡶⣶⣶⣶⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⡲⣲⢰⣶⠀⠐⠒⠒⠒⠒⠒⠒
 
 SCHOOLCALC_SCREEN label=f3 pc=F51E executionWindow=true
-T (1,1)-/c:MY PROGRESS | (106,1)-/c:SOREN | (2,10)+/c:RECENT FIND TEN PERCENT | (2,21)+/c:SCORE | (114,21)+/c:80% | (2,31)+/c:DONE   1 | (70,31)+/c:QUEUED | (96,31)+/c:0 | (2,41)+/c:CABLE: OFFLINE | (30,57)-/c:BACK | (104,57)-/c:SWITCH; S [none]
+T (1,1)-/c:MY PROGRESS | (106,1)-/c:LEARNER1 | (2,10)+/c:RECENT FIND TEN PERCENT | (2,21)+/c:SCORE | (114,21)+/c:80% | (2,31)+/c:DONE   1 | (70,31)+/c:QUEUED | (96,31)+/c:0 | (2,41)+/c:CABLE: OFFLINE | (30,57)-/c:BACK | (104,57)-/c:SWITCH; S [none]
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 
@@ -157,7 +157,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⠿⠰⠿⠱⠹⠵⠾⠸⠺⠿⠿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⠷⠾⠸⠸⠆⠾⠆⠾⠵⠾⠸⠸
 
 SCHOOLCALC_SCREEN label=wait-600 pc=F51E executionWindow=true
-T (1,1)-/c:MY PROGRESS | (106,1)-/c:SOREN | (2,10)+/c:RECENT FIND TEN PERCENT | (2,21)+/c:SCORE | (114,21)+/c:80% | (2,31)+/c:DONE   1 | (70,31)+/c:QUEUED | (96,31)+/c:0 | (2,41)+/c:CABLE: OFFLINE | (30,57)-/c:BACK | (104,57)-/c:SWITCH; S [none]
+T (1,1)-/c:MY PROGRESS | (106,1)-/c:LEARNER1 | (2,10)+/c:RECENT FIND TEN PERCENT | (2,21)+/c:SCORE | (114,21)+/c:80% | (2,31)+/c:DONE   1 | (70,31)+/c:QUEUED | (96,31)+/c:0 | (2,41)+/c:CABLE: OFFLINE | (30,57)-/c:BACK | (104,57)-/c:SWITCH; S [none]
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 
@@ -169,7 +169,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⠿⠰⠿⠱⠹⠵⠾⠸⠺⠿⠿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⠷⠾⠸⠸⠆⠾⠆⠾⠵⠾⠸⠸
 
 SCHOOLCALC_SCREEN label=f5 pc=019A executionWindow=true
-T (1,1)-/c:WHO IS STUDYING | (106,1)-/c:SOREN | (9,10)+/c:SOREN | (9,16)+/c:ALAN | (9,22)+/c:MILO | (9,28)+/c:FELIX | (9,34)+/c:GUEST | (1,57)-/c:SELECT | (31,57)-/c:PROG | (105,57)-/c:GUEST; S (61,1)-:◌ (0,10)+:❯ (4,10)+:●
+T (1,1)-/c:WHO IS STUDYING | (106,1)-/c:LEARNER1 | (9,10)+/c:LEARNER1 | (9,16)+/c:LEARNER2 | (9,22)+/c:LEARNER3 | (9,28)+/c:LEARNER4 | (9,34)+/c:GUEST | (1,57)-/c:SELECT | (31,57)-/c:PROG | (105,57)-/c:GUEST; S (61,1)-:◌ (0,10)+:❯ (4,10)+:●
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 ⠇⠅⠇⠅⠯⠪⠿⠿⠗⠐⠟⠰⠿⠿⠟⠰⠷⠰⠧⠣⠇⠪⠷⠱⠗⠐⠇⠅⠯⠂⠷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠾⠕⠽⠠⠻⠀⠺⠨⠸⠿
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇
@@ -181,7 +181,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⠿⠶⠇⠶⠇⠿⠇⠶⠯⠶⠷⠰⠇⠿⠿⠇⠾⠇⠞⠯⠮⠯⠖⠿⠿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⠯⠖⠧⠧⠇⠶⠿⠶⠷⠰⠿⠇
 
 SCHOOLCALC_SCREEN label=wait-300 pc=019A executionWindow=true
-T (1,1)-/c:WHO IS STUDYING | (106,1)-/c:SOREN | (9,10)+/c:SOREN | (9,16)+/c:ALAN | (9,22)+/c:MILO | (9,28)+/c:FELIX | (9,34)+/c:GUEST | (1,57)-/c:SELECT | (31,57)-/c:PROG | (105,57)-/c:GUEST; S (61,1)-:◌ (0,10)+:❯ (4,10)+:●
+T (1,1)-/c:WHO IS STUDYING | (106,1)-/c:LEARNER1 | (9,10)+/c:LEARNER1 | (9,16)+/c:LEARNER2 | (9,22)+/c:LEARNER3 | (9,28)+/c:LEARNER4 | (9,34)+/c:GUEST | (1,57)-/c:SELECT | (31,57)-/c:PROG | (105,57)-/c:GUEST; S (61,1)-:◌ (0,10)+:❯ (4,10)+:●
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 ⠇⠅⠇⠅⠯⠪⠿⠿⠗⠐⠟⠰⠿⠿⠟⠰⠷⠰⠧⠣⠇⠪⠷⠱⠗⠐⠇⠅⠯⠂⠷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠾⠕⠽⠠⠻⠀⠺⠨⠸⠿
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇
@@ -202,7 +202,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠁⠀⠁⠀⠁
 
 SCHOOLCALC_SCREEN label=wait-600 pc=019A executionWindow=true
-T (1,1)-/c:SUBJECTS | (106,1)-/c:SOREN | (10,10)+/c:MATH | (10,16)+/c:SCIENCE | (10,22)+/c:HISTORY | (10,28)+/c:ARTS & CULTURE | (4,58)-/c:OPEN | (30,58)-/c:BACK | (55,58)-/c:USER | (104,58)-/c:OFF; S (0,10)+:❯
+T (1,1)-/c:SUBJECTS | (106,1)-/c:LEARNER1 | (10,10)+/c:MATH | (10,16)+/c:SCIENCE | (10,22)+/c:HISTORY | (10,28)+/c:ARTS & CULTURE | (4,58)-/c:OPEN | (30,58)-/c:BACK | (55,58)-/c:USER | (104,58)-/c:OFF; S (0,10)+:❯
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 
@@ -214,7 +214,7 @@ G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dar
 ⣶⣶⡲⣲⢰⣶⠰⢶⢐⢰⣶⣶⡆⣶⣶⠰⣶⢲⢲⡲⢶⢰⢴⣶⣶⣶⣶⣆⢆⡶⢶⡆⠶⡆⡶⣶⣶⣶⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⡲⣲⢰⣶⠀⠐⠒⠒⠒⠒⠒⠒
 
 SCHOOLCALC_SCREEN label=final pc=019A executionWindow=true
-T (1,1)-/c:SUBJECTS | (106,1)-/c:SOREN | (10,10)+/c:MATH | (10,16)+/c:SCIENCE | (10,22)+/c:HISTORY | (10,28)+/c:ARTS & CULTURE | (4,58)-/c:OPEN | (30,58)-/c:BACK | (55,58)-/c:USER | (104,58)-/c:OFF; S (0,10)+:❯
+T (1,1)-/c:SUBJECTS | (106,1)-/c:LEARNER1 | (10,10)+/c:MATH | (10,16)+/c:SCIENCE | (10,22)+/c:HISTORY | (10,28)+/c:ARTS & CULTURE | (4,58)-/c:OPEN | (30,58)-/c:BACK | (55,58)-/c:USER | (104,58)-/c:OFF; S (0,10)+:❯
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 

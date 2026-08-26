@@ -275,7 +275,7 @@ Confirm the run output lists `DeviceManager.profileType.test.js` (6 passed) and 
 
 ## Deployment note (out of plan scope, do NOT auto-run)
 
-A live workout may be in progress (Felix + Milo were active during diagnosis). Per `CLAUDE.local.md`, **never redeploy while a fitness session is active**. After tests pass, confirm `sessionActive:false` / `rosterSize:0` via the documented gate before `sudo docker build` + `sudo deploy-daylight`, then hard-reload the garage Firefox kiosk (`frontend/src/modules/Fitness/` rule). The build/deploy is a separate, gated step — not part of this TDD plan.
+A live workout may be in progress (Learner-Four + Learner-Three were active during diagnosis). Per `CLAUDE.local.md`, **never redeploy while a fitness session is active**. After tests pass, confirm `sessionActive:false` / `rosterSize:0` via the documented gate before `sudo docker build` + `sudo deploy-daylight`, then hard-reload the garage Firefox kiosk (`frontend/src/modules/Fitness/` rule). The build/deploy is a separate, gated step — not part of this TDD plan.
 
 ---
 

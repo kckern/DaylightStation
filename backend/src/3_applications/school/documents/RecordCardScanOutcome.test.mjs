@@ -78,7 +78,7 @@ function fakeReviewQueue() {
   };
 }
 
-function seededSession(sessionId, { learnerId = 'felix', unitId = 'unit-1' } = {}) {
+function seededSession(sessionId, { learnerId = 'learner4', unitId = 'unit-1' } = {}) {
   const mk = (payload) => {
     const { errors, event } = createEvent(payload);
     if (errors.length) throw new Error(errors.join('; '));
@@ -100,7 +100,7 @@ const gradedCard = (over = {}) => ({
   documentId: 'arts/quiz-1',
   rev: 'abcdef123',
   variant: 0,
-  learnerId: 'felix',
+  learnerId: 'learner4',
   revisionSuperseded: false,
   renderedAt: '2026-08-04T00:00:00.000Z',
   results: [
@@ -127,14 +127,14 @@ describe('attempt persistence', () => {
 
     expect(outcome.recorded).toBe(true);
     expect(outcome.attemptIds).toHaveLength(2);
-    const attempts = datastore.readAllAttempts('felix');
+    const attempts = datastore.readAllAttempts('learner4');
     expect(attempts).toHaveLength(2);
     expect(attempts[0]).toMatchObject({
       itemId: 'q1',
       itemType: 'multiple_choice',
       given: 'blue',
       correct: true,
-      attributedTo: 'felix',
+      attributedTo: 'learner4',
       transport: 'paper',
       provenance: {
         kind: 'omr-card', cardId: '1234567', recordId: 'arts/quiz-1@abcdef123:v0:1-2', row: 1,
@@ -149,7 +149,7 @@ describe('attempt persistence', () => {
     const cardIdInferred = { pattern: '123456?', cardId: '1234567' };
     await useCase.execute({ testId: '123456?', card: gradedCard(), cardIdInferred });
 
-    const attempts = datastore.readAllAttempts('felix');
+    const attempts = datastore.readAllAttempts('learner4');
     expect(attempts[0].provenance.cardIdInferred).toEqual(cardIdInferred);
   });
 
@@ -158,7 +158,7 @@ describe('attempt persistence', () => {
     const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
     await useCase.execute({ testId: '1234567', card: gradedCard() });
 
-    const attempts = datastore.readAllAttempts('felix');
+    const attempts = datastore.readAllAttempts('learner4');
     expect(attempts[0].provenance.cardIdInferred).toBeUndefined();
   });
 
@@ -178,7 +178,7 @@ describe('attempt persistence', () => {
     });
     const outcome = await useCase.execute({ testId: '1234567', card });
     expect(outcome.attemptIds).toHaveLength(1);
-    expect(datastore.readAllAttempts('felix')).toHaveLength(1);
+    expect(datastore.readAllAttempts('learner4')).toHaveLength(1);
   });
 
   it('re-feeding the identical card writes nothing new (idempotent per scan content)', async () => {
@@ -189,7 +189,7 @@ describe('attempt persistence', () => {
 
     const repeat = await useCase.execute({ testId: '1234567', card: gradedCard() });
     expect(repeat).toMatchObject({ recorded: false, reason: 'duplicate-scan' });
-    expect(datastore.readAllAttempts('felix')).toHaveLength(2);
+    expect(datastore.readAllAttempts('learner4')).toHaveLength(2);
   });
 
   it('a re-scan with DIFFERENT answers is recorded (real evidence), flagged via provenance', async () => {
@@ -201,7 +201,7 @@ describe('attempt persistence', () => {
     changed.results[1] = { ...changed.results[1], given: 'cat', status: 'correct', earned: 1 };
     const second = await useCase.execute({ testId: '1234567', card: changed });
     expect(second.recorded).toBe(true);
-    const attempts = datastore.readAllAttempts('felix');
+    const attempts = datastore.readAllAttempts('learner4');
     expect(attempts).toHaveLength(3); // row 1 deduped (identical given), only row 2 re-appends
     expect(attempts.at(-1).provenance.reScored).toBe(true);
     expect(scanKey(changed)).not.toBe(scanKey(gradedCard()));
@@ -212,7 +212,7 @@ describe('attempt persistence', () => {
     const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
     const card = gradedCard({ documentId: 'science/biology/quiz-1', recordId: 'science/biology/quiz-1@abcdef123:v0:1-2' });
     await useCase.execute({ testId: '1234567', card });
-    const attempt = datastore.readAllAttempts('felix')[0];
+    const attempt = datastore.readAllAttempts('learner4')[0];
     expect(attempt.bankId).toBe('science/biology/quiz-1@abcdef123');
     expect(attempt.learning.subjectId).toBe('science');
     expect(attempt.sessionId).toBeNull();
@@ -225,7 +225,7 @@ describe('attempt persistence', () => {
     const flat = gradedCard({ documentId: 'quiz-1', recordId: 'quiz-1@abcdef123:v0:9-10' });
     flat.results = flat.results.map((row, i) => ({ ...row, row: 9 + i }));
     await useCase.execute({ testId: '1234567', card: flat });
-    const attempts = datastore.readAllAttempts('felix');
+    const attempts = datastore.readAllAttempts('learner4');
     expect(attempts.at(-1).bankId).toBe('quiz-1@abcdef123');
     expect(attempts.at(-1).learning?.subjectId ?? null).toBeNull();
   });
@@ -241,7 +241,7 @@ describe('attempt persistence', () => {
     });
     card.results[0].concepts = ['fraction-add'];
     await useCase.execute({ testId: '1234567', card });
-    const attempt = datastore.readAllAttempts('felix')[0];
+    const attempt = datastore.readAllAttempts('learner4')[0];
     expect(attempt.learning).toMatchObject({
       subjectId: 'math', courseId: 'fractions', unitId: 'unit-frac-3', conceptIds: ['fraction-add'],
     });
@@ -257,7 +257,7 @@ describe('attempt persistence', () => {
       recordId: 'math/fractions/quiz-3@abcdef123:v0:1-2',
     });
     await useCase.execute({ testId: '1234567', card });
-    const attempt = datastore.readAllAttempts('felix')[0];
+    const attempt = datastore.readAllAttempts('learner4')[0];
     expect(attempt.sessionId).toBe('ws-1');
     expect(attempt.provenance.workSessionId).toBe('ws-1');
   });
@@ -266,7 +266,7 @@ describe('attempt persistence', () => {
     const datastore = fakeDatastore();
     const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
     await useCase.execute({ testId: '1234567', card: gradedCard() });
-    const attempt = datastore.readAllAttempts('felix')[0];
+    const attempt = datastore.readAllAttempts('learner4')[0];
     expect(attempt.sessionId).toBeNull();
     expect(attempt.provenance.workSessionId).toBeUndefined();
   });
@@ -275,7 +275,7 @@ describe('attempt persistence', () => {
     const datastore = fakeDatastore();
     const card = gradedCard({ documentId: 'math/fractions/quiz-3', recordId: 'math/fractions/quiz-3@abcdef123:v0:1-2' });
     await new RecordCardScanOutcome({ datastore, logger: quietLogger }).execute({ testId: '1234567', card });
-    const attempt = datastore.readAllAttempts('felix')[0];
+    const attempt = datastore.readAllAttempts('learner4')[0];
     expect(attempt.learning).toMatchObject({ subjectId: 'math', courseId: 'fractions' });
     expect(attempt.learning.unitId ?? null).toBeNull();
   });
@@ -291,12 +291,12 @@ describe('attempt persistence', () => {
       earnedPoints: 1,
     });
     await useCase.execute({ testId: '1234567', card: partial });
-    expect(datastore.readAllAttempts('felix')).toHaveLength(1);
+    expect(datastore.readAllAttempts('learner4')).toHaveLength(1);
 
     const complete = gradedCard(); // both rows answered, row 1 identical (given 'blue')
     const second = await useCase.execute({ testId: '1234567', card: complete });
     expect(second.recorded).toBe(true);
-    const attempts = datastore.readAllAttempts('felix');
+    const attempts = datastore.readAllAttempts('learner4');
     expect(attempts).toHaveLength(2); // row 1 deduped, only row 2 appended
     expect(attempts.at(-1).itemId).toBe('q2');
   });
@@ -366,11 +366,11 @@ describe('a scan with nothing to grade', () => {
       testId: '1234567',
       cardId: '1234567',
       recordId: 'arts/quiz-1@abcdef123:v0:1-2',
-      learnerId: 'felix',
+      learnerId: 'learner4',
     }));
     // The false claim this whole case exists to kill.
     expect(logger.info).not.toHaveBeenCalledWith('school.print.scan-already-recorded', expect.anything());
-    expect(datastore.readAllAttempts('felix')).toHaveLength(0);
+    expect(datastore.readAllAttempts('learner4')).toHaveLength(0);
     // Nothing was assessed, so the session must not have moved.
     expect((await sessions.readEvents('ws-1')).map((event) => event.type)).toEqual(['created', 'issued']);
   });
@@ -404,11 +404,11 @@ describe('a scan with nothing to grade', () => {
       testId: '1234567',
       cardId: '1234567',
       recordId: 'arts/quiz-1@abcdef123:v0:1-2',
-      learnerId: 'felix',
+      learnerId: 'learner4',
       rowCount: 2,
     }));
     expect(logger.info).not.toHaveBeenCalledWith('school.print.scan-already-recorded', expect.anything());
-    expect(datastore.readAllAttempts('felix')).toHaveLength(0);
+    expect(datastore.readAllAttempts('learner4')).toHaveLength(0);
     expect((await sessions.readEvents('ws-1')).map((event) => event.type)).toEqual(['created', 'issued']);
   });
 
@@ -423,11 +423,11 @@ describe('a scan with nothing to grade', () => {
     const repeat = await useCase.execute({ testId: '1234567', card: gradedCard() });
     expect(repeat).toMatchObject({ recorded: false, reason: 'duplicate-scan' });
     expect(logger.info).toHaveBeenCalledWith('school.print.scan-already-recorded', expect.objectContaining({
-      testId: '1234567', recordId: 'arts/quiz-1@abcdef123:v0:1-2', learnerId: 'felix',
+      testId: '1234567', recordId: 'arts/quiz-1@abcdef123:v0:1-2', learnerId: 'learner4',
     }));
     // A benign re-feed must NOT be escalated by the two guards above.
     expect(logger.warn).not.toHaveBeenCalled();
-    expect(datastore.readAllAttempts('felix')).toHaveLength(2);
+    expect(datastore.readAllAttempts('learner4')).toHaveLength(2);
   });
 });
 
@@ -439,7 +439,7 @@ describe('dedup read windowing', () => {
     });
     await useCase.execute({ testId: '1234567', card: gradedCard({ renderedAt: '2026-08-04T00:00:00.000Z' }) });
 
-    expect(datastore.readAttemptsInRange).toHaveBeenCalledWith('felix', '2026-08-04', '2026-08-05');
+    expect(datastore.readAttemptsInRange).toHaveBeenCalledWith('learner4', '2026-08-04', '2026-08-05');
     expect(datastore.readAllAttempts).not.toHaveBeenCalled();
   });
 
@@ -450,7 +450,7 @@ describe('dedup read windowing', () => {
     });
     await useCase.execute({ testId: '1234567', card: gradedCard({ renderedAt: undefined }) });
 
-    expect(datastore.readAllAttempts).toHaveBeenCalledWith('felix');
+    expect(datastore.readAllAttempts).toHaveBeenCalledWith('learner4');
     expect(datastore.readAttemptsInRange).not.toHaveBeenCalled();
   });
 
@@ -465,7 +465,7 @@ describe('dedup read windowing', () => {
     });
     const outcome = await useCase.execute({ testId: '1234567', card: gradedCard() });
     expect(outcome.recorded).toBe(true);
-    expect(store.readAllAttempts('felix')).toHaveLength(2);
+    expect(store.readAllAttempts('learner4')).toHaveLength(2);
   });
 });
 
@@ -551,7 +551,7 @@ describe('session bridge', () => {
     const outcome = await useCase.execute({ testId: '1234567', card: gradedCard({ sessionId: 'ws-1' }) });
     expect(outcome.recorded).toBe(true);
     expect(outcome.session).toMatchObject({ advancedTo: null, reason: 'bridge-failed' });
-    expect(datastore.readAllAttempts('felix')).toHaveLength(2);
+    expect(datastore.readAllAttempts('learner4')).toHaveLength(2);
   });
 });
 

@@ -87,13 +87,26 @@ now diverge:
   `2026-08-26.yml.corrupt-2026-08-26T18-04-00-000Z`) **before** writing
   anything, logs at `error` with `learnerId`, `studyDay` and `preservedAt`,
   then starts a fresh shard and carries on.
-- If the file exists but cannot be read at all (permissions, bad device), the
-  bytes cannot be rescued, so `append` **throws** rather than replace it.
+- If the file exists but cannot be read at all (permissions, a directory in
+  its place, bad device), the bytes cannot be rescued, so `append` **throws**
+  rather than replace it.
+- A zero-byte shard has nothing to preserve, so it is replaced rather than
+  side-filed — but it logs `school.reading-log.empty`, because a file that is
+  zero-byte *because* it was truncated has already lost its rows.
 
 Side-filing rather than throwing on corruption is deliberate: throwing would
 mean a child could log no reads at all for the rest of the day over one stray
 byte, trading silent data loss for loud data loss. The evidence stays
 recoverable by hand and the day still works.
+
+A `reads:` entry that is not shaped like a read — a bare title where a map
+belongs, which is exactly what a hurried hand-merge produces — is **not**
+treated as corruption. It does not cost you the shard. It is carried through
+every rewrite **verbatim**, `listForDay` skips it when counting, and each read
+or append logs `school.reading-log.unrecognised-entries` with how many there
+are. So a typo in the repair below costs you a warn and an undercount, never a
+row: fix the line whenever you next look. Nothing in this store deletes an
+entry it cannot parse.
 
 **If you find a `.corrupt-*` file, it is yours to inspect — nothing will ever
 touch it again.** It holds the reads that were on record when corruption was
@@ -129,16 +142,16 @@ The examples below are the program-facing subset.
 
 ```bash
 # Read only
-node cli/school.mjs ops status milo
-node cli/school.mjs ops monitor milo felix --watch
+node cli/school.mjs ops status learner3
+node cli/school.mjs ops monitor learner3 learner4 --watch
 
 # Prints a redacted request; does not write
-SCHOOL_PIN=... node cli/school.mjs ops enroll milo \
+SCHOOL_PIN=... node cli/school.mjs ops enroll learner3 \
   --syllabus come-follow-me-ot-2026-lower --teacher kckern \
   --pin-env SCHOOL_PIN
 
 # Explicit mutation
-SCHOOL_PIN=... node cli/school.mjs ops rematerialize milo \
+SCHOOL_PIN=... node cli/school.mjs ops rematerialize learner3 \
   --syllabus come-follow-me-ot-2026-lower --teacher kckern \
   --pin-env SCHOOL_PIN --apply
 ```

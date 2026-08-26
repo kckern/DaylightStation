@@ -9,7 +9,7 @@ import { createCertificatePdfRenderer } from './CertificateRenderer.mjs';
 
 const REPORT = {
   schema: 'school.progress-report/v1',
-  learnerId: 'felix',
+  learnerId: 'learner4',
   period: { periodId: '2026-fall', label: 'Fall 2026' },
   generatedAt: '2026-08-06T12:00:00Z',
   courses: [{ courseId: 'math-fractions', policy: 'best-of-unit-mean-v1', coursePercent: 88 }],
@@ -35,7 +35,7 @@ describe('CertificateRenderer', () => {
   it('renders a one-page landscape Letter certificate', async () => {
     const render = createCertificatePdfRenderer();
     const { pdf, pageCount } = await render({
-      learnerName: 'Felix', courseId: 'math-fractions', percent: 88,
+      learnerName: 'Learner4', courseId: 'math-fractions', percent: 88,
       periodLabel: 'Fall 2026', issuedOn: '2026-08-06', issuedBy: 'KC Kern',
     });
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');

@@ -69,7 +69,7 @@ ssh homeserver.local "grep -rn --include='*.yml' --include='*.json' \
   /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data"
 ```
 
-**Result: 8 hits, of which only 4 are real values** — exactly the four already named in Tier 3 (`scales.yml`, `vehicles.yml`, `games.yml`, `retroarch.yml`). The other four are comments (`piano.yml:12`, `school.yml:217`, a conflicted-copy header in `users/milo/`) and one incidental match: a git commit log pasted inside a journal entry at `users/kckern/lifelog/journalist/debriefs.yml`.
+**Result: 8 hits, of which only 4 are real values** — exactly the four already named in Tier 3 (`scales.yml`, `vehicles.yml`, `games.yml`, `retroarch.yml`). The other four are comments (`piano.yml:12`, `school.yml:217`, a conflicted-copy header in `users/learner3/`) and one incidental match: a git commit log pasted inside a journal entry at `users/kckern/lifelog/journalist/debriefs.yml`.
 
 **No hidden Tier 3 blockers.** The list in Tier 3 is complete.
 

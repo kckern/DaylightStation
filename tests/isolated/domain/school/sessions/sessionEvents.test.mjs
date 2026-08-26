@@ -507,7 +507,7 @@ describe('reduceSession: lastPrintedAt', () => {
 // `firstIssuedAt` is the twin of `lastPrintedAt` above and exists because that
 // field cannot answer "when was this work assigned": every reprint moves it
 // forward, so a session issued last week and reprinted this morning looks like
-// this morning's work. That is exactly how Felix's 2026-08-14 session resumed
+// this morning's work. That is exactly how Learner-Four's 2026-08-14 session resumed
 // eight days later presenting itself as fresh.
 describe('reduceSession: firstIssuedAt', () => {
   it('is null before anything has ever been issued', () => {

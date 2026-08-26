@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { GetTeacherSession, GetLearnerTimeline } from './GetTeacherSession.mjs';
 
 const events = [
-  { type: 'created', seq: 1, at: '2026-08-24T14:27:36.519Z', learnerId: 'milo', unitId: 'atlas-us-p044-illinois' },
+  { type: 'created', seq: 1, at: '2026-08-24T14:27:36.519Z', learnerId: 'learner3', unitId: 'atlas-us-p044-illinois' },
   { type: 'issued', seq: 2, at: '2026-08-24T14:28:43.031Z', artifactId: 'civilization/young-peoples-atlas-us/ws-ses-illinois' },
   { type: 'submitted', seq: 3, at: '2026-08-24T15:20:13.805Z' },
   { type: 'graded', seq: 4, at: '2026-08-24T15:20:13.833Z', percent: 100, correctCount: 1, totalCount: 1 },
@@ -51,7 +51,7 @@ describe('GetTeacherSession artifact read-through', () => {
 describe('GetLearnerTimeline catalog join', () => {
   const sessions = {
     listForLearner: vi.fn(async () => [
-      { sessionId: 's1', learnerId: 'milo', unitId: 'atlas-us-p044-illinois', state: 'closed', updatedAt: '2026-08-24T15:20:00Z' },
+      { sessionId: 's1', learnerId: 'learner3', unitId: 'atlas-us-p044-illinois', state: 'closed', updatedAt: '2026-08-24T15:20:00Z' },
     ]),
   };
   const curriculum = {
@@ -67,7 +67,7 @@ describe('GetLearnerTimeline catalog join', () => {
 
   it('joins the catalog so timeline rows carry the taxonomy the list renders', async () => {
     const useCase = new GetLearnerTimeline({ sessions, curriculum });
-    const { items } = await useCase.execute({ learnerId: 'milo' });
+    const { items } = await useCase.execute({ learnerId: 'learner3' });
     expect(items[0]).toMatchObject({
       sessionId: 's1',
       lessonTitle: 'Illinois',
@@ -81,7 +81,7 @@ describe('GetLearnerTimeline catalog join', () => {
 
   it('returns raw rows untouched when no curriculum is wired', async () => {
     const useCase = new GetLearnerTimeline({ sessions });
-    const { items } = await useCase.execute({ learnerId: 'milo' });
+    const { items } = await useCase.execute({ learnerId: 'learner3' });
     expect(items[0].sessionId).toBe('s1');
     expect(items[0].lessonTitle).toBeUndefined();
   });
@@ -91,7 +91,7 @@ describe('GetLearnerTimeline catalog join', () => {
       sessions,
       curriculum: { getUnit: vi.fn(async () => { throw new Error('catalog down'); }), listWorks: vi.fn(async () => { throw new Error('catalog down'); }) },
     });
-    const { items } = await useCase.execute({ learnerId: 'milo' });
+    const { items } = await useCase.execute({ learnerId: 'learner3' });
     expect(items[0].sessionId).toBe('s1');
   });
 });

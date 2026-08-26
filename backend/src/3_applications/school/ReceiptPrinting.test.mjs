@@ -13,7 +13,7 @@ import { ReceiptPrinting } from './ReceiptPrinting.mjs';
 
 const quietLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
 
-const DOCUMENT = { id: 'agenda-felix', target: ['receipt'] };
+const DOCUMENT = { id: 'agenda-learner4', target: ['receipt'] };
 
 function wire(printOutcome, logger = quietLogger()) {
   const renderer = { render: vi.fn(async () => ({ items: [] })) };

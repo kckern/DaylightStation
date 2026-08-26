@@ -28,12 +28,12 @@ describe('ManageCurriculumException', () => {
     ['replaced', { advancesGate: true, grantsMastery: false }],
   ])('previews and appends learner exception %s', async (kind, effect) => {
     const { service, history } = fixture();
-    const args = { kind, learnerId: 'milo', targetType: 'lesson', targetId: 'lesson-1',
+    const args = { kind, learnerId: 'learner3', targetType: 'lesson', targetId: 'lesson-1',
       replacementLessonId: kind === 'replaced' ? 'replacement' : null,
       reason: 'learner-specific decision', decidedBy: 'parent', apply: true };
     const receipt = await service.execute(args);
     expect(receipt).toMatchObject({ applied: true, effects: effect,
-      exception: { kind, learnerId: 'milo', resolvedLessonIds: ['lesson-1'] } });
+      exception: { kind, learnerId: 'learner3', resolvedLessonIds: ['lesson-1'] } });
     expect(history).toHaveLength(1);
   });
 
@@ -52,6 +52,6 @@ describe('ManageCurriculumException', () => {
   it('rejects a global pause for a learner difficulty rationale', async () => {
     const { service } = fixture();
     await expect(service.execute({ kind: 'paused', targetType: 'lesson', targetId: 'lesson-1',
-      reason: 'too hard for Milo', decidedBy: 'parent' })).rejects.toThrow(/paused reason/);
+      reason: 'too hard for Learner3', decidedBy: 'parent' })).rejects.toThrow(/paused reason/);
   });
 });

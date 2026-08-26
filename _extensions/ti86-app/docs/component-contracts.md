@@ -273,7 +273,7 @@ The calculator never makes progress authoritative. `DSPROG` is a bounded,
 device-scoped projection of the generic School read model; the selected stable
 learner key is restored after SCG1 validation before an entry is resolved.
 This prevents a parser scratch value from showing another learner's progress.
-The exact-release MAME scenario requires Soren's distinct Math/80% projection,
+The exact-release MAME scenario requires Learner1's distinct Math/80% projection,
 so that property is exercised through TI-OS rather than only inferred from the
 record codec.
 

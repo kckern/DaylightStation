@@ -49,14 +49,14 @@ describe('School timing', () => {
       { unitId: 'science.01', title: 'Science', subject: 'science', courseId: 'science', sequence: 1 },
     ];
     const assignment = { courses: [{ courseId: 'science', timing: { ...urgentTiming, availability: { closesOn: '2026-06-30' } } }] };
-    expect(planLearnerWork({ learnerId: 'milo', assignment, units, sessions: [], now: `${TODAY}T12:00:00Z` }).entries[0].status).toBe('dormant');
-    expect(planLearnerWork({ learnerId: 'milo', assignment, units, sessions: [{ sessionId: 's1', unitId: 'science.01', terminal: false, state: 'issued', updatedAt: `${TODAY}T12:00:00Z` }], now: `${TODAY}T12:00:00Z` }).entries[0].status).toBe('in_progress');
+    expect(planLearnerWork({ learnerId: 'learner3', assignment, units, sessions: [], now: `${TODAY}T12:00:00Z` }).entries[0].status).toBe('dormant');
+    expect(planLearnerWork({ learnerId: 'learner3', assignment, units, sessions: [{ sessionId: 's1', unitId: 'science.01', terminal: false, state: 'issued', updatedAt: `${TODAY}T12:00:00Z` }], now: `${TODAY}T12:00:00Z` }).entries[0].status).toBe('in_progress');
   });
 
   it('fails closed on malformed parent-authored timing', () => {
     const units = [{ unitId: 'read.01', title: 'Read', subject: 'english' }];
     const result = planLearnerWork({
-      learnerId: 'milo', assignment: { units: [{ unitId: 'read.01', timing: 'soonish' }] }, units, sessions: [], now: `${TODAY}T12:00:00Z`,
+      learnerId: 'learner3', assignment: { units: [{ unitId: 'read.01', timing: 'soonish' }] }, units, sessions: [], now: `${TODAY}T12:00:00Z`,
     });
     expect(result.entries[0]).toMatchObject({ status: 'dormant', timingReasons: expect.arrayContaining(['invalid_timing']) });
   });

@@ -260,7 +260,7 @@ export async function runOps({ argv, fetchImpl = globalThis.fetch, env = process
       learnerId, subject, continueToday: rest.includes('--continue'),
     });
     // Defaults to the origin the API base already names, so the common case is
-    // `school ops launch-preview felix --subject arts` and nothing else.
+    // `school ops launch-preview learner4 --subject arts` and nothing else.
     const origin = option(rest, '--origin') ?? new URL(base.school).origin;
     const appPath = String(option(rest, '--path', '/school')).replace(/\/+$/, '');
     const previewApi = `${base.school}/self-service/preview/${enc(link)}`;

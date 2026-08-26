@@ -580,7 +580,7 @@ export class ResolveCardScan {
     const rowOwners = resolveRowOwners(eligible);
     const results = [];
     // LIVE records whose owned rows received zero marks while OTHER rows on
-    // the same physical card were answered — the wrong-rows signature (Felix
+    // the same physical card were answered — the wrong-rows signature (Learner-Four
     // answered quiz B's questions in quiz A's rows). Undetectable in
     // principle from marks alone, so it is surfaced as a confidence signal
     // for the teacher, never guessed at or auto-corrected.

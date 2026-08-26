@@ -8,7 +8,7 @@
 
 Scanning a personal card prints an agenda successfully on the thermal printer, but
 it is the plain ESC/POS text layout with a firmware QR — not the designed receipt
-produced by the print design system. Observed on Felix's card, 2026-08-14
+produced by the print design system. Observed on Learner-Four's card, 2026-08-14
 (`09:28:31` and `09:36:39`).
 
 Confirmed in the log: `thermalPrinter.job.start {"target":"10.0.0.50:9100","itemCount":11,"upsideDown":true}`.
@@ -90,7 +90,7 @@ committing to it.
 
 ## Unrelated, found while investigating
 
-`school.agenda.plan-errors` fires on every one of Felix's prints:
+`school.agenda.plan-errors` fires on every one of Learner-Four's prints:
 
 ```
 math-fractions: assigned but no published units belong to it

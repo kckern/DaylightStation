@@ -13,11 +13,11 @@ npm run test:teacher-ui
 
 The contract covers two representative routes:
 
-- `/school/teacher`: expanding Milo’s daily record resolves the canonical
+- `/school/teacher`: expanding Learner3’s daily record resolves the canonical
   session, course poster, subject identity, worksheet preview/PDF, and result
   receipt. It rejects the former printable-queue sentence, anonymous
   `assessment` rows, and raw `P044` labels.
-- `/school/teacher/students/milo/history/sessions/ses_a6NVUhN9`: renders the
+- `/school/teacher/students/learner3/history/sessions/ses_a6NVUhN9`: renders the
   immutable historical session with its taxonomy and issued-material cards.
   It rejects developer-facing artifact-lineage terminology.
 

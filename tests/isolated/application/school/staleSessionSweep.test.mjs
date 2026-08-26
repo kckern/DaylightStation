@@ -3,7 +3,7 @@
  *
  * `listStale` was reachable only through a manual, teacher-gated
  * `GET /sessions/stale`; nothing scheduled ever called it, so the threshold
- * written into that route was never once consulted. That is how Felix's
+ * written into that route was never once consulted. That is how Learner4's
  * 2026-08-14 session was still live eight days later and resumed presenting
  * itself as that morning's work.
  *
@@ -32,14 +32,14 @@ async function build(sessions) {
   const useCase = new MarkSessionAbandoned({
     sessions: repo,
     teacherGate: loudGate,
-    learnerDirectory: { listLearners: async () => [{ id: 'felix' }] },
+    learnerDirectory: { listLearners: async () => [{ id: 'learner4' }] },
     clock: () => NOW,
     logger: silent,
   });
   return { repo, useCase };
 }
 
-const created = (at) => ({ type: 'created', at, learnerId: 'felix', unitId: 'u1' });
+const created = (at) => ({ type: 'created', at, learnerId: 'learner4', unitId: 'u1' });
 const issued = (at) => ({ type: 'issued', at, artifactId: 'a1' });
 
 describe('sweepUntouched', () => {

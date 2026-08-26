@@ -107,9 +107,9 @@ describe('EnrollLearner', () => {
   });
 
   it('materializes an enrollment onto a new assignment entry', async () => {
-    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     const [record] = h.saved;
-    expect(record.learnerId).toBe('milo');
+    expect(record.learnerId).toBe('learner3');
     const entry = record.courses.find((c) => c.courseId === 'elements');
     expect(entry.profile).toBe('lower');
     expect(entry.syllabusId).toBe('elements-lower');
@@ -131,13 +131,13 @@ describe('EnrollLearner', () => {
   });
 
   it('scopes materialization to the syllabus course only', async () => {
-    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
     expect(Object.keys(entry.enrollment.lessonOrder)).not.toContain('x');
   });
 
   it('materializes a syllabus timing template onto the learner enrollment', async () => {
-    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-fourth-of-july', enrolledBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-fourth-of-july', enrolledBy: 'kckern', pin: '7410' });
     const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
     expect(entry.timing).toMatchObject({
       anchor: { anchorId: 'fourth-of-july', resolvedOn: '2027-07-04' },
@@ -157,7 +157,7 @@ describe('EnrollLearner', () => {
       logger: { info: () => {}, warn: () => {} },
     });
     const record = await enrollLearner.execute({
-      learnerId: 'milo', syllabusId: 'cfm', enrolledBy: 'kckern', pin: '0000',
+      learnerId: 'learner3', syllabusId: 'cfm', enrolledBy: 'kckern', pin: '0000',
     });
     const entry = record.courses.find((course) => course.courseId === 'cfm');
     expect(entry.enrollment.moduleSchedule).toEqual({
@@ -166,55 +166,55 @@ describe('EnrollLearner', () => {
   });
 
   it('refuses an unknown syllabus by name', async () => {
-    await expect(h.useCase.execute({ learnerId: 'milo', syllabusId: 'ghost', enrolledBy: 'kckern', pin: '7410' }))
+    await expect(h.useCase.execute({ learnerId: 'learner3', syllabusId: 'ghost', enrolledBy: 'kckern', pin: '7410' }))
       .rejects.toThrow("unknown syllabus: 'ghost'");
   });
 
   it('refuses a second enrollment in the same course without rematerialize', async () => {
-    const hh = harness({ assignment: { learnerId: 'milo', courses: [{ courseId: 'elements' }], units: [], updatedAt: null } });
-    await expect(hh.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' }))
-      .rejects.toThrow('milo is already enrolled in elements');
+    const hh = harness({ assignment: { learnerId: 'learner3', courses: [{ courseId: 'elements' }], units: [], updatedAt: null } });
+    await expect(hh.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' }))
+      .rejects.toThrow('learner3 is already enrolled in elements');
   });
 
   it('refuses a re-materialize while a session on that course is open', async () => {
     const hh = harness({
-      assignment: { learnerId: 'milo', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
+      assignment: { learnerId: 'learner3', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
       open: [{ sessionId: 'ws_1', unitId: 'el.02', state: 'issued' }],
     });
     await expect(hh.useCase.execute({
-      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+      learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
     })).rejects.toThrow(/open session/i);
   });
 
   it('ignores an open session on a DIFFERENT course', async () => {
     const hh = harness({
-      assignment: { learnerId: 'milo', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
+      assignment: { learnerId: 'learner3', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
       open: [{ sessionId: 'ws_2', unitId: 'other.01', state: 'issued' }],
     });
     await hh.useCase.execute({
-      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+      learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
     });
     expect(hh.saved).toHaveLength(1);
   });
 
   it('refuses a stale save', async () => {
-    const hh = harness({ assignment: { learnerId: 'milo', courses: [], units: [], updatedAt: '2026-09-01T00:00:00.000Z' } });
+    const hh = harness({ assignment: { learnerId: 'learner3', courses: [], units: [], updatedAt: '2026-09-01T00:00:00.000Z' } });
     await expect(hh.useCase.execute({
-      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', baseUpdatedAt: null,
+      learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', baseUpdatedAt: null,
     })).rejects.toThrow(/changed since you loaded/);
   });
 
   it('re-materializing preserves elective and the original enrolledAt from the prior entry', async () => {
     const hh = harness({
       assignment: {
-        learnerId: 'milo',
+        learnerId: 'learner3',
         courses: [{ courseId: 'elements', elective: true, enrolledAt: '2026-01-01T00:00:00.000Z' }],
         units: [],
         updatedAt: null,
       },
     });
     await hh.useCase.execute({
-      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+      learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
     });
     const entry = hh.saved[0].courses.find((c) => c.courseId === 'elements');
     expect(entry.elective).toBe(true);
@@ -224,7 +224,7 @@ describe('EnrollLearner', () => {
   it('re-materializing under a different syllabus overwrites stale top-level profile/passing, but still preserves elective and enrolledAt', async () => {
     const hh = harness({
       assignment: {
-        learnerId: 'milo',
+        learnerId: 'learner3',
         courses: [{
           courseId: 'elements',
           elective: true,
@@ -238,7 +238,7 @@ describe('EnrollLearner', () => {
       },
     });
     await hh.useCase.execute({
-      learnerId: 'milo', syllabusId: 'elements-upper', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+      learnerId: 'learner3', syllabusId: 'elements-upper', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
     });
     const entry = hh.saved[0].courses.find((c) => c.courseId === 'elements');
     expect(entry.profile).toBeNull();
@@ -248,7 +248,7 @@ describe('EnrollLearner', () => {
   });
 
   it('stamps enrolledAt fresh on a brand-new enrollment (no prior entry to preserve)', async () => {
-    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
     expect(entry.enrolledAt).toBe('2026-09-08T12:00:00.000Z');
   });
@@ -264,7 +264,7 @@ describe('EnrollLearner', () => {
       rng: () => 0,
       logger: { info: () => {}, warn: () => {} },
     });
-    const record = await hh.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    const record = await hh.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     const entry = record.courses.find((c) => c.courseId === 'elements');
     expect(entry.enrollment.moduleOrder[0]).toBe('foundations');
   });
@@ -272,13 +272,13 @@ describe('EnrollLearner', () => {
   it('preserves other courses and standalone units untouched', async () => {
     const hh = harness({
       assignment: {
-        learnerId: 'milo',
+        learnerId: 'learner3',
         courses: ['math-fractions'],
         units: ['language-daily'],
         updatedAt: null,
       },
     });
-    await hh.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    await hh.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     expect(hh.saved[0].courses[0]).toBe('math-fractions');
     expect(hh.saved[0].units).toEqual(['language-daily']);
   });
@@ -300,24 +300,24 @@ function unenrollHarness({ assignment, open = [] } = {}) {
 }
 
 describe('UnenrollLearner', () => {
-  const enrolled = { learnerId: 'milo', courses: [{ courseId: 'elements' }, 'math-fractions'], units: ['language-daily'], updatedAt: null };
+  const enrolled = { learnerId: 'learner3', courses: [{ courseId: 'elements' }, 'math-fractions'], units: ['language-daily'], updatedAt: null };
 
   it('removes the course entry and leaves everything else alone', async () => {
     const h = unenrollHarness({ assignment: enrolled });
-    await h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'learner3', courseId: 'elements', removedBy: 'kckern', pin: '7410' });
     expect(h.saved[0].courses).toEqual(['math-fractions']);
     expect(h.saved[0].units).toEqual(['language-daily']);
   });
 
   it('refuses when the learner is not enrolled in that course', async () => {
-    const h = unenrollHarness({ assignment: { learnerId: 'milo', courses: [], units: [], updatedAt: null } });
-    await expect(h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
-      .rejects.toThrow('milo is not enrolled in elements');
+    const h = unenrollHarness({ assignment: { learnerId: 'learner3', courses: [], units: [], updatedAt: null } });
+    await expect(h.useCase.execute({ learnerId: 'learner3', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
+      .rejects.toThrow('learner3 is not enrolled in elements');
   });
 
   it('refuses while a session on that course is open', async () => {
     const h = unenrollHarness({ assignment: enrolled, open: [{ sessionId: 'ws_1', unitId: 'el.02', state: 'issued' }] });
-    await expect(h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
+    await expect(h.useCase.execute({ learnerId: 'learner3', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
       .rejects.toThrow(/open session/i);
   });
 
@@ -326,7 +326,7 @@ describe('UnenrollLearner', () => {
       assignment: enrolled,
       open: [{ sessionId: 'ws_2', unitId: 'other.01', state: 'issued' }],
     });
-    await h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'learner3', courseId: 'elements', removedBy: 'kckern', pin: '7410' });
     expect(h.saved).toHaveLength(1);
   });
 

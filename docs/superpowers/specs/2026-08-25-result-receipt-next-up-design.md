@@ -210,7 +210,7 @@ Assert on `b.md`, not `b.value`.
 
 ## Out of scope, tracked elsewhere
 
-- **Soren has no assignment plan** (`plans/learners/` holds only `felix.yml` and `milo.yml`), so his
+- **Learner1 has no assignment plan** (`plans/learners/` holds only `learner4.yml` and `learner3.yml`), so his
   scans produce `offers: 0`. Tracked as L-4 in
   `docs/_wip/bugs/2026-08-25-school-morning-scan-and-print-incident.md`.
 - **Empty-agenda print guardrail** and the HA error-sound fallback — separate work.

@@ -35,17 +35,44 @@ const generation = `sha256:${stableRecordDigest(projectionBody)}`;
 const projection = { ...projectionBody, generation };
 const catalog = codec.encodeCatalog(projection);
 const catalogGenerationKey = decodeTi86Envelope(catalog, 'SCC1').generationKey;
+// WHO SITS IN WHICH SLOT IS HOUSEHOLD DATA, NOT SOURCE.
+//
+// This map used to name real learners inline. The repo is public, so the
+// identities live in the (gitignored) data tree instead and the committed
+// default is a placeholder set. The shape is what matters to the codebook:
+// exactly four slots, 0..3, each with a distinct learnerKey 1..4 — see
+// IssueSchoolContinuationCode, which rejects anything else.
+//
+// Override by creating `<dataDir>/household/config/schoolcalc.slots.json`:
+//   { "<learnerId>": { "slot": 0, "learnerKey": 1 }, ... }
+// Without it the build still succeeds and produces placeholder-labelled slots,
+// which is correct for a STARTER image and wrong for a real one — so the run
+// says out loud which of the two it made.
+const DEFAULT_LEARNER_SLOTS = {
+  learner1: { slot: 0, learnerKey: 1 },
+  learner2: { slot: 1, learnerKey: 2 },
+  learner3: { slot: 2, learnerKey: 3 },
+  learner4: { slot: 3, learnerKey: 4 },
+};
+const slotsOverridePath = path.join(
+  process.env.DAYLIGHT_DATA_PATH
+    || path.join(process.env.DAYLIGHT_BASE_PATH || '', 'data'),
+  'household/config/schoolcalc.slots.json',
+);
+let LEARNER_SLOTS = DEFAULT_LEARNER_SLOTS;
+try {
+  LEARNER_SLOTS = JSON.parse(readFileSync(slotsOverridePath, 'utf8'));
+  process.stdout.write(`[ti86] learner slots from ${slotsOverridePath}\n`);
+} catch {
+  process.stdout.write('[ti86] no slot override found — building with PLACEHOLDER learner slots\n');
+}
+
 const continuationCodebook = encodeTi86ContinuationCodebook({
   deviceId: DEVICE_ID,
   generation,
   catalog: raw,
   artifacts,
-  learnerSlots: {
-    soren: { slot: 0, learnerKey: 1 },
-    alan: { slot: 1, learnerKey: 2 },
-    milo: { slot: 2, learnerKey: 3 },
-    felix: { slot: 3, learnerKey: 4 },
-  },
+  learnerSlots: LEARNER_SLOTS,
 });
 const manifest = codec.encodeSyncManifest({
   schema: 'school.calc.sync-plan/v1', deviceId: DEVICE_ID, platformId: 'ti86',

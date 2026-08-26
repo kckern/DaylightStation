@@ -44,7 +44,7 @@ describe('Sentence Ladder study grant boundary', () => {
 
   it('refuses a learner day without a valid header', async () => {
     const { app, service } = appWith({ verify: () => ({ ok: false, reason: 'missing' }) });
-    const res = await request(app).get('/api/v1/school/sentence-ladder/users/milo/day?corpus=korean');
+    const res = await request(app).get('/api/v1/school/sentence-ladder/users/learner3/day?corpus=korean');
     expect(res.status).toBe(403);
     expect(service.getDay).not.toHaveBeenCalled();
   });
@@ -53,12 +53,12 @@ describe('Sentence Ladder study grant boundary', () => {
     const verify = vi.fn(() => ({ ok: true }));
     const { app, service } = appWith({ verify });
     const res = await request(app)
-      .get('/api/v1/school/sentence-ladder/users/milo/day?corpus=korean&microphone=true&textInput=EN,KR')
+      .get('/api/v1/school/sentence-ladder/users/learner3/day?corpus=korean&microphone=true&textInput=EN,KR')
       .set('X-School-Study-Grant', 'signed');
     expect(res.status).toBe(200);
-    expect(verify).toHaveBeenCalledWith('signed', { learnerId: 'milo', corpusId: 'korean' });
+    expect(verify).toHaveBeenCalledWith('signed', { learnerId: 'learner3', corpusId: 'korean' });
     expect(service.getDay).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'milo', corpusId: 'korean', capabilities: { microphone: true, textInput: ['EN', 'KR'] },
+      userId: 'learner3', corpusId: 'korean', capabilities: { microphone: true, textInput: ['EN', 'KR'] },
     }));
   });
 });

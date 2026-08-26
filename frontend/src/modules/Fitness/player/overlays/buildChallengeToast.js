@@ -14,7 +14,7 @@
  */
 
 /**
- * "Felix", "Felix & Milo", "Felix, Milo & Alan" — the way a person would say it.
+ * "Learner-Four", "Learner-Four & Learner-Three", "Learner-Four, Learner-Three & Learner-Two" — the way a person would say it.
  * A bare comma-joined list reads like a database row, and this line is meant to
  * be read out loud by whoever is standing there.
  */

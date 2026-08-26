@@ -267,7 +267,7 @@ describe('program units', () => {
       { unitId: 'language-daily', title: 'Language', subject: 'language', program: 'language', cadence: 'daily' },
     ];
     const result = planLearnerWork({
-      learnerId: 'felix',
+      learnerId: 'learner4',
       assignment: { units: ['language-daily'] },
       units,
       sessions: [],
@@ -285,7 +285,7 @@ describe('program units', () => {
       { unitId: 'language-daily', title: 'Language', subject: 'language', program: 'language', cadence: 'daily' },
     ];
     const result = planLearnerWork({
-      learnerId: 'felix',
+      learnerId: 'learner4',
       assignment: { units: ['language-daily'] },
       units,
       sessions: [session({ unitId: 'language-daily', state: 'issued', sessionId: 'ses_stray' })],
@@ -302,7 +302,7 @@ describe('program units', () => {
       { unitId: 'language-daily', title: 'Language', subject: 'language', program: 'language', cadence: 'daily' },
     ];
     const result = planLearnerWork({
-      learnerId: 'felix',
+      learnerId: 'learner4',
       assignment: { units: ['language-daily'] },
       units,
       sessions: [passed('language-daily')],
@@ -322,7 +322,7 @@ describe('program units', () => {
       },
     ];
     const result = planLearnerWork({
-      learnerId: 'felix', assignment: { units: ['language-daily'] }, units, sessions: [], now: NOW,
+      learnerId: 'learner4', assignment: { units: ['language-daily'] }, units, sessions: [], now: NOW,
     });
     expect(result.entries[0].programInstance).toBe('test-korean');
   });
@@ -344,7 +344,7 @@ describe('dated_modules gating', () => {
     lessonOrder: Object.fromEntries(modules.map((module) => [module, [1, 2, 3].map((day) => `cfm.${module}.d${day}`)])),
   } }] });
   const datedPlan = (now, sessions = []) => planLearnerWork({
-    learnerId: 'milo', assignment: datedAssignment(), units: datedUnits(), sessions, now,
+    learnerId: 'learner3', assignment: datedAssignment(), units: datedUnits(), sessions, now,
     coursePolicies: { cfm: { mode: 'dated_modules', lesson_order: 'sequence' } },
   });
 
@@ -411,7 +411,7 @@ describe('dated_modules gating', () => {
       lessonOrder: { w3: [1, 2, 3].map((day) => `cfm.w3.d${day}`) },
     };
     const result = planLearnerWork({
-      learnerId: 'milo',
+      learnerId: 'learner3',
       assignment: { courses: [{ courseId: 'cfm', enrollment }] },
       units: datedUnits(), sessions: [], now: '2026-09-08T09:00:00.000Z',
       coursePolicies: { cfm: { mode: 'dated_modules', lesson_order: 'sequence' } },

@@ -196,7 +196,7 @@ the `moduleOrder`/`lessonOrder` it already freezes — same snapshot discipline,
 so editing the course later never moves a live plan. Modules closing before the
 enrollment date are omitted entirely.
 
-### Enrolling Milo and Felix
+### Enrolling Learner-Three and Learner-Four
 
 `EnrollLearner` requires a `syllabusId`, and `plans/syllabi/` does not exist —
 no syllabus has ever been authored, and there is still no console UI to create
@@ -217,7 +217,7 @@ The syllabus route is preferred over hand-editing both learner plans because:
   `createCourseEnrollment` sat tested and uncalled while every production
   enrollment was hand-typed.
 
-Profiles follow their atlas enrollments: **Milo `lower`, Felix `upper`**,
+Profiles follow their atlas enrollments: **Learner-Three `lower`, Learner-Four `upper`**,
 matching the 6-question/3–4-choice and 10-question/5-choice splits the course
 already declares.
 

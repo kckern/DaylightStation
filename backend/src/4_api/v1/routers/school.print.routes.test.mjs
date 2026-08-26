@@ -33,7 +33,7 @@ function appWith({ printService = null } = {}) {
 const printService = {
   listPrintables: async () => [{ id: 'state-capitals', pages: 2 }],
   getQuota: (userId) => ({ userId, remaining: 5 }),
-  listPending: () => [{ requestId: 'req-1', userId: 'felix', pages: 6 }],
+  listPending: () => [{ requestId: 'req-1', userId: 'learner4', pages: 6 }],
   listRequestsFor: (userId) => [{ id: 'pr_1', userId, status: 'denied', label: 'Maze' }],
   previewPrintable: async (printableId) => {
     if (printableId !== 'state-capitals') {
@@ -48,13 +48,13 @@ describe('/print fixed routes vs the *id splat', () => {
   it('GET /print/pending reaches the pending handler, not the document splat', async () => {
     const res = await request(appWith({ printService })).get('/api/v1/school/print/pending');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ requestId: 'req-1', userId: 'felix', pages: 6 }]);
+    expect(res.body).toEqual([{ requestId: 'req-1', userId: 'learner4', pages: 6 }]);
   });
 
   it('GET /print/requests serves a learner\'s own asks; no userId answers []', async () => {
-    const res = await request(appWith({ printService })).get('/api/v1/school/print/requests?userId=felix');
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/requests?userId=learner4');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: 'pr_1', userId: 'felix', status: 'denied', label: 'Maze' }]);
+    expect(res.body).toEqual([{ id: 'pr_1', userId: 'learner4', status: 'denied', label: 'Maze' }]);
     expect((await request(appWith({ printService })).get('/api/v1/school/print/requests')).body).toEqual([]);
   });
 
@@ -65,9 +65,9 @@ describe('/print fixed routes vs the *id splat', () => {
   });
 
   it('GET /print/quota reaches quota', async () => {
-    const res = await request(appWith({ printService })).get('/api/v1/school/print/quota?userId=felix');
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/quota?userId=learner4');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ userId: 'felix', remaining: 5 });
+    expect(res.body).toEqual({ userId: 'learner4', remaining: 5 });
   });
 
   it('fixed routes answer their inert shapes even with no printService wired', async () => {
@@ -192,17 +192,17 @@ describe('GET /api/v1/school/audit (admin advocacy #9)', () => {
       passOverrideStore: { all: () => ({}), history: () => [{ at: '2026-08-03T10:00:00Z', editedBy: 'elizabeth', unitId: 'frac.01', percent: 60 }] },
       milestoneStore: { history: () => [{ at: '2026-07-01T10:00:00Z', editedBy: 'kckern', count: 2 }] },
       assignmentsStore: {
-        list: async () => [{ learnerId: 'felix' }],
+        list: async () => [{ learnerId: 'learner4' }],
         history: async () => [{ recordedAt: '2026-08-02T10:00:00Z', assignedBy: 'kckern', courses: ['math'] }],
       },
       // Task 12 (debt M5): the reassignment audit trail joins the merge too.
-      reassignmentLog: { list: () => [{ at: '2026-08-04T09:00:00Z', fromLearnerId: 'felix', toLearnerId: 'milo', moved: 1, reassignedBy: 'kckern' }] },
+      reassignmentLog: { list: () => [{ at: '2026-08-04T09:00:00Z', fromLearnerId: 'learner4', toLearnerId: 'learner3', moved: 1, reassignedBy: 'kckern' }] },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
     }));
     const res = await request(app).get('/api/v1/school/audit');
     expect(res.status).toBe(200);
     expect(res.body.entries.map((e) => e.kind)).toEqual(['reassignment', 'pass-override', 'assignments', 'periods', 'milestones']);
-    expect(res.body.entries[0]).toMatchObject({ kind: 'reassignment', by: 'kckern', learnerId: 'felix', toLearnerId: 'milo', moved: 1 });
+    expect(res.body.entries[0]).toMatchObject({ kind: 'reassignment', by: 'kckern', learnerId: 'learner4', toLearnerId: 'learner3', moved: 1 });
 
     const since = await request(app).get('/api/v1/school/audit?since=2026-08-02');
     expect(since.body.entries.map((e) => e.kind)).toEqual(['reassignment', 'pass-override', 'assignments']);
@@ -236,13 +236,13 @@ describe('report-card PDF name resolution (M9 fix)', () => {
     const app = express();
     app.use('/api/v1/school', createSchoolRouter({
       schoolService: { listBankSourceSummaries: () => [] },
-      getReportCard: { execute: async () => ({ schema: 'school.report-card/v1', learnerId: 'felix', period: { label: 'Fall' }, courses: [], materials: [], activeDays: { bySubject: {}, total: 0 }, concepts: null, pendingReview: 0, remediationArcs: [] }) },
+      getReportCard: { execute: async () => ({ schema: 'school.report-card/v1', learnerId: 'learner4', period: { label: 'Fall' }, courses: [], materials: [], activeDays: { bySubject: {}, total: 0 }, concepts: null, pendingReview: 0, remediationArcs: [] }) },
       renderReportCardPdf: async (report, { learnerName }) => ({ pdf: Buffer.from(`PDF:${learnerName}`), pageCount: 1, mode: 'draft' }),
-      learnerDirectory: { listLearners: () => [{ id: 'felix', name: 'Felix' }] }, // SYNC return
+      learnerDirectory: { listLearners: () => [{ id: 'learner4', name: 'Learner4' }] }, // SYNC return
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
     }));
-    const res = await request(app).get('/api/v1/school/report-card?learnerId=felix&periodId=p1&format=pdf');
+    const res = await request(app).get('/api/v1/school/report-card?learnerId=learner4&periodId=p1&format=pdf');
     expect(res.status).toBe(200);
-    expect(res.body.toString()).toBe('PDF:Felix');
+    expect(res.body.toString()).toBe('PDF:Learner4');
   });
 });

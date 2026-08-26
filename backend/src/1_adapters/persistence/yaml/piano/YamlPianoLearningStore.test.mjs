@@ -19,25 +19,25 @@ function store() {
 describe('YamlPianoLearningStore', () => {
   it('enrolls idempotently and removes only the requested program', () => {
     const subject = store();
-    subject.enroll('felix', 'hanon');
-    subject.enroll('felix', 'hanon');
-    subject.enroll('felix', 'scales');
-    expect(subject.getEnrollments('felix').map((entry) => entry.programId)).toEqual(['hanon', 'scales']);
-    expect(subject.unenroll('felix', 'hanon').map((entry) => entry.programId)).toEqual(['scales']);
+    subject.enroll('learner4', 'hanon');
+    subject.enroll('learner4', 'hanon');
+    subject.enroll('learner4', 'scales');
+    expect(subject.getEnrollments('learner4').map((entry) => entry.programId)).toEqual(['hanon', 'scales']);
+    expect(subject.unenroll('learner4', 'hanon').map((entry) => entry.programId)).toEqual(['scales']);
   });
 
   it('guards assignment writes against stale teacher edits', () => {
     const subject = store();
-    subject.putAssignment({ learnerId: 'felix', programs: ['hanon'], assignedBy: 'dad', baseUpdatedAt: null });
-    expect(() => subject.putAssignment({ learnerId: 'felix', programs: [], assignedBy: 'dad', baseUpdatedAt: null }))
+    subject.putAssignment({ learnerId: 'learner4', programs: ['hanon'], assignedBy: 'dad', baseUpdatedAt: null });
+    expect(() => subject.putAssignment({ learnerId: 'learner4', programs: [], assignedBy: 'dad', baseUpdatedAt: null }))
       .toThrow(/changed since/);
   });
 
   it('keeps one pending video checkpoint per content id', () => {
     const subject = store();
-    subject.putPendingCheckpoint('felix', { contentId: 'plex:123', title: 'First', requirement: { exercise_id: 'scale-c' } });
-    subject.putPendingCheckpoint('felix', { contentId: 'plex:123', title: 'Revised', requirement: { exercise_id: 'scale-d' } });
-    expect(subject.getPendingCheckpoints('felix')).toMatchObject([
+    subject.putPendingCheckpoint('learner4', { contentId: 'plex:123', title: 'First', requirement: { exercise_id: 'scale-c' } });
+    subject.putPendingCheckpoint('learner4', { contentId: 'plex:123', title: 'Revised', requirement: { exercise_id: 'scale-d' } });
+    expect(subject.getPendingCheckpoints('learner4')).toMatchObject([
       { contentId: 'plex:123', title: 'Revised', requirement: { exercise_id: 'scale-d' } },
     ]);
   });

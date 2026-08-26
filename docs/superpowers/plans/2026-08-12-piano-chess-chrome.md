@@ -586,10 +586,10 @@ describe('POST /api/v1/chess/games', () => {
   it('stores a record for a real user', async () => {
     const writes = [];
     const app = appWith({ engine: {}, configService: stubConfig(), recordStore: { save: (u, r) => writes.push([u, r]) } });
-    const res = await request(app).post('/api/v1/chess/games?user=felix')
+    const res = await request(app).post('/api/v1/chess/games?user=learner4')
       .send({ result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000 });
     expect(res.status).toBe(201);
-    expect(writes[0][0]).toBe('felix');
+    expect(writes[0][0]).toBe('learner4');
     expect(writes[0][1]).toMatchObject({ result: 'win', moves: 24 });
   });
 
@@ -666,7 +666,7 @@ export async function saveGameRecord(userId, record) {
 ```
 
 Add a test to `chessApi.test.js` mirroring the existing `saveChessConfig` one: it POSTs to
-`api/v1/chess/games?user=felix` with the record body, and resolves `null` rather than throwing when
+`api/v1/chess/games?user=learner4` with the record body, and resolves `null` rather than throwing when
 the transport fails.
 
 - [ ] **Step 10: Run the API suites**

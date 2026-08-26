@@ -34,7 +34,7 @@ const ESC_AT = Buffer.from([0x1b, 0x40]); // ESC @ — job init
 
 const quietLogger = () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() });
 
-const DOCUMENT = { id: 'agenda-felix', target: ['receipt'] };
+const DOCUMENT = { id: 'agenda-learner4', target: ['receipt'] };
 const JOB = { items: [{ type: 'text', content: 'Your list', align: 'left' }] };
 
 /**
@@ -110,7 +110,7 @@ describe('ReceiptPrinting over the real claim tier', () => {
     expect(connections[0].jobBytes().includes(ESC_AT)).toBe(true);
     // The silence stays visible even though the print counts.
     expect(logger.warn).toHaveBeenCalledWith(
-      'school.receipt.unverified', expect.objectContaining({ id: 'agenda-felix' }),
+      'school.receipt.unverified', expect.objectContaining({ id: 'agenda-learner4' }),
     );
   }, 20000);
 
@@ -126,7 +126,7 @@ describe('ReceiptPrinting over the real claim tier', () => {
     expect(outcome).toEqual({ printed: false, reason: 'printer_fault' });
     expect(logger.warn).toHaveBeenCalledWith(
       'school.receipt.printer-fault',
-      expect.objectContaining({ id: 'agenda-felix', faults: ['no_paper'] }),
+      expect.objectContaining({ id: 'agenda-learner4', faults: ['no_paper'] }),
     );
   }, 20000);
 
@@ -140,7 +140,7 @@ describe('ReceiptPrinting over the real claim tier', () => {
     expect(connections).toHaveLength(1);
     expect(connections[0].jobBytes()).toHaveLength(0);
     expect(logger.warn).toHaveBeenCalledWith(
-      'school.receipt.refused', expect.objectContaining({ id: 'agenda-felix' }),
+      'school.receipt.refused', expect.objectContaining({ id: 'agenda-learner4' }),
     );
   }, 20000);
 

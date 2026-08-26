@@ -483,7 +483,7 @@ function makeDeps({ summaries }) {
   return {
     configService: {
       getHouseholdAppConfig: () => PIANO_CFG,
-      getHouseholdUsers: () => ['kc', 'learner-two'],
+      getHouseholdUsers: () => ['kc', 'learner2'],
       getUserProfile: (id) => ({ display_name: id.toUpperCase() }),
     },
     plexClient: {
@@ -507,7 +507,7 @@ function makeDeps({ summaries }) {
 
 test('picks each user newest lesson course, sorted most recent first, skipping no-history users', async () => {
   const uc = new GetRecentCourseActivity(makeDeps({ summaries: {
-    learner-two: {
+    learner2: {
       10: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' },
       11: { completed: 2, total: 2, lastPlayedAt: '2026-07-25T00:00:00Z' },
     },
@@ -516,7 +516,7 @@ test('picks each user newest lesson course, sorted most recent first, skipping n
   const { players } = await uc.execute();
   assert.equal(players.length, 2);
   assert.equal(players[0].userId, 'kc');                    // newest first
-  assert.equal(players[1].courseId, 'plex:11');             // learner-two's newest course
+  assert.equal(players[1].courseId, 'plex:11');             // learner2's newest course
   assert.equal(players[1].courseTitle, 'Course B');
   assert.equal(players[1].completed, 2);
   assert.equal(players[1].percent, 100);
@@ -819,7 +819,7 @@ import PianoMenuActivity, { relativeTime } from './PianoMenuActivity.jsx';
 
 const NOW = Date.parse('2026-07-28T12:00:00Z');
 const player = (over = {}) => ({
-  userId: 'learner-two', name: 'learner-two', courseId: 'plex:11', courseTitle: 'Course B',
+  userId: 'learner2', name: 'learner2', courseId: 'plex:11', courseTitle: 'Course B',
   thumbnail: '/img/b', completed: 13, total: 57, percent: 23,
   lastPlayedAt: '2026-07-28T10:00:00Z', ...over,
 });
@@ -837,7 +837,7 @@ describe('relativeTime', () => {
 
 describe('PianoMenuActivity', () => {
   it('renders one card per player with ring percent, title, and relative time', async () => {
-    response = { players: [player(), player({ userId: 'learner-one', name: 'learner-one', percent: 1, completed: 3, total: 344, courseTitle: 'Hoffman Academy' })] };
+    response = { players: [player(), player({ userId: 'learner1', name: 'learner1', percent: 1, completed: 3, total: 344, courseTitle: 'Hoffman Academy' })] };
     render(<PianoMenuActivity onOpenCourse={() => {}} />);
     await waitFor(() => expect(screen.getByText('Course B')).toBeTruthy());
     expect(screen.getByText('Hoffman Academy')).toBeTruthy();

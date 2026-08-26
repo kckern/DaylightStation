@@ -56,7 +56,7 @@ describe('buildBeat', () => {
   });
 
   it('carries only the active game identity needed for recovery protection', () => {
-    const beat = buildBeat(60, { activity: { type: 'game', id: 'chess', player: 'milo' } });
+    const beat = buildBeat(60, { activity: { type: 'game', id: 'chess', player: 'learner3' } });
     expect(beat.activity).toEqual({ type: 'game', id: 'chess' });
     expect(beat.activity.player).toBeUndefined();
   });

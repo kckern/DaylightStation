@@ -1,10 +1,10 @@
 /**
  * Slice H (2026-08-22) — every printed QR is bound to its own keypad code, or
  * says explicitly that scanning is the only way in. Two real defects sat
- * under Felix's single-offer slip looking right:
+ * under Learner-Four's single-offer slip looking right:
  *
  *   1. `resultDocument` never threaded a code to the "next up" QR at all —
- *      Milo's receipt carried `sch:XAXYT6X849DUPEVX` under "Scan to print
+ *      Learner-Three's receipt carried `sch:XAXYT6X849DUPEVX` under "Scan to print
  *      the next worksheet" with nothing typeable beneath it.
  *   2. Codes used to be keyed by SUBJECT while QRs are minted per TOKEN, so
  *      two tokened offers sharing a subject could never both get a code.
@@ -67,7 +67,7 @@ function assertEveryQrIsExplained(blocks, { expectCount } = {}) {
   expect(explained).toBe(qrCount);
 }
 
-describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () => {
+describe('QR / panel-code pairing (Slice H, regression: Learner-Three, 2026-08-22)', () => {
   it('pairs a result receipt\'s "next up" QR with its own code', () => {
     const r = resultDocument({
       sessionId: 'ses_x',
@@ -87,7 +87,7 @@ describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () =
   });
 
   it('prints an explicit "scanning only" line rather than a silent gap when no code could be minted', () => {
-    // This is exactly Milo's receipt: a lesson-presentation QR whose caller
+    // This is exactly Learner-Three's receipt: a lesson-presentation QR whose caller
     // checked (accessCode: null, not omitted) and found no code available —
     // self-service off, or a token class (like `remediation`) that can
     // never carry one.

@@ -12,21 +12,21 @@ import {
 
 describe('launch preview link — round trip', () => {
   it('encodes a learner and subject into a url-safe segment and reads it back', () => {
-    const link = encodeLaunchPreviewLink({ learnerId: 'felix', subject: 'scripture' });
+    const link = encodeLaunchPreviewLink({ learnerId: 'learner4', subject: 'scripture' });
     expect(link).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(decodeLaunchPreviewLink(link)).toEqual({
       ok: true,
-      payload: { learnerId: 'felix', subject: 'scripture', continueToday: false },
+      payload: { learnerId: 'learner4', subject: 'scripture', continueToday: false },
     });
   });
 
   it('carries continueToday when asked, so the "one more?" card can be previewed too', () => {
-    const link = encodeLaunchPreviewLink({ learnerId: 'felix', subject: 'math', continueToday: true });
+    const link = encodeLaunchPreviewLink({ learnerId: 'learner4', subject: 'math', continueToday: true });
     expect(decodeLaunchPreviewLink(link).payload.continueToday).toBe(true);
   });
 
   it('refuses to encode a payload that names no learner or no subject', () => {
-    expect(() => encodeLaunchPreviewLink({ learnerId: 'felix' })).toThrow(/subject/i);
+    expect(() => encodeLaunchPreviewLink({ learnerId: 'learner4' })).toThrow(/subject/i);
     expect(() => encodeLaunchPreviewLink({ subject: 'math' })).toThrow(/learner/i);
   });
 });
@@ -52,7 +52,7 @@ describe('launch preview link — malformed input never decodes to a guess', () 
   });
 
   it('a well-formed object missing the fields the card needs', () => {
-    const result = decodeLaunchPreviewLink(Buffer.from('{"learnerId":"felix"}').toString('base64url'));
+    const result = decodeLaunchPreviewLink(Buffer.from('{"learnerId":"learner4"}').toString('base64url'));
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('incomplete');
     expect(result.sentence).toMatch(/learner and a subject/i);

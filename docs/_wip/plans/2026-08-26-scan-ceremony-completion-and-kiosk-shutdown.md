@@ -393,7 +393,7 @@ Add to the `'a live worksheet with blank rows still speaks'` describe block:
           recordId: 'civilization/atlas/ws-today@rev1:v0:34-39',
           documentId: 'civilization/atlas/ws-today',
           rowRange: { start: 34, end: 39 },
-          learnerId: 'milo',
+          learnerId: 'learner3',
         }],
       },
       recorder: duplicateRecorder(),

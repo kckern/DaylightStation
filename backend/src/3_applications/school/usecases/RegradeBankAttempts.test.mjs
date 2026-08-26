@@ -10,7 +10,7 @@ const BANK = {
 };
 
 const ATTEMPTS = {
-  felix: [
+  learner4: [
     // Graded WRONG under the buggy key (answer used to be 'Seattle'): child
     // chose Olympia, recorded incorrect. Current key says correct.
     { id: 'att_1', at: '2026-08-01T10:00:00.000Z', sessionId: 'ses_1', bankId: 'caps', itemId: 'q1', given: 'Olympia', correct: false },
@@ -37,7 +37,7 @@ const make = ({ appended = [], sessions = null, worksheetInstances = null, sessi
   },
   bankReader: { getBank: (id) => (id === 'caps' ? BANK : null) },
   teacherGate: { assert: ({ userId }) => { if (userId !== 'kckern') throw new GuestForbiddenError('no'); } },
-  learnerDirectory: { listLearners: async () => [{ id: 'felix' }] },
+  learnerDirectory: { listLearners: async () => [{ id: 'learner4' }] },
   sessions, worksheetInstances, sessionCorrection,
   clock: () => new Date('2026-08-20T12:00:00.000Z'),
   logger: silent,
@@ -49,7 +49,7 @@ describe('RegradeBankAttempts (admin advocacy #5)', () => {
     const uc = make({ appended });
     const r = await uc.execute({ bankId: 'caps', fromDay: '2026-08-01', toDay: '2026-08-02', reason: 'answer key fixed', regradedBy: 'kckern' });
     expect(r).toMatchObject({ applied: false, checked: 2 });
-    expect(r.changed).toEqual([{ learnerId: 'felix', attemptId: 'att_1', sessionId: 'ses_1', itemId: 'q1', was: false, now: true }]);
+    expect(r.changed).toEqual([{ learnerId: 'learner4', attemptId: 'att_1', sessionId: 'ses_1', itemId: 'q1', was: false, now: true }]);
     expect(r.sessionsAffected).toEqual(['ses_1']);
     expect(appended).toEqual([]);
   });
@@ -90,7 +90,7 @@ describe('RegradeBankAttempts (admin advocacy #5)', () => {
     const sessionCorrection = vi.fn(async (args) => ({ ...args, idempotent: false,
       receiptArtifact: { artifactId: `receipt/ses_1/correction/${args.adjustmentId}` } }));
     const sessions = { readEvents: async () => [
-      { type: 'created', at: '2026-08-01T10:00:00.000Z', sessionId: 'ses_1', seq: 1, learnerId: 'felix', unitId: 'unit_1' },
+      { type: 'created', at: '2026-08-01T10:00:00.000Z', sessionId: 'ses_1', seq: 1, learnerId: 'learner4', unitId: 'unit_1' },
       { type: 'issued', at: '2026-08-01T10:01:00.000Z', sessionId: 'ses_1', seq: 2, artifactId: 'art_1' },
       { type: 'submitted', at: '2026-08-01T10:02:00.000Z', sessionId: 'ses_1', seq: 3, transport: 'paper' },
       { type: 'graded', at: '2026-08-01T10:03:00.000Z', sessionId: 'ses_1', seq: 4,
@@ -109,7 +109,7 @@ describe('RegradeBankAttempts (admin advocacy #5)', () => {
 
   it('gate-checked and reason required', async () => {
     const uc = make();
-    await expect(uc.execute({ bankId: 'caps', fromDay: '2026-08-01', toDay: '2026-08-02', reason: 'r', regradedBy: 'felix' }))
+    await expect(uc.execute({ bankId: 'caps', fromDay: '2026-08-01', toDay: '2026-08-02', reason: 'r', regradedBy: 'learner4' }))
       .rejects.toThrow(GuestForbiddenError);
     await expect(uc.execute({ bankId: 'caps', fromDay: '2026-08-01', toDay: '2026-08-02', regradedBy: 'kckern' }))
       .rejects.toThrow(/reason/);

@@ -2,7 +2,7 @@
 /**
  * Regression coverage for the bug reported 2026-08-14: `barcode-scan-sim.cli.mjs`
  * silently reported `{ ok: true, sections: 0, offers: [], errors: [] }` for a
- * learner (felix) whose real agenda had exactly one offer, because the CLI never
+ * learner (learner4) whose real agenda had exactly one offer, because the CLI never
  * loaded `.env` (so `DAYLIGHT_BASE_PATH` was unset in a plain shell invocation)
  * and fell back to the Docker-only default `/usr/src/app/data`, which doesn't
  * exist outside the container. Every Yaml adapter downstream treats a missing
@@ -92,7 +92,7 @@ describe('runBarcodeScanSim — data-dir gate', () => {
   it('card fails loudly (ok:false, non-empty errors, exit 1) against an empty dataDir instead of reporting a fictional empty agenda', async () => {
     const stateDir = path.join(tmpRoot, 'state');
     const { exitCode, report } = await runBarcodeScanSim(
-      ['card', 'felix', '--data-dir', tmpRoot, '--state-dir', stateDir],
+      ['card', 'learner4', '--data-dir', tmpRoot, '--state-dir', stateDir],
       { env: {} },
     );
     expect(exitCode).toBe(1);
@@ -108,7 +108,7 @@ describe('runBarcodeScanSim — data-dir gate', () => {
   it('lesson fails loudly against an empty dataDir rather than a bare "no unit found" that looks like a content problem', async () => {
     const stateDir = path.join(tmpRoot, 'state');
     const { exitCode, report } = await runBarcodeScanSim(
-      ['lesson', 'felix', 'atlas-us-p006-united-states', '--data-dir', tmpRoot, '--state-dir', stateDir],
+      ['lesson', 'learner4', 'atlas-us-p006-united-states', '--data-dir', tmpRoot, '--state-dir', stateDir],
       { env: {} },
     );
     expect(exitCode).toBe(1);
@@ -118,14 +118,14 @@ describe('runBarcodeScanSim — data-dir gate', () => {
 
   it('reproduces the exact original bug scenario: no DAYLIGHT_BASE_PATH in the environment must not silently resolve to a nonexistent default', async () => {
     // This is the literal repro from the bug report: `node
-    // cli/barcode-scan-sim.cli.mjs card felix` with no --data-dir and no
+    // cli/barcode-scan-sim.cli.mjs card learner4` with no --data-dir and no
     // DAYLIGHT_BASE_PATH exported in the calling shell. Before the fix, this
     // fell back to the Docker-only '/usr/src/app/data' default and reported
     // `{ ok: true, sections: 0, offers: [], errors: [] }` on any host where
     // that path doesn't exist. `env: {}` here simulates exactly that shell.
     const paths = resolveScanSimPaths({ flags: {}, env: {} });
     expect(fs.existsSync(paths.dataDir)).toBe(false); // sanity: this really is a nonexistent default
-    const { exitCode, report } = await runBarcodeScanSim(['card', 'felix'], { env: {} });
+    const { exitCode, report } = await runBarcodeScanSim(['card', 'learner4'], { env: {} });
     expect(exitCode).toBe(1);
     expect(report.ok).toBe(false);
     expect(report.errors.some((e) => /data directory not found/.test(e))).toBe(true);

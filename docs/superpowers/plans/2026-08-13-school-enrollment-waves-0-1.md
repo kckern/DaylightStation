@@ -19,7 +19,7 @@
 - **Every mutating school route asserts `TeacherGate`** (see `SetAssignments.mjs:55`) and carries the `baseUpdatedAt` stale-save guard (`SetAssignments.mjs:97-108`, 409 `STALE_SAVE`).
 - **Never use raw `console.*` in frontend code.** Use `teacherLog` (`frontend/src/modules/School/teacher/teacherLog.js`).
 - **Wave 1 is whole-course syllabi only.** The `modules` subset field is deliberately NOT in the schema — the planner cannot honor a subset until wave 2 (`planner.mjs:90-95` takes membership from the catalog, and `planner.mjs:137-138` computes module completion over all catalog siblings). Adding the field now would create data the planner silently ignores.
-- **`felix.yml` must keep working untouched** throughout. It holds a hand-authored enrollment with no `syllabusId`.
+- **`learner4.yml` must keep working untouched** throughout. It holds a hand-authored enrollment with no `syllabusId`.
 
 ---
 
@@ -74,7 +74,7 @@ const ENROLLED = {
   profile: 'upper',
   enrollment: {
     schema: 'school.course-enrollment/v1',
-    enrollmentId: 'enr-felix-young-peoples-atlas-us',
+    enrollmentId: 'enr-learner4-young-peoples-atlas-us',
     courseId: 'young-peoples-atlas-us',
     profile: 'upper',
     moduleOrder: ['united-states', 'midwest'],
@@ -660,9 +660,9 @@ describe('EnrollLearner', () => {
   beforeEach(() => { h = harness(); });
 
   it('materializes an enrollment onto a new assignment entry', async () => {
-    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     const [record] = h.saved;
-    expect(record.learnerId).toBe('milo');
+    expect(record.learnerId).toBe('learner3');
     const entry = record.courses.find((c) => c.courseId === 'elements');
     expect(entry.profile).toBe('lower');
     expect(entry.syllabusId).toBe('elements-lower');
@@ -672,60 +672,60 @@ describe('EnrollLearner', () => {
   });
 
   it('scopes materialization to the syllabus course only', async () => {
-    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
     expect(Object.keys(entry.enrollment.lessonOrder)).not.toContain('x');
   });
 
   it('refuses an unknown syllabus by name', async () => {
-    await expect(h.useCase.execute({ learnerId: 'milo', syllabusId: 'ghost', enrolledBy: 'kckern', pin: '7410' }))
+    await expect(h.useCase.execute({ learnerId: 'learner3', syllabusId: 'ghost', enrolledBy: 'kckern', pin: '7410' }))
       .rejects.toThrow("unknown syllabus: 'ghost'");
   });
 
   it('refuses a second enrollment in the same course without rematerialize', async () => {
-    const hh = harness({ assignment: { learnerId: 'milo', courses: [{ courseId: 'elements' }], units: [], updatedAt: null } });
-    await expect(hh.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' }))
-      .rejects.toThrow('milo is already enrolled in elements');
+    const hh = harness({ assignment: { learnerId: 'learner3', courses: [{ courseId: 'elements' }], units: [], updatedAt: null } });
+    await expect(hh.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' }))
+      .rejects.toThrow('learner3 is already enrolled in elements');
   });
 
   it('refuses a re-materialize while a session on that course is open', async () => {
     const hh = harness({
-      assignment: { learnerId: 'milo', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
+      assignment: { learnerId: 'learner3', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
       open: [{ sessionId: 'ws_1', unitId: 'el.02', state: 'issued' }],
     });
     await expect(hh.useCase.execute({
-      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+      learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
     })).rejects.toThrow(/open session/i);
   });
 
   it('ignores an open session on a DIFFERENT course', async () => {
     const hh = harness({
-      assignment: { learnerId: 'milo', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
+      assignment: { learnerId: 'learner3', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
       open: [{ sessionId: 'ws_2', unitId: 'other.01', state: 'issued' }],
     });
     await hh.useCase.execute({
-      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+      learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
     });
     expect(hh.saved).toHaveLength(1);
   });
 
   it('refuses a stale save', async () => {
-    const hh = harness({ assignment: { learnerId: 'milo', courses: [], units: [], updatedAt: '2026-09-01T00:00:00.000Z' } });
+    const hh = harness({ assignment: { learnerId: 'learner3', courses: [], units: [], updatedAt: '2026-09-01T00:00:00.000Z' } });
     await expect(hh.useCase.execute({
-      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', baseUpdatedAt: null,
+      learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', baseUpdatedAt: null,
     })).rejects.toThrow(/changed since you loaded/);
   });
 
   it('preserves other courses and standalone units untouched', async () => {
     const hh = harness({
       assignment: {
-        learnerId: 'milo',
+        learnerId: 'learner3',
         courses: ['math-fractions'],
         units: ['language-daily'],
         updatedAt: null,
       },
     });
-    await hh.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    await hh.useCase.execute({ learnerId: 'learner3', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     expect(hh.saved[0].courses[0]).toBe('math-fractions');
     expect(hh.saved[0].units).toEqual(['language-daily']);
   });
@@ -933,24 +933,24 @@ function unenrollHarness({ assignment, open = [] }) {
 }
 
 describe('UnenrollLearner', () => {
-  const enrolled = { learnerId: 'milo', courses: [{ courseId: 'elements' }, 'math-fractions'], units: ['language-daily'], updatedAt: null };
+  const enrolled = { learnerId: 'learner3', courses: [{ courseId: 'elements' }, 'math-fractions'], units: ['language-daily'], updatedAt: null };
 
   it('removes the course entry and leaves everything else alone', async () => {
     const h = unenrollHarness({ assignment: enrolled });
-    await h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'learner3', courseId: 'elements', removedBy: 'kckern', pin: '7410' });
     expect(h.saved[0].courses).toEqual(['math-fractions']);
     expect(h.saved[0].units).toEqual(['language-daily']);
   });
 
   it('refuses when the learner is not enrolled in that course', async () => {
-    const h = unenrollHarness({ assignment: { learnerId: 'milo', courses: [], units: [], updatedAt: null } });
-    await expect(h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
-      .rejects.toThrow('milo is not enrolled in elements');
+    const h = unenrollHarness({ assignment: { learnerId: 'learner3', courses: [], units: [], updatedAt: null } });
+    await expect(h.useCase.execute({ learnerId: 'learner3', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
+      .rejects.toThrow('learner3 is not enrolled in elements');
   });
 
   it('refuses while a session on that course is open', async () => {
     const h = unenrollHarness({ assignment: enrolled, open: [{ sessionId: 'ws_1', unitId: 'el.02', state: 'issued' }] });
-    await expect(h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
+    await expect(h.useCase.execute({ learnerId: 'learner3', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
       .rejects.toThrow(/open session/i);
   });
 });
@@ -1311,7 +1311,7 @@ describe('deriveMatrix — enrollment cells', () => {
     const m = deriveMatrix({
       kids: KIDS, units: UNITS, syllabi: SYLLABI,
       assignments: [{
-        learnerId: 'felix',
+        learnerId: 'learner4',
         courses: [{ courseId: 'history-capitals', profile: 'upper', syllabusId: 'atlas-upper', enrollment: { schema: 'school.course-enrollment/v1' } }],
       }],
     });
@@ -1322,7 +1322,7 @@ describe('deriveMatrix — enrollment cells', () => {
   it('marks a hand-authored enrollment as unmanaged rather than broken', () => {
     const m = deriveMatrix({
       kids: KIDS, units: UNITS, syllabi: SYLLABI,
-      assignments: [{ learnerId: 'felix', courses: [{ courseId: 'history-capitals', profile: 'upper', enrollment: { schema: 'school.course-enrollment/v1' } }] }],
+      assignments: [{ learnerId: 'learner4', courses: [{ courseId: 'history-capitals', profile: 'upper', enrollment: { schema: 'school.course-enrollment/v1' } }] }],
     });
     expect(m.rows[0].cells['history-capitals']).toMatchObject({ enrolled: true, managed: false, profile: 'upper' });
   });
@@ -1330,7 +1330,7 @@ describe('deriveMatrix — enrollment cells', () => {
   it('treats a bare-string course as enrolled with no enrollment record', () => {
     const m = deriveMatrix({
       kids: KIDS, units: UNITS, syllabi: [],
-      assignments: [{ learnerId: 'milo', courses: ['math-fractions'] }],
+      assignments: [{ learnerId: 'learner3', courses: ['math-fractions'] }],
     });
     expect(m.rows[1].cells['math-fractions']).toMatchObject({ enrolled: true, managed: false, syllabusId: null });
   });
@@ -1364,7 +1364,7 @@ export function deriveMatrix({ assignments, units, kids, syllabi = [] }) {
     const assigned = new Set((rec?.courses ?? []).map(courseOf).filter(Boolean));
     // One cell per assigned course. `managed` is false for an enrollment with
     // no syllabusId -- a hand-authored record, which renders first-class and
-    // flagged, never as broken (felix.yml must keep working).
+    // flagged, never as broken (learner4.yml must keep working).
     const cells = {};
     (rec?.courses ?? []).forEach((entry) => {
       const id = courseOf(entry);
@@ -1598,7 +1598,7 @@ Expected: PASS. `deriveMatrix` is pure and unchanged by this step; the tests exe
 # with the dev backend running (see Task 6 Step 5)
 # open http://localhost:3113/school/teacher/planning
 ```
-Check: a matrix cell opens the drawer; a course with no syllabus shows the empty state; Felix × atlas shows the ⚑ unmanaged marker and the hand-authored note.
+Check: a matrix cell opens the drawer; a course with no syllabus shows the empty state; Learner4 × atlas shows the ⚑ unmanaged marker and the hand-authored note.
 
 - [ ] **Step 5: Commit**
 
@@ -1831,12 +1831,12 @@ npx vitest run --config vitest.config.mjs tests/unit/tooling/auditLayerImports.t
 ```
 Expected: PASS.
 
-- [ ] **Confirm `felix.yml` still round-trips**
+- [ ] **Confirm `learner4.yml` still round-trips**
 
-With the dev backend running, fetch and re-save Felix's assignments through the console (Planning → pick Felix → Assignments → Edit → Save with no changes), then:
+With the dev backend running, fetch and re-save Learner4's assignments through the console (Planning → pick Learner4 → Assignments → Edit → Save with no changes), then:
 
 ```bash
-sudo docker exec daylight-station sh -c 'grep -c lessonOrder data/household/apps/school/assignments/felix.yml'
+sudo docker exec daylight-station sh -c 'grep -c lessonOrder data/household/apps/school/assignments/learner4.yml'
 ```
 Expected: `1` — the enrollment survived. This is the wave-0 bug's regression check and the single most important line in this plan.
 

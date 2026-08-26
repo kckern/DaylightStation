@@ -196,7 +196,7 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
         // an array always is, then read `.label`/`.completed`/`.total`
         // straight off the array itself rather than an element of it —
         // always `undefined`, printing the literal "undefined · undefined of
-        // undefined" onto Milo's receipt. A single-object shape is still
+        // undefined" onto Learner-Three's receipt. A single-object shape is still
         // accepted defensively (matching `DocumentReceiptRenderer.mjs`'s own
         // array/object normalisation), and a row missing any of its three
         // fields prints NOTHING rather than a garbled line — a guard on the

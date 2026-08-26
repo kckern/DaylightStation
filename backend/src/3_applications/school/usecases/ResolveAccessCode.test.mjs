@@ -13,7 +13,7 @@ import { ResolveAccessCode } from './ResolveAccessCode.mjs';
 import { ResolveSubjectNext } from './ResolveSubjectNext.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 
-const LEARNER_ID = 'felix';
+const LEARNER_ID = 'learner4';
 const SUBJECT = 'scripture';
 const NOW_ISO = '2026-08-25T18:00:00.000Z';
 

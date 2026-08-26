@@ -5,7 +5,7 @@ describe('ListPrintableWorksheetSessions', () => {
   it('offers only issuable bank-only sessions from the requested day window', async () => {
     const listLearnerSessions = {
       async execute(args) {
-        expect(args).toEqual({ learnerId: 'milo', window: 'today' });
+        expect(args).toEqual({ learnerId: 'learner3', window: 'today' });
         return [
           { sessionId: 'paper', unitId: 'science/paper', state: 'created' },
           { sessionId: 'video', unitId: 'science/video', state: 'created' },
@@ -27,7 +27,7 @@ describe('ListPrintableWorksheetSessions', () => {
     };
     const useCase = new ListPrintableWorksheetSessions({ listLearnerSessions, curriculum });
 
-    await expect(useCase.execute({ learnerId: 'milo' })).resolves.toEqual([{
+    await expect(useCase.execute({ learnerId: 'learner3' })).resolves.toEqual([{
       sessionId: 'paper', unitId: 'science/paper', title: 'Paper lesson',
       subject: 'science', courseId: 'chemistry', state: 'created',
     }]);

@@ -134,7 +134,7 @@ describe('execute — composed allocation sections', () => {
     const { allocation } = await publishAndAllocate({
       repository, allocationStore, source,
       context: {
-        freshCard: true, learnerId: 'milo',
+        freshCard: true, learnerId: 'learner3',
         sectionAttribution: [
           { id: 'a', itemIds: ['q1'], sessionId: 'session-a', lessonId: 'lesson-a' },
           { id: 'b', itemIds: ['q2'], sessionId: 'session-b', lessonId: 'lesson-b' },

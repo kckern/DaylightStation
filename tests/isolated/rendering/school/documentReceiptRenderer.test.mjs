@@ -142,7 +142,7 @@ describe('the standard header', () => {
   };
 
   it('a titled document opens with a full-bleed black band', async () => {
-    const titled = await renderer.createCanvas({ ...doc([{ type: 'rich_text', md: 'Body.' }]), title: 'Felix' });
+    const titled = await renderer.createCanvas({ ...doc([{ type: 'rich_text', md: 'Body.' }]), title: 'Learner-Four' });
     // The band bleeds edge to edge at the very top of the tape; the knocked-out
     // name keeps it from being 100% dark.
     expect(rowDarkness(titled.canvas, 2)).toBeGreaterThan(0.8);

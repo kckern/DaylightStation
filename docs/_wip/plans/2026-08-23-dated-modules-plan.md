@@ -525,7 +525,7 @@ git commit -m "feat(school): enrolling in a dated course freezes its calendar on
 ```javascript
 it('materializes a dated course schedule from the catalog work', async () => {
   const record = await enrollLearner.execute({
-    learnerId: 'milo', syllabusId: 'cfm', enrolledBy: 'kckern', pin: '0000',
+    learnerId: 'learner3', syllabusId: 'cfm', enrolledBy: 'kckern', pin: '0000',
   });
   const entry = record.courses.find((c) => c.courseId === 'cfm');
   expect(entry.enrollment.moduleSchedule).toEqual({
@@ -612,7 +612,7 @@ describe('dated_modules gating', () => {
   } }] });
   const policies = { cfm: { mode: 'dated_modules', lesson_order: 'sequence' } };
   const plan = (now, sessions = []) => planLearnerWork({
-    learnerId: 'milo', assignment: assignment(), units: datedCourse(),
+    learnerId: 'learner3', assignment: assignment(), units: datedCourse(),
     sessions, now, coursePolicies: policies,
   });
 
@@ -917,7 +917,7 @@ The data tree is not this repo — note the edit in the commit message but commi
 
 ---
 
-## Task 8: Author the syllabus and enroll Milo and Felix
+## Task 8: Author the syllabus and enroll Learner3 and Learner4
 
 **Step 1: Create the syllabus**
 
@@ -925,7 +925,7 @@ The data tree is not this repo — note the edit in the commit message but commi
 
 Do NOT add a `modules:` key — `syllabus.mjs` refuses it (scope subsetting is not built). Do NOT add a `timingTemplate` — that is course-level anchor timing, a different mechanism from `moduleSchedule`.
 
-**A syllabus carries `profile`** (`syllabus.mjs:64-69`, validated against the course's own `work.profiles`), and `EnrollLearner` takes no profile override. So Milo and Felix need **two syllabus files**, identical but for id, title, and profile:
+**A syllabus carries `profile`** (`syllabus.mjs:64-69`, validated against the course's own `work.profiles`), and `EnrollLearner` takes no profile override. So Learner3 and Learner4 need **two syllabus files**, identical but for id, title, and profile:
 
 `come-follow-me-ot-2026-lower.yml`
 ```yaml
@@ -947,11 +947,11 @@ Household config is boot-cached. Touch a watched backend file so nodemon reloads
 **Step 3: Enroll both learners**
 
 ```bash
-curl -X POST http://localhost:3112/api/v1/school/lifecycle/enrollments/milo \
+curl -X POST http://localhost:3112/api/v1/school/lifecycle/enrollments/learner3 \
   -H 'Content-Type: application/json' \
   -d '{"syllabusId":"come-follow-me-ot-2026-lower","enrolledBy":"kckern","pin":"<pin>"}'
 
-curl -X POST http://localhost:3112/api/v1/school/lifecycle/enrollments/felix \
+curl -X POST http://localhost:3112/api/v1/school/lifecycle/enrollments/learner4 \
   -H 'Content-Type: application/json' \
   -d '{"syllabusId":"come-follow-me-ot-2026-upper","enrolledBy":"kckern","pin":"<pin>"}'
 ```
@@ -959,7 +959,7 @@ curl -X POST http://localhost:3112/api/v1/school/lifecycle/enrollments/felix \
 **Step 4: Verify the materialized plans**
 
 ```bash
-grep -A4 moduleSchedule "$DAYLIGHT_BASE_PATH/data/household/school/plans/learners/milo.yml" | head -20
+grep -A4 moduleSchedule "$DAYLIGHT_BASE_PATH/data/household/school/plans/learners/learner3.yml" | head -20
 ```
 Expected: all 17 windows (enrolling on or before Aug 24 keeps every week), `moduleOrder` in calendar order, `lessonOrder` shuffled within each week.
 

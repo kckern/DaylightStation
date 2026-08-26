@@ -183,7 +183,7 @@ describe('LanguageStudyService.todayStatus', () => {
   });
 
   it('a day completed on a PRIOR study day reports the rolled day, never done today', () => {
-    // Found live (felix, 2026-07-30): day 1 cleared on July 22, the app never
+    // Found live (learner4, 2026-07-30): day 1 cleared on July 22, the app never
     // reopened, so the stored day stayed 1 and todayStatus reported the
     // long-finished day as "done today" — hiding the subject on the agenda.
     // The stored day only advances when the learner next opens the app, so

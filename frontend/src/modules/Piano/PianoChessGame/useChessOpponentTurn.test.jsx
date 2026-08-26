@@ -28,7 +28,7 @@ function hookProps(game, overrides = {}) {
     gameSeed: 7,
     fallbackThinkMs: 1200,
     rungId: 'learner',
-    userId: 'felix',
+    userId: 'learner4',
     localFallbackDifficulty: 'learner',
     setGame: vi.fn(),
     announce: vi.fn(),
@@ -59,7 +59,7 @@ describe('useChessOpponentTurn', () => {
       gameSeed: 7,
       fallbackThinkMs: 1200,
       rungId: 'learner',
-      userId: 'felix',
+      userId: 'learner4',
       localFallbackDifficulty: 'learner',
       setGame: vi.fn(),
       announce: vi.fn(),
@@ -75,7 +75,7 @@ describe('useChessOpponentTurn', () => {
     expect(replyContract).toMatchObject({ enabled: true, thinkMs: 900, resetKey: 'game-1:0' });
     await replyContract.request();
     expect(requestOpponentMove).toHaveBeenCalledWith({
-      fen: 'current-fen', rung: 'learner', level: 4, gameId: 'game-1', userId: 'felix',
+      fen: 'current-fen', rung: 'learner', level: 4, gameId: 'game-1', userId: 'learner4',
     });
   });
 

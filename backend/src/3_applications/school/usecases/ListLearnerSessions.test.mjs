@@ -13,18 +13,18 @@ describe('ListLearnerSessions', () => {
       sessions: repo([mk('old', '2026-08-05T12:00:00Z'), mk('now', '2026-08-06T09:00:00Z')]),
       clock,
     });
-    const rows = await uc.execute({ learnerId: 'felix', window: 'today' });
+    const rows = await uc.execute({ learnerId: 'learner4', window: 'today' });
     expect(rows.map((r) => r.id)).toEqual(['now']);
   });
 
   it('no window returns everything', async () => {
     const uc = new ListLearnerSessions({ sessions: repo([mk('a', '2026-01-01T00:00:00Z')]), clock });
-    expect((await uc.execute({ learnerId: 'felix' })).length).toBe(1);
+    expect((await uc.execute({ learnerId: 'learner4' })).length).toBe(1);
   });
 
   it('an unknown window value returns everything (never an empty lie)', async () => {
     const uc = new ListLearnerSessions({ sessions: repo([mk('a', '2026-01-01T00:00:00Z')]), clock });
-    expect((await uc.execute({ learnerId: 'felix', window: 'fortnight' })).length).toBe(1);
+    expect((await uc.execute({ learnerId: 'learner4', window: 'fortnight' })).length).toBe(1);
   });
 
   it('falls back to created when updatedAt is absent', async () => {
@@ -32,12 +32,12 @@ describe('ListLearnerSessions', () => {
       sessions: repo([{ id: 'c', created: '2026-08-06T05:00:00Z' }]),
       clock,
     });
-    expect((await uc.execute({ learnerId: 'felix', window: 'today' })).map((r) => r.id)).toEqual(['c']);
+    expect((await uc.execute({ learnerId: 'learner4', window: 'today' })).map((r) => r.id)).toEqual(['c']);
   });
 
   it('a session with neither timestamp is excluded from today, not crashed on', async () => {
     const uc = new ListLearnerSessions({ sessions: repo([{ id: 'x' }, mk('y', '2026-08-06T10:00:00Z')]), clock });
-    expect((await uc.execute({ learnerId: 'felix', window: 'today' })).map((r) => r.id)).toEqual(['y']);
+    expect((await uc.execute({ learnerId: 'learner4', window: 'today' })).map((r) => r.id)).toEqual(['y']);
   });
 
   it('applies the household timezone to the boundary', async () => {
@@ -50,7 +50,7 @@ describe('ListLearnerSessions', () => {
       timezone: 'America/Los_Angeles',
       clock: laClock,
     });
-    expect((await uc.execute({ learnerId: 'felix', window: 'today' })).map((r) => r.id)).toEqual(['la-today']);
+    expect((await uc.execute({ learnerId: 'learner4', window: 'today' })).map((r) => r.id)).toEqual(['la-today']);
   });
 
   it('requires a sessions repository', () => {

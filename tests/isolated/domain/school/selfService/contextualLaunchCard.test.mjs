@@ -135,7 +135,7 @@ describe('contextual launch card', () => {
 describe('contextual launch card lesson media', () => {
   const cardWith = (lesson) => buildContextualLaunchCard({
     resolution: { kind: 'move', state: { state: 'ready' } },
-    learner: { id: 'milo', displayName: 'Milo' },
+    learner: { id: 'learner3', displayName: 'Learner3' },
     subjectId: 'arts',
     lesson,
   }).context.taxonomy.lesson;

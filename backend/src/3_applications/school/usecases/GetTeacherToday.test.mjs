@@ -3,7 +3,7 @@ import { GetTeacherToday } from './GetTeacherToday.mjs';
 
 const events = [
   { type: 'created', at: '2026-08-23T15:00:00.000Z', sessionId: 'ses_felix', seq: 1,
-    learnerId: 'felix', unitId: 'lesson-1', studyDay: '2026-08-23' },
+    learnerId: 'learner4', unitId: 'lesson-1', studyDay: '2026-08-23' },
   { type: 'issued', at: '2026-08-23T15:01:00.000Z', sessionId: 'ses_felix', seq: 2, artifactId: 'art_1' },
   { type: 'submitted', at: '2026-08-24T16:00:00.000Z', sessionId: 'ses_felix', seq: 3, transport: 'paper' },
   { type: 'graded', at: '2026-08-24T16:01:00.000Z', sessionId: 'ses_felix', seq: 4,
@@ -14,7 +14,7 @@ const events = [
 
 function useCase() {
   return new GetTeacherToday({
-    learnerDirectory: { listLearners: async () => [{ id: 'felix', name: 'Felix' }] },
+    learnerDirectory: { listLearners: async () => [{ id: 'learner4', name: 'Learner4' }] },
     datastore: { readAttemptDay: () => [] },
     sessions: {
       listForLearner: async () => [{ sessionId: 'ses_felix', updatedAt: events.at(-1).at }],
@@ -30,7 +30,7 @@ function useCase() {
 }
 
 describe('GetTeacherToday v2', () => {
-  it('keeps Felix work on August 23 and reports its August 24 scan once as processed today', async () => {
+  it('keeps Learner4 work on August 23 and reports its August 24 scan once as processed today', async () => {
     const august23 = await useCase().execute({ studyDay: '2026-08-23', version: 'v2' });
     expect(august23.learners[0]).toMatchObject({
       effectiveScoreTotals: { correct: 1, total: 2, percent: 50 },

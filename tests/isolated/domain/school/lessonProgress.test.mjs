@@ -14,7 +14,7 @@ describe('lessonProgressRows display labels', () => {
       progression: { mode: 'sequential', module_order: 'fixed', lesson_order: 'fixed', module_number_start: 35 },
     };
     const rows = lessonProgressRows({
-      learnerId: 'felix', unit: units[1], units, sessions: [],
+      learnerId: 'learner4', unit: units[1], units, sessions: [],
       assignment: { courses: [{ courseId: 'cfm', enrollment }] },
       works: [{
         work: 'cfm', title: 'Come Follow Me — Old Testament 2026', short_title: 'Come Follow Me',

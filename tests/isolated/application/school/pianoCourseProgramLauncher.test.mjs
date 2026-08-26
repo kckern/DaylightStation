@@ -37,7 +37,7 @@ describe('PianoCourseProgramLauncher.status', () => {
       { items: [lesson('a', { completedAt: '2026-08-25T18:00:00Z', title: 'Unit 3 Lesson 7' })] },
       '2026-08-25T20:00:00Z',
     );
-    const status = await launcher.status({ userId: 'felix', programInstance: COURSE });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
     expect(status.doneToday).toBe(true);
     expect(status.excused).toBeUndefined();
     expect(status.progressLabel).toContain('Unit 3 Lesson 7');
@@ -50,7 +50,7 @@ describe('PianoCourseProgramLauncher.status', () => {
       { items: [lesson('a', { completedAt: '2026-08-24T18:00:00Z' })] },
       '2026-08-25T18:00:00Z',
     );
-    const status = await launcher.status({ userId: 'felix', programInstance: COURSE });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
     expect(status.doneToday).toBe(false);
   });
 
@@ -61,7 +61,7 @@ describe('PianoCourseProgramLauncher.status', () => {
       { items: [lesson('a', { completedAt: '2026-08-26T06:30:00Z' })] },
       '2026-08-26T10:00:00Z',
     );
-    expect((await launcher.status({ userId: 'felix', programInstance: COURSE })).doneToday).toBe(true);
+    expect((await launcher.status({ userId: 'learner4', programInstance: COURSE })).doneToday).toBe(true);
   });
 
   it('rolls over at 4am: the same completion no longer counts after the boundary', async () => {
@@ -71,7 +71,7 @@ describe('PianoCourseProgramLauncher.status', () => {
       { items: [lesson('a', { completedAt: '2026-08-26T06:30:00Z' })] },
       '2026-08-26T12:30:00Z',
     );
-    expect((await launcher.status({ userId: 'felix', programInstance: COURSE })).doneToday).toBe(false);
+    expect((await launcher.status({ userId: 'learner4', programInstance: COURSE })).doneToday).toBe(false);
   });
 
   it('does not let a reference/practice unit discharge the day', async () => {
@@ -82,21 +82,21 @@ describe('PianoCourseProgramLauncher.status', () => {
       { items: [lesson('warmup', { completedAt: '2026-08-25T18:00:00Z', isReference: true })] },
       '2026-08-25T20:00:00Z',
     );
-    expect((await launcher.status({ userId: 'felix', programInstance: COURSE })).doneToday).toBe(false);
+    expect((await launcher.status({ userId: 'learner4', programInstance: COURSE })).doneToday).toBe(false);
   });
 
   it('excuses a co-progress lockout rather than leaving an impossible debt', async () => {
     const launcher = launcherFor(
       {
         items: [lesson('a', { watched: true }), lesson('b')],
-        coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3 },
+        coProgressLock: { locked: true, waitingForId: 'learner3', aheadBy: 3, buffer: 3 },
       },
       '2026-08-25T20:00:00Z',
     );
-    const status = await launcher.status({ userId: 'felix', programInstance: COURSE });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
     expect(status.doneToday).toBe(true);
     expect(status.excused).toBe(true);
-    expect(status.progressLabel).toContain('milo');
+    expect(status.progressLabel).toContain('learner3');
   });
 
   it('reports a real completion as done, not excused, even while locked', async () => {
@@ -105,11 +105,11 @@ describe('PianoCourseProgramLauncher.status', () => {
     const launcher = launcherFor(
       {
         items: [lesson('a', { completedAt: '2026-08-25T18:00:00Z' })],
-        coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3 },
+        coProgressLock: { locked: true, waitingForId: 'learner3', aheadBy: 3, buffer: 3 },
       },
       '2026-08-25T20:00:00Z',
     );
-    const status = await launcher.status({ userId: 'felix', programInstance: COURSE });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
     expect(status.doneToday).toBe(true);
     expect(status.excused).toBeUndefined();
   });
@@ -119,7 +119,7 @@ describe('PianoCourseProgramLauncher.status', () => {
       { items: [lesson('a', { watched: true }), lesson('b', { title: 'Unit 4 Lesson 1' })] },
       '2026-08-25T20:00:00Z',
     );
-    const status = await launcher.status({ userId: 'felix', programInstance: COURSE });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
     expect(status.doneToday).toBe(false);
     expect(status.progressLabel).toContain('next: Unit 4 Lesson 1');
     expect(status.score).toBe(50);
@@ -131,11 +131,11 @@ describe('PianoCourseProgramLauncher.status', () => {
     const launcher = launcherFor(
       {
         items: [lesson('a', { watched: true }), lesson('b', { title: 'Unit 4 Lesson 1' })],
-        coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3, exemptLessonIds: ['b'] },
+        coProgressLock: { locked: true, waitingForId: 'learner3', aheadBy: 3, buffer: 3, exemptLessonIds: ['b'] },
       },
       '2026-08-25T20:00:00Z',
     );
-    const status = await launcher.status({ userId: 'felix', programInstance: COURSE });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
     expect(status.doneToday).toBe(false);
     expect(status.excused).toBeUndefined();
     expect(status.progressLabel).toContain('next: Unit 4 Lesson 1');
@@ -145,11 +145,11 @@ describe('PianoCourseProgramLauncher.status', () => {
     const launcher = launcherFor(
       {
         items: [lesson('a', { watched: true }), lesson('b')],
-        coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3, exemptLessonIds: ['zzz'] },
+        coProgressLock: { locked: true, waitingForId: 'learner3', aheadBy: 3, buffer: 3, exemptLessonIds: ['zzz'] },
       },
       '2026-08-25T20:00:00Z',
     );
-    const status = await launcher.status({ userId: 'felix', programInstance: COURSE });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
     expect(status.excused).toBe(true);
   });
 
@@ -163,12 +163,12 @@ describe('PianoCourseProgramLauncher.status', () => {
       getPlayableUnits: { execute: async () => { throw new Error('plex down'); } },
       timezone: TZ, clock: () => new Date('2026-08-25T20:00:00Z'), logger: { warn() {} },
     });
-    expect(await launcher.status({ userId: 'felix', programInstance: COURSE })).toEqual({ error: true });
+    expect(await launcher.status({ userId: 'learner4', programInstance: COURSE })).toEqual({ error: true });
   });
 
   it('is not done, and does not throw, with no course assigned', async () => {
     const launcher = launcherFor({ items: [] }, '2026-08-25T20:00:00Z');
-    const status = await launcher.status({ userId: 'felix', programInstance: null });
+    const status = await launcher.status({ userId: 'learner4', programInstance: null });
     expect(status.doneToday).toBe(false);
   });
 });
@@ -183,7 +183,7 @@ describe('PianoCourseProgramLauncher launch contract', () => {
 
   it('fails in words when DoNow is not wired', async () => {
     const launcher = launcherFor({ items: [] }, '2026-08-25T20:00:00Z');
-    const result = await launcher.launch({ userId: 'felix' });
+    const result = await launcher.launch({ userId: 'learner4' });
     expect(result.decision).toBe('failed');
     expect(result.message).toMatch(/piano/i);
   });
@@ -199,9 +199,9 @@ describe('PianoCourseProgramLauncher launch contract', () => {
         userWatched: false, isReference: false,
       }],
     }, '2026-08-25T20:00:00Z');
-    await expect(launcher.issueLaunchTarget({ userId: 'felix', programInstance: COURSE }))
+    await expect(launcher.issueLaunchTarget({ userId: 'learner4', programInstance: COURSE }))
       .resolves.toEqual({
-        kind: 'course-lesson', learnerId: 'felix', courseId: COURSE,
+        kind: 'course-lesson', learnerId: 'learner4', courseId: COURSE,
         courseTitle: 'Hoffman Academy', unitId: 'season-4', unitTitle: 'Unit 4',
         lessonId: 'plex:9001', lessonTitle: 'Lesson 1',
       });
@@ -211,9 +211,9 @@ describe('PianoCourseProgramLauncher launch contract', () => {
     const launcher = launcherFor({
       compoundId: COURSE,
       items: [{ id: 'plex:9001', title: 'Lesson 1', parentId: 's4', parentIndex: 4, itemIndex: 1, userWatched: false }],
-      coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3 },
+      coProgressLock: { locked: true, waitingForId: 'learner3', aheadBy: 3, buffer: 3 },
     }, '2026-08-25T20:00:00Z');
-    await expect(launcher.issueLaunchTarget({ userId: 'felix', programInstance: COURSE }))
+    await expect(launcher.issueLaunchTarget({ userId: 'learner4', programInstance: COURSE }))
       .rejects.toThrow(/waiting for the paired learner/);
   });
 
@@ -223,9 +223,9 @@ describe('PianoCourseProgramLauncher launch contract', () => {
     const launcher = launcherFor({
       compoundId: COURSE,
       items: [{ id: 'plex:9001', title: 'Lesson 1', parentId: 's4', parentIndex: 4, itemIndex: 1, userWatched: false }],
-      coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3, exemptLessonIds: ['9001'] },
+      coProgressLock: { locked: true, waitingForId: 'learner3', aheadBy: 3, buffer: 3, exemptLessonIds: ['9001'] },
     }, '2026-08-25T20:00:00Z');
-    const target = await launcher.issueLaunchTarget({ userId: 'felix', programInstance: COURSE });
+    const target = await launcher.issueLaunchTarget({ userId: 'learner4', programInstance: COURSE });
     expect(target.lessonId).toBe('plex:9001');
   });
 
@@ -239,11 +239,11 @@ describe('PianoCourseProgramLauncher launch contract', () => {
       donow: { dispatch: async (request) => { calls.push(request); return { decision: 'dispatched', message: 'Started.' }; } },
       timezone: TZ, clock: () => new Date('2026-08-25T20:00:00Z'), logger: { warn() {}, info() {} },
     });
-    await expect(launcher.launch({ userId: 'felix', programInstance: COURSE, unitId: `piano-course:${COURSE}` }))
+    await expect(launcher.launch({ userId: 'learner4', programInstance: COURSE, unitId: `piano-course:${COURSE}` }))
       .resolves.toMatchObject({ decision: 'dispatched' });
     expect(calls[0]).toMatchObject({
-      surface: 'piano-kiosk', learnerId: 'felix', force: 'interrupt', programId: 'piano-course',
-      action: { kind: 'course-lesson', courseId: COURSE, lessonId: 'plex:9001', learnerId: 'felix' },
+      surface: 'piano-kiosk', learnerId: 'learner4', force: 'interrupt', programId: 'piano-course',
+      action: { kind: 'course-lesson', courseId: COURSE, lessonId: 'plex:9001', learnerId: 'learner4' },
     });
   });
 });
@@ -286,7 +286,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
       unit(4, 'Unit 4', 10),
     ), '2026-08-25T20:00:00Z');
 
-    const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    const [course] = (await launcher.status({ userId: 'learner3', programInstance: COURSE })).progress;
     // `inProgress` is `progressRows.mjs`'s hatch — the segment the learner is
     // standing in, which is NOT counted in `completed`. The location a surface
     // renders is the two added together (`activeProgressPosition`): unit 2 of 4.
@@ -301,7 +301,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
       unit(2, 'Unit 2 · Chords & the Grand Staff', 10, 4),
     ), '2026-08-25T20:00:00Z');
 
-    const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    const rows = (await launcher.status({ userId: 'learner3', programInstance: COURSE })).progress;
     expect(rows[1]).toMatchObject({
       scope: 'module', label: 'Unit 2 · Chords & the Grand Staff',
       completed: 4, total: 10, inProgress: 1,
@@ -318,7 +318,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
       unit(3, 'Unit 3', 7),
     ), '2026-08-25T20:00:00Z');
 
-    const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    const rows = (await launcher.status({ userId: 'learner3', programInstance: COURSE })).progress;
     expect(rows[0]).toMatchObject({ completed: 1, total: 3, inProgress: 1 });
     expect(rows[1]).toMatchObject({ completed: 12, total: 23, inProgress: 1 });
   });
@@ -329,7 +329,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
       unit(2, 'Unit 2', 4, 1),
     ), '2026-08-25T20:00:00Z');
 
-    const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    const rows = (await launcher.status({ userId: 'learner3', programInstance: COURSE })).progress;
     // Both scales hatch, because both are true at once: the learner is inside
     // unit 2 of the course AND inside a lesson of that unit. An earlier draft
     // marked only the deepest row, which read as though the course bar had no
@@ -348,7 +348,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
       unit(3, 'Unit 3', 4),
     ), '2026-08-25T20:00:00Z');
 
-    const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    const [course] = (await launcher.status({ userId: 'learner3', programInstance: COURSE })).progress;
     expect(course).toMatchObject({ completed: 2, total: 3, inProgress: 1 });
   });
 
@@ -360,7 +360,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
       unit(2, 'Unit 2', 4, 4),
     ), '2026-08-25T20:00:00Z');
 
-    const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    const [course] = (await launcher.status({ userId: 'learner3', programInstance: COURSE })).progress;
     expect(course).toMatchObject({ completed: 2, total: 2 });
     expect(course.inProgress).toBe(0);
   });
@@ -377,7 +377,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
       ],
     }, '2026-08-25T20:00:00Z');
 
-    const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    const [course] = (await launcher.status({ userId: 'learner3', programInstance: COURSE })).progress;
     expect(course).toMatchObject({ completed: 1, total: 2, inProgress: 1 });
   });
 
@@ -393,7 +393,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
       ],
     }, '2026-08-25T20:00:00Z');
 
-    const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    const rows = (await launcher.status({ userId: 'learner3', programInstance: COURSE })).progress;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       scope: 'course', completed: 1, total: 3, inProgress: 1,
@@ -408,7 +408,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
       unit(2, 'Unit 2', 20),
     ), '2026-08-25T20:00:00Z');
 
-    const status = await launcher.status({ userId: 'milo', programInstance: COURSE });
+    const status = await launcher.status({ userId: 'learner3', programInstance: COURSE });
     expect(status.progressLabel).toContain('4/40');
     expect(status.score).toBe(10);
   });
@@ -434,7 +434,7 @@ describe('PianoCourseProgramLauncher lesson media', () => {
 
   const lessonOf = async (result) => {
     const launcher = launcherFor(result, '2026-08-25T20:00:00Z');
-    return (await launcher.status({ userId: 'milo', programInstance: COURSE })).context.lesson;
+    return (await launcher.status({ userId: 'learner3', programInstance: COURSE })).context.lesson;
   };
 
   it('carries the episode still and summary through to the program context', async () => {

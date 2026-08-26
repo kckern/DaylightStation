@@ -61,8 +61,8 @@ anchors:
     kind: annual_date
     month: 7
     day: 4
-  - anchorId: milo-birthday-2026
-    label: Milo's birthday
+  - anchorId: learner3-birthday-2026
+    label: Learner3's birthday
     kind: fixed_date
     date: '2026-10-18'
   - anchorId: world-cup-final-2026

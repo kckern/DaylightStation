@@ -91,7 +91,7 @@ export class MarkSessionAbandoned {
    *
    * Nothing scheduled ever called `listStale`. It was reachable only through a
    * manual, teacher-gated `GET /sessions/stale`, so the seven-day threshold
-   * written into that route was never once consulted — which is how Felix's
+   * written into that route was never once consulted — which is how Learner-Four's
    * 2026-08-14 session was still live eight days later and resumed as if it
    * were that morning's work.
    *

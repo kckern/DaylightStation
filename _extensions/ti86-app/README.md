@@ -98,8 +98,8 @@ Useful current commands from the repository root include:
 # Build the deterministic resolved geometry lesson used by the journey lane.
 node _extensions/ti86-app/tools/build-adaptive-journey-fixture.mjs
 
-# Build the audited Felix / code 000000 / state-capitals install bundle.
-node _extensions/ti86-app/tools/build-felix-state-capitals-install.mjs
+# Build the audited Learner4 / code 000000 / state-capitals install bundle.
+node _extensions/ti86-app/tools/build-learner4-state-capitals-install.mjs
 
 # With the locally preserved ROM and Graph Link sender available:
 node _extensions/ti86-app/tools/ti86-mame-scenario-harness.mjs \

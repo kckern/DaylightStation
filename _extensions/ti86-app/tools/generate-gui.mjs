@@ -378,7 +378,7 @@ const screens = [
     g.softkeys([{ id: 'acknowledge', label: 'OK' }, null, null, null, null]);
   }),
   makeScreen('my-progress', 'Curriculum history overview with movable focus and stable inspector', (g) => {
-    header(g, 'MY PROGRESS', 'SOREN');
+    header(g, 'MY PROGRESS', 'LEARNER1');
     g.readerText(2, 10, 'Fractions');
     g.text(2, 19, 'TYPE');
     g.text(24, 19, 'C');
@@ -425,7 +425,7 @@ const screens = [
     g.softkeys([{ icon: 'sync', label: 'TRY' }, null, null, null, null]);
   }),
   makeScreen('catalog', 'Installed Catalog subject list', (g) => {
-    header(g, 'SUBJECTS', 'SOREN');
+    header(g, 'SUBJECTS', 'LEARNER1');
     g.list(
       ['PHYSICS', 'CHEMISTRY', 'FINANCE', 'ECONOMICS', 'ALGEBRA I', 'GEOMETRY', 'STATISTICS'],
       {

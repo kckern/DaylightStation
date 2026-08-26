@@ -835,7 +835,7 @@ describe('school-docs CLI', () => {
       // Mint the card the instance will point at, exactly as a real issuance would.
       const minted = await runSchoolDocs([
         'render', publishedFile, '--out', path.join(root, 'first.pdf'), '--data-dir', dataDir,
-        '--fresh-card', '--learner-id', 'felix', '--learner-name', 'Felix', '--date', '14 Aug 2026',
+        '--fresh-card', '--learner-id', 'learner4', '--learner-name', 'Learner4', '--date', '14 Aug 2026',
       ]);
       expect(minted.exitCode).toBe(0);
       const cardId = minted.report.allocation.cardId;
@@ -845,7 +845,7 @@ describe('school-docs CLI', () => {
       await writeFile(path.join(instancesDir, 'ws-fixture.yml'), dump({
         id: 'ws-fixture',
         sessionId: 'ses_fixture',
-        learnerId: 'felix',
+        learnerId: 'learner4',
         documentId: 'teacher-cli-fixture',
         documentRevision: published.report.rev,
         issuedAt: '2026-08-14T17:55:20.033Z',
@@ -863,7 +863,7 @@ describe('school-docs CLI', () => {
       expect(report.allocation).toMatchObject({ cardId, status: 'live' });
 
       const text = pdfText(await readFile(path.join(root, 'reprinted.pdf')));
-      expect(text).toContain('Felix');
+      expect(text).toContain('Learner4');
       expect(text).toContain('14 Aug 2026');
       expect(text).toContain(cardId);
     }));
@@ -877,7 +877,7 @@ describe('school-docs CLI', () => {
       const publishedFile = publishedPath(contentRoot, 'teacher-cli-fixture', published.report.rev);
       const minted = await runSchoolDocs([
         'render', publishedFile, '--out', path.join(root, 'first.pdf'), '--data-dir', dataDir,
-        '--fresh-card', '--learner-id', 'felix', '--learner-name', 'Felix', '--date', '14 Aug 2026',
+        '--fresh-card', '--learner-id', 'learner4', '--learner-name', 'Learner4', '--date', '14 Aug 2026',
       ]);
       const cardId = minted.report.allocation.cardId;
       const instancesDir = path.join(dataDir, 'household/school/records/worksheets');
@@ -885,7 +885,7 @@ describe('school-docs CLI', () => {
       await writeFile(path.join(instancesDir, 'ws-fixture.yml'), dump({
         id: 'ws-fixture',
         sessionId: 'ses_fixture',
-        learnerId: 'felix',
+        learnerId: 'learner4',
         documentId: 'teacher-cli-fixture',
         documentRevision: published.report.rev,
         issuedAt: '2026-08-14T17:55:20.033Z',
@@ -926,7 +926,7 @@ describe('school-docs CLI', () => {
       const publishedFile = publishedPath(contentRoot, 'teacher-cli-fixture', published.report.rev);
       const minted = await runSchoolDocs([
         'render', publishedFile, '--out', path.join(root, 'first.pdf'), '--data-dir', dataDir,
-        '--fresh-card', '--learner-id', 'felix', '--learner-name', 'Felix', '--date', '14 Aug 2026',
+        '--fresh-card', '--learner-id', 'learner4', '--learner-name', 'Learner4', '--date', '14 Aug 2026',
       ]);
       const cardId = minted.report.allocation.cardId;
       const originalRecordId = minted.report.allocation.recordId;
@@ -940,7 +940,7 @@ describe('school-docs CLI', () => {
       await writeFile(path.join(instancesDir, 'ws-drifted.yml'), dump({
         id: 'ws-drifted',
         sessionId: 'ses_fixture',
-        learnerId: 'felix',
+        learnerId: 'learner4',
         documentId: 'teacher-cli-fixture',
         documentRevision: published.report.rev,
         issuedAt: '2026-08-14T17:55:20.033Z',
@@ -1006,7 +1006,7 @@ describe('school-docs CLI', () => {
       await mkdir(instancesDir, { recursive: true });
       await writeFile(path.join(instancesDir, 'ws-no-rev.yml'), dump({
         id: 'ws-no-rev',
-        learnerId: 'felix',
+        learnerId: 'learner4',
         documentId: 'teacher-cli-fixture',
         // documentRevision omitted — `getPublished(id, undefined)` would resolve
         // "newest published revision by mtime", i.e. a DIFFERENT sheet.
@@ -1045,7 +1045,7 @@ describe('school-docs CLI', () => {
       await writeFile(path.join(instancesDir, 'ws-no-card.yml'), dump({
         id: 'ws-no-card',
         sessionId: 'ses_fixture',
-        learnerId: 'felix',
+        learnerId: 'learner4',
         documentId: 'teacher-cli-fixture',
         documentRevision: published.report.rev,
         issuedAt: '2026-08-14T17:55:20.033Z',

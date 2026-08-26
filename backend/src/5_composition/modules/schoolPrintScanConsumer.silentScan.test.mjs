@@ -52,7 +52,7 @@ const silentLogger = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), erro
 
 const card = (recordId) => ({
   cardId: '0123456', recordId, documentId: 'civilization/atlas/ws-one',
-  rev: 'rev1', variant: 0, learnerId: 'milo', sessionId: 'ses-one',
+  rev: 'rev1', variant: 0, learnerId: 'learner3', sessionId: 'ses-one',
   revisionSuperseded: false, results: [], totalPoints: 6, earnedPoints: 5,
 });
 
@@ -90,7 +90,7 @@ const unmarkedLiveRows = () => ({
     recordId: 'civilization/atlas/ws-today@rev1:v0:34-39',
     documentId: 'civilization/atlas/ws-today',
     rowRange: { start: 34, end: 39 },
-    learnerId: 'milo',
+    learnerId: 'learner3',
   }],
 });
 
@@ -171,7 +171,7 @@ describe('createSchoolPrintScanConsumer: a scan always makes a mark on the room'
     await flush();
 
     expect(eventsNamed(bus, 'scan-not-recorded')[0]).toMatchObject({
-      testId: '0123456', learnerId: 'milo',
+      testId: '0123456', learnerId: 'learner3',
     });
   });
 });
@@ -208,7 +208,7 @@ describe('createSchoolPrintScanConsumer: a live worksheet with blank rows still 
     // is no way to tell which block of rows is today's.
     expect(eventsNamed(bus, 'scan-rows-unmarked')[0]).toMatchObject({
       testId: '0123456',
-      learnerId: 'milo',
+      learnerId: 'learner3',
       rowRange: { start: 34, end: 39 },
     });
   });
@@ -248,7 +248,7 @@ describe('createSchoolPrintScanConsumer: a live worksheet with blank rows still 
           recordId: 'civilization/atlas/ws-today@rev1:v0:34-39',
           documentId: 'civilization/atlas/ws-today',
           rowRange: { start: 34, end: 39 },
-          learnerId: 'milo',
+          learnerId: 'learner3',
         }],
       },
       recorder: duplicateRecorder(),

@@ -21,20 +21,20 @@ describe('school ops', () => {
   it('aggregates completion, assignment, and today sessions for diagnosis', async () => {
     const fetchImpl = vi.fn(async (url) => {
       if (url.includes('/completion')) return response({ state: 'indeterminate', faults: [{ reason: 'plan_error' }] });
-      if (url.includes('/assignments/')) return response({ learnerId: 'milo', programs: [] });
+      if (url.includes('/assignments/')) return response({ learnerId: 'learner3', programs: [] });
       return response({ sessions: [] });
     });
     let output = '';
-    await runOps({ argv: ['status', 'milo', '--base-url', 'http://school'], fetchImpl, stdout: { write: (s) => { output += s; } } });
+    await runOps({ argv: ['status', 'learner3', '--base-url', 'http://school'], fetchImpl, stdout: { write: (s) => { output += s; } } });
     expect(JSON.parse(output).completion.state).toBe('indeterminate');
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it('keeps enrollment dry-run by default and redacts the PIN', async () => {
-    const fetchImpl = vi.fn(async () => response({ learnerId: 'milo', updatedAt: 'v1' }));
+    const fetchImpl = vi.fn(async () => response({ learnerId: 'learner3', updatedAt: 'v1' }));
     let output = '';
     await runOps({
-      argv: ['rematerialize', 'milo', '--syllabus', 'cfm-lower', '--teacher', 'dad', '--pin-env', 'PIN'],
+      argv: ['rematerialize', 'learner3', '--syllabus', 'cfm-lower', '--teacher', 'dad', '--pin-env', 'PIN'],
       fetchImpl, env: { PIN: '7410' }, stdout: { write: (s) => { output += s; } },
     });
     expect(output).toContain('"dryRun": true');
@@ -164,7 +164,7 @@ describe('school ops', () => {
     const fetchImpl = vi.fn();
     let output = '';
     await runOps({
-      argv: ['launch-preview', 'felix', '--subject', 'arts', '--base-url', 'http://host/api/v1/school'],
+      argv: ['launch-preview', 'learner4', '--subject', 'arts', '--base-url', 'http://host/api/v1/school'],
       fetchImpl, stdout: { write: (s) => { output += s; } },
     });
     const result = JSON.parse(output);
@@ -172,14 +172,14 @@ describe('school ops', () => {
     expect(result.url).toBe(`http://host/school/launch-preview/${result.link}`);
     expect(result.api).toBe(`http://host/api/v1/school/self-service/preview/${result.link}`);
     expect(JSON.parse(Buffer.from(result.link, 'base64url').toString('utf8')))
-      .toEqual({ learnerId: 'felix', subject: 'arts' });
+      .toEqual({ learnerId: 'learner4', subject: 'arts' });
   });
 
   it('--continue rides along, and --resolve reads the card back without writing', async () => {
     const fetchImpl = vi.fn(async () => response({ ok: true, preview: true, actions: [{ kind: 'program', inert: true }] }));
     let output = '';
     await runOps({
-      argv: ['launch-preview', 'felix', '--subject', 'arts', '--continue', '--resolve',
+      argv: ['launch-preview', 'learner4', '--subject', 'arts', '--continue', '--resolve',
         '--origin', 'https://portal.example', '--path', '/screens/portal', '--base-url', 'http://host/api/v1/school'],
       fetchImpl, stdout: { write: (s) => { output += s; } },
     });
@@ -193,7 +193,7 @@ describe('school ops', () => {
 
   it('refuses to generate a link that names no subject', async () => {
     await expect(runOps({
-      argv: ['launch-preview', 'felix', '--base-url', 'http://school'],
+      argv: ['launch-preview', 'learner4', '--base-url', 'http://school'],
       fetchImpl: vi.fn(), stdout: { write() {} },
     })).rejects.toThrow(/--subject/);
   });

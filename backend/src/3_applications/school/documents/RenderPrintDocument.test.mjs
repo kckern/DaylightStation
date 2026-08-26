@@ -1505,7 +1505,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     const useCase = new RenderPrintDocument({ allocationStore });
     const result = await useCase.execute({
       document: omrSourceDoc(2),
-      context: { cardId: '4071314', startRow: 19, historicalCard: true, learnerName: 'Milo' },
+      context: { cardId: '4071314', startRow: 19, historicalCard: true, learnerName: 'Learner-Three' },
     });
 
     expect(isPdf(result.bytes)).toBe(true);

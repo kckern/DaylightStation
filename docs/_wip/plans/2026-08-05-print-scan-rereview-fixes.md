@@ -204,7 +204,7 @@ it('EVERY lane rides the published doc when the repo is wired — a fresh first 
   const repo = { get: vi.fn().mockResolvedValue(source), getPublished: vi.fn().mockResolvedValue(published) };
   const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
   const res = await request(appWith({ render, repo, allocations }))
-    .get('/api/v1/school/print/creature-quiz-1?variety=omr&learnerId=felix');
+    .get('/api/v1/school/print/creature-quiz-1?variety=omr&learnerId=learner4');
   expect(res.status).toBe(200);
   // The render receives the PUBLISHED document (rev field intact), never the source.
   expect(render.calls[0].document).toMatchObject({ rev: 'abcdef123' });
@@ -234,7 +234,7 @@ it('quiz + fabricated card (no usable record) demands a learnerId — the seven-
   expect(bare.body.error).toMatch(/learnerId/);
   // With a learner, attach-new on an explicit card stays legal.
   const ok = await request(appWith({ render, repo, allocations }))
-    .get('/api/v1/school/print/creature-quiz-1?variety=omr&card=1111111&learnerId=felix');
+    .get('/api/v1/school/print/creature-quiz-1?variety=omr&card=1111111&learnerId=learner4');
   expect(ok.status).toBe(200);
 });
 
@@ -244,12 +244,12 @@ it('adopting a card that belongs to a DIFFERENT learner is a 409, never a silent
   const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
   const allocations = {
     findByCard: vi.fn().mockResolvedValue([
-      { documentId: 'creature-quiz-1', cardId: '4829306', learnerId: 'felix', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
+      { documentId: 'creature-quiz-1', cardId: '4829306', learnerId: 'learner4', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
     ]),
     findByDocument: vi.fn(),
   };
   const res = await request(appWith({ render, repo, allocations }))
-    .get('/api/v1/school/print/creature-quiz-1?variety=omr&card=4829306&learnerId=soren');
+    .get('/api/v1/school/print/creature-quiz-1?variety=omr&card=4829306&learnerId=learner1');
   expect(res.status).toBe(409);
   expect(res.body.code).toBe('CARD_LEARNER_MISMATCH');
 });
@@ -345,7 +345,7 @@ it('attempts are filed under the document taxonomy, not a phantom "derived" subj
   const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
   const card = gradedCard({ documentId: 'science/biology/quiz-1', recordId: 'science/biology/quiz-1@abcdef123:v0:1-2' });
   await useCase.execute({ testId: '1234567', card });
-  const attempt = datastore.readAllAttempts('felix')[0];
+  const attempt = datastore.readAllAttempts('learner4')[0];
   expect(attempt.bankId).toBe('science/biology/quiz-1@abcdef123');
   expect(attempt.learning.subjectId).toBe('science');
   expect(attempt.sessionId).toBeNull();
@@ -358,7 +358,7 @@ it('a flat (non-hierarchical) documentId files without a subjectId rather than i
   const flat = gradedCard({ documentId: 'quiz-1', recordId: 'quiz-1@abcdef123:v0:9-10' });
   flat.results = flat.results.map((row, i) => ({ ...row, row: 9 + i }));
   await useCase.execute({ testId: '1234567', card: flat });
-  const attempts = datastore.readAllAttempts('felix');
+  const attempts = datastore.readAllAttempts('learner4');
   expect(attempts.at(-1).bankId).toBe('quiz-1@abcdef123');
   expect(attempts.at(-1).learning?.subjectId ?? null).toBeNull();
 });
@@ -374,12 +374,12 @@ it('a partial feed then a complete re-feed appends ONLY the rows not already rec
     earnedPoints: 1,
   });
   await useCase.execute({ testId: '1234567', card: partial });
-  expect(datastore.readAllAttempts('felix')).toHaveLength(1);
+  expect(datastore.readAllAttempts('learner4')).toHaveLength(1);
 
   const complete = gradedCard(); // both rows answered, row 1 identical (given 'blue')
   const second = await useCase.execute({ testId: '1234567', card: complete });
   expect(second.recorded).toBe(true);
-  const attempts = datastore.readAllAttempts('felix');
+  const attempts = datastore.readAllAttempts('learner4');
   expect(attempts).toHaveLength(2); // row 1 deduped, only row 2 appended
   expect(attempts.at(-1).itemId).toBe('q2');
 });
@@ -724,8 +724,8 @@ with `reprintMismatchReason(record, request)` returning `'seed differs'` | `'lea
 ### Task 6: Full sweep + integration coherence (controller-executed)
 
 Run by the controller after Tasks 1-5 (not a subagent): full school sweep (see Global Constraints), `node --check backend/src/app.mjs`, then ff-merge to main, gated deploy (playback/session gate as a separate halting step), live verification:
-- `?variety=omr&learnerId=felix` still reproduces felix's sheet (published-first now, record rev unchanged `@632002966`).
+- `?variety=omr&learnerId=learner4` still reproduces learner4's sheet (published-first now, record rev unchanged `@632002966`).
 - `?variety=omr&card=1111111` → 400 demanding learnerId.
-- `?variety=omr&card=<felix's card>&learnerId=soren` → 409 `CARD_LEARNER_MISMATCH`.
+- `?variety=omr&card=<learner4's card>&learnerId=learner1` → 409 `CARD_LEARNER_MISMATCH`.
 - Teacher key with pin still 200.
 - Container logs clean of FATAL.

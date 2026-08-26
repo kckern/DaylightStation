@@ -210,7 +210,7 @@ describe('teacher workspace routes', () => {
     ]) };
     const curriculumForSyllabus = { getUnitSummary: vi.fn(async () => ({ unitId: 'atlas-us-p044-illinois', title: 'Illinois' })) };
     const response = await request(app({ reviewQueue, teacherNotesStore, curriculumForSyllabus }))
-      .get('/api/v1/school/review/learner/milo').expect(200);
+      .get('/api/v1/school/review/learner/learner3').expect(200);
     expect(response.body[0]).toMatchObject({ itemId: 'i1', unitTitle: 'Illinois' });
     expect(response.body[1]).toMatchObject({ itemId: 'n1', kind: 'note', unitTitle: null });
   });

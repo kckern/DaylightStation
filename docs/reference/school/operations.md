@@ -6,17 +6,17 @@ default, and no command fabricates completion or rewards.
 ## Diagnose and monitor
 
 ```bash
-node cli/school.mjs ops completion milo
-node cli/school.mjs ops status milo
-node cli/school.mjs ops monitor milo felix
-node cli/school.mjs ops monitor milo felix --watch --interval 15
-node cli/school.mjs ops timeline milo --limit 50 --teacher parent --pin-env SCHOOL_PIN
+node cli/school.mjs ops completion learner3
+node cli/school.mjs ops status learner3
+node cli/school.mjs ops monitor learner3 learner4
+node cli/school.mjs ops monitor learner3 learner4 --watch --interval 15
+node cli/school.mjs ops timeline learner3 --limit 50 --teacher parent --pin-env SCHOOL_PIN
 node cli/school.mjs ops session ses_123 --teacher parent --pin-env SCHOOL_PIN
-node cli/school.mjs ops gates milo
+node cli/school.mjs ops gates learner3
 node cli/school.mjs ops audit --since 2026-08-01T00:00:00Z
-node cli/school.mjs ops agenda-preview milo --output /tmp/milo-agenda.png
+node cli/school.mjs ops agenda-preview learner3 --output /tmp/learner3-agenda.png
 node cli/school.mjs ops artifact art_123 --view manifest --teacher parent --pin-env SCHOOL_PIN
-node cli/school.mjs ops launch-preview milo --subject arts
+node cli/school.mjs ops launch-preview learner3 --subject arts
 ```
 
 `completion` returns the four-state daily projection. `status` joins completion,
@@ -42,9 +42,9 @@ breadcrumb that reads wrong, a button offering the wrong thing — needs no code
 and no paper.
 
 ```bash
-node cli/school.mjs ops launch-preview milo --subject arts
-node cli/school.mjs ops launch-preview milo --subject scripture --continue
-node cli/school.mjs ops launch-preview milo --subject arts --resolve
+node cli/school.mjs ops launch-preview learner3 --subject arts
+node cli/school.mjs ops launch-preview learner3 --subject scripture --continue
+node cli/school.mjs ops launch-preview learner3 --subject arts --resolve
 ```
 
 The command prints a link and mints nothing:
@@ -52,7 +52,7 @@ The command prints a link and mints nothing:
 ```json
 {
   "schema": "school.launch-preview-link/v1",
-  "learnerId": "milo",
+  "learnerId": "learner3",
   "subject": "arts",
   "continueToday": false,
   "link": "eyJsZWFybmVySWQiOiJtaWxvIiwic3ViamVjdCI6ImFydHMifQ",
@@ -80,7 +80,7 @@ actually offer.
 Generating a link by hand is a one-liner when the CLI is out of reach:
 
 ```bash
-node -e 'process.stdout.write(Buffer.from(JSON.stringify({learnerId:"milo",subject:"arts"})).toString("base64url"))'
+node -e 'process.stdout.write(Buffer.from(JSON.stringify({learnerId:"learner3",subject:"arts"})).toString("base64url"))'
 ```
 
 **It resolves through the panel's own path.** The payload replaces one step and
@@ -146,29 +146,29 @@ hardware-simulation surface. Use simulation for scenarios; use `ops status` and
 
 ```bash
 # Preview an assignment write
-SCHOOL_PIN=... node cli/school.mjs ops assign milo \
+SCHOOL_PIN=... node cli/school.mjs ops assign learner3 \
   --file plan.yml --teacher kckern --pin-env SCHOOL_PIN
 
 # Apply enrollment
-SCHOOL_PIN=... node cli/school.mjs ops enroll milo \
+SCHOOL_PIN=... node cli/school.mjs ops enroll learner3 \
   --syllabus come-follow-me-ot-2026-lower \
   --teacher kckern --pin-env SCHOOL_PIN --apply
 
 # Rebuild a frozen enrollment snapshot
-SCHOOL_PIN=... node cli/school.mjs ops rematerialize milo \
+SCHOOL_PIN=... node cli/school.mjs ops rematerialize learner3 \
   --syllabus come-follow-me-ot-2026-lower \
   --teacher kckern --pin-env SCHOOL_PIN --apply
 
 # Resolve a ghost session explicitly
 SCHOOL_PIN=... node cli/school.mjs ops abandon ses_123 \
-  --learner milo --reason "worksheet lost" \
+  --learner learner3 --reason "worksheet lost" \
   --teacher kckern --pin-env SCHOOL_PIN --apply
 
 # Preview, then dispatch one durable agenda print
-SCHOOL_PIN=... node cli/school.mjs ops agenda-dispatch milo \
+SCHOOL_PIN=... node cli/school.mjs ops agenda-dispatch learner3 \
   --teacher kckern --pin-env SCHOOL_PIN
-SCHOOL_PIN=... node cli/school.mjs ops agenda-dispatch milo \
-  --teacher kckern --pin-env SCHOOL_PIN --idempotency-key agenda-milo-20260824 --apply
+SCHOOL_PIN=... node cli/school.mjs ops agenda-dispatch learner3 \
+  --teacher kckern --pin-env SCHOOL_PIN --idempotency-key agenda-learner3-20260824 --apply
 
 # Preview, then append a grade correction (never overwrite machine evidence)
 SCHOOL_PIN=... node cli/school.mjs ops grade-adjust ses_123 \
@@ -184,7 +184,7 @@ SCHOOL_PIN=... node cli/school.mjs ops grade-retract ses_123 --adjustment adj_1 
 SCHOOL_PIN=... node cli/school.mjs ops regrade science/how-chemistry-surrounds-you/01-checkpoint \
   --from-day 2026-08-01 --to-day 2026-08-24 --reason "bank answer-key correction" \
   --teacher kckern --pin-env SCHOOL_PIN
-SCHOOL_PIN=... node cli/school.mjs ops reassign assessment_123 --from milo --to felix \
+SCHOOL_PIN=... node cli/school.mjs ops reassign assessment_123 --from learner3 --to learner4 \
   --day 2026-08-24 --teacher kckern --pin-env SCHOOL_PIN
 ```
 

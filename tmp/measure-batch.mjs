@@ -18,13 +18,13 @@ function createChoiceResolver(bank) {
 
 function measureOne(doc, bank, density) {
   const theme = createWorkbookTheme({ typeScale: doc.fit.typeScale, density });
-  const furnitureOpts = { gutter: true, duplex: true, title: doc.title || doc.id, nameLine: 'Felix' };
+  const furnitureOpts = { gutter: true, duplex: true, title: doc.title || doc.id, nameLine: 'Learner-Four' };
   const box = contentBox(theme, furnitureOpts);
   const measurementDoc = createMeasurementDocument({ theme });
   const fragments = measureDocumentFragments(doc, {
     doc: measurementDoc, theme, texToSvg: async () => ({ svg: '', widthPt: 0, heightPt: 0 }), resolveAsset: null,
     resolveChoices: createChoiceResolver(bank),
-    studentName: 'Felix', widthPt: box.widthPt, italic: true, totalPoints: 10, tokens: null,
+    studentName: 'Learner-Four', widthPt: box.widthPt, italic: true, totalPoints: 10, tokens: null,
   });
   const { pages } = placeFragments(fragments, { pageHeightPt: box.pageHeightPt, marginPt: box.marginPt, spacing: theme.spacing });
   const totalPt = contentHeightPt(fragments, { spacing: theme.spacing });

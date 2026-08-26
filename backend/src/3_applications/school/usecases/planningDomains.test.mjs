@@ -79,9 +79,9 @@ describe('YamlPassOverrideStore', () => {
 
 describe('milestones domain', () => {
   it('validateMilestone enforces shape', () => {
-    expect(validateMilestone({ id: 'm1', learnerId: 'felix', courseId: 'math', unitId: 'math.04', dueBy: '2026-10-01' }).errors).toEqual([]);
-    expect(validateMilestone({ id: 'm1', learnerId: 'felix', courseId: 'math', unitId: 'math.04', dueBy: 'oct 1' }).errors.length).toBeGreaterThan(0);
-    expect(validateMilestone({ learnerId: 'felix', courseId: 'math', unitId: 'math.04', dueBy: '2026-10-01' }).errors.length).toBeGreaterThan(0);
+    expect(validateMilestone({ id: 'm1', learnerId: 'learner4', courseId: 'math', unitId: 'math.04', dueBy: '2026-10-01' }).errors).toEqual([]);
+    expect(validateMilestone({ id: 'm1', learnerId: 'learner4', courseId: 'math', unitId: 'math.04', dueBy: 'oct 1' }).errors.length).toBeGreaterThan(0);
+    expect(validateMilestone({ learnerId: 'learner4', courseId: 'math', unitId: 'math.04', dueBy: '2026-10-01' }).errors.length).toBeGreaterThan(0);
   });
 
   it('milestoneStatus: met beats the calendar; behind only past due; else upcoming', () => {
@@ -107,7 +107,7 @@ describe('gated planning use cases', () => {
   it('SetAcademicPeriods: refusal writes nothing', async () => {
     const store = new YamlAcademicPeriodStore({ configService, fallback: null });
     const uc = new SetAcademicPeriods({ store, teacherGate: refusingGate() });
-    await expect(uc.execute({ periods: [PERIOD], editedBy: 'felix' })).rejects.toThrow(GuestForbiddenError);
+    await expect(uc.execute({ periods: [PERIOD], editedBy: 'learner4' })).rejects.toThrow(GuestForbiddenError);
     expect(store.listPeriods()).toEqual([]);
   });
 
@@ -123,21 +123,21 @@ describe('gated planning use cases', () => {
 
   it('SetMilestones is learner-scoped: validates every entry and preserves the siblings', async () => {
     const store = new YamlMilestoneStore({ configService });
-    await store.replace([{ id: 'mx', learnerId: 'milo', courseId: 'math', unitId: 'math.01', dueBy: '2026-09-01' }], { editedBy: 'k' });
+    await store.replace([{ id: 'mx', learnerId: 'learner3', courseId: 'math', unitId: 'math.01', dueBy: '2026-09-01' }], { editedBy: 'k' });
     const uc = new SetMilestones({ store, teacherGate: passingGate(), clock: () => new Date() });
     const good = { id: 'm1', courseId: 'math', unitId: 'math.04', dueBy: '2026-10-01' };
-    await uc.execute({ learnerId: 'felix', milestones: [good], editedBy: 'kckern' });
+    await uc.execute({ learnerId: 'learner4', milestones: [good], editedBy: 'kckern' });
     expect(store.list().map((m) => m.id).sort()).toEqual(['m1', 'mx']);
-    await expect(uc.execute({ learnerId: 'felix', milestones: [{ ...good, dueBy: 'later' }], editedBy: 'kckern' })).rejects.toThrow(/dueBy/);
+    await expect(uc.execute({ learnerId: 'learner4', milestones: [{ ...good, dueBy: 'later' }], editedBy: 'kckern' })).rejects.toThrow(/dueBy/);
     expect(store.list().length).toBe(2);
   });
 
   it('GetMilestoneStatuses joins passed sessions, scoped to the learner', async () => {
     const store = new YamlMilestoneStore({ configService });
     await store.replace([
-      { id: 'm1', learnerId: 'felix', courseId: 'math', unitId: 'math.04', dueBy: '2026-07-01' },
-      { id: 'm2', learnerId: 'felix', courseId: 'math', unitId: 'math.05', dueBy: '2026-07-01' },
-      { id: 'm3', learnerId: 'milo', courseId: 'math', unitId: 'math.04', dueBy: '2026-07-01' },
+      { id: 'm1', learnerId: 'learner4', courseId: 'math', unitId: 'math.04', dueBy: '2026-07-01' },
+      { id: 'm2', learnerId: 'learner4', courseId: 'math', unitId: 'math.05', dueBy: '2026-07-01' },
+      { id: 'm3', learnerId: 'learner3', courseId: 'math', unitId: 'math.04', dueBy: '2026-07-01' },
     ], { editedBy: 'k', at: 't' });
     // The REAL repo fact shape: result lives under `outcome`, never top-level.
     const sessions = { listForLearner: async () => [
@@ -145,7 +145,7 @@ describe('gated planning use cases', () => {
       { unitId: 'math.05', outcome: { result: 'needs_remediation' } },
     ] };
     const uc = new GetMilestoneStatuses({ store, sessions, clock: () => new Date('2026-08-06T12:00:00Z') });
-    const out = await uc.execute({ learnerId: 'felix' });
+    const out = await uc.execute({ learnerId: 'learner4' });
     expect(out.milestones.map((m) => [m.id, m.status])).toEqual([['m1', 'met'], ['m2', 'behind']]);
   });
 
@@ -156,20 +156,20 @@ describe('gated planning use cases', () => {
       clock: () => new Date('2026-08-06T12:00:00Z'), idGen: () => 'enr_1',
     });
     const out = await uc.execute({
-      recordedBy: 'kckern', pin: '7410', learnerIds: ['felix', 'milo'],
+      recordedBy: 'kckern', pin: '7410', learnerIds: ['learner4', 'learner3'],
       from: '2026-08-10', to: '2026-08-14', title: 'Yellowstone trip',
       subjectIds: ['science', 'history'], note: 'Geysers + fort tour',
     });
     expect(out.entry).toMatchObject({ id: 'enr_1', recordedBy: 'kckern', title: 'Yellowstone trip' });
-    expect(log.list({ learnerId: 'felix' }).length).toBe(1);
-    expect(log.list({ learnerId: 'soren' }).length).toBe(0);
+    expect(log.list({ learnerId: 'learner4' }).length).toBe(1);
+    expect(log.list({ learnerId: 'learner1' }).length).toBe(0);
   });
 
   it('RecordEnrichment refuses garbage dates and an empty title', async () => {
     const log = new YamlEnrichmentLog({ configService });
     const uc = new RecordEnrichment({ log, teacherGate: passingGate(), clock: () => new Date(), idGen: () => 'x' });
-    await expect(uc.execute({ recordedBy: 'k', learnerIds: ['felix'], from: 'next week', title: 'T' })).rejects.toThrow(/from/);
-    await expect(uc.execute({ recordedBy: 'k', learnerIds: ['felix'], from: '2026-08-10', title: ' ' })).rejects.toThrow(/title/);
+    await expect(uc.execute({ recordedBy: 'k', learnerIds: ['learner4'], from: 'next week', title: 'T' })).rejects.toThrow(/from/);
+    await expect(uc.execute({ recordedBy: 'k', learnerIds: ['learner4'], from: '2026-08-10', title: ' ' })).rejects.toThrow(/title/);
     await expect(uc.execute({ recordedBy: 'k', learnerIds: [], from: '2026-08-10', title: 'T' })).rejects.toThrow(/learner/);
   });
 });
@@ -189,9 +189,9 @@ describe('corrupt-file posture (M3 F3)', () => {
 
   it('a corrupt enrichment log refuses to append rather than truncating itself', async () => {
     const log = new YamlEnrichmentLog({ configService, logger: { error: vi.fn(), info: vi.fn() } });
-    await log.append({ id: 'e1', title: 'T', learnerIds: ['felix'], from: '2026-08-01', to: '2026-08-01' });
+    await log.append({ id: 'e1', title: 'T', learnerIds: ['learner4'], from: '2026-08-01', to: '2026-08-01' });
     await fs.writeFile(path.join(dir, 'school/records/enrichment.yml'), 'entries: { broken', 'utf8');
-    await expect(log.append({ id: 'e2', title: 'U', learnerIds: ['felix'], from: '2026-08-02', to: '2026-08-02' }))
+    await expect(log.append({ id: 'e2', title: 'U', learnerIds: ['learner4'], from: '2026-08-02', to: '2026-08-02' }))
       .rejects.toThrow(/cannot be read/);
   });
 
@@ -208,7 +208,7 @@ describe('paceMilestones (spec C5)', async () => {
 
   it('a behind milestone fully covered by enrichment days is excused', () => {
     const out = paceMilestones([behind], [
-      { from: '2026-08-02', to: '2026-08-06', learnerIds: ['felix'] },
+      { from: '2026-08-02', to: '2026-08-06', learnerIds: ['learner4'] },
     ], { today: '2026-08-05' });
     expect(out[0]).toMatchObject({ effectiveStatus: 'excused', overdueDays: 4, excusedDays: 4 });
   });

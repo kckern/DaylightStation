@@ -177,3 +177,8 @@ docs/_moveme/
 /.agents
 !scripts/migrate-household-config.mjs
 *.png
+
+# TI-86 install images are BUILD OUTPUT, regenerable by tools/build-*-install.mjs.
+# 31MB of binaries, and the .86s payloads carry learner identities baked in at
+# build time — neither belongs in a public repo.
+_extensions/ti86-app/dist/

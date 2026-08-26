@@ -17,7 +17,7 @@ const bank = (id) => ({
 function fakeSessions(entries = [['s-one', 'one'], ['s-two', 'two']]) {
   const events = new Map();
   for (const [sessionId, unitId] of entries) {
-    events.set(sessionId, [{ type: 'created', at: '2026-08-21T08:00:00.000Z', sessionId, learnerId: 'milo', unitId, seq: 1 }]);
+    events.set(sessionId, [{ type: 'created', at: '2026-08-21T08:00:00.000Z', sessionId, learnerId: 'learner3', unitId, seq: 1 }]);
   }
   return {
     events,
@@ -192,7 +192,7 @@ describe('IssueComposedWorksheet against the real work-session datastore', () =>
   };
 
   const open = async (sessions, sessionId, unitId, extra = []) => {
-    await sessions.appendEvent(sessionId, { type: 'created', at: '2026-08-21T08:00:00.000Z', sessionId, learnerId: 'milo', unitId });
+    await sessions.appendEvent(sessionId, { type: 'created', at: '2026-08-21T08:00:00.000Z', sessionId, learnerId: 'learner3', unitId });
     for (const event of extra) {
       // eslint-disable-next-line no-await-in-loop
       await sessions.appendEvent(sessionId, { ...event, sessionId });
@@ -267,7 +267,7 @@ describe('IssueComposedWorksheet against the real work-session datastore', () =>
     expect(await typesOf(sessions, 's-one')).toEqual(['created']);
     expect(await typesOf(sessions, 's-two')).toEqual(['created']);
 
-    await expect(useCase.execute({ sessionIds: ['s-one', 's-two'] })).resolves.toMatchObject({ learnerId: 'milo' });
+    await expect(useCase.execute({ sessionIds: ['s-one', 's-two'] })).resolves.toMatchObject({ learnerId: 'learner3' });
     expect(printer.jobs).toHaveLength(1);
     expect(await typesOf(sessions, 's-one')).toEqual(['created', 'issued']);
     expect(await typesOf(sessions, 's-two')).toEqual(['created', 'issued']);
@@ -280,7 +280,7 @@ describe('IssueComposedWorksheet against the real work-session datastore', () =>
     const printer = { jobs: [], async printPdf(bytes) { this.jobs.push(bytes); return { ok: true }; } };
     const { useCase } = build({ sessions, printer });
 
-    await expect(useCase.execute({ sessionIds: ['s-fresh', 's-already'] })).resolves.toMatchObject({ learnerId: 'milo' });
+    await expect(useCase.execute({ sessionIds: ['s-fresh', 's-already'] })).resolves.toMatchObject({ learnerId: 'learner3' });
 
     expect(printer.jobs).toHaveLength(1);
     expect(await typesOf(sessions, 's-fresh')).toEqual(['created', 'issued']);

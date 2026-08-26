@@ -173,7 +173,7 @@ describe('what a child is told', () => {
 });
 
 /**
- * Regression: Milo's result receipt (2026-08-22) printed the literal
+ * Regression: Learner-Three's result receipt (2026-08-22) printed the literal
  * `undefined · undefined of undefined` between "Passing is 80%" and "NOTES
  * FOR YOU". `block.progress` is the ARRAY `CloseSessionOutcome#learningProgress`
  * always returns (one row for the course, one for the unit) — the old
@@ -181,7 +181,7 @@ describe('what a child is told', () => {
  * read `.label`/`.completed`/`.total` off the ARRAY itself, which has none of
  * those properties.
  */
-describe('the progress line on a result summary (regression: Milo, 2026-08-22)', () => {
+describe('the progress line on a result summary (regression: Learner-Three, 2026-08-22)', () => {
   const withProgress = (progress) => resultDocument({
     sessionId: 'ses_1', unitTitle: 'Unit Two', result: 'passed', percent: 90, progress,
   });

@@ -18,8 +18,8 @@ there — already knowing which child, no face picker. When they finish the
 day's queue, School records a **completion (pass, no score)** that mirrors the
 OMR result shape — outcome, reward, agenda-served — but prints no worksheet
 result and itemizes nothing. Lesson size, content, and the rung chain are
-**per enrollment**: Felix's day targets ~10 items across four rungs from one
-band of the corpus; Milo's targets 3–5 repetition-only items from another.
+**per enrollment**: Learner-Four's day targets ~10 items across four rungs from one
+band of the corpus; Learner-Three's targets 3–5 repetition-only items from another.
 
 Most rails exist and were verified against the code. `BuildAgenda` mints a
 code per subject section, including a program-only section;
@@ -83,7 +83,7 @@ day a second corpus exists. Validation: legal only when `program` is present,
 and it must be added to `validateUnit`'s output whitelist
 (`unitValidation.mjs:320-347`) or it is silently dropped.
 
-Each learner's plan lists the unit in `units:` — for Felix and Milo this is the
+Each learner's plan lists the unit in `units:` — for Learner-Four and Learner-Three this is the
 first `units:` entry either file has ever carried.
 
 ### 3.2 The program enrollment (household plan)
@@ -102,7 +102,7 @@ programs:
     scope: [fluency-1]        # optional (D6); omitted = whole corpus, seq order
 ```
 
-Milo's entry: `lessonSize: 4, rungs: [repetition]`. A scope may mix named
+Learner-Three's entry: `lessonSize: 4, rungs: [repetition]`. A scope may mix named
 bands and raw ranges, in study order:
 `scope: [fluency-2, {range: [3200, 3400]}]`.
 
@@ -416,7 +416,7 @@ program-only + output whitelist; `PUT /pacing` refusal.
 - flow: keypad code → drill → simulated completion → settled outcome +
   agenda `servedToday` + coins.
 
-**Migration:** additive throughout. Felix/Milo plans gain `units:` +
+**Migration:** additive throughout. Learner-Four/Learner-Three plans gain `units:` +
 `programs:`; corpus gains `bands:`; `progress.yml` untouched (its
 `daily_limit` demotes to fallback). No event-log rewrite; no published-doc or
 allocation impact. Rollout order: domain → service (plans-reader dependency,

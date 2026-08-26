@@ -47,12 +47,12 @@ describe('resolveCoursePolicy', () => {
   const cfg = {
     user_policies: {
       kckern: { engagement_gate: false, auto_advance: true },
-      felix: { engagement_gate: true },
+      learner4: { engagement_gate: true },
     },
   };
 
   it('defaults: gate on, no auto-advance', () => {
-    expect(resolveCoursePolicy(cfg, 'milo')).toEqual({ engagementGate: true, autoAdvance: false });
+    expect(resolveCoursePolicy(cfg, 'learner3')).toEqual({ engagementGate: true, autoAdvance: false });
   });
 
   it('kckern: gate off, auto-advance on', () => {
@@ -60,7 +60,7 @@ describe('resolveCoursePolicy', () => {
   });
 
   it('partial entry only overrides what it names', () => {
-    expect(resolveCoursePolicy(cfg, 'felix')).toEqual({ engagementGate: true, autoAdvance: false });
+    expect(resolveCoursePolicy(cfg, 'learner4')).toEqual({ engagementGate: true, autoAdvance: false });
   });
 
   it('tolerates missing config and missing user', () => {
@@ -430,7 +430,7 @@ describe('LecturePlayerRoute — per-user policy wiring', () => {
   });
 
   it('a default user gets the gate and no auto-advance', () => {
-    state.user = 'milo';
+    state.user = 'learner3';
     renderAt('/videos/c1/plex:100');
     expect(screen.getByTestId('gate-enabled').textContent).toBe('true');
     expect(screen.getByTestId('has-advance').textContent).toBe('false');

@@ -42,7 +42,7 @@ const text = (md) => ({ type: 'rich_text', md });
 /**
  * Shared agenda/result lesson card: one QR, one hierarchy, no repeated token
  * text — and, as of Slice H, its own panel-code pairing baked in, so a
- * caller cannot push the QR and forget the second push (Milo's receipt,
+ * caller cannot push the QR and forget the second push (Learner-Three's receipt,
  * 2026-08-22: a `scan_action` with nothing typeable beneath it).
  *
  * Returns an ARRAY (the QR block, then whatever `codeAbsenceBlocks` decides

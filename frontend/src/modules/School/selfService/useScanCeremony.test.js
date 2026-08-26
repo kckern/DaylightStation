@@ -147,7 +147,7 @@ describe('useScanCeremony', () => {
   it('maps scan-not-recorded to an error ceremony so a re-fed sheet is never met with silence', () => {
     const { result } = mount();
     act(() => {
-      deliver({ topic: 'omr', event: 'scan-not-recorded', testId: '0123456', learnerId: 'milo' });
+      deliver({ topic: 'omr', event: 'scan-not-recorded', testId: '0123456', learnerId: 'learner3' });
     });
     expect(result.current.current).toMatchObject({
       tone: 'error',
@@ -187,7 +187,7 @@ describe('useScanCeremony', () => {
         topic: 'omr',
         event: 'scan-rows-unmarked',
         testId: '0123456',
-        learnerId: 'milo',
+        learnerId: 'learner3',
         rowRange: { start: 34, end: 39 },
       });
     });
@@ -219,7 +219,7 @@ describe('useScanCeremony', () => {
         topic: 'omr',
         event: 'scan-rows-unmarked',
         testId: '0123456',
-        learnerId: 'milo',
+        learnerId: 'learner3',
         rowRange: { start: 34, end: 39 },
         rowRanges: [{ start: 34, end: 39 }, { start: 40, end: 45 }],
       });

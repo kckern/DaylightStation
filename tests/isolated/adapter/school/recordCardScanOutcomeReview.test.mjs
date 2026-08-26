@@ -59,7 +59,7 @@ function fakeReviewQueue() {
   };
 }
 
-function seededSession(sessionId, { learnerId = 'felix', unitId = 'unit-1' } = {}) {
+function seededSession(sessionId, { learnerId = 'learner4', unitId = 'unit-1' } = {}) {
   const mk = (payload) => {
     const { errors, event } = createEvent(payload);
     if (errors.length) throw new Error(errors.join('; '));
@@ -94,7 +94,7 @@ async function runAwaitingReviewCase() {
     documentId: 'arts/quiz-1',
     rev: 'abcdef123',
     variant: 0,
-    learnerId: 'felix',
+    learnerId: 'learner4',
     sessionId: 'ws-1',
     revisionSuperseded: false,
     renderedAt: '2026-08-04T00:00:00.000Z',
