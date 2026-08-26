@@ -34,7 +34,10 @@ describe('ResolvePersonalCard agenda capture', () => {
     expect(result.status).toBe('agenda_printed');
     expect(captureAgenda.execute).toHaveBeenCalledTimes(1);
     const call = captureAgenda.execute.mock.calls[0][0];
-    expect(call.artifactId).toBe('agenda/test-learner/2026-08-25T23:48:31.080Z');
+    // ISO BASIC in the leaf: a full instant carries colons, and a colon is
+    // illegal in a Windows filename and awkward in Finder — hidden until now
+    // only by whole-id percent-encoding, which is the thing being unwound.
+    expect(call.artifactId).toBe('agenda/test-learner/20260825T234831080Z');
     expect(call.kind).toBe('agenda');
     expect(call.learnerId).toBe('test-learner');
     // The renderer's INPUT is the point — bytes alone cannot be re-rendered
@@ -46,7 +49,7 @@ describe('ResolvePersonalCard agenda capture', () => {
     // A convention duplicated as a template string in two files is a convention
     // that drifts, so both sides call this.
     expect(agendaArtifactId({ learnerId: 'test-learner', issuedAt: '2026-08-25T23:48:31.080Z' }))
-      .toBe('agenda/test-learner/2026-08-25T23:48:31.080Z');
+      .toBe('agenda/test-learner/20260825T234831080Z');
   });
 
   it('NEVER fails a print because the archive failed', async () => {

@@ -404,7 +404,15 @@ export class CloseSessionOutcome {
     let printing = document ? { printed: false, printReason: 'not_wired' }
       : { printed: false, printReason: state.state === 'external_activity_assessed' ? 'digital_activity' : 'program' };
     if (document) {
-      const artifactId = `receipt/${sessionId}/${outcome.outcomeId}`;
+      // `original`, not the outcome id. `outcomeIdFor` is deterministic —
+      // `out:${sessionId}` — so the old leaf restated the session id a second
+      // time inside a path that already carried it
+      // (`receipt/ses_X/out:ses_X`) and dragged a colon into a filename for
+      // nothing. One outcome per session means a fixed leaf cannot collide,
+      // and `original` mirrors the `correction/<id>` sibling beside it.
+      // Receipts already written keep their recorded id: readers use
+      // `receipt.artifactId` from session state, never a recomputed one.
+      const artifactId = `receipt/${sessionId}/original`;
       try {
         receiptArtifact = await this.#receiptCapture?.execute({ artifactId, sessionId,
           learnerId: state.learnerId, unitId: state.unitId, document, issuedAt: nowIso });
