@@ -193,16 +193,49 @@ describe('TodayTab', () => {
     expect(await screen.findByRole('link', { name: /See today’s plan/i })).toBeInTheDocument();
   });
 
-  it('says a session is awaiting review using the status the backend actually emits', async () => {
+  // `reviewStatus` is read ONLY from `submitted` onward. The digest defaults it
+  // to 'complete' on sessions that were never worked, so asking any earlier
+  // answers a different question than the card is posing — that default is what
+  // made this label look permanently dead.
+  it('says a session is awaiting review once it has been submitted', async () => {
     schoolApi.teacherDay.mockResolvedValue(ok([
       { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 1 }, pendingReview: 1, sessions: [
-        { sessionId: 'ses_2', lessonTitle: 'Photosynthesis', subject: 'science', reviewStatus: 'pending' },
+        { sessionId: 'ses_2', lessonTitle: 'Photosynthesis', subject: 'science', state: 'submitted', reviewStatus: 'pending' },
       ] },
     ]));
     mount(<TodayTab kids={KIDS} />);
     fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
     expect(await screen.findByText(/Awaiting review/)).toBeInTheDocument();
     expect(screen.queryByText(/Not graded/)).not.toBeInTheDocument();
+  });
+
+  it('does not ask for a review of work that was never started', async () => {
+    // The bug: a session minted at agenda-build time carries state 'created'
+    // AND reviewStatus 'complete'. It used to render "DONE / Not graded".
+    // Shapes copied from the live payload that produced the bug: the planner
+    // still counts the subject as owed (`servedToday:false`) and its own
+    // `next` names the very session that has not been touched.
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
+      { subject: 'scripture', servedToday: false, obligation: { state: 'obligated' },
+        next: { unitId: 'unit-psalms', title: 'Psalms 62–66', sessionId: 'ses_3', status: 'in_progress' } },
+    ] }));
+    schoolApi.teacherDay.mockResolvedValue(ok([
+      { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [
+        { sessionId: 'ses_3', unitId: 'unit-psalms', lessonTitle: 'Psalms 62–66', subject: 'scripture',
+          state: 'created', reviewStatus: 'complete', effectiveScore: null,
+          artifacts: { worksheet: null, receipt: null } },
+      ] },
+    ]));
+    mount(<TodayTab kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    expect(await screen.findByText('Psalms 62–66')).toBeInTheDocument();
+    expect(screen.getByText('Not started')).toBeInTheDocument();
+    expect(screen.queryByText(/Not graded/)).toBeNull();
+    expect(screen.queryByText(/Awaiting review/)).toBeNull();
+    expect(screen.queryByText('Done')).toBeNull();
+    // …and its dot is not green.
+    const dot = document.querySelector('.teacher-roster__dot');
+    expect(dot.className).not.toMatch(/--passed/);
   });
 
   it('scores render as marks plus a percent, stating the count only once (as the marks’ label)', async () => {

@@ -594,6 +594,10 @@
     .teacher-subject-identity { display: block; }
     .teacher-subject-identity__icon { width: 14px; height: 14px; display: block; opacity: 1; }
     &--passed { border-color: #7fae7c; background: #e4f0e0; color: #2e6b34; }
+    // Out in the world but not back yet. Dashed, so the state does not ride on
+    // colour alone — a reader who cannot separate this amber from the green
+    // still sees a broken ring against two solid ones.
+    &--active { border-color: #c9a35c; border-style: dashed; background: #fdf7e8; color: #8a6a2a; }
     &--failed { border-color: #d9b46a; background: #fbf0d8; color: #8a5a2a; }
     &--idle   { border-color: #ddd3c1; background: #f4efe5; color: #8a8272; }
   }
@@ -1467,15 +1471,25 @@
   &--planned, &--deferred, &--blocked { background: #fdfcf8; }
   &--blocked { border-color: #e6cfc4; }
 }
+// PROVENANCE, NOT PROGRESS. `extra` used to be a chip tone competing with
+// "Done" for the same slot, which is why unplanned work could not also say it
+// was finished. This is a quiet tag that sits BESIDE any chip.
+.teacher-day-chip__tag {
+  align-self: start; color: #7a7161; font-size: 11px; font-weight: 600;
+  text-transform: none; letter-spacing: 0; white-space: nowrap;
+}
+.teacher-lesson-card__chips, .teacher-day-row__chips {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; min-width: 0;
+}
 .teacher-day-chip {
   align-self: start; padding: 3px 8px; border-radius: 20px;
   font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; text-align: center; white-space: nowrap;
   background: #efeade; color: #6b6255;
   &--done { background: #e2eddc; color: #3f5c34; }
+  &--in-progress { background: #f6eed9; color: #8a6a2a; }
   &--planned { background: #f2ece0; color: #7a6f5c; }
   &--deferred { background: #f4e9d6; color: #866526; }
   &--blocked { background: #f7e2da; color: #8d452c; }
-  &--extra { background: #e6e9f2; color: #45507a; }
   &--processed { background: #eae6f0; color: #57457a; }
 }
 /* The dry-run printout. Constrained so a tall receipt-format PNG cannot

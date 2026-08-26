@@ -112,7 +112,14 @@ function DayRow({ row, onOpenSession }) {
         <strong>{row.planned ?? 'No work offered'}</strong></div>;
   return (
     <li className={`teacher-day-row teacher-day-row--${row.status}`}>
-      <span className={`teacher-day-chip teacher-day-chip--${row.status}`}>{DAY_STATUS_LABEL[row.status]}</span>
+      {/* One vocabulary with the dashboard's lesson cards: the chip is
+          progress, the tag is provenance. They must not drift — a reader who
+          sees "In progress" here and "Done" there has no way to tell which
+          surface is lying. */}
+      <span className="teacher-day-row__chips">
+        <span className={`teacher-day-chip teacher-day-chip--${row.status}`}>{DAY_STATUS_LABEL[row.status]}</span>
+        {row.unplanned && <span className="teacher-day-chip__tag">not on the plan</span>}
+      </span>
       <div className="teacher-day-row__body">
         {session
           ? <button type="button" className="teacher-day-row__open" onClick={() => onOpenSession(session.sessionId)}>{body}</button>
@@ -157,12 +164,17 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
     [joined.rows],
   );
   const alsoMarked = processed.filter((session) => !carried.has(session.sessionId));
+  // `counts` is keyed by STATUS, which no longer has an `extra` bucket —
+  // unplanned work counts under whatever progress it actually made, and is
+  // tallied separately from the flag.
+  const unplanned = joined.rows.filter((row) => row.unplanned).length;
   const summary = [
     joined.counts.done ? `${joined.counts.done} done` : null,
+    joined.counts['in-progress'] ? `${joined.counts['in-progress']} in progress` : null,
     joined.counts.planned ? `${joined.counts.planned} not started` : null,
     joined.counts.deferred ? `${joined.counts.deferred} deferred` : null,
     joined.counts.blocked ? `${joined.counts.blocked} blocked` : null,
-    joined.counts.extra ? `${joined.counts.extra} extra` : null,
+    unplanned ? `${unplanned} not on the plan` : null,
   ].filter(Boolean).join(' · ');
 
   // Both reads failing at once is the install-lacks-lifecycle case; one panel
