@@ -1,6 +1,6 @@
 # School scan — a fed sheet produced no ceremony and no sound — 2026-08-26
 
-**Status:** F-1–F-5 implemented, tested, and deployed
+**Status:** F-1–F-5 implemented and committed; not yet deployed
 **Window:** 2026-08-26 08:32–08:35 PDT (`15:32`–`15:35Z`)
 **Surfaces:** `backend/src/5_composition/modules/schoolPrintScanConsumer.mjs`,
 `backend/src/3_applications/school/documents/ResolveCardScan.mjs`,
