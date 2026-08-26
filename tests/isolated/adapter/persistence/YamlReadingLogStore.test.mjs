@@ -244,6 +244,85 @@ describe('YamlReadingLogStore', () => {
     expect(await readdir(path.join(dir, 'learner-c'))).toEqual(['2026-08-26.yml']);
   });
 
+  describe('pickId — idempotent on one finish', () => {
+    // doneToday is `rows.length >= target`, so a duplicate ROW is a duplicate
+    // BOOK. A retried POST or a player that remounts and fires `ended` twice
+    // must not credit a child twice for one story.
+    it('appends once for a repeated pickId and returns the row already on disk', async () => {
+      const store = makeStore();
+      const first = await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T18:00:00.000Z', contentId: 'plex:1', title: 'One', pickId: 'pick-1' });
+      const again = await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T19:30:00.000Z', contentId: 'plex:1', title: 'One retried', pickId: 'pick-1' });
+
+      const rows = await store.listForDay('learner-c', '2026-08-26');
+      expect(rows).toHaveLength(1);
+      // The EXISTING row, not the incoming one: the caller gets what is on disk.
+      expect(again).toMatchObject({ title: 'One', at: '2026-08-26T18:00:00.000Z' });
+      expect(again).toEqual(first);
+      expect(rows[0]).toMatchObject({ title: 'One', pickId: 'pick-1' });
+    });
+
+    it('stores the pickId on the row', async () => {
+      const store = makeStore();
+      await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T18:00:00.000Z', contentId: 'plex:1', pickId: 'pick-1' });
+      expect((await store.listForDay('learner-c', '2026-08-26'))[0]).toMatchObject({ pickId: 'pick-1' });
+    });
+
+    it('never dedupes on a null pickId — two hand-recorded reads are two reads', async () => {
+      const store = makeStore();
+      await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T18:00:00.000Z', contentId: 'plex:1', title: 'Same book' });
+      await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T19:00:00.000Z', contentId: 'plex:1', title: 'Same book' });
+      const rows = await store.listForDay('learner-c', '2026-08-26');
+      expect(rows).toHaveLength(2);
+      expect(rows.every((r) => r.pickId === null)).toBe(true);
+    });
+
+    it('is scoped to the day — the same pickId in another shard does not dedupe', async () => {
+      const store = makeStore();
+      await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T18:00:00.000Z', contentId: 'plex:1', title: 'One', pickId: 'pick-1' });
+      await store.append({ learnerId: 'learner-c', studyDay: '2026-08-27', at: '2026-08-27T18:00:00.000Z', contentId: 'plex:1', title: 'One', pickId: 'pick-1' });
+      expect(await store.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
+      expect(await store.listForDay('learner-c', '2026-08-27')).toHaveLength(1);
+    });
+
+    it('leaves a carried-through unrecognised entry untouched when it dedupes', async () => {
+      const file = await seed('learner-c', '2026-08-26', [
+        'learnerId: learner-c',
+        'studyDay: 2026-08-26',
+        'reads:',
+        '  - The Jungle Book',
+        "  - at: '2026-08-26T18:00:00.000Z'",
+        '    title: Two',
+        '    pickId: pick-2',
+        '',
+      ].join('\n'));
+      const store = makeStore();
+      const before = await readFile(file, 'utf8');
+
+      const again = await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T20:00:00.000Z', contentId: 'plex:2', title: 'Two retried', pickId: 'pick-2' });
+
+      expect(again).toMatchObject({ title: 'Two' });
+      // A repeat writes NOTHING, so the unrecognised entry cannot be disturbed.
+      expect(await readFile(file, 'utf8')).toBe(before);
+    });
+
+    it('scans only recognised rows for the key — an unparseable entry carries no pickId', async () => {
+      const file = await seed('learner-c', '2026-08-26', [
+        'learnerId: learner-c',
+        'studyDay: 2026-08-26',
+        'reads:',
+        '  - pick-1',
+        '',
+      ].join('\n'));
+      const store = makeStore();
+      await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T18:00:00.000Z', contentId: 'plex:1', title: 'One', pickId: 'pick-1' });
+
+      const written = yaml.load(await readFile(file, 'utf8'));
+      expect(written.reads).toHaveLength(2);
+      expect(written.reads[0]).toBe('pick-1');
+      expect(written.reads[1]).toMatchObject({ title: 'One', pickId: 'pick-1' });
+    });
+  });
+
   it('does not treat a missing file as corrupt — no side-file, no error log', async () => {
     const logger = recordingLogger();
     const store = new YamlReadingLogStore({
