@@ -33,6 +33,7 @@ import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '
  * @param {Object} [config.contentDispatcher] - ContentDispatcher instance (optimistic content posture; shared with barcode ingress)
  * @param {Function} [config.screenBroadcast] - Screen-targeted broadcast helper (targetScreen, payload) used by contentDispatcher-driven flows
  * @param {Function} [config.commandResolver] - Resolves a raw scan/value string to a known command (e.g. resolveCommand)
+ * @param {Object} [config.learnerActions] - Registry of what a school learner card DOES per reader (createLearnerActions). Absent, a learner tap answers `no_handler` by name.
  * @param {Object} [config.logger] - Logger instance
  * @returns {{ triggerDispatchService: TriggerDispatchService, router: import('express').Router }}
  */
@@ -50,6 +51,7 @@ export function createTriggerApiRouter(config) {
     contentDispatcher = null,
     screenBroadcast = null,
     commandResolver = null,
+    learnerActions = null,
     logger = console,
   } = config;
 
@@ -77,6 +79,7 @@ export function createTriggerApiRouter(config) {
     screenBroadcast,
     commandResolver,
     endpointGateway,
+    learnerActions,
     broadcast,
     logger,
   });

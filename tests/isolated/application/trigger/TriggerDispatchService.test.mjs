@@ -768,3 +768,78 @@ describe('TriggerDispatchService — barcode (frozen Response) through handleEve
     expect(optimistic).not.toHaveBeenCalled();
   });
 });
+
+// An action nothing can dispatch is, from the tap's point of view, exactly a
+// tag nobody registered: nothing happens. Before this, it was WORSE than that —
+// the UNKNOWN_ACTION return sits below the `if (!intent)` branch, so it skipped
+// the placeholder write, the notify_unknown push AND the debounce set. The
+// arming event for that gap is a one-line YAML edit to a reader, which no test
+// observes and no code comment reaches, so the degradation has to live here.
+describe('TriggerDispatchService — an unmappable action degrades to the unknown-tag path', () => {
+  let haGateway; let tagWriter; let broadcast; let logger; let now;
+
+  beforeEach(() => {
+    haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }), setNfcNote: vi.fn() };
+    broadcast = vi.fn();
+    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    now = 1714137138000;
+  });
+
+  const registry = (modality = 'nfc') => ({
+    [modality]: {
+      locations: {
+        livingroom: {
+          target: 'livingroom-tv', action: 'launch-rocket', auth_token: null,
+          notify_unknown: 'mobile_app_kc_phone', defaults: {},
+        },
+      },
+      tags: { '04a1b2c3': { global: { plex: 620707 }, overrides: {} } },
+    },
+  });
+
+  const makeService = (config) => new TriggerDispatchService({
+    config,
+    contentIdResolver: makeResolver(),
+    wakeAndLoadService: { execute: vi.fn() },
+    haGateway,
+    deviceService: { get: vi.fn() },
+    tagWriter,
+    broadcast,
+    logger,
+    clock: () => now,
+  });
+
+  it('writes the placeholder and pushes notify_unknown, as an unregistered tag would', async () => {
+    const service = makeService(registry());
+    const result = await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+
+    expect(result.code).toBe('UNKNOWN_ACTION');
+    expect(tagWriter.recordObserved).toHaveBeenCalledWith('04a1b2c3', expect.any(String));
+    expect(haGateway.callService).toHaveBeenCalledWith('notify', 'mobile_app_kc_phone', expect.any(Object));
+  });
+
+  it('debounces the repeat taps, so one tap is one placeholder and one push', async () => {
+    const service = makeService(registry());
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+    const second = await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+
+    expect(second.debounced).toBe(true);
+    expect(tagWriter.recordObserved).toHaveBeenCalledTimes(1);
+    expect(haGateway.callService).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a non-NFC modality alone — there is no tag registry to place it in', async () => {
+    const service = makeService({
+      state: {
+        locations: {
+          livingroom: { target: 'livingroom-tv', auth_token: null, states: { off: { action: 'launch-rocket' } } },
+        },
+      },
+    });
+    const result = await service.handleTrigger('livingroom', 'state', 'off');
+
+    expect(result.code).toBe('UNKNOWN_ACTION');
+    expect(tagWriter.recordObserved).not.toHaveBeenCalled();
+  });
+});
