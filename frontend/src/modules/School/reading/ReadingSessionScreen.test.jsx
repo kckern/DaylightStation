@@ -131,6 +131,45 @@ describe('ReadingSessionScreen', () => {
     expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'open');
   });
 
+  /**
+   * D2 — a card tapped while a movie is on. The backend refuses it: no session
+   * opens and nothing touches the TV. What must NOT also happen is nothing on
+   * screen. This is the one acknowledgement that has to render with no session
+   * behind it at all, because there is no session — invariant 5, a child who
+   * taps and sees nothing taps harder.
+   */
+  it('a refused card acknowledges the tap even with no session open', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-refused', learnerId: 'learner-c', location: 'livingroom', reason: 'content-playing' });
+
+    expect(screen.getByTestId('reading-notice')).toHaveTextContent('Something else is playing');
+    expect(h.cues).toContain('warn');
+  });
+
+  it('and the refusal does not open a prompt, or otherwise take the screen', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-refused', learnerId: 'learner-c', location: 'livingroom', reason: 'content-playing' });
+
+    expect(screen.queryByTestId('reading-prompt')).toBeNull();
+    expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'idle');
+    // Nothing was mounted over the movie, and nothing dismissed what was on it.
+    expect(h.overlay.shown).toEqual([]);
+    expect(h.overlay.dismissed).toBe(0);
+  });
+
+  it('the refusal notice clears itself, leaving the widget rendering nothing again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const { container } = render(<ReadingSessionScreen />);
+      await deliver({ event: 'session-refused', learnerId: 'learner-c', location: 'livingroom', reason: 'content-playing' });
+      expect(screen.getByTestId('reading-notice')).toBeTruthy();
+      await act(async () => { vi.advanceTimersByTime(8000); });
+      expect(container).toBeEmptyDOMElement();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a closed session takes the widget back to rendering nothing', async () => {
     const { container } = render(<ReadingSessionScreen />);
     await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });

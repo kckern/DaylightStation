@@ -144,7 +144,22 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
 
   // The whole screen belongs to the menu when nobody is standing at the reader,
   // and to the Player once a story is up.
-  if (view === 'idle' || view === 'playing') return null;
+  //
+  // ONE EXCEPTION, AND IT IS THE POINT OF D2: a card REFUSED because unrelated
+  // content is playing opens no session, so `view` never leaves `idle` — and
+  // without this branch the child would tap, be refused, and see nothing at
+  // all. The notice renders alone, over whatever is playing, and takes itself
+  // away again; nothing else about the screen moves, because the whole promise
+  // of the refusal is that the movie keeps playing.
+  if (view === 'idle') {
+    if (!notice) return null;
+    return (
+      <div className="reading-session reading-session--idle" data-testid="reading-session" data-view="idle">
+        <Notice notice={notice} />
+      </div>
+    );
+  }
+  if (view === 'playing') return null;
 
   const name = learner?.name || null;
   const elapsed = (confirmRemainingMs !== null && confirmTotalMs > 0)
