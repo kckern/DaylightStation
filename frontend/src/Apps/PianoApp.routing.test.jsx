@@ -38,10 +38,11 @@ beforeEach(() => {
 describe('PianoApp single-piano routing', () => {
   it('serves the Videos mode at /piano/videos without a /default/ segment', async () => {
     renderApp('/piano/videos');
-    // Past the connect gate (no Web MIDI in jsdom) into the active piano.
-    fireEvent.click(await screen.findByText(/Continue without piano/i));
+    // No connect gate to click through any more — it was dropped in 87b8ba68fa
+    // ("rebuild kiosk sound and maintenance settings"), which asserts its
+    // absence. The kiosk goes straight to the active piano.
     // Videos mode mounted (the chrome shows the active mode label "Courses").
-    expect(screen.getByText('Courses')).toBeTruthy();
+    expect(await screen.findByText('Courses')).toBeTruthy();
     // The single piano must NOT redirect to /piano/default/...
     expect(lastPath).toBe('/piano/videos');
     expect(lastPath).not.toContain('/default/');
@@ -49,23 +50,21 @@ describe('PianoApp single-piano routing', () => {
 
   it('serves the menu at /piano (no pianoId segment, no picker)', async () => {
     renderApp('/piano');
-    fireEvent.click(await screen.findByText(/Continue without piano/i));
     // Mode menu, not the "Which piano?" chooser.
-    expect(screen.getByText('Courses')).toBeTruthy();
+    expect(await screen.findByText('Courses')).toBeTruthy();
     expect(screen.queryByText('Which piano?')).toBeNull();
     expect(lastPath).toBe('/piano');
   });
 
   it('home button (single piano) navigates to /piano, not /piano/default', async () => {
     renderApp('/piano/videos');
-    fireEvent.click(await screen.findByText(/Continue without piano/i));
-    fireEvent.click(screen.getByRole('button', { name: 'Home' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Home' }));
     expect(lastPath).toBe('/piano');
   });
 
   it('does not render a "Switch piano" button for a single piano', async () => {
     renderApp('/piano');
-    fireEvent.click(await screen.findByText(/Continue without piano/i));
+    await screen.findByText('Courses');   // wait for the kiosk to mount first
     expect(screen.queryByTitle('Switch piano')).toBeNull();
   });
 });
