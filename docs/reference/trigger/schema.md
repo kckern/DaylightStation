@@ -18,6 +18,8 @@ data/household/config/triggers/
   # (future modalities live as siblings: voice/, barcode/, etc.)
 ```
 
+> **Path drift:** the live tree consolidates reader sources into `data/household/triggers/sources.yml` (one entry per source, each with a `modality:` key) and tag registries into `data/household/triggers/bindings/nfc/*.yml`. The per-modality *shapes* below are what the parsers still consume; only the file layout moved.
+
 Each modality is self-contained. A modality may have:
 - A `locations.yml` (always — defines the trigger sources of that modality and their defaults)
 - One or more registry/resolver-data files (`tags.yml`, `intents.yml`, etc.)
@@ -41,9 +43,12 @@ livingroom:
 **Reserved fields** (consumed as first-class config):
 - `target` (REQUIRED, non-empty string) — the device ID this reader controls
 - `action` (optional) — the default action for tags here; overridable per tag
+- `learner_action` (optional, string or null) — what a **school learner card** means at this reader; see [Learner cards](#learner-cards) below. Null (or absent) means a learner card is not actionable here.
 - `auth_token` (optional, string or null) — required auth token; null = no auth
 
 **Defaults** (everything else, e.g. `shader`, `volume`, `shuffle`, `continuous`) — flow into the load query as the lowest-precedence layer for any tag scanned at this reader.
+
+`learner_action` is reserved rather than a default on purpose: swept into `defaults` it would inherit into every tag scanned at that reader and be forwarded into the load-query string of every book tap.
 
 ---
 
@@ -76,7 +81,53 @@ If a tag has an object-valued key whose name does NOT match a registered reader,
 
 ### Reserved tag fields
 
-Inside the tag body (and inside any per-reader override block), these keys are consumed as first-class intent fields rather than passing through as load-query params: `action`, `target`, `content`, `scene`, `service`, `entity`, `data`. (Same `RESERVED_KEYS` set used by the previous `TriggerIntent.resolveIntent`.)
+Inside the tag body (and inside any per-reader override block), these keys are consumed as first-class intent fields rather than passing through as load-query params: `action`, `target`, `content`, `scene`, `service`, `entity`, `data`, `school_learner`. (Same `RESERVED_KEYS` set used by the previous `TriggerIntent.resolveIntent`.)
+
+---
+
+## Learner cards
+
+A **learner card** is an NFC tag carrying `school_learner:` — it names a *person*, not a piece of content.
+
+```yaml
+# tags
+048ba600cc2a81:
+  note: learner-a personal card (red)
+  school_learner: learner-a
+```
+
+The card names **who**. The reader decides **what happens to them**, via that location's `learner_action`:
+
+```yaml
+study:
+  target: portal
+  action: play-next
+  learner_action: print-agenda      # tap here -> print my agenda
+
+livingroom:
+  target: livingroom-tv
+  action: play-next
+  learner_action: reading-session   # SAME card -> start my reading session
+```
+
+**Resolution.** `NfcResolver` treats `school_learner` as an actionable field, resolved **before** content (a learner card carries no content, and shorthand expansion over a reader's defaults could otherwise throw `AMBIGUOUS_SHORTHAND` first):
+
+| Situation | Result |
+|---|---|
+| Card tapped at a reader with `learner_action` | intent `{ action: <learner_action>, learnerId, location, target, params: {} }` |
+| Card tapped at a reader with no `learner_action` | `null` → the ordinary unknown-tag capture, so a mis-tapped card is noticed rather than doing something wrong |
+| `school_learner` on the reader's *defaults* | ignored — a learner card must be a TAG, never a property of a room |
+| `school_learner` is a list, a map, or empty | `ValidationError(code: 'INVALID_SCHOOL_LEARNER')` — a learner id becomes a URL segment downstream. An unquoted number is accepted and stringified. |
+
+`school_learner` is in `RESERVED_KEYS`, so it never leaks into `params` (and thus never into a load-query string), and it honours the normal precedence chain — a per-reader override block can point the same physical card at a different learner at one reader.
+
+**Dispatch.** The intent becomes `Response.learner` (`mapIntentToResponse` discriminates on the presence of `learnerId`, deliberately *not* on an enumerated action list), which `responseHandlers.learner` routes through an injected `learnerActions` registry.
+
+**An unregistered op is a named refusal, never a fallback.** If `reading-session` has no handler, the tap answers `{ status: 'no_handler', op, learnerId }` and logs `trigger.learner.no_handler` — it does not run `print-agenda` because that happens to be the only learner action wired. A preschooler tapping their card in the living room and hearing a printer start up two rooms away is worse than nothing happening.
+
+Handlers are registered at composition (`backend/src/app.mjs`), so the trigger pipeline holds no School import. `print-agenda` lives in `backend/src/5_composition/modules/learnerCardActions.mjs`; it calls School's `ResolvePersonalCard` and broadcasts `agenda-suppressed` on the `omr` topic when the print cooldown suppresses a repeat tap — that broadcast is the only feedback a tap producing no paper gets, and `useScanCeremony.js` renders it.
+
+**Both ingress doors resolve identically.** An HTTP tap (`POST /api/v1/trigger/<location>/nfc/<uid>`) and a tap arriving on the hardware-relay bus (`nfcTapIngress`, the omr-relay's M5 Unit NFC) both go through `TriggerDispatchService`. `nfcTapIngress` is transport-only — canonicalize the uid, map reader id → location, call `handleEvent` — and holds no tag policy. Its one exception is the shutdown tag, whose uid lives in `shutdown.yml` rather than the tag registry and is checked ahead of everything, including the reader map.
 
 ---
 
