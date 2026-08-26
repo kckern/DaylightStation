@@ -119,28 +119,6 @@
     }
   }
 
-  // "You are here" chevron in the left margin, tracking the narrated line.
-  // Opt-in per surface: hidden here, enabled by e.g. .readalong-playlist
-  // (School kiosk). Moves on the same 0.2s cadence as the scroll transform
-  // so the two never visibly disagree.
-  .reading-guide {
-    display: none;
-    position: absolute;
-    left: 0.15rem;
-    width: 1.5rem;
-    height: 1.75rem;
-    z-index: 2;
-    pointer-events: none;
-    transition: top 0.2s linear;
-    svg {
-      width: 100%;
-      height: 100%;
-      fill: #5d340866;
-    }
-  }
-  &.seeking .reading-guide {
-    transition: none !important;
-  }
 
   .controls {
     background-color: #333;

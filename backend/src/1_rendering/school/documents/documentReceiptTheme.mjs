@@ -110,6 +110,9 @@ export const documentReceiptTheme = Object.freeze({
     headingLineHeight: 40,
     bodyLineHeight: 30,
     codeLineHeight: 26,
+    /** A `rule: 'above'` text block's hairline, and the air under it. */
+    ruleWidth: 2,
+    ruleGap: 14,
   },
 
   colors: {
@@ -152,18 +155,6 @@ export const documentReceiptTheme = Object.freeze({
     unitLineHeight: 26,
     unitMarkerSize: 12,
     unitMarkerGap: 10,
-    /** Progress bars inside a lesson card: a label/position row, then the bar. */
-    progressLabelHeight: 24,
-    progressBarHeight: 12,
-    progressRowGap: 8,
-    /**
-     * Above this many items the per-item ticks are dropped and the bar is drawn
-     * plain. The result receipt puts ONE TICK PER ITEM so the filled edge lands
-     * exactly on the `completed`-th tick — correct, and unreadable at 366
-     * lessons, where each tick would be a third of a pixel. A bar with no ticks
-     * still reads "how far along"; a bar with 366 of them reads as a smudge.
-     */
-    progressTickMax: 40,
     /** Subject shelf icon drawn left of the label (58mm tape, so keep it bold). */
     iconPx: 56,
     /** Taxonomy gutter icon (globe etc.) — sized to sit beside ONE line of
@@ -197,6 +188,43 @@ export const documentReceiptTheme = Object.freeze({
   },
 
   /**
+   * THE progress bar, for every receipt surface that draws one — see
+   * `progressBar.mjs` for what this replaced and why these numbers won.
+   *
+   * The bar is deliberately shorter than a line of type and its ticks are
+   * hairlines: it is a reading of position, not a headline. The two surfaces
+   * that draw it (an agenda lesson card, a result receipt) used to disagree
+   * on every one of these values.
+   */
+  progress: {
+    /** The label row above the track: subject/unit left, "n of m" right. */
+    labelHeight: 26,
+    barHeight: 14,
+    rowGap: 10,
+    /** The track outline. Thinner than a card border — this is furniture. */
+    borderWidth: 2,
+    /** Segment dividers inside the track, one per lesson. */
+    tickWidth: 2,
+    /**
+     * Narrowest gap, in canvas px, at which ticks are still countable. The
+     * track is ~530px, so this permits a unit of ~88 lessons before the ticks
+     * are dropped entirely — far past any real course, and dropping them is
+     * the honest failure: a tick that does not mean one lesson is worse than
+     * no tick at all.
+     */
+    minTickGap: 6,
+    /**
+     * The in-progress hatch: stripe pitch and stroke, chosen by rendering four
+     * densities side by side. 3-on-6 is 50% ink — a fine even texture that
+     * reads as "part way" against both the solid fill and the empty track. A
+     * sparser hatch (3-on-12) reads as a row of tick marks instead, and a
+     * heavier one (5-on-8) starts to look solid.
+     */
+    hatchPitch: 6,
+    hatchWidth: 3,
+  },
+
+  /**
    * The agenda's finished-work strip.
    *
    * Deliberately the QUIETEST thing on the page. Everything above it is a
@@ -215,8 +243,15 @@ export const documentReceiptTheme = Object.freeze({
     markStrokeWidth: 3,
     markInset: 4,
     markGap: 12,
-    labelHeight: 26,
-    subjectLineHeight: 26,
+    labelHeight: 30,
+    /** Each finished subject is an outline item under the "DONE TODAY" head. */
+    rowIndent: 34,
+    /** The subject's own shelf icon, drawn in the row's gutter. */
+    iconSize: 20,
+    iconGap: 8,
+    subjectHeight: 24,
+    titleLineHeight: 24,
+    entryGap: 10,
     padBottom: 4,
   },
 
@@ -247,28 +282,12 @@ export const documentReceiptTheme = Object.freeze({
     // well past the `scoreMode: 'items'` ceiling of 10 this path draws for.
     markStrokeWidth: 3,
     markInset: 7,
-    progressHeight: 14,
-    progressGap: 5,
     // The aggregate-score BOX count. Despite the name it no longer has
     // anything to do with the progress bars below the panel: those draw one
     // tick per lesson (`segments === total`), because a tick that stands for
     // "a tenth of the way" cannot line up with a fill computed as
     // `completed / total`.
     progressSegments: 10,
-    // Narrowest gap, in canvas px, at which progress ticks are still
-    // countable. The track is 530px, so this permits a unit of ~88 lessons
-    // before the ticks are dropped entirely — far past any real course, and
-    // dropping them is the honest failure (see the renderer's own note).
-    progressMinTickGap: 6,
-    // The in-progress hatch: stripe pitch and stroke, in canvas px, chosen by
-    // rendering four densities side by side. 3-on-6 is 50% ink — a fine even
-    // texture that reads as "part way" against both the solid fill and the
-    // empty track. A sparser hatch (3-on-12) reads as a row of tick marks
-    // instead, and a heavier one (5-on-8) starts to look solid. The pitch is
-    // also an order of magnitude tighter than the segment ticks (~75px on a
-    // 7-unit course), so the two can never be mistaken for each other.
-    progressHatchPitch: 6,
-    progressHatchWidth: 3,
   },
 });
 

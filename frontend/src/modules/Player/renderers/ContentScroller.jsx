@@ -16,7 +16,6 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
 import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
   import { playbackLog } from '../lib/playbackLogger.js';
-  import { computeReadingGuideTop } from '../lib/readingGuide.js';
   
   /**
    * ContentScroller (superclass)
@@ -116,8 +115,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 
   // Track in-body heading positions for sticky header
   const headingPositionsRef = useRef([]);
-  // Height of the narrated text WITHOUT its bottom run-out padding — feeds the
-  // reading-guide marker so it doesn't run ahead of the voice at the end.
+  // Height of the narrated text WITHOUT its bottom run-out padding.
   const narratableHeightRef = useRef(0);
 
   // Measure h4 positions and narratable height after content renders
@@ -471,28 +469,6 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
           >
             {renderedContent}
           </div>
-          {(() => {
-            // Reading guide: a small chevron in the left margin marking where
-            // the narration is right now. Hidden by default (display: none);
-            // surfaces that want it (e.g. the School readalong kiosk) opt in
-            // via CSS. Position follows the scroller's own linear time→text
-            // model, so it is exactly as accurate as the scroll itself.
-            if (!duration || !panelHeight) return null;
-            const guideTop = computeReadingGuideTop({
-              progressFraction: duration ? currentTime / duration : 0,
-              narratableHeight: narratableHeightRef.current || contentHeight,
-              yOffset,
-              panelHeight
-            });
-            if (guideTop == null) return null;
-            return (
-              <div className="reading-guide" style={{ top: `${guideTop}px` }} aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false">
-                  <path d="M7 4.5 17.5 12 7 19.5z" />
-                </svg>
-              </div>
-            );
-          })()}
         </div>
 
         </div>
