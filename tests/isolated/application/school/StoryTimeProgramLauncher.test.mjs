@@ -77,4 +77,70 @@ describe('StoryTimeProgramLauncher', () => {
     expect(launcher.locationHint).toBe('on the living room TV');
     expect(launcher.surface ?? null).toBe(null);
   });
+  // `YamlAssignmentStore.get()` NEVER THROWS — it answers null for a missing
+  // file AND for unparseable YAML. So the masking these two cover happens on
+  // the happy path, not in a catch: `null?.programs ?? []` finds no entry and
+  // silently falls back to the default target. For a learner whose target is 5
+  // that is `doneToday: true` at two books — a FALSE DONE, worse than the false
+  // zero this launcher's own header argues must never happen.
+  it('refuses to guess a target when there is no assignment record at all', async () => {
+    const launcher = new StoryTimeProgramLauncher({
+      readingLog: { listForDay: async () => [{}, {}] },
+      assignments: { get: async () => null },
+      timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
+    });
+    const s = await launcher.status({ userId: 'learner-c' });
+    expect(s.error).toBe(true);
+    expect(s.doneToday).toBe(false);
+    expect(s.target).toBe(null);
+  });
+
+  it('refuses to guess a target the enrollment authored but garbled', async () => {
+    const launcher = new StoryTimeProgramLauncher({
+      readingLog: { listForDay: async () => [{}, {}] },
+      assignments: { get: async () => ({ programs: [{ programId: 'story-time', target: '5' }] }) },
+      timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
+    });
+    const s = await launcher.status({ userId: 'learner-c' });
+    expect(s.error).toBe(true);
+    expect(s.target).toBe(null);
+  });
+
+  it('takes the default only when the enrollment exists and OMITS a target', async () => {
+    const launcher = new StoryTimeProgramLauncher({
+      readingLog: { listForDay: async () => [] },
+      assignments: { get: async () => ({ programs: [{ programId: 'story-time' }] }) },
+      timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
+    });
+    expect((await launcher.status({ userId: 'learner-c' })).progressLabel).toBe('0 of 2 stories');
+  });
+
+  it('reports an error rather than a guessed target when the assignments store throws', async () => {
+    const launcher = new StoryTimeProgramLauncher({
+      readingLog: { listForDay: async () => [{}, {}] },
+      assignments: { get: async () => { throw new Error('disk gone'); } },
+      timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
+    });
+    const s = await launcher.status({ userId: 'learner-c' });
+    expect(s.error).toBe(true);
+    expect(s.doneToday).toBe(false);
+  });
+
+  // Plan 03's on-screen counter reads `status().count`. An error branch that
+  // omits it hands that counter `undefined` instead of "unknown".
+  it('answers the same shape on both error branches as on success', async () => {
+    const unreadableLog = await new StoryTimeProgramLauncher({
+      readingLog: { listForDay: async () => { throw new Error('disk gone'); } },
+      assignments: { get: async () => ({ programs: [{ programId: 'story-time', target: 3 }] }) },
+      timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
+    }).status({ userId: 'learner-c' });
+    expect(unreadableLog).toMatchObject({ error: true, count: null, target: 3, reads: [], terminal: false, score: null });
+
+    const unknownTarget = await new StoryTimeProgramLauncher({
+      readingLog: { listForDay: async () => [] },
+      assignments: { get: async () => null },
+      timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
+    }).status({ userId: 'learner-c' });
+    expect(unknownTarget).toMatchObject({ error: true, count: null, target: null, reads: [], terminal: false, score: null });
+  });
 });

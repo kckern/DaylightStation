@@ -41,23 +41,51 @@ export class StoryTimeProgramLauncher {
 
   get id() { return STORY_TIME_PROGRAM_ID; }
 
-  /**
-   * The room, in the words a child reads. `surface` stays null (the base
-   * default): there is no DoNow surface to dispatch to yet, so the self-service
-   * panel must route through `launch()` — which refuses truthfully — rather
-   * than mounting a screen that isn't there.
-   */
+  /** The room, in the words a child reads. */
   get locationHint() { return 'on the living room TV'; }
 
-  /** The learner's own target, or the default when the enrollment omits one. */
+  /**
+   * Explicit, because these launchers are duck-typed rather than extending
+   * `IProgramLauncher` — there is no base class to inherit a default from, and
+   * an absent getter would read `undefined` rather than the documented `null`.
+   * There is no DoNow surface to dispatch to yet, so the self-service panel
+   * must route through `launch()` — which refuses truthfully — rather than
+   * mounting a screen that isn't there.
+   */
+  get surface() { return null; }
+
+  /**
+   * The learner's own target, or `null` when there is NO ENROLLMENT TO READ IT
+   * FROM — which is not the same thing as an enrollment that omits it.
+   *
+   * The distinction is the whole point. `YamlAssignmentStore.get()` never
+   * throws: a missing file and unparseable YAML both answer `null`. Falling
+   * back to the default there would set every learner's target to 2 off a
+   * corrupt file — asking the child whose target is 1 for a second book, and
+   * calling the child whose target is 5 DONE at two. A false done is worse
+   * than the false zero this file's header rules out, and it fails silently.
+   *
+   * A `target` that is present but not a positive integer is refused for the
+   * same reason: `target: '5'` in a hand-edited plan must not quietly become 2.
+   * Only an ABSENT target takes the default.
+   *
+   * Deliberately not wrapped in a catch — a store that genuinely throws is a
+   * real fault, and `status()` turns it into the same honest `error` answer.
+   */
   async #targetFor(userId) {
-    try {
-      const assignment = await this.#assignments.get(userId);
-      const entry = (assignment?.programs ?? []).find((p) => p?.programId === STORY_TIME_PROGRAM_ID);
-      return Number.isInteger(entry?.target) && entry.target > 0 ? entry.target : DEFAULT_STORY_TARGET;
-    } catch {
-      return DEFAULT_STORY_TARGET;
-    }
+    const assignment = await this.#assignments.get(userId);
+    const entry = (assignment?.programs ?? []).find((p) => p?.programId === STORY_TIME_PROGRAM_ID);
+    if (!entry) return null;
+    if (entry.target === undefined || entry.target === null) return DEFAULT_STORY_TARGET;
+    return Number.isInteger(entry.target) && entry.target > 0 ? entry.target : null;
+  }
+
+  /** The one error shape, so both branches answer what the success branch does. */
+  #unavailable(progressLabel, target) {
+    return {
+      error: true, doneToday: false, progressLabel, score: null, terminal: false,
+      count: null, target, reads: [],
+    };
   }
 
   studyDay() {
@@ -65,14 +93,24 @@ export class StoryTimeProgramLauncher {
   }
 
   async status({ userId }) {
-    const target = await this.#targetFor(userId);
     const day = this.studyDay();
+    let target;
+    try {
+      target = await this.#targetFor(userId);
+    } catch (err) {
+      this.#logger.error?.('school.story-time.target-unknown', { userId, day, error: err.message });
+      return this.#unavailable('Reading assignment unavailable', null);
+    }
+    if (target === null) {
+      this.#logger.error?.('school.story-time.target-unknown', { userId, day, reason: 'no readable enrollment' });
+      return this.#unavailable('Reading assignment unavailable', null);
+    }
     let rows;
     try {
       rows = await this.#readingLog.listForDay(userId, day);
     } catch (err) {
       this.#logger.error?.('school.story-time.log-unreadable', { userId, day, error: err.message });
-      return { error: true, doneToday: false, progressLabel: 'Reading log unavailable', score: null, terminal: false };
+      return this.#unavailable('Reading log unavailable', target);
     }
     const count = Array.isArray(rows) ? rows.length : 0;
     return {
