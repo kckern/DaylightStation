@@ -33,7 +33,7 @@ import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
 import { teacherBaseFor, teacherDayPath, teacherSessionPath } from '../teacherUrl.js';
 import { localDay } from '../teacherDates.js';
 import { SubjectIdentity } from '../CurriculumIdentity.jsx';
-import { hasIcon } from '../../home/icons/Icon.jsx';
+import Icon, { hasIcon } from '../../home/icons/Icon.jsx';
 import { teacherLog } from '../teacherLog.js';
 
 // ---------------------------------------------------------------------------
@@ -197,7 +197,20 @@ function LessonCard({ row, learnerId, base, onOpen }) {
   // how "Arts & Culture / How to Play “Dinah” on Piano / Nothing recorded
   // yet" ended up with no art and no course beneath it.
   const offer = row.offer ?? null;
-  const title = session?.lessonTitle ?? session?.title ?? offer?.taxonomy?.lesson ?? row.planned ?? 'No work offered';
+  // A SERVED SUBJECT STILL KNOWS WHAT IT SERVED. Once a subject is done for
+  // the day the planner drops its `next`, so this chain used to run out and
+  // land on "No work offered" — printed on a card whose own chip said DONE.
+  // `served.work` names curriculum work; `served.progressLabel` is the
+  // program's own copy for a subject that completes outside a work session.
+  const served = row.served ?? null;
+  const title = session?.lessonTitle ?? session?.title
+    ?? offer?.taxonomy?.lesson ?? row.planned
+    ?? served?.work?.[0]?.title
+    // Used verbatim, never sliced: it is authored display copy (agenda.mjs
+    // `progressLabelFor`), and trimming a "Done today — " prefix off it would
+    // rot the first time that wording changed.
+    ?? served?.progressLabel
+    ?? 'No work offered';
   const courseTitle = session?.courseTitle ?? offer?.taxonomy?.course ?? null;
   const posterUrl = session?.posterUrl ?? offer?.posterUrl ?? null;
   const score = session?.effectiveScore;
@@ -225,10 +238,21 @@ function LessonCard({ row, learnerId, base, onOpen }) {
   // The breadcrumb, in the card's own header band: where in the curriculum
   // this lesson sits. Course and unit both, when both are known — the same
   // Subject › Course › Unit the printed lesson card carries.
-  const crumbs = [courseTitle, session?.moduleTitle ?? offer?.taxonomy?.unit].filter(Boolean);
+  const crumbs = [
+    courseTitle,
+    session?.moduleTitle ?? offer?.taxonomy?.unit ?? served?.moduleLabel,
+  ].filter(Boolean);
   const identity = (
     <span className="teacher-lesson-card__identity">
       <span className="teacher-lesson-card__poster">
+        {/* THE FRAME IS RESERVED EITHER WAY (see above), but a permanently
+            empty one reads as a failed load rather than as art that never
+            existed. The subject's own mark stands in — the same glyph the
+            header carries, so the card is still identifiable at a glance. */}
+        {/* The glyph is always in the frame; the image covers it when it
+            loads. So a poster that never existed and one that 404s look
+            identical, and neither moves anything. */}
+        <Icon name={subject ?? 'school'} className="teacher-lesson-card__poster-glyph" />
         {posterUrl && <SafeImg src={posterUrl} alt="" fallback="" />}
       </span>
       <strong className="teacher-lesson-card__title">{title}</strong>
