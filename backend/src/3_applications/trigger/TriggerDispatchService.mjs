@@ -266,7 +266,14 @@ export class TriggerDispatchService {
     try {
       const dispatchResult = await dispatchResponse({ ...response, dispatchId }, this.#deps);
       const elapsedMs = this.#clock() - startedAt;
-      this.#debounce.set(debounceKey, this.#clock());
+      // A handler that ANSWERS instead of throwing can still have failed, and
+      // the release-on-failure below is reachable only by a thrown error. So a
+      // handler is allowed to say so: `retryable` releases the same lockout the
+      // catch does. Without it a learner action whose receipt says "Try
+      // scanning again" locks the child out for the full window, and the retry
+      // it asked for is swallowed with the handler never invoked.
+      if (dispatchResult?.retryable) this.#debounce.delete(debounceKey);
+      else this.#debounce.set(debounceKey, this.#clock());
       this.#logger.info?.('trigger.fired', { ...baseLog, action: logAction, target, ok: true, elapsedMs });
       this.#emit(location, modality, { ...summary, ok: true });
       return { ok: true, ...summary, dispatch: dispatchResult, elapsedMs };
