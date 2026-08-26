@@ -4048,7 +4048,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
-  const { router: triggerRouter, triggerDispatchService, triggerConfig } = createTriggerApiRouter({
+  const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
     listDir,
     learnerActions,
     deviceServices,
@@ -4109,19 +4109,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   // NFC taps arriving on a hardware-relay topic (the omr-relay carries an M5
-  // Unit NFC alongside the bubble-sheet reader). One tag registry decides who
-  // owns the tag: a personal card goes to School and prints an agenda, anything
-  // else falls through to the normal trigger pipeline like any other reader.
+  // Unit NFC alongside the bubble-sheet reader). TRANSPORT ONLY: every tap —
+  // book sticker, learner card, unknown tag — goes to the same pipeline every
+  // other reader in the house uses. What a learner card MEANS is the reader
+  // location's `learner_action`, resolved in NfcResolver.
   const { createNfcTapIngress } = await import('#composition/modules/nfcTapIngress.mjs');
   const nfcTapIngress = createNfcTapIngress({
     eventBus,
     topics: ['omr'],
-    triggerConfig,
     triggerDispatchService,
-    resolvePersonalCard: schoolLifecycle.useCases?.resolvePersonalCard ?? null,
     shutdownService,
     getShutdownConfig: readShutdownConfig,
-    location: configService.getHouseholdAppConfig?.(householdId, 'school')?.lifecycle?.nfcLocation ?? null,
+    // Reader id -> trigger location. Was a single global `location`, which
+    // assumed every reader on this bus was in one room. The fallback names the
+    // one reader that exists today so the study card keeps working without a
+    // config edit; add a key here (or in school.yml) for each new relay reader.
+    readerLocations: configService.getHouseholdAppConfig?.(householdId, 'school')?.lifecycle?.nfcReaderLocations
+      ?? { 'study-omr': 'study' },
     logger: rootLogger.child({ module: 'nfc-tap' }),
   });
 
