@@ -23,6 +23,38 @@ const latestAt = (events) => events.reduce((latest, event) => (
   String(event?.at ?? '') > latest ? String(event.at) : latest
 ), '');
 
+/**
+ * Per-session paper-record references for the dashboard drill-in.
+ *
+ * The reduced session state already carries every archived artifact id, and
+ * the artifact routes are deterministic functions of those ids — the same
+ * URLs GetTeacherSession emits. Deriving them here costs no store read and
+ * spares the dashboard the per-session document fetch (the audited N+1) it
+ * once paid to show these. An id only enters the event log when a capture
+ * archived the bytes, so a link here is live by construction; a legacy
+ * session with no archived print simply carries nulls.
+ *
+ * Worksheet: the FIRST issued artifact — reprints reuse the original bytes.
+ * Receipt: the LATEST capture — a regrade re-captures, and the newest
+ * receipt states the standing result the family actually saw last.
+ */
+function artifactRefs(state) {
+  const artifactUrl = (artifactId, suffix) => `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/${suffix}`;
+  const worksheetId = state.issuedArtifacts?.[0] ?? null;
+  const receipt = (state.resultReceiptArtifacts ?? []).at(-1) ?? null;
+  return {
+    worksheet: worksheetId ? {
+      artifactId: worksheetId,
+      originalPdfUrl: artifactUrl(worksheetId, 'original.pdf'),
+      thumbnailUrl: artifactUrl(worksheetId, 'thumbnail.png'),
+    } : null,
+    receipt: receipt ? {
+      artifactId: receipt.artifactId,
+      originalUrl: artifactUrl(receipt.artifactId, 'original'),
+    } : null,
+  };
+}
+
 function uniqueAttempts(attempts) {
   const seen = new Set();
   return attempts.filter((attempt) => {
@@ -131,6 +163,7 @@ export class GetTeacherToday {
           },
           reviewStatus: pending.some((item) => item.sessionId === row.sessionId) ? 'pending' : 'complete',
           outcome: state.outcome,
+          artifacts: artifactRefs(state),
         };
         if (originalStudyDay === selectedStudyDay) sessions.push(summary);
         const processedEvents = events.filter((event) => PROCESSED_TYPES.has(event.type) && withinStudyWindow(event.at, window));

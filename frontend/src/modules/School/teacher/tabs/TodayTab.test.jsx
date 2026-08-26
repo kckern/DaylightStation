@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react';
 import TodayTab from './TodayTab.jsx';
 import { QueueView } from '../WorkspaceViews.jsx';
 import { TeacherProfileProvider, useTeacherProfile } from '../TeacherProfileContext.jsx';
@@ -19,6 +19,7 @@ vi.mock('../teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: {
     teacherDay: vi.fn(),
+    agendaPreview: vi.fn(),
     lifecycleReview: vi.fn(),
     printPending: vi.fn(),
     quizRequests: vi.fn(),
@@ -55,9 +56,21 @@ beforeEach(() => {
   schoolApi.printDeny.mockResolvedValue(ok({ decision: 'denied' }));
   schoolApi.quizRequestDismiss.mockResolvedValue(ok({ dismissed: true }));
   schoolApi.teacherDay.mockResolvedValue(ok([
-    { learnerId: 'learner-a', effectiveScoreTotals: { correct: 5, total: 7 }, sessions: [{ sessionId: 'ses_1', lessonTitle: 'Illinois', subject: 'civilization', courseTitle: 'United States Regions and States', moduleTitle: 'Midwest', posterUrl: '/course-poster.jpg', studyDay: '2026-08-24', effectiveScore: { correctCount: 5, totalCount: 7, percent: 71 }, state: 'graded' }], pendingReview: 2 },
+    { learnerId: 'learner-a', effectiveScoreTotals: { correct: 5, total: 7 }, sessions: [{ sessionId: 'ses_1', unitId: 'unit-illinois', lessonTitle: 'Illinois', subject: 'civilization', courseTitle: 'United States Regions and States', moduleTitle: 'Midwest', posterUrl: '/course-poster.jpg', studyDay: '2026-08-24', effectiveScore: { correctCount: 5, totalCount: 7, percent: 71 }, state: 'graded',
+      // The digest itself carries the paper-record refs (GetTeacherToday) —
+      // this is what lets the grid show them with zero per-session fetches.
+      artifacts: {
+        worksheet: { artifactId: 'worksheet-1', originalPdfUrl: '/issued/illinois.pdf', thumbnailUrl: '/issued/illinois-thumb.png' },
+        receipt: { artifactId: 'receipt-1', originalUrl: '/issued/illinois-receipt.png' },
+      } }], pendingReview: 2 },
     { learnerId: 'learner-b', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 },
   ]));
+  // The day's plan, for the "not yet started" cards: Illinois is claimed by
+  // the recorded session (unit match); the math offer has no session yet.
+  schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
+    { subject: 'civilization', next: { unitId: 'unit-illinois', title: 'Illinois' } },
+    { subject: 'math', next: { unitId: 'unit-fractions', title: 'Fractions Intro' } },
+  ] }));
   schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [
     { sessionId: 'ses_1', itemId: 'q3', learnerId: 'learner-a', prompt: 'Explain photosynthesis', given: 'plants eat light', questionNumber: 3 },
   ] }));
@@ -85,20 +98,57 @@ describe('TodayTab', () => {
   });
 
   it('drill-in names the lesson and costs no session fetch', async () => {
-    // The issued files moved to the day record's per-lesson Paper record fold
-    // (covered by SessionPaperRecord.test.jsx and the Playwright contract).
-    // The dashboard used to fetch a full session document per session on
-    // load; naming the lesson must not cost a round trip.
+    // The grid shows every lesson AND its paper-record icons straight from
+    // the digest — the per-session document fetch (the audited N+1) must
+    // never come back. The one extra read is the learner's agenda preview.
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Learner A/ })); });
     expect(await screen.findByRole('link', { name: /Open the full day record/i })).toBeInTheDocument();
     expect(screen.getByText('Illinois')).toBeTruthy();
     expect(screen.getByText('United States Regions and States')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Peek at the worksheet/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Peek at the result receipt/i })).toBeInTheDocument();
     expect(teacherWorkspaceApi.session).not.toHaveBeenCalled();
+    expect(schoolApi.agendaPreview).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/Print selected worksheets/i)).toBeNull();
     expect(screen.queryByText(/No printable lessons/i)).toBeNull();
     expect(screen.queryByText(/^assessment$/i)).toBeNull();
+  });
+
+  it('shows the day as a grid: done work beside planned-but-unstarted lessons', async () => {
+    mount(<TodayTab kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    const grid = await screen.findByTestId('lesson-grid');
+    await waitFor(() => expect(within(grid).getAllByTestId('lesson-card').length).toBe(2));
+    // Done: the recorded Illinois session claims its planned section (unit match).
+    expect(within(grid).getByText('Done')).toBeInTheDocument();
+    // Not yet started: the math offer with no session gets its own card.
+    expect(within(grid).getByText('Not started')).toBeInTheDocument();
+    expect(within(grid).getByText('Fractions Intro')).toBeInTheDocument();
+  });
+
+  it('peeking at an artifact opens it in place, from digest data alone', async () => {
+    mount(<TodayTab kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Peek at the worksheet/i }));
+    const dialog = await screen.findByRole('dialog', { name: /Worksheet — Illinois/i });
+    expect(within(dialog).getByRole('link', { name: /Open worksheet/i })).toHaveAttribute('href', '/issued/illinois.pdf');
+    fireEvent.click(within(dialog).getByRole('button', { name: /Close preview/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Worksheet — Illinois/i })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Peek at the result receipt/i }));
+    const receiptDialog = await screen.findByRole('dialog', { name: /Result receipt — Illinois/i });
+    expect(within(receiptDialog).getByRole('link', { name: /Open receipt/i })).toHaveAttribute('href', '/issued/illinois-receipt.png');
+    expect(teacherWorkspaceApi.session).not.toHaveBeenCalled();
+  });
+
+  it('a failed agenda read degrades to recorded work, never a dead drill-in', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(fail(500));
+    mount(<TodayTab kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    const grid = await screen.findByTestId('lesson-grid');
+    expect(within(grid).getByText('Illinois')).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t load the day’s plan/)).toBeInTheDocument();
   });
 
   it('offers one route into the full day record instead of re-rendering it', async () => {
@@ -127,11 +177,17 @@ describe('TodayTab', () => {
     expect(screen.queryByText(/Not graded/)).not.toBeInTheDocument();
   });
 
-  it('states a score once, without repeating it as a percent', async () => {
+  it('scores render as marks plus a percent, stating the count only once (as the marks’ label)', async () => {
     mount(<TodayTab kids={KIDS} />);
     fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
-    const outcome = await screen.findByText(/5 of 7 correct/);
-    expect(outcome).not.toHaveTextContent('71%');
+    const marks = await screen.findByTestId('score-marks');
+    // 5 green checks + 2 red crosses — the count lives in the marks and their
+    // accessible name; percent appears once as text, never "5 of 7 · 71%".
+    expect(marks.querySelectorAll('.teacher-mark--check').length).toBe(5);
+    expect(marks.querySelectorAll('.teacher-mark--cross').length).toBe(2);
+    expect(marks).toHaveAccessibleName('5 of 7 correct');
+    expect(within(marks).getByText('71%')).toBeInTheDocument();
+    expect(screen.queryByText(/5 of 7 correct/)).toBeNull();
   });
 
   it('one failing panel leaves its siblings rendered (queue)', async () => {

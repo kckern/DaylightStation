@@ -788,7 +788,17 @@ through the per-unit override store) live on the per-course drill-in page.
 transposed — courses as rows, students as columns — with a legend and an
 unassigned-course count. The dashboard is the Today digest plus a compact
 backlog-count strip; the Action queue owns the item-level review/print/quiz
-lists. Destructive flows are two-tap arm→confirm everywhere (enrollment
+lists. Expanding a learner on the dashboard shows the whole day as a grid of
+roughly square lesson cards — done work with its score as green-check/red-cross
+marks plus a percentage, planned-but-unstarted offers, deferred/blocked
+subjects, and unplanned extras — built by joining the digest row with the
+learner's agenda preview (one lazy, non-recording read per expand) through the
+same day-join the day record uses. Each graded card carries small worksheet
+(PDF) and result-receipt icons whose links ride the digest itself: the digest
+derives artifact URLs from session state at read time, so the dashboard never
+pays a per-session document fetch to show them. Tapping an icon opens the
+archived artifact in an overlay above the dashboard; the drill-in also offers
+the printed-agenda preview and one link into the full day record. Destructive flows are two-tap arm→confirm everywhere (enrollment
 changes included), the curriculum-exceptions form starts neutral, and the
 period-close control lives with the closed periods below the live report
 card.
@@ -1792,7 +1802,11 @@ the sessions touched today (whatever their state — finished work shows
 alongside in-flight), and how many items are waiting on a grown-up's mark — all
 scoped to the same 4am→4am study day the language ladder and the printed
 agenda already use, not the plain UTC calendar date, so a session at 11pm
-still belongs to "today" until the boundary rolls. The parent report board
+still belongs to "today" until the boundary rolls. Each session row also
+carries its paper-record references (`artifacts.worksheet` /
+`artifacts.receipt` with original/thumbnail URLs), derived from the already
+reduced session state at zero extra I/O — an id only enters the event log when
+a capture archived the bytes, so a link in the digest is live by construction. The parent report board
 renders it as a **Today strip** above each learner's card; a needs-review
 badge on that strip links straight to the Admin review queue
 (`/admin/school/review`) — the digest names the backlog, Admin is where it
