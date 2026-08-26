@@ -88,22 +88,37 @@ export default {
       // _deleteme/"). A probe test parked here still got collected, inflating
       // counts and tearing down noisily mid-sweep.
       '**/_deleteme/**',
-      // `node:test` file, not a vitest one. A directory-glob vitest run
-      // collects it and reports "no test suite found", which reads as a
+      // `node:test` files, not vitest ones. A directory-glob vitest run
+      // collects them and reports "no test suite found", which reads as a
       // failure and trains everyone to skim past the gate's failing list —
-      // the exact habit that lets a real regression through. It still runs
-      // (and passes) under `node --test`; excluding it here fixes the
-      // reporting, not the coverage. Converting it to vitest is a bigger
+      // the exact habit that lets a real regression through. Each one below
+      // was RUN under `node --test` and passes; excluding it here fixes the
+      // reporting, not the coverage. Converting them to vitest is a bigger
       // change than the noise justifies.
       //
-      // NOTE: `pianoGames.test.mjs` is a sibling `node:test` file with the
-      // same "no test suite found" symptom, but it is deliberately NOT
-      // excluded here: under `node --test` it fails 3 of 5 real tests
-      // (OpponentLadder normalizeSeriesEntry errors + a 'Level 1' vs
-      // 'Diglett' mismatch). That is a genuine bug, not glob noise — see
-      // task-C2-report.md. Excluding it would hide the failure instead of
-      // just fixing how it's reported.
+      // EVERY entry here must be earned by running the file under
+      // `node --test` FIRST. "No test suite found" is not proof a file is
+      // harmless — see the pianoGames note below, where that assumption
+      // would have buried a real bug.
+      //
+      // Listed file by file, deliberately, rather than globbing
+      // `**/rubiksCube/*.test.mjs`: a directory pattern would also swallow a
+      // future *vitest* file added beside them, silently dropping it from
+      // the gate. Silent exclusion is the failure mode this block exists to
+      // fix, so it must not introduce one.
       '**/nfcTapIngress.shutdown.test.mjs',
+      '**/rubiksCube/courseCatalog.test.mjs',
+      '**/rubiksCube/physicalCube.test.mjs',
+      '**/rubiksCube/RubiksCubeCourseService.test.mjs',
+      //
+      // NOT EXCLUDED, deliberately: `pianoGames.test.mjs` is a sibling
+      // `node:test` file with the same "no test suite found" symptom, but
+      // under `node --test` it fails 3 of 5 real tests (OpponentLadder
+      // rejects entries built by PianoGamesContainer.recordGame, plus a
+      // 'Level 1' vs 'Diglett' mismatch). That is a genuine bug, not glob
+      // noise — see docs/_wip/bugs/2026-08-26-pianogames-ladder-series-
+      // entries-rejected.md. Excluding it would hide the failure instead of
+      // just fixing how it is reported.
     ],
   },
 };
