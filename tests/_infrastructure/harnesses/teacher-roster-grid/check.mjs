@@ -147,6 +147,41 @@ async function measure(page) {
       percentTexts: [...document.querySelectorAll('.teacher-lesson-card__percent')].map((el) => el.textContent),
       overflowX: document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth,
       chips: cards.map((c) => c.chip),
+      // Provenance is a TAG now, not a chip: `extra` stopped being a status
+      // when status became progress-only, so an unplanned lesson reports how
+      // far along it got AND that it was unplanned.
+      tags: [...document.querySelectorAll('.teacher-day-chip__tag')].map((el) => el.textContent.trim()),
+      // Type hierarchy: the lesson's name must outweigh the breadcrumb that
+      // merely locates it. jsdom cannot see computed font sizes; this can.
+      typeScale: (() => {
+        const card = document.querySelector('[data-testid="lesson-card"]');
+        const px = (sel) => {
+          const el = card?.querySelector(sel);
+          return el ? parseFloat(getComputedStyle(el).fontSize) : null;
+        };
+        return {
+          title: px('.teacher-lesson-card__title'),
+          crumbs: px('.teacher-lesson-card__crumbs'),
+          subject: px('.teacher-subject-identity'),
+          crumbsInHeader: Boolean(card?.querySelector('.teacher-lesson-card__header .teacher-lesson-card__crumbs')),
+        };
+      })(),
+      // The two row-level targets must not share a corner.
+      rowTargets: (() => {
+        const toggle = document.querySelector('.teacher-roster__card');
+        const agenda = document.querySelector('.teacher-roster__agenda-link');
+        if (!toggle || !agenda) return null;
+        const a = toggle.getBoundingClientRect(); const b = agenda.getBoundingClientRect();
+        return {
+          nested: toggle.contains(agenda),
+          intersects: !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top),
+          agenda: { width: b.width, height: b.height },
+        };
+      })(),
+      // The stat line the operator asked to delete.
+      correctStat: [...document.querySelectorAll('.teacher-roster__stats')]
+        .map((el) => el.textContent.trim()).filter((t) => /\d+\s*\/\s*\d+\s*correct/.test(t)),
+      rosterSummary: [...document.querySelectorAll('.teacher-roster__stats')].map((el) => el.textContent.trim()),
     };
   });
 }
@@ -232,7 +267,45 @@ async function runViewport(browser, { width, height, name, minColumns, peek }) {
     geo.percentTexts.includes('71%') && geo.percentTexts.includes('100%'), `got=${geo.percentTexts.join(',')}`);
   check(label('planned + deferred lessons appear as their own cards'),
     geo.chips.includes('Not started') && geo.chips.includes('Deferred'), `chips=${geo.chips.join('|')}`);
-  check(label('unplanned work appears as an Extra card'), geo.chips.includes('Extra'), `chips=${geo.chips.join('|')}`);
+  // `Extra` retired as a status: it described PROVENANCE while its neighbours
+  // described progress, so unplanned work could never also say it was
+  // finished. It is a tag beside the progress chip now.
+  check(label('no card wears the retired Extra status'),
+    !geo.chips.includes('Extra'), `chips=${geo.chips.join('|')}`);
+  check(label('unplanned work is tagged, and still reports its own progress'),
+    geo.tags.some((t) => /not on the plan/i.test(t)), `tags=${geo.tags.join('|') || 'none'}`);
+
+  // THE LESSON OUTRANKS THE SHELF (W3). The breadcrumb used to sit in the
+  // tinted header band and out-measure the title it was there to locate.
+  check(label('the breadcrumb is out of the header band'),
+    geo.typeScale.crumbsInHeader === false, `inHeader=${geo.typeScale.crumbsInHeader}`);
+  check(label('the lesson title outweighs its breadcrumb and its subject'),
+    geo.typeScale.title > geo.typeScale.crumbs && geo.typeScale.title > geo.typeScale.subject,
+    `title=${geo.typeScale.title} crumbs=${geo.typeScale.crumbs} subject=${geo.typeScale.subject}`);
+
+  // TWO DISCRETE TARGETS (W4). They used to be absolutely positioned into the
+  // same corner, 20px apart, over a button whose whole surface is the toggle.
+  check(label('the agenda link is not nested in the row toggle'),
+    geo.rowTargets && geo.rowTargets.nested === false, `nested=${geo.rowTargets?.nested}`);
+  check(label('the agenda link does not overlap the row toggle'),
+    geo.rowTargets && geo.rowTargets.intersects === false, `intersects=${geo.rowTargets?.intersects}`);
+
+  // THE ROW COUNTS THE DAY, NOT ONE LESSON (W4). "6 / 6 correct" was a
+  // lesson's arithmetic standing in for a whole student-day.
+  check(label('the lesson-scoped correct-count is gone from the roster row'),
+    geo.correctStat.length === 0, `found=${geo.correctStat.join('|') || 'none'}`);
+  check(label('the row states the day in lessons'),
+    geo.rosterSummary.some((t) => /\d+ of \d+ lessons? done/.test(t)),
+    `summary=${geo.rosterSummary.join('|') || 'none'}`);
+
+  // THE CIRCLES ARE THE ROW'S CONTENT NOW, sized for it.
+  check(label('day dots are >=30px and carry their subject mark'),
+    geo.dots.length > 0 && geo.dots.every((d) => d.width >= 30 && d.height >= 30),
+    `count=${geo.dots.length} smallest=${Math.min(...geo.dots.map((d) => d.width))}`);
+  check(label('an unstarted lesson does not paint a passing dot'),
+    geo.dots.some((d) => d.tone === 'teacher-roster__dot--idle'
+      || d.tone === 'teacher-roster__dot--active'),
+    `tones=${geo.dots.map((d) => d.tone).join('|')}`);
   // The card's three bands: breadcrumb header, body, outcome footer — each
   // one shaded against the body and separated from it by a real divider.
   check(label('every card has a header and a footer band'),
