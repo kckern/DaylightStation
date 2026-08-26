@@ -62,17 +62,37 @@ const eventsNamed = (bus, name) => bus.broadcast.mock.calls
   .filter(([, payload]) => payload?.event === name)
   .map(([, payload]) => payload);
 
-function build({ records = ['r1'], recorder }) {
+function build({ records = ['r1'], recorder, outcome, logger }) {
   const bus = makeBus();
   createSchoolPrintScanConsumer({
     eventBus: bus,
-    resolveCardScan: { execute: async () => ({ results: records.map(card) }) },
+    resolveCardScan: {
+      execute: async () => outcome ?? { results: records.map(card), cardRecordCount: records.length },
+    },
     recordCardScanOutcome: recorder,
     closeSessionOutcome: null,
-    logger: silentLogger(),
+    logger: logger ?? silentLogger(),
   });
   return bus;
 }
+
+/**
+ * The outcome `ResolveCardScan` returns for the 2026-08-26 signature: a
+ * cumulative card whose LIVE record (today's worksheet) got zero marks while
+ * the older, already-satisfied rows still carry last week's marks. `results`
+ * is empty because the one eligible record owned no answered row.
+ */
+const unmarkedLiveRows = () => ({
+  results: [],
+  cardRecordCount: 7,
+  unallocatedRows: Array.from({ length: 33 }, (_, i) => i + 1),
+  silentLiveRecords: [{
+    recordId: 'civilization/atlas/ws-today@rev1:v0:34-39',
+    documentId: 'civilization/atlas/ws-today',
+    rowRange: { start: 34, end: 39 },
+    learnerId: 'milo',
+  }],
+});
 
 // The real shapes RecordCardScanOutcome returns on its silent paths.
 const rewardedRecorder = () => ({
@@ -153,5 +173,108 @@ describe('createSchoolPrintScanConsumer: a scan always makes a mark on the room'
     expect(eventsNamed(bus, 'scan-not-recorded')[0]).toMatchObject({
       testId: '0123456', learnerId: 'milo',
     });
+  });
+});
+
+// 2026-08-26. A child fed his card FOUR times in two and a half minutes and
+// the room stayed silent every time — no paper, no banner, no error tone.
+//
+// His card is cumulative: six finished worksheets in rows 1-33, and today's
+// live worksheet in rows 34-39. He had not bubbled 34-39, so the only marks on
+// the card were the old ones. `ResolveCardScan` narrowed to the live record,
+// found none of its rows answered, filed it under `silentLiveRecords` and
+// returned `results: []`.
+//
+// The consumer then returned on `!results.length` — ABOVE the
+// `silentLiveRecords` warn written for exactly this signature, above the
+// `spoke` tracker, and above the `scan-not-recorded` backstop that the block
+// directly overhead calls "the backstop that makes 'every' literal". The
+// guarantee and the path that violated it never met.
+describe('createSchoolPrintScanConsumer: a live worksheet with blank rows still speaks', () => {
+  it('answers a card whose live rows are blank while the old rows carry marks', async () => {
+    const bus = build({ outcome: unmarkedLiveRows(), recorder: duplicateRecorder() });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(eventsNamed(bus, 'scan-rows-unmarked')).toHaveLength(1);
+  });
+
+  it('names the rows the child still has to fill in', async () => {
+    const bus = build({ outcome: unmarkedLiveRows(), recorder: duplicateRecorder() });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    // Without the row range the child cannot act: on a cumulative card there
+    // is no way to tell which block of rows is today's.
+    expect(eventsNamed(bus, 'scan-rows-unmarked')[0]).toMatchObject({
+      testId: '0123456',
+      learnerId: 'milo',
+      rowRange: { start: 34, end: 39 },
+    });
+  });
+
+  it('records the unmarked live record at warn, where production can see it', async () => {
+    // The only line this path used to emit was `scan-no-allocation` at DEBUG,
+    // and debug never reaches the log store — so four fed sheets left no trace
+    // anywhere a person would look.
+    const logger = silentLogger();
+    const bus = build({ outcome: unmarkedLiveRows(), recorder: duplicateRecorder(), logger });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'school.print.scan-live-record-unmarked',
+      expect.objectContaining({ testId: '0123456' }),
+    );
+  });
+
+  it('speaks ONCE, not once for the rows and again for the backstop', async () => {
+    const bus = build({ outcome: unmarkedLiveRows(), recorder: duplicateRecorder() });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(bus.broadcast.mock.calls.filter(([, p]) => p?.event?.startsWith('scan-'))).toHaveLength(1);
+  });
+
+  it('stays quiet for a legacy bubble sheet the store has no records for at all', async () => {
+    // The deliberate silence this early return was originally written for, and
+    // the one case that must survive the fix: a sheet on this bus that was
+    // never a print-document at all. The recorder already persisted it.
+    const bus = build({
+      outcome: { results: [], cardRecordCount: 0, unallocatedRows: [1, 2, 3] },
+      recorder: duplicateRecorder(),
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(bus.broadcast.mock.calls.filter(([, p]) => p?.event?.startsWith('scan-'))).toHaveLength(0);
+  });
+});
+
+// The structural rule, not another instance of it. Both silent-scan incidents
+// (2026-08-25's missing `else`, 2026-08-26's early return above the backstop)
+// were the same defect wearing different clothes: a terminal path that exits
+// without a ceremony. This table is the guard — every outcome shape
+// `ResolveCardScan` can return, asserted to produce exactly one.
+describe('createSchoolPrintScanConsumer: every terminal outcome makes exactly one mark on the room', () => {
+  const TERMINAL_OUTCOMES = [
+    ['an unreadable card id', { error: { code: 'CARD_ID_UNREADABLE' } }],
+    ['a card the store has never seen', {
+      results: [], unknownCard: true, answeredRowCount: 12, nearMissCardIds: ['0123457'],
+    }],
+    ['a card whose records are all retired', {
+      results: [], deadCard: true, answeredRowCount: 12, recordStatuses: ['released'],
+    }],
+    ['a live worksheet with blank rows', unmarkedLiveRows()],
+    ['a re-fed sheet with nothing new to bank', { results: [card('r1')], cardRecordCount: 1 }],
+  ];
+
+  it.each(TERMINAL_OUTCOMES)('speaks for %s', async (_label, outcome) => {
+    const bus = build({ outcome, recorder: duplicateRecorder() });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    const ceremonies = bus.broadcast.mock.calls.filter(([, p]) => p?.event?.startsWith('scan-'));
+    expect(ceremonies).toHaveLength(1);
   });
 });
