@@ -28,6 +28,11 @@ const RESERVED_KEYS = new Set([
   'action', 'target', 'content',
   'scene', 'service', 'entity', 'data',
   'end', 'end_location', 'endpoint',
+  // A learner card names a PERSON. It is actionable, but its action comes
+  // from the reader location (`learner_action`), never from the tag — the
+  // same card must be able to mean "print my agenda" in the study and
+  // "start my reading session" in the living room.
+  'school_learner',
 ]);
 
 // Tag bookkeeping written by YamlTriggerConfigRepository on first scan.
@@ -99,6 +104,19 @@ export class NfcResolver {
     const target = merged.target ?? locationConfig.target;
     const end = merged.end ?? locationConfig.end;
     const endLocation = merged.end_location ?? locationConfig.end_location;
+
+    // A learner card resolves against the READER, not the tag. No
+    // learner_action at this reader means the card is not actionable here,
+    // and a null intent routes it into the ordinary unknown-tag capture —
+    // which is the honest answer, and lets a mis-tapped card be noticed.
+    // Decided before content resolution: a learner card carries no content
+    // and must not fall into shorthand expansion.
+    const schoolLearner = merged.school_learner;
+    if (schoolLearner !== undefined && schoolLearner !== null) {
+      const learnerAction = locationConfig.learner_action;
+      if (!learnerAction) return null;
+      return { action: learnerAction, target, learnerId: String(schoolLearner), params: {} };
+    }
 
     // Resolve content. Explicit `content` wins; otherwise expand single-prefix shorthand.
     let content = merged.content;

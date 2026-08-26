@@ -270,3 +270,48 @@ describe('NfcResolver — metadata-only tags', () => {
     });
   });
 });
+
+describe('school learner cards', () => {
+  const registry = {
+    locations: {
+      study: { target: 'portal', action: 'play-next', learner_action: 'print-agenda', defaults: {} },
+      livingroom: { target: 'livingroom-tv', action: 'play-next', learner_action: 'reading-session', defaults: {} },
+      office: { target: 'office-tv', action: 'play-next', learner_action: null, defaults: {} },
+    },
+    tags: {
+      '048ba600cc2a81': { global: { note: 'learner-a personal card', school_learner: 'learner-a' }, overrides: {} },
+    },
+  };
+
+  it('resolves to the reader location learner_action, carrying the learner', () => {
+    const intent = NfcResolver.resolve({
+      location: 'study', value: '04:8B:A6:00:CC:2A:81', registry,
+      contentIdResolver: makeContentIdResolver(),
+    });
+    expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'learner-a' });
+  });
+
+  it('gives the SAME card a different action at a different reader', () => {
+    const intent = NfcResolver.resolve({
+      location: 'livingroom', value: '048ba600cc2a81', registry,
+      contentIdResolver: makeContentIdResolver(),
+    });
+    expect(intent.action).toBe('reading-session');
+    expect(intent.learnerId).toBe('learner-a');
+  });
+
+  it('resolves to null at a reader that declares no learner_action', () => {
+    expect(NfcResolver.resolve({
+      location: 'office', value: '048ba600cc2a81', registry,
+      contentIdResolver: makeContentIdResolver(),
+    })).toBeNull();
+  });
+
+  it('never leaks school_learner into params', () => {
+    const intent = NfcResolver.resolve({
+      location: 'study', value: '048ba600cc2a81', registry,
+      contentIdResolver: makeContentIdResolver(),
+    });
+    expect(intent.params).not.toHaveProperty('school_learner');
+  });
+});
