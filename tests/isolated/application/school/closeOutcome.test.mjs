@@ -396,8 +396,16 @@ describe('the result receipt carries a resolved note (spec R7)', () => {
 describe('the result receipt reaches paper', () => {
   it('prints the retained original raster, not a second render', async () => {
     const bytes = Buffer.from('the frozen receipt raster');
-    const capture = { execute: vi.fn(async () => ({ created: true, artifact: {
-      bytes, manifest: { artifactId: 'receipt/ses_1/out:ses_1', representation: { mediaType: 'image/png' } },
+    // The caller now NAMES the artifact and hands the id to capture, so the
+    // fake echoes what it is given rather than asserting an id of its own —
+    // that is what the real capture does, and a fake that invents its own id
+    // cannot notice the caller changing it. `receipt/<session>/original`
+    // replaced `receipt/<session>/out:<session>` in the id-shape refactor: the
+    // old leaf restated the session id inside a path that already carried it
+    // and dragged a colon into a filename for nothing (see
+    // `CloseSessionOutcome#execute`). This test kept asserting the old shape.
+    const capture = { execute: vi.fn(async ({ artifactId }) => ({ created: true, artifact: {
+      bytes, manifest: { artifactId, representation: { mediaType: 'image/png' } },
     } })) };
     const printer = { print: vi.fn(async () => true) };
     build({ receiptCapture: capture, receiptArtifactPrinter: printer });
@@ -405,11 +413,11 @@ describe('the result receipt reaches paper', () => {
 
     const result = await close.execute({ sessionId: SID });
 
-    expect(result).toMatchObject({ printed: true, receiptArtifactId: 'receipt/ses_1/out:ses_1' });
+    expect(result).toMatchObject({ printed: true, receiptArtifactId: 'receipt/ses_1/original' });
     expect(printer.print).toHaveBeenCalledWith(expect.objectContaining({ bytes }));
     expect(thermal.jobs).toHaveLength(0);
     expect(sessions.derive(SID).resultReceiptArtifacts).toEqual([
-      expect.objectContaining({ artifactId: 'receipt/ses_1/out:ses_1', printed: true }),
+      expect.objectContaining({ artifactId: 'receipt/ses_1/original', printed: true }),
     ]);
   });
 

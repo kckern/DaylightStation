@@ -218,8 +218,21 @@ describe('School progress HTTP projection', () => {
     await request(app).post('/api/v1/school/sessions').send({
       userId: 'kid-a', bankId: 'rates/check', mode: 'learning_probe', learning,
     }).expect(200, { sessionId: 'ses-catalog' });
+    // `purpose`/`testPlan` ride along on every Catalog open since the rich
+    // flashcard study program landed — the router forwards both from the body
+    // and `OpenCatalogLearningSession#execute` declares both in its signature.
+    // They are `null` here because this request is ordinary Catalog work, not
+    // a flashcard test; asserted explicitly rather than loosened to
+    // `objectContaining` so that a future field silently joining the call
+    // still fails this test.
     expect(openCatalogLearningSession.execute).toHaveBeenCalledWith({
-      learnerId: 'kid-a', bankId: 'rates/check', mode: 'learning_probe', learning, fresh: false,
+      learnerId: 'kid-a',
+      bankId: 'rates/check',
+      mode: 'learning_probe',
+      learning,
+      purpose: null,
+      testPlan: null,
+      fresh: false,
     });
   });
 
