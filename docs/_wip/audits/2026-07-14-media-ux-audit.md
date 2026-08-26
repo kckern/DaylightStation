@@ -132,7 +132,7 @@ front door is broken too:
    (`librarySectionTitle` is in the payload, never rendered); cross-source duplicates
    (plex+abs pairs); duplicate React keys from the files source.
 7. **Private fitness recordings of the kids outrank the actual show** in "bluey" search,
-   duplicated, titled with raw filenames (`20260620191341_17m_milo-learnerTwo_bluey-2018`).
+   duplicated, titled with raw filenames (`20260620191341_17m_learnerThree-learnerTwo_bluey-2018`).
 8. **The playback watchdog's failure signal can never reach the UI**: the tray row is
    deleted 3s after "done" and `dispatchReducer.js:25` drops STEP events for unknown
    dispatchIds — the one alarm designed to catch silent cast failure is structurally

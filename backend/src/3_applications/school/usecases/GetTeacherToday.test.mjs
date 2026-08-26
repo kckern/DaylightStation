@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { GetTeacherToday } from './GetTeacherToday.mjs';
 
 const events = [
-  { type: 'created', at: '2026-08-23T15:00:00.000Z', sessionId: 'ses_felix', seq: 1,
+  { type: 'created', at: '2026-08-23T15:00:00.000Z', sessionId: 'ses_learner4', seq: 1,
     learnerId: 'learner4', unitId: 'lesson-1', studyDay: '2026-08-23' },
-  { type: 'issued', at: '2026-08-23T15:01:00.000Z', sessionId: 'ses_felix', seq: 2, artifactId: 'art_1' },
-  { type: 'submitted', at: '2026-08-24T16:00:00.000Z', sessionId: 'ses_felix', seq: 3, transport: 'paper' },
-  { type: 'graded', at: '2026-08-24T16:01:00.000Z', sessionId: 'ses_felix', seq: 4,
+  { type: 'issued', at: '2026-08-23T15:01:00.000Z', sessionId: 'ses_learner4', seq: 2, artifactId: 'art_1' },
+  { type: 'submitted', at: '2026-08-24T16:00:00.000Z', sessionId: 'ses_learner4', seq: 3, transport: 'paper' },
+  { type: 'graded', at: '2026-08-24T16:01:00.000Z', sessionId: 'ses_learner4', seq: 4,
     attemptIds: ['att_1', 'att_2'], percent: 50, passingPercent: 80, correctCount: 1, totalCount: 2 },
-  { type: 'result_receipt_captured', at: '2026-08-24T16:02:00.000Z', sessionId: 'ses_felix', seq: 5,
+  { type: 'result_receipt_captured', at: '2026-08-24T16:02:00.000Z', sessionId: 'ses_learner4', seq: 5,
     artifactId: 'receipt_1', kind: 'result-receipt', printed: true },
 ];
 
@@ -17,7 +17,7 @@ function useCase() {
     learnerDirectory: { listLearners: async () => [{ id: 'learner4', name: 'Learner4' }] },
     datastore: { readAttemptDay: () => [] },
     sessions: {
-      listForLearner: async () => [{ sessionId: 'ses_felix', updatedAt: events.at(-1).at }],
+      listForLearner: async () => [{ sessionId: 'ses_learner4', updatedAt: events.at(-1).at }],
       readEvents: async () => events,
     },
     curriculum: {
@@ -34,7 +34,7 @@ describe('GetTeacherToday v2', () => {
     const august23 = await useCase().execute({ studyDay: '2026-08-23', version: 'v2' });
     expect(august23.learners[0]).toMatchObject({
       effectiveScoreTotals: { correct: 1, total: 2, percent: 50 },
-      sessions: [{ sessionId: 'ses_felix', studyDay: '2026-08-23', lessonTitle: 'Lesson One', courseTitle: 'Course One', moduleTitle: 'Unit A' }],
+      sessions: [{ sessionId: 'ses_learner4', studyDay: '2026-08-23', lessonTitle: 'Lesson One', courseTitle: 'Course One', moduleTitle: 'Unit A' }],
       processedToday: [],
     });
 
@@ -43,7 +43,7 @@ describe('GetTeacherToday v2', () => {
     expect(august24.learners[0].effectiveScoreTotals).toEqual({ correct: 0, total: 0, percent: null });
     expect(august24.learners[0].processedToday).toHaveLength(1);
     expect(august24.learners[0].processedToday[0]).toMatchObject({
-      sessionId: 'ses_felix', studyDay: '2026-08-23', processedAt: '2026-08-24T16:01:00.000Z',
+      sessionId: 'ses_learner4', studyDay: '2026-08-23', processedAt: '2026-08-24T16:01:00.000Z',
       processedEventTypes: ['submitted', 'graded'],
     });
   });

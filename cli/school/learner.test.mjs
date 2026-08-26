@@ -8,7 +8,11 @@ import { runRekey, rewriteLearnerIds } from './learner.mjs';
 let root;
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'school-rekey-'));
-  const school = path.join(root, 'household', 'apps', 'school');
+  // FLAT: `household/school`, per the registry in
+  // shared/contracts/householdConfig.mjs (`school: 'school/school'`) and the
+  // household data reorg. This fixture kept an `apps/` segment, so the CLI —
+  // which reads the flat path — found none of the files it was meant to move.
+  const school = path.join(root, 'household', 'school');
   fs.mkdirSync(path.join(school, 'assignments'), { recursive: true });
   fs.mkdirSync(path.join(school, 'sessions', '2026-08-01'), { recursive: true });
   fs.mkdirSync(path.join(root, 'users', 'learner4', 'apps', 'school'), { recursive: true });
@@ -39,7 +43,7 @@ describe('school-rekey-learner (admin advocacy #8)', () => {
     expect(r.moves.map((m) => path.basename(m.from))).toEqual(['learner4', 'learner4.yml']);
     expect(r.edits.length).toBeGreaterThanOrEqual(3);
     expect(fs.existsSync(path.join(root, 'users', 'learner4'))).toBe(true);
-    const milestones = yaml.load(fs.readFileSync(path.join(root, 'household', 'apps', 'school', 'milestones.yml'), 'utf8'));
+    const milestones = yaml.load(fs.readFileSync(path.join(root, 'household', 'school', 'milestones.yml'), 'utf8'));
     expect(milestones[0].learnerId).toBe('learner4'); // untouched
   });
 
@@ -48,7 +52,7 @@ describe('school-rekey-learner (admin advocacy #8)', () => {
     expect(r.errors).toEqual([]);
     expect(fs.existsSync(path.join(root, 'users', 'learner4-k'))).toBe(true);
     expect(fs.existsSync(path.join(root, 'users', 'learner4'))).toBe(false);
-    const school = path.join(root, 'household', 'apps', 'school');
+    const school = path.join(root, 'household', 'school');
     const assignment = yaml.load(fs.readFileSync(path.join(school, 'assignments', 'learner4-k.yml'), 'utf8'));
     expect(assignment).toMatchObject({ learnerId: 'learner4-k', assignedBy: 'kckern' }); // actor untouched
     const milestones = yaml.load(fs.readFileSync(path.join(school, 'milestones.yml'), 'utf8'));
