@@ -1,0 +1,41 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+
+vi.mock('../teacherWorkspaceApi.js', () => ({
+  teacherWorkspaceApi: { session: vi.fn() },
+}));
+const { teacherWorkspaceApi } = await import('../teacherWorkspaceApi.js');
+const SessionPaperRecord = (await import('./SessionPaperRecord.jsx')).default;
+
+const DOC = {
+  taxonomy: { lessonTitle: 'Illinois' },
+  artifacts: [
+    { artifactId: 'w1', kind: 'assignment', availability: 'exact', originalPdfUrl: '/w1.pdf', thumbnailUrl: '/w1.png' },
+    { artifactId: 'r1', kind: 'result-receipt', availability: 'exact', originalUrl: '/r1.png' },
+  ],
+};
+
+beforeEach(() => { teacherWorkspaceApi.session.mockReset(); });
+
+describe('SessionPaperRecord', () => {
+  it('fetches nothing until it is opened', () => {
+    render(<SessionPaperRecord sessionId="ses_1" lessonTitle="Illinois" />);
+    expect(teacherWorkspaceApi.session).not.toHaveBeenCalled();
+  });
+
+  it('fetches once on open and shows both paper records', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: DOC });
+    render(<SessionPaperRecord sessionId="ses_1" lessonTitle="Illinois" />);
+    fireEvent.click(screen.getByText('Paper record'));
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Open worksheet' })).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: 'Open receipt' })).toBeInTheDocument();
+    expect(teacherWorkspaceApi.session).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so plainly when the install has no artifact record', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: false, status: 404, data: null });
+    render(<SessionPaperRecord sessionId="ses_1" lessonTitle="Illinois" />);
+    fireEvent.click(screen.getByText('Paper record'));
+    await waitFor(() => expect(screen.getByText(/not kept on this install/i)).toBeInTheDocument());
+  });
+});

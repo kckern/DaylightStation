@@ -304,6 +304,15 @@
   &__copy { display: grid; align-content: center; gap: 4px; } &__copy > small { color: #756d60; } &__actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; } &__actions a { border: 1px solid #d4c6af; border-radius: 6px; padding: 5px 8px; color: #604521; font-size: 12px; font-weight: 700; text-decoration: none; }
   &__receipt-preview { display: grid; height: 112px; place-items: center; overflow: hidden; border: 1px solid #e1d7c6; border-radius: 4px; background: #f3eee5; } &__receipt-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
 }
+/* A missing thumbnail is the MAJORITY worksheet state — it must read as a
+   quiet placeholder, not a broken link. `text-decoration` propagates from an
+   anchor and a descendant cannot reliably remove it, so kill it at the source. */
+.teacher-issued-artifact__preview,
+.teacher-issued-artifact__receipt-preview { text-decoration: none; }
+.teacher-img-fallback {
+  display: grid; place-items: center; height: 100%; min-height: 64px; margin: 0;
+  color: #9a9081; font-size: 12px; font-weight: 700; text-decoration: none;
+}
 .teacher-processed { margin-top: 12px; padding-top: 10px; border-top: 1px solid #e7dece;
   h3 { margin: 0 0 6px; font-size: 13px; } a { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; color: #604521; text-decoration: none; } span { color: #817665; font-size: 12px; }
 }
@@ -1307,3 +1316,133 @@
 .teacher-reportcard__materials-label { margin: 0.6rem 0 0.2rem; color: #8a7c5c; font-size: 0.78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 // Insight card titles wrap on narrow screens instead of clipping mid-word.
 .school-insights__group .school-overview-detail__item strong { overflow-wrap: anywhere; }
+
+/* One button vocabulary (UX audit IA5). Weight signals consequence:
+   primary = the thing you came here to do; default = a peer action;
+   quiet = navigation wearing a button's clothes. */
+.teacher-btn {
+  border: 1px solid #d4c6af; border-radius: 7px; padding: 7px 11px;
+  background: white; color: #59462f; cursor: pointer; font: inherit; text-decoration: none; white-space: nowrap;
+  &:disabled { cursor: not-allowed; opacity: .5; }
+  &--primary { border-color: #6e4b20; background: #6e4b20; color: white; font-weight: 700; }
+  &--quiet { border-color: transparent; background: transparent; color: #745326; font-weight: 700; padding-left: 4px; padding-right: 4px; }
+}
+
+/* --- Learner Day (UX audit IA2/IA3) ------------------------------------ */
+.teacher-day { display: flex; flex-direction: column; gap: 12px; }
+.teacher-day-nav {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; border: 1px solid #e5dccb; border-radius: 10px; background: #fffdf8;
+  &__label { display: flex; align-items: baseline; gap: 8px;
+    strong { font: 700 19px/1.2 Georgia, serif; color: #30291f; } }
+  &__today { padding: 2px 7px; border-radius: 20px; background: #e8dfc9; color: #6b5a33; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+  &__pick { display: flex; align-items: center; gap: 6px; margin-left: auto; color: #7d7466; font-size: 12px;
+    input { min-height: 34px; border: 1px solid #d8cfbe; border-radius: 7px; padding: 0 8px; background: white; color: #30291f; font: inherit; } }
+}
+.teacher-day__summary { margin: 0 0 10px; color: #6b6255; font-size: 13px; font-weight: 700; }
+.teacher-day-rows { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.teacher-day-row {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 12px; align-items: start;
+  padding: 10px; border: 1px solid #e9e1d2; border-radius: 9px; background: white;
+  &__body { display: grid; gap: 4px; min-width: 0; }
+  &__open { display: block; width: 100%; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+  &__unstarted { display: flex; flex-direction: column; gap: 3px;
+    strong { color: #4a4335; font-weight: 700; } }
+  &__detail { color: #857b6b; font-size: 12px; }
+  &__right { display: grid; justify-items: end; gap: 6px; }
+  &__score { color: #5f6b4f; font-size: 13px; font-weight: 700; white-space: nowrap; }
+  /* Not-yet-done work is quieter than done work — the eye should land on
+     what happened, then on what is outstanding. */
+  &--planned, &--deferred, &--blocked { background: #fdfcf8; }
+  &--blocked { border-color: #e6cfc4; }
+}
+.teacher-day-chip {
+  align-self: start; padding: 3px 8px; border-radius: 20px;
+  font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; text-align: center; white-space: nowrap;
+  background: #efeade; color: #6b6255;
+  &--done { background: #e2eddc; color: #3f5c34; }
+  &--planned { background: #f2ece0; color: #7a6f5c; }
+  &--deferred { background: #f4e9d6; color: #866526; }
+  &--blocked { background: #f7e2da; color: #8d452c; }
+  &--extra { background: #e6e9f2; color: #45507a; }
+  &--processed { background: #eae6f0; color: #57457a; }
+}
+/* The dry-run printout. Constrained so a tall receipt-format PNG cannot
+   run away with the page, and given paper-white ground + a drop shadow so
+   it reads as a physical artifact rather than as page furniture. */
+.teacher-printed-agenda {
+  margin-top: 4px; padding: 10px; border: 1px solid #e5dccb; border-radius: 10px; background: #fffdf8;
+  &__promise { margin: 10px 0 0; padding: 8px 11px; border-radius: 8px; background: #f4ecdb; color: #6f5c33; font-size: 12px; line-height: 1.45; }
+  &__image { display: block; max-width: min(100%, 420px); max-height: 70vh; margin: 10px auto 2px;
+    border: 1px solid #d9d0c0; background: white; object-fit: contain;
+    box-shadow: 0 8px 25px rgba(45, 36, 22, .12); }
+}
+.teacher-paper-record {
+  summary { color: #745326; cursor: pointer; font-size: 12px; font-weight: 700; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '▸ '; }
+  &[open] summary::before { content: '▾ '; }
+  &__cards { display: grid; gap: 8px; margin-top: 8px; }
+}
+@media (max-width: 720px) {
+  .teacher-day-row { grid-template-columns: 1fr; gap: 6px;
+    &__right { justify-items: start; } }
+  .teacher-day-nav__pick { margin-left: 0; }
+}
+
+.teacher-history-day { margin-top: 14px;
+  &:first-of-type { margin-top: 0; }
+  &__heading { margin: 0 0 6px; font: 800 12px/1 -apple-system, system-ui, sans-serif; letter-spacing: .07em; text-transform: uppercase;
+    a { color: #8a6a2c; text-decoration: none; } a:hover { text-decoration: underline; } }
+}
+
+/* --- The graded worksheet (UX audit IA1/IA6) --------------------------- */
+.teacher-graded-worksheet { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.teacher-graded-q {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) minmax(150px, 230px); gap: 12px;
+  padding: 11px 0; border-top: 1px solid #f0eadf;
+  &:first-child { border-top: 0; }
+  &__number { color: #a2988a; font-weight: 800; font-size: 13px; }
+  /* Question prose reads left-to-right like prose. It used to be centred in a
+     ragged middle column, which is unreadable at length. */
+  &__main { min-width: 0; text-align: left; }
+  &__prompt { margin: 0; color: #3b3428; font-weight: 700; line-height: 1.4; }
+  &__choices { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 0; padding: 0; list-style: none;
+    li { color: #877d6d; font-size: 13px; }
+    li.is-chosen { color: #3b3428; font-weight: 700; } }
+  &__result { display: grid; justify-items: end; align-content: start; gap: 3px; text-align: right; }
+  &__given { color: #4a4335; font-size: 13px; }
+  &__expected { color: #8d452c; font-size: 12px; }
+  &--incorrect { background: #fdf7f4; }
+}
+.teacher-verdict { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  &--correct { background: #e2eddc; color: #3f5c34; }
+  &--incorrect { background: #f7e2da; color: #8d452c; }
+}
+@media (max-width: 720px) {
+  .teacher-graded-q { grid-template-columns: 24px minmax(0, 1fr);
+    &__result { grid-column: 2; justify-items: start; text-align: left; } }
+}
+
+.teacher-fold {
+  summary { display: flex; align-items: baseline; gap: 10px; cursor: pointer; list-style: none;
+    h3 { margin: 0; } span { color: #8d8474; font-size: 12px; } }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: '▸'; margin-left: auto; color: #8d8474; }
+  &[open] summary::after { content: '▾'; }
+}
+.teacher-score-provenance { display: block; margin-top: 2px; color: #8a7d68; font-size: 12px; font-weight: 400; }
+
+/* --- Interventions index (UX audit IA4) -------------------------------- */
+.teacher-interventions__list { display: grid; gap: 0; margin: 10px 0 0; padding: 0; list-style: none;
+  li { display: grid; grid-template-columns: minmax(190px, .8fr) 1fr; gap: 4px 16px; padding: 10px 0; border-top: 1px solid #f0eadf; }
+  li:first-child { border-top: 0; }
+}
+.teacher-interventions__label { color: #6b4a1e; font-weight: 700; text-decoration: none;
+  &:hover { text-decoration: underline; } }
+.teacher-interventions__when { color: #5f584c; line-height: 1.45; }
+.teacher-interventions__where { grid-column: 2; color: #8d8474; font-size: 12px; }
+@media (max-width: 720px) {
+  .teacher-interventions__list li { grid-template-columns: 1fr; }
+  .teacher-interventions__where { grid-column: 1; }
+}

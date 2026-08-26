@@ -25,8 +25,10 @@ export function dayStatus({ total, done }) {
 }
 
 // The plan ∪ the outcomes, per learner: agenda sections (suppressed ones
-// excluded) matched against passed sessions by subject — the same join the
-// teacher AgendaPreview makes.
+// excluded) matched against passed sessions by subject. This is the coarse
+// counting version; the teacher workspace's Learner Day does the same join
+// per-row and by unit id (teacher/learnerDay.js#joinLearnerDay), because a
+// subject key double-counts a unit the planner bucketed into 'other'.
 export function summarize(sections, sessions) {
   const planned = (sections ?? []).filter((section) => !section.suppressed);
   const passedSubjects = new Set((sessions ?? [])

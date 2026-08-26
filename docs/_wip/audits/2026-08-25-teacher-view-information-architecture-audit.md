@@ -1,5 +1,11 @@
 # Teacher View Information-Architecture Audit — Are the Teachers Right?
 
+> **OUTCOME (2026-08-25):** IA1–IA6 remediated — plan
+> `docs/_wip/plans/2026-08-25-teacher-workspace-ia-remediation.md`.
+> Verified via vitest (28 teacher files / 217 tests green; 90 files / 691 tests
+> across the whole School module) + the frontend-only Playwright visual
+> contract (6/6). Screenshots in `docs/_wip/audits/teacher-workspace/`.
+
 **Date:** 2026-08-25 · **Surface:** `/school/teacher` (`frontend/src/modules/School/teacher/`)
 **Method:** code-level read of the workspace shell, views, tabs, and panels; six production screenshots (dashboard, dashboard drill-in, session inspector `ses_f1eJJS0u`, and a Civilization session detail) supplied by the operator.
 **Prior art:** `2026-08-24-teacher-console-ux-audit.md` (39 findings, remediated same day).

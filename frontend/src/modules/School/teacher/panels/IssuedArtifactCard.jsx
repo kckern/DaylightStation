@@ -14,20 +14,22 @@ function availabilityLabel(artifact) {
   return 'Original print was not archived — only prints issued after artifact retention began are kept';
 }
 
-export default function IssuedArtifactCard({ artifact, lessonTitle = 'Lesson' }) {
+export default function IssuedArtifactCard({ artifact, lessonTitle = 'Lesson', action = null }) {
   const receipt = isReceipt(artifact);
   const url = receipt ? artifact.originalUrl : artifact.originalPdfUrl;
   const title = receipt ? 'Result receipt' : `${lessonTitle} worksheet`;
   if (!url) {
     return <article className="teacher-issued-artifact teacher-issued-artifact--unavailable">
-      <div className="teacher-issued-artifact__copy"><strong>{title}</strong><small>{availabilityLabel(artifact)}</small></div>
+      <div className="teacher-issued-artifact__copy"><strong>{title}</strong><small>{availabilityLabel(artifact)}</small>{action}</div>
     </article>;
   }
   return <article className={`teacher-issued-artifact${receipt ? ' teacher-issued-artifact--receipt' : ''}`}>
     <a className={receipt ? 'teacher-issued-artifact__receipt-preview' : 'teacher-issued-artifact__preview'} href={url} target="_blank" rel="noreferrer" aria-label={`Open ${title}`}>
       {receipt
         ? <SafeImg src={url} alt="Printed result receipt" />
-        : artifact.thumbnailUrl ? <SafeImg src={artifact.thumbnailUrl} alt={`${title} first page`} /> : <span>PDF</span>}
+        : artifact.thumbnailUrl
+          ? <SafeImg src={artifact.thumbnailUrl} alt={`${title} first page`} fallback="No preview" />
+          : <span className="teacher-img-fallback">PDF</span>}
     </a>
     <div className="teacher-issued-artifact__copy">
       <strong>{title}</strong>
@@ -37,6 +39,7 @@ export default function IssuedArtifactCard({ artifact, lessonTitle = 'Lesson' })
       <div className="teacher-issued-artifact__actions">
         <a href={url} target="_blank" rel="noreferrer">Open {receipt ? 'receipt' : 'worksheet'}</a>
         <a href={url} download>Download {receipt ? 'image' : 'PDF'}</a>
+        {action}
       </div>
     </div>
   </article>;
