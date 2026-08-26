@@ -59,16 +59,40 @@ describe('StockfishEngineAdapter', () => {
     // movetime_ms + timeoutMarginMs (1600ms here) — the exact per-move latency
     // tax the 'exit' handler already exists to avoid.
     const broken = createStockfishEngine({ workerPath: BOOT_FAILING_WORKER, logger: silentLogger });
+
+    // MEASURED AGAINST A CONTROL, NOT A STOPWATCH (2026-08-26). This assertion
+    // used to be `elapsedSecond < 800` — half the full timeout, in absolute
+    // milliseconds. It passed alone and failed inside the gate, where ~1400
+    // files share half the cores: a starved run measured 2121ms for a search
+    // that never waited on the timer at all. Note that 2121 is LONGER than the
+    // 1600ms timeout being guarded against, so no absolute threshold can tell
+    // "paid the timer" apart from "was denied a CPU" — the number it needs is
+    // not available in wall-clock terms.
+    //
+    // The FIRST search is the control. It runs on the same engine, the same
+    // fixture and the same starved machine, and it also ends in `fallback` —
+    // but it is the call that DETECTS the boot failure, so it is the one that
+    // legitimately pays worker spawn. The second must not cost meaningfully
+    // more than that, and "meaningfully" is denominated in the timeout itself
+    // rather than in milliseconds. Contention inflates both measurements
+    // together and cancels out; a returned regression adds the whole timer to
+    // one side only.
+    const startedFirst = Date.now();
     const first = await broken.chooseMove({ fen: START, rung, gameId: 'g6' });
+    const elapsedFirst = Date.now() - startedFirst;
     expect(first.engine).toBe('fallback');
 
     const startedSecond = Date.now();
     const second = await broken.chooseMove({ fen: START, rung, gameId: 'g6' });
     const elapsedSecond = Date.now() - startedSecond;
     expect(second.engine).toBe('fallback');
-    // Generous relative to the ~1600ms full timeout this would otherwise pay,
-    // while leaving headroom for CI jitter around the boot-failed round trip.
-    expect(elapsedSecond).toBeLessThan(800);
+
+    // `timeoutMarginMs` defaults to 1500 in the adapter, so a search that fell
+    // through to the timer pays `movetime_ms + 1500`. Half of that is far more
+    // than the spawn-free second call can legitimately differ by, and far less
+    // than the timer would add.
+    const fullTimeoutMs = rung.movetime_ms + 1500;
+    expect(elapsedSecond).toBeLessThan(elapsedFirst + (fullTimeoutMs / 2));
 
     broken.dispose();
   });
