@@ -38,6 +38,33 @@ Two guardrails now enforce that order rather than relying on anyone reading this
 
 `preflight` exits non-zero when unsafe, including when FKB is unreachable, so it fails closed.
 
+### ⚠ UNBUILT CHANGE PENDING — `isPanelLit()` (2026-08-26)
+
+`PortalKeysService` now reads the DISPLAY's own power state
+(`Display.getState() == STATE_ON`) instead of `PowerManager.isInteractive()`,
+in both the key handler and `isDisplayOn()`. On this Portal `isInteractive()`
+does not track the backlight — FKB reported `screenOn:true` on a visibly dark
+panel — so the wake branch never fired and a press meant to wake the display
+fell through to the double-press SLEEP instead. The device log caught it:
+
+```
+11:56:18 key KEYCODE_VOLUME_DOWN down interactive=true   ← trying to wake it
+11:56:21 double-press-sleep fired
+11:56:21 screen-off ok=true                              ← it slept again
+```
+
+**This source change has NOT been compiled or installed.** There is no Android
+SDK on the prod host; build and flash it from the Mac per "Building" below, and
+re-enable the gesture only after verifying a dark panel wakes on one press:
+
+```bash
+PK_HOST=<portal-ip>:8771 node _extensions/portal-keys/pkctl.mjs config set screenToggleEnabled true
+```
+
+`screenToggleEnabled` was set to **false** on 2026-08-26 as the interim
+mitigation — with it off, nothing can sleep the panel by gesture, so nothing
+can strand it. Leave it off until the new APK is verified.
+
 ### If the panel is dark and unreachable
 
 1. Press a volume key on the device. The wake path is a loopback call to `127.0.0.1:2323`, so it
