@@ -70,8 +70,14 @@ describe('the v2 agenda — math and language together, one card', () => {
     // -------------------------------------------------------------------
     await h.scanCard();
     const tapA = h.lastReceiptText();
-    expect(tapA).toContain('MATH');
-    expect(tapA).toContain('LANGUAGE');
+    // Both subjects are on the card, identified by each lesson card's own
+    // taxonomy breadcrumb (Course/Unit/Lesson) rather than by an uppercase
+    // subject heading above it. The breadcrumb replaced that heading for
+    // tokened cards — see the eyebrow note in receipts.mjs: the breadcrumb is
+    // the line that says WHERE in the curriculum the lesson sits, and a
+    // heading repeating its first word cost a row for nothing.
+    expect(tapA).toContain('math-fractions');
+    expect(tapA).toContain("Language — today's sentences");
 
     // The same computation the tap just printed, captured for the golden
     // tape in (f) below — before anything about math or language changes.
@@ -180,19 +186,17 @@ describe('the v2 agenda — math and language together, one card', () => {
       expect(banner.content).not.toMatch(/^#/);
       expect(banner.content).toContain('TEST LEARNER');
 
-      // Section headers render bold, left, NORMAL size — and MATH prints
-      // before LANGUAGE (the subject-wall order, spec §6.2). A LIVE section's
-      // header is the lesson card's eyebrow (`TODAY · {subject}`), not a `## `
-      // heading: the heading is only emitted for sections with no card to
-      // offer (served/locked/unavailable). See receipts.mjs `agendaDocument`.
-      const mathHeaderIndex = job.items.findIndex((i) => i.type === 'text' && i.content === 'TODAY · MATH');
-      const languageHeaderIndex = job.items.findIndex((i) => i.type === 'text' && i.content === 'TODAY · LANGUAGE');
+      // MATH prints before LANGUAGE (the subject-wall order, spec §6.2).
+      //
+      // A LIVE section no longer carries a header at all. It used to be the
+      // lesson card's eyebrow (`TODAY · {subject}`) — dropped because the
+      // renderer truncates at the first `·`, so every card printed the single
+      // word "TODAY". Each card's own taxonomy breadcrumb is what says where
+      // the work sits now, so that is the anchor for section order.
+      const mathHeaderIndex = job.items.findIndex((i) => i.type === 'text' && /math-fractions/.test(i.content || ''));
+      const languageHeaderIndex = job.items.findIndex((i) => i.type === 'text' && /Language — today's sentences/.test(i.content || ''));
       expect(mathHeaderIndex).toBeGreaterThan(0);
       expect(languageHeaderIndex).toBeGreaterThan(mathHeaderIndex);
-      for (const idx of [mathHeaderIndex, languageHeaderIndex]) {
-        expect(job.items[idx]).toMatchObject({ align: 'left', style: { bold: true } });
-        expect(job.items[idx].size).toBeUndefined();
-      }
 
       // Exactly one QR per LIVE subject — never a section without a scan
       // action offered, never more than one per subject.

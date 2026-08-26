@@ -543,6 +543,47 @@ nothing but `ArduinoOTA.handle()` while `otaActive`. On error the board restarts
 into the old image rather than sitting half-suspended — a failed OTA never
 switches the boot partition, so that is a rollback, not a brick.
 
+### Addressing the reader — do not guess the hostname
+
+**The mDNS name is the reader's key in the config, not `node_name`.**
+`main.cpp` calls `ArduinoOTA.setHostname(READER_ID)`, and `gen-config.mjs` sets
+`READER_ID` from the `scanners:` key it was invoked with. So the reader
+registered as `study-omr` answers at **`study-omr.local`**. `provisioning.node_name`
+(`omr-relay`) is *not* a hostname and resolves to nothing — a plausible-looking
+guess that silently returns empty rather than failing loudly.
+
+```bash
+curl -s http://study-omr.local/health | jq '{boot_count, last_reset, net, bus}'
+```
+
+`/health` reports the current IP, so use it to learn the address rather than
+assuming a lease. DHCP; it drifts.
+
+### Which build is on the device?
+
+**Read `/health` for `boot_count` and `last_reset`.** Both were added by
+`0384ba7d39` — *after* the first OTA delivery — so they double as a build marker:
+
+| `/health` shows | What is running |
+|---|---|
+| no `boot_count`, no `last_reset` | the original OTA-capable image (2026-08-25 16:42) — OTA works, but this build predates the reset-reason work |
+| `boot_count` + `last_reset` present | `0384ba7d39` or later |
+
+**Their absence does NOT mean OTA is unavailable.** That inference has already
+cost one round of confusion. OTA capability and the reset-reason fields arrived
+in two different commits; only the second shows up in `/health`.
+
+**Do not probe port 3232 with a TCP check.** `nc -z <host> 3232` reports closed
+on a perfectly OTA-capable board and proves nothing. ArduinoOTA listens for the
+espota **invitation over UDP** on 3232; the device then dials *back* to an
+ephemeral TCP port on the uploading host (`Starting on 0.0.0.0:50369` in espota's
+own debug output). There is no TCP listener on 3232 to find.
+
+`boot_count` starts at 1 from an empty NVS, so it is a sequence from the last
+flash that erased NVS — not a lifetime total. Read it with `last_reset`: a
+reconnect burst with a *steady* `boot_count` is a link flapping, while a climbing
+one is the board actually dying and coming back.
+
 ### The bus heartbeat is not optional
 
 `ws.enableHeartbeat(20000, 8000, 3)` in `setup()` is a **fix, not a tuning

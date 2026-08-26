@@ -47,9 +47,9 @@ describe('agendaDocument', () => {
       learnerId: 'kid1', learnerName: 'Kid One', generatedAt: '2026-07-27T09:00:00.000Z', sections, tokensBySubject,
     });
     expect(doc.blocks.map((b) => b.type)).toEqual([
-      'rich_text', // printed at
       'scan_action', // math's next, tokened
       'rich_text', // ## LANGUAGE — done today
+      'rich_text', // printed at — the FOOT of the sheet, not the head
     ]);
   });
 
@@ -86,27 +86,42 @@ describe('agendaDocument', () => {
     expect(text).not.toContain('Day 61');
   });
 
-  it('prints the progress label for a live (not-yet-served) section', () => {
+  // `meta` is the action label ALONE. Progress used to ride here too, but for a
+  // program course that reads `34/366 · next: <title>` — a raw tally the child
+  // cannot act on, ending in a verbatim repeat of the card's own title two rows
+  // above. Progress is a `progress` bar now; see receipts.mjs.
+  it('gives the card footer the action label alone, not the progress tally', () => {
     const action = actionsOf(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }))[0];
-    expect(action.meta).toContain('Unit 2 of 4');
+    expect(action.meta).toBe('WATCH IT');
+    expect(action.meta).not.toContain('Unit 2 of 4');
   });
 
-  it('prints the grade only when gradePercent is not null', () => {
-    const withGrade = actionsOf(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }))[0];
-    expect(withGrade.meta).toContain('Grade 88%');
+  // A grade is not a thing to DO, and this sheet is a list of things to do. It
+  // belongs to the result receipt, which is where a child sees it — so a
+  // gradePercent on the section must not reach the agenda card at all.
+  it('keeps the grade off the agenda card; it belongs to the result receipt', () => {
+    const graded = actionsOf(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }))[0];
+    expect(graded.meta).not.toContain('88');
+    expect(JSON.stringify(graded)).not.toContain('Grade');
 
-    const noGrade = agendaDocument({
+    // With no actionLabel to name the move, the card falls back to the stem.
+    const noLabel = agendaDocument({
       learnerId: 'kid1', tokensBySubject, sections: [{ subject: 'math', servedToday: false, next: { title: 'Unit Two', token: 'sch:AAAA' } }],
     });
-    expect(actionsOf(noGrade)[0].meta).toBe('SCAN TO PRINT');
+    expect(actionsOf(noLabel)[0].meta).toBe('SCAN TO PRINT');
   });
 
   it('uses the shared QR-left lesson card without exposing or repeating the token', () => {
     const doc = agendaDocument({ learnerId: 'kid1', sections, tokensBySubject });
     expect(actionsOf(doc)[0]).toMatchObject({
       type: 'scan_action', action: 'sch:AAAA', label: 'Unit Two', icon: 'math',
-      eyebrow: 'Today · math', presentation: 'lesson', hideCode: true,
+      presentation: 'lesson', hideCode: true,
     });
+    // NO EYEBROW — it read `Today · <subject>`, which the renderer truncates at
+    // the first `·`, so every card printed the single word "TODAY". The page IS
+    // the day. An absent key, not a null one: `null` trips the validator's
+    // "when present" guard and invalidates the whole document.
+    expect(actionsOf(doc)[0]).not.toHaveProperty('eyebrow');
   });
 
   it('prints an untokened next as plain text rather than a bare scan action', () => {

@@ -1,4 +1,5 @@
 // tests/_infrastructure/harnesses/isolated.harness.mjs
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
@@ -60,6 +61,69 @@ function runVitest(files) {
   });
 }
 
+/** Flatten the vitest-side inputs without losing the colocated walk. */
+function allVitestFilesRaw(vitestFiles, colocatedFiles) {
+  return [...vitestFiles, ...colocatedFiles];
+}
+
+/**
+ * Decide each file's runner from its own imports.
+ *
+ * A file importing `@jest/globals` throws under vitest; a file importing from
+ * 'vitest' never registers a test under Jest. Both failures are LOAD failures,
+ * which read as a wall of red rather than as "this file is in the wrong list" —
+ * so they get normalised as baseline instead of fixed.
+ *
+ * Files importing neither keep whichever list they were discovered in.
+ */
+function routeByImports(jestFiles, vitestFiles) {
+  const JEST_IMPORT   = /from\s+['"]@jest\/globals['"]|require\(\s*['"]@jest\/globals['"]\s*\)/;
+  const VITEST_IMPORT = /from\s+['"]vitest['"]|require\(\s*['"]vitest['"]\s*\)/;
+
+  const jest = [];
+  const vitest = [];
+  const moved = [];
+
+  const classify = (file, discoveredIn) => {
+    let src = '';
+    try {
+      src = fs.readFileSync(file, 'utf8');
+    } catch {
+      // Unreadable is not this function's problem — let the runner report it.
+      (discoveredIn === 'jest' ? jest : vitest).push(file);
+      return;
+    }
+    const wantsJest = JEST_IMPORT.test(src);
+    const wantsVitest = VITEST_IMPORT.test(src);
+
+    // Importing BOTH is a genuine authoring error that no routing can resolve.
+    // Say so loudly rather than silently picking one and half-running it.
+    if (wantsJest && wantsVitest) {
+      console.log(`${COLORS.yellow}WARNING: imports BOTH jest and vitest — ${path.relative(ROOT_DIR, file)}${COLORS.reset}`);
+      (discoveredIn === 'jest' ? jest : vitest).push(file);
+      return;
+    }
+
+    // Neither import: the file uses bare globals, so nothing in it demands a
+    // runner. Default to vitest — the repo's actual standard. Measured
+    // 2026-08-25 across tests/isolated/: 546 files import vitest and ZERO
+    // import @jest/globals, so Jest owns nothing here by choice, only by an
+    // accident of which directory list a file landed in. Five such files were
+    // failing under Jest on ESM interop alone (`require is not defined` from
+    // `import.meta.url` in the production code they cover) while passing
+    // cleanly under vitest.
+    //
+    // Jest is still reachable, but only on an explicit `@jest/globals` import.
+    const target = wantsJest ? 'jest' : wantsVitest ? 'vitest' : 'vitest';
+    if (target !== discoveredIn) moved.push({ file, from: discoveredIn, to: target });
+    (target === 'jest' ? jest : vitest).push(file);
+  };
+
+  jestFiles.forEach((f) => classify(f, 'jest'));
+  vitestFiles.forEach((f) => classify(f, 'vitest'));
+  return { jest, vitest, moved };
+}
+
 async function main() {
   const args = parseArgs(process.argv);
 
@@ -86,8 +150,26 @@ async function main() {
   const colocatedFiles = runColocated
     ? findColocatedTestFiles(FRONTEND_SRC_DIR, args)
     : [];
-  const allVitestFiles = [...vitestFiles, ...colocatedFiles];
-  const allFiles = [...jestFiles, ...allVitestFiles];
+  // ---- Re-route by what each file IMPORTS, not by which directory it sits in.
+  //
+  // The lists above are per-DIRECTORY; the runner mismatch is per-FILE. Every
+  // file under `domain/` and `application/` imports from 'vitest' while both are
+  // JEST targets, so ~550 suites failed to LOAD on every run. That mass of
+  // load errors was treated as baseline noise, and real failures hid inside it:
+  // a defect that made EVERY lesson card on EVERY agenda fail validateDocument()
+  // sat there for months, caught by 14 tests that never got to run.
+  //
+  // A directory listing cannot notice that. The import can, so classify on it
+  // and let the directory lists be the fallback for files that import neither.
+  const { jest: reJest, vitest: reVitest, moved } = routeByImports(jestFiles, allVitestFilesRaw(vitestFiles, colocatedFiles));
+  if (moved.length) {
+    console.log(`${COLORS.yellow}Re-routed ${moved.length} file(s) to the runner their imports require:${COLORS.reset}`);
+    for (const m of moved.slice(0, 10)) console.log(`  ${m.to.padEnd(6)} ← ${path.relative(ROOT_DIR, m.file)}`);
+    if (moved.length > 10) console.log(`  …and ${moved.length - 10} more`);
+  }
+  const allVitestFiles = reVitest;
+  const jestFilesRouted = reJest;
+  const allFiles = [...jestFilesRouted, ...allVitestFiles];
 
   if (allFiles.length === 0) {
     console.log(`${COLORS.yellow}No test files found${COLORS.reset}`);
@@ -105,9 +187,9 @@ async function main() {
   let jestPassed = true;
   let vitestPassed = true;
 
-  if (jestFiles.length > 0) {
+  if (jestFilesRouted.length > 0) {
     try {
-      await runJest(jestFiles, {
+      await runJest(jestFilesRouted, {
         coverage: args.coverage,
         watch: args.watch,
         verbose: args.verbose,
