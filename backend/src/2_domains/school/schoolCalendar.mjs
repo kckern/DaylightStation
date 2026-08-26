@@ -114,24 +114,36 @@ export function validateSchedule(raw) {
 const covers = (spans, day) => spans.some((span) => day >= span.from && day <= span.to);
 
 /**
- * Is `day` a school day under `schedule`?
+ * The full verdict for one day under one schedule: whether it is a school day,
+ * and whatever the schedule was refused for.
+ *
+ * Both halves come from a single validation pass because the caller that logs
+ * a bad schedule is the same caller that has to decide the day, and running
+ * the validator twice per entry per agenda build is waste.
  *
  * Precedence is fixed: `also` beats `except` beats `daysOfWeek`. A makeup day
  * named explicitly has to win over the vacation range containing it, or
  * "we'll make it up on Saturday" is inexpressible.
  *
- * FAILS OPEN. An absent, unparseable or invalid schedule is a school day. The
- * failure mode of this module must be "the child is asked to do their work",
- * never "a typo excused the entire term and nobody noticed until June".
+ * FAILS OPEN. An absent, unparseable or invalid schedule is a school day — the
+ * failure mode here must be "the child is asked to do their work", never "a
+ * typo excused the entire term and nobody noticed until June". `errors` is how
+ * a caller turns that silent-but-safe verdict into something findable.
+ *
+ * @returns {{schoolDay: boolean, errors: string[]}}
  */
-export function isSchoolDay(day, schedule) {
-  if (!isStudyDay(day)) return true;
+export function scheduleVerdict(day, schedule) {
   const { errors, schedule: normalized } = validateSchedule(schedule);
-  if (errors.length || !normalized) return true;
-  if (covers(normalized.also ?? [], day)) return true;
-  if (covers(normalized.except ?? [], day)) return false;
-  if (!normalized.daysOfWeek) return true;
-  return normalized.daysOfWeek.includes(isoWeekday(day));
+  if (errors.length || !normalized || !isStudyDay(day)) return { schoolDay: true, errors };
+  if (covers(normalized.also ?? [], day)) return { schoolDay: true, errors };
+  if (covers(normalized.except ?? [], day)) return { schoolDay: false, errors };
+  if (!normalized.daysOfWeek) return { schoolDay: true, errors };
+  return { schoolDay: normalized.daysOfWeek.includes(isoWeekday(day)), errors };
+}
+
+/** `scheduleVerdict` without the diagnostics. */
+export function isSchoolDay(day, schedule) {
+  return scheduleVerdict(day, schedule).schoolDay;
 }
 
 export default isSchoolDay;
