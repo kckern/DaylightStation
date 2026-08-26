@@ -25,3 +25,21 @@ needed.
 | capitals | Geography | `svg/capitals.svg` | placeholder line-art (star) — swap later |
 | flags | Geography | `svg/flags.svg` | placeholder line-art (flag) — swap later |
 | countries | Geography | `svg/countries.svg` | placeholder line-art (globe+pin) — swap later |
+
+## Action marks
+
+The set also carries icons named for what a control DOES rather than for a
+subject — transport (`play`, `pause`, `next`, `prev`, `rewind`, `restart`),
+`print`, `close`, `forward`, the `kind-*` material marks, and:
+
+| Name | File | Used by |
+|------|------|---------|
+| `back` | `svg/back.svg` | the launch card's "Go back" |
+| `piano` | `svg/piano.svg` | the launch card's "Learn at the piano" |
+
+⚠️ **Normalise to the contract, don't just drop the download in.** `piano.svg`
+arrived from SVG Repo carrying `<style>.st0{fill:currentColor}</style>` and a
+`class="st0"` path. It renders in Chromium — and vanishes entirely under jsdom,
+which mis-parses a `<style>` inside foreign content and swallows the rest of the
+SVG. An icon that is invisible to every test in this repo while looking fine in
+a browser is the worst of both. Fills go on the element, always.

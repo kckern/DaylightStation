@@ -62,6 +62,7 @@ export const ART_BOX = {
   detailPoster: [230, 345], // .school-material-detail__poster (max-width 230)
   unitThumb: [240, 135],    // .school-material-detail__thumb, aspect-ratio 16/9
   launchPoster: [248, 372], // .school-selfservice-card__poster (art column caps at 15.5rem)
+  launchStill: [248, 140],  // .school-selfservice-card__still, aspect-ratio 16/9, same column
 };
 
 export default sizedPlexImage;
