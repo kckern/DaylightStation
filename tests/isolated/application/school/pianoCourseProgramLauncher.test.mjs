@@ -381,3 +381,74 @@ describe('PianoCourseProgramLauncher progress rows', () => {
     expect(status.score).toBe(10);
   });
 });
+
+/**
+ * The lesson's own still and blurb, carried out of Plex and into School.
+ * Plex stores summaries with Windows line endings and the occasional store
+ * link; neither is something a kiosk card should be handed.
+ */
+describe('PianoCourseProgramLauncher lesson media', () => {
+  const episode = (extra = {}) => ({
+    compoundId: COURSE,
+    info: { title: 'Hoffman Academy' },
+    items: [{
+      id: 'plex:676040',
+      title: 'Rhythm Improvisation with Chords',
+      parentId: 'season-2', parentTitle: 'Unit 2', parentIndex: 2, itemIndex: 12,
+      isReference: false, userWatched: false, userCompletedAt: null,
+      ...extra,
+    }],
+  });
+
+  const lessonOf = async (result) => {
+    const launcher = launcherFor(result, '2026-08-25T20:00:00Z');
+    return (await launcher.status({ userId: 'milo', programInstance: COURSE })).context.lesson;
+  };
+
+  it('carries the episode still and summary through to the program context', async () => {
+    const lesson = await lessonOf(episode({
+      thumbnail: '/api/v1/proxy/plex/library/metadata/676052/thumb/1783605320',
+      metadata: { summary: 'How to find high and low notes on your piano' },
+    }));
+    expect(lesson.thumbnail).toBe('/api/v1/proxy/plex/library/metadata/676052/thumb/1783605320');
+    expect(lesson.description).toBe('How to find high and low notes on your piano');
+  });
+
+  it('normalises Plex CRLF before the string ever reaches a browser', async () => {
+    const lesson = await lessonOf(episode({
+      metadata: { summary: 'High and low notes\r\nPattern of 2 and 3 black keys\r\nYour first song' },
+    }));
+    expect(lesson.description).toBe('High and low notes\nPattern of 2 and 3 black keys\nYour first song');
+    expect(lesson.description).not.toContain('\r');
+  });
+
+  it('strips the store markup a few Hoffman summaries carry', async () => {
+    // A kiosk card renders text. Left in, the tag either shows as literal angle
+    // brackets or gets trusted — neither is acceptable.
+    const lesson = await lessonOf(episode({
+      metadata: {
+        summary: 'Learn "Ode to Joy"\r\n\r\n<a href="https://www.hoffmanacademy.com/store" target="_blank">Get the sheet music here.</a>',
+      },
+    }));
+    expect(lesson.description).toBe('Learn "Ode to Joy"\n\nGet the sheet music here.');
+  });
+
+  it('omits both for a lesson that carries neither', async () => {
+    // The non-Plex case, which is most of School's work.
+    const lesson = await lessonOf(episode());
+    expect('thumbnail' in lesson).toBe(false);
+    expect('description' in lesson).toBe(false);
+    expect(lesson.title).toBe('Rhythm Improvisation with Chords');
+  });
+
+  it('drops a thumbnail no kiosk could fetch instead of passing it on', async () => {
+    const lesson = await lessonOf(episode({ thumbnail: 'http://10.0.0.5:32400/library/metadata/1/thumb' }));
+    expect('thumbnail' in lesson).toBe(false);
+  });
+
+  it('treats a summary of pure whitespace as no summary at all', async () => {
+    const lesson = await lessonOf(episode({ metadata: { summary: '  \r\n \r\n ' }, thumbnail: '   ' }));
+    expect('description' in lesson).toBe(false);
+    expect('thumbnail' in lesson).toBe(false);
+  });
+});

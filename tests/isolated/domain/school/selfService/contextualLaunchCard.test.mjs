@@ -126,3 +126,78 @@ describe('contextual launch card', () => {
     expect(card.context.learner.displayName).toBeNull();
   });
 });
+
+/**
+ * A lesson's own still and blurb. Plex has them; worksheets, quizzes and banks
+ * do not, and most courses in the house are not Plex-backed at all — so the
+ * absent case is the common one and has to stay clean.
+ */
+describe('contextual launch card lesson media', () => {
+  const cardWith = (lesson) => buildContextualLaunchCard({
+    resolution: { kind: 'move', state: { state: 'ready' } },
+    learner: { id: 'milo', displayName: 'Milo' },
+    subjectId: 'arts',
+    lesson,
+  }).context.taxonomy.lesson;
+
+  it('carries the still as an artwork descriptor, like the course poster', () => {
+    // One convention for images on this card: a node under `artwork` naming its
+    // kind, never a bare string the panel has to sniff.
+    expect(cardWith({
+      id: 'plex:676040',
+      title: 'Rhythm Improvisation with Chords',
+      thumbnail: '/api/v1/proxy/plex/library/metadata/676052/thumb/1783605320',
+    }).artwork).toEqual({
+      kind: 'lesson-thumbnail',
+      path: '/api/v1/proxy/plex/library/metadata/676052/thumb/1783605320',
+    });
+  });
+
+  it('omits both outright for a lesson that has neither', () => {
+    const node = cardWith({ id: 'unit-14', title: 'Fractions worksheet' });
+    expect(node).toEqual({ id: 'unit-14', title: 'Fractions worksheet' });
+    expect('artwork' in node).toBe(false);
+    expect('description' in node).toBe(false);
+  });
+
+  it('omits an empty or blank description rather than shipping ""', () => {
+    // An empty string is a picture the panel reserves room for and never draws.
+    const node = cardWith({ id: 'u1', title: 'Lesson', description: '   \r\n  ', thumbnail: '' });
+    expect('description' in node).toBe(false);
+    expect('artwork' in node).toBe(false);
+  });
+
+  it('drops a thumbnail that is not a path this origin can serve', () => {
+    // A direct Plex URL carries no credentials a kiosk holds; a broken image is
+    // worse than no image.
+    expect('artwork' in cardWith({
+      id: 'u1', title: 'Lesson', thumbnail: 'http://10.0.0.5:32400/library/metadata/1/thumb',
+    })).toBe(false);
+  });
+
+  it('normalises CRLF so no browser is handed raw Windows line endings', () => {
+    expect(cardWith({
+      id: 'plex:1',
+      title: 'Lesson 1',
+      description: 'How to find high and low notes\r\nPattern of 2 and 3 black keys\r\nYour first song',
+    }).description).toBe('How to find high and low notes\nPattern of 2 and 3 black keys\nYour first song');
+  });
+
+  it('collapses a run of blank lines instead of padding the card with air', () => {
+    expect(cardWith({ id: 'plex:1', title: 'L', description: 'One\r\n\r\n\r\n\r\nTwo' }).description)
+      .toBe('One\n\nTwo');
+  });
+
+  it('caps a long summary at a word boundary and says it was cut', () => {
+    const long = `${'word '.repeat(200)}end`;
+    const description = cardWith({ id: 'plex:1', title: 'L', description: long }).description;
+    expect(description.length).toBeLessThanOrEqual(401);
+    expect(description.endsWith('…')).toBe(true);
+    expect(description).not.toMatch(/ …$/);
+  });
+
+  it('leaves a summary that already fits completely untouched', () => {
+    const short = 'How to find high and low notes on your piano';
+    expect(cardWith({ id: 'plex:1', title: 'L', description: short }).description).toBe(short);
+  });
+});
