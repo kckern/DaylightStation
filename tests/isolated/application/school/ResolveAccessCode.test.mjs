@@ -159,6 +159,45 @@ describe('reading a code', () => {
     expect(appended).toEqual([]);
   });
 
+  /**
+   * WHAT THE PIANO LAUNCHER ACTUALLY REPORTS. Its course id is the playable
+   * service's `compoundId`, and that service prepends `plex:` to whatever it
+   * is handed — the School enrollment already stores `plex:675689`, so the
+   * course arrives here as `plex:plex:675689`. The panel finds a Plex cover by
+   * the canonical `plex:<ratingKey>`; a doubly-prefixed id misses that rule and
+   * falls through to the curriculum poster route, which has no cover for a
+   * Plex-hosted course and correctly 404s. That is a child looking at a
+   * placeholder instead of Hoffman Academy, so the card canonicalises it.
+   */
+  it('canonicalises a doubly-prefixed plex course id so the poster resolves', async () => {
+    await build({
+      assignmentSeed: [{
+        learnerId: 'kid1', programs: [{ programId: 'piano-course', courseId: 'plex:675689', subject: 'arts' }],
+      }],
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'arts' }],
+      launchers: new Map([['piano-course', {
+        status: async () => ({
+          doneToday: false,
+          progressLabel: '34/344 · next: Lesson 3',
+          context: {
+            course: { id: 'plex:plex:675689', title: 'Hoffman Academy' },
+            unit: { id: 'season-4', title: 'Unit 4', position: 4 },
+            lesson: { id: 'plex:9003', title: 'Lesson 3', position: 3 },
+          },
+          progress: [],
+        }),
+      }]]),
+    });
+
+    const card = await useCase.execute({ code: CODE });
+
+    expect(card.context.taxonomy.course).toEqual({
+      id: 'plex:675689',
+      title: 'Hoffman Academy',
+      artwork: { kind: 'course-poster', courseId: 'plex:675689' },
+    });
+  });
+
   it('appends no events when the entry has no session yet', async () => {
     const card = await useCase.execute({ code: CODE });
 

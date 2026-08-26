@@ -72,6 +72,48 @@ describe('contextual launch card', () => {
     });
   });
 
+  /**
+   * A Plex-backed course reaches this builder wearing whatever prefix the
+   * program that owns it happened to stack on: the piano launcher's
+   * `compoundId` is `plex:` prepended to an id that already said `plex:`, and
+   * the plan's synthetic unit id scopes the same course under `piano-course:`.
+   * The panel has ONE rule for finding a cover (`plex:<ratingKey>` goes to the
+   * image proxy, anything else to the curriculum package), so the canonical
+   * form is settled here rather than by teaching the client every prefix a
+   * program might invent.
+   */
+  it.each([
+    ['plex:675689'],
+    ['plex:plex:675689'],
+    ['piano-course:plex:675689'],
+  ])('names a plex-backed course canonically, however %s reached it', (courseId) => {
+    const card = buildContextualLaunchCard({
+      resolution: { kind: 'program', programId: 'piano-course', unit: { unitId: courseId } },
+      learner: { id: 'kid1' },
+      subjectId: 'arts',
+      course: { id: courseId, title: 'Hoffman Academy' },
+    });
+
+    expect(card.context.taxonomy.course).toEqual({
+      id: 'plex:675689',
+      title: 'Hoffman Academy',
+      artwork: { kind: 'course-poster', courseId: 'plex:675689' },
+    });
+    expect(card.context.trail.find((item) => item.kind === 'course').id).toBe('plex:675689');
+  });
+
+  it('leaves a curriculum course id exactly as the package authored it', () => {
+    const card = buildContextualLaunchCard({
+      resolution: { kind: 'program', programId: 'atlas', unit: { unitId: 'x' } },
+      learner: { id: 'kid1' },
+      subjectId: 'civilization',
+      course: { id: 'young-peoples-atlas-us', title: "Young People's Atlas" },
+    });
+
+    expect(card.context.taxonomy.course.id).toBe('young-peoples-atlas-us');
+    expect(card.context.taxonomy.course.artwork.courseId).toBe('young-peoples-atlas-us');
+  });
+
   it('omits absent course and progress instead of inventing zero completion', () => {
     const card = buildContextualLaunchCard({
       resolution: { kind: 'program', programId: 'typing', unit: { unitId: 'typing', title: 'Typing' } },
