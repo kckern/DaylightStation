@@ -61,6 +61,15 @@ export function createSchoolPrintScanConsumer({
   if (!eventBus?.subscribe) {
     throw new Error('createSchoolPrintScanConsumer: eventBus with subscribe required');
   }
+  if (!eventBus?.broadcast) {
+    // IMPORTANT 2 (final review, 2026-08-26): `spoke` in `speak()` below is
+    // set BEFORE `eventBus.broadcast?.()` runs, so a subscribe-only bus
+    // marks every sheet as answered while broadcasting nothing — the
+    // backstop suppressed, with no warning, by the very guard meant to let
+    // it through. `broadcast` is required here, same as `subscribe` above,
+    // rather than left to the optional-call `?.` at the call site.
+    throw new Error('createSchoolPrintScanConsumer: eventBus with broadcast required');
+  }
   if (!resolveCardScan?.execute) {
     throw new Error('createSchoolPrintScanConsumer: resolveCardScan with execute required');
   }
@@ -83,30 +92,38 @@ export function createSchoolPrintScanConsumer({
     if (payload?.event !== 'sheet' || !Array.isArray(payload.marks)) return;
     const { testId, answers, testIdCandidates } = decodeQuizSheet(payload.marks);
 
+    // THE CEREMONY FUNNEL (2026-08-26). Every broadcast below goes through
+    // `speak`, and every terminal path below returns through ONE place
+    // that checks whether it did.
+    //
+    // Both silent-scan incidents were the same defect wearing different
+    // clothes. 2026-08-25: a missing `else` let terminal session states
+    // fall off the end of a branch. 2026-08-26: an early `return` on
+    // `!results.length` sat ABOVE the `silentLiveRecords` warn written for
+    // that exact signature, above the `spoke` tracker, and above the
+    // `scan-not-recorded` backstop — so a child fed his card four times
+    // and the room stayed silent, because the guarantee and the path that
+    // violated it never met.
+    //
+    // `spoke`/`speak` are declared HERE, above the `.then`/`.catch` split
+    // (final review CRITICAL 1), not inside the `.then` — a rejection from
+    // `resolveCardScan.execute`, or a synchronous throw anywhere inside
+    // `settleOutcome`, means the `.then` callback never runs (or never
+    // finishes) and only `.catch` ever gets a turn. A tracker only the
+    // `.then` can see is not a guarantee either; it is the exact same hole
+    // one level up.
+    let spoke = false;
+    const speak = (event) => {
+      spoke = true;
+      eventBus.broadcast?.(broadcastTopic, event);
+    };
+
     resolveCardScan.execute({ testId, testIdCandidates, answers })
       .then(async (outcome) => {
-        // THE CEREMONY FUNNEL (2026-08-26). Every broadcast below goes through
-        // `speak`, and every terminal path below returns through ONE place
-        // that checks whether it did.
-        //
-        // Both silent-scan incidents were the same defect wearing different
-        // clothes. 2026-08-25: a missing `else` let terminal session states
-        // fall off the end of a branch. 2026-08-26: an early `return` on
-        // `!results.length` sat ABOVE the `silentLiveRecords` warn written for
-        // that exact signature, above the `spoke` tracker, and above the
-        // `scan-not-recorded` backstop — so a child fed his card four times
-        // and the room stayed silent, because the guarantee and the path that
-        // violated it never met.
-        //
         // A tracker that any `return` can skip past is not a guarantee. The
         // outcome handling now runs as a nested call whose returns cannot
         // escape the check, and it reports whether this sheet is OWED a
         // ceremony it did not already get.
-        let spoke = false;
-        const speak = (event) => {
-          spoke = true;
-          eventBus.broadcast?.(broadcastTopic, event);
-        };
         const owedCeremony = await settleOutcome(outcome, speak);
         if (!spoke && owedCeremony) {
           logger.warn?.('school.print.scan-not-recorded', {
@@ -124,6 +141,18 @@ export function createSchoolPrintScanConsumer({
         // persistence (already run, synchronously, before this promise
         // chain) — logged loudly so a broken pipeline is visible.
         logger.warn?.('school.print.scan-resolve-failed', { testId, error: err.message });
+        // CRITICAL 1a (final review, 2026-08-26): this `.catch` sat OUTSIDE
+        // the funnel — a resolver rejection (allocation-store read failure,
+        // phantom rev, bad YAML) or any synchronous throw inside
+        // `settleOutcome` (e.g. `recordCardScanOutcome.execute` throwing
+        // before returning a promise) used to land here with a warn and
+        // NOTHING broadcast, because `spoke` was never consulted. A child
+        // who fed paper is owed an answer even when the backend broke, so
+        // this backstop applies here too — unless something already spoke
+        // for this sheet before the failure hit.
+        if (!spoke) {
+          speak({ event: 'scan-not-recorded', testId, learnerId: null });
+        }
       });
 
     /**
@@ -156,7 +185,12 @@ export function createSchoolPrintScanConsumer({
         // Home automation is a bystander: never awaited into the grading path
         // and never able to fail it. The adapter already swallows its own
         // errors; this catch covers a hook that rejects outright.
-        gradingHook?.fire({ result: 'unresolved', testId, code: outcome.error.code }).catch(() => {});
+        // CRITICAL 1b (final review): wrapped in `Promise.resolve` — the
+        // JSDoc contract above sanctions "any fake with a `fire(outcome)`",
+        // and a hook that returns a non-promise would otherwise throw
+        // SYNCHRONOUSLY calling `.catch` on it, on the exact incident path,
+        // before the `speak` a few lines below ever runs.
+        Promise.resolve(gradingHook?.fire({ result: 'unresolved', testId, code: outcome.error.code })).catch(() => {});
         // Same outcome, second listener: the School panel ceremony (Slice
         // D) needs this broadcast too. `testIdCandidates` here is the RAW
         // per-column digit-mark arrays `decodeQuizSheet` built (one entry
@@ -196,7 +230,9 @@ export function createSchoolPrintScanConsumer({
         // (fetch a grown-up); only the `code` distinguishes them, which is
         // all a grown-up needs to tell "card id we've never seen" from
         // "record on a known card refused".
-        gradingHook?.fire({ result: 'unresolved', testId, code: 'unknown_card' }).catch(() => {});
+        // See CRITICAL 1b note above: `Promise.resolve(...)` guards a hook
+        // whose `fire` returns a non-promise.
+        Promise.resolve(gradingHook?.fire({ result: 'unresolved', testId, code: 'unknown_card' })).catch(() => {});
         speak({
           event: 'scan-refused', code: 'unknown_card', recordId: null,
         });
@@ -225,7 +261,9 @@ export function createSchoolPrintScanConsumer({
         // sheet is simply out of date, and scanning their card prints a
         // fresh one. Refusing them to a grown-up here would send a child
         // to fetch help for something self-service already solves.
-        gradingHook?.fire({ result: 'unresolved', testId, code: 'dead_card' }).catch(() => {});
+        // See CRITICAL 1b note above: `Promise.resolve(...)` guards a hook
+        // whose `fire` returns a non-promise.
+        Promise.resolve(gradingHook?.fire({ result: 'unresolved', testId, code: 'dead_card' })).catch(() => {});
         speak({
           event: 'scan-stale-sheet', code: 'dead_card', testId,
         });
@@ -244,12 +282,17 @@ export function createSchoolPrintScanConsumer({
         logger.warn?.('school.print.scan-live-record-unmarked', {
           testId, silentLiveRecords: outcome.silentLiveRecords,
         });
-        gradingHook?.fire({
+        // See CRITICAL 1b note above: `Promise.resolve(...)` guards a hook
+        // whose `fire` returns a non-promise — on THIS incident path, the
+        // very one the 2026-08-26 report is about, a thrown `.catch` here
+        // would fire before the `scan-rows-unmarked` `speak` a few lines
+        // below ever runs.
+        Promise.resolve(gradingHook?.fire({
           result: 'partial',
           testId,
           code: 'live_record_unmarked',
           silentLiveRecords: outcome.silentLiveRecords,
-        }).catch(() => {});
+        })).catch(() => {});
         // WHO HEARS THIS depends on whether anything else will speak, and
         // the original code got that call backwards by only ever considering
         // one of the two cases.
@@ -269,12 +312,20 @@ export function createSchoolPrintScanConsumer({
         // actionable — on a cumulative card there is no other way to tell
         // which block of rows is this morning's.
         if (!outcome.results?.length) {
+          // MINOR 4 (final review): a card can carry more than one unmarked
+          // live record (two pending worksheets on one cumulative card) —
+          // naming only the first told the child about rows 34-39 and said
+          // nothing about 40-45. `rowRange` stays the first record's range
+          // for backward compatibility with any existing consumer of this
+          // shape; `rowRanges` rides alongside with every unmarked record's
+          // range so a multi-worksheet card is named in full.
           const [unmarked] = outcome.silentLiveRecords;
           speak({
             event: 'scan-rows-unmarked',
             testId,
             learnerId: unmarked.learnerId ?? null,
             rowRange: unmarked.rowRange,
+            rowRanges: outcome.silentLiveRecords.map((record) => record.rowRange),
           });
           return false;
         }
@@ -337,9 +388,11 @@ export function createSchoolPrintScanConsumer({
           // `recordId` deliberately NOT sent — `toVariables()`'s 11-key
           // contract has no `record_id`, so it would be silently discarded;
           // the id is already on the adjacent log line for anyone who needs it.
-          gradingHook?.fire({
+          // See CRITICAL 1b note above: `Promise.resolve(...)` guards a hook
+          // whose `fire` returns a non-promise.
+          Promise.resolve(gradingHook?.fire({
             result: 'refused', testId, code: card.error.code, learnerId: card.learnerId ?? null,
-          }).catch(() => {});
+          })).catch(() => {});
           // Same outcome, second listener: the School panel ceremony
           // (Slice D) needs this on the wire too.
           speak({
@@ -494,7 +547,9 @@ export function createSchoolPrintScanConsumer({
                 // Assistant can distinguish a passing non-perfect score
                 // from a score needing remediation. The hook itself is
                 // still fire-and-forget and cannot affect grading.
-                gradingHook?.fire({
+                // See CRITICAL 1b note above: `Promise.resolve(...)` guards
+                // a hook whose `fire` returns a non-promise.
+                Promise.resolve(gradingHook?.fire({
                   result: settledResult,
                   testId,
                   learnerId: card.learnerId ?? null,
@@ -506,9 +561,11 @@ export function createSchoolPrintScanConsumer({
                   course: sectionOutcome.curriculum?.courseId ?? null,
                   unit: sectionOutcome.curriculum?.unitId ?? null,
                   lesson: sectionOutcome.curriculum?.lessonId ?? null,
-                }).catch(() => {});
+                })).catch(() => {});
               } else if (sectionOutcome?.session?.reason === 'awaiting-review') {
-                gradingHook?.fire({
+                // See CRITICAL 1b note above: `Promise.resolve(...)` guards
+                // a hook whose `fire` returns a non-promise.
+                Promise.resolve(gradingHook?.fire({
                   result: 'review',
                   testId,
                   learnerId: card.learnerId ?? null,
@@ -520,7 +577,7 @@ export function createSchoolPrintScanConsumer({
                   course: sectionOutcome.curriculum?.courseId ?? null,
                   unit: sectionOutcome.curriculum?.unitId ?? null,
                   lesson: sectionOutcome.curriculum?.lessonId ?? null,
-                }).catch(() => {});
+                })).catch(() => {});
                 // Same outcome, second listener: the School panel ceremony
                 // (Slice D) needs this on the wire too.
                 speak({

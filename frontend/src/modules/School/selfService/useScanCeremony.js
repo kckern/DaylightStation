@@ -168,15 +168,23 @@ function buildCeremony(payload) {
       // fix is entirely the child's, and naming the row range is what makes it
       // actionable — on a cumulative card there is no other way to tell which
       // block of rows is this morning's.
-      const { start, end } = payload.rowRange ?? {};
-      const rows = typeof start === 'number' && typeof end === 'number'
-        ? `Your new questions are rows ${start}–${end}. `
-        : '';
+      // A cumulative card can carry more than one unmarked live worksheet
+      // (final review MINOR 4) — `rowRanges` names every one of them;
+      // `rowRange` (the first) is kept as the fallback for a payload from an
+      // older backend that never learned the plural shape.
+      const ranges = Array.isArray(payload.rowRanges) && payload.rowRanges.length
+        ? payload.rowRanges
+        : (payload.rowRange ? [payload.rowRange] : []);
+      const rowsText = ranges
+        .filter((r) => typeof r?.start === 'number' && typeof r?.end === 'number')
+        .map((r) => `rows ${r.start}–${r.end}`)
+        .join(' and ');
+      // A missing or malformed range must never cost the ceremony itself —
+      // that would reproduce the silence this event was added to end.
+      const rows = rowsText ? `Your new questions are ${rowsText}. ` : '';
       return {
         tone: 'error',
         title: 'Nothing filled in yet',
-        // A missing or malformed range must never cost the ceremony itself —
-        // that would reproduce the silence this event was added to end.
         detail: `${rows}Fill them in, then scan again.`,
         at,
       };

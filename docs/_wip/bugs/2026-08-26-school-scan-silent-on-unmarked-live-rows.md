@@ -297,20 +297,24 @@ F-1 and F-2 close today's instance.
 
 ## 8. Tests
 
-The existing suite covers `silentLiveRecords` **alongside** a graded record,
-which is why this shipped. Regression coverage needed:
+The existing suite covered `silentLiveRecords` **alongside** a graded record,
+which is why this shipped originally undetected. Regression coverage was
+written test-first and now exists and passes:
 
 1. **Consumer, alone-case** — a live record whose owned rows are unmarked while
    other rows carry marks, with no other gradeable record ⇒ asserts
    `school.print.scan-live-record-unmarked` is logged **and** a
-   `scan-rows-unmarked` broadcast is emitted. This test fails on the current
-   code, which is the point.
+   `scan-rows-unmarked` broadcast is emitted. Watched red against the
+   pre-fix code, green after.
 2. **Ceremony mapping** — `scan-rows-unmarked` ⇒ tone `error`, row range
    interpolated into the copy.
 3. **Sound** — tone `error` selects the double-buzz pattern.
-4. **Guarantee test (F-4)** — every terminal outcome shape from
+4. **Guarantee table (F-4)** — every terminal outcome shape from
    `ResolveCardScan` produces exactly one ceremony broadcast. This is the test
-   that would have caught the original ordering mistake.
+   that would have caught the original ordering mistake, extended in the
+   final review with the two failure shapes the table structurally couldn't
+   reach (a rejecting/throwing resolve path, and a subscribe-only bus) — see
+   §8a.
 
 ---
 
@@ -341,13 +345,31 @@ shape produces exactly one ceremony), 2 resolver, 3 ceremony-mapping. All were
 watched failing first; the two resolver tests were re-verified by reverting the
 production line and confirming they go red.
 
-**Regression status:** the silent-scan suite is 16/16; the touched suites are
-264/264. The full vitest gate reports three failing files
-(`school.progress`, `registryCompleteness`, `closeOutcome`) — all three
-**pre-existing**, verified by reverting all three source changes and observing
-identical failures. Two further files (`nfcTapIngress.shutdown`, `pianoGames`)
-report "no test suite found" under a directory-glob vitest run; they are
-`node:test` files and are not vitest's to run.
+**Final review addendum (same day).** The 5-case table above can only ever
+exercise *resolved* outcome shapes — it is structurally blind to a rejecting
+`resolveCardScan.execute`, a synchronous throw inside the outcome handler, a
+`gradingHook.fire()` that returns a non-promise, and a subscribe-only event
+bus. All four were real holes: the outer `.catch` sat outside the `speak()`
+funnel and only logged; a `Promise`-shaped-only `.catch()` chained straight
+onto a hook's return value threw before the correct ceremony spoke; and the
+constructor only ever required `eventBus.subscribe`, so a bus with no
+`broadcast` silently satisfied every guard while never actually reaching the
+room. Fixed in place (outer `.catch` now speaks a `scan-not-recorded`
+backstop; every `gradingHook?.fire(...)` call site wrapped in
+`Promise.resolve(...)` before `.catch`; the constructor now requires
+`eventBus.broadcast` alongside `subscribe`), with four new tests added to
+`schoolPrintScanConsumer.silentScan.test.mjs` (watched red against the
+pre-fix code first). That suite is now 21/21.
+
+**Regression status:** the touched suites are green. This branch also fixed
+the two previously-listed failures in `school.progress` and `closeOutcome`
+(commit `0862db2d0`) — both are now 76/76 together, not pre-existing failures
+to route around. `nfcTapIngress.shutdown.test.mjs` is no longer collected as
+a vitest suite at all (commit `ce38c256e`); it is a `node:test` file excluded
+from the vitest glob, not un-runnable noise left behind. `pianoGames.test.mjs`
+still reports "no test suite found" under a directory-glob vitest run — it is
+a `node:test` file vitest was never going to run, and is unrelated to this
+fix.
 
 ---
 
