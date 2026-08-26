@@ -14,7 +14,7 @@ const shuffle = (items, rng) => {
 
 export function createCourseEnrollment({
   enrollmentId = null, courseId, profile, units, modules = [], policy = {}, display = null,
-  today = null, rng = Math.random,
+  schedule = null, today = null, rng = Math.random,
 } = {}) {
   if (typeof courseId !== 'string' || !courseId) throw new Error('courseId is required');
   if (enrollmentId !== null && (typeof enrollmentId !== 'string' || !enrollmentId)) {
@@ -92,6 +92,10 @@ export function createCourseEnrollment({
       ...(display?.shortTitle ? { courseShortTitle: display.shortTitle } : {}),
       modules: moduleDisplay,
     },
+    // Which days are school days. Snapshotted for the same reason progression
+    // is: a vacation added to the syllabus mid-year must be an explicit
+    // re-materialize, not something that moves under a learner overnight.
+    ...(schedule ? { schedule: structuredClone(schedule) } : {}),
     ...(dated ? {
       moduleSchedule: Object.fromEntries(
         windowed.map((module) => [module.module, { opensOn: module.opensOn, closesOn: module.closesOn }]),

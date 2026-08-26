@@ -109,6 +109,7 @@ export class EnrollLearner {
       modules: work?.modules ?? [],
       policy,
       display: work ? { title: work.title, shortTitle: work.short_title } : null,
+      schedule: syllabus.schedule ?? null,
       today,
       rng: this.#rng,
     });
