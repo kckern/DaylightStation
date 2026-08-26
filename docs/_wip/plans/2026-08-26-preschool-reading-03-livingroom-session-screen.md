@@ -21,15 +21,69 @@
 
 ---
 
-## Design decisions, settled
+## Design decisions — all settled 2026-08-26
 
-**The session is the screen.** Last card tap wins; a different card swaps the context. There is no timeout to design, no separate state machine, and "nobody scans a book" answers itself — the screen sits on that child's prompt until someone taps something.
+**The full state machine is `docs/reference/school/reading-sessions.md`. Read it
+before writing any code in this plan; it is the authority on behaviour and it
+enumerates every state, input and transition.** What follows is only what changes
+about the implementation.
 
-**A card tapped mid-playback switches the context but does NOT stop the story.** The current book finishes and is credited to the child who *started* it — attribution is decided at pick time, not at finish time, or a sibling wandering past the reader could steal a read. The new learner's prompt is what appears when playback ends. **Confirm this with KC before Task 5** — it is the one behavioural call from the requirements conversation that was left open.
+**A session has a MODE, derived on every evaluation and never stored:**
+`assignment` when the learner is enrolled in story-time and `count < target`;
+`browsing` otherwise. The two differ in exactly one cell of the transition matrix —
+a book tapped mid-story. Assignment refuses it; browsing does not claim it and the
+existing preempt/on-deck queue applies unchanged.
 
-**The interceptor is a seam in the content handler, not a branch in the resolver.** `responseHandlers.content` already has an injected `contentDispatcher` hook for the same reason. A book tag stays a book tag with `action: play-next`; what changes is who gets first refusal on dispatching it.
+That single branch is why the mode exists, and it removes several things this plan
+originally had to design:
 
-**Session state is in-memory and per-location.** It is not evidence — the reading log is. A backend restart loses "who is standing at the reader", which is correct: nobody is standing there after a restart. Do not persist it.
+- **A non-enrolled card needs no special case** — it is simply always in browsing
+  mode. Delete any "is this learner enrolled" refusal.
+- **The confirm countdown never competes with the 15 s preempt window**, because in
+  assignment mode nothing reaches the queue while a story plays.
+- **The on-deck ownership question disappears in assignment mode.** No queue, no
+  on-deck, nothing silent.
+
+**The session is the screen.** Last card tap wins; a different card swaps context.
+
+**A card tapped mid-story switches context but does NOT stop the story**, and the
+story is credited to whoever **picked** it. Attribution is decided at pick time, or
+a sibling wandering past the reader could steal a read.
+
+**The interceptor is a seam in the content handler, not a branch in the resolver.**
+`responseHandlers.content` already has an injected `contentDispatcher` hook for the
+same reason. A book tag stays a book tag with `action: play-next`; what changes is
+who gets first refusal on dispatching it.
+
+**Session state is in-memory and per-location.** It is not evidence — the reading log
+is. A backend restart loses "who is standing at the reader", which is correct.
+
+### The three that add work to this plan
+
+**Completion ends the session.** Target met → ceremony → teardown → TV off. To read
+more, re-tap the card, which reopens in browsing mode. Tasks 6 and 7 must sequence
+the ceremony *before* teardown.
+
+**⚠ `end: tv-off` must be suppressed while a session is open (D8).** The `livingroom`
+location is configured `end: tv-off`, which fires when content ends
+(`WakeAndLoadService.mjs:275` → `sideEffectHandlers['tv-off']`). Left unmodified **it
+powers the TV off the instant a story ends, before the ceremony can render.** This is
+a live hazard in the current config, not a design option. Add a test.
+
+**An idle session times out (D6).** ~2 minutes quiet at `PROMPT` or `CONFIRM` →
+teardown → TV off, the same teardown a finished session runs. Without it the TV stays
+on all night and the next tap lands in a stale session.
+
+### Smaller settled behaviours to implement
+
+| # | Behaviour |
+|---|---|
+| D2 | A card tapped while unrelated content plays: **refuse, visibly**. Brief on-screen acknowledgement; content keeps playing. A session never seizes the TV. |
+| D3 | A different card during the countdown: swap learner and **drop the pick**. |
+| D7 | Any tap during `CELEBRATE`/`TEARDOWN` **cancels teardown**. |
+| D9 | An unregistered book tag inside a session: say so on screen, **and** still write the observed-registry entry and send the phone push. |
+| D10 | The same book tapped again during the countdown: **confirm immediately**, skipping the rest. The 3 s dedup window would otherwise swallow it. |
+| — | A book already read today **counts again**. No repeat suppression; the reading log needs no `repeat` flag. |
 
 ---
 
@@ -221,15 +275,27 @@ git commit -m "feat(trigger): content interceptor seam, scoped by reader locatio
 - Create: `backend/src/3_applications/school/readingSessionInterceptor.mjs`
 - Test: `tests/isolated/application/school/readingSessionInterceptor.test.mjs`
 
-**Behaviour:** if a session is open at `response.location`, broadcast `book-selected` on `reading:<location>` with the content id, title and the learner, and claim. Otherwise return `null` and let the book play as it does today.
+**Behaviour — MODE-AWARE.** This is the one place the assignment/browsing split
+actually lands in code:
+
+- No session at `response.location` → return `null`. The book plays as it does today.
+- Session open, **nothing playing** (`PROMPT`) → claim, broadcast `book-selected`.
+- Session open, **story playing**, mode `assignment` → **claim and refuse** (D5).
+  Broadcast a `book-refused` so the screen can say "finish this one first". Claiming
+  is what stops it reaching the queue; refusing is what the child sees.
+- Session open, **story playing**, mode `browsing` → return `null`. The existing
+  preempt/on-deck rules apply unchanged.
 
 **Step 1: Write the failing test**
 
 ```js
-it('claims a book tap when a session is open at that location', async () => { /* ... */ });
+it('claims a book tap when a session is open and nothing is playing', async () => { /* ... */ });
 it('does NOT claim when no session is open — a book tapped by a grown-up still just plays', async () => { /* ... */ });
 it('does NOT claim a tap at a different location', async () => { /* ... */ });
 it('carries the learner and the content id in the broadcast', async () => { /* ... */ });
+it('claims AND refuses a mid-story tap in assignment mode', async () => { /* ... */ });
+it('does NOT claim a mid-story tap in browsing mode — the queue still owns it', async () => { /* ... */ });
+it('derives mode from the reading log, not from stored session state', async () => { /* ... */ });
 ```
 
 **Step 2-5:** implement, run `npx vitest run tests/isolated/application/school/readingSessionInterceptor.test.mjs --reporter=dot`, commit.
@@ -325,6 +391,13 @@ Per memory `feedback_dont_assert_unverified_device_facts` and `feedback_screensh
 6. Repeat to the target → the School board card goes green
 7. Tap the other preschooler's card → the context switches
 8. Tap a book with **no** session open → it just plays, exactly as it does today (the no-regression case)
+9. **Mid-story, assignment mode:** tap a second book → on-screen "finish this one first", nothing queues (D5)
+10. **Mid-story, browsing mode:** after the target is met, tap a second book → the existing queue behaviour, unchanged (D5)
+11. **Movie playing, no session:** tap a card → brief refusal on screen, the movie keeps playing (D2)
+12. **Ceremony renders before the TV powers off** — the D8 hazard. Watch the actual screen; a passing test is not enough here
+13. **Walk away at the prompt:** ~2 min later the TV powers off on its own (D6)
+14. **Tap during teardown:** the TV stays on and the session reopens (D7)
+15. **An unregistered book tag in a session:** the screen says it doesn't know the book, and a phone push arrives (D9)
 
 ---
 
@@ -332,3 +405,4 @@ Per memory `feedback_dont_assert_unverified_device_facts` and `feedback_screensh
 
 - **A story finished on a lap** still cannot be credited except through plan 02's CLI. If that matters, it is a separate evidence path and a separate decision.
 - **Two children listening together** credits only the child whose card opened the session. Multi-attribution was not part of the requirements and is not designed here.
+- **A repeated book counts again.** Accepted trade-off (see the state machine doc): the daily target can be met by re-reading one short book. If that becomes a problem in the field, the fix is a `repeat` flag on the reading log row and a count that ignores repeats — a small change, deliberately not pre-built.
