@@ -1,4 +1,5 @@
 import { normalizeTimingTemplate } from '../timing.mjs';
+import { validateSchedule } from '../schoolCalendar.mjs';
 
 /**
  * Pure validation + normalisation of a syllabus (see
@@ -104,6 +105,15 @@ export function validateSyllabus(raw, sets = {}) {
   const { timingTemplate, errors: timingErrors } = normalizeTimingTemplate(raw.timingTemplate);
   errors.push(...timingErrors);
 
+  // Which days are school days. Refused rather than dropped when malformed:
+  // the whole point of a schedule is to excuse a day, so a typo'd one that
+  // survived validation would excuse days nobody asked it to.
+  const { schedule, errors: scheduleErrors } = validateSchedule(raw.schedule);
+  // The validator names its own fields (`daysOfWeek`, `except`), which mean
+  // nothing on a syllabus until they are qualified — except for the one error
+  // that already names the block itself.
+  errors.push(...scheduleErrors.map((m) => (m.startsWith('schedule ') ? m : `schedule.${m}`)));
+
   if (errors.length) return { errors };
   return {
     errors,
@@ -117,6 +127,7 @@ export function validateSyllabus(raw, sets = {}) {
       passing,
       term,
       ...(timingTemplate ? { timingTemplate } : {}),
+      ...(schedule ? { schedule } : {}),
     },
   };
 }

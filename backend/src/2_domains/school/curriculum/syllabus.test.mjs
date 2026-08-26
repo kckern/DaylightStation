@@ -87,6 +87,35 @@ describe('validateSyllabus', () => {
     });
   });
 
+  it('accepts and normalizes a school-day schedule', () => {
+    const { errors, syllabus } = validateSyllabus({
+      ...VALID,
+      schedule: { daysOfWeek: [5, 1, 3, 1], except: ['2026-11-26'], also: ['2026-11-28'] },
+    }, SETS);
+    expect(errors).toEqual([]);
+    expect(syllabus.schedule).toEqual({
+      daysOfWeek: [1, 3, 5],
+      except: [{ from: '2026-11-26', to: '2026-11-26' }],
+      also: [{ from: '2026-11-28', to: '2026-11-28' }],
+    });
+  });
+
+  it('omits schedule entirely when none is authored', () => {
+    expect(validateSyllabus(VALID, SETS).syllabus).not.toHaveProperty('schedule');
+  });
+
+  it('refuses a malformed schedule rather than storing a term-wide excuse', () => {
+    expect(validateSyllabus({ ...VALID, schedule: { daysOfWeek: [0] } }, SETS).errors[0])
+      .toMatch(/daysOfWeek/);
+  });
+
+  it('qualifies a schedule error with its block, without saying it twice', () => {
+    expect(validateSyllabus({ ...VALID, schedule: { except: ['Christmas'] } }, SETS).errors)
+      .toEqual(['schedule.except has an invalid date: Christmas']);
+    expect(validateSyllabus({ ...VALID, schedule: 'weekdays' }, SETS).errors)
+      .toEqual(['schedule must be a mapping']);
+  });
+
   it('degrades to accepting when reference sets are unavailable', () => {
     const { errors } = validateSyllabus({ ...VALID, courseId: 'anything' }, {});
     expect(errors).toEqual([]);
