@@ -11,5 +11,6 @@ export default {
     api_key: { type: 'string', secret: true, required: true, description: 'OpenAI API key' },
     model: { type: 'string', default: 'gpt-4.1', description: 'Model to use for completions' },
     max_tokens: { type: 'number', default: 4000, description: 'Maximum tokens in response' },
+    pricing: { type: 'object', description: 'Per-model {input, output} USD-per-1M-token overrides for usage cost estimates' },
   }
 };

@@ -4,12 +4,26 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import * as sass from 'sass-embedded';
 import EraTimeline, {
+
   ERAS, TIMELINE_SPAN, NOMINAL_WIDTH_PX,
   ERA_LABEL_EM, ERA_LABEL_PX, ERA_LABEL_OVERHANG, ERA_LABEL_GAP_EM, ERA_LABEL_CLASH_EM,
   YEAR_ANCHOR_EDGE,
   datelineFor, eraLabelWidthPx, fractionFor, layoutEraLabels, subjectErasFor,
   yearAnchorFor,
 } from './EraTimeline.jsx';
+
+// COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
+// `withStyles()` recompiled it on every call — up to 20 times in this file
+// alone, across nine specs that each do the same. `sass.compile` is
+// synchronous and CPU-heavy, and under a full parallel sweep (~1,000 files on
+// every core) that redundant work is what starves a worker past its timeout,
+// failing whichever timing-shaped test it was inside. Memoised by path.
+const __sassCache = new Map();
+const compileSheetOnce = (file) => {
+  if (!__sassCache.has(file)) __sassCache.set(file, sass.compile(file));
+  return __sassCache.get(file);
+};
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -315,7 +329,7 @@ describe('EraTimeline — the drawing', () => {
 describe('EraTimeline — the shipped design', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'EraTimeline.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'EraTimeline.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);

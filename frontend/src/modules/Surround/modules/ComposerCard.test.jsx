@@ -14,6 +14,19 @@ import { __resetMapCache } from '../map/CountryMap.jsx';
 import { registerSurroundBuiltins, SURROUND_BUILTIN_MODULES } from '../builtins.js';
 import { getSurroundRegistry, resetSurroundRegistry } from '../registry.js';
 
+// COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
+// `withStyles()` recompiled it on every call — up to 20 times in this file
+// alone, across nine specs that each do the same. `sass.compile` is
+// synchronous and CPU-heavy, and under a full parallel sweep (~1,000 files on
+// every core) that redundant work is what starves a worker past its timeout,
+// failing whichever timing-shaped test it was inside. Memoised by path.
+const __sassCache = new Map();
+const compileSheetOnce = (file) => {
+  if (!__sassCache.has(file)) __sassCache.set(file, sass.compile(file));
+  return __sassCache.get(file);
+};
+
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const makeLogger = () => ({
@@ -285,7 +298,7 @@ describe('ComposerCard hard content budget — long text', () => {
   });
 
   it('caps the name to 3 lines and ellipsizes the birthplace to 1', () => {
-    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'ComposerCard.scss'));
     injectedStyle = document.createElement('style');
     injectedStyle.textContent = compiled.css;
     document.head.appendChild(injectedStyle);
@@ -332,7 +345,7 @@ describe('ComposerCard hard content budget — long text', () => {
   // over `width: fit-content` on the same element, so the mat was 45% wide
   // regardless of the picture's shape).
   it('gives the portrait column 45% of the card, and lets the mat hug its picture', () => {
-    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'ComposerCard.scss'));
     injectedStyle = document.createElement('style');
     injectedStyle.textContent = compiled.css;
     document.head.appendChild(injectedStyle);
@@ -371,7 +384,7 @@ describe('ComposerCard hard content budget — long text', () => {
   // Museum convention (settled 2026-08-19): the plate hugs its widest line —
   // the name — so the short dates line underneath can never be what widens it.
   it('hugs the name — the plate is width: fit-content, so short dates cannot widen it', () => {
-    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'ComposerCard.scss'));
     injectedStyle = document.createElement('style');
     injectedStyle.textContent = compiled.css;
     document.head.appendChild(injectedStyle);
@@ -398,7 +411,7 @@ describe('ComposerCard hard content budget — long text', () => {
    * 1.35rem was the shrunk-to-fit size this wave replaces.
    */
   it('gives the name a measure to break in, and bigger type to break with', () => {
-    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'ComposerCard.scss'));
     injectedStyle = document.createElement('style');
     injectedStyle.textContent = compiled.css;
     document.head.appendChild(injectedStyle);
@@ -428,7 +441,7 @@ describe('ComposerCard hard content budget — long text', () => {
   // Both lines on the brass get the same engraved treatment — the dates read as
   // more engraving, not a sticker laid on top of the metal.
   it('engraves the dates the same way as the name — multiply blend, scoped to the plate', () => {
-    const css = sass.compile(path.join(__dirname, 'ComposerCard.scss')).css.replace(/\s+/g, ' ');
+    const css = compileSheetOnce(path.join(__dirname, 'ComposerCard.scss')).css.replace(/\s+/g, ' ');
     expect(css).toMatch(
       /\.surround-composer-card__nameplate \.surround-composer-card__name,\s*\.surround-composer-card__nameplate \.surround-composer-card__dates\s*\{[^}]*mix-blend-mode:\s*multiply/,
     );
@@ -719,7 +732,7 @@ describe('country-map surround module', () => {
 describe('ComposerCard — pictures whole, fact slot still', () => {
   let injectedStyle = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'ComposerCard.scss'));
     injectedStyle = document.createElement('style');
     injectedStyle.textContent = compiled.css;
     document.head.appendChild(injectedStyle);
@@ -911,7 +924,7 @@ describe('ComposerCard — pictures whole, fact slot still', () => {
 describe('ComposerCard — the period line', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'ComposerCard.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);

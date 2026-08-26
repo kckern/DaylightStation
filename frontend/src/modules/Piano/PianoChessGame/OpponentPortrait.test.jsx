@@ -5,6 +5,19 @@ import { act, render, screen } from '@testing-library/react';
 import OpponentPortrait, { opponentMood, opponentStatus } from './OpponentPortrait.jsx';
 import { DEFAULT_ROSTER, themeForLevel, TOP_LEVEL } from '@shared-gaming/rulesets/chess/ladder.mjs';
 
+// COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
+// `withStyles()` recompiled it on every call — up to 20 times in this file
+// alone, across nine specs that each do the same. `sass.compile` is
+// synchronous and CPU-heavy, and under a full parallel sweep (~1,000 files on
+// every core) that redundant work is what starves a worker past its timeout,
+// failing whichever timing-shaped test it was inside. Memoised by path.
+const __sassCache = new Map();
+const compileSheetOnce = (file) => {
+  if (!__sassCache.has(file)) __sassCache.set(file, sass.compile(file));
+  return __sassCache.get(file);
+};
+
+
 describe('the opponent status line', () => {
   it('says what they are doing, from real state only', () => {
     expect(opponentStatus({ thinking: true })).toBe('Thinking…');
@@ -177,7 +190,7 @@ describe('the thinking pulse is declared once', () => {
   // Being later it won, silently discarding `--pc-think-ms` — the rung-scaled
   // duration that is the entire point of driving the pulse from real think time.
   it('has exactly one animation rule for the thinking face', () => {
-    const css = sass.compile(fileURLToPath(new URL('./OpponentPortrait.scss', import.meta.url))).css;
+    const css = compileSheetOnce(fileURLToPath(new URL('./OpponentPortrait.scss', import.meta.url))).css;
     const bodies = [...css.matchAll(/\.chess-opponent--thinking \.chess-opponent__face\s*\{([^}]*)\}/g)]
       .map((m) => m[1]);
     const animating = bodies.filter((b) => /animation:\s*chess-opponent/.test(b));

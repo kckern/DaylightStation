@@ -12,6 +12,30 @@ describe('workbookTheme', () => {
     expect(createWorkbookTheme().lessonCard.progressGapPt).toBe(10);
   });
 
+  it('keeps the first question off the lesson card’s border', () => {
+    // The card had no spacing class at all, so `gapBetween` fell through to
+    // its `?? 0` default and questions sat flush against the border. The gap
+    // was never a tuned value — it was an omission.
+    const theme = createWorkbookTheme();
+    expect(theme.lessonCard.spacingClass).toBe('lessonCard');
+    expect(theme.spacing.lessonCard.question).toBeGreaterThan(0);
+  });
+
+  it('scales the lesson-card gap with density like every other class', () => {
+    const normal = createWorkbookTheme({ density: 'normal' }).spacing.lessonCard.question;
+    const compact = createWorkbookTheme({ density: 'compact' }).spacing.lessonCard.question;
+    expect(compact).toBeLessThan(normal);
+  });
+
+  it('gives the lesson card its own row rather than moving existing pairs', () => {
+    // Every other class pair predates the card; none may shift because it
+    // wanted more air.
+    const spacing = createWorkbookTheme().spacing;
+    expect(spacing.heading.question).toBe(10);
+    expect(spacing.question.question).toBe(14);
+    expect(spacing.body.question).toBe(12);
+  });
+
   it('ships all four Atkinson Hyperlegible faces plus the OFL license', () => {
     const dir = path.join(FONT_DIR, 'atkinson-hyperlegible');
     for (const file of ['AtkinsonHyperlegible-Regular.ttf', 'AtkinsonHyperlegible-Bold.ttf',
