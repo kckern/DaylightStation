@@ -45,6 +45,30 @@ export const Response = {
     if (!ref) throw new ValidationError('Response.script ref required', { code: 'RESPONSE_SCRIPT_REF' });
     return Object.freeze({ kind: 'script', ref, params });
   },
+
+  /**
+   * A tap that named a PERSON rather than a piece of content. `op` is the
+   * reader location's `learner_action`; what it does is the injected
+   * learner-action registry's business, not this layer's. The legal ops are
+   * deliberately NOT enumerated here — a new learner action must be a config
+   * key plus a registered handler, never an edit to this file.
+   *
+   * Both fields end up in a log line and a registry lookup, and both originate
+   * in a YAML tree shared with prod, so they are type-checked rather than
+   * stringified: `[object Object]` as an op produces a refusal that names
+   * nothing and points at no line of config.
+   *
+   * @param {{op:string, learnerId:string, location?:string, target?:string}} a
+   */
+  learner({ op, learnerId, location, target } = {}) {
+    if (typeof op !== 'string' || op.trim().length === 0) {
+      throw new ValidationError('Response.learner op required (non-empty string)', { code: 'RESPONSE_LEARNER_OP' });
+    }
+    if (typeof learnerId !== 'string' || learnerId.trim().length === 0) {
+      throw new ValidationError('Response.learner learnerId required (non-empty string)', { code: 'RESPONSE_LEARNER_ID' });
+    }
+    return Object.freeze({ kind: 'learner', op, learnerId, location, target });
+  },
 };
 
 export default Response;
