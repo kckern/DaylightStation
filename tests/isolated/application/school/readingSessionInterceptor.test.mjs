@@ -28,8 +28,14 @@ const bookTap = (over = {}) => ({
 const owing = { status: async () => ({ error: false, count: 1, target: 2, doneToday: false }) };
 /** Enrolled and finished → browsing mode. */
 const finished = { status: async () => ({ error: false, count: 2, target: 2, doneToday: true }) };
-/** No readable enrollment → browsing mode. */
-const notEnrolled = { status: async () => ({ error: true, count: null, target: null, doneToday: false }) };
+/** No story-time enrollment at all → browsing mode. A NORMAL answer, not an error (D1). */
+const notEnrolled = {
+  status: async () => ({ error: false, enrolled: false, count: null, target: null, doneToday: false }),
+};
+/** The enrollment or the log could not be READ. Not the same thing as not enrolled. */
+const unreadable = {
+  status: async () => ({ error: true, enrolled: null, count: null, target: null, doneToday: false }),
+};
 
 function build({ storyTime = owing, sessions = new ReadingSessionService({ logger: silent }) } = {}) {
   const sent = [];
@@ -143,11 +149,64 @@ describe('ReadingSessionInterceptor — a book mid-story', () => {
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
 
-  it('a learner with no readable enrollment is in browsing mode — no special case', async () => {
+  it('a learner with no story-time enrollment is in browsing mode — no special case', async () => {
     const { interceptor, sessions } = build({ storyTime: notEnrolled });
     sessions.open({ location: 'livingroom', learnerId: 'learner-d' });
     sessions.update('livingroom', { state: 'reading' });
     expect(await interceptor.claim(bookTap())).toBeNull();
+  });
+
+  it('says nothing on screen about a learner who is simply not enrolled', async () => {
+    const { interceptor, sessions, sent } = build({ storyTime: notEnrolled });
+    sessions.open({ location: 'livingroom', learnerId: 'learner-d' });
+    sessions.update('livingroom', { state: 'reading' });
+    await interceptor.claim(bookTap());
+    expect(sent.filter((m) => m.payload.event === 'session-error')).toEqual([]);
+  });
+});
+
+// AN UNREADABLE OBLIGATION IS NOT AN UNENROLLED ONE. Both used to answer
+// `{error: true, target: null}` and both fell to browsing, so a log that had
+// gone unreadable RELAXED a child who was mid-assignment with nothing anywhere
+// to say the hardening had switched itself off.
+describe('ReadingSessionInterceptor — an obligation that cannot be read', () => {
+  it('does NOT claim — the failure mode of this seam is still the old behaviour', async () => {
+    const { interceptor, sessions } = build({ storyTime: unreadable });
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.update('livingroom', { state: 'reading' });
+    expect(await interceptor.claim(bookTap())).toBeNull();
+  });
+
+  it('SURFACES it on the screen rather than downgrading in silence', async () => {
+    const { interceptor, sessions, sent } = build({ storyTime: unreadable });
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.update('livingroom', { state: 'reading' });
+    await interceptor.claim(bookTap());
+    expect(sent.find((m) => m.payload.event === 'session-error')).toMatchObject({
+      topic: 'reading:livingroom',
+      payload: { event: 'session-error', reason: 'obligation-unreadable', learnerId: 'learner-c' },
+    });
+  });
+
+  it('surfaces a mode source that THROWS the same way', async () => {
+    const { interceptor, sessions, sent } = build({
+      storyTime: { status: async () => { throw new Error('log unreadable'); } },
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.update('livingroom', { state: 'reading' });
+    expect(await interceptor.claim(bookTap())).toBeNull();
+    expect(sent.find((m) => m.payload.event === 'session-error')).toBeTruthy();
+  });
+
+  // Nothing is wrong: there is no story-time launcher wired at all (a degraded
+  // composition). That is browsing, quietly — an error banner on the TV every
+  // time a book plays would be a lie about this household's state.
+  it('does NOT surface an error when no mode source is wired at all', async () => {
+    const { interceptor, sessions, sent } = build({ storyTime: null });
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.update('livingroom', { state: 'reading' });
+    expect(await interceptor.claim(bookTap())).toBeNull();
+    expect(sent.filter((m) => m.payload.event === 'session-error')).toEqual([]);
   });
 });
 
