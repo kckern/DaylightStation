@@ -20,13 +20,15 @@ const build = (sections) => agendaDocument({
 const lessonCard = (doc) => doc.blocks.find((b) => b.type === 'scan_action');
 
 describe('agendaDocument lesson cards', () => {
-  it('puts the SUBJECT in the eyebrow, not "Today"', () => {
-    // Every card on the page is today's — the page IS the day — so a TODAY
-    // eyebrow on each one spent the card's most prominent small line restating
-    // the masthead. Worse, the receipt renderer truncates the eyebrow at its
-    // first '·', so the old `Today · scripture` printed as the single word
-    // "TODAY" and the subject never appeared at all.
-    expect(lessonCard(build([section()])).eyebrow).toBe('scripture');
+  it('carries no eyebrow — the taxonomy breadcrumb is the meaningful line', () => {
+    // It used to read `Today · <subject>`, which the renderer truncates at the
+    // first '·' — so it printed the single word "TODAY" on every card. Every
+    // card on the page is today's (the page IS the day), so that restated the
+    // masthead and nothing else. The bare subject was no better: the breadcrumb
+    // directly beneath already reads "Arts › Hoffman Academy Piano › Unit 3"
+    // with the subject's own SVG in the gutter, so an eyebrow repeating its
+    // first word costs a row and pushes the title down.
+    expect(lessonCard(build([section()])).eyebrow).toBeNull();
   });
 
   it('rails a catch-up offer', () => {

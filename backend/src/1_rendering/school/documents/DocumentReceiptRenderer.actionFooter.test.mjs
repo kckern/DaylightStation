@@ -62,6 +62,18 @@ describe('lesson card footer', () => {
     expect(railed).toBe(plain + theme.action.railHeight);
   });
 
+  it('reserves no row — and draws no indicator — when there is no eyebrow', async () => {
+    // The agenda card dropped its eyebrow entirely. The row's gap used to be
+    // added unconditionally, so a card without one still paid for a blank row,
+    // and the draw side put the eyebrow's sun beside nothing.
+    const withEyebrow = await heightOf(card({ meta: SHORT }));
+    const without = await heightOf({
+      ...card({ meta: SHORT }),
+      blocks: [{ ...card({ meta: SHORT }).blocks[0], eyebrow: null }],
+    });
+    expect(without).toBeLessThan(withEyebrow);
+  });
+
   it('ignores a rail on a non-lesson action', async () => {
     // The rail is a lesson-card affordance; a plain scan box has no header to
     // hang it on, and silently growing one would misalign every other box.
