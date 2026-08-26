@@ -442,7 +442,13 @@ export function agendaDocument({
   // One extra card at the end, printing every offered subject in one job: an
   // alias for "scan each lesson card in turn," not a fourth kind of session.
   // Same malformed-code-prints-nothing rule as a per-subject panel code
-  // (`panelCodeBlocks`) — a bad code is worse than no code.
+  // (`panelCodeField`) — a bad code is worse than no code.
+  //
+  // The code rides ON the block, not in a loose block after it. That is the
+  // per-subject contract too since Slice H: a separate `rich_text` of digits
+  // drew adrift BELOW the card on the canvas renderer, with nothing saying
+  // which card it belonged to. `hideCode` still suppresses the raw TOKEN
+  // under the QR — the six digits are the only thing a child should read.
   if (isNonEmptyString(bulkToken) && typeof bulkAccessCode === 'string' && PANEL_CODE.test(bulkAccessCode)) {
     const printableSubjects = offered.map((s) => s.subject);
     blocks.push({
@@ -452,8 +458,8 @@ export function agendaDocument({
       label: 'Print all sheets',
       hideCode: true,
       subjects: printableSubjects,
+      ...panelCodeField(bulkAccessCode),
     });
-    blocks.push(...panelCodeBlocks(bulkAccessCode));
   }
 
   appendNoteLines(blocks, noteLines);

@@ -238,7 +238,17 @@ export function createDocumentReceiptRenderer({
       (subject) => wrapTight(ctx, `• ${subject}`, contentWidth - 2 * theme.action.padding - 8),
     );
     ctx.font = theme.fonts.code;
-    const codeLines = block.hideCode ? [] : wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx);
+    // Same rule as `actionOp`: a `panelCode` on the block IS what goes under
+    // the code area, and it outranks `hideCode` (which only ever meant "do
+    // not print the raw TOKEN"). Without this the bulk card draws a QR with
+    // nothing typeable beneath it — the defect Slice H closed for the
+    // per-subject cards, one presentation over.
+    const panelCode = typeof block.panelCode === 'string' && block.panelCode.trim()
+      ? block.panelCode.trim()
+      : null;
+    const codeLines = panelCode
+      ? [panelCode]
+      : (block.hideCode ? [] : wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx));
     const headingHeight = headingLines.length * theme.action.eyebrowLineHeight;
     const subjectsHeight = subjectLines.length * theme.text.bodyLineHeight;
     const codeBlockHeight = theme.action.codeAreaPx + (codeLines.length ? theme.action.codeGap : 0)
