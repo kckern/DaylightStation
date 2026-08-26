@@ -73,6 +73,37 @@ than a false zero, so the agenda reports the program unavailable and the day
 indeterminate. Showing a child who read three books as owing three books would
 be worse than admitting the log could not be read.
 
+#### A corrupt shard is preserved, never overwritten — `*.yml.corrupt-*`
+
+Failing open is right for a READER and wrong for a WRITER, because `append` is
+a read-modify-write. A corrupt shard reading as `[]` used to mean the next
+finished book overwrote every read that day held, silently. So the two paths
+now diverge:
+
+- **`listForDay`** still answers `[]` and logs at `warn`. It has **no side
+  effects** — it leaves the bad file exactly where it is.
+- **`append`** copies the original bytes to
+  `{studyDay}.yml.corrupt-{ISO-instant}` (e.g.
+  `2026-08-26.yml.corrupt-2026-08-26T18-04-00-000Z`) **before** writing
+  anything, logs at `error` with `learnerId`, `studyDay` and `preservedAt`,
+  then starts a fresh shard and carries on.
+- If the file exists but cannot be read at all (permissions, bad device), the
+  bytes cannot be rescued, so `append` **throws** rather than replace it.
+
+Side-filing rather than throwing on corruption is deliberate: throwing would
+mean a child could log no reads at all for the rest of the day over one stray
+byte, trading silent data loss for loud data loss. The evidence stays
+recoverable by hand and the day still works.
+
+**If you find a `.corrupt-*` file, it is yours to inspect — nothing will ever
+touch it again.** It holds the reads that were on record when corruption was
+detected; the live shard has only what was logged afterwards. Merge the salvaged
+`reads:` entries back into `{studyDay}.yml` by hand (or re-record them with
+`school ops read --apply`), then delete the side file. Grep the logs for
+`school.reading-log.corrupt-side-filed` to see when and for whom it happened.
+The shard itself is written with `saveYamlToPathAtomic`, so a torn write — one
+of the ways a shard goes bad — should not be the cause.
+
 ### Recording a read by hand
 
 Evidence normally arrives when the audiobook FINISHES (a story abandoned two
