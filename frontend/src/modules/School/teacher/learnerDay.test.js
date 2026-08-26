@@ -54,6 +54,37 @@ describe('joinLearnerDay', () => {
     expect(rows[0].detail).toMatch(/no session record/i);
   });
 
+  it('claims the carried-over session that made a section servedToday', () => {
+    // The seam this closes: `servedToday` is computed from work GRADED today,
+    // but the day's `sessions` lane is filtered by studyDay. A sheet issued on
+    // an earlier day and scanned today therefore sets servedToday while living
+    // in the carried-over lane — and the join used to answer "Completed — no
+    // session record" about a session it was holding all along.
+    const carried = session('civilization', 'ses_carry', { studyDay: '2026-08-23' });
+    const { rows } = joinLearnerDay({
+      sections: [section('civilization', { servedToday: true, next: null })],
+      sessions: [],
+      carriedOver: [carried],
+      studyDay: '2026-08-25',
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'done', carriedOver: true });
+    expect(rows[0].session.sessionId).toBe('ses_carry');
+    expect(rows[0].detail).toBeNull();
+  });
+
+  it('leaves an unclaimed carried-over session out of the rows entirely', () => {
+    // It belongs to the "Also marked on this date" block, which owns it. It is
+    // not "extra" — that word means unplanned work done on THIS study day.
+    const { rows } = joinLearnerDay({
+      sections: [section('math')],
+      sessions: [],
+      carriedOver: [session('civilization', 'ses_carry', { studyDay: '2026-08-23' })],
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ subject: 'math', status: 'planned' });
+  });
+
   it('lists a session whose subject was never planned as extra', () => {
     const { rows } = joinLearnerDay({ sections: [], sessions: [session('piano', 'ses_9')] });
     expect(rows[0]).toMatchObject({ subject: 'piano', status: 'extra' });

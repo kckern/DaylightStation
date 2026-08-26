@@ -96,6 +96,11 @@ function DayRow({ row, onOpenSession }) {
   // heading reading "Other".
   const subject = session?.subject ?? row.subject;
   const title = session?.lessonTitle ?? session?.title ?? row.planned;
+  // A carried-over row is credited to THIS day because it was marked today,
+  // but the teacher still needs to know which day assigned it.
+  const detail = row.detail ?? (row.carriedOver && session?.studyDay
+    ? `Study day ${teacherDate(session.studyDay)}${teacherTime(session.processedAt) ? ` · marked ${teacherTime(session.processedAt)}` : ''}`
+    : null);
   const body = session
     ? <LessonIdentity compact subject={subject} courseTitle={session.courseTitle}
         moduleTitle={session.moduleTitle} lessonTitle={title ?? 'Lesson'} posterUrl={session.posterUrl} />
@@ -108,7 +113,7 @@ function DayRow({ row, onOpenSession }) {
         {session
           ? <button type="button" className="teacher-day-row__open" onClick={() => onOpenSession(session.sessionId)}>{body}</button>
           : body}
-        {row.detail && <small className="teacher-day-row__detail">{row.detail}</small>}
+        {detail && <small className="teacher-day-row__detail">{detail}</small>}
       </div>
       <div className="teacher-day-row__right">
         {scoreLine(session) && <span className="teacher-day-row__score">{scoreLine(session)}</span>}
@@ -130,13 +135,24 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
     () => (day.data?.learners ?? (Array.isArray(day.data) ? day.data : [])).find((row) => row.learnerId === learnerId) ?? null,
     [day.data, learnerId],
   );
+  const processed = useMemo(
+    () => (learnerRow?.processedToday ?? []).filter((session) => session.studyDay !== studyDay),
+    [learnerRow, studyDay],
+  );
   const joined = useMemo(() => joinLearnerDay({
     sections: agenda.data?.sections ?? [],
     sessions: learnerRow?.sessions ?? [],
+    carriedOver: processed,
     studyDay,
-  }), [agenda.data, learnerRow, studyDay]);
+  }), [agenda.data, learnerRow, processed, studyDay]);
 
-  const processed = (learnerRow?.processedToday ?? []).filter((session) => session.studyDay !== studyDay);
+  // A carry-over the day's own list already credits must not be listed twice —
+  // saying it once is the whole point of this view (IA1).
+  const carried = useMemo(
+    () => new Set(joined.rows.filter((row) => row.carriedOver).map((row) => row.session?.sessionId)),
+    [joined.rows],
+  );
+  const alsoMarked = processed.filter((session) => !carried.has(session.sessionId));
   const summary = [
     joined.counts.done ? `${joined.counts.done} done` : null,
     joined.counts.planned ? `${joined.counts.planned} not started` : null,
@@ -150,7 +166,7 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
   const state = agenda.state === 'unavailable' && day.state === 'unavailable' ? 'unavailable'
     : agenda.state === 'loading' || day.state === 'loading' ? 'loading'
       : agenda.state === 'error' && day.state === 'error' ? 'error'
-        : joined.rows.length || processed.length ? 'ok' : 'empty';
+        : joined.rows.length || alsoMarked.length ? 'ok' : 'empty';
 
   return (
     <section className="teacher-day" aria-label={`${learnerName ?? learnerId}'s day`}>
@@ -182,11 +198,11 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
       {/* The heading deliberately avoids repeating the row chip's exact words:
           "Graded today" is the per-row label, and the section should not say
           the same phrase twice over one list. */}
-      {processed.length > 0 && (
+      {alsoMarked.length > 0 && (
         <PanelFrame title="Also marked on this date" state="ok">
           <p className="teacher-muted">Work from an earlier study day that was marked on this date.</p>
           <ul className="teacher-day-rows">
-            {processed.map((session) => (
+            {alsoMarked.map((session) => (
               <li className="teacher-day-row teacher-day-row--processed" key={session.sessionId}>
                 <span className="teacher-day-chip teacher-day-chip--processed">Graded today</span>
                 <div className="teacher-day-row__body">

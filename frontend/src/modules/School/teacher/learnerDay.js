@@ -79,13 +79,20 @@ function claimFor(section, pool) {
 
 /**
  * @param {object}   input
- * @param {Array}    input.sections  agenda preview `sections[]` — the plan
- * @param {Array}    input.sessions  day projection `sessions[]` — the record
- * @param {string?}  input.studyDay  the day these describe (echoed back)
+ * @param {Array}    input.sections     agenda preview `sections[]` — the plan
+ * @param {Array}    input.sessions     day projection `sessions[]` — the record
+ * @param {Array}    input.carriedOver  `processedToday[]` from an earlier study day
+ * @param {string?}  input.studyDay     the day these describe (echoed back)
  * @returns {{ studyDay: string|null, rows: Array, counts: object }}
  */
-export function joinLearnerDay({ sections = [], sessions = [], studyDay = null } = {}) {
+export function joinLearnerDay({
+  sections = [], sessions = [], carriedOver = [], studyDay = null,
+} = {}) {
   const pool = claimPool(Array.isArray(sessions) ? sessions : []);
+  // A SEPARATE pool, never swept into the "extra" sweep below: an unclaimed
+  // carry-over is not unplanned work done today, it is another day's work
+  // that the "Also marked on this date" block owns.
+  const carriedPool = claimPool(Array.isArray(carriedOver) ? carriedOver : []);
   const rows = [];
 
   (Array.isArray(sections) ? sections : []).forEach((section, position) => {
@@ -118,6 +125,22 @@ export function joinLearnerDay({ sections = [], sessions = [], studyDay = null }
       return;
     }
     if (section?.servedToday) {
+      // `servedToday` is computed from work GRADED today, while `sessions` is
+      // filtered by studyDay — so a sheet issued earlier and scanned today
+      // sets the flag from the carry-over lane. Claiming it here is what stops
+      // the view answering "no session record" about a session it was holding.
+      const { matched: carried, matchedOn: carriedOn } = claimFor(section, carriedPool);
+      if (carried.length) {
+        carried.forEach((session, index) => rows.push({
+          key: session.sessionId ?? `${rowKey('carried')}:${index}`,
+          subject, status: 'done', planned: index === 0 ? planned : null, session,
+          detail: null, carriedOver: true,
+          matchedOn: index === 0 ? carriedOn : null,
+        }));
+        return;
+      }
+      // Still reachable, and still honest: a subject served by a program that
+      // owns its completion outside a work session has no session to show.
       rows.push({
         key: rowKey('served'), subject, status: 'done', planned, session: null,
         detail: 'Completed — no session record',
