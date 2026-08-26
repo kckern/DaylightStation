@@ -5,7 +5,7 @@ import AgendaStatusBoard, { dayStatus, summarize } from './AgendaStatusBoard.jsx
 vi.mock('../schoolApi.js', () => ({ schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn() } }));
 import { schoolApi } from '../schoolApi.js';
 
-const KIDS = [{ id: 'milo', name: 'Milo' }, { id: 'felix', name: 'Felix' }];
+const KIDS = [{ id: 'learner-one', name: 'Learner One' }, { id: 'learner-two', name: 'Learner Two' }];
 
 describe('AgendaStatusBoard model', () => {
   it('statuses read Not started / In progress / Done for the day', () => {
@@ -44,7 +44,7 @@ describe('AgendaStatusBoard render', () => {
 
   it('renders one non-interactive row per kid with pills and a single count readout', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
-      { learnerId: 'milo', sessions: [{ subject: 'civilization', outcome: { result: 'passed' } }] },
+      { learnerId: 'learner-one', sessions: [{ subject: 'civilization', outcome: { result: 'passed' } }] },
     ] } });
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [
       { subject: 'civilization' }, { subject: 'math' }, { subject: 'reading' },
@@ -54,8 +54,8 @@ describe('AgendaStatusBoard render', () => {
     // ONE readout per card, in the corner. The status WORD used to sit there
     // with the count repeated under the discs — two lines for one fact, and
     // the word said nothing the filled discs did not already show.
-    expect(screen.getByText('1 of 3')).toBeTruthy();      // Milo: civilization passed
-    expect(screen.getByText('0 of 3')).toBeTruthy();      // Felix: nothing yet
+    expect(screen.getByText('1 of 3')).toBeTruthy();      // Learner One: civilization passed
+    expect(screen.getByText('0 of 3')).toBeTruthy();      // Learner Two: nothing yet
     expect(screen.queryByText('In progress')).toBeNull();
     expect(screen.queryByText('Not started')).toBeNull();
     // Read-only: no buttons, no links.
@@ -69,7 +69,7 @@ describe('AgendaStatusBoard render', () => {
   // stylesheet hangs both on.
   it('flags a fully cleared day on the card itself', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
-      { learnerId: 'milo', sessions: [
+      { learnerId: 'learner-one', sessions: [
         { subject: 'civilization', outcome: { result: 'passed' } },
         { subject: 'math', outcome: { result: 'passed' } },
       ] },
@@ -77,7 +77,7 @@ describe('AgendaStatusBoard render', () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [
       { subject: 'civilization' }, { subject: 'math' },
     ] } });
-    render(<AgendaStatusBoard kids={[{ id: 'milo', name: 'Milo' }]} day="2026-08-24" />);
+    render(<AgendaStatusBoard kids={[{ id: 'learner-one', name: 'Learner One' }]} day="2026-08-24" />);
     await waitFor(() => expect(screen.getByTestId('agenda-status-board')).toBeTruthy());
     const row = screen.getByTestId('agenda-status-board').querySelector('.school-status-board__row');
     expect(row.dataset.complete).toBe('true');
@@ -86,12 +86,12 @@ describe('AgendaStatusBoard render', () => {
 
   it('every segment draws a subject icon and states its subject and state by name', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
-      { learnerId: 'milo', sessions: [{ subject: 'civilization', outcome: { result: 'passed' } }] },
+      { learnerId: 'learner-one', sessions: [{ subject: 'civilization', outcome: { result: 'passed' } }] },
     ] } });
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [
       { subject: 'civilization' }, { subject: 'math' }, { subject: 'reading' },
     ] } });
-    render(<AgendaStatusBoard kids={[{ id: 'milo', name: 'Milo' }]} day="2026-08-24" />);
+    render(<AgendaStatusBoard kids={[{ id: 'learner-one', name: 'Learner One' }]} day="2026-08-24" />);
     await waitFor(() => expect(screen.getByTestId('agenda-status-board')).toBeTruthy());
 
     const segments = screen.getByTestId('agenda-status-board').querySelectorAll('.school-status-board__pill');
