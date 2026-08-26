@@ -30,6 +30,7 @@
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include <FastLED.h>
+#include <ArduinoOTA.h>
 #include "config.h"
 
 // A config.h generated before the NFC/buzzer keys existed simply has none of
@@ -37,6 +38,46 @@
 // nothing registers), so it needs a default rather than a missing-macro error.
 #ifndef BUZZER_ACK_TIMEOUT_MS
 #define BUZZER_ACK_TIMEOUT_MS 2000
+#endif
+
+// Bus keep-alive. NOT tuning knobs — see the enableHeartbeat() call in setup()
+// for why the client having its own liveness check is the difference between a
+// 60-second outage and a silently destroyed scan. Defaulted here rather than in
+// config.h because they are not instance-specific, and so that a config.h
+// generated before this fix existed still builds and still gets the fix.
+#ifndef WS_PING_INTERVAL_MS
+#define WS_PING_INTERVAL_MS 20000
+#endif
+#ifndef WS_PONG_TIMEOUT_MS
+#define WS_PONG_TIMEOUT_MS 8000
+#endif
+#ifndef WS_PONG_MISSES
+#define WS_PONG_MISSES 3
+#endif
+
+// Over-the-air updates. Default OFF so a stale config.h can never expose an
+// unauthenticated flash endpoint; gen-config.mjs turns it on and supplies the
+// password, and refuses to enable it without one.
+#ifndef OTA_ENABLED
+#define OTA_ENABLED 0
+#endif
+#ifndef OTA_PASSWORD
+#define OTA_PASSWORD ""
+#endif
+
+#if OTA_ENABLED
+// An OTA write must have the board to itself. Writing to flash on an ESP32
+// disables the instruction cache, and any OTHER task executing from flash at
+// that moment has to be suspended across the write — the IDF does that for you,
+// but the resulting stalls are long enough to time out the espota transfer.
+// Measured 2026-08-25: with the NFC task and the WebSocket both live, an OTA
+// died at ~10% every attempt. Quiescing everything first makes it complete.
+static volatile bool otaActive = false;
+#endif
+#if NFC_ENABLED
+// Kept outside the OTA guard: the handle belongs to the NFC task, and an
+// OTA-disabled build that still runs NFC must compile.
+static TaskHandle_t nfcTaskHandle = nullptr;
 #endif
 
 #if NFC_ENABLED
@@ -426,7 +467,14 @@ struct RecentFrame {
   String   hex;      // truncated preview
 };
 static const size_t RECENT_MAX      = 16;
-static const size_t RECENT_HEX_CHARS = 64;
+// A full card record is 64 bytes = 128 hex chars, and the longest frame seen in
+// the field was 130 B. At 64 this ring held HALF a frame — columns 1-16 of 32 —
+// and that is exactly the wrong half to lose: when a scan dies on the wire this
+// ring is the ONLY surviving copy of it, and half a card cannot be regraded.
+// (2026-08-25: four sheets were lost to a half-open socket and only columns
+// 1-16 could be recovered. The live allocation happened to fall inside them.)
+// Cost: 16 x ~288 B = ~4.6 KB against ~192 KB free heap.
+static const size_t RECENT_HEX_CHARS = 288;
 static RecentFrame recentBuf[RECENT_MAX];
 static size_t recentHead = 0, recentCount = 0;
 
@@ -940,6 +988,24 @@ void setup() {
   // false while the socket is actually up, so every emit() silently drops.
   ws.onEvent(onWsEvent);
   ws.setReconnectInterval(3000);
+  // WITHOUT THIS THE CLIENT HAS NO LIVENESS DETECTION AT ALL. With pingInterval
+  // 0, arduinoWebSockets' handleHBTimeout() returns at its first line, so a peer
+  // that vanishes without a clean close leaves wsConnected stuck true forever —
+  // and setReconnectInterval above never fires, because WStype_DISCONNECTED
+  // never arrives. The backend's own sweep terminates us on missed pongs, but if
+  // that RST doesn't survive a weak link we sit in ESTABLISHED writing into a
+  // dead socket: sendTXT() returns true, drainQueue() pops the item, qDelivered++
+  // — and the outbound queue, whose entire purpose is that a bubble sheet is a
+  // one-shot physical event, is defeated by a flag that lied to it.
+  //
+  // Measured 2026-08-25: four sheets destroyed exactly this way, with recovery
+  // waiting ~16 min for lwIP to give up retransmitting. 3 misses x 20 s means a
+  // dead peer is noticed in ~60 s; the backend allows 3 x 30 s, so the CLIENT
+  // notices first and reconnects cleanly instead of being culled mid-scan.
+  //
+  // The sibling relays (kitchen, obd, pressure-mat) have always called this.
+  // Only this one was missed.
+  ws.enableHeartbeat(WS_PING_INTERVAL_MS, WS_PONG_TIMEOUT_MS, WS_PONG_MISSES);
   ws.begin(BACKEND_HOST, BACKEND_PORT, WS_PATH);
 
   http.on("/",       handleStatus);
@@ -950,6 +1016,44 @@ void setup() {
   http.onNotFound([]() { http.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}"); });
   http.begin();
 
+#if OTA_ENABLED
+  // Until 2026-08-25 this board built against huge_app.csv — ONE app slot — so
+  // OTA was impossible and every firmware fix meant physically deconstructing
+  // the reader setup for a USB cable. min_spiffs.csv gives two 1.92 MB slots and
+  // this image is ~1 MB, so it fits with room to spare. Nothing here uses SPIFFS,
+  // so shrinking that partition costs nothing.
+  //
+  // Password-gated deliberately: the diagnostics server on :80 is read-only by
+  // design, and an unauthenticated flash endpoint on the same LAN would be a far
+  // bigger door than anything else this firmware opens. gen-config.mjs refuses
+  // to enable OTA without a password, and OTA_ENABLED defaults to 0, so the
+  // insecure combination cannot be reached by forgetting something.
+  ArduinoOTA.setHostname(READER_ID);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.onStart([]() {
+    // Give the writer the board to itself — see the note on otaActive. Order
+    // matters: stop producing work before tearing down what consumes it.
+    otaActive = true;
+#if NFC_ENABLED
+    if (nfcTaskHandle) vTaskSuspend(nfcTaskHandle);
+#endif
+    ws.disconnect();
+    http.stop();
+    logEvent("ota", "update starting; nfc+ws+http quiesced");
+  });
+  ArduinoOTA.onEnd([]() { logEvent("ota", "update complete, rebooting"); });
+  ArduinoOTA.onError([](ota_error_t e) {
+    // Half-suspended is a worse state than rebooting: the NFC task is stopped,
+    // the socket is gone and the HTTP server is down, so the board would look
+    // alive and do nothing. Restart into the OLD image — a failed OTA never
+    // switched the boot partition, so this is a safe rollback, not a brick.
+    logEvent("ota", "FAILED, error %u — restarting", (unsigned)e);
+    delay(200);
+    ESP.restart();
+  });
+  ArduinoOTA.begin();
+#endif
+
 #if NFC_ENABLED
   nfcQueue = xQueueCreate(NFC_HANDOFF_DEPTH, sizeof(NfcCard));
   if (!nfcQueue) {
@@ -958,7 +1062,7 @@ void setup() {
     // Core 0. loop() is on core 1, so a blocking detect() cannot delay the UART
     // drain. 8 KB stack: the M5 driver allocates std::vector per detect and this
     // is not a path where a stack overflow should be discovered in the field.
-    xTaskCreatePinnedToCore(nfcTask, "nfc", 8192, nullptr, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(nfcTask, "nfc", 8192, nullptr, 1, &nfcTaskHandle, 0);
   }
 #endif
 
@@ -998,6 +1102,15 @@ static void flushFrame() {
 static uint32_t lastWifiTryMs = 0;
 
 void loop() {
+#if OTA_ENABLED
+  ArduinoOTA.handle();
+  // Once a write is in flight this is the ONLY thing that may run. Every line
+  // below either touches flash-resident code or blocks, and any of it stalling
+  // the transfer past espota's timeout aborts the update. A scan fed during
+  // these few seconds is lost — the reader re-arms after the reboot, so the
+  // cost is one card to re-feed, not a mute reader.
+  if (otaActive) return;
+#endif
   ws.loop();
   http.handleClient();
   drainQueue();

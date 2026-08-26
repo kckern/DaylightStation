@@ -48,6 +48,19 @@ export default {
   },
   test: {
     globals: true,
+    // WALL-CLOCK CEILINGS ARE CALIBRATED FOR AN IDLE MACHINE, and this suite is
+    // ~1,000 files run across every core at once. A worker starved for a slice
+    // past the 5s default fails whichever timing-shaped test it was inside —
+    // one roaming victim per sweep (QuizRunner, AdminPreviewPlayer,
+    // WeeklyReview, RubiksCubeProgram…), each passing every solo run, none of
+    // them sharing a cause beyond the clock. This raises only how long a
+    // starved worker MAY take; it changes nothing about what has to become
+    // true, and a genuinely hung test still fails, just later.
+    //
+    // It must also stay above `asyncUtilTimeout` (5s, frontend/src/test-setup.js)
+    // — a waitFor allowed to outlive its own test only moves the failure.
+    testTimeout: 20000,
+    hookTimeout: 20000,
     // Worker pool: threads, deliberately. The default forks pool intermittently
     // dies at worker recycle with "EnvironmentTeardownError: Closing rpc while
     // onUserConsoleLog was pending" (exit 1 with zero test failures) — its

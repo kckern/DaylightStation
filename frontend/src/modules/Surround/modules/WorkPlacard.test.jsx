@@ -6,6 +6,19 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import WorkPlacard, { plateText } from './WorkPlacard.jsx';
 
+// COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
+// `withStyles()` recompiled it on every call — up to 20 times in this file
+// alone, across nine specs that each do the same. `sass.compile` is
+// synchronous and CPU-heavy, and under a full parallel sweep (~1,000 files on
+// every core) that redundant work is what starves a worker past its timeout,
+// failing whichever timing-shaped test it was inside. Memoised by path.
+const __sassCache = new Map();
+const compileSheetOnce = (file) => {
+  if (!__sassCache.has(file)) __sassCache.set(file, sass.compile(file));
+  return __sassCache.get(file);
+};
+
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DATA = {
@@ -36,7 +49,7 @@ it('engraves the piece title and its provenance line', () => {
  * render would read UA defaults and pass whatever the stylesheet said.
  */
 it('sets the work title as the loudest type on the plate', () => {
-  const css = sass.compile(path.join(__dirname, 'WorkPlacard.scss')).css.replace(/\s+/g, ' ');
+  const css = compileSheetOnce(path.join(__dirname, 'WorkPlacard.scss')).css.replace(/\s+/g, ' ');
   const size = (sel) => {
     const rule = css.match(new RegExp(`\\.surround-work-placard__${sel} \\{([^}]*)\\}`))?.[1] ?? '';
     // The title's size is `var(--plate-size, 2.05rem)` since the plate learned

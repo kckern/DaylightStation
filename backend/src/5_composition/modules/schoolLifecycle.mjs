@@ -910,6 +910,11 @@ export async function createSchoolLifecycle({
   };
   const resolvePersonalCard = new ResolvePersonalCard({
     buildAgenda, receipts,
+    // The SAME capture port the result-receipt path uses — one canvas renderer,
+    // one artifact store, two `kind`s. The agenda leg was simply never wired,
+    // so every printed agenda was rendered and thrown away while result
+    // receipts had been archived all along.
+    captureAgenda: receiptCapture,
     roster: displayRoster,
     // Slice G: the SAME `school.yml` top level `agenda:` block a household
     // edits alongside `printing:`/`selfService:` — `cooldownMinutes: 0`

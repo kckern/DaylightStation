@@ -8,6 +8,7 @@
 
 import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { estimateCostUsd } from './aiPricing.mjs';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -43,8 +44,10 @@ export class AnthropicAdapter extends IAIGateway {
     this.model = config.model || 'claude-sonnet-4-20250514';
     this.maxTokens = config.maxTokens || 1000;
     this.timeout = config.timeout || 60000;
+    this.pricing = config.pricing || null;
     this.httpClient = deps.httpClient;
     this.logger = deps.logger || console;
+    this.usageLedger = deps.aiUsageLedger || null;
 
     // Metrics
     this.metrics = {
@@ -70,6 +73,7 @@ export class AnthropicAdapter extends IAIGateway {
     });
 
     this.metrics.requestCount++;
+    const startedAt = Date.now();
 
     try {
       const response = await this._makeRequest(url, {
@@ -95,11 +99,14 @@ export class AnthropicAdapter extends IAIGateway {
           throw error;
         }
 
-        throw new InfrastructureError(errorData.error?.message || `AI API error: ${response.status}`, {
+        const err = new InfrastructureError(errorData.error?.message || `AI API error: ${response.status}`, {
           code: 'EXTERNAL_SERVICE_ERROR',
           service: 'Anthropic',
           statusCode: response.status
         });
+        err.status = response.status;
+        err.apiError = errorData.error || null;
+        throw err;
       }
 
       const result = await response.json();
@@ -110,18 +117,63 @@ export class AnthropicAdapter extends IAIGateway {
         this.metrics.outputTokens += result.usage.output_tokens || 0;
       }
 
-      this.logger.debug?.('anthropic.response', {
-        endpoint,
-        usage: result.usage
-      });
-
+      this.#recordUsage({ endpoint, requestedModel: data.model, result, durationMs: Date.now() - startedAt });
       return result;
     } catch (error) {
       if (!error.code) {
         this.metrics.errors++;
       }
-      this.logger.error?.('anthropic.error', { endpoint, error: error.message });
+      this.logger.error?.('anthropic.error', {
+        endpoint,
+        model: data.model,
+        status: error.status ?? null,
+        error: error.message,
+        apiError: error.apiError || null,
+      });
+      this.#recordUsage({ endpoint, requestedModel: data.model, durationMs: Date.now() - startedAt, error });
       throw error;
+    }
+  }
+
+  /**
+   * Emit one `anthropic.usage` event and one ledger row per API call — the
+   * billing trail. Never throws; observing a call must not break it.
+   * @private
+   */
+  #recordUsage({ endpoint, requestedModel, result = null, durationMs, error = null }) {
+    try {
+      const usage = result?.usage || {};
+      const model = result?.model || requestedModel || null;
+      // Anthropic reports cache reads/writes OUTSIDE input_tokens, unlike
+      // OpenAI — so cache reads are added to the prompt total here to give the
+      // pricing helper the same "cached is a subset of prompt" shape.
+      const cachedTokens = usage.cache_read_input_tokens ?? null;
+      const cacheWriteTokens = usage.cache_creation_input_tokens ?? null;
+      const promptTokens = usage.input_tokens != null
+        ? usage.input_tokens + (cachedTokens || 0)
+        : null;
+      const completionTokens = usage.output_tokens ?? null;
+      const entry = {
+        provider: 'anthropic',
+        endpoint,
+        model,
+        requestedModel: requestedModel || null,
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens != null || completionTokens != null
+          ? (promptTokens || 0) + (completionTokens || 0)
+          : null,
+        ...(cachedTokens != null ? { cachedTokens } : {}),
+        ...(cacheWriteTokens != null ? { cacheWriteTokens } : {}),
+        costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens, cachedTokens, cacheWriteTokens }, this.pricing),
+        durationMs,
+        status: error ? 'error' : 'ok',
+        ...(error ? { httpStatus: error.status ?? null, error: error.message } : {}),
+      };
+      this.logger.info?.('anthropic.usage', entry);
+      this.usageLedger?.record(entry);
+    } catch (recordError) {
+      this.logger.warn?.('anthropic.usage.record-failed', { endpoint, error: recordError.message });
     }
   }
 
@@ -132,17 +184,20 @@ export class AnthropicAdapter extends IAIGateway {
   async _makeRequest(url, options) {
     // Adapt httpClient.post to return fetch-like response
     // This maintains compatibility with existing callApi method
+    // validateStatus keeps axios from throwing on 4xx/5xx, which would discard
+    // the API's error body before callApi can read and log it
     const response = await this.httpClient.post(
       url,
       JSON.parse(options.body),
       {
         headers: options.headers,
-        timeout: options.timeout
+        timeout: options.timeout,
+        validateStatus: () => true
       }
     );
 
     return {
-      ok: response.ok,
+      ok: response.status >= 200 && response.status < 300,
       status: response.status,
       json: () => Promise.resolve(response.data),
       headers: {

@@ -164,11 +164,19 @@ export function createChessOpponentCommentaryService({
         }), options.timeoutMs);
         const quip = normalizeQuip(raw, options.maxChars);
         if (!quip) throw new Error('invalid_commentary');
-        logger?.info?.('chess.commentary.generated', { gameId, ply: game.moves.length, level: resolved.level });
+        logger?.info?.('chess.commentary.generated', {
+          gameId, ply: game.moves.length, level: resolved.level, opponent: opponent.name, quip,
+        });
         return { eventId, quip, source: 'ai' };
       } catch (error) {
         logger?.warn?.('chess.commentary.fallback', {
-          gameId, ply: game.moves.length, level: resolved.level, reason: error.message,
+          gameId,
+          ply: game.moves.length,
+          level: resolved.level,
+          opponent: opponent.name,
+          reason: error.message,
+          apiError: error.apiError || null,
+          quip: fallback,
         });
         return { eventId, quip: fallback, source: 'fallback' };
       }

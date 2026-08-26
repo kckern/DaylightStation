@@ -6,12 +6,25 @@ import { INITIAL_FEN, applyMove, describePosition } from '@shared-gaming/ruleset
 import ChessBoard from './ChessBoard.jsx';
 import { pieceSource } from './pieceAssets.js';
 
+// COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
+// `withStyles()` recompiled it on every call — up to 20 times in this file
+// alone, across nine specs that each do the same. `sass.compile` is
+// synchronous and CPU-heavy, and under a full parallel sweep (~1,000 files on
+// every core) that redundant work is what starves a worker past its timeout,
+// failing whichever timing-shaped test it was inside. Memoised by path.
+const __sassCache = new Map();
+const compileSheetOnce = (file) => {
+  if (!__sassCache.has(file)) __sassCache.set(file, sass.compile(file));
+  return __sassCache.get(file);
+};
+
+
 // jsdom never computes CSS, so nothing above this line can tell us whether two
 // channels actually render together on one square — a class-name assertion would
 // stay green even while box-shadow silently overwrote itself. This block compiles
 // the real stylesheet and inspects the generated declarations instead.
 const scssPath = fileURLToPath(new URL('./ChessBoard.scss', import.meta.url));
-const compiledCss = sass.compile(scssPath).css;
+const compiledCss = compileSheetOnce(scssPath).css;
 
 function ruleBody(selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

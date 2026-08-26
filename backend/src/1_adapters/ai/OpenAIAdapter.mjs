@@ -8,10 +8,34 @@
 import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { retryTransient } from '#system/utils/retryTransient.mjs';
+import { estimateCostUsd } from './aiPricing.mjs';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
+/**
+ * Model families that reject `max_tokens` in favour of `max_completion_tokens`
+ * (the reasoning line, and gpt-5 onward). Matched by prefix so dated ids and
+ * variants — `gpt-5.6-luna`, `o3-mini-2025-01-31` — are covered.
+ */
+const COMPLETION_TOKEN_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'];
+
 export class OpenAIAdapter extends IAIGateway {
+  /**
+   * Models learned at runtime to need `max_completion_tokens`, from a 400 that
+   * said so. Static so the lesson is shared by every adapter instance in the
+   * process and survives a rebuilt gateway.
+   */
+  static completionTokenModels = new Set();
+
+  /** Which max-tokens parameter name this model expects. */
+  static maxTokensParamFor(model) {
+    if (typeof model !== 'string') return 'max_tokens';
+    if (OpenAIAdapter.completionTokenModels.has(model)) return 'max_completion_tokens';
+    return COMPLETION_TOKEN_PREFIXES.some(prefix => model.startsWith(prefix))
+      ? 'max_completion_tokens'
+      : 'max_tokens';
+  }
+
   /**
    * @param {Object} config
    * @param {string} config.apiKey - OpenAI API key
@@ -43,8 +67,10 @@ export class OpenAIAdapter extends IAIGateway {
     this.miniModel = config.miniModel || config.mini_model || 'gpt-4.1-mini';
     this.maxTokens = config.maxTokens || 1000;
     this.timeout = config.timeout || 60000;
+    this.pricing = config.pricing || null;
     this.httpClient = deps.httpClient;
     this.logger = deps.logger || console;
+    this.usageLedger = deps.aiUsageLedger || null;
 
     // Metrics
     this.metrics = {
@@ -205,9 +231,10 @@ export class OpenAIAdapter extends IAIGateway {
     });
 
     this.metrics.requestCount++;
+    const startedAt = Date.now();
 
     try {
-      return await this.#retryWithBackoff(async () => {
+      const result = await this.#retryWithBackoff(async () => {
         const response = await this._makeRequest(url, {
           method: 'POST',
           headers: {
@@ -232,6 +259,7 @@ export class OpenAIAdapter extends IAIGateway {
 
           const err = new Error(errorData.error?.message || `AI API error: ${response.status}`);
           err.status = response.status;
+          err.apiError = errorData.error || null;
           throw err;
         }
 
@@ -241,19 +269,67 @@ export class OpenAIAdapter extends IAIGateway {
           this.metrics.tokenCount += result.usage.total_tokens || 0;
         }
 
-        this.logger.debug?.('openai.response', {
-          endpoint,
-          usage: result.usage
-        });
-
         return result;
       });
+
+      this.#recordUsage({ endpoint, requestedModel: data.model, result, durationMs: Date.now() - startedAt });
+      return result;
     } catch (error) {
       if (!error.code) {
         this.metrics.errors++;
       }
-      this.logger.error?.('openai.error', { endpoint, error: error.message });
+      this.logger.error?.('openai.error', {
+        endpoint,
+        model: data.model,
+        status: error.status ?? null,
+        error: error.message,
+        apiError: error.apiError || null,
+      });
+      this.#recordUsage({ endpoint, requestedModel: data.model, durationMs: Date.now() - startedAt, error });
       throw error;
+    }
+  }
+
+  /**
+   * Emit one `openai.usage` event and one ledger row per API call — the
+   * billing trail: which model, tokens in/out, estimated cost, and duration.
+   * Never throws; observing a call must not break it.
+   * @private
+   */
+  #recordUsage({ endpoint, requestedModel, result = null, durationMs, error = null }) {
+    try {
+      const usage = result?.usage || {};
+      const model = result?.model || requestedModel || null;
+      const promptTokens = usage.prompt_tokens ?? usage.input_tokens ?? null;
+      const completionTokens = usage.completion_tokens ?? usage.output_tokens ?? null;
+      // Cache hits bill at roughly a tenth of the input rate, so they have to
+      // be split out rather than folded into the prompt total.
+      const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? null;
+      const cacheWriteTokens = usage.prompt_tokens_details?.cache_write_tokens ?? null;
+      // Reasoning tokens are already inside completion_tokens and bill at the
+      // output rate; surfaced separately because they are invisible spend —
+      // a model can burn most of a call's output budget thinking.
+      const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens ?? null;
+      const entry = {
+        provider: 'openai',
+        endpoint,
+        model,
+        requestedModel: requestedModel || null,
+        promptTokens,
+        completionTokens,
+        totalTokens: usage.total_tokens ?? null,
+        ...(cachedTokens != null ? { cachedTokens } : {}),
+        ...(cacheWriteTokens ? { cacheWriteTokens } : {}),
+        ...(reasoningTokens ? { reasoningTokens } : {}),
+        costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens, cachedTokens, cacheWriteTokens }, this.pricing),
+        durationMs,
+        status: error ? 'error' : 'ok',
+        ...(error ? { httpStatus: error.status ?? null, error: error.message } : {}),
+      };
+      this.logger.info?.('openai.usage', entry);
+      this.usageLedger?.record(entry);
+    } catch (recordError) {
+      this.logger.warn?.('openai.usage.record-failed', { endpoint, error: recordError.message });
     }
   }
 
@@ -264,12 +340,15 @@ export class OpenAIAdapter extends IAIGateway {
   async _makeRequest(url, options) {
     // Adapt httpClient.post to return fetch-like response
     // This maintains compatibility with existing callApi method
+    // validateStatus keeps axios from throwing on 4xx/5xx, which would discard
+    // the API's error body before callApi can read and log it
     const response = await this.httpClient.post(
       url,
       JSON.parse(options.body),
       {
         headers: options.headers,
-        timeout: options.timeout
+        timeout: options.timeout,
+        validateStatus: () => true
       }
     );
 
@@ -288,10 +367,11 @@ export class OpenAIAdapter extends IAIGateway {
    * @private
    */
   async callCompletions(messages, options = {}) {
+    const model = options.model || this.model;
     const data = {
-      model: options.model || this.model,
+      model,
       messages,
-      max_tokens: options.maxTokens || this.maxTokens
+      [OpenAIAdapter.maxTokensParamFor(model)]: options.maxTokens || this.maxTokens
     };
 
     if (options.temperature !== undefined) {
@@ -306,7 +386,21 @@ export class OpenAIAdapter extends IAIGateway {
       data.response_format = { type: 'json_object' };
     }
 
-    return this.callApi('/chat/completions', data, options);
+    try {
+      return await this.callApi('/chat/completions', data, options);
+    } catch (error) {
+      // Newer model families reject `max_tokens` and want
+      // `max_completion_tokens`. The prefix list below cannot know every future
+      // model, so learn from the rejection and retry once rather than failing a
+      // call over a parameter rename.
+      if (error?.apiError?.code === 'unsupported_parameter' && error.apiError.param === 'max_tokens') {
+        OpenAIAdapter.completionTokenModels.add(model);
+        this.logger.warn?.('openai.maxTokensParam.switched', { model, param: 'max_completion_tokens' });
+        const { max_tokens: maxTokens, ...rest } = data;
+        return this.callApi('/chat/completions', { ...rest, max_completion_tokens: maxTokens }, options);
+      }
+      throw error;
+    }
   }
 
   // ============ IAIGateway Implementation ============
@@ -513,6 +607,7 @@ export class OpenAIAdapter extends IAIGateway {
     });
 
     this.metrics.requestCount++;
+    const startedAt = Date.now();
 
     try {
       const response = await retryTransient(
@@ -539,10 +634,37 @@ export class OpenAIAdapter extends IAIGateway {
         textLength: response.text?.length
       });
 
+      // Whisper bills per audio minute rather than per token; record the call
+      // and payload size so spend can be reconstructed from provider invoices.
+      const entry = {
+        provider: 'openai',
+        endpoint: '/audio/transcriptions',
+        model: 'whisper-1',
+        requestedModel: 'whisper-1',
+        promptTokens: null,
+        completionTokens: null,
+        totalTokens: null,
+        costUsd: null,
+        audioBytes: audioBuffer.length,
+        durationMs: Date.now() - startedAt,
+        status: 'ok',
+      };
+      this.logger.info?.('openai.usage', entry);
+      this.usageLedger?.record(entry);
+
       return response.text;
     } catch (error) {
       this.metrics.errors++;
       this.logger.error?.('openai.transcribe.error', { error: error.message });
+      this.usageLedger?.record({
+        provider: 'openai',
+        endpoint: '/audio/transcriptions',
+        model: 'whisper-1',
+        audioBytes: audioBuffer.length,
+        durationMs: Date.now() - startedAt,
+        status: 'error',
+        error: error.message,
+      });
       throw error;
     }
   }

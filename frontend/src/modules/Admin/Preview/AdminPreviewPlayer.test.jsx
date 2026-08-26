@@ -68,9 +68,17 @@ describe('AdminPreviewPlayer frame', () => {
 
   it('re-scales when a different screen is chosen', async () => {
     const { container } = renderPreview();
-    await waitFor(() => expect(screen.getByLabelText('Preview at screen')).toBeTruthy());
+    const select = await screen.findByLabelText('Preview at screen');
+    // WAIT FOR THE OPTION, not just the select. Before the API answers,
+    // `screens` holds only FALLBACK_SCREEN (see the note below on stranding) —
+    // the control is on screen with `portal` not yet in it, and changing to a
+    // value that does not exist is a no-op the assertions then wait out. The
+    // sweep only lost this race when the machine was busy.
+    await waitFor(() => expect(
+      [...select.options].some((o) => o.value === 'portal'),
+    ).toBe(true));
 
-    fireEvent.change(screen.getByLabelText('Preview at screen'), { target: { value: 'portal' } });
+    fireEvent.change(select, { target: { value: 'portal' } });
 
     await waitFor(() => {
       const root = container.querySelector('.admin-preview-player');

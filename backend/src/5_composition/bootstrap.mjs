@@ -443,7 +443,7 @@ export async function initializeIntegrations(config) {
  * @returns {Promise<Object>} Adapters keyed by capability
  */
 export async function loadHouseholdIntegrations(config) {
-  const { householdId, httpClient, logger = console } = config;
+  const { householdId, httpClient, logger = console, aiUsageLedger = null } = config;
 
   if (!integrationLoaderInstance) {
     throw new Error('Integration system not initialized. Call initializeIntegrations first.');
@@ -451,7 +451,7 @@ export async function loadHouseholdIntegrations(config) {
 
   const adapters = await integrationLoaderInstance.loadForHousehold(
     householdId,
-    { httpClient }
+    { httpClient, logger, aiUsageLedger }
   );
 
   logger.info?.('integrations.household.loaded', {

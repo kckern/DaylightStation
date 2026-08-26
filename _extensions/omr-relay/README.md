@@ -386,6 +386,60 @@ pio run -e m5-atom -t upload --upload-port /dev/cu.usbserial-XXXX
 pio device monitor -b 115200        # watch bytes; first goal is a `raw` capture
 ```
 
+### Over-the-air updates ✅ (2026-08-25, verified on hardware)
+
+**USB is no longer needed for a firmware change.** The board used to build
+against `huge_app.csv` — a single app slot, so OTA was impossible — and every
+fix meant taking the reader apart for a cable. It now builds against
+`min_spiffs.csv` (two 1.92 MB slots); the image is ~1.28 MB, so it fits at 65%.
+
+```bash
+cd firmware
+PLATFORMIO_UPLOAD_FLAGS="--auth=<ota.password>" \
+  pio run -e m5-atom-ota -t upload --upload-port 10.0.0.19
+```
+
+The password lives in the household SSOT under the reader's `ota:` block, never
+in this repo. `gen-config.mjs` **refuses to build an OTA-enabled image without
+one** — the diagnostics server on :80 is unauthenticated by design, and an open
+flash endpoint beside it would be a far bigger door.
+
+Two things that are easy to get wrong:
+
+- `--upload-protocol` and `--upload-flags` are **not** CLI options. The protocol
+  comes from the `m5-atom-ota` env; the auth flag has to arrive via
+  `PLATFORMIO_UPLOAD_FLAGS`.
+- **The first delivery after switching partition tables is still USB.** The
+  partition table sits at 0x8000, outside any app slot, so it cannot be written
+  over the air. A board still running a `huge_app.csv` image cannot receive an
+  OTA at all — it has nowhere to put it.
+
+**An OTA needs the board to itself.** Writing flash on an ESP32 disables the
+instruction cache, and anything else executing from flash has to be suspended
+across each write; with the NFC task and the WebSocket live, the transfer stalled
+past espota's timeout and **died at ~10% every attempt.** `onStart` now suspends
+the NFC task, drops the socket and stops the HTTP server, and `loop()` runs
+nothing but `ArduinoOTA.handle()` while `otaActive`. On error the board restarts
+into the old image rather than sitting half-suspended — a failed OTA never
+switches the boot partition, so that is a rollback, not a brick.
+
+### The bus heartbeat is not optional
+
+`ws.enableHeartbeat(20000, 8000, 3)` in `setup()` is a **fix, not a tuning
+knob**. Without it `pingInterval` is 0, arduinoWebSockets' `handleHBTimeout()`
+returns immediately, and the client has no liveness detection at all: a peer
+that vanishes without a clean close leaves `wsConnected` stuck true, so
+`setReconnectInterval()` never fires. `sendTXT()` then succeeds into a dead
+socket, `drainQueue()` pops the item and `qDelivered++` — and the outbound
+queue, whose whole reason for existing is that a bubble sheet is a one-shot
+physical event, is defeated by a flag that lied to it.
+
+Measured 2026-08-25: four sheets destroyed this way, recovery waiting ~16 min
+for lwIP to give up retransmitting, while `/health` reported `ok: true,
+dropped: 0`. The sibling relays (kitchen, obd, pressure-mat) always called this;
+only this one was missed. **`ack.timedOut` is the only counter that sees this
+class of loss** — `delivered` counts `sendTXT()` returning true, not receipt.
+
 ## Bring-up checklist
 
 Work top to bottom. The electronics are a copy of the other two relays; the

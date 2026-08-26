@@ -35,6 +35,24 @@ import { stableRecordDigest } from '#apps/common/stableRecord.mjs';
 const DEFAULT_AGENDA_COOLDOWN_MINUTES = 15;
 
 /**
+ * Artifact id convention for a printed agenda: `agenda/<learner>/<issuedAt>`.
+ *
+ * Namespaced like the receipt ids beside it (`receipt/<session>/<outcome>`), so
+ * one `school/artifacts/issued/` tree holds every kind and the prefix says which
+ * is which. The timestamp is the whole uniqueness story — a child may tap many
+ * times a day and each printed page is its own record — and it sorts
+ * chronologically, which is how you actually look for one ("what came out around
+ * half four?").
+ *
+ * Exported because the CLI has to name the same artifact the printer wrote; a
+ * convention duplicated as a template string in two files is a convention that
+ * drifts.
+ */
+export function agendaArtifactId({ learnerId, issuedAt }) {
+  return `agenda/${learnerId}/${issuedAt}`;
+}
+
+/**
  * Validated the same defensive way `IssueDocument`'s
  * `normalizePrintCooldownMinutes` is: this number gates every single card
  * scan in the house, so a malformed config value must fail loudly at
@@ -75,7 +93,7 @@ function agendaFingerprint(agenda) {
 }
 
 export class ResolvePersonalCard {
-  #buildAgenda; #receipts; #roster; #logger; #cooldown; #cooldownMinutes; #clock; #tokens;
+  #buildAgenda; #receipts; #roster; #logger; #cooldown; #cooldownMinutes; #clock; #tokens; #captureAgenda;
 
   /**
    * One in-flight resolution per learner.
@@ -101,6 +119,10 @@ export class ResolvePersonalCard {
    *   and every scan prints exactly as it did before the feature existed.
    * @param {number} [deps.cooldownMinutes] - `school.yml agenda.cooldownMinutes`
    *   (default 15). `0` disables the cooldown outright.
+   * @param {{execute: Function}} [deps.captureAgenda] - archives each printed
+   *   agenda (document + rendered bytes) to the issued-artifact store. Optional
+   *   and best-effort: absent, printing behaves exactly as it did before, and a
+   *   capture that throws never fails a print. See `#captureAgendaArtifact`.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    * @param {import('../ports/ITokenRegistry.mjs').ITokenRegistry} [deps.tokens] -
@@ -110,11 +132,12 @@ export class ResolvePersonalCard {
    */
   constructor({
     buildAgenda, receipts, roster = null, cooldown = null, cooldownMinutes = null,
-    clock = () => new Date(), logger = console, tokens = null,
+    clock = () => new Date(), logger = console, tokens = null, captureAgenda = null,
   } = {}) {
     if (!buildAgenda || !receipts) throw new Error('ResolvePersonalCard requires buildAgenda and receipts');
     this.#buildAgenda = buildAgenda;
     this.#receipts = receipts;
+    this.#captureAgenda = captureAgenda;
     this.#roster = roster;
     this.#cooldown = cooldown;
     this.#cooldownMinutes = normalizeCooldownMinutes(cooldownMinutes);
@@ -189,8 +212,10 @@ export class ResolvePersonalCard {
 
     if (this.#cooldown) await this.#armCooldown(learnerId, agenda);
 
+    const artifactId = await this.#captureAgendaArtifact(learnerId, agenda);
+
     this.#logger.info?.('school.card.agenda-printed', {
-      learnerId, offers: agenda.offers.length, created: agenda.createdSessions.length,
+      learnerId, offers: agenda.offers.length, created: agenda.createdSessions.length, artifactId,
     });
     return {
       status: 'agenda_printed',
@@ -199,6 +224,50 @@ export class ResolvePersonalCard {
       printed: true,
       message: 'Printing your list.',
     };
+  }
+
+  /**
+   * Archive what just came off the printer.
+   *
+   * Until this existed the agenda was rendered to a scratch PNG, printed, and
+   * unlinked — so the only trace of a page a child was holding was one log line
+   * saying a page had existed. "This block is broken, look at it" had no answer
+   * short of standing at the printer with a camera, and by the time anyone
+   * asked, the state that produced it had moved on.
+   *
+   * The manifest keeps `sourceDocument` — the renderer's INPUT — beside the
+   * bytes. Bytes alone are an archive; the document is what can be fed back
+   * through a renderer you have since changed, which is what makes a layout fix
+   * verifiable against the page that actually went wrong rather than against
+   * invented test data. A later renderer will not reproduce the old pixels
+   * exactly, and that is fine and expected — the contract here is that the DATA
+   * and STATE as of the printout survive faithfully.
+   *
+   * BEST EFFORT, ALWAYS. This runs after the paper is already in a child's
+   * hand. An archive that can turn a successful print into a failed scan has
+   * its priorities backwards, so every failure here is a warning and nothing
+   * more.
+   *
+   * @returns {Promise<string|null>} the artifact id, or null if not captured
+   */
+  async #captureAgendaArtifact(learnerId, agenda) {
+    if (!this.#captureAgenda?.execute || !agenda?.document) return null;
+    const issuedAt = this.#clock().toISOString();
+    const artifactId = agendaArtifactId({ learnerId, issuedAt });
+    try {
+      await this.#captureAgenda.execute({
+        artifactId, learnerId, issuedAt, kind: 'agenda', document: agenda.document,
+        // An agenda spans whatever sessions it happens to offer rather than
+        // belonging to one, so there is no single sessionId to record here.
+        sessionId: null,
+      });
+      return artifactId;
+    } catch (err) {
+      this.#logger.warn?.('school.card.agenda-capture-failed', {
+        learnerId, artifactId, error: err.message,
+      });
+      return null;
+    }
   }
 
   /**

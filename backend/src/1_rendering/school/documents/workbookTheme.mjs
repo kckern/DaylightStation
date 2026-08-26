@@ -96,6 +96,11 @@ const STYLE_META = {
  * so the two densities differ predictably rather than reshuffling rhythm.
  */
 const NORMAL_SPACING = {
+  // The lesson card is a page-opening masthead, not a heading: it carries a
+  // border, a rule and a pass bar, and the first question must not crowd it.
+  // Its own row rather than a shared one — every other class pair predates
+  // the card and none of them should move because it wants more air.
+  lessonCard: { heading: 14, body: 12, question: 14, instruction: 12, asset: 14, action: 16 },
   heading: { heading: 10, body: 6, question: 10, instruction: 6, asset: 10, action: 12 },
   body: { heading: 14, body: 8, question: 12, instruction: 8, asset: 12, action: 14 },
   question: { heading: 16, body: 12, question: 14, instruction: 12, asset: 14, action: 16 },
@@ -417,6 +422,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
     /** Vertical breathing room between the subject mark and progress rail. */
     lessonCard: {
       progressGapPt: 10,
+      spacingClass: 'lessonCard',
     },
 
     /** Lines a flowable fragment may not be broken below, on either side of a page break. */

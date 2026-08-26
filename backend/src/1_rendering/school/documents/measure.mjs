@@ -1352,6 +1352,10 @@ function fragmentFromNode(node, { id, block, theme }) {
     // Teacher-key render mode (Task 6): same "atomic single-node fragment"
     // path as wordbank/matching above.
     answerKey: theme.answerKey?.spacingClass,
+    // Without this the card had NO spacing class, so `gapBetween` fell through
+    // to its `?? 0` default and the first question sat flush against the card's
+    // border — the gap was never a tuned value, just an omission.
+    lessonCard: theme.lessonCard?.spacingClass,
   };
   node.offsetYPt = 0;
   return {

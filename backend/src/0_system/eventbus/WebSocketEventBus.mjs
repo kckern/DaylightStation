@@ -24,6 +24,15 @@ import {
 // client-control:<clientId> topic prefix — delivered per connection identity.
 const CLIENT_CONTROL_PREFIX = 'client-control:';
 
+// Consecutive missed pongs before a client is terminated. This used to be an
+// implicit 1 — a SINGLE lost ping or pong frame killed the connection. Fine for
+// a browser on good WiFi; brutal for an embedded relay on a marginal link, and
+// the ESP32 relays flapped ~29 times a day because of it (2026-08-25). At 3 x
+// the 30s sweep a client has ~90s, which is deliberately LONGER than the
+// clients' own heartbeat detection (~60s) so a healthy-but-lossy device
+// notices and reconnects itself rather than being culled mid-scan.
+const STALE_PONG_MISSES = 3;
+
 /**
  * @typedef {import('./IEventBus.mjs').ClientMeta} ClientMeta
  */
@@ -148,10 +157,22 @@ export class WebSocketEventBus {
       const beat = JSON.stringify({ type: 'heartbeat', ts: Date.now() });
       for (const [clientId, { ws }] of this.#clients) {
         if (ws._wsPongReceived === false) {
-          // No pong since last ping — connection is stale
-          this.#logger.warn?.('eventbus.client_stale', { clientId });
-          ws.terminate();
-          continue;
+          ws._wsPongMisses = (ws._wsPongMisses || 0) + 1;
+          if (ws._wsPongMisses >= STALE_PONG_MISSES) {
+            // No pong across STALE_PONG_MISSES consecutive sweeps — really gone.
+            this.#logger.warn?.('eventbus.client_stale', {
+              clientId, misses: ws._wsPongMisses,
+            });
+            ws.terminate();
+            continue;
+          }
+          // One or two misses is a lossy link, not a dead peer. Logged so a
+          // chronically flapping device is visible BEFORE it starts losing
+          // data — the OMR relay had been missing pongs for weeks with nothing
+          // recording it, because only the terminal event was ever logged.
+          this.#logger.debug?.('eventbus.client_pong_missed', {
+            clientId, misses: ws._wsPongMisses, of: STALE_PONG_MISSES,
+          });
         }
         ws._wsPongReceived = false;
         ws.ping();
@@ -742,7 +763,11 @@ export class WebSocketEventBus {
 
     // Track pong responses for stale connection detection
     ws._wsPongReceived = true;
-    ws.on('pong', () => { ws._wsPongReceived = true; });
+    ws._wsPongMisses = 0;
+    // Any pong clears the streak — STALE_PONG_MISSES counts CONSECUTIVE misses,
+    // so an occasional dropped frame on a lossy link never accumulates toward a
+    // termination the way a genuinely dead peer's does.
+    ws.on('pong', () => { ws._wsPongReceived = true; ws._wsPongMisses = 0; });
 
     // Set up message handler
     ws.on('message', (rawMessage) => {
