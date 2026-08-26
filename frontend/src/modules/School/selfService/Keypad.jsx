@@ -24,6 +24,15 @@
  * that still uses words (a backend outage, plus its retry button) does not
  * shift the pad either.
  *
+ * THE INTERACTION OUTLASTS THE ENTRY. Auto-submit made the sixth DIGIT the
+ * child's finishing gesture, and `submit` empties the pad before the round
+ * trip — so the trailing activations of that key (a release that outran the
+ * tap dedupe, an impatient second jab) arrive on an empty pad and used to read
+ * as the start of a new code, cancelling the refusal they had just earned.
+ * STRAY_PRESS_MS is where that is held: for as long as one physical gesture is
+ * allowed to take, a key is the tail of the last code rather than the head of
+ * the next.
+ *
  * Presentational — every decision (wrong code vs. dead backend, what to do
  * next) belongs to useSelfService.
  */
@@ -59,6 +68,27 @@ const WIPE_MS = 70;
 // what lets a child who overshoots the last digit backspace before that
 // request ever goes out, without adding a noticeable delay for a correct code.
 const AUTO_SUBMIT_SETTLE_MS = 300;
+
+/**
+ * HOW LONG A KEY ACTIVATION STILL BELONGS TO THE CODE THAT JUST WENT OUT.
+ *
+ * `submit` empties the entry BEFORE the round trip (see there for why), and
+ * auto-submit made the child's finishing gesture a DIGIT KEY rather than a
+ * deliberate tap on Go. Those two together mean every trailing activation of
+ * that last key — the release that outran `useTapFire`'s dedupe window, the
+ * impatient second jab from a child who saw nothing happen — now lands on an
+ * EMPTY pad, where `press` reads it as the start of a new code and cancels the
+ * refusal that same submission had just earned. NONONO fired and was wiped
+ * before anyone could see it.
+ *
+ * So a press this soon after the verdict is treated as the tail of the old
+ * interaction and dropped: nobody has reacted to an answer they have not
+ * finished seeing. Deliberately the SAME 700ms as `useTapFire`'s window, and
+ * for the same reason — it is how long one physical gesture at this panel is
+ * allowed to take. Past it, the header's rule stands unchanged: any key
+ * cancels a playing refusal, because by then the child has read it.
+ */
+const STRAY_PRESS_MS = 700;
 
 /**
  * Buttons that fire on TOUCH-DOWN.
@@ -208,13 +238,33 @@ export default function Keypad({
     at(t, () => setReject(null));
   }, [length]);
 
+  /**
+   * Until when a digit/backspace activation is read as the tail of the code
+   * that just went out rather than the start of a new one (STRAY_PRESS_MS).
+   * Armed twice per submission — once when the request leaves, once when the
+   * verdict lands — so the window is measured from whichever the child could
+   * actually have been reacting to, and a slow round trip does not extend it.
+   */
+  const strayUntilRef = useRef(0);
+  const armStrayGuard = useCallback(() => {
+    strayUntilRef.current = Date.now() + STRAY_PRESS_MS;
+  }, []);
+  const isStray = useCallback(() => Date.now() < strayUntilRef.current, []);
+
   // Any key cancels a playing refusal on the spot — a child who has already
   // started re-typing must not watch their new digits get wiped by the tail of
-  // the old animation.
+  // the old animation. The one exception is the stray window above: an
+  // activation that arrives before anyone could have read the answer is the
+  // previous gesture finishing, not a new one starting, and it is dropped
+  // outright rather than allowed to cancel the refusal it caused.
   const press = useCallback((digit) => {
+    if (isStray()) {
+      schoolLog.selfService('keypad.stray-press', { key: 'digit' });
+      return;
+    }
     stopReject();
     setEntry((current) => (current.length >= length ? current : current + digit));
-  }, [length, stopReject]);
+  }, [isStray, length, stopReject]);
 
   /**
    * Clear wipes the entry; Clear on an ALREADY-EMPTY entry refreshes the panel.
@@ -229,13 +279,22 @@ export default function Keypad({
    */
   const clearEntry = useCallback(() => {
     if (reject) { stopReject(); return; }
-    if (!entry && onReload) { onReload(); return; }
+    // Clear itself is never held back — "start over" has to work the instant
+    // it is asked for. Its RELOAD branch is: inside the stray window the entry
+    // is empty because `submit` just emptied it, not because the screen is
+    // idle, and reloading the panel out from under a verdict still in flight
+    // is the same rug pull by a louder route.
+    if (!entry && onReload && !isStray()) { onReload(); return; }
     setEntry('');
-  }, [entry, onReload, reject, stopReject]);
+  }, [entry, isStray, onReload, reject, stopReject]);
   const backspace = useCallback(() => {
+    if (isStray()) {
+      schoolLog.selfService('keypad.stray-press', { key: 'backspace' });
+      return;
+    }
     stopReject();
     setEntry((c) => c.slice(0, -1));
-  }, [stopReject]);
+  }, [isStray, stopReject]);
 
   const submit = useCallback(async () => {
     if (busy || entry.length !== length) return;
@@ -243,7 +302,11 @@ export default function Keypad({
     // walking up must never find a half-typed code waiting for them, and the
     // refusal that follows is about a code they have already finished typing.
     setEntry('');
+    // From here until STRAY_PRESS_MS after the answer lands, the pad is empty
+    // but the interaction is NOT over: see STRAY_PRESS_MS.
+    armStrayGuard();
     const verdict = await onSubmit(entry);
+    armStrayGuard();
     // Only a real refusal gets the drama. `skipped` is a double-tap that never
     // made a request (nothing on screen may change), and `degraded` is an
     // outage — the child's code may well have been fine, so it gets words and
@@ -251,7 +314,7 @@ export default function Keypad({
     if (verdict && verdict.resolved === false && !verdict.skipped && !verdict.degraded) {
       playReject();
     }
-  }, [busy, entry, length, onSubmit, playReject]);
+  }, [armStrayGuard, busy, entry, length, onSubmit, playReject]);
 
   // A bonded BK-3001 is a normal Android HID keyboard: its keys reach the
   // WebView as browser keydown events. Keep this listener on the keypad, not
