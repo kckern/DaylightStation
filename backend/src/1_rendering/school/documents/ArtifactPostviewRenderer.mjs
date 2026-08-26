@@ -1,31 +1,5 @@
 import PDFDocument from 'pdfkit';
-import { createCanvas, DOMMatrix, ImageData, Path2D, DOMPoint } from '@napi-rs/canvas';
-
-/**
- * PDF.js NEEDS A BROWSER'S CANVAS GLOBALS, AND CANNOT FIND THEM HERE.
- *
- * pdf.mjs polyfills `DOMMatrix`/`ImageData`/`Path2D` by requiring
- * `@napi-rs/canvas` through `process.getBuiltinModule` — added in Node 22.3,
- * absent from the Node 20 the container runs. So its polyfill block warned
- * "Cannot access the `require` function", left every global undefined, and the
- * first `constructPath` threw `Path2D is not defined`. The thumbnail route
- * catches a render failure and answers 404 by design (a corrupt PDF is a
- * missing view, not a server fault), so the failure surfaced only as the
- * words "No preview" under every worksheet on the dashboard — for years,
- * silently, on every PDF in the system.
- *
- * We do the polyfill ourselves, from the same package pdf.mjs would have
- * used, at import time — before anything can `await import` pdf.mjs below.
- *
- * AND WE RASTERIZE WITH THAT SAME CANVAS. Mixing implementations is the
- * second half of the trap: hand node-canvas a `Path2D` built by
- * `@napi-rs/canvas` and it neither draws it nor complains — the render
- * "succeeds" and returns a blank page (1.4KB of white for a full worksheet,
- * against 40KB when the two agree). One canvas, both jobs.
- */
-for (const [name, value] of Object.entries({ DOMMatrix, ImageData, Path2D, DOMPoint })) {
-  if (!globalThis[name] && value) globalThis[name] = value;
-}
+import { createCanvas } from 'canvas';
 
 /**
  * Rasterize the exact issued PDF and overlay the evidence the lifecycle can

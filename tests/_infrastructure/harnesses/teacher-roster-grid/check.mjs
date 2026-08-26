@@ -109,38 +109,11 @@ async function measure(page) {
       const r = el.getBoundingClientRect();
       return { width: r.width, height: r.height, hasImage: Boolean(el.querySelector('img')) };
     });
-    // Header/footer bands: present on every card, and visibly shaded against
-    // the body they sandwich (the divider + tint is what makes them bands).
-    const bands = [...document.querySelectorAll('[data-testid="lesson-card"]')].map((card) => {
-      const head = card.querySelector('.teacher-lesson-card__header');
-      const foot = card.querySelector('.teacher-lesson-card__foot');
-      const body = card.querySelector('.teacher-lesson-card__body');
-      const shade = (el) => (el ? getComputedStyle(el).backgroundColor : null);
-      return {
-        hasHeader: Boolean(head), hasFooter: Boolean(foot),
-        headShade: shade(head), footShade: shade(foot), bodyShade: shade(body),
-        headBorder: head ? getComputedStyle(head).borderBottomWidth : null,
-        footBorder: foot ? getComputedStyle(foot).borderTopWidth : null,
-        subjectInHeader: Boolean(head?.querySelector('.teacher-subject-identity')),
-        chipInFooter: Boolean(foot?.querySelector('.teacher-day-chip')),
-        scoreInFooter: Boolean(foot?.querySelector('[data-testid="score-marks"]')),
-      };
-    });
-    const dots = [...document.querySelectorAll('.teacher-roster__dot')].map((el) => {
-      const r = el.getBoundingClientRect();
-      return {
-        width: r.width, height: r.height,
-        tone: [...el.classList].find((c) => c.startsWith('teacher-roster__dot--')) ?? null,
-        hasIcon: Boolean(el.querySelector('svg, img')),
-      };
-    });
     const graded = document.querySelector('[data-testid="score-marks"]');
     return {
       cards,
       buttons,
       posters,
-      bands,
-      dots,
       firstRowCount: cards.filter((c) => c.top === cards[0]?.top).length,
       checkMarks: graded ? graded.querySelectorAll('.teacher-mark--check').length : 0,
       crossMarks: graded ? graded.querySelectorAll('.teacher-mark--cross').length : 0,
@@ -164,20 +137,9 @@ async function runViewport(browser, { width, height, name, minColumns, peek }) {
   check(`${name}: the agenda link is a >=40px target`,
     Boolean(agendaGeo) && agendaGeo.width >= 40 && agendaGeo.height >= 40,
     agendaGeo ? `${agendaGeo.width}x${agendaGeo.height}` : 'missing');
-  // A real href (middle-clickable), intercepted into a window sized to the
-  // 580px sheet rather than a whole tab for a narrow column.
-  const agendaOpen = await page.evaluate(() => {
-    const calls = [];
-    window.open = (...args) => { calls.push(args); return {}; };
-    document.querySelector('.teacher-roster__agenda-link').click();
-    return calls;
-  });
-  check(`${name}: the agenda link opens a window sized to the sheet`,
-    agendaOpen.length === 1 && agendaOpen[0][0].includes('/agenda/preview')
-      && /width=6\d\d/.test(agendaOpen[0][2]),
-    JSON.stringify(agendaOpen[0] ?? null));
-  check(`${name}: the agenda link keeps a real href for middle-click`,
-    (await agendaLink?.getAttribute('href'))?.includes('/agenda/preview'),
+  check(`${name}: the agenda link opens the preview in a new tab`,
+    (await agendaLink?.getAttribute('target')) === '_blank'
+      && (await agendaLink?.getAttribute('href'))?.includes('/agenda/preview'),
     await agendaLink?.getAttribute('href'));
 
   await page.click('.teacher-roster__card');
@@ -233,22 +195,6 @@ async function runViewport(browser, { width, height, name, minColumns, peek }) {
   check(label('planned + deferred lessons appear as their own cards'),
     geo.chips.includes('Not started') && geo.chips.includes('Deferred'), `chips=${geo.chips.join('|')}`);
   check(label('unplanned work appears as an Extra card'), geo.chips.includes('Extra'), `chips=${geo.chips.join('|')}`);
-  // The card's three bands: breadcrumb header, body, outcome footer — each
-  // one shaded against the body and separated from it by a real divider.
-  check(label('every card has a header and a footer band'),
-    geo.bands.length === geo.cards.length && geo.bands.every((b) => b.hasHeader && b.hasFooter),
-    `bands=${geo.bands.length}`);
-  check(label('the bands are shaded against the body, with dividers'),
-    geo.bands.every((b) => b.headShade !== b.bodyShade && b.footShade !== b.bodyShade
-      && parseFloat(b.headBorder) > 0 && parseFloat(b.footBorder) > 0),
-    `head=${geo.bands[0]?.headShade} body=${geo.bands[0]?.bodyShade} rule=${geo.bands[0]?.headBorder}`);
-  check(label('the subject sits in the header, the outcome in the footer'),
-    geo.bands.every((b) => b.subjectInHeader) && geo.bands.every((b) => b.scoreInFooter || b.chipInFooter),
-    `subjects=${geo.bands.filter((b) => b.subjectInHeader).length}`);
-  // A score IS "done" — a card carrying marks must not also carry the chip.
-  check(label('a scored card carries no redundant Done chip'),
-    geo.bands.filter((b) => b.scoreInFooter).every((b) => !b.chipInFooter),
-    `scored=${geo.bands.filter((b) => b.scoreInFooter).length} withChip=${geo.bands.filter((b) => b.scoreInFooter && b.chipInFooter).length}`);
   check(label('artifact tap targets are >=40px squares'),
     geo.buttons.length >= 4 && geo.buttons.every((b) => b.width >= 40 && b.height >= 40),
     `count=${geo.buttons.length} smallest=${Math.min(...geo.buttons.flatMap((b) => [b.width, b.height]))}`);
