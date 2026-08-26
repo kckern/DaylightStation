@@ -206,10 +206,13 @@ function LessonCard({ row, learnerId, base, onOpen }) {
   const served = row.served ?? null;
   const title = session?.lessonTitle ?? session?.title
     ?? offer?.taxonomy?.lesson ?? row.planned
+    // A clean lesson name, whether it came from the curriculum tally or from a
+    // program's own status. Preferred over `progressLabel` because that is a
+    // whole authored SENTENCE — "Done today — Rhythm Improvisation with Chords
+    // · 35/366" — which repeats the Done chip beside it and reads oddly as a
+    // title. It stays as the last resort, used verbatim: slicing a "Done
+    // today — " prefix off it would rot the moment that wording changed.
     ?? served?.work?.[0]?.title
-    // Used verbatim, never sliced: it is authored display copy (agenda.mjs
-    // `progressLabelFor`), and trimming a "Done today — " prefix off it would
-    // rot the first time that wording changed.
     ?? served?.progressLabel
     ?? 'No work offered';
   const courseTitle = session?.courseTitle ?? offer?.taxonomy?.course ?? null;

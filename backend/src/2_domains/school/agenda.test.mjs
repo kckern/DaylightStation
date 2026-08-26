@@ -16,6 +16,41 @@ describe('planDailyAgenda once-only programs', () => {
   });
 });
 
+describe('served work from a program subject', () => {
+  // A program subject (piano/arts) completes outside a work session, so its
+  // work never appears in the plan entries `servedWork` was built from. The
+  // section therefore named NOTHING once the subject was served — the very
+  // case that rendered as "No work offered" beneath a DONE chip. The program's
+  // own status knows which lesson it credited.
+  it('names the lesson a program credited today', () => {
+    const agenda = planDailyAgenda({
+      plan: { entries: [reel] }, now: '2026-08-25T18:00:00.000Z',
+      programStatuses: { 'language-reels::10': {
+        doneToday: true, progressLabel: 'Done today — Rhythm Improvisation with Chords · 35/366',
+        score: null, servedWork: [{ unitId: 'piano-l35', title: 'Rhythm Improvisation with Chords' }],
+      } },
+    });
+    expect(agenda.sections[0].servedToday).toBe(true);
+    expect(agenda.sections[0].servedWork).toEqual([
+      { unitId: 'piano-l35', title: 'Rhythm Improvisation with Chords' },
+    ]);
+  });
+
+  it('is unmoved by a status that carries no served work, or errored', () => {
+    const agenda = planDailyAgenda({
+      plan: { entries: [reel] }, now: '2026-08-25T18:00:00.000Z',
+      programStatuses: { 'language-reels::10': { doneToday: true, progressLabel: 'Done', score: null } },
+    });
+    expect(agenda.sections[0].servedWork).toEqual([]);
+
+    const errored = planDailyAgenda({
+      plan: { entries: [reel] }, now: '2026-08-25T18:00:00.000Z',
+      programStatuses: { 'language-reels::10': { error: true } },
+    });
+    expect(errored.sections[0].servedWork).toEqual([]);
+  });
+});
+
 describe('gradeFor scale', () => {
   // A program `score` arrives ALREADY as a percent: the piano launcher
   // computes `(completed / total) * 100`, the flashcard launcher passes the

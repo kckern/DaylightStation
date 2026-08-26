@@ -246,6 +246,14 @@ export class PianoCourseProgramLauncher {
         ...common,
         doneToday: true,
         progressLabel: `Done today — ${title} · ${completed}/${total}`,
+        // THE NAME ON ITS OWN, beside the sentence. `progressLabel` is
+        // authored display copy — a presenter that wants to say "Done" in its
+        // own voice cannot reuse it without slicing a prefix off, which would
+        // rot the moment the wording above changed. This is the same lesson,
+        // structured, for callers that supply their own framing.
+        servedWork: completedToday.map((item) => ({
+          unitId: item.unitId ?? item.id ?? null, title: item.title ?? null,
+        })),
       };
     }
 

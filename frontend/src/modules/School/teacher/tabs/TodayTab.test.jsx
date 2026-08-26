@@ -259,7 +259,10 @@ describe('TodayTab', () => {
   // card, all from the join discarding what the served section still knew.
   it('names the work a program completed on its own, instead of saying none was offered', async () => {
     schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
-      { subject: 'arts', servedToday: true, next: null, servedWork: [],
+      { subject: 'arts', servedToday: true, next: null,
+        // The program's own status now names the lesson it credited, so the
+        // card no longer has to wear the whole "Done today — …" sentence.
+        servedWork: [{ unitId: 'piano-l35', title: 'Rhythm Improvisation with Chords' }],
         progressLabel: 'Done today — Rhythm Improvisation with Chords · 35/366',
         progressRows: [{ scope: 'module', label: 'Unit 2 · Chords & the Grand Staff' }] },
     ] }));
@@ -268,8 +271,10 @@ describe('TodayTab', () => {
     ]));
     mount(<TodayTab kids={KIDS} />);
     fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
-    expect(await screen.findByText(/Rhythm Improvisation with Chords/)).toBeInTheDocument();
+    expect(await screen.findByText('Rhythm Improvisation with Chords')).toBeInTheDocument();
     expect(screen.queryByText('No work offered')).toBeNull();
+    // The title is the lesson's name, not the sentence about it.
+    expect(screen.queryByText(/Done today —/)).toBeNull();
     expect(screen.getByText(/Unit 2 · Chords & the Grand Staff/)).toBeInTheDocument();
     expect(screen.getByText('Completed in its own program')).toBeInTheDocument();
     // The reserved frame is not left blank: the subject's mark stands in.
