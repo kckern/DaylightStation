@@ -33,6 +33,9 @@ export const documentReceiptTheme = Object.freeze({
     // below have grown too (printed-copy feedback: keep the hierarchy, just
     // close the gap between the smallest and largest sizes).
     lessonTitle: 'bold 30px "Roboto Condensed"',
+    /** The catch-up rail's label. Small and bold — it names the card, it is
+     *  not competing with the title. */
+    rail: 'bold 20px "Roboto Condensed"',
     eyebrow: 'bold 20px "Roboto Condensed"',
     // Was 18px — the printed copy showed this (the lesson description) as
     // one of the two hardest lines to read on thermal stock.
@@ -87,6 +90,13 @@ export const documentReceiptTheme = Object.freeze({
   },
 
   action: {
+    /** Inverted bar sat on top of a card to mark it as something other than
+     *  ordinary today-work — currently catch-up (a lesson from a day that has
+     *  already passed). Emphasis comes from the inversion, not a second
+     *  typeface: on 58mm thermal a solid black bar is the one treatment that
+     *  survives, and Roboto Condensed stays the only face on the page. */
+    railHeight: 34,
+    railPadX: 12,
     padding: 12,
     borderWidth: 3,
     codeAreaPx: 132,

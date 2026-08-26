@@ -51,11 +51,13 @@ const text = (md) => ({ type: 'rich_text', md });
  * to remember, and therefore no way to separate the two.
  */
 function lessonAction({
-  token, eyebrow, title, description = null, icon = null, meta = null, taxonomy = null, accessCode,
+  token, eyebrow, title, description = null, icon = null, meta = null, taxonomy = null,
+  rail = null, accessCode,
 } = {}) {
   const block = {
     type: 'scan_action', action: token, label: title,
     presentation: 'lesson', eyebrow, hideCode: true,
+    ...(isNonEmptyString(rail) ? { rail } : {}),
     ...(isNonEmptyString(description) ? { description } : {}),
     ...(isNonEmptyString(icon) ? { icon } : {}),
     ...(isNonEmptyString(meta) ? { meta } : {}),
@@ -367,7 +369,16 @@ export function agendaDocument({
     if (isNonEmptyString(token)) {
       blocks.push(...lessonAction({
         token,
-        eyebrow: `Today · ${section.subject}`,
+        // The SUBJECT, not "Today". Every card on this page is today's — the
+        // page is the day — so a TODAY eyebrow on each one spent the card's
+        // most prominent small line restating the masthead. (The renderer
+        // truncates the eyebrow at its first `·`, so `Today · arts` printed as
+        // the single word "TODAY" and the subject never appeared at all: the
+        // one genuinely identifying word was the one being thrown away.)
+        eyebrow: section.subject,
+        // Catch-up work is offered exactly like today's; only this says which
+        // is which. See `agenda.mjs`'s `catchUp`.
+        rail: section.catchUp ? 'Catch-up' : null,
         title: nextTitle,
         description: next.description,
         icon: section.subject,
