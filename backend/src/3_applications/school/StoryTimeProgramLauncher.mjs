@@ -17,9 +17,11 @@
  * state. See `resolveDayCompletion`'s `indeterminate` branch.
  */
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
-
-export const STORY_TIME_PROGRAM_ID = 'story-time';
-export const DEFAULT_STORY_TARGET = 2;
+// ONE declaration of the id and the default, in the domain module that also
+// validates them. A launcher fallback that could drift from the validator's
+// default would change what a learner's obligation MEANS without anything
+// failing.
+import { STORY_TIME_PROGRAM_ID, DEFAULT_STORY_TARGET } from '#domains/school/storyTime.mjs';
 
 /** Wording for every "you can't start this here" path — one sentence, one place. */
 const AT_THE_TV = 'Story time happens on the living room TV — tap your card there.';

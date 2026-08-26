@@ -14,7 +14,7 @@ const course = (over = {}) => ({
   lastPlayedAt: '2026-07-28T10:00:00Z', ...over,
 });
 const player = (over = {}) => ({
-  userId: 'learner-two', name: 'learner-two', lastPlayedAt: '2026-07-28T10:00:00Z',
+  userId: 'learner2', name: 'learner2', lastPlayedAt: '2026-07-28T10:00:00Z',
   courses: [course()], ...over,
 });
 
@@ -47,13 +47,13 @@ describe('PianoMenuActivity', () => {
         course(),
         course({ courseId: 'plex:12', courseTitle: 'Course C', thumbnail: '/img/c', completed: 3, total: 344, percent: 1 }),
       ] }),
-      player({ userId: 'learner-one', name: 'learner-one', courses: [
+      player({ userId: 'learner1', name: 'learner1', courses: [
         course({ courseId: 'plex:13', courseTitle: 'Hoffman Academy', thumbnail: '/img/h', completed: 3, total: 344, percent: 1 }),
       ] }),
     ] };
     render(<PianoMenuActivity onOpenCourse={() => {}} />);
     await waitFor(() => expect(loadedCards()).toHaveLength(2));
-    // learner-two's card: two course thumbnails, each with its percent underneath
+    // learner2's card: two course thumbnails, each with its percent underneath
     const cards = loadedCards();
     expect(cards[0].querySelectorAll('.piano-menu-activity__course')).toHaveLength(2);
     expect(cards[0].textContent).toContain('23%');
@@ -103,7 +103,7 @@ describe('PianoMenuActivity', () => {
     await waitFor(() => expect(screen.getByAltText('Course C')).toBeTruthy());
     fireEvent.click(screen.getByAltText('Course C').closest('button'));
     // Carries the card owner too — tapping a player's card also selects them.
-    expect(onOpenCourse).toHaveBeenCalledWith('plex:12', 'learner-two');
+    expect(onOpenCourse).toHaveBeenCalledWith('plex:12', 'learner2');
   });
 
   it('falls back to a text tile when a course has no thumbnail', async () => {

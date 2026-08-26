@@ -495,8 +495,8 @@ describe('createChessConfigService', () => {
       writeUserConfig: (userId, data) => { writes.push({ userId, data }); },
       logger: silent,
     });
-    await service.writeUserLayer('user_2', { default_rung: 'steady' });
-    expect(writes).toEqual([{ userId: 'user_2', data: { default_rung: 'steady' } }]);
+    await service.writeUserLayer('learner4', { default_rung: 'steady' });
+    expect(writes).toEqual([{ userId: 'learner4', data: { default_rung: 'steady' } }]);
   });
 
   it('merges a patch into the existing override instead of replacing the file', async () => {
@@ -509,7 +509,7 @@ describe('createChessConfigService', () => {
       writeUserConfig: (_userId, data) => { stored = data; },
       logger: silent,
     });
-    await service.writeUserLayer('user_2', { feedback: { hint_level: 'off' } });
+    await service.writeUserLayer('learner4', { feedback: { hint_level: 'off' } });
     expect(stored).toEqual({ default_rung: 'steady', feedback: { hint_level: 'off' } });
   });
 
@@ -729,7 +729,7 @@ describe('POST /api/v1/chess/move', () => {
 describe('/api/v1/chess/config', () => {
   it('serves the merged config', async () => {
     const res = await request(appWith({ engine: {}, configService: stubConfig() }))
-      .get('/api/v1/chess/config?user=user_2');
+      .get('/api/v1/chess/config?user=learner4');
     expect(res.status).toBe(200);
     expect(res.body.default_rung).toBe('learner');
   });
@@ -737,9 +737,9 @@ describe('/api/v1/chess/config', () => {
   it('writes the user layer on PUT', async () => {
     const configService = stubConfig();
     const res = await request(appWith({ engine: {}, configService }))
-      .put('/api/v1/chess/config?user=user_2').send({ default_rung: 'steady' });
+      .put('/api/v1/chess/config?user=learner4').send({ default_rung: 'steady' });
     expect(res.status).toBe(200);
-    expect(configService.writeUserLayer).toHaveBeenCalledWith('user_2', { default_rung: 'steady' });
+    expect(configService.writeUserLayer).toHaveBeenCalledWith('learner4', { default_rung: 'steady' });
   });
 
   it('refuses to write without a user', async () => {
@@ -899,10 +899,10 @@ beforeEach(() => { vi.clearAllMocks(); });
 describe('requestOpponentMove', () => {
   it('posts the position and returns the move', async () => {
     DaylightAPI.mockResolvedValue({ from: 'e7', to: 'e5', san: 'e5', engine: 'stockfish' });
-    const move = await requestOpponentMove({ fen: 'x', rung: 'learner', gameId: 'g1', userId: 'user_2' });
+    const move = await requestOpponentMove({ fen: 'x', rung: 'learner', gameId: 'g1', userId: 'learner4' });
     expect(move).toMatchObject({ from: 'e7', to: 'e5' });
     const [path, data, method] = DaylightAPI.mock.calls[0];
-    expect(path).toBe('api/v1/chess/move?user=user_2');
+    expect(path).toBe('api/v1/chess/move?user=learner4');
     expect(data).toMatchObject({ fen: 'x', rung: 'learner', gameId: 'g1' });
     expect(method).toBe('POST');
   });
@@ -921,21 +921,21 @@ describe('requestOpponentMove', () => {
 describe('fetchChessConfig', () => {
   it('reads without a data object, so the helper does not promote it to POST', async () => {
     DaylightAPI.mockResolvedValue({ default_rung: 'learner' });
-    await fetchChessConfig('user_2');
-    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/config?user=user_2');
+    await fetchChessConfig('learner4');
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/config?user=learner4');
   });
 
   it('returns null on failure rather than throwing into render', async () => {
     DaylightAPI.mockRejectedValue(new Error('boom'));
-    expect(await fetchChessConfig('user_2')).toBeNull();
+    expect(await fetchChessConfig('learner4')).toBeNull();
   });
 });
 
 describe('saveChessConfig', () => {
   it('PUTs the patch for the user', async () => {
     DaylightAPI.mockResolvedValue({ default_rung: 'steady' });
-    await saveChessConfig('user_2', { default_rung: 'steady' });
-    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/config?user=user_2', { default_rung: 'steady' }, 'PUT');
+    await saveChessConfig('learner4', { default_rung: 'steady' });
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/config?user=learner4', { default_rung: 'steady' }, 'PUT');
   });
 });
 ```

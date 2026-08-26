@@ -13,7 +13,7 @@ const bank = {
 
 describe('renderBankWorksheet', () => {
   it('produces a valid non-empty PDF with a page count', async () => {
-    const { pdf, pageCount } = await renderBankWorksheet(bank, { studentName: 'learner-two' });
+    const { pdf, pageCount } = await renderBankWorksheet(bank, { studentName: 'learner2' });
     expect(Buffer.isBuffer(pdf)).toBe(true);
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(pageCount).toBeGreaterThanOrEqual(1);

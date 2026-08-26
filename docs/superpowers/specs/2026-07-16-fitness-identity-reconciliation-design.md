@@ -17,14 +17,14 @@ these cases.
 ### Motivating case — session `20260627195941` (2026-06-27)
 
 - One ANT+ HR strap (device `10001`). At startup the roster was fumbled:
-  attributed to **learner-one** (ticks 1–2), then **parent-two** (tick 3), then settled
+  attributed to **learner1** (ticks 1–2), then **parent-two** (tick 3), then settled
   on **grannie** (tick 4 onward), who wore it for the whole ~53-minute Jane Fonda
   "Complete Workout (1988)" session.
 - The raw `device:10001:heart-rate` series is **one continuous trace with no
   dropout** across those handoffs — proof it was one body the whole time (a
   label fix, not a physical strap handoff).
 - Result: **grannie** (966 coins, full trace) plus two ghost participants —
-  **learner-one** (1 coin, 2 HR samples) and **parent-two** (0 coins, 1 HR sample).
+  **learner1** (1 coin, 2 HR samples) and **parent-two** (0 coins, 1 HR sample).
 
 ### Why today's machinery missed it
 
@@ -38,10 +38,10 @@ There are already two mechanisms — an in-session threshold absorption
    segment builder fills a null `endTime` with *session end*, so a 4-second
    sliver is measured as a **53-minute** segment → not sub-threshold → not
    absorbed.
-2. **Series-only names are invisible to the backfill.** `learner-one` has no entity
+2. **Series-only names are invisible to the backfill.** `learner1` has no entity
    record at all — he exists only as a per-name timeline series
-   (`learner-one:hr`, `learner-one:coins`, …). `sessionBackfill.js` reads *only*
-   `entities`, so learner-one can never be reconciled.
+   (`learner1:hr`, `learner1:coins`, …). `sessionBackfill.js` reads *only*
+   `entities`, so learner1 can never be reconciled.
 3. **Absorption keyed on wall-clock, not effort.** Even with the plumbing
    fixed, the duration-only gate would keep a strap that sat idle (long
    duration, zero effort).
@@ -150,7 +150,7 @@ turn-taking is never merged.
   `endTime = now`, `status = 'transferred'` (or `'superseded'`) **even when the
   segment is not absorbed**, so segments are clean, closed, and sequential.
 - **Guarantee an entity record for every assignment**, so no attributed name is
-  entity-less (fixes the learner-one case at the source; the reconciliation pass still
+  entity-less (fixes the learner1 case at the source; the reconciliation pass still
   covers any that slip through).
 - The live roster drops the prior ghost immediately, so the on-screen
   participant list matches the reconciled save.
@@ -197,7 +197,7 @@ suites), each a fixture → expected participant set:
 - **Known-user 2-device swap** → one participant, coins summed. *(Rule M)*
 - **Idle strap** (long duration, ~0 effort) → absorbed. *(Rule A; duration-only
   would keep it — regression guard.)*
-- **Series-only ghost** (no entity, the learner-one case) → absorbed.
+- **Series-only ghost** (no entity, the learner1 case) → absorbed.
 - **Unclosed superseded entity** measured with real duration after
   close-on-reassign.
 - **Real shared-strap turn-taking** (3+ alternating substantial segments) →
@@ -206,7 +206,7 @@ suites), each a fixture → expected participant set:
   *(Effort keeps it.)*
 - **Two guest blips on two devices** → NOT cross-merged. *(No identity basis.)*
 - **Golden replay** of the `20260627195941` fixture → grannie sole participant;
-  learner-one + parent-two gone; coins/zone-minutes unchanged for grannie.
+  learner1 + parent-two gone; coins/zone-minutes unchanged for grannie.
 
 ---
 

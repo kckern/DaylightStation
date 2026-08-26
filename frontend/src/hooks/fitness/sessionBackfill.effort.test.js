@@ -47,13 +47,13 @@ describe('buildOccupancySegments', () => {
       { entityId: 'e1', profileId: 'grannie', deviceId: '10001', startTime: 400, endTime: null, status: 'active' }
     ];
     const series = {
-      'user:learner-one:heart_rate': [116, 116, null],
+      'user:learner1:heart_rate': [116, 116, null],
       'user:grannie:heart_rate': [null, null, 80]
     };
     const per = buildOccupancySegments({ entities, series, sessionEndTime: 1000, intervalSeconds: 5 });
     const segs = per.get('10001');
     const ids = segs.map((s) => s.occupantId).sort();
-    expect(ids).toEqual(['grannie', 'learner-one']);
+    expect(ids).toEqual(['grannie', 'learner1']);
     expect(segs.every((s) => s.effort)).toBe(true);
   });
 });

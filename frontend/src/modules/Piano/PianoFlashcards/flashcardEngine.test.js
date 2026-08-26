@@ -248,7 +248,7 @@ describe('resolveStartLevel', () => {
   });
 
   it('falls back to 0 for unknown users, missing maps, or unknown level names', () => {
-    expect(resolveStartLevel(levels, { kckern: 'Major Chords' }, 'learner-three')).toBe(0);
+    expect(resolveStartLevel(levels, { kckern: 'Major Chords' }, 'learner3')).toBe(0);
     expect(resolveStartLevel(levels, { kckern: 'Major Chords' }, null)).toBe(0);
     expect(resolveStartLevel(levels, undefined, 'kckern')).toBe(0);
     expect(resolveStartLevel(levels, { kckern: 'No Such Level' }, 'kckern')).toBe(0);

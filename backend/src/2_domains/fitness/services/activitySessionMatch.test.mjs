@@ -51,9 +51,9 @@ const garageSession = () => ({
     duration_seconds: 11719,
   },
   participants: {
-    'learner-one': { display_name: 'Learner One', hr_device: '10001' },
-    'learner-two': { display_name: 'learner-two', hr_device: '10002' },
-    'learner-three': { display_name: 'learner-three', hr_device: '10003' },
+    'learner1': { display_name: 'Learner One', hr_device: '10001' },
+    'learner2': { display_name: 'learner2', hr_device: '10002' },
+    'learner3': { display_name: 'learner3', hr_device: '10003' },
     'test-user': { display_name: 'test-user', hr_device: '10000' },
   },
   summary: {
@@ -102,9 +102,9 @@ const indoorRideSession = () => ({
     duration_seconds: 3690,
   },
   participants: {
-    'learner-four': { hr_device: '10004' },
-    'learner-three': { hr_device: '10003' },
-    'learner-two': { hr_device: '10002' },
+    'learner4': { hr_device: '10004' },
+    'learner3': { hr_device: '10003' },
+    'learner2': { hr_device: '10002' },
     'test-user': { hr_device: '10000' },
   },
   summary: { media: [{ contentId: 'plex:1', title: 'Mario Kart Arcade GP 2' }] },
@@ -170,7 +170,7 @@ describe('participantPresenceSeconds', () => {
   });
 
   it('returns 0 for a participant with no HR series', () => {
-    const seconds = participantPresenceSeconds(garageSession(), 'learner-one', {
+    const seconds = participantPresenceSeconds(garageSession(), 'learner1', {
       from: new Date('2026-07-25T22:41:28Z'),
       to: new Date('2026-07-25T23:21:56Z'),
       tz: TZ,

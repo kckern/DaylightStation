@@ -27,8 +27,8 @@ vi.mock('../identity/SchoolProfileContext.jsx', () => ({
 
 beforeEach(() => {
   profile = {
-    currentUser: { id: 'learner-two', name: 'learner-two', birthyear: 2016 },
-    roster: [{ id: 'learner-two', name: 'learner-two', birthyear: 2016 }, { id: 'dad', name: 'Papa', birthyear: 1984 }],
+    currentUser: { id: 'learner2', name: 'learner2', birthyear: 2016 },
+    roster: [{ id: 'learner2', name: 'learner2', birthyear: 2016 }, { id: 'dad', name: 'Papa', birthyear: 1984 }],
     openPicker: vi.fn(),
   };
   printablesMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [{ id: 'caps', label: 'State Capitals', type: 'bank', pages: 2 }] });
@@ -52,7 +52,7 @@ describe('PrintCenter', () => {
     render(<PrintCenter />);
     fireEvent.click((await screen.findByText('State Capitals')).closest('button'));
     expect(await screen.findByText(/check the kitchen printer/i)).toBeInTheDocument();
-    expect(requestPrintMock).toHaveBeenCalledWith({ userId: 'learner-two', printableId: 'caps', copies: 1 });
+    expect(requestPrintMock).toHaveBeenCalledWith({ userId: 'learner2', printableId: 'caps', copies: 1 });
   });
 
   it('an over-quota print shows the "asked a grown-up" message', async () => {
@@ -63,8 +63,8 @@ describe('PrintCenter', () => {
   });
 
   it('a child does NOT see the approvals panel even when requests are pending', async () => {
-    profile.currentUser = { id: 'learner-two', name: 'learner-two', birthyear: 2016 };
-    pendingMock.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'pr_1', userId: 'learner-three', label: 'Big', pages: 8 }] });
+    profile.currentUser = { id: 'learner2', name: 'learner2', birthyear: 2016 };
+    pendingMock.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'pr_1', userId: 'learner3', label: 'Big', pages: 8 }] });
     render(<PrintCenter />);
     await screen.findByText('State Capitals');
     expect(screen.queryByText(/waiting for your ok/i)).toBeNull();
@@ -72,7 +72,7 @@ describe('PrintCenter', () => {
 
   it('an adult sees pending approvals and can allow one', async () => {
     profile.currentUser = { id: 'dad', name: 'Papa', birthyear: 1984 };
-    pendingMock.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'pr_1', userId: 'learner-two', printableId: 'big-worksheet', label: 'Big Worksheet', pages: 8 }] });
+    pendingMock.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'pr_1', userId: 'learner2', printableId: 'big-worksheet', label: 'Big Worksheet', pages: 8 }] });
     render(<PrintCenter />);
     expect(await screen.findByText(/waiting for your ok/i)).toBeInTheDocument();
     expect(screen.getByText(/big worksheet/i)).toBeInTheDocument();
@@ -85,8 +85,8 @@ describe('PrintCenter', () => {
     pendingMock.mockResolvedValue({
       ok: true, status: 200,
       data: [
-        { id: 'pr_1', userId: 'learner-two', printableId: 'big-worksheet', label: 'Big Worksheet', pages: 8 },
-        { id: 'pr_2', userId: 'learner-two', printableId: 'state-capitals', label: 'State Capitals', pages: 2 },
+        { id: 'pr_1', userId: 'learner2', printableId: 'big-worksheet', label: 'Big Worksheet', pages: 8 },
+        { id: 'pr_2', userId: 'learner2', printableId: 'state-capitals', label: 'State Capitals', pages: 2 },
       ],
     });
     render(<PrintCenter />);

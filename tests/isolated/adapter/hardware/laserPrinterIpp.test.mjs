@@ -6,7 +6,7 @@ import {
 describe('IPP encodeRequest', () => {
   it('emits version 1.1, the operation, request-id, and the document after end-of-attributes', () => {
     const pdf = Buffer.from('%PDF-1.4 fake');
-    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p:631/ipp/print', { user: 'learner-two', jobName: 'ws', documentFormat: 'application/pdf' }), pdf, 7);
+    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p:631/ipp/print', { user: 'learner2', jobName: 'ws', documentFormat: 'application/pdf' }), pdf, 7);
 
     expect(buf.readUInt8(0)).toBe(1);
     expect(buf.readUInt8(1)).toBe(1);
@@ -96,7 +96,7 @@ describe('IPP Validate-Job (RFC 8011 §3.2.3, Incident #3) — same encoding as 
 
   it('encodes with the SAME operation-attribute bytes a Print-Job for the same job would carry — only the operation code and the absence of a document differ', () => {
     const attrs = printJobAttrs('ipp://p:631/ipp/print', {
-      user: 'learner-two',
+      user: 'learner2',
       jobName: 'ws',
       documentFormat: 'image/urf',
       jobAttributes: { printColorMode: 'monochrome', media: 'na_letter_8.5x11in' },

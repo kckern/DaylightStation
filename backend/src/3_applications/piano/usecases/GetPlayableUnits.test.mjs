@@ -3,8 +3,8 @@ import { GetPlayableUnits } from './GetPlayableUnits.mjs';
 
 const COURSE = '12345';
 const COMPOUND = `plex:${COURSE}`;
-const AHEAD = 'user_2';
-const BEHIND = 'user_3';
+const AHEAD = 'learner4';
+const BEHIND = 'learner3';
 
 /** Six lessons in one unit — plex 100..105, itemIndex 1..6. */
 const lessons = () => Array.from({ length: 6 }, (_, i) => ({

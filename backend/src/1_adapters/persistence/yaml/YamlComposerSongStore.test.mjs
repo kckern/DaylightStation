@@ -19,7 +19,7 @@ import { YamlComposerSongStore as ComposerSongStore } from '#adapters/persistenc
 
 const configService = {
   getUserDir: (id) => `/data/users/${id}`,
-  getUserProfile: (id) => (['kc', 'learner-one'].includes(id) ? { id } : null),
+  getUserProfile: (id) => (['kc', 'learner1'].includes(id) ? { id } : null),
   getHouseholdAppConfig: () => ({ composer: { versions_keep: 5, share_tag: 'family' } }),
 };
 const store = () => new ComposerSongStore({ configService, logger: { info() {}, warn() {}, debug() {} } });
@@ -63,7 +63,7 @@ describe('ComposerSongStore', () => {
   it('lists shared songs across users when meta.share is true', () => {
     const s = store();
     const a = s.create('kc', { title: 'Shared', musicxml: XML, meta: { share: true } });
-    s.create('learner-one', { title: 'Private', musicxml: XML });
+    s.create('learner1', { title: 'Private', musicxml: XML });
     const shared = s.listShared();
     expect(shared.map(x => x.id)).toEqual([a.id]);
   });

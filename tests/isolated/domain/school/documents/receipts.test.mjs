@@ -355,7 +355,7 @@ describe('resultDocument', () => {
   });
 
   it('makes the learner the receipt title while retaining the generic fallback', () => {
-    expect(resultDocument({ ...pass, learnerName: 'User_2' }).title).toBe('User_2’s Result');
+    expect(resultDocument({ ...pass, learnerName: 'Learner-Four' }).title).toBe('Learner-Four’s Result');
     expect(resultDocument(pass).title).toBe('Worksheet Result');
   });
 
