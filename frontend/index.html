@@ -39,16 +39,154 @@
       going through the logging framework — the framework lives in the bundle
       that just failed to load. On-screen text is the fallback for a panel with
       no network and nobody to read a log.
+
+      ── IT IS A *BOOT* TRAP AND IT DISARMS THE MOMENT THE APP MOUNTS ──
+
+      The first version of this stayed armed for the life of the page, which is
+      not what "boot" means. `unhandledrejection` fires for any stray promise at
+      any time, and `report()` paints an opaque full-screen panel over whatever
+      is running — so on 2026-08-26 a benign, already-known chess rejection
+      ("Session … is complete", useChessAuthority.js) dropped a "This screen
+      could not start" panel over a piano kiosk that was rendering at 59.9fps
+      and went on rendering underneath it for another 23 minutes. Nothing had
+      failed to start. The panel offered "a grown-up can reload the page" to a
+      wall tablet with no address bar, no keyboard and no reload button; the
+      only way out was FullyKiosk's REST API from a laptop.
+
+      Two rules now, and neither may be weakened:
+
+        1. ARMED ONLY UNTIL #root HAS CONTENT. On mount the listeners come off,
+           the timers die, and any panel already painted is REMOVED — a race
+           between a late rejection and a successful mount must always resolve
+           in favour of the running app.
+
+        2. NEVER A TERMINAL STATE. A real boot failure retries on a backoff and
+           keeps retrying forever, because the commonest cause is a redeploy in
+           flight (~45s of no upstream) and the second commonest is a stale
+           cached bundle — both of which heal on their own. KC, 2026-08-26: "I
+           would rather see the entire thing reboot unexpectedly than go into
+           this state." The panel is what we show BETWEEN retries, never instead
+           of one, and it carries a full-bleed tap-to-reload target because
+           every surface running this file is a touchscreen.
+
+      Resource errors are scoped to SCRIPT/LINK. Any element used to qualify,
+      so one 404'd <img> could blank a kiosk on the same code path.
     -->
     <script>
       (function () {
+        var ATTEMPT_KEY = 'daylight.boot.attempt';
+        // Fast retries first, then a slow forever-cadence. The fast ones cover
+        // a redeploy; the slow one means an unattended panel still heals hours
+        // later without anybody walking to it.
+        var BACKOFF_MS = [2000, 4000, 8000, 15000, 30000];
+        var SLOW_RETRY_MS = 60000;
+        // From here on a plain reload has demonstrably not worked, so the next
+        // attempt drops the service worker and its caches first — a broken
+        // bundle pinned in cache survives any number of ordinary reloads.
+        var PURGE_CACHES_AFTER = 3;
+
         var reported = false;
+        var disarmed = false;
+        var panel = null;
+        var retryTimer = null;
+        var countdownTimer = null;
+        var emptyRootTimer = null;
+        var observer = null;
+
+        function attempts() {
+          try { return parseInt(sessionStorage.getItem(ATTEMPT_KEY), 10) || 0; } catch (e) { /* fall through */ }
+          try { var m = /\bdlboot=(\d+)\b/.exec(window.name || ''); return m ? parseInt(m[1], 10) : 0; } catch (e) { return 0; }
+        }
+        // window.name is the fallback because it survives a same-tab reload
+        // even where sessionStorage throws (some kiosk WebView profiles).
+        // Without a counter that survives the reload, every retry looks like
+        // the first and the backoff never escalates.
+        function setAttempts(n) {
+          try { sessionStorage.setItem(ATTEMPT_KEY, String(n)); return; } catch (e) { /* fall through */ }
+          try { window.name = String(window.name || '').replace(/\s*\bdlboot=\d+\b/, '') + ' dlboot=' + n; } catch (e) { /* nothing left to try */ }
+        }
+        function clearAttempts() {
+          try { sessionStorage.removeItem(ATTEMPT_KEY); } catch (e) { /* fall through */ }
+          try { window.name = String(window.name || '').replace(/\s*\bdlboot=\d+\b/, ''); } catch (e) { /* nothing left to try */ }
+        }
+
+        function reload() {
+          var n = attempts();
+          setAttempts(n + 1);
+          if (n + 1 >= PURGE_CACHES_AFTER) {
+            purgeAndReload();
+            return;
+          }
+          try { location.reload(); } catch (e) { location.href = location.href; }
+        }
+
+        function purgeAndReload() {
+          var done = false;
+          function go() {
+            if (done) return;
+            done = true;
+            try { location.reload(); } catch (e) { location.href = location.href; }
+          }
+          // Never let a hanging cache API hold the panel open: reload anyway.
+          setTimeout(go, 4000);
+          try {
+            var jobs = [];
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+                return Promise.all(rs.map(function (r) { return r.unregister(); }));
+              }));
+            }
+            if (window.caches && caches.keys) {
+              jobs.push(caches.keys().then(function (ks) {
+                return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+              }));
+            }
+            Promise.all(jobs).then(go, go);
+          } catch (e) { go(); }
+        }
+
+        function paint(kind, detail, waitMs) {
+          try {
+            if (!panel) {
+              panel = document.createElement('div');
+              panel.setAttribute('data-boot-error', '1');
+              panel.style.cssText = 'position:fixed;inset:0;z-index:2147483647;margin:0;padding:24px;'
+                + 'background:#111;color:#f5c518;font:14px/1.6 monospace;white-space:pre-wrap;overflow:auto;'
+                + 'cursor:pointer;-webkit-tap-highlight-color:rgba(245,197,24,.3)';
+              // The whole panel is the reload target. A child should not have
+              // to find a button, and there is nothing else here to tap.
+              panel.addEventListener('click', function () { reload(); });
+              document.body.appendChild(panel);
+            }
+            panel.textContent = 'This screen is restarting itself.\n\n'
+              + kind + ': ' + detail
+              + '\n\nRetrying in ' + Math.ceil(waitMs / 1000) + 's — or tap anywhere to restart now.'
+              + '\n\nThe error has been reported.';
+          } catch (e) { /* nothing left to try */ }
+        }
+
+        function scheduleRetry(kind, detail) {
+          var n = attempts();
+          var wait = n < BACKOFF_MS.length ? BACKOFF_MS[n] : SLOW_RETRY_MS;
+          var due = Date.now() + wait;
+          paint(kind, detail, wait);
+          countdownTimer = setInterval(function () {
+            var left = due - Date.now();
+            if (left <= 0) { clearInterval(countdownTimer); countdownTimer = null; return; }
+            paint(kind, detail, left);
+          }, 1000);
+          retryTimer = setTimeout(reload, wait);
+        }
+
         function report(kind, detail) {
-          if (reported) return;
+          if (reported || disarmed) return;
           reported = true;
           var payload = {
             level: 'error', event: 'boot.failed',
-            data: { kind: kind, detail: String(detail).slice(0, 500), url: location.pathname },
+            data: {
+              kind: kind, detail: String(detail).slice(0, 500), url: location.pathname,
+              attempt: attempts(),
+            },
             context: { source: 'frontend', app: 'boot', userAgent: navigator.userAgent },
           };
           try {
@@ -58,32 +196,69 @@
               body: JSON.stringify(payload),
             }).catch(function () {});
           } catch (e) { /* nothing left to try */ }
-          // A kiosk has no console and no address bar. Say it on the glass.
-          try {
-            var el = document.createElement('pre');
-            el.setAttribute('data-boot-error', '1');
-            el.style.cssText = 'position:fixed;inset:0;z-index:2147483647;margin:0;padding:16px;'
-              + 'background:#111;color:#f5c518;font:14px/1.5 monospace;white-space:pre-wrap;overflow:auto';
-            el.textContent = 'This screen could not start.\n\n' + kind + ': ' + detail
-              + '\n\nA grown-up can reload the page. The error has been reported.';
-            document.body.appendChild(el);
-          } catch (e) { /* nothing left to try */ }
+          // A kiosk has no console and no address bar. Say it on the glass —
+          // and then fix it without being asked.
+          scheduleRetry(kind, String(detail));
         }
-        window.addEventListener('error', function (event) {
-          if (event.target && event.target !== window && event.target.tagName) {
-            report('resource', (event.target.src || event.target.href || event.target.tagName));
-          } else {
-            report('exception', (event.message || 'unknown') + ' @ ' + (event.filename || '') + ':' + (event.lineno || 0));
+
+        function onError(event) {
+          var t = event.target;
+          if (t && t !== window && t.tagName) {
+            // Only the things a boot is actually made of. An <img>, <video> or
+            // <audio> that 404s is a missing decoration, not a dead app.
+            var tag = String(t.tagName).toUpperCase();
+            if (tag !== 'SCRIPT' && tag !== 'LINK') return;
+            report('resource', t.src || t.href || tag);
+            return;
           }
-        }, true);
-        window.addEventListener('unhandledrejection', function (event) {
+          report('exception', (event.message || 'unknown') + ' @ ' + (event.filename || '') + ':' + (event.lineno || 0));
+        }
+        function onRejection(event) {
           report('rejection', (event.reason && event.reason.message) || event.reason || 'unknown');
-        });
+        }
+
+        window.addEventListener('error', onError, true);
+        window.addEventListener('unhandledrejection', onRejection);
+
+        // THE DISARM. Rule 1 above: once the app has put anything in #root it
+        // has booted, and this trap has no further business on the page.
+        function disarm() {
+          if (disarmed) return;
+          disarmed = true;
+          window.removeEventListener('error', onError, true);
+          window.removeEventListener('unhandledrejection', onRejection);
+          if (observer) { try { observer.disconnect(); } catch (e) { /* ignore */ } observer = null; }
+          clearTimeout(emptyRootTimer);
+          clearTimeout(retryTimer);
+          clearInterval(countdownTimer);
+          retryTimer = countdownTimer = null;
+          clearAttempts();
+          // A rejection that raced the mount and painted may not strand a
+          // working app behind an opaque panel. Mount always wins.
+          if (panel) { try { panel.remove(); } catch (e) { /* ignore */ } panel = null; }
+        }
+
+        function mounted() {
+          var root = document.getElementById('root');
+          return !!(root && root.children.length > 0);
+        }
+        function checkMounted() { if (mounted()) disarm(); }
+
+        try {
+          observer = new MutationObserver(checkMounted);
+          observer.observe(document.getElementById('root'), { childList: true });
+        } catch (e) { /* polled below regardless */ }
+        // Belt and braces: the observer is the fast path, the poll is the one
+        // that cannot be defeated by a WebView quirk. Both call the same disarm.
+        var poll = setInterval(function () {
+          if (disarmed) { clearInterval(poll); return; }
+          checkMounted();
+        }, 250);
+
         // Nothing threw, but nothing rendered either — the other way a boot
         // fails. Checked once, late enough that a slow device is not accused.
-        setTimeout(function () {
-          var root = document.getElementById('root');
-          if (root && root.children.length === 0) report('empty-root', 'no error was raised; #root is still empty');
+        emptyRootTimer = setTimeout(function () {
+          if (!disarmed && !mounted()) report('empty-root', 'no error was raised; #root is still empty');
         }, 20000);
       })();
     </script>
