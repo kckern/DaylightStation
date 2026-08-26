@@ -42,36 +42,41 @@ function encodeIntentPart(part) {
 }
 
 /**
- * The FKB JavaScript interface object, or null when we are not inside FKB.
+ * The FKB kiosk-control interface, or null when this page does not have one.
  *
- * TWO NAMES, AND ONLY ONE OF THEM IS THE BRIDGE ITSELF. `FullyKiosk` is the
- * NATIVE object Android's `addJavascriptInterface` attaches; `fully` is a
- * JavaScript alias FKB creates for it by injecting its own script into the
- * page. Every function in this file used to test for `fully` alone, so on any
- * device where that alias does not land the whole module went quietly inert —
- * `screenOff()` returned false and logged `fkb.screenOff.unavailable` forever,
- * which is exactly what the school Portal (Facebook Portal, Android 9, FKB
- * 1.60.1 PLUS, JS interface ENABLED) has been doing: probed on-device, the
- * page had `FullyKiosk` and `FullyLicense` on `window` and no `fully` at all.
+ * WHAT IS ACTUALLY ON THE PAGE, probed on the school Portal (Facebook Portal,
+ * Android 9, FKB 1.60.1 PLUS, `enableFullyJavascriptInterface` = true):
+ *   - no `window.fully` at all — the alias FKB normally injects never lands;
+ *   - a `window.FullyKiosk` that is NOT the control object. It carries exactly
+ *     five methods: getBase64FromBlobData, getFullyVersion, getFullyVersionCode,
+ *     grab, print. A blob/print helper. No turnScreenOff. No bind.
  *
- * THE TWO OBJECTS ARE NOT INTERCHANGEABLE, and assuming they were took the
- * school Portal down for eighty minutes. A Java bridge exposes exactly its
- * `@JavascriptInterface` methods — `turnScreenOff`, `startApplication`,
- * `startIntent` — and NOTHING else. `bind('onBackButton', fn)` is JS-side
- * event wiring that exists only on the alias. `bindBackButton()` runs at app
- * startup behind a bare `isFKBAvailable()` guard, so the moment that guard
- * started returning true on a device with only the native object, startup
- * threw `bridge(...).bind is not a function` and React never mounted: a black
- * panel, and nothing in the logs because the throw happens before any
- * error listener the page installs.
+ * So on that device there is no control interface, and `screenOff()` genuinely
+ * cannot work from the page — a fact this module must REPORT rather than paper
+ * over. Matching on a name alone claimed otherwise, and cost eighty minutes of
+ * Portal outage: `isFKBAvailable()` went true, `bindBackButton()` (which runs
+ * at app STARTUP) called `.bind()` on an object that has none, the throw
+ * happened before any error listener the page installs, and React never
+ * mounted. A black panel and a silent log.
  *
- * So presence is not capability. `bridge()` answers "are we inside FKB";
- * `bridgeMethod(name)` answers the only question a caller actually has —
- * "can I call this?" — and every call site goes through it.
+ * Hence two questions, asked separately, and a candidate that must prove
+ * itself: `bridge()` answers "is a control interface actually here", and
+ * `bridgeMethod(name)` answers the only question a caller has — "can I call
+ * this?". Every call site goes through the second one.
  */
+const CONTROL_METHODS = ['turnScreenOff', 'turnScreenOn', 'startApplication', 'startIntent', 'bind'];
+
 function bridge() {
   if (typeof globalThis === 'undefined') return null;
-  return globalThis.fully ?? globalThis.FullyKiosk ?? null;
+  for (const candidate of [globalThis.fully, globalThis.FullyKiosk]) {
+    if (!candidate) continue;
+    try {
+      if (CONTROL_METHODS.some((name) => typeof candidate[name] === 'function')) return candidate;
+    } catch {
+      // A bridge object may throw on property access; it simply does not qualify.
+    }
+  }
+  return null;
 }
 
 /**
@@ -92,11 +97,10 @@ function bridgeMethod(name) {
 }
 
 /**
- * Check if the FKB JavaScript interface is available (under either name).
+ * True when a real kiosk-control interface is present — see `bridge()`.
  *
- * PRESENCE, NOT CAPABILITY — see `bridgeMethod`. A true here does not promise
- * that any particular method exists, and a caller that needs one must ask for
- * it by name.
+ * Still not a promise about any PARTICULAR method: a bridge can carry
+ * `turnScreenOff` and no `bind`. A caller that needs one asks by name.
  */
 export function isFKBAvailable() {
   return bridge() !== null;
