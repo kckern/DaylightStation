@@ -129,6 +129,39 @@ export class ReadingSessionInterceptor {
   }
 
   /**
+   * D8 — the seam's OTHER question: may this dispatch keep the reader
+   * location's `end` behaviour?
+   *
+   * `livingroom` is configured `end: tv-off`, and that is right for every tap
+   * that is not part of a reading session. While one is open it is a hazard:
+   * the TV would power off the instant a story ends, which is before the
+   * ceremony renders and with a child still standing at the reader. So the
+   * session takes the location's teardown away for as long as it is open and
+   * runs its own — after the ceremony, or when the room has actually gone
+   * quiet (D6).
+   *
+   * SUPPRESSION IS NOT CLAIMING, and the taps that need it are precisely the
+   * ones `claim` handed back: a browsing-mode second book, and a mid-story tap
+   * whose obligation could not be read. Both still play. Neither may take the
+   * lights with it.
+   *
+   * IT ASKS ONLY WHETHER A SESSION IS OPEN — never the mode, never the state.
+   * A mode decides who may claim a book; it has nothing to say about whether a
+   * child is in the room. Synchronous and total: the caller evaluates this on
+   * the dispatch path, and an answer it has to await (or catch) is an answer
+   * that can arrive after the TV is already off.
+   *
+   * @param {object} response the content Response about to be dispatched
+   * @returns {boolean}
+   */
+  suppressEnd(response) {
+    if (response?.kind !== 'content') return false;
+    const location = response?.location;
+    if (!location) return false;
+    return Boolean(this.#sessions.current(location));
+  }
+
+  /**
    * THREE answers, not two. `assignment` only when the obligation is READABLE
    * and UNMET; `browsing` when it is readable and there is nothing owed —
    * including a learner with no enrollment at all, which is an ordinary state
