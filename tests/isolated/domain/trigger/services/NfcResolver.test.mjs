@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { NfcResolver } from '#domains/trigger/services/NfcResolver.mjs';
-// Application-layer import in a DOMAIN test, on purpose: the tripwire at the
-// bottom of this file pins a resolver/mapper pair that is currently mismatched.
-import { mapIntentToResponse, UnknownActionError } from '#apps/trigger/mapIntentToResponse.mjs';
 
 const makeContentIdResolver = () => ({
   resolve: (compound) => compound.startsWith('plex:') ? compound : null,
@@ -294,6 +291,14 @@ describe('school learner cards', () => {
     expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'learner-a' });
   });
 
+  it('carries the reader it was tapped at, since the reader is part of the answer', () => {
+    const intent = NfcResolver.resolve({
+      location: 'livingroom', value: '048ba600cc2a81', registry,
+      contentIdResolver: makeContentIdResolver(),
+    });
+    expect(intent.location).toBe('livingroom');
+  });
+
   it('gives the SAME card a different action at a different reader', () => {
     const intent = NfcResolver.resolve({
       location: 'livingroom', value: '048ba600cc2a81', registry,
@@ -431,25 +436,5 @@ describe('school learner cards — config-surface guards', () => {
     });
     expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'learner-a' });
     expect(intent).not.toHaveProperty('content');
-  });
-});
-
-// TRIPWIRE, not a wish. `print-agenda` / `reading-session` are not among the
-// six actions mapIntentToResponse knows, so a learner card at a reader that
-// declares learner_action currently ends as UNKNOWN_ACTION — which ALSO skips
-// the unknown-tag placeholder write and the notify_unknown push that the old
-// null-intent path gave us. Task 6 registers these actions; when it does, THIS
-// TEST GOES RED and should be replaced by one asserting the real Response.
-describe('school learner cards — interim: no Response kind exists yet', () => {
-  it('a learner intent is not yet mappable to a Response (Task 6 closes this)', () => {
-    const registry = {
-      locations: { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
-      tags: { '048ba600cc2a81': { global: { school_learner: 'learner-a' }, overrides: {} } },
-    };
-    const intent = NfcResolver.resolve({
-      location: 'study', value: '048ba600cc2a81', registry,
-      contentIdResolver: makeContentIdResolver(),
-    });
-    expect(() => mapIntentToResponse(intent)).toThrow(UnknownActionError);
   });
 });
