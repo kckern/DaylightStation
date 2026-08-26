@@ -51,6 +51,7 @@ import { YamlLessonCompanionStore } from '#adapters/persistence/yaml/YamlLessonC
 import { YamlIssuedArtifactStore } from '#adapters/persistence/yaml/YamlIssuedArtifactStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { YamlAgendaCooldownStore } from '#adapters/persistence/yaml/YamlAgendaCooldownStore.mjs';
+import { YamlReadingLogStore } from '#adapters/persistence/yaml/YamlReadingLogStore.mjs';
 import { YamlTeacherActionReceiptStore } from '#adapters/persistence/yaml/YamlTeacherActionReceiptStore.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
@@ -67,6 +68,7 @@ import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.
 import { RubiksCubeProgramLauncher } from '#apps/school/RubiksCubeProgramLauncher.mjs';
 import { RUBIKS_CUBE_COURSE_ID } from '#apps/school/rubiksCube/courseCatalog.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
+import { StoryTimeProgramLauncher, STORY_TIME_PROGRAM_ID } from '#apps/school/StoryTimeProgramLauncher.mjs';
 import { transcribeEscPosItems } from '#system/utils/escposTranscript.mjs';
 import { codesFrom as receiptCodesFrom } from '#rendering/school/documents/DocumentReceiptRasterRenderer.mjs';
 import { PianoCourseProgramLauncher } from '#apps/school/PianoCourseProgramLauncher.mjs';
@@ -112,6 +114,7 @@ import { EnrollLearner } from '#apps/school/usecases/EnrollLearner.mjs';
 import { UnenrollLearner } from '#apps/school/usecases/UnenrollLearner.mjs';
 import { validateSyllabus } from '#domains/school/curriculum/syllabus.mjs';
 import { validateFlashcardEnrollment } from '#domains/school/flashcards/index.mjs';
+import { validateStoryTimeEnrollment } from '#domains/school/storyTime.mjs';
 import { validateFitnessActivityDescriptor } from '#domains/school/fitnessCourse.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
@@ -410,6 +413,9 @@ export async function createSchoolLifecycle({
     // printed" record, so a repeat card tap inside `agenda.cooldownMinutes`
     // does not put a second identical slip in the tray.
     agendaCooldown: new YamlAgendaCooldownStore({ configService, logger }),
+    // Story-time evidence: durable `records/`, sharded by the household's own
+    // study day so the launcher's "how many today" is one file read.
+    readingLog: new YamlReadingLogStore({ configService, logger }),
     teacherActionReceipts: new YamlTeacherActionReceiptStore({ configService }),
   };
   // Long-expired token files are dead weight (a pruned scan resolves to the
@@ -474,6 +480,16 @@ export async function createSchoolLifecycle({
   } else {
     logger.warn?.('school.lifecycle.piano-course-unwired', { reason: 'no pianoPlayableUnits' });
   }
+
+  // Story time — a daily obligation with no course behind it. Unconditional:
+  // its only dependencies are a YAML store and the assignments store, both of
+  // which always exist, so unlike the service-backed launchers above there is
+  // no degraded composition in which this should silently vanish. Registered
+  // before the `school.yml` `programs:` loop for the same reason piano-course
+  // is: a config entry reusing the id must trip that loop's collision check.
+  launchers.set(STORY_TIME_PROGRAM_ID, new StoryTimeProgramLauncher({
+    readingLog: stores.readingLog, assignments: stores.assignments, timezone, clock, logger,
+  }));
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config
   // selecting from the closed DoNow surface vocabulary (spec §6 "Surface
@@ -1084,6 +1100,9 @@ export async function createSchoolLifecycle({
           ...(raw?.title ? { title: String(raw.title) } : {}),
         } };
       }]] : []),
+      // Unconditional, matching the launcher registration: story-time has no
+      // service behind it that could be missing.
+      ['story-time', (raw) => validateStoryTimeEnrollment(raw)],
       // Same RUBIKS_CUBE_COURSE_ID gate as the launcher registration above:
       // no course.yml authored means no valid courseId ever exists, so don't
       // offer the validator at all rather than have it reject every attempt.
