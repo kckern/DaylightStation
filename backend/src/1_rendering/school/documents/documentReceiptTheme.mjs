@@ -196,6 +196,30 @@ export const documentReceiptTheme = Object.freeze({
     rowGap: 10,
   },
 
+  /**
+   * The agenda's finished-work strip.
+   *
+   * Deliberately the QUIETEST thing on the page. Everything above it is a
+   * lesson card with a border, a QR and a title at 30px; this is a rule, a
+   * tick, and two short lines — a receipt's subtotal, not another headline.
+   * The subjects are set at the eyebrow size rather than the label size for
+   * the same reason: they name work that is already behind the child.
+   */
+  done: {
+    /** The hairline that separates the tally from the work above it. */
+    ruleWidth: 2,
+    ruleGap: 14,
+    /** The tick: a vector stroke, never a font glyph — same rule the result
+     *  panel's marks follow (Roboto Condensed has no U+2713). */
+    markSize: 22,
+    markStrokeWidth: 3,
+    markInset: 4,
+    markGap: 12,
+    labelHeight: 26,
+    subjectLineHeight: 26,
+    padBottom: 4,
+  },
+
   result: {
     padY: 8,
     iconPx: 42,

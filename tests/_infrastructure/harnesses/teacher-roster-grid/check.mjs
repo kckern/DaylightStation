@@ -3,8 +3,9 @@
 //   node tests/_infrastructure/harnesses/teacher-roster-grid/check.mjs [--shots-dir DIR]
 // Starts the harness vite server, drives headless Chromium at the dashboard's
 // two real sizes (desktop 1440x900, small-desktop/tablet 1024x768), asserts
-// the geometry the operator asked for — side-by-side, roughly square cards,
-// score marks, >=40px artifact tap targets, in-place artifact peek — and
+// the geometry the operator asked for — side-by-side cards, 2:3 poster frames
+// that hold their box before and after the art loads (no rug pull), score
+// marks, >=40px artifact tap targets that open the artifact itself — and
 // saves screenshots.
 import { spawn } from 'child_process';
 import path from 'path';
@@ -104,10 +105,15 @@ async function measure(page) {
       const r = el.getBoundingClientRect();
       return { width: r.width, height: r.height };
     });
+    const posters = [...document.querySelectorAll('.teacher-lesson-card__poster')].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { width: r.width, height: r.height, hasImage: Boolean(el.querySelector('img')) };
+    });
     const graded = document.querySelector('[data-testid="score-marks"]');
     return {
       cards,
       buttons,
+      posters,
       firstRowCount: cards.filter((c) => c.top === cards[0]?.top).length,
       checkMarks: graded ? graded.querySelectorAll('.teacher-mark--check').length : 0,
       crossMarks: graded ? graded.querySelectorAll('.teacher-mark--cross').length : 0,
@@ -122,6 +128,20 @@ async function runViewport(browser, { width, height, name, minColumns, peek }) {
   const page = await browser.newPage({ viewport: { width, height } });
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForSelector('.teacher-roster__card', { timeout: 15000 });
+
+  // The agenda is reachable BEFORE anything is expanded — it lives on the
+  // roster card, not behind the disclosure.
+  const agendaLink = await page.$('.teacher-roster__agenda-link');
+  check(`${name}: the agenda link is on the roster card, unexpanded`, Boolean(agendaLink));
+  const agendaGeo = agendaLink ? await agendaLink.boundingBox() : null;
+  check(`${name}: the agenda link is a >=40px target`,
+    Boolean(agendaGeo) && agendaGeo.width >= 40 && agendaGeo.height >= 40,
+    agendaGeo ? `${agendaGeo.width}x${agendaGeo.height}` : 'missing');
+  check(`${name}: the agenda link opens the preview in a new tab`,
+    (await agendaLink?.getAttribute('target')) === '_blank'
+      && (await agendaLink?.getAttribute('href'))?.includes('/agenda/preview'),
+    await agendaLink?.getAttribute('href'));
+
   await page.click('.teacher-roster__card');
   await page.waitForSelector('[data-testid="lesson-grid"]', { timeout: 15000 });
   // Six cards: 4 recorded + 1 planned + 1 deferred (agenda join settled).
@@ -130,16 +150,43 @@ async function runViewport(browser, { width, height, name, minColumns, peek }) {
     { timeout: 15000 },
   );
 
+  // NO RUG PULL. Geometry the instant the grid exists, versus geometry once
+  // every poster has finished loading (or failed). A card that grows or slides
+  // between those two moments is a card that moved under a hand already
+  // reaching for it — the whole reason the poster frame is a reserved box.
+  const before = await measure(page);
+  await page.waitForFunction(
+    () => [...document.images].every((img) => img.complete),
+    { timeout: 15000 },
+  );
   const geo = await measure(page);
+  const moved = geo.cards
+    .map((card, i) => ({
+      i,
+      dTop: Math.abs(card.top - (before.cards[i]?.top ?? card.top)),
+      dLeft: Math.abs(card.left - (before.cards[i]?.left ?? card.left)),
+      dHeight: Math.abs(card.height - (before.cards[i]?.height ?? card.height)),
+    }))
+    .filter((d) => d.dTop > 0.5 || d.dLeft > 0.5 || d.dHeight > 0.5);
+  check(`${name}: no card moves or resizes when the posters load (no rug pull)`,
+    moved.length === 0,
+    moved.map((d) => `#${d.i} dy=${d.dTop.toFixed(1)} dx=${d.dLeft.toFixed(1)} dh=${d.dHeight.toFixed(1)}`).join(', '));
   const label = (text) => `${name}: ${text}`;
 
   check(label('six lesson cards render (4 recorded + planned + deferred)'), geo.cards.length === 6, `cards=${geo.cards.length}`);
   check(label(`cards sit side by side (>=${minColumns} in the first row)`), geo.firstRowCount >= minColumns, `firstRow=${geo.firstRowCount}`);
   const widths = geo.cards.map((c) => c.width);
   check(label('cards share one width'), Math.max(...widths) - Math.min(...widths) < 1.5, `min=${Math.min(...widths).toFixed(1)} max=${Math.max(...widths).toFixed(1)}`);
-  const ratios = geo.cards.map((c) => c.height / c.width);
-  check(label('cards are roughly square (~16:19, h/w within 1.0–1.6)'),
-    ratios.every((r) => r >= 1.0 && r <= 1.6), `ratios=${ratios.map((r) => r.toFixed(2)).join(',')}`);
+  const heights = geo.cards.map((c) => c.height);
+  check(label('cards in the grid share one height'),
+    Math.max(...heights) - Math.min(...heights) < 1.5,
+    `min=${Math.min(...heights).toFixed(1)} max=${Math.max(...heights).toFixed(1)}`);
+  check(label('every card carries a poster frame, poster or not'),
+    geo.posters.length === geo.cards.length, `frames=${geo.posters.length} cards=${geo.cards.length}`);
+  const posterRatios = geo.posters.map((p) => p.height / p.width);
+  check(label('poster frames are 2:3 tall (h/w = 1.5)'),
+    geo.posters.length > 0 && posterRatios.every((r) => Math.abs(r - 1.5) < 0.06),
+    `ratios=${posterRatios.map((r) => r.toFixed(2)).join(',')}`);
   check(label('no horizontal overflow'), geo.overflowX <= 0, `overflowX=${geo.overflowX}`);
   check(label('score marks: 5 green checks + 2 red crosses on the 5/7 lesson'),
     geo.checkMarks === 5 && geo.crossMarks === 2, `checks=${geo.checkMarks} crosses=${geo.crossMarks}`);
@@ -152,39 +199,30 @@ async function runViewport(browser, { width, height, name, minColumns, peek }) {
     geo.buttons.length >= 4 && geo.buttons.every((b) => b.width >= 40 && b.height >= 40),
     `count=${geo.buttons.length} smallest=${Math.min(...geo.buttons.flatMap((b) => [b.width, b.height]))}`);
 
-  const agendaButton = await page.$('.teacher-printed-agenda button');
-  check(label('the printed-agenda affordance is on the drill-in'), Boolean(agendaButton));
+  check(label('the printed-agenda toggle is gone from the drill-in'),
+    !(await page.$('.teacher-printed-agenda')));
   const dayLink = await page.$('.teacher-roster__day-link');
   check(label('the full-day-record link is on the drill-in'), Boolean(dayLink));
 
   await page.screenshot({ path: path.join(shotsDir, `roster-grid-${name}.png`) });
 
   if (peek) {
-    await page.click('.teacher-artifact-btn[aria-label="Peek at the worksheet"]');
-    await page.waitForSelector('.teacher-artifact-peek', { timeout: 10000 });
-    const peekGeo = await page.evaluate(() => {
-      const overlay = document.querySelector('.teacher-artifact-peek').getBoundingClientRect();
-      const close = document.querySelector('.teacher-artifact-peek__close').getBoundingClientRect();
-      const thumb = document.querySelector('.teacher-artifact-peek img');
-      const link = [...document.querySelectorAll('.teacher-artifact-peek a')]
-        .find((a) => a.textContent.includes('Open worksheet'));
-      return {
-        coversViewport: overlay.width >= window.innerWidth - 1 && overlay.height >= window.innerHeight - 1,
-        close: { width: close.width, height: close.height },
-        thumbLoaded: Boolean(thumb && thumb.naturalWidth > 0),
-        linkHref: link?.getAttribute('href') ?? null,
-      };
+    // The icon IS the artifact: one tap, no interstitial.
+    const worksheet = await page.$('.teacher-artifact-btn[aria-label="Open the worksheet"]');
+    check(label('the worksheet icon is a real link to the PDF'),
+      (await worksheet?.getAttribute('href')) === '/worksheet.pdf'
+        && (await worksheet?.getAttribute('target')) === '_blank',
+      `href=${await worksheet?.getAttribute('href')}`);
+    const opened = await page.evaluate(() => {
+      const calls = [];
+      window.open = (...args) => { calls.push(args); return null; };
+      document.querySelector('.teacher-artifact-btn[aria-label="Open the result receipt"]').click();
+      return calls;
     });
-    check(label('artifact peek overlays the whole dashboard'), peekGeo.coversViewport);
-    check(label('peek close button is a >=44px target'), peekGeo.close.width >= 44 && peekGeo.close.height >= 44,
-      `${peekGeo.close.width}x${peekGeo.close.height}`);
-    check(label('worksheet thumbnail actually loads in the peek'), peekGeo.thumbLoaded);
-    check(label('peek offers the original PDF'), peekGeo.linkHref === '/worksheet.pdf', `href=${peekGeo.linkHref}`);
-    await page.screenshot({ path: path.join(shotsDir, `roster-grid-${name}-peek.png`) });
-    await page.click('.teacher-artifact-peek__close');
-    const gone = await page.waitForSelector('.teacher-artifact-peek', { state: 'detached', timeout: 5000 })
-      .then(() => true).catch(() => false);
-    check(label('peek closes back to the dashboard'), gone);
+    check(label('the receipt icon opens the PNG directly'),
+      opened.length === 1 && opened[0][0] === '/receipt.png' && opened[0][1] === '_blank',
+      JSON.stringify(opened));
+    check(label('no modal is left behind either one'), !(await page.$('[role="dialog"]')));
   }
 
   await page.close();

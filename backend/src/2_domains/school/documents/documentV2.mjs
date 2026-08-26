@@ -55,6 +55,7 @@ export const BLOCK_TARGET_SUPPORT = Object.freeze({
   scan_action: Object.freeze(['letter', 'receipt']),
   media_action: Object.freeze(['letter', 'receipt']),
   result_summary: Object.freeze(['receipt']),
+  done_summary: Object.freeze(['receipt']),
   math: Object.freeze(['letter']),
   plot: Object.freeze(['letter']),
   geometry: Object.freeze(['letter']),

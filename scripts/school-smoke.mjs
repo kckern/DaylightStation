@@ -117,15 +117,15 @@ async function main() {
   check('unit 02 is no longer locked', unit02?.status === 'available', unit02?.status);
 
   // MATH already served today (a passing outcome just now) — the agenda
-  // caps a subject at one scannable action per study day and prints
-  // "done today" instead (spec §6.2 v2, docs/reference/school/README.md
-  // "at most one scannable action"). Rescanning the SAME day proves that
-  // cap, not a bug in unlocking; cross the 4am study-day boundary to see
-  // unit 02 actually offered.
+  // caps a subject at one scannable action per study day and files the
+  // subject under the foot-of-sheet "Done today" tally instead (spec §6.2
+  // v2, docs/reference/school/README.md "at most one scannable action").
+  // Rescanning the SAME day proves that cap, not a bug in unlocking; cross
+  // the 4am study-day boundary to see unit 02 actually offered.
   await harness.scanCard();
   const sameDayAgenda = harness.lastReceiptText() ?? '';
   if (VERBOSE) process.stdout.write(`\n--- same-day agenda ---\n${sameDayAgenda}\n\n`);
-  check('MATH is marked done for today, not re-offered', /MATH.*done today/i.test(sameDayAgenda));
+  check('MATH is marked done for today, not re-offered', /done today[\s\S]*MATH/i.test(sameDayAgenda));
 
   harness.advanceDays(1);
   await harness.scanCard();

@@ -333,19 +333,26 @@ export function agendaDocument({
     return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
   }
 
+  // FINISHED SUBJECTS ARE A TALLY, NOT HEADLINES.
+  //
+  // Each one used to print as its own section heading — `## CIVILIZATION —
+  // done today` — at the same weight as the work still to do, and above it,
+  // because sections print in subject order. A child looking for their next
+  // move read two dead lines first, each one an all-caps subject welded to a
+  // lowercase phrase by an em dash, and the phrase repeated verbatim on every
+  // one of them. Collected here instead and emitted as a single strip at the
+  // foot of the sheet, where a tally belongs.
+  const doneSubjects = [];
   offered.forEach((section) => {
     // A focus day deliberately removes flexible work from the CHILD'S paper;
     // the parent preview retains the suppression reason.
     if (section.suppressed) return;
-    const served = !!section.servedToday;
     const suffix = section.focus
       ? ` — Focus today · up to ${section.focus.blockBudget} lessons`
-      : served
-      ? ' — done today'
       : (isNonEmptyString(section.progressLabel) ? ` — ${section.progressLabel}` : '');
     // Already served today: nothing more to offer for this subject.
-    if (served) {
-      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
+    if (section.servedToday) {
+      doneSubjects.push(String(section.subject || '').trim() || 'work');
       return;
     }
 
@@ -443,6 +450,17 @@ export function agendaDocument({
     }
   });
 
+  if (doneSubjects.length) {
+    // Whether anything is still open decides the wording: with work left this
+    // is a footnote to the page above it; with nothing left it is the whole
+    // answer, and saying so plainly beats a bare list under a small heading.
+    const nothingLeft = blocks.length === 0;
+    blocks.push({
+      type: 'done_summary',
+      label: nothingLeft ? 'All done today' : 'Done today',
+      subjects: doneSubjects,
+    });
+  }
   appendNoteLines(blocks, noteLines);
   const hasCalculator = offered.some((section) => section.next?.schoolcalcHandoff?.eligible);
   if (footer || hasCalculator) blocks.push(text(footer || 'Enter the calculator code to start.'));

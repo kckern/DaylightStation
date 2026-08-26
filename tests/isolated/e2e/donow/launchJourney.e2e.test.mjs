@@ -208,7 +208,9 @@ describe('the DoNow launch journey — one card, garage-fitness, end to end (Tas
     // valid; the OLD `peToken` stays usable too, spec's own "a token a child
     // is already holding should keep meaning something".)
     await h.scanCard();
-    expect(h.lastReceiptText()).toMatch(/SCIENCE.*done today/i);
+    // The finished subject now reads off the foot-of-sheet tally, not a
+    // per-subject heading: 'Done today' first, then the subjects under it.
+    expect(h.lastReceiptText()).toMatch(/done today[\s\S]*SCIENCE/i);
     const offeredD = h.tokensInLastReceipt();
     expect(offeredD.find((o) => /go to the garage/i.test(o.printed))).toBeUndefined();
     // The pe-daily subject is still unserved — its ticket is still offered.
@@ -238,8 +240,8 @@ describe('the DoNow launch journey — one card, garage-fitness, end to end (Tas
     // Re-tap once more: both subjects now read done for today, no QR for either.
     await h.scanCard();
     const tapFinal = h.lastReceiptText();
-    expect(tapFinal).toMatch(/SCIENCE.*done today/i);
-    expect(tapFinal).toMatch(/SKILLS.*done today/i);
+    expect(tapFinal).toMatch(/done today[\s\S]*SCIENCE/i);
+    expect(tapFinal).toMatch(/done today[\s\S]*SKILLS/i);
     const offeredFinal = h.tokensInLastReceipt();
     expect(offeredFinal).toHaveLength(0);
 
