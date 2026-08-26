@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import yaml from 'js-yaml';
+import { saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 
 /** Append-only curriculum exception ledger. */
 export class YamlCurriculumExceptionStore {
@@ -16,8 +17,10 @@ export class YamlCurriculumExceptionStore {
   async append(record) {
     const run = async () => {
       const records = await this.list(); records.push(structuredClone(record));
-      await fs.mkdir(path.dirname(this.#file()), { recursive: true });
-      await fs.writeFile(this.#file(), yaml.dump(records, { lineWidth: -1, noRefs: true }), 'utf8');
+      // Atomic replacement: #writeChain already stops two appends racing, but
+      // a truncate-then-write still exposes a reader (or a crash) to a
+      // half-written ledger.
+      saveYamlToPathAtomic(this.#file(), records, { noRefs: true });
       return structuredClone(record);
     };
     const queued = this.#writeChain.then(run); this.#writeChain = queued.catch(() => {}); return queued;
