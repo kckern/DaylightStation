@@ -16,6 +16,7 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
 import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
   import { playbackLog } from '../lib/playbackLogger.js';
+  import { computeReadingGuideTop } from '../lib/readingGuide.js';
   
   /**
    * ContentScroller (superclass)
@@ -59,6 +60,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
     parseContent,
     onAdvance,
     onClear,
+    onProgress,
     shaders,
     listId,
     yStartTime = 15,
@@ -114,8 +116,11 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 
   // Track in-body heading positions for sticky header
   const headingPositionsRef = useRef([]);
+  // Height of the narrated text WITHOUT its bottom run-out padding — feeds the
+  // reading-guide marker so it doesn't run ahead of the voice at the end.
+  const narratableHeightRef = useRef(0);
 
-  // Measure h4 positions after content renders
+  // Measure h4 positions and narratable height after content renders
   useEffect(() => {
     const contentEl = contentRef.current;
     if (!contentEl) return;
@@ -124,6 +129,14 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
       top: el.offsetTop,
       text: el.textContent,
     }));
+    const wrapper = contentEl.firstElementChild;
+    if (wrapper) {
+      let padBottom = 0;
+      try { padBottom = parseFloat(getComputedStyle(wrapper).paddingBottom) || 0; } catch { /* jsdom */ }
+      narratableHeightRef.current = Math.max(0, wrapper.offsetHeight - padBottom);
+    } else {
+      narratableHeightRef.current = 0;
+    }
   }, [contentData]);
 
 
@@ -232,6 +245,32 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 
       return () => clearInterval(syncInterval);
     }, [reportPlaybackMetrics]);
+
+    // Progress bridge for shell components (e.g. ReadalongPlaylistPlayer).
+    // Content formats bypass the AudioPlayer/VideoPlayer onProgress path, so
+    // without this the Player's onProgress consumer never hears from a
+    // scroller: position, duration and paused state all read as zero upstream.
+    const onProgressRef = useRef(onProgress);
+    onProgressRef.current = onProgress;
+    useEffect(() => {
+      const el = mainRef.current;
+      if (!el) return () => {};
+      const emit = () => {
+        const cb = onProgressRef.current;
+        if (typeof cb !== 'function') return;
+        const dur = Number.isFinite(el.duration) ? el.duration : 0;
+        const cur = Number.isFinite(el.currentTime) ? el.currentTime : 0;
+        cb({
+          currentTime: cur,
+          duration: dur,
+          paused: Boolean(el.paused),
+          percent: dur > 0 ? (cur / dur) * 100 : 0
+        });
+      };
+      const events = ['loadedmetadata', 'timeupdate', 'play', 'pause', 'seeked', 'ended'];
+      events.forEach((name) => el.addEventListener(name, emit));
+      return () => events.forEach((name) => el.removeEventListener(name, emit));
+    }, [mainMediaUrl]);
 
     // Anchor the smooth seek-bar keyframe on playback discontinuities. Each anchor
     // captures the true playhead + rate so the CSS animation clock re-syncs to the
@@ -432,6 +471,28 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
           >
             {renderedContent}
           </div>
+          {(() => {
+            // Reading guide: a small chevron in the left margin marking where
+            // the narration is right now. Hidden by default (display: none);
+            // surfaces that want it (e.g. the School readalong kiosk) opt in
+            // via CSS. Position follows the scroller's own linear time→text
+            // model, so it is exactly as accurate as the scroll itself.
+            if (!duration || !panelHeight) return null;
+            const guideTop = computeReadingGuideTop({
+              progressFraction: duration ? currentTime / duration : 0,
+              narratableHeight: narratableHeightRef.current || contentHeight,
+              yOffset,
+              panelHeight
+            });
+            if (guideTop == null) return null;
+            return (
+              <div className="reading-guide" style={{ top: `${guideTop}px` }} aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M7 4.5 17.5 12 7 19.5z" />
+                </svg>
+              </div>
+            );
+          })()}
         </div>
 
         </div>

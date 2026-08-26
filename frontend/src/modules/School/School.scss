@@ -720,17 +720,94 @@
   }
 }
 
+// Read-along viewer (1280x800 touch kiosk, child users). Layout follows the
+// screen-framework playbook (PanelRenderer.css): a definite height at the top,
+// then nested flex with min-height:0 at every level. `height: 100%`, NOT
+// `min-height: 100%` — a min-height leaves the container's own height
+// indefinite, so the percentage chain hanging below the stage
+// (.player{height:100%} → .content-scroller{height:100%}) resolved to auto and
+// the verse panel collapsed to nothing: the stage stretched, its content
+// didn't, and ~460px of the 800px viewport rendered as bare background.
 .readalong-playlist {
-  min-height: 100%; display: flex; flex-direction: column; background: var(--school-bg); color: var(--school-fg);
-  &__header { display:flex; gap:1rem; align-items:center; padding:1rem; border-bottom:1px solid var(--school-border); }
-  &__header button, &__picker button, &__controls button { min-height:44px; padding:0.5rem 0.8rem; border:1px solid var(--school-border); border-radius:8px; background:var(--school-surface); color:var(--school-fg); font:inherit; }
-  &__header span { display:block; color:var(--school-muted); font-size:0.9rem; margin-top:0.2rem; }
-  &__segments { display:flex; gap:4px; padding:0.7rem 1rem; }
-  &__segments button { flex:1; height:12px; padding:0; overflow:hidden; border:0; background:var(--school-surface-2); cursor:pointer; }
-  &__segments i { display:block; height:100%; background:var(--school-fg); }
-  &__picker { display:flex; flex-wrap:wrap; gap:0.4rem; padding:0 1rem 0.8rem; }
-  &__stage { flex:1; min-height:0; }
-  &__controls { display:flex; flex-wrap:wrap; justify-content:center; gap:0.5rem; padding:0.8rem; border-top:1px solid var(--school-border); }
+  height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--school-bg); color: var(--school-fg);
+
+  // One bar answers "where am I": each chapter chip is the picker AND that
+  // chapter's progress bar. (This replaces the old three overlapping
+  // representations: segment bars + numbered picker + header counter.)
+  &__topbar {
+    flex: 0 0 auto; display: flex; align-items: stretch; gap: 0.6rem;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--school-border); background: var(--school-surface);
+  }
+  &__back {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    min-height: 56px; min-width: 56px; padding: 0 1.1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font: inherit; font-size: 1.05rem; font-weight: 700; cursor: pointer;
+    svg { width: 22px; height: 22px; }
+  }
+  &__chapters { flex: 1 1 auto; min-width: 0; display: flex; gap: 0.5rem; }
+  &__chapter {
+    flex: 1 1 0; min-width: 0;
+    display: flex; flex-direction: column; justify-content: center; gap: 0.35rem;
+    min-height: 56px; padding: 0.4rem 0.8rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-muted);
+    font: inherit; font-size: 1.05rem; font-weight: 700; text-align: left; cursor: pointer;
+    &.is-current { border-color: var(--school-accent); color: var(--school-fg); cursor: default; }
+    &.is-complete { color: var(--school-fg); }
+  }
+  &__chapter-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &__chapter-fill {
+    display: block; height: 6px; border-radius: 999px; overflow: hidden;
+    background: color-mix(in srgb, var(--school-fg) 14%, transparent);
+    i { display: block; height: 100%; background: var(--school-accent); }
+  }
+
+  // The verse text owns everything between the two bars. Flex stretch (the
+  // framework pattern) makes the stage's child definite-height, which is what
+  // lets the scroller's internal percentage sizing work.
+  &__stage {
+    flex: 1 1 auto; min-height: 0; position: relative; display: flex;
+    > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
+  }
+  &__empty { align-self: center; margin: 0 auto; color: var(--school-muted); font-size: 1.2rem; }
+
+  // One transport row: icon + word on every control, 64px minimum targets.
+  &__controls {
+    flex: 0 0 auto; display: flex; justify-content: center; align-items: stretch; gap: 0.75rem;
+    padding: 0.7rem 1rem;
+    border-top: 1px solid var(--school-border); background: var(--school-surface);
+  }
+  &__control {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
+    min-width: 108px; min-height: 64px; padding: 0.4rem 1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font: inherit; font-size: 0.95rem; font-weight: 700; cursor: pointer;
+    svg { width: 26px; height: 26px; }
+    &:disabled { opacity: 0.35; cursor: default; }
+  }
+  &__control--primary {
+    min-width: 150px;
+    border-color: transparent; background: var(--school-accent); color: var(--school-accent-ink);
+  }
+
+  // Scoped adjustments to the shared ContentScroller, kiosk only.
+  .content-scroller {
+    // Title and superscription read as one deliberate left-aligned line
+    // instead of a centered title fighting a right-parked superscription.
+    .scroller-header { justify-content: flex-start; gap: 1.25rem; }
+    .scroller-header-title { margin: 0; font-size: 2.3rem; }
+    .scroller-header-subtitle { flex: 1 1 auto; min-width: 0; text-align: left; }
+    // Seek strip tall enough for a child's finger (tap-to-seek; the discrete
+    // ±15s controls below remain the primary seek affordance).
+    .controls { height: 2.75rem; }
+    // The narration marker earns its keep on a read-along surface.
+    .reading-guide { display: block; }
+  }
 }
 
 // --- program report: every program x every learner, one shape ---------------

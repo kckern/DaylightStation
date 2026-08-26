@@ -76,15 +76,6 @@ export function SinglePlayer(props = {}) {
     queuePosition
   };
 
-  const contentScrollerBridge = {
-    onResolvedMeta,
-    onPlaybackMetrics,
-    onRegisterMediaAccess,
-    seekToIntentSeconds,
-    onSeekRequestConsumed,
-    remountDiagnostics
-  };
-
   // Shader diagnostics for loading state
   const loadingShaderRef = useRef(null);
   const playerContainerRef = useRef(null);
@@ -188,6 +179,20 @@ export function SinglePlayer(props = {}) {
       });
     }
   }, [accumulateWatchedDuration, onPlaybackMetrics, onProgress, playbackSessionKey]);
+
+  const contentScrollerBridge = {
+    onResolvedMeta,
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    seekToIntentSeconds,
+    onSeekRequestConsumed,
+    remountDiagnostics,
+    // Content formats (scrollers) otherwise never reach the onProgress
+    // consumer — only AudioPlayer/VideoPlayer were wired to handleProgress,
+    // so a shell like ReadalongPlaylistPlayer saw position/duration stuck at
+    // zero for readalong content.
+    onProgress: handleProgress
+  };
 
   useEffect(() => {
     if (!playbackSessionKey || typeof window === 'undefined') {
