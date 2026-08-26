@@ -18,6 +18,30 @@ export class FitnessPlayableService {
   #contentQueryService;
   #createProgressClassifier;
   #logger;
+  /**
+   * PLEX STRUCTURE CACHE — the course's shape, never the child's progress.
+   *
+   * Measured 2026-08-25 against the live library: resolving one piano course's
+   * playables costs 1.0-1.5s every call, with no warm-up benefit, and the
+   * school agenda pays it per learner. A learner with an open program subject
+   * took ~1s while one with nothing open answered in 70ms, so the board's whole
+   * wait was this call.
+   *
+   * ONLY the three reads that describe the CONTENT are cached — the episode
+   * list and the two container-metadata lookups. `enrichWithWatchState` is
+   * deliberately left outside: it is what "has this child finished today's
+   * lesson" is computed from, and serving that stale would tell a child they
+   * still owe work they have done, or offer a lesson they just finished. The
+   * expensive half is the half that barely changes; the half that changes by
+   * the minute is cheap and stays live.
+   *
+   * In-flight requests are shared, not just completed ones: Plex serialises
+   * concurrent requests, so four learners resolving the same course at once
+   * must become one fetch rather than four queued ones.
+   */
+  #structureCache = new Map();
+  #structureTtlMs;
+  #now;
 
   /**
    * @param {Object} deps
@@ -27,12 +51,73 @@ export class FitnessPlayableService {
    * @param {Function} deps.createProgressClassifier - Factory: (config) => classifier with classify()
    * @param {Object} [deps.logger]
    */
-  constructor({ fitnessConfigService, contentAdapter, contentQueryService, createProgressClassifier, logger = console }) {
+  constructor({
+    fitnessConfigService, contentAdapter, contentQueryService, createProgressClassifier,
+    logger = console, structureTtlMs = null, now = () => Date.now(),
+  }) {
     this.#fitnessConfigService = fitnessConfigService;
     this.#contentAdapter = contentAdapter;
     this.#contentQueryService = contentQueryService;
     this.#createProgressClassifier = createProgressClassifier;
     this.#logger = logger;
+    // Five minutes: a course gains an episode when someone adds one to Plex,
+    // which is a human-scale event, and the cost of being a few minutes late
+    // to notice is nil. Injectable so tests do not sleep.
+    this.#structureTtlMs = Number.isFinite(structureTtlMs) ? structureTtlMs : 5 * 60_000;
+    this.#now = now;
+  }
+
+  /**
+   * Run `produce()` for `key`, reusing a fresh result or an in-flight request.
+   *
+   * A rejected fetch is evicted rather than cached: a Plex blip must not be
+   * remembered for the whole TTL.
+   */
+  /**
+   * A cached value must never be handed out by reference.
+   *
+   * Callers below MUTATE what they get — `info.labels = parentInfo.labels` is
+   * a direct write onto the container info, and the item list is re-mapped in
+   * place-ish through classification. Sharing the cached objects would let one
+   * request's edits become every later request's starting state, and for a
+   * per-learner read that is a cross-learner leak, not just a stale field.
+   * Copying an array of small objects costs nothing against a 1s Plex call.
+   */
+  static #detach(value) {
+    if (Array.isArray(value)) return value.map((entry) => (entry && typeof entry === 'object' ? { ...entry } : entry));
+    if (value && typeof value === 'object') return { ...value };
+    return value;
+  }
+
+  #cachedStructure(key, produce) {
+    const hit = this.#structureCache.get(key);
+    const now = this.#now();
+    if (hit && (hit.pending || now - hit.at < this.#structureTtlMs)) {
+      return hit.value.then(FitnessPlayableService.#detach);
+    }
+    const value = Promise.resolve().then(produce);
+    const entry = { value, at: now, pending: true };
+    this.#structureCache.set(key, entry);
+    value.then(
+      () => { entry.pending = false; entry.at = this.#now(); },
+      () => { this.#structureCache.delete(key); },
+    );
+    return value.then(FitnessPlayableService.#detach);
+  }
+
+  /**
+   * Drop cached Plex structure — all of it, or one course.
+   *
+   * A course occupies THREE keys (`playables:`, `info:`, `item:`), so dropping
+   * the compound id alone would leave two thirds of it cached — invalidation
+   * that silently half-works is worse than none.
+   */
+  invalidateStructure(showId = null) {
+    if (showId === null) { this.#structureCache.clear(); return; }
+    const compoundId = `plex:${String(showId).replace(/^(?:plex:)+/, '')}`;
+    for (const key of [...this.#structureCache.keys()]) {
+      if (key.endsWith(`:${compoundId}`)) this.#structureCache.delete(key);
+    }
   }
 
   /**
@@ -75,7 +160,10 @@ export class FitnessPlayableService {
       : { classify: () => 'unknown' };
 
     // Resolve playable items from content adapter
-    let items = await this.#contentAdapter.resolvePlayables(compoundId);
+    // Structure only — watch state is enriched fresh below, every call.
+    let items = await this.#cachedStructure(
+      `playables:${compoundId}`, () => this.#contentAdapter.resolvePlayables(compoundId),
+    );
 
     // Enrich with watch state via ContentQueryService (DDD-compliant)
     if (this.#contentQueryService) {
@@ -91,10 +179,10 @@ export class FitnessPlayableService {
     // Get container info and item for show metadata
     const [info, containerItem] = await Promise.all([
       this.#contentAdapter.getContainerInfo
-        ? this.#contentAdapter.getContainerInfo(compoundId)
+        ? this.#cachedStructure(`info:${compoundId}`, () => this.#contentAdapter.getContainerInfo(compoundId))
         : null,
       this.#contentAdapter.getItem
-        ? this.#contentAdapter.getItem(compoundId)
+        ? this.#cachedStructure(`item:${compoundId}`, () => this.#contentAdapter.getItem(compoundId))
         : null
     ]);
 
