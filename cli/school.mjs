@@ -84,6 +84,10 @@ const NAMESPACES = {
     module: './school/learner.mjs',
     blurb: 'admin: rekey a learner id across both school data roots',
   },
+  agenda: {
+    module: './school/agenda.mjs',
+    blurb: 'inspect and re-render the agenda pages the thermal printer printed',
+  },
   omr: {
     module: './school/omr.mjs',
     blurb: 'rebuild decoded quiz day files, or replay a scan the relay never delivered',
