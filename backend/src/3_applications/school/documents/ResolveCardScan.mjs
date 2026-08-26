@@ -651,6 +651,15 @@ export class ResolveCardScan {
     const unallocatedRows = [...answeredRows].filter((row) => !rowOwners.has(row)).sort((a, b) => a - b);
     return {
       results,
+      // IS THIS CARD ONE OF OURS? (2026-08-26) An empty `results` means two
+      // completely different things, and the consumer cannot tell them apart
+      // without this count: a legacy household bubble sheet this system never
+      // issued (zero records — silence is correct, the recorder already has
+      // the decoded scan), or a print-document card we DID issue whose rows
+      // simply did not line up with the marks (records exist — silence is the
+      // failure that let four fed sheets vanish). Always present, so `?? 0`
+      // in a consumer degrades to the safe, pre-existing "stay quiet" reading.
+      cardRecordCount: records.length,
       ...(unallocatedRows.length ? { unallocatedRows } : {}),
       ...(silentLiveRecords.length ? { silentLiveRecords } : {}),
       ...(cardIdInferred ? { cardIdInferred } : {}),

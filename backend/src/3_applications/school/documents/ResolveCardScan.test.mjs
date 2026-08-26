@@ -566,7 +566,34 @@ describe('execute — unallocated rows (spec §5.4: "never guessed")', () => {
     const result = await useCaseExecute({ allocationStore, repository }, {
       testId: '9999999', answers: {},
     });
-    expect(result).toEqual({ results: [] });
+    // `cardRecordCount: 0` is what EARNS the quiet here (2026-08-26): it is the
+    // signal `schoolPrintScanConsumer` reads to tell a legacy sheet this system
+    // never issued (stay silent) from a card we did issue whose rows did not
+    // match the marks (never stay silent).
+    expect(result).toEqual({ results: [], cardRecordCount: 0 });
+  });
+
+  it('reports how many records the card carries, so an empty result can be told from a foreign sheet', async () => {
+    // The 2026-08-26 silent scan: a cumulative card whose LIVE record got zero
+    // marks while its older satisfied rows still carried last week's. `results`
+    // is empty for both this and a sheet we never issued — `cardRecordCount` is
+    // the only thing that distinguishes them.
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore({ rng: Math.random });
+    const source = sourceDoc('unmarked-quiz', [
+      mcQuestion('um-q1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+
+    // Answer a row this card's record does not own — nothing to grade.
+    const result = await useCaseExecute({ allocationStore, repository }, {
+      testId: allocation.cardId, answers: { 99: 'A' },
+    });
+
+    expect(result.results).toEqual([]);
+    expect(result.cardRecordCount).toBeGreaterThan(0);
   });
 
   it('a card whose ONLY record is RELEASED, scanned with answers, reports deadCard rather than a bare unallocatedRow (re-review wave 2: superseded by the more informative dead-card signal)', async () => {
