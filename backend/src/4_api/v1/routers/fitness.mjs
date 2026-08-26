@@ -683,7 +683,8 @@ export function createFitnessRouter(config) {
       align: 'left',
       threshold: 128
     });
-    const success = await printerAdapter.print(printJob);
+    const outcome = await printerAdapter.print(printJob);
+    const success = outcome === true || outcome?.verified === true;
 
     try { deleteFile(tempPath); } catch {}
 

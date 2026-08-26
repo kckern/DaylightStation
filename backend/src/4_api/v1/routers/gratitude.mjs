@@ -491,7 +491,10 @@ export function createGratitudeRouter(config) {
       threshold: 128
     });
 
-    const success = await printerAdapter.print(printJob);
+    // `verified` is the bar: the gratitude rows below are marked printed on
+    // this, and a row marked printed is never offered again.
+    const outcome = await printerAdapter.print(printJob);
+    const success = outcome === true || outcome?.verified === true;
 
     // Clean up temp file
     deleteFile(tempPath);

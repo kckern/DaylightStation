@@ -12,6 +12,12 @@
  * These tests pin the contract: never close before the flush callback, never
  * report success for a write that failed.
  *
+ * `print()` resolves a claim tier — `{dispatched, verified, printerState}` —
+ * rather than a bare boolean (2026-08-25); the transports here are write-only
+ * (no `read`), so the printer is never asked anything and `verified` is always
+ * false. What these tests assert is `dispatched`, which is the same claim the
+ * old boolean made.
+ *
  * NOTE ON MOCKING: the transport is INJECTED via `options.createTransport`,
  * not module-mocked. `escpos-network` is CJS, so this ESM adapter's import of
  * it resolves through interop and neither `jest.mock` (unavailable — these test
@@ -102,14 +108,14 @@ describe('ThermalPrinterAdapter flush contract', () => {
     expect(mockCloseCalls.length).toBe(1);
   });
 
-  it('resolves false when the write fails instead of reporting a phantom success', async () => {
+  it('reports NOT dispatched when the write fails instead of reporting a phantom success', async () => {
     const logger = quietLogger();
     const adapter = makeAdapter(logger);
     const printing = adapter.print(textJob);
     await settle(PAST_QUEUE_DELAY);
 
     mockWriteCalls[0].cb(new Error('EPIPE'));
-    await expect(printing).resolves.toBe(false);
+    await expect(printing).resolves.toMatchObject({ dispatched: false, verified: false });
 
     const completed = logger.info.mock.calls.some(([e]) => e === 'thermalPrinter.job.complete');
     expect(completed).toBe(false);
@@ -148,7 +154,7 @@ describe('ThermalPrinterAdapter flush contract', () => {
     const failing = adapter.print(textJob);
     await settle(PAST_QUEUE_DELAY);
     mockWriteCalls[0].cb(new Error('EPIPE'));
-    await expect(failing).resolves.toBe(false);
+    await expect(failing).resolves.toMatchObject({ dispatched: false });
 
     const next = adapter.print(textJob);
     await settle(PAST_QUEUE_DELAY);

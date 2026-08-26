@@ -35,6 +35,8 @@ export class ReceiptPrinting {
    * @param {object} document - a validated `target: ['receipt']` document
    * @param {object} [opts] - passed through to the renderer
    * @returns {Promise<{ printed: boolean, reason: string|null }>}
+   *   `printed` is only ever true when the printer CONFIRMED it — see
+   *   `reason: 'unverified'` below for the case in between.
    */
   async print(document, opts = {}) {
     if (!document) return { printed: false, reason: 'nothing_to_print' };
@@ -45,14 +47,29 @@ export class ReceiptPrinting {
     let job = null;
     try {
       job = await this.#renderer.render(document, opts);
-      // The real adapter's `print` resolves FALSE on failure and never rejects;
-      // both are handled, because a double or a future adapter might differ.
-      const ok = await this.#printer.print(job);
-      if (!ok) {
-        this.#logger.warn?.('school.receipt.refused', { id: document.id });
-        return { printed: false, reason: 'printer_refused' };
+      // THREE OUTCOMES, NOT TWO.
+      //
+      // The thermal adapter resolves a claim tier — `{dispatched, verified}` —
+      // because "our bytes flushed" and "the printer says it printed and is
+      // still fine" are different claims, and the morning of 2026-08-25 a child
+      // was locked out for fifteen minutes over a receipt that never came out
+      // because only the first was ever checked. `printed: true` requires the
+      // second. `unverified` is the honest middle: the bytes went, and the
+      // printer would not confirm it — the caller can retry or ask, but must
+      // not write down a permanent `issued`.
+      //
+      // A plain boolean is still accepted so test doubles and any other printer
+      // surface that answers true/false keep working, and it never rejects.
+      const outcome = await this.#printer.print(job);
+      const dispatched = outcome === true || outcome?.dispatched === true;
+      const verified = outcome === true || outcome?.verified === true;
+      if (verified) return { printed: true, reason: null };
+      if (dispatched) {
+        this.#logger.warn?.('school.receipt.unverified', { id: document.id });
+        return { printed: false, reason: 'unverified' };
       }
-      return { printed: true, reason: null };
+      this.#logger.warn?.('school.receipt.refused', { id: document.id });
+      return { printed: false, reason: 'printer_refused' };
     } catch (err) {
       this.#logger.warn?.('school.receipt.failed', { id: document.id, error: err.message });
       return { printed: false, reason: 'printer_error' };
