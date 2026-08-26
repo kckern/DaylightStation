@@ -5,6 +5,9 @@ nothing until `school.yml` opts in. This runbook is what turning it on requires.
 
 Architecture: [`2026-07-27-school-physical-console-architecture.md`](../superpowers/specs/2026-07-27-school-physical-console-architecture.md).
 Subsystem reference: [`docs/reference/school/README.md`](../reference/school/README.md).
+Already deployed and something's broken? See the
+[day-to-day operations runbook](./school/README.md), especially
+[hardware-troubleshooting.md](./school/hardware-troubleshooting.md).
 
 ---
 
