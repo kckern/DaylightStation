@@ -70,7 +70,7 @@ describe('the result receipt never carries an audit-only note (regression: Learn
       },
     ]);
     const doc = resultDocument({
-      sessionId: 'ses_milo', unitTitle: 'The United States', result: 'passed', percent: 100, notes,
+      sessionId: 'ses_learner3', unitTitle: 'The United States', result: 'passed', percent: 100, notes,
     });
     const text = doc.blocks.filter((b) => b.type === 'rich_text').map((b) => b.md).join('\n');
     expect(text).not.toContain(AUDIT_TEXT);
@@ -86,7 +86,7 @@ describe('the result receipt never carries an audit-only note (regression: Learn
       },
     ]);
     const doc = resultDocument({
-      sessionId: 'ses_milo', unitTitle: 'The United States', result: 'passed', percent: 100, notes,
+      sessionId: 'ses_learner3', unitTitle: 'The United States', result: 'passed', percent: 100, notes,
     });
     const text = doc.blocks.filter((b) => b.type === 'rich_text').map((b) => b.md).join('\n');
     expect(text).toContain('NOTES FOR YOU');

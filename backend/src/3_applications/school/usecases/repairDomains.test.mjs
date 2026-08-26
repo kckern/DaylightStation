@@ -192,7 +192,10 @@ describe('advocacy wave 7 — auto-notes (A5: no silent verbs about children)', 
     const notes = noteStore();
     const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), notes, clock: () => new Date('2026-08-06T12:00:00Z') });
     await uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' });
-    expect(notes.entries.map((n) => n.learnerId).sort()).toEqual(['learner4', 'learner3']);
+    // Sorted, so this asserts WHICH TWO children were told, not the order the
+    // use case told them in. The literal used to read as from-then-to and
+    // passed only because those two ids happened to sort that way.
+    expect(notes.entries.map((n) => n.learnerId).sort()).toEqual(['learner3', 'learner4']);
 
     // best-effort: append throwing must not fail the move itself
     ds.seed('learner4', '2026-08-07', [{ sessionId: 'ses_9', itemId: 'q1', attributedTo: 'learner4', at: '2026-08-07T10:00:00Z' }]);

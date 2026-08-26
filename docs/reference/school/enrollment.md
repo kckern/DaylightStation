@@ -41,7 +41,7 @@ courses:
     enrolledAt: '2026-08-23T20:00:00.000Z'
     enrollment:
       schema: school.course-enrollment/v2
-      enrollmentId: enr_milo_come_follow_me
+      enrollmentId: enr_learner3_come_follow_me
       courseId: come-follow-me-ot-2026
       profile: lower
       progression:

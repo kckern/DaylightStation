@@ -125,9 +125,9 @@ test.describe('Group Label Fallback', () => {
       // Verify devices exist
       const devices = await sim.getDevices();
       const hasKckern = devices.some(d => String(d.deviceId) === '40475');
-      const hasFelix = devices.some(d => String(d.deviceId) === '90003');
+      const hasLearner4 = devices.some(d => String(d.deviceId) === '90003');
       expect(hasKckern, 'user_1 device (40475) must exist').toBe(true);
-      expect(hasFelix, 'user_2 device (90003) must exist').toBe(true);
+      expect(hasLearner4, 'user_2 device (90003) must exist').toBe(true);
 
       // Phase 1: Single device - should show display_name
       await sim.setZone('40475', 'warm');

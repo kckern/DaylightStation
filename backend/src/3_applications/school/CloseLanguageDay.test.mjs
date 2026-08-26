@@ -25,7 +25,7 @@ describe('CloseLanguageDay', () => {
     expect(f.sessions.appendEvent).toHaveBeenCalledTimes(2);
     expect(f.sessions.appendEvent.mock.calls.map(([, event]) => event.type)).toEqual(['created', 'program_dispatched']);
     expect(f.close.execute).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 'ses_lang_felix_glossika-korean_d4', honorClose: true, rewardOverride: { amount: 2 },
+      sessionId: 'ses_lang_learner4_glossika-korean_d4', honorClose: true, rewardOverride: { amount: 2 },
     }));
     expect(result.status).toBe('settled');
   });
@@ -38,7 +38,7 @@ describe('CloseLanguageDay', () => {
     });
 
     expect(f.close.execute).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 'ses_lang_felix_glossika-korean_d4',
+      sessionId: 'ses_lang_learner4_glossika-korean_d4',
       honorClose: true,
       rewardOverride: { amount: 2 },
     }));
