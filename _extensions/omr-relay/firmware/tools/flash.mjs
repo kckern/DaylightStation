@@ -3,7 +3,7 @@
 // flash.mjs — regenerate config.h from omr-readers.yml, then build + upload.
 //
 // Usage:
-//   node tools/flash.mjs <path-to>/config/omr-readers.yml [reader-id] [--port /dev/cu.xxx]
+//   node tools/flash.mjs <dataDir>/household/hardware/omr/readers.yml [reader-id] [--port /dev/cu.xxx]
 //   DAYLIGHT_OMR_CONFIG=<path> node tools/flash.mjs [reader-id] [--port ...]
 //
 // Port autodetects the first /dev/cu.usbserial-* if --port omitted.
