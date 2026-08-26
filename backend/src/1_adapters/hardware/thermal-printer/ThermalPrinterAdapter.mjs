@@ -157,6 +157,24 @@ function statusIsConclusive(status) {
 }
 
 /**
+ * Build the claim tier `print()` resolves — see its doc comment for what each
+ * `verification` value claims.
+ *
+ * `verified` is DERIVED, never passed in, so the boolean and the reason can
+ * never disagree: it was two independent fields that let "faulted" and
+ * "unreadable" be flattened into one `false` in the first place.
+ */
+function claimTier({ dispatched, verification, faults = null, printerState = null }) {
+  return {
+    dispatched,
+    verified: verification === 'verified',
+    verification,
+    faults: faults?.length ? faults : null,
+    printerState,
+  };
+}
+
+/**
  * @typedef {Object} PrinterConfig
  * @property {string} host - Printer IP address
  * @property {number} [port=9100] - Printer port
@@ -416,8 +434,34 @@ export class ThermalPrinterAdapter {
    * A status read that fails tells us nothing, and nothing is not a fault: it
    * drops `verified` to false and never blocks the job.
    *
+   * WHICH IS WHY `verified: false` ALONE IS NOT A REPORTABLE OUTCOME. It covers
+   * two incompatible situations — "I asked and the printer reported a fault"
+   * and "I asked and heard nothing" — and a caller that cannot tell them apart
+   * has to guess. It guessed wrong on 2026-08-25: a caller read every silence
+   * as a failed print and told children their worksheets had not printed while
+   * they sat in the tray. `verification` carries the distinction across the
+   * seam so no caller has to infer it:
+   *
+   *   'verified'   — asked after the job, printer reported itself able to print
+   *                  with nothing wrong. The only tier that may become a
+   *                  permanent, cooldown-arming fact.
+   *   'faulted'    — the printer REPORTED a blocking condition (paper out,
+   *                  cover open, error). Positive evidence of failure, whether
+   *                  it came from the pre-flight or the post-job read;
+   *                  `faults` names them.
+   *   'unreadable' — nothing could be learned: no reply, a refused connection,
+   *                  a partial answer, or a write-only transport. NOT evidence
+   *                  of failure in either direction. On this hardware it is the
+   *                  ordinary case, because port 9100 is fire-and-forget and
+   *                  gives no per-job acknowledgment.
+   *
+   * `verified` is retained as exactly `verification === 'verified'`, so callers
+   * and doubles written against the two-field tier keep working.
+   *
    * @param {PrintJob} printJob
-   * @returns {Promise<{dispatched: boolean, verified: boolean, printerState: object|null}>}
+   * @returns {Promise<{dispatched: boolean, verified: boolean,
+   *   verification: 'verified'|'faulted'|'unreadable', faults: string[]|null,
+   *   printerState: object|null}>}
    */
   async print(printJob) {
     const result = await new Promise((resolve) => {
@@ -427,7 +471,7 @@ export class ThermalPrinterAdapter {
           resolve(await this.#printWithClaimTier(printJob));
         } catch (e) {
           this.#logger.error?.('thermalPrinter.queue.error', { error: e.message });
-          resolve({ dispatched: false, verified: false, printerState: null });
+          resolve(claimTier({ dispatched: false, verification: 'unreadable' }));
         }
       });
     });
@@ -439,11 +483,22 @@ export class ThermalPrinterAdapter {
     const preflightState = outcome.printerState ?? null;
 
     if (!outcome.dispatched) {
-      return { dispatched: false, verified: false, printerState: preflightState };
+      // A pre-flight refusal is the printer SAYING it cannot print; a connect
+      // failure or a job that could not be built is silence. Both stop the job
+      // here, but only the first is evidence about the printer's condition.
+      const preflightFaults = faultsIn(preflightState);
+      return claimTier({
+        dispatched: false,
+        verification: preflightFaults ? 'faulted' : 'unreadable',
+        faults: preflightFaults,
+        printerState: preflightState,
+      });
     }
     if (!outcome.statusCapable) {
       // Nothing on this transport can answer, so nothing here can be verified.
-      return { dispatched: true, verified: false, printerState: preflightState };
+      return claimTier({
+        dispatched: true, verification: 'unreadable', printerState: preflightState,
+      });
     }
 
     const post = await this.#readStatusAfterJob();
@@ -452,7 +507,9 @@ export class ThermalPrinterAdapter {
       this.#logger.error?.('thermalPrinter.postjob.fault', {
         target: `${this.#host}:${this.#port}`, faults,
       });
-      return { dispatched: true, verified: false, printerState: post };
+      return claimTier({
+        dispatched: true, verification: 'faulted', faults, printerState: post,
+      });
     }
     if (!statusIsConclusive(post)) {
       this.#logger.warn?.('thermalPrinter.postjob.unverified', {
@@ -460,12 +517,14 @@ export class ThermalPrinterAdapter {
         error: post?.error ?? null,
         answered: post?.answered ?? 0,
       });
-      return { dispatched: true, verified: false, printerState: post ?? null };
+      return claimTier({
+        dispatched: true, verification: 'unreadable', printerState: post ?? null,
+      });
     }
     this.#logger.info?.('thermalPrinter.postjob.ok', {
       target: `${this.#host}:${this.#port}`,
     });
-    return { dispatched: true, verified: true, printerState: post };
+    return claimTier({ dispatched: true, verification: 'verified', printerState: post });
   }
 
   /**
