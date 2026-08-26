@@ -72,9 +72,24 @@ APK → `app/app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Install
 
+**USB is required, at least once.** Checked 2026-08-26 from the prod host:
+`10.0.0.92:5555` refuses the connection, so ADB-over-WiFi is not currently
+listening on the Portal. Turning it on (`adb tcpip 5555`) itself requires an
+already-authorized ADB session, so there is no way in over the network alone.
+
+Plug into USB on the Mac and install directly:
+
 ```bash
+adb devices                          # authorize the prompt on the panel if asked
+adb install -r .../app-debug.apk
+```
+
+Optionally enable WiFi ADB while you are physically connected, so future
+installs need no cable:
+
+```bash
+adb tcpip 5555
 adb connect <portal-ip>:5555
-adb -s <portal-ip>:5555 install -r .../app-debug.apk
 ```
 
 The `AccessibilityService` grant survives an `install -r`. If it does not,
