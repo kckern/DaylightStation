@@ -56,7 +56,14 @@ function lessonAction({
 } = {}) {
   const block = {
     type: 'scan_action', action: token, label: title,
-    presentation: 'lesson', eyebrow, hideCode: true,
+    presentation: 'lesson', hideCode: true,
+    // Omitted when empty, exactly like every other optional field below.
+    // Spreading it unconditionally put a literal `eyebrow: null` on the block,
+    // and the validator's guard is `!== undefined` — so "no eyebrow" read as
+    // "present but not a string" and made EVERY lesson card on EVERY agenda
+    // fail validateDocument(). Invisible for months because the three suites
+    // that caught it are Jest targets full of vitest imports and never loaded.
+    ...(isNonEmptyString(eyebrow) ? { eyebrow } : {}),
     ...(isNonEmptyString(rail) ? { rail } : {}),
     ...(isNonEmptyString(unit) ? { unit } : {}),
     ...(Array.isArray(progress) && progress.length ? { progress } : {}),
@@ -318,6 +325,11 @@ export function agendaDocument({
   if (!offered.length) {
     blocks.push(text('Nothing is assigned right now. Ask a grown-up what to do next.'));
     appendNoteLines(blocks, noteLines);
+    // The footer belongs here too. This early return used to skip it, so the
+    // ONE sheet whose date matters most — a "nothing assigned" slip found
+    // loose on a table — was the one that never said when it was printed.
+    // Same placement as the offered path below.
+    if (printedAt) blocks.push({ ...text(printedAt), align: 'center' });
     return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
   }
 
