@@ -33,6 +33,7 @@ import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
 import { teacherBaseFor, teacherDayPath, teacherSessionPath } from '../teacherUrl.js';
 import { localDay } from '../teacherDates.js';
 import { SubjectIdentity } from '../CurriculumIdentity.jsx';
+import { hasIcon } from '../../home/icons/Icon.jsx';
 import { teacherLog } from '../teacherLog.js';
 
 // ---------------------------------------------------------------------------
@@ -76,6 +77,28 @@ const IconAgenda = () => (
 // `reviewStatus` is 'pending' | 'complete' on the wire; accept the historical
 // 'pending_review' spelling too so a backend rename can't silence the label.
 const AWAITING = new Set(['pending', 'pending_review']);
+
+// The agenda sheet is 580px of receipt tape, and a full browser tab gives it a
+// whole screen to be a narrow column in the middle of. A window sized to the
+// PNG puts the paper at its own scale, alongside the dashboard rather than on
+// top of it. The anchor keeps its real `href` so middle-click and long-press
+// still work; only a plain left-click is intercepted.
+const AGENDA_WINDOW_WIDTH = 620;   // 580px of tape + the window's own chrome
+const AGENDA_WINDOW_HEIGHT = 900;
+
+function openAgendaWindow(event, src, learnerId) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+  const left = Math.max(0, (globalThis.screen?.availWidth ?? AGENDA_WINDOW_WIDTH) - AGENDA_WINDOW_WIDTH);
+  const opened = window.open(
+    src,
+    `agenda-${learnerId}`,
+    `popup=yes,width=${AGENDA_WINDOW_WIDTH},height=${AGENDA_WINDOW_HEIGHT},left=${left},top=0,`
+    + 'menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes',
+  );
+  // A blocked popup must not swallow the click: fall through to the anchor's
+  // own navigation rather than leaving the teacher with nothing.
+  if (opened) event.preventDefault();
+}
 
 const SELF_LABEL = {
   not_yet: 'says: not yet', uncertain: 'says: not sure', ready: 'says: feels ready',
@@ -151,9 +174,27 @@ const outcomeNote = (session) => {
 function LessonCard({ row, learnerId, base, onOpen }) {
   const session = row.session;
   const subject = session?.subject ?? row.subject;
-  const title = session?.lessonTitle ?? session?.title ?? row.planned ?? 'No work offered';
+  // A PLANNED LESSON IS AS FULLY DESCRIBED AS A RECORDED ONE.
+  //
+  // The agenda offer resolves its own Subject › Course › Unit › Lesson names
+  // and its poster (BuildAgenda's `offerPresentation`), so a card with no
+  // session yet has no reason to fall back to a bare title. It used to,
+  // because the day-join threw everything but `next.title` away — which is
+  // how "Arts & Culture / How to Play “Dinah” on Piano / Nothing recorded
+  // yet" ended up with no art and no course beneath it.
+  const offer = row.offer ?? null;
+  const title = session?.lessonTitle ?? session?.title ?? offer?.taxonomy?.lesson ?? row.planned ?? 'No work offered';
+  const courseTitle = session?.courseTitle ?? offer?.taxonomy?.course ?? null;
+  const posterUrl = session?.posterUrl ?? offer?.posterUrl ?? null;
   const score = session?.effectiveScore;
+  const scored = score?.correctCount != null && score?.totalCount != null;
+  // A SCORE ALREADY SAYS "DONE". Seven green checks and 71% cannot be the
+  // state of unstarted work, so a "Done" chip above them is a label for
+  // something the reader has already been told. The chip survives only where
+  // it carries news — not started, deferred, blocked, an unplanned extra, or
+  // a done card whose work belongs to an earlier study day.
   const statusLabel = row.status === 'done' && row.carriedOver ? 'Done (earlier day)' : DAY_STATUS_LABEL[row.status];
+  const showChip = !scored || row.carriedOver;
   // THE POSTER FRAME IS ALWAYS DRAWN, poster or not.
   //
   // It used to be a conditional full-width 52px band — a letterboxed strip of
@@ -163,60 +204,118 @@ function LessonCard({ row, learnerId, base, onOpen }) {
   // one 404s, moves every word on the card underneath it; a card in a grid of
   // cards moves its neighbours too. Reserved space is the whole point — the
   // layout is identical at first paint, on load, and on failure.
+  // The breadcrumb, in the card's own header band: where in the curriculum
+  // this lesson sits. Course and unit both, when both are known — the same
+  // Subject › Course › Unit the printed lesson card carries.
+  const crumbs = [courseTitle, session?.moduleTitle ?? offer?.taxonomy?.unit].filter(Boolean);
   const identity = (
     <span className="teacher-lesson-card__identity">
       <span className="teacher-lesson-card__poster">
-        {session?.posterUrl && <SafeImg src={session.posterUrl} alt="" fallback="" />}
+        {posterUrl && <SafeImg src={posterUrl} alt="" fallback="" />}
       </span>
-      <span className="teacher-lesson-card__copy">
-        <SubjectIdentity subject={subject} />
-        <strong className="teacher-lesson-card__title">{title}</strong>
-        {session?.courseTitle && <span className="teacher-lesson-card__course">{session.courseTitle}</span>}
-      </span>
+      <strong className="teacher-lesson-card__title">{title}</strong>
     </span>
   );
   return (
     <article className={`teacher-lesson-card teacher-lesson-card--${row.status}`} data-testid="lesson-card">
-      <span className={`teacher-day-chip teacher-day-chip--${row.status}`}>{statusLabel}</span>
-      {session?.sessionId
-        ? <a className="teacher-lesson-card__open" href={teacherSessionPath(learnerId, session.sessionId, base, { from: 'today' })}>{identity}</a>
-        : identity}
-      <span className="teacher-lesson-card__foot">
-        {score?.correctCount != null && score?.totalCount != null
-          ? <ScoreMarks score={score} />
-          : <span className="teacher-lesson-card__pending">{session ? outcomeNote(session) : row.detail ?? 'Nothing recorded yet'}</span>}
+      {/* HEADER — the shelf this lesson came off. Subject full width across
+          the top, breadcrumb beneath it, on its own tinted band above a
+          divider. The subject used to be a caption wedged into the text
+          column beside the art, at the same weight as the course line. */}
+      <header className="teacher-lesson-card__header">
+        <SubjectIdentity subject={subject} />
+        {crumbs.length > 0 && (
+          <span className="teacher-lesson-card__crumbs">{crumbs.join(' › ')}</span>
+        )}
+      </header>
+      <div className="teacher-lesson-card__body">
+        {session?.sessionId
+          ? <a className="teacher-lesson-card__open" href={teacherSessionPath(learnerId, session.sessionId, base, { from: 'today' })}>{identity}</a>
+          : identity}
+      </div>
+      {/* FOOTER — how it went, and its paper. Same band treatment as the
+          header, on the other side of the body. */}
+      <footer className="teacher-lesson-card__foot">
+        <span className="teacher-lesson-card__state">
+          {scored && <ScoreMarks score={score} />}
+          {showChip && (
+            <span className={`teacher-day-chip teacher-day-chip--${row.status}`}>{statusLabel}</span>
+          )}
+          {!scored && (session || row.detail) && (
+            <span className="teacher-lesson-card__pending">
+              {session ? outcomeNote(session) : row.detail}
+            </span>
+          )}
+        </span>
         {session && <ArtifactButtons session={session} onOpen={onOpen} />}
-      </span>
+      </footer>
     </article>
   );
 }
 
 /**
- * The expanded day for one learner. Joins the recorded sessions (already in
- * the digest row) with the day's plan (one lazy agenda-preview read) through
- * the same claim logic the day record uses, so "done" and "not yet started"
- * are one vocabulary across surfaces.
+ * The day as dots, for the collapsed card: one per lesson, in plan order.
+ *
+ * Green passed, amber fell short, grey not started yet — the shape of the day
+ * without opening it. The subject's own icon rides inside each dot, so the row
+ * says WHICH lessons as well as how many; "10 / 10 correct across 2
+ * assignments" said neither.
+ *
+ * `passing` is 80% — the same bar the printed result receipt states.
  */
-function LearnerDayGrid({ row, base, studyDay: studyDayProp }) {
-  const learnerId = row.learnerId;
-  // A v1 digest carries no studyDay; default LOCAL (never the UTC date, which
-  // flips to tomorrow every evening) so PrintedAgenda and the agenda read
-  // always name a real day — `studyDay=undefined` is rejected as malformed.
-  const studyDay = studyDayProp ?? localDay();
-  const agenda = usePanelFetch(() => schoolApi.agendaPreview(learnerId, studyDay), {
-    deps: [learnerId, studyDay], panel: `roster-agenda-${learnerId}`, notFoundAs: 'unavailable',
-  });
+const PASS_PERCENT = 80;
+
+function dotTone(row) {
+  const score = row.session?.effectiveScore;
+  if (score?.percent != null) return score.percent >= PASS_PERCENT ? 'passed' : 'failed';
+  // Work that HAPPENED but carries no percent — a media lesson, an unplanned
+  // extra, something still awaiting a grown-up's mark — is done. Only a
+  // recorded shortfall earns amber; grey is reserved for "not touched".
+  if (row.status === 'done' || row.status === 'extra') return 'passed';
+  if (row.status === 'blocked') return 'failed';
+  return 'idle';
+}
+
+function DayDots({ rows }) {
+  if (!rows.length) return null;
+  return (
+    <span className="teacher-roster__dots" data-testid="day-dots">
+      {rows.map((row) => {
+        const tone = dotTone(row);
+        const score = row.session?.effectiveScore;
+        const label = [
+          row.subject ?? 'lesson',
+          row.session?.lessonTitle ?? row.planned,
+          score?.percent != null ? `${Math.round(score.percent)}%` : DAY_STATUS_LABEL[row.status],
+        ].filter(Boolean).join(' — ');
+        return (
+          <span key={row.key} className={`teacher-roster__dot teacher-roster__dot--${tone}`} title={label}>
+            {/* `Icon` draws NOTHING for a subject with no SVG, and here the
+                icon IS the content — an empty disc says neither which lesson
+                nor that anything is missing. The subject's initial stands in. */}
+            {hasIcon(row.subject)
+              ? <SubjectIdentity subject={row.subject} iconOnly />
+              : <>
+                <span aria-hidden="true" className="teacher-roster__dot-initial">
+                  {String(row.subject ?? '?')[0].toUpperCase()}
+                </span>
+                <span className="teacher-visually-hidden">{label}</span>
+              </>}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/**
+ * The expanded day for one learner: the joined rows as a grid of lesson cards.
+ * The join itself lives on the entry above — the collapsed card needs it too.
+ */
+function LearnerDayGrid({ learnerId, rows, base, studyDay, agenda, onOpenArtifact }) {
   useEffect(() => {
-    teacherLog.nav('drill-open', { learnerId, sessions: (row.sessions ?? []).length });
+    teacherLog.nav('drill-open', { learnerId, lessons: rows.length });
   }, [learnerId]); // eslint-disable-line react-hooks/exhaustive-deps -- one open, one event
-  const sessions = row.sessions ?? row.sessionsToday ?? [];
-  const carriedOver = (row.processedToday ?? []).filter((session) => session.studyDay !== studyDay);
-  const joined = joinLearnerDay({
-    sections: agenda.data?.sections ?? [], sessions, carriedOver, studyDay,
-  });
-  const openArtifact = (kind, session) => {
-    teacherLog.nav('artifact-open', { learnerId, sessionId: session.sessionId, kind });
-  };
   return (
     <>
       {agenda.state === 'error' && (
@@ -230,99 +329,140 @@ function LearnerDayGrid({ row, base, studyDay: studyDayProp }) {
           frame ago. One reserved-height line holds the space instead. */}
       {agenda.state === 'loading'
         ? <p className="teacher-roster__plan-loading" aria-busy="true">Loading the day&rsquo;s plan…</p>
-        : joined.rows.length > 0
+        : rows.length > 0
           ? <div className="teacher-lesson-grid" data-testid="lesson-grid">
-            {joined.rows.map((gridRow) => (
-              <LessonCard key={gridRow.key} row={gridRow} learnerId={learnerId} base={base} onOpen={openArtifact} />
+            {rows.map((gridRow) => (
+              <LessonCard key={gridRow.key} row={gridRow} learnerId={learnerId} base={base} onOpen={onOpenArtifact} />
             ))}
           </div>
           : <p className="teacher-panel__empty">Nothing planned or recorded for this day.</p>}
       <a className="teacher-btn teacher-btn--quiet teacher-roster__day-link"
-        href={teacherDayPath(learnerId, row.studyDay ?? undefined, base)}>
+        href={teacherDayPath(learnerId, studyDay ?? undefined, base)}>
         Open the full day record →
       </a>
     </>
   );
 }
 
+/**
+ * One learner: the collapsed card, and the day grid when it is open.
+ *
+ * THE AGENDA READ LIVES HERE, not in the grid, because the collapsed card
+ * needs the plan too — a row of dots that only knew about recorded sessions
+ * would show a four-lesson day as two. It is still ONE read per learner (never
+ * per session: that N+1 stays dead), and it is still GET-only and
+ * non-recording.
+ */
+function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle }) {
+  const learnerId = row.learnerId;
+  const name = kids.find((k) => k.id === learnerId)?.name ?? learnerId;
+  const panelId = `teacher-day-${String(learnerId).replace(/[^a-z0-9_-]/gi, '-')}`;
+  const base = teacherBaseFor(globalThis.location?.pathname ?? '');
+  // A v1 digest carries no studyDay; default LOCAL (never the UTC date, which
+  // flips to tomorrow every evening) so the agenda read always names a real
+  // day — `studyDay=undefined` is rejected as malformed.
+  const studyDay = studyDayProp ?? row.studyDay ?? localDay();
+  const agenda = usePanelFetch(() => schoolApi.agendaPreview(learnerId, studyDay), {
+    deps: [learnerId, studyDay], panel: `roster-agenda-${learnerId}`, notFoundAs: 'unavailable',
+  });
+  const sessions = row.sessions ?? row.sessionsToday ?? [];
+  const carriedOver = (row.processedToday ?? []).filter((session) => session.studyDay !== studyDay);
+  const joined = joinLearnerDay({
+    sections: agenda.data?.sections ?? [], sessions, carriedOver, studyDay,
+  });
+  const openArtifact = (kind, session) => {
+    teacherLog.nav('artifact-open', { learnerId, sessionId: session.sessionId, kind });
+  };
+  const scored = (row.effectiveScoreTotals?.total ?? row.attemptsToday) > 0;
+  return (
+    <div className="teacher-roster__entry">
+      <button
+        type="button"
+        className="teacher-roster__card"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={panelId}
+      >
+        <ProfileAvatar id={learnerId} name={name} />
+        <span className="teacher-roster__identity">
+          <span className="teacher-roster__name">{name}</span>
+          {scored ? (
+            <span className="teacher-roster__stats">
+              {row.effectiveScoreTotals?.correct ?? row.correctToday} / {row.effectiveScoreTotals?.total ?? row.attemptsToday} correct
+            </span>
+          ) : (
+            // "0 / 0 correct — idle" was division-by-zero as a status line
+            // (design audit): a quiet phrase carries the same fact kindly.
+            <span className="teacher-roster__stats teacher-roster__stats--none">nothing yet today</span>
+          )}
+        </span>
+        {/* The day itself, at a glance. Rendered only once the plan has
+            settled — dots that multiply as the read lands are the same rug
+            pull the grid below refuses. */}
+        {agenda.state !== 'loading' && <DayDots rows={joined.rows} />}
+        {row.pendingReview > 0 && (
+          <span className="teacher-roster__badge">{row.pendingReview} to review</span>
+        )}
+      </button>
+      {/* THE AGENDA BELONGS ON THE CARD, not behind the disclosure. It is
+          the child's paper for the day — the thing a parent reaches for
+          before deciding whether to open anything at all — and it used to
+          cost an accordion open plus a "Show the printed agenda" toggle to
+          reach. One tap, straight to the sheet. */}
+      <a className="teacher-artifact-btn teacher-roster__agenda-link"
+        href={agendaPreviewSrc(learnerId, studyDay)}
+        aria-label={`Open ${name}'s printed agenda`}
+        onClick={(event) => {
+          teacherLog.nav('agenda-open', { learnerId });
+          openAgendaWindow(event, agendaPreviewSrc(learnerId, studyDay), learnerId);
+        }}>
+        <IconAgenda />
+      </a>
+      <span className="teacher-roster__disclosure" aria-hidden="true"><IconChevron open={open} /></span>
+      {/* A learner with nothing recorded is not a dead end: the plan for
+          the day is the next thing a teacher wants to see. */}
+      {!scored && (
+        <a className="teacher-btn teacher-btn--quiet teacher-roster__plan-link"
+          href={teacherDayPath(learnerId, row.studyDay ?? undefined, base)}>
+          See today’s plan →
+        </a>
+      )}
+      {/* The kid's own words about today's work (advocacy wave 7):
+          reflections used to be written and read by nobody. */}
+      {(row.reflectionsToday ?? []).length > 0 && (
+        <ul className="teacher-roster__reflections" data-testid="reflections">
+          {(row.reflectionsToday ?? []).map((r, i) => (
+            // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
+            <li key={i} className="teacher-roster__reflection">
+              {r.selfAssessment && <span className="teacher-roster__reflection-mood">{SELF_LABEL[r.selfAssessment] ?? r.selfAssessment}</span>}
+              {r.note && <span className="teacher-roster__reflection-note">&ldquo;{r.note}&rdquo;</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && <div id={panelId} className="teacher-roster__details">
+        <LearnerDayGrid
+          learnerId={learnerId} rows={joined.rows} base={base}
+          studyDay={row.studyDay ?? undefined} agenda={agenda} onOpenArtifact={openArtifact}
+        />
+      </div>}
+    </div>
+  );
+}
+
 export default function RosterStrip({ rows, kids, studyDay = null }) {
   const [openId, setOpenId] = useState(null);
-  const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   return (
     <div className="teacher-roster">
       {rows.map((row) => (
-        <div key={row.learnerId} className="teacher-roster__entry">
-          {(() => { const panelId = `teacher-day-${String(row.learnerId).replace(/[^a-z0-9_-]/gi, '-')}`;
-            const sessions = row.sessions ?? row.sessionsToday ?? [];
-            const base = teacherBaseFor(globalThis.location?.pathname ?? '');
-            return <>
-          <button
-            type="button"
-            className="teacher-roster__card"
-            onClick={() => setOpenId((cur) => (cur === row.learnerId ? null : row.learnerId))}
-            aria-expanded={openId === row.learnerId}
-            aria-controls={panelId}
-          >
-            <ProfileAvatar id={row.learnerId} name={nameFor(row.learnerId)} />
-            <span className="teacher-roster__name">{nameFor(row.learnerId)}</span>
-            {(row.effectiveScoreTotals?.total ?? row.attemptsToday) > 0 ? (
-              <span className="teacher-roster__stats">
-                {row.effectiveScoreTotals?.correct ?? row.correctToday} / {row.effectiveScoreTotals?.total ?? row.attemptsToday} correct
-                {sessions.length > 1 ? ` across ${sessions.length} assignments` : ''}
-              </span>
-            ) : (
-              // "0 / 0 correct — idle" was division-by-zero as a status line
-              // (design audit): a quiet phrase carries the same fact kindly.
-              <span className="teacher-roster__stats teacher-roster__stats--none">nothing yet today</span>
-            )}
-            {sessions.length > 0 && (
-              <span className="teacher-roster__sessions">
-                {`${sessions.length} session${sessions.length > 1 ? 's' : ''}`}
-              </span>
-            )}
-            {row.pendingReview > 0 && (
-              <span className="teacher-roster__badge">{row.pendingReview} to review</span>
-            )}
-          </button>
-          {/* THE AGENDA BELONGS ON THE CARD, not behind the disclosure. It is
-              the child's paper for the day — the thing a parent reaches for
-              before deciding whether to open anything at all — and it used to
-              cost an accordion open plus a "Show the printed agenda" toggle to
-              reach. One tap, straight to the sheet. */}
-          <a className="teacher-artifact-btn teacher-roster__agenda-link"
-            href={agendaPreviewSrc(row.learnerId, studyDay ?? row.studyDay ?? localDay())}
-            target="_blank" rel="noreferrer"
-            aria-label={`Open ${nameFor(row.learnerId)}'s printed agenda`}
-            onClick={() => teacherLog.nav('agenda-open', { learnerId: row.learnerId })}>
-            <IconAgenda />
-          </a>
-          <span className="teacher-roster__disclosure" aria-hidden="true"><IconChevron open={openId === row.learnerId} /></span>
-          {/* A learner with nothing recorded is not a dead end: the plan for
-              the day is the next thing a teacher wants to see. */}
-          {!((row.effectiveScoreTotals?.total ?? row.attemptsToday) > 0) && (
-            <a className="teacher-btn teacher-btn--quiet teacher-roster__plan-link"
-               href={teacherDayPath(row.learnerId, row.studyDay ?? undefined, base)}>
-              See today’s plan →
-            </a>
-          )}
-          {/* The kid's own words about today's work (advocacy wave 7):
-              reflections used to be written and read by nobody. */}
-          {(row.reflectionsToday ?? []).length > 0 && (
-            <ul className="teacher-roster__reflections" data-testid="reflections">
-              {(row.reflectionsToday ?? []).map((r, i) => (
-                // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
-                <li key={i} className="teacher-roster__reflection">
-                  {r.selfAssessment && <span className="teacher-roster__reflection-mood">{SELF_LABEL[r.selfAssessment] ?? r.selfAssessment}</span>}
-                  {r.note && <span className="teacher-roster__reflection-note">&ldquo;{r.note}&rdquo;</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-          {openId === row.learnerId && <div id={panelId} className="teacher-roster__details">
-            <LearnerDayGrid row={row} base={base} studyDay={studyDay ?? row.studyDay ?? null} />
-          </div>}
-          </>; })()}
-        </div>
+        <RosterEntry
+          key={row.learnerId}
+          row={row}
+          kids={kids}
+          studyDay={studyDay}
+          open={openId === row.learnerId}
+          onToggle={() => setOpenId((cur) => (cur === row.learnerId ? null : row.learnerId))}
+        />
       ))}
     </div>
   );

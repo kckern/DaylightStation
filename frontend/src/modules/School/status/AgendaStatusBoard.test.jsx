@@ -42,7 +42,7 @@ describe('AgendaStatusBoard model', () => {
 describe('AgendaStatusBoard render', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('renders one non-interactive row per kid with pills, count, and status', async () => {
+  it('renders one non-interactive row per kid with pills and a single count readout', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
       { learnerId: 'milo', sessions: [{ subject: 'civilization', outcome: { result: 'passed' } }] },
     ] } });
@@ -51,13 +51,37 @@ describe('AgendaStatusBoard render', () => {
     ] } });
     render(<AgendaStatusBoard kids={KIDS} day="2026-08-24" />);
     await waitFor(() => expect(screen.getByTestId('agenda-status-board')).toBeTruthy());
+    // ONE readout per card, in the corner. The status WORD used to sit there
+    // with the count repeated under the discs — two lines for one fact, and
+    // the word said nothing the filled discs did not already show.
     expect(screen.getByText('1 of 3')).toBeTruthy();      // Milo: civilization passed
-    expect(screen.getByText('In progress')).toBeTruthy();
     expect(screen.getByText('0 of 3')).toBeTruthy();      // Felix: nothing yet
-    expect(screen.getByText('Not started')).toBeTruthy();
+    expect(screen.queryByText('In progress')).toBeNull();
+    expect(screen.queryByText('Not started')).toBeNull();
     // Read-only: no buttons, no links.
     const board = screen.getByTestId('agenda-status-board');
     expect(board.querySelectorAll('button, a')).toHaveLength(0);
+  });
+
+  // A cleared day has to be visible from across the room without reading
+  // anything. jsdom cannot see the colour or the glow — the harness screenshot
+  // gate covers those — so the contract pinned here is the ATTRIBUTE the
+  // stylesheet hangs both on.
+  it('flags a fully cleared day on the card itself', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
+      { learnerId: 'milo', sessions: [
+        { subject: 'civilization', outcome: { result: 'passed' } },
+        { subject: 'math', outcome: { result: 'passed' } },
+      ] },
+    ] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [
+      { subject: 'civilization' }, { subject: 'math' },
+    ] } });
+    render(<AgendaStatusBoard kids={[{ id: 'milo', name: 'Milo' }]} day="2026-08-24" />);
+    await waitFor(() => expect(screen.getByTestId('agenda-status-board')).toBeTruthy());
+    const row = screen.getByTestId('agenda-status-board').querySelector('.school-status-board__row');
+    expect(row.dataset.complete).toBe('true');
+    expect(screen.getByText('2 of 2')).toBeTruthy();
   });
 
   it('every segment draws a subject icon and states its subject and state by name', async () => {

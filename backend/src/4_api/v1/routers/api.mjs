@@ -14,6 +14,7 @@
 import express from 'express';
 import { configService } from '#system/config/index.mjs';
 import { getDispatcher, isLoggingInitialized } from '#system/logging/dispatcher.mjs';
+import { createLogger } from '#system/logging/logger.mjs';
 import { getSessionFileTransport } from '#system/logging/transports/sessionFile.mjs';
 
 /**
@@ -181,6 +182,34 @@ export function createApiRouter(config) {
     config: safeConfig,
     logging: loggingStatus()
   }));
+
+  /**
+   * A SCREEN THAT COULD NOT START, reported by the page shell.
+   *
+   * The frontend's own logger ships over a WebSocket that lives inside the app
+   * bundle — so when the bundle itself throws, the one transport that could
+   * report it is the thing that failed. Nothing reached the log store, and a
+   * blank kiosk was indistinguishable from a dead display without walking up
+   * to it (school Portal, 2026-08-25, eighty minutes).
+   *
+   * This is the one log route that must not depend on the app: plain HTTP,
+   * called by an inline script in `index.html` before the module loads.
+   * Fire-and-forget by design — the caller is a page that is already broken,
+   * so it always answers 204 and never makes the client handle a failure.
+   */
+  const bootLogger = createLogger({ source: 'frontend', app: 'boot' });
+  router.post('/system/boot-error', express.json({ limit: '16kb' }), (req, res) => {
+    const body = req.body ?? {};
+    const data = body.data ?? {};
+    bootLogger.error('boot.failed', {
+      kind: String(data.kind ?? 'unknown').slice(0, 40),
+      detail: String(data.detail ?? '').slice(0, 500),
+      url: String(data.url ?? '').slice(0, 200),
+      userAgent: String(body.context?.userAgent ?? req.get('user-agent') ?? '').slice(0, 300),
+      ip: req.ip,
+    });
+    res.status(204).end();
+  });
 
   // System reload — re-read household app YAML configs from disk without
   // restarting the process. Useful when an admin edits a config file.

@@ -82,7 +82,11 @@ describe('agendaDocument', () => {
   it('collects served subjects into one done strip, after the open work', () => {
     const doc = agendaDocument({ learnerId: 'kid1', sections, tokensBySubject });
     const strip = doc.blocks.find((b) => b.type === 'done_summary');
-    expect(strip).toEqual({ type: 'done_summary', label: 'Done today', subjects: ['language'] });
+    expect(strip).toEqual({
+      type: 'done_summary',
+      label: 'Done today',
+      entries: [{ subject: 'language', icon: 'language', titles: [] }],
+    });
     expect(doc.blocks.indexOf(strip)).toBeGreaterThan(doc.blocks.findIndex((b) => b.type === 'scan_action'));
     expect(textOf(doc)).not.toContain('done today');
     expect(textOf(doc)).not.toContain('LANGUAGE —');
@@ -93,8 +97,14 @@ describe('agendaDocument', () => {
       learnerId: 'kid1',
       sections: [{ subject: 'math', servedToday: true }, { subject: 'language', servedToday: true }],
     });
-    expect(doc.blocks.find((b) => b.type === 'done_summary'))
-      .toEqual({ type: 'done_summary', label: 'All done today', subjects: ['math', 'language'] });
+    expect(doc.blocks.find((b) => b.type === 'done_summary')).toEqual({
+      type: 'done_summary',
+      label: 'All done today',
+      entries: [
+        { subject: 'math', icon: 'math', titles: [] },
+        { subject: 'language', icon: 'language', titles: [] },
+      ],
+    });
   });
 
   it('emits no done strip at all when nothing has been served', () => {

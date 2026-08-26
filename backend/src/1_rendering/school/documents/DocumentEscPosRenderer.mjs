@@ -121,10 +121,18 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
         // where a tick should be is worse than no tick at all.
         items.push({ type: 'space', lines: 1 });
         items.push({ type: 'text', content: block.label, align: 'left', style: { bold: true } });
-        items.push({
-          type: 'text', align: 'left',
-          content: block.subjects.map((subject) => String(subject).toUpperCase()).join(' · '),
-        });
+        for (const entry of block.entries) {
+          const percent = Number.isFinite(entry.percent) ? ` — ${Math.round(entry.percent)}%` : '';
+          items.push({
+            type: 'text', align: 'left', style: { bold: true },
+            content: `${String(entry.subject).toUpperCase()}${percent}`,
+          });
+          // The lesson itself, indented under its subject. The canvas receipt
+          // hangs these off a subject icon; here the indent is the outline.
+          for (const title of entry.titles ?? []) {
+            items.push({ type: 'text', align: 'left', content: `  ${title}` });
+          }
+        }
         continue;
       }
 

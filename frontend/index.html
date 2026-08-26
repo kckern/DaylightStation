@@ -22,6 +22,71 @@
   </head>
   <body style="background-color: black;">
     <div id="root"></div>
+    <!--
+      BOOT ERROR TRAP — first script on the page, deliberately.
+
+      A throw while the app bundle EXECUTES happens before any listener the
+      bundle itself installs, and before anything a kiosk can inject after load
+      (FullyKiosk's injectJsCode runs post-load). The result is a black panel
+      with an empty #root, nothing in the log store, and no way to tell a dead
+      app from a dead display without physically standing in front of it. That
+      cost eighty minutes of a school Portal outage on 2026-08-25.
+
+      Capture phase is required: a failed module script fires `error` at window
+      only while capturing, never in the bubble phase.
+
+      It posts straight to the ingest endpoint with `keepalive` rather than
+      going through the logging framework — the framework lives in the bundle
+      that just failed to load. On-screen text is the fallback for a panel with
+      no network and nobody to read a log.
+    -->
+    <script>
+      (function () {
+        var reported = false;
+        function report(kind, detail) {
+          if (reported) return;
+          reported = true;
+          var payload = {
+            level: 'error', event: 'boot.failed',
+            data: { kind: kind, detail: String(detail).slice(0, 500), url: location.pathname },
+            context: { source: 'frontend', app: 'boot', userAgent: navigator.userAgent },
+          };
+          try {
+            fetch('/api/v1/system/boot-error', {
+              method: 'POST', keepalive: true,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            }).catch(function () {});
+          } catch (e) { /* nothing left to try */ }
+          // A kiosk has no console and no address bar. Say it on the glass.
+          try {
+            var el = document.createElement('pre');
+            el.setAttribute('data-boot-error', '1');
+            el.style.cssText = 'position:fixed;inset:0;z-index:2147483647;margin:0;padding:16px;'
+              + 'background:#111;color:#f5c518;font:14px/1.5 monospace;white-space:pre-wrap;overflow:auto';
+            el.textContent = 'This screen could not start.\n\n' + kind + ': ' + detail
+              + '\n\nA grown-up can reload the page. The error has been reported.';
+            document.body.appendChild(el);
+          } catch (e) { /* nothing left to try */ }
+        }
+        window.addEventListener('error', function (event) {
+          if (event.target && event.target !== window && event.target.tagName) {
+            report('resource', (event.target.src || event.target.href || event.target.tagName));
+          } else {
+            report('exception', (event.message || 'unknown') + ' @ ' + (event.filename || '') + ':' + (event.lineno || 0));
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function (event) {
+          report('rejection', (event.reason && event.reason.message) || event.reason || 'unknown');
+        });
+        // Nothing threw, but nothing rendered either — the other way a boot
+        // fails. Checked once, late enough that a slow device is not accused.
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.children.length === 0) report('empty-root', 'no error was raised; #root is still empty');
+        }, 20000);
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
