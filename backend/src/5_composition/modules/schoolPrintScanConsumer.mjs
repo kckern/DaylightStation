@@ -77,7 +77,7 @@ export function createSchoolPrintScanConsumer({
     const { testId, answers, testIdCandidates } = decodeQuizSheet(payload.marks);
 
     resolveCardScan.execute({ testId, testIdCandidates, answers })
-      .then((outcome) => {
+      .then(async (outcome) => {
         if (outcome?.error) {
           // CARD_ID_UNREADABLE (or any future resolver error code) — never
           // guessed at; the recorder already persisted the raw/decoded scan
@@ -208,6 +208,18 @@ export function createSchoolPrintScanConsumer({
             silentLiveRecords: outcome.silentLiveRecords,
           }).catch(() => {});
         }
+        // A SCAN NEVER HAPPENS SILENTLY (spec §6.2). Everything below can end
+        // in a terminal state that says nothing to the child — a re-fed sheet
+        // whose session is already `rewarded`, rows that were all recorded on
+        // an earlier pass, a session that has gone missing. Those are the
+        // right things to RECORD, but the wrong things to be quiet about: on
+        // 2026-08-25 three sheets were fed and the room stayed silent.
+        //
+        // Tracked per SHEET, not per record. A card can carry six allocation
+        // records; six sounds at a child standing at the scanner is not
+        // feedback, it is an alarm.
+        let spoke = false;
+        const settling = [];
         // One log line PER resolution (a card can carry more than one
         // allocation record, e.g. two documents sharing one physical card
         // across a bank boundary — spec §5.4).
@@ -234,6 +246,7 @@ export function createSchoolPrintScanConsumer({
             eventBus.broadcast?.(broadcastTopic, {
               event: 'scan-refused', code: card.error.code, recordId: card.recordId,
             });
+            spoke = true;
             continue;
           }
           logger.info?.('school.print.scan-resolved', {
@@ -267,7 +280,7 @@ export function createSchoolPrintScanConsumer({
           // records plus the session bridge (submitted → graded) when the
           // allocation record carries its issuing session. Sequential and
           // per-card so one failure never swallows a cardmate's recording.
-          recordCardScanOutcome.execute({ testId, card, cardIdInferred: outcome.cardIdInferred ?? null })
+          settling.push(recordCardScanOutcome.execute({ testId, card, cardIdInferred: outcome.cardIdInferred ?? null })
             .then(async (recorded) => {
               // A composed worksheet records one outcome per independently
               // completable lesson section. A legacy/single worksheet still
@@ -379,6 +392,7 @@ export function createSchoolPrintScanConsumer({
                     printed,
                     printReason,
                   });
+                  spoke = true;
                   // Fire after the authoritative outcome settles so Home
                   // Assistant can distinguish a passing non-perfect score
                   // from a score needing remediation. The hook itself is
@@ -421,6 +435,7 @@ export function createSchoolPrintScanConsumer({
                     reasons: sectionOutcome.session.reasons,
                     items: sectionOutcome.session.items,
                   });
+                  spoke = true;
                 }
               }
             })
@@ -428,7 +443,25 @@ export function createSchoolPrintScanConsumer({
               logger.warn?.('school.print.scan-record-failed', {
                 testId, recordId: card.recordId, error: err.message,
               });
-            });
+            }));
+        }
+        // The sheet is finished. If nothing above spoke for it, speak now —
+        // the child fed paper into a machine and is owed an answer, even when
+        // the honest answer is "that was already done".
+        await Promise.all(settling);
+        // Only when a recorder was actually wired. Without one this consumer
+        // never attempted to record anything, so it is in no position to
+        // announce that nothing was recorded — the resolve-and-score-only
+        // composition is a legitimate wiring, not a silent scan.
+        if (!spoke && recordCardScanOutcome) {
+          logger.warn?.('school.print.scan-not-recorded', {
+            testId, recordCount: outcome.results.length,
+          });
+          eventBus.broadcast?.(broadcastTopic, {
+            event: 'scan-not-recorded',
+            testId,
+            learnerId: outcome.results.find((c) => c.learnerId)?.learnerId ?? null,
+          });
         }
       })
       .catch((err) => {
