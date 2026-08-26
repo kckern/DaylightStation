@@ -332,19 +332,22 @@
   &--planned &__header, &--planned &__foot { background: #f7f2e6; }
   &--deferred &__header, &--blocked &__header,
   &--deferred &__foot, &--blocked &__foot { background: #fbeed6; }
+  // One line, and only the shelf. The breadcrumb used to live here too, which
+  // is what let the least specific fact on the card set its visual weight.
   &__header {
-    display: grid; gap: 2px; padding: 7px 10px;
+    display: grid; padding: 6px 10px;
     border-bottom: 1px solid #ece3d1; background: #faf6ed;
   }
   // The breadcrumb is a second-order line: it locates the lesson, it is not
-  // the lesson. Two lines maximum, then it clips — a five-line course path
-  // would push the title out of a fixed-height card.
-  &__crumbs { color: #8a8070; font-size: 11.5px; line-height: 1.25; overflow: hidden;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  // the lesson. Demoted under the title, it gets ONE line — the fixed card
+  // height buys the title the room instead.
+  &__crumbs { color: #8a8070; font-size: 11.5px; line-height: 1.3; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
   &__body { flex: 1; display: flex; padding: 10px; min-width: 0; }
   &__open { color: inherit; text-decoration: none; display: block; width: 100%; min-width: 0;
     &:hover .teacher-lesson-card__title { color: #604521; text-decoration: underline; } }
-  &__identity { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 9px; min-width: 0; }
+  &__identity { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 9px; min-width: 0; align-items: center; }
+  &__copy { display: grid; gap: 3px; min-width: 0; }
   // The frame, not the image: it keeps its 2:3 box with or without a poster.
   // The frame, not the image: it keeps its 2:3 box with or without a poster,
   // and the subject glyph sits underneath so an empty frame still says which
@@ -353,7 +356,8 @@
     width: 58px; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 5px; background: #ece5d8;
     img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; } }
   &__poster-glyph { width: 24px; height: 24px; opacity: .4; color: #8a8070; }
-  &__title { align-self: center; color: #302a22; font-size: 15px; line-height: 1.2; overflow-wrap: break-word; }
+  // The dominant line on the card, which is what a teacher is scanning for.
+  &__title { color: #302a22; font-size: 17px; font-weight: 700; line-height: 1.18; overflow-wrap: break-word; }
   &__foot {
     margin-top: auto; display: flex; align-items: center; justify-content: space-between;
     gap: 6px; min-height: 52px; padding: 6px 10px;
@@ -378,8 +382,11 @@
   svg { width: 20px; height: 20px; }
   &:hover { border-color: #ae8d5a; background: #fffdf8; }
 }
+// The mark is muted by its COLOUR, not by near-total transparency. At 18px and
+// 25% opacity it was invisible — while the same glyph inside a day dot was
+// drawn at full strength, so one screen showed one icon two ways.
 .teacher-subject-identity { display: inline-flex; align-items: center; gap: 6px; color: #756b5d; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-  &__icon { width: 18px; height: 18px; opacity: .25; }
+  &__icon { width: 18px; height: 18px; }
 }
 // Present to a screen reader, absent to the eye — for marks that carry their
 // meaning visually (the roster's day dots) and must still be named.
@@ -597,7 +604,7 @@
     display: grid; place-items: center; width: 26px; height: 26px; flex: none;
     border: 1px solid; border-radius: 50%;
     .teacher-subject-identity { display: block; }
-    .teacher-subject-identity__icon { width: 14px; height: 14px; display: block; opacity: 1; }
+    .teacher-subject-identity__icon { width: 14px; height: 14px; display: block; }
     &--passed { border-color: #7fae7c; background: #e4f0e0; color: #2e6b34; }
     // Out in the world but not back yet. Dashed, so the state does not ride on
     // colour alone — a reader who cannot separate this amber from the green

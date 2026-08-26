@@ -255,7 +255,18 @@ function LessonCard({ row, learnerId, base, onOpen }) {
         <Icon name={subject ?? 'school'} className="teacher-lesson-card__poster-glyph" />
         {posterUrl && <SafeImg src={posterUrl} alt="" fallback="" />}
       </span>
-      <strong className="teacher-lesson-card__title">{title}</strong>
+      {/* THE LESSON OUTRANKS ITS SHELF. The breadcrumb used to sit in the
+          tinted header band — uppercase, full width, above a divider — which
+          made the least specific fact on the card the loudest one, and on a
+          long course path it wrapped to two lines and out-measured the title
+          it was supposed to locate. It is a locator now, under the name,
+          clamped to one line. */}
+      <span className="teacher-lesson-card__copy">
+        <strong className="teacher-lesson-card__title">{title}</strong>
+        {crumbs.length > 0 && (
+          <span className="teacher-lesson-card__crumbs">{crumbs.join(' › ')}</span>
+        )}
+      </span>
     </span>
   );
   return (
@@ -266,9 +277,6 @@ function LessonCard({ row, learnerId, base, onOpen }) {
           column beside the art, at the same weight as the course line. */}
       <header className="teacher-lesson-card__header">
         <SubjectIdentity subject={subject} />
-        {crumbs.length > 0 && (
-          <span className="teacher-lesson-card__crumbs">{crumbs.join(' › ')}</span>
-        )}
       </header>
       <div className="teacher-lesson-card__body">
         {session?.sessionId
