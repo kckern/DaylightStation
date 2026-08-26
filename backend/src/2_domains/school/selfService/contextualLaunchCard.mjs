@@ -35,11 +35,10 @@ const crumb = (kind, id, label) => (
 );
 
 /**
- * A Plex-hosted course wearing any number of scoping prefixes — `plex:675689`,
- * the piano launcher's doubly-prefixed `plex:plex:675689` (its `compoundId` is
- * `plex:` prepended to an enrollment id that already said `plex:`), or the
- * plan's synthetic `piano-course:plex:675689`. All three name ONE Plex rating
- * key, and the tail is the only part that identifies it.
+ * A Plex-hosted course wearing a scoping prefix — `plex:675689` itself, or the
+ * assigned plan's synthetic `piano-course:plex:675689`, which scopes the same
+ * course under the program that owns it. Both name ONE Plex rating key, and the
+ * tail is the only part that identifies it.
  */
 const PLEX_COURSE_TAIL = /(?:^|:)plex:(\d+)$/;
 
@@ -48,15 +47,24 @@ const PLEX_COURSE_TAIL = /(?:^|:)plex:(\d+)$/;
  *
  * The panel finds a cover by a single rule: `plex:<ratingKey>` is asked of the
  * house's Plex image proxy, and anything else of the curriculum package the
- * course shipped in. A course id that says `plex:` twice matches neither, so it
- * fell through to the curriculum route — which has no cover for a Plex-hosted
- * course and correctly 404s — and a child stood in front of a placeholder
- * instead of Hoffman Academy.
+ * course shipped in. A prefixed id matches neither, so it falls through to the
+ * curriculum route — which has no cover for a Plex-hosted course and correctly
+ * 404s — and a child stands in front of a placeholder instead of Hoffman
+ * Academy. `piano-course:` ids reach this function on every assigned-plan card,
+ * so this is a live translation, not a legacy guard.
+ *
+ * This ALSO used to absorb a doubly-prefixed `plex:plex:675689` coming out of
+ * the piano launcher's `compoundId`. That defect is now fixed at its source in
+ * FitnessPlayableService, which normalises before it mints the compound id —
+ * so the card and the DoNow dispatch name a course identically instead of the
+ * card quietly repairing what the dispatch still got wrong. The regex still
+ * tolerates the doubled form because `(?:^|:)` costs nothing to leave in, but
+ * nothing upstream produces it any more; if it reappears, fix it there, not by
+ * widening this.
  *
  * Canonicalising HERE, where every launch card's course id is minted, means
- * that rule stays one line on the client no matter how many prefixes the
- * program that owns a course decides to stack on it. A curriculum id is not a
- * Plex id and passes through untouched.
+ * that rule stays one line on the client no matter how a program scopes its
+ * course ids. A curriculum id is not a Plex id and passes through untouched.
  */
 const canonicalCourseId = (value) => {
   const id = String(value);

@@ -39,7 +39,8 @@ export class FitnessPlayableService {
    * Resolve playable episodes for a fitness show, enriched with watch state
    * and fitness-specific progress classification.
    *
-   * @param {string} showId - Plex show ID (numeric string, e.g., "12345")
+   * @param {string} showId - Plex show ID, bare ("12345") or already scoped
+   *   ("plex:12345"). Both are accepted and normalised to one compound id.
    * @param {string} [householdId] - Household ID for config lookup
    * @returns {Promise<{items: Array, parents: Object|null, container: Object|null}>}
    * @throws {Error} If adapter is missing or doesn't support resolvePlayables
@@ -52,7 +53,19 @@ export class FitnessPlayableService {
       throw new Error('Content adapter does not support playable resolution');
     }
 
-    const compoundId = `plex:${showId}`;
+    // Callers reach this service from three directions and disagree about the
+    // id shape: the Fitness routes pass a bare rating key, the piano kiosk
+    // passes the `plex:`-prefixed id its grid renders, and School passes back
+    // whatever an enrollment recorded. Prepending unconditionally minted
+    // `plex:plex:675689` for the prefixed half — a string that is not a Plex id
+    // to anything downstream. It silently voided the two piano rules keyed on
+    // `videos.co_progress[].courseId` / `videos.reference_units[].courseId`
+    // (both written `plex:675689`, so neither ever matched), and it made the
+    // School launch card name a course the image proxy cannot resolve.
+    // Normalising HERE, where the compound id is minted, is what lets every
+    // caller keep passing the id shape that is natural to it.
+    const localId = String(showId ?? '').replace(/^(?:plex:)+/, '');
+    const compoundId = `plex:${localId}`;
 
     // Load config for progress classification thresholds
     const fitnessConfig = this.#fitnessConfigService.loadRawConfig(householdId);
@@ -111,7 +124,10 @@ export class FitnessPlayableService {
 
     return {
       compoundId,
-      showId,
+      // The bare key, not the caller's spelling: a result whose `showId` still
+      // said `plex:675689` next to a `compoundId` of `plex:675689` would invite
+      // the next caller to re-prefix it and reintroduce exactly this bug.
+      showId: localId,
       items,
       parents,
       info,
