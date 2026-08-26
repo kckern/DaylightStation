@@ -244,15 +244,25 @@ export function createFitnessApiRouter(config) {
 
   // Filesystem access the router used to do inline now lives behind these
   // injected providers (keeps the API layer free of fs/path).
+  // `media/fitness/ux/menus`, NOT `media/apps/fitness/ux/menus`. The UX assets
+  // moved out from under `apps/` and this function was half-migrated: the
+  // emitted path on the way out was updated, the directory it reads was not, so
+  // it listed a directory that no longer exists and the catch below turned that
+  // into an empty playlist. Menu music was silently off. Read and emit are now
+  // built from ONE base so they cannot drift apart again.
+  const MENU_MUSIC_REL = 'fitness/ux/menus';
   const menuMusicProvider = () => {
-    const musicDir = path.join(configService.getMediaDir(), 'apps', 'fitness', 'ux', 'menus');
+    const musicDir = path.join(configService.getMediaDir(), ...MENU_MUSIC_REL.split('/'));
     try {
       return nodeFs.readdirSync(musicDir)
         .filter(f => /\.(mp3|m4a|ogg|wav)$/i.test(f))
         .sort()
-        .map(f => `media/fitness/ux/menus/${f}`);
-    } catch (_) {
-      // Directory missing or unreadable — return empty list gracefully.
+        .map(f => `media/${MENU_MUSIC_REL}/${f}`);
+    } catch (err) {
+      // Empty is a legitimate answer (no music configured), so this stays
+      // non-fatal — but it must not be SILENT. A missing directory read as
+      // "no music" is exactly how this went unnoticed.
+      logger?.warn?.('fitness.menu_music.dir_unreadable', { musicDir, error: String(err?.message ?? err) });
       return [];
     }
   };
