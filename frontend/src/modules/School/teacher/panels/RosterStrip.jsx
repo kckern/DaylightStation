@@ -393,7 +393,7 @@ function LearnerDayGrid({ learnerId, rows, base, studyDay, agenda, onOpenArtifac
           </div>
           : <p className="teacher-panel__empty">Nothing planned or recorded for this day.</p>}
       <a className="teacher-btn teacher-btn--quiet teacher-roster__day-link"
-        href={teacherDayPath(learnerId, studyDay ?? undefined, base)}>
+        href={teacherDayPath(learnerId, studyDay, base)}>
         Open the full day record →
       </a>
     </>
@@ -429,7 +429,24 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle }) {
   const openArtifact = (kind, session) => {
     teacherLog.nav('artifact-open', { learnerId, sessionId: session.sessionId, kind });
   };
-  const scored = (row.effectiveScoreTotals?.total ?? row.attemptsToday) > 0;
+  // THE DAY, COUNTED AT DAY SCOPE. "6 / 6 correct" was a LESSON's numerator
+  // and denominator printed on a row that stands for a whole student-day: on
+  // the reported screenshot it was one worksheet's marks, on a day holding
+  // three lessons, one of which had not been started. It said nothing about
+  // how much of the day was left, which is the only question this row exists
+  // to answer.
+  const lessons = joined.rows.filter((r) => !r.unplanned).length;
+  const doneCount = joined.rows.filter((r) => !r.unplanned && r.status === 'done').length;
+  const unplannedCount = joined.rows.filter((r) => r.unplanned).length;
+  const summary = [
+    lessons > 0 ? `${doneCount} of ${lessons} lesson${lessons === 1 ? '' : 's'} done` : null,
+    unplannedCount > 0 ? `${unplannedCount} extra` : null,
+  ].filter(Boolean).join(' · ');
+  // The plan link is for a learner who has not begun. `scored` used to mean
+  // "any machine-graded attempt today", which missed a day spent entirely on
+  // work that carries no score.
+  const started = (joined.counts.done ?? 0) + (joined.counts['in-progress'] ?? 0) > 0;
+  const settled = agenda.state !== 'loading';
   return (
     <div className="teacher-roster__entry">
       <button
@@ -442,23 +459,22 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle }) {
         <ProfileAvatar id={learnerId} name={name} />
         <span className="teacher-roster__identity">
           <span className="teacher-roster__name">{name}</span>
-          {scored ? (
-            <span className="teacher-roster__stats">
-              {row.effectiveScoreTotals?.correct ?? row.correctToday} / {row.effectiveScoreTotals?.total ?? row.attemptsToday} correct
-            </span>
-          ) : (
-            // "0 / 0 correct — idle" was division-by-zero as a status line
-            // (design audit): a quiet phrase carries the same fact kindly.
-            <span className="teacher-roster__stats teacher-roster__stats--none">nothing yet today</span>
-          )}
+          {settled && summary && <span className="teacher-roster__stats">{summary}</span>}
         </span>
-        {/* The day itself, at a glance. Rendered only once the plan has
-            settled — dots that multiply as the read lands are the same rug
-            pull the grid below refuses. */}
-        {agenda.state !== 'loading' && <DayDots rows={joined.rows} />}
+        {/* THE DAY ITSELF — the row's primary content, not a decoration
+            beside a number. One disc per assigned lesson, in plan order,
+            carrying its subject's mark and its own state. Rendered only once
+            the plan has settled: dots that multiply as the read lands are the
+            same rug pull the grid below refuses. */}
+        {settled && <DayDots rows={joined.rows} />}
         {row.pendingReview > 0 && (
           <span className="teacher-roster__badge">{row.pendingReview} to review</span>
         )}
+        {/* Decorative, and INSIDE the toggle it describes. It used to be
+            absolutely positioned over the button, 20px from the agenda link —
+            two targets stacked in one corner of a row whose whole surface is
+            already the toggle. */}
+        <span className="teacher-roster__disclosure" aria-hidden="true"><IconChevron open={open} /></span>
       </button>
       {/* THE AGENDA BELONGS ON THE CARD, not behind the disclosure. It is
           the child's paper for the day — the thing a parent reaches for
@@ -474,12 +490,12 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle }) {
         }}>
         <IconAgenda />
       </a>
-      <span className="teacher-roster__disclosure" aria-hidden="true"><IconChevron open={open} /></span>
+
       {/* A learner with nothing recorded is not a dead end: the plan for
           the day is the next thing a teacher wants to see. */}
-      {!scored && (
+      {settled && !started && (
         <a className="teacher-btn teacher-btn--quiet teacher-roster__plan-link"
-          href={teacherDayPath(learnerId, row.studyDay ?? undefined, base)}>
+          href={teacherDayPath(learnerId, studyDay, base)}>
           See today’s plan →
         </a>
       )}
@@ -499,7 +515,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle }) {
       {open && <div id={panelId} className="teacher-roster__details">
         <LearnerDayGrid
           learnerId={learnerId} rows={joined.rows} base={base}
-          studyDay={row.studyDay ?? undefined} agenda={agenda} onOpenArtifact={openArtifact}
+          studyDay={studyDay} agenda={agenda} onOpenArtifact={openArtifact}
         />
       </div>}
     </div>

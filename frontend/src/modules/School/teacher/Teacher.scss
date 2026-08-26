@@ -281,11 +281,20 @@
   button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 3px; border: 0; background: transparent; cursor: pointer; text-align: left; }
   button > span:first-child { display: flex; flex-direction: column; gap: 3px; } small { color: #8a8272; }
 }
-.teacher-roster__entry { position: relative; }
-.teacher-roster__disclosure { position: absolute; top: 20px; right: 12px; color: #66543c; pointer-events: none; }
+// TWO DISCRETE TARGETS, SIDE BY SIDE — not stacked in one corner. The agenda
+// link used to be absolutely positioned ON the toggle button, 20px from the
+// chevron, so a tap near either one was a guess. A grid gives each its own
+// cell; the chevron moved inside the button it belongs to.
+.teacher-roster__entry {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; column-gap: 8px;
+}
+.teacher-roster__disclosure { color: #66543c; pointer-events: none; flex: none; }
 // The day's paper, one tap from the roster — a real link, so it can be
 // middle-clicked or long-pressed like any other.
-.teacher-roster__agenda-link { position: absolute; top: 8px; right: 32px; z-index: 1; text-decoration: none; }
+.teacher-roster__agenda-link { grid-column: 2; align-self: center; text-decoration: none; }
+.teacher-roster__plan-link, .teacher-roster__reflections, .teacher-roster__details { grid-column: 1 / -1; }
+.teacher-roster__plan-link { justify-self: start; margin: 2px 0 4px 58px; }
 .teacher-roster__chevron { width: 14px; height: 14px; display: block; transition: transform 140ms ease;
   &--open { transform: rotate(90deg); }
 }
@@ -577,20 +586,21 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    grid-column: 1;
     width: 100%;
+    min-height: 56px;
     border: 1px solid #eee7d9;
     background: #fff;
     border-radius: 10px;
-    // Right padding reserves the lane the agenda button and the disclosure
-    // chevron are absolutely positioned into, so a long name or a "3 to
-    // review" badge can never slide under either one.
-    padding: 8px 78px 8px 12px;
+    // No reserved lane any more: the agenda button is a grid sibling, not an
+    // overlay, and the chevron is a child of this button.
+    padding: 8px 12px;
     font-size: 14px;
     cursor: pointer;
     text-align: left;
   }
 
-  &__identity { display: grid; gap: 1px; min-width: 0; flex: none; }
+  &__identity { display: grid; gap: 1px; min-width: 0; flex: none; margin-right: 4px; }
   &__name { font-weight: 700; }
   &__stats { color: #6d6455; font-size: 12.5px; }
   &__sessions { color: #8a8272; font-size: 12px; }
@@ -599,12 +609,14 @@
   // "10 / 10 correct across 2 assignments" told a parent the arithmetic and
   // nothing about the shape of the day: which subjects, how many left. These
   // wrap rather than scroll; a 12-lesson day is a legitimate two rows.
-  &__dots { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
+  // PRIMARY CONTENT, not a garnish beside a number — the stat line they used
+  // to sit next to is gone. Sized up accordingly.
+  &__dots { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; margin-right: auto; }
   &__dot {
-    display: grid; place-items: center; width: 26px; height: 26px; flex: none;
+    display: grid; place-items: center; width: 30px; height: 30px; flex: none;
     border: 1px solid; border-radius: 50%;
     .teacher-subject-identity { display: block; }
-    .teacher-subject-identity__icon { width: 14px; height: 14px; display: block; }
+    .teacher-subject-identity__icon { width: 16px; height: 16px; display: block; }
     &--passed { border-color: #7fae7c; background: #e4f0e0; color: #2e6b34; }
     // Out in the world but not back yet. Dashed, so the state does not ride on
     // colour alone — a reader who cannot separate this amber from the green
@@ -613,10 +625,10 @@
     &--failed { border-color: #d9b46a; background: #fbf0d8; color: #8a5a2a; }
     &--idle   { border-color: #ddd3c1; background: #f4efe5; color: #8a8272; }
   }
-  &__dot-initial { font-size: 12px; font-weight: 800; line-height: 1; }
+  &__dot-initial { font-size: 13px; font-weight: 800; line-height: 1; }
 
   &__badge {
-    margin-left: auto;
+    flex: none;
     background: #b8873b;
     color: #fff;
     border-radius: 999px;
