@@ -220,3 +220,69 @@ describe('GET /summary — what the screen puts in front of the child', () => {
     expect((await request(app).get('/api/v1/school/reading/summary')).status).toBeGreaterThanOrEqual(400);
   });
 });
+
+/**
+ * `READING --ended--> PROMPT` (§5). The state machine has this transition and
+ * nothing was performing it: `POST /playing` moved the session to `reading`,
+ * and there it stayed for the rest of the evening.
+ *
+ * Two things break while a finished session sits at `reading`. The next book
+ * tapped is evaluated by D5's mid-story branch, so in assignment mode it is
+ * refused with "finish this one first" when nothing is playing at all. And the
+ * idle timeout (D6) exempts `reading` on purpose — a long audiobook is not an
+ * empty room — so the session never expires and the TV that D8 stopped from
+ * powering itself off stays on all night. The teardown D6 promises depends on
+ * this transition existing.
+ */
+describe('POST /read — and the session it leaves behind', () => {
+  const finish = (app, over = {}) => request(app).post('/api/v1/school/reading/read').send({
+    learnerId: 'learner-c', contentId: 'plex:1', title: 'Corduroy',
+    location: 'livingroom', pickId: 'pick_1', ...over,
+  });
+
+  it('takes the session back to the prompt, so the next book gets a countdown', async () => {
+    const { app, sessions } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.update('livingroom', { state: 'reading', playing: { learnerId: 'learner-c', pickId: 'pick_1' } });
+
+    await finish(app).expect(200);
+
+    expect(sessions.current('livingroom')).toMatchObject({ state: 'prompt', pick: null, playing: null });
+  });
+
+  it('and that is what lets an abandoned session time out at all (D6)', async () => {
+    const { app, sessions } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.update('livingroom', { state: 'reading' });
+    await finish(app).expect(200);
+    // `sweep` exempts `reading`; only a session back at `prompt` can expire.
+    expect(sessions.current('livingroom').state).toBe('prompt');
+  });
+
+  it('does NOT re-credit the read to whoever the session belongs to now (D4)', async () => {
+    // The story was picked by learner-c; a sibling tapped in mid-story, so the
+    // session belongs to learner-d. The read is the SCREEN's pick-time
+    // snapshot and nothing here may second-guess it.
+    const { app, sessions, readingLog } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'learner-d' });
+    sessions.update('livingroom', { state: 'reading' });
+
+    await finish(app, { learnerId: 'learner-c' }).expect(200);
+
+    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
+    expect(await readingLog.listForDay('learner-d', '2026-08-26')).toHaveLength(0);
+    expect(sessions.current('livingroom').learnerId).toBe('learner-d');
+  });
+
+  it('records the read even with no session open — the story still happened', async () => {
+    const { app, readingLog } = build();
+    await finish(app).expect(200);
+    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
+  });
+
+  it('records the read even when the body names no location', async () => {
+    const { app, readingLog } = build();
+    await finish(app, { location: undefined }).expect(200);
+    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
+  });
+});

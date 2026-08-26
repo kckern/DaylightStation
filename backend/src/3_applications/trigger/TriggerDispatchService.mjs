@@ -64,6 +64,12 @@ export class TriggerDispatchService {
     deviceService,
     tagWriter = null,           // NEW
     contentDispatcher = null,
+    // First refusal on a content dispatch, plus the D8 end-behaviour
+    // suppression. Whitelisted below like everything else — this is the
+    // failure with no symptom: a seam in `responseHandlers.content` and an
+    // interceptor handed to composition can both be right while nothing
+    // connects them, and the book simply plays.
+    contentInterceptors = [],
     screenBroadcast = null,
     commandResolver = null,
     endpointGateway = null,
@@ -77,7 +83,7 @@ export class TriggerDispatchService {
     this.#contentIdResolver = contentIdResolver;
     // #deps is an explicit whitelist, not a spread of the constructor args —
     // a dep that is not named here never reaches responseHandlers.
-    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, screenBroadcast, commandResolver, endpointGateway, learnerActions, logger };
+    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, contentInterceptors, screenBroadcast, commandResolver, endpointGateway, learnerActions, logger };
     this.#tagWriter = tagWriter;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;

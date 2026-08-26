@@ -882,3 +882,83 @@ describe('TriggerDispatchService — zombie-wake-guard suppression is content-on
     expect(haGateway.callService).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The interceptor seam is only real if the dispatcher actually CARRIES it.
+ *
+ * `#deps` is an explicit whitelist — "a dep that is not named here never
+ * reaches responseHandlers" — so a seam built in `responseHandlers.content` and
+ * an interceptor handed to `createTriggerApiRouter` can both be perfectly
+ * correct while nothing whatsoever is connected between them. That is a failure
+ * with no symptom in either unit: every claim test passes, every interceptor
+ * test passes, and in the field the book just plays.
+ */
+describe('TriggerDispatchService — content interceptors reach the content handler', () => {
+  const registry = {
+    nfc: {
+      locations: {
+        livingroom: {
+          target: 'livingroom-tv', action: 'play-next', end: 'tv-off',
+          auth_token: null, defaults: {},
+        },
+      },
+      tags: { '838e6806': { global: { plex: 620707 }, overrides: {} } },
+    },
+  };
+
+  function service({ contentInterceptors, wakeAndLoadService }) {
+    return new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: makeResolver(),
+      wakeAndLoadService,
+      haGateway: { callService: vi.fn().mockResolvedValue({ ok: true }) },
+      deviceService: { get: vi.fn() },
+      contentInterceptors,
+      broadcast: vi.fn(),
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+  }
+
+  it('a claimed book tap never reaches wake-and-load', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    const result = await service({
+      contentInterceptors: [{ claim: async () => ({ claimed: true, by: 'reading-session' }) }],
+      wakeAndLoadService,
+    }).handleTrigger('livingroom', 'nfc', '838e6806');
+
+    expect(wakeAndLoadService.execute).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('an unclaimed book tap plays exactly as it does today', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    await service({
+      contentInterceptors: [{ claim: async () => null }],
+      wakeAndLoadService,
+    }).handleTrigger('livingroom', 'nfc', '838e6806');
+
+    expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(1);
+  });
+
+  // D8, end to end through the dispatcher: the reader is configured
+  // `end: tv-off`, and a suppressing interceptor must take it off the dispatch.
+  it('a suppressing interceptor strips the reader s tv-off from the load options', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    await service({
+      contentInterceptors: [{ claim: async () => null, suppressEnd: () => true }],
+      wakeAndLoadService,
+    }).handleTrigger('livingroom', 'nfc', '838e6806');
+
+    const [, , options] = wakeAndLoadService.execute.mock.calls[0];
+    expect(options.endBehavior).toBeUndefined();
+  });
+
+  it('and without one, the reader s tv-off still rides along', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    await service({ contentInterceptors: [], wakeAndLoadService })
+      .handleTrigger('livingroom', 'nfc', '838e6806');
+
+    const [, , options] = wakeAndLoadService.execute.mock.calls[0];
+    expect(options).toMatchObject({ endBehavior: 'tv-off' });
+  });
+});

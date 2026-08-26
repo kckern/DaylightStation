@@ -104,6 +104,7 @@ export function createReadingRouter({
    */
   router.post('/read', asyncHandler(async (req, res) => {
     const body = req.body || {};
+    const location = trimmed(body.location);
     const read = await recordStoryRead.execute({
       learnerId: body.learnerId,
       contentId: trimmed(body.contentId),
@@ -112,6 +113,20 @@ export function createReadingRouter({
       location: trimmed(body.location),
       pickId: trimmed(body.pickId),
     });
+
+    // `READING --ended--> PROMPT` (§5). The evidence is written FIRST and this
+    // is a courtesy on top of it — but not an optional one, because it is the
+    // transition two other rules stand on. A session left at `reading` after
+    // the story ended refuses the next book with "finish this one first" while
+    // nothing is playing (D5), and never expires, because the idle sweep
+    // exempts `reading` on purpose (D6) — so the TV that D8 stopped from
+    // powering itself off stays on all night.
+    //
+    // The LEARNER is untouched. `update` cannot patch it, and it must not: the
+    // read that was just written carries the screen's pick-time snapshot, and
+    // whoever the session belongs to now is a different question (D4).
+    if (location) sessions.update(location, { state: 'prompt', pick: null, playing: null });
+
     return res.json({ recorded: true, read });
   }));
 
