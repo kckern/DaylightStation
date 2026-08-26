@@ -22,7 +22,12 @@ const isObject = (value) => Boolean(value) && typeof value === 'object' && !Arra
  */
 function isoWeekday(day) {
   const [year, month, date] = day.split('-').map(Number);
-  const weekday = new Date(Date.UTC(year, month - 1, date)).getUTCDay();
+  const at = new Date(Date.UTC(year, month - 1, date));
+  // Date.UTC maps a year under 100 into the 1900s, so year 26 would be read as
+  // 1926 — a different weekday. `isStudyDay` accepts '0026-11-26', so this
+  // function has to too.
+  at.setUTCFullYear(year);
+  const weekday = at.getUTCDay();
   return weekday === 0 ? 7 : weekday;
 }
 
@@ -62,10 +67,19 @@ function readSpanList(raw, field, errors) {
  * `errors` is non-empty, and callers must read `errors` rather than infer a
  * verdict from the null.
  */
+const SCHEDULE_KEYS = ['daysOfWeek', 'except', 'also'];
+
 export function validateSchedule(raw) {
   if (raw === undefined || raw === null) return { errors: [], schedule: null };
   if (!isObject(raw)) return { errors: ['schedule must be a mapping'], schedule: null };
   const errors = [];
+
+  // A key this file does not read is not a harmless extra: `daysofweek`,
+  // `exept` or `holidays` would be dropped, leaving a schedule that excuses
+  // nothing while its author believes a vacation is in force. Bad VALUES are
+  // caught below; only this catches a bad KEY.
+  const unknown = Object.keys(raw).filter((key) => !SCHEDULE_KEYS.includes(key));
+  if (unknown.length) errors.push(`schedule has unknown keys: ${unknown.join(', ')}`);
 
   let daysOfWeek = null;
   if (raw.daysOfWeek !== undefined && raw.daysOfWeek !== null) {
@@ -86,14 +100,15 @@ export function validateSchedule(raw) {
   const also = readSpanList(raw.also, 'also', errors);
 
   if (errors.length) return { errors, schedule: null };
-  return {
-    errors,
-    schedule: {
-      ...(daysOfWeek ? { daysOfWeek } : {}),
-      ...(except.length ? { except } : {}),
-      ...(also.length ? { also } : {}),
-    },
+  const schedule = {
+    ...(daysOfWeek ? { daysOfWeek } : {}),
+    ...(except.length ? { except } : {}),
+    ...(also.length ? { also } : {}),
   };
+  // An empty block constrains nothing. Returning it anyway would propagate a
+  // meaningless `schedule: {}` into the syllabus record, the enrollment
+  // snapshot and every planner entry built from it.
+  return { errors, schedule: Object.keys(schedule).length ? schedule : null };
 }
 
 const covers = (spans, day) => spans.some((span) => day >= span.from && day <= span.to);
