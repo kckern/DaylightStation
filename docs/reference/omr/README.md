@@ -447,6 +447,41 @@ Work in this order. The first two are cheap and the failure modes are silent.
    are driven by the reader and drop when it is unplugged. CTS floats high with
    nothing attached and proves nothing.
 
+### "NFC taps register but sheets will not feed"
+
+This is the power signature, and it is worth recognising on sight because the
+two halves of the reader fail apart. NFC reads draw almost nothing and keep
+working; the sheet feed runs a **motor** and is the first thing a sagging supply
+drops. If the device's own HTTP status server is also unreachable (`curl`
+returning `000`), suspect a brownout — supply, cable, or connector — before
+suspecting the serial link or the cards.
+
+The backend flags the software-visible half of this automatically. A failing
+reader **reconnects to the event bus repeatedly**, and because each individual
+connection subscribes promptly and looks entirely healthy, nothing about a
+single connection gives it away — the fault is only in the rate.
+`omrReaderLiveness` therefore counts reconnections per reader and warns:
+
+```
+omr.reader_liveness.reconnect_burst  { id, ip, reconnects, windowMs, spanMs }
+```
+
+- **Threshold: 3 reconnections inside 600s.** Taken from the 2026-08-25 incident,
+  not chosen for roundness. That day's failing clusters ran 3-4 reconnects in
+  227s / 574s / 415s; the tightest three-reconnect span on the preceding healthy
+  day was 1324s. 600s sits above the worst failing span and below half the
+  tightest healthy one.
+- **Restarts do not trip it.** The window is per-process and in-memory, so a
+  redeploy begins with an empty history; a restart's own reconnect (observed at
+  18-23s after `omr.relay.ready`) is one, never three, and a startup grace
+  discards it regardless.
+- **It is `warn`, deliberately.** `debug` is not shipped to the log store, so a
+  debug line here would be invisible in production — which is precisely how this
+  failure mode stayed hard to diagnose.
+
+Detection only: nothing here repairs the reader, and a burst warning is a
+prompt to go look at the power, not an error the backend can retry past.
+
 ### Diagnostics that mislead
 
 - **`GETCONFIG` succeeding proves the link, not the data path.** Queries work
