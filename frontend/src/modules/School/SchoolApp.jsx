@@ -580,15 +580,58 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   });
 
   const [lockSide, setLockSide] = useState('keypad-left');
+  // What the Keypad reports about the child in front of it. Refs, not state:
+  // the flip reads them on a tick and must never re-render the panel just
+  // because a finger landed on a key.
+  const keypadEngagedRef = useRef(false);
+  const keypadTouchedAtRef = useRef(0);
+  const onKeypadActivity = useCallback(() => { keypadTouchedAtRef.current = Date.now(); }, []);
+  const onKeypadEngagedChange = useCallback((engaged) => { keypadEngagedRef.current = engaged; }, []);
 
-  // The two static panes trade sides only while the anonymous keypad is up.
-  // Keeping them mounted preserves an entry already in progress and avoids a
-  // bright, fixed image sitting on the same half of the Portal all day.
+  /**
+   * The burn-in flip. The two static panes trade sides only while the
+   * anonymous keypad is up, so a bright fixed image never sits on the same
+   * half of the Portal all day.
+   *
+   * IT MAY NEVER PREEMPT AN INTERACTION IN PROGRESS. `direction: rtl` throws
+   * the whole pad to the other half of a 1280x800 screen; the typed digits
+   * survive that, but the KEYS do not stay under a finger already in motion,
+   * and a child mid-code taps where a key no longer is. Burn-in is a
+   * maintenance concern and it yields to the person using the panel.
+   *
+   * "In progress" is BOTH facts, because either alone is wrong: a code half
+   * typed while the child reads the next digit off a slip has no recent touch,
+   * and a finger that has just left the pad on an empty entry is still a hand
+   * over the keys. `LOCK_FLIP_QUIET_MS` covers the second; the Keypad's
+   * `engaged` covers the first, plus the ~2s of a refusal animation.
+   *
+   * A DEFERRED FLIP IS NOT RESCHEDULED — `dueAt` is left in the past, so the
+   * flip lands on the first quiet tick rather than waiting out another full
+   * interval. A code finished at second 89 delays the flip by seconds, not by
+   * another 90.
+   *
+   * AND IT CANNOT BE STARVED. There is no override that flips anyway (that
+   * would just reintroduce the rug pull); instead the busy predicate is
+   * short-lived by construction. A code auto-submits on its sixth digit, a
+   * refusal is bounded at ~2s, an abandoned entry clears itself
+   * (`ABANDONED_ENTRY_MS`), and quiet is 8s — so someone tapping every minute
+   * leaves ~50s of quiet in each one, and the worst case for a panel walked
+   * away from mid-code is a deferral of about 70s past due.
+   */
+  const LOCK_FLIP_INTERVAL_MS = 90_000;
+  const LOCK_FLIP_QUIET_MS = 8_000;
+  const LOCK_FLIP_TICK_MS = 1_000;
   useEffect(() => {
     if (!lock.locked || selfService.view !== 'keypad' || active || section) return undefined;
+    let dueAt = Date.now() + LOCK_FLIP_INTERVAL_MS;
     const timer = window.setInterval(() => {
-      setLockSide((side) => (side === 'keypad-left' ? 'keypad-right' : 'keypad-left'));
-    }, 90_000);
+      const now = Date.now();
+      if (now < dueAt) return;
+      if (keypadEngagedRef.current) return;
+      if (now - keypadTouchedAtRef.current < LOCK_FLIP_QUIET_MS) return;
+      setLockSide((s) => (s === 'keypad-left' ? 'keypad-right' : 'keypad-left'));
+      dueAt = now + LOCK_FLIP_INTERVAL_MS;
+    }, LOCK_FLIP_TICK_MS);
     return () => window.clearInterval(timer);
   }, [active, lock.locked, section, selfService.view]);
 
@@ -827,6 +870,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                 onReload={selfService.reload}
                 screenOffTimeoutSeconds={lock.screenOffTimeoutSeconds}
                 screenOffSuppressed={!!ceremony.current}
+                onActivity={onKeypadActivity}
+                onEngagedChange={onKeypadEngagedChange}
               />
               {/* Read-only status pane: names appear here by design — this is
                   the family's own day board, not a claim affordance; codes
