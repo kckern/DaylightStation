@@ -21,6 +21,7 @@ export function ReadalongScroller({
   initialData,
   advance,
   clear,
+  onProgress,
   volume,
   playbackKeys,
   ignoreKeys,
@@ -178,6 +179,7 @@ export function ReadalongScroller({
         parseContent={parseContent}
         onAdvance={advance}
         onClear={clear}
+        onProgress={onProgress}
         playbackKeys={playbackKeys}
         ignoreKeys={ignoreKeys}
         queuePosition={queuePosition}
