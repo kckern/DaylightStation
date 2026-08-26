@@ -272,9 +272,12 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   if (today) {
     enrollmentByCourse.forEach(({ enrollment }, courseId) => {
       if (policyFor(courseId)?.mode !== 'dated_modules') return;
-      const schedule = isPlainObject(enrollment?.moduleSchedule) ? enrollment.moduleSchedule : {};
+      // `moduleWindows`, not `schedule`: two different things now answer to
+      // that word in this file, and the SCHOOL-DAY calendar has the better
+      // claim on it. These are dated-module open/close windows.
+      const moduleWindows = isPlainObject(enrollment?.moduleSchedule) ? enrollment.moduleSchedule : {};
       const closed = [];
-      Object.entries(schedule).forEach(([moduleId, window]) => {
+      Object.entries(moduleWindows).forEach(([moduleId, window]) => {
         try {
           const decision = evaluateDatedModule(window, { today });
           const key = `${courseId}/${moduleId}`;
