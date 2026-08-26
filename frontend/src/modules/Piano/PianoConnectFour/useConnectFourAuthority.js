@@ -15,6 +15,16 @@ export function useConnectFourAuthority({ userId = 'household' } = {}) {
   }, [indexKey]);
   useEffect(() => { startPromiseRef.current = start(); }, [start]);
   const play = useCallback(async (column) => { const session = sessionRef.current || await startPromiseRef.current; if (!session) return null; const result = await authorityRef.current.dispatch(session.header.session_id, { command_id: `piano:${crypto.randomUUID()}`, actor_id: ACTOR, expected_revision: session.header.revision, logical_time: performance.timeOrigin + performance.now(), command: { type: 'connect-four.play', column } }, { participant_id: ACTOR }); sessionRef.current = result; setState(result.state); return result.state; }, []);
-  const reset = useCallback(async () => { if (sessionRef.current) await authorityRef.current.close(sessionRef.current.header.session_id); return start({ fresh: true }); }, [start]);
+  // Closing a terminal session always throws ("Session … is complete"), so an
+  // unguarded close rejects out of "Play again" and leaves a zombie board. See
+  // `useChessAuthority.js` for the full account; all three game hooks came from
+  // one template and only chess had the guard until 2026-08-26.
+  const reset = useCallback(async () => {
+    if (sessionRef.current) {
+      try { await authorityRef.current.close(sessionRef.current.header.session_id); }
+      catch { /* terminal already, or close raced — start fresh regardless */ }
+    }
+    return start({ fresh: true });
+  }, [start]);
   return { state, moves: state?.moves || [], play, reset, authority: authorityRef.current };
 }

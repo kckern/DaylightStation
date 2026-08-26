@@ -15,6 +15,22 @@ export function useCheckersAuthority({ userId = 'household' } = {}) {
   }, [indexKey]);
   useEffect(() => { startPromiseRef.current = start(); }, [start]);
   const play = useCallback(async (move) => { const session = sessionRef.current || await startPromiseRef.current; if (!session) return null; const result = await authorityRef.current.dispatch(session.header.session_id, { command_id: `piano:${crypto.randomUUID()}`, actor_id: ACTOR, expected_revision: session.header.revision, logical_time: performance.timeOrigin + performance.now(), command: { type: 'checkers.move', from: move.from, to: move.to } }, { participant_id: ACTOR }); sessionRef.current = result; setState(result.state); return result.state; }, []);
-  const reset = useCallback(async () => { if (sessionRef.current) await authorityRef.current.close(sessionRef.current.header.session_id); return start({ fresh: true }); }, [start]);
+  // A FINISHED SESSION CANNOT BE CLOSED, AND DOES NOT NEED TO BE. The kernel
+  // refuses every command on a terminal session — `session.close` included
+  // (`runtime.dispatch`: "Session … is complete") — so after a win this close
+  // ALWAYS throws. Unguarded it rejected out of "Play again" and, on
+  // 2026-08-26, that stray rejection reached the boot trap in index.html and
+  // painted "This screen could not start" over a healthy piano kiosk. The trap
+  // no longer stays armed past mount, but the rejection was a real bug on its
+  // own: it aborted the reset before the fresh start, leaving a zombie board.
+  // This is the identical guard `useChessAuthority.js` already carries; the
+  // two hooks were written from the same template and only one was fixed.
+  const reset = useCallback(async () => {
+    if (sessionRef.current) {
+      try { await authorityRef.current.close(sessionRef.current.header.session_id); }
+      catch { /* terminal already, or close raced — start fresh regardless */ }
+    }
+    return start({ fresh: true });
+  }, [start]);
   return { state, moves: state?.moves || [], play, reset };
 }
