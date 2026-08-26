@@ -81,6 +81,39 @@ export const responseHandlers = {
     }
     return deps.endpointGateway.call(response.ref, response.params);
   },
+
+  // A tap that named a person. NEVER REJECTS: a card tap that throws must still
+  // answer the dispatcher, or a child gets silence and taps harder — which is
+  // the exact behaviour every cooldown and debounce in this pipeline exists to
+  // stop. An unregistered op is refused BY NAME and logged with its reader, so
+  // an action configured before its handler shipped is findable in the log
+  // rather than doing some other action's job.
+  learner: async (response, deps) => {
+    const handler = deps.learnerActions?.get?.(response.op) ?? null;
+    if (!handler) {
+      deps.logger?.warn?.('trigger.learner.no_handler', {
+        op: response.op,
+        learnerId: response.learnerId,
+        location: response.location,
+        registered: deps.learnerActions?.list?.() ?? null,
+      });
+      return { status: 'no_handler', op: response.op, learnerId: response.learnerId };
+    }
+    try {
+      const result = await handler({
+        learnerId: response.learnerId, location: response.location, target: response.target,
+      });
+      deps.logger?.info?.('trigger.learner.dispatched', {
+        op: response.op, learnerId: response.learnerId, location: response.location, status: result?.status ?? null,
+      });
+      return result ?? { status: 'ok' };
+    } catch (err) {
+      deps.logger?.error?.('trigger.learner.failed', {
+        op: response.op, learnerId: response.learnerId, location: response.location, error: err.message,
+      });
+      return { status: 'failed', op: response.op, error: err.message };
+    }
+  },
 };
 
 export async function dispatchResponse(response, deps) {
