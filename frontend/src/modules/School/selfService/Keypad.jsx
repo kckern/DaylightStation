@@ -91,6 +91,21 @@ const AUTO_SUBMIT_SETTLE_MS = 300;
 const STRAY_PRESS_MS = 700;
 
 /**
+ * A half-typed code nobody is standing in front of any more.
+ *
+ * The panel already holds that "the next child walking up must never find a
+ * half-typed code waiting for them" — `submit` clears on the way out for
+ * exactly that reason, and an abandoned entry breaks the same promise by a
+ * slower route. It is also what BOUNDS the burn-in deferral in SchoolApp: an
+ * entry in progress holds the split-pane flip, so without this, three digits
+ * left on screen at bedtime would pin the bright half of the Portal in place
+ * until morning. 60s without a touch ANYWHERE on the panel is far longer than
+ * the gap between two digits copied off a paper slip, and any touch at all
+ * restarts it.
+ */
+const ABANDONED_ENTRY_MS = 60_000;
+
+/**
  * Buttons that fire on TOUCH-DOWN.
  *
  * The pad is a wall panel a child jabs at, and `onClick` waits for a full
@@ -143,6 +158,13 @@ function useTapFire() {
  *   from the card-to-keypad idle timeout owned by useSelfService.
  * @param {boolean} [props.screenOffSuppressed] - Ceremony/runner or another
  *   foreground obligation is using the panel; do not sleep it.
+ * @param {() => void} [props.onActivity] - a finger or a key just landed
+ *   ANYWHERE on the panel. The same signal the screen-off timer runs on
+ *   (`noteActivity`), published so the owner of the burn-in flip works off one
+ *   notion of "someone is here" rather than inventing a second.
+ * @param {(engaged: boolean) => void} [props.onEngagedChange] - the pad is
+ *   mid-interaction in a way a CLOCK cannot see: a code partly typed, or a
+ *   refusal still playing. Recency alone would call both of those idle.
  */
 export default function Keypad({
   length = 6,
@@ -154,6 +176,8 @@ export default function Keypad({
   onReload = null,
   screenOffTimeoutSeconds = 0,
   screenOffSuppressed = false,
+  onActivity = null,
+  onEngagedChange = null,
 }) {
   const [entry, setEntry] = useState('');
   const [screenOffFailure, setScreenOffFailure] = useState(null);
@@ -181,9 +205,16 @@ export default function Keypad({
     { armMs: 3000 },
   );
 
+  // `onActivity` rides on the EXISTING activity signal rather than a second
+  // one: whatever counts as "someone is at the panel" for the screen-off timer
+  // is the same thing that counts for the burn-in flip, and two definitions
+  // would drift.
+  const onActivityRef = useRef(onActivity);
+  onActivityRef.current = onActivity;
   const noteActivity = useCallback(() => {
     setScreenOffFailure(null);
     setActivityEpoch((current) => current + 1);
+    onActivityRef.current?.();
   }, []);
 
   // Automatic screen sleep belongs ONLY to the anonymous keypad. Keypad
@@ -367,6 +398,36 @@ export default function Keypad({
     const timer = setTimeout(() => submitRef.current(), AUTO_SUBMIT_SETTLE_MS);
     return () => clearTimeout(timer);
   }, [entry, length]);
+
+  /**
+   * "Mid-interaction" in the sense a clock cannot see. A code half typed is an
+   * interaction with no recent touch at all (a child reading the next digit
+   * off a slip), and a refusal is ~2s of shake-reveal-wipe during which the
+   * pad must not move either — a flip mid-NONONO is the same rug pull as a
+   * flip mid-code.
+   */
+  const engaged = entry.length > 0 || reject !== null;
+  const onEngagedRef = useRef(onEngagedChange);
+  onEngagedRef.current = onEngagedChange;
+  useEffect(() => {
+    onEngagedRef.current?.(engaged);
+    // Leaving the panel while engaged must release the hold, or a keypad
+    // unmounted mid-code would park the flip forever.
+    return () => { if (engaged) onEngagedRef.current?.(false); };
+  }, [engaged]);
+
+  // An abandoned entry clears itself (see ABANDONED_ENTRY_MS). Keyed on
+  // `activityEpoch` so ANY touch on the panel restarts the countdown, not just
+  // a keystroke — and deliberately NOT calling `noteActivity` itself, which
+  // would keep the screen awake for a child who has already walked away.
+  useEffect(() => {
+    if (!entry) return undefined;
+    const timer = setTimeout(() => {
+      schoolLog.selfService('keypad.entry-abandoned', { digits: entry.length });
+      setEntry('');
+    }, ABANDONED_ENTRY_MS);
+    return () => clearTimeout(timer);
+  }, [activityEpoch, entry]);
 
   const cells = reject
     ? Array.from({ length }, (_, i) => (i < reject.shown ? letters[i] : null))
