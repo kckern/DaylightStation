@@ -17,7 +17,8 @@
  *     in (`{ unitId, state, terminal, outcome, gradedPercent, updatedAt }`).
  */
 import { SUBJECT_IDS } from './curriculum/unitValidation.mjs';
-import { isSameStudyDay } from './studyDay.mjs';
+import { isSameStudyDay, studyDayForInstant } from './studyDay.mjs';
+import { isSchoolDay } from './schoolCalendar.mjs';
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -224,6 +225,7 @@ export function planDailyAgenda({
   plan, sessions = [], programStatuses = {}, now, timezone = null, boundaryHour = 4, logger = null,
 } = {}) {
   const nowMs = Date.parse(now ?? '');
+  const today = studyDayForInstant(nowMs, { timezone, boundaryHour });
   const entries = (plan?.entries ?? []).filter((e) => e && typeof e === 'object');
   const order = [...SUBJECT_IDS, 'other'];
 
@@ -319,11 +321,24 @@ export function planDailyAgenda({
       && programStatusFor(programStatuses, e)?.doneToday === true
     ));
     const obligationServed = nonElectiveList.some((e) => passedTodayIds.has(e.unitId)) || nonElectiveProgramDone;
+    // Today is not a school day for this section only when EVERY piece of
+    // required work in it says so. An entry with no schedule is a school day
+    // (isSchoolDay fails open), so one unscheduled course sitting beside a
+    // weekday-only one keeps the section obligated rather than borrowing its
+    // vacation.
+    const noSchoolToday = nonElectiveList.length > 0
+      && nonElectiveList.every((e) => !isSchoolDay(today, e.schedule ?? null));
     const isBacklog = (e) => e.timing?.mode === 'catch_up' || e.timingState === 'catch_up';
     const hasNonElective = (pred) => nonElectiveList.some(pred);
     let obligation;
     if (obligationServed) {
       obligation = { state: 'served', reason: null };
+    } else if (noSchoolToday) {
+      // A non-school day excuses what is LEFT, but never un-serves what was
+      // already done: `obligationServed` is checked first, deliberately. A
+      // child who reads on a Saturday has read, and downgrading that to
+      // "excused" would erase work they actually did.
+      obligation = { state: 'excused', reason: 'not_a_school_day' };
     } else if (actionable.length === 0) {
       let reason;
       if (nonElectiveList.length === 0) reason = 'elective_only';
