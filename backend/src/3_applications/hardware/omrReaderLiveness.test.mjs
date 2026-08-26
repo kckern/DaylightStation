@@ -256,3 +256,96 @@ describe('createOmrReaderLiveness — reconnect bursts', () => {
     expect(bursts(h)).toHaveLength(0);
   });
 });
+
+// A burst on its own is a symptom. The relay's firmware now reports why its
+// previous life ended (`last_reset`) and how many lives there have been
+// (`boot_count`) on the same `relay-status` message it already sends at
+// reconnect — the one channel still working when the reader's own HTTP server
+// is unreachable, which is exactly what 2026-08-25 looked like. Carrying those
+// onto the warning is what makes it a diagnosis. Both are OPTIONAL: a board
+// still running older firmware must not break the check or the line.
+describe('createOmrReaderLiveness — boot post-mortem on a burst', () => {
+  const bursts = (h) => h.logged.filter((l) => l.event === 'omr.reader_liveness.reconnect_burst');
+
+  function settle(h) {
+    seedKnownReader(h);
+    h.advance(120_000);
+  }
+
+  /** A flap whose hello carries the firmware's post-mortem. */
+  function flapWithBoot(h, clientId, gapMs, boot) {
+    h.bus.connect(clientId);
+    h.bus.message(clientId, {
+      source: 'omr-relay', type: 'relay-status', id: READER_ID, ...boot,
+    });
+    h.bus.subscribe(clientId, ['omr']);
+    h.bus.disconnect(clientId);
+    h.advance(gapMs);
+  }
+
+  it('names the cause when the reader reports BROWNOUT', () => {
+    const h = harness();
+    settle(h);
+
+    // The reported values are the PRECEDING connection's, by design: a burst is
+    // recognised the instant the third socket arrives, before its own hello. The
+    // brownout that killed connection 1 is announced by connection 2 — which has
+    // already landed.
+    flapWithBoot(h, 'c1', 60_000, { last_reset: 'POWERON', boot_count: 11 });
+    flapWithBoot(h, 'c2', 60_000, { last_reset: 'BROWNOUT', boot_count: 12 });
+    flapWithBoot(h, 'c3', 0, { last_reset: 'BROWNOUT', boot_count: 13 });
+
+    const warned = bursts(h);
+    expect(warned).toHaveLength(1);
+    expect(warned[0].data).toMatchObject({
+      id: READER_ID, reconnects: 3, lastReset: 'BROWNOUT', bootCount: 12,
+    });
+  });
+
+  it('a steady boot_count says the board never rebooted — a link fault, not a power fault', () => {
+    const h = harness();
+    settle(h);
+
+    flapWithBoot(h, 'c1', 60_000, { last_reset: 'SW', boot_count: 40 });
+    flapWithBoot(h, 'c2', 60_000, { last_reset: 'SW', boot_count: 40 });
+    flapWithBoot(h, 'c3', 0, { last_reset: 'SW', boot_count: 40 });
+
+    expect(bursts(h)[0].data).toMatchObject({ lastReset: 'SW', bootCount: 40 });
+  });
+
+  it('reports null for a reader whose firmware predates the fields, and still warns', () => {
+    const h = harness();
+    settle(h);
+
+    // seedKnownReader/flap send a hello with no post-mortem at all.
+    flap(h, 'c1', 60_000);
+    flap(h, 'c2', 60_000);
+    flap(h, 'c3', 0);
+
+    const warned = bursts(h);
+    expect(warned).toHaveLength(1);
+    expect(warned[0].data.lastReset).toBeNull();
+    expect(warned[0].data.bootCount).toBeNull();
+  });
+
+  it('ignores malformed post-mortem fields rather than reporting junk', () => {
+    const h = harness();
+    settle(h);
+
+    flapWithBoot(h, 'c1', 60_000, { last_reset: 'BROWNOUT', boot_count: 7 });
+    // A garbled hello must not overwrite what was already learned.
+    flapWithBoot(h, 'c2', 60_000, { last_reset: '', boot_count: 'lots' });
+    flap(h, 'c3', 0);
+
+    expect(bursts(h)[0].data).toMatchObject({ lastReset: 'BROWNOUT', bootCount: 7 });
+  });
+
+  /** Shared with the burst suite: a flap whose hello carries no post-mortem. */
+  function flap(h, clientId, gapMs) {
+    h.bus.connect(clientId);
+    h.bus.message(clientId, { source: 'omr-relay', type: 'relay-status', id: READER_ID });
+    h.bus.subscribe(clientId, ['omr']);
+    h.bus.disconnect(clientId);
+    h.advance(gapMs);
+  }
+});

@@ -493,7 +493,7 @@ single connection gives it away — the fault is only in the rate.
 `omrReaderLiveness` therefore counts reconnections per reader and warns:
 
 ```
-omr.reader_liveness.reconnect_burst  { id, ip, reconnects, windowMs, spanMs }
+omr.reader_liveness.reconnect_burst  { id, ip, reconnects, windowMs, spanMs, lastReset, bootCount }
 ```
 
 - **Threshold: 3 reconnections inside 600s.** Taken from the 2026-08-25 incident,
@@ -511,6 +511,27 @@ omr.reader_liveness.reconnect_burst  { id, ip, reconnects, windowMs, spanMs }
 
 Detection only: nothing here repairs the reader, and a burst warning is a
 prompt to go look at the power, not an error the backend can retry past.
+
+#### Reading `lastReset` / `bootCount` — the burst says *what*, these say *why*
+
+A burst alone is a symptom: the socket keeps dropping, cause unstated. The
+firmware reports its own post-mortem on the `relay-status` message it sends at
+every reconnect, and the warning carries it through:
+
+| On the warning | Verdict |
+|---|---|
+| `lastReset: "BROWNOUT"` | **Confirmed power fault.** Supply, cable, connector — in that order. Not a hint; this is the board saying its voltage collapsed. |
+| `bootCount` **climbing** across successive bursts | the board is genuinely rebooting. |
+| `bootCount` **steady** through the whole burst | the board never rebooted. This is a **network** fault, not power — stop replacing bricks. |
+| `lastReset: "PANIC"` | firmware crash, not power. Pull `/events` off the reader for what preceded it. |
+| `lastReset: "POWERON"` | plug pulled, or someone power-cycled it. Ordinary after a household reset; suspicious if nobody was there. |
+| both `null` | the reader is running firmware older than 2026-08-25. Reflash it before spending an afternoon guessing; the fields cost nothing and settle the question. |
+
+Both are optional by design and default to `null` — an un-updated reader still
+produces the burst warning, just without the diagnosis. Values are those of the
+*preceding* connection, which is the right ones: a burst is recognised the
+instant the third socket arrives, before its own hello, and a brownout that
+killed connection N is reported by connection N+1, which has already landed.
 
 ### Diagnostics that mislead
 
