@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSchoolDay } from '#domains/school/schoolCalendar.mjs';
+import { isSchoolDay, validateSchedule } from '#domains/school/schoolCalendar.mjs';
 
 describe('isSchoolDay', () => {
   it('is true for every day when there is no schedule', () => {
@@ -48,5 +48,41 @@ describe('isSchoolDay', () => {
 
   it('fails OPEN on a malformed schedule — never silently excuses a whole term', () => {
     expect(isSchoolDay('2026-08-26', { daysOfWeek: 'weekdays' })).toBe(true);
+  });
+});
+
+describe('validateSchedule', () => {
+  it('accepts an absent schedule', () => {
+    expect(validateSchedule(undefined)).toEqual({ errors: [], schedule: null });
+  });
+
+  it('refuses a weekday outside 1..7', () => {
+    expect(validateSchedule({ daysOfWeek: [0] }).errors[0]).toMatch(/daysOfWeek/);
+    expect(validateSchedule({ daysOfWeek: [8] }).errors[0]).toMatch(/daysOfWeek/);
+  });
+
+  it('refuses an empty daysOfWeek — that is a term with no school days at all', () => {
+    expect(validateSchedule({ daysOfWeek: [] }).errors[0]).toMatch(/daysOfWeek/);
+  });
+
+  it('refuses a malformed date', () => {
+    expect(validateSchedule({ except: ['Christmas'] }).errors[0]).toMatch(/except/);
+  });
+
+  it('refuses a range that ends before it starts', () => {
+    expect(validateSchedule({ except: [{ from: '2026-12-25', to: '2026-12-01' }] }).errors[0]).toMatch(/before/);
+  });
+
+  it('normalizes and dedupes, sorting daysOfWeek', () => {
+    expect(validateSchedule({ daysOfWeek: [3, 1, 3] }).schedule.daysOfWeek).toEqual([1, 3]);
+  });
+
+  it('normalizes a bare date to a one-day span so membership is one comparison', () => {
+    expect(validateSchedule({ except: ['2026-11-26'] }).schedule.except)
+      .toEqual([{ from: '2026-11-26', to: '2026-11-26' }]);
+  });
+
+  it('never returns a schedule alongside errors', () => {
+    expect(validateSchedule({ daysOfWeek: [1], except: ['nope'] }).schedule).toBeNull();
   });
 });
