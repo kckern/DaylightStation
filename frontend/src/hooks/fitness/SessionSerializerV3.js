@@ -62,7 +62,7 @@ export class SessionSerializerV3 {
     // Add totals block if treasureBox exists
     if (treasureBox) {
       result.totals = {
-        coins: treasureBox.totalCoins,
+        rings: treasureBox.totalRings,
         buckets: treasureBox.buckets
       };
     }
@@ -76,7 +76,11 @@ export class SessionSerializerV3 {
       Object.entries(participantsMeta).forEach(([userId, meta]) => {
         const hrSeries = this.decodeSeries(series[`user:${userId}:heart_rate`]);
         const zoneSeries = this.decodeSeries(series[`user:${userId}:zone_id`]);
-        const coinsSeries = this.decodeSeries(series[`user:${userId}:coins_total`]);
+        // `coins_total` fallback: pre-2026-08-26 sessions, read until the
+        // migration clears them. See ringSeries.mjs for the backend twin.
+        const ringsSeries = this.decodeSeries(
+          series[`user:${userId}:rings_total`] ?? series[`user:${userId}:coins_total`],
+        );
         const beatsSeries = this.decodeSeries(series[`user:${userId}:heart_beats`]);
 
         participants[userId] = {
@@ -85,7 +89,7 @@ export class SessionSerializerV3 {
           is_guest: meta.is_guest || false,
           ...(meta.hr_device && { hr_device: meta.hr_device }),
           ...(meta.cadence_device && { cadence_device: meta.cadence_device }),
-          coins_earned: this.getLastValue(coinsSeries),
+          rings_earned: this.getLastValue(ringsSeries),
           active_seconds: this.computeActiveSeconds(hrSeries, intervalSeconds),
           zone_time_seconds: this.computeZoneTime(zoneSeries, intervalSeconds),
           hr_stats: this.computeHrStats(hrSeries),
@@ -341,7 +345,9 @@ export class SessionSerializerV3 {
     const METRIC_MAP = {
       heart_rate: 'hr',
       zone_id: 'zone',
-      coins_total: 'coins',
+      rings_total: 'rings',
+      // Legacy v2 name, still present in every pre-rename session on disk.
+      coins_total: 'rings',
       heart_beats: 'beats'
     };
 

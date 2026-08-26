@@ -10,7 +10,7 @@ const FULL_DASHBOARD = {
   today: {
     weight: { lbs: 170.7, trend: -0.006 },
     nutrition: { calories: 1500, protein: 100, carbs: 180, fat: 50 },
-    sessions: [{ sessionId: 's1', title: 'Run', type: 'run', totalCoins: 5 }],
+    sessions: [{ sessionId: 's1', title: 'Run', type: 'run', totalRings: 5 }],
   },
   recency: [{ source: 'weight', name: 'Weight', daysSince: 0, status: 'recent' }],
   goals: [],

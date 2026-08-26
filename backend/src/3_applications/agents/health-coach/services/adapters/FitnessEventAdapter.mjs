@@ -197,7 +197,7 @@ export class FitnessEventAdapter extends EventAdapter {
   #extractTreasureStats(session) {
     if (!session.treasureBox) return null;
     return {
-      total_coins: session.treasureBox.totalCoins ?? 0,
+      total_rings: session.treasureBox.totalRings ?? 0,
       buckets: session.treasureBox.buckets ?? null,
     };
   }
@@ -233,7 +233,7 @@ export class FitnessEventAdapter extends EventAdapter {
       hr_max: p.hr_max ?? null,
       hr_min: p.hr_min ?? null,
       zone_minutes: p.zone_minutes ?? null,
-      coins: p.coins ?? null,
+      rings: p.rings ?? null,
     };
   }
 }

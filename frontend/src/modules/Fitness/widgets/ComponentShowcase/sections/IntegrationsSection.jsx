@@ -107,14 +107,14 @@ const IntegrationsSection = () => {
 
       <ComponentCard
         title="TreasureBoxWidget"
-        description="Coins and rewards preview from session treasure box."
+        description="Rings and rewards preview from session treasure box."
         badge={treasureBox ? 'Live data' : 'Demo'}
       >
         <TreasureBoxWidget
           isOpen={false}
           onOpen={() => {}}
-          rewards={(treasureBox?.rewards || [{ icon: '💰', label: 'Coins' }]).slice(0, 3)}
-          description={`Coins: ${treasureBox?.coins ?? treasureBox?.totalCoins ?? '—'}`}
+          rewards={(treasureBox?.rewards || [{ icon: '💰', label: 'Rings' }]).slice(0, 3)}
+          description={`Rings: ${treasureBox?.rings ?? treasureBox?.totalRings ?? '—'}`}
         />
       </ComponentCard>
 

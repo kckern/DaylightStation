@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { SessionGroupingService } from './SessionGroupingService.mjs';
 
 const H = (h, m) => Date.parse(`2026-06-05T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-07:00`);
-const sess = (id, start, durMin, riders, media = null, coins = 0) => ({
+const sess = (id, start, durMin, riders, media = null, rings = 0) => ({
   sessionId: id, date: '2026-06-05', startTime: start, durationMs: durMin * 60000,
-  participants: Object.fromEntries(riders.map(r => [r, { displayName: r }])), media, totalCoins: coins,
+  participants: Object.fromEntries(riders.map(r => [r, { displayName: r }])), media, totalRings: rings,
 });
 
 const sessions = [

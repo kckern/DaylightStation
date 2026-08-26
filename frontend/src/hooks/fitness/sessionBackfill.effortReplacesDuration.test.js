@@ -4,7 +4,7 @@
  * Variant-1 data-loss shape (the bug this guards against):
  *   - A LONG, insignificant ghost segment (near-zero effort) on a device,
  *   - immediately followed by a SHORT segment with SIGNIFICANT effort
- *     (40 coins) by a DIFFERENT occupant.
+ *     (40 rings) by a DIFFERENT occupant.
  *
  * Under the OLD design the series path ran BOTH the legacy duration rules
  * (`applyAbsorbRules`) AND the effort pass:
@@ -30,17 +30,17 @@ describe('runSessionBackfill — effort replaces duration (Variant-1 data-loss g
     const entities = [
       // Long ghost segment (10 min) — over threshold, but near-zero effort.
       { entityId: 'g1', profileId: 'ghostrider', deviceId: 'D1', startTime: 0,      endTime: 600000, status: 'active' },
-      // Short REAL burst (30 s) — sub-threshold by DURATION, but 40 coins of
+      // Short REAL burst (30 s) — sub-threshold by DURATION, but 40 rings of
       // real effort. The OLD duration rule absorbed this backward into the
       // ghost, losing the data.
       { entityId: 'r1', profileId: 'realrider', deviceId: 'D1', startTime: 600000, endTime: 630000, status: 'active' }
     ];
     const series = {
-      // Ghost: 1 HR sample, no coins → insignificant effort.
+      // Ghost: 1 HR sample, no rings → insignificant effort.
       'user:ghostrider:heart_rate': [116, null, null, null],
-      // Real rider: significant effort via coins (40), a couple HR samples.
+      // Real rider: significant effort via rings (40), a couple HR samples.
       'user:realrider:heart_rate':  [null, null, 130, 131],
-      'user:realrider:coins_total': [null, null, 20, 40]
+      'user:realrider:rings_total': [null, null, 20, 40]
     };
 
     const r = runSessionBackfill({ entities, series, thresholdMs: T, sessionEndTime: 630000 });

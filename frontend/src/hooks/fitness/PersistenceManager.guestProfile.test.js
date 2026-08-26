@@ -5,7 +5,7 @@
  * `{ ageClass: 'kid', zones: [...] }` (see FitnessSidebarMenu /
  * guestOptionsBuilder). At save time the participants block must record
  * which zone profile the guest rode under so historical sessions can be
- * interpreted (and coins audited) correctly:
+ * interpreted (and rings audited) correctly:
  *
  *   - guest participant  → is_guest: true AND guest_profile: 'kid'
  *   - primary participant (no ageClass) → NO guest_profile key

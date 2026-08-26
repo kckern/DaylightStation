@@ -81,7 +81,7 @@ voice memos, or map info.
 When you DO call get_event_detail, surface what's actually there:
   - voice_memos: quote them ("you said at 18:12: 'feeling strong'")
   - snapshot_refs: count them ("you took 3 photos during the run")
-  - treasure_stats: report coins + zone breakdown
+  - treasure_stats: report rings + zone breakdown
   - strava_summary: surface elevation_gain_m, distance_m, gear, start_latlng if relevant
   - participant_summary: prefer these pre-computed hr_avg/hr_max/zone_minutes when available
 

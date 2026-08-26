@@ -31,6 +31,12 @@ describe('YamlSessionDatastore — findInRange index', () => {
       durationMs: 3600000,
       timezone: 'UTC',
       participants: {},
+      // DELIBERATELY the LEGACY `coins` key. Every session on disk written
+      // before 2026-08-26 carries it, and the datastore must keep reading them
+      // until cli/rings-migration.mjs has run. Seeding `rings` here instead
+      // would make this test pass while the entire pre-rename archive silently
+      // reported zero. The ASSERTION below reads `totalRings` — legacy in, new
+      // name out, which is exactly the dual-read contract.
       summary: { coins: { total: overrides.coins ?? 0 } },
       timeline: { series: {}, events: [] },
       ...overrides.data,
@@ -70,7 +76,7 @@ describe('YamlSessionDatastore — findInRange index', () => {
     expect(fs.existsSync(shardPath('2026-06'))).toBe(true);
     const shard = readShard('2026-06');
     expect(Object.keys(shard.days).sort()).toEqual(['2026-06-01', '2026-06-02', '2026-06-10']);
-    expect(shard.days['2026-06-01'].sessions[0].totalCoins).toBe(5);
+    expect(shard.days['2026-06-01'].sessions[0].totalRings).toBe(5);
   });
 
   it('does not re-scan a day whose shard entry is fresh (cache hit)', async () => {

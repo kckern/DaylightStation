@@ -89,7 +89,7 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
         // assignments rapidly enough that the in-session check missed, or
         // because the user is opting into save-time disambiguation.)
         status: seg === 4 ? 'active' : 'dropped',
-        coins: 0
+        rings: 0
       });
     }
 
@@ -190,7 +190,7 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
           startTime: sessionStart,
           endTime: aEnd,
           status: 'dropped',
-          coins: 0
+          rings: 0
         },
         {
           entityId: 'entity-test-user-b-1',
@@ -200,7 +200,7 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
           startTime: aEnd,
           endTime: bEnd,
           status: 'dropped',
-          coins: 0
+          rings: 0
         },
         {
           entityId: 'entity-guest123-1',
@@ -210,7 +210,7 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
           startTime: bEnd,
           endTime: sessionEnd,
           status: 'active',
-          coins: 0
+          rings: 0
         }
       ],
       timeline: {

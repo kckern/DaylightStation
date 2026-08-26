@@ -63,7 +63,7 @@ describe('SessionSerializerV3', () => {
         endTime: 1767732533431,
         timezone: 'America/Los_Angeles',
         treasureBox: {
-          totalCoins: 913,
+          totalRings: 913,
           buckets: { blue: 0, green: 270, yellow: 400, orange: 228, red: 15 }
         }
       };
@@ -71,7 +71,7 @@ describe('SessionSerializerV3', () => {
       const result = SessionSerializerV3.serialize(input);
 
       expect(result.totals).toBeDefined();
-      expect(result.totals.coins).toBe(913);
+      expect(result.totals.rings).toBe(913);
       expect(result.totals.buckets).toEqual({ blue: 0, green: 270, yellow: 400, orange: 228, red: 15 });
     });
   });
@@ -97,7 +97,7 @@ describe('SessionSerializerV3', () => {
           series: {
             'user:user_1:heart_rate': [71, 75, 80, 90, 100],
             'user:user_1:zone_id': ['c', 'c', 'a', 'a', 'a'],
-            'user:user_1:coins_total': [0, 1, 2, 3, 5],
+            'user:user_1:rings_total': [0, 1, 2, 3, 5],
             'user:user_1:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7]
           }
         }
@@ -107,7 +107,7 @@ describe('SessionSerializerV3', () => {
 
       expect(result.participants.user_1).toBeDefined();
       expect(result.participants.user_1.display_name).toBe('Keith');
-      expect(result.participants.user_1.coins_earned).toBe(5);
+      expect(result.participants.user_1.rings_earned).toBe(5);
       expect(result.participants.user_1.hr_stats.min).toBe(71);
       expect(result.participants.user_1.hr_stats.max).toBe(100);
       expect(result.participants.user_1.zone_time_seconds.cool).toBe(10);
@@ -128,11 +128,11 @@ describe('SessionSerializerV3', () => {
           series: {
             'user:user_1:heart_rate': [71, 75, 80, 90, 100],
             'user:user_1:zone_id': ['c', 'c', 'a', 'a', 'a'],
-            'user:user_1:coins_total': [0, 1, 2, 3, 5],
+            'user:user_1:rings_total': [0, 1, 2, 3, 5],
             'user:user_1:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7],
             'device:49904:rpm': [null, null, 60, 65, 70],
             'device:49904:rotations': [null, null, 5, 10.5, 16.3],
-            'global:coins_total': [0, 1, 2, 3, 5]
+            'global:rings_total': [0, 1, 2, 3, 5]
           }
         }
       };
@@ -151,7 +151,7 @@ describe('SessionSerializerV3', () => {
       expect(result.timeline.equipment['49904'].rpm).toBeDefined();
 
       // Global
-      expect(result.timeline.global.coins).toBeDefined();
+      expect(result.timeline.global.rings).toBeDefined();
     });
 
     it('drops empty/trivial series', () => {

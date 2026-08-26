@@ -930,7 +930,7 @@ test.describe('Fitness Happy Path', () => {
       const hrPayload = JSON.parse(JSON.stringify(basePayload));
       hrPayload.timeline.series['user:testuser:heart_rate'] = Array(24).fill(120);
       hrPayload.timeline.series['user:testuser:zone_id'] = Array(24).fill(2);
-      hrPayload.timeline.series['user:testuser:coins_total'] = Array(24).fill(100);
+      hrPayload.timeline.series['user:testuser:rings_total'] = Array(24).fill(100);
       const heartRateResult = pm.validateSessionPayload(hrPayload);
 
       // Test 2: hr key (legacy format) — MUST also pass
@@ -938,7 +938,7 @@ test.describe('Fitness Happy Path', () => {
       legacyPayload.sessionId = 'test-legacy-' + now;
       legacyPayload.timeline.series['user:testuser:hr'] = Array(24).fill(110);
       legacyPayload.timeline.series['user:testuser:zone_id'] = Array(24).fill(2);
-      legacyPayload.timeline.series['user:testuser:coins_total'] = Array(24).fill(50);
+      legacyPayload.timeline.series['user:testuser:rings_total'] = Array(24).fill(50);
       const legacyResult = pm.validateSessionPayload(legacyPayload);
 
       // Test 3: no HR data — MUST fail with no-meaningful-data
@@ -1017,8 +1017,8 @@ test.describe('Fitness Happy Path', () => {
           series: {
             'user:testuser:heart_rate': [100, 105, 110, 115, 120, 125, 130, 128, 125, 120, 115, 110, 105, 100, 98, 95, 92, 90, 88, 85, 82, 80, 78, 75],
             'user:testuser:zone_id': [0, 0, 1, 1, 2, 2, 3, 3, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            'user:testuser:coins_total': [0, 1, 3, 5, 8, 12, 17, 22, 26, 30, 33, 36, 38, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
-            'global:coins': [0, 1, 3, 5, 8, 12, 17, 22, 26, 30, 33, 36, 38, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50]
+            'user:testuser:rings_total': [0, 1, 3, 5, 8, 12, 17, 22, 26, 30, 33, 36, 38, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
+            'global:rings': [0, 1, 3, 5, 8, 12, 17, 22, 26, 30, 33, 36, 38, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50]
           },
           events: [],
           interval_seconds: 5,
@@ -1026,14 +1026,14 @@ test.describe('Fitness Happy Path', () => {
           encoding: 'rle'
         },
         treasureBox: {
-          coinTimeUnitMs: 5000,
-          totalCoins: 50,
+          ringTimeUnitMs: 5000,
+          totalRings: 50,
           buckets: { blue: 0, green: 20, yellow: 20, orange: 10, red: 0 }
         },
         summary: {
           participants: {
             testuser: {
-              coins: 50,
+              rings: 50,
               hr_avg: 104,
               hr_max: 130,
               hr_min: 75,
@@ -1041,7 +1041,7 @@ test.describe('Fitness Happy Path', () => {
             }
           },
           media: [],
-          coins: {
+          rings: {
             total: 50,
             buckets: { blue: 0, green: 20, yellow: 20, orange: 10, red: 0 }
           },

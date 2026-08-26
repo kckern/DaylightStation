@@ -504,10 +504,10 @@ export class SessionService {
       );
     }
 
-    // Merge treasureBox coins
+    // Merge treasureBox rings
     if (source.treasureBox && target.treasureBox) {
-      target.treasureBox.totalCoins = (target.treasureBox.totalCoins || 0)
-        + (source.treasureBox.totalCoins || 0);
+      target.treasureBox.totalRings = (target.treasureBox.totalRings || 0)
+        + (source.treasureBox.totalRings || 0);
     } else if (source.treasureBox && !target.treasureBox) {
       target.treasureBox = source.treasureBox;
     }

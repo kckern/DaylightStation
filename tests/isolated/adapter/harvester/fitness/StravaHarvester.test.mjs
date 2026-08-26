@@ -235,7 +235,7 @@ describe('StravaHarvester', () => {
             is_primary: true,
           },
         },
-        treasureBox: { totalCoins: 15 },
+        treasureBox: { totalRings: 15 },
         timeline: { events: [] },
       };
 
@@ -289,7 +289,7 @@ describe('StravaHarvester', () => {
         participants: {
           user_3: { display_name: 'User_3', is_primary: true },
         },
-        treasureBox: { totalCoins: 10 },
+        treasureBox: { totalRings: 10 },
         timeline: { events: [] },
       };
 
@@ -324,7 +324,7 @@ describe('StravaHarvester', () => {
      * Regression for 2026-07-25: this path (harvest → applyHomeSessionEnrichment
      * and matchBacklog) carried NO plausibility guards at all, so a 5.3 km
      * outdoor run was stamped onto a 3h15m garage session it fell inside —
-     * writing homeSessionId, homeCoins and homeMedia onto the activity.
+     * writing homeSessionId, homeRings and homeMedia onto the activity.
      */
     it('should NOT match an outdoor GPS activity to a garage session', async () => {
       const dateDir = path.join(tmpDir, '2026-07-25');
@@ -345,7 +345,7 @@ describe('StravaHarvester', () => {
           user_2: { display_name: 'User_2', hr_device: '28676', is_primary: true },
         },
         summary: { media: [{ contentId: 'plex:665664' }] },
-        treasureBox: { totalCoins: 4179 },
+        treasureBox: { totalRings: 4179 },
         timeline: {
           interval_seconds: 5,
           tick_count: 2346,
@@ -407,7 +407,7 @@ describe('StravaHarvester', () => {
           user_1: { display_name: 'User_1', hr_device: '40475', is_primary: true },
         },
         summary: { media: [{ contentId: 'plex:665664' }] },
-        treasureBox: { totalCoins: 4179 },
+        treasureBox: { totalRings: 4179 },
         timeline: {
           interval_seconds: 5,
           tick_count: 2346,
@@ -471,7 +471,7 @@ describe('StravaHarvester', () => {
           user_1: { display_name: 'User_1', hr_device: '40475', is_primary: true },
         },
         summary: { media: [{ contentId: 'plex:665664' }] },
-        treasureBox: { totalCoins: 100 },
+        treasureBox: { totalRings: 100 },
         // Full HR coverage: presence alone would wave this through.
         timeline: {
           interval_seconds: 5,
@@ -538,7 +538,7 @@ describe('StravaHarvester', () => {
         participants: {
           user_1: { display_name: 'User_1', is_primary: true },
         },
-        treasureBox: { totalCoins: 5 },
+        treasureBox: { totalRings: 5 },
         timeline: { events: [] },
       };
 
@@ -586,7 +586,7 @@ describe('StravaHarvester', () => {
         participants: {
           user_1: { display_name: 'User_1', is_primary: true },
         },
-        treasureBox: { totalCoins: 15 },
+        treasureBox: { totalRings: 15 },
         timeline: {
           events: [
             { timestamp: 123, type: 'media', data: { title: 'Mario Kart 8' } },
@@ -636,7 +636,7 @@ describe('StravaHarvester', () => {
       const savedSummary = summarySave[2];
       const enrichedEntry = savedSummary['2026-02-15'].find(a => a.id === 17418186050);
       expect(enrichedEntry.homeSessionId).toBe('20260215191250');
-      expect(enrichedEntry.homeCoins).toBe(15);
+      expect(enrichedEntry.homeRings).toBe(15);
       expect(enrichedEntry.homeMedia).toBe('Mario Kart 8');
     });
 
@@ -657,7 +657,7 @@ describe('StravaHarvester', () => {
         participants: {
           user_1: { display_name: 'User_1', is_primary: true },
         },
-        treasureBox: { totalCoins: 15 },
+        treasureBox: { totalRings: 15 },
         timeline: { events: [] },
       };
 
@@ -724,7 +724,7 @@ describe('StravaHarvester', () => {
         participants: {
           user_1: { display_name: 'User_1', is_primary: true },
         },
-        treasureBox: { totalCoins: 20 },
+        treasureBox: { totalRings: 20 },
         timeline: { events: [] },
       };
 

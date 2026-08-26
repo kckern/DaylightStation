@@ -17,7 +17,7 @@ function baseSession() {
       { index: 0, timestamp: 100, path: 'p/0.jpg', filename: 'p0.jpg', role: 'player' }
     ] },
     roster: [{ id: 'kc', display_name: 'KC' }],
-    treasureBox: { totalCoins: 50 }
+    treasureBox: { totalRings: 50 }
   };
 }
 
@@ -40,7 +40,7 @@ function fakes(overrides = {}) {
       buildFrames: (s) => (s.snapshots.captures.some(c => (c.role || 'camera') === 'camera') ? [{
         frameIndex: 0, cameraTimestamp: 0, playerTimestamp: 100, playerContentId: 'plex:1',
         title: 'X', showTitle: 'Show', participants: [{ id: 'kc', displayName: 'KC', hr: 120 }],
-        elapsedRealMs: 0, wallClockMs: 0, zone: 'hot', rpm: 80, coins: 25
+        elapsedRealMs: 0, wallClockMs: 0, zone: 'hot', rpm: 80, rings: 25
       }] : [])
     },
     frameRenderer: { renderFrame: async (args) => { calls.rendered.push(args); return Buffer.from([0xff, 0xd8, 1, 2, 3]); } },

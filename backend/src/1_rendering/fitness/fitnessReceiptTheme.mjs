@@ -31,7 +31,7 @@ export const fitnessReceiptTheme = {
     label: 'bold 20px "Roboto Condensed"',
     body: '20px "Roboto Condensed"',
     value: 'bold 28px "Roboto Condensed"',
-    coinTotal: 'bold 64px "Roboto Condensed"',
+    ringTotal: 'bold 64px "Roboto Condensed"',
     memo: '18px "Roboto Condensed"',
     chartHeader: 'bold 16px "Roboto Condensed"',
     chartTime: '14px "Roboto Condensed"',
@@ -74,7 +74,7 @@ export const fitnessReceiptTheme = {
   treasureBox: {
     barHeight: 24,
     barMargin: 40,
-    coinAdvance: 70,
+    ringAdvance: 70,
   },
 
   leaderboard: {

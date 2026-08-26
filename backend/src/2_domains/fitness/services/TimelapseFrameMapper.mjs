@@ -1,6 +1,7 @@
 import { decodeSeries } from './TimelineService.mjs';
 import { FrameDescriptor } from '#domains/fitness/value-objects/FrameDescriptor.mjs';
 import { cssColorForStrap } from '#domains/fitness/strapColors.mjs';
+import { readRingSeries } from './ringSeries.mjs';
 
 /**
  * Pure domain service: maps persisted session data into an ordered list of
@@ -44,11 +45,11 @@ export class TimelapseFrameMapper {
     const playerCaptures = captures.filter(c => c.role === 'player').sort(byTs);
     if (!cameraCaptures.length) return [];
 
-    // Animated coin total: treasureBox holds only the final totalCoins, so we
+    // Animated ring total: treasureBox holds only the final totalRings, so we
     // reconstruct a plausible accrual curve by weighting each tick by active
-    // participation and normalizing the cumulative curve to end at totalCoins.
-    const totalCoins = Number.isFinite(session?.treasureBox?.totalCoins) ? session.treasureBox.totalCoins : 0;
-    const coinCurve = buildCoinCurve(decoded, roster, totalCoins);
+    // participation and normalizing the cumulative curve to end at totalRings.
+    const totalRings = Number.isFinite(session?.treasureBox?.totalRings) ? session.treasureBox.totalRings : 0;
+    const ringCurve = buildRingCurve(decoded, roster, totalRings);
     const idColors = assignIdentityColors(roster.map(p => p.id));
     const chartBase = buildChart(decoded, roster, resolveColor);
     const cadenceBases = buildCadenceBases(decoded, cadenceDevices, cadenceColors);
@@ -88,7 +89,7 @@ export class TimelapseFrameMapper {
         participants,
         zone: zoneAtTick(decoded, roster, tickIndex),
         rpm: rpmKey ? valueAtTick(decoded, rpmKey, tickIndex) : null,
-        coins: coinsAt(coinCurve, tickIndex, totalCoins, i, frameCount),
+        rings: ringsAt(ringCurve, tickIndex, totalRings, i, frameCount),
         chart: chartFor(chartBase, participants, tickIndex),
         cadence: cadenceAt(cadenceBases, tickIndex),
         timezone: tz
@@ -131,36 +132,36 @@ function colorForParticipant(p, idColors, resolveColor) {
     || idColors.get(p.id);
 }
 
-// Simplified FitnessChart payload: per-participant cumulative-coins series (the
+// Simplified FitnessChart payload: per-participant cumulative-rings series (the
 // "race" the chart visualises). The series arrays are shared across every frame
 // (cheap); only `tick` + the per-participant live zone change frame to frame.
-const COIN_RATE = { rest: 0, c: 0, cool: 0, a: 1, active: 1, w: 3, warm: 3, h: 5, hot: 5, m: 7, max: 7, f: 7, fire: 7 };
+const RING_RATE = { rest: 0, c: 0, cool: 0, a: 1, active: 1, w: 3, warm: 3, h: 5, hot: 5, m: 7, max: 7, f: 7, fire: 7 };
 function cumulativeFromZone(zones) {
   if (!Array.isArray(zones)) return null;
   const out = []; let run = 0;
-  for (const z of zones) { run += COIN_RATE[String(z).toLowerCase()] ?? 0; out.push(run); }
+  for (const z of zones) { run += RING_RATE[String(z).toLowerCase()] ?? 0; out.push(run); }
   return out;
 }
 function buildChart(decoded, roster, resolveColor = null) {
   if (!roster.length) return null;
   const idColors = assignIdentityColors(roster.map(p => p.id));
   const series = roster.map(p => {
-    let coins = decoded[`${p.id}:coins`];
-    if (!Array.isArray(coins) || !coins.length) coins = cumulativeFromZone(decoded[`${p.id}:zone`]) || [];
-    return { id: p.id, color: colorForParticipant(p, idColors, resolveColor), coins };
+    let rings = readRingSeries(decoded, p.id);
+    if (!rings.length) rings = cumulativeFromZone(decoded[`${p.id}:zone`]) || [];
+    return { id: p.id, color: colorForParticipant(p, idColors, resolveColor), rings };
   });
-  const totalTicks = series.reduce((m, s) => Math.max(m, s.coins.length), 0);
-  let maxCoins = 0;
-  for (const s of series) for (const v of s.coins) if (v != null && v > maxCoins) maxCoins = v;
-  return (totalTicks && maxCoins > 0) ? { totalTicks, maxCoins, series } : null;
+  const totalTicks = series.reduce((m, s) => Math.max(m, s.rings.length), 0);
+  let maxRings = 0;
+  for (const s of series) for (const v of s.rings) if (v != null && v > maxRings) maxRings = v;
+  return (totalTicks && maxRings > 0) ? { totalTicks, maxRings, series } : null;
 }
 function chartFor(base, participants, tick) {
   if (!base) return null;
   return {
     tick,
     totalTicks: base.totalTicks,
-    maxCoins: base.maxCoins,
-    series: base.series.map((s, i) => ({ id: s.id, color: s.color, coins: s.coins, zone: participants[i]?.zone ?? null }))
+    maxRings: base.maxRings,
+    series: base.series.map((s, i) => ({ id: s.id, color: s.color, rings: s.rings, zone: participants[i]?.zone ?? null }))
   };
 }
 
@@ -192,10 +193,10 @@ function cadenceAt(bases, tick) {
   return out.length ? out : null;
 }
 
-// Per-tick earning weight by zone, accumulated and normalized to totalCoins.
+// Per-tick earning weight by zone, accumulated and normalized to totalRings.
 const ZONE_WEIGHT = { cool: 0.3, active: 1, warm: 1, hot: 1.2, max: 1.5 };
-function buildCoinCurve(decoded, roster, totalCoins) {
-  if (!(totalCoins > 0)) return null;
+function buildRingCurve(decoded, roster, totalRings) {
+  if (!(totalRings > 0)) return null;
   const zoneArrays = roster.map(p => decoded[`${p.id}:zone`]).filter(Array.isArray);
   const len = zoneArrays.reduce((m, a) => Math.max(m, a.length), 0);
   if (!len) return null;
@@ -211,14 +212,14 @@ function buildCoinCurve(decoded, roster, totalCoins) {
   }
   return { cum, total: running || 1 };
 }
-function coinsAt(curve, tick, totalCoins, frameIndex, frameCount) {
-  if (!(totalCoins > 0)) return null;
+function ringsAt(curve, tick, totalRings, frameIndex, frameCount) {
+  if (!(totalRings > 0)) return null;
   if (!curve) {
     // Linear fallback when no zone data is available.
-    return Math.round(totalCoins * (frameCount > 1 ? frameIndex / (frameCount - 1) : 1));
+    return Math.round(totalRings * (frameCount > 1 ? frameIndex / (frameCount - 1) : 1));
   }
   const idx = Math.min(curve.cum.length - 1, Math.max(0, tick));
-  return Math.round(totalCoins * (curve.cum[idx] / curve.total));
+  return Math.round(totalRings * (curve.cum[idx] / curve.total));
 }
 
 function toMs(t) {

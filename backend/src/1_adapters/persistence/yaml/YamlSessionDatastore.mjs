@@ -365,9 +365,20 @@ export class YamlSessionDatastore extends ISessionDatastore {
       // credits active/warm/hot/fire and omits cool, so it needs the breakdown).
       const participants = {};
       for (const [slug, info] of Object.entries(data.participants || {})) {
+        const p = summary?.participants?.[slug];
         participants[slug] = {
           displayName: info.display_name || slug,
-          zoneMinutes: summary?.participants?.[slug]?.zone_minutes || null,
+          zoneMinutes: p?.zone_minutes || null,
+          // PER-PARTICIPANT RINGS. Already computed and stored; it simply was
+          // never surfaced, so the only ring figure the API exposed was the
+          // session-wide `totalRings`. Summing a week per learner without this
+          // would mean decoding every session's series — far too heavy for a
+          // board that repaints every five minutes.
+          //
+          // `coins` is the pre-2026-08-26 name and is read until the migration
+          // clears it (cli/rings-migration.mjs). `?? null` distinguishes "no
+          // ring data recorded" from a real zero.
+          rings: p?.rings ?? p?.coins ?? null,
         };
       }
 
@@ -504,7 +515,9 @@ export class YamlSessionDatastore extends ISessionDatastore {
         };
       }
 
-      const totalCoins = summary?.coins?.total ?? data.treasureBox?.totalCoins ?? 0;
+      // Legacy `coins` read alongside `rings` — see the participant block above.
+      const totalRings = summary?.rings?.total ?? summary?.coins?.total
+        ?? data.treasureBox?.totalRings ?? data.treasureBox?.totalCoins ?? 0;
 
       // Voice memos: prefer summary, fall back to timeline events
       let rawMemos = summary?.voiceMemos;
@@ -535,7 +548,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
         timezone: data.timezone,
         participants,
         media,
-        totalCoins,
+        totalRings,
         maxSufferScore,
         totalSufferScore,
         stravaActivityId,

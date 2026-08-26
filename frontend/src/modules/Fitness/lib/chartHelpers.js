@@ -12,23 +12,23 @@ export const MIN_VISIBLE_TICKS = 30;
 // Re-export for backward compatibility - prefer importing from domain
 export const ZONE_COLOR_MAP = ZoneColors;
 
-// Default zone coin rates (used if zoneConfig not provided)
-const DEFAULT_ZONE_COIN_RATES = {
-  rest: 0,      // gray — no coins
-  cool: 0,      // blue — no coins
-  active: 1,    // green — earns coins
+// Default zone ring rates (used if zoneConfig not provided)
+const DEFAULT_ZONE_RING_RATES = {
+  rest: 0,      // gray — no rings
+  cool: 0,      // blue — no rings
+  active: 1,    // green — earns rings
   warm: 3,      // yellow
   hot: 5,       // orange
   fire: 7       // red
 };
 
 /**
- * Get coin rate for a zone ID.
+ * Get ring rate for a zone ID.
  * @param {string} zoneId - Zone ID (e.g., 'active', 'warm', 'hot', 'fire')
- * @param {Array} [zoneConfig] - Zone configuration array with coins property
- * @returns {number} Coins per interval (0 for blue/unknown)
+ * @param {Array} [zoneConfig] - Zone configuration array with rings property
+ * @returns {number} Rings per interval (0 for blue/unknown)
  */
-export const getZoneCoinRate = (zoneId, zoneConfig = []) => {
+export const getZoneRingRate = (zoneId, zoneConfig = []) => {
   if (!zoneId) return 0;
   const normalizedId = String(zoneId).toLowerCase();
 
@@ -38,13 +38,13 @@ export const getZoneCoinRate = (zoneId, zoneConfig = []) => {
       String(z.id || '').toLowerCase() === normalizedId ||
       String(z.name || '').toLowerCase() === normalizedId
     );
-    if (zone && Number.isFinite(zone.coins)) {
-      return zone.coins;
+    if (zone && Number.isFinite(zone.rings)) {
+      return zone.rings;
     }
   }
 
   // Fall back to defaults
-  return DEFAULT_ZONE_COIN_RATES[normalizedId] || 0;
+  return DEFAULT_ZONE_RING_RATES[normalizedId] || 0;
 };
 
 const toNumber = (value) => {
@@ -253,16 +253,16 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
     }
   }
 
-  // Primary source: coins_total from TreasureBox (single source of truth)
+  // Primary source: rings_total from TreasureBox (single source of truth)
   // Phase 5: Uses entity series when available
-  const coinsRaw = getSeriesForParticipant('coins_total');
-  const coinsNonNullCount = Array.isArray(coinsRaw) ? coinsRaw.filter(v => Number.isFinite(v)).length : 0;
-  const coinsQualityThreshold = Math.max(3, (coinsRaw?.length || 0) * 0.05);
+  const ringsRaw = getSeriesForParticipant('rings_total');
+  const ringsNonNullCount = Array.isArray(ringsRaw) ? ringsRaw.filter(v => Number.isFinite(v)).length : 0;
+  const ringsQualityThreshold = Math.max(3, (ringsRaw?.length || 0) * 0.05);
 
-  if (Array.isArray(coinsRaw) && coinsNonNullCount >= coinsQualityThreshold) {
+  if (Array.isArray(ringsRaw) && ringsNonNullCount >= ringsQualityThreshold) {
     // Apply Math.floor for consistency with TreasureBox accumulator
     // Use startAtZero to anchor cumulative values to origin (0,0)
-    const beats = forwardFill(fillEdgesOnly(coinsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null)), { startAtZero: true }));
+    const beats = forwardFill(fillEdgesOnly(ringsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null)), { startAtZero: true }));
     return { beats, zones, active };
   }
 
@@ -311,7 +311,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
  * @param {Object} [options] - Additional options
  * @param {boolean} [options.isCurrentlyActive] - Whether user is currently active according to roster (for immediate gap extension on rejoin)
  * @param {number} [options.currentTick] - Current tick index for extending gap to present
- * @param {Array} [options.zoneConfig] - Zone configuration array for coin rate lookup
+ * @param {Array} [options.zoneConfig] - Zone configuration array for ring rate lookup
  * @returns {Object[]} Array of segment objects
  */
 export const buildSegments = (beats = [], zones = [], active = [], options = {}) => {
@@ -386,7 +386,7 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
     if (inGap && gapStartPoint) {
       // Returning from dropout - create HORIZONTAL gap segment
       // The gap is purely horizontal at the dropout value
-      // Any vertical jump is part of the COLORED segment (user earned coins after rejoining)
+      // Any vertical jump is part of the COLORED segment (user earned rings after rejoining)
       // This correctly shows: dropout value stayed flat, then jumps to current value
       const gapTicks = i - gapStartPoint.i;
       const gapDurationMs = gapTicks * intervalMs;
@@ -463,21 +463,21 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
   // The colored line ends at the dropout point; avatar renders there.
 
   // POST-PROCESS: Enforce zone-based slopes to fix sawtooth pattern
-  // Blue zones (coinRate=0) should be flat, non-blue zones should have slope
+  // Blue zones (ringRate=0) should be flat, non-blue zones should have slope
   return enforceZoneSlopes(segments, zoneConfig);
 };
 
 /**
- * Enforce that segment slopes match zone coin rates.
+ * Enforce that segment slopes match zone ring rates.
  * Eliminates sawtooth pattern by interpolating based on zone, not raw data.
  *
  * Rules:
- * - Blue zones (coinRate=0): Always flat (horizontal line)
- * - Non-blue zones: Always sloped (coins being earned)
+ * - Blue zones (ringRate=0): Always flat (horizontal line)
+ * - Non-blue zones: Always sloped (rings being earned)
  * - Gap segments: Unchanged (already flat + dashed)
  *
  * @param {Object[]} segments - Raw segments from buildSegments
- * @param {Array} [zoneConfig] - Zone configuration for coin rates
+ * @param {Array} [zoneConfig] - Zone configuration for ring rates
  * @returns {Object[]} Segments with enforced slopes
  */
 function enforceZoneSlopes(segments, zoneConfig = []) {
@@ -489,9 +489,9 @@ function enforceZoneSlopes(segments, zoneConfig = []) {
     // Need at least 2 points to check for flat segments
     if (!segment.points || segment.points.length < 2) return segment;
 
-    const coinRate = getZoneCoinRate(segment.zone, zoneConfig);
+    const ringRate = getZoneRingRate(segment.zone, zoneConfig);
 
-    if (coinRate === 0) {
+    if (ringRate === 0) {
       // Blue zone: enforce flat by using start value for all points
       // This ensures no accidental slopes in blue segments
       const startValue = segment.points[0]?.v ?? 0;
@@ -507,9 +507,9 @@ function enforceZoneSlopes(segments, zoneConfig = []) {
 
     if (startValue === endValue && segment.points.length > 1) {
       // Flat segment in non-blue zone - create interpolated slope
-      // This fixes the sawtooth where recorded values are [5, 5] but zone earns coins
+      // This fixes the sawtooth where recorded values are [5, 5] but zone earns rings
       const tickCount = segment.points.length - 1;
-      const expectedGain = coinRate * tickCount;
+      const expectedGain = ringRate * tickCount;
 
       return {
         ...segment,
@@ -556,7 +556,7 @@ function enforceZoneSlopes(segments, zoneConfig = []) {
  *
  * @param {Object} params
  * @param {number} lastTick - Last recorded tick index
- * @param {number} lastValue - Last recorded coin value
+ * @param {number} lastValue - Last recorded ring value
  * @param {Object} liveProgress - From TreasureBox.getIntervalProgress()
  * @param {number} currentTick - Current tick index (may be fractional)
  * @returns {Object|null} Live edge data or null if not applicable

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import AgendaStatusBoard, { dayStatus, summarize } from './AgendaStatusBoard.jsx';
+import AgendaStatusBoard, { dayStatus, summarize, ringsByLearner } from './AgendaStatusBoard.jsx';
 
-vi.mock('../schoolApi.js', () => ({ schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn() } }));
+vi.mock('../schoolApi.js', () => ({
+  schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), measuresWeekly: vi.fn() },
+}));
 import { schoolApi } from '../schoolApi.js';
 
 const KIDS = [{ id: 'learner1', name: 'Learner One' }, { id: 'learner2', name: 'Learner Two' }];
@@ -39,8 +41,60 @@ describe('AgendaStatusBoard model', () => {
   });
 });
 
+describe('ringsByLearner', () => {
+  it('picks the fitness.rings measure out of the roster payload', () => {
+    expect(ringsByLearner({
+      learners: [
+        { learnerId: 'milo', measures: [{ id: 'fitness.rings', value: 40 }] },
+        { learnerId: 'felix', measures: [{ id: 'fitness.rings', value: 0 }] },
+      ],
+    })).toEqual({ milo: 40, felix: 0 });
+  });
+
+  it('omits a learner whose measure could not be read, rather than showing a false zero', () => {
+    // null means "we could not find out". Rendering it as 0 would state that
+    // the child did no exercise, which is a different and possibly wrong claim.
+    expect(ringsByLearner({
+      learners: [{ learnerId: 'milo', measures: [{ id: 'fitness.rings', value: null }] }],
+    })).toEqual({});
+  });
+
+  it('ignores other measures and survives an empty payload', () => {
+    expect(ringsByLearner({
+      learners: [{ learnerId: 'milo', measures: [{ id: 'something.else', value: 9 }] }],
+    })).toEqual({});
+    expect(ringsByLearner(null)).toEqual({});
+  });
+});
+
 describe('AgendaStatusBoard render', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: no ring data. Individual tests opt in.
+    schoolApi.measuresWeekly.mockResolvedValue({ ok: false, status: 0, data: null });
+  });
+
+  it('shows a ring count when the measures read lands', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math' }] } });
+    schoolApi.measuresWeekly.mockResolvedValue({ ok: true, status: 200, data: { learners: [
+      { learnerId: 'learner1', measures: [{ id: 'fitness.rings', value: 42 }] },
+    ] } });
+
+    render(<AgendaStatusBoard kids={KIDS} day="2026-08-26" />);
+    await waitFor(() => expect(screen.getByText('42')).toBeTruthy());
+    // learner2 has no ring row, so no number is invented for them.
+    expect(screen.queryByText('0')).toBeNull();
+  });
+
+  it('still renders the day when the measures read fails — rings are additive', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math' }] } });
+    schoolApi.measuresWeekly.mockResolvedValue({ ok: false, status: 500, data: null });
+
+    render(<AgendaStatusBoard kids={KIDS} day="2026-08-26" />);
+    await waitFor(() => expect(screen.getAllByText('0 of 1').length).toBe(2));
+  });
 
   it('renders one non-interactive row per kid with pills and a single count readout', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [

@@ -5,13 +5,13 @@
  * The expected values were DERIVED FROM THE PRE-MOVE RENDERER CODE (verbatim
  * replication of FitnessReceiptRenderer.mjs @ 07381396d run against these
  * fixtures) — these tests pin the exact behavior across the move: histogram
- * buckets + zone majority votes, coins/min, event flattening across both
+ * buckets + zone majority votes, rings/min, event flattening across both
  * schema shapes, challenge dedup, and participant discovery.
  */
 import { describe, it, expect } from 'vitest';
 import {
   computeHrHistogram,
-  coinsPerMinute,
+  ringsPerMinute,
   normalizeSessionEvents,
   dedupeChallengeEvents,
   discoverParticipants,
@@ -66,14 +66,14 @@ describe('computeHrHistogram (characterized from renderer)', () => {
   });
 });
 
-// ─── Coins per minute ────────────────────────────────────────────────────────
+// ─── Rings per minute ────────────────────────────────────────────────────────
 
-describe('coinsPerMinute (characterized from renderer)', () => {
-  it('matches the renderer formatting: (coins/activeMin).toFixed(1)', () => {
-    expect(coinsPerMinute(57, 1230 / 60)).toBe('2.8');
+describe('ringsPerMinute (characterized from renderer)', () => {
+  it('matches the renderer formatting: (rings/activeMin).toFixed(1)', () => {
+    expect(ringsPerMinute(57, 1230 / 60)).toBe('2.8');
   });
   it('returns "0.0" for zero active time', () => {
-    expect(coinsPerMinute(57, 0)).toBe('0.0');
+    expect(ringsPerMinute(57, 0)).toBe('0.0');
   });
 });
 
@@ -130,7 +130,7 @@ describe('discoverParticipants (characterized from renderer)', () => {
   it('unions series slug:zone keys with participants block keys, filtering global/device:/bike:', () => {
     const series = {
       'alice:zone': 'x', 'alice:hr': 'x', 'bob:zone': 'x', 'global:zone': 'x',
-      'alice:coins': 'x', 'weird': 'x',
+      'alice:rings': 'x', 'weird': 'x',
     };
     const participants = { alice: {}, carol: {}, 'device:ant-123': {}, 'bike:2': {} };
     expect(discoverParticipants(series, participants)).toEqual(['alice', 'bob', 'carol']);

@@ -385,13 +385,13 @@ describe('SessionService', () => {
         },
         participants: {},
         timeline: { series: {} },
-        treasureBox: { totalCoins: 500, buckets: { green: 300, yellow: 200 } },
-        entities: [{ entityId: 'e1', profileId: 'user_4', coins: 250 }]
+        treasureBox: { totalRings: 500, buckets: { green: 300, yellow: 200 } },
+        entities: [{ entityId: 'e1', profileId: 'user_4', rings: 250 }]
       }, 'test-hid');
 
-      expect(session.treasureBox).toEqual({ totalCoins: 500, buckets: { green: 300, yellow: 200 } });
+      expect(session.treasureBox).toEqual({ totalRings: 500, buckets: { green: 300, yellow: 200 } });
       expect(session.entities).toHaveLength(1);
-      expect(session.entities[0].coins).toBe(250);
+      expect(session.entities[0].rings).toBe(250);
     });
   });
 

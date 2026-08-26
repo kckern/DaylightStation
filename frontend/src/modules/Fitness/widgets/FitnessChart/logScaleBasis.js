@@ -1,5 +1,5 @@
 /**
- * `logScaleBasis` — which participants define the coin chart's log curve.
+ * `logScaleBasis` — which participants define the ring chart's log curve.
  *
  * The 3+ participant branch of `scaleY` pins the LOWEST participant to 25% of
  * chart height:

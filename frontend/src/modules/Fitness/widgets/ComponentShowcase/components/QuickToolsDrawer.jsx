@@ -227,7 +227,7 @@ const QuickToolsDrawer = () => {
 
             <div className="cs-tool">
               <div className="cs-tool-title">Treasure Chest</div>
-              <div className="cs-tool-value">{treasureBox?.coins ?? '—'} coins</div>
+              <div className="cs-tool-value">{treasureBox?.rings ?? '—'} rings</div>
               <div className="cs-tool-meta">Next reward: {treasureBox?.nextReward ?? '—'}</div>
             </div>
 

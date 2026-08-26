@@ -8,7 +8,7 @@
  * - Generating SVG paths
  * 
  * Consumers don't need to know about:
- * - coins_total vs heart_beats series
+ * - rings_total vs heart_beats series
  * - Forward-filling behavior
  * - Activity mask generation from heart_rate
  * - Segment merging and gap detection
@@ -400,11 +400,11 @@ export class ChartDataBuilder {
 
     const firstActiveTick = active.findIndex((v) => v === true);
 
-    // Primary: coins_total
-    const coinsRaw = this._getSeries(targetId, 'coins_total', { clone: true }) || null;
-    if (Array.isArray(coinsRaw) && coinsRaw.length > 0) {
+    // Primary: rings_total
+    const ringsRaw = this._getSeries(targetId, 'rings_total', { clone: true }) || null;
+    if (Array.isArray(ringsRaw) && ringsRaw.length > 0) {
       const beats = this._rebaseBeats(
-        this._normalizeNumericSeries(coinsRaw, maxLen),
+        this._normalizeNumericSeries(ringsRaw, maxLen),
         firstActiveTick
       );
       return { beats, zones: this._padArray(zones, maxLen), active, firstActiveTick };

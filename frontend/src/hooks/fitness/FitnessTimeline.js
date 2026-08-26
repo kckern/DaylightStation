@@ -184,7 +184,7 @@ export class FitnessTimeline {
   /**
    * Phase 3: Get a series for an entity by entityId and metric.
    * @param {string} entityId - Entity ID (e.g., "entity-1735689600000-abc12")
-   * @param {string} metric - Metric name (e.g., "heart_rate", "coins_total")
+   * @param {string} metric - Metric name (e.g., "heart_rate", "rings_total")
    * @returns {Array} Series data or empty array
    */
   getEntitySeries(entityId, metric) {

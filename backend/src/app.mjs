@@ -4205,6 +4205,30 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   shutdownService.start();
   server?.once?.('close', () => shutdownService.dispose());
   v1Routers.shutdown = createShutdownRouter({ shutdownService });
+
+  // Weekly measures — the school board's ring figure. One registry, one
+  // provider in v1; the seam exists so a second measure is a new file rather
+  // than a refactor of this one. Read-only: it mints nothing and writes
+  // nothing, it only sums what fitness already recorded.
+  const { MeasureRegistry } = await import('#apps/measures/MeasureRegistry.mjs');
+  const { createFitnessRingsProvider } = await import('#apps/measures/fitnessRingsProvider.mjs');
+  const { createMeasuresRouter } = await import('#api/v1/routers/measures.mjs');
+  const measuresTimezone = configService.getHouseholdTimezone?.(householdId) || 'UTC';
+  const measureRegistry = new MeasureRegistry().register(createFitnessRingsProvider({
+    timezone: measuresTimezone,
+    sessions: {
+      // The provider asks in study days; SessionService speaks the same
+      // YYYY-MM-DD range, so no translation layer is needed.
+      listSessions: ({ from, to }) => fitnessServices.sessionService
+        .listSessionsInRange(from, to, householdId),
+    },
+  }));
+  v1Routers.measures = createMeasuresRouter({
+    registry: measureRegistry,
+    learners: async () => schoolLearnerDirectory.listLearners(),
+    timezone: measuresTimezone,
+    logger: rootLogger.child({ module: 'measures' }),
+  });
   // The action executor is deliberately late-bound: SchoolCalc is composed
   // before the existing print and trigger services, but scans cannot arrive
   // until boot is complete. This keeps one shared policy path rather than a

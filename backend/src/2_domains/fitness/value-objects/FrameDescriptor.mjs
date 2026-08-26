@@ -20,7 +20,7 @@ export class FrameDescriptor {
     participants = [],
     zone = null,
     rpm = null,
-    coins = null,
+    rings = null,
     chart = null,
     cadence = null,
     timezone = null
@@ -39,7 +39,7 @@ export class FrameDescriptor {
     this.participants = Object.freeze(participants.map(p => Object.freeze({ ...p })));
     this.zone = zone;
     this.rpm = rpm;
-    this.coins = coins;
+    this.rings = rings;
     this.chart = chart;
     this.cadence = cadence;
     this.timezone = timezone;

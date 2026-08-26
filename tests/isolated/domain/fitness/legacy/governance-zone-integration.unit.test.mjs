@@ -3,7 +3,7 @@
  * Integration test verifying:
  * 1. TreasureBox receives zones from ZoneProfileStore
  * 2. GovernanceEngine doesn't trigger false warnings after internal pulses
- * 3. Coin counting works when zones are configured
+ * 3. Ring counting works when zones are configured
  *
  * This tests the fixes from Tasks 1-3:
  * - Task 1: TreasureBox configured with zones on ensureStarted()
@@ -37,9 +37,9 @@ describe('Governance + TreasureBox Zone Integration', () => {
     const { ZoneProfileStore } = await import('#frontend/hooks/fitness/ZoneProfileStore.js');
 
     const zoneConfig = [
-      { id: 'blue', name: 'Blue', min: 0, color: 'blue', coins: 0 },
-      { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
-      { id: 'warm', name: 'Warm', min: 130, color: 'yellow', coins: 2 },
+      { id: 'blue', name: 'Blue', min: 0, color: 'blue', rings: 0 },
+      { id: 'active', name: 'Active', min: 100, color: 'green', rings: 1 },
+      { id: 'warm', name: 'Warm', min: 130, color: 'yellow', rings: 2 },
     ];
 
     // Set up ZoneProfileStore with base config
@@ -67,8 +67,8 @@ describe('Governance + TreasureBox Zone Integration', () => {
     const { FitnessTreasureBox } = await import('#frontend/hooks/fitness/TreasureBox.js');
 
     const zoneConfig = [
-      { id: 'blue', name: 'Blue', min: 0, color: 'blue', coins: 0 },
-      { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
+      { id: 'blue', name: 'Blue', min: 0, color: 'blue', rings: 0 },
+      { id: 'active', name: 'Active', min: 100, color: 'green', rings: 1 },
     ];
 
     const mockSession = { _log: vi.fn() };

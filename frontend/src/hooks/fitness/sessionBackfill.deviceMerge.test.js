@@ -30,7 +30,7 @@ describe('runSessionBackfill — backward absorb skips in-session-transferred gh
     const series = {
       // granny has substantial effort so she's a legitimate absorb target.
       'user:granny:heart_rate': [120, 121, 122, 123],
-      'user:granny:coins_total': [5, 10, 15, 20]
+      'user:granny:rings_total': [5, 10, 15, 20]
       // oldguest and shortguest are left with zero/default effort (insignificant).
     };
     const r = runSessionBackfill({ entities, series, sessionEndTime: 165000 });
@@ -54,7 +54,7 @@ describe('runSessionBackfill — known-user device swap merge', () => {
     ];
     const series = {
       'user:kckern:heart_rate': [120, 121, 122, 123],
-      'user:kckern:coins_total': [10, 20, 30, 40]
+      'user:kckern:rings_total': [10, 20, 30, 40]
     };
     const r = runSessionBackfill({ entities, series, sessionEndTime: 120000 });
     // Same id on both devices → no merge transfer needed (already one identity), no removal.

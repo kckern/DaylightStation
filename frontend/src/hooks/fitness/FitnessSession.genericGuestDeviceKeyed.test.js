@@ -40,8 +40,8 @@ describe('FitnessSession — two simultaneous generic Guest tags (W2 integration
     session.userManager.configure(
       { primary: [], family: [], friends: [] },
       [
-        { id: 'cool',   min: 0,   coins: 0 },
-        { id: 'active', min: 100, coins: 1 }
+        { id: 'cool',   min: 0,   rings: 0 },
+        { id: 'active', min: 100, rings: 1 }
       ]
     );
 

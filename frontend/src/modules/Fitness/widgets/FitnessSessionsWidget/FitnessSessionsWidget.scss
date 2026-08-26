@@ -140,7 +140,7 @@
 }
 
 // Recap-available chip — filled pill on the poster's top-left corner. Sized to
-// read at TV distance (2-4m), matching the coin/duration filled-badge treatment.
+// read at TV distance (2-4m), matching the ring/duration filled-badge treatment.
 .session-row__recap-chip {
   position: absolute;
   top: 8px;
@@ -241,7 +241,7 @@
   margin-right: -6px;
 }
 
-.session-row__coins,
+.session-row__rings,
 .session-row__suffer {
   display: inline-flex;
   align-items: center;
@@ -257,7 +257,7 @@
   text-transform: uppercase;
 }
 
-.session-row__coins {
+.session-row__rings {
   background: #f5c54266;
   margin-left: 6px;
 }

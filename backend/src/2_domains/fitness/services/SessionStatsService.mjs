@@ -19,12 +19,12 @@ function zoneIntensity(zone) {
  * @param {Object} params
  * @param {Array<number|null>} params.hr - Decoded heart rate array
  * @param {Array<string|null>} params.zones - Decoded zone name array
- * @param {Array<number|null>} params.coins - Decoded cumulative coins array
+ * @param {Array<number|null>} params.rings - Decoded cumulative rings array
  * @param {number} params.intervalSeconds - Seconds per tick
- * @param {Object} params.participant - Participant metadata (coins_earned, active_seconds, display_name)
+ * @param {Object} params.participant - Participant metadata (rings_earned, active_seconds, display_name)
  * @returns {Object} Computed stats
  */
-export function computeParticipantStats({ hr, zones, coins, intervalSeconds, participant }) {
+export function computeParticipantStats({ hr, zones, rings, intervalSeconds, participant }) {
   const p = participant || {};
   const hrValid = (hr || []).filter(v => v != null && v > 0);
   const peakHr = hrValid.length > 0 ? Math.max(...hrValid) : null;
@@ -34,9 +34,9 @@ export function computeParticipantStats({ hr, zones, coins, intervalSeconds, par
     : null;
 
   const zoneArr = zones || [];
-  const coinArr = coins || [];
-  const lastCoin = coinArr.length > 0 ? (coinArr[coinArr.length - 1] || 0) : 0;
-  const totalCoins = p.coins_earned != null ? p.coins_earned : lastCoin;
+  const ringArr = rings || [];
+  const lastRing = ringArr.length > 0 ? (ringArr[ringArr.length - 1] || 0) : 0;
+  const totalRings = p.rings_earned != null ? p.rings_earned : lastRing;
   const activeTicks = zoneArr.filter(z => z != null).length;
   const activeSeconds = p.active_seconds != null ? p.active_seconds : activeTicks * intervalSeconds;
   const joinTick = (hr || []).findIndex(v => v != null && v > 0);
@@ -67,15 +67,15 @@ export function computeParticipantStats({ hr, zones, coins, intervalSeconds, par
     }
   }
 
-  // Per-zone coins (delta from cumulative)
-  const zoneCoins = {};
-  for (let i = 0; i < zoneArr.length && i < coinArr.length; i++) {
+  // Per-zone rings (delta from cumulative)
+  const zoneRings = {};
+  for (let i = 0; i < zoneArr.length && i < ringArr.length; i++) {
     const z = zoneArr[i];
     if (z != null) {
-      const cur = coinArr[i] || 0;
-      const prev = i > 0 ? (coinArr[i - 1] || 0) : 0;
+      const cur = ringArr[i] || 0;
+      const prev = i > 0 ? (ringArr[i - 1] || 0) : 0;
       const delta = Math.max(0, cur - prev);
-      if (delta > 0) zoneCoins[z] = (zoneCoins[z] || 0) + delta;
+      if (delta > 0) zoneRings[z] = (zoneRings[z] || 0) + delta;
     }
   }
 
@@ -83,13 +83,13 @@ export function computeParticipantStats({ hr, zones, coins, intervalSeconds, par
     peakHr,
     avgHr,
     stdDevHr,
-    totalCoins,
+    totalRings,
     activeSeconds,
     joinTick,
     warmPlusRatio,
     zoneSeconds,
     zoneBounds,
-    zoneCoins,
+    zoneRings,
     hrValues: hrValid,
   };
 }
@@ -167,13 +167,13 @@ export function computeHrHistogram(hr, zones, { buckets: numBuckets = 10 } = {})
 }
 
 /**
- * Coins-per-minute rate, formatted to one decimal (receipt display contract).
- * @param {number} totalCoins
+ * Rings-per-minute rate, formatted to one decimal (receipt display contract).
+ * @param {number} totalRings
  * @param {number} activeMinutes
  * @returns {string} e.g. '2.8'; '0.0' when no active time
  */
-export function coinsPerMinute(totalCoins, activeMinutes) {
-  return activeMinutes > 0 ? (totalCoins / activeMinutes).toFixed(1) : '0.0';
+export function ringsPerMinute(totalRings, activeMinutes) {
+  return activeMinutes > 0 ? (totalRings / activeMinutes).toFixed(1) : '0.0';
 }
 
 // Session event-type schema: raw stored types → normalized receipt categories.

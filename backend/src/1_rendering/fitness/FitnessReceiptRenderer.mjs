@@ -14,7 +14,7 @@ import { decodeSingleSeries } from '#domains/fitness/services/TimelineService.mj
 import {
   computeParticipantStats,
   computeHrHistogram,
-  coinsPerMinute,
+  ringsPerMinute,
   normalizeSessionEvents,
   dedupeChallengeEvents,
   discoverParticipants,
@@ -110,28 +110,32 @@ export function createFitnessReceiptRenderer(config) {
       // Try flat series keys first, then nested participants format
       const rawZone = series[`${slug}:zone`] || timelineParticipants[slug]?.zone;
       const rawHr = series[`${slug}:hr`] || timelineParticipants[slug]?.hr;
-      const rawCoins = series[`${slug}:coins`] || timelineParticipants[slug]?.coins;
+      // Legacy `<slug>:coins` included — see ringSeries.mjs. `readRingSeries`
+      // returns [] rather than undefined, so the nested-format fallback below
+      // must be reached on emptiness, not on nullishness.
+      const flatRings = readRingSeries(series, slug);
+      const rawRings = flatRings.length ? flatRings : timelineParticipants[slug]?.rings;
 
       // decodeSingleSeries handles both RLE strings and already-decoded arrays
       const zoneArr = decodeSingleSeries(rawZone) || (Array.isArray(rawZone) ? rawZone : []);
       const hrArr = decodeSingleSeries(rawHr) || (Array.isArray(rawHr) ? rawHr : []);
-      const coinsArr = decodeSingleSeries(rawCoins) || (Array.isArray(rawCoins) ? rawCoins : []);
+      const ringsArr = decodeSingleSeries(rawRings) || (Array.isArray(rawRings) ? rawRings : []);
 
       // Map zone symbols to names
       const zones = zoneArr.map(z => z != null ? (resolveZone(z) || z) : null);
 
-      decoded[slug] = { zones, hr: hrArr, coins: coinsArr };
+      decoded[slug] = { zones, hr: hrArr, rings: ringsArr };
     }
 
     // ─── Per-participant stats ─────────────────────────────
     const stats = {};
     for (const slug of participantSlugs) {
       const p = participants[slug] || {};
-      const d = decoded[slug] || { zones: [], hr: [], coins: [] };
+      const d = decoded[slug] || { zones: [], hr: [], rings: [] };
       const computed = computeParticipantStats({
         hr: d.hr,
         zones: d.zones,
-        coins: d.coins,
+        rings: d.rings,
         intervalSeconds,
         participant: p,
       });
@@ -178,14 +182,14 @@ export function createFitnessReceiptRenderer(config) {
     chartEvents.sort((a, b) => a.rowIndex - b.rowIndex);
 
     // ─── Treasure box data ────────────────────────────────
-    const tbCoins = treasureBox?.totalCoins ?? treasureBox?.coins ?? 0;
+    const tbRings = treasureBox?.totalRings ?? treasureBox?.rings ?? 0;
     const tbBuckets = treasureBox?.buckets || {};
-    const hasTreasureBox = tbCoins > 0;
+    const hasTreasureBox = tbRings > 0;
 
-    // ─── Leaderboard (sorted by coins desc) ───────────────
+    // ─── Leaderboard (sorted by rings desc) ───────────────
     const leaderboard = participantSlugs
       .map(slug => ({ slug, ...stats[slug] }))
-      .sort((a, b) => b.totalCoins - a.totalCoins);
+      .sort((a, b) => b.totalRings - a.totalRings);
 
     // ─── Event details by type (use chart events which are already normalized) ──
     // Challenge dedup (LAST challenge_end per challengeId wins) is domain
@@ -210,7 +214,7 @@ export function createFitnessReceiptRenderer(config) {
     // Treasure box
     let tbHeight = 0;
     if (hasTreasureBox) {
-      tbHeight = sectionGap + theme.treasureBox.coinAdvance + theme.treasureBox.barHeight + 30 + 10; // header + coin + bar + labels + gap
+      tbHeight = sectionGap + theme.treasureBox.ringAdvance + theme.treasureBox.barHeight + 30 + 10; // header + ring + bar + labels + gap
       totalHeight += tbHeight;
     }
 
@@ -309,18 +313,18 @@ export function createFitnessReceiptRenderer(config) {
     // ─── Section B: Treasure Box ──────────────────────────
     if (hasTreasureBox) {
       y += 5;
-      // Coin total
-      ctx.font = theme.fonts.coinTotal;
-      const coinStr = `${tbCoins}`;
-      const coinW = ctx.measureText(coinStr).width;
-      ctx.fillText(coinStr, (width - coinW) / 2, y);
-      y += theme.treasureBox.coinAdvance;
+      // Ring total
+      ctx.font = theme.fonts.ringTotal;
+      const ringStr = `${tbRings}`;
+      const ringW = ctx.measureText(ringStr).width;
+      ctx.fillText(ringStr, (width - ringW) / 2, y);
+      y += theme.treasureBox.ringAdvance;
 
-      // Coin label
+      // Ring label
       ctx.font = theme.fonts.label;
-      const coinLabel = 'COINS EARNED';
-      const clW = ctx.measureText(coinLabel).width;
-      ctx.fillText(coinLabel, (width - clW) / 2, y);
+      const ringLabel = 'RINGS EARNED';
+      const clW = ctx.measureText(ringLabel).width;
+      ctx.fillText(ringLabel, (width - clW) / 2, y);
       y += 25;
 
       // Stacked bar
@@ -330,14 +334,14 @@ export function createFitnessReceiptRenderer(config) {
 
       const bucketOrder = ['green', 'yellow', 'orange', 'red'];
       const bucketPatterns = { green: 0, yellow: 1, orange: 2, red: 3 };
-      const totalBucketCoins = bucketOrder.reduce((s, k) => s + (tbBuckets[k] || 0), 0);
+      const totalBucketRings = bucketOrder.reduce((s, k) => s + (tbBuckets[k] || 0), 0);
 
-      if (totalBucketCoins > 0) {
+      if (totalBucketRings > 0) {
         let bx = barX;
         for (const bucket of bucketOrder) {
           const val = tbBuckets[bucket] || 0;
           if (val <= 0) continue;
-          const bw = (val / totalBucketCoins) * barW;
+          const bw = (val / totalBucketRings) * barW;
 
           // Draw with pattern density to distinguish buckets on thermal
           ctx.fillStyle = theme.colors.text;
@@ -499,7 +503,7 @@ export function createFitnessReceiptRenderer(config) {
       const rowY = y + rank * theme.leaderboard.rowHeight;
       let ly = rowY;
 
-      // Line 1: Rank + Name (left) ... Coins (right)
+      // Line 1: Rank + Name (left) ... Rings (right)
       ctx.font = theme.fonts.value;
       ctx.fillStyle = theme.colors.text;
       ctx.fillText(`#${rank + 1}`, margin, ly);
@@ -508,12 +512,12 @@ export function createFitnessReceiptRenderer(config) {
       ctx.fillText(p.displayName, margin + 40, ly + 4);
 
       ctx.font = theme.fonts.value;
-      const coinStr = `${p.totalCoins} coins`;
-      const coinW = ctx.measureText(coinStr).width;
-      ctx.fillText(coinStr, width - margin - coinW, ly);
+      const ringStr = `${p.totalRings} rings`;
+      const ringW = ctx.measureText(ringStr).width;
+      ctx.fillText(ringStr, width - margin - ringW, ly);
       ly += 28;
 
-      // HR stats (left, 3 lines) ... Duration + coins/min (right)
+      // HR stats (left, 3 lines) ... Duration + rings/min (right)
       // Fixed-width columns for alignment across participants
       ctx.font = theme.fonts.body;
       const lineH = 20;
@@ -533,7 +537,7 @@ export function createFitnessReceiptRenderer(config) {
       ctx.fillText(durStr, rightColRight - ctx.measureText(durStr).width, ly);
       ly += lineH;
 
-      // Row 2: Avg HR ... coins/min
+      // Row 2: Avg HR ... rings/min
       ctx.fillText('Avg:', labelX, ly);
       if (p.avgHr) {
         const v = `${p.avgHr}`;
@@ -541,7 +545,7 @@ export function createFitnessReceiptRenderer(config) {
         ctx.fillText('\u2661', heartX, ly);
       }
       const activeMin = p.activeSeconds > 0 ? p.activeSeconds / 60 : 0;
-      const cpm = coinsPerMinute(p.totalCoins, activeMin);
+      const cpm = ringsPerMinute(p.totalRings, activeMin);
       const cpmStr = `\u26C0${cpm}/min`;
       ctx.fillText(cpmStr, rightColRight - ctx.measureText(cpmStr).width, ly);
       ly += lineH;
@@ -609,7 +613,7 @@ export function createFitnessReceiptRenderer(config) {
         ctx.fillStyle = theme.colors.text;
         ly += 16;
 
-        // Zone group brackets with zone name + coin count
+        // Zone group brackets with zone name + ring count
         ctx.font = theme.fonts.chartTime;
         let groupStart = 0;
         for (let b = 0; b <= numBuckets; b++) {
@@ -631,13 +635,13 @@ export function createFitnessReceiptRenderer(config) {
             ctx.lineTo(gx2, ly);
             ctx.stroke();
 
-            // Zone label + coin count (abbreviate if group is narrow)
-            const coins = p.zoneCoins[zone] || 0;
-            const fullLabel = coins > 0
-              ? `${zoneLabelsMap[zone] || zone} (\u26C0${coins})`
+            // Zone label + ring count (abbreviate if group is narrow)
+            const rings = p.zoneRings[zone] || 0;
+            const fullLabel = rings > 0
+              ? `${zoneLabelsMap[zone] || zone} (\u26C0${rings})`
               : `${zoneLabelsMap[zone] || zone}`;
-            const shortLabel = coins > 0
-              ? `${(zone[0] || '').toUpperCase()} \u26C0${coins}`
+            const shortLabel = rings > 0
+              ? `${(zone[0] || '').toUpperCase()} \u26C0${rings}`
               : `${(zone[0] || '').toUpperCase()}`;
             const label = ctx.measureText(fullLabel).width > groupWidth
               ? shortLabel : fullLabel;

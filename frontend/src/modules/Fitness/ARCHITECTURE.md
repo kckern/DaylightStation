@@ -114,7 +114,7 @@ Analysis of the current implementations reveals UI patterns that are duplicated 
 
 #### From `FitnessTreasureBox.jsx`:
 - **Elapsed timer display** (MM:SS format)
-- **Coin/reward badge** with zone colors
+- **Ring/reward badge** with zone colors
 - **Color-coded grid** for reward buckets
 
 #### From `VoiceMemoOverlay.jsx`:

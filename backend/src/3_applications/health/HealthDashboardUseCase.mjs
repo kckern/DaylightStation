@@ -118,7 +118,7 @@ export class HealthDashboardUseCase {
         title: s.media?.primary?.title || null,
         showTitle: s.media?.primary?.showTitle || null,
         durationMs: s.durationMs,
-        totalCoins: s.totalCoins || 0,
+        totalRings: s.totalRings || 0,
         participants: s.participants ? Object.keys(s.participants) : [],
       }));
     } catch (err) {

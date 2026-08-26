@@ -176,7 +176,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
       strava: { activityId: 1, type: 'Run' }, metadata: {},
       timeline: { series: {}, events: [] },
       treasureBox: {
-        totalCoins: 160, coinTimeUnitMs: 5000,
+        totalRings: 160, ringTimeUnitMs: 5000,
         buckets: { blue: 0, green: 3, yellow: 58, orange: 99, red: 0 },
       },
     };
@@ -189,7 +189,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
     });
     const r = await svc.detail('20260507060000');
     expect(r.treasure_stats).toEqual({
-      total_coins: 160,
+      total_rings: 160,
       buckets: { blue: 0, green: 3, yellow: 58, orange: 99, red: 0 },
     });
   });
@@ -238,7 +238,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
       summary: {
         participants: {
           user_1: {
-            coins: 160, hr_avg: 136, hr_max: 158, hr_min: 73,
+            rings: 160, hr_avg: 136, hr_max: 158, hr_min: 73,
             zone_minutes: { cool: 0.25, active: 0.25, warm: 2.42, hot: 2.75 },
           },
         },
@@ -255,7 +255,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
     expect(r.participant_summary).toEqual({
       hr_avg: 136, hr_max: 158, hr_min: 73,
       zone_minutes: { cool: 0.25, active: 0.25, warm: 2.42, hot: 2.75 },
-      coins: 160,
+      rings: 160,
     });
   });
 

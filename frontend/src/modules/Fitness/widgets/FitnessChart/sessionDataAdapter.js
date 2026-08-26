@@ -10,7 +10,7 @@ import { genericGuestImageId, isGenericGuestProfileId } from '@/modules/Fitness/
 const METRIC_KEY_MAP = {
   heart_rate: 'hr',
   zone_id: 'zone',
-  coins_total: 'coins',
+  rings_total: 'rings',
   heart_beats: 'beats',
 };
 
@@ -98,7 +98,7 @@ export function createChartDataSource(session, { configuredUsers = [] } = {}) {
   let timelineParticipants = session.timeline?.participants || {};
   if (Object.keys(timelineParticipants).length === 0 && session.timeline?.series) {
     const grouped = {};
-    const CHART_METRICS = new Set(['hr', 'zone', 'coins', 'beats']);
+    const CHART_METRICS = new Set(['hr', 'zone', 'rings', 'beats']);
     for (const [key, values] of Object.entries(session.timeline.series)) {
       const colonIdx = key.lastIndexOf(':');
       if (colonIdx === -1) continue;

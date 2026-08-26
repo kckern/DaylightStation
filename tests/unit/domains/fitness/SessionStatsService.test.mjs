@@ -6,7 +6,7 @@ describe('computeParticipantStats', () => {
     const stats = computeParticipantStats({
       hr: [100, 150, 120, null, 160],
       zones: ['cool', 'warm', 'warm', null, 'hot'],
-      coins: [0, 5, 10, 10, 20],
+      rings: [0, 5, 10, 10, 20],
       intervalSeconds: 5,
       participant: {},
     });
@@ -17,7 +17,7 @@ describe('computeParticipantStats', () => {
     const stats = computeParticipantStats({
       hr: [100, 200],
       zones: ['cool', 'hot'],
-      coins: [0, 10],
+      rings: [0, 10],
       intervalSeconds: 5,
       participant: {},
     });
@@ -28,7 +28,7 @@ describe('computeParticipantStats', () => {
     const stats = computeParticipantStats({
       hr: [100, 120, 140, 160],
       zones: ['cool', 'cool', 'warm', 'hot'],
-      coins: [0, 0, 5, 10],
+      rings: [0, 0, 5, 10],
       intervalSeconds: 10,
       participant: {},
     });
@@ -41,7 +41,7 @@ describe('computeParticipantStats', () => {
     const stats = computeParticipantStats({
       hr: [100, 120, 160, 180],
       zones: ['cool', 'active', 'warm', 'hot'],
-      coins: [0, 0, 5, 10],
+      rings: [0, 0, 5, 10],
       intervalSeconds: 5,
       participant: {},
     });
@@ -52,12 +52,12 @@ describe('computeParticipantStats', () => {
     const stats = computeParticipantStats({
       hr: [],
       zones: [],
-      coins: [],
+      rings: [],
       intervalSeconds: 5,
       participant: {},
     });
     expect(stats.peakHr).toBeNull();
     expect(stats.avgHr).toBeNull();
-    expect(stats.totalCoins).toBe(0);
+    expect(stats.totalRings).toBe(0);
   });
 });

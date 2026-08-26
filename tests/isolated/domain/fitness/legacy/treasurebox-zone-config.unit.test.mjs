@@ -6,7 +6,7 @@
  * Bug context: Previously, TreasureBox zone configuration relied on React effect timing
  * in FitnessContext. If TreasureBox was created after the effect ran, zones were never
  * configured, causing:
- * - Zero coin counting (globalZones empty)
+ * - Zero ring counting (globalZones empty)
  * - False governance warnings (empty zoneRankMap)
  */
 
@@ -78,9 +78,9 @@ describe('FitnessSession.ensureStarted()', () => {
 
     it('should configure TreasureBox with zones from zoneProfileStore', () => {
       const mockZoneConfig = [
-        { id: 'blue', name: 'Blue', min: 0, color: 'blue', coins: 0 },
-        { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
-        { id: 'warm', name: 'Warm', min: 120, color: 'yellow', coins: 2 },
+        { id: 'blue', name: 'Blue', min: 0, color: 'blue', rings: 0 },
+        { id: 'active', name: 'Active', min: 100, color: 'green', rings: 1 },
+        { id: 'warm', name: 'Warm', min: 120, color: 'yellow', rings: 2 },
       ];
 
       // Simulate zone config being available via zoneProfileStore
@@ -98,22 +98,22 @@ describe('FitnessSession.ensureStarted()', () => {
       expect(session.treasureBox.globalZones[2].id).toBe('warm');
     });
 
-    it('should configure TreasureBox with coin values from zone config', () => {
+    it('should configure TreasureBox with ring values from zone config', () => {
       const mockZoneConfig = [
-        { id: 'cool', name: 'Cool', min: 0, color: 'blue', coins: 0 },
-        { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
-        { id: 'warm', name: 'Warm', min: 130, color: 'orange', coins: 2 },
-        { id: 'hot', name: 'Hot', min: 150, color: 'red', coins: 3 },
+        { id: 'cool', name: 'Cool', min: 0, color: 'blue', rings: 0 },
+        { id: 'active', name: 'Active', min: 100, color: 'green', rings: 1 },
+        { id: 'warm', name: 'Warm', min: 130, color: 'orange', rings: 2 },
+        { id: 'hot', name: 'Hot', min: 150, color: 'red', rings: 3 },
       ];
 
       session.zoneProfileStore.setBaseZoneConfig(mockZoneConfig);
       session.ensureStarted({ reason: 'test', force: true });
 
-      // Verify coin values are preserved
-      expect(session.treasureBox.globalZones[0].coins).toBe(0);
-      expect(session.treasureBox.globalZones[1].coins).toBe(1);
-      expect(session.treasureBox.globalZones[2].coins).toBe(2);
-      expect(session.treasureBox.globalZones[3].coins).toBe(3);
+      // Verify ring values are preserved
+      expect(session.treasureBox.globalZones[0].rings).toBe(0);
+      expect(session.treasureBox.globalZones[1].rings).toBe(1);
+      expect(session.treasureBox.globalZones[2].rings).toBe(2);
+      expect(session.treasureBox.globalZones[3].rings).toBe(3);
     });
 
     it('should handle missing zoneConfig gracefully', () => {
@@ -139,10 +139,10 @@ describe('FitnessSession.ensureStarted()', () => {
     it('should sort zones by min threshold ascending', () => {
       // Zones provided out of order
       const mockZoneConfig = [
-        { id: 'warm', name: 'Warm', min: 130, color: 'orange', coins: 2 },
-        { id: 'cool', name: 'Cool', min: 0, color: 'blue', coins: 0 },
-        { id: 'hot', name: 'Hot', min: 150, color: 'red', coins: 3 },
-        { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
+        { id: 'warm', name: 'Warm', min: 130, color: 'orange', rings: 2 },
+        { id: 'cool', name: 'Cool', min: 0, color: 'blue', rings: 0 },
+        { id: 'hot', name: 'Hot', min: 150, color: 'red', rings: 3 },
+        { id: 'active', name: 'Active', min: 100, color: 'green', rings: 1 },
       ];
 
       session.zoneProfileStore.setBaseZoneConfig(mockZoneConfig);
@@ -191,8 +191,8 @@ describe('FitnessSession.updateSnapshot()', () => {
 
       // Update snapshot with zones
       const mockZoneConfig = [
-        { id: 'blue', name: 'Blue', min: 0, color: 'blue', coins: 0 },
-        { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
+        { id: 'blue', name: 'Blue', min: 0, color: 'blue', rings: 0 },
+        { id: 'active', name: 'Active', min: 100, color: 'green', rings: 1 },
       ];
 
       session.updateSnapshot({ zoneConfig: mockZoneConfig });

@@ -161,7 +161,7 @@ const ZONE_COLUMNS = [
   { key: 'id', label: 'ID', type: 'text', width: 100 },
   { key: 'min', label: 'Min BPM', type: 'number', width: 100 },
   { key: 'color', label: 'Color', type: 'text', width: 100 },
-  { key: 'coins', label: 'Coins', type: 'number', width: 80 },
+  { key: 'rings', label: 'Rings', type: 'number', width: 80 },
 ];
 
 const FAMILY_COLUMNS = [
@@ -364,7 +364,7 @@ function ZonesSection({ data, update }) {
       items={zones}
       onChange={(items) => update('zones', items)}
       columns={ZONE_COLUMNS}
-      createDefaults={{ name: '', id: '', min: 0, color: '', coins: 0 }}
+      createDefaults={{ name: '', id: '', min: 0, color: '', rings: 0 }}
       addLabel="Add Zone"
       confirmDelete
       emptyMessage="No zones configured."
@@ -456,10 +456,10 @@ function GovernanceSection({ data, update }) {
           onChange={(val) => update('governance.warning_cooldown_seconds', val)}
         />
         <NumberInput
-          label="Coin Time Unit (ms)"
-          description="Root-level: coin_time_unit_ms"
-          value={data.coin_time_unit_ms ?? ''}
-          onChange={(val) => update('coin_time_unit_ms', val)}
+          label="Ring Time Unit (ms)"
+          description="Root-level: ring_time_unit_ms"
+          value={data.ring_time_unit_ms ?? ''}
+          onChange={(val) => update('ring_time_unit_ms', val)}
         />
       </SimpleGrid>
       <TagsInput

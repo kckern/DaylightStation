@@ -183,7 +183,7 @@ export const getFitnessTimeouts = () => ({ ...FITNESS_TIMEOUTS });
  * - user:user_4:heart_rate   -> user_4:hr
  * - user:user_4:zone_id      -> user_4:zone
  * - user:user_4:heart_beats  -> user_4:beats
- * - user:user_4:coins_total  -> user_4:coins
+ * - user:user_4:rings_total  -> user_4:rings
  * - device:7138:rpm        -> bike:7138:rpm
  * - device:device_7138:rpm -> bike:7138:rpm
  * - device:device_28676:heart_rate -> device:28676:heart_rate
@@ -205,7 +205,7 @@ const mapSeriesKeyForPersist = (key) => {
       if (metric === 'heart_rate') return 'hr';
       if (metric === 'zone_id') return 'zone';
       if (metric === 'heart_beats') return 'beats';
-      if (metric === 'coins_total') return 'coins';
+      if (metric === 'rings_total') return 'rings';
       return metric;
     })();
     return `${slug}:${mappedMetric}`;
@@ -324,7 +324,7 @@ export class FitnessSession {
     this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
 
     // Session Entity Registry - tracks participation segments per device assignment
-    // Each device assignment creates a new entity with fresh metrics (coins, start time)
+    // Each device assignment creates a new entity with fresh metrics (rings, start time)
     // @see /docs/design/guest-switch-session-transition.md
     this.entityRegistry = new SessionEntityRegistry();
     
@@ -802,7 +802,7 @@ export class FitnessSession {
       name: entity.name,
       deviceId: entity.deviceId,
       durationMs: entity.durationMs,
-      finalCoins: entity.coins,
+      finalRings: entity.rings,
       status: entity.status,
       transferredTo: options.transferredTo || null
     });
@@ -836,13 +836,13 @@ export class FitnessSession {
    * Used during grace period transfers when a brief session is merged into successor.
    * 
    * Transfers:
-   * - TreasureBox accumulator (coins, zone state)
-   * - Timeline series data (heart_rate, coins_total, zone_id)
+   * - TreasureBox accumulator (rings, zone state)
+   * - Timeline series data (heart_rate, rings_total, zone_id)
    * - Marks source entity as 'transferred'
    * 
    * @param {string} fromEntityId - Source entity ID (being transferred)
    * @param {string} toEntityId - Destination entity ID (receiving transfer)
-   * @returns {{ ok: boolean, coinsTransferred?: number, seriesTransferred?: Array, error?: string }}
+   * @returns {{ ok: boolean, ringsTransferred?: number, seriesTransferred?: Array, error?: string }}
    * @see /docs/design/guest-switch-session-transition.md
    */
   transferSessionEntity(fromEntityId, toEntityId) {
@@ -861,23 +861,23 @@ export class FitnessSession {
     }
     
     const now = Date.now();
-    let coinsTransferred = 0;
+    let ringsTransferred = 0;
     let seriesTransferred = [];
     
-    // 1. Transfer TreasureBox accumulator (coins, zone state)
+    // 1. Transfer TreasureBox accumulator (rings, zone state)
     if (this.treasureBox) {
       const transferred = this.treasureBox.transferAccumulator(fromEntityId, toEntityId);
       if (transferred) {
-        coinsTransferred = fromEntity.coins || 0;
-        // Update destination entity's coin count
+        ringsTransferred = fromEntity.rings || 0;
+        // Update destination entity's ring count
         const toAcc = this.treasureBox.perUser.get(toEntityId);
         if (toAcc) {
-          toEntity.setCoins(toAcc.totalCoins || 0);
+          toEntity.setRings(toAcc.totalRings || 0);
         }
       }
     }
     
-    // 2. Transfer timeline series (heart_rate, coins_total, zone_id, etc.)
+    // 2. Transfer timeline series (heart_rate, rings_total, zone_id, etc.)
     if (this.timeline) {
       const transferred = this.timeline.transferEntitySeries(fromEntityId, toEntityId);
       seriesTransferred = transferred;
@@ -913,7 +913,7 @@ export class FitnessSession {
       toEntityId,
       fromProfileId: fromEntity.profileId,
       toProfileId: toEntity.profileId,
-      coinsTransferred,
+      ringsTransferred,
       seriesTransferred: seriesTransferred.length,
       durationMs: fromEntity.durationMs,
       timestamp: now
@@ -922,13 +922,13 @@ export class FitnessSession {
     console.log('[FitnessSession] Entity transfer complete:', {
       from: fromEntityId,
       to: toEntityId,
-      coinsTransferred,
+      ringsTransferred,
       seriesCount: seriesTransferred.length
     });
     
     return {
       ok: true,
-      coinsTransferred,
+      ringsTransferred,
       seriesTransferred
     };
   }
@@ -956,12 +956,12 @@ export class FitnessSession {
     }
 
     // 2. Transfer TreasureBox accumulator
-    let coinsTransferred = 0;
+    let ringsTransferred = 0;
     if (this.treasureBox) {
       const transferred = this.treasureBox.transferAccumulator(fromUserId, toUserId);
       if (transferred) {
         const toAcc = this.treasureBox.perUser.get(toUserId);
-        coinsTransferred = toAcc?.totalCoins || 0;
+        ringsTransferred = toAcc?.totalRings || 0;
       }
     }
 
@@ -980,7 +980,7 @@ export class FitnessSession {
 
     return {
       ok: true,
-      coinsTransferred,
+      ringsTransferred,
       seriesTransferred: seriesTransferred.length
     };
   }
@@ -998,19 +998,19 @@ export class FitnessSession {
   }
 
   /**
-   * Phase 3: Get aggregated coin total for a profile across all their entities.
-   * Excludes transferred entities (their coins were merged into successor).
+   * Phase 3: Get aggregated ring total for a profile across all their entities.
+   * Excludes transferred entities (their rings were merged into successor).
    * 
    * @param {string} profileId - Profile ID to aggregate
-   * @returns {number} Total coins across all non-transferred entities
+   * @returns {number} Total rings across all non-transferred entities
    */
-  getProfileCoinsTotal(profileId) {
+  getProfileRingsTotal(profileId) {
     if (!profileId) return 0;
     const entities = this.getEntitiesForProfile(profileId);
     return entities.reduce((total, entity) => {
-      // Exclude transferred entities - their coins went to successor
+      // Exclude transferred entities - their rings went to successor
       if (entity.status === 'transferred') return total;
-      return total + (entity.coins || 0);
+      return total + (entity.rings || 0);
     }, 0);
   }
 
@@ -1019,7 +1019,7 @@ export class FitnessSession {
    * Combines entity series data for profile-level display.
    * 
    * @param {string} profileId - Profile ID
-   * @param {string} metric - Metric name (e.g., 'coins_total')
+   * @param {string} metric - Metric name (e.g., 'rings_total')
    * @returns {number[]} Aggregated series
    */
   getProfileTimelineSeries(profileId, metric) {
@@ -1035,7 +1035,7 @@ export class FitnessSession {
     }
     
     // For multiple entities, aggregate based on metric type
-    // For coins_total, sum across active entities at each tick
+    // For rings_total, sum across active entities at each tick
     // Note: This is a simplified aggregation - more complex logic may be needed
     const allSeries = entities
       .filter(e => e.status !== 'transferred')
@@ -1048,7 +1048,7 @@ export class FitnessSession {
     const maxLen = Math.max(...allSeries.map(s => s.length));
     const aggregated = new Array(maxLen).fill(0);
     
-    // Sum values at each tick (for coins_total) or use latest (for heart_rate)
+    // Sum values at each tick (for rings_total) or use latest (for heart_rate)
     for (let i = 0; i < maxLen; i++) {
       for (const series of allSeries) {
         const val = series[i];
@@ -1846,7 +1846,7 @@ export class FitnessSession {
     
     if (!this.treasureBox) {
       this.treasureBox = new FitnessTreasureBox(this);
-      // Inject ActivityMonitor for activity-aware coin processing (Priority 2)
+      // Inject ActivityMonitor for activity-aware ring processing (Priority 2)
       this.treasureBox.setActivityMonitor(this.activityMonitor);
       // Wire ZoneProfileStore so TreasureBox uses committed (hysteresis) zones for display
       if (this.zoneProfileStore) {
@@ -1913,7 +1913,7 @@ export class FitnessSession {
       this.timebase.startAbsMs = this.startTime || Date.now();
     }
 
-    const intervalMs = this.treasureBox?.coinTimeUnitMs || this.timebase.intervalMs || 5000;
+    const intervalMs = this.treasureBox?.ringTimeUnitMs || this.timebase.intervalMs || 5000;
     this.timebase.intervalMs = intervalMs;
     if (this.timeline) {
       this.timeline.setIntervalMs(intervalMs);
@@ -2085,7 +2085,7 @@ export class FitnessSession {
         .filter(entry => entry.hrInactive && (entry.id || entry.profileId))
         .map(entry => entry.id || entry.profileId);
 
-    // Guests are eligible (challenge credit + coins) but never governed as
+    // Guests are eligible (challenge credit + rings) but never governed as
     // subjects — flag them so the engine keeps them out of required/missing.
     const guestIds = effectiveRoster
         .filter(entry => entry.isGuest && (entry.id || entry.profileId))
@@ -2265,7 +2265,9 @@ export class FitnessSession {
         const slug = key.replace('user:', '').replace(':heart_rate', '');
         const hrSeries = this.timeline.series[key] || [];
         const beatsSeries = this.timeline.series[`user:${slug}:heart_beats`] || [];
-        const coinsSeries = this.timeline.series[`user:${slug}:coins_total`] || [];
+        // `coins_total` fallback — pre-rename sessions (see ringSeries.mjs).
+        const ringsSeries = this.timeline.series[`user:${slug}:rings_total`]
+          || this.timeline.series[`user:${slug}:coins_total`] || [];
         
         // Count nulls in heart_rate
         const nullCount = hrSeries.filter(v => v === null).length;
@@ -2274,7 +2276,7 @@ export class FitnessSession {
         // Get last 10 values for inspection
         const lastHR = hrSeries.slice(-10);
         const lastBeats = beatsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v);
-        const lastCoins = coinsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v);
+        const lastRings = ringsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v);
         
         userSeries[slug] = {
           hrLength: hrSeries.length,
@@ -2282,7 +2284,7 @@ export class FitnessSession {
           validCount,
           lastHR,
           lastBeats,
-          lastCoins, // Add coins_total for debugging
+          lastRings, // Add rings_total for debugging
           isActiveNow: activeHRSet.has(slug)
         };
       }
@@ -2383,7 +2385,7 @@ export class FitnessSession {
       sessionData = this.summary;
       if (this.treasureBox) {
         // MEMORY LEAK FIX: Clear accumulated timeline data on session end
-        // Must happen AFTER summary capture so coins/buckets are preserved
+        // Must happen AFTER summary capture so rings/buckets are preserved
         this.treasureBox.reset();
       }
     } catch(_){}
@@ -2426,7 +2428,7 @@ export class FitnessSession {
 
   /**
    * Phase 3: Check if an entity is active (has user with active HR this tick).
-   * Used for determining whether to record entity coins_total.
+   * Used for determining whether to record entity rings_total.
    *
    * @param {string} entityId - Entity ID to check
    * @param {Set<string>} activeHRSet - Set of user IDs with active HR this tick

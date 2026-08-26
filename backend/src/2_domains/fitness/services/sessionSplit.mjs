@@ -5,8 +5,9 @@
  * @module 2_domains/fitness/services/sessionSplit
  */
 import { computeParticipantStats } from './SessionStatsService.mjs';
+import { readRingSeries } from './ringSeries.mjs';
 
-const CUMULATIVE_SUFFIXES = ['beats', 'coins', 'rotations', 'impacts'];
+const CUMULATIVE_SUFFIXES = ['beats', 'rings', 'rotations', 'impacts'];
 const ZONE_COLOR = { cool: 'blue', active: 'green', warm: 'yellow', hot: 'orange', fire: 'red' };
 
 // Persisted `<slug>:zone` series store single-char zone SYMBOLS (see
@@ -33,15 +34,15 @@ export function zoneToColor(zone) {
 const BUCKET_COLORS = ['blue', 'green', 'yellow', 'orange', 'red'];
 
 /**
- * Split the ORIGINAL per-color coin buckets between two parts so that:
+ * Split the ORIGINAL per-color ring buckets between two parts so that:
  *  - each color total is preserved exactly: part1[c] + part2[c] === orig[c]
- *  - each part's bucket sum equals its exact coin total (total1 / total2)
+ *  - each part's bucket sum equals its exact ring total (total1 / total2)
  *  - within those margins, allocation is weighted by each part's actual zone
  *    activity (est1/est2 estimated buckets); colors with no activity signal
- *    fall back to each part's share of total coins.
+ *    fall back to each part's share of total rings.
  *
  * Per-color buckets cannot be exactly reconstructed from the persisted per-tick
- * data (coins are colored by the highest zone per award interval, not stored),
+ * data (rings are colored by the highest zone per award interval, not stored),
  * so we redistribute the KNOWN originals rather than re-deriving them.
  *
  * @returns {{ part1: Record<string, number>, part2: Record<string, number> }}
@@ -155,43 +156,43 @@ export function splitDecodedSeries(decoded, splitTick) {
  * and that part's events. Returns { summary, treasureBox }.
  *
  * @param {Object} args
- * @param {Record<string, any[]>} args.series   - decoded series for THIS part (coins already re-zeroed)
+ * @param {Record<string, any[]>} args.series   - decoded series for THIS part (rings already re-zeroed)
  * @param {string[]} args.slugs                 - participant slugs
  * @param {Array} args.events                   - events belonging to THIS part
  * @param {number} args.intervalMs
- * @param {number} args.coinTimeUnitMs
+ * @param {number} args.ringTimeUnitMs
  */
-export function recomputeSummaryForPart({ series, slugs, events, intervalMs, coinTimeUnitMs, minHrSamples = 3 }) {
+export function recomputeSummaryForPart({ series, slugs, events, intervalMs, ringTimeUnitMs, minHrSamples = 3 }) {
   const intervalSeconds = intervalMs / 1000;
   const participants = {};
   const buckets = { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 };
-  let totalCoins = 0;
+  let totalRings = 0;
 
   for (const slug of slugs) {
     const hr = series[`${slug}:hr`] || [];
     const zones = (series[`${slug}:zone`] || []).map(normalizeZone);
-    const coins = series[`${slug}:coins`] || [];
+    const rings = readRingSeries(series, slug);
     const hrValid = hr.filter(v => v != null && v > 0);
     // Require a minimum of real HR samples — a one-or-two-reading blip from a
     // strap that connected briefly is not a participant in this part.
     if (hrValid.length < minHrSamples) continue;
 
-    const stats = computeParticipantStats({ hr, zones, coins, intervalSeconds, participant: {} });
+    const stats = computeParticipantStats({ hr, zones, rings, intervalSeconds, participant: {} });
     const zoneMinutes = {};
     for (const [z, secs] of Object.entries(stats.zoneSeconds)) {
       zoneMinutes[z] = Math.round((secs / 60) * 100) / 100;
     }
     participants[slug] = {
-      coins: stats.totalCoins,
+      rings: stats.totalRings,
       hr_avg: stats.avgHr,
       hr_max: stats.peakHr,
       hr_min: Math.min(...hrValid),
       zone_minutes: zoneMinutes,
     };
-    totalCoins += stats.totalCoins || 0;
-    for (const [zone, coinDelta] of Object.entries(stats.zoneCoins)) {
+    totalRings += stats.totalRings || 0;
+    for (const [zone, ringDelta] of Object.entries(stats.zoneRings)) {
       const color = zoneToColor(zone);
-      if (color) buckets[color] += coinDelta;
+      if (color) buckets[color] += ringDelta;
     }
   }
 
@@ -227,9 +228,9 @@ export function recomputeSummaryForPart({ series, slugs, events, intervalMs, coi
     summary: {
       participants,
       media,
-      coins: { total: totalCoins, buckets },
+      rings: { total: totalRings, buckets },
       challenges: { total: challengeEvents.length, succeeded, failed },
     },
-    treasureBox: { coinTimeUnitMs, totalCoins, buckets },
+    treasureBox: { ringTimeUnitMs, totalRings, buckets },
   };
 }

@@ -8,8 +8,8 @@ const cloneZoneConfig = (config = []) => {
     name: zone?.name ?? zone?.id ?? `Zone ${index + 1}`,
     color: zone?.color || null,
     min: Number.isFinite(zone?.min) ? zone.min : null,
-    // Preserve coins field for TreasureBox configuration
-    coins: Number.isFinite(zone?.coins) ? zone.coins : 0
+    // Preserve rings field for TreasureBox configuration
+    rings: Number.isFinite(zone?.rings) ? zone.rings : 0
   }));
 };
 

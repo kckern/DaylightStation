@@ -498,7 +498,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     musicPlaylists,
     ant_devices,
     usersConfig,
-    coinTimeUnitMs,
+    ringTimeUnitMs,
     zoneConfig,
     governanceConfig,
     equipmentConfig,
@@ -536,7 +536,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       musicPlaylists: Array.isArray(plex?.music_playlists) ? plex.music_playlists : [],
       ant_devices: root?.ant_devices || {},
       usersConfig: root?.users || {},
-      coinTimeUnitMs: root?.coin_time_unit_ms,
+      ringTimeUnitMs: root?.ring_time_unit_ms,
       zoneConfig: root?.zones,
       governanceConfig: {
         ...governance,
@@ -689,13 +689,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     usersConfig,
     zoneConfig,
     governanceConfig,
-    coinTimeUnitMs,
+    ringTimeUnitMs,
     equipmentConfig,
     nomusicLabels,
     governedLabels,
     governedTypes,
     sessionsConfig
-  }), [ant_devices, usersConfig, zoneConfig, governanceConfig, coinTimeUnitMs, equipmentConfig, nomusicLabels, governedLabels, governedTypes, sessionsConfig]);
+  }), [ant_devices, usersConfig, zoneConfig, governanceConfig, ringTimeUnitMs, equipmentConfig, nomusicLabels, governedLabels, governedTypes, sessionsConfig]);
 
   const configurationSignature = React.useMemo(() => JSON.stringify({
     ...configurationInputs,
@@ -776,7 +776,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (!box) return;
 
     const signature = JSON.stringify({
-      coinTimeUnitMs: coinTimeUnitMs ?? null,
+      ringTimeUnitMs: ringTimeUnitMs ?? null,
       zones: zoneConfig ?? null,
       users: usersConfig ?? null
     });
@@ -784,14 +784,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (treasureConfigSignatureRef.current !== signature) {
       treasureConfigSignatureRef.current = signature;
       box.configure({
-        coinTimeUnitMs,
+        ringTimeUnitMs,
         zones: zoneConfig,
         users: usersConfig
       });
     }
 
     box.setMutationCallback(() => {
-      // TreasureBox mutated (HR data / coin update).
+      // TreasureBox mutated (HR data / ring update).
       // Governance re-evaluation happens via:
       //   1. recordDeviceActivity() -> ZoneProfileStore sync -> notifyZoneChange()
       //   2. batchedForceUpdate() -> updateSnapshot() -> evaluate() with full data
@@ -804,7 +804,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         box.setMutationCallback(null);
       }
     };
-  }, [coinTimeUnitMs, zoneConfig, usersConfig, batchedForceUpdate, version]);
+  }, [ringTimeUnitMs, zoneConfig, usersConfig, batchedForceUpdate, version]);
 
   useEffect(() => {
     const session = fitnessSessionRef.current;
@@ -2316,7 +2316,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     /**
      * Phase 3: Get series for an entity ID
      * @param {string} entityId - Entity ID (e.g., "entity-1735689600000-abc12")
-     * @param {string} metric - Metric name (e.g., "heart_rate", "coins_total")
+     * @param {string} metric - Metric name (e.g., "heart_rate", "rings_total")
      * @param {Object} [options] - Options for windowing/cloning
      * @returns {Array}
      */
@@ -2516,7 +2516,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     usersConfig,
     zoneConfig,
     equipmentConfig,
-    coinTimeUnitMs,
+    ringTimeUnitMs,
     governanceConfig,
     governedLabels,
     governedLabelSet,
@@ -2610,7 +2610,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Phase 3: Entity registry access
     entityRegistry: session?.entityRegistry,
     getEntitiesForProfile: session?.getEntitiesForProfile?.bind(session),
-    getProfileCoinsTotal: session?.getProfileCoinsTotal?.bind(session),
+    getProfileRingsTotal: session?.getProfileRingsTotal?.bind(session),
     getProfileTimelineSeries: session?.getProfileTimelineSeries?.bind(session),
     
     // Activity Monitor - single source of truth for participant status (Phase 2)

@@ -7,7 +7,7 @@
  * effort-absorb + known-user cross-device-merge passes), but reads the
  * on-disk shape instead of the in-memory one:
  *
- *   - Participant series keys are FLAT `<id>:hr | :zone | :coins | :beats`
+ *   - Participant series keys are FLAT `<id>:hr | :zone | :rings | :beats`
  *     (not `user:<id>:heart_rate` etc.). Equipment/global keys are prefixed
  *     `device:`, `vib:`, `bike:`, `global:` and must be excluded from
  *     occupant discovery.
@@ -23,13 +23,15 @@
  * actual timeline series and participant list.
  */
 
+import { readRingSeries } from './ringSeries.mjs';
+
 import { decodeSeries } from '#domains/fitness/services/TimelineService.mjs';
 
 const ACTIVE_ZONE_VALUES = new Set(['active', 'warm', 'hot', 'a', 'w', 'h']);
 
 const RESERVED_KEY_RE = /^(?!device:|vib:|bike:|global:)(.+):hr$/;
 
-export const DEFAULT_CFG = { maxCoins: 1, maxActiveZoneSeconds: 5, maxHrSamples: 3 };
+export const DEFAULT_CFG = { maxRings: 1, maxActiveZoneSeconds: 5, maxHrSamples: 3 };
 
 /**
  * Conservative detector for synthetic / "untagged placeholder" occupant IDs (same rule as
@@ -71,35 +73,35 @@ export function discoverOccupantIds(series) {
  * @param {Object} decoded - output of decodeSeries(timeline.series)
  * @param {string} id
  * @param {number} intervalSeconds
- * @returns {{ coins: number, activeWarmZoneSeconds: number, hrSampleCount: number }}
+ * @returns {{ rings: number, activeWarmZoneSeconds: number, hrSampleCount: number }}
  */
 export function occupantEffort(decoded, id, intervalSeconds = 5) {
   const s = decoded && typeof decoded === 'object' ? decoded : {};
   const hr = Array.isArray(s[`${id}:hr`]) ? s[`${id}:hr`] : [];
   const zone = Array.isArray(s[`${id}:zone`]) ? s[`${id}:zone`] : [];
-  const coins = Array.isArray(s[`${id}:coins`]) ? s[`${id}:coins`] : [];
+  const rings = readRingSeries(s, id);
 
   const hrSampleCount = hr.filter((v) => Number.isFinite(v) && v > 0).length;
   const activeWarmZoneSeconds = zone.filter((z) => ACTIVE_ZONE_VALUES.has(z)).length
     * (Number.isFinite(intervalSeconds) ? intervalSeconds : 5);
 
   let last = 0;
-  for (let i = coins.length - 1; i >= 0; i--) {
-    if (coins[i] != null) { last = coins[i]; break; }
+  for (let i = rings.length - 1; i >= 0; i--) {
+    if (rings[i] != null) { last = rings[i]; break; }
   }
-  return { coins: last, activeWarmZoneSeconds, hrSampleCount };
+  return { rings: last, activeWarmZoneSeconds, hrSampleCount };
 }
 
 /**
  * Is this occupant's measured effort below the noise floor?
  *
- * @param {{coins:number, activeWarmZoneSeconds:number, hrSampleCount:number}} effort
- * @param {{maxCoins:number, maxActiveZoneSeconds:number, maxHrSamples:number}} cfg
+ * @param {{rings:number, activeWarmZoneSeconds:number, hrSampleCount:number}} effort
+ * @param {{maxRings:number, maxActiveZoneSeconds:number, maxHrSamples:number}} cfg
  * @returns {boolean}
  */
 export function isInsignificant(effort, cfg = DEFAULT_CFG) {
   if (!effort) return true;
-  return effort.coins <= cfg.maxCoins
+  return effort.rings <= cfg.maxRings
     && effort.activeWarmZoneSeconds <= cfg.maxActiveZoneSeconds
     && effort.hrSampleCount < cfg.maxHrSamples;
 }

@@ -1,7 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { ElapsedTimer } from '@/modules/Fitness/shared';
-import { ZONE_COLORS, getCoinColorRank } from '@/modules/Fitness/shared/constants/fitness';
+import { ZONE_COLORS, getRingColorRank } from '@/modules/Fitness/shared/constants/fitness';
 import '../FitnessSidebar.scss';
 
 /**
@@ -15,14 +15,14 @@ const FitnessTreasureBox = ({ box, session }) => {
 
   if (!box) return null;
 
-  const totalCoins = box.totalCoins ?? 0;
-  const colorCoins = box.buckets || {};
+  const totalRings = box.totalRings ?? 0;
+  const colorRings = box.buckets || {};
   
-  // Get colors with coins, sorted by zone intensity (high to low)
-  const colors = Object.keys(colorCoins)
-    .filter(c => (colorCoins[c] || 0) > 0)
-    .sort((a, b) => getCoinColorRank(b) - getCoinColorRank(a));
-  const hasCoins = colors.length > 0;
+  // Get colors with rings, sorted by zone intensity (high to low)
+  const colors = Object.keys(colorRings)
+    .filter(c => (colorRings[c] || 0) > 0)
+    .sort((a, b) => getRingColorRank(b) - getRingColorRank(a));
+  const hasRings = colors.length > 0;
 
   return (
     <div className="treasure-box-panel">
@@ -38,17 +38,17 @@ const FitnessTreasureBox = ({ box, session }) => {
       </div>
       <div className="tb-row tb-row-body">
         <div className="tb-total">
-          <span className="tb-icon" role="img" aria-label="coins">💰</span>
-          {totalCoins}
+          <span className="tb-icon" role="img" aria-label="rings">💰</span>
+          {totalRings}
         </div>
-        {hasCoins && (
+        {hasRings && (
           <div className="tb-color-grid">
             {colors.map(c => {
               const hex = ZONE_COLORS[c] || c;
               return (
-                <div key={c} className="tb-color-coin" title={`${c}: ${colorCoins[c]} coins`}>
+                <div key={c} className="tb-color-ring" title={`${c}: ${colorRings[c]} rings`}>
                   <span className="swatch" style={{ background: hex }}>
-                    {colorCoins[c]}
+                    {colorRings[c]}
                   </span>
                 </div>
               );
@@ -61,9 +61,9 @@ const FitnessTreasureBox = ({ box, session }) => {
 };
 
 FitnessTreasureBox.propTypes = {
-  /** Treasure box state with totalCoins and buckets */
+  /** Treasure box state with totalRings and buckets */
   box: PropTypes.shape({
-    totalCoins: PropTypes.number,
+    totalRings: PropTypes.number,
     buckets: PropTypes.object
   }),
   /** Session state with startTime */

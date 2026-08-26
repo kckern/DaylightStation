@@ -9,7 +9,7 @@ describe('niceNum', () => {
 });
 
 describe('niceTicks', () => {
-  it('produces round human ticks across a coin range', () => {
+  it('produces round human ticks across a ring range', () => {
     expect(niceTicks(0, 433, 5)).toEqual([0, 100, 200, 300, 400, 500]);
   });
   it('never emits the toFixed garbage (172/303/433)', () => {

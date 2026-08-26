@@ -96,10 +96,10 @@ describe('GovernanceEngine phase stability', () => {
 
     // Setup zones
     box.configure({
-      coinTimeUnitMs: 5000,
+      ringTimeUnitMs: 5000,
       zones: [
-        { id: 'active', name: 'Active', min: 100, color: 'blue', coins: 1 },
-        { id: 'warm', name: 'Warm', min: 140, color: 'yellow', coins: 2 }
+        { id: 'active', name: 'Active', min: 100, color: 'blue', rings: 1 },
+        { id: 'warm', name: 'Warm', min: 140, color: 'yellow', rings: 2 }
       ]
     });
 

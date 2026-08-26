@@ -278,7 +278,7 @@ export function collectFullyAbsorbedOccupants(perDevice) {
   return removed;
 }
 
-export const DEFAULT_INSIGNIFICANT_USAGE = { maxCoins: 1, maxActiveZoneSeconds: 5, maxHrSamples: 3 };
+export const DEFAULT_INSIGNIFICANT_USAGE = { maxRings: 1, maxActiveZoneSeconds: 5, maxHrSamples: 3 };
 
 const ACTIVE_ZONE_VALUES = new Set(['active', 'warm', 'hot', 'a', 'w', 'h']);
 
@@ -286,22 +286,26 @@ export function computeOccupantEffort(series, occupantId, { intervalSeconds = 5 
   const s = series && typeof series === 'object' ? series : {};
   const hr = Array.isArray(s[`user:${occupantId}:heart_rate`]) ? s[`user:${occupantId}:heart_rate`] : [];
   const zone = Array.isArray(s[`user:${occupantId}:zone_id`]) ? s[`user:${occupantId}:zone_id`] : [];
-  const coinsArr = Array.isArray(s[`user:${occupantId}:coins_total`]) ? s[`user:${occupantId}:coins_total`] : [];
+  // `coins_total` fallback — pre-rename sessions. Without it every legacy
+  // occupant reads as zero effort, and this function's whole job is deciding
+  // whether an occupant did enough to be real.
+  const rawRings = s[`user:${occupantId}:rings_total`] ?? s[`user:${occupantId}:coins_total`];
+  const ringsArr = Array.isArray(rawRings) ? rawRings : [];
 
   const hrSampleCount = hr.filter((v) => Number.isFinite(v) && v > 0).length;
   const activeTicks = zone.filter((z) => ACTIVE_ZONE_VALUES.has(z)).length;
   const activeWarmZoneSeconds = activeTicks * (Number.isFinite(intervalSeconds) ? intervalSeconds : 5);
 
-  let coins = 0;
-  for (let i = coinsArr.length - 1; i >= 0; i--) {
-    if (coinsArr[i] != null) { coins = coinsArr[i]; break; }
+  let rings = 0;
+  for (let i = ringsArr.length - 1; i >= 0; i--) {
+    if (ringsArr[i] != null) { rings = ringsArr[i]; break; }
   }
-  return { coins, activeWarmZoneSeconds, hrSampleCount };
+  return { rings, activeWarmZoneSeconds, hrSampleCount };
 }
 
 export function isInsignificantEffort(effort, cfg = DEFAULT_INSIGNIFICANT_USAGE) {
   if (!effort) return true;
-  return effort.coins <= cfg.maxCoins
+  return effort.rings <= cfg.maxRings
     && effort.activeWarmZoneSeconds <= cfg.maxActiveZoneSeconds
     && effort.hrSampleCount < cfg.maxHrSamples;
 }
@@ -330,7 +334,7 @@ export function isKnownUserId(id) {
  * Build occupancy segments with effort, including series-only occupants.
  *
  * This function extends buildSegmentsPerDevice by:
- *   1. Computing effort (coins, activeWarmZoneSeconds, hrSampleCount) for every segment
+ *   1. Computing effort (rings, activeWarmZoneSeconds, hrSampleCount) for every segment
  *   2. Creating synthetic segments for occupants who appear in the series
  *      (user:<id>:heart_rate key) but have no entity (no actual session device record).
  *
@@ -513,7 +517,7 @@ export function applyLateIdentityClaimMerge(perDevice) {
  *
  * When `series` is supplied, EFFORT REPLACES DURATION as the absorb gate:
  * only the effort-based pass (`applyEffortAbsorb` — near-zero
- * coins/active-zone-time/HR-samples ghosts, regardless of duration) folds
+ * rings/active-zone-time/HR-samples ghosts, regardless of duration) folds
  * segments; the legacy `applyAbsorbRules` (OI-1 backward / OI-3 forward,
  * duration-driven) is deliberately NOT run on this path because it absorbs
  * brief-but-REAL bursts and can produce reciprocal transfers that lose real
@@ -565,7 +569,7 @@ export function runSessionBackfill({ entities, series, thresholdMs, sessionEndTi
     // ({real→ghost} backward + {ghost→real} forward) that land BOTH occupants
     // in removedOccupants and LOSE the real burst's data. Effort-only mirrors
     // the backend SessionIdentityHealer, which returns the correct result.
-    // Only INSIGNIFICANT (near-zero coins/HR/active-zone) segments fold.
+    // Only INSIGNIFICANT (near-zero rings/HR/active-zone) segments fold.
     allTransfers.push(...applyEffortAbsorb(segments, cfg));
   }
   // Rule 1 (Decision §5): a untagged placeholder immediately followed on the same device by

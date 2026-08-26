@@ -4,7 +4,7 @@ import { DashboardCard } from '../../Fitness/widgets/_shared/DashboardCard';
 
 export default function SessionsCard({ sessions, onClick }) {
   const count = sessions?.length || 0;
-  const totalCoins = sessions?.reduce((t, s) => t + (s.totalCoins || 0), 0) || 0;
+  const totalRings = sessions?.reduce((t, s) => t + (s.totalRings || 0), 0) || 0;
   const latest = sessions?.[0];
 
   return (
@@ -12,9 +12,9 @@ export default function SessionsCard({ sessions, onClick }) {
       <Stack gap={4} align="center">
         <Title order={2} className="dashboard-stat-value">{count}</Title>
         <Text size="sm" c="dimmed">today</Text>
-        {totalCoins > 0 && (
+        {totalRings > 0 && (
           <Badge color="yellow" variant="light" size="lg">
-            🪙 {totalCoins}
+            🪙 {totalRings}
           </Badge>
         )}
         {latest?.title && (

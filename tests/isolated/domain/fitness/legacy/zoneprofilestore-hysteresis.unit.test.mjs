@@ -17,10 +17,10 @@ beforeAll(async () => {
 });
 
 const ZONE_CONFIG = [
-  { id: 'cool', name: 'Cool', min: 0, color: 'gray', coins: 0 },
-  { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
-  { id: 'warm', name: 'Warm', min: 130, color: 'yellow', coins: 2 },
-  { id: 'hot', name: 'Hot', min: 160, color: 'orange', coins: 3 }
+  { id: 'cool', name: 'Cool', min: 0, color: 'gray', rings: 0 },
+  { id: 'active', name: 'Active', min: 100, color: 'green', rings: 1 },
+  { id: 'warm', name: 'Warm', min: 130, color: 'yellow', rings: 2 },
+  { id: 'hot', name: 'Hot', min: 160, color: 'orange', rings: 3 }
 ];
 
 const makeUser = (id, heartRate, opts = {}) => ({
@@ -240,8 +240,8 @@ describe('ZoneProfileStore hysteresis', () => {
     // Use a zone config where active min is 2 (below EXIT_MARGIN_BPM of 5)
     // Exit threshold = max(0, 2 - 5) = 0 (clamped, would be -3 without clamp)
     const tightConfig = [
-      { id: 'cool', name: 'Cool', min: 0, color: 'gray', coins: 0 },
-      { id: 'active', name: 'Active', min: 2, color: 'green', coins: 1 }
+      { id: 'cool', name: 'Cool', min: 0, color: 'gray', rings: 0 },
+      { id: 'active', name: 'Active', min: 2, color: 'green', rings: 1 }
     ];
     store.setBaseZoneConfig(tightConfig);
 

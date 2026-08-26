@@ -130,7 +130,7 @@ export class ParticipantIdentityResolver {
    * Get the timeline series key for a participant and metric
    * 
    * @param {string} deviceId - Device ID
-   * @param {string} metric - Metric name (e.g., 'heart_rate', 'coins_total')
+   * @param {string} metric - Metric name (e.g., 'heart_rate', 'rings_total')
    * @returns {string | null}
    */
   getSeriesKey(deviceId, metric) {

@@ -80,11 +80,11 @@ function v3Payload() {
     // Sent at the ROOT by the kiosk; the save path folds them into
     // timeline.events and stores them there only.
     events: [{ timestamp: 1_754_930_000_000, type: 'session_start' }],
-    treasureBox: { coinTimeUnitMs: 5000, totalCoins: 4 },
+    treasureBox: { ringTimeUnitMs: 5000, totalRings: 4 },
     summary: {
-      participants: { 'test-user': { coins: 4, hr_avg: 120 } },
+      participants: { 'test-user': { rings: 4, hr_avg: 120 } },
       media: [],
-      coins: { total: 4 },
+      rings: { total: 4 },
       voiceMemos: [],
     },
   };
@@ -148,11 +148,11 @@ describe('fitness session stored shape (characterization)', () => {
         tick_count: 3,
         encoding: 'rle',
       },
-      treasureBox: { coinTimeUnitMs: 5000, totalCoins: 4 },
+      treasureBox: { ringTimeUnitMs: 5000, totalRings: 4 },
       summary: {
-        participants: { 'test-user': { coins: 4, hr_avg: 120 } },
+        participants: { 'test-user': { rings: 4, hr_avg: 120 } },
         media: [],
-        coins: { total: 4 },
+        rings: { total: 4 },
         voiceMemos: [],
       },
     }));

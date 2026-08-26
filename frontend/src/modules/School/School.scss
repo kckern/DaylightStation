@@ -2436,18 +2436,71 @@
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
 
+  // RINGS THIS WEEK. Sits under the "x of y" readout in the card's right
+  // column: a second, independent fact (how much the child MOVED) beside the
+  // school-work count, not a competitor to it. Quieter than the status line on
+  // purpose — the discs and their count are still what this board is for.
+  &__rings {
+    align-self: flex-end; flex: 0 0 auto;
+    display: flex; align-items: center; gap: 0.3em;
+    font-size: clamp(0.8rem, 1.8vh, 1rem); font-weight: 700;
+    color: var(--school-muted);
+    line-height: 1;
+  }
+  &__rings-count { font-variant-numeric: tabular-nums; }
+
   // A CLEARED DAY, VISIBLE FROM THE DOORWAY. Green card, green rim, and a slow
-  // breath on the rim's glow — the only motion on this panel, and the only
-  // reward it has to give. Two seconds per cycle is a breath, not a blink; a
-  // faster pulse on a wall fixture that is up all day becomes something to
-  // ignore, or to be irritated by.
+  // DOT CRAWL around the rim — the only motion on this panel, and the only
+  // reward it has to give.
+  //
+  // It was a breathing glow (a box-shadow fading in and out every 2.4s) and
+  // that was the wrong shape of motion for a wall fixture: anything that
+  // changes BRIGHTNESS periodically reads as blinking from the corner of the
+  // eye, and a thing that blinks all day is a thing you learn to ignore or
+  // resent. A crawl holds a constant luminance and moves instead, so it is
+  // legible as "finished" without ever flashing. KC, 2026-08-26.
+  //
+  // The dots must follow the 16px corner radius, which rules out the classic
+  // four-straight-strips marching-ants trick. A conic gradient rotated about
+  // the card's centre, masked down to a 2px ring, chases the rounded outline
+  // properly. 14s is deliberately unhurried: this should be noticed on the way
+  // past, not watched.
   &__row[data-complete='true'] {
+    position: relative;
     border-color: var(--school-board-done);
     background: color-mix(in srgb, var(--school-board-done) 14%, var(--school-surface));
-    animation: school-board-glow 2.4s ease-in-out infinite;
 
     .school-status-board__status { color: var(--school-board-done); opacity: 1; }
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      padding: 2px;
+      pointer-events: none;
+      background: repeating-conic-gradient(
+        from var(--school-board-crawl-angle),
+        var(--school-board-done) 0deg 2.2deg,
+        transparent 2.2deg 7deg
+      );
+      // Punch the middle out so only the ring paints. `exclude` keeps the
+      // rounded corners honest; a border-image cannot.
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude;
+      animation: school-board-crawl 14s linear infinite;
+    }
   }
+}
+
+// An angle cannot be interpolated unless it is a registered custom property —
+// without this the gradient would jump between keyframes instead of turning.
+@property --school-board-crawl-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
 }
 
 @keyframes school-board-shimmer {
@@ -2455,14 +2508,21 @@
   100% { background-position: -30% 0; }
 }
 
-@keyframes school-board-glow {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--school-board-done) 40%, transparent); }
-  50% { box-shadow: 0 0 clamp(10px, 2vh, 22px) clamp(1px, 0.4vh, 4px) color-mix(in srgb, var(--school-board-done) 55%, transparent); }
+@keyframes school-board-crawl {
+  to { --school-board-crawl-angle: 360deg; }
 }
 
 // A wall fixture must not animate at someone who has asked it not to.
+//
+// THE SELECTOR HAS TO NAME THE PSEUDO-ELEMENT. The cleared-day motion used to
+// live on the row itself (a box-shadow breath), so `…__row[data-complete]` was
+// enough. The dot crawl runs on the row's `::after`, and a rule that stops the
+// row stops nothing — the ring would keep turning for exactly the person who
+// asked it not to. The static ring still reads as "done": it is a solid dotted
+// green rim, it simply stops moving.
 @media (prefers-reduced-motion: reduce) {
   .school-status-board__row[data-complete='true'],
+  .school-status-board__row[data-complete='true']::after,
   .school-status-board__pill--skeleton { animation: none; }
 }
 /* On a portrait/narrow mount the split stacks; the board hides on very short

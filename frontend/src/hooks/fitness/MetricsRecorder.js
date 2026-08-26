@@ -253,17 +253,17 @@ export class MetricsRecorder {
     if (treasureBox) {
       const treasureSummary = treasureBox.summary;
       if (treasureSummary) {
-        assignMetric('global:coins_total', treasureSummary.totalCoins);
+        assignMetric('global:rings_total', treasureSummary.totalRings);
       }
       
-      const perUserCoinTotals = typeof treasureBox.getPerUserTotals === 'function'
+      const perUserRingTotals = typeof treasureBox.getPerUserTotals === 'function'
         ? treasureBox.getPerUserTotals()
         : null;
       
-      if (perUserCoinTotals && typeof perUserCoinTotals.forEach === 'function') {
-        perUserCoinTotals.forEach((coins, userId) => {
+      if (perUserRingTotals && typeof perUserRingTotals.forEach === 'function') {
+        perUserRingTotals.forEach((rings, userId) => {
           if (!userId) return;
-          assignMetric(`user:${userId}:coins_total`, Number.isFinite(coins) ? coins : null);
+          assignMetric(`user:${userId}:rings_total`, Number.isFinite(rings) ? rings : null);
         });
       }
     }

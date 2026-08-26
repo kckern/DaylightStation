@@ -79,7 +79,7 @@ Aggregated data from `userVitalsMap`:
 - Average heart rate across all participants
 - Zone distribution breakdown
 - Active time vs idle time
-- Treasure box coin balance from `treasureBox`
+- Treasure box ring balance from `treasureBox`
 
 ### Governance State Display
 
@@ -136,10 +136,10 @@ A persistent utility panel accessible via a floating action button (bottom-right
 
 ### Treasure Chest Status
 - **Live Mode**: Bound to `treasureBox` from context
-- Shows current coin balance with animated coin stack
+- Shows current ring balance with animated ring stack
 - Progress toward next reward threshold
 - "Claim Rewards" button when rewards available
-- Sparkle animation when coins are earned
+- Sparkle animation when rings are earned
 
 ### Quick Notes
 - Tap to open voice memo recording (triggers `openVoiceMemoRedo`)
@@ -360,7 +360,7 @@ Domain-specific fitness components, all populated with live context data.
 - Artwork visibility toggle
 
 #### 4.9 TreasureBoxWidget
-- **Live Mode**: Displays actual `treasureBox` coin balance from session
+- **Live Mode**: Displays actual `treasureBox` ring balance from session
 - States: locked, unlocked, opening, open
 - Size options and glow effect toggle
 

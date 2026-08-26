@@ -19,19 +19,19 @@ beforeAll(async () => {
 });
 
 const GLOBAL_ZONES = [
-  { id: 'cool', name: 'Cool', min: 0, color: 'blue', coins: 0 },
-  { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
-  { id: 'warm', name: 'Warm', min: 120, color: 'yellow', coins: 2 },
-  { id: 'hot', name: 'Hot', min: 140, color: 'orange', coins: 3 },
-  { id: 'fire', name: 'Fire', min: 160, color: 'red', coins: 5 },
+  { id: 'cool', name: 'Cool', min: 0, color: 'blue', rings: 0 },
+  { id: 'active', name: 'Active', min: 100, color: 'green', rings: 1 },
+  { id: 'warm', name: 'Warm', min: 120, color: 'yellow', rings: 2 },
+  { id: 'hot', name: 'Hot', min: 140, color: 'orange', rings: 3 },
+  { id: 'fire', name: 'Fire', min: 160, color: 'red', rings: 5 },
 ];
 
 const LEARNER_ONE_ZONE_CONFIG = [
-  { id: 'cool', name: 'Cool', min: 0, color: 'blue', coins: 0 },
-  { id: 'active', name: 'Active', min: 125, color: 'green', coins: 1 },
-  { id: 'warm', name: 'Warm', min: 150, color: 'yellow', coins: 2 },
-  { id: 'hot', name: 'Hot', min: 170, color: 'orange', coins: 3 },
-  { id: 'fire', name: 'Fire', min: 190, color: 'red', coins: 5 },
+  { id: 'cool', name: 'Cool', min: 0, color: 'blue', rings: 0 },
+  { id: 'active', name: 'Active', min: 125, color: 'green', rings: 1 },
+  { id: 'warm', name: 'Warm', min: 150, color: 'yellow', rings: 2 },
+  { id: 'hot', name: 'Hot', min: 170, color: 'orange', rings: 3 },
+  { id: 'fire', name: 'Fire', min: 190, color: 'red', rings: 5 },
 ];
 
 function createMockZoneProfileStore(profiles = {}) {
@@ -65,7 +65,7 @@ describe('TreasureBox per-user zone resolution', () => {
     const tb = createTreasureBox();
     const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('active');
-    expect(zone.coins).toBe(1);
+    expect(zone.rings).toBe(1);
   });
 
   it('uses per-user zones from ZoneProfileStore when available', () => {
@@ -73,7 +73,7 @@ describe('TreasureBox per-user zone resolution', () => {
     const tb = createTreasureBox(store);
     const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('cool');
-    expect(zone.coins).toBe(0);
+    expect(zone.rings).toBe(0);
   });
 
   it('falls back to global zones for users without custom profiles', () => {
@@ -81,7 +81,7 @@ describe('TreasureBox per-user zone resolution', () => {
     const tb = createTreasureBox(store);
     const zone = tb.resolveZone('user_4', 113);
     expect(zone.id).toBe('active');
-    expect(zone.coins).toBe(1);
+    expect(zone.rings).toBe(1);
   });
 
   it('respects per-user active threshold exactly at boundary', () => {
@@ -89,7 +89,7 @@ describe('TreasureBox per-user zone resolution', () => {
     const tb = createTreasureBox(store);
     const zone = tb.resolveZone('user_5', 125);
     expect(zone.id).toBe('active');
-    expect(zone.coins).toBe(1);
+    expect(zone.rings).toBe(1);
   });
 
   it('resolves higher zones correctly with per-user thresholds', () => {
@@ -97,7 +97,7 @@ describe('TreasureBox per-user zone resolution', () => {
     const tb = createTreasureBox(store);
     const zone = tb.resolveZone('user_5', 155);
     expect(zone.id).toBe('warm');
-    expect(zone.coins).toBe(2);
+    expect(zone.rings).toBe(2);
   });
 
   it('still uses usersConfigOverrides if populated (backward compat)', () => {
@@ -105,6 +105,6 @@ describe('TreasureBox per-user zone resolution', () => {
     tb.usersConfigOverrides.set('user_5', { active: 125, warm: 150, hot: 170, fire: 190 });
     const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('cool');
-    expect(zone.coins).toBe(0);
+    expect(zone.rings).toBe(0);
   });
 });

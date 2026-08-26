@@ -1,0 +1,176 @@
+/**
+ * RingIcon — all motion, in CSS only.
+ *
+ * The source SVG (media/fitness/ux/spinning-ring.svg) animated two ways: CSS
+ * @keyframes for the face/glints, and eight SMIL <animateTransform> elements
+ * for the extrusion slices. That split is why it could not honour
+ * prefers-reduced-motion — CSS can stop keyframes but nothing can stop SMIL
+ * declaratively. Every SMIL element is ported here.
+ *
+ * The eight slices ran the same curve at different amplitudes (±14, ±10, ±6,
+ * ±2 for the depth slices, +14 for the face). Those keyTimes/values are
+ * exactly sin(2πt), so they collapse to ONE keyframe set driven by a per-slice
+ * `--amp` custom property rather than eight near-identical rules.
+ */
+
+.ring-icon {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex: none;
+
+  // Everything below is paused unless the caller opts in. Static is the
+  // default because the school status board mounts four of these and holds an
+  // explicit one-motion budget (see AgendaStatusBoard's docblock).
+  .ring-icon__plane,
+  .ring-icon__slice,
+  .ring-icon__sparkle-a,
+  .ring-icon__sparkle-b,
+  .ring-icon__edge-core,
+  .ring-icon__glint-a,
+  .ring-icon__glint-b {
+    animation-play-state: paused;
+    // plane-turn begins at scaleX(1) — the face-on, widest, most legible pose —
+    // so a paused animation IS the static frame we want. No second drawing.
+    animation-delay: 0s;
+  }
+
+  &--spin,
+  &--spin-once {
+    .ring-icon__plane,
+    .ring-icon__slice,
+    .ring-icon__sparkle-a,
+    .ring-icon__sparkle-b,
+    .ring-icon__edge-core,
+    .ring-icon__glint-a,
+    .ring-icon__glint-b {
+      animation-play-state: running;
+    }
+  }
+
+  &--spin-once {
+    .ring-icon__plane,
+    .ring-icon__slice,
+    .ring-icon__sparkle-a,
+    .ring-icon__sparkle-b,
+    .ring-icon__edge-core,
+    .ring-icon__glint-a,
+    .ring-icon__glint-b {
+      animation-iteration-count: 1;
+    }
+  }
+}
+
+.ring-icon__plane {
+  animation: ring-plane-turn 2.8s linear infinite;
+  transform-box: view-box;
+  transform-origin: 0 0;
+}
+
+// Was <animateTransform type="translate">. `--amp` carries the slice's depth.
+.ring-icon__slice {
+  animation: ring-slice-shift 2.8s linear infinite;
+  transform-box: view-box;
+  transform-origin: 0 0;
+}
+
+.ring-icon__sparkle-a,
+.ring-icon__sparkle-b {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.ring-icon__sparkle-a { animation: ring-sparkle-a 2.8s linear infinite; }
+.ring-icon__sparkle-b { animation: ring-sparkle-b 2.8s linear infinite; }
+.ring-icon__edge-core { animation: ring-edge-core 2.8s linear infinite; }
+.ring-icon__glint-a   { animation: ring-glint-a 2.8s step-end infinite; }
+.ring-icon__glint-b   { animation: ring-glint-b 2.8s step-end infinite; }
+
+/* Samples of cos(theta) give a continuous turn without pausing at edge-on. */
+@keyframes ring-plane-turn {
+  0%, 100% { transform: scaleX(1); }
+  6.25%  { transform: scaleX(.924); }
+  12.5%  { transform: scaleX(.707); }
+  18.75% { transform: scaleX(.383); }
+  25%    { transform: scaleX(.035); }
+  31.25% { transform: scaleX(-.383); }
+  37.5%  { transform: scaleX(-.707); }
+  43.75% { transform: scaleX(-.924); }
+  50%    { transform: scaleX(-1); }
+  56.25% { transform: scaleX(-.924); }
+  62.5%  { transform: scaleX(-.707); }
+  68.75% { transform: scaleX(-.383); }
+  75%    { transform: scaleX(-.035); }
+  81.25% { transform: scaleX(.383); }
+  87.5%  { transform: scaleX(.707); }
+  93.75% { transform: scaleX(.924); }
+}
+
+/* x = z*sin(theta). One curve; `--amp` is the slice's signed depth. */
+@keyframes ring-slice-shift {
+  0%, 100% { transform: translateX(0); }
+  6.25%  { transform: translateX(calc(var(--amp) * .386)); }
+  12.5%  { transform: translateX(calc(var(--amp) * .707)); }
+  18.75% { transform: translateX(calc(var(--amp) * .921)); }
+  25%    { transform: translateX(calc(var(--amp) * 1)); }
+  31.25% { transform: translateX(calc(var(--amp) * .921)); }
+  37.5%  { transform: translateX(calc(var(--amp) * .707)); }
+  43.75% { transform: translateX(calc(var(--amp) * .386)); }
+  50%    { transform: translateX(0); }
+  56.25% { transform: translateX(calc(var(--amp) * -.386)); }
+  62.5%  { transform: translateX(calc(var(--amp) * -.707)); }
+  68.75% { transform: translateX(calc(var(--amp) * -.921)); }
+  75%    { transform: translateX(calc(var(--amp) * -1)); }
+  81.25% { transform: translateX(calc(var(--amp) * -.921)); }
+  87.5%  { transform: translateX(calc(var(--amp) * -.707)); }
+  93.75% { transform: translateX(calc(var(--amp) * -.386)); }
+}
+
+@keyframes ring-sparkle-a {
+  0%, 20%, 30%, 100% { opacity: 0; transform: scale(.15) rotate(-12deg); }
+  24%, 26% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+@keyframes ring-sparkle-b {
+  0%, 70%, 80%, 100% { opacity: 0; transform: scale(.15) rotate(12deg); }
+  74%, 76% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+@keyframes ring-edge-core {
+  0%, 22%, 28%, 72%, 78%, 100% { opacity: 0; }
+  24%, 26%, 74%, 76% { opacity: 1; }
+}
+
+/* Swap local sides while the ring is edge-on; the apparent light stays screen-right. */
+@keyframes ring-glint-a {
+  0%, 24.99% { opacity: 1; }
+  25%, 74.99% { opacity: 0; }
+  75%, 100% { opacity: 1; }
+}
+
+@keyframes ring-glint-b {
+  0%, 24.99% { opacity: 0; }
+  25%, 74.99% { opacity: 1; }
+  75%, 100% { opacity: 0; }
+}
+
+/**
+ * THE WHOLE REASON THE SMIL WAS PORTED. A `spin` prop is a request; this is the
+ * authority. Because every animation is now CSS, one rule stops all of them —
+ * which was impossible while eight <animateTransform> elements were running.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .ring-icon,
+  .ring-icon--spin,
+  .ring-icon--spin-once {
+    .ring-icon__plane,
+    .ring-icon__slice,
+    .ring-icon__sparkle-a,
+    .ring-icon__sparkle-b,
+    .ring-icon__edge-core,
+    .ring-icon__glint-a,
+    .ring-icon__glint-b {
+      animation: none !important;
+    }
+  }
+}
