@@ -76,6 +76,30 @@ describe('trigger learner actions — composition contract', () => {
     expect(printed).toEqual([]);
   });
 
+  it('and changes nothing in Home Assistant either', async () => {
+    // The refused path ran the zombie-wake-guard suppression on its way past —
+    // `livingroom-tv` is the one guarded target — so the tap that promises to
+    // change nothing disabled a TV safety automation for 90 seconds. Only
+    // content wakes a target; only content needs the guard out of the way.
+    const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    const learnerActions = createLearnerActions({ logger: silent });
+    const service = new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: { resolve: () => null },
+      wakeAndLoadService: { execute: vi.fn() },
+      haGateway,
+      deviceService: { get: vi.fn() },
+      tagWriter: { recordObserved: vi.fn().mockResolvedValue({ created: true }) },
+      learnerActions,
+      broadcast: vi.fn(),
+      logger: silent,
+    });
+
+    await service.handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+
+    expect(haGateway.callService).not.toHaveBeenCalled();
+  });
+
   it('a no_handler refusal does not file the card as an unknown tag', async () => {
     // The tag IS registered and named — it is the ACTION that has no owner. A
     // placeholder write and a phone push would misname the problem.
