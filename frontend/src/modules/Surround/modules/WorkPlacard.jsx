@@ -143,6 +143,22 @@ export default function WorkPlacard({
   }, [mapped, drawn]);
   const segment = index >= 0 ? drawn[index].segment : null;
 
+  // ---- PERFORMER SEGMENT — even on a single work ----------------------------
+  // The container gate above decides whether the TITLE tracks the sounding
+  // segment. The performer credit is a separate question: a single-work recital
+  // with nine pianists rotates the credit every few minutes even though the
+  // title stays fixed. Resolve the sounding segment against the full rail
+  // regardless of container status; the only consumer is the performer line.
+  const perfMapped = useMemo(
+    () => (!container && rail.length
+      ? segmentAt({ segments: rail, contentId, position })
+      : null),
+    [container, rail, contentId, position],
+  );
+  const perfSegment = container
+    ? segment
+    : (perfMapped?.index >= 0 ? rail[perfMapped.index] : null);
+
   // ---- THE FIT --------------------------------------------------------------
   // Every name this plate may ever carry, CURLED, because that is what is
   // painted — a measurement of the straight-quoted original measures a string
@@ -291,10 +307,20 @@ export default function WorkPlacard({
   // in the fleet.
   const parts = [piece?.opus, piece?.composed, piece?.premiered].filter(Boolean);
 
+  // PERFORMANCE CREDIT — the recording, not the work. Segment-level override
+  // wins (a different pianist for one movement), then the piece-level default.
+  const performance = trimmed(perfSegment?.performance) || trimmed(data?.piece?.performance) || '';
+  const perfParts = performance ? performance.split(/\s+\.\s+/).filter(Boolean) : [];
+
+  const modifiers = [
+    container ? ' surround-work-placard--set' : '',
+    perfParts.length ? ' surround-work-placard--has-performer' : '',
+  ].join('');
+
   return (
     <div
       ref={rootRef}
-      className={`surround-work-placard${container ? ' surround-work-placard--set' : ''}`}
+      className={`surround-work-placard${modifiers}`}
       data-testid="surround-work-placard"
       style={plateStyle(fit)}
     >
@@ -303,20 +329,10 @@ export default function WorkPlacard({
         data-testid="surround-placard-title"
       >
         {smartQuotes(title)}
-        {/* THE RULER (the idiom the band measures its prose with, `../fit.js`).
-            Out of flow and invisible, inside the very element it measures, so it
-            inherits the face, the weight and the tracking the headline is set
-            in. Rendered only on a container: a single work's plate is not
-            fitted, and an element nothing measures is an element that can only
-            be wrong. */}
         {container && (
           <span className="surround-work-placard__probe" aria-hidden="true" />
         )}
       </h2>
-      {/* THE SET LINE. Reserved, not conditional — see BLANK_LINE. It names the
-          set and the segment's place in it; the rail below draws the same fact
-          as geometry, and this is the sentence form of it for a viewer who has
-          just walked in. */}
       {container && (
         <p className="surround-work-placard__set" data-testid="surround-placard-set">
           {set ? (
@@ -331,8 +347,6 @@ export default function WorkPlacard({
       {parts.length > 0 ? (
         <p className="surround-work-placard__meta">
           {parts.map((part, i) => (
-            // The parts are authored strings from one corpus entry, in a fixed
-            // order; the index is their identity as much as their value is.
             // eslint-disable-next-line react/no-array-index-key
             <React.Fragment key={`${i}:${part}`}>
               {i > 0 && (
@@ -343,6 +357,19 @@ export default function WorkPlacard({
           ))}
         </p>
       ) : null}
+      {perfParts.length > 0 && (
+        <p className="surround-work-placard__performer" data-testid="surround-placard-performer">
+          {perfParts.map((part, i) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <React.Fragment key={`p${i}:${part}`}>
+              {i > 0 && (
+                <span className="surround-work-placard__sep" aria-hidden="true">·</span>
+              )}
+              {smartQuotes(part)}
+            </React.Fragment>
+          ))}
+        </p>
+      )}
     </div>
   );
 }

@@ -429,7 +429,7 @@ export default function LaunchCard({
 
   return (
     <section
-      className="school-selfservice-card"
+      className={`school-selfservice-card${card?.bulk ? ' school-selfservice-card--bulk' : ''}`}
       data-testid="selfservice-card"
       data-status={card?.presentation?.status ?? 'ready'}
       data-preview={isPreview ? 'true' : undefined}
@@ -474,6 +474,20 @@ export default function LaunchCard({
           <div className="school-selfservice-card__interaction" aria-busy={busy}>
             {view === 'card' && (
               <>
+                {/* Bulk card: one line per printable subject. When `items` is
+                    empty (nothing left to print today) there is nothing to
+                    list — the all-done `message` below and the backend's
+                    exit-only `actions` carry the whole message. */}
+                {card?.bulk && card.items?.length > 0 && (
+                  <ul className="school-selfservice-card__items" data-testid="selfservice-bulk-items">
+                    {card.items.map((item, index) => (
+                      <li key={`${item.subject}-${index}`} className="school-selfservice-card__item">
+                        <span className="school-selfservice-card__item-subject">{item.subject}</span>
+                        <span className="school-selfservice-card__item-title">{item.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {message && <p className="school-selfservice-card__sentence" role="status">{message}</p>}
                 <div className="school-selfservice-card__actions">
                   {actions.map((action, index) => (
