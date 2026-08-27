@@ -60,9 +60,14 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
   const titles = curriculumTitles(catalog.data?.units ?? []);
 
   const allSessions = work.data?.sessions ?? [];
+  // The household's 4am-boundary study day, NOT the row's `day` — that one is a
+  // UTC slice of the opening timestamp, so west of UTC an evening lesson files
+  // itself under tomorrow and vanishes from the button for the day it was
+  // actually done. Same `studyDay ?? day` rule the session timeline follows.
+  const dayOf = (s) => s.studyDay ?? s.day ?? null;
   const days = [...new Set([
     ...(recentDays.data?.days ?? []),
-    ...allSessions.map((s) => s.day).filter(Boolean),
+    ...allSessions.map(dayOf).filter(Boolean),
   ])].sort().reverse().slice(0, RECENT_DAYS);
 
   const assessments = loaded?.assessments ?? null;
@@ -71,8 +76,17 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
   // one piece of work.
   const withAttempts = new Set((assessments ?? []).map((a) => a.assessmentId));
   const sessions = loaded
-    ? allSessions.filter((s) => s.day === loaded.day && !withAttempts.has(s.sessionId))
+    ? allSessions.filter((s) => dayOf(s) === loaded.day && !withAttempts.has(s.sessionId))
     : [];
+  // Names come from the catalog; when that read failed there are no names, and
+  // labelling every row identically while leaving its Re-credit button live is
+  // how a grown-up moves the wrong lesson. Fall back to the id — a join key is
+  // a poor label but it is the only thing left that distinguishes the rows —
+  // and say why, so the ids read as a degradation rather than as the design.
+  const catalogNamed = catalog.state === 'ok';
+  const labelFor = (s) => (catalogNamed
+    ? titles.lesson(s.unitId)
+    : s.unitId ?? 'Lesson with no unit recorded');
 
   const load = async (forDay = day) => {
     setLoadError(null);
@@ -138,6 +152,9 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
           <p className="teacher-panel__empty">
             Lessons with no recorded answers. Moving one re-credits the whole lesson to the sibling.
           </p>
+          {!catalogNamed && (
+            <p className="teacher-panel__error">Lesson names couldn’t be loaded — these are their ids.</p>
+          )}
           <textarea
             aria-label="Reason"
             placeholder="Whose work is it, and how do you know? (required)"
@@ -147,7 +164,7 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
           <ul className="teacher-quizreq">
             {sessions.map((s) => (
               <li key={s.sessionId} className="teacher-quizreq__row">
-                <span>{titles.lesson(s.unitId)}</span>
+                <span>{labelFor(s)}</span>
                 <span className="teacher-quizreq__meta">{s.state ?? 'not started'}</span>
                 <button
                   type="button"

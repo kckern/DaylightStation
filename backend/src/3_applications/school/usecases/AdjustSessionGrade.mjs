@@ -146,8 +146,17 @@ export class AdjustSessionGrade {
       currentAmount, desiredAmount, delta: 0, txnId: null };
 
     const at = this.#clock().toISOString();
+    // WHOSE balance this delta lands on. Not `after.learnerId`: `reassigned` is
+    // legal at `rewarded`, so a session can be re-credited AFTER it paid, and
+    // from then on the credited learner is not the child holding the coins.
+    // Reversing against the credited learner would debit a child who was never
+    // paid while the original kept theirs, and a raise would pay twice.
+    // `rewardPaidTo` is stamped by the award; absent (nothing was paid, or the
+    // session predates the field) it falls back to the credited learner, which
+    // is exactly what this always did.
+    const payee = before.rewardPaidTo ?? after.learnerId;
     try {
-      const adjusted = await this.#economy.adjust(after.learnerId, {
+      const adjusted = await this.#economy.adjust(payee, {
         delta, source: 'school-grade-correction', ref: reconciliationId,
         note: `Session ${sessionId}; adjustment ${sourceAdjustmentId}`,
       });

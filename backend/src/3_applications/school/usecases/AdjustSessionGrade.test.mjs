@@ -137,3 +137,72 @@ describe('AdjustSessionGrade', () => {
     expect(reduceSession(f.events).rewardAmount).toBe(0);
   });
 });
+
+/**
+ * A REVERSAL MUST DEBIT WHOEVER WAS PAID.
+ *
+ * `reassigned` is legal at `rewarded`, so a lesson can be re-credited after it
+ * paid — and from that moment the session's credited learner and the child
+ * holding the coins are two different people. Reconciling against the credited
+ * learner would take five coins off a child who was never given them while the
+ * original child kept theirs, and a raise would pay the household's coins out
+ * twice. The payee is recorded on the award; this is what reads it.
+ */
+describe('reward reconciliation after a reassignment', () => {
+  const paidThenReassigned = ({ paidTo = 'kid1' } = {}) => [
+    { type: 'created', at: '2026-08-01T10:00:00.000Z', sessionId: 'ses_1', seq: 1, learnerId: 'kid1', unitId: 'math' },
+    { type: 'issued', at: '2026-08-01T10:01:00.000Z', sessionId: 'ses_1', seq: 2, artifactId: 'art_1' },
+    { type: 'submitted', at: '2026-08-01T10:02:00.000Z', sessionId: 'ses_1', seq: 3, transport: 'paper' },
+    { type: 'graded', at: '2026-08-01T10:03:00.000Z', sessionId: 'ses_1', seq: 4,
+      attemptIds: ['att_1'], percent: 100, passingPercent: 80, correctCount: 2, totalCount: 2 },
+    { type: 'outcome_recorded', at: '2026-08-01T10:04:00.000Z', sessionId: 'ses_1', seq: 5, outcomeId: 'out_1', result: 'passed' },
+    { type: 'rewarded', at: '2026-08-01T10:05:00.000Z', sessionId: 'ses_1', seq: 6, txnId: 'txn_1', amount: 5, ...(paidTo ? { paidTo } : {}) },
+    { type: 'reassigned', at: '2026-08-02T09:00:00.000Z', sessionId: 'ses_1', seq: 7,
+      fromLearnerId: 'kid1', toLearnerId: 'kid2', reviewedBy: 'parent', reason: 'kid2 sat at the wrong desk' },
+  ];
+
+  const build = (events) => {
+    const log = events.map((e) => ({ ...e }));
+    const sessions = {
+      readEvents: vi.fn(async () => log.map((event) => ({ ...event }))),
+      appendEvent: vi.fn(async (sessionId, event) => {
+        const stored = { ...event, sessionId, seq: log.length + 1 };
+        log.push(stored);
+        return stored;
+      }),
+    };
+    const economy = { adjust: vi.fn(async (_learnerId, args) => ({ txnId: `txn:${args.ref}` })) };
+    const adjust = new AdjustSessionGrade({
+      sessions, teacherGate: { assert: vi.fn() }, economy,
+      curriculum: { getUnit: vi.fn(async () => ({ reward: { amount: 5 } })) },
+      economyEnabled: true, clock: () => new Date('2026-08-02T12:00:00.000Z'), logger: { info() {}, warn() {} },
+    });
+    return { log, economy, adjust };
+  };
+
+  const failIt = (adjust) => adjust.execute({
+    sessionId: 'ses_1', adjustmentId: 'adj_down', percent: 40,
+    reason: 'the marks were another child\'s', adjustedBy: 'parent', baseSeq: 7, apply: true,
+  });
+
+  it('debits the child who was paid, not the child the work now belongs to', async () => {
+    const { log, economy, adjust } = build(paidThenReassigned());
+    // The session reads as kid2's work; the coins are kid1's.
+    expect(reduceSession(log)).toMatchObject({ learnerId: 'kid2', rewardPaidTo: 'kid1', rewardAmount: 5 });
+
+    const result = await failIt(adjust);
+    expect(result.rewardReconciliation).toMatchObject({ status: 'applied', delta: -5, desiredAmount: 0 });
+    expect(economy.adjust).toHaveBeenCalledOnce();
+    expect(economy.adjust).toHaveBeenCalledWith('kid1', expect.objectContaining({ delta: -5 }));
+    // The child who never held these coins is not touched at all.
+    expect(economy.adjust.mock.calls.map(([learnerId]) => learnerId)).not.toContain('kid2');
+  });
+
+  it('falls back to the credited learner for an award that named no payee', async () => {
+    // Every session rewarded before `paidTo` existed, and every zero/skipped
+    // reward: unchanged behaviour, which is what the fallback is for.
+    const { economy, adjust } = build(paidThenReassigned({ paidTo: null }));
+    await failIt(adjust);
+    expect(economy.adjust).toHaveBeenCalledWith('kid2', expect.objectContaining({ delta: -5 }));
+  });
+});
