@@ -213,8 +213,13 @@ describe('LearnerDayView — agenda dispatch', () => {
     expect(screen.queryByRole('button', { name: /^Print it now$/i })).not.toBeInTheDocument();
   });
 
-  it('sends the exact Idempotency-Key minted at prepare time when it actually prints', async () => {
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('uuid-fixed');
+  it('sends the exact Idempotency-Key minted at prepare time when it actually prints — not a fresh one', async () => {
+    // Two DISTINCT values so the test can fail: a dispatch that minted a new
+    // key at print time (the bug this whole shape exists to prevent) would
+    // send 'uuid-print', not 'uuid-prepare'. A single fixed return value here
+    // would pass even for that bug, which is what the prior version did.
+    const randomUUID = vi.spyOn(globalThis.crypto, 'randomUUID')
+      .mockReturnValueOnce('uuid-prepare').mockReturnValueOnce('uuid-print');
     teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValue(readyPreview);
     teacherWorkspaceApi.agendaDispatch.mockResolvedValue(ok({ printed: true }));
     mount();
@@ -222,7 +227,11 @@ describe('LearnerDayView — agenda dispatch', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Print it now$/i }));
     await waitFor(() => expect(teacherWorkspaceApi.agendaDispatch).toHaveBeenCalled());
     const [, , idempotencyKey] = teacherWorkspaceApi.agendaDispatch.mock.calls[0];
-    expect(idempotencyKey).toContain('uuid-fixed');
+    expect(idempotencyKey).toContain('uuid-prepare');
+    expect(idempotencyKey).not.toContain('uuid-print');
+    // Only ONE key was ever minted for this prepare-then-print cycle.
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+    randomUUID.mockRestore();
   });
 
   it('discards the key on cancel, so a second prepare mints a different one', async () => {
@@ -254,5 +263,30 @@ describe('LearnerDayView — agenda dispatch', () => {
     const [, , , grantToken] = teacherWorkspaceApi.agendaDispatch.mock.calls[0];
     expect(grantToken).toBe('grant-xyz');
     expect(requestAuthorizationMock).toHaveBeenCalledWith({ action: 'agenda.dispatch', resource: 'learner-a' });
+  });
+
+  it('does not carry a prepared preview across a learner switch', async () => {
+    // The Students rail re-renders the SAME LearnerDayView position for a new
+    // learnerId — it does not remount the tree by itself. Without a key on
+    // AgendaDispatch, its `preview`/`idempotencyKey` state would survive that
+    // switch: a "ready to print" box built from Learner A's plan, wearing
+    // Learner B's name, offering to print unpreviewed paper for the wrong
+    // child. The fix is a `key={learnerId:studyDay}` on the element, which
+    // this proves by forcing the box back to its closed state on switch.
+    teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValue(readyPreview);
+    const { rerender } = render(
+      <LearnerDayView learnerId="learner-a" learnerName="Learner A" studyDay="2026-08-25"
+        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /Print the day.s agenda/i }));
+    await screen.findByText(/will print for Learner A/);
+
+    rerender(
+      <LearnerDayView learnerId="learner-b" learnerName="Learner B" studyDay="2026-08-25"
+        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Print the day.s agenda/i })).toBeInTheDocument());
+    expect(screen.queryByText(/will print for/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Print it now$/i })).not.toBeInTheDocument();
   });
 });

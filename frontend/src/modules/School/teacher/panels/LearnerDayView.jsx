@@ -306,7 +306,12 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
           only in the `ok` state, and "what would today's paper look like?"
           is a fair question on a day with nothing planned or recorded. */}
       <PrintedAgenda learnerId={learnerId} studyDay={studyDay} />
-      <AgendaDispatch learnerId={learnerId} learnerName={learnerName} studyDay={studyDay} />
+      {/* Keyed on learner+day: a plain re-render (switching Students-rail rows
+          reuses this element type at the same position) would otherwise carry
+          a stale `preview`/`idempotencyKey` across children — Alan's ready
+          count and Idempotency-Key sitting under Milo's name. The key forces
+          a remount, which is the only thing that resets that state. */}
+      <AgendaDispatch key={`${learnerId}:${studyDay}`} learnerId={learnerId} learnerName={learnerName} studyDay={studyDay} />
       {/* The heading deliberately avoids repeating the row chip's exact words:
           "Graded today" is the per-row label, and the section should not say
           the same phrase twice over one list. */}
