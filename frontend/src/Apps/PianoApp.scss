@@ -458,6 +458,91 @@
   }
 }
 
+// The one owed lesson, standing in for the whole tile wall. It is the ONLY
+// thing on the body, so it centres rather than tiling — a single card a child
+// walks up to and taps. Deliberately warmer and larger than a tile: the tile
+// wall is a menu of equals, this is the one thing to do right now.
+.piano-lesson-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-2);
+  // Sized for a wall tablet a child walks up to: this REPLACES the tile wall,
+  // so it has to hold the screen the way the wall did, not float in it.
+  width: min(46rem, 100%);
+  padding: var(--sp-5) var(--sp-6, 3rem) var(--sp-5);
+  background: var(--piano-surface);
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-lg);
+
+  &__thumb {
+    width: 20rem;
+    max-width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: var(--r-md);
+    margin-bottom: var(--sp-2);
+  }
+
+  // `--piano-accent-text`, not `--piano-accent`: this is accent used AS TEXT
+  // on a charcoal surface, which is the AA-safe pair.
+  &__eyebrow {
+    margin: 0;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--piano-accent-text);
+  }
+
+  &__context {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--piano-muted);
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 2.3rem;
+    line-height: 1.2;
+  }
+
+  // The blurb is context, not instruction — clamped so a long Hoffman summary
+  // can never push the start button off a short kiosk screen.
+  &__description {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--piano-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  // The single action on the screen, so it takes the accent FILL rather than
+  // a tile's outline — nothing else here competes with it.
+  &__start {
+    margin-top: var(--sp-3);
+    padding: var(--sp-3) var(--sp-5);
+    font: inherit;
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--piano-accent-ink);
+    background: var(--piano-accent);
+    border: none;
+    border-radius: var(--r-lg);
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.12s ease;
+
+    &:active { transform: scale(0.97); filter: brightness(0.92); }
+  }
+}
+
+@media (orientation: portrait) {
+  .piano-lesson-gate__thumb { width: 15rem; }
+  .piano-lesson-gate__title { font-size: 1.9rem; }
+}
+
 @media (orientation: portrait) {
   .piano-menu__tiles {
     // Keep two rows in portrait too — 5 equal columns that shrink to fit the
