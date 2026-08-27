@@ -42,6 +42,7 @@ vi.mock('./TeacherProfileContext.jsx', () => ({
 // StaleSessions is left REAL: "which page owns the stuck-session tool" is
 // exactly what the one-home tests below assert.
 vi.mock('./panels/ActiveOverrides.jsx', () => ({ default: () => null }));
+vi.mock('./panels/SystemHealthPanel.jsx', () => ({ default: () => null }));
 vi.mock('./panels/PeriodsTimeline.jsx', () => ({ default: () => null }));
 vi.mock('./panels/CurriculumCatalog.jsx', () => ({ default: () => null }));
 vi.mock('./panels/CurriculumBrowser.jsx', () => ({ default: () => null }));

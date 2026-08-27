@@ -15,6 +15,7 @@ import CurriculumBrowser from './panels/CurriculumBrowser.jsx';
 import CurriculumCatalog from './panels/CurriculumCatalog.jsx';
 import SyllabiPanel from './panels/SyllabiPanel.jsx';
 import ActiveOverrides from './panels/ActiveOverrides.jsx';
+import SystemHealthPanel from './panels/SystemHealthPanel.jsx';
 import PeriodsTimeline from './panels/PeriodsTimeline.jsx';
 import EnrichmentPanel from './panels/EnrichmentPanel.jsx';
 import ReviewQueueView from './panels/ReviewQueueView.jsx';
@@ -383,7 +384,7 @@ export function CurriculumView({ kids, courseId = null, lessonId = null }) {
 }
 
 export function OperationsView({ kids }) {
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><CapabilityNotice>Device health and retained-artifact audit will appear here when their teacher read models are available.</CapabilityNotice></div>;
+  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><SystemHealthPanel kids={kids} /></div>;
 }
 
 function BulkRegradePanel() {

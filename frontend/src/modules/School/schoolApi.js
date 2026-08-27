@@ -96,6 +96,10 @@ export const schoolApi = {
   },
   banks: (audience) => req(`/banks${audience ? `?audience=${encodeURIComponent(audience)}` : ''}`),
   bank: (id) => req(`/banks/${encodeURIComponent(id)}`),
+  // Content health (admin advocacy #7): which banks failed to parse at the
+  // last warm, by id. `{warmedAt, banks, failed}` — never consumed by any UI
+  // until the System health panel.
+  bankHealth: () => req('/banks/health'),
   learningCatalogs: (learnerId = null) => req(`/catalogs${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`),
   learningLesson: ({ catalogId, subjectId, courseId, unitId, lessonId }, learnerId = null) => req(
     `/catalogs/${encodeURIComponent(catalogId)}`
@@ -157,6 +161,13 @@ export const schoolApi = {
     if (periodId) p.set('periodId', periodId);
     return req(`/report-card/frozen?${p}`);
   },
+  // Superseded freeze versions (admin advocacy #5) — the archived
+  // `{periodId}.v<n>.yml` copies a supersede-close preserves rather than
+  // destroys. The route is learner+period scoped (400 without both), never a
+  // household-wide list.
+  reportCardFrozenVersions: ({ learnerId, periodId }) => req(
+    `/report-card/frozen/versions?${new URLSearchParams({ learnerId, periodId })}`,
+  ),
   lifecycleReview: () => req('/lifecycle/review'),
   // The HOUSEHOLD-WIDE review queue is `lifecycleReview` above. This is the
   // per-session read a stuck-session row needs before it can say why a

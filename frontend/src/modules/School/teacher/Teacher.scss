@@ -709,6 +709,7 @@
 }
 
 .teacher-quizreq__meta, .teacher-frozen__meta { color: #8a8272; }
+.teacher-frozen__health-link { display: inline-block; margin-top: 8px; font-size: 13px; color: #8a5a2a; }
 .teacher-quizreq__kind {
   align-self: flex-start; padding: 0.1rem 0.5rem; border-radius: 999px;
   background: #ead9a8; color: #4a3d14; font-size: 0.7rem; font-weight: 800;
@@ -1710,3 +1711,14 @@
   .teacher-interventions__list li { grid-template-columns: 1fr; }
   .teacher-interventions__where { grid-column: 1; }
 }
+
+/* --- System health (plan item 4.4) -------------------------------------- */
+.teacher-health__list { list-style: none; margin: 0.4rem 0 0; padding: 0;
+  li { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.3rem 0; border-bottom: 1px solid #eee4cf;
+    code { font-size: 0.85em; }
+  }
+  li span:last-child { color: #8a8272; white-space: nowrap; }
+}
+.teacher-health__ok { display: flex; align-items: center; gap: 0.4rem; margin: 0.4rem 0 0; color: #3f5c34; }
+.teacher-health__check { width: 15px; height: 15px; flex: none; }
+.teacher-health__selectors { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.4rem 0; }
