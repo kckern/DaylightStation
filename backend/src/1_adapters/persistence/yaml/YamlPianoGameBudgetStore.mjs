@@ -54,9 +54,30 @@ export class YamlPianoGameBudgetStore {
     return raw;
   }
 
+  /**
+   * The write side needs the same shape guard the read side has. Without it,
+   * a caller bug that hands `saveDay` a malformed-but-date-tagged object
+   * overwrites a good balance file with nothing catching it at the boundary
+   * built to catch it — `loadDay`'s schema check only fires on the NEXT read,
+   * and a same-schema/wrong-payload write would never be caught at all.
+   */
   saveDay(day) {
+    const file = this.#fileFor(day.studyDate);
+    if (day.schema !== SCHEMA) {
+      this.#logger.error?.('piano.game-budget.save_refused', {
+        file, reason: 'schema', schema: day.schema ?? null,
+      });
+      throw new Error(`refusing to save ${file}: unexpected schema ${day.schema ?? '(none)'}`);
+    }
+    const missing = ['device', 'learners', 'sessions'].filter((key) => day[key] == null);
+    if (missing.length) {
+      this.#logger.error?.('piano.game-budget.save_refused', {
+        file, reason: 'missing-keys', missing,
+      });
+      throw new Error(`refusing to save ${file}: missing required key(s) ${missing.join(', ')}`);
+    }
     ensureDir(this.#root);
-    saveYamlToPathAtomic(this.#fileFor(day.studyDate), day);
+    saveYamlToPathAtomic(file, day);
   }
 }
 
