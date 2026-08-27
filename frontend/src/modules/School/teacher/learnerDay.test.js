@@ -368,4 +368,79 @@ describe('joinLearnerDay', () => {
     expect(rows.find((row) => row.unplanned).session.sessionId).toBe('ses_x');
     expect(rows.find((row) => row.status === 'planned')).toBeTruthy();
   });
+
+  // -------------------------------------------------------------------------
+  // The join carries agenda.mjs's own obligation verdict onto every row a
+  // section produces — a pass-through, never a second opinion computed from
+  // `next`/`servedToday`. `status` (per-row progress) and `obligation`
+  // (per-subject owing) are different questions and neither one collapses
+  // into the other: a row can be `planned` under `excused`, or `done` under
+  // `served`.
+  // -------------------------------------------------------------------------
+  it('carries the same obligation onto every row a section produces, even across several sessions', () => {
+    const { rows } = joinLearnerDay({
+      sections: [section('scripture', { obligation: { state: 'obligated', reason: null } })],
+      sessions: [session('scripture', 'ses_1'), session('scripture', 'ses_2')],
+    });
+    expect(rows).toHaveLength(2);
+    rows.forEach((row) => {
+      expect(row.obligation).toEqual({ state: 'obligated', reason: null, needsGrownUp: false });
+    });
+  });
+
+  it('yields a null obligation, never a fabricated default, when the section never computed one', () => {
+    const { rows } = joinLearnerDay({ sections: [section('math')], sessions: [] });
+    expect(rows[0].obligation).toBeNull();
+  });
+
+  it('leaves obligation null on an unplanned session — no section judged it', () => {
+    const { rows } = joinLearnerDay({ sections: [], sessions: [session('piano', 'ses_9')] });
+    expect(rows[0].obligation).toBeNull();
+  });
+
+  it('pins status and obligation as independent facts: planned+excused, and done+served', () => {
+    const excusedButPlanned = joinLearnerDay({
+      sections: [section('reading', { obligation: { state: 'excused', reason: 'not_due_yet' } })],
+      sessions: [],
+    });
+    expect(excusedButPlanned.rows[0]).toMatchObject({
+      status: 'planned',
+      obligation: { state: 'excused', reason: 'not_due_yet' },
+    });
+
+    const servedAndDone = joinLearnerDay({
+      sections: [section('math', { obligation: { state: 'served', reason: null } })],
+      sessions: [session('math', 'ses_1')],
+    });
+    expect(servedAndDone.rows[0]).toMatchObject({
+      status: 'done',
+      obligation: { state: 'served', reason: null },
+    });
+  });
+
+  // Table-driven: all thirteen state/reason pairs `agenda.mjs` can produce
+  // (verified against `agenda.mjs:355-410` and its FAULT_REASONS set), so a
+  // future reason added to either side of the ladder shows up here as a gap
+  // rather than silently defaulting to "no grown-up needed".
+  it.each([
+    ['served', null, false],
+    ['obligated', null, false],
+    ['excused', 'elective_only', false],
+    ['faulted', 'program_unavailable', true],
+    ['excused', 'blocked_no_offer', false],
+    ['faulted', 'blocked_unreachable', true],
+    ['excused', 'awaiting_grown_up', true],
+    ['excused', 'opens_later', false],
+    ['excused', 'caught_up', true],
+    ['excused', 'optional_backlog', false],
+    ['excused', 'not_due_yet', false],
+    ['excused', 'not_a_school_day', false],
+    ['excused', 'suppressed_by_focus', false],
+  ])('classifies %s · %s as needing a grown-up: %s', (state, reason, needsGrownUp) => {
+    const { rows } = joinLearnerDay({
+      sections: [section('math', { obligation: { state, reason } })],
+      sessions: [],
+    });
+    expect(rows[0].obligation).toMatchObject({ state, reason, needsGrownUp });
+  });
 });
