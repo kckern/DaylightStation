@@ -173,6 +173,28 @@ describe('PianoCourseProgramLauncher.status', () => {
   });
 });
 
+describe('PianoCourseProgramLauncher.status — nextLesson', () => {
+  it('names the next unwatched lesson when owed', async () => {
+    const launcher = launcherFor(
+      { items: [lesson('a', { watched: true, title: 'Lesson 1' }), lesson('b', { title: 'Lesson 2' })] },
+      '2026-08-25T20:00:00Z',
+    );
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
+    expect(status.doneToday).toBe(false);
+    expect(status.nextLesson?.lesson?.id).toContain('b');
+  });
+
+  it('is null when the course is fully watched (nothing left to gate on)', async () => {
+    const launcher = launcherFor(
+      { items: [lesson('a', { watched: true })] },
+      '2026-08-25T20:00:00Z',
+    );
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
+    expect(status.doneToday).toBe(false); // no completion TODAY, but nothing left to launch
+    expect(status.nextLesson).toBeNull();
+  });
+});
+
 describe('PianoCourseProgramLauncher launch contract', () => {
   it('declares itself mountable so the agenda mints a QR and panel code', () => {
     const launcher = launcherFor({ items: [] }, '2026-08-25T20:00:00Z');

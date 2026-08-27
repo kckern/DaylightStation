@@ -273,6 +273,7 @@ export class PianoCourseProgramLauncher {
     return {
       ...common,
       doneToday: false,
+      nextLesson: next ? this.#lessonContext({ result, item: next }) : null,
       progressLabel: next
         ? `${completed}/${total} · next: ${next.title}`
         : `${completed}/${total} — course complete`,
