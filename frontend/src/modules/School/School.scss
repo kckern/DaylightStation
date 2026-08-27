@@ -39,6 +39,12 @@
   // bars: at bar height the fill was a hint, at disc size it is the backdrop
   // an icon has to read against, and 22% left the glyph swimming.
   --school-board-pending: color-mix(in srgb, var(--school-board-ink) 34%, transparent);
+  // Scanned, under the pass threshold. Amber, not red: this panel is read by
+  // siblings walking past, and the message is "try again", not "you failed".
+  // It has to be separable from the sage done-disc at a glance and from across
+  // the room, which rules out anything olive or yellow-green.
+  --school-board-retry: #e2a33c;
+  --school-board-retry-ink: #2a1a05;
   --kind-video: #5b8dd6;  // blue — watch
   --kind-audio: #b085e6;  // violet — listen
   --kind-app:   #3fbfae;  // teal — do
@@ -2391,9 +2397,14 @@
   // on a string — which is exactly what "3 of 7 done" is. A circle only
   // inscribes ~71% of its box, so the diameter below is sized for the ICON
   // rather than the disc, and the disc is simply what's left over.
+  // NEVER WRAPS. The discs are per-ASSIGNMENT now, not per-subject, so a busy
+  // midweek learner can carry eight or more where the old model capped at the
+  // nine subjects and usually showed three. A second line steals height from a
+  // card that has none to give, so the row shrinks the circles instead — see
+  // `&__pill`'s `--disc`, which divides the available width by the count.
   &__pills {
     list-style: none; margin: 0; padding: 0;
-    display: flex; flex-wrap: wrap; align-items: center;
+    display: flex; flex-wrap: nowrap; align-items: center; min-width: 0;
     --disc-gap: clamp(0.25rem, 0.7vh, 0.4rem);
     gap: var(--disc-gap);
   }
@@ -2435,9 +2446,19 @@
     .school-icon { display: flex; width: 58%; height: 58%; line-height: 1; }
     svg { width: 100%; height: 100%; }
 
-    &[data-done='true'] {
+    // THREE STATES, matching the outcome vocabulary the domain actually has.
+    // `pending` is the base style above (grey): planned or printed, no result
+    // recorded yet.
+    &[data-state='passed'], &[data-done='true'] {
       background: var(--school-board-done);
       color: var(--school-board-done-ink);
+    }
+    // Scanned and under the pass threshold. Amber rather than red on purpose:
+    // this is a wall panel a sibling can read, and "try again" is the message,
+    // not "you failed". The ink is dark for contrast on a light amber.
+    &[data-state='needs-retry'] {
+      background: var(--school-board-retry, #e2a33c);
+      color: var(--school-board-retry-ink, #2a1a05);
     }
 
     // In flight: a disc-shaped hole with a shimmer crossing it. The panel used
@@ -2463,6 +2484,20 @@
     opacity: 0.75; text-transform: uppercase; letter-spacing: 0.05em;
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
+
+  // The chip that REPLACES the count at 100%. Green is already carrying the
+  // message on the card; this says it in words, because green is a convention
+  // a child has to be taught and a sentence is not.
+  &__done-chip {
+    align-self: flex-end; flex: 0 0 auto;
+    padding: 0.2em 0.7em;
+    border-radius: 999px;
+    background: var(--school-board-done);
+    color: var(--school-board-done-ink);
+    font-size: clamp(0.75rem, 1.8vh, 1rem); font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    white-space: nowrap; line-height: 1.3;
+  }
 
   // RINGS THIS WEEK. Sits under the "x of y" readout in the card's right
   // column: a second, independent fact (how much the child MOVED) beside the

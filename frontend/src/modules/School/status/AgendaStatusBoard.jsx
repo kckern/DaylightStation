@@ -36,7 +36,8 @@
  * day digest (what's done). Exported for reuse by adult surfaces that may
  * mount a more interactive variant later.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useWebSocketSubscription } from '../../../hooks/useWebSocket.js';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import RingIcon from '../../../lib/icons/RingIcon.jsx';
 import Icon, { hasIcon } from '../home/icons/Icon.jsx';
@@ -82,27 +83,82 @@ export function dayStatus({ total, done }) {
   return 'Not started';
 }
 
-// The plan ∪ the outcomes, per learner: agenda sections (suppressed ones
-// excluded) matched against passed sessions by subject. This is the coarse
-// counting version; the teacher workspace's Learner Day does the same join
-// per-row and by unit id (teacher/learnerDay.js#joinLearnerDay), because a
-// subject key double-counts a unit the planner bucketed into 'other'.
-export function summarize(sections, sessions) {
+/**
+ * One disc per ASSIGNMENT, labelled by its subject.
+ *
+ * It used to be one disc per SUBJECT — a learner with two geography sheets got
+ * one globe, and finishing either one turned it green. The discs are the only
+ * per-item thing on this board, so collapsing them was hiding exactly what a
+ * child walks up to check. Two geography assignments now draw two globes.
+ *
+ * THE SET IS PLAN ∪ EVIDENCE, keyed by unitId:
+ *   - every session the learner has today (started, printed, graded — anything
+ *     that produced a session), and
+ *   - every subject's still-offered next action that has not already appeared
+ *     as a session.
+ *
+ * Evidence has to be in the union because a lesson taken through the "one
+ * more?" chain never appears as a section's `next` — the subject is already
+ * served — and a sheet a child is holding is the most real thing on their
+ * plate. The plan has to be in it because work not yet started has no session.
+ *
+ * Three states, from the two the outcome vocabulary actually has
+ * (`passed | needs_remediation`) plus the absence of one:
+ *   passed      — scanned and over the pass threshold
+ *   needs-retry — scanned and under it
+ *   pending     — no outcome recorded yet
+ */
+const stateOf = (result) => (
+  result === 'passed' ? 'passed' : result === 'needs_remediation' ? 'needs-retry' : 'pending'
+);
+
+export function summarize(sections, sessions, entries = []) {
   const planned = (sections ?? []).filter((section) => !section.suppressed);
-  const passedSubjects = new Set((sessions ?? [])
-    .filter((session) => session.outcome?.result === 'passed')
-    .map((session) => session.subject));
-  // The board draws one segment PER SUBJECT now, so the join has to survive as
-  // a list and not collapse straight to a count: which subject is done is the
-  // whole point of the icons. `total`/`done` stay derived from it so the
-  // status word and the "x of y" readout cannot drift from the segments.
-  const segments = planned.map((section) => ({
-    subject: section.subject,
-    label: nameFor(section.subject),
-    done: Boolean(section.servedToday || passedSubjects.has(section.subject)),
-  }));
-  return { total: segments.length, done: segments.filter((s) => s.done).length, segments };
+  const plannedSubjects = new Set(planned.map((s) => s.subject));
+  const byUnit = new Map();
+
+  // Evidence first, so a real attempt always wins over the plan's idea of it.
+  for (const session of sessions ?? []) {
+    if (!session?.unitId) continue;
+    // A subject the focus pass suppressed is off the child's paper today; its
+    // sessions should not reappear here as discs.
+    if (session.subject && plannedSubjects.size && !plannedSubjects.has(session.subject)) continue;
+    const prior = byUnit.get(session.unitId);
+    const state = stateOf(session.outcome?.result);
+    // Two sessions for one unit (a retry) collapse to the best outcome — a
+    // passed retry is a pass, not a lingering yellow.
+    if (!prior || (prior.state !== 'passed' && state === 'passed')) {
+      byUnit.set(session.unitId, {
+        unitId: session.unitId,
+        subject: session.subject ?? null,
+        label: nameFor(session.subject),
+        state,
+      });
+    }
+  }
+
+  // Then the plan, for work with no session yet.
+  const fromEntries = new Map((entries ?? []).map((e) => [e.unitId, e]));
+  for (const section of planned) {
+    const next = section.next;
+    if (!next?.unitId || byUnit.has(next.unitId)) continue;
+    const entry = fromEntries.get(next.unitId);
+    byUnit.set(next.unitId, {
+      unitId: next.unitId,
+      subject: entry?.subject ?? section.subject,
+      label: nameFor(entry?.subject ?? section.subject),
+      state: 'pending',
+    });
+  }
+
+  const segments = [...byUnit.values()];
+  return {
+    total: segments.length,
+    done: segments.filter((s) => s.state === 'passed').length,
+    segments,
+  };
 }
+
 
 /** learnerId -> ring count, from one roster-wide measures read. */
 export function ringsByLearner(payload) {
@@ -177,7 +233,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
           if (!plan?.ok) return settle(kid.id, null);
           const learners = dayResponse.ok ? (dayResponse.data?.learners ?? []) : [];
           const sessions = learners.find((row) => row.learnerId === kid.id)?.sessions ?? [];
-          return settle(kid.id, summarize(plan.data?.sections, sessions));
+          return settle(kid.id, summarize(plan.data?.sections, sessions, plan.data?.entries));
         })
         .catch((error) => {
           schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });
@@ -194,6 +250,33 @@ export default function AgendaStatusBoard({ kids = [], day }) {
     }, REFRESH_MS);
     return () => clearInterval(timer);
   }, []);
+
+  /**
+   * A SCAN CHANGES THE BOARD NOW, not in up to five minutes.
+   *
+   * The poll above is the floor, not the mechanism. When a worksheet is scanned
+   * its result receipt usually prints, and a printed receipt SUPPRESSES the
+   * on-screen ceremony on purpose — the paper carries the news and the panel
+   * must never show a score the report card will. The consequence, until now,
+   * was that the most legible moment in the whole flow (a disc turning green)
+   * was invisible to the child standing right there.
+   *
+   * So the board listens to the same `omr` topic the ceremony does and simply
+   * re-reads. It does NOT paint the result from the payload: the payload
+   * carries `percent`/`correctCount`, and re-reading keeps this board unable to
+   * display a score even by accident. It also means one code path produces the
+   * discs, so a pushed update and a polled one can never disagree.
+   *
+   * Any terminal scan outcome triggers it, not just a pass — a failed sheet
+   * turns a disc yellow and that is just as much news.
+   */
+  const onScan = useCallback((payload) => {
+    const event = payload?.event;
+    if (!event || !String(event).startsWith('scan-')) return;
+    schoolLog.scan('status-board.refresh', { event, learnerId: payload.learnerId ?? null });
+    setNonce((n) => n + 1);
+  }, []);
+  useWebSocketSubscription('omr', onScan, [onScan]);
 
   const visible = useMemo(() => rows ?? [], [rows]);
   // Once EVERY card has settled with nothing to show, the board is not a
@@ -232,7 +315,15 @@ export default function AgendaStatusBoard({ kids = [], day }) {
               {loading ? (
                 <span className="school-status-board__status school-status-board__status--none">&nbsp;</span>
               ) : summary && summary.total > 0 ? (
-                <span className="school-status-board__status">{summary.done} of {summary.total}</span>
+                // AT 100% THE CHIP REPLACES THE COUNT. "5 of 5" makes a reader
+                // do the comparison to learn the one thing that matters; the
+                // chip says it. Below 100% the count is the more useful of the
+                // two, because how much is left is exactly the open question.
+                summary.done >= summary.total ? (
+                  <span className="school-status-board__done-chip">Done for the day</span>
+                ) : (
+                  <span className="school-status-board__status">{summary.done} of {summary.total}</span>
+                )
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}
@@ -282,13 +373,21 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                         // Two sections can share a subject; the index keeps the
                         // key unique without pretending order is meaningful.
                         // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
-                        key={`${segment.subject}-${i}`}
+                        key={`${segment.unitId ?? segment.subject}-${i}`}
                         className="school-status-board__pill"
-                        data-done={segment.done ? 'true' : 'false'}
+                        data-state={segment.state}
+                        // `data-done` kept alongside `data-state` for anything
+                        // still selecting on the boolean; the tri-state is the
+                        // one to read.
+                        data-done={segment.state === 'passed' ? 'true' : 'false'}
                       >
                         <Icon
                           name={iconFor(segment.subject)}
-                          label={`${segment.label}: ${segment.done ? 'done' : 'not done'}`}
+                          label={`${segment.label}: ${
+                            segment.state === 'passed' ? 'done'
+                              : segment.state === 'needs-retry' ? 'try again'
+                                : 'not done'
+                          }`}
                         />
                       </li>
                     ))}
