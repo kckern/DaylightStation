@@ -97,6 +97,20 @@ export function validateQuestionBank(raw) {
     else seen.add(item.id);
     if (!ITEM_TYPES.has(item.type)) { errors.push(`${at}: unknown type "${item.type}"`); return; }
     if (!isNonEmptyString(item.prompt)) errors.push(`${at}: prompt is required`);
+    for (const field of ['prompt_by_profile', 'prompt_prefix_by_profile', 'prompt_suffix_by_profile']) {
+      if (item[field] !== undefined) {
+        if (!item[field] || typeof item[field] !== 'object' || Array.isArray(item[field])) {
+          errors.push(`${at}: ${field} must be a mapping when present`);
+          continue;
+        }
+        const allowedProfiles = new Set(['lower', 'upper', 'lower-3', 'upper-5']);
+        const unknown = Object.keys(item[field]).filter((profile) => !allowedProfiles.has(profile));
+        if (unknown.length) errors.push(`${at}.${field}: unknown profiles ${unknown.join(', ')}`);
+        for (const [profile, prompt] of Object.entries(item[field])) {
+          if (!isNonEmptyString(prompt)) errors.push(`${at}.${field}.${profile}: must be a non-empty string`);
+        }
+      }
+    }
     if (isV2 && !['multiple_choice', 'multi_select'].includes(item.type)) {
       errors.push(`${at}: v2 authored pools support only multiple_choice|multi_select`);
     }
