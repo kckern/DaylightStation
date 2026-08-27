@@ -151,6 +151,14 @@ Then `grep -rn "modules/Player/utils/pauseArbiter" frontend/src` — must return
 
 ### Task 2: `mediaGate.js` — framework-free enforcement core
 
+> ✅ **DONE** — `c187a07f7`, `592c9d7dc`, `f77488e0c`. Spec ✅, quality ✅.
+> Gate suite 61 tests. Ships a status surface (`getState`/`subscribe`, and `apply()`
+> returns the same frozen snapshot) that **Task 3 must use** to tell gate-issued DOM
+> events from human ones. `ownsPause` deliberately stays true across the in-flight
+> window of a successful resume — that is what makes a rejected `play()` retryable,
+> and what stops the caller misreading its own resume's DOM events.
+
+
 **Files:**
 - Create: `frontend/src/lib/Player/gate/mediaGate.js`
 - Test: `frontend/src/lib/Player/gate/mediaGate.test.js`
