@@ -44,6 +44,7 @@ export function median(values) {
  * pattern.
  */
 const MIN_SAMPLE = 4;
+const TIMING_TOLERANCE_MS = 5000;
 
 export function haste(moves) {
   if (moves.length < MIN_SAMPLE * 2) return null;
@@ -89,16 +90,29 @@ export function rushedErrors(moves, { maxThinkMs = 5000, minLossCp = 150 } = {})
  * measurement.
  */
 export function analyzeTiming(review, record, { side = 'w' } = {}) {
+  const mode = record?.timing?.mode || 'off';
+  const duration = record?.duration_ms;
+  const recordedSpent = record?.timing?.spent_ms?.[side];
+  // Clock data is derived in the browser. A stale tab or a resumed session can
+  // leave an old start time in one move and inflate the aggregate far beyond
+  // the game itself. Do not turn corrupt telemetry into coaching advice.
+  if (Number.isFinite(duration) && duration >= 0
+    && Number.isFinite(recordedSpent) && recordedSpent > duration + TIMING_TOLERANCE_MS) {
+    return { timed: false, invalid: true, mode, reason: 'recorded player time exceeds game duration' };
+  }
   const moves = timedMoves(review.moves, record, side);
-  if (!moves.length) return { timed: false, mode: record?.timing?.mode || 'off' };
+  if (!moves.length) return { timed: false, mode };
 
   const thinks = moves.map((move) => move.thinkMs);
   const total = thinks.reduce((sum, value) => sum + value, 0);
+  if (Number.isFinite(duration) && duration >= 0 && total > duration + TIMING_TOLERANCE_MS) {
+    return { timed: false, invalid: true, mode, reason: 'recorded move times exceed game duration' };
+  }
   const slowest = moves.reduce((worst, move) => (move.thinkMs > worst.thinkMs ? move : worst), moves[0]);
 
   return {
     timed: true,
-    mode: record?.timing?.mode || 'off',
+    mode,
     moveCount: moves.length,
     totalMs: total,
     meanMs: Math.round(total / moves.length),

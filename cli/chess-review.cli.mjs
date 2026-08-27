@@ -293,8 +293,14 @@ export function renderReport(record, review, { brief = false } = {}) {
     lines.push('');
   }
 
-  const timing = renderTiming(analyzeTiming(review, record, { side }), record);
+  const timingReadout = analyzeTiming(review, record, { side });
+  const timing = renderTiming(timingReadout, record);
   if (timing) { lines.push(timing); lines.push(''); }
+  else if (timingReadout.invalid) {
+    lines.push('  ON THE CLOCK');
+    lines.push(`    unavailable: ${timingReadout.reason}.`);
+    lines.push('');
+  }
 
   if (readout.motifs.length) {
     lines.push('  WHAT TO WORK ON');
@@ -317,7 +323,10 @@ export function renderReport(record, review, { brief = false } = {}) {
   if (review.retracted.length) {
     lines.push('');
     lines.push('  TAKEN BACK');
-    for (const move of review.retracted) lines.push(`    ply ${move.ply}: ${move.san} (${move.color})`);
+    for (const move of review.retracted) {
+      const ply = Number.isInteger(move.ply) ? `ply ${move.ply}` : 'untracked ply';
+      lines.push(`    ${ply}: ${move.san} (${move.color})`);
+    }
   }
   lines.push('');
   lines.push(`  help used: ${help.hints || 0} hints, ${help.best_moves || 0} best-move reveals, ${help.takebacks || 0} takebacks`);
