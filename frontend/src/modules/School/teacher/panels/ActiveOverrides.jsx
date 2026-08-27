@@ -15,6 +15,7 @@ export default function ActiveOverrides({ kids = [] }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   const overrides = usePanelFetch(() => schoolApi.passOverrides(), { panel: 'active-overrides', nullAs: 'empty' });
   const attestations = usePanelFetch(() => schoolApi.attestations(), { panel: 'active-attestations', nullAs: 'empty' });
+  const bypasses = usePanelFetch(() => schoolApi.programDayBypasses(), { panel: 'active-program-bypasses', nullAs: 'empty', notFoundAs: 'unavailable' });
   const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'active-overrides-catalog', notFoundAs: 'unavailable' });
   const titles = curriculumTitles(catalog.data?.units ?? []);
 
@@ -27,15 +28,17 @@ export default function ActiveOverrides({ kids = [] }) {
       typeof value === 'object' && value !== null ? { unitId, ...value } : { unitId, percent: value }
     ));
   const attestationRows = attestations.data?.entries ?? [];
-  const empty = !overrideRows.length && !attestationRows.length;
-  const state = overrides.state === 'loading' || attestations.state === 'loading' ? 'loading'
+  const bypassRows = bypasses.data?.active ?? [];
+  const empty = !overrideRows.length && !attestationRows.length && !bypassRows.length;
+  const state = overrides.state === 'loading' || attestations.state === 'loading' || bypasses.state === 'loading'
+    ? 'loading'
     : empty ? 'empty' : 'ok';
 
   return (
     <PanelFrame
       title="Active overrides"
       state={state}
-      retry={() => { overrides.retry(); attestations.retry(); }}
+      retry={() => { overrides.retry(); attestations.retry(); bypasses.retry(); }}
       emptyCopy="Nothing is overridden right now — every bar and gate is as authored."
     >
       {overrideRows.length > 0 && (
@@ -49,6 +52,23 @@ export default function ActiveOverrides({ kids = [] }) {
                   bar {o.percent}%
                   {o.setBy ? ` · by ${o.setBy}` : ''}
                   {o.at ? ` · since ${teacherDate(o.at)}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {bypassRows.length > 0 && (
+        <div className="teacher-overrides__group" data-testid="active-program-bypasses">
+          <h3>Today&rsquo;s program bypasses</h3>
+          <ul>
+            {bypassRows.map((b) => (
+              <li key={b.bypassId}>
+                <span>{nameFor(b.learnerId)} · {b.programId}</span>
+                <span>
+                  by {b.decidedBy ?? 'unknown'}
+                  {b.decidedAt ? ` · ${teacherDate(b.decidedAt)}` : ''}
+                  {b.reason ? ` — ${b.reason}` : ''}
                 </span>
               </li>
             ))}

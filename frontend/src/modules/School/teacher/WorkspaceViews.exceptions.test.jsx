@@ -12,6 +12,10 @@ vi.mock('../schoolApi.js', () => ({
     periods: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     staleSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
     regradeAttempts: vi.fn(),
+    programDayBypasses: vi.fn(async () => ({ ok: true, status: 200, data: { active: [], history: [] } })),
+    pianoLessonGate: vi.fn(async () => ({ ok: true, status: 200, data: { gated: false, reason: 'not-enrolled' } })),
+    grantProgramDayBypass: vi.fn(),
+    retractProgramDayBypass: vi.fn(),
   },
 }));
 vi.mock('./teacherWorkspaceApi.js', () => ({
