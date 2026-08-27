@@ -41,8 +41,19 @@
  * may be never. Two things then rot: the user-pause latch here never clears (so the
  * gate re-pauses a person who just pressed play), and `ownsPause` stays stale-true
  * (so their NEXT pause is misread as our echo). Observing `play` fixes both by
- * driving one `apply`, which is what lets `mediaGate` release ownership. Our own
- * resume also fires `play`; `applyingRef` keeps that from recursing.
+ * driving one `apply`, which is what lets `mediaGate` release ownership.
+ *
+ * The gate's OWN resume fires `play` too, and — unlike the `pause` case — there is no
+ * way to filter it out. `applyingRef` only covers a synchronous dispatch; a real
+ * browser queues the event, so by the time it lands our `apply` has long returned.
+ * `ownsPause` cannot stand in either, because it is TRUE at the exact instant a human
+ * presses play in both cases that matter: the autoplay-blocked retry (ownership held
+ * so it can retry) and a kid pressing play to skip an unanswered checkpoint (the gate
+ * paused them). Filtering on it lets a checkpoint be skipped — both shapes are pinned
+ * by tests. So the epoch bump stays UNCONDITIONAL; it is safe because a redundant
+ * apply hits `mediaGate`'s in-flight latch and returns early. Only the log's
+ * attribution is conditioned, so a gate-issued resume never claims a human pressed
+ * play — on this kiosk the log store is the only thing anyone can read afterwards.
  *
  * ## 3. The gate is constructed INSIDE the effect
  *
@@ -225,10 +236,15 @@ export function useMediaGate({
 
     const onPlay = () => {
       setUserPaused(false);
-      if (applyingRef.current) return;   // our own resume, not a hand on the remote
-      // Header §2: the resulting apply is how `mediaGate` learns the human took the
-      // transport back, which is what releases ownership.
-      log().info('gate.user-play-observed', { gate: gate.getState().gate });
+      if (applyingRef.current) return;   // synchronous dispatch from inside our own apply
+      // Attribution only — never a filter. See header §2 for why `ownsPause` cannot
+      // gate the bump: it is true for a human's play as well as for our own resume.
+      if (gate.getState().ownsPause) {
+        log().debug('gate.play-observed-while-owned', { gate: gate.getState().gate });
+      } else {
+        log().info('gate.user-play-observed', { gate: gate.getState().gate });
+      }
+      // The resulting apply is how `mediaGate` learns the transport moved.
       setTransportEpoch((n) => n + 1);
     };
 
@@ -280,7 +296,9 @@ export function useMediaGate({
       applyRef.current = null;
       log().info('gate.hook.unmounted', {});
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `[]` on purpose: every value this effect reads from the render scope is a ref, a
+    // setState, or module scope, so there is nothing for exhaustive-deps to ask for —
+    // and the gate must outlive every render, since `detach()` is terminal.
   }, []);
 
   // One apply per MATERIALLY different decision — plus one per transport epoch, which

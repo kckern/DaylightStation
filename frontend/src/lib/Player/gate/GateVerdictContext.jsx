@@ -1,3 +1,7 @@
+/* eslint-disable react-refresh/only-export-components -- the provider and the consumer
+   hook that reads it are one context module; splitting them would put two halves of a
+   single contract in two files. Same call as FeedPlayerContext.jsx. */
+
 /**
  * GateVerdictContext — how a governor that lives OUTSIDE the player subtree gets a
  * word in.
@@ -65,9 +69,11 @@ export function GateVerdictProvider({ verdicts, children }) {
 
   // `key` is the whole dependency on purpose — see the header. `outer` and `mine` are
   // read through it, and any change either can make is a change to the signature.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Listing them as well would defeat the memo: both are fresh objects every render,
+  // which is the churn this file exists to absorb.
   const value = useMemo(
     () => (outer.length || mine.length ? Object.freeze([...outer, ...mine]) : EMPTY),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [key]
   );
 

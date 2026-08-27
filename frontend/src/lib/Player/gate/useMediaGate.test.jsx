@@ -90,6 +90,9 @@ const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn()
 });
 
+/** Event names emitted at one level, in call order. */
+const events = (log, method = 'info') => log[method].mock.calls.map((c) => c[0]);
+
 const BLOCKED = (over = {}) => ({ blocked: true, id: 'checkpoint', seekCeiling: null, ...over });
 const OPEN = (over = {}) => ({ blocked: false, id: 'checkpoint', seekCeiling: null, ...over });
 
@@ -275,6 +278,26 @@ describe('useMediaGate — the gate must not mistake its own echo for a human', 
     expect(el.pause).not.toHaveBeenCalled();       // the gate must not shove them back down
   });
 
+  // MUTATION-PINNED against any attempt to filter DOM `play` on `ownsPause`.
+  // A kid pressing play to skip an unanswered checkpoint arrives with ownsPause TRUE
+  // (the gate paused them) and resumeBlocked FALSE — indistinguishable, on the status
+  // surface alone, from the gate's own resume echo. Filtering either shape lets them
+  // through, and a skipped checkpoint is far worse than a mislabelled log line.
+  it('re-pauses a human who presses play while a gate is still blocking', () => {
+    const el = makeEl({ paused: false, echo: false });
+    const { result } = renderHook(() => useMediaGate({
+      getMediaEl: () => el, verdicts: [BLOCKED()], logger
+    }));
+    expect(el.pause).toHaveBeenCalledTimes(1);
+    expect(result.current.status.ownsPause).toBe(true);
+
+    act(() => { el.paused = false; el.dispatchEvent('play'); });   // the skip attempt
+
+    expect(el.pause).toHaveBeenCalledTimes(2);                     // put straight back
+    expect(el.paused).toBe(true);
+    expect(result.current.decision).toMatchObject({ paused: true, reason: PAUSE_REASON.GATE });
+  });
+
   // The probe-confirmed regression from Task 2's review, end to end.
   it('honours a human pause taken back during a gate-owned autoplay retry', async () => {
     const el = makeEl({
@@ -304,6 +327,49 @@ describe('useMediaGate — the gate must not mistake its own echo for a human', 
     expect(result.current.decision).toMatchObject({ paused: true, reason: PAUSE_REASON.USER });
     expect(el.play).toHaveBeenCalledTimes(1);             // no second, overriding play()
     expect(el.paused).toBe(true);
+  });
+  // ADVISORY (traced, benign, previously undocumented). `ownsPause` is deliberately
+  // held across the in-flight window of a SUCCESSFUL resume, so a human pause landing
+  // inside that window is filtered as our echo and never reaches the `user` slot. It
+  // is harmless: the settle releases ownership WITHOUT re-playing, so the pause stands.
+  // Written down so a future reader finds the trace instead of re-deriving it.
+  it('filters a human pause landing inside a successful resume, and the pause still stands', async () => {
+    let settle;
+    const el = makeEl({
+      paused: false,
+      echo: false,
+      play: vi.fn(() => { el.paused = false; return new Promise((res) => { settle = res; }); })
+    });
+    const { result, rerender } = renderHook(
+      ({ verdicts }) => useMediaGate({ getMediaEl: () => el, verdicts, logger }),
+      { initialProps: { verdicts: [BLOCKED()] } }
+    );
+    rerender({ verdicts: [OPEN()] });
+    expect(el.play).toHaveBeenCalledTimes(1);
+    expect(result.current.status.ownsPause).toBe(true);      // held until the promise settles
+
+    // The human pauses while our play() is still unsettled.
+    act(() => { el.paused = true; el.dispatchEvent('pause'); });
+    expect(result.current.decision.reason).toBe(PAUSE_REASON.PLAYING);  // filtered as echo
+
+    await act(async () => { settle(); });
+    expect(result.current.status.ownsPause).toBe(false);      // settle releases ownership
+    expect(el.play).toHaveBeenCalledTimes(1);                 // and does NOT re-play
+    expect(el.paused).toBe(true);                             // so their pause stands
+  });
+
+  it('never attributes the gate\'s own resume to the viewer in the logs', () => {
+    const el = makeEl({ paused: false, echo: false });
+    const { rerender } = renderHook(
+      ({ verdicts }) => useMediaGate({ getMediaEl: () => el, verdicts, logger }),
+      { initialProps: { verdicts: [BLOCKED()] } }
+    );
+    rerender({ verdicts: [OPEN()] });
+    // A real browser queues `play`, so it lands after apply returned — the shape that
+    // used to log a spurious "the user pressed play".
+    act(() => { el.dispatchEvent('play'); });
+    expect(events(logger, 'info')).not.toContain('gate.user-play-observed');
+    expect(events(logger, 'debug')).toContain('gate.play-observed-while-owned');
   });
 });
 
