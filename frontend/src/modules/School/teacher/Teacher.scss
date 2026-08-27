@@ -643,7 +643,18 @@
     display: grid; place-items: center; width: 30px; height: 30px; flex: none;
     border: 1px solid; border-radius: 50%;
     .teacher-subject-identity { display: block; }
-    .teacher-subject-identity__icon { width: 16px; height: 16px; display: block; }
+    // The mark is centred in the disc by its BOX, not by flow. Every subject
+    // svg is authored `width="1em" height="1em"`, so in plain block layout it
+    // rendered at whatever font-size the roster row happened to inherit and
+    // sat against the top-left of its 16px span — visibly off-centre in a
+    // 30px circle, and drifting whenever the row's type size changed. Sizing
+    // the svg to the span and centring it makes the glyph independent of
+    // inherited type.
+    .teacher-subject-identity__icon {
+      width: 16px; height: 16px;
+      display: grid; place-items: center;
+      svg { display: block; width: 100%; height: 100%; }
+    }
     &--passed { border-color: #7fae7c; background: #e4f0e0; color: #2e6b34; }
     // Out in the world but not back yet. Dashed, so the state does not ride on
     // colour alone — a reader who cannot separate this amber from the green
