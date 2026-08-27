@@ -32,6 +32,7 @@ import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor, teacherDayPath } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
 import { localDay, humanDate, humanDateTime } from './teacherDates.js';
+import { teacherLog } from './teacherLog.js';
 
 const sessionIdOf = (session) => session?.sessionId ?? session?.id ?? null;
 const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.createdAt ?? session?.issuedAt ?? null;
@@ -650,6 +651,48 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
   return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Print another copy…</button> : <span className="teacher-reprint-confirm"><span>{label} ready to print</span><button type="button" disabled={busy === key} onClick={print}>Print now</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
 }
 
+/**
+ * Whether the remediation session a parent lesson opened has reached a
+ * terminal state — the gate for offering ANOTHER retake (audit 4.2).
+ * `sessionState.remediation` is set once by `remediation_opened` and never
+ * cleared, so "a remediation exists" stopped meaning "one is live": an
+ * abandoned retake or an unscanned, expired ticket left the parent stuck
+ * forever with no way back for either the child or the teacher.
+ *
+ * `GetTeacherSession` does not fold the remediation child's own state into
+ * the parent read — it returns only `{ newSessionId, variant }` — so this is
+ * a genuine second read, not a duplicate of one already in hand.
+ *
+ * The answer is `false` while the read is in flight AND if it fails. Both
+ * are deliberate: flashing the button on then off is worse than a beat of
+ * silence, and offering a second retake while the first may still be live
+ * would mint a competing ticket for the child.
+ */
+function useRemediationTerminal(remediation) {
+  const newSessionId = remediation?.newSessionId ?? null;
+  const [terminal, setTerminal] = useState(false);
+  useEffect(() => {
+    if (!newSessionId) { setTerminal(false); return undefined; }
+    let alive = true;
+    setTerminal(false); // no flash: stays hidden until the read resolves true
+    teacherWorkspaceApi.session(newSessionId).then((response) => {
+      if (!alive) return;
+      if (!response.ok) {
+        teacherLog.fetch('remediation-lookup-failed', { newSessionId, status: response.status });
+        setTerminal(false);
+        return;
+      }
+      setTerminal(response.data?.state?.terminal === true);
+    }).catch(() => {
+      if (!alive) return;
+      teacherLog.fetchError('remediation-lookup-threw', { newSessionId });
+      setTerminal(false);
+    });
+    return () => { alive = false; };
+  }, [newSessionId]);
+  return terminal;
+}
+
 export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   const [result, setResult] = useState({ state: 'loading', session: null, ownerId: learnerId });
   const [attempt, setAttempt] = useState(0);
@@ -683,7 +726,13 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   const machineGrade = session?.scores?.machine?.percent ?? sessionState?.machineGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const effectiveGrade = session?.scores?.effective?.percent ?? sessionState?.effectiveGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const gradeAdjustments = sessionState?.gradeAdjustments ?? [];
-  const canOfferRetake = sessionState?.outcome?.result === 'needs_remediation' && !sessionState?.remediation;
+  const remediation = sessionState?.remediation ?? null;
+  const remediationTerminal = useRemediationTerminal(remediation);
+  // No remediation ever opened -> offer it, same as before. One opened ->
+  // offer it again only once THAT session is confirmed terminal; see
+  // useRemediationTerminal for why "in flight" and "failed" both read false.
+  const canOfferRetake = sessionState?.outcome?.result === 'needs_remediation'
+    && (!remediation || remediationTerminal);
   // No learner, no settle: the reason is delivered TO a child by name, and a
   // form that cannot name one would write a note nobody receives.
   const settleLearnerId = result.ownerId ?? learnerId ?? null;
