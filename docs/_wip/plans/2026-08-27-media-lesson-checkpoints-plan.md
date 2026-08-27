@@ -206,16 +206,43 @@ import { createMediaGate } from './mediaGate.js';
 - Create: `frontend/src/lib/Player/gate/useMediaGate.js`, `frontend/src/lib/Player/gate/GateVerdictContext.jsx`
 - Test: `frontend/src/lib/Player/gate/useMediaGate.test.jsx`
 
-> **REQUIRED, from Task 2's spec review.** `useMediaGate` MUST feed the element's own
-> DOM `pause`/`play` events into the `user` slot it passes to `resolvePause`. This is
-> not optional wiring: `mediaGate` deliberately keeps pause ownership after a rejected
-> `play()` so it can retry (the garage kiosk's Firefox blocks audible autoplay), and
-> the reviewer probe-confirmed the consequence — gate pauses → resume rejects → the
-> human presses pause → the next apply carrying a PLAYING decision calls `play()` again
-> and overrides them. The gate declines correctly ONCE the pause reaches the arbiter's
-> `user` slot (also probe-confirmed), so this hook is the only thing standing between
-> the retry and a viewer fighting their own pause button. Test it explicitly: a DOM
-> pause during a gate-owned retry must produce `PAUSED_USER` and no further `play()`.
+> **REQUIRED, from Task 2's reviews — and read the SECOND half before you implement
+> the first.**
+>
+> **(a) Feed DOM `pause` into the `user` slot.** `mediaGate` keeps pause ownership after
+> a rejected `play()` so it can retry (the garage kiosk's Firefox blocks audible
+> autoplay). Probe-confirmed consequence without this wiring: gate pauses → resume
+> rejects → the human presses pause → the next apply carrying a PLAYING decision calls
+> `play()` again and overrides them. The gate declines correctly once the pause reaches
+> the `user` slot.
+>
+> **(b) BUT YOU MUST FILTER THE GATE'S OWN ECHO, or (a) deadlocks.** `el.pause()` fires
+> a spec-mandated DOM `pause` event whenever `paused` goes false→true — including the
+> gate's own. Naive wiring gives:
+>
+> ```
+> gate blocks → apply() calls el.pause() → DOM fires 'pause'
+>   → user.paused = true → arbiter returns { paused: true, reason: PAUSED_USER } forever
+>   → the gate never resumes → the lesson is STUCK AFTER A CORRECT ANSWER
+> ```
+>
+> The identical shape applies to the seek clamp: `el.currentTime = ceiling` fires
+> `seeking`, so wiring DOM `seeking` into the `seeking` slot makes the clamp suppress
+> the very pause it was enforcing.
+>
+> **The fix is a status surface on `mediaGate`** (added in Task 2's follow-up): the gate
+> is the only thing that knows it issued that pause, so it must say so. Read its status
+> — `owned`/`pausedEl` — and treat a DOM `pause` as user intent ONLY when the gate does
+> not own the pause. `useMediaClock.js` two files up already has the `getState()` /
+> `subscribe()` precedent; follow it rather than inventing a channel.
+>
+> **Construct the gate INSIDE the effect, not in `useMemo`/`useRef`.** `detach()` is
+> terminal (`detached = true` is never cleared), so a gate detached by an effect cleanup
+> and then re-run is permanently dead. This app does not use StrictMode today; building
+> it in the effect means it never has to.
+>
+> Test all of it explicitly: a gate-issued pause must NOT become `PAUSED_USER`; a HUMAN
+> pause during a gate-owned retry MUST; a clamp-issued seek must not suppress the gate.
 
 **Step 1: Failing tests** (RTL `renderHook`):
 - `useMediaGate({ getMediaEl, verdicts, player: { seeking, resilience, user } })` calls `resolvePause` with merged verdicts and applies via a `createMediaGate` instance (mock the module); re-applies when verdicts change; detaches on unmount.
