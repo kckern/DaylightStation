@@ -35,6 +35,7 @@ import { localDay } from '../teacherDates.js';
 import { SubjectIdentity } from '../CurriculumIdentity.jsx';
 import Icon, { hasIcon } from '../../home/icons/Icon.jsx';
 import { teacherLog } from '../teacherLog.js';
+import { labelize } from '../labelize.js';
 
 // ---------------------------------------------------------------------------
 // Inline SVG marks (kiosk WebViews render unicode glyphs as tofu).
@@ -131,6 +132,21 @@ const GROWN_UP_ACTION = {
 };
 
 /**
+ * `faulted` outranks the `needsGrownUp` flag: the ladder that computes the
+ * flag (`learnerDay.js`'s `NEEDS_GROWN_UP`) is a hand-authored mirror of
+ * `agenda.mjs`'s own two-reason `FAULT_REASONS` set, and if the mirror ever
+ * drifts (a fault reason added on one side, not the other) `state: 'faulted'`
+ * is still the domain's own word for "needs a grown-up" (per
+ * `docs/reference/school/teacher.md` §4: "faulted means the day could not be
+ * judged at all"). Checking BOTH is what keeps the red card band
+ * (`--faulted`, keyed off `state` alone) from ever painting with nothing in
+ * it to read.
+ */
+function needsAdult(obligation) {
+  return Boolean(obligation && (obligation.needsGrownUp || obligation.state === 'faulted'));
+}
+
+/**
  * Where the grown-up action goes: the learner's own Courses page for a
  * course that ran out of lessons (that is where assignments are edited),
  * School Operations for everything else — the fix is institutional, not a
@@ -138,6 +154,26 @@ const GROWN_UP_ACTION = {
  */
 function grownUpHref(linkTo, learnerId, base) {
   return linkTo === 'courses' ? teacherLearnerPath(learnerId, 'courses', null, base) : teacherSectionPath('operations', base);
+}
+
+/**
+ * `GROWN_UP_ACTION` keyed on a reason it does not carry — a mirror gone
+ * stale (see `needsAdult` above) — used to render nothing at all: `state`
+ * painted the red band, `needsGrownUp` turned the dot, the dashboard tally
+ * counted the subject, and the card alone had no words for why. This is the
+ * card's own copy-gap safety net: a labelized, generic sentence instead of a
+ * blank slot, plus a warn so the drift gets fixed rather than quietly
+ * tolerated forever.
+ */
+function grownUpActionFor(reason) {
+  const action = GROWN_UP_ACTION[reason];
+  if (action) return action;
+  teacherLog.copyGap('grown-up-reason-unmapped', { reason });
+  return {
+    headline: reason ? `This needs a grown-up (${labelize(reason)}).` : 'This needs a grown-up.',
+    linkTo: 'operations',
+    linkLabel: 'School → Operations',
+  };
 }
 
 /**
@@ -158,6 +194,14 @@ const MUTED_EXCUSE_FALLBACK = {
   not_a_school_day: 'Not a school day.',
   suppressed_by_focus: 'Deferred for another subject today.',
 };
+
+/** Same copy-gap safety net as `grownUpActionFor`, for the seven quiet excuses. */
+function mutedExcuseFor(reason) {
+  const sentence = MUTED_EXCUSE_FALLBACK[reason];
+  if (sentence) return sentence;
+  teacherLog.copyGap('excuse-reason-unmapped', { reason });
+  return reason ? labelize(reason) : 'Excused today.';
+}
 
 /**
  * The score as the operator asked for it: green checks and red X's AND a
@@ -239,8 +283,18 @@ const progressNote = (session) => {
   return null;
 };
 
-/** One lesson on the day — identity, state, score, and its paper, in one square. */
-function LessonCard({ row, learnerId, base, onOpen }) {
+/**
+ * One lesson on the day — identity, state, score, and its paper, in one
+ * square.
+ *
+ * `showObligation` defaults true: it is set false only for a non-first row of
+ * a multi-session section (`LearnerDayGrid` below), because every row a
+ * section produces shares the SAME obligation (`learnerDay.js`: "the plan is
+ * stated once for the subject, not repeated per session") — two finished
+ * sessions under one `excused:caught_up` subject must not print "This course
+ * has no more lessons" on two adjacent cards.
+ */
+function LessonCard({ row, learnerId, base, onOpen, showObligation = true }) {
   const session = row.session;
   const subject = session?.subject ?? row.subject;
   // A PLANNED LESSON IS AS FULLY DESCRIBED AS A RECORDED ONE.
@@ -289,12 +343,17 @@ function LessonCard({ row, learnerId, base, onOpen }) {
   // two true things, not a contradiction (plan 3.2/3.3/3.4 design note).
   const obligation = row.obligation ?? null;
   const faulted = obligation?.state === 'faulted';
-  const grownUp = obligation?.needsGrownUp ? GROWN_UP_ACTION[obligation.reason] ?? null : null;
+  // `showObligation` suppresses the NOTICE on a repeat row of the same
+  // section (see the doc comment above) — the card still carries its own
+  // status chip and score regardless; only the once-per-subject verdict text
+  // is held back. `grownUpActionFor`/`mutedExcuseFor` never return null, so
+  // this slot is never silently blank for a row that IS showing it.
+  const grownUp = (showObligation && needsAdult(obligation)) ? grownUpActionFor(obligation.reason) : null;
   // A quiet excuse still says why, just never with a button — the fallback
   // only fires when nothing upstream (an in-flight session, the row's own
   // `detail`) already supplied a sentence.
-  const mutedExcuse = (obligation?.state === 'excused' && !obligation.needsGrownUp)
-    ? MUTED_EXCUSE_FALLBACK[obligation.reason] ?? null
+  const mutedExcuse = (showObligation && obligation?.state === 'excused' && !needsAdult(obligation))
+    ? mutedExcuseFor(obligation.reason)
     : null;
   const pendingText = note ?? row.detail ?? mutedExcuse;
   // THE POSTER FRAME IS ALWAYS DRAWN, poster or not.
@@ -411,7 +470,7 @@ function dotTone(row) {
   // reasons) gets its OWN tone regardless of row status: `blocked_unreachable`
   // carries the same `status: 'blocked'` an ordinary reachable lock does, and
   // the collapsed row must still tell the two apart at a glance.
-  if (row.obligation?.needsGrownUp) return 'needs-grownup';
+  if (needsAdult(row.obligation)) return 'needs-grownup';
   // Status now means progress for EVERY row, so there is no branch here for
   // unplanned work — it tones by how far along it is, like anything else, and
   // the dot's label carries the provenance. Grey is reserved for "not touched",
@@ -434,7 +493,7 @@ function DayDots({ rows }) {
           row.session?.lessonTitle ?? row.planned,
           score?.percent != null ? `${Math.round(score.percent)}%` : DAY_STATUS_LABEL[row.status],
           row.unplanned ? 'not on the plan' : null,
-          row.obligation?.needsGrownUp ? GROWN_UP_ACTION[row.obligation.reason]?.headline ?? null : null,
+          needsAdult(row.obligation) ? GROWN_UP_ACTION[row.obligation.reason]?.headline ?? null : null,
         ].filter(Boolean).join(' — ');
         return (
           <span key={row.key} className={`teacher-roster__dot teacher-roster__dot--${tone}`} title={label}>
@@ -479,9 +538,24 @@ function LearnerDayGrid({ learnerId, rows, base, studyDay, agenda, onOpenArtifac
         ? <p className="teacher-roster__plan-loading" aria-busy="true">Loading the day&rsquo;s plan…</p>
         : rows.length > 0
           ? <div className="teacher-lesson-grid" data-testid="lesson-grid">
-            {rows.map((gridRow) => (
-              <LessonCard key={gridRow.key} row={gridRow} learnerId={learnerId} base={base} onOpen={onOpenArtifact} />
-            ))}
+            {/* A section's obligation is stated ONCE (`learnerDay.js`: "the
+                plan is stated once for the subject, not repeated per
+                session"). Every row a section produces shares the SAME
+                `obligation` object BY REFERENCE (task 7), so identity — not
+                the subject string, which two different sections can share —
+                is what "already shown" means here. Fresh every render, so a
+                stale Set never survives past this one pass. */}
+            {(() => {
+              const seenObligations = new Set();
+              return rows.map((gridRow) => {
+                const showObligation = !gridRow.obligation || !seenObligations.has(gridRow.obligation);
+                if (gridRow.obligation) seenObligations.add(gridRow.obligation);
+                return (
+                  <LessonCard key={gridRow.key} row={gridRow} learnerId={learnerId} base={base}
+                    onOpen={onOpenArtifact} showObligation={showObligation} />
+                );
+              });
+            })()}
           </div>
           : <p className="teacher-panel__empty">Nothing planned or recorded for this day.</p>}
       <a className="teacher-btn teacher-btn--quiet teacher-roster__day-link"
@@ -544,7 +618,24 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   // the join, never a second classification. Reported only once the plan has
   // settled, for the same reason `DayDots` waits below: "zero" before the
   // read lands is a guess, not a fact.
-  const grownUpEntries = joined.rows.filter((r) => r.obligation?.needsGrownUp);
+  //
+  // ONE PER SECTION, NOT ONE PER ROW. A section that produced two rows (two
+  // matched sessions, say) shares the SAME `obligation` object across both
+  // (task 7) — a subject stuck on `excused:caught_up` after finishing two
+  // lessons must count as ONE subject, not two, or the strip reads "2
+  // subjects need a grown-up" for a single course. Dedup by object identity:
+  // two DIFFERENT sections never share the same `obligation` reference (each
+  // section computes its own), so this is exact, not a subject-string guess.
+  const grownUpEntries = (() => {
+    const seen = new Set();
+    const entries = [];
+    joined.rows.forEach((r) => {
+      if (!needsAdult(r.obligation) || seen.has(r.obligation)) return;
+      seen.add(r.obligation);
+      entries.push(r);
+    });
+    return entries;
+  })();
   // A stable signature (not the array itself, which is a fresh reference every
   // render) so the report effect fires only when the SET of subjects needing
   // a grown-up actually changes, not on every unrelated re-render.

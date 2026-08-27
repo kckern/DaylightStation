@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import RosterStrip from './RosterStrip.jsx';
+import { teacherLog } from '../teacherLog.js';
 
 // RosterStrip's only network dependency is the agenda preview read (per
 // learner, GET-only) that `joinLearnerDay` needs to compute `obligation`.
@@ -135,5 +136,88 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /Learner A/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, href: null }));
+  });
+});
+
+// A section is judged ONCE by the planner; a section that produces MULTIPLE
+// rows (two matched sessions under one subject) shares the SAME `obligation`
+// object across every row it produces (task 7). Neither the tally nor the
+// card may count/print that verdict once per ROW — code review caught this:
+// every other fixture in this file has exactly one row per section, so
+// nothing here previously exercised the multi-row case at all.
+describe('RosterStrip — a section\'s obligation is stated once, not once per row (plan 3.4 fix)', () => {
+  // `caught_up` is the reason that most plausibly co-occurs with finished
+  // work: the course ran out of lessons AFTER the child did two of them
+  // today. No `next.unitId` on the section, so both sessions claim it by
+  // SUBJECT match (`claimFor`), producing two rows sharing one obligation.
+  const rowWithTwoSessions = {
+    learnerId: 'learner-a',
+    sessions: [
+      { subject: 'math', sessionId: 'ses_1', unitId: 'm1', lessonTitle: 'Math A', state: 'graded' },
+      { subject: 'math', sessionId: 'ses_2', unitId: 'm2', lessonTitle: 'Math B', state: 'graded' },
+    ],
+  };
+  const twoSessionSection = section({ state: 'excused', reason: 'caught_up' });
+
+  it('counts a multi-session subject ONCE in the dashboard tally, not once per session', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [twoSessionSection] }));
+    const onNeedsGrownUp = vi.fn();
+    render(<RosterStrip rows={[rowWithTwoSessions]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
+    await screen.findByRole('button', { name: /Learner A/ });
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
+      count: 1, href: '/school/teacher/students/learner-a/courses',
+    }));
+  });
+
+  it('prints the notice on only the FIRST of the two cards, never duplicated on the second', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [twoSessionSection] }));
+    render(<RosterStrip rows={[rowWithTwoSessions]} kids={KIDS} studyDay="2026-08-26" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    const grid = within(await screen.findByTestId('lesson-grid'));
+    const cards = grid.getAllByTestId('lesson-card');
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]).getByText('This course has no more lessons')).toBeInTheDocument();
+    expect(within(cards[0]).getByRole('link', { name: 'Open Courses' })).toBeInTheDocument();
+    // The second card gets no repeat of the sentence, and no obligation link
+    // standing in for it either — the slot is deliberately quiet, not
+    // silently different. (Each card DOES carry its own "open this session"
+    // link, unrelated to the obligation — scope to the obligation link itself.)
+    expect(within(cards[1]).queryByText('This course has no more lessons')).toBeNull();
+    expect(within(cards[1]).queryByRole('link', { name: 'Open Courses' })).toBeNull();
+    expect(cards[1].querySelector('.teacher-lesson-card__obligation')).toBeNull();
+  });
+});
+
+// Task 7's `NEEDS_GROWN_UP` (`learnerDay.js`) is the source of truth for
+// WHICH reasons need a grown-up; this file's `GROWN_UP_ACTION` /
+// `MUTED_EXCUSE_FALLBACK` only supply the WORDS for the ones it already
+// knows about. If the two drift apart the slot must still say something —
+// never blank — and must warn so the drift gets noticed and fixed.
+describe('RosterStrip — a copy-gap never renders blank (drift safety net)', () => {
+  it('a FAULTED reason with no matching GROWN_UP_ACTION entry still gets a headline and a link, and warns', async () => {
+    const warn = vi.spyOn(teacherLog, 'copyGap').mockImplementation(() => {});
+    // `state: 'faulted'` on its own (task 7's ladder guarantees only two
+    // reasons ever produce it today, but the card must not rely on that
+    // holding forever) — a fault reason this file has never heard of.
+    const grid = await mountExpanded(section({ state: 'faulted', reason: 'unforeseen_fault' }));
+    const card = grid.getByTestId('lesson-card');
+    expect(card.className).toMatch(/--faulted/);
+    expect(grid.queryByText('unforeseen_fault')).toBeNull();
+    expect(grid.getByText('This needs a grown-up (Unforeseen Fault).')).toBeInTheDocument();
+    expect(grid.getByRole('link', { name: 'School → Operations' })).toBeInTheDocument();
+    expect(warn).toHaveBeenCalledWith('grown-up-reason-unmapped', { reason: 'unforeseen_fault' });
+    warn.mockRestore();
+  });
+
+  it('an EXCUSED reason with no matching MUTED_EXCUSE_FALLBACK entry still gets a sentence (labelized, no link), and warns', async () => {
+    const warn = vi.spyOn(teacherLog, 'copyGap').mockImplementation(() => {});
+    const grid = await mountExpanded(section({ state: 'excused', reason: 'unforeseen_excuse' }));
+    const card = grid.getByTestId('lesson-card');
+    expect(card.className).not.toMatch(/--faulted/);
+    expect(grid.queryByText('unforeseen_excuse')).toBeNull();
+    expect(grid.getByText('Unforeseen Excuse')).toBeInTheDocument();
+    expect(grid.queryByRole('link')).toBeNull();
+    expect(warn).toHaveBeenCalledWith('excuse-reason-unmapped', { reason: 'unforeseen_excuse' });
+    warn.mockRestore();
   });
 });
