@@ -35,7 +35,7 @@
  *
  * @module applications/school/PianoCourseProgramLauncher
  */
-import { isSameStudyDay } from '#domains/school/studyDay.mjs';
+import { isSameStudyDay, studyDayForInstant } from '#domains/school/studyDay.mjs';
 // The present-tense rule (what counts as "the one you are inside") lives in the
 // domain so the agenda card and the result receipt cannot disagree about it.
 import { inProgressSegments, activeProgressPosition } from '#domains/school/progressRows.mjs';
@@ -141,22 +141,28 @@ const orderedUnits = (credit, parents = {}) => {
 };
 
 export class PianoCourseProgramLauncher {
-  #getPlayableUnits; #donow; #timezone; #clock; #logger;
+  #getPlayableUnits; #donow; #dayBypasses; #timezone; #clock; #logger;
 
   /**
    * @param {object} config
    * @param {{execute: Function}} config.getPlayableUnits - Piano's `GetPlayableUnits`
    *   use case, INJECTED (Decision D1: a use case never imports a concrete adapter).
+   * @param {{activeFor: Function}|null} [config.dayBypasses] - parent day-bypass ledger,
+   *   optional (opt-in): a launcher wired without it behaves exactly as before.
    * @param {string|null} [config.timezone] - household timezone, for the study-day boundary
    * @param {() => Date} [config.clock]
    * @param {object} [config.logger]
    */
-  constructor({ getPlayableUnits, donow = null, timezone = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({
+    getPlayableUnits, donow = null, dayBypasses = null, timezone = null,
+    clock = () => new Date(), logger = console,
+  } = {}) {
     if (!getPlayableUnits || typeof getPlayableUnits.execute !== 'function') {
       throw new Error('PianoCourseProgramLauncher requires a getPlayableUnits use case');
     }
     this.#getPlayableUnits = getPlayableUnits;
     this.#donow = donow;
+    this.#dayBypasses = dayBypasses;
     this.#timezone = timezone;
     this.#clock = clock;
     this.#logger = logger;
@@ -254,6 +260,33 @@ export class PianoCourseProgramLauncher {
         servedWork: completedToday.map((item) => ({
           unitId: item.unitId ?? item.id ?? null, title: item.title ?? null,
         })),
+      };
+    }
+
+    // A parent-recorded bypass for THIS learner/course/study-day — checked
+    // only after a real completion is ruled out (evidence always outranks a
+    // bypass), and before the co-progress excuse below. A read failure here
+    // is a missing convenience, not a status failure: the day falls back to
+    // owed/locked exactly as if no bypass store were wired at all.
+    let bypass = null;
+    try {
+      bypass = await this.#dayBypasses?.activeFor?.({
+        learnerId: userId, programId: this.id,
+        studyDate: studyDayForInstant(nowMs, { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR }),
+      }) ?? null;
+    } catch (err) {
+      this.#logger.warn?.('school.piano-course.bypass-read-failed', {
+        userId, courseId: programInstance, error: err?.message ?? String(err),
+      });
+      bypass = null;
+    }
+    if (bypass) {
+      return {
+        ...common,
+        doneToday: true,
+        excused: true,
+        bypassed: true,
+        progressLabel: `Excused today by ${bypass.decidedBy} · ${completed}/${total}`,
       };
     }
 
