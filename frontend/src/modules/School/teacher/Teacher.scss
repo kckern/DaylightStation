@@ -1575,6 +1575,18 @@
     border: 1px solid #d9d0c0; background: white; object-fit: contain;
     box-shadow: 0 8px 25px rgba(45, 36, 22, .12); }
 }
+/* The one console path that prints for real. Deliberately NOT sharing the
+   preview's box, action row, or neutral beige — a teacher who only glances
+   must still be able to tell "read-only copy" from "this prints" apart. */
+.teacher-agenda-dispatch {
+  margin-top: 4px;
+  &__blocked, &__ready {
+    margin-top: 8px; padding: 10px 12px; border: 1px solid #e8c98f; border-radius: 8px;
+    background: #fff3d9; color: #6c5425;
+    p { margin: 0 0 8px; font-weight: 700; }
+    ul { margin: 0 0 8px; padding-left: 1.1rem; }
+  }
+}
 .teacher-paper-record {
   summary { color: #745326; cursor: pointer; font-size: 12px; font-weight: 700; list-style: none; }
   summary::-webkit-details-marker { display: none; }
