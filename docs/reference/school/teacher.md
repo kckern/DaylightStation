@@ -205,7 +205,7 @@ retryable immediately rather than blocked by the cooldown.
 | `issued` / `reprinted` | reprint the exact artifact; abandon | Session inspector → Issued materials; Operations | capability |
 | `media_dispatched` / `media_stalled` | abandon | Operations | capability |
 | `submitted` | resolve the review items that block grading | Queue → Grading and review | capability |
-| `submitted` / `graded` / `outcome_recorded` | settle it by hand when marking never finished | Session inspector → Settle this by hand | **step-up** |
+| `graded` / `outcome_recorded`, and `submitted` with every question marked | settle it by hand — see §5 for what it cannot finish | Session inspector → Settle this by hand | **step-up** |
 | `graded` | correct the mark; retract a correction | Session inspector → Fix a marked answer | **step-up** |
 | `outcome_recorded` (`needs_remediation`) | offer another try | Session inspector → Offer another try | capability |
 | `rewarded` | correct the mark — the effective grade and its reward reconcile | Session inspector | **step-up** |
@@ -219,8 +219,12 @@ retryable immediately rather than blocked by the cooldown.
 Work that came back settles through grading and close, never through
 abandonment, and `MarkSessionAbandoned` refuses the difference by name. The
 session inspector's **Settle this by hand** is the other half of that split:
-offered on exactly the states abandonment is not, and shown as nothing at all
-where it does not apply rather than as a disabled button.
+*shown* on exactly the states abandonment is not — `submitted`, `graded`,
+`outcome_recorded` — and shown as nothing at all elsewhere rather than as a
+disabled button. Shown is not the same as guaranteed: whether a settle can
+actually finish depends on whether a score can be derived, which only the
+grading use case can answer. §5 lists both the cases it finishes and the three
+it refuses.
 
 ---
 
@@ -397,27 +401,52 @@ supersedes deliberately.
 | Fix a marked answer | one session | `grade_adjusted` | **step-up** |
 | Retract a correction | one adjustment | `grade_adjustment_retracted` | **step-up** |
 | Systematic regrade | one bank × date range | corrective attempts | **step-up** |
-| Settle it by hand | one session | teacher note + `graded` + `outcome_recorded` | **step-up** |
+| Settle it by hand | one session | `graded` + teacher note + `outcome_recorded` | **step-up** |
 
 Every one of the five is preview-first. Nothing applies on the first tap.
 
-**Settling by hand** is the exit for work that came back and never finished
-marking — a scan that produced no attempts, a paper lesson somebody marked at
-the table, a session whose last review item nobody will ever answer. One tap of
-**Settle it** does three things in this order:
+**Settling by hand** finishes work that came back and stalled on the way to an
+outcome. One tap of **Settle it** does three things in this order:
 
-1. the mandatory reason is delivered **to the child** as a teacher note (the
-   agenda's "Notes for you", the student panel) — nothing about their work
-   moves before the why is on record;
-2. `graded`, flagged `settle`, which is what buys it the step-up: a settle
+1. `graded`, flagged `settle`, which is what buys it the step-up: a settle
    carries no verdicts, so without that flag it would meet no gate at all;
+2. the mandatory reason is delivered **to the child** as a teacher note (the
+   agenda's "Notes for you", the student panel);
 3. `outcome_recorded`, because grading and stopping there would leave the
    session open and still on the stuck list.
 
+The note is second, not first, and that is deliberate. The write that acts on
+the child here is the **grade**, and the grade can refuse. Note-first meant a
+child could read a sentence about a settlement that then did not happen — a
+false sentence, which this house forbids more strongly than it demands the why
+be early. Second still puts it ahead of everything the rule protects: ahead of
+`outcome_recorded`, ahead of the printed receipt, ahead of anything that
+reaches their day.
+
+**What it can finish**, because these are the states the grade half accepts:
+
+| Stuck at | What the grade half says | Result |
+|---|---|---|
+| `graded` — marked, never closed out | `duplicate` | closed out |
+| `outcome_recorded` — settled, never rewarded | `duplicate` | re-settles, receipt reprints |
+| `submitted` with every question already marked | `graded` | marked and closed out |
+
 "Already marked" and "already settled" count as success — they name the state
-the form is trying to reach. Any other refusal stops the sequence and is
-reported as what it is; a settle that got partway is never announced as a
-settle.
+the form is trying to reach.
+
+**What it cannot finish, and where to go instead.** A settle derives a score;
+it cannot invent one. Three stuck sessions land here and are refused, each with
+the grading use case's own sentence rather than a generic failure:
+
+| Stuck at | Refused because | The move that works |
+|---|---|---|
+| `submitted`, questions still pending | `awaiting_review` — a person still owes a verdict | Queue → Grading and review; the last verdict grades and closes it |
+| `submitted`, every question voided | `unavailable` — no markable question, so no denominator | mark one voided question `correct`/`incorrect` in the review lane, which un-voids it |
+| `submitted`, nothing to mark at all (a scan with no attempts) | `unavailable` — same reason | attest the unit under Student → Operations, which credits the work without a grade |
+
+In every refusal **nothing is written and the child is told nothing**: no
+decision was taken, so there is nothing to report to them. A settle that got
+partway is never announced as a settle.
 
 ---
 
@@ -715,7 +744,9 @@ flowchart LR
     LIST --> C{"Does the state accept 'abandoned'?"}
     C -->|yes| A["Abandon with a mandatory reason"]
     C -->|"no — submitted, graded, outcome_recorded"| G["Settle by hand → · session inspector"]
-    G --> H["Note the child reads · graded · outcome_recorded"]
+    G --> D{"Is there a score to derive?"}
+    D -->|yes| H["graded · note the child reads · outcome_recorded"]
+    D -->|"no — pending, or every question voided"| R["Refused, nothing written<br/>review queue, or attest the unit"]
 ```
 
 Household-scoped by design, not per-learner: a wedged session is an operational

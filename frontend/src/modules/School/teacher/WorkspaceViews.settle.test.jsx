@@ -116,7 +116,7 @@ describe('SessionInspector — settle this by hand', () => {
     expect(screen.getByText(/Learner B gets your note/)).toBeInTheDocument();
   });
 
-  it('tells the child why, marks it, then closes it — and refetches', async () => {
+  it('marks it, tells the child why, then closes it — and refetches', async () => {
     await renderAt('submitted');
     const reads = teacherWorkspaceApi.session.mock.calls.length;
     fireEvent.change(screen.getByLabelText('Settlement reason'), { target: { value: 'Marked on paper at the table.' } });
@@ -159,6 +159,39 @@ describe('SessionInspector — settle this by hand', () => {
     expect(schoolApi.closeSession).not.toHaveBeenCalled();
   });
 
+  // The reason the note moved behind the grade. A refused grade means no
+  // decision was taken about this child, so they must not read a sentence
+  // describing a settlement that did not happen.
+  it('says nothing to the child when the marking refuses', async () => {
+    schoolApi.gradeSession.mockResolvedValue({ ok: false, status: 404, data: { status: 'unavailable', message: 'There were questions on that one, but none of them could be marked.' } });
+    await renderAt('submitted');
+    fireEvent.change(screen.getByLabelText('Settlement reason'), { target: { value: 'Every question was voided.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview settlement' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Settle it' }));
+    await waitFor(() => expect(screen.getByText(/none of them could be marked/)).toBeInTheDocument());
+    expect(screen.getByText(/Nothing was changed/)).toBeInTheDocument();
+    expect(schoolApi.postTeacherNote).not.toHaveBeenCalled();
+    expect(schoolApi.closeSession).not.toHaveBeenCalled();
+  });
+
+  // Keyed to the SESSION, not the reason text: rewording at a dead end and
+  // trying again must not send the child a second note.
+  it('sends one note however many times a settle is retried', async () => {
+    schoolApi.closeSession.mockResolvedValue({ ok: false, status: 404, data: { status: 'unavailable', message: 'That work has not been marked yet.' } });
+    await renderAt('submitted');
+    const reason = screen.getByLabelText('Settlement reason');
+    fireEvent.change(reason, { target: { value: 'First wording.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview settlement' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Settle it' }));
+    await waitFor(() => expect(schoolApi.postTeacherNote).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(reason, { target: { value: 'Second, clearer wording.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview settlement' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Settle it' }));
+    await waitFor(() => expect(schoolApi.closeSession).toHaveBeenCalledTimes(2));
+    expect(schoolApi.postTeacherNote).toHaveBeenCalledTimes(1);
+  });
+
   it('does not claim a settle when only the marking half landed', async () => {
     schoolApi.closeSession.mockResolvedValue({ ok: false, status: 404, data: { status: 'unavailable', message: 'That work has not been marked yet.' } });
     await renderAt('submitted');
@@ -169,14 +202,16 @@ describe('SessionInspector — settle this by hand', () => {
     expect(screen.getByText(/That work has not been marked yet/)).toBeInTheDocument();
   });
 
-  it('does not mark anything when the child could not be told why', async () => {
+  it('does not close anything out when the child could not be told why', async () => {
     schoolApi.postTeacherNote.mockResolvedValue({ ok: false, status: 500, data: { error: 'internal' } });
     await renderAt('submitted');
     fireEvent.change(screen.getByLabelText('Settlement reason'), { target: { value: 'Scan came back empty.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Preview settlement' }));
     fireEvent.click(screen.getByRole('button', { name: 'Settle it' }));
     await waitFor(() => expect(screen.getByText('internal')).toBeInTheDocument());
-    expect(schoolApi.gradeSession).not.toHaveBeenCalled();
+    // The mark is on record — it is append-only and cannot be taken back — but
+    // the session stays open rather than being settled behind the child's back.
+    expect(schoolApi.gradeSession).toHaveBeenCalled();
     expect(schoolApi.closeSession).not.toHaveBeenCalled();
   });
 });

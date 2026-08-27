@@ -528,17 +528,26 @@ const saidBy = (response, fallback) => {
  * legal from any of those states, so the stuck-session panel links here rather
  * than offering a verb the server would refuse.
  *
- * THREE WRITES, ONE ACT, in the order a person would want them:
+ * THREE WRITES, ONE ACT:
  *
- *  1. The reason, as a teacher note. It is the only half the CHILD ever reads
- *     — `RecordTeacherNote` puts it on the agenda's "Notes for you" and the
- *     student panel — so it goes first: nothing about their work moves before
- *     the why is on record.
- *  2. `graded`, flagged `settle` so it costs a session-scoped step-up. A
+ *  1. `graded`, flagged `settle` so it costs a session-scoped step-up. A
  *     hand-settle carries no verdicts and would otherwise meet no gate at all.
+ *  2. The reason, as a teacher note. It is the only half the CHILD ever reads
+ *     — `RecordTeacherNote` puts it on the agenda's "Notes for you" and the
+ *     student panel.
  *  3. `outcome_recorded`. Grading and stopping there would have moved the
  *     problem rather than solved it — the session would sit at `graded`, still
  *     open, still on the stuck list.
+ *
+ * WHY THE NOTE IS SECOND, not first. The instinct is to put the why on record
+ * before anything moves. But the write that acts on this child is the GRADE,
+ * and the grade can refuse — an all-voided sheet, a session still waiting on a
+ * person. Note-first meant the child read a sentence about a settlement that
+ * then did not happen, while the work stayed at `submitted`: a false sentence
+ * to a child, which this house forbids more strongly than it demands
+ * earliness. Second still puts it ahead of everything the principle protects —
+ * ahead of `outcome_recorded`, ahead of the printed receipt, ahead of anything
+ * that reaches their day.
  *
  * `duplicate` and `already_settled` are SUCCESS here: they say the half in
  * question was already on record, which is the state this form is trying to
@@ -548,9 +557,10 @@ const saidBy = (response, fallback) => {
 function SettleByHand({ sessionId, learnerId, learnerName, currentPercent, onSettled }) {
   const [reason, setReason] = useState('');
   const [preview, setPreview] = useState(false);
-  // Which reason is already delivered. `useTeacherWrite` replays a 403'd call
-  // once after re-authorizing, and a replay must not send the note twice — the
-  // child would read the same sentence from two different days.
+  // Whether this SESSION's note is already on record — keyed to the session id,
+  // never to the reason text. `useTeacherWrite` replays a 403'd call once after
+  // re-authorizing, and a teacher stuck at a refusing grade half will reword
+  // and try again; both must send the child one note, not two.
   const deliveredRef = useRef(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'session-settle' });
   const key = `settle:${sessionId}`;
@@ -558,22 +568,25 @@ function SettleByHand({ sessionId, learnerId, learnerName, currentPercent, onSet
   const valid = Boolean(reason.trim());
 
   const settle = () => run(key, async ({ actorId, pin, stepUpToken }) => {
-    const note = reason.trim();
-    if (deliveredRef.current !== note) {
-      const delivered = await schoolApi.postTeacherNote({ learnerId, note, from: actorId, pin });
-      if (!delivered.ok) return delivered;
-      deliveredRef.current = note;
-    }
     const graded = await schoolApi.gradeSession(sessionId, {
       gradedBy: actorId, pin, settle: true, settledBy: actorId,
     }, stepUpToken);
     if (!MARKED_OUTCOMES.has(graded.data?.status)) {
+      // Nothing was written and nothing was said: a refused grade means no
+      // decision was taken about this child, so there is nothing to tell them.
       // A 403 is the one refusal `useTeacherWrite` can act on (it re-prompts
-      // and replays), so it travels unrewritten. Everything else says what
-      // actually happened, including the half that did land.
+      // and replays), so it travels unrewritten; everything else reports the
+      // use case's own sentence about why.
       if (graded.status === 403) return graded;
       return { ok: false, status: graded.status, data: { error:
-        `${learnerName} has your note, but the marking didn’t go through: ${saidBy(graded, 'that work could not be marked')}` } };
+        `Nothing was changed — the marking didn’t go through: ${saidBy(graded, 'that work could not be marked')}` } };
+    }
+    if (deliveredRef.current !== sessionId) {
+      const delivered = await schoolApi.postTeacherNote({
+        learnerId, note: reason.trim(), from: actorId, pin,
+      });
+      if (!delivered.ok) return delivered;
+      deliveredRef.current = sessionId;
     }
     const closed = await schoolApi.closeSession(sessionId, { pin });
     if (!SETTLED_OUTCOMES.has(closed.data?.status)) {
@@ -597,10 +610,10 @@ function SettleByHand({ sessionId, learnerId, learnerName, currentPercent, onSet
         <div className="teacher-action-preview">
           <strong>Settling does three things</strong>
           <ol>
-            <li>{learnerName} gets your note: “{reason.trim()}”</li>
             <li>{alreadyMarked
               ? `The ${Math.round(currentPercent)}% already on record stands.`
               : 'The mark is finished from the answers already on record.'}</li>
+            <li>{learnerName} gets your note: “{reason.trim()}”</li>
             <li>The result is recorded and a receipt goes to the printer.</li>
           </ol>
         </div>
