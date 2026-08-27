@@ -316,6 +316,9 @@ flowchart TD
     AMB -->|"ambiguous · blank · free_response"| Q["Review queue — one item per question"]
 
     Q --> RES["Teacher marks it Correct or Incorrect<br/>plus an optional note the child receives"]
+    Q --> VOID["Teacher marks it Can't mark this<br/>note REQUIRED — the child is told why"]
+    VOID --> DEN["The question leaves the denominator"]
+    DEN --> LAST
     RES --> LAST{"Last pending item<br/>on this session?"}
     LAST -->|yes| GRADED
     LAST -->|no| Q
@@ -335,6 +338,20 @@ flowchart TD
 authored one, the child's given answer, and how long they have been waiting. A
 verdict plus an optional ≤120-character note — the same cap receipts and
 agendas enforce, because the note is delivered to the child.
+
+**Three verdicts, not two.** A teacher who genuinely cannot mark something —
+an unreadable scan, a question that needs the child in the room — chooses
+**Can't mark this** (`void`). That question leaves the score's **denominator**:
+the percent becomes "of the questions we could mark", and the `graded` event
+stamps `voidedItemIds` so a later reader can tell a 6-of-8 that was voided down
+from nine apart from one that was always eight. A voided item is never counted
+wrong, and it resolves its queue row like any other verdict, so it stops
+holding the session open. **Its note is mandatory** — a question dropped from a
+child's score without a sentence they can read is the silent verb this
+household does not allow.
+
+If voiding leaves **nothing** markable, the session is not graded at all —
+`graded` requires a total of at least one — and it waits to be settled by hand.
 
 With both finishers wired, resolving the **last** pending item of a session
 grades and closes it in the same act. Without them, resolve-only.

@@ -30,6 +30,14 @@ import { questionItemIds, questionPrompts } from '#domains/school/documents/docu
 import { PRINT_DOCUMENT_REF_PATTERN } from '#domains/school/curriculum/unitValidation.mjs';
 import { worksheetInstanceRoster } from '#domains/school/questionBankV2.mjs';
 
+/**
+ * The three things a PERSON (never the engine) can say about one question.
+ * `void` — "not markable from the evidence" — resolves the item without
+ * giving it a truth value; see `ResolveReviewItem`, which is where a teacher
+ * actually says it and where the mandatory child-facing note is enforced.
+ */
+const HUMAN_VERDICTS = new Set(['correct', 'incorrect', 'void']);
+
 export class GradeSubmission {
   #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #teacherGate; #clock; #logger; #passOverrides;
   #worksheetInstances;
@@ -85,7 +93,10 @@ export class GradeSubmission {
    * @param {object} args
    * @param {string} args.sessionId
    * @param {Record<string,*>} [args.entries] - itemId → given, for machine grading
-   * @param {Record<string,'correct'|'incorrect'>} [args.verdicts] - a person's marks
+   * @param {Record<string,'correct'|'incorrect'|'void'>} [args.verdicts] - a
+   *   person's marks. `void` is "not markable from the evidence"
+   *   (`ResolveReviewItem`): it resolves the item without giving it a truth
+   *   value, and the item leaves the score's denominator entirely.
    * @param {string} [args.gradedBy] - the roster id of the grown-up who marked
    *   the review items; required (and checked) whenever `verdicts` is non-empty
    * @param {string|null} [args.pin] - the console PIN, consulted only when a
@@ -93,7 +104,10 @@ export class GradeSubmission {
    * @returns {Promise<{ status: 'graded'|'awaiting_review'|'duplicate'|'unavailable',
    *                     sessionId: string, percent: number|null, correct: number,
    *                     expected: number, attemptIds: string[], outstanding: string[],
-   *                     message: string, pointsAt?: object }>}
+   *                     message: string, pointsAt?: object, voidedItemIds?: string[] }>}
+   *   `expected` is the MARKABLE count, not the printed one — voided questions
+   *   are out of it. `voidedItemIds` accompanies a `graded` result and names
+   *   which ones those were.
    */
   async execute({
     sessionId, entries = {}, verdicts = {}, gradedBy = null, pin = null,
@@ -101,7 +115,12 @@ export class GradeSubmission {
     // Before anything is read, let alone written: a human verdict is a claim of
     // authority over a child's work, and this is the only place it can be
     // checked once for every caller — HTTP, a scan, or a reconciliation job.
-    if (Object.values(verdicts ?? {}).some((v) => v === 'correct' || v === 'incorrect')) {
+    // `void` is on this list with the other two deliberately: deciding a
+    // question cannot be marked takes it out of a child's score, which is
+    // every bit as much a claim of authority over their work as calling it
+    // wrong. A lane that let it through unchecked would be the cheapest way
+    // to edit a denominator from a browser.
+    if (Object.values(verdicts ?? {}).some((v) => HUMAN_VERDICTS.has(v))) {
       this.#grownUps.assert(gradedBy, 'Only a grown-up can mark a child\'s work', {
         action: 'grade.verdicts', sessionId,
       });
@@ -184,26 +203,40 @@ export class GradeSubmission {
     // is therefore the durable per-item verdict sheet for the whole submission —
     // machine marks included — so the second call can see what the first decided
     // without the caller having to re-send a sheet it no longer holds.
+    //
+    // `marked` holds TRUTH VALUES. A voided item has none — nobody could read
+    // it — so it is kept in its own set instead: putting `false` in `marked`
+    // would count an unreadable answer as wrong, and putting `true` would be
+    // an outright invention.
     const marked = new Map();
-    queueItemsForSession
-      .filter((item) => item.verdict === 'correct' || item.verdict === 'incorrect')
-      .forEach((item) => marked.set(item.itemId, item.verdict === 'correct'));
+    const voided = new Set();
+    queueItemsForSession.forEach((item) => {
+      if (item.verdict === 'correct' || item.verdict === 'incorrect') marked.set(item.itemId, item.verdict === 'correct');
+      else if (item.verdict === 'void') voided.add(item.itemId);
+    });
 
     // --- a person's verdicts -------------------------------------------------
     for (const [itemId, verdict] of Object.entries(verdicts)) {
-      if (verdict !== 'correct' && verdict !== 'incorrect') continue;
+      if (!HUMAN_VERDICTS.has(verdict)) continue;
       // eslint-disable-next-line no-await-in-loop
       const resolved = await this.#reviewQueue.resolve({ sessionId, itemId, verdict, gradedBy, at: nowIso });
       // A verdict on something that was never queued still counts — a parent
       // may mark a question the machine thought it could score.
-      marked.set(itemId, verdict === 'correct');
+      if (verdict === 'void') voided.add(itemId);
+      else marked.set(itemId, verdict === 'correct');
       if (!resolved) this.#logger.debug?.('school.grade.verdict-unqueued', { sessionId, itemId });
     }
 
     // --- the engine ----------------------------------------------------------
     const bankItemIds = new Set((bank?.items ?? []).map((i) => i.id));
+    // `!voided.has` alongside `!marked.has` for the same reason: both mean a
+    // PERSON has already spoken about this question, and the engine does not
+    // get to speak over them. Without it, a voided free-response row that also
+    // happens to carry a bank entry would come back from the grader with a
+    // machine truth value the teacher had just said could not be established.
     const gradable = Object.entries(entries).filter(([itemId, given]) => (
-      bankItemIds.has(itemId) && !marked.has(itemId) && given !== undefined && given !== null && given !== ''
+      bankItemIds.has(itemId) && !marked.has(itemId) && !voided.has(itemId)
+      && given !== undefined && given !== null && given !== ''
     ));
 
     // A machine mark is recorded in the same durable verdict sheet a parent
@@ -250,9 +283,27 @@ export class GradeSubmission {
     }
 
     // --- the score -----------------------------------------------------------
-    const outstanding = expectedItems.filter((itemId) => !marked.has(itemId));
-    const correct = expectedItems.filter((itemId) => marked.get(itemId) === true).length;
-    const percent = Math.round((correct / expectedItems.length) * 10000) / 100;
+    // A voided question leaves the sheet BEFORE any of the three lines below.
+    // It has to leave before `outstanding` or it reads as forever-unmarked and
+    // the session never grades at all; before `correct` because it is not
+    // right; and before the divisor because it is not wrong either. What is
+    // left is the honest denominator: the questions we could actually mark.
+    const voidedItemIds = expectedItems.filter((itemId) => voided.has(itemId));
+    const markable = expectedItems.filter((itemId) => !voided.has(itemId));
+
+    // Everything on the sheet was voided. There IS no percent to record —
+    // and `graded`'s own validator refuses `totalCount: 0`, so the only ways
+    // forward are an invalid event or no event. This takes the second: the
+    // session stays where it is and says why, and a grown-up settles it by
+    // hand. Silently writing `0 of 0` would tell a child they scored nothing.
+    if (!markable.length) {
+      this.#logger.info?.('school.grade.nothing-markable', { sessionId, voidedItemIds });
+      return this.#unavailable(sessionId, 'There were questions on that one, but none of them could be marked.');
+    }
+
+    const outstanding = markable.filter((itemId) => !marked.has(itemId));
+    const correct = markable.filter((itemId) => marked.get(itemId) === true).length;
+    const percent = Math.round((correct / markable.length) * 10000) / 100;
 
     if (outstanding.length) {
       this.#logger.info?.('school.grade.awaiting-review', { sessionId, outstanding });
@@ -261,7 +312,7 @@ export class GradeSubmission {
         sessionId,
         percent: null,
         correct,
-        expected: expectedItems.length,
+        expected: markable.length,
         attemptIds,
         outstanding,
         message: 'A grown-up still has some of this to check.',
@@ -300,18 +351,24 @@ export class GradeSubmission {
       // `totalCount` — the same pair `RecordCardScanOutcome` emits. Until
       // 2026-08-15 only that paper-scan producer sent them, so every
       // screen-path and grown-up-marked session printed a receipt with null
-      // counts. `expectedItems.length` is >= 1 here: the empty roster returns
-      // `unavailable` well above, which is what the event schema's
-      // `totalCount >= 1` rule requires.
+      // counts. `markable.length` is >= 1 here: an empty roster returns
+      // `unavailable` well above, and an all-voided one returns it just above
+      // the score — which is what the event schema's `totalCount >= 1` rule
+      // requires.
       correctCount: correct,
-      totalCount: expectedItems.length,
+      totalCount: markable.length,
+      // What was taken OUT of that total, so a later reader can tell a 6-of-8
+      // that was voided down from nine from one that was always eight. Sent
+      // only when there is something to say — an absent field reads as "no
+      // question on this sheet went unmarkable", which is the truth.
+      ...(voidedItemIds.length ? { voidedItemIds } : {}),
       ...(typeof effectivePassingPercent === 'number' ? { passingPercent: effectivePassingPercent } : {}),
     });
     if (errors.length) throw new Error(`GradeSubmission: could not record the grade: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
 
     this.#logger.info?.('school.grade.recorded', {
-      sessionId, unitId: state.unitId, percent, correct, expected: expectedItems.length, gradedBy,
+      sessionId, unitId: state.unitId, percent, correct, expected: markable.length, voided: voidedItemIds.length, gradedBy,
     });
 
     return {
@@ -320,10 +377,14 @@ export class GradeSubmission {
       percent,
       passingPercent: typeof effectivePassingPercent === 'number' ? effectivePassingPercent : null,
       correct,
-      expected: expectedItems.length,
+      // `expected` is what was MARKABLE, matching the event's `totalCount` and
+      // the "N of M" the receipt prints. A caller that reported the printed
+      // count here would disagree with the paper in the child's hand.
+      expected: markable.length,
+      voidedItemIds,
       attemptIds: recordedAttempts,
       outstanding: [],
-      message: `Marked: ${correct} of ${expectedItems.length}.`,
+      message: `Marked: ${correct} of ${markable.length}.`,
     };
   }
 
