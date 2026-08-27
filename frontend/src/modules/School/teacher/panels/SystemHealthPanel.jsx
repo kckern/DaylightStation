@@ -22,7 +22,19 @@
  * it 400s without both query params, and there is no bulk "every superseded
  * freeze in the household" read to compose instead. So this section carries
  * its own learner + period selector rather than pretending to enumerate
- * something the API cannot answer.
+ * something the API cannot answer — which makes it a spot-check tool for one
+ * learner+period at a time, not a glanceable household-wide indicator like
+ * the bank list above it.
+ *
+ * The selector lives OUTSIDE the `PanelFrame` it drives, same reasoning as
+ * the `FrozenHistory` link added alongside this panel: it CHOOSES what to
+ * fetch, so it cannot sit inside the thing that unmounts to a loading
+ * skeleton on every choice (`PanelFrame`'s `alwaysRender` excludes
+ * `'loading'` from rendering children). And the versions list itself is
+ * gated on `versions.state === 'ok'`, not just "a period is picked" — a
+ * failed read must never render the reassuring "all clear" sentence next to
+ * its own error banner, which is exactly the contradiction this panel exists
+ * to avoid.
  *
  * A healthy read renders a REASSURING sentence, not a blank card — the
  * opposite of the dashboard's backlog strip, which renders nothing at zero.
@@ -64,11 +76,16 @@ export default function SystemHealthPanel({ kids = [] }) {
   // No learner/period selected yet resolves to an empty list rather than
   // skipping the fetch conditionally — usePanelFetch's hook order must stay
   // fixed regardless of selection state.
+  // `{versions: [...]}` always has the `versions` key, even when the array
+  // is empty — never treated as usePanelFetch's 'empty' state (that would
+  // route an empty read through PanelFrame's generic empty copy instead of
+  // the reassuring sentence below, exactly the bug this shape avoids for
+  // bank health too).
   const versions = usePanelFetch(
     () => (learnerId && periodId
       ? schoolApi.reportCardFrozenVersions({ learnerId, periodId })
       : Promise.resolve({ ok: true, status: 200, data: { versions: [] } })),
-    { deps: [learnerId, periodId], panel: 'system-health-versions', isEmpty: (d) => !(d?.versions ?? []).length },
+    { deps: [learnerId, periodId], panel: 'system-health-versions' },
   );
   const versionRows = versions.data?.versions ?? [];
   const learnerName = kids.find((k) => k.id === learnerId)?.name ?? learnerId;
@@ -100,56 +117,63 @@ export default function SystemHealthPanel({ kids = [] }) {
         )}
       </PanelFrame>
 
-      <PanelFrame
-        title="Superseded report-card versions"
-        state={versions.state}
-        retry={versions.retry}
-        alwaysRender
-        unavailableCopy="Report-card versions are not available on this install."
-      >
+      <div className="teacher-health__versions">
+        <p className="teacher-health__hint">
+          Pick a learner and period to check for preserved (superseded) freezes — a spot check, not a household-wide list.
+        </p>
         {!kids.length ? (
           <p className="teacher-panel__empty">No learners configured.</p>
         ) : (
-          <>
-            <div className="teacher-health__selectors">
-              <select aria-label="Learner" value={learnerId ?? ''} onChange={(e) => setLearnerId(e.target.value)}>
-                {kids.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
-              </select>
-              {periods.state === 'error' ? (
-                <span className="teacher-panel__error">
-                  Couldn&rsquo;t load periods.
-                  <button type="button" className="teacher-panel__retry" onClick={periods.retry}>Retry</button>
-                </span>
-              ) : (
-                <PeriodSelect periods={periodList} value={periodId} onChange={setPeriodId} />
-              )}
-            </div>
-            {periods.state !== 'loading' && periods.state !== 'error' && !periodList.length && (
-              <p className="teacher-panel__empty">No academic periods configured — versions are period-scoped.</p>
+          <div className="teacher-health__selectors">
+            <select aria-label="Learner" value={learnerId ?? ''} onChange={(e) => setLearnerId(e.target.value)}>
+              {kids.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+            </select>
+            {periods.state === 'error' ? (
+              <span className="teacher-panel__error">
+                Couldn&rsquo;t load periods.
+                <button type="button" className="teacher-panel__retry" onClick={periods.retry}>Retry</button>
+              </span>
+            ) : (
+              <PeriodSelect periods={periodList} value={periodId} onChange={setPeriodId} />
             )}
-            {periodId && (
-              versionRows.length ? (
-                <ul className="teacher-health__list" data-testid="system-health-frozen-versions">
-                  {versionRows.map(({ version, record }) => (
-                    <li key={version}>
-                      <span>{record?.period?.label ?? periodLabel} · v{version}</span>
-                      <span>
-                        Closed by {record?.closedBy ?? 'unknown'}
-                        {record?.closedAt ? ` · ${teacherDate(record.closedAt)}` : ''}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="teacher-health__ok" data-testid="system-health-versions-ok">
-                  <IconCheck />
-                  {' '}No superseded versions for {learnerName} · {periodLabel}.
-                </p>
-              )
-            )}
-          </>
+          </div>
         )}
-      </PanelFrame>
+        {periods.state !== 'loading' && periods.state !== 'error' && kids.length > 0 && !periodList.length && (
+          <p className="teacher-panel__empty">No academic periods configured — versions are period-scoped.</p>
+        )}
+        <PanelFrame
+          title="Superseded report-card versions"
+          state={versions.state}
+          retry={versions.retry}
+          alwaysRender
+          unavailableCopy="Report-card versions are not available on this install."
+        >
+          {/* Gated on the READ's own state, not merely "a period is picked" —
+              an error banner and a reassuring "all clear" must never render
+              side by side (the exact contradiction this panel exists to
+              prevent). */}
+          {versions.state === 'ok' && periodId && (
+            versionRows.length ? (
+              <ul className="teacher-health__list" data-testid="system-health-frozen-versions">
+                {versionRows.map(({ version, record }) => (
+                  <li key={version}>
+                    <span>{record?.period?.label ?? periodLabel} · v{version}</span>
+                    <span>
+                      Closed by {record?.closedBy ?? 'unknown'}
+                      {record?.closedAt ? ` · ${teacherDate(record.closedAt)}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="teacher-health__ok" data-testid="system-health-versions-ok">
+                <IconCheck />
+                {' '}No superseded versions for {learnerName} · {periodLabel}.
+              </p>
+            )
+          )}
+        </PanelFrame>
+      </div>
     </>
   );
 }
