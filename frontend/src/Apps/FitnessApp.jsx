@@ -1210,7 +1210,8 @@ const FitnessApp = () => {
         // NOTE: every top-level fitness.yml block consumed by the frontend MUST
         // be listed here, or FitnessContext (which roots at response.fitness)
         // will never see it — that's how dance_party silently went missing.
-        const unifyKeys = ['ant_devices','equipment','users','ring_time_unit_ms','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks','emergency','household_label','momentum'];
+        // Both spellings: `coin_time_unit_ms` is what the config still says.
+        const unifyKeys = ['ant_devices','equipment','users','ring_time_unit_ms','coin_time_unit_ms','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks','emergency','household_label','momentum'];
         unifyKeys.forEach(k => {
           if (response[k] !== undefined && response.fitness[k] === undefined) {
             response.fitness[k] = response[k];
