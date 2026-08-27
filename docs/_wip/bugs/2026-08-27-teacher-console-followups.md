@@ -216,3 +216,35 @@ two — any future mis-named action will hang rather than error.
   them. The wrapper was deliberately left in place rather than trimmed.
 - **An all-voided session cannot be settled.** `graded` requires `totalCount >= 1`.
   The UI refuses honestly; closing it needs a domain change.
+
+---
+
+## 4. The repo's vitest gate does not run the frontend at all
+
+Found 2026-08-27 while merging the step-up fix, and it reframes several notes above.
+
+`scripts/gate-vitest.mjs:45` — `const ROOTS = ['tests/unit', 'tests/isolated', 'backend'];`
+
+**`frontend/` is not in the population.** Not "panel specs are outside it", which is how
+this was repeatedly logged during the remediation — the entire frontend tree is. Every
+spec written for the teacher console across that work (`RosterStrip`, `SyllabiPanel`,
+`LearnerDayView`, `PrintPendingView`, `SystemHealthPanel`, `TeacherProfileContext`, the
+`WorkspaceViews.*` family) passes when run directly and **will never be run by the gate
+again**.
+
+The tell: adding three tests to the branch left the gate's count unchanged at
+17364/17431.
+
+Consequences worth stating plainly:
+
+- The task-10 regression during the remediation — a stale `schoolApi` test-double that
+  broke ten tests in `TodayTab.test.jsx` — was **not** caught by the gate and could not
+  have been. It was caught because a later agent happened to mention it. A note in that
+  work claiming the branch-end gate was the thing that would have caught it is wrong.
+- `npx vitest run frontend/src/modules/School/teacher/` is currently green at 36 files /
+  371 tests, but nothing enforces that it stays green.
+
+Fix is one line (add `frontend` to `ROOTS`) plus whatever baseline churn that exposes —
+which is exactly why it should be its own change with its own review, not a rider on a
+bug fix. Expect the population to roughly double and expect pre-existing frontend
+failures to surface; those need triage, not a blanket baseline bump.
