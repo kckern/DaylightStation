@@ -86,7 +86,11 @@ export class FitnessTreasureBox {
         name: z.name,
         min: Number(z.min) || 0,
         color: z.color,
-        rings: Number(z.rings) || 0
+        // `coins` is the pre-rename per-zone field name. A config or per-user
+        // override written before the 2026-08-26 rename still carries it, and
+        // silently reading it as 0 makes every ring award a no-op with no
+        // error anywhere in the chain.
+        rings: Number(z.rings ?? z.coins) || 0
       })).sort((a,b) => a.min - b.min);
       // Pre-sort descending for resolveZone() to avoid re-sorting on every call
       this._globalZonesDescending = [...this.globalZones].reverse();
