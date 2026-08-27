@@ -239,57 +239,92 @@ import { validateCheckpoints, dueCheckpoint, seekCeilingFor, clearedSetFrom } fr
 
 ---
 
-## Phase 3 — Backend application, persistence, API
+## Phase 3 — Backend application + API
 
-### Task 6: `YamlMediaLessonProgressStore` — durable evidence
+> **REVISED 2026-08-27, mid-execution.** The original Phase 3 (in git history) built a
+> parallel in-memory `MediaLessonSessionService` plus a new YAML progress store. That was
+> wrong: an event-sourced media-session lifecycle **already exists** and is wired.
+> Discovered during Task 10's investigation step:
+>
+> - `2_domains/school/sessions/sessionEvents.mjs` — durable event-sourced work sessions:
+>   `created → media_dispatched → media_completed | media_stalled`, with a closed
+>   `TRANSITIONS` table, a `SCHEMA` field whitelist, and `ANNOTATION_EVENTS` (facts that
+>   record without advancing state).
+> - `3_applications/school/usecases/DispatchMedia.mjs` — resolves unit → manifest →
+>   locator, target autonomy via `child_selectable`, idempotent (refuses a second dispatch
+>   mid-play), appends `media_dispatched`.
+> - `3_applications/school/usecases/RecordMediaCompletion.mjs` — the other end:
+>   `verified: 'playhead'|'duration'`, **"only completion releases the linked quiz or
+>   form"**, stall → `media_stalled`.
+> - Both are wired in `5_composition/modules/schoolLifecycle.mjs:863-872`, called by
+>   `ResolveScanAction` / `RunSelfServiceAction`.
+> - **The gap that is genuinely missing:** the real playback adapter. Composition says
+>   `playbackAdapter = null` — "null until §8 lands" (`schoolLifecycle.mjs:153`), and only
+>   `VirtualPlaybackAdapter` exists. That gap is Task 10.
+>
+> So checkpoints EXTEND that lifecycle rather than duplicating it: a `checkpoint_cleared`
+> annotation event is durable evidence for free, reporting already reads the stream, and
+> the "media gates the linked quiz" concept already exists at unit granularity — ours is
+> the finer-grained version mid-content. This is the DRY call the user asked for, applied
+> to the backend as well as the gate layer. **The separate progress store is deleted from
+> the plan.**
+
+### Task 6: `checkpoint_cleared` annotation event (domain)
 
 **Files:**
-- Create: `backend/src/1_adapters/persistence/yaml/YamlMediaLessonProgressStore.mjs`
-- Test: `tests/isolated/adapters/YamlMediaLessonProgressStore.test.mjs` (mirror where `YamlReadingLogStore`'s test lives — `find tests -name '*ReadingLogStore*'` and match)
+- Modify: `backend/src/2_domains/school/sessions/sessionEvents.mjs` (`SCHEMA` ~line 130 beside `media_dispatched`; `ANNOTATION_EVENTS` ~line 308; the `APPLY` reducer ~line 526)
+- Test: extend `backend/src/2_domains/school/sessions/sessionEvents.test.mjs` (find it; if absent, the nearest existing session-events test)
 
-**Read first:** `YamlReadingLogStore.mjs` header in full — this store copies its corruption posture, with ONE deliberate inversion.
-
-Path: `<dataDir>/household/school/records/media-lessons/{learnerId}/{unitId}.yml`
-Shape: `{ schema: 'school.media-lesson-progress/v1', unitId, learnerId, cleared: [{id, at, clearedAt, attempts}], furthestPosition, completedAt|null }`
+**Read first:** `sessionEvents.mjs` lines 90-145 (SCHEMA entries and their `fields` whitelist + `validate` helpers), 275-325 (TRANSITIONS, ANNOTATION_EVENTS, TERMINAL_STATES derivation), and the `media_dispatched` reducer at ~526. Note the comment explaining that `fields` IS the whitelist — an undeclared field is silently dropped.
 
 **Step 1: Failing tests:**
-- `get(learnerId, unitId)`: missing file → `{ missing: true, progress: null }` (fresh learner — fine); **corrupt file → `{ error: true }`** — NOT empty progress. The reading log fails open because its worst case is a re-owed story; here a false "nothing cleared" re-gates answered questions, so a reader that can't trust the file says so (the StoryTime `error: true` rule).
-- `recordCleared(...)` / `recordPosition(...)`: read-modify-write; corrupt file side-files to `<unitId>.yml.corrupt-<stamp>` first, then fresh shard (copy the reading store's append posture verbatim); `furthestPosition` only ratchets up; clearing an already-cleared id is idempotent (bumps attempts, no duplicate row).
-- Unsafe learner/unit ids THROW on write (never file evidence under a wrong key).
+- `createEvent({ type: 'checkpoint_cleared', sessionId, at, checkpointId, attempts })` validates: `checkpointId` required non-empty string; `attempts` integer >= 1; unknown fields dropped by the whitelist.
+- It is an ANNOTATION: legal while the session is `media_dispatched`, and **does not advance state** — `reduceSession` after it still reports `state === 'media_dispatched'`.
+- `reduceSession` accumulates cleared checkpoints in order: state gains `clearedCheckpoints: [{ checkpointId, at, attempts }]`; a repeat of the same `checkpointId` does not duplicate the row (idempotent — the screen may retry a POST).
+- It is NOT legal from `created` (nothing dispatched yet) — assert the rejection.
 
-**Step 2: FAIL. Step 3: Implement** cribbing `YamlReadingLogStore`'s `#load` (`missing/ok/corrupt/unreadable`) and write path. **Step 4: pass. Step 5: Commit** `feat(school): durable media-lesson progress store`
+**Step 2: FAIL. Step 3: Implement** — SCHEMA entry + `ANNOTATION_EVENTS` membership + reducer case. Follow the existing comment style: state WHY it is an annotation (a cleared checkpoint is evidence inside an in-flight dispatch, not a lifecycle advance).
 
-### Task 7: `MediaLessonSessionService` — in-memory sessions, retry-allowed grading
+**Step 4: pass, including the whole pre-existing sessionEvents suite (this file is load-bearing for every school session — a regression here breaks paper, media and program paths alike).**
 
-**Files:**
-- Create: `backend/src/3_applications/school/MediaLessonSessionService.mjs`
-- Test: `tests/isolated/application/school/MediaLessonSessionService.test.mjs`
+**Step 5: Commit** `feat(school): checkpoint_cleared session annotation event`
 
-**Read first:** `ReadingSessionService.mjs` (in-memory + sweep + injected clock/bus/logger; state stored, mode derived) and `SchoolService.mjs:337-380` (session shape, `ses_` ids, sweep). Grading imports: `gradeAnswer`, `givenShapeError` from `#domains/school/grading.mjs`; gate math from `#domains/school/mediaCheckpoints.mjs`.
-
-This service does NOT reuse `SchoolService` sessions: its response-claims model is one-shot per item, and checkpoint policy is retry-until-correct. Same grader, different policy owner — the design's D2.
-
-**Step 1: Failing tests** (injected fake clock, fake progress store, fake bus):
-- `open({ learnerId, unit, bank, locator })` → `{ sessionId, checkpoints (WITHOUT answers/accept/pairs), resumePosition, cleared }` seeded from the progress store; store `error: true` → open THROWS (agenda shows unavailable — never gate on a lie).
-- `answer({ sessionId, checkpointId, itemId, given })`:
-  - correct → `{ correct: true, checkpointCleared? }`; when the checkpoint's last item clears, persists via `recordCleared` and broadcasts `checkpoint-cleared` on `lesson:{location}`;
-  - wrong → `{ correct: false }`, attempts++, item stays answerable (RETRY-ALLOWED — assert a second submit of the same item is graded, the exact opposite of SchoolService's claim map);
-  - shape errors → ValidationError with `givenShapeError`'s message.
-- `position({ sessionId, position })` bumps `lastActiveAt`, ratchets store `furthestPosition` (throttled: persist at most every 15s of position delta — heartbeat cadence);
-- `ended({ sessionId })` with all checkpoints cleared → `completedAt` persisted + `lesson-complete` broadcast; with uncleared checkpoints → refuses (`{ completed: false, remaining }`) — an `ended` event cannot skip a gate;
-- idle sweep: sessions with no heartbeat for `idleTimeoutMs` torn down; every broadcast wrapped (dead bus never costs the session) — copy `ReadingSessionService`'s wrap.
-
-**Step 2: FAIL. Step 3: Implement. Step 4: pass. Step 5: Commit** `feat(school): media-lesson session service — hard gate, retry-allowed grading`
-
-### Task 8: `OpenMediaLessonSession` use case
+### Task 7: `RecordCheckpointAnswer` use case
 
 **Files:**
-- Create: `backend/src/3_applications/school/OpenMediaLessonSession.mjs`
-- Test: `tests/isolated/application/school/OpenMediaLessonSession.test.mjs`
+- Create: `backend/src/3_applications/school/usecases/RecordCheckpointAnswer.mjs`
+- Test: `tests/isolated/application/school/RecordCheckpointAnswer.test.mjs`
 
-**Read first:** `OpenCatalogLearningSession.mjs` (the client supplies only an address; the server re-resolves everything).
+**Read first:** `DispatchMedia.mjs` in full (the neighbour this sits beside — same deps shape: `{ curriculum, sessions, clock, logger }`, same `reduceSession(await sessions.readEvents(id))` opening, same status-string return contract), `2_domains/school/grading.mjs` (`gradeAnswer`, `givenShapeError` — used UNCHANGED), and the new `mediaCheckpoints.mjs` from Task 4.
 
-`execute({ learnerId, unitId })`: resolve unit via injected curriculum (must carry `checkpoints`), resolve `media` manifest → locator (`plex:…`), resolve `bank` snapshot, call `sessions.open(...)`. Unknown unit / no checkpoints / dangling manifest → `ValidationError`/`EntityNotFoundError` (should-be-impossible post-publish-gate; logged loudly, never a crash — the `IssueDocument` posture). TDD as above; **Commit** `feat(school): OpenMediaLessonSession use case`.
+`execute({ sessionId, checkpointId, itemId, given })`:
+- Reduce the session; refuse unless `state === 'media_dispatched'` (status `'not_playing'`).
+- Resolve unit → `checkpoints` → the named checkpoint; resolve its bank items via curriculum.
+- `givenShapeError` first → `ValidationError`. Then `gradeAnswer(item, given)`.
+- **Wrong answer: `{ correct: false, attempts }` and the item stays answerable** — retry-until-correct is THIS use case's policy (design D3). Do not import any one-shot claim logic from `SchoolService`; that is a different policy on the same grader, exactly as OMR is.
+- Correct AND it was the checkpoint's last unanswered item → append `checkpoint_cleared` → `{ correct: true, checkpointCleared: true, seekCeiling }` (recomputed from `mediaCheckpoints.seekCeilingFor`).
+- Attempts are counted per item **in memory for the life of the request chain** — the durable record is `attempts` on the `checkpoint_cleared` event. Do NOT add a second store.
+- Returns the same `{ status, message, ... }` flavour its neighbours do.
+
+TDD per the standing rules. **Commit** `feat(school): RecordCheckpointAnswer — retry-until-correct checkpoint grading`
+
+### Task 8: Gate `RecordMediaCompletion` on uncleared checkpoints
+
+**Files:**
+- Modify: `backend/src/3_applications/school/usecases/RecordMediaCompletion.mjs`
+- Modify: `backend/src/3_applications/school/usecases/DispatchMedia.mjs` (return the checkpoint list with the dispatch, so the screen gets it without a second round trip)
+- Test: extend both use cases' existing test files
+
+**This is what makes the gate HARD on the backend.** A `media_completed` arriving with checkpoints still uncleared is not a completion — it is a client that seeked past the gate, or a stale duration timer.
+
+**Step 1: Failing tests:**
+- `RecordMediaCompletion.execute({ sessionId, verified: 'playhead' })` on a unit WITH checkpoints, some uncleared → refuses: status `'checkpoints_outstanding'`, `released: false`, no `media_completed` event appended, message naming how many are left. Assert the event stream is unchanged.
+- Same call with all checkpoints cleared → completes exactly as today (`released: true`).
+- A unit with NO `checkpoints` → **behaviour byte-for-byte unchanged** (this is the regression that matters; every existing media unit flows through here).
+- `verified: 'duration'` with outstanding checkpoints → also refused (a duration timer cannot prove comprehension).
+- `DispatchMedia` returns `checkpoints` (ids + `at`, never answers) alongside `contentId`; a unit without checkpoints returns `checkpoints: null` and an otherwise identical payload.
+
+**Step 2: FAIL. Step 3: Implement** minimally — read cleared set from the reduced state, compare against the unit's checkpoints. **Step 4: pass, whole school suite. Step 5: Commit** `feat(school): completion refuses while checkpoints are outstanding`
 
 ### Task 9: Lesson router
 
@@ -297,32 +332,36 @@ This service does NOT reuse `SchoolService` sessions: its response-claims model 
 - Create: `backend/src/4_api/v1/routers/mediaLesson.mjs`
 - Test: `tests/isolated/api/routers/mediaLesson.test.mjs`
 
-**Read first:** `backend/src/4_api/v1/routers/reading.mjs` — copy its structure exactly (deps-injected factory, `asyncHandler`, `errorHandlerMiddleware`, trimmed helpers, header comment naming the ONE caller).
+**Read first:** `backend/src/4_api/v1/routers/reading.mjs` — copy its structure exactly (deps-injected factory, `asyncHandler`, `errorHandlerMiddleware`, trimmed-string helpers, a header comment naming the ONE caller and what each route exists for).
 
-Routes (mounted at `/api/v1/school/lesson`):
-- `GET /:sessionId` — session snapshot for the widget (checkpoints sans answers, cleared, resumePosition, contentId, learner display name via injected `resolveLearner`).
-- `POST /:sessionId/answer` — `{ checkpointId, itemId, given }` → grade result.
-- `POST /:sessionId/position` — `{ position }` heartbeat.
-- `POST /:sessionId/ended` — the media element's own `ended`; returns `{ completed, remaining }`.
+Mounted at `/api/v1/school/lesson`. Thin — every route delegates to a use case:
+- `GET /:sessionId` — snapshot for the widget: `contentId`, `checkpoints` (ids + `at`, **never answers**), `cleared`, `resumePosition`, learner display name via injected `resolveLearner`. Built from `reduceSession` + curriculum, no new state.
+- `POST /:sessionId/answer` → `RecordCheckpointAnswer`.
+- `POST /:sessionId/position` → appends nothing durable by default; it refreshes the in-flight dispatch's liveness only. **Investigate first:** if the existing `school-playback` bus topic already carries `progress` events with `seconds`/`percent` (see `VirtualPlaybackAdapter`'s header), route position through THAT rather than inventing a second channel, and say so in the route comment.
+- `POST /:sessionId/ended` → `RecordMediaCompletion` with `verified: 'playhead'`; returns `{ completed, remaining }` so the screen can show what is left when refused.
 
-Session gone → 410 (the schoolApi client distinguishes statuses — keep that contract). TDD with supertest-style isolated tests exactly as `reading.test.mjs` does. **Commit** `feat(school): media-lesson router`.
+Unknown/gone session → 410 (the `schoolApi` client distinguishes statuses — keep that contract). TDD mirroring `reading.test.mjs`. **Commit** `feat(school): media-lesson router`
 
-### Task 10: Surface + dispatch + wiring
+### Task 10: Real playback adapter for the living-room screen + wiring
+
+**This is the "§8" gap, and it is the ONLY genuinely new dispatch plumbing.**
 
 **Files:**
-- Modify: `backend/src/3_applications/donow/surfaces/LivingroomTvSurface.mjs` (second action kind)
-- Modify: `backend/src/5_composition/modules/schoolLifecycle.mjs` (store + service + use case in `stores`/`useCases`)
-- Modify: `backend/src/app.mjs` (~line 4030 region — beside the reading wiring; mount router)
-- Modify: the unit-launch resolution path (see investigation step)
-- Tests: extend `tests/isolated/` suites beside each
+- Create: `backend/src/1_adapters/hardware/playback/ScreenPlaybackAdapter.mjs`
+- Modify: `backend/src/5_composition/modules/schoolLifecycle.mjs` (pass the real adapter where `playbackAdapter` is threaded, ~line 153/192/394)
+- Modify: `backend/src/app.mjs` (construct it; mount the Task 9 router beside the reading router, ~line 4030)
+- Test: `tests/isolated/adapters/ScreenPlaybackAdapter.test.mjs`
 
-**Step 1 (investigation, before any code):** find where a `bank:` unit's card-scan/keypad launch builds its Portal target — start from `tests/isolated/composition/triggerLearnerActions.test.mjs` and `RunSelfServiceAction`/`ResolveScanAction` (grep in `3_applications`). Identify the branch point where unit composition (`bank` vs `launch` vs `program`) selects a dispatch. Write down the file:line in the task commit message.
+**Read first:** `VirtualPlaybackAdapter.mjs` IN FULL — it documents the exact port shape the real adapter must satisfy (`dispatch()` returning a correlator, `getStatus()` → `SlotStatus[]`, the `school-playback` bus topic, `dispatched`/`progress`/`complete`/`stop` event types, the `source:id` contentId convention). Its header says these names were provisional pending this work: **if you keep them, say so; if you change them, change the double too so the shapes cannot drift.**
 
-**Step 2: Failing tests:**
-- `LivingroomTvSurface.validateAction` accepts `{ kind: 'media-lesson', sessionId }` (and still accepts legacy `{ query }`); `dispatch` for that kind runs the wake stack THEN broadcasts `{ type: 'lesson.open', sessionId, learnerId }` on topic `lesson:livingroom`; wake failure → `dispatched: false` and NO broadcast (never tell a screen that isn't coming on).
-- Launch path: a unit carrying `checkpoints` routes: `OpenMediaLessonSession` → `donow.dispatch({ surface: 'livingroom-tv', action: { kind: 'media-lesson', sessionId }, learnerId, requestedBy: 'school-unit', programId: null, ref: unitId })`. **Session open precedes dispatch**; a failed dispatch leaves the session to idle out (assert no explicit teardown needed).
+`dispatch({ target, contentId, learnerId, durationSec })` for a screen target:
+- Runs the existing wake stack (`WakeAndLoadService.execute(deviceId, query)` — see how `LivingroomTvSurface` calls it) so a dark TV comes on.
+- Then broadcasts `{ type: 'lesson.open', sessionId, learnerId }` on topic `lesson:{location}` (per-room, mirroring `reading:livingroom`) so the mounted screen SPA opens the lesson without a page reload.
+- Wake failure → throws (so `DispatchMedia`'s existing catch files a non-advancing `failed` event and tells the child to scan again) and **no broadcast** — never tell a screen that is not coming on.
 
-**Step 3-4: implement, pass.** Wiring in `app.mjs` copies the reading block's shape (same guard: only when schoolLifecycle is wired; `server.once('close', …)` stops the sweep). **Step 5: Commit** `feat(school): media-lesson dispatch via livingroom-tv surface + composition wiring`
+Configure targets in `data/household/school/config.yml` under `media.targets` (id `livingroom-tv`, `child_selectable: true`) — **but see the deployment-ordering warning in Task 18: that data edit goes live before the code deploys, so it is applied LAST, by the user, not committed as part of this branch's rollout.**
+
+TDD with a fake wake service + fake bus. **Commit** `feat(school): real screen playback adapter (the §8 gap) + composition wiring`
 
 ---
 
@@ -349,7 +388,7 @@ Pure derivation, mirroring `mediaCheckpoints.mjs` client-side (duplicated by han
 
 **Read first:** `frontend/src/modules/School/reading/useReadingSession.js` IN FULL — this hook is its sibling: same WS subscription pattern (`useWebSocketSubscription`), same "attribution frozen, never re-read" doctrine, same stable-listener refs.
 
-Views: `idle → open (fetching) → playing → checkpoint → celebrating → done`. Subscribes `lesson:{location}`; on `lesson.open` fetches via `schoolApi.lessonSession`; exposes `notePlaybackStarted/Completed` callbacks (wired to the media element by the widget), `answer(itemId, given)`, `chooseRewind()` (releases gate locally, seeks handled by widget, re-arms), heartbeat timer (15s while playing, cleared otherwise). Error paths per design: answer POST failure → `notice` state, gate stays blocked, escape-at-notice exits. TDD with mocked WS + api exactly as `useReadingSession.test.jsx` does. **Commit** `feat(school): media-lesson session hook`.
+Views: `idle → open (fetching) → playing → checkpoint → celebrating → done`. Subscribes `lesson:{location}`; on `lesson.open` fetches via `schoolApi.lessonSession`; exposes `notePlaybackStarted/Completed` callbacks (wired to the media element by the widget), `answer(checkpointId, itemId, given)`, `chooseRewind()` (releases gate locally, seeks handled by widget, re-arms), heartbeat timer (15s while playing, cleared otherwise). Error paths per design: answer POST failure → `notice` state, gate stays blocked, escape-at-notice exits. TDD with mocked WS + api exactly as `useReadingSession.test.jsx` does. **Commit** `feat(school): media-lesson session hook`.
 
 ### Task 14: `CheckpointQuizOverlay` — focus-ring quiz for remote/gamepad
 
@@ -405,7 +444,7 @@ Widget test mirrors `ReadingSessionScreen.test.jsx`: deliver `lesson.open`, asse
 - Create `docs/reference/school/media-lessons.md`: architecture summary (link the design doc), the GateVerdict contract, topics/routes table, authoring guide for the `checkpoints:` unit block.
 - Add the doc row to `CLAUDE.md`'s Navigation table.
 - Move the design doc's status line to "Implemented on feature/media-lesson-checkpoints".
-- **Deployment order note (shared-Dropbox data-tree hazard):** the two DATA changes — `data/household/screens/living-room.yml` gaining the `school-lesson` widget entry, and any real unit YAML gaining `checkpoints:` — go live on prod the moment they're saved to the synced tree, BEFORE code deploys. They must be applied only AFTER the code ships. Say this in the doc's deployment section explicitly.
+- **Deployment order note (shared-Dropbox data-tree hazard):** THREE data changes — `data/household/screens/living-room.yml` gaining the `school-lesson` widget entry, `data/household/school/config.yml` gaining `media.targets` (Task 10), and any real unit YAML gaining `checkpoints:` — go live on prod the moment they're saved to the synced tree, BEFORE code deploys. They must be applied only AFTER the code ships, by the user. Say this in the doc's deployment section explicitly, and note that school config is cached at startup so it needs a container restart to take effect.
 - **Commit** `docs(school): media-lessons reference + deployment ordering`
 
 ### Task 19: Finish
