@@ -119,9 +119,9 @@ describe('fail closed', () => {
     const { useCases } = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
     expect(Object.keys(useCases).sort()).toEqual([
       'buildAgenda', 'closeLanguageDay', 'closeSessionOutcome', 'createLostAnswerSheetTicket', 'dispatchMedia',
-      'enrollLearner', 'getLearnerDayCompletion', 'gradeSubmission',
+      'enrollLearner', 'getLearnerDayCompletion', 'getPianoLessonGate', 'gradeSubmission',
       'issueComposedWorksheet', 'issueCorrectedResultReceipt', 'issueDocument', 'manageCurriculumException',
-      'markSessionAbandoned', 'openRemediation', 'previewAgenda',
+      'manageProgramDayBypass', 'markSessionAbandoned', 'openRemediation', 'previewAgenda',
       'recordLessonCompanionProgress', 'recordMediaCompletion', 'replaceLostAnswerSheet',
       'reprintIssuedArtifact', 'reprintResultReceiptArtifact', 'resolveAccessCode', 'resolvePersonalCard',
       'resolveReviewItem', 'resolveScanAction', 'runSelfServiceAction', 'setAssignments',
