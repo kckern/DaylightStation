@@ -46,6 +46,35 @@ describe('question-bank/v2', () => {
     expect(upper.items.filter((entry) => entry.type === 'multi_select').every((entry) => entry.options.filter((option) => option.correct).length === 2)).toBe(true);
   });
 
+  it('uses a profile prompt override without duplicating the assessed item or its options', () => {
+    const shared = item('scaffolded');
+    shared.prompt = 'What helps the fishing cat swim?';
+    shared.prompt_by_profile = { lower: 'Look on p. 132. What helps the fishing cat swim?' };
+    const scaffoldedBank = {
+      ...bank,
+      items: Array.from({ length: 12 }, (_, index) => ({ ...shared, id: `scaffolded-${index}` })),
+    };
+    expect(validateQuestionBank(scaffoldedBank).ok).toBe(true);
+    const lower = issueWorksheet({ bank: scaffoldedBank, learnerId: 'lower', enrollmentId: 'e', lessonId: 'cats', profile: 'lower', seed: 'one' });
+    const upper = issueWorksheet({ bank: scaffoldedBank, learnerId: 'upper', enrollmentId: 'e', lessonId: 'cats', profile: 'upper-5', seed: 'two' });
+    expect(lower.items.every((entry) => entry.prompt.startsWith('Look on p. 132.'))).toBe(true);
+    expect(upper.items.every((entry) => entry.prompt === 'What helps the fishing cat swim?')).toBe(true);
+    expect(lower.items[0].options.map((option) => option.label).sort()).toEqual(expect.arrayContaining(['Option 1']));
+  });
+
+  it('composes profile prefixes and suffixes around a shared or replaced prompt', () => {
+    const shared = item('affixed');
+    shared.prompt = 'What helps the fishing cat swim?';
+    shared.prompt_by_profile = { upper: 'Which adaptation helps the fishing cat swim?' };
+    shared.prompt_prefix_by_profile = { lower: 'Look on p. 132.' };
+    shared.prompt_suffix_by_profile = { lower: 'Read the caption carefully.' };
+    const affixedBank = { ...bank, items: Array.from({ length: 12 }, (_, index) => ({ ...shared, id: `affixed-${index}` })) };
+    const lower = issueWorksheet({ bank: affixedBank, learnerId: 'lower', enrollmentId: 'e', lessonId: 'cats', profile: 'lower', seed: 'one' });
+    const upper = issueWorksheet({ bank: affixedBank, learnerId: 'upper', enrollmentId: 'e', lessonId: 'cats', profile: 'upper-5', seed: 'two' });
+    expect(lower.items.every((entry) => entry.prompt === 'Look on p. 132. What helps the fishing cat swim? Read the caption carefully.')).toBe(true);
+    expect(upper.items.every((entry) => entry.prompt === 'Which adaptation helps the fishing cat swim?')).toBe(true);
+  });
+
   it('reissues only the missed ids, freshly shuffled', () => {
     const issued = issueWorksheet({ bank, learnerId: 'learner3', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'one' });
     // The missed set as a caller derives it — every item but the first.

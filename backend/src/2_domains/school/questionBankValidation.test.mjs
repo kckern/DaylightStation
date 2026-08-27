@@ -64,3 +64,14 @@ describe('validateQuestionBank formative feedback', () => {
     ]));
   });
 });
+
+describe('validateQuestionBank profile prompts', () => {
+  const item = { id: 'i1', type: 'multiple_choice', prompt: 'Which animal swims?', answer: 'Fishing cat', decoys: ['Lion', 'Tiger', 'Leopard', 'Cheetah'] };
+  it('accepts bounded lower and upper prompt overrides', () => {
+    expect(validateQuestionBank({ schema: 'school.question-bank/v2', ...base, items: [{ ...item, prompt_by_profile: { lower: 'Look on p. 132. Which animal swims?', upper: 'Which animal swims?' }, prompt_prefix_by_profile: { lower: 'Use the caption.' }, prompt_suffix_by_profile: { upper: 'Use the evidence.' } }] }).ok).toBe(true);
+  });
+  it('rejects malformed or unknown profile prompt overrides', () => {
+    const result = validateQuestionBank({ schema: 'school.question-bank/v2', ...base, items: [{ ...item, prompt_by_profile: { toddler: 'Which animal?' } }] });
+    expect(result.errors.join(' ')).toMatch(/unknown profiles toddler/);
+  });
+});
