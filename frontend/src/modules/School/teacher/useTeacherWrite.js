@@ -29,7 +29,10 @@ export function useTeacherWrite({ panel }) {
     const authorized = await requestAuthorization(requirement ?? {});
     if (!authorized.ok) {
       if (!authorized.cancelled && !authorized.busy) {
-        setErrors((value) => ({ ...value, [key]: 'Teacher authorization is required.' }));
+        // A refusal the teacher cannot retype their way out of arrives with the
+        // server's own words; say those rather than the generic ask.
+        setErrors((value) => ({ ...value, [key]: authorized.message ?? 'Teacher authorization is required.' }));
+        if (authorized.refused) teacherLog.writeRefused('authorization-refused', { panel, key, status: authorized.status });
       }
       return false;
     }

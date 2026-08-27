@@ -76,11 +76,30 @@ derived from the resource being non-null, so a name in the Set with no resource
 branch requires nothing at all — a step-up that silently buys a free pass looks
 exactly like one that works.
 
+**That list is closed, and it is not the same vocabulary as the audit log.**
+Every teacher write names an `action` when it calls `teacherGate.assert`, and
+most of those names — `artifact.reprint`, `curriculum-exception.apply`,
+`curriculum-exception.retract`, `sessions.reassign` — exist only to say what
+was attempted in the log. A console that asks `POST auth/step-up` for one of
+them is asking the server to mint a grant it has no definition for; the answer
+is 403 and the only correct client behaviour is not to ask. Everything outside
+the seven runs on the capability cookie, which is the full gate the routes
+check.
+
 **A 403 is a loop, not a wall.** `useTeacherWrite` invalidates the capability,
 opens the PIN prompt, and replays the blocked call exactly once. A tap made
 before any teacher is claimed is stashed and replayed after the picker
 resolves; a *cancelled* picker drops the stash rather than firing it later as a
 ghost write.
+
+**Every path out of the PIN prompt settles the write that opened it.** A
+refused step-up is retryable only while the PIN is still a plausible cause — a
+wrong PIN, or a service the browser could not reach — and the dialog stays open
+for another attempt. Once the server has accepted that PIN and still refused
+the action, no PIN can help: the prompt closes and the caller is settled with
+the server's own words, which surface as the panel's error. A refusal that
+neither settles nor retries would leave the teacher with a dialog nothing can
+close over a write that never resolves, and no error anywhere.
 
 ---
 
@@ -884,16 +903,6 @@ This document is endstate and present-tense everywhere else. This section is
 the exception, and it exists so that a gap is never invisible: a reference that
 certifies a dead flow as working converts a real problem into one nobody can
 find.
-
-**Three buttons do not work: Print another copy, Apply exception, Retract
-exception.** Each requests a step-up grant under an action name the server does
-not recognise — `artifact.reprint`, `curriculum-exception.apply`, and
-`curriculum-exception.retract` are absent from `STEP_UP_ACTIONS`. The PIN
-dialog opens and cannot be satisfied by any correct PIN. The preview halves
-work; the apply halves cannot complete. These three names are TeacherGate
-*audit-action* names, not grant names, and they predate the teacher-coverage
-work. Wherever this document describes reprint or exception apply/retract as
-preview-first, read that as a description of the preview only.
 
 **An abandonment's reason is filed, not delivered.** `MarkSessionAbandoned`
 requires the reason and writes it into the `abandoned` event, and that is where
