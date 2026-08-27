@@ -216,6 +216,15 @@ teaching, and it is invisible in a PGN.
 
 Guests are archived too, with a null player: the history is about what happened on the instrument.
 
+### Dialogue evidence
+
+`commentary.displayed` is an ordered, de-duplicated ledger of only the lines that reached the
+player's screen. Every entry has its ply, event id, text, source, safe fallback reason, and display
+time. Planned lines, rejected model output, and replies that arrived too late are diagnostic events,
+not transcript evidence, so they are deliberately absent. `final_line` is derived from the ledger
+and is the only dialogue retained in compact cross-game rivalry memory. Older archives retain their
+legacy final line but are reported as “final line only.”
+
 ## Motion, and what it costs
 
 The kiosk runs this in a WebView on a 2018 tablet, and that device sets the rules:
@@ -279,10 +288,11 @@ and that is all. Enforcing a loss on time was deliberately not built — it was 
 would mean routing a synthetic result through the game-over, archive and promotion paths for a
 feature nobody wanted.
 
-The clock is **derived, not ticked**. Every move records when it landed, so both sides' times are a
-pure function of the move list plus "what time is it now". That is why it cannot drift out of step
-with the board, cannot be left running on the wrong side after a takeback, and survives a remount
-with no special handling. A finished game freezes, so the board agrees with what was archived.
+The visible clock is derived from move timestamps. The archived coaching timing is more careful:
+each active move gets a duration captured from the browser session's monotonic clock at the moment
+it lands. A reload or resumed session cannot join two monotonic timelines, so the archive marks its
+timing `discontinuous` and coaching deliberately declines to make timing claims. New, uninterrupted
+games are `complete`; an off clock is `off`.
 
 Two consequences worth knowing. A move with no timestamp is reported as *untimed* rather than as
 zero — games archived before the clock existed must not appear to have been played instantly. And a
@@ -311,6 +321,7 @@ second one.
 ```bash
 node cli/chess-review.cli.mjs --user <child> --date 2026-08-15   # coaching report
 node cli/chess-review.cli.mjs --user <child> --latest --brief    # without the move table
+node cli/chess.cli.mjs analyze --user <child> --latest --dialogue # exact displayed dialogue evidence
 node cli/chess-review.cli.mjs --user <child> --trend             # form over every game
 node cli/chess-review.cli.mjs --user <child> --latest --pgn      # annotated PGN
 node cli/chess-review.cli.mjs --user <child> --all --drills      # mistakes to re-solve

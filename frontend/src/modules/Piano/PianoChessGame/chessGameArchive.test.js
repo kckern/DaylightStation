@@ -33,12 +33,18 @@ describe('the household game archive', () => {
     expect(archive.move_count).toBe(2);
   });
 
-  it('keeps only the final player-visible dialogue line for rivalry memory', () => {
+  it('keeps an ordered, de-duplicated ledger of player-visible dialogue and derives the rivalry line', () => {
     const game = played([['e2', 'e4']]);
     const archive = buildGameArchive(inputs(game, {
-      commentary: { quip: 'A small step with plans.', source: 'fallback' },
+      commentary: [
+        { eventId: 'g1:1:e4', ply: 1, quip: 'A small step with plans.', source: 'fallback', fallbackReason: 'timeout', shownAt: '2026-08-12T17:00:04.000Z' },
+        { eventId: 'g1:1:e4', ply: 1, quip: 'Duplicate must not survive.', source: 'ai' },
+      ],
     }));
-    expect(archive.commentary).toEqual({ final_line: 'A small step with plans.', source: 'fallback' });
+    expect(archive.commentary).toEqual({
+      displayed: [{ ply: 1, event_id: 'g1:1:e4', text: 'A small step with plans.', source: 'fallback', fallback_reason: 'timeout', shown_at: '2026-08-12T17:00:04.000Z' }],
+      final_line: 'A small step with plans.', source: 'fallback',
+    });
   });
 
   it('is replayable: the start position plus every move in both notations', () => {
@@ -198,6 +204,7 @@ describe('timing in the archive', () => {
     ]);
     const archive = buildGameArchive(inputs(game, {
       startedAt: START, timing: { mode: 'up', initial_ms: null, increment_ms: null },
+      timingLedger: { quality: 'complete', byPly: { 1: 4000, 2: 1000, 3: 20000 } },
     }));
     expect(archive.moves.map((move) => move.think_ms)).toEqual([4000, 1000, 20000]);
   });
@@ -208,7 +215,7 @@ describe('timing in the archive', () => {
       ['e7', 'e5', START + 5000],
       ['g1', 'f3', START + 25000],
     ]);
-    const archive = buildGameArchive(inputs(game, { startedAt: START, timing: { mode: 'up' } }));
+    const archive = buildGameArchive(inputs(game, { startedAt: START, timing: { mode: 'up' }, timingLedger: { quality: 'complete', byPly: { 1: 4000, 2: 1000, 3: 20000 } } }));
     expect(archive.timing.spent_ms).toEqual({ w: 24000, b: 1000 });
     expect(archive.timing.timed_moves).toBe(3);
   });
@@ -233,6 +240,13 @@ describe('timing in the archive', () => {
       timing: { mode: 'down', initial_ms: 300000, increment_ms: 3000 },
     }));
     expect(archive.timing).toMatchObject({ mode: 'down', initial_ms: 300000, increment_ms: 3000 });
+  });
+
+  it('marks a resumed or incomplete timing ledger as discontinuous instead of inventing times', () => {
+    const game = timed([['e2', 'e4', START + 4000], ['e7', 'e5', START + 5000]]);
+    const archive = buildGameArchive(inputs(game, { timing: { mode: 'up' }, timingLedger: { quality: 'discontinuous', byPly: {} } }));
+    expect(archive.timing.quality).toBe('discontinuous');
+    expect(archive.moves.every((move) => !('think_ms' in move))).toBe(true);
   });
 
   it('leaves a taken-back move untimed, having no line to measure it against', () => {
