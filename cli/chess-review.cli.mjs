@@ -44,6 +44,7 @@ export function parseArgs(argv) {
   const options = {
     file: null,
     user: null,
+    opponent: null,
     date: null,
     since: null,
     latest: false,
@@ -63,6 +64,7 @@ export function parseArgs(argv) {
     const token = argv[index];
     if (token === '--file') options.file = requiredValue(argv, index++, token);
     else if (token === '--user') options.user = requiredValue(argv, index++, token);
+    else if (token === '--opponent') options.opponent = requiredValue(argv, index++, token);
     else if (token === '--date') options.date = requiredValue(argv, index++, token);
     else if (token === '--since') options.since = requiredValue(argv, index++, token);
     else if (token === '--depth') options.depth = Number(requiredValue(argv, index++, token));
@@ -101,7 +103,7 @@ function archiveRoot() {
 }
 
 /** Every archived game, newest first, narrowed by user, day, or start date. */
-export function findGames({ user = null, date = null, since = null, root = archiveRoot() } = {}) {
+export function findGames({ user = null, opponent = null, date = null, since = null, root = archiveRoot() } = {}) {
   if (!fs.existsSync(root)) return [];
   const games = [];
   for (const day of fs.readdirSync(root)) {
@@ -114,6 +116,10 @@ export function findGames({ user = null, date = null, since = null, root = archi
       // The filename leads with the user id, so a prefix test avoids opening
       // and parsing every archived game just to filter by player.
       if (user && !name.startsWith(`${user}_`)) continue;
+      if (opponent) {
+        const record = YAML.parse(fs.readFileSync(path.join(dayDir, name), 'utf8'));
+        if (String(record?.opponent?.name || '').toLowerCase() !== String(opponent).toLowerCase()) continue;
+      }
       games.push({ day, name, file: path.join(dayDir, name) });
     }
   }
@@ -366,6 +372,7 @@ const USAGE = `Review archived Piano Chess games with a full-strength engine.
 Selecting games:
   --file <path>    Archived game YAML to review
   --user <id>      Household user id (e.g. test-user)
+  --opponent <n>   Only games against this named opponent (e.g. Caterpie)
   --date <date>    A single archive day, YYYY-MM-DD
   --since <date>   Every game on or after this day
   --latest         Only the newest match (the default when several match)
@@ -390,10 +397,10 @@ Options:
 Centipawn-loss labels: inaccuracy >= ${THRESHOLDS.inaccuracy}, mistake >= ${THRESHOLDS.mistake}, blunder >= ${THRESHOLDS.blunder}.
 `;
 
-async function main() {
+export async function main(argv = process.argv.slice(2)) {
   let options;
   try {
-    options = parseArgs(process.argv.slice(2));
+    options = parseArgs(argv);
   } catch (error) {
     process.stderr.write(`${error.message}\n\n${USAGE}`);
     process.exitCode = 2;
@@ -408,7 +415,7 @@ async function main() {
   if (options.file) {
     targets = [{ file: options.file, name: path.basename(options.file), day: null }];
   } else {
-    targets = findGames({ user: options.user, date: options.date, since: options.since });
+    targets = findGames({ user: options.user, opponent: options.opponent, date: options.date, since: options.since });
     if (!targets.length) {
       process.stderr.write('No archived games matched.\n');
       process.exitCode = 1;

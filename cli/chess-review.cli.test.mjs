@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import YAML from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { findGames, parseArgs, renderTrend } from './chess-review.cli.mjs';
 
@@ -13,8 +14,8 @@ describe('parseArgs', () => {
   });
 
   it('reads selection and output flags', () => {
-    const options = parseArgs(['--user', 'test-user', '--date', '2026-08-15', '--brief']);
-    expect(options).toMatchObject({ user: 'test-user', date: '2026-08-15', brief: true });
+    const options = parseArgs(['--user', 'test-user', '--opponent', 'Caterpie', '--date', '2026-08-15', '--brief']);
+    expect(options).toMatchObject({ user: 'test-user', opponent: 'Caterpie', date: '2026-08-15', brief: true });
   });
 
   it('takes a bare path as the file', () => {
@@ -58,7 +59,10 @@ describe('findGames', () => {
       ['2026-08-15', ['test-user_level0_c.yml', 'notes.txt']],
     ]) {
       fs.mkdirSync(path.join(root, day));
-      for (const name of names) fs.writeFileSync(path.join(root, day, name), '{}');
+      for (const name of names) {
+        const opponent = name.includes('level0') ? 'Caterpie' : 'Weedle';
+        fs.writeFileSync(path.join(root, day, name), YAML.stringify({ opponent: { name: opponent } }));
+      }
     }
   });
 
@@ -72,6 +76,11 @@ describe('findGames', () => {
   it('filters by user from the filename, without parsing every game', () => {
     expect(findGames({ root, user: 'test-user' })).toHaveLength(2);
     expect(findGames({ root, user: 'other-user' })).toHaveLength(1);
+  });
+
+  it('filters by opponent name case-insensitively', () => {
+    expect(findGames({ root, opponent: 'caterpie' })).toHaveLength(2);
+    expect(findGames({ root, opponent: 'Weedle' })).toHaveLength(1);
   });
 
   it('filters to a single day', () => {
