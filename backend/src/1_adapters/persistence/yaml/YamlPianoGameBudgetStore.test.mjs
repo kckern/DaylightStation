@@ -37,4 +37,30 @@ describe('YamlPianoGameBudgetStore', () => {
     writeFileSync(path.join(root, '2026-08-27.yml'), 'schema: something-else/v9\n');
     expect(() => store.loadDay('2026-08-27')).toThrow(/schema/i);
   });
+
+  it('saveDay refuses a wrong-schema record and leaves the good file on disk untouched', () => {
+    const { day: good } = applyOpen(emptyDay('2026-08-27'), {
+      sessionId: 's1', learnerId: 'kid_a', deviceId: 'kiosk',
+      at: '2026-08-27T20:00:00.000Z', staleAfterSeconds: 900,
+    });
+    store.saveDay(good);
+    const before = readFileSync(path.join(root, '2026-08-27.yml'), 'utf8');
+
+    const badSchema = { ...good, schema: 'something-else/v9' };
+    expect(() => store.saveDay(badSchema)).toThrow(/schema/i);
+    expect(readFileSync(path.join(root, '2026-08-27.yml'), 'utf8')).toEqual(before);
+  });
+
+  it('saveDay refuses a record missing a required key and leaves the good file on disk untouched', () => {
+    const { day: good } = applyOpen(emptyDay('2026-08-27'), {
+      sessionId: 's1', learnerId: 'kid_a', deviceId: 'kiosk',
+      at: '2026-08-27T20:00:00.000Z', staleAfterSeconds: 900,
+    });
+    store.saveDay(good);
+    const before = readFileSync(path.join(root, '2026-08-27.yml'), 'utf8');
+
+    const { sessions, ...truncated } = good;
+    expect(() => store.saveDay(truncated)).toThrow(/sessions/i);
+    expect(readFileSync(path.join(root, '2026-08-27.yml'), 'utf8')).toEqual(before);
+  });
 });
