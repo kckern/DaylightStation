@@ -27,13 +27,16 @@ vi.mock('./teacherWorkspaceApi.js', () => ({
     lessonPreviewUrl: () => '',
   },
 }));
+const teacherAuth = vi.hoisted(() => ({
+  requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
+}));
 vi.mock('./TeacherProfileContext.jsx', () => ({
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
+    requestAuthorization: teacherAuth.requestAuthorization,
     invalidateAuthorization: vi.fn(),
     pinPromptOpen: false,
     pickerOpen: false,
@@ -95,6 +98,48 @@ describe('CurriculumExceptionPanel neutral defaults', () => {
     await waitFor(() => expect(teacherWorkspaceApi.retractCurriculumException).toHaveBeenCalled());
     expect(teacherWorkspaceApi.retractCurriculumException.mock.calls[0][1]).toMatchObject({ reason: 'authored fix landed' });
     expect(promptSpy).not.toHaveBeenCalled();
+  });
+});
+
+// `curriculum-exception.apply` / `.retract` are the audit labels
+// ManageCurriculumException stamps on `teacherGate.assert` — they are not in
+// the server's STEP_UP_ACTIONS and never were. Asking for a grant under those
+// names opened a PIN dialog the server could only refuse, and the console sat
+// there forever. The console PIN behind the capability cookie is the gate.
+describe('curriculum exception writes ask for no step-up grant', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const requestedActions = () => teacherAuth.requestAuthorization.mock.calls.map(([arg]) => arg?.action ?? null);
+
+  it('applies an exception on the capability cookie alone', async () => {
+    render(<OperationsView kids={KIDS} />);
+    await screen.findByLabelText(/^Decision/);
+    const panel = screen.getByText('Curriculum exceptions').closest('.teacher-panel');
+    fireEvent.change(within(panel).getByLabelText(/^Decision/), { target: { value: 'paused' } });
+    fireEvent.change(within(panel).getByLabelText(/^Lesson/), { target: { value: 'u1' } });
+    fireEvent.change(within(panel).getByLabelText(/^Reason/), { target: { value: 'defective' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Preview exception' }));
+
+    const apply = await screen.findByRole('button', { name: 'Apply exception' });
+    fireEvent.click(apply);
+    await waitFor(() => expect(teacherWorkspaceApi.changeCurriculumException)
+      .toHaveBeenCalledWith(expect.objectContaining({ apply: true })));
+    // Still authorized — just never for an action the server cannot mint.
+    expect(teacherAuth.requestAuthorization).toHaveBeenCalled();
+    expect(requestedActions().every((action) => action == null)).toBe(true);
+    // …and no dead grant token rides along on the write.
+    expect(teacherWorkspaceApi.changeCurriculumException.mock.calls.at(-1)).toHaveLength(1);
+  });
+
+  it('retracts an exception on the capability cookie alone', async () => {
+    render(<OperationsView kids={KIDS} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retract' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Retract' }));
+    fireEvent.change(await screen.findByLabelText(/Retraction reason/), { target: { value: 'fixed upstream' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm retraction' }));
+    await waitFor(() => expect(teacherWorkspaceApi.retractCurriculumException).toHaveBeenCalled());
+    expect(requestedActions().every((action) => action == null)).toBe(true);
+    expect(teacherWorkspaceApi.retractCurriculumException.mock.calls.at(-1)).toHaveLength(2);
   });
 });
 

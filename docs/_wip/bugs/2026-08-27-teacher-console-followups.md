@@ -121,6 +121,33 @@ component already ships identically. Ship them as they are.
 during review, it is a live bug on a production household server, and Blocker 4d
 requires the new reference doc to stop certifying it as working.
 
+> **FIXED** on `fix/school-dead-stepup-buttons`. Kept below because the chain is the
+> record of how it hid. What changed, and what deliberately did not:
+>
+> - **The three `stepUp` requests are gone** (`WorkspaceViews.jsx`). The three names are
+>   TeacherGate audit-action labels; the routes' gate is the capability cookie, which
+>   `useTeacherWrite` already carries. The buttons now behave like every other
+>   capability-gated write.
+> - **`submitPin` settles every terminal path** (`TeacherProfileContext.jsx`). Both
+>   refusals come back as a bare 403, so the discriminator is whether the server
+>   accepted *this* PIN during *this* submission: if it never did (or the service was
+>   unreachable) the dialog stays open for another attempt; if it did and the step-up
+>   was still refused, the refusal is about the action, the prompt closes, and the
+>   caller is settled `{ok: false, refused: true, status, message}`. `useTeacherWrite`
+>   renders that message rather than the generic ask.
+> - **Deliberately NOT done:** nothing was added to `STEP_UP_ACTIONS` or
+>   `teacherResource`, and no route gained step-up enforcement. Raising the bar on
+>   reprint or curriculum exceptions is a policy decision nobody has taken. Note for
+>   whoever takes it: because `TeacherGate.assert` passes its audit `action` straight
+>   into `capabilitySessions.authorize`, adding a name to the Set **with** a matching
+>   `teacherResource` branch would in fact start enforcing it there — the pairing
+>   invariant is the whole mechanism, so the change is one edit, not a route rewrite.
+> - **Regression cover:** `WorkspaceViews.exceptions.test.jsx` and
+>   `WorkspaceViews.sessionDetail.test.jsx` assert the three writes request no action
+>   grant and carry no grant argument; `TeacherProfileContext.test.jsx` drives the real
+>   provider and asserts a non-retryable refusal *settles* (it times out against the old
+>   code) while a wrong PIN still holds the dialog open.
+
 **Three console buttons are dead: Print another copy, Apply exception, Retract exception.**
 
 The chain, verifiable end to end:

@@ -283,17 +283,19 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   };
   const valid = form.kind && form.targetId.trim() && form.reason.trim() && (form.kind === 'paused' || form.learnerId)
     && (form.kind !== 'replaced' || form.replacementLessonId.trim());
+  // No `stepUp` requirement: `curriculum-exception.apply` / `.retract` are the
+  // audit labels `ManageCurriculumException` stamps on its `teacherGate.assert`,
+  // not grant names the server knows how to mint. Asking for a grant under those
+  // names opened a PIN dialog no PIN could satisfy.
   const save = (apply) => run(`exception-${apply ? 'apply' : 'preview'}`, (auth) => teacherWorkspaceApi.changeCurriculumException({
     ...form, learnerId: form.kind === 'paused' ? null : form.learnerId, courseId: form.courseId || null,
     replacementLessonId: form.kind === 'replaced' ? form.replacementLessonId : null,
     decidedBy: auth.actorId, pin: auth.pin, apply,
-  }, auth.stepUpToken), { onSuccess: (data) => { setPreview(data); if (apply) setRefresh((n) => n + 1); },
-    stepUp: apply ? () => ({ action: 'curriculum-exception.apply', resource: form.targetId }) : null });
+  }), { onSuccess: (data) => { setPreview(data); if (apply) setRefresh((n) => n + 1); } });
   const retract = (exception) => {
     run(`retract-${exception.exceptionId}`, (auth) => teacherWorkspaceApi.retractCurriculumException(exception.exceptionId,
-      { reason: retractReason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }, auth.stepUpToken),
-    { onSuccess: () => { setRetracting(null); setRetractReason(''); setRefresh((n) => n + 1); },
-      stepUp: () => ({ action: 'curriculum-exception.retract', resource: exception.exceptionId }) });
+      { reason: retractReason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }),
+    { onSuccess: () => { setRetracting(null); setRetractReason(''); setRefresh((n) => n + 1); } });
   };
   return <PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
     <label>Decision<select value={form.kind} onChange={change('kind')}><option value="">Choose…</option><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></select></label>
@@ -636,9 +638,11 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
     run(key, ({ actorId, pin }) => teacherWorkspaceApi.reprintArtifact(artifactId,
       { reprintedBy: actorId, pin, apply: false }, requestKey), { onSuccess: setPreview });
   };
-  const print = () => run(key, ({ actorId, pin, stepUpToken }) => teacherWorkspaceApi.reprintArtifact(artifactId,
-    { reprintedBy: actorId, pin, apply: true }, idempotencyKey, stepUpToken), {
-    stepUp: { action: 'artifact.reprint', resource: artifactId },
+  // `artifact.reprint` is ReprintIssuedArtifact's audit label, not a step-up
+  // grant name — the capability cookie is the whole authority the reprint route
+  // checks. Requesting a grant here hung the button on an unsatisfiable dialog.
+  const print = () => run(key, ({ actorId, pin }) => teacherWorkspaceApi.reprintArtifact(artifactId,
+    { reprintedBy: actorId, pin, apply: true }, idempotencyKey), {
     onSuccess: () => { setPreview(null); setIdempotencyKey(null); onPrinted?.(); },
   });
   const label = kind === 'result-receipt' || kind === 'result-correction' ? 'Result receipt' : 'Worksheet';
