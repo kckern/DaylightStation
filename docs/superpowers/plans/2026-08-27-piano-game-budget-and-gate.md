@@ -538,6 +538,22 @@ describe('PianoGameBudgetService', () => {
     expect(store._days.get('2026-08-27').learners.kid_a.totalSeconds).toBe(60);
     expect(store._days.has('2026-08-28')).toBe(false);
   });
+
+  it('a settle that CROSSES the boundary lands on the new day and says so', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const svc2 = new PianoGameBudgetService({
+      store, config: () => CFG, timezone: 'America/Los_Angeles',
+      clock: () => now, idFactory: () => 'sess_x', logger,
+    });
+    await svc2.open({ learnerId: 'kid_a', deviceId: 'kiosk' });
+    now = new Date('2026-08-28T12:30:00.000Z'); // 05:30 LA — the study day has rolled
+    await svc2.settle({ sessionId: 'sess_x', learnerId: 'kid_a', cumulativeSeconds: 60 });
+    // A session open across 4am does not carry yesterday's spend into today.
+    expect(store._days.has('2026-08-28')).toBe(true);
+    expect(logger.info).toHaveBeenCalledWith('budget.day-rollover', expect.objectContaining({
+      learnerId: 'kid_a', from: '2026-08-27', to: '2026-08-28',
+    }));
+  });
 });
 ```
 
@@ -600,7 +616,16 @@ export class PianoGameBudgetService {
     const cfg = this.#cfg();
     if (cfg.enabled !== true) return { secondsLeft: Infinity, depleted: false, deviceDepleted: false };
     const at = this.#clock().toISOString();
-    const day = this.#store.loadDay(this.#today());
+    const today = this.#today();
+    let day = this.#store.loadDay(today);
+    // A session left open across 4am must not spend yesterday's allowance today.
+    // The session lives in the day it opened in; when the study day rolls under
+    // it, seal it there and re-open it on the new day at the same high-water, so
+    // the client's cumulative keeps meaning the same thing (design D6).
+    if (!day.sessions[sessionId]) {
+      const carried = this.#carryForward({ sessionId, learnerId, today, at });
+      if (carried) { day = carried.day; this.#logger.info?.('budget.day-rollover', carried.event); }
+    }
     const r = applySettle(day, { sessionId, cumulativeSeconds, at });
     try {
       this.#store.saveDay(r.day);
@@ -643,6 +668,36 @@ export class PianoGameBudgetService {
     if (cfg.enabled !== true) return { enabled: false };
     const day = this.#store.loadDay(this.#today());
     return { enabled: true, ...balanceFor(day, cfg, learnerId), warnAtSeconds: this.#warnAtSeconds(cfg) };
+  }
+
+  /**
+   * Find a session that belongs to an earlier study day and continue it on
+   * today's record at the same cumulative high-water. Returns null when there
+   * is nothing to carry (an unknown session id — applySettle will throw, which
+   * is the honest answer).
+   *
+   * Only yesterday is searched: a session idle longer than that is past
+   * STALE_AFTER_SECONDS and open() would have sealed it anyway.
+   */
+  #carryForward({ sessionId, learnerId, today, at }) {
+    const yesterdayStr = budgetStudyDate(
+      new Date(Date.parse(`${today}T12:00:00.000Z`) - 86_400_000), this.#timezone,
+    );
+    const prev = this.#store.loadDay(yesterdayStr);
+    const s = prev.sessions[sessionId];
+    if (!s || s.closed) return null;
+    s.closed = true;
+    this.#store.saveDay(prev);
+    const day = this.#store.loadDay(today);
+    day.sessions[sessionId] = {
+      learnerId: s.learnerId, deviceId: s.deviceId, openedAt: at, lastSettleAt: at,
+      cumulativeSeconds: s.cumulativeSeconds, closed: false,
+    };
+    day.learners[s.learnerId] ??= { totalSeconds: 0 };
+    return {
+      day,
+      event: { learnerId, sessionId, from: yesterdayStr, to: today, cumulativeSeconds: s.cumulativeSeconds },
+    };
   }
 }
 
