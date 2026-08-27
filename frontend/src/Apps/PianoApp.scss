@@ -468,14 +468,16 @@
   align-items: center;
   text-align: center;
   gap: var(--sp-2);
-  max-width: 38rem;
-  padding: var(--sp-5) var(--sp-5) var(--sp-4);
+  // Sized for a wall tablet a child walks up to: this REPLACES the tile wall,
+  // so it has to hold the screen the way the wall did, not float in it.
+  width: min(46rem, 100%);
+  padding: var(--sp-5) var(--sp-6, 3rem) var(--sp-5);
   background: var(--piano-surface);
   border: 1px solid var(--piano-border);
   border-radius: var(--r-lg);
 
   &__thumb {
-    width: 14rem;
+    width: 20rem;
     max-width: 100%;
     aspect-ratio: 16 / 9;
     object-fit: cover;
@@ -501,7 +503,7 @@
 
   &__title {
     margin: 0;
-    font-size: 1.9rem;
+    font-size: 2.3rem;
     line-height: 1.2;
   }
 
@@ -523,7 +525,7 @@
     margin-top: var(--sp-3);
     padding: var(--sp-3) var(--sp-5);
     font: inherit;
-    font-size: 1.25rem;
+    font-size: 1.4rem;
     font-weight: 600;
     color: var(--piano-accent-ink);
     background: var(--piano-accent);
@@ -537,8 +539,8 @@
 }
 
 @media (orientation: portrait) {
-  .piano-lesson-gate__thumb { width: 11rem; }
-  .piano-lesson-gate__title { font-size: 1.5rem; }
+  .piano-lesson-gate__thumb { width: 15rem; }
+  .piano-lesson-gate__title { font-size: 1.9rem; }
 }
 
 @media (orientation: portrait) {
