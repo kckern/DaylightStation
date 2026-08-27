@@ -144,6 +144,44 @@ describe('useScanCeremony', () => {
     });
   });
 
+  it('names the exact empty row when a sheet is scored but unfinished', () => {
+    // 2026-08-26: two of three answered, row 45 blank, and all three feeds of
+    // the card returned nothing at all.
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-rows-incomplete', testId: '4071314', blankRows: [45] });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'error',
+      title: 'Not finished yet',
+      detail: 'Row 45 is still empty. Then scan again.',
+    });
+  });
+
+  it('names a double mark alongside the empty rows, and pluralises both', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({
+        topic: 'omr', event: 'scan-rows-incomplete', testId: '4071314',
+        blankRows: [45, 46], ambiguousRows: [44],
+      });
+    });
+    expect(result.current.current.detail).toBe(
+      'Rows 45 and 46 are still empty. Row 44 has more than one answer marked — erase the extra. Then scan again.',
+    );
+  });
+
+  it('still speaks when the payload carries no rows at all', () => {
+    // Silence is the exact failure this event exists to end, so a payload with
+    // nothing to name must not drop the ceremony.
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-rows-incomplete', testId: '4071314' });
+    });
+    expect(result.current.current).toMatchObject({ tone: 'error', title: 'Not finished yet' });
+    expect(result.current.current.detail).toBe('Then scan again.');
+  });
+
   it('maps scan-not-recorded to an error ceremony so a re-fed sheet is never met with silence', () => {
     const { result } = mount();
     act(() => {
