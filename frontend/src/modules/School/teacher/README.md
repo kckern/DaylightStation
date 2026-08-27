@@ -122,6 +122,9 @@ Logs: `context.app:school` in the log store (see root `CLAUDE.md` → Reading Lo
 
 ## Related docs
 
+- `docs/reference/school/teacher.md` — the flow model: every lifecycle, every
+  state, and the teacher's move out of each one. Start there when the question
+  is "the work is sitting in X — what can a grown-up do about it?"
 - `docs/reference/school/README.md` — the school reference index
 - `docs/reference/school/agenda-and-completion.md` — how `sections`, `servedToday`, and completion are derived
 - `docs/reference/school/print-documents.md` — worksheets, receipts, OMR grading
