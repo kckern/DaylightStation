@@ -589,6 +589,52 @@ export function createSchoolPrintScanConsumer({
                   reasons: sectionOutcome.session.reasons,
                   items: sectionOutcome.session.items,
                 });
+              } else if (sectionOutcome?.session?.reason === 'partial-scan') {
+                // AN UNFINISHED SHEET IS SCORED AND THEN DROPPED, AND USED TO
+                // BE DROPPED IN SILENCE (2026-08-26).
+                //
+                // `#bridgeSession` refuses to grade a card with any blank row,
+                // and that refusal is right — a half-empty sheet must not
+                // become a permanent verdict on unfinished work. But it was
+                // the only branch here with no ceremony, so the scan resolved,
+                // scored, logged `scan-partial-not-bridged`, and told nobody.
+                // The child re-fed the card twice more and got silence both
+                // times; a parent found it hours later by noticing the day's
+                // disc count was wrong.
+                //
+                // This is strictly MORE actionable than `scan-rows-unmarked`,
+                // which can only name a range: here the rows are known
+                // individually, so the child is told exactly which bubble is
+                // missing. Ambiguous rows ride along because a double mark is
+                // the other way a sheet stalls, and the two are easy to
+                // confuse on paper — a stray second mark reads as "I answered
+                // that one" to the child who made it.
+                const rowsWith = (status) => (card.results ?? [])
+                  .filter((row) => row.status === status && Number.isFinite(row.row))
+                  .map((row) => row.row)
+                  .sort((a, b) => a - b);
+                const blankRows = rowsWith('blank');
+                const ambiguousRows = rowsWith('ambiguous');
+                logger.warn?.('school.print.scan-partial-unfinished', {
+                  testId, recordId: card.recordId, learnerId: card.learnerId ?? null,
+                  sessionId: sectionOutcome.session.sessionId, blankRows, ambiguousRows,
+                });
+                // See CRITICAL 1b note above: `Promise.resolve(...)` guards a
+                // hook whose `fire` returns a non-promise.
+                Promise.resolve(gradingHook?.fire({
+                  result: 'partial',
+                  testId,
+                  code: 'partial_scan',
+                  learnerId: card.learnerId ?? null,
+                })).catch(() => {});
+                speak({
+                  event: 'scan-rows-incomplete',
+                  testId,
+                  learnerId: card.learnerId ?? null,
+                  sessionId: sectionOutcome.session.sessionId,
+                  blankRows,
+                  ambiguousRows,
+                });
               }
             }
           })

@@ -90,6 +90,7 @@ function logger() {
  *   scan-refused      → error    "That sheet doesn't match" "This paper doesn't line up with what's on file. Ask a grown-up."
  *   scan-not-recorded → error    "Already done"             "I read that sheet, but there was nothing new to mark."
  *   scan-rows-unmarked→ error    "Nothing filled in yet"    "Your new questions are rows {start}–{end}. Fill them in, then scan again."
+ *   scan-rows-incomplete→ error  "Not finished yet"        "Row {n} is still empty. Row {m} has more than one answer marked — erase the extra. Then scan again."
  *   reader-error      → error    "Scanner hiccup"           "The scanner didn't catch that. Feed the sheet again."
  *   agenda-suppressed → warn     "Already printed"          "You already have today's agenda — check your desk."
  *   story-read        → success  "Story read!"              "{title} — that's another book today."
@@ -190,6 +191,42 @@ function buildCeremony(payload) {
         tone: 'error',
         title: 'Nothing filled in yet',
         detail: `${rows}Fill them in, then scan again.`,
+        at,
+      };
+    }
+    case 'scan-rows-incomplete': {
+      // The sheet WAS read and WAS scored — it just is not finished, so the
+      // grader refused to bridge it into a verdict (2026-08-26: a learner
+      // answered two of three questions, left one bubble empty and put a
+      // second mark on another, and every one of his three feeds returned
+      // nothing at all).
+      //
+      // `error` for the same reason `scan-rows-unmarked` is: the low
+      // double-buzz is what tells a child who has already turned away that
+      // feeding the card achieved nothing. Naming the exact rows is what makes
+      // it fixable without an adult — unlike the unmarked case we know them
+      // individually, so there is no need to make the child count a range.
+      const list = (rows) => {
+        const clean = (Array.isArray(rows) ? rows : []).filter((r) => typeof r === 'number');
+        if (!clean.length) return null;
+        if (clean.length === 1) return `Row ${clean[0]}`;
+        return `Rows ${clean.slice(0, -1).join(', ')} and ${clean[clean.length - 1]}`;
+      };
+      const blanks = list(payload.blankRows);
+      const doubles = list(payload.ambiguousRows);
+      const parts = [];
+      if (blanks) parts.push(`${blanks} ${blanks.startsWith('Rows') ? 'are' : 'is'} still empty.`);
+      if (doubles) {
+        parts.push(`${doubles} ${doubles.startsWith('Rows') ? 'have' : 'has'} more than one answer marked — erase the extra.`);
+      }
+      // A payload with neither list must still speak. Silence is the exact
+      // failure this case was added to end, so the generic sentence stands in
+      // rather than the ceremony dropping out.
+      parts.push('Then scan again.');
+      return {
+        tone: 'error',
+        title: 'Not finished yet',
+        detail: parts.join(' '),
         at,
       };
     }
