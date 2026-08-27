@@ -549,7 +549,19 @@ Before reporting a task complete, the implementer must have run and QUOTED:
 4. A check that no test file fails to LOAD — `grep "Cannot find module\|0 tests"` over
    the run output. A load failure reports as zero tests, which is invisible in a
    pass/fail count and is exactly how 14 assertions went silently dark in Task 1.
-5. `npm run test:unit:vitest`, with every failure attributed against the baseline doc.
+5. **The gate that actually covers the files you changed** — and they are different gates:
+
+   | You changed | Gate that covers it |
+   |---|---|
+   | `backend/**`, `tests/unit/**`, `tests/isolated/**` | `npm run test:unit:vitest` |
+   | `frontend/src/**` | `node tests/_infrastructure/harnesses/isolated.harness.mjs --only=frontend` |
+
+   **`npm run test:unit:vitest` does NOT walk `frontend/src/**`** — measured in Task 2.
+   Its population is `tests/unit`, `tests/isolated`, and `backend` only, so the entire
+   gate layer, every School component, and every hook this feature adds are invisible
+   to it. A green vitest gate is NOT evidence that frontend work is sound. Tasks 3 and
+   11-16 are frontend: run the frontend harness, and quote its numbers.
+   Attribute every failure against the baseline doc.
 
 - Structured logging framework only — never raw `console.*` (CLAUDE.md).
 - Backend imports use the `#domains/` / `#apps/` / `#api/` aliases as seen in neighbors.
