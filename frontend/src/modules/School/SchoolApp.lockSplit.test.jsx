@@ -9,8 +9,12 @@ vi.mock('./schoolApi.js', () => ({
     surfaceProfile: vi.fn(async () => ({ ok: true, status: 200, data: { surfaceId: 'screen-browser' } })),
     materials: vi.fn(async () => ({ ok: true, status: 200, data: { materials: [] } })),
     banks: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [{ subject: 'math' }, { subject: 'reading' }] } })),
-    teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ learnerId: 'learner3', sessions: [{ subject: 'math', outcome: { result: 'passed' } }] }] } })),
+    // Discs are per-ASSIGNMENT now, so the fixture has to carry unit ids.
+    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: {
+      sections: [{ subject: 'math', next: { unitId: 'math.01' } }, { subject: 'reading', next: { unitId: 'read.01' } }],
+      entries: [{ unitId: 'math.01', subject: 'math' }, { unitId: 'read.01', subject: 'reading' }],
+    } })),
+    teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ learnerId: 'learner3', sessions: [{ unitId: 'math.01', subject: 'math', outcome: { result: 'passed' } }] }] } })),
   },
 }));
 vi.mock('./Programs/SentenceLadder/languageApi.js', () => ({
