@@ -23,14 +23,14 @@
  * session, print, ticket, or code — the agenda preview route is inert by
  * construction (`X-School-Preview: agenda-non-recording`).
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import SafeImg from './SafeImg.jsx';
 import { agendaPreviewSrc } from './LearnerDayView.jsx';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
-import { teacherBaseFor, teacherDayPath, teacherSessionPath } from '../teacherUrl.js';
+import { teacherBaseFor, teacherDayPath, teacherSessionPath, teacherSectionPath, teacherLearnerPath } from '../teacherUrl.js';
 import { localDay } from '../teacherDates.js';
 import { SubjectIdentity } from '../CurriculumIdentity.jsx';
 import Icon, { hasIcon } from '../../home/icons/Icon.jsx';
@@ -103,6 +103,60 @@ function openAgendaWindow(event, src, learnerId) {
 
 const SELF_LABEL = {
   not_yet: 'says: not yet', uncertain: 'says: not sure', ready: 'says: feels ready',
+};
+
+// ---------------------------------------------------------------------------
+// Obligation copy (plan 3.2/3.3). `row.obligation = { state, reason,
+// needsGrownUp }` is task 7's pass-through of `agenda.mjs`'s own verdict —
+// this file adds no classification of its own, only the words and the link
+// for reasons that already carry `needsGrownUp: true`, plus a muted fallback
+// for the ones that don't. NEVER a raw reason slug on screen.
+// ---------------------------------------------------------------------------
+
+/**
+ * The four obligation reasons that dead-end without an adult (task 7's
+ * `needsGrownUp` — read from the join, never re-derived here). The two FAULT
+ * reasons (`program_unavailable`, `blocked_unreachable`) are OUR fault, not
+ * the child's: the 2026-08-25 unlock incident is why that pair gets its own
+ * card treatment (`faulted` styling, 3.2) instead of reading as a quiet
+ * unstarted lesson. `caught_up` and `awaiting_grown_up` are excuses — the day
+ * still completes — but still need a person, so they get the same link
+ * without the fault styling (3.3).
+ */
+const GROWN_UP_ACTION = {
+  program_unavailable: { headline: 'This program can’t start', linkTo: 'operations', linkLabel: 'School → Operations' },
+  blocked_unreachable: { headline: 'Locked behind work nothing can reach', linkTo: 'operations', linkLabel: 'School → Operations' },
+  caught_up: { headline: 'This course has no more lessons', linkTo: 'courses', linkLabel: 'Open Courses' },
+  awaiting_grown_up: { headline: 'Ask a grown-up to continue or reschedule this work.', linkTo: 'operations', linkLabel: 'School → Operations' },
+};
+
+/**
+ * Where the grown-up action goes: the learner's own Courses page for a
+ * course that ran out of lessons (that is where assignments are edited),
+ * School Operations for everything else — the fix is institutional, not a
+ * property of one learner's enrollment.
+ */
+function grownUpHref(linkTo, learnerId, base) {
+  return linkTo === 'courses' ? teacherLearnerPath(learnerId, 'courses', null, base) : teacherSectionPath('operations', base);
+}
+
+/**
+ * The other seven excuse reasons resolve on their own — no grown-up, no
+ * button (3.3, "do not give every excuse a button"). Most already read as a
+ * sentence from the row's own `detail` (a lock reason, "Deferred for X
+ * focus", "Starts <date>" — see `agenda.mjs`'s `lockedRemedy`/`suppressed`/
+ * `timingNotice`); this is the FALLBACK for whenever that branch left
+ * `detail` null, so an excused row is never blank and never prints its own
+ * schema name.
+ */
+const MUTED_EXCUSE_FALLBACK = {
+  elective_only: 'Only elective work is offered today.',
+  blocked_no_offer: 'Locked behind other work.',
+  opens_later: 'Opens later.',
+  optional_backlog: 'Optional catch-up work — nothing owed today.',
+  not_due_yet: 'Offered, but not due yet.',
+  not_a_school_day: 'Not a school day.',
+  suppressed_by_focus: 'Deferred for another subject today.',
 };
 
 /**
@@ -230,6 +284,19 @@ function LessonCard({ row, learnerId, base, onOpen }) {
   // in progress, or untouched, and the tag says so beside the chip rather than
   // standing in for it.
   const note = session ? progressNote(session) : null;
+  // THE PLANNER'S VERDICT, SHOWN AS ITS OWN FACT — never merged with `status`
+  // into a combined badge. A row can be `planned` under `excused`; that is
+  // two true things, not a contradiction (plan 3.2/3.3/3.4 design note).
+  const obligation = row.obligation ?? null;
+  const faulted = obligation?.state === 'faulted';
+  const grownUp = obligation?.needsGrownUp ? GROWN_UP_ACTION[obligation.reason] ?? null : null;
+  // A quiet excuse still says why, just never with a button — the fallback
+  // only fires when nothing upstream (an in-flight session, the row's own
+  // `detail`) already supplied a sentence.
+  const mutedExcuse = (obligation?.state === 'excused' && !obligation.needsGrownUp)
+    ? MUTED_EXCUSE_FALLBACK[obligation.reason] ?? null
+    : null;
+  const pendingText = note ?? row.detail ?? mutedExcuse;
   // THE POSTER FRAME IS ALWAYS DRAWN, poster or not.
   //
   // It used to be a conditional full-width 52px band — a letterboxed strip of
@@ -274,7 +341,10 @@ function LessonCard({ row, learnerId, base, onOpen }) {
     </span>
   );
   return (
-    <article className={`teacher-lesson-card teacher-lesson-card--${row.status}`} data-testid="lesson-card">
+    <article
+      className={`teacher-lesson-card teacher-lesson-card--${row.status}${faulted ? ' teacher-lesson-card--faulted' : ''}`}
+      data-testid="lesson-card"
+    >
       {/* HEADER — the shelf this lesson came off. Subject full width across
           the top, breadcrumb beneath it, on its own tinted band above a
           divider. The subject used to be a caption wedged into the text
@@ -300,9 +370,21 @@ function LessonCard({ row, learnerId, base, onOpen }) {
               {row.unplanned && <span className="teacher-day-chip__tag">not on the plan</span>}
             </span>
           )}
-          {(note ?? row.detail) && (
-            <span className="teacher-lesson-card__pending">{note ?? row.detail}</span>
-          )}
+          {/* THE OBLIGATION IS A SEPARATE FACT FROM THE CHIP ABOVE, never
+              merged into it (plan 3.2/3.3): a `planned` chip can sit right
+              beside "This program can't start". Only the four reasons that
+              dead-end without an adult earn a link; the rest of this slot is
+              the quiet muted sentence it always was. */}
+          {grownUp ? (
+            <span className={`teacher-lesson-card__obligation${faulted ? ' teacher-lesson-card__obligation--fault' : ''}`}>
+              <strong>{grownUp.headline}</strong>
+              <a className="teacher-lesson-card__obligation-link" href={grownUpHref(grownUp.linkTo, learnerId, base)}>
+                {grownUp.linkLabel}
+              </a>
+            </span>
+          ) : (pendingText && (
+            <span className="teacher-lesson-card__pending">{pendingText}</span>
+          ))}
         </span>
         {session && <ArtifactButtons session={session} onOpen={onOpen} />}
       </footer>
@@ -325,6 +407,11 @@ const PASS_PERCENT = 80;
 function dotTone(row) {
   const score = row.session?.effectiveScore;
   if (score?.percent != null) return score.percent >= PASS_PERCENT ? 'passed' : 'failed';
+  // A row that dead-ends without a grown-up (task 8's four obligation
+  // reasons) gets its OWN tone regardless of row status: `blocked_unreachable`
+  // carries the same `status: 'blocked'` an ordinary reachable lock does, and
+  // the collapsed row must still tell the two apart at a glance.
+  if (row.obligation?.needsGrownUp) return 'needs-grownup';
   // Status now means progress for EVERY row, so there is no branch here for
   // unplanned work — it tones by how far along it is, like anything else, and
   // the dot's label carries the provenance. Grey is reserved for "not touched",
@@ -347,6 +434,7 @@ function DayDots({ rows }) {
           row.session?.lessonTitle ?? row.planned,
           score?.percent != null ? `${Math.round(score.percent)}%` : DAY_STATUS_LABEL[row.status],
           row.unplanned ? 'not on the plan' : null,
+          row.obligation?.needsGrownUp ? GROWN_UP_ACTION[row.obligation.reason]?.headline ?? null : null,
         ].filter(Boolean).join(' — ');
         return (
           <span key={row.key} className={`teacher-roster__dot teacher-roster__dot--${tone}`} title={label}>
@@ -413,7 +501,7 @@ function LearnerDayGrid({ learnerId, rows, base, studyDay, agenda, onOpenArtifac
  * per session: that N+1 stays dead), and it is still GET-only and
  * non-recording.
  */
-function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle }) {
+function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeedsGrownUp }) {
   const learnerId = row.learnerId;
   const name = kids.find((k) => k.id === learnerId)?.name ?? learnerId;
   const panelId = `teacher-day-${String(learnerId).replace(/[^a-z0-9_-]/gi, '-')}`;
@@ -451,6 +539,21 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle }) {
   // work that carries no score.
   const started = (joined.counts.done ?? 0) + (joined.counts['in-progress'] ?? 0) > 0;
   const settled = agenda.state !== 'loading';
+  // THE SUBJECTS THIS LEARNER CONTRIBUTES to the dashboard's "N subjects need
+  // a grown-up" strip (plan 3.4) — task 7's `needsGrownUp` read straight off
+  // the join, never a second classification. Reported only once the plan has
+  // settled, for the same reason `DayDots` waits below: "zero" before the
+  // read lands is a guess, not a fact.
+  const grownUpEntries = joined.rows.filter((r) => r.obligation?.needsGrownUp);
+  // A stable signature (not the array itself, which is a fresh reference every
+  // render) so the report effect fires only when the SET of subjects needing
+  // a grown-up actually changes, not on every unrelated re-render.
+  const grownUpSignature = grownUpEntries.map((r) => `${r.key}:${r.obligation.reason}`).join('|');
+  useEffect(() => {
+    if (!onNeedsGrownUp || !settled) return;
+    onNeedsGrownUp(learnerId, grownUpEntries.map((r) => ({ reason: r.obligation.reason })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- grownUpSignature stands in for grownUpEntries
+  }, [onNeedsGrownUp, settled, learnerId, grownUpSignature]);
   return (
     <div className="teacher-roster__entry">
       <button
@@ -526,8 +629,41 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle }) {
   );
 }
 
-export default function RosterStrip({ rows, kids, studyDay = null }) {
+export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownUp = null }) {
   const [openId, setOpenId] = useState(null);
+  // One small tally, keyed by learner, built entirely from what each entry
+  // already fetched for its own agenda preview (plan 3.4) — never a second
+  // fetch just to count what the roster already knows. `reportGrownUp` is
+  // referentially stable (`useCallback`, no deps) so a re-render never looks
+  // like a fresh report to the entries holding it.
+  const [grownUpByLearner, setGrownUpByLearner] = useState({});
+  const reportGrownUp = useCallback((learnerId, entries) => {
+    setGrownUpByLearner((prev) => ({ ...prev, [learnerId]: entries }));
+  }, []);
+  // A primitive stand-in for `rows` (which is a fresh array reference on
+  // every parent render whenever the caller derives it inline) — the
+  // dashboard-report effect below must fire on an actual roster-order
+  // change, never on an unrelated re-render.
+  const rowOrder = rows.map((row) => row.learnerId).join('|');
+  useEffect(() => {
+    if (!onNeedsGrownUp) return;
+    const firstLearnerId = rows.map((row) => row.learnerId)
+      .find((learnerId) => (grownUpByLearner[learnerId]?.length ?? 0) > 0) ?? null;
+    const first = firstLearnerId ? grownUpByLearner[firstLearnerId][0] : null;
+    const count = Object.values(grownUpByLearner).reduce((sum, entries) => sum + entries.length, 0);
+    const base = teacherBaseFor(globalThis.location?.pathname ?? '');
+    onNeedsGrownUp({
+      count,
+      href: first ? grownUpHref(GROWN_UP_ACTION[first.reason]?.linkTo ?? 'operations', firstLearnerId, base) : null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rowOrder stands in for `rows`
+  }, [grownUpByLearner, rowOrder, onNeedsGrownUp]);
+  // The strip must go quiet if the roster itself unmounts (a failed/loading
+  // digest read) — a stale "N subjects need a grown-up" outliving its own
+  // source is exactly the kind of ghost signal this panel model forbids. A
+  // SEPARATE effect, deliberately not re-run by the report effect above: its
+  // cleanup must fire only on a true unmount, never on every tally update.
+  useEffect(() => (onNeedsGrownUp ? () => onNeedsGrownUp({ count: 0, href: null }) : undefined), [onNeedsGrownUp]);
   return (
     <div className="teacher-roster">
       {rows.map((row) => (
@@ -538,6 +674,7 @@ export default function RosterStrip({ rows, kids, studyDay = null }) {
           studyDay={studyDay}
           open={openId === row.learnerId}
           onToggle={() => setOpenId((cur) => (cur === row.learnerId ? null : row.learnerId))}
+          onNeedsGrownUp={reportGrownUp}
         />
       ))}
     </div>

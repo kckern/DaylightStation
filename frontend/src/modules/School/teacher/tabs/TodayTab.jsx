@@ -6,6 +6,7 @@
  * when they all do. The digest's own unwired tell is `[]` beside a non-empty
  * kids roster — when wired it always answers one row per roster learner.
  */
+import { useMemo, useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch, allUnavailable } from '../usePanelFetch.js';
 import PanelFrame from '../panels/PanelFrame.jsx';
@@ -40,6 +41,26 @@ function BacklogStrip({ onOpenQueue }) {
   );
 }
 
+/**
+ * "N subjects need a grown-up" (plan 3.4) — the roster's own faults
+ * (`program_unavailable`, `blocked_unreachable`) and its two actionable
+ * excuses (`caught_up`, `awaiting_grown_up`), counted across every learner
+ * and named ONCE above the roster instead of found lesson by lesson. The
+ * count comes from `RosterStrip` itself (`onNeedsGrownUp`) — it already
+ * fetched every learner's agenda preview to draw the day-dots, so this adds
+ * no second read. Renders nothing at zero, same reasoning as `BacklogStrip`
+ * below: an empty state shouting for attention is its own defect (UX audit
+ * IA5).
+ */
+function GrownUpStrip({ count, href }) {
+  if (!count) return null;
+  return (
+    <a className="teacher-grownup-strip" data-testid="grownup-strip" href={href}>
+      {count} subject{count === 1 ? '' : 's'} need{count === 1 ? 's' : ''} a grown-up →
+    </a>
+  );
+}
+
 export default function TodayTab({ kids = [], onOpenQueue = null }) {
   // The v2 day projection is the board contract: it preserves the actual
   // session/taxonomy/artifact context rather than flattening rows into the
@@ -50,12 +71,22 @@ export default function TodayTab({ kids = [], onOpenQueue = null }) {
   // empty array next to a non-empty roster means "unwired", not "quiet day".
   const rosterState = today.state === 'empty' && kids.length > 0 ? 'unavailable' : today.state;
   const lifecycleDown = allUnavailable([rosterState]);
+  // A STABLE reference for RosterStrip's `rows` prop: an inline `?? []`
+  // fallback is a fresh array every render, which would make the roster's
+  // own needs-a-grown-up report effect think the roster reshuffled on every
+  // unrelated re-render.
+  const rows = useMemo(
+    () => (Array.isArray(today.data) ? today.data : (today.data?.learners ?? [])),
+    [today.data],
+  );
+  const [needsGrownUp, setNeedsGrownUp] = useState({ count: 0, href: null });
 
   return (
     <div className="teacher-tab teacher-tab--today">
       {lifecycleDown && (
         <p className="teacher-banner">School lifecycle is not enabled on this install — the daily digest needs it.</p>
       )}
+      <GrownUpStrip count={needsGrownUp.count} href={needsGrownUp.href} />
       <PanelFrame
         title="Today"
         state={rosterState}
@@ -64,8 +95,9 @@ export default function TodayTab({ kids = [], onOpenQueue = null }) {
         unavailableCopy="The daily digest isn't available on this install."
         suppressUnavailable={lifecycleDown}
       >
-        <RosterStrip rows={Array.isArray(today.data) ? today.data : (today.data?.learners ?? [])} kids={kids}
-          studyDay={Array.isArray(today.data) ? null : (today.data?.studyDay ?? null)} />
+        <RosterStrip rows={rows} kids={kids}
+          studyDay={Array.isArray(today.data) ? null : (today.data?.studyDay ?? null)}
+          onNeedsGrownUp={setNeedsGrownUp} />
       </PanelFrame>
       {onOpenQueue && <BacklogStrip onOpenQueue={onOpenQueue} />}
     </div>

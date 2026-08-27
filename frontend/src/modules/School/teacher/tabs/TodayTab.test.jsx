@@ -399,6 +399,46 @@ describe('TodayTab', () => {
     await waitFor(() => expect(screen.getByText(/US State Capitals/)).toBeTruthy());
     expect(screen.getByText(/Fractions Ep\. 4/)).toBeTruthy();
   });
+
+  // Plan 3.4: the dashboard names a structurally broken day ONCE, above the
+  // roster, instead of a teacher finding it lesson by lesson.
+  describe('"N subjects need a grown-up" (plan 3.4)', () => {
+    it('renders nothing when no subject needs a grown-up', async () => {
+      // The default beforeEach fixture carries no `obligation` on either
+      // section — the ordinary, healthy-day shape.
+      mount(<TodayTab kids={KIDS} />);
+      await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
+      await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalledTimes(KIDS.length));
+      expect(screen.queryByTestId('grownup-strip')).not.toBeInTheDocument();
+    });
+
+    it('counts a fault and an actionable excuse across BOTH learners, and links to the first', async () => {
+      schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'learner-a'
+        ? [
+          { subject: 'civilization', next: { unitId: 'unit-illinois', title: 'Illinois' } },
+          { subject: 'science', next: null, obligation: { state: 'faulted', reason: 'program_unavailable' } },
+        ]
+        : [{ subject: 'math', next: null, obligation: { state: 'excused', reason: 'caught_up' } }] }));
+      mount(<TodayTab kids={KIDS} />);
+      const strip = await screen.findByTestId('grownup-strip');
+      expect(strip).toHaveTextContent('2 subjects need a grown-up');
+      // learner-a's own fault is first in roster order, so the strip lands
+      // on School Operations, not learner-b's Courses page.
+      expect(strip).toHaveAttribute('href', '/school/teacher/operations');
+    });
+
+    it('uses singular copy for exactly one subject', async () => {
+      schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'learner-a'
+        ? [
+          { subject: 'civilization', next: { unitId: 'unit-illinois', title: 'Illinois' } },
+          { subject: 'math', next: null, obligation: { state: 'excused', reason: 'awaiting_grown_up' } },
+        ]
+        : [] }));
+      mount(<TodayTab kids={KIDS} />);
+      const strip = await screen.findByTestId('grownup-strip');
+      expect(strip).toHaveTextContent('1 subject needs a grown-up');
+    });
+  });
 });
 
 describe('wave-2 mutations', () => {
