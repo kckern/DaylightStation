@@ -210,7 +210,7 @@ import { createMediaGate } from './mediaGate.js';
 
 ### Task 3: `useMediaGate` hook + `GateVerdictContext`
 
-> DONE — `bb59c5a55`. **Phase 1 is closed.** Gate suite 81 tests (20 new);
+> DONE — `bb59c5a55`, `d1b4f5b7b` (lint + log attribution). Spec-reviewed. **Phase 1 is closed.** Gate suite 81 tests (20 new);
 > 19 deliberate mutations run, all killed, 0 survivors. Three decisions Task 16
 > needs to know about, none of which the sketch below anticipates:
 >
@@ -232,6 +232,17 @@ import { createMediaGate } from './mediaGate.js';
 > The hook returns `{ decision, status }`. `status` is `mediaGate`'s snapshot and
 > arrives ONLY through `subscribe()` — `apply()`'s return is not pushed as well, since
 > that would be a second source of the same truth.
+>
+> ⚠ **Do not filter DOM `play` on `ownsPause`.** It reads like the obvious mirror of the
+> `pause` echo filter and it is not: `ownsPause` is TRUE at the exact instant a human
+> presses play in both cases that matter — the autoplay-blocked retry (ownership is held
+> so it can retry) and a kid pressing play to skip an unanswered checkpoint (the gate
+> paused them). Guarding the branch on it **lets the checkpoint be skipped**. Both the
+> literal guard and an `ownsPause && !resumeBlocked` refinement were run against the
+> suite; both regress, and both regressions are now pinned by tests. The gate's own
+> resume is genuinely indistinguishable here — a real browser queues the event, so
+> `applyingRef` has already cleared — so the epoch bump is unconditional and only the
+> LOG's attribution is conditioned.
 
 **Files:**
 - Create: `frontend/src/lib/Player/gate/useMediaGate.js`, `frontend/src/lib/Player/gate/GateVerdictContext.jsx`
