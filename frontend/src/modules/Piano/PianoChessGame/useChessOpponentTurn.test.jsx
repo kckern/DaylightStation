@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const pacing = vi.hoisted(() => ({
@@ -6,6 +6,7 @@ const pacing = vi.hoisted(() => ({
   useOpponentReply: vi.fn(() => ({ thinking: true })),
 }));
 const requestOpponentMove = vi.hoisted(() => vi.fn(async () => null));
+const requestOpponentQuip = vi.hoisted(() => vi.fn(async () => null));
 
 vi.mock('../game-platform/opponent/opponentPacing.js', () => pacing);
 import { useChessOpponentTurn } from './useChessOpponentTurn.js';
@@ -34,6 +35,7 @@ function hookProps(game, overrides = {}) {
     announce: vi.fn(),
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     requestMove: requestOpponentMove,
+    requestQuip: requestOpponentQuip,
     ...overrides,
   };
 }
@@ -84,8 +86,9 @@ describe('useChessOpponentTurn', () => {
     const props = hookProps(game);
     renderHook(() => useChessOpponentTurn(props));
     const contract = pacing.useOpponentReply.mock.calls[0][0];
-    await contract.request();
-    contract.onReply({ from: 'e7', to: 'e5', san: 'e5', engine: 'stockfish' });
+    requestOpponentMove.mockResolvedValueOnce({ from: 'e7', to: 'e5', san: 'e5', engine: 'stockfish' });
+    const plan = await contract.request();
+    await act(async () => { await contract.onReply(plan); });
 
     expect(props.setGame).toHaveBeenCalledWith(expect.objectContaining({
       history: expect.arrayContaining([expect.objectContaining({ san: 'e5', color: 'b' })]),
@@ -99,8 +102,9 @@ describe('useChessOpponentTurn', () => {
     const props = hookProps(game);
     renderHook(() => useChessOpponentTurn(props));
     const contract = pacing.useOpponentReply.mock.calls[0][0];
-    await contract.request();
-    contract.onReply({ from: 'a1', to: 'a8', engine: 'broken-server' });
+    requestOpponentMove.mockResolvedValueOnce({ from: 'a1', to: 'a8', engine: 'broken-server' });
+    const plan = await contract.request();
+    await act(async () => { await contract.onReply(plan); });
 
     expect(props.logger.warn).toHaveBeenCalledWith(
       'opponent-reply-invalid', expect.objectContaining({ source: 'server' }),
@@ -110,6 +114,52 @@ describe('useChessOpponentTurn', () => {
       rejection: null,
     }));
     expect(props.announce).toHaveBeenCalledOnce();
+  });
+
+  it('generates dialogue from the planned reply before that reply is committed', async () => {
+    const game = opponentState();
+    const props = hookProps(game);
+    const { result } = renderHook(() => useChessOpponentTurn(props));
+    const contract = pacing.useOpponentReply.mock.calls[0][0];
+    requestOpponentMove.mockResolvedValueOnce({ from: 'e7', to: 'e5', san: 'e5' });
+    requestOpponentQuip.mockResolvedValueOnce({ eventId: 'g1:2:e5', quip: 'A steady answer.', source: 'ai' });
+
+    const plan = await contract.request();
+    expect(requestOpponentQuip).toHaveBeenCalledWith(expect.objectContaining({
+      gameId: 'game-1',
+      ply: 2,
+      game: expect.objectContaining({ moves: expect.arrayContaining(['e5']) }),
+      dialogue: [],
+    }));
+    expect(result.current.speech).toBeNull();
+    await plan.reactionPromise;
+    await act(async () => { await contract.onReply(plan); });
+
+    expect(result.current.speech).toMatchObject({ quip: 'A steady answer.', source: 'ai' });
+    expect(props.logger.info).toHaveBeenCalledWith('chess.dialogue.displayed', expect.objectContaining({
+      eventId: 'g1:2:e5', quip: 'A steady answer.', source: 'ai',
+    }));
+  });
+
+  it('uses one fallback at move commit and discards a late model reaction', async () => {
+    const game = opponentState();
+    const props = hookProps(game);
+    const { result } = renderHook(() => useChessOpponentTurn(props));
+    const contract = pacing.useOpponentReply.mock.calls[0][0];
+    requestOpponentMove.mockResolvedValueOnce({ from: 'e7', to: 'e5', san: 'e5' });
+    let resolveQuip;
+    requestOpponentQuip.mockReturnValueOnce(new Promise((resolve) => { resolveQuip = resolve; }));
+
+    const plan = await contract.request();
+    await act(async () => { await contract.onReply(plan); });
+    expect(result.current.speech).toMatchObject({ source: 'fallback' });
+    const displayed = result.current.speech.quip;
+
+    await act(async () => { resolveQuip({ eventId: 'g1:2:e5', quip: 'Too late now.', source: 'ai' }); await plan.reactionPromise; });
+    expect(result.current.speech.quip).toBe(displayed);
+    expect(props.logger.info).toHaveBeenCalledWith(
+      'chess.dialogue.late-discarded', expect.objectContaining({ gameId: 'game-1', ply: 2 }),
+    );
   });
 
   it('drops a reply when the live position no longer matches the requested FEN', async () => {

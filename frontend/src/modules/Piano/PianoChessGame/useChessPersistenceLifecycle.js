@@ -24,6 +24,7 @@ export function useChessPersistenceLifecycle({
   helpUsed,
   timing,
   playerColor,
+  commentary = null,
   logger,
   gateway,
 }) {
@@ -54,6 +55,7 @@ export function useChessPersistenceLifecycle({
     takebacks: helpUsed.takebacks,
     startedAt: lifecycle.startedAt,
     timing,
+    commentary,
   };
   archiveInputsRef.current = sharedInputs;
   completionInputsRef.current = { ...sharedInputs, level: ladderLevel };

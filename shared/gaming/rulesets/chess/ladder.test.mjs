@@ -38,6 +38,26 @@ describe('the roster', () => {
     expect(roster[20].name).toBe(DEFAULT_ROSTER[20].name);
   });
 
+  it('normalizes a full dialogue profile and maps the legacy personality field', () => {
+    const [weedle, legacy] = resolveRoster({ ladder: { roster: [
+      {
+        name: 'Weedle',
+        dialogue: {
+          persona: 'Earnest and stubborn.',
+          chess_voice: 'Notices simple threats.',
+          lore: { type: ['bug', 'poison'], references: ['String Shot'], use: 'sparingly_as_playful_metaphor' },
+        },
+      },
+      { name: 'Old voice', personality: 'A legacy personality.' },
+    ], lore_reference_vocabulary: ['String Shot', 'Poison Sting'] } });
+    expect(weedle.dialogue).toEqual({
+      persona: 'Earnest and stubborn.', chess_voice: 'Notices simple threats.',
+      lore: { type: ['bug', 'poison'], references: ['String Shot'], known_references: ['String Shot', 'Poison Sting'], use: 'sparingly_as_playful_metaphor' },
+    });
+    expect(legacy.dialogue.persona).toBe('A legacy personality.');
+    expect(legacy.dialogue.lore.use).toBe('never');
+  });
+
   it('picks a named pack, so each child selects a roster instead of copying one', () => {
     const config = {
       ladder: {

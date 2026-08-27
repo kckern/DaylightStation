@@ -47,7 +47,6 @@ import {
   checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
 } from './takebackBudget.js';
 import { buildChessRailViewModel } from './chessRailViewModel.js';
-import { opponentLine as cannedOpponentLine } from './opponentViewModel.js';
 import { useChessAddressingProgress } from './useChessAddressingProgress.js';
 import { useChessOpponentTurn } from './useChessOpponentTurn.js';
 import { useChessPersistenceLifecycle } from './useChessPersistenceLifecycle.js';
@@ -55,7 +54,6 @@ import { useChessSessionIdentity } from './useChessSessionIdentity.js';
 import { useChessSessionResources } from './useChessSessionResources.js';
 import { useChessHelpController } from './useChessHelpController.js';
 import { useChessInputController } from './useChessInputController.js';
-import { useChessOpponentSpeech } from './useChessOpponentSpeech.js';
 import './PianoChessGame.scss';
 
 export { promptFor } from './chessRailViewModel.js';
@@ -285,6 +283,7 @@ export function PianoChessGame({
   const reading = isStaffScheme(liveScheme);
   const gameRef = useRef(game);
   gameRef.current = game;
+  const terminalSpeechRef = useRef(() => {});
   const projectAuthority = useCallback((authoritativeSession, nativeState = gameRef.current) => (
     projectChessAuthorityState(authoritativeSession.state, {
       playerColor,
@@ -457,6 +456,7 @@ export function PianoChessGame({
     } else if (event.type === 'moved' || event.type === 'game_over') {
       commitChessMove(event.move).then((authoritativeSession) => {
         const projected = projectAuthority(authoritativeSession, gameRef.current);
+        if (projected.status?.game_over) terminalSpeechRef.current(projected);
         setGame(projected);
         announce(projected);
         logger().info('move-played', { san: event.move.san, chords: projected.history.at(-1)?.chords });
@@ -499,6 +499,8 @@ export function PianoChessGame({
     opponentError,
     retryOpponent,
     resetOpponent,
+    speech: opponentSpeech,
+    showTerminalSpeech,
   } = useChessOpponentTurn({
     game,
     gameRef,
@@ -516,11 +518,13 @@ export function PianoChessGame({
     announce,
     logger: logger(),
     requestMove: requestOpponentMove,
+    requestQuip: requestOpponentQuip,
     commitAuthorityMove: async (candidate) => {
       const authoritativeSession = await commitChessMove(candidate);
       return projectAuthority(authoritativeSession, gameRef.current);
     },
   });
+  terminalSpeechRef.current = showTerminalSpeech;
 
   const {
     startedAt,
@@ -538,6 +542,7 @@ export function PianoChessGame({
     helpUsed,
     timing,
     playerColor,
+    commentary: opponentSpeech,
     logger: logger(),
     gateway: CHESS_PERSISTENCE_GATEWAY,
   });
@@ -758,17 +763,6 @@ export function PianoChessGame({
     reading,
     takebackArmed,
   });
-  const opponentSpeech = useChessOpponentSpeech({
-    gameId,
-    game,
-    level: ladderLevel,
-    playerColor,
-    userId: lockedUser,
-    fallback: cannedOpponentLine(mood),
-    requestQuip: requestOpponentQuip,
-    logger: logger(),
-  });
-
   return (
     <PianoGameHost
       gameId="chess"

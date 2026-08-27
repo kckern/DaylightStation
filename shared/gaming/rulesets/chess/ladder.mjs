@@ -54,11 +54,54 @@ export function themeForLevel(level) {
   return `hsl(${hue} ${saturation}% ${lightness}%)`;
 }
 
+const GENERIC_PERSONAS = Object.freeze([
+  'Curious and encouraging.', 'Sleepy but game for a challenge.', 'Thoughtful and gentle.',
+  'Cheerful and adventurous.', 'Bouncy and optimistic.', 'Patient and warm.',
+  'Friendly and snack-minded.', 'Calm and practical.', 'Quick-witted and bright.',
+  'Quietly determined.', 'Fair and observant.', 'Composed and patient.',
+  'Mysterious but kind.', 'Watchful and direct.', 'Bold and energetic.',
+  'Reserved and steady.', 'Sharp and playful.', 'Strong-willed and focused.',
+  'Tough and persistent.', 'Confident and exacting.', 'Formidable but respectful.',
+]);
+
+function profileText(value, max = 280) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : null;
+}
+
+function profileList(value, maxItems = 6, maxText = 48) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => profileText(item, maxText)).filter(Boolean).slice(0, maxItems);
+}
+
+/** Normalize authored speech data; callers never receive raw configuration objects. */
+export function normalizeDialogueProfile(value, legacyPersonality = null, level = 0, knownReferences = []) {
+  const raw = value && typeof value === 'object' ? value : {};
+  const lore = raw.lore && typeof raw.lore === 'object' ? raw.lore : {};
+  const persona = profileText(raw.persona) || profileText(legacyPersonality) || GENERIC_PERSONAS[level] || 'A friendly chess opponent.';
+  const chessVoice = profileText(raw.chess_voice)
+    || 'Speak naturally about the immediate game at an age-appropriate level; do not overclaim analysis.';
+  const references = profileList(lore.references);
+  return Object.freeze({
+    persona,
+    chess_voice: chessVoice,
+    lore: Object.freeze({
+      type: Object.freeze(profileList(lore.type, 3, 24)),
+      references: Object.freeze(references),
+      known_references: Object.freeze(profileList(knownReferences, 80, 48)),
+      use: references.length && lore.use === 'sparingly_as_playful_metaphor'
+        ? 'sparingly_as_playful_metaphor'
+        : 'never',
+    }),
+  });
+}
+
 export const DEFAULT_ROSTER = Object.freeze([
   'Pip', 'Dozy', 'Mumble', 'Clover', 'Tumble', 'Waddle', 'Biscuit',
   'Bramble', 'Piper', 'Quill', 'Ferris', 'Sable', 'Vesper', 'Corvin',
   'Talon', 'Grimsby', 'Vandal', 'Marrow', 'Skarn', 'Brutus', 'Malgrave',
-].map((name, level) => Object.freeze({ level, name, art: null, theme: themeForLevel(level) })));
+].map((name, level) => Object.freeze({
+  level, name, art: null, theme: themeForLevel(level), dialogue: normalizeDialogueProfile(null, null, level),
+})));
 
 /**
  * Promotion policy. Every number here is a judgement call, which is why they
@@ -141,6 +184,7 @@ export function resolveRoster(config) {
   const pack = ladder.roster_pack && ladder.rosters ? ladder.rosters[ladder.roster_pack] : null;
   const raw = Array.isArray(pack) && pack.length ? pack : ladder.roster;
   if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_ROSTER;
+  const knownReferences = profileList(ladder.lore_reference_vocabulary, 80, 48);
   return Object.freeze(DEFAULT_ROSTER.map((fallback, level) => {
     const entry = raw[level];
     if (entry === undefined || entry === null) return fallback;
@@ -154,9 +198,9 @@ export function resolveRoster(config) {
       theme: typeof entry.theme === 'string' && entry.theme ? entry.theme : fallback.theme,
       // Optional per-opponent piece set — a named style the board resolves.
       pieces: entry.pieces ?? null,
-      // A short voice note for cosmetic opponent dialogue. It never affects
-      // engine strength or promotion and stays server-resolved with the roster.
-      personality: typeof entry.personality === 'string' ? entry.personality.trim() : null,
+      // Authored speech content is server-resolved with the roster. `personality`
+      // remains a migration alias for old household configuration.
+      dialogue: normalizeDialogueProfile(entry.dialogue, entry.personality, level, knownReferences),
     });
   }));
 }
@@ -357,6 +401,6 @@ export function rungForLevel(level, policy) {
 
 export default {
   LADDER_SIZE, TOP_LEVEL, DEFAULT_ROSTER, DEFAULT_LADDER_POLICY, DEFAULT_LEVEL_RUNGS, themeForLevel,
-  resolvePolicy, resolveRoster, createLadderProgress, normalizeProgress, describeLevel,
+  resolvePolicy, resolveRoster, normalizeDialogueProfile, createLadderProgress, normalizeProgress, describeLevel,
   countsTowardPromotion, promotionStatus, applyGameToProgress, availableOpponents, rungForLevel,
 };

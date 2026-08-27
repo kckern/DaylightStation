@@ -16,7 +16,7 @@ import { safeSegment } from './lib/emulatorPaths.mjs';
  */
 export function createChessRouter({
   engine, configService, recordStore = null, archiveStore = null, ladderService = null,
-  commentaryService = null, analyst = null, logger = null,
+  commentaryService = null, rivalryMemory = null, analyst = null, logger = null,
 }) {
   const router = express.Router();
 
@@ -117,10 +117,10 @@ export function createChessRouter({
     if (!commentaryService) return res.status(501).json({ error: 'commentary_unavailable' });
     const user = resolveUser(req, res);
     if (user === undefined) return undefined;
-    const { gameId, ply, level, playerColor, game } = req.body || {};
+    const { gameId, ply, level, playerColor, game, dialogue } = req.body || {};
     try {
       const reaction = await commentaryService.react({
-        userId: user, gameId, ply, level, playerColor, game,
+        userId: user, gameId, ply, level, playerColor, game, dialogue,
       });
       return res.json(reaction);
     } catch (error) {
@@ -209,6 +209,11 @@ export function createChessRouter({
       addressing: record.addressing,
       opponent: record.opponent || null,
     });
+    if (record.completed && record.ended_by === 'game_over' && rivalryMemory) {
+      // Rivalry memory is derived from the durable archive. It is cosmetic, so
+      // a memory write can never turn a successfully saved game into a failure.
+      await rivalryMemory.recordArchive(record);
+    }
     return res.status(201).json({ archived: true });
   }));
 

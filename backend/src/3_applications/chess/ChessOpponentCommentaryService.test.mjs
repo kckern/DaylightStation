@@ -18,7 +18,14 @@ function serviceWith({ response = 'That knight has plans.', enabled = true } = {
       ladderService: {
         rungFor: vi.fn(async () => ({
           level: 0,
-          opponent: { name: 'Tempo', personality: 'Bright, brave, and a little cheeky' },
+          opponent: {
+            name: 'Tempo',
+            dialogue: {
+              persona: 'Bright, brave, and a little cheeky.',
+              chess_voice: 'Notices simple tactics without pretending to be an expert.',
+              lore: { type: ['bug'], references: ['String Shot'], known_references: ['String Shot', 'Poison Sting'], use: 'sparingly_as_playful_metaphor' },
+            },
+          },
         })),
       },
       readConfig: async () => ({ personality: { enabled } }),
@@ -38,6 +45,21 @@ describe('ChessOpponentCommentaryService', () => {
       expect.objectContaining({ role: 'user', content: expect.stringContaining('Tempo') }),
     ]), expect.objectContaining({ model: 'gpt-5.6-luna', reasoningEffort: 'none', maxTokens: 40 }));
     expect(chat.mock.calls[0][0][1].content).toContain('"san":"Nf6"');
+    expect(chat.mock.calls[0][0][1].content).toContain('Full current-game moves');
+    expect(chat.mock.calls[0][0][1].content).toContain('never use "barely looked"');
+    expect(chat.mock.calls[0][0][1].content).toContain('CHARACTER PERSONA: Bright, brave, and a little cheeky.');
+    expect(chat.mock.calls[0][0][1].content).toContain('CHESS VOICE: Notices simple tactics');
+    expect(chat.mock.calls[0][0][1].content).toContain('String Shot');
+  });
+
+  it('includes only shown in-game dialogue and compact rivalry context', async () => {
+    const { service, chat } = serviceWith();
+    const game = gameAfter('e4', 'Nf6');
+    await service.react({
+      gameId: 'g-history', ply: 2, level: 0, playerColor: 'w', game,
+      dialogue: [{ ply: 1, quip: 'A small step with plans.' }],
+    });
+    expect(chat.mock.calls[0][0][1].content).toContain('A small step with plans.');
   });
 
   it('falls back without holding the game hostage to bad output', async () => {
@@ -76,5 +98,22 @@ describe('normalizeQuip', () => {
   it('rejects emoji and hostile language', () => {
     expect(normalizeQuip('Nice move 😈')).toBeNull();
     expect(normalizeQuip('You are stupid.')).toBeNull();
+  });
+
+  it('rejects private chess notation, repeated wording, and unapproved lore', () => {
+    // Regressions drawn from the August 26 production transcript.
+    expect(normalizeQuip('Barely looked—okay, your pawn steps to f3!')).toBeNull();
+    expect(normalizeQuip('I see e4 coming.')).toBeNull();
+    expect(normalizeQuip('Qxd6 wins that piece.')).toBeNull();
+    expect(normalizeQuip('O-O keeps me safe.')).toBeNull();
+    expect(normalizeQuip('A clever little trap!', 96, {
+      dialogue: [{ ply: 2, quip: 'A clever little trap is waiting.' }],
+    })).toBeNull();
+    expect(normalizeQuip('Oops, rook check!', 96, {
+      dialogue: [{ ply: 2, quip: 'Oops, rook check!' }],
+    })).toBeNull();
+    const lore = { references: ['String Shot'], known_references: ['String Shot', 'Poison Sting'] };
+    expect(normalizeQuip('String Shot slows you down.', 96, { lore })).toBe('String Shot slows you down.');
+    expect(normalizeQuip('Poison Sting surprises you.', 96, { lore })).toBeNull();
   });
 });
