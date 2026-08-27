@@ -60,30 +60,37 @@ export default function ProgramDayBypassPanel({ learnerId, learnerName }) {
       unavailableCopy="Program excusals are not available on this install."
       alwaysRender
     >
-      <p className="teacher-panel__status">{statusLine(gate) ?? ' '}</p>
+      {statusLine(gate) && <p className="teacher-panel__status">{statusLine(gate)}</p>}
       {active ? (
-        <div className="teacher-enrichment__row">
-          <span className="teacher-enrichment__title">
-            Excused by {active.decidedBy} — {active.reason}
-          </span>
-          <span className="teacher-enrichment__dates">
-            {active.decidedAt ? teacherDate(active.decidedAt) : active.studyDate}
-          </span>
-          <textarea
-            aria-label="Retract reason"
-            placeholder="Why retract? (required)"
-            value={retractReason}
-            onChange={(e) => setRetractReason(e.target.value)}
-          />
-          <button
-            type="button"
-            disabled={busy === 'retract' || !retractReason.trim()}
-            onClick={retract}
-          >
-            Retract
-          </button>
-          {errors.retract && <p className="teacher-panel__error">{errors.retract}</p>}
-        </div>
+        // The `.teacher-enrichment` wrapper is load-bearing, not decoration:
+        // `.teacher-enrichment button` is a DESCENDANT rule, so a row outside
+        // it renders an unstyled browser button beside AttestationPanel's
+        // styled one. Same ul/li shape as that panel for the same reason.
+        <ul className="teacher-enrichment">
+          <li className="teacher-enrichment__row">
+            <span className="teacher-enrichment__title">
+              Excused by {active.decidedBy}
+            </span>
+            <span className="teacher-enrichment__dates">
+              {active.decidedAt ? teacherDate(active.decidedAt) : active.studyDate}
+            </span>
+            <span className="teacher-enrichment__note">{active.reason}</span>
+            <textarea
+              aria-label="Retract reason"
+              placeholder="Why retract? (required)"
+              value={retractReason}
+              onChange={(e) => setRetractReason(e.target.value)}
+            />
+            <button
+              type="button"
+              disabled={busy === 'retract' || !retractReason.trim()}
+              onClick={retract}
+            >
+              Retract
+            </button>
+            {errors.retract && <p className="teacher-panel__error">{errors.retract}</p>}
+          </li>
+        </ul>
       ) : (
         <div className="teacher-enrichment__form">
           <textarea

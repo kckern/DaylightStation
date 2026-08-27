@@ -570,6 +570,15 @@
     font-size: 13px;
     color: #8a8272;
   }
+
+  // Live state a write is about to act on (e.g. which lesson is owed today),
+  // as opposed to `__empty`'s "there is nothing here". Darker than empty
+  // because it is the fact the grown-up is deciding against, not filler.
+  &__status {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: #5d5647;
+  }
 }
 
 @keyframes teacher-shimmer {
