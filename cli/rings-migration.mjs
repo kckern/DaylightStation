@@ -49,6 +49,10 @@ const RULES = [
   { name: 'total-camel', re: /\btotalCoins\b/g, to: 'totalRings' },
   // Both formats: the v2 namespaced cumulative metric
   { name: 'coins-total', re: /\bcoins_total\b/g, to: 'rings_total' },
+  // treasureBox.coinTimeUnitMs — the ring award interval. Write-only in
+  // practice (TreasureBox.restore reads totalRings and buckets, never this),
+  // but leaving it would mean the verification pass never reaches zero.
+  { name: 'time-unit-camel', re: /\bcoinTimeUnitMs\b/g, to: 'ringTimeUnitMs' },
   // JSON: `"kckern:coins":` and `"global:coins":`
   { name: 'json-flat-series', re: /"([A-Za-z0-9_@#.-]+):coins"/g, to: '"$1:rings"' },
   // JSON: `"coins":`

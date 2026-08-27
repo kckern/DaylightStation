@@ -536,7 +536,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       musicPlaylists: Array.isArray(plex?.music_playlists) ? plex.music_playlists : [],
       ant_devices: root?.ant_devices || {},
       usersConfig: root?.users || {},
-      ringTimeUnitMs: root?.ring_time_unit_ms,
+      // `coin_time_unit_ms` is the pre-rename config key and is still what
+      // data/system/config/fitness.yml carries. Reading only the new name made
+      // TreasureBox fall back to its 5000ms default instead of the configured
+      // 60000ms — awarding rings TWELVE TIMES too fast, silently, on every new
+      // session. Both names are accepted until the config is migrated.
+      ringTimeUnitMs: root?.ring_time_unit_ms ?? root?.coin_time_unit_ms,
       zoneConfig: root?.zones,
       governanceConfig: {
         ...governance,

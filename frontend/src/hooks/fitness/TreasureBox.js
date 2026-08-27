@@ -183,8 +183,13 @@ export class FitnessTreasureBox {
    */
   restore(saved) {
     if (!saved) return;
-    if (typeof saved.totalRings === 'number') {
-      this.totalRings = saved.totalRings;
+    // `totalCoins` is the pre-2026-08-26 name. Restoring a session written
+    // before the rename must not silently reset the count to zero — that would
+    // look like the ledger, not like a read failure.
+    const savedTotal = typeof saved.totalRings === 'number' ? saved.totalRings
+      : (typeof saved.totalCoins === 'number' ? saved.totalCoins : null);
+    if (savedTotal !== null) {
+      this.totalRings = savedTotal;
     }
     if (saved.buckets && typeof saved.buckets === 'object') {
       this.buckets = { ...saved.buckets };

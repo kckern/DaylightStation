@@ -457,8 +457,8 @@ function GovernanceSection({ data, update }) {
         />
         <NumberInput
           label="Ring Time Unit (ms)"
-          description="Root-level: ring_time_unit_ms"
-          value={data.ring_time_unit_ms ?? ''}
+          description="Root-level: ring_time_unit_ms (legacy: coin_time_unit_ms)"
+          value={data.ring_time_unit_ms ?? data.coin_time_unit_ms ?? ''}
           onChange={(val) => update('ring_time_unit_ms', val)}
         />
       </SimpleGrid>

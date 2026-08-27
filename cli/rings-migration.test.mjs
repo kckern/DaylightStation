@@ -84,3 +84,15 @@ describe('scope guard', () => {
     expect(ALLOWED_ROOTS.some((r) => r.includes('school'))).toBe(false);
   });
 });
+
+describe('the ring award interval', () => {
+  it('renames treasureBox.coinTimeUnitMs', () => {
+    expect(migrateText('  coinTimeUnitMs: 60000\n').text).toBe('  ringTimeUnitMs: 60000\n');
+    expect(migrateText('"coinTimeUnitMs":5000').text).toBe('"ringTimeUnitMs":5000');
+  });
+
+  it('still leaves prose alone with the new rule in place', () => {
+    const prose = 'She paid three coins for the ring, coincidentally.';
+    expect(migrateText(prose).changed).toBe(false);
+  });
+});
