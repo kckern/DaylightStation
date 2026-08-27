@@ -212,6 +212,12 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
         if (state.learnerId !== learnerId) continue;
         const last = events[events.length - 1];
         out.push({ sessionId, day: events[0]?.at?.slice(0, 10) ?? null, row: {
+          // `day` above is the UTC date the log was OPENED; `studyDay` is the
+          // household's own 4am-boundary day, minted timezone-aware when the
+          // session was created. West of UTC the two disagree for everything
+          // after late afternoon local, so a consumer bucketing by day needs
+          // the real one — `studyDay ?? day` — not the timestamp slice.
+          studyDay: state.studyDay ?? null,
           learnerId: state.learnerId, unitId: state.unitId, state: state.state,
           open: !state.terminal, result: state.outcome?.result ?? null,
           gradedPercent: state.gradedPercent ?? null, updatedAt: last?.at ?? null,
@@ -249,6 +255,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
         outcome: row.result ? { result: row.result } : null,
         gradedPercent: row.gradedPercent ?? null,
         day,
+        studyDay: row.studyDay ?? null,
         updatedAt: row.updatedAt ?? null,
       });
     }

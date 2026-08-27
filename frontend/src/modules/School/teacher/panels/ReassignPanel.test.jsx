@@ -39,16 +39,25 @@ const ok = (data) => ({ ok: true, status: 200, data });
 /** A quiz with recorded answers, and a program lesson with none. */
 const seed = ({ sessions = null } = {}) => {
   schoolApi.attemptDays.mockResolvedValue(ok({ days: ['2026-08-26'] }));
+  // EVERY seeded unit is named. A catalog that knows only one of them makes the
+  // other rows render 'Lesson title unavailable', and an assertion that the
+  // quiz/other-day rows are absent then passes because their titles never
+  // existed — not because the filters work.
   schoolApi.curriculumUnits.mockResolvedValue(ok({ units: [
     { unitId: 'korean.day-12', title: 'Korean — day 12', courseId: 'korean', courseTitle: 'Korean' },
+    { unitId: 'korean.day-11', title: 'Korean — day 11', courseId: 'korean', courseTitle: 'Korean' },
+    { unitId: 'creatures.01', title: 'Creatures — lesson 1', courseId: 'creatures', courseTitle: 'Creatures' },
   ] }));
   schoolApi.attemptsSummary.mockResolvedValue(ok({ assessments: [
     { assessmentId: 'ses_quiz', count: 8, title: 'Creature Quiz 1' },
   ] }));
+  // `ses_program` is an EVENING lesson: opened 2026-08-26 after 17:00 PDT, so
+  // its UTC `day` is the 27th while the household's study day is still the
+  // 26th. Bucketing by `day` would file it under a date the child never worked.
   schoolApi.learnerSessions.mockResolvedValue(ok({ sessions: sessions ?? [
-    { sessionId: 'ses_quiz', unitId: 'creatures.01', state: 'rewarded', day: '2026-08-26' },
-    { sessionId: 'ses_program', unitId: 'korean.day-12', state: 'rewarded', day: '2026-08-26' },
-    { sessionId: 'ses_other_day', unitId: 'korean.day-11', state: 'rewarded', day: '2026-08-25' },
+    { sessionId: 'ses_quiz', unitId: 'creatures.01', state: 'rewarded', day: '2026-08-26', studyDay: '2026-08-26' },
+    { sessionId: 'ses_program', unitId: 'korean.day-12', state: 'rewarded', day: '2026-08-27', studyDay: '2026-08-26' },
+    { sessionId: 'ses_other_day', unitId: 'korean.day-11', state: 'rewarded', day: '2026-08-25', studyDay: '2026-08-25' },
   ] }));
   schoolApi.reassignSession.mockResolvedValue(ok({ sessionId: 'ses_program', toLearnerId: 'learner-b' }));
 };
@@ -71,12 +80,17 @@ describe('ReassignPanel — work with no machine attempts', () => {
     // own list, named rather than shown as a raw unit id.
     await waitFor(() => expect(screen.getByText('Korean — day 12')).toBeTruthy());
     expect(screen.getByText('Creature Quiz 1')).toBeTruthy();
-    // A session the attempts summary already covers is not listed twice.
-    expect(screen.getAllByText(/Creature Quiz 1|creatures\.01/)).toHaveLength(1);
-    // Another day's work is not this day's work.
-    expect(screen.queryByText('korean.day-11')).toBeNull();
+    // EXACTLY ONE movable session row. `ses_quiz` is covered by the attempts
+    // list above and `ses_other_day` belongs to another day; both units are in
+    // the catalog, so if either filter were dropped its title would render here
+    // and this count would be 2 or 3.
+    const sessionRows = screen.getAllByText('Re-credit').map((b) => b.closest('li'));
+    expect(sessionRows).toHaveLength(1);
+    expect(within(sessionRows[0]).getByText('Korean — day 12')).toBeTruthy();
+    expect(screen.queryByText('Creatures — lesson 1')).toBeNull();
+    expect(screen.queryByText('Korean — day 11')).toBeNull();
 
-    const row = screen.getByText('Korean — day 12').closest('li');
+    const row = sessionRows[0];
     const recredit = within(row).getByText('Re-credit');
     // No target and no reason: the verb is not offerable yet.
     expect(recredit.disabled).toBe(true);
@@ -127,5 +141,30 @@ describe('ReassignPanel — work with no machine attempts', () => {
     await waitFor(() => expect(screen.getByText('2026-08-26')).toBeTruthy());
     expect(schoolApi.attemptDays).toHaveBeenCalledWith('learner-a');
     expect(screen.getByText('2026-08-25')).toBeTruthy();
+  });
+
+  it('buckets an evening lesson by its study day, not by the UTC date it was opened', async () => {
+    // `ses_program` carries day 2026-08-27 / studyDay 2026-08-26. Reading `day`
+    // would offer a 27th button that no work belongs to and hide the lesson
+    // from the 26th — the day the child actually did it, and the day the child
+    // is told about in their own note.
+    seed();
+    render(<ReassignPanel learnerId="learner-a" learnerName="Learner A" kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText('2026-08-26')).toBeTruthy());
+    expect(screen.queryByText('2026-08-27')).toBeNull();
+    await loadTheDay('2026-08-26');
+    await waitFor(() => expect(screen.getByText('Korean — day 12')).toBeTruthy());
+  });
+
+  it('falls back to ids and says so when lesson names could not be loaded', async () => {
+    // Every row reading 'Lesson title unavailable' beside a live Re-credit
+    // button is how a grown-up moves the wrong lesson.
+    seed();
+    schoolApi.curriculumUnits.mockResolvedValue({ ok: false, status: 500, data: null });
+    render(<ReassignPanel learnerId="learner-a" learnerName="Learner A" kids={KIDS} />);
+    await loadTheDay();
+    await waitFor(() => expect(screen.getByText('korean.day-12')).toBeTruthy());
+    expect(screen.getByText(/Lesson names couldn’t be loaded/)).toBeTruthy();
+    expect(screen.queryByText('Lesson title unavailable')).toBeNull();
   });
 });

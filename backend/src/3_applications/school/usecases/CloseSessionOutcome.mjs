@@ -599,13 +599,25 @@ export class CloseSessionOutcome {
 
     const txnId = earned?.txnId ?? outcome.outcomeId;
     const amount = earned?.earned ?? 0;
-    await this.#recordRewarded({ sessionId, nowIso, txnId, amount });
+    // `paidTo` is the child the coins were actually credited to, which is the
+    // same id `economy.earn` was just called with. It matters later: a session
+    // can be reassigned after it was rewarded, and a grade correction that
+    // reverses this payment must debit whoever HOLDS the coins, not whoever
+    // the session is credited to by then.
+    await this.#recordRewarded({ sessionId, nowIso, txnId, amount, paidTo: state.learnerId });
     this.#logger.info?.('school.reward.awarded', { sessionId, unitId: state.unitId, amount, txnId, ref: decision.ref });
     return { amount, txnId, skipReason: null };
   }
 
-  async #recordRewarded({ sessionId, nowIso, txnId, amount }) {
-    const { errors, event } = createEvent({ type: 'rewarded', at: nowIso, sessionId, txnId, amount });
+  async #recordRewarded({ sessionId, nowIso, txnId, amount, paidTo = null }) {
+    const { errors, event } = createEvent({
+      type: 'rewarded', at: nowIso, sessionId, txnId, amount,
+      // Only when coins actually moved. A skipped or zero reward holds nothing
+      // for anybody, so naming a payee would be a claim about a payment that
+      // never happened — and would send a later correction's credit to the
+      // wrong child on a session that was reassigned in between.
+      ...(Number.isInteger(amount) && amount > 0 && paidTo ? { paidTo } : {}),
+    });
     if (errors.length) {
       this.#logger.warn?.('school.reward.unrecordable', { sessionId, errors });
       return;

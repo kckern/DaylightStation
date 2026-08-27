@@ -200,9 +200,15 @@ retryable immediately rather than blocked by the cooldown.
 `reassigned` is legal at a terminal state for the same reason `grade_adjusted`
 is: it changes **attribution**, never lifecycle position. The wrong child's
 name is usually discovered after the coins have been paid, and settled work
-must not be the one work that can never be given back. The coin ledger is not
-rewritten by the move — where coins have to follow, the existing reward
-reconciliation is the mechanism, as it is for a corrected grade.
+must not be the one work that can never be given back.
+
+**Coins do not follow the move, and nothing moves them afterwards.** The ledger
+is not rewritten by an attribution change and no code path debits one child to
+credit another; a grown-up who wants the coins moved does that by hand. What the
+move must not do is make a *later* correction pay the wrong child, so `rewarded`
+records `paidTo` — the child who actually holds the coins — and reward
+reconciliation reverses against that name rather than against whoever the
+session is credited to now.
 
 ### What a teacher can do, per state
 

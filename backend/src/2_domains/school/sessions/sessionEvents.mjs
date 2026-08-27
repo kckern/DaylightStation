@@ -209,7 +209,21 @@ const SCHEMA = {
     fields: ['outcomeId', 'result', 'reason'],
     validate: allOf(stringField('outcomeId'), oneOfField('result', RESULTS)),
   },
-  rewarded: { fields: ['txnId', 'amount'], validate: stringField('txnId') },
+  // `paidTo` (optional) is WHICH CHILD actually holds these coins. It is not
+  // redundant with the session's credited learner: `reassigned` is legal at
+  // `rewarded`, so a session can be re-credited AFTER it paid, and from that
+  // moment the derived `learnerId` and the child holding the coins are two
+  // different people. A later grade correction reconciles the reward by
+  // applying a delta — reversing a payment against whoever `learnerId` names
+  // now would debit a child who was never paid, and pay the household's coins
+  // out twice on a raise. Reconciliation therefore targets THIS field.
+  //
+  // Written only when a positive amount actually moved (see
+  // `CloseSessionOutcome.#recordRewarded`). A skipped or zero reward holds no
+  // coins for anybody, so it names nobody, and reconciliation falls back to the
+  // currently credited learner — which is also the behaviour every session
+  // rewarded before this field existed keeps.
+  rewarded: { fields: ['txnId', 'amount', 'paidTo'], validate: stringField('txnId') },
   reward_reconciled: {
     fields: ['reconciliationId', 'delta', 'txnId', 'sourceAdjustmentId'],
     validate: allOf(stringField('reconciliationId'), stringField('txnId'), (raw, push) => {
@@ -349,9 +363,12 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
  *   wrong child's name on a `rewarded` lesson is exactly the moment the move
  *   is needed, and leaving it illegal there would mean settled work is the one
  *   work that can never be given back to whoever actually did it. The coin
- *   ledger is NOT rewritten by an attribution change — where coins have to
- *   follow, the reward reconciliation above is the mechanism, exactly as it is
- *   for a corrected grade.
+ *   ledger is NOT rewritten by an attribution change, and NOTHING moves it
+ *   afterwards: no code path debits one child and credits another. The coins
+ *   stay with whoever was paid, which is why `rewarded` records `paidTo` — so
+ *   that a later reconciliation reverses the payment against the child who
+ *   actually holds it. Making a reassignment move coins is a household-economy
+ *   decision nobody has taken.
  */
 const TERMINAL_ANNOTATIONS = new Set([
   'grade_adjusted', 'grade_adjustment_retracted', 'reward_reconciled', 'reward_reconciliation_failed',
@@ -517,6 +534,10 @@ const emptyState = () => ({
   machineOutcome: null,
   rewardTxn: null,
   rewardAmount: 0,
+  // The child holding the coins this session paid — NOT necessarily the child
+  // it is now credited to, because a session can be reassigned after it was
+  // rewarded. Null when nothing was paid. See the `rewarded` schema comment.
+  rewardPaidTo: null,
   rewardReconciliations: [],
   remediationOf: null,
   remediationItemIds: [],
@@ -648,7 +669,11 @@ const APPLY = {
     s.outcome = { outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at };
     s.machineOutcome = { ...s.outcome };
   },
-  rewarded(s, e) { s.rewardTxn = e.txnId ?? null; s.rewardAmount = Number.isInteger(e.amount) ? e.amount : 0; },
+  rewarded(s, e) {
+    s.rewardTxn = e.txnId ?? null;
+    s.rewardAmount = Number.isInteger(e.amount) ? e.amount : 0;
+    if (isNonEmptyString(e.paidTo)) s.rewardPaidTo = e.paidTo;
+  },
   reward_reconciled(s, e) {
     s.rewardAmount += e.delta;
     s.rewardReconciliations.push({ reconciliationId: e.reconciliationId, delta: e.delta,
