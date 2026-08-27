@@ -1370,6 +1370,11 @@
     dt { color: #8a8272; font-weight: 700; }
     dd { margin: 0; }
     em { color: #8a8272; font-style: italic; }
+    // A managed fact links to the syllabus that set it — same understated
+    // treatment as .teacher-curriculum__preview, so it reads as a pointer,
+    // not a button.
+    a { color: #604521; font-weight: 700; text-decoration: none; border-bottom: 1px dotted #604521; }
+    a:hover { text-decoration: none; border-bottom-style: solid; }
   }
 
   &__note {
@@ -1435,6 +1440,8 @@
   color: #5d5647;
   font-size: 0.78rem;
   font-style: italic;
+
+  a { color: #604521; font-style: normal; font-weight: 700; }
 }
 
 .teacher-stale { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }

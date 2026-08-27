@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { teacherLog } from '../teacherLog.js';
+import { teacherSectionPath } from '../teacherUrl.js';
 
 export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Course title unavailable', cell, syllabi = [], baseUpdatedAt = null, onClose, onChanged }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'enrollment' });
@@ -57,14 +58,33 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
         <button type="button" onClick={onClose} aria-label="Close" ref={closeRef}>✕</button>
       </header>
 
+      {/* These three facts are read-only for a reason: their one home is the
+          syllabus (`EnrollLearner.mjs` copies profile/passing off it at
+          materialization time), and a second place to set the same value is
+          how the two-vocabularies problem starts (docs/reference/school/teacher.md
+          §7). What they were missing was a way OUT — a `managed` cell (has a
+          syllabusId) links each fact to the syllabus that actually set it, on
+          the Curriculum page's Syllabi panel, instead of dead-ending here. A
+          hand-authored cell has no syllabus to send anyone to, so it stays
+          plain text. */}
       {cell?.enrolled && (
         <dl className="teacher-drawer__facts">
           <dt>Syllabus</dt>
-          <dd>{cell.syllabusTitle ?? <em>not managed by a syllabus</em>}</dd>
+          <dd>{cell.managed
+            ? <a href={teacherSectionPath('curriculum')} title="Edit on Curriculum → Syllabi">{cell.syllabusTitle}</a>
+            : <em>not managed by a syllabus</em>}</dd>
           <dt>Profile</dt>
-          <dd>{cell.profile ?? <em>none</em>}</dd>
+          <dd>{cell.profile == null
+            ? <em>none</em>
+            : cell.managed
+              ? <a href={teacherSectionPath('curriculum')} title="Set by the syllabus — edit on Curriculum → Syllabi">{cell.profile}</a>
+              : cell.profile}</dd>
           <dt>Pass bar</dt>
-          <dd>{cell.passing != null ? `${cell.passing}%` : <em>course default</em>}</dd>
+          <dd>{cell.passing == null
+            ? <em>course default</em>
+            : cell.managed
+              ? <a href={teacherSectionPath('curriculum')} title="Set by the syllabus — edit on Curriculum → Syllabi">{`${cell.passing}%`}</a>
+              : `${cell.passing}%`}</dd>
         </dl>
       )}
 
