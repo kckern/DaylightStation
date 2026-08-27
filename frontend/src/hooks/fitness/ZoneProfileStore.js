@@ -8,8 +8,12 @@ const cloneZoneConfig = (config = []) => {
     name: zone?.name ?? zone?.id ?? `Zone ${index + 1}`,
     color: zone?.color || null,
     min: Number.isFinite(zone?.min) ? zone.min : null,
-    // Preserve rings field for TreasureBox configuration
-    rings: Number.isFinite(zone?.rings) ? zone.rings : 0
+    // Preserve rings field for TreasureBox configuration.
+    // `coins` is the pre-rename field name; a config or per-user override
+    // written before 2026-08-26 still carries it, and reading only `rings`
+    // silently zeroes every award with no error anywhere in the chain.
+    rings: Number.isFinite(zone?.rings) ? zone.rings
+      : (Number.isFinite(zone?.coins) ? zone.coins : 0)
   }));
 };
 
