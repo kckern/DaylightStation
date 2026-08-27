@@ -205,10 +205,14 @@ must not be the one work that can never be given back.
 **Coins do not follow the move, and nothing moves them afterwards.** The ledger
 is not rewritten by an attribution change and no code path debits one child to
 credit another; a grown-up who wants the coins moved does that by hand. What the
-move must not do is make a *later* correction pay the wrong child, so `rewarded`
-records `paidTo` — the child who actually holds the coins — and reward
-reconciliation reverses against that name rather than against whoever the
-session is credited to now.
+move must not do is make a *later* correction pay the wrong child. So the
+session's derived state tracks **who holds the coins** — set by the award, and
+updated by any reconciliation that moves them — and a reversal debits that name
+rather than whoever the session is credited to now. A balance back at zero is
+held by nobody, so the next credit goes to whoever the work belongs to by then.
+This applies to sessions rewarded before the field existed too: where the event
+does not name a payee the reducer derives one, which is exact, because a
+reassignment could not legally follow a reward until it became legal here.
 
 ### What a teacher can do, per state
 

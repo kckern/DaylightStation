@@ -225,7 +225,11 @@ const SCHEMA = {
   // rewarded before this field existed keeps.
   rewarded: { fields: ['txnId', 'amount', 'paidTo'], validate: stringField('txnId') },
   reward_reconciled: {
-    fields: ['reconciliationId', 'delta', 'txnId', 'sourceAdjustmentId'],
+    // `paidTo` (optional): whose balance this delta actually landed on. A
+    // reconciliation moves coins, so it can create a payee the award never
+    // named — see `APPLY.reward_reconciled`. Declared here or `createEvent`
+    // drops it, like every other field on this table.
+    fields: ['reconciliationId', 'delta', 'txnId', 'sourceAdjustmentId', 'paidTo'],
     validate: allOf(stringField('reconciliationId'), stringField('txnId'), (raw, push) => {
       if (!Number.isInteger(raw.delta) || raw.delta === 0) push('delta: must be a non-zero integer');
     }),
@@ -365,10 +369,14 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
  *   work that can never be given back to whoever actually did it. The coin
  *   ledger is NOT rewritten by an attribution change, and NOTHING moves it
  *   afterwards: no code path debits one child and credits another. The coins
- *   stay with whoever was paid, which is why `rewarded` records `paidTo` — so
- *   that a later reconciliation reverses the payment against the child who
- *   actually holds it. Making a reassignment move coins is a household-economy
- *   decision nobody has taken.
+ *   stay with whoever was paid — which is why the fold tracks `rewardPaidTo`
+ *   across both `rewarded` and `reward_reconciled`, so that a later
+ *   reconciliation reverses a payment against the child who actually holds it
+ *   rather than whoever the work is credited to by then. That holds for every
+ *   log in the store, not only ones written since: where the event carries no
+ *   payee the fold derives one, and it is exact, because a reassignment could
+ *   not legally follow a reward until this change. Making a reassignment MOVE
+ *   coins is a household-economy decision nobody has taken.
  */
 const TERMINAL_ANNOTATIONS = new Set([
   'grade_adjusted', 'grade_adjustment_retracted', 'reward_reconciled', 'reward_reconciliation_failed',
@@ -672,10 +680,29 @@ const APPLY = {
   rewarded(s, e) {
     s.rewardTxn = e.txnId ?? null;
     s.rewardAmount = Number.isInteger(e.amount) ? e.amount : 0;
-    if (isNonEmptyString(e.paidTo)) s.rewardPaidTo = e.paidTo;
+    // Stamp first, DERIVE second. Every log written before `paidTo` existed
+    // carries none, and those sessions are not safe just because they are old:
+    // the session can be reassigned tomorrow, and the reversal that follows
+    // must still find the child who was paid. The derivation is exact for all
+    // of them — a reassignment could not legally follow a reward until this
+    // change, so at the instant `rewarded` folds, `s.learnerId` IS the id
+    // `economy.earn` was called with. Zero paid, nobody named.
+    s.rewardPaidTo = isNonEmptyString(e.paidTo)
+      ? e.paidTo
+      : (Number.isInteger(e.amount) && e.amount > 0 ? s.learnerId : s.rewardPaidTo);
   },
   reward_reconciled(s, e) {
     s.rewardAmount += e.delta;
+    // A reconciliation MOVES COINS TOO, so it can create a payee where the
+    // award named none — a session that closed unpaid, was reassigned, then
+    // corrected upward paid the child credited at that moment. Same
+    // stamp-then-derive rule, and for the same reason: reconciliations already
+    // on disk carry no `paidTo` and must still resolve to whoever holds the
+    // balance. A balance back at zero is held by nobody, so it names nobody
+    // and the next credit goes to whoever the work belongs to by then.
+    if (isNonEmptyString(e.paidTo)) s.rewardPaidTo = e.paidTo;
+    else if (s.rewardPaidTo === null) s.rewardPaidTo = s.learnerId;
+    if (!(s.rewardAmount > 0)) s.rewardPaidTo = null;
     s.rewardReconciliations.push({ reconciliationId: e.reconciliationId, delta: e.delta,
       txnId: e.txnId, sourceAdjustmentId: e.sourceAdjustmentId ?? null, at: e.at, status: 'applied' });
   },

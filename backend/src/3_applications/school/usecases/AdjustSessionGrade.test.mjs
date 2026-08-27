@@ -198,11 +198,69 @@ describe('reward reconciliation after a reassignment', () => {
     expect(economy.adjust.mock.calls.map(([learnerId]) => learnerId)).not.toContain('kid2');
   });
 
-  it('falls back to the credited learner for an award that named no payee', async () => {
-    // Every session rewarded before `paidTo` existed, and every zero/skipped
-    // reward: unchanged behaviour, which is what the fallback is for.
-    const { economy, adjust } = build(paidThenReassigned({ paidTo: null }));
+  it('debits the original child on a LEGACY award that names no payee at all', async () => {
+    // The exposure is not historical events — it is a future move on a
+    // historical session, which is exactly what this branch makes possible.
+    // Every session rewarded before `paidTo` existed carries none, and nothing
+    // backfills them; the reducer derives the payee instead, which is exact
+    // because a reassignment could not legally follow a reward until now.
+    const { log, economy, adjust } = build(paidThenReassigned({ paidTo: null }));
+    expect(reduceSession(log)).toMatchObject({ learnerId: 'kid2', rewardPaidTo: 'kid1', rewardAmount: 5 });
     await failIt(adjust);
-    expect(economy.adjust).toHaveBeenCalledWith('kid2', expect.objectContaining({ delta: -5 }));
+    expect(economy.adjust).toHaveBeenCalledWith('kid1', expect.objectContaining({ delta: -5 }));
+    expect(economy.adjust.mock.calls.map(([learnerId]) => learnerId)).not.toContain('kid2');
+  });
+
+  /**
+   * A RECONCILIATION MOVES COINS TOO.
+   *
+   * An unpaid session (`rewarded`, amount 0) names no payee, so a credit that
+   * arrives later by correction creates one that the award never recorded. Every
+   * step below is legal — `grade_adjusted`, `grade_adjustment_retracted` and
+   * `reassigned` are all annotations legal at a terminal state — so the second
+   * move has to find the child holding coins the FIRST correction paid.
+   */
+  it('follows the coins through a correction, a second move, and a retraction', async () => {
+    const unpaidThenReassigned = [
+      { type: 'created', at: '2026-08-01T10:00:00.000Z', sessionId: 'ses_1', seq: 1, learnerId: 'kid1', unitId: 'math' },
+      { type: 'issued', at: '2026-08-01T10:01:00.000Z', sessionId: 'ses_1', seq: 2, artifactId: 'art_1' },
+      { type: 'submitted', at: '2026-08-01T10:02:00.000Z', sessionId: 'ses_1', seq: 3, transport: 'paper' },
+      { type: 'graded', at: '2026-08-01T10:03:00.000Z', sessionId: 'ses_1', seq: 4,
+        attemptIds: ['att_1'], percent: 40, passingPercent: 80, correctCount: 1, totalCount: 2 },
+      { type: 'outcome_recorded', at: '2026-08-01T10:04:00.000Z', sessionId: 'ses_1', seq: 5, outcomeId: 'out_1', result: 'needs_remediation' },
+      // Closed unpaid: nobody holds anything, so nobody is named.
+      { type: 'rewarded', at: '2026-08-01T10:05:00.000Z', sessionId: 'ses_1', seq: 6, txnId: 'txn_1', amount: 0 },
+      { type: 'reassigned', at: '2026-08-02T09:00:00.000Z', sessionId: 'ses_1', seq: 7,
+        fromLearnerId: 'kid1', toLearnerId: 'kid2', reviewedBy: 'parent', reason: 'kid2 did this one' },
+    ];
+    const { log, economy, adjust } = build(unpaidThenReassigned);
+    expect(reduceSession(log).rewardPaidTo).toBeNull();
+
+    // Corrected up: kid2 is credited 5, and now holds them.
+    await adjust.execute({ sessionId: 'ses_1', adjustmentId: 'adj_up', percent: 100,
+      reason: 'scanner missed the second page', adjustedBy: 'parent', baseSeq: 7, apply: true });
+    expect(economy.adjust).toHaveBeenLastCalledWith('kid2', expect.objectContaining({ delta: 5 }));
+    expect(reduceSession(log)).toMatchObject({ rewardAmount: 5, rewardPaidTo: 'kid2' });
+
+    // Moved again, to kid3 — the coins do not travel with the attribution.
+    log.push({ type: 'reassigned', at: '2026-08-03T09:00:00.000Z', sessionId: 'ses_1', seq: log.length + 1,
+      fromLearnerId: 'kid2', toLearnerId: 'kid3', reviewedBy: 'parent', reason: 'it was kid3 after all' });
+    expect(reduceSession(log)).toMatchObject({ learnerId: 'kid3', rewardPaidTo: 'kid2' });
+
+    // Retracted: the 5 comes back off kid2, who is holding it — not off kid3.
+    const retract = new RetractSessionGradeAdjustment({
+      sessions: { readEvents: async () => log.map((e) => ({ ...e })),
+        appendEvent: async (sessionId, event) => { const stored = { ...event, sessionId, seq: log.length + 1 }; log.push(stored); return stored; } },
+      teacherGate: { assert: vi.fn() }, economy,
+      curriculum: { getUnit: vi.fn(async () => ({ reward: { amount: 5 } })) },
+      economyEnabled: true, clock: () => new Date('2026-08-03T12:00:00.000Z'), logger: { info() {}, warn() {} },
+    });
+    await retract.execute({ sessionId: 'ses_1', adjustmentId: 'adj_up',
+      reason: 'the correction was wrong', retractedBy: 'parent', baseSeq: log.length, apply: true });
+    expect(economy.adjust).toHaveBeenLastCalledWith('kid2', expect.objectContaining({ delta: -5 }));
+    expect(economy.adjust.mock.calls.map(([learnerId]) => learnerId)).not.toContain('kid3');
+    // Balance back to zero: held by nobody, so the next credit is free to
+    // follow the work rather than chasing a stale name.
+    expect(reduceSession(log)).toMatchObject({ rewardAmount: 0, rewardPaidTo: null });
   });
 });

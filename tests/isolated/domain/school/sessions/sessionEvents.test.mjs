@@ -605,6 +605,57 @@ describe('reduceSession: annotation events', () => {
   });
 });
 
+/**
+ * WHO HOLDS THE COINS is not the same question as who the work belongs to, and
+ * has not been since `reassigned` became legal at `rewarded`. A reversal that
+ * asks the wrong one debits a child who was never paid.
+ */
+describe('reduceSession: rewardPaidTo', () => {
+  const PAID = ['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'rewarded'];
+  const paidLog = (rewarded = {}) => log(PAID, { rewarded: { txnId: 'txn_1', amount: 5, ...rewarded } });
+
+  it('derives the payee from the credited learner when the award names none', () => {
+    // Every award written before `paidTo` existed. Exact, because a
+    // reassignment could not legally follow a reward until it became legal.
+    expect(reduceSession(paidLog()).rewardPaidTo).toBe('kid1');
+  });
+
+  it('prefers the explicitly recorded payee', () => {
+    expect(reduceSession(paidLog({ paidTo: 'kid9' })).rewardPaidTo).toBe('kid9');
+  });
+
+  it('names nobody when nothing was paid', () => {
+    expect(reduceSession(log(PAID, { rewarded: { txnId: 'txn_1', amount: 0 } })).rewardPaidTo).toBeNull();
+  });
+
+  it('leaves the payee where it is when the work is reassigned afterwards', () => {
+    const events = paidLog();
+    const state = reduceSession([...events, { ...ev('reassigned'), seq: events.length + 1 }]);
+    expect(state.errors).toEqual([]);
+    // The work is kid2's now; the coins are still kid1's.
+    expect(state.learnerId).toBe('kid2');
+    expect(state.rewardPaidTo).toBe('kid1');
+  });
+
+  it('moves the payee to whoever a reconciliation actually paid, and clears it at zero', () => {
+    const events = paidLog({ amount: 0 });
+    const reassigned = { ...ev('reassigned'), seq: events.length + 1 };
+    const credited = { type: 'reward_reconciled', at: AT, sessionId: SID, seq: events.length + 2,
+      reconciliationId: 'rec_up', delta: 5, txnId: 'txn_2' };
+    // A session that closed unpaid, moved, then was corrected upward: the
+    // credit created a holder the award never named.
+    const afterCredit = reduceSession([...events, reassigned, credited]);
+    expect(afterCredit.rewardPaidTo).toBe('kid2');
+    expect(afterCredit.rewardAmount).toBe(5);
+
+    const reversed = reduceSession([...events, reassigned, credited,
+      { type: 'reward_reconciled', at: AT, sessionId: SID, seq: events.length + 3,
+        reconciliationId: 'rec_down', delta: -5, txnId: 'txn_3' }]);
+    expect(reversed.rewardAmount).toBe(0);
+    expect(reversed.rewardPaidTo).toBeNull();
+  });
+});
+
 describe('reduceSession: remediation lineage', () => {
   it('links forward to the session opened from a failed outcome', () => {
     const state = reduceSession(log(

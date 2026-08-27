@@ -160,8 +160,12 @@ export class AdjustSessionGrade {
         delta, source: 'school-grade-correction', ref: reconciliationId,
         note: `Session ${sessionId}; adjustment ${sourceAdjustmentId}`,
       });
+      // Record WHOSE balance this landed on. Without it a reconciliation that
+      // paid a previously-unpaid session names no holder, and a later move plus
+      // a retraction would debit the coins off whoever the work belongs to by
+      // then instead of off the child actually holding them.
       const built = createEvent({ type: 'reward_reconciled', at, sessionId, reconciliationId,
-        delta, txnId: adjusted?.txnId ?? reconciliationId, sourceAdjustmentId });
+        delta, txnId: adjusted?.txnId ?? reconciliationId, sourceAdjustmentId, paidTo: payee });
       if (built.errors.length) throw new ValidationError(built.errors.join('; '));
       await this.#sessions.appendEvent(sessionId, built.event);
       return { status: 'applied', applied: true, idempotent: adjusted?.idempotent === true,
