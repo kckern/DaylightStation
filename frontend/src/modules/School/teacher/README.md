@@ -27,8 +27,9 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 | "N subjects need a grown-up →" strip, above the roster | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
 | The Records tab, day record, session detail | `RecordsTab`, `WorkspaceViews` | `tabs/RecordsTab.jsx`, `WorkspaceViews.jsx`, `panels/LearnerDayView.jsx` |
 
-**Decides Done / Not started / Deferred / Blocked / Extra, and which session
-belongs to which planned lesson:** `learnerDay.js` (`joinLearnerDay`). Pure
+**Decides Done / Not started / Deferred / Blocked, and which session belongs
+to which planned lesson:** (provenance — `unplanned`, `carriedOver` — is a flag
+beside the status, never a status value) `learnerDay.js` (`joinLearnerDay`). Pure
 function, no fetching — this is where card status and titles are actually
 decided, *not* in the JSX. Status copy: `DAY_STATUS_LABEL` in the same file.
 
@@ -38,14 +39,17 @@ decided, *not* in the JSX. Status copy: `DAY_STATUS_LABEL` in the same file.
 
 ---
 
-## The two API reads behind the Today tab
+## The API reads behind the Today tab
 
-Everything on that screen comes from exactly two GETs. Curl them first — most
-"the UI is wrong" questions are answered by the payload without opening a file.
+The roster comes from exactly two GETs — curl them first, since most "the UI is
+wrong" questions are answered by the payload without opening a file. The
+backlog strip adds three more of its own (`lifecycleReview`, `printPending`,
+`quizRequests`); they feed only the "N to review / N prints / N quiz requests"
+counts, never the roster.
 
 ```bash
 # 1. The digest: one row per learner, with RECORDED sessions, scores, artifacts.
-curl -s https://daylightlocal.kckern.net/api/v1/school/teacher/today \
+curl -s https://daylightlocal.kckern.net/api/v1/school/teacher/day \
   | jq '.[] | select(.learnerId=="learner-1")
         | {effectiveScoreTotals, pendingReview,
            sessions: [.sessions[] | {sessionId, subject, unitId, lessonTitle,
@@ -58,8 +62,9 @@ curl -s "https://daylightlocal.kckern.net/api/v1/school/lifecycle/learners/learn
   | jq '.sections'
 ```
 
-Client wrappers: `schoolApi.teacherToday()` and `schoolApi.agendaPreview()` in
-`../schoolApi.js`. Fetch/retry/empty-state wrapper: `usePanelFetch.js`.
+Client wrappers: `schoolApi.teacherDay()` and `schoolApi.agendaPreview()` in
+`../schoolApi.js`. (`schoolApi.teacherToday()` still exists and still backs the
+report surface's `useTeacherToday.js`; it is not what this tab reads.) Fetch/retry/empty-state wrapper: `usePanelFetch.js`.
 
 ### Field cheat-sheet (the ones that drive what renders)
 

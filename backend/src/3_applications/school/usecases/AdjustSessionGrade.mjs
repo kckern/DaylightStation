@@ -198,24 +198,62 @@ export class AdjustSessionGrade {
     if (!Array.isArray(itemVerdicts)) throw new ValidationError('itemVerdicts are required when the printed question snapshot exists');
     const supplied = new Map(itemVerdicts.map((entry) => [entry?.itemId, entry]));
     const machine = new Map(evidence.map((item) => [item.itemId, item.verdict === 'correct']));
+    // A QUESTION NOBODY COULD MARK IS NOT A WRONG ANSWER.
+    //
+    // The void left the denominator when the sheet was graded —
+    // `GradeSubmission`'s `markable` (`GradeSubmission.mjs:353-354`) drops it
+    // before the divisor because it is neither right nor wrong. It never left
+    // the PRINTED sheet, so it is still in `roster`, and `machine` maps its
+    // stored `void` to `false` below (`'void' === 'correct'`). Without this
+    // set, a correction that touches one other question re-scores the void as
+    // missed, shortens nothing, and lengthens the denominator by one: a
+    // 6-of-8 becomes 7-of-9 instead of 7-of-8. That is a wrong grade, and
+    // downstream a wrong pass/fail and a reversed coin balance.
+    //
+    // The correction UI offers `unchanged | correct | incorrect` and no
+    // `void`, so `unchanged` is the only honest thing a grown-up can click for
+    // a question that is still unmarkable — it has to keep meaning "leave it
+    // out". Naming it explicitly re-marks it, which UN-VOIDS it and puts it
+    // back in the denominator: the same rule the grading lane already applies
+    // at `GradeSubmission.mjs:281-288`, so the two lanes agree.
+    const voided = new Set(evidence
+      .filter((item) => item?.verdict === 'void').map((item) => item.itemId).filter(Boolean));
     const normalized = roster.map((itemId) => {
       const entry = supplied.get(itemId);
+      // Unchanged: every printed item must still be accounted for. A voided
+      // one arrives as `unchanged` like any other; it is excluded from
+      // SCORING, not from the roll call.
       if (!entry) throw new ValidationError(`a verdict is required for printed item ${itemId}`);
       const verdict = entry.verdict ?? (typeof entry.correct === 'boolean' ? (entry.correct ? 'correct' : 'incorrect') : null);
       if (!['unchanged', 'correct', 'incorrect'].includes(verdict)) {
         throw new ValidationError(`item ${itemId} verdict must be unchanged, correct, or incorrect`);
+      }
+      if (verdict === 'unchanged' && voided.has(itemId)) {
+        // `correct: false` because the event schema wants a boolean and this
+        // one earns nothing; `voided: true` is what every reader must look at
+        // instead. It survives the fold (`APPLY.grade_adjusted` spreads each
+        // record) and keeps the row out of the score below.
+        return { itemId, correct: false, verdict, voided: true };
       }
       const correct = verdict === 'unchanged'
         ? (machine.has(itemId) ? machine.get(itemId) : !state.machineGrade.missedItemIds.includes(itemId))
         : verdict === 'correct';
       return { itemId, correct, verdict };
     });
-    const derivedCorrect = normalized.filter((entry) => entry.correct).length;
+    const scored = normalized.filter((entry) => entry.voided !== true);
+    if (!scored.length) {
+      // Same refusal as `GradeSubmission`'s all-voided sheet, for the same
+      // reason: `0 of 0` would tell a child they scored nothing. `graded`'s
+      // own validator refuses `totalCount: 0` too, so the alternative is an
+      // invalid event.
+      throw new ValidationError('every printed question on that one is unmarkable — there is nothing left to score');
+    }
+    const derivedCorrect = scored.filter((entry) => entry.correct).length;
     return {
-      percent: Math.round((derivedCorrect / roster.length) * 10000) / 100,
+      percent: Math.round((derivedCorrect / scored.length) * 10000) / 100,
       correctCount: derivedCorrect,
-      totalCount: roster.length,
-      missedItemIds: normalized.filter((entry) => !entry.correct).map((entry) => entry.itemId),
+      totalCount: scored.length,
+      missedItemIds: scored.filter((entry) => !entry.correct).map((entry) => entry.itemId),
       itemVerdicts: normalized,
     };
   }

@@ -900,6 +900,17 @@ export function reduceSession(events) {
     if (Number.isInteger(effective.correctCount)) s.gradedCorrectCount = effective.correctCount;
     if (Number.isInteger(effective.totalCount)) s.gradedTotalCount = effective.totalCount;
     if (Array.isArray(effective.missedItemIds)) s.missedItemIds = [...effective.missedItemIds];
+    // A correction that re-marks a voided question un-voids it (the grading
+    // lane does the same at `GradeSubmission`), so the stamp from the `graded`
+    // event goes stale the moment one does. Left alone, the record asserts
+    // both that a question was unmarkable and that a grown-up marked it.
+    // Only an item-level correction can say anything here: a percent-only one
+    // carries no verdicts and must leave the stamp exactly as it found it.
+    if (Array.isArray(effective.itemVerdicts) && effective.itemVerdicts.length && s.voidedItemIds.length) {
+      const stillVoid = new Set(effective.itemVerdicts
+        .filter((row) => row?.voided === true).map((row) => row.itemId));
+      s.voidedItemIds = s.voidedItemIds.filter((itemId) => stillVoid.has(itemId));
+    }
     if (s.outcome && typeof s.gradedPercent === 'number' && typeof s.gradedPassingPercent === 'number') {
       s.outcome = {
         ...s.outcome,

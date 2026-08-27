@@ -1,8 +1,13 @@
 /** Route model for the teacher operations workspace.
  *
  * The console intentionally owns its navigation instead of nesting another
- * BrowserRouter. That keeps it usable at both the final route and the
- * temporary rollout alias, and makes every learner/session view bookmarkable.
+ * BrowserRouter, which makes every learner/session view bookmarkable.
+ *
+ * It once had to serve two bases at once — the final route and a temporary
+ * rollout alias. It does not any more: `/school/teacher-next` is a redirect and
+ * the console never renders there. `teacherBaseFor` is the vestige of that
+ * period; it ignores its argument and returns `TEACHER_BASE` unconditionally,
+ * kept only so its many call sites do not all have to change at once.
  */
 export const TEACHER_BASE = '/school/teacher';
 

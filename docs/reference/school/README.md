@@ -1987,8 +1987,9 @@ HttpOnly, SameSite=Strict cookie: 10-minute idle expiry, 30-minute absolute
 expiry. PINs exist only in the prompt while unlocking or confirming an action;
 they are not stored in React state, sessionStorage, logs, or ordinary mutation
 bodies. High-consequence writes—agenda dispatch, grade correction/retraction,
-bulk regrade, period supersession, and postview artifact rendering—also require
-a two-minute, one-use grant scoped to the exact action and resource.
+bulk regrade, period supersession, postview artifact rendering, and settling a
+session by hand—also require a two-minute, one-use grant scoped to the exact
+action and resource.
 
 **Panel isolation, five states.** Every panel fetches independently through
 `usePanelFetch` (`loading | error | empty | unavailable | ok`): one failing
@@ -2055,8 +2056,9 @@ its own evidence kind, not an engine grade). Attribution repair moves the
 attempt events themselves (`YamlSchoolDatastore.moveAttempts` — destination
 shard first, provenance stamped into each moved event, `attributedTo`
 rewritten), so every derived rollup follows the evidence; `GET
-/attempts-summary` feeds the picker and `POST /reassign` is the gated
-write. Standalone teacher notes (`household/school/records/teacher-notes.yml`) ride the
+/attempts-summary` feeds the picker; `POST /reassign` moves a learner's
+attempts and its no-attempts twin `POST /reassign-session` re-credits a whole
+session that nobody typed answers into. Both are gated writes. Standalone teacher notes (`household/school/records/teacher-notes.yml`) ride the
 same delivery surfaces as review notes: merged into `GET /review/learner`
 (kind:'note') and the agenda's "Notes for you" window. The **e2e journey
 test** (`tests/isolated/e2e/school/teacherJourney.e2e.test.mjs`) drives a
@@ -2091,8 +2093,10 @@ math shared with `GetTeacherToday`.
 one child on one school day. It joins two side-effect-free reads —
 `GET /lifecycle/learners/:id/agenda/preview?format=json&studyDay=…` (the plan)
 and `GET /teacher/day?studyDay=…` (the record) — through the pure function
-`learnerDay.js#joinLearnerDay`, which classifies each subject as done,
-not started, deferred, blocked, or extra. Previewing a day never writes.
+`learnerDay.js#joinLearnerDay`, which classifies each subject as done, not
+started, deferred, or blocked. Provenance is a flag beside that status
+(`unplanned`, `carriedOver`), never a status value — so a row can say both
+"unplanned" and "finished". Previewing a day never writes.
 
 - It also carries the **printed-agenda dry run**: the exact thermal-printer PNG
   for the selected day, from the same GET route, on demand. `previewAgenda` is
