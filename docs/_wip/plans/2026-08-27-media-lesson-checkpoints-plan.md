@@ -206,8 +206,20 @@ import { createMediaGate } from './mediaGate.js';
 - Create: `frontend/src/lib/Player/gate/useMediaGate.js`, `frontend/src/lib/Player/gate/GateVerdictContext.jsx`
 - Test: `frontend/src/lib/Player/gate/useMediaGate.test.jsx`
 
+> **REQUIRED, from Task 2's spec review.** `useMediaGate` MUST feed the element's own
+> DOM `pause`/`play` events into the `user` slot it passes to `resolvePause`. This is
+> not optional wiring: `mediaGate` deliberately keeps pause ownership after a rejected
+> `play()` so it can retry (the garage kiosk's Firefox blocks audible autoplay), and
+> the reviewer probe-confirmed the consequence — gate pauses → resume rejects → the
+> human presses pause → the next apply carrying a PLAYING decision calls `play()` again
+> and overrides them. The gate declines correctly ONCE the pause reaches the arbiter's
+> `user` slot (also probe-confirmed), so this hook is the only thing standing between
+> the retry and a viewer fighting their own pause button. Test it explicitly: a DOM
+> pause during a gate-owned retry must produce `PAUSED_USER` and no further `play()`.
+
 **Step 1: Failing tests** (RTL `renderHook`):
 - `useMediaGate({ getMediaEl, verdicts, player: { seeking, resilience, user } })` calls `resolvePause` with merged verdicts and applies via a `createMediaGate` instance (mock the module); re-applies when verdicts change; detaches on unmount.
+- A DOM `pause` event on the element flows into the `user` slot (see the requirement above).
 - `GateVerdictProvider` + `useContributedVerdicts()`: a provider ancestor contributes verdicts; nesting providers concatenates outer-first (household outranks lesson — outer contributions come first in the merged array). No provider → `[]`, never throws.
 
 **Step 2: FAIL. Step 3: Implement** (~30 lines each): context holds a stable array via `useMemo`; `useMediaGate` merges `[...useContributedVerdicts(), ...verdicts]`, memoizes the `resolvePause` result, and drives one `createMediaGate` instance in a `useEffect`.
@@ -512,7 +524,11 @@ Use superpowers:finishing-a-development-branch — verify full suite, then merge
 - **Subagents stage by explicit path.** Never `git add -A`, never `git commit -a` —
   this checkout has concurrent writers.
 - **Reports must give REAL numbers**: the command run and its actual output counts.
-  "Tests pass" is not a result.
+  "Tests pass" is not a result. **Disclose EVERY failure in a run you quote, including
+  ones you believe are unrelated** — say "1 failed, and here is why I believe it is
+  pre-existing", never round it to green. Task 2 reported a frontend sweep as
+  "1150 files / 11437 tests passed" when it was actually 1 failed; the failure was
+  genuinely an unrelated flake, but the reviewer had to find that out independently.
 - **A failing gate must be attributed, not waved past.** Compare against
   `docs/_wip/plans/2026-08-27-baseline.md` (task R2). Anything not in that baseline
   is ours.
