@@ -13,6 +13,7 @@ import MilestonesPanel from './panels/MilestonesPanel.jsx';
 import SchoolMatrix from './panels/SchoolMatrix.jsx';
 import CurriculumBrowser from './panels/CurriculumBrowser.jsx';
 import CurriculumCatalog from './panels/CurriculumCatalog.jsx';
+import SyllabiPanel from './panels/SyllabiPanel.jsx';
 import ActiveOverrides from './panels/ActiveOverrides.jsx';
 import PeriodsTimeline from './panels/PeriodsTimeline.jsx';
 import EnrichmentPanel from './panels/EnrichmentPanel.jsx';
@@ -372,6 +373,7 @@ export function CurriculumView({ kids, courseId = null, lessonId = null }) {
       <InterventionsIndex scopes={['school']} />
     </> : <>
       <CurriculumCatalog />
+      <SyllabiPanel />
       <SchoolMatrix kids={kids} />
       <EnrichmentPanel kids={kids} />
       <InterventionsIndex scopes={['school']} />
