@@ -108,6 +108,9 @@ function reply(res, result) {
  *   three agenda routes above
  * @param {object} [deps.getLearnerDayCompletion] - read-only learner-level
  *   completion projection; gates `GET .../completion`
+ * @param {object} [deps.getPianoLessonGate] - read-only "does this learner owe
+ *   a piano lesson right now"; gates `GET .../piano-lesson-gate`, the second
+ *   read seam for the piano kiosk
  * @param {object} [deps.issueDocument]
  * @param {object} [deps.issueComposedWorksheet] - persistent multi-lesson worksheet issuer
  * @param {object} [deps.listPrintableWorksheetSessions] - teacher-safe current paper-session selector
@@ -142,6 +145,7 @@ export function createSchoolLifecycleRouter({
   buildAgenda = null,
   previewAgenda = null,
   getLearnerDayCompletion = null,
+  getPianoLessonGate = null,
   receiptPngRenderer = null,
   issueDocument = null,
   issueComposedWorksheet = null,
@@ -317,6 +321,19 @@ export function createSchoolLifecycleRouter({
   if (getLearnerDayCompletion) {
     router.get('/learners/:learnerId/completion', asyncHandler(async (req, res) => {
       const result = await getLearnerDayCompletion.execute({ learnerId: req.params.learnerId });
+      res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+
+  // --- piano lesson gate (read only) ----------------------------------------
+  // The second read seam for the piano kiosk, beside `/completion` above: that
+  // one answers "is the whole school day done" (which gates Games), this one
+  // answers "does this learner owe a piano lesson right now, and which one"
+  // (which gates the kiosk menu). Unwired — a composition with no piano course
+  // — 404s, and the kiosk hook fails open to the ordinary menu.
+  if (getPianoLessonGate) {
+    router.get('/learners/:learnerId/piano-lesson-gate', asyncHandler(async (req, res) => {
+      const result = await getPianoLessonGate.execute({ learnerId: req.params.learnerId });
       res.set('Cache-Control', 'no-store').json(result);
     }));
   }

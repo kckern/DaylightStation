@@ -13,6 +13,73 @@ program was required.
 Sentence Ladder is the first code-registered program. Its canonical id is
 `sentence-ladder`; `language` is a deprecated read/write compatibility alias.
 
+## Piano course — a program backed by another app's evidence
+
+`piano-course` is the program for "one Hoffman Academy lesson a day at the
+piano". It is a `PianoCourseProgramLauncher`
+(`3_applications/school/PianoCourseProgramLauncher.mjs`), deliberately NOT a
+config-driven `SurfaceProgramLauncher`, because the piano REPORTS BACK: the
+kiosk already stamps `completedAt` when a lesson crosses the household
+completion threshold and the child actually played along. Settling the day on
+dispatch would throw that evidence away and credit a kiosk opened and walked
+away from, so `doneToday` reads the evidence instead.
+
+It reaches that evidence through Piano's own `GetPlayableUnits` use case,
+injected (Decision D1). Enrollment lives in `assignment.programs[]` as
+`{ programId: 'piano-course', courseId: 'plex:<ratingKey>' }`.
+
+`status()` settles a day in this order, and the order is the contract:
+
+| Order | Condition | Result |
+|---|---|---|
+| 1 | A crediting lesson completed inside today's study day | `doneToday`, ceremony fires |
+| 2 | An active parent day-bypass (below) | `doneToday, excused, bypassed` — no ceremony |
+| 3 | Co-progress lock blocks the next lesson, unexempted | `doneToday, excused` — no ceremony |
+| 4 | Otherwise | owed, with `nextLesson` naming the playable lesson |
+
+Evidence always outranks a bypass, so a child who does the lesson anyway gets
+a real completion and the chime. Reference/practice units give no credit here
+for the same reason they give none in the kiosk: the two must agree, or a
+child "finishes" school by replaying a warm-up.
+
+### The kiosk menu gate
+
+`GetPianoLessonGate` (`3_applications/school/usecases/GetPianoLessonGate.mjs`)
+turns `status()` into the piano kiosk's menu answer, served at
+**`GET /api/v1/school/lifecycle/learners/:learnerId/piano-lesson-gate`** —
+the second read seam for the kiosk beside `/completion` (which gates Games).
+School serves it because School owns the rule; the kiosk only renders it.
+
+While `gated` is true the kiosk replaces its whole tile grid with that one
+lesson. So the read **fails open**: no assignment file, an unreachable Plex, a
+launcher error, or an unwired lifecycle all return `gated: false`. A wrong
+`true` would lock a child out of every mode over a transient fault; a wrong
+`false` merely fails to nag. (`GetPlayableUnits`'s co-progress exemption fails
+CLOSED — opposite stakes, deliberately opposite posture.)
+
+The piano itself is never gated: auto-enter-Studio arms on the menu ROUTE, and
+the gate is a render branch of that same route.
+
+### Parent bypass — excusing one day
+
+A grown-up can excuse one learner's obligation for one study day from the
+Teacher Console (Student → Operations). `ManageProgramDayBypass` writes an
+append-only ledger (`school/records/program-day-bypasses.yml`) keyed by
+learner + program + `studyDate`, with a required reason and a named actor;
+retraction is another append, never a delete.
+
+Study-day keyed rather than TTL'd: tomorrow's `status()` computes a different
+key and the record simply stops matching, and a grant issued at 2am correctly
+files under the study day the child is still living in. Grants are idempotent
+per key, so two grown-ups excusing the same day is one excusal.
+
+It is consumed inside `status()` (step 2 above) rather than by each surface,
+which is what makes the kiosk gate, the agenda card and the ceremony agree
+without any of them knowing the bypass exists. Grants and retractions
+broadcast `program-day-bypass-changed` on the `school` topic — the same topic
+`PianoLessonCeremonyBridge` uses — so a bypass granted on a laptop clears the
+kiosk within a beat instead of waiting out its 15s poll.
+
 ## Story time — a program with no course at all
 
 `story-time` is the first program whose obligation is a plain daily COUNT:
