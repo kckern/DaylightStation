@@ -346,6 +346,14 @@
   &--planned &__header, &--planned &__foot { background: #f7f2e6; }
   &--deferred &__header, &--blocked &__header,
   &--deferred &__foot, &--blocked &__foot { background: #fbeed6; }
+  // FAULTED IS NOT BLOCKED. Both can carry `status: 'blocked'` (a locked
+  // sibling that IS reachable renders identically otherwise), but a fault
+  // means the day could not be judged at all — the 2026-08-25 unlock
+  // incident is why this pair (`program_unavailable`, `blocked_unreachable`)
+  // gets language and colour distinct from an ordinary quiet lock, layered
+  // OVER the status modifier above rather than replacing it.
+  &--faulted { border-color: #e3b7a6; }
+  &--faulted &__header, &--faulted &__foot { background: #f8dfd8; }
   // One line, and only the shelf. The breadcrumb used to live here too, which
   // is what let the least specific fact on the card set its visual weight.
   &__header {
@@ -384,6 +392,20 @@
   &__percent { font-size: 15px; font-weight: 800; color: #2e6b34;
     &--low { color: #8a3627; } }
   &__pending { color: #877d6c; font-size: 12.5px; }
+  // THE OBLIGATION NOTICE — a headline sentence plus a link, for the four
+  // reasons a subject dead-ends without an adult (plan 3.2/3.3). Sits in the
+  // SAME state slot `__pending` used, never a grown row: this card's density
+  // is deliberate. Muted by colour (the fault variant reuses the same red
+  // `.teacher-status--failed` already carries elsewhere), never by opacity.
+  &__obligation {
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+    strong { font-size: 12.5px; font-weight: 700; color: #6b5d33; }
+    &--fault strong { color: #813927; }
+  }
+  &__obligation-link {
+    align-self: flex-start; color: #604521; font-size: 12px; font-weight: 700; text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
 }
 .teacher-mark { width: 13px; height: 13px; flex: none;
   &--check { color: #2e8b3d; } &--cross { color: #c0392b; }
@@ -629,6 +651,11 @@
     &--active { border-color: #c9a35c; border-style: dashed; background: #fdf7e8; color: #8a6a2a; }
     &--failed { border-color: #d9b46a; background: #fbf0d8; color: #8a5a2a; }
     &--idle   { border-color: #ddd3c1; background: #f4efe5; color: #8a8272; }
+    // A subject that dead-ends without a grown-up (task 8) — a fault or one
+    // of the two actionable excuses — gets its own solid ring, distinct from
+    // the amber "fell short"/"out in the world" tones: this is not a score
+    // and not a normal in-flight lock, it is a stop only an adult can clear.
+    &--needs-grownup { border-color: #d99a7f; background: #fbe4de; color: #9a3b26; }
   }
   &__dot-initial { font-size: 13px; font-weight: 800; line-height: 1; }
 
@@ -1499,6 +1526,18 @@
   border: 1px solid #e7dcc3; border-radius: 12px; background: #fffdf7;
   padding: 0.7rem 0.9rem; font: inherit; font-weight: 700; color: #6b5d33; cursor: pointer;
   &:hover, &:focus-visible { background: #fbf4e6; }
+}
+// "N subjects need a grown-up" (plan 3.4) — a structurally broken day named
+// once, above the roster, instead of found lesson by lesson. Same red the
+// faulted lesson card carries, because most of what this strip counts IS a
+// fault; the two actionable excuses ride along rather than earning a second
+// colour the strip would need to explain. Renders nothing at zero — see
+// `BacklogStrip`, whose own comment states why an empty count must not shout.
+.teacher-grownup-strip {
+  display: block; width: 100%; text-align: left; text-decoration: none;
+  border: 1px solid #e3b7a6; border-radius: 12px; background: #fbe4de;
+  padding: 0.7rem 0.9rem; font: inherit; font-weight: 700; color: #813927;
+  &:hover, &:focus-visible { background: #f8dfd8; }
 }
 
 .teacher-reportcard__materials-label { margin: 0.6rem 0 0.2rem; color: #8a7c5c; font-size: 0.78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
