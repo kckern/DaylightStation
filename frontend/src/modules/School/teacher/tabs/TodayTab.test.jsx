@@ -22,6 +22,8 @@ vi.mock('../../schoolApi.js', () => ({
     agendaPreview: vi.fn(),
     lifecycleReview: vi.fn(),
     printPending: vi.fn(),
+    printQuota: vi.fn(async () => ({ ok: true, status: 200, data: { pagesInWindow: 0, pagesPerWindow: 5, remaining: 5, windowMinutes: 60 } })),
+    printablePreviewUrl: (printableId) => `/api/v1/school/print/printables/${printableId}/preview`,
     quizRequests: vi.fn(),
     teachers: vi.fn(),
     resolveReview: vi.fn(),
@@ -398,6 +400,72 @@ describe('TodayTab', () => {
     mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/US State Capitals/)).toBeTruthy());
     expect(screen.getByText(/Fractions Ep\. 4/)).toBeTruthy();
+  });
+
+  // Plan 3.4: the dashboard names a structurally broken day ONCE, above the
+  // roster, instead of a teacher finding it lesson by lesson.
+  describe('"N subjects need a grown-up" (plan 3.4)', () => {
+    it('renders nothing when no subject needs a grown-up', async () => {
+      // The default beforeEach fixture carries no `obligation` on either
+      // section — the ordinary, healthy-day shape.
+      mount(<TodayTab kids={KIDS} />);
+      await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
+      await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalledTimes(KIDS.length));
+      expect(screen.queryByTestId('grownup-strip')).not.toBeInTheDocument();
+    });
+
+    it('counts a fault and an actionable excuse across BOTH learners, and links to the first', async () => {
+      schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'learner-a'
+        ? [
+          { subject: 'civilization', next: { unitId: 'unit-illinois', title: 'Illinois' } },
+          { subject: 'science', next: null, obligation: { state: 'faulted', reason: 'program_unavailable' } },
+        ]
+        : [{ subject: 'math', next: null, obligation: { state: 'excused', reason: 'caught_up' } }] }));
+      mount(<TodayTab kids={KIDS} />);
+      const strip = await screen.findByTestId('grownup-strip');
+      expect(strip).toHaveTextContent('2 subjects need a grown-up');
+      // learner-a's own fault is first in roster order, so the strip lands
+      // on School Operations, not learner-b's Courses page.
+      expect(strip).toHaveAttribute('href', '/school/teacher/operations');
+    });
+
+    // A DOWN PLANNER MUST NOT LOOK LIKE A QUIET MORNING.
+    //
+    // The "couldn't load the day's plan" notice lives in the day grid, which a
+    // collapsed roster never mounts, and the roster card's own PanelFrame is
+    // `ok` because the DIGEST read succeeded — the agenda is a separate
+    // per-learner read. This strip is the only place on a collapsed dashboard
+    // where a failed planner read can be seen at all.
+    it('cautions instead of falling silent when no learner\u2019s plan could be read', async () => {
+      schoolApi.agendaPreview.mockResolvedValue(fail(500));
+      mount(<TodayTab kids={KIDS} />);
+      const caution = await screen.findByTestId('grownup-strip-unknown');
+      expect(caution).toHaveTextContent('We couldn\u2019t read the plan for 2 learners');
+      // No tally: zero is not a fact here, and must not be printed as one.
+      expect(screen.queryByTestId('grownup-strip')).not.toBeInTheDocument();
+    });
+
+    it('shows the tally AND the caution when one learner reads and another does not', async () => {
+      schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'learner-a'
+        ? ok({ sections: [{ subject: 'science', next: null, obligation: { state: 'faulted', reason: 'program_unavailable' } }] })
+        : fail(500)));
+      mount(<TodayTab kids={KIDS} />);
+      expect(await screen.findByTestId('grownup-strip')).toHaveTextContent('1 subject needs a grown-up');
+      expect(await screen.findByTestId('grownup-strip-unknown'))
+        .toHaveTextContent('We couldn\u2019t read the plan for 1 learner');
+    });
+
+    it('uses singular copy for exactly one subject', async () => {
+      schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'learner-a'
+        ? [
+          { subject: 'civilization', next: { unitId: 'unit-illinois', title: 'Illinois' } },
+          { subject: 'math', next: null, obligation: { state: 'excused', reason: 'awaiting_grown_up' } },
+        ]
+        : [] }));
+      mount(<TodayTab kids={KIDS} />);
+      const strip = await screen.findByTestId('grownup-strip');
+      expect(strip).toHaveTextContent('1 subject needs a grown-up');
+    });
   });
 });
 

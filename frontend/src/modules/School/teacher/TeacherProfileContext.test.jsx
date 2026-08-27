@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { TeacherProfileProvider, useTeacherProfile } from './TeacherProfileContext.jsx';
 import PinPrompt from './panels/PinPrompt.jsx';
@@ -15,6 +16,9 @@ const { teacherWorkspaceApi } = await import('./teacherWorkspaceApi.js');
 
 function Probe() {
   const p = useTeacherProfile();
+  // Records what the caller's promise RESOLVED TO — 'pending' means it never
+  // settled, which is the failure mode this suite exists to catch.
+  const [settled, setSettled] = useState('pending');
   return (
     <div>
       <span data-testid="status">{p.status}</span>
@@ -22,10 +26,17 @@ function Probe() {
       <span data-testid="teachers">{p.teachers.map((t) => t.id).join(',')}</span>
       <span data-testid="current">{p.currentTeacher?.id ?? 'none'}</span>
       <span data-testid="authorized">{String(p.authorization.active)}</span>
+      <span data-testid="settled">{settled}</span>
       <button type="button" onClick={() => p.claim('kckern')}>claim</button>
       <button type="button" onClick={() => p.release()}>release</button>
       <button type="button" onClick={() => p.requestAuthorization()}>authorize</button>
-      <button type="button" onClick={() => p.requestAuthorization({ action: 'artifact.postview', resource: 'art_1' })}>step-up</button>
+      <button
+        type="button"
+        onClick={() => p.requestAuthorization({ action: 'artifact.postview', resource: 'art_1' })
+          .then((result) => setSettled(JSON.stringify(result)))}
+      >
+        step-up
+      </button>
     </div>
   );
 }
@@ -148,5 +159,59 @@ describe('TeacherProfileContext', () => {
     await waitFor(() => expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({
       pin: '4321', action: 'artifact.postview', resource: 'art_1',
     }));
+  });
+});
+
+/**
+ * No terminal path may leave the caller's promise unsettled.
+ *
+ * The console once asked for grants under action names the server does not
+ * mint (`artifact.reprint`, `curriculum-exception.apply`/`.retract`). Every
+ * step-up was refused, this branch returned without settling, and three
+ * buttons became a PIN dialog no PIN could close over a write that never
+ * resolved. Both refusals arrive as a bare 403, so the discriminator is
+ * whether the server accepted THIS PIN during THIS submission: if it did, the
+ * refusal is about the action and retyping cannot help.
+ */
+describe('a step-up refusal always settles or stays retryable', () => {
+  const activeSession = () => {
+    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    schoolApi.teachers.mockResolvedValue({ ok: true, status: 200,
+      data: { configured: true, teachers: [{ id: 'kckern', name: 'KC' }] } });
+    teacherWorkspaceApi.authStatus.mockResolvedValue({ ok: true, status: 200,
+      data: { active: true, userId: 'kckern' } });
+  };
+
+  it('settles the caller and closes the dialog when the ACTION is refused', async () => {
+    activeSession();
+    teacherWorkspaceApi.stepUp.mockResolvedValue({ ok: false, status: 403,
+      data: { error: 'A valid step-up action and resource are required.' } });
+    mount();
+    await waitFor(() => expect(screen.getByTestId('authorized').textContent).toBe('true'));
+    fireEvent.click(screen.getByText('step-up'));
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+    fireEvent.click(screen.getByText('Continue'));
+
+    await waitFor(() => expect(screen.getByTestId('settled').textContent).not.toBe('pending'));
+    expect(JSON.parse(screen.getByTestId('settled').textContent)).toMatchObject({
+      ok: false, refused: true, status: 403, message: 'A valid step-up action and resource are required.',
+    });
+    expect(screen.queryByLabelText('PIN')).toBeNull();
+    expect(JSON.stringify(sessionStorage)).not.toContain('4321');
+  });
+
+  it('keeps the dialog open for another try when the PIN is what was refused', async () => {
+    activeSession();
+    teacherWorkspaceApi.unlock.mockResolvedValue({ ok: false, status: 403, data: { error: 'Wrong PIN.' } });
+    teacherWorkspaceApi.stepUp.mockResolvedValue({ ok: false, status: 403, data: { error: 'The teacher PIN is missing or wrong.' } });
+    mount();
+    await waitFor(() => expect(screen.getByTestId('authorized').textContent).toBe('true'));
+    fireEvent.click(screen.getByText('step-up'));
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '1111' } });
+    fireEvent.click(screen.getByText('Continue'));
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('The teacher PIN is missing or wrong.'));
+    expect(screen.getByLabelText('PIN')).toBeTruthy();
+    expect(screen.getByTestId('settled').textContent).toBe('pending');
   });
 });

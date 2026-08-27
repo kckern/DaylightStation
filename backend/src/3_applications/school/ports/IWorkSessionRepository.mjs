@@ -62,11 +62,17 @@ export class IWorkSessionRepository {
    * answer. Returning derived facts (not events) is what keeps drawing one
    * agenda from reducing a whole term's history.
    *
+   * `day` is the UTC date the log was opened; `studyDay` is the household's own
+   * 4am-boundary day and is null for a session that never recorded one. Bucket
+   * by `studyDay ?? day` — west of UTC the two disagree for everything after
+   * late afternoon local, and reading `day` alone files an evening lesson under
+   * tomorrow.
+   *
    * @param {string} learnerId
    * @returns {Promise<Array<{ sessionId: string, learnerId: string, unitId: string|null,
    *                          state: string|null, terminal: boolean,
    *                          outcome: {result: string}|null, gradedPercent: number|null,
-   *                          day: string, updatedAt: string|null }>>}
+   *                          day: string, studyDay: string|null, updatedAt: string|null }>>}
    */
   async listForLearner(learnerId) {
     throw new Error('IWorkSessionRepository.listForLearner must be implemented');

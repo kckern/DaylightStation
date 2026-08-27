@@ -18,14 +18,18 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 | One collapsed row per learner (avatar, name, "6 / 6 correct", day dots, agenda icon, chevron) | `RosterEntry`, `DayDots` | `panels/RosterStrip.jsx` |
 | The expanded grid of lesson cards under a learner | `LearnerDayGrid` | `panels/RosterStrip.jsx` |
 | **One lesson card** — subject header band, breadcrumb, poster, title, footer chip/score/paper icons | `LessonCard` | `panels/RosterStrip.jsx` |
+| A card that says "This program can't start" / "Locked behind work nothing can reach" (red header/foot) | `LessonCard` (`teacher-lesson-card--faulted`) | `panels/RosterStrip.jsx` |
+| The muted excuse sentence / "Open Courses" / "School → Operations" link in a card's footer | `LessonCard` (`GROWN_UP_ACTION`, `MUTED_EXCUSE_FALLBACK`) | `panels/RosterStrip.jsx` |
 | Green ✓ / red ✗ marks + percent | `ScoreMarks` | `panels/RosterStrip.jsx` |
 | The PDF / receipt square buttons | `ArtifactButtons` | `panels/RosterStrip.jsx` |
 | "CIVILIZATION" / "SCRIPTURE & GOSPEL" subject label + icon | `SubjectIdentity` | `CurriculumIdentity.jsx` (labels: `../home/subjects.js`, icons: `../home/icons/svg/*.svg`) |
 | "· N to review / N prints / N quiz requests →" strip | `BacklogStrip` | `tabs/TodayTab.jsx` |
+| "N subjects need a grown-up →" strip, above the roster | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
 | The Records tab, day record, session detail | `RecordsTab`, `WorkspaceViews` | `tabs/RecordsTab.jsx`, `WorkspaceViews.jsx`, `panels/LearnerDayView.jsx` |
 
-**Decides Done / Not started / Deferred / Blocked / Extra, and which session
-belongs to which planned lesson:** `learnerDay.js` (`joinLearnerDay`). Pure
+**Decides Done / Not started / Deferred / Blocked, and which session belongs
+to which planned lesson:** (provenance — `unplanned`, `carriedOver` — is a flag
+beside the status, never a status value) `learnerDay.js` (`joinLearnerDay`). Pure
 function, no fetching — this is where card status and titles are actually
 decided, *not* in the JSX. Status copy: `DAY_STATUS_LABEL` in the same file.
 
@@ -35,14 +39,17 @@ decided, *not* in the JSX. Status copy: `DAY_STATUS_LABEL` in the same file.
 
 ---
 
-## The two API reads behind the Today tab
+## The API reads behind the Today tab
 
-Everything on that screen comes from exactly two GETs. Curl them first — most
-"the UI is wrong" questions are answered by the payload without opening a file.
+The roster comes from exactly two GETs — curl them first, since most "the UI is
+wrong" questions are answered by the payload without opening a file. The
+backlog strip adds three more of its own (`lifecycleReview`, `printPending`,
+`quizRequests`); they feed only the "N to review / N prints / N quiz requests"
+counts, never the roster.
 
 ```bash
 # 1. The digest: one row per learner, with RECORDED sessions, scores, artifacts.
-curl -s https://daylightlocal.kckern.net/api/v1/school/teacher/today \
+curl -s https://daylightlocal.kckern.net/api/v1/school/teacher/day \
   | jq '.[] | select(.learnerId=="learner-1")
         | {effectiveScoreTotals, pendingReview,
            sessions: [.sessions[] | {sessionId, subject, unitId, lessonTitle,
@@ -55,8 +62,9 @@ curl -s "https://daylightlocal.kckern.net/api/v1/school/lifecycle/learners/learn
   | jq '.sections'
 ```
 
-Client wrappers: `schoolApi.teacherToday()` and `schoolApi.agendaPreview()` in
-`../schoolApi.js`. Fetch/retry/empty-state wrapper: `usePanelFetch.js`.
+Client wrappers: `schoolApi.teacherDay()` and `schoolApi.agendaPreview()` in
+`../schoolApi.js`. (`schoolApi.teacherToday()` still exists and still backs the
+report surface's `useTeacherToday.js`; it is not what this tab reads.) Fetch/retry/empty-state wrapper: `usePanelFetch.js`.
 
 ### Field cheat-sheet (the ones that drive what renders)
 
@@ -71,7 +79,9 @@ machine-scored — a score outranks a missing `state`); `reviewStatus`
 
 **Agenda section** — `next` (the offer: `taxonomy`, `posterUrl`, `unitId`;
 **`null` once the subject is served**), `servedToday`, `servedWork[]`,
-`progressLabel`, `progressRows[]`, `suppressed`, `lockedRemedy`, `obligation.state`.
+`progressLabel`, `progressRows[]`, `suppressed`, `lockedRemedy`,
+`obligation: { state, reason }` (see `docs/reference/school/teacher.md` §4 for
+the full 4-state/11-reason ladder).
 
 `joinLearnerDay` matches a session to a section by `unitId` first, subject
 second, then decides progress from `servedToday` → score → `state`. `status` is
@@ -79,6 +89,16 @@ always progress (`done` | `in-progress` | `planned` | `deferred` | `blocked`);
 provenance rides beside it as the `unplanned` / `carriedOver` flags. The join
 also authors the footer's explanatory sentences, so the card places copy it
 does not write.
+
+**`row.obligation`** is the planner's verdict carried through unchanged, plus
+one thing the join computes: `needsGrownUp` (`true` for exactly four reasons —
+the two that fault, `caught_up`, and `awaiting_grown_up`). `status` and
+`obligation` are two separate facts shown together, never merged into one
+badge — a row can be `planned` under `excused`. `RosterStrip.jsx` reads
+`needsGrownUp` to decide the fault card treatment, the action link, and the
+collapsed row's dot tone; it does not re-derive the classification. A `null`
+obligation (an older payload, or a subject the planner never judged) renders
+nothing extra.
 
 `LessonCard` reads its title/course/poster from `session` first, then
 `row.offer` (= `section.next`, which is `null` once a subject is served), then
@@ -122,6 +142,9 @@ Logs: `context.app:school` in the log store (see root `CLAUDE.md` → Reading Lo
 
 ## Related docs
 
+- `docs/reference/school/teacher.md` — the flow model: every lifecycle, every
+  state, and the teacher's move out of each one. Start there when the question
+  is "the work is sitting in X — what can a grown-up do about it?"
 - `docs/reference/school/README.md` — the school reference index
 - `docs/reference/school/agenda-and-completion.md` — how `sections`, `servedToday`, and completion are derived
 - `docs/reference/school/print-documents.md` — worksheets, receipts, OMR grading

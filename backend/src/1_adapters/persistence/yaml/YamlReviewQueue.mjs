@@ -146,8 +146,13 @@ export class YamlReviewQueue extends IReviewQueue {
     sessionId, itemId, verdict, gradedBy = null, note = null, internalNote = null, at,
   } = {}) {
     if (!isSafeSessionId(sessionId)) return null;
-    if (verdict !== 'correct' && verdict !== 'incorrect') {
-      throw new Error(`YamlReviewQueue: verdict must be correct|incorrect, got: ${verdict}`);
+    // `void` ("not markable from the evidence") is a resolution like the other
+    // two as far as this store is concerned: it is truthy, so `#write` below
+    // files the session as settled once every row has one, and `listPending`
+    // stops offering it. What the verdict MEANS — that the question leaves the
+    // score's denominator — is the grading use case's business, not storage's.
+    if (verdict !== 'correct' && verdict !== 'incorrect' && verdict !== 'void') {
+      throw new Error(`YamlReviewQueue: verdict must be correct|incorrect|void, got: ${verdict}`);
     }
     if (typeof at !== 'string' || Number.isNaN(Date.parse(at))) {
       throw new Error('YamlReviewQueue: resolve requires an ISO-8601 `at`');

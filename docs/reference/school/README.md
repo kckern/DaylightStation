@@ -50,6 +50,7 @@
 | How does today's paper and completion gate work? | [Agenda and completion](./agenda-and-completion.md) |
 | How are attempts graded and notes delivered? | [Assessment and feedback](./assessment-and-feedback.md) |
 | What do progress, course grade, and status mean? | [Progress and reporting](./progress-and-reporting.md) |
+| What can a grown-up actually do, and from which state? | [Teacher — every flow](./teacher.md) |
 | How do I inspect or repair live state? | [Operations](./operations.md) |
 | Something is broken right now — day-to-day troubleshooting, logs, hardware | [Day-to-day operations runbook](../../runbooks/school/README.md) |
 | How do external programs plug in? | [Programs](./programs.md) |
@@ -1271,8 +1272,11 @@ state derived on every read (the language-ladder pattern). It supplies the
 context the attempt log intentionally lacks — why work was selected, what paper
 was issued, what comes next.
 - `failed` and `reassigned` are **annotations, not states**: they record a fact
-  at any non-terminal state and leave the lifecycle where it was, so a failed
-  print leaves the token valid and the next scan retries.
+  and leave the lifecycle where it was, so a failed print leaves the token valid
+  and the next scan retries. `failed` is legal at any non-terminal state;
+  `reassigned` is legal at every state including the terminal ones, because it
+  changes attribution rather than lifecycle position and the wrong child's name
+  is usually found on work that has already settled.
 - **Every non-terminal state yields a non-null next action**, asserted as a
   property across all reachable states. A state without one is a wedged session.
 - The outcome carries a deterministic id (`out:{sessionId}`) used as the
@@ -1972,15 +1976,20 @@ did.
 > — screen-element → file table, the two API reads behind the Today tab with
 > curl examples, and how to tell which tree the running container was built
 > from. Read that first when a question starts from something on screen.
+>
+> **Flow model:** [`teacher.md`](./teacher.md) — every lifecycle, every state,
+> and the teacher's move out of each one, as state diagrams. Read that when the
+> question starts from a state rather than from a screen.
 
 The grown-up side of the desk is the responsive workspace at
-**`/school/teacher`** (with **`/school/teacher-next`** as an additive alias),
-never a Portal widget and never in kiosk navigation. Its URL is the complete
-workspace state: global dashboard/queue/curriculum/operations views and
-learner-scoped overview, courses, history, reports, operations, and session
-inspection can all be deep-linked and survive refresh/back/forward. The older
-Today, Planning, Records, and Repair panels remain reachable inside this
-workspace while their server-authoritative functions are consolidated.
+**`/school/teacher`** (`/school/teacher-next`, the rollout alias, now
+redirects here rather than 404ing), never a Portal widget and never in kiosk
+navigation. Its URL is the complete workspace state: global
+dashboard/queue/curriculum/operations views and learner-scoped day, courses,
+history, reports, operations, and session inspection can all be deep-linked
+and survive refresh/back/forward. The older Today, Planning, Records, and
+Repair panels remain reachable inside this workspace while their
+server-authoritative functions are consolidated.
 
 **Teachers are config-declared, not age-derived.** `school.yml` `teachers:`
 lists roster ids; `GET /api/v1/school/teachers` resolves them against the
@@ -1993,8 +2002,9 @@ HttpOnly, SameSite=Strict cookie: 10-minute idle expiry, 30-minute absolute
 expiry. PINs exist only in the prompt while unlocking or confirming an action;
 they are not stored in React state, sessionStorage, logs, or ordinary mutation
 bodies. High-consequence writes—agenda dispatch, grade correction/retraction,
-bulk regrade, period supersession, and postview artifact rendering—also require
-a two-minute, one-use grant scoped to the exact action and resource.
+bulk regrade, period supersession, postview artifact rendering, and settling a
+session by hand—also require a two-minute, one-use grant scoped to the exact
+action and resource.
 
 **Panel isolation, five states.** Every panel fetches independently through
 `usePanelFetch` (`loading | error | empty | unavailable | ok`): one failing
@@ -2061,8 +2071,9 @@ its own evidence kind, not an engine grade). Attribution repair moves the
 attempt events themselves (`YamlSchoolDatastore.moveAttempts` — destination
 shard first, provenance stamped into each moved event, `attributedTo`
 rewritten), so every derived rollup follows the evidence; `GET
-/attempts-summary` feeds the picker and `POST /reassign` is the gated
-write. Standalone teacher notes (`household/school/records/teacher-notes.yml`) ride the
+/attempts-summary` feeds the picker; `POST /reassign` moves a learner's
+attempts and its no-attempts twin `POST /reassign-session` re-credits a whole
+session that nobody typed answers into. Both are gated writes. Standalone teacher notes (`household/school/records/teacher-notes.yml`) ride the
 same delivery surfaces as review notes: merged into `GET /review/learner`
 (kind:'note') and the agenda's "Notes for you" window. The **e2e journey
 test** (`tests/isolated/e2e/school/teacherJourney.e2e.test.mjs`) drives a
@@ -2086,7 +2097,7 @@ math shared with `GetTeacherToday`.
 | Application | `backend/src/3_applications/school/usecases/GetTeachers.mjs`, `ListLearnerSessions.mjs` |
 | API | `/api/v1/school/teacher/auth/*`; teacher timeline/session/artifact/agenda-dispatch/grade-adjustment endpoints; existing lifecycle reads and gated writes |
 | Frontend | `frontend/src/modules/School/teacher/` — `TeacherConsole`, `WorkspaceViews`, `TeacherProfileContext`, `useTeacherWrite`, legacy `tabs/` and `panels/` |
-| Routes | `frontend/src/main.jsx` — `/school/teacher[/*]`, `/school/teacher-next[/*]`, and `/app/school/teacher` redirect |
+| Routes | `frontend/src/main.jsx` — `/school/teacher[/*]`; `/school/teacher-next[/*]` redirects here (retired rollout alias, trim wave 5.5) |
 | Config | `data/household/school/school.yml` → `teachers:` |
 
 **Design spec:** [`2026-08-06-school-teacher-console-design.md`](../../superpowers/specs/2026-08-06-school-teacher-console-design.md) — includes the full use-case catalog, wave decomposition (mutations, planning domains, renderers, repair), and the placeholder registry future waves work from.
@@ -2097,8 +2108,10 @@ math shared with `GetTeacherToday`.
 one child on one school day. It joins two side-effect-free reads —
 `GET /lifecycle/learners/:id/agenda/preview?format=json&studyDay=…` (the plan)
 and `GET /teacher/day?studyDay=…` (the record) — through the pure function
-`learnerDay.js#joinLearnerDay`, which classifies each subject as done,
-not started, deferred, blocked, or extra. Previewing a day never writes.
+`learnerDay.js#joinLearnerDay`, which classifies each subject as done, not
+started, deferred, or blocked. Provenance is a flag beside that status
+(`unplanned`, `carriedOver`), never a status value — so a row can say both
+"unplanned" and "finished". Previewing a day never writes.
 
 - It also carries the **printed-agenda dry run**: the exact thermal-printer PNG
   for the selected day, from the same GET route, on demand. `previewAgenda` is
@@ -2107,7 +2120,8 @@ not started, deferred, blocked, or extra. Previewing a day never writes.
   grown-up to start this lesson" — so the QR and digit codes on a previewed
   sheet are inert by construction. Nothing is minted, for today or any day.
 - The dashboard and the History tab both LINK here; neither re-renders it.
-- `/students/:id` and `/students/:id/overview` both resolve to the day record.
+- `/students/:id` is the canonical short form for the day record;
+  `/students/:id/overview` is a retired alias the shell redirects there.
 - Paper records (worksheet PDF, result receipt) are fetched lazily per lesson
   via `SessionPaperRecord`, never eagerly for a whole day.
 - Repair tooling is indexed in `interventions.js`; each tool has exactly one
