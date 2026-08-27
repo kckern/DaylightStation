@@ -27,6 +27,8 @@ vi.mock('../schoolApi.js', () => {
     passOverrides: vi.fn(async () => ({ ok: true, status: 200, data: { overrides: {} } })), milestones: vi.fn(async () => ({ ok: true, status: 200, data: { milestones: [] } })),
     enrichment: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
     regradeAttempts: vi.fn(async () => ({ ok: true, status: 200, data: { applied: false, checked: 0, changed: [], sessionsAffected: [] } })),
+    bankHealth: vi.fn(async () => ({ ok: true, status: 200, data: { warmedAt: '2026-08-01T00:00:00.000Z', banks: 4, failed: [] } })),
+    reportCardFrozenVersions: vi.fn(async () => ({ ok: true, status: 200, data: { versions: [] } })),
   } };
 });
 vi.mock('./teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
