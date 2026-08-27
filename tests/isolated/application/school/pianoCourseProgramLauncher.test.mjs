@@ -173,6 +173,74 @@ describe('PianoCourseProgramLauncher.status', () => {
   });
 });
 
+describe('PianoCourseProgramLauncher.status — nextLesson', () => {
+  it('names the next unwatched lesson when owed', async () => {
+    const launcher = launcherFor(
+      { items: [lesson('a', { watched: true, title: 'Lesson 1' }), lesson('b', { title: 'Lesson 2' })] },
+      '2026-08-25T20:00:00Z',
+    );
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
+    expect(status.doneToday).toBe(false);
+    expect(status.nextLesson?.lesson?.id).toContain('b');
+  });
+
+  it('is null when the course is fully watched (nothing left to gate on)', async () => {
+    const launcher = launcherFor(
+      { items: [lesson('a', { watched: true })] },
+      '2026-08-25T20:00:00Z',
+    );
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
+    expect(status.doneToday).toBe(false); // no completion TODAY, but nothing left to launch
+    expect(status.nextLesson).toBeNull();
+  });
+});
+
+describe('PianoCourseProgramLauncher.status — parent bypass', () => {
+  const bypassStore = (record) => ({ activeFor: async () => record });
+
+  it('an active bypass settles the day as excused/bypassed, not owed', async () => {
+    const launcher = new PianoCourseProgramLauncher({
+      getPlayableUnits: fakeUnits({ items: [lesson('a')] }),
+      dayBypasses: bypassStore({ decidedBy: 'kckern', reason: 'Recital' }),
+      timezone: TZ, clock: () => new Date('2026-08-25T20:00:00Z'), logger: { warn() {}, info() {} },
+    });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
+    expect(status.doneToday).toBe(true);
+    expect(status.excused).toBe(true);
+    expect(status.bypassed).toBe(true);
+    expect(status.progressLabel).toContain('Excused today by kckern');
+  });
+
+  it('a real completion outranks an active bypass — no excused flag, ceremony-eligible', async () => {
+    const launcher = new PianoCourseProgramLauncher({
+      getPlayableUnits: fakeUnits({ items: [lesson('a', { completedAt: '2026-08-25T18:00:00Z' })] }),
+      dayBypasses: bypassStore({ decidedBy: 'kckern', reason: 'Recital' }),
+      timezone: TZ, clock: () => new Date('2026-08-25T20:00:00Z'), logger: { warn() {}, info() {} },
+    });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
+    expect(status.doneToday).toBe(true);
+    expect(status.excused).toBeUndefined();
+    expect(status.bypassed).toBeUndefined();
+  });
+
+  it('a bypass store throw is treated as no bypass, never error:true', async () => {
+    const launcher = new PianoCourseProgramLauncher({
+      getPlayableUnits: fakeUnits({ items: [lesson('a')] }),
+      dayBypasses: { activeFor: async () => { throw new Error('disk gone'); } },
+      timezone: TZ, clock: () => new Date('2026-08-25T20:00:00Z'), logger: { warn() {}, info() {} },
+    });
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
+    expect(status.error).toBeUndefined();
+    expect(status.doneToday).toBe(false);
+  });
+
+  it('no dayBypasses dependency behaves exactly as before (opt-in)', async () => {
+    const launcher = launcherFor({ items: [lesson('a')] }, '2026-08-25T20:00:00Z');
+    const status = await launcher.status({ userId: 'learner4', programInstance: COURSE });
+    expect(status.bypassed).toBeUndefined();
+  });
+});
+
 describe('PianoCourseProgramLauncher launch contract', () => {
   it('declares itself mountable so the agenda mints a QR and panel code', () => {
     const launcher = launcherFor({ items: [] }, '2026-08-25T20:00:00Z');
