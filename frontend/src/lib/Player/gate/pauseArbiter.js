@@ -62,9 +62,14 @@ export const resolvePause = ({
   resilience = {},
   user = {}
 } = {}) => {
-  // `gates = []` only defaults on undefined; callers hand us governor state that
-  // can legitimately be null before it has resolved, so normalize rather than throw.
+  // Destructuring defaults fire on `undefined` ONLY. Every slot here arrives from a
+  // caller's live state (`useMediaGate` forwards `player: { seeking, resilience, user }`
+  // straight through) and each can legitimately be null before its source resolves, so
+  // normalize rather than throw on the first property read.
   const allGates = Array.isArray(gates) ? gates : [];
+  const seek = seeking || {};
+  const health = resilience || {};
+  const viewer = user || {};
 
   // A ceiling is a standing rule, not a pause side-effect: it composes regardless
   // of whether any gate is blocked, so a caller can keep clamping seeks while
@@ -91,7 +96,7 @@ export const resolvePause = ({
   // mid-seek to prevent pause/resume thrashing from gate events during seeks
   // (this was the fitness governance-challenge lesson; it applies to every gate).
   // Note this suppresses `paused` only: `blocked` above still reports the truth.
-  if (truthy(seeking.active)) {
+  if (truthy(seek.active)) {
     return { paused: false, reason: PAUSE_REASON.SEEKING, ...base };
   }
 
@@ -102,15 +107,15 @@ export const resolvePause = ({
   // Note: resilience.stalled is NOT included - stalled state triggers reload, not pause
   // Pausing during stall interferes with reload recovery (e.g., after governance unlock)
   const resiliencePaused = truthy(
-    resilience.requiresPause
-    ?? resilience.buffering
-    ?? resilience.waiting
+    health.requiresPause
+    ?? health.buffering
+    ?? health.waiting
   );
   if (resiliencePaused) {
     return { paused: true, reason: PAUSE_REASON.BUFFERING, ...base };
   }
 
-  const userPaused = truthy(user.paused ?? user.pauseIntent === 'user');
+  const userPaused = truthy(viewer.paused ?? viewer.pauseIntent === 'user');
   if (userPaused) {
     return { paused: true, reason: PAUSE_REASON.USER, ...base };
   }
