@@ -6,11 +6,16 @@
  * card's top corner carries the count, which is the one thing icons cannot say.
  *
  * A CLEARED DAY IS A STATE, NOT A SENTENCE. When every disc is filled the card
- * itself goes green and breathes — the child should be able to see they are
- * finished from across the room, without reading anything. That is the whole
- * reward this board offers, so it is worth the animation budget; it is also
- * the only motion on the panel, and it stops for anyone who has asked the OS
- * for reduced motion.
+ * itself goes green — the child should be able to see they are finished from
+ * across the room, without reading anything. That is the whole reward this
+ * board offers.
+ *
+ * IT DOES NOT MOVE, and that is a settled decision rather than an omission.
+ * The cleared card has been a breathing glow (which reads as blinking, because
+ * it changes brightness) and a dot crawl (which holds luminance but still
+ * pulls the eye). Both were distracting for the same reason: a wall panel sits
+ * in peripheral vision all day, and anything moving there asks for attention
+ * it does not need. Colour alone carries it. Do not re-add motion here.
  *
  * RINGS ARE A SECOND, INDEPENDENT READ (2026-08-26). The discs say what school
  * work is planned and done; the ring count says how much the child has MOVED
@@ -19,9 +24,9 @@
  * costs the number, never the card. v1 displays the figure only — no target,
  * no progress bar, no gate.
  *
- * The ring is STATIC here. This board's motion budget is spent on the
- * cleared-day breathe below, and four spinning rings would compete with the
- * one animation that is supposed to mean something.
+ * The ring is STATIC here, for the same reason the cleared card is: nothing on
+ * this panel moves. `RingIcon` spins only where motion is already the idiom —
+ * inside the fitness app.
  *
  * Deliberately NON-INTERACTIVE (kiosk spec wave 5): it renders on the locked
  * Portal beside the keypad as a reminder/preview only — codes and printed
