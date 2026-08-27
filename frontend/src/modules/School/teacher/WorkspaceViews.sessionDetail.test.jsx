@@ -145,14 +145,19 @@ describe('SessionInspector detail coherence', () => {
 });
 
 /**
- * "Offer another try" (audit 4.2). `sessionState.remediation` is set once by
- * `remediation_opened` and never cleared, so it used to mean only "one was
- * EVER opened" — an abandoned retake or an expired, unscanned ticket left the
- * parent lesson stuck with no way back. The gate now reads whether that
- * remediation session reached a TERMINAL state, which is a second read
- * (`GetTeacherSession` does not fold the child's state into the parent).
+ * "Offer another try" IS OFFERED EXACTLY ONCE, because that is all the server
+ * can honour. `OpenRemediation` returns `already_opened` for any session that
+ * has a remediation — live, abandoned, or never scanned — and the route
+ * answers it at HTTP 201, which `useTeacherWrite` reads as a save. A button
+ * shown past that point reports success, creates nothing, and tells a parent a
+ * fresh sheet is waiting when the only sheet is a dead one.
+ *
+ * A retake that is abandoned therefore strands the parent session. That gap is
+ * REAL and is filed as a known residual (audit A10) rather than papered over
+ * here: `remediation_opened` has no outgoing edge in the domain's transition
+ * table, so a second one is refused on append. Closing it is a domain change.
  */
-describe('SessionInspector — offering a retake again (audit 4.2)', () => {
+describe('SessionInspector — offering a retake', () => {
   const needsRemediation = (extra = {}) => ({
     schema: 'school.teacher-session/v4',
     sessionId: 'ses_1',
@@ -169,52 +174,39 @@ describe('SessionInspector — offering a retake again (audit 4.2)', () => {
 
   beforeEach(() => vi.clearAllMocks());
 
-  it('offers the retake when no remediation has ever been opened (unchanged)', async () => {
+  it('offers the retake when no remediation has ever been opened', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: needsRemediation() });
     render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     expect(await screen.findByRole('button', { name: 'Offer another try' })).toBeInTheDocument();
   });
 
-  it('offers it again once the remediation session it opened is terminal', async () => {
+  it('withholds it once a remediation exists, even one whose session is finished', async () => {
     teacherWorkspaceApi.session.mockImplementation(async (id) => (id === 'ses_1'
       ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_2', variant: 'retry' } }) }
       : { ok: true, status: 200, data: remediationChild('ses_2', true) }));
     render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-    expect(await screen.findByRole('button', { name: 'Offer another try' })).toBeInTheDocument();
-    expect(teacherWorkspaceApi.session).toHaveBeenCalledWith('ses_2');
+    await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
+    // A terminal retake is exactly the abandoned case, and it is exactly the
+    // case the server refuses. Offering it here is the defect.
+    expect(screen.queryByRole('button', { name: 'Offer another try' })).not.toBeInTheDocument();
   });
 
-  it('does not offer it while the remediation session it opened is still live', async () => {
+  it('withholds it while the remediation session is still live', async () => {
     teacherWorkspaceApi.session.mockImplementation(async (id) => (id === 'ses_1'
       ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_3', variant: 'retry' } }) }
       : { ok: true, status: 200, data: remediationChild('ses_3', false) }));
     render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-    await waitFor(() => expect(teacherWorkspaceApi.session).toHaveBeenCalledWith('ses_3'));
+    await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Offer another try' })).not.toBeInTheDocument();
   });
 
-  it('fails closed: a failed remediation lookup does not offer the retake', async () => {
+  it('never reads the remediation child: the answer needs no second request', async () => {
     teacherWorkspaceApi.session.mockImplementation(async (id) => (id === 'ses_1'
       ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_4', variant: 'retry' } }) }
-      : { ok: false, status: 500, data: null }));
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-    await waitFor(() => expect(teacherWorkspaceApi.session).toHaveBeenCalledWith('ses_4'));
-    expect(screen.queryByRole('button', { name: 'Offer another try' })).not.toBeInTheDocument();
-  });
-
-  it('does not flash the button on then off while the lookup is in flight', async () => {
-    let resolveChild;
-    teacherWorkspaceApi.session.mockImplementation(async (id) => {
-      if (id === 'ses_1') return { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_5', variant: 'retry' } }) };
-      return new Promise((resolve) => { resolveChild = resolve; });
-    });
+      : { ok: true, status: 200, data: remediationChild('ses_4', true) }));
     render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
-    // The parent session resolved, but the remediation-child lookup is still
-    // pending — the button must be absent now, not present-then-removed.
-    expect(screen.queryByRole('button', { name: 'Offer another try' })).not.toBeInTheDocument();
-    resolveChild({ ok: true, status: 200, data: remediationChild('ses_5', true) });
-    expect(await screen.findByRole('button', { name: 'Offer another try' })).toBeInTheDocument();
+    expect(teacherWorkspaceApi.session).not.toHaveBeenCalledWith('ses_4');
   });
 });
 

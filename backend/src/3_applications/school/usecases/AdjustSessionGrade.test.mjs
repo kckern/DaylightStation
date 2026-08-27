@@ -264,3 +264,123 @@ describe('reward reconciliation after a reassignment', () => {
     expect(reduceSession(log)).toMatchObject({ rewardAmount: 0, rewardPaidTo: null });
   });
 });
+
+/**
+ * A VOIDED QUESTION IS NOT A WRONG ANSWER.
+ *
+ * A void leaves the denominator when the sheet is graded (`GradeSubmission`'s
+ * `markable`), but it never leaves the PRINTED sheet, so a correction still
+ * sees it in the roster — and the correction UI offers no `void` option, so a
+ * grown-up correcting some OTHER question leaves it on `unchanged`. Scoring
+ * that as missed turns a 6-of-8 into a 7-of-9, which is a wrong grade, a wrong
+ * pass/fail, and a coin reversal against a child who passed.
+ */
+describe('AdjustSessionGrade with a voided question', () => {
+  const NINE = Array.from({ length: 9 }, (_, i) => `q${i + 1}`);
+
+  // Graded 6 of 8: nine printed, q3 voided, q5 marked wrong by the machine.
+  const gradedWithVoid = () => [
+    { type: 'created', at: '2026-08-01T10:00:00.000Z', sessionId: 'ses_v', seq: 1, learnerId: 'kid', unitId: 'math' },
+    { type: 'issued', at: '2026-08-01T10:01:00.000Z', sessionId: 'ses_v', seq: 2, artifactId: 'art_v' },
+    { type: 'submitted', at: '2026-08-01T10:02:00.000Z', sessionId: 'ses_v', seq: 3, transport: 'paper' },
+    { type: 'graded', at: '2026-08-01T10:03:00.000Z', sessionId: 'ses_v', seq: 4, attemptIds: ['att_v'],
+      percent: 75, passingPercent: 80, correctCount: 6, totalCount: 8,
+      missedItemIds: ['q5', 'q7'], voidedItemIds: ['q3'] },
+    { type: 'outcome_recorded', at: '2026-08-01T10:04:00.000Z', sessionId: 'ses_v', seq: 5,
+      outcomeId: 'out_v', result: 'needs_remediation' },
+  ];
+
+  const evidenceWithVoid = () => NINE.map((itemId) => ({
+    itemId,
+    verdict: itemId === 'q3' ? 'void' : (['q5', 'q7'].includes(itemId) ? 'incorrect' : 'correct'),
+  }));
+
+  function build({ log = gradedWithVoid(), evidence = evidenceWithVoid(), economy = null, curriculum = null } = {}) {
+    const sessions = {
+      readEvents: vi.fn(async () => log.map((event) => ({ ...event }))),
+      appendEvent: vi.fn(async (sessionId, event) => {
+        const stored = { ...event, sessionId, seq: log.length + 1 };
+        log.push(stored);
+        return stored;
+      }),
+    };
+    const adjust = new AdjustSessionGrade({
+      sessions, teacherGate: { assert: vi.fn() },
+      worksheetInstances: { findBySession: vi.fn(async () => ({ itemIds: NINE })) },
+      reviewQueue: { listForSession: vi.fn(async () => evidence) },
+      economy, curriculum, economyEnabled: Boolean(economy),
+      clock: () => new Date('2026-08-02T12:00:00.000Z'), logger: { info() {}, warn() {} },
+    });
+    return { log, sessions, adjust };
+  }
+
+  const allUnchangedExcept = (overrides = {}) => NINE.map((itemId) => ({
+    itemId, verdict: overrides[itemId] ?? 'unchanged',
+  }));
+
+  it('keeps a still-unmarkable question out of the denominator when a different answer is corrected', async () => {
+    const { adjust } = build();
+    const result = await adjust.execute({
+      sessionId: 'ses_v', adjustmentId: 'adj_v', reason: 'q5 was right after all', adjustedBy: 'parent',
+      baseSeq: 5, itemVerdicts: allUnchangedExcept({ q5: 'correct' }),
+    });
+    // 7 of 8, not 7 of 9. q3 was unmarkable at grading and nobody re-marked it.
+    expect(result.effectiveGrade).toMatchObject({ correctCount: 7, totalCount: 8, percent: 87.5 });
+    expect(result.effectiveGrade.missedItemIds).toEqual(['q7']);
+    expect(result.effectiveGrade.missedItemIds).not.toContain('q3');
+  });
+
+  it('un-voids a question a grown-up finally marks, restoring the denominator', async () => {
+    const { adjust } = build();
+    const result = await adjust.execute({
+      sessionId: 'ses_v', adjustmentId: 'adj_v2', reason: 'the tear was readable after all',
+      adjustedBy: 'parent', baseSeq: 5, itemVerdicts: allUnchangedExcept({ q3: 'incorrect' }),
+    });
+    expect(result.effectiveGrade).toMatchObject({ correctCount: 6, totalCount: 9 });
+    expect(result.effectiveGrade.missedItemIds).toContain('q3');
+  });
+
+  it('clears the void stamp for a re-marked question and keeps it for the rest', async () => {
+    const { log, adjust } = build();
+    await adjust.execute({
+      sessionId: 'ses_v', adjustmentId: 'adj_v3', reason: 'readable after all', adjustedBy: 'parent',
+      baseSeq: 5, itemVerdicts: allUnchangedExcept({ q3: 'correct' }), apply: true,
+    });
+    // The record must not assert both that q3 was unmarkable and that a
+    // grown-up marked it.
+    expect(reduceSession(log).voidedItemIds).toEqual([]);
+
+    const untouched = build();
+    await untouched.adjust.execute({
+      sessionId: 'ses_v', adjustmentId: 'adj_v4', reason: 'q5 was right', adjustedBy: 'parent',
+      baseSeq: 5, itemVerdicts: allUnchangedExcept({ q5: 'correct' }), apply: true,
+    });
+    expect(reduceSession(untouched.log).voidedItemIds).toEqual(['q3']);
+  });
+
+  it('does not claw back coins from a child whose corrected score clears the bar', async () => {
+    // Paid 10 on a pass would be the wrong shape here; this session failed and
+    // paid nothing, so the correct reconciliation is a CREDIT, not a debit.
+    // The regression is that scoring q3 wrong holds the percent below the bar
+    // and no reward is owed at all.
+    const economy = { adjust: vi.fn(async (_learnerId, args) => ({ txnId: `txn:${args.ref}` })) };
+    const curriculum = { getUnit: vi.fn(async () => ({ reward: { amount: 10 }, passing: { percent: 80 } })) };
+    const { log, adjust } = build({ economy, curriculum });
+    const result = await adjust.execute({
+      sessionId: 'ses_v', adjustmentId: 'adj_v5', reason: 'q5 was right after all', adjustedBy: 'parent',
+      baseSeq: 5, itemVerdicts: allUnchangedExcept({ q5: 'correct' }), apply: true,
+    });
+    // 87.5% clears an 80% bar; 7-of-9 (77.78%) would not have.
+    expect(result.outcome).toMatchObject({ result: 'passed' });
+    expect(reduceSession(log).outcome).toMatchObject({ result: 'passed' });
+  });
+
+  it('refuses a correction that would leave nothing markable rather than recording 0 of 0', async () => {
+    const evidence = NINE.map((itemId) => ({ itemId, verdict: 'void' }));
+    const { adjust } = build({ evidence });
+    await expect(adjust.execute({
+      sessionId: 'ses_v', adjustmentId: 'adj_v6', reason: 'nothing readable', adjustedBy: 'parent',
+      baseSeq: 5, itemVerdicts: allUnchangedExcept(),
+    })).rejects.toThrow(/nothing left to score/);
+  });
+});

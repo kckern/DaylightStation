@@ -25,7 +25,13 @@ export function renderSessionResultPng(session, { kind = 'effective' } = {}) {
     const machineVerdict = item.verdict ?? 'unresolved';
     const correction = session?.state?.gradeAdjustments?.filter((row) => !row.retracted).at(-1)?.itemVerdicts
       ?.find((row) => row.itemId === item.itemId);
-    const verdict = kind === 'effective' && correction ? (correction.correct ? 'correct' : 'incorrect') : machineVerdict;
+    // A correction record carries every printed question, including the ones
+    // it deliberately left out of the score (`voided: true`). Those hold
+    // `correct: false` only because the event schema wants a boolean — reading
+    // it as a mark would print "incorrect" beside a question nobody could
+    // mark. The machine verdict ("void") is the true thing to show.
+    const verdict = kind === 'effective' && correction && correction.voided !== true
+      ? (correction.correct ? 'correct' : 'incorrect') : machineVerdict;
     ctx.fillStyle = verdict === 'correct' ? '#1b7f4b' : verdict === 'incorrect' ? '#a6382d' : '#8b6f31';
     ctx.beginPath(); ctx.arc(88, y - 8, 14, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#17324d'; ctx.font = 'bold 23px sans-serif';

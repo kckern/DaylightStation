@@ -51,13 +51,28 @@ function BacklogStrip({ onOpenQueue }) {
  * no second read. Renders nothing at zero, same reasoning as `BacklogStrip`
  * below: an empty state shouting for attention is its own defect (UX audit
  * IA5).
+ *
+ * `unknown` is the learners whose plan could not be read. Absence of a tally
+ * for them is NOT zero, and this strip is the only place that difference is
+ * visible on a collapsed roster — the "couldn't load the day's plan" notice is
+ * inside the day grid, which nobody has opened. A silent strip over a down
+ * planner would say the morning is fine when nothing was checked.
  */
-function GrownUpStrip({ count, href }) {
-  if (!count) return null;
+function GrownUpStrip({ count, href, unknown = 0 }) {
+  if (!count && !unknown) return null;
   return (
-    <a className="teacher-grownup-strip" data-testid="grownup-strip" href={href}>
-      {count} subject{count === 1 ? '' : 's'} need{count === 1 ? 's' : ''} a grown-up →
-    </a>
+    <div className="teacher-grownup">
+      {count > 0 && (
+        <a className="teacher-grownup-strip" data-testid="grownup-strip" href={href}>
+          {count} subject{count === 1 ? '' : 's'} need{count === 1 ? 's' : ''} a grown-up →
+        </a>
+      )}
+      {unknown > 0 && (
+        <p className="teacher-grownup-strip teacher-grownup-strip--unknown" data-testid="grownup-strip-unknown">
+          We couldn’t read the plan for {unknown} learner{unknown === 1 ? '' : 's'} — this count may be short.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -79,14 +94,14 @@ export default function TodayTab({ kids = [], onOpenQueue = null }) {
     () => (Array.isArray(today.data) ? today.data : (today.data?.learners ?? [])),
     [today.data],
   );
-  const [needsGrownUp, setNeedsGrownUp] = useState({ count: 0, href: null });
+  const [needsGrownUp, setNeedsGrownUp] = useState({ count: 0, unknown: 0, href: null });
 
   return (
     <div className="teacher-tab teacher-tab--today">
       {lifecycleDown && (
         <p className="teacher-banner">School lifecycle is not enabled on this install — the daily digest needs it.</p>
       )}
-      <GrownUpStrip count={needsGrownUp.count} href={needsGrownUp.href} />
+      <GrownUpStrip count={needsGrownUp.count} href={needsGrownUp.href} unknown={needsGrownUp.unknown ?? 0} />
       <PanelFrame
         title="Today"
         state={rosterState}

@@ -1549,11 +1549,20 @@
 // fault; the two actionable excuses ride along rather than earning a second
 // colour the strip would need to explain. Renders nothing at zero — see
 // `BacklogStrip`, whose own comment states why an empty count must not shout.
+// The tally and the caution stack; either may be absent, and the wrapper
+// renders nothing of its own when both are.
+.teacher-grownup { display: flex; flex-direction: column; gap: 0.4rem; }
 .teacher-grownup-strip {
   display: block; width: 100%; text-align: left; text-decoration: none;
   border: 1px solid #e3b7a6; border-radius: 12px; background: #fbe4de;
   padding: 0.7rem 0.9rem; font: inherit; font-weight: 700; color: #813927;
   &:hover, &:focus-visible { background: #f8dfd8; }
+  // "We couldn't read the plan" — a caution, not a fault, and not a link:
+  // there is nowhere useful to send a parent whose planner read failed. Amber
+  // rather than the strip's red so an unknown never reads as a known problem.
+  &--unknown {
+    margin: 0; border-color: #ddc389; background: #fbf1da; color: #7a5c1c; font-weight: 600;
+  }
 }
 
 .teacher-reportcard__materials-label { margin: 0.6rem 0 0.2rem; color: #8a7c5c; font-size: 0.78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }

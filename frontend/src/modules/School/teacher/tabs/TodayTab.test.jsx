@@ -429,6 +429,32 @@ describe('TodayTab', () => {
       expect(strip).toHaveAttribute('href', '/school/teacher/operations');
     });
 
+    // A DOWN PLANNER MUST NOT LOOK LIKE A QUIET MORNING.
+    //
+    // The "couldn't load the day's plan" notice lives in the day grid, which a
+    // collapsed roster never mounts, and the roster card's own PanelFrame is
+    // `ok` because the DIGEST read succeeded — the agenda is a separate
+    // per-learner read. This strip is the only place on a collapsed dashboard
+    // where a failed planner read can be seen at all.
+    it('cautions instead of falling silent when no learner\u2019s plan could be read', async () => {
+      schoolApi.agendaPreview.mockResolvedValue(fail(500));
+      mount(<TodayTab kids={KIDS} />);
+      const caution = await screen.findByTestId('grownup-strip-unknown');
+      expect(caution).toHaveTextContent('We couldn\u2019t read the plan for 2 learners');
+      // No tally: zero is not a fact here, and must not be printed as one.
+      expect(screen.queryByTestId('grownup-strip')).not.toBeInTheDocument();
+    });
+
+    it('shows the tally AND the caution when one learner reads and another does not', async () => {
+      schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'learner-a'
+        ? ok({ sections: [{ subject: 'science', next: null, obligation: { state: 'faulted', reason: 'program_unavailable' } }] })
+        : fail(500)));
+      mount(<TodayTab kids={KIDS} />);
+      expect(await screen.findByTestId('grownup-strip')).toHaveTextContent('1 subject needs a grown-up');
+      expect(await screen.findByTestId('grownup-strip-unknown'))
+        .toHaveTextContent('We couldn\u2019t read the plan for 1 learner');
+    });
+
     it('uses singular copy for exactly one subject', async () => {
       schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'learner-a'
         ? [

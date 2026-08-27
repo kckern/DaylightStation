@@ -126,7 +126,7 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     // once both have landed, must count only learner-b's fault and link to
     // the first (in roster order) learner who has one.
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
-      count: 1, href: '/school/teacher/operations',
+      count: 1, unknown: 0, href: '/school/teacher/operations',
     }));
   });
 
@@ -135,7 +135,53 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /Learner A/ });
-    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, href: null }));
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 0, href: null }));
+  });
+
+  // A FAILED PLANNER READ IS NOT A ZERO.
+  //
+  // On an `error`/`unavailable` agenda, `agenda.data` is null, the join runs
+  // over zero sections, and every row's obligation is `null` — which
+  // `learnerDay.js` defines as "the planner didn't say", not "the planner said
+  // fine". Reporting that as an empty tally makes the one screen built to
+  // catch a broken day say all-clear. The "couldn't load the day's plan"
+  // notice lives in the grid, which a collapsed card never mounts, so nothing
+  // else on this screen would say otherwise.
+  it.each([['error', 500], ['unavailable', 404]])
+  ('reports a %s agenda read as unknown, never as zero subjects', async (_state, status) => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: false, status, data: null });
+    const onNeedsGrownUp = vi.fn();
+    render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
+    await screen.findByRole('button', { name: /Learner A/ });
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 1, href: null }));
+  });
+
+  it('counts a readable learner and an unreadable one separately', async () => {
+    const kids = [{ id: 'learner-a', name: 'Learner A' }, { id: 'learner-b', name: 'Learner B' }];
+    const rows = [{ learnerId: 'learner-a', sessions: [] }, { learnerId: 'learner-b', sessions: [] }];
+    schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'learner-a'
+      ? ok({ sections: [section({ state: 'faulted', reason: 'program_unavailable' })] })
+      : { ok: false, status: 500, data: null }));
+    const onNeedsGrownUp = vi.fn();
+    render(<RosterStrip rows={rows} kids={kids} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
+    await screen.findByRole('button', { name: /Learner B/ });
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
+      count: 1, unknown: 1, href: '/school/teacher/operations',
+    }));
+  });
+
+  it('suppresses the collapsed card summary and dots when the plan could not be read', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: false, status: 500, data: null });
+    render(<RosterStrip rows={[{ learnerId: 'learner-a', sessions: [
+      { subject: 'math', sessionId: 'ses_1', unitId: 'm1', lessonTitle: 'Math A', state: 'graded' },
+    ] }]} kids={KIDS} studyDay="2026-08-26" />);
+    const card = await screen.findByRole('button', { name: /Learner A/ });
+    // With no sections every session falls to `unplanned`, so the summary
+    // would read "1 extra" for an ordinary day and the dots would show a
+    // one-lesson day. Both are guesses dressed as facts.
+    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalled());
+    expect(card.querySelector('.teacher-roster__stats')).toBeNull();
+    expect(card.querySelector('.teacher-roster__dots')).toBeNull();
   });
 });
 
@@ -165,7 +211,7 @@ describe('RosterStrip — a section\'s obligation is stated once, not once per r
     render(<RosterStrip rows={[rowWithTwoSessions]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /Learner A/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
-      count: 1, href: '/school/teacher/students/learner-a/courses',
+      count: 1, unknown: 0, href: '/school/teacher/students/learner-a/courses',
     }));
   });
 

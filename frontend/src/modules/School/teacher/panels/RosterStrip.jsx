@@ -612,7 +612,18 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   // "any machine-graded attempt today", which missed a day spent entirely on
   // work that carries no score.
   const started = (joined.counts.done ?? 0) + (joined.counts['in-progress'] ?? 0) > 0;
-  const settled = agenda.state !== 'loading';
+  // SETTLED MEANS THE PLAN ACTUALLY ARRIVED. `!== 'loading'` also admitted
+  // `error` and `unavailable`, where `agenda.data` is null, the join runs over
+  // zero sections, every row gets `obligation: null` ("the planner didn't
+  // say", per `learnerDay.js`), and the tally below reports an empty array as
+  // fact. That is a false all-clear on the one screen built to catch a broken
+  // day — and the "couldn't load the day's plan" notice lives in the grid,
+  // which a collapsed card never mounts, so nothing else says otherwise.
+  const settled = agenda.state === 'ok' || agenda.state === 'empty';
+  // The other half of the same truth: we tried, and we could not tell. Silence
+  // alone would be honest but useless — the parent would still see a clean
+  // roster. This travels up to the dashboard as a caution, not as a zero.
+  const planUnknown = agenda.state === 'error' || agenda.state === 'unavailable';
   // THE SUBJECTS THIS LEARNER CONTRIBUTES to the dashboard's "N subjects need
   // a grown-up" strip (plan 3.4) — task 7's `needsGrownUp` read straight off
   // the join, never a second classification. Reported only once the plan has
@@ -640,11 +651,15 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   // render) so the report effect fires only when the SET of subjects needing
   // a grown-up actually changes, not on every unrelated re-render.
   const grownUpSignature = grownUpEntries.map((r) => `${r.key}:${r.obligation.reason}`).join('|');
+  // Three answers, not two: a tally, "we could not tell", and — while the read
+  // is still in flight — nothing at all.
   useEffect(() => {
-    if (!onNeedsGrownUp || !settled) return;
-    onNeedsGrownUp(learnerId, grownUpEntries.map((r) => ({ reason: r.obligation.reason })));
+    if (!onNeedsGrownUp) return;
+    if (!settled && !planUnknown) return;
+    onNeedsGrownUp(learnerId, settled ? grownUpEntries.map((r) => ({ reason: r.obligation.reason })) : [],
+      { known: settled });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- grownUpSignature stands in for grownUpEntries
-  }, [onNeedsGrownUp, settled, learnerId, grownUpSignature]);
+  }, [onNeedsGrownUp, settled, planUnknown, learnerId, grownUpSignature]);
   return (
     <div className="teacher-roster__entry">
       <button
@@ -727,9 +742,12 @@ export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownU
   // fetch just to count what the roster already knows. `reportGrownUp` is
   // referentially stable (`useCallback`, no deps) so a re-render never looks
   // like a fresh report to the entries holding it.
+  // `{ entries, known }` per learner, not a bare array: a learner whose plan
+  // could not be read contributes no subjects AND must not be counted as a
+  // quiet zero. The two are different facts and the dashboard shows both.
   const [grownUpByLearner, setGrownUpByLearner] = useState({});
-  const reportGrownUp = useCallback((learnerId, entries) => {
-    setGrownUpByLearner((prev) => ({ ...prev, [learnerId]: entries }));
+  const reportGrownUp = useCallback((learnerId, entries, { known = true } = {}) => {
+    setGrownUpByLearner((prev) => ({ ...prev, [learnerId]: { entries, known } }));
   }, []);
   // A primitive stand-in for `rows` (which is a fresh array reference on
   // every parent render whenever the caller derives it inline) — the
@@ -739,12 +757,17 @@ export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownU
   useEffect(() => {
     if (!onNeedsGrownUp) return;
     const firstLearnerId = rows.map((row) => row.learnerId)
-      .find((learnerId) => (grownUpByLearner[learnerId]?.length ?? 0) > 0) ?? null;
-    const first = firstLearnerId ? grownUpByLearner[firstLearnerId][0] : null;
-    const count = Object.values(grownUpByLearner).reduce((sum, entries) => sum + entries.length, 0);
+      .find((learnerId) => (grownUpByLearner[learnerId]?.entries?.length ?? 0) > 0) ?? null;
+    const first = firstLearnerId ? grownUpByLearner[firstLearnerId].entries[0] : null;
+    const count = Object.values(grownUpByLearner)
+      .reduce((sum, report) => sum + (report?.entries?.length ?? 0), 0);
+    // Learners whose plan could not be read at all. The count above is short
+    // by an unknown amount for each one, and saying so is the whole point.
+    const unknown = Object.values(grownUpByLearner).filter((report) => report?.known === false).length;
     const base = teacherBaseFor(globalThis.location?.pathname ?? '');
     onNeedsGrownUp({
       count,
+      unknown,
       href: first ? grownUpHref(GROWN_UP_ACTION[first.reason]?.linkTo ?? 'operations', firstLearnerId, base) : null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rowOrder stands in for `rows`
@@ -754,7 +777,7 @@ export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownU
   // source is exactly the kind of ghost signal this panel model forbids. A
   // SEPARATE effect, deliberately not re-run by the report effect above: its
   // cleanup must fire only on a true unmount, never on every tally update.
-  useEffect(() => (onNeedsGrownUp ? () => onNeedsGrownUp({ count: 0, href: null }) : undefined), [onNeedsGrownUp]);
+  useEffect(() => (onNeedsGrownUp ? () => onNeedsGrownUp({ count: 0, unknown: 0, href: null }) : undefined), [onNeedsGrownUp]);
   return (
     <div className="teacher-roster">
       {rows.map((row) => (

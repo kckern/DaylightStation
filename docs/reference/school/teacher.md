@@ -50,8 +50,10 @@ stateDiagram-v2
 | **Capability** | HttpOnly `SameSite=Strict` cookie | 10 min idle, 30 min absolute | every ordinary teacher write |
 | **Step-up grant** | `X-Teacher-Step-Up` header | 2 min, **one use**, scoped to one action *and one resource id* | the seven high-consequence actions below |
 
-The PIN exists only inside the prompt. It is never in React state, never in
-`sessionStorage`, never in a log, and never in an ordinary mutation body.
+The PIN exists only inside the prompt. It is never held in shared state, never
+in `sessionStorage`, never in a log, and never in an ordinary mutation body; it
+exists only in the prompt's own local state while it is being typed, and is
+cleared when the prompt closes.
 
 **The seven step-up actions** (`TeacherCapabilitySessions.mjs#STEP_UP_ACTIONS`),
 with the resource each is scoped to:
@@ -112,13 +114,15 @@ flowchart TD
     HIST -->|day heading| DAY
     SESSION -->|"Give credit for work you saw"| LOPS
     CURRIC -->|course card| CURRIC
-    OPS -.->|interventions index| LOPS
 ```
 
-The interventions index renders in exactly one place — School Operations —
-not on Curriculum too (trim wave 5.3): Curriculum inspects published
-curriculum, Operations repairs it, and Operations is one click away via the
-global nav rail from any page, including Curriculum.
+The interventions index renders in two places, and no longer on Curriculum
+(trim wave 5.3): **School Operations** shows the four school-scoped entries,
+and a student's **Operations** page shows all eight, learner-scoped. Curriculum
+inspects published curriculum and links to Operations rather than re-rendering
+the index; Operations is one click away via the global nav rail from any page.
+The eight-entry chooser drawn in §14 is therefore the *student* Operations
+view — School Operations draws the school-scoped four.
 
 `/students/:id` is the canonical short form for the Day; `/students/:id/overview`
 is a retired alias that the shell redirects there rather than 404ing (trim
@@ -230,7 +234,7 @@ reassignment could not legally follow a reward until it became legal here.
 | `submitted` | resolve the review items that block grading | Queue → Grading and review | capability |
 | `graded` / `outcome_recorded`, and `submitted` with every question marked | settle it by hand — see §5 for what it cannot finish | Session inspector → Settle this by hand | **step-up** |
 | `graded` | correct the mark; retract a correction | Session inspector → Fix a marked answer | **step-up** |
-| `outcome_recorded` (`needs_remediation`) | offer another try | Session inspector → Offer another try | capability |
+| `outcome_recorded` (`needs_remediation`), while no retake has been opened | offer another try | Session inspector → Offer another try | capability |
 | `rewarded` | correct the mark — the effective grade and its reward reconcile | Session inspector | **step-up** |
 | any | give credit for work the tech lost — attest the unit | Student → Operations | capability |
 | any | move the work to the right child | Student → Operations | capability |
@@ -280,7 +284,9 @@ flowchart TD
 
     S --> NS{"Not a school day?"}
     O --> NS
-    NS -->|yes, and not served| NSE["excused · not_a_school_day"]
+    B --> NS
+    D --> NS
+    NS -->|"yes, and the verdict is not served"| NSE["excused · not_a_school_day"]
     O --> FOCUS{"Suppressed by a focus subject?"}
     FOCUS -->|yes| SUP["excused · suppressed_by_focus"]
 ```
@@ -324,6 +330,7 @@ flowchart LR
     V -->|no| SC{"A recorded score?"}
     SC -->|yes| DONE
     SC -->|no| ST{"Session state"}
+    ST -->|"graded / outcome_recorded / rewarded / media_completed / external_activity_assessed"| DONE
     ST -->|"issued / reprinted / dispatched / submitted"| IP["in-progress"]
     ST -->|"created or none"| PL["planned"]
     ST -->|"deferred by exception"| DEF["deferred"]
@@ -393,10 +400,18 @@ go. Marking a voided question `correct` or `incorrect` later **un-voids** it —
 the question returns to the denominator.
 
 If voiding leaves **nothing** markable, the session is not graded at all —
-`graded` requires a total of at least one — and it waits to be settled by hand.
-**Marking one of those questions is the only way to reopen the score**: a
-hand-settle cannot manufacture a denominator out of nothing, and reports the
-refusal rather than inventing a `0 of 0`.
+`graded` requires a total of at least one — and a hand-settle **refuses it too**,
+for the same reason. **Marking one of those questions is the only way to reopen
+the score**: nothing can manufacture a denominator out of nothing, and the
+console reports the refusal rather than inventing a `0 of 0`. A session in that
+state cannot be settled at all today; closing that needs a domain change.
+
+A **grade correction** honours the same denominator. A question voided at
+grading time stays out of the score when a later correction leaves it
+`unchanged` — it is not re-scored as wrong — and re-enters the moment a
+grown-up marks it `correct` or `incorrect`, which un-voids it exactly as the
+grading lane does. The correction form offers no `void` option: `unchanged` is
+how a still-unmarkable question is left alone.
 
 With both finishers wired, resolving the **last** pending item of a session
 grades and closes it in the same act. Without them, resolve-only.
@@ -426,7 +441,11 @@ supersedes deliberately.
 | Systematic regrade | one bank × date range | corrective attempts | **step-up** |
 | Settle it by hand | one session | `graded` + teacher note + `outcome_recorded` | **step-up** |
 
-Every one of the five is preview-first. Nothing applies on the first tap.
+Four of the five are preview-first. Resolving a review item as `correct` or
+`incorrect` applies on the **first tap** — the mark itself is the whole
+decision and there is nothing to preview. `void` is the exception within that
+row: it arms first, and will not commit until the note the child will read has
+been written.
 
 **Settling by hand** finishes work that came back and stalled on the way to an
 outcome. One tap of **Settle it** does three things in this order:
@@ -525,7 +544,9 @@ usable copy.
 stateDiagram-v2
     [*] --> requested: child asks for a printable
     requested --> printed: within the rolling page quota
-    requested --> pending: over quota
+    requested --> refused: the job alone exceeds the quota
+    refused --> [*]: denied outright — no teacher ever sees it
+    requested --> pending: over quota, but askable
     pending --> printed: teacher approves — approver stamped in the log
     pending --> denied: teacher denies
     denied --> [*]: retained 30 days, visible to the child as "your asks"
@@ -665,14 +686,18 @@ every reader folds retractions out. The child hears about it, rather than
 discovering a lock reappeared.
 
 **Pass-criteria overrides** are the fourth override surface: a per-unit bar
-that beats the authored `passing.percent`, consumed at exactly one point
-(`CloseSessionOutcome`). A course-level bar is a bulk write over the same
+that beats the authored `passing.percent`. It is read at **grading** time and
+stamped onto the `graded` event (`GradeSubmission`), so the bar cannot move
+under a child who has already been graded; the close reads that stamp first and
+falls back to the live override only for sessions graded before stamping
+existed (`CloseSessionOutcome`). §7 states the same rule. A course-level bar is a bulk write over the same
 per-unit store — one concept, not two. Garbage input must never become a
 silent *clear* of a real override, so the field validates 1–100 before it
 writes.
 
-All four surfaces are readable in one place — what is overridden right now, by
-whom, since when.
+Two of the four are readable together in **Active overrides** — pass-criteria
+overrides and attestations, each as its own group, showing what is overridden
+right now, by whom, since when. Enrichment and notes have their own panels.
 
 ---
 
@@ -768,6 +793,11 @@ flowchart TD
     F -->|"teacher dismisses"| DIS["Reason REQUIRED<br/>delivered to the child as a note"]
 ```
 
+**Granting a retake does not clear the row.** `OpenRemediation` opens the fresh
+session but removes nothing from the backlog; a dismissal is the only thing
+that removes a row. Pre-existing behaviour, stated here so a row that outlives
+its own grant does not read as a bug.
+
 A dismissal without a reason is not possible: the reason *is* the delivery. The
 dismissal targets exactly one row — kind and session id ride along, because a
 retake ask and a flag on the same bank are different sentences.
@@ -810,7 +840,7 @@ flowchart TD
     Q1 -->|"the lesson itself is broken"| M5["Excuse, postpone, swap, or stop<br/>→ school · Operations"]
     Q1 -->|"a lesson is stuck open"| M6["Clear a lesson that never finished<br/>→ school · Operations"]
     Q1 -->|"a rule was wrong for many"| M7["Re-mark a whole batch<br/>→ school · Operations"]
-    Q1 -->|"what is already changed?"| M8["Active overrides<br/>→ school · Operations"]
+    Q1 -->|"what is already changed?"| M8["See what is already changed<br/>→ school · Operations"]
 ```
 
 Use the **narrowest intervention that matches what actually happened**. Every
@@ -821,12 +851,16 @@ write is attributed and auditable.
 ## 15. Invariants this surface holds to
 
 1. **No silent verbs about children.** Every adult action whose subject is a
-   child produces one child-readable sentence. Dismissals, abandonments,
-   attestation retractions, and review verdicts all carry a mandatory or
-   optional note that is *delivered*, not filed.
+   child produces one child-readable sentence. Dismissals, attestation
+   retractions, and review verdicts all carry a note that is *delivered*, not
+   filed. **Abandonment is the exception:** its reason is mandatory and is
+   written into the event log, but nothing delivers it to the child. Closing
+   that gap is outstanding — see §16.
 2. **Preview before apply, everywhere consequential.** Exceptions, grade
-   corrections and their retractions, regrades, reprints, agenda dispatch.
-   Nothing consequential happens on a first tap.
+   corrections and their retractions, regrades, agenda dispatch. Nothing
+   consequential happens on a first tap. Review verdicts are deliberately not
+   in this list (§5): `correct`/`incorrect` is the whole decision. Reprint is
+   *documented* as preview-first but its apply half does not work — see §16.
 3. **Append-only, always.** Nothing is edited in place. A correction is a new
    fact that outranks an old one; the old one stays readable.
 4. **The record is not the presentation.** The machine grade survives under
@@ -841,6 +875,48 @@ write is attributed and auditable.
    `unavailable`, an unassigned learner is `empty`.
 7. **Reads never write.** Agenda preview, report-card reads, and the print
    preview are side-effect-free by construction, not by convention.
+
+---
+
+## 16. Known gaps — what this surface does not do
+
+This document is endstate and present-tense everywhere else. This section is
+the exception, and it exists so that a gap is never invisible: a reference that
+certifies a dead flow as working converts a real problem into one nobody can
+find.
+
+**Three buttons do not work: Print another copy, Apply exception, Retract
+exception.** Each requests a step-up grant under an action name the server does
+not recognise — `artifact.reprint`, `curriculum-exception.apply`, and
+`curriculum-exception.retract` are absent from `STEP_UP_ACTIONS`. The PIN
+dialog opens and cannot be satisfied by any correct PIN. The preview halves
+work; the apply halves cannot complete. These three names are TeacherGate
+*audit-action* names, not grant names, and they predate the teacher-coverage
+work. Wherever this document describes reprint or exception apply/retract as
+preview-first, read that as a description of the preview only.
+
+**An abandonment's reason is filed, not delivered.** `MarkSessionAbandoned`
+requires the reason and writes it into the `abandoned` event, and that is where
+it stops: nothing appends a note and nothing reads it back to the child. This
+is the one place invariant 1 does not hold. Closing it needs a decision about
+what a child should read when their work is abandoned, which has not been
+taken.
+
+**A retake that is abandoned strands the parent session** (audit A10). Once a
+remediation has been opened, the console does not offer another, because the
+server cannot honour one: `OpenRemediation` answers `already_opened` for any
+session that has a remediation — live, abandoned, or never scanned — and
+`remediation_opened` has no outgoing edge in the domain transition table, so a
+second one is refused on append. A child who never scanned their ticket
+therefore has no route back and no adult move that creates one. Closing this
+requires a `TRANSITIONS` change to admit a second `remediation_opened` (or an
+equivalent re-open annotation), plus a decision on how `variant` cycles across
+it. Not attempted; the console correctly does not offer a move the domain
+refuses.
+
+**An all-voided sheet cannot be settled.** Covered in §5: `graded` requires a
+denominator of at least one, so nothing can close the session. The console is
+honest about the refusal and names the move that works.
 
 ---
 
