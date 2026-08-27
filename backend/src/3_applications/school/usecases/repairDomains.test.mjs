@@ -368,6 +368,52 @@ describe('the review loop closes itself (student-advocacy A1)', () => {
     expect(out.sessionFinished).toEqual({ result: 'passed', percent: 90, passingPercent: 80 });
   });
 
+  it('VOIDING the last pending item finishes the session too — a resolved row is a resolved row', async () => {
+    // The whole point of the third verdict: a question nobody can mark must
+    // stop holding a child's work open. If this filter still read
+    // "correct or incorrect", voiding would close nothing and the session
+    // would sit at `submitted` forever — the exact wedge `void` exists to end.
+    const { ResolveReviewItem } = await import('./ResolveReviewItem.mjs');
+    const rows = [
+      { itemId: 'q1', verdict: 'correct' },
+      { itemId: 'q2', verdict: null },
+    ];
+    const gradeSubmission = { execute: vi.fn(async () => ({ status: 'graded', percent: 100, passingPercent: 80 })) };
+    const closeSessionOutcome = { execute: vi.fn(async () => ({ result: 'passed' })) };
+    const uc = new ResolveReviewItem({
+      reviewQueue: mkQueue(rows), grownUps: { assert: () => {} },
+      gradeSubmission, closeSessionOutcome,
+    });
+    const out = await uc.execute({
+      sessionId: 's1', itemId: 'q2', verdict: 'void', gradedBy: 'kckern',
+      note: 'The camera missed this one — we will do it out loud.',
+    });
+    expect(gradeSubmission.execute).toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(out.sessionFinished).toEqual({ result: 'passed', percent: 100, passingPercent: 80 });
+  });
+
+  it('a session left holding only voided rows still counts as finished', async () => {
+    const { ResolveReviewItem } = await import('./ResolveReviewItem.mjs');
+    const rows = [
+      { itemId: 'q1', verdict: 'void' },
+      { itemId: 'q2', verdict: null },
+    ];
+    // Nothing markable is left, so the grade use case declines — and the
+    // finisher must degrade quietly rather than close on a non-grade.
+    const gradeSubmission = { execute: vi.fn(async () => ({ status: 'unavailable' })) };
+    const closeSessionOutcome = { execute: vi.fn() };
+    const uc = new ResolveReviewItem({
+      reviewQueue: mkQueue(rows), grownUps: { assert: () => {} },
+      gradeSubmission, closeSessionOutcome,
+    });
+    const out = await uc.execute({
+      sessionId: 's1', itemId: 'q2', verdict: 'void', gradedBy: 'kckern', note: 'Page 2 never scanned.',
+    });
+    expect(gradeSubmission.execute).toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(closeSessionOutcome.execute).not.toHaveBeenCalled();
+    expect(out.sessionFinished).toBeUndefined();
+  });
+
   it('items still pending -> resolve only, no premature grade', async () => {
     const { ResolveReviewItem } = await import('./ResolveReviewItem.mjs');
     const rows = [

@@ -216,7 +216,35 @@ describe('the stale-work sweep over HTTP (admin advocacy A5)', () => {
     const body = await res.json();
     // ses_stuck (26 days idle) qualifies; ses_done is terminal; ses_fresh is 1 day old.
     expect(body.sessions.map((s) => s.sessionId)).toEqual(['ses_stuck']);
-    expect(body.sessions[0]).toMatchObject({ learnerId: 'learner-1', state: 'issued', unitId: 'frac.01' });
+    expect(body.sessions[0]).toMatchObject({ learnerId: 'learner-1', state: 'issued', unitId: 'frac.01', abandonable: true });
+  });
+
+  it('stamps `abandonable` per row, and the flag agrees with what POST /abandon actually does for the same state — a second copy of the rule is the bug this exists to prevent', async () => {
+    sessionRows.push(
+      // Past `submitted`, work settles through grading/close — never abandonment.
+      { sessionId: 'ses_stuck_submitted', learnerId: 'learner-1', unitId: 'frac.05', state: 'submitted', terminal: false, updatedAt: '2026-07-01T09:00:00.000Z' },
+      // A null state is not permission, even though it is non-terminal and stale.
+      { sessionId: 'ses_stuck_null', learnerId: 'learner-1', unitId: 'frac.06', state: null, terminal: false, updatedAt: '2026-07-01T09:00:00.000Z' },
+    );
+    const res = await fetch(`${base}/sessions/stale?olderThanDays=7`);
+    const body = await res.json();
+    const bySessionId = Object.fromEntries(body.sessions.map((s) => [s.sessionId, s]));
+    expect(bySessionId.ses_stuck.abandonable).toBe(true);
+    expect(bySessionId.ses_stuck_submitted.abandonable).toBe(false);
+    expect(bySessionId.ses_stuck_null.abandonable).toBe(false);
+
+    // Pin: for each row, `abandonable` must predict whether POST /abandon
+    // actually succeeds — drift between the two is exactly the defect this
+    // task exists to close.
+    for (const [sessionId, expectSuccess] of [
+      ['ses_stuck', true], ['ses_stuck_submitted', false], ['ses_stuck_null', false],
+    ]) {
+      appendedEvents = [];
+      // eslint-disable-next-line no-await-in-loop
+      const r = await post(`/sessions/${sessionId}/abandon`, { learnerId: 'learner-1', decidedBy: 'dad', reason: 'checking agreement' });
+      expect(r.ok).toBe(expectSuccess);
+      expect(appendedEvents.length > 0).toBe(expectSuccess);
+    }
   });
 
   it('POST /sessions/:id/abandon: gated, reason required, appends the terminal event with attribution', async () => {

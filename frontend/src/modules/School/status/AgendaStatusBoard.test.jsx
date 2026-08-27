@@ -80,6 +80,42 @@ describe('AgendaStatusBoard model', () => {
     expect(summary.segments.map((s) => s.unitId)).toEqual(['math.01']);
   });
 
+  it('draws a disc for SERVED work that never opened a session — the piano case', () => {
+    // Regression, 2026-08-26. Piano is a PROGRAM subject: it is served inside
+    // its own app, so it finishes with no session row and no OMR outcome, and
+    // only `servedWork` ever records it. Milo was served four things that day
+    // and the board could see three, reading "2 OF 3" for a 3-of-4 day.
+    const sections = [
+      { subject: 'civilization', servedToday: true, servedWork: [{ unitId: 'atlas.ohio' }] },
+      { subject: 'arts', servedToday: true, servedWork: [{ unitId: 'plex:676040' }] },
+    ];
+    const sessions = [{ unitId: 'atlas.ohio', subject: 'civilization', outcome: { result: 'passed' } }];
+    const summary = summarize(sections, sessions);
+    expect(summary.segments.map((s) => s.unitId).sort()).toEqual(['atlas.ohio', 'plex:676040']);
+    expect(summary.total).toBe(2);
+    expect(summary.done).toBe(2);
+  });
+
+  it('lets an open sheet stay pending even though the planner calls it served', () => {
+    // The other half of the same change, and the reason servedWork cannot just
+    // paint everything green: a partial scan the grader refused to bridge is
+    // still SERVED by the planner's reckoning, but the child is not done with
+    // it. Evidence runs first and wins.
+    const sections = [{
+      subject: 'scripture',
+      servedToday: true,
+      servedWork: [{ unitId: 'cfm.d2' }, { unitId: 'cfm.d3' }],
+    }];
+    const sessions = [
+      { unitId: 'cfm.d2', subject: 'scripture', outcome: { result: 'passed' } },
+      { unitId: 'cfm.d3', subject: 'scripture', outcome: null },
+    ];
+    const summary = summarize(sections, sessions);
+    expect(summary.total).toBe(2);
+    expect(summary.done).toBe(1);
+    expect(summary.segments.find((s) => s.unitId === 'cfm.d3').state).toBe('pending');
+  });
+
   it('names a subject that is not one of the nine shelves', () => {
     const summary = summarize(
       [{ subject: 'nature-study' }],

@@ -111,7 +111,59 @@ const gradedRecorder = () => ({
   })),
 });
 
+/**
+ * The 2026-08-26 partial: the record resolved and SCORED (2 of 3), but a blank
+ * row meant `#bridgeSession` refused to turn it into a verdict. That refusal is
+ * correct; it was the only branch with no ceremony, so three feeds of the card
+ * produced nothing at all.
+ */
+const partialRecorder = () => ({
+  execute: vi.fn(async () => ({
+    recorded: true,
+    session: { sessionId: 'ses-one', advancedTo: null, reason: 'partial-scan' },
+  })),
+});
+
 describe('createSchoolPrintScanConsumer: a scan always makes a mark on the room', () => {
+  it('names the unfinished rows when a scored sheet is not bridged', async () => {
+    const partialCard = {
+      ...card('r1'),
+      results: [
+        { row: 43, status: 'correct' },
+        { row: 44, status: 'ambiguous' },
+        { row: 45, status: 'blank' },
+      ],
+    };
+    const bus = build({
+      recorder: partialRecorder(),
+      outcome: { results: [partialCard], cardRecordCount: 1 },
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    const spoken = eventsNamed(bus, 'scan-rows-incomplete');
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]).toMatchObject({
+      sessionId: 'ses-one', learnerId: 'learner3', blankRows: [45], ambiguousRows: [44],
+    });
+  });
+
+  it('does not ALSO fire the generic backstop — one ceremony per sheet', async () => {
+    // The partial branch speaks for itself, so the "nothing was recorded"
+    // fallback must stay out of the way. Two sounds at a child standing at the
+    // scanner is an alarm, not feedback.
+    const partialCard = { ...card('r1'), results: [{ row: 45, status: 'blank' }] };
+    const bus = build({
+      recorder: partialRecorder(),
+      outcome: { results: [partialCard], cardRecordCount: 1 },
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(eventsNamed(bus, 'scan-rows-incomplete')).toHaveLength(1);
+    expect(eventsNamed(bus, 'scan-not-recorded')).toHaveLength(0);
+  });
+
   it('answers a re-fed sheet whose session was already rewarded', async () => {
     const bus = build({ recorder: rewardedRecorder() });
     bus.broadcast('omr', sheetPayload());

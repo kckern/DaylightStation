@@ -262,6 +262,11 @@
   input { min-height: 38px; border: 1px solid #d8cfbe; border-radius: 7px; padding: 0 9px; background: white; color: #30291f; font: inherit; }
   .teacher-action-preview, .teacher-action-row, .teacher-panel__error { grid-column: 1 / -1; }
 }
+.teacher-session-settle {
+  label { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; color: #6c604f; font-size: 12px; font-weight: 700; }
+  input { min-height: 38px; border: 1px solid #d8cfbe; border-radius: 7px; padding: 0 9px; background: white; color: #30291f; font: inherit; font-weight: 400; }
+  .teacher-action-preview { strong { color: #59462f; font-size: 13px; } ol { margin: 6px 0 0; padding-left: 18px; color: #696052; font-size: 13px; } }
+}
 .teacher-item-verdicts { grid-column: 1 / -1; display: grid; gap: 6px; margin: 4px 0; padding: 10px; border: 1px solid #ded3bf; border-radius: 8px;
   label { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; padding-top: 6px; border-top: 1px solid #eee6d8; }
   label:first-of-type { border-top: 0; } span { display: grid; } small { color: #887e6e; font-weight: 400; } select { min-height: 38px; }
@@ -341,6 +346,14 @@
   &--planned &__header, &--planned &__foot { background: #f7f2e6; }
   &--deferred &__header, &--blocked &__header,
   &--deferred &__foot, &--blocked &__foot { background: #fbeed6; }
+  // FAULTED IS NOT BLOCKED. Both can carry `status: 'blocked'` (a locked
+  // sibling that IS reachable renders identically otherwise), but a fault
+  // means the day could not be judged at all — the 2026-08-25 unlock
+  // incident is why this pair (`program_unavailable`, `blocked_unreachable`)
+  // gets language and colour distinct from an ordinary quiet lock, layered
+  // OVER the status modifier above rather than replacing it.
+  &--faulted { border-color: #e3b7a6; }
+  &--faulted &__header, &--faulted &__foot { background: #f8dfd8; }
   // One line, and only the shelf. The breadcrumb used to live here too, which
   // is what let the least specific fact on the card set its visual weight.
   &__header {
@@ -379,6 +392,20 @@
   &__percent { font-size: 15px; font-weight: 800; color: #2e6b34;
     &--low { color: #8a3627; } }
   &__pending { color: #877d6c; font-size: 12.5px; }
+  // THE OBLIGATION NOTICE — a headline sentence plus a link, for the four
+  // reasons a subject dead-ends without an adult (plan 3.2/3.3). Sits in the
+  // SAME state slot `__pending` used, never a grown row: this card's density
+  // is deliberate. Muted by colour (the fault variant reuses the same red
+  // `.teacher-status--failed` already carries elsewhere), never by opacity.
+  &__obligation {
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+    strong { font-size: 12.5px; font-weight: 700; color: #6b5d33; }
+    &--fault strong { color: #813927; }
+  }
+  &__obligation-link {
+    align-self: flex-start; color: #604521; font-size: 12px; font-weight: 700; text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
 }
 .teacher-mark { width: 13px; height: 13px; flex: none;
   &--check { color: #2e8b3d; } &--cross { color: #c0392b; }
@@ -625,7 +652,18 @@
     display: grid; place-items: center; width: 30px; height: 30px; flex: none;
     border: 1px solid; border-radius: 50%;
     .teacher-subject-identity { display: block; }
-    .teacher-subject-identity__icon { width: 16px; height: 16px; display: block; }
+    // The mark is centred in the disc by its BOX, not by flow. Every subject
+    // svg is authored `width="1em" height="1em"`, so in plain block layout it
+    // rendered at whatever font-size the roster row happened to inherit and
+    // sat against the top-left of its 16px span — visibly off-centre in a
+    // 30px circle, and drifting whenever the row's type size changed. Sizing
+    // the svg to the span and centring it makes the glyph independent of
+    // inherited type.
+    .teacher-subject-identity__icon {
+      width: 16px; height: 16px;
+      display: grid; place-items: center;
+      svg { display: block; width: 100%; height: 100%; }
+    }
     &--passed { border-color: #7fae7c; background: #e4f0e0; color: #2e6b34; }
     // Out in the world but not back yet. Dashed, so the state does not ride on
     // colour alone — a reader who cannot separate this amber from the green
@@ -633,6 +671,11 @@
     &--active { border-color: #c9a35c; border-style: dashed; background: #fdf7e8; color: #8a6a2a; }
     &--failed { border-color: #d9b46a; background: #fbf0d8; color: #8a5a2a; }
     &--idle   { border-color: #ddd3c1; background: #f4efe5; color: #8a8272; }
+    // A subject that dead-ends without a grown-up (task 8) — a fault or one
+    // of the two actionable excuses — gets its own solid ring, distinct from
+    // the amber "fell short"/"out in the world" tones: this is not a score
+    // and not a normal in-flight lock, it is a stop only an adult can clear.
+    &--needs-grownup { border-color: #d99a7f; background: #fbe4de; color: #9a3b26; }
   }
   &__dot-initial { font-size: 13px; font-weight: 800; line-height: 1; }
 
@@ -675,6 +718,7 @@
 }
 
 .teacher-quizreq__meta, .teacher-frozen__meta { color: #8a8272; }
+.teacher-frozen__health-link { display: inline-block; margin-top: 8px; font-size: 13px; color: #8a5a2a; }
 .teacher-quizreq__kind {
   align-self: flex-start; padding: 0.1rem 0.5rem; border-radius: 999px;
   background: #ead9a8; color: #4a3d14; font-size: 0.7rem; font-weight: 800;
@@ -801,6 +845,10 @@
     cursor: pointer;
   }
 }
+
+.teacher-prints__preview { color: #604521; font-weight: 700; font-size: 12px; text-decoration: none; border-bottom: 1px dotted #604521; }
+.teacher-prints__preview:hover { border-bottom-style: solid; }
+.teacher-prints__quota { color: #8a5a2a; font-size: 12px; }
 
 .teacher-prints__actions {
   margin-left: auto;
@@ -1015,6 +1063,36 @@
     padding: 2px 8px;
     font-size: 11px;
     cursor: pointer;
+  }
+}
+
+.teacher-syllabi {
+  &__list { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+  &__row {
+    padding: 8px 0;
+    border-top: 1px solid #f1ece0;
+    &:first-child { border-top: none; }
+  }
+  &__summary { display: flex; flex-direction: column; gap: 4px; }
+  &__head { display: flex; align-items: baseline; gap: 8px; }
+  &__title { font-weight: 700; }
+  &__course { color: #8a8272; font-size: 12px; }
+  &__meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: #8a8272; font-size: 12px; }
+  &__editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 13px;
+
+    button {
+      align-self: flex-start;
+      border: 1px solid #d9bfae;
+      background: #fff;
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
   }
 }
 
@@ -1344,6 +1422,11 @@
     dt { color: #8a8272; font-weight: 700; }
     dd { margin: 0; }
     em { color: #8a8272; font-style: italic; }
+    // A managed fact links to the syllabus that set it — same understated
+    // treatment as .teacher-curriculum__preview, so it reads as a pointer,
+    // not a button.
+    a { color: #604521; font-weight: 700; text-decoration: none; border-bottom: 1px dotted #604521; }
+    a:hover { text-decoration: none; border-bottom-style: solid; }
   }
 
   &__note {
@@ -1409,6 +1492,8 @@
   color: #5d5647;
   font-size: 0.78rem;
   font-style: italic;
+
+  a { color: #604521; font-style: normal; font-weight: 700; }
 }
 
 .teacher-stale { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -1447,6 +1532,13 @@
   background: #fdf0ed; color: #7c2417; font-weight: 800; cursor: pointer; white-space: nowrap;
 }
 .teacher-stale__row button { white-space: nowrap; }
+.teacher-stale__settle { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; white-space: nowrap; }
+.teacher-stale__settle-link { font-weight: 700; text-decoration: none; color: #2b2620;
+  &:hover { text-decoration: underline; }
+}
+.teacher-stale__pending { color: #a15b16; font-weight: 700; text-decoration: none;
+  &:hover { text-decoration: underline; }
+}
 
 .teacher-exception-panel {
   ul { margin: 1rem 0 0; padding-left: 1.25rem; }
@@ -1459,6 +1551,27 @@
   border: 1px solid #e7dcc3; border-radius: 12px; background: #fffdf7;
   padding: 0.7rem 0.9rem; font: inherit; font-weight: 700; color: #6b5d33; cursor: pointer;
   &:hover, &:focus-visible { background: #fbf4e6; }
+}
+// "N subjects need a grown-up" (plan 3.4) — a structurally broken day named
+// once, above the roster, instead of found lesson by lesson. Same red the
+// faulted lesson card carries, because most of what this strip counts IS a
+// fault; the two actionable excuses ride along rather than earning a second
+// colour the strip would need to explain. Renders nothing at zero — see
+// `BacklogStrip`, whose own comment states why an empty count must not shout.
+// The tally and the caution stack; either may be absent, and the wrapper
+// renders nothing of its own when both are.
+.teacher-grownup { display: flex; flex-direction: column; gap: 0.4rem; }
+.teacher-grownup-strip {
+  display: block; width: 100%; text-align: left; text-decoration: none;
+  border: 1px solid #e3b7a6; border-radius: 12px; background: #fbe4de;
+  padding: 0.7rem 0.9rem; font: inherit; font-weight: 700; color: #813927;
+  &:hover, &:focus-visible { background: #f8dfd8; }
+  // "We couldn't read the plan" — a caution, not a fault, and not a link:
+  // there is nowhere useful to send a parent whose planner read failed. Amber
+  // rather than the strip's red so an unknown never reads as a known problem.
+  &--unknown {
+    margin: 0; border-color: #ddc389; background: #fbf1da; color: #7a5c1c; font-weight: 600;
+  }
 }
 
 .teacher-reportcard__materials-label { margin: 0.6rem 0 0.2rem; color: #8a7c5c; font-size: 0.78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
@@ -1535,6 +1648,18 @@
     border: 1px solid #d9d0c0; background: white; object-fit: contain;
     box-shadow: 0 8px 25px rgba(45, 36, 22, .12); }
 }
+/* The one console path that prints for real. Deliberately NOT sharing the
+   preview's box, action row, or neutral beige — a teacher who only glances
+   must still be able to tell "read-only copy" from "this prints" apart. */
+.teacher-agenda-dispatch {
+  margin-top: 4px;
+  &__blocked, &__ready {
+    margin-top: 8px; padding: 10px 12px; border: 1px solid #e8c98f; border-radius: 8px;
+    background: #fff3d9; color: #6c5425;
+    p { margin: 0 0 8px; font-weight: 700; }
+    ul { margin: 0 0 8px; padding-left: 1.1rem; }
+  }
+}
 .teacher-paper-record {
   summary { color: #745326; cursor: pointer; font-size: 12px; font-weight: 700; list-style: none; }
   summary::-webkit-details-marker { display: none; }
@@ -1604,3 +1729,16 @@
   .teacher-interventions__list li { grid-template-columns: 1fr; }
   .teacher-interventions__where { grid-column: 1; }
 }
+
+/* --- System health (plan item 4.4) -------------------------------------- */
+.teacher-health__list { list-style: none; margin: 0.4rem 0 0; padding: 0;
+  li { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.3rem 0; border-bottom: 1px solid #eee4cf;
+    code { font-size: 0.85em; }
+  }
+  li span:last-child { color: #8a8272; white-space: nowrap; }
+}
+.teacher-health__ok { display: flex; align-items: center; gap: 0.4rem; margin: 0.4rem 0 0; color: #3f5c34; }
+.teacher-health__check { width: 15px; height: 15px; flex: none; }
+.teacher-health__selectors { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.4rem 0; }
+.teacher-health__versions { margin-top: 0.75rem; }
+.teacher-health__hint { margin: 0 0 0.4rem; color: #8a8272; font-size: 0.85em; }

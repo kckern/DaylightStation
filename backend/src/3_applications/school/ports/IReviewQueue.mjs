@@ -33,7 +33,7 @@
  *             unitId: string|null, reason: 'ambiguous'|'blank'|'free_response'|'unscorable'|'machine',
  *             given: *, prompt: string|null, questionNumber: number|null,
  *             rubric: string|null, enqueuedAt: string,
- *             verdict: 'correct'|'incorrect'|null, gradedBy: string|null,
+ *             verdict: 'correct'|'incorrect'|'void'|null, gradedBy: string|null,
  *             gradedAt: string|null, note: string|null,
  *             internalNote: string|null }} ReviewItem
  */
@@ -63,7 +63,11 @@ export class IReviewQueue {
    * @param {object} args
    * @param {string} args.sessionId
    * @param {string} args.itemId
-   * @param {'correct'|'incorrect'} args.verdict
+   * @param {'correct'|'incorrect'|'void'} args.verdict - `void` is "not
+   *   markable from the evidence": it RESOLVES the item (so it stops holding
+   *   the session open and stops appearing in `listPending`) without giving
+   *   it a truth value, and the grading use case leaves it out of the score's
+   *   denominator entirely. It is never a synonym for wrong.
    * @param {string} args.gradedBy
    * @param {string|null} [args.note] - what the parent wants the CHILD to
    *   read: why it was marked that way. Optional, kept verbatim, and NOT

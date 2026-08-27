@@ -7,13 +7,63 @@
  * Household-scoped by design (not per-learner): a wedged session is an
  * operational leak whoever it belongs to, and the whole point is that
  * somebody finally NOTICES.
+ *
+ * `abandoned` is not legal from every state — a session wedged at
+ * `submitted`, `graded`, or `outcome_recorded` settles through grading and
+ * close, not abandonment, and `MarkSessionAbandoned.execute` refuses those
+ * outright. The server stamps each row with `abandonable` (derived from the
+ * same domain table `execute` consults), and THIS panel renders off that
+ * flag rather than hand-writing its own copy of the state list — a second
+ * copy in JSX is exactly the mistake `sessionEvents.mjs#statesAccepting` was
+ * extracted to prevent. A non-abandonable row still gets a move: a link to
+ * the session inspector to settle it by hand, plus — when the per-session
+ * review read finds unmarked items — the honest reason it is still open.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
+import { teacherLog } from '../teacherLog.js';
 import PanelFrame from './PanelFrame.jsx';
 import { teacherDate } from '../teacherDates.js';
+import { teacherSessionPath, teacherSectionPath } from '../teacherUrl.js';
+
+/**
+ * One lazy, per-row read of `GET /lifecycle/sessions/:id/review` — the list
+ * is short, so a request per row is cheap, and a panel-wide `usePanelFetch`
+ * does not fit "N independent counts". A failed read renders nothing: this
+ * is decoration on top of a row that already has a valid affordance (the
+ * settle link), never a second error state competing with the row's own.
+ */
+function PendingReviewCount({ sessionId }) {
+  const [waiting, setWaiting] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    setWaiting(null);
+    schoolApi.sessionReview(sessionId).then(({ ok, status, data }) => {
+      if (!alive) return;
+      if (!ok || !Array.isArray(data?.items)) {
+        // Logged, never rendered: a failed count must not become a row error.
+        teacherLog.fetch('session-review-failed', { sessionId, status });
+        return;
+      }
+      const count = data.items.filter((item) => !item.verdict).length;
+      if (count > 0) setWaiting(count);
+    }).catch((err) => {
+      if (!alive) return;
+      teacherLog.fetchError('session-review-threw', { sessionId, error: err?.message });
+    });
+    return () => { alive = false; };
+  }, [sessionId]);
+
+  if (!waiting) return null;
+  return (
+    <a className="teacher-stale__pending" href={teacherSectionPath('queue')}>
+      {waiting} answer{waiting === 1 ? '' : 's'} waiting
+    </a>
+  );
+}
 
 export default function StaleSessions({ kids = [] }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
@@ -64,10 +114,20 @@ export default function StaleSessions({ kids = [] }) {
                 </button>
                 <button type="button" onClick={() => { setAsking(null); setReason(''); }}>Cancel</button>
               </span>
-            ) : (
+            ) : row.abandonable ? (
               <button type="button" disabled={busy === row.sessionId} onClick={() => { setAsking(row.sessionId); setReason(''); }}>
                 Abandon…
               </button>
+            ) : (
+              // Not abandonable: the state machine settles this through
+              // grading or close, not abandonment (`MarkSessionAbandoned`
+              // would refuse it). Offer the move that actually works.
+              <span className="teacher-stale__settle">
+                <a className="teacher-stale__settle-link" href={teacherSessionPath(null, row.sessionId)}>
+                  Settle by hand →
+                </a>
+                <PendingReviewCount sessionId={row.sessionId} />
+              </span>
             )}
             {errors[row.sessionId] && <p className="teacher-panel__error">{errors[row.sessionId]}</p>}
           </li>

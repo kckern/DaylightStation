@@ -82,6 +82,8 @@ import { createCostApiRouter } from '#composition/modules/costApi.mjs';
 import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
+import { declaredEntryActions } from '#domains/school/reachability.mjs';
+import { reportUnreachableSchoolPrograms } from '#composition/modules/schoolReachability.mjs';
 import { createLearnerActions } from '#apps/trigger/learnerActions.mjs';
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
 import { createSchoolCalc } from '#composition/modules/schoolCalc.mjs';
@@ -3364,6 +3366,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // needed the seams just above to exist first.
   // ==========================================================================
   const schoolLifecycleLogger = rootLogger.child({ module: 'school-lifecycle' });
+  // The parsed NFC reader locations, for the school reachability check. Set
+  // when the trigger API is composed further down; read only from inside a
+  // thunk, long after that has happened.
+  //
+  // Returning `null` while unset is load-bearing: it means "could not tell",
+  // which reports an assigned program as unstartable rather than silently
+  // passing it. An empty object here would be a confident — and wrong —
+  // "no reader declares anything".
+  let triggerNfcLocations = null;
+  const nfcLocationsForReachability = () => triggerNfcLocations;
+
   let schoolLifecycle = {
     wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null,
     reporter: null, router: null, devicesRouter: null, donowSchoolBridge: null,
@@ -3390,6 +3403,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   try {
     const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
     schoolLifecycle = await createSchoolLifecycle({
+      // Deliberately a THUNK: the trigger API that owns the parsed sources is
+      // composed further down this file, so there is no value to read yet. It
+      // resolves per projection, which also means a reloaded trigger config is
+      // picked up without restarting School.
+      declaredEntryActions: () => declaredEntryActions(nfcLocationsForReachability()),
       configService,
       householdId,
       schoolService,
@@ -3712,6 +3730,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     datastore: schoolDatastore, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes,
     auditLog: schoolReassignmentLog, logger: rootLogger.child({ module: 'school-reassignments' }),
   });
+  // Its session-level twin (plan 4.1) — the repair for work with no machine
+  // attempts to move. Shares the ONE audit-log instance above deliberately: a
+  // second `YamlReassignmentLog` would race that instance's append chain.
+  // Null when the lifecycle is unwired (no sessions repo, nothing to move),
+  // which 404s the route rather than half-answering it.
+  const { ReassignSession } = await import('#apps/school/usecases/ReassignSession.mjs');
+  const schoolSessionsRepo = schoolLifecycle.stores?.sessions ?? null;
+  const reassignSession = schoolSessionsRepo
+    ? new ReassignSession({
+      sessions: schoolSessionsRepo, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes,
+      auditLog: schoolReassignmentLog, logger: rootLogger.child({ module: 'school-reassignments' }),
+    })
+    : null;
   const { RetractTeacherRecord } = await import('#apps/school/usecases/RetractTeacherRecord.mjs');
   const retractTeacherRecord = new RetractTeacherRecord({
     stores: { enrichment: schoolEnrichmentLog, attestation: schoolAttestations, note: schoolTeacherNotes },
@@ -3915,6 +3946,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     teacherNotesStore: schoolTeacherNotes,
     recordTeacherNote,
     reassignEvidence,
+    reassignSession,
     reassignmentLog: schoolReassignmentLog,
     attemptsStore: schoolDatastore,
     retractTeacherRecord,
@@ -4156,7 +4188,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
-  const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
+  const { router: triggerRouter, triggerDispatchService, triggerConfig } = createTriggerApiRouter({
     listDir,
     learnerActions,
     deviceServices,
@@ -4181,6 +4213,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     screenBroadcast: barcodeScreenBroadcast,
     commandResolver: resolveCommand,
     logger: rootLogger.child({ module: 'trigger' }),
+  });
+  // The school reachability check can now answer for real (it has been
+  // returning "could not tell" for every projection until this line).
+  triggerNfcLocations = triggerConfig?.nfc?.locations ?? null;
+  reportUnreachableSchoolPrograms({
+    launchers: schoolLifecycle?.launchers ?? null,
+    declared: declaredEntryActions(triggerNfcLocations),
+    logger: rootLogger.child({ module: 'school' }),
   });
   v1Routers.trigger = triggerRouter;
   // Shared public-kiosk shutdown is deliberately server-owned: NFC writes one
