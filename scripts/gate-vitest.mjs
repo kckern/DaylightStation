@@ -143,10 +143,47 @@ function runVitest(files) {
     { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 }
   );
   if (!existsSync(outFile)) {
-    console.error('gate-vitest: vitest produced no JSON report.\n' + (res.stderr || '').slice(-2000));
+    // SAY WHY, NOT JUST THAT. The two ways this spawn dies most cheaply both
+    // leave stderr EMPTY, so a message built from stderr alone printed one
+    // bare sentence and nothing after it — which is what made the E2BIG above
+    // expensive to find. `spawnSync` reports those failures on `res.error`,
+    // not on the child's output, because there was no child:
+    //   E2BIG  — the argv is too long (the bug this comment block records).
+    //   ENOENT — `npx` is not on PATH. Dropping `shell: true` made this newly
+    //            reachable: `npx` is now resolved by execvp rather than by a
+    //            login shell, so a minimal PATH (cron, systemd, a non-nvm
+    //            shell) fails here with the same silence.
+    console.error('gate-vitest: vitest produced no JSON report.');
+    console.error(`gate-vitest: spawn error=${res.error ? `${res.error.code || res.error.message}` : 'none'} `
+      + `status=${res.status} signal=${res.signal} files=${files.length}`);
+    if (res.error) console.error(`gate-vitest: ${res.error.message}`);
+    console.error((res.stderr || '(stderr was empty)').slice(-2000));
     process.exit(2);
   }
   const report = JSON.parse(readFileSync(outFile, 'utf8'));
+  // RECONCILE THE POPULATION AGAINST WHAT ACTUALLY RAN. `vitest.config.mjs`
+  // applies its `exclude` globs even to paths passed explicitly on the command
+  // line, so a file can be counted in the population here and quietly not run
+  // — the population number would keep rising while coverage fell, which is
+  // the precise failure this gate was built to end. There is no overlap today;
+  // widening the population by 80% is exactly when to stop trusting that.
+  const ran = new Set(report.testResults.map((t) => path.relative(ROOT, t.name)));
+  if (report.testResults.length !== files.length) {
+    const missing = files.filter((f) => !ran.has(f));
+    const extra = [...ran].filter((f) => !files.includes(f));
+    console.error(`\ngate-vitest: population/run MISMATCH — ${files.length} files in population, `
+      + `${report.testResults.length} in the report.`);
+    if (missing.length) {
+      console.error(`gate-vitest: ${missing.length} file(s) in the population that vitest did not run `
+        + '(check `exclude` in vitest.config.mjs — it applies to explicit paths too):');
+      missing.forEach((f) => console.error('  ? ' + f));
+    }
+    if (extra.length) {
+      console.error(`gate-vitest: ${extra.length} file(s) vitest ran that the population does not claim:`);
+      extra.forEach((f) => console.error('  ? ' + f));
+    }
+    process.exit(2);
+  }
   const failed = report.testResults
     .filter((t) => t.status === 'failed')
     .map((t) => path.relative(ROOT, t.name))
@@ -164,18 +201,88 @@ function readBaseline() {
   );
 }
 
+// The last line writeBaseline emits before the body. Everything after it is
+// hand-written and must survive --update.
+const HEADER_SENTINEL = '# Regenerate with: node scripts/gate-vitest.mjs --update';
+
+/**
+ * Split the existing baseline into its generated header (discarded) and the
+ * hand-written `#` prose (kept). WHY: --update used to rewrite this file as
+ * `header + failed.join('\n')`, which silently deleted every comment in it —
+ * including the notes recording WHICH baseline entries had been individually
+ * diagnosed and which were merely observed to pass once. That prose is the
+ * only thing distinguishing a considered exception from an absorbed failure,
+ * and losing it is not recoverable from the file itself.
+ *
+ * A comment block sitting directly above a path is that path's rationale and
+ * moves with it. A block closed by a separator — a blank line or a bare `#` —
+ * or one whose path no longer fails, is free-standing and kept in a notes
+ * section. The sentinel must stay the LAST generated header line: everything
+ * after it is treated as hand-written, so a generated line below it would be
+ * re-preserved as prose on every --update and the header would grow forever.
+ */
+function parseBaseline() {
+  const empty = { notes: [], attached: new Map() };
+  if (!existsSync(BASELINE)) return empty;
+  const lines = readFileSync(BASELINE, 'utf8').split('\n');
+  // No sentinel (someone edited the header) => -1 => scan from line 0 and treat
+  // the whole file as hand-written. That over-preserves rather than deleting,
+  // which is the right direction to fail in for a file whose whole value is
+  // prose someone wrote once.
+  const sentinel = lines.findIndex((l) => l.trim() === HEADER_SENTINEL);
+  const notes = [];
+  const attached = new Map();
+  let block = [];
+  for (let i = sentinel + 1; i < lines.length; i++) {
+    const line = lines[i].trimEnd();
+    if (!line || line.trim() === '#') {
+      // A blank line or a bare `#` closes a block without attaching it.
+      if (block.length) { notes.push(block); block = []; }
+      continue;
+    }
+    if (line.startsWith('#')) { block.push(line); continue; }
+    if (block.length) { attached.set(line.trim(), block); block = []; }
+  }
+  if (block.length) notes.push(block);
+  return { notes, attached };
+}
+
 function writeBaseline(failed, report) {
-  const header = [
+  // The population sentence is DERIVED from ROOTS, never restated by hand.
+  // It was restated by hand once, and when `frontend` was added to ROOTS the
+  // generator kept emitting the old three-root list — so the first --update
+  // would have quietly reverted the record to the exact false claim the
+  // change existed to correct, in a machine-generated file that reads as
+  // authoritative. A drifting header is worse than no header.
+  const out = [
     '# GATE-VITEST baseline — the SET of vitest files currently failing.',
-    '# Population: *.test.{js,jsx,mjs} under tests/unit, tests/isolated and',
-    '# backend/ that vitest OWNS (explicit vitest import, or bare globals with',
-    '# no runner import), minus suite/ (jest) and node:test files.',
+    `# Population: *.test.{js,jsx,mjs} under ${ROOTS.join(', ')} that vitest`,
+    '# OWNS (explicit vitest import, or bare globals with no runner import),',
+    '# minus suite/ (jest) and node:test files.',
     '# A file failing that is NOT listed here is a REGRESSION (gate exits 1).',
-    `# Captured: ${report.numTotalTests} tests, ${report.numPassedTests} pass, ${report.numFailedTests} fail.`,
-    '# Regenerate with: node scripts/gate-vitest.mjs --update',
-    '',
-  ].join('\n');
-  writeFileSync(BASELINE, header + failed.join('\n') + '\n');
+    `# Captured: ${report.numTotalTests} tests, ${report.numPassedTests} pass, `
+      + `${report.numFailedTests} fail, ${report.numPendingTests} skipped.`,
+    '# --update PRESERVES the hand-written `#` prose below: a comment block',
+    '# directly above a path travels with that path; a block closed by a bare',
+    '# `#` is kept in the notes section. Nothing here records WHICH run wrote a',
+    '# line, so say in prose why an entry is here if the reason is not obvious.',
+    HEADER_SENTINEL, // must stay last — see parseBaseline
+  ];
+  const { notes, attached } = parseBaseline();
+  // A file that now passes is dropped from the list; its rationale is not
+  // dropped with it — it becomes a note, labelled with what it used to hold.
+  for (const [file, block] of attached) {
+    if (!failed.includes(file)) {
+      notes.push([`# (was attached to ${file}, which no longer fails)`, ...block]);
+    }
+  }
+  for (const block of notes) out.push('#', ...block);
+  out.push('#');
+  for (const f of failed) {
+    if (attached.has(f)) out.push(...attached.get(f));
+    out.push(f);
+  }
+  writeFileSync(BASELINE, out.join('\n') + '\n');
 }
 
 // ---- main ----
@@ -183,7 +290,12 @@ const update = process.argv.includes('--update');
 const files = vitestPopulation();
 console.log(`gate-vitest: ${files.length} vitest files in population`);
 const { report, failed } = runVitest(files);
-console.log(`gate-vitest: ${report.numPassedTests}/${report.numTotalTests} tests pass; ${failed.length} files failing`);
+// SPELL OUT THE THREE NUMBERS. "28903/28971 pass" invites a reader to subtract
+// and quote 68 failures when 13 failed and 52 were skipped; skipped tests are
+// not failures and must not be reported as the same shortfall.
+console.log(`gate-vitest: ${report.numTotalTests} tests — ${report.numPassedTests} pass, `
+  + `${report.numFailedTests} fail, ${report.numPendingTests} skipped; `
+  + `${failed.length} file(s) failing across ${report.testResults.length} files run`);
 
 if (update || !existsSync(BASELINE)) {
   writeBaseline(failed, report);
