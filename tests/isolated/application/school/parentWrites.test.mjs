@@ -91,11 +91,17 @@ describe('signing off a review item', () => {
     })).rejects.toMatchObject({ name: 'GuestForbiddenError' });
   });
 
-  it('rejects a verdict that is not correct|incorrect', async () => {
+  it('rejects a verdict that is not correct|incorrect|void', async () => {
     await expect(resolveReviewItem.execute({
       sessionId: 'ses_a', itemId: 'q3', verdict: 'maybe', gradedBy: 'dad',
     })).rejects.toMatchObject({ name: 'ValidationError' });
     expect(reviewQueue.resolve).not.toHaveBeenCalled();
+  });
+
+  it('names all three verdicts when it refuses one, so the message is a fix and not a riddle', async () => {
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'maybe', gradedBy: 'dad',
+    })).rejects.toThrow(/correct\|incorrect\|void/);
   });
 
   it('reports an item that is not queued as not found', async () => {
@@ -106,6 +112,68 @@ describe('signing off a review item', () => {
 
   it('cannot be built without a grown-up gate', () => {
     expect(() => new ResolveReviewItem({ reviewQueue, clock })).toThrow(/grownUps/);
+  });
+});
+
+/**
+ * The third verdict (teacher-coverage 1.1). A grown-up who genuinely cannot
+ * mark something — a torn scan, a question that needs the child present —
+ * previously had to guess or leave the item pending, and pending strands the
+ * whole work session at `submitted` where nothing can clear it. `void` is the
+ * honest third answer, and it is the one verdict that must never be silent:
+ * it takes a question out of a child's score, so it comes with a sentence
+ * they can read or it does not happen at all.
+ */
+describe('"I cannot mark this" — the void verdict', () => {
+  it('records a void with a note, attributed like any other verdict', async () => {
+    const item = await resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'void', gradedBy: 'dad',
+      note: 'The scan tore across this line — bring me the paper and we will do it together.',
+    });
+    expect(item).toMatchObject({ verdict: 'void', gradedBy: 'dad', gradedAt: AT.toISOString() });
+    expect(reviewQueue.resolve).toHaveBeenCalledWith(expect.objectContaining({
+      verdict: 'void',
+      note: 'The scan tore across this line — bring me the paper and we will do it together.',
+    }));
+  });
+
+  it('REFUSES a void with no note — a question dropped from a score is never dropped silently', async () => {
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'void', gradedBy: 'dad',
+    })).rejects.toMatchObject({ name: 'ValidationError' });
+    expect(reviewQueue.resolve).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES a void whose note is only whitespace — a blank sentence says nothing', async () => {
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'void', gradedBy: 'dad', note: '   ',
+    })).rejects.toMatchObject({ name: 'ValidationError' });
+    expect(reviewQueue.resolve).not.toHaveBeenCalled();
+  });
+
+  it('an INTERNAL note does not satisfy the requirement — the child never reads that field', async () => {
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'void', gradedBy: 'dad',
+      internalNote: 'scanner jam, re-feed later',
+    })).rejects.toMatchObject({ name: 'ValidationError' });
+    expect(reviewQueue.resolve).not.toHaveBeenCalled();
+  });
+
+  it('leaves correct and incorrect notes OPTIONAL, exactly as they were', async () => {
+    for (const verdict of ['correct', 'incorrect']) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(resolveReviewItem.execute({ sessionId: 'ses_a', itemId: 'q3', verdict, gradedBy: 'dad' }))
+        .resolves.toMatchObject({ verdict });
+    }
+  });
+
+  it('still checks WHO is asking before it asks about the note', async () => {
+    // A child voiding their own hard question, with no note, must be refused
+    // as a stranger — not told which field they forgot.
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'void', gradedBy: 'learner-1',
+    })).rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect(reviewQueue.resolve).not.toHaveBeenCalled();
   });
 });
 

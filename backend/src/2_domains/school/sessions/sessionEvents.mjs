@@ -163,7 +163,14 @@ const SCHEMA = {
     // `passingPercent` (optional) is the bar IN EFFECT at grading time
     // (student-advocacy A4): a later pass-override edit must never move the
     // bar under an already-graded kid, so the close reads this stamp first.
-    fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds'],
+    //
+    // `voidedItemIds` (optional) names the questions a grown-up marked `void`
+    // — "not markable from the evidence" — and which were therefore taken OUT
+    // of `totalCount` before the percent was worked out. Without the stamp a
+    // 6-of-8 that was voided down from nine reads identically to a 6-of-8 that
+    // was always eight, and the difference is exactly what a later reader
+    // needs: one of those sheets had a question nobody could mark.
+    fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds', 'voidedItemIds'],
     validate: (raw, push) => {
       if (raw.passingPercent !== undefined && (typeof raw.passingPercent !== 'number'
           || !Number.isFinite(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {
@@ -191,6 +198,10 @@ const SCHEMA = {
       if (raw.missedItemIds !== undefined && (!Array.isArray(raw.missedItemIds)
           || !raw.missedItemIds.every(isNonEmptyString))) {
         push('missedItemIds: must be an array of non-empty strings when present');
+      }
+      if (raw.voidedItemIds !== undefined && (!Array.isArray(raw.voidedItemIds)
+          || !raw.voidedItemIds.every(isNonEmptyString))) {
+        push('voidedItemIds: must be an array of non-empty strings when present');
       }
     },
   },
@@ -464,6 +475,11 @@ const emptyState = () => ({
   gradedCorrectCount: null,
   gradedTotalCount: null,
   missedItemIds: [],
+  // The questions a grown-up could not mark at all (`void`). They were left
+  // out of the graded event's `totalCount`, so a reader that wants to know
+  // "out of how many, and which ones went missing from that count" has both
+  // here without re-folding the log.
+  voidedItemIds: [],
   transport: null,
   mediaDispatch: null,
   outcome: null,
@@ -587,6 +603,7 @@ const APPLY = {
     if (Number.isInteger(e.correctCount)) s.gradedCorrectCount = e.correctCount;
     if (Number.isInteger(e.totalCount)) s.gradedTotalCount = e.totalCount;
     if (Array.isArray(e.missedItemIds)) s.missedItemIds = [...e.missedItemIds];
+    if (Array.isArray(e.voidedItemIds)) s.voidedItemIds = [...e.voidedItemIds];
     s.machineGrade = {
       percent: typeof e.percent === 'number' ? e.percent : null,
       passingPercent: typeof e.passingPercent === 'number' ? e.passingPercent : null,
