@@ -48,12 +48,12 @@ stateDiagram-v2
 |---|---|---|---|
 | **Claim** | `sessionStorage`, client-side | until the tab closes | attribution on writes — nothing else |
 | **Capability** | HttpOnly `SameSite=Strict` cookie | 10 min idle, 30 min absolute | every ordinary teacher write |
-| **Step-up grant** | `X-Teacher-Step-Up` header | 2 min, **one use**, scoped to one action *and one resource id* | the six high-consequence actions below |
+| **Step-up grant** | `X-Teacher-Step-Up` header | 2 min, **one use**, scoped to one action *and one resource id* | the seven high-consequence actions below |
 
 The PIN exists only inside the prompt. It is never in React state, never in
 `sessionStorage`, never in a log, and never in an ordinary mutation body.
 
-**The six step-up actions** (`TeacherCapabilitySessions.mjs#STEP_UP_ACTIONS`),
+**The seven step-up actions** (`TeacherCapabilitySessions.mjs#STEP_UP_ACTIONS`),
 with the resource each is scoped to:
 
 | Action | Scoped to | Why it costs extra |
@@ -62,11 +62,17 @@ with the resource each is scoped to:
 | `attempts.regrade` | `bankId` | rewrites what a batch of history *means* |
 | `sessions.grade-adjust` | `sessionId` | overrides a machine verdict about a child |
 | `sessions.grade-adjustment.retract` | `sessionId/adjustmentId` | withdraws that override |
+| `sessions.settle` | `sessionId` | writes a mark **no machine produced** |
 | `artifact.postview` | `artifactId` | renders a marked-up copy of a child's work |
 | `report-card.close` | `learnerId/periodId` — **only when `supersede: true`** | replaces a record a family already has |
 
 A first freeze of a period needs the capability only. Re-closing one needs a
 grant, because the record already exists in someone's hands.
+
+The Set and `teacherResource` must **agree**: `requiresTeacherStepUp` is
+derived from the resource being non-null, so a name in the Set with no resource
+branch requires nothing at all — a step-up that silently buys a free pass looks
+exactly like one that works.
 
 **A 403 is a loop, not a wall.** `useTeacherWrite` invalidates the capability,
 opens the PIN prompt, and replays the blocked call exactly once. A tap made
@@ -199,6 +205,7 @@ retryable immediately rather than blocked by the cooldown.
 | `issued` / `reprinted` | reprint the exact artifact; abandon | Session inspector → Issued materials; Operations | capability |
 | `media_dispatched` / `media_stalled` | abandon | Operations | capability |
 | `submitted` | resolve the review items that block grading | Queue → Grading and review | capability |
+| `submitted` / `graded` / `outcome_recorded` | settle it by hand when marking never finished | Session inspector → Settle this by hand | **step-up** |
 | `graded` | correct the mark; retract a correction | Session inspector → Fix a marked answer | **step-up** |
 | `outcome_recorded` (`needs_remediation`) | offer another try | Session inspector → Offer another try | capability |
 | `rewarded` | correct the mark — the effective grade and its reward reconcile | Session inspector | **step-up** |
@@ -210,7 +217,10 @@ retryable immediately rather than blocked by the cooldown.
 `launch_dispatched`, `program_dispatched`, and
 `external_activity_dispatched` — work that was handed out and never came back.
 Work that came back settles through grading and close, never through
-abandonment, and `MarkSessionAbandoned` refuses the difference by name.
+abandonment, and `MarkSessionAbandoned` refuses the difference by name. The
+session inspector's **Settle this by hand** is the other half of that split:
+offered on exactly the states abandonment is not, and shown as nothing at all
+where it does not apply rather than as a disabled button.
 
 ---
 
@@ -357,6 +367,9 @@ the question returns to the denominator.
 
 If voiding leaves **nothing** markable, the session is not graded at all —
 `graded` requires a total of at least one — and it waits to be settled by hand.
+**Marking one of those questions is the only way to reopen the score**: a
+hand-settle cannot manufacture a denominator out of nothing, and reports the
+refusal rather than inventing a `0 of 0`.
 
 With both finishers wired, resolving the **last** pending item of a session
 grades and closes it in the same act. Without them, resolve-only.
@@ -384,8 +397,27 @@ supersedes deliberately.
 | Fix a marked answer | one session | `grade_adjusted` | **step-up** |
 | Retract a correction | one adjustment | `grade_adjustment_retracted` | **step-up** |
 | Systematic regrade | one bank × date range | corrective attempts | **step-up** |
+| Settle it by hand | one session | teacher note + `graded` + `outcome_recorded` | **step-up** |
 
-Every one of the four is preview-first. Nothing applies on the first tap.
+Every one of the five is preview-first. Nothing applies on the first tap.
+
+**Settling by hand** is the exit for work that came back and never finished
+marking — a scan that produced no attempts, a paper lesson somebody marked at
+the table, a session whose last review item nobody will ever answer. One tap of
+**Settle it** does three things in this order:
+
+1. the mandatory reason is delivered **to the child** as a teacher note (the
+   agenda's "Notes for you", the student panel) — nothing about their work
+   moves before the why is on record;
+2. `graded`, flagged `settle`, which is what buys it the step-up: a settle
+   carries no verdicts, so without that flag it would meet no gate at all;
+3. `outcome_recorded`, because grading and stopping there would leave the
+   session open and still on the stuck list.
+
+"Already marked" and "already settled" count as success — they name the state
+the form is trying to reach. Any other refusal stops the sequence and is
+reported as what it is; a settle that got partway is never announced as a
+settle.
 
 ---
 
@@ -682,7 +714,8 @@ flowchart LR
     S["Non-terminal, untouched for 7+ days"] --> LIST["Stuck sessions — roster-wide"]
     LIST --> C{"Does the state accept 'abandoned'?"}
     C -->|yes| A["Abandon with a mandatory reason"]
-    C -->|"no — submitted, graded, outcome_recorded"| G["Settles through grading and close"]
+    C -->|"no — submitted, graded, outcome_recorded"| G["Settle by hand → · session inspector"]
+    G --> H["Note the child reads · graded · outcome_recorded"]
 ```
 
 Household-scoped by design, not per-learner: a wedged session is an operational

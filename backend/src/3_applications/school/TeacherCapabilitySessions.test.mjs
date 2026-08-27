@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TeacherGate } from './TeacherGate.mjs';
-import { TeacherCapabilitySessions } from './TeacherCapabilitySessions.mjs';
+import { TeacherCapabilitySessions, requiresTeacherStepUp, teacherResource } from './TeacherCapabilitySessions.mjs';
 
 function fixture() {
   let now = Date.parse('2026-08-24T10:00:00.000Z');
@@ -78,5 +78,35 @@ describe('TeacherCapabilitySessions', () => {
       action: 'sessions.grade-adjustment.retract', resource: 'ses_1/adj_1' });
     expect(f.sessions.authorize({ capabilityToken: unlocked.capabilityToken, stepUpToken: grant.grantToken,
       userId: 'parent', action: 'sessions.grade-adjustment.retract', context: { sessionId: 'ses_1', adjustmentId: 'adj_2' } })).toBe(false);
+  });
+
+  // The Set and `teacherResource` have to AGREE. `requiresTeacherStepUp` is
+  // derived from the resource being non-null, so a name in the Set with no
+  // resource branch requires nothing — a step-up that silently buys a free
+  // pass looks exactly like one that works, which is why this is asserted
+  // rather than eyeballed.
+  it('scopes a hand-settle to the one session it is settling', () => {
+    expect(requiresTeacherStepUp('sessions.settle', { sessionId: 'ses_1' })).toBe(true);
+    expect(teacherResource('sessions.settle', { sessionId: 'ses_1' })).toBe('ses_1');
+    expect(requiresTeacherStepUp('sessions.settle', {})).toBe(false);
+
+    const f = fixture();
+    const unlocked = f.sessions.unlock({ userId: 'parent', pin: '4321' });
+    const proof = { capabilityToken: unlocked.capabilityToken };
+    // The capability cookie alone is not enough, and a grant for a different
+    // session is not either.
+    expect(() => f.gate.assert({ userId: 'parent', pin: proof,
+      action: 'sessions.settle', context: { sessionId: 'ses_1' } })).toThrow(/PIN/);
+    const other = f.sessions.stepUp({ capabilityToken: unlocked.capabilityToken, pin: '4321',
+      action: 'sessions.settle', resource: 'ses_2' });
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: other.grantToken },
+      action: 'sessions.settle', context: { sessionId: 'ses_1' } })).toThrow(/PIN/);
+    const grant = f.sessions.stepUp({ capabilityToken: unlocked.capabilityToken, pin: '4321',
+      action: 'sessions.settle', resource: 'ses_1' });
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: grant.grantToken },
+      action: 'sessions.settle', context: { sessionId: 'ses_1' } })).not.toThrow();
+    // One use only: the same token cannot settle the session twice.
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: grant.grantToken },
+      action: 'sessions.settle', context: { sessionId: 'ses_1' } })).toThrow(/PIN/);
   });
 });
