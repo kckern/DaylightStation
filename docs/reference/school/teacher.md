@@ -350,6 +350,11 @@ holding the session open. **Its note is mandatory** — a question dropped from 
 child's score without a sentence they can read is the silent verb this
 household does not allow.
 
+Voiding happens on the **review** lane only, because that is the lane a note
+can travel on; a `void` sent to the grading call is refused and told where to
+go. Marking a voided question `correct` or `incorrect` later **un-voids** it —
+the question returns to the denominator.
+
 If voiding leaves **nothing** markable, the session is not graded at all —
 `graded` requires a total of at least one — and it waits to be settled by hand.
 
