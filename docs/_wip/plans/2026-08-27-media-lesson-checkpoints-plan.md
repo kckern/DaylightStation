@@ -621,6 +621,42 @@ Use superpowers:finishing-a-development-branch — verify full suite, then merge
   again. Task 1 shipped with this loop shortcut (the controller substituted a
   two-command self-check); task R4 repays it. Do not repeat the shortcut.
 
+### Lint (the fourth blind spot)
+
+ESLint IS configured — at **`frontend/.eslintrc.cjs`**, not the repo root (an earlier
+check for a root config concluded "no eslint" and was wrong). `frontend/package.json`
+runs it with `--max-warnings 0`.
+
+**BUT the repo-wide lint is long-broken: 2386 problems (1853 errors, 533 warnings)
+measured 2026-08-27.** So it is NOT a regression gate and must not be treated as one.
+
+The rule is therefore: **files you create must lint clean — do not add to the pile.**
+Run `cd frontend && npx eslint <your new files>` and get to zero. Do not attempt to fix
+the pre-existing 2386.
+
+Two gotchas already hit: an `eslint-disable-next-line` must sit on the line the rule
+REPORTS (for `exhaustive-deps` that is the dependency array, not the `useMemo(` line),
+and a file exporting both a component and a hook/constant trips
+`react-refresh/only-export-components`.
+
+### Review weight — scale to risk (not every task gets three agents)
+
+Tasks 1-3 (the concurrency-shaped gate layer) each ran implementer + spec review +
+quality review, and that was right: it caught a deadlock, a silent-flood, an
+observability regression and two unpinned invariants. The remaining tasks are not all
+that risky. Apply:
+
+| Task shape | Review |
+|---|---|
+| Pure functions, no timing/IO (4, 5) | Implementer self-review + controller verification |
+| Backend session/API, hard-gate correctness (6-10) | Implementer + spec review |
+| Kiosk-facing UI and input (14, 15) | Implementer + spec review |
+| Thin clients, registry lines, chrome (11, 12, 13, 16) | Implementer self-review + controller verification |
+| Integration, flow test, docs (17-19) | Controller |
+
+Mutation testing stays REQUIRED for anything with a behavioral invariant, at every
+weight — it has found a real gap in every task that used it.
+
 ### Per-task verification checklist
 
 Before reporting a task complete, the implementer must have run and QUOTED:
