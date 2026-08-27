@@ -241,7 +241,7 @@ Options:
 
 Analysis:
   analyze           Review archived games with full-strength Stockfish. For
-                    example: analyze --user felix --opponent Caterpie --all
+                    example: analyze --user user_3 --opponent Caterpie --all
 
 In-game commands (typed at the move prompt):
   moves            List legal moves in the current position

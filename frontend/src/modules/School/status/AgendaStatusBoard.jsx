@@ -143,7 +143,7 @@ export function summarize(sections, sessions, entries = []) {
   // the one in the house — is served by finishing a lesson in its own app, so
   // it completes with no session row and no OMR outcome; only the section's
   // `servedWork` ever knows it happened. Building discs from sessions alone
-  // therefore dropped the piano disc entirely (2026-08-26: Milo finished piano
+  // therefore dropped the piano disc entirely (2026-08-26: User_4 finished piano
   // in the morning, was served four things, and the board could only see three
   // — it read "2 OF 3" for a day that was really 3 of 4).
   //

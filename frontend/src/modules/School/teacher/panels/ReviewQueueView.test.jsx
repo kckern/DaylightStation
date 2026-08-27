@@ -25,7 +25,7 @@ vi.mock('../TeacherProfileContext.jsx', () => ({
 }));
 import { schoolApi } from '../../schoolApi.js';
 
-const KIDS = [{ id: 'kid1', name: 'Milo' }];
+const KIDS = [{ id: 'kid1', name: 'User_4' }];
 const ITEMS = [{
   sessionId: 'ses_1', itemId: 'q3', learnerId: 'kid1', questionNumber: 3,
   prompt: 'Write a sentence about the moon.', reason: 'free_response', enqueuedAt: null,
@@ -60,7 +60,7 @@ describe('ReviewQueueView — "Can\'t mark this"', () => {
     paint();
     expect(noteBox().placeholder).toMatch(/optional/);
     fireEvent.click(screen.getByRole('button', { name: /Can’t mark this/ }));
-    expect(noteBox().placeholder).toMatch(/Milo will read this/);
+    expect(noteBox().placeholder).toMatch(/User_4 will read this/);
   });
 
   it('sends verdict void WITH the note once one is written', async () => {

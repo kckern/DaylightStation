@@ -83,7 +83,7 @@ describe('AgendaStatusBoard model', () => {
   it('draws a disc for SERVED work that never opened a session — the piano case', () => {
     // Regression, 2026-08-26. Piano is a PROGRAM subject: it is served inside
     // its own app, so it finishes with no session row and no OMR outcome, and
-    // only `servedWork` ever records it. Milo was served four things that day
+    // only `servedWork` ever records it. User_4 was served four things that day
     // and the board could see three, reading "2 OF 3" for a 3-of-4 day.
     const sections = [
       { subject: 'civilization', servedToday: true, servedWork: [{ unitId: 'atlas.ohio' }] },
@@ -131,23 +131,23 @@ describe('ringsByLearner', () => {
   it('picks the fitness.rings measure out of the roster payload', () => {
     expect(ringsByLearner({
       learners: [
-        { learnerId: 'milo', measures: [{ id: 'fitness.rings', value: 40 }] },
-        { learnerId: 'felix', measures: [{ id: 'fitness.rings', value: 0 }] },
+        { learnerId: 'user_4', measures: [{ id: 'fitness.rings', value: 40 }] },
+        { learnerId: 'user_3', measures: [{ id: 'fitness.rings', value: 0 }] },
       ],
-    })).toEqual({ milo: 40, felix: 0 });
+    })).toEqual({ user_4: 40, user_3: 0 });
   });
 
   it('omits a learner whose measure could not be read, rather than showing a false zero', () => {
     // null means "we could not find out". Rendering it as 0 would state that
     // the child did no exercise, which is a different and possibly wrong claim.
     expect(ringsByLearner({
-      learners: [{ learnerId: 'milo', measures: [{ id: 'fitness.rings', value: null }] }],
+      learners: [{ learnerId: 'user_4', measures: [{ id: 'fitness.rings', value: null }] }],
     })).toEqual({});
   });
 
   it('ignores other measures and survives an empty payload', () => {
     expect(ringsByLearner({
-      learners: [{ learnerId: 'milo', measures: [{ id: 'something.else', value: 9 }] }],
+      learners: [{ learnerId: 'user_4', measures: [{ id: 'something.else', value: 9 }] }],
     })).toEqual({});
     expect(ringsByLearner(null)).toEqual({});
   });

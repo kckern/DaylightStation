@@ -1,7 +1,7 @@
 /**
  * A program nothing can start is reported, not planned.
  *
- * 2026-08-26: Alan and Soren were assigned story time, the living-room trigger
+ * 2026-08-26: User_5 and User_2 were assigned story time, the living-room trigger
  * source declared no `learner_action`, and every layer behaved exactly as
  * written while they stood at the reader tapping. These are the two places that
  * now notice — the per-projection fault and the startup report.
@@ -26,7 +26,7 @@ describe('collectProgramStatuses reachability', () => {
   it('reports a program whose entry action no reader declares', async () => {
     const launcher = storyLauncher();
     const [row] = await collectProgramStatuses({
-      plan, learnerId: 'soren',
+      plan, learnerId: 'user_2',
       launchers: new Map([['story-time', launcher]]),
       declaredEntryActions: new Set(['print-agenda']),
       logger: silentLogger(),
@@ -39,7 +39,7 @@ describe('collectProgramStatuses reachability', () => {
     // That is true, and useless, because nothing in the house can start it.
     const launcher = storyLauncher();
     await collectProgramStatuses({
-      plan, learnerId: 'soren',
+      plan, learnerId: 'user_2',
       launchers: new Map([['story-time', launcher]]),
       declaredEntryActions: new Set(),
       logger: silentLogger(),
@@ -50,7 +50,7 @@ describe('collectProgramStatuses reachability', () => {
   it('passes the program through when a reader declares the action', async () => {
     const launcher = storyLauncher();
     const [row] = await collectProgramStatuses({
-      plan, learnerId: 'soren',
+      plan, learnerId: 'user_2',
       launchers: new Map([['story-time', launcher]]),
       declaredEntryActions: new Set(['reading-session']),
       logger: silentLogger(),
@@ -64,7 +64,7 @@ describe('collectProgramStatuses reachability', () => {
     // behaviour exactly.
     const launcher = storyLauncher();
     const [row] = await collectProgramStatuses({
-      plan, learnerId: 'soren',
+      plan, learnerId: 'user_2',
       launchers: new Map([['story-time', launcher]]),
       logger: silentLogger(),
     });
@@ -73,7 +73,7 @@ describe('collectProgramStatuses reachability', () => {
 
   it('fails toward reporting when the trigger config could not be read', async () => {
     const [row] = await collectProgramStatuses({
-      plan, learnerId: 'soren',
+      plan, learnerId: 'user_2',
       launchers: new Map([['story-time', storyLauncher()]]),
       declaredEntryActions: null,
       logger: silentLogger(),
@@ -85,7 +85,7 @@ describe('collectProgramStatuses reachability', () => {
     const launcher = { status: vi.fn(async () => ({ doneToday: true })) };
     const [row] = await collectProgramStatuses({
       plan: { entries: [{ unitId: 'p', program: 'piano-course', subject: 'arts', status: 'available' }] },
-      learnerId: 'milo',
+      learnerId: 'user_4',
       launchers: new Map([['piano-course', launcher]]),
       declaredEntryActions: new Set(),
       logger: silentLogger(),
@@ -101,7 +101,7 @@ describe('the fault reaches day completion', () => {
     // the status board shows no done chip and the receipt prints no
     // done-for-the-day line for a child who could never begin.
     const statuses = await collectProgramStatuses({
-      plan, learnerId: 'soren',
+      plan, learnerId: 'user_2',
       launchers: new Map([['story-time', storyLauncher()]]),
       declaredEntryActions: new Set(),
       logger: silentLogger(),

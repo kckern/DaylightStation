@@ -21,11 +21,11 @@ and [agenda and completion](../../reference/school/agenda-and-completion.md).
 Two complaints from 2026-08-26, one root: **the lesson layer is date-blind and
 the result receipt is subject-blind.**
 
-**Milo was handed Tuesday's lesson on Wednesday.** Time sensitivity exists only
+**User_4 was handed Tuesday's lesson on Wednesday.** Time sensitivity exists only
 at the module level. `evaluateDatedModule` answers `upcoming` / `available` /
 `catch_up` for a *window*; lessons inside a module carry no dates and are gated
 as strict prerequisites by `blockerFor`. `d1…d5` are the publisher's day labels
-carried as text — nothing knows `d3` means Wednesday. Milo got `d2` because it
+carried as text — nothing knows `d3` means Wednesday. User_4 got `d2` because it
 was the first unpassed entry.
 
 The week is 5 lessons in a 7-day window (`opensOn: 2026-08-24`,
@@ -211,7 +211,7 @@ via `schoolCalendar.mjs`) and assign `lessonOrder[n]` to school-day *n*.
 
 Enrollment policy is snapshotted at materialization and `policyFor` prefers the
 snapshot, so an existing enrollment never acquires `lessonSchedule` on its own.
-Rev 1's "no migration needed" meant the fix reached nobody, including Milo.
+Rev 1's "no migration needed" meant the fix reached nobody, including User_4.
 
 Re-enrolling is **not** an acceptable migration: `createCourseEnrollment` drops
 modules already closed at enrollment time, which would erase exactly the backlog
@@ -372,7 +372,7 @@ Slice 1:
 
 Slice 2, pure domain:
 - `evaluateDatedLesson`, one case per row of §8.1, open and closed modules
-- the spread reproduces §7.2 from Milo's real `w35-aug24` window
+- the spread reproduces §7.2 from User_4's real `w35-aug24` window
 - spread with zero school days falls back to calendar days
 - spread with more lessons than school days doubles up on the last
 
@@ -387,7 +387,7 @@ Regression:
 - a `fixed` course picks the identical lesson before and after
 - the pinned newest-first closed-module order still holds (§8.1)
 
-**Acceptance — 2026-08-26 replayed.** Milo, Wednesday, `d1` passed, `d2` printed
+**Acceptance — 2026-08-26 replayed.** User_4, Wednesday, `d1` passed, `d2` printed
 Tuesday (so it carries a bare `created` session):
 
 | | Today | After |
@@ -401,7 +401,7 @@ Tuesday (so it carries a bare `created` session):
 | --- | --- | --- |
 | acceptance test yields `d3` | `BuildAgenda` pre-creates a session → `d2` wins at priority 0 | §8.3 |
 | "merge `evaluateTiming`" produces the table | 7-day urgency lead makes every lesson `urgent`; 3 of 4 rows unreachable | §8.1, dedicated evaluator |
-| "no migration" | frozen policy = fix reaches nobody, including Milo | §7.6 re-pacing |
+| "no migration" | frozen policy = fix reaches nobody, including User_4 | §7.6 re-pacing |
 | flip `assignedPrograms: true` | projection has no launchers by design → every program faults | §4, skip programs |
 | `not_due_yet` is "effectively dead" | sound for non-dated; the real hazard is narrower | §8.4 |
 | `noSchoolToday` "checked earlier, short-circuits" | applied last as an override, deliberately | §8.4 |

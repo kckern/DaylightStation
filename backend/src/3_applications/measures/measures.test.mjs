@@ -20,28 +20,28 @@ describe('fitnessRingsProvider', () => {
     const p = createFitnessRingsProvider({
       timezone: TZ,
       sessions: sourceOf([
-        session('2026-08-24T16:00:00Z', { milo: { rings: 40 } }),
-        session('2026-08-26T16:00:00Z', { milo: { rings: 25 }, felix: { rings: 10 } }),
+        session('2026-08-24T16:00:00Z', { user_4: { rings: 40 } }),
+        session('2026-08-26T16:00:00Z', { user_4: { rings: 25 }, user_3: { rings: 10 } }),
       ]),
     });
-    expect(await p.total({ learnerId: 'milo', ...WINDOW })).toBe(65);
-    expect(await p.total({ learnerId: 'felix', ...WINDOW })).toBe(10);
+    expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(65);
+    expect(await p.total({ learnerId: 'user_3', ...WINDOW })).toBe(10);
   });
 
   it('counts Saturday — catch-up work is real work', async () => {
     const p = createFitnessRingsProvider({
       timezone: TZ,
-      sessions: sourceOf([session('2026-08-29T18:00:00Z', { milo: { rings: 12 } })]),
+      sessions: sourceOf([session('2026-08-29T18:00:00Z', { user_4: { rings: 12 } })]),
     });
-    expect(await p.total({ learnerId: 'milo', ...WINDOW })).toBe(12);
+    expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(12);
   });
 
   it('does NOT count the next Sunday — it head-starts the following week', async () => {
     const p = createFitnessRingsProvider({
       timezone: TZ,
-      sessions: sourceOf([session('2026-08-30T18:00:00Z', { milo: { rings: 99 } })]),
+      sessions: sourceOf([session('2026-08-30T18:00:00Z', { user_4: { rings: 99 } })]),
     });
-    expect(await p.total({ learnerId: 'milo', ...WINDOW })).toBe(0);
+    expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(0);
   });
 
   it('dates a session by its START, so a workout past 4am is not split', async () => {
@@ -49,28 +49,28 @@ describe('fitnessRingsProvider', () => {
     // so it belongs to the week that is ending.
     const p = createFitnessRingsProvider({
       timezone: TZ,
-      sessions: sourceOf([session('2026-08-30T10:00:00Z', { milo: { rings: 7 } })]),
+      sessions: sourceOf([session('2026-08-30T10:00:00Z', { user_4: { rings: 7 } })]),
     });
-    expect(await p.total({ learnerId: 'milo', ...WINDOW })).toBe(7);
+    expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(7);
   });
 
   it('returns 0, not NaN, for a learner who did nothing', async () => {
     const p = createFitnessRingsProvider({
       timezone: TZ,
-      sessions: sourceOf([session('2026-08-24T16:00:00Z', { felix: { rings: 5 } })]),
+      sessions: sourceOf([session('2026-08-24T16:00:00Z', { user_3: { rings: 5 } })]),
     });
-    expect(await p.total({ learnerId: 'milo', ...WINDOW })).toBe(0);
+    expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(0);
   });
 
   it('ignores a participant with no ring data rather than counting it as zero-ish NaN', async () => {
     const p = createFitnessRingsProvider({
       timezone: TZ,
       sessions: sourceOf([
-        session('2026-08-24T16:00:00Z', { milo: { rings: null } }),
-        session('2026-08-25T16:00:00Z', { milo: { rings: 3 } }),
+        session('2026-08-24T16:00:00Z', { user_4: { rings: null } }),
+        session('2026-08-25T16:00:00Z', { user_4: { rings: 3 } }),
       ]),
     });
-    expect(await p.total({ learnerId: 'milo', ...WINDOW })).toBe(3);
+    expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(3);
   });
 });
 
@@ -79,7 +79,7 @@ describe('MeasureRegistry', () => {
 
   it('returns one row per registered measure', async () => {
     const r = new MeasureRegistry().register(stub('a', 1)).register(stub('b', 2));
-    expect(await r.totalsFor({ learnerId: 'milo', ...WINDOW })).toEqual([
+    expect(await r.totalsFor({ learnerId: 'user_4', ...WINDOW })).toEqual([
       { id: 'a', label: 'a', unit: 'x', value: 1 },
       { id: 'b', label: 'b', unit: 'x', value: 2 },
     ]);
@@ -88,7 +88,7 @@ describe('MeasureRegistry', () => {
   it('distinguishes "could not find out" (null) from "did nothing" (0)', async () => {
     const boom = { id: 'boom', label: 'Boom', unit: 'x', total: async () => { throw new Error('nope'); } };
     const r = new MeasureRegistry().register(boom).register(stub('zero', 0));
-    const rows = await r.totalsFor({ learnerId: 'milo', ...WINDOW });
+    const rows = await r.totalsFor({ learnerId: 'user_4', ...WINDOW });
     expect(rows.find((x) => x.id === 'boom').value).toBeNull();
     expect(rows.find((x) => x.id === 'zero').value).toBe(0);
   });
