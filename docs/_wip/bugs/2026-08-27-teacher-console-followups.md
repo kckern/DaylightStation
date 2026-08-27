@@ -219,7 +219,7 @@ two — any future mis-named action will hang rather than error.
 
 ---
 
-## 4. The repo's vitest gate does not run the frontend at all
+## 4. The repo's vitest gate did not run the frontend at all — FIXED 2026-08-27
 
 Found 2026-08-27 while merging the step-up fix, and it reframes several notes above.
 
@@ -244,7 +244,19 @@ Consequences worth stating plainly:
 - `npx vitest run frontend/src/modules/School/teacher/` is currently green at 36 files /
   371 tests, but nothing enforces that it stays green.
 
-Fix is one line (add `frontend` to `ROOTS`) plus whatever baseline churn that exposes —
-which is exactly why it should be its own change with its own review, not a rider on a
-bug fix. Expect the population to roughly double and expect pre-existing frontend
-failures to surface; those need triage, not a blanket baseline bump.
+**Fixed** on `chore/gate-vitest-covers-frontend`. It was not one line.
+
+- `frontend` added to `ROOTS`: population 1447 -> 2605, tests 17431 -> 28971.
+- The frontend tree turned out to be almost entirely green — **1 failing file out of
+  1158**, not the wave of triage this note predicted. `Surround/band.measure.test.jsx`
+  asserts `2 < 2` at an exact boundary, fails deterministically in isolation, and is
+  unrelated to the gate. Baselined with that reasoning recorded inline; fixing a design
+  tolerance in another module as a rider on a gate change would have been wrong.
+- **The real work was a latent `E2BIG`.** `runVitest` spawned with `shell: true`, which
+  collapses argv into ONE `/bin/sh -c` string. Linux caps a *single* argument at
+  `MAX_ARG_STRLEN` (128 KiB) — a limit independent of the 2 MiB `ARG_MAX` that everyone
+  checks first. At 1447 files the joined command was ~90 KiB and fit; at 2605 it was
+  ~165 KiB and every run died instantly with an empty stderr and "vitest produced no
+  JSON report". Dropping `shell: true` gives each path its own argv entry, so only the
+  2 MiB total applies. Anyone adding another root should know this ceiling exists.
+- Gate runtime is now ~12.7 minutes.
