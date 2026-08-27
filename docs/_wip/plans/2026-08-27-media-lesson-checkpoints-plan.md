@@ -1,0 +1,424 @@
+# Media Lesson Checkpoints — Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Hard-gated video/audio lessons on the living-room TV — playback pauses at curriculum-authored checkpoints for retry-until-correct comprehension questions, with backend-owned per-learner state feeding completion.
+
+**Architecture:** Three layers, per the validated design (`docs/_wip/plans/2026-08-27-media-lesson-checkpoints-design.md`, committed on main): (1) a generic gate layer in `lib/Player/gate/` promoted from the fitness governance pattern (N-ary `resolvePause`, `GateVerdict` contract, `useMediaGate` enforcement); (2) backend domain + session (pure `mediaCheckpoints.mjs`, durable progress store, in-memory session service, router); (3) School frontend (widget on the reading-session pattern, checkpoint quiz overlay, surround modules). Screen-framework gets one registry line; `contentFilter` is untouched.
+
+**Tech stack:** Vitest (run directly — NEVER via `npm test --only=domain`, which mis-routes to Jest), React Testing Library, Express routers in `4_api/v1/routers/`, YAML stores in `1_adapters/persistence/yaml/`.
+
+**Worktree:** `.worktrees/media-lesson-checkpoints`, branch `feature/media-lesson-checkpoints`. Baseline verified green (82 tests over the touched surfaces).
+
+**Commit convention:** `feat(player): …` / `feat(school): …` — match `git log --oneline` style. Per-task commits are authorized on this isolated feature branch.
+
+**Run tests as:** `npx vitest run <paths>` from the worktree root.
+
+---
+
+## Phase 1 — Gate layer (`lib/Player/gate/`)
+
+### Task 1: Promote `pauseArbiter`, make it N-ary
+
+**Files:**
+- Move: `frontend/src/modules/Player/utils/pauseArbiter.js` → `frontend/src/lib/Player/gate/pauseArbiter.js` (use `git mv`)
+- Move: `frontend/src/modules/Player/utils/pauseArbiter.test.js` → `frontend/src/lib/Player/gate/pauseArbiter.test.js`
+- Modify: `frontend/src/modules/Fitness/player/FitnessPlayer.jsx:13` (import path), `:427-437` (call site)
+
+**Read first:** both current files in full (they're short), and `FitnessPlayer.jsx:420-440`.
+
+**Step 1: `git mv` both files** into `frontend/src/lib/Player/gate/`.
+
+**Step 2: Write failing tests** appended to the moved test file:
+
+```js
+describe('gates array (GateVerdict composition)', () => {
+  it('any blocked gate pauses, first blocked in array order wins the reason', () => {
+    const r = resolvePause({ gates: [
+      { blocked: false, reason: 'household', seekCeiling: null },
+      { blocked: true, reason: 'checkpoint', seekCeiling: 312 },
+      { blocked: true, reason: 'governance', seekCeiling: null },
+    ] });
+    expect(r).toEqual({ paused: true, reason: PAUSE_REASON.GATE, gate: 'checkpoint', seekCeiling: 312 });
+  });
+  it('seeking suppresses gate pause (anti-thrash rule unchanged)', () => {
+    const r = resolvePause({ seeking: { active: true }, gates: [{ blocked: true, reason: 'checkpoint' }] });
+    expect(r.paused).toBe(false);
+    expect(r.reason).toBe(PAUSE_REASON.SEEKING);
+  });
+  it('seekCeiling composes as min of non-null ceilings, even with no gate blocked', () => {
+    const r = resolvePause({ gates: [
+      { blocked: false, reason: 'a', seekCeiling: 500 },
+      { blocked: false, reason: 'b', seekCeiling: 312 },
+      { blocked: false, reason: 'c', seekCeiling: null },
+    ] });
+    expect(r.paused).toBe(false);
+    expect(r.seekCeiling).toBe(312);
+  });
+  it('legacy governance slot still maps to a gate (alias)', () => {
+    const r = resolvePause({ governance: { locked: true } });
+    expect(r).toMatchObject({ paused: true, reason: PAUSE_REASON.GATE, gate: 'governance' });
+  });
+  it('no gates, no ceiling: seekCeiling is null and result shape is stable', () => {
+    expect(resolvePause({})).toEqual({ paused: false, reason: PAUSE_REASON.PLAYING, gate: null, seekCeiling: null });
+  });
+});
+```
+
+Adjust the *existing* tests: any assertion on `PAUSE_REASON.GOVERNANCE` becomes `PAUSE_REASON.GATE` + `gate: 'governance'`.
+
+**Step 3: Run** `npx vitest run frontend/src/lib/Player/gate/pauseArbiter.test.js` — expect the new describe block to FAIL (`gates` unhandled, `GATE` undefined).
+
+**Step 4: Implement.** Replace the moved `pauseArbiter.js` body with:
+
+```js
+/**
+ * @typedef {object} GateVerdict
+ * @property {boolean} blocked          playback may not proceed
+ * @property {string}  reason           stable id for logs ('checkpoint', 'governance', …)
+ * @property {number|null} [seekCeiling] furthest seekable position (s); null/absent = unclamped
+ */
+export const PAUSE_REASON = Object.freeze({
+  SEEKING: 'SEEKING',
+  GATE: 'PAUSED_GATE',
+  BUFFERING: 'PAUSED_BUFFERING',
+  USER: 'PAUSED_USER',
+  PLAYING: 'PLAYING',
+});
+
+const truthy = (v) => Boolean(v);
+
+/** Legacy alias: a `governance` slot becomes one gate named 'governance'. */
+const governanceAsGate = (governance = {}) => ({
+  blocked: truthy(governance.blocked ?? governance.paused ?? governance.locked ?? governance.videoLocked),
+  reason: 'governance',
+  seekCeiling: null,
+});
+
+export const resolvePause = ({ seeking = {}, gates = [], governance = null, resilience = {}, user = {} } = {}) => {
+  const allGates = governance ? [...gates, governanceAsGate(governance)] : gates;
+  // A ceiling is a standing rule, not a pause side-effect: composed regardless of blocked.
+  const seekCeiling = allGates.reduce(
+    (min, g) => (Number.isFinite(g?.seekCeiling) ? (min == null ? g.seekCeiling : Math.min(min, g.seekCeiling)) : min),
+    null,
+  );
+  const base = { gate: null, seekCeiling };
+
+  // Seeking is highest priority — suppress all pause while mid-seek to prevent
+  // pause/resume thrashing from gate events during seeks (fitness lesson learned).
+  if (truthy(seeking.active)) return { paused: false, reason: PAUSE_REASON.SEEKING, ...base };
+
+  const blockedGate = allGates.find((g) => truthy(g?.blocked));
+  if (blockedGate) return { paused: true, reason: PAUSE_REASON.GATE, gate: blockedGate.reason ?? 'gate', seekCeiling };
+
+  // resilience.stalled deliberately NOT included — stall triggers reload, not pause.
+  if (truthy(resilience.requiresPause ?? resilience.buffering ?? resilience.waiting)) {
+    return { paused: true, reason: PAUSE_REASON.BUFFERING, ...base };
+  }
+  if (truthy(user.paused ?? user.pauseIntent === 'user')) return { paused: true, reason: PAUSE_REASON.USER, ...base };
+  return { paused: false, reason: PAUSE_REASON.PLAYING, ...base };
+};
+
+export default resolvePause;
+```
+
+**Step 5: Migrate FitnessPlayer.** In `FitnessPlayer.jsx`: import from `'@/lib/Player/gate/pauseArbiter.js'`; change the call site to pass a gates array (keeps its telemetry id):
+
+```js
+const pauseDecision = useMemo(() => resolvePause({
+  seeking: { active: isSeeking },
+  gates: [{ blocked: Boolean(effectiveGovernanceState?.videoLocked), reason: 'governance', seekCeiling: null }],
+  resilience: { stalled: resilienceState?.stalled, waiting: resilienceState?.waitingToPlay },
+  user: { paused: isPaused },
+}), [isSeeking, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+
+const governancePaused = pauseDecision.reason === PAUSE_REASON.GATE && pauseDecision.gate === 'governance' && pauseDecision.paused;
+```
+
+Then `grep -rn "modules/Player/utils/pauseArbiter" frontend/src` — must return nothing.
+
+**Step 6: Run** the arbiter suite + the fitness guard: `npx vitest run frontend/src/lib/Player/gate/ frontend/src/modules/Fitness/player/` — all pass.
+
+**Step 7: Commit** `feat(player): promote pauseArbiter to lib/Player/gate, N-ary GateVerdict composition`
+
+### Task 2: `mediaGate.js` — framework-free enforcement core
+
+**Files:**
+- Create: `frontend/src/lib/Player/gate/mediaGate.js`
+- Test: `frontend/src/lib/Player/gate/mediaGate.test.js`
+
+**Read first:** `frontend/src/lib/Player/useMediaClock.js:1-120` — copy its style: framework-free factory, injected `getMediaEl`, lazy module logger (CLAUDE.md "Module-Level Loggers"), never throws outward.
+
+**Step 1: Failing tests** against a fake element (`{ paused, currentTime, play: vi.fn(), pause: vi.fn(), addEventListener, removeEventListener, dispatchEvent }` — a tiny EventTarget-ish stub is fine):
+
+```js
+import { createMediaGate } from './mediaGate.js';
+// - apply({paused:true, gate:'checkpoint'}) on a playing element → el.pause() called once
+// - apply({paused:false}) on a gate-paused element → el.play() called; but NEVER
+//   auto-plays an element the gate did not itself pause (user-paused stays paused)
+// - a 'seeking' event with currentTime > effective ceiling → currentTime snapped
+//   back to ceiling; a seek below ceiling untouched
+// - ceiling null → no clamping listener behavior
+// - detach() removes listeners; subsequent seeks unclamped
+// - transitions logged: gate.blocked / gate.released / gate.seek-clamped (spy on logger)
+```
+
+**Step 2: Run to verify FAIL** (`createMediaGate` not defined).
+
+**Step 3: Implement** `createMediaGate({ getMediaEl, logger })` returning `{ apply(decision), detach() }`:
+- `apply` receives a full `resolvePause` result. Tracks `#gatePausedByUs` so release only resumes what the gate itself paused (the user-pause invariant above).
+- Seek clamp: listen to `seeking` on the element; if `el.currentTime > ceiling + 0.25` set `el.currentTime = ceiling` and log `gate.seek-clamped { gate, from, ceiling }` via `logger.sampled` (maxPerMinute 10 — a held FF button must not flood).
+- Re-resolve the element via `getMediaEl()` on every `apply` (late mount / element swap, same reason `useMediaClock` does).
+- All logging uses the structured framework (`app: 'player', component: 'media-gate'`). **No raw console.**
+
+**Step 4: Run — pass. Step 5: Commit** `feat(player): mediaGate enforcement core (pause + seek clamp)`
+
+### Task 3: `useMediaGate` hook + `GateVerdictContext`
+
+**Files:**
+- Create: `frontend/src/lib/Player/gate/useMediaGate.js`, `frontend/src/lib/Player/gate/GateVerdictContext.jsx`
+- Test: `frontend/src/lib/Player/gate/useMediaGate.test.jsx`
+
+**Step 1: Failing tests** (RTL `renderHook`):
+- `useMediaGate({ getMediaEl, verdicts, player: { seeking, resilience, user } })` calls `resolvePause` with merged verdicts and applies via a `createMediaGate` instance (mock the module); re-applies when verdicts change; detaches on unmount.
+- `GateVerdictProvider` + `useContributedVerdicts()`: a provider ancestor contributes verdicts; nesting providers concatenates outer-first (household outranks lesson — outer contributions come first in the merged array). No provider → `[]`, never throws.
+
+**Step 2: FAIL. Step 3: Implement** (~30 lines each): context holds a stable array via `useMemo`; `useMediaGate` merges `[...useContributedVerdicts(), ...verdicts]`, memoizes the `resolvePause` result, and drives one `createMediaGate` instance in a `useEffect`.
+
+**Step 4: pass. Step 5: Commit** `feat(player): useMediaGate hook + GateVerdictContext for cross-tree governors`
+
+---
+
+## Phase 2 — Backend domain
+
+### Task 4: `mediaCheckpoints.mjs` — pure checkpoint math + validation
+
+**Files:**
+- Create: `backend/src/2_domains/school/mediaCheckpoints.mjs`
+- Test: `backend/src/2_domains/school/mediaCheckpoints.test.mjs`
+
+**Read first:** `backend/src/2_domains/school/storyTime.mjs` (style: header comment stating the WHY, `{errors, ...}` validator shape, no clock, no I/O) and its test file.
+
+**Step 1: Failing tests:**
+
+```js
+import { validateCheckpoints, dueCheckpoint, seekCeilingFor, clearedSetFrom } from './mediaCheckpoints.mjs';
+// validateCheckpoints(raw, { bankItemIds }) → { errors, checkpoints? }
+// - not an array / empty array → error
+// - each entry: integer at >= 1; non-empty items array of strings
+// - strictly ascending `at` (equal or descending → error naming both indexes)
+// - items resolve against bankItemIds WHEN the set is provided; shape-only when
+//   absent (the PRINT_DOCUMENT_REF precedent: domain has no repository)
+// - normalized checkpoints get stable ids: `cp-<at>` (deterministic, no clock)
+// dueCheckpoint(position, checkpoints, clearedIds:Set) → first checkpoint with
+//   at <= position and id not in clearedIds, else null (THE gate predicate)
+// seekCeilingFor(checkpoints, clearedIds) → `at` of first uncleared checkpoint,
+//   else null (all cleared = unclamped)
+// - position exactly at boundary: at <= position fires (312 fires at 312.0)
+```
+
+**Step 2: FAIL. Step 3: Implement** (small — under 80 lines, comment-dense per house style). **Step 4: pass.**
+
+**Step 5: Commit** `feat(school): mediaCheckpoints domain — validation, due-gate, seek ceiling`
+
+### Task 5: `unitValidation.mjs` — accept the `checkpoints:` block
+
+**Files:**
+- Modify: `backend/src/2_domains/school/curriculum/unitValidation.mjs` (composition rules ~line 260-365, normalized output ~line 400)
+- Test: extend `backend/src/2_domains/school/curriculum/unitValidation.test.mjs`
+
+**Read first:** `unitValidation.mjs` in full; note `RESOLVABLE_REFS`, the exclusive-fields pattern, and where `references` lands on the normalized unit.
+
+**Step 1: Failing tests:** a unit with `media + bank + checkpoints` validates clean and carries normalized `checkpoints`; `checkpoints` without `media` → error `'checkpoints requires media'`; without `bank` → `'checkpoints requires bank'`; invalid inner block surfaces `mediaCheckpoints`' errors prefixed `checkpoints: `; item existence checked when the caller injects `sets.bankItems` (a `Map<bankId, Set<itemId>>`), shape-only otherwise.
+
+**Step 2: FAIL. Step 3: Implement:** import `validateCheckpoints`; in the composition section add the requires-media/bank guards, delegate the block, spread normalized `checkpoints` onto the returned unit. Follow the existing one-error-per-field message style.
+
+**Step 4:** `npx vitest run backend/src/2_domains/school/curriculum/unitValidation.test.mjs` — all pass **including every pre-existing test** (the block is optional; nothing regresses).
+
+**Step 5: Commit** `feat(school): curriculum units accept checkpoints block (publish-time resolution)`
+
+---
+
+## Phase 3 — Backend application, persistence, API
+
+### Task 6: `YamlMediaLessonProgressStore` — durable evidence
+
+**Files:**
+- Create: `backend/src/1_adapters/persistence/yaml/YamlMediaLessonProgressStore.mjs`
+- Test: `tests/isolated/adapters/YamlMediaLessonProgressStore.test.mjs` (mirror where `YamlReadingLogStore`'s test lives — `find tests -name '*ReadingLogStore*'` and match)
+
+**Read first:** `YamlReadingLogStore.mjs` header in full — this store copies its corruption posture, with ONE deliberate inversion.
+
+Path: `<dataDir>/household/school/records/media-lessons/{learnerId}/{unitId}.yml`
+Shape: `{ schema: 'school.media-lesson-progress/v1', unitId, learnerId, cleared: [{id, at, clearedAt, attempts}], furthestPosition, completedAt|null }`
+
+**Step 1: Failing tests:**
+- `get(learnerId, unitId)`: missing file → `{ missing: true, progress: null }` (fresh learner — fine); **corrupt file → `{ error: true }`** — NOT empty progress. The reading log fails open because its worst case is a re-owed story; here a false "nothing cleared" re-gates answered questions, so a reader that can't trust the file says so (the StoryTime `error: true` rule).
+- `recordCleared(...)` / `recordPosition(...)`: read-modify-write; corrupt file side-files to `<unitId>.yml.corrupt-<stamp>` first, then fresh shard (copy the reading store's append posture verbatim); `furthestPosition` only ratchets up; clearing an already-cleared id is idempotent (bumps attempts, no duplicate row).
+- Unsafe learner/unit ids THROW on write (never file evidence under a wrong key).
+
+**Step 2: FAIL. Step 3: Implement** cribbing `YamlReadingLogStore`'s `#load` (`missing/ok/corrupt/unreadable`) and write path. **Step 4: pass. Step 5: Commit** `feat(school): durable media-lesson progress store`
+
+### Task 7: `MediaLessonSessionService` — in-memory sessions, retry-allowed grading
+
+**Files:**
+- Create: `backend/src/3_applications/school/MediaLessonSessionService.mjs`
+- Test: `tests/isolated/application/school/MediaLessonSessionService.test.mjs`
+
+**Read first:** `ReadingSessionService.mjs` (in-memory + sweep + injected clock/bus/logger; state stored, mode derived) and `SchoolService.mjs:337-380` (session shape, `ses_` ids, sweep). Grading imports: `gradeAnswer`, `givenShapeError` from `#domains/school/grading.mjs`; gate math from `#domains/school/mediaCheckpoints.mjs`.
+
+This service does NOT reuse `SchoolService` sessions: its response-claims model is one-shot per item, and checkpoint policy is retry-until-correct. Same grader, different policy owner — the design's D2.
+
+**Step 1: Failing tests** (injected fake clock, fake progress store, fake bus):
+- `open({ learnerId, unit, bank, locator })` → `{ sessionId, checkpoints (WITHOUT answers/accept/pairs), resumePosition, cleared }` seeded from the progress store; store `error: true` → open THROWS (agenda shows unavailable — never gate on a lie).
+- `answer({ sessionId, checkpointId, itemId, given })`:
+  - correct → `{ correct: true, checkpointCleared? }`; when the checkpoint's last item clears, persists via `recordCleared` and broadcasts `checkpoint-cleared` on `lesson:{location}`;
+  - wrong → `{ correct: false }`, attempts++, item stays answerable (RETRY-ALLOWED — assert a second submit of the same item is graded, the exact opposite of SchoolService's claim map);
+  - shape errors → ValidationError with `givenShapeError`'s message.
+- `position({ sessionId, position })` bumps `lastActiveAt`, ratchets store `furthestPosition` (throttled: persist at most every 15s of position delta — heartbeat cadence);
+- `ended({ sessionId })` with all checkpoints cleared → `completedAt` persisted + `lesson-complete` broadcast; with uncleared checkpoints → refuses (`{ completed: false, remaining }`) — an `ended` event cannot skip a gate;
+- idle sweep: sessions with no heartbeat for `idleTimeoutMs` torn down; every broadcast wrapped (dead bus never costs the session) — copy `ReadingSessionService`'s wrap.
+
+**Step 2: FAIL. Step 3: Implement. Step 4: pass. Step 5: Commit** `feat(school): media-lesson session service — hard gate, retry-allowed grading`
+
+### Task 8: `OpenMediaLessonSession` use case
+
+**Files:**
+- Create: `backend/src/3_applications/school/OpenMediaLessonSession.mjs`
+- Test: `tests/isolated/application/school/OpenMediaLessonSession.test.mjs`
+
+**Read first:** `OpenCatalogLearningSession.mjs` (the client supplies only an address; the server re-resolves everything).
+
+`execute({ learnerId, unitId })`: resolve unit via injected curriculum (must carry `checkpoints`), resolve `media` manifest → locator (`plex:…`), resolve `bank` snapshot, call `sessions.open(...)`. Unknown unit / no checkpoints / dangling manifest → `ValidationError`/`EntityNotFoundError` (should-be-impossible post-publish-gate; logged loudly, never a crash — the `IssueDocument` posture). TDD as above; **Commit** `feat(school): OpenMediaLessonSession use case`.
+
+### Task 9: Lesson router
+
+**Files:**
+- Create: `backend/src/4_api/v1/routers/mediaLesson.mjs`
+- Test: `tests/isolated/api/routers/mediaLesson.test.mjs`
+
+**Read first:** `backend/src/4_api/v1/routers/reading.mjs` — copy its structure exactly (deps-injected factory, `asyncHandler`, `errorHandlerMiddleware`, trimmed helpers, header comment naming the ONE caller).
+
+Routes (mounted at `/api/v1/school/lesson`):
+- `GET /:sessionId` — session snapshot for the widget (checkpoints sans answers, cleared, resumePosition, contentId, learner display name via injected `resolveLearner`).
+- `POST /:sessionId/answer` — `{ checkpointId, itemId, given }` → grade result.
+- `POST /:sessionId/position` — `{ position }` heartbeat.
+- `POST /:sessionId/ended` — the media element's own `ended`; returns `{ completed, remaining }`.
+
+Session gone → 410 (the schoolApi client distinguishes statuses — keep that contract). TDD with supertest-style isolated tests exactly as `reading.test.mjs` does. **Commit** `feat(school): media-lesson router`.
+
+### Task 10: Surface + dispatch + wiring
+
+**Files:**
+- Modify: `backend/src/3_applications/donow/surfaces/LivingroomTvSurface.mjs` (second action kind)
+- Modify: `backend/src/5_composition/modules/schoolLifecycle.mjs` (store + service + use case in `stores`/`useCases`)
+- Modify: `backend/src/app.mjs` (~line 4030 region — beside the reading wiring; mount router)
+- Modify: the unit-launch resolution path (see investigation step)
+- Tests: extend `tests/isolated/` suites beside each
+
+**Step 1 (investigation, before any code):** find where a `bank:` unit's card-scan/keypad launch builds its Portal target — start from `tests/isolated/composition/triggerLearnerActions.test.mjs` and `RunSelfServiceAction`/`ResolveScanAction` (grep in `3_applications`). Identify the branch point where unit composition (`bank` vs `launch` vs `program`) selects a dispatch. Write down the file:line in the task commit message.
+
+**Step 2: Failing tests:**
+- `LivingroomTvSurface.validateAction` accepts `{ kind: 'media-lesson', sessionId }` (and still accepts legacy `{ query }`); `dispatch` for that kind runs the wake stack THEN broadcasts `{ type: 'lesson.open', sessionId, learnerId }` on topic `lesson:livingroom`; wake failure → `dispatched: false` and NO broadcast (never tell a screen that isn't coming on).
+- Launch path: a unit carrying `checkpoints` routes: `OpenMediaLessonSession` → `donow.dispatch({ surface: 'livingroom-tv', action: { kind: 'media-lesson', sessionId }, learnerId, requestedBy: 'school-unit', programId: null, ref: unitId })`. **Session open precedes dispatch**; a failed dispatch leaves the session to idle out (assert no explicit teardown needed).
+
+**Step 3-4: implement, pass.** Wiring in `app.mjs` copies the reading block's shape (same guard: only when schoolLifecycle is wired; `server.once('close', …)` stops the sweep). **Step 5: Commit** `feat(school): media-lesson dispatch via livingroom-tv surface + composition wiring`
+
+---
+
+## Phase 4 — Frontend School
+
+### Task 11: `schoolApi` lesson methods
+
+**Files:** modify `frontend/src/modules/School/schoolApi.js` + its test.
+Add: `lessonSession(sessionId)`, `lessonAnswer(sessionId, body)`, `lessonPosition(sessionId, position)`, `lessonEnded(sessionId)` — all via the existing `req` helper (never throws, `{ok, status, data}`). TDD trivial. **Commit** `feat(school): schoolApi media-lesson endpoints`.
+
+### Task 12: `useCheckpointGate` — the authority
+
+**Files:**
+- Create: `frontend/src/modules/School/lesson/useCheckpointGate.js`
+- Test: `frontend/src/modules/School/lesson/useCheckpointGate.test.jsx`
+
+Pure derivation, mirroring `mediaCheckpoints.mjs` client-side (duplicated by hand like the SUBJECT_IDS twin — note it in both headers): input `{ position, checkpoints, clearedIds }` → `{ verdict: GateVerdict, dueCheckpoint }`. `blocked` when a due checkpoint is uncleared; `reason: 'checkpoint'`; `seekCeiling` = first uncleared `at`. Include the approach signal: `{ approaching: dueWithin(position, 5) }` for the chrome pulse. TDD; **Commit** `feat(school): useCheckpointGate authority hook`.
+
+### Task 13: `useMediaLessonSession` — the state machine
+
+**Files:**
+- Create: `frontend/src/modules/School/lesson/useMediaLessonSession.js`
+- Test: `frontend/src/modules/School/lesson/useMediaLessonSession.test.jsx`
+
+**Read first:** `frontend/src/modules/School/reading/useReadingSession.js` IN FULL — this hook is its sibling: same WS subscription pattern (`useWebSocketSubscription`), same "attribution frozen, never re-read" doctrine, same stable-listener refs.
+
+Views: `idle → open (fetching) → playing → checkpoint → celebrating → done`. Subscribes `lesson:{location}`; on `lesson.open` fetches via `schoolApi.lessonSession`; exposes `notePlaybackStarted/Completed` callbacks (wired to the media element by the widget), `answer(itemId, given)`, `chooseRewind()` (releases gate locally, seeks handled by widget, re-arms), heartbeat timer (15s while playing, cleared otherwise). Error paths per design: answer POST failure → `notice` state, gate stays blocked, escape-at-notice exits. TDD with mocked WS + api exactly as `useReadingSession.test.jsx` does. **Commit** `feat(school): media-lesson session hook`.
+
+### Task 14: `CheckpointQuizOverlay` — focus-ring quiz for remote/gamepad
+
+**Files:**
+- Create: `frontend/src/modules/School/lesson/CheckpointQuizOverlay.jsx` + `.scss` + test
+
+**Read first:** `frontend/src/modules/School/quiz/QuizRunner.jsx` (item components + props), `frontend/src/screen-framework/input/useScreenAction.js`.
+
+Renders the due checkpoint's current item via the existing item components (`MultipleChoiceItem` first; other types follow the same wrapper), inside a focus-ring layer: `useScreenAction('navigate')` moves focus, `'select'` activates, `'escape'` ignored at a live question / exits at a notice. **"Rewind & rewatch" is appended as a focusable option on every multiple-choice checkpoint item.** Wrong answer → shake + reshuffle; correct → ✓ beat then `onCleared`. TDD with RTL firing ActionBus events (see `useScreenAction.test.js` for the emit pattern). **Commit** `feat(school): checkpoint quiz overlay with d-pad focus navigation`.
+
+### Task 15: `MediaLessonScreen` widget + registration
+
+**Files:**
+- Create: `frontend/src/modules/School/lesson/MediaLessonScreen.jsx` + `.scss` + test
+- Modify: `frontend/src/screen-framework/widgets/builtins.js` (ONE line + comment, after `school-reading`)
+
+**Read first:** `frontend/src/modules/School/reading/ReadingSessionScreen.jsx` IN FULL — mount pattern (renders null when idle; Player via `useScreenOverlay()`; `onMediaRef` + stable listener refs; `clear` ≠ `ended`).
+
+The widget composes: `useMediaLessonSession` (state) + `useMediaClock` (position off the mounted element) + `useCheckpointGate` (verdict) + `useMediaGate` (enforcement) + `CheckpointQuizOverlay` (mounted during `checkpoint` view) + inline surround definition (Task 16). Registration:
+
+```js
+// Gated media lessons on the living-room TV. Same contract as school-reading:
+// renders nothing until a lesson is dispatched to this room, so the screen's
+// menu and screensaver are untouched by its presence.
+registry.register('school-lesson', MediaLessonScreen);
+```
+
+Widget test mirrors `ReadingSessionScreen.test.jsx`: deliver `lesson.open`, assert fetch + overlay mount; simulate playhead crossing a checkpoint (fake clock state), assert pause + overlay; answer correct, assert release. **Commit** `feat(school): school-lesson screen widget`.
+
+### Task 16: Surround modules — `checkpoint-map` + `lesson-score`
+
+**Files:**
+- Create: `frontend/src/modules/School/lesson/surround/CheckpointMap.jsx`, `LessonScore.jsx`, `.scss`, tests, plus a `registerLessonSurround.js` side-effect module imported by `MediaLessonScreen`
+
+**Read first:** `frontend/src/modules/Surround/modules/SegmentMap.jsx` (the shape to copy: props = region definition + sampled clock state), `frontend/src/modules/Surround/registry.js`.
+
+`checkpoint-map`: nodes per checkpoint (cleared ✓ / current pulsing when `approaching` / locked), position cursor. `lesson-score`: avatar + name (attribution visible), items correct, attempts. Registered via `registerSurroundModule('checkpoint-map', …)` / `('lesson-score', …)`. The widget hands `SurroundHost` an inline definition — verify `SurroundHost`'s props allow an explicit definition (read `SurroundHost.jsx`; if it only polls sidecars, mount `SurroundFrame` directly instead — it accepts a definition; note whichever path was taken in the commit). The frame failing must never block the lesson (the surround ONE RULE). RTL tests per module. **Commit** `feat(school): lesson surround chrome (checkpoint-map, lesson-score)`.
+
+---
+
+## Phase 5 — Integration, flow test, docs
+
+### Task 17: Full-suite regression + flow test
+
+**Step 1:** `npx vitest run frontend/src/lib/Player frontend/src/modules/School frontend/src/modules/Fitness/player frontend/src/screen-framework backend/src/2_domains/school tests/isolated` — everything green.
+
+**Step 2:** Playwright flow test `tests/live/flow/school/media-lesson-checkpoint.runtime.test.mjs`: seed a test unit (fixture bank + 2 checkpoints) via test fixtures, open the lesson URL with `?goto=<checkpoint-5s>` (the review-seek primitive — see `lib/Player/reviewParams.js`), assert: playback pauses at the checkpoint, overlay visible, a forward seek attempt snaps back, correct answer resumes. **Test discipline:** no conditional assertion-skipping — if the fixture can't be seeded, fail in `beforeAll`. NOTE: live tests need the ONE running dev stack (never start a second backend — CLAUDE.local.md); coordinate with the user before running.
+
+**Step 3: Commit** `test(school): media-lesson checkpoint flow test`
+
+### Task 18: Docs + deployment notes
+
+- Create `docs/reference/school/media-lessons.md`: architecture summary (link the design doc), the GateVerdict contract, topics/routes table, authoring guide for the `checkpoints:` unit block.
+- Add the doc row to `CLAUDE.md`'s Navigation table.
+- Move the design doc's status line to "Implemented on feature/media-lesson-checkpoints".
+- **Deployment order note (shared-Dropbox data-tree hazard):** the two DATA changes — `data/household/screens/living-room.yml` gaining the `school-lesson` widget entry, and any real unit YAML gaining `checkpoints:` — go live on prod the moment they're saved to the synced tree, BEFORE code deploys. They must be applied only AFTER the code ships. Say this in the doc's deployment section explicitly.
+- **Commit** `docs(school): media-lessons reference + deployment ordering`
+
+### Task 19: Finish
+
+Use superpowers:finishing-a-development-branch — verify full suite, then merge to main per house policy (no PRs, delete branch after merge, record in `docs/_archive/deleted-branches.md`).
+
+---
+
+## Standing rules for every task
+
+- Structured logging framework only — never raw `console.*` (CLAUDE.md).
+- Backend imports use the `#domains/` / `#apps/` / `#api/` aliases as seen in neighbors.
+- Comment density and header style must match the touched file's neighbors (School files carry WHY-dense headers; match them).
+- No PII in fixtures — `test-user`, never real household identifiers.
+- Vitest directly; never `--only=domain`.
+- Each task: tests fail first, then pass, then commit. Report actual output, not intentions.
