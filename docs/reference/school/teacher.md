@@ -188,7 +188,7 @@ move is the failure this machine exists to forbid.
 | Event | Meaning | Legal at a terminal state? |
 |---|---|---|
 | `failed` | a print attempt never reached paper | no |
-| `reassigned` | the work belongs to a different child | **no** |
+| `reassigned` | the work belongs to a different child | yes |
 | `grade_adjusted` / `grade_adjustment_retracted` | a teacher corrected the mark | yes |
 | `reward_reconciled` / `reward_reconciliation_failed` | coins follow a corrected grade | yes |
 | `result_receipt_captured` / `result_receipt_reprinted` | settlement evidence | yes |
@@ -196,6 +196,13 @@ move is the failure this machine exists to forbid.
 `failed` is deliberately non-advancing: the same ticket stays valid, so the
 next scan retries. It does not touch `lastPrintedAt`, so a print that failed is
 retryable immediately rather than blocked by the cooldown.
+
+`reassigned` is legal at a terminal state for the same reason `grade_adjusted`
+is: it changes **attribution**, never lifecycle position. The wrong child's
+name is usually discovered after the coins have been paid, and settled work
+must not be the one work that can never be given back. The coin ledger is not
+rewritten by the move — where coins have to follow, the existing reward
+reconciliation is the mechanism, as it is for a corrected grade.
 
 ### What a teacher can do, per state
 
@@ -656,7 +663,11 @@ whom, since when.
 ## 10. Attribution repair
 
 The wrong child's name on a lesson is repaired by **moving the evidence
-itself**, not by annotating around it.
+itself**, not by annotating around it. Which evidence there is to move decides
+which of the two repairs applies — they are listed separately on Student →
+Operations, and a piece of work appears under exactly one of them.
+
+**Recorded answers — the attempt events move.**
 
 ```mermaid
 flowchart LR
@@ -668,9 +679,20 @@ flowchart LR
 ```
 
 Destination shard is written first and gated: a corrupt destination refuses the
-move rather than half-completing it. A reassignment to the same learner is
-rejected outright — it records no fact and would still rewrite attribution
-downstream.
+move rather than half-completing it.
+
+**No recorded answers — the session is re-credited.** A program-served lesson,
+paper a grown-up marked by hand, a launch outcome: there are no attempts to
+move, and this is the only repair that reaches them. One `reassigned` event is
+appended to the work session; nothing already written is edited, and every
+derived read follows because the reducer takes the credited learner from the
+annotation. The reason is **required** and stored in the event itself — a
+best-effort audit trail can go missing, the log cannot. Both children are told
+in their own feed, and the day's sessions are listed from the same
+learner-sessions read the rest of the console uses.
+
+A reassignment to the same learner is rejected outright by either route — it
+records no fact and would still rewrite attribution downstream.
 
 ---
 

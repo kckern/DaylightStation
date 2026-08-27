@@ -3730,6 +3730,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     datastore: schoolDatastore, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes,
     auditLog: schoolReassignmentLog, logger: rootLogger.child({ module: 'school-reassignments' }),
   });
+  // Its session-level twin (plan 4.1) — the repair for work with no machine
+  // attempts to move. Shares the ONE audit-log instance above deliberately: a
+  // second `YamlReassignmentLog` would race that instance's append chain.
+  // Null when the lifecycle is unwired (no sessions repo, nothing to move),
+  // which 404s the route rather than half-answering it.
+  const { ReassignSession } = await import('#apps/school/usecases/ReassignSession.mjs');
+  const schoolSessionsRepo = schoolLifecycle.stores?.sessions ?? null;
+  const reassignSession = schoolSessionsRepo
+    ? new ReassignSession({
+      sessions: schoolSessionsRepo, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes,
+      auditLog: schoolReassignmentLog, logger: rootLogger.child({ module: 'school-reassignments' }),
+    })
+    : null;
   const { RetractTeacherRecord } = await import('#apps/school/usecases/RetractTeacherRecord.mjs');
   const retractTeacherRecord = new RetractTeacherRecord({
     stores: { enrichment: schoolEnrichmentLog, attestation: schoolAttestations, note: schoolTeacherNotes },
@@ -3932,6 +3945,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     teacherNotesStore: schoolTeacherNotes,
     recordTeacherNote,
     reassignEvidence,
+    reassignSession,
     reassignmentLog: schoolReassignmentLog,
     attemptsStore: schoolDatastore,
     retractTeacherRecord,

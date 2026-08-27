@@ -98,6 +98,13 @@ export function createSchoolRouter({
   teacherNotesStore = null,
   recordTeacherNote = null,
   reassignEvidence = null,
+  // The session-level twin of `reassignEvidence` (plan 4.1): re-credits work
+  // that has no machine attempts to move. Mounted here rather than on the
+  // lifecycle router for two reasons — it shares the ONE `reassignmentLog`
+  // instance below (a second instance would race that log's append chain, and
+  // an audit trail that drops entries is worse than none), and `/sessions` on
+  // this router already means quiz sessions, not work sessions.
+  reassignSession = null,
   // Task 12 (debt M5) — the reassignment audit trail, merged into GET /audit.
   reassignmentLog = null,
   attemptsStore = null,
@@ -1189,6 +1196,16 @@ export function createSchoolRouter({
     if (!reassignEvidence) throw new EntityNotFoundError('reassignment', 'not configured');
     const { fromLearnerId, toLearnerId, day, assessmentId, reassignedBy = null, pin = null } = req.body || {};
     res.json(await reassignEvidence.execute({ fromLearnerId, toLearnerId, day, assessmentId, reassignedBy, pin }));
+  }));
+  // Re-credit a whole work session. The route above moves attempt EVENTS and
+  // can only reach work a machine recorded answers for; this appends one
+  // `reassigned` event and reaches everything else. `fromLearnerId` is not
+  // taken from the caller — the use case reads it off the session's own log,
+  // so a stale panel cannot assert who the work currently belongs to.
+  router.post('/reassign-session', wrap(async (req, res) => {
+    if (!reassignSession) throw new EntityNotFoundError('session reassignment', 'not configured');
+    const { sessionId, toLearnerId, reason, reassignedBy = null, pin = null } = req.body || {};
+    res.json(await reassignSession.execute({ sessionId, toLearnerId, reason, reassignedBy, pin }));
   }));
 
   // --- wave-4 records --------------------------------------------------------

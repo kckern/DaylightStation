@@ -33,7 +33,7 @@ const PAYLOADS = {
   reward_reconciled: { reconciliationId: 'rec_1', delta: 1, txnId: 'txn_2' },
   reward_reconciliation_failed: { reconciliationId: 'rec_2', delta: -1, reason: 'economy unavailable' },
   remediation_opened: { newSessionId: 'ses_next', variant: 1 },
-  reassigned: { fromLearnerId: 'kid1', toLearnerId: 'kid2' },
+  reassigned: { fromLearnerId: 'kid1', toLearnerId: 'kid2', reason: 'Learner Two sat down at Learner One’s sheet' },
   failed: { stage: 'print', reason: 'printer offline' },
   grade_adjusted: { adjustmentId: 'adj_1', percent: 100, reason: 'OMR erased answer misread', adjustedBy: 'parent1' },
   grade_adjustment_retracted: { adjustmentId: 'adj_1', reason: 'entered against wrong session', retractedBy: 'parent1' },
@@ -245,6 +245,9 @@ describe('createEvent: per-type payloads', () => {
     ['remediation_opened', 'newSessionId'],
     ['reassigned', 'fromLearnerId'],
     ['reassigned', 'toLearnerId'],
+    // Moving a child's work onto a sibling is a decision with an author and a
+    // why; the why lives in the event, not only in a best-effort audit trail.
+    ['reassigned', 'reason'],
     ['failed', 'stage'],
     ['failed', 'reason'],
   ])('%s requires %s', (type, field) => {
@@ -577,6 +580,28 @@ describe('reduceSession: annotation events', () => {
     const events = log(['created', 'abandoned']);
     const state = reduceSession([...events, { ...ev('failed'), seq: 3 }]);
     expect(state.errors).toContain('event[seq=3]: illegal transition abandoned -> failed');
+  });
+
+  /**
+   * ...with `reassigned` as the deliberate exception. A reassignment changes
+   * ATTRIBUTION, never lifecycle position, so a settled lesson is exactly when
+   * it is most needed: the wrong child's name is usually discovered after the
+   * coins have already been paid. Asserted on the DERIVED state — that the
+   * work now reads as kid2's and the lifecycle did not move — rather than on
+   * the legality call, because "legal" that the reducer then drops would be
+   * the same bug wearing a green tick.
+   */
+  it.each([
+    ['rewarded', ['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'rewarded']],
+    ['remediation_opened', ['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'remediation_opened']],
+    ['abandoned', ['created', 'abandoned']],
+  ])('a reassignment is legal at %s and re-credits the settled work', (terminal, path) => {
+    const events = log(path);
+    const state = reduceSession([...events, { ...ev('reassigned'), seq: events.length + 1 }]);
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe(terminal);
+    expect(state.terminal).toBe(true);
+    expect(state.learnerId).toBe('kid2');
   });
 });
 

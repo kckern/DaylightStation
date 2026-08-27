@@ -1257,8 +1257,11 @@ state derived on every read (the language-ladder pattern). It supplies the
 context the attempt log intentionally lacks — why work was selected, what paper
 was issued, what comes next.
 - `failed` and `reassigned` are **annotations, not states**: they record a fact
-  at any non-terminal state and leave the lifecycle where it was, so a failed
-  print leaves the token valid and the next scan retries.
+  and leave the lifecycle where it was, so a failed print leaves the token valid
+  and the next scan retries. `failed` is legal at any non-terminal state;
+  `reassigned` is legal at every state including the terminal ones, because it
+  changes attribution rather than lifecycle position and the wrong child's name
+  is usually found on work that has already settled.
 - **Every non-terminal state yields a non-null next action**, asserted as a
   property across all reachable states. A state without one is a wedged session.
 - The outcome carries a deterministic id (`out:{sessionId}`) used as the
