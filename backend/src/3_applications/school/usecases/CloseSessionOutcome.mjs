@@ -43,6 +43,7 @@ import { outcomeIdFor, evaluateOutcome, rewardDecision } from '#domains/school/s
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
+import { chooseForwardAction } from '#domains/school/documents/forwardAction.mjs';
 import { PlanProjection } from '../PlanProjection.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
@@ -305,7 +306,19 @@ export class CloseSessionOutcome {
       accessCode: null,
     });
     let nextSubjectToken = null;
-    if (passed && unlocked && state.learnerId && unit?.subject) {
+    // The gate is NOT `unlocked && …` any more. `unlocks` is null on a module's
+    // last lesson, so a d5-passed-Friday learner with d2 unfinished would never
+    // be offered the catch-up — the one moment it matters most. The chooser
+    // decides whether an action exists; this only decides whether we may ask.
+    const offer = (passed && state.learnerId && unit?.subject)
+      ? chooseForwardAction({
+        sections: projected?.sections ?? [],
+        subject: unit.subject,
+        backlog: this.#backlogIn({ projected, subject: unit.subject }),
+        unlocked,
+      })
+      : null;
+    if (offer) {
       // The self-service panel alias for the "next up" QR — minted the SAME
       // way `BuildAgenda` mints one for the agenda's own subject_next tokens
       // (spec self-service, Slice H 2026-08-22). Before this the result
@@ -315,7 +328,11 @@ export class CloseSessionOutcome {
       const accessCode = await this.#mintNextSubjectAccessCode({ sessionId, nowIso });
       const record = mintToken({
         tokenClass: 'subject_next',
-        subject: { learnerId: state.learnerId, subject: unit.subject, continueToday: true },
+        subject: {
+          learnerId: state.learnerId,
+          subject: offer.subject,
+          continueToday: offer.continueToday,
+        },
         at: nowIso,
         rng: this.#rng,
         ...(accessCode ? { accessCode, accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso) } : {}),
@@ -324,13 +341,13 @@ export class CloseSessionOutcome {
       nextSubjectToken = record.token;
       actions.push({
         token: record.token,
-        label: unlocked.title,
+        label: offer.title,
         presentation: 'lesson',
-        eyebrow: 'One more?',
-        title: unlocked.title,
-        description: 'Today is already complete. Scan only if you want one more.',
-        icon: unit.subject,
-        taxonomy: unlocked.taxonomy,
+        eyebrow: offer.eyebrow,
+        title: offer.title,
+        description: offer.description,
+        icon: offer.icon,
+        ...(offer.taxonomy ? { taxonomy: offer.taxonomy } : {}),
         // Explicit either way (a real code, or `null` when self-service is
         // off or minting failed) — never omitted, so this QR can never fall
         // back to the pre-Slice-H silence.
@@ -626,6 +643,22 @@ export class CloseSessionOutcome {
   #accessCodeExpiryFor(nowIso) {
     const rolloverMs = studyDayWindow(Date.parse(nowIso), { timezone: this.#timezone }).endAtMs;
     return new Date(rolloverMs).toISOString();
+  }
+
+  /**
+   * An unfinished BACKLOG lesson in this subject, or null.
+   *
+   * Slice 1 uses the module-level notion of backlog that already exists — a
+   * lesson belonging to a closed dated module (`agenda.mjs`'s `isBacklog`).
+   * Read off `plan.available` rather than `section.next`, because the section
+   * for the subject just passed is `servedToday` and its `next` is therefore
+   * null by the time this runs.
+   */
+  #backlogIn({ projected, subject }) {
+    const entries = projected?.plan?.available ?? [];
+    const found = entries.find((entry) => entry.subject === subject
+      && (entry.timing?.mode === 'catch_up' || entry.timingState === 'catch_up'));
+    return found ? { unitId: found.unitId, title: found.title } : null;
   }
 
   /**

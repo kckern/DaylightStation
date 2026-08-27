@@ -24,6 +24,7 @@ const build = ({
   economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true,
   passOverrides = null, teacherGate = null, eventBus = null,
   receiptCapture = null, receiptArtifactPrinter = null,
+  assignments: assignmentsOverride = null,
 } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -33,7 +34,8 @@ const build = ({
   economy = new FakeEconomy({ throwOn });
   thermal = new FakeReceiptPrinter();
   reviewQueue = new FakeReviewQueue();
-  const assignments = new FakeAssignmentStore([{ learnerId: 'kid1', courses: ['math-fractions'] }]);
+  const assignments = assignmentsOverride
+    ?? new FakeAssignmentStore([{ learnerId: 'kid1', courses: ['math-fractions'] }]);
   const receipts = new ReceiptPrinting({
     renderer: new FakeReceiptRenderer(),
     printer: receiptPrinter === undefined ? thermal : receiptPrinter,
@@ -285,6 +287,52 @@ describe('the result receipt', () => {
       tokenClass: 'subject_next',
       subject: { learnerId: 'kid1', subject: 'math', continueToday: true },
     });
+  });
+
+  it('offers the next UNSERVED subject rather than one more of the same course', async () => {
+    // kid1 is assigned two COURSES in different subjects. Passing a math
+    // lesson must point the receipt at science, not at the next math unit.
+    build({ assignments: new FakeAssignmentStore([
+      { learnerId: 'kid1', courses: ['math-fractions', 'how-chemistry-surrounds-you'] },
+    ]) });
+    await graded({ unitId: MEDIA_UNIT, percent: 100 });
+    const result = await close.execute({ sessionId: SID });
+
+    expect(result.document.blocks.find((b) => b.type === 'scan_action')).toMatchObject({
+      eyebrow: 'Next up',
+      description: expect.stringContaining('Still to do today'),
+    });
+    expect(await tokens.get(result.nextSubjectToken)).toMatchObject({
+      tokenClass: 'subject_next',
+      subject: { learnerId: 'kid1', subject: 'science', continueToday: false },
+    });
+  });
+
+  it('never offers a program subject as the next subject', async () => {
+    // language-daily is a PROGRAM, and this projection has no launchers, so it
+    // cannot know whether language was already done today. Tier 1 must skip it
+    // and fall through to one-more-in-math.
+    build({ assignments: new FakeAssignmentStore([
+      { learnerId: 'kid1', courses: ['math-fractions'], units: ['language-daily'] },
+    ]) });
+    await graded({ unitId: MEDIA_UNIT, percent: 100 });
+    const result = await close.execute({ sessionId: SID });
+
+    expect(result.document.blocks.find((b) => b.type === 'scan_action'))
+      .toMatchObject({ eyebrow: 'One more?' });
+    expect(await tokens.get(result.nextSubjectToken))
+      .toMatchObject({ subject: { subject: 'math', continueToday: true } });
+  });
+
+  it('mints exactly one forward action, never a stack of tiers', async () => {
+    build({ assignments: new FakeAssignmentStore([
+      { learnerId: 'kid1', courses: ['math-fractions', 'how-chemistry-surrounds-you'] },
+    ]) });
+    await graded({ unitId: MEDIA_UNIT, percent: 100 });
+    const result = await close.execute({ sessionId: SID });
+
+    const scanActions = result.document.blocks.filter((b) => b.type === 'scan_action');
+    expect(scanActions).toHaveLength(1);
   });
 
   it('promises no next unit at the end of a course', async () => {
