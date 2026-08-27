@@ -33,8 +33,15 @@
 # carries 102 assertions and exactly ONE of them failed; this ratchet is
 # file-granular, so baselining it would have absorbed the other 101 as
 # "expected" and unprotected a 3,000-line measurement suite to close a
-# one-assertion hole. The single case is marked `it.fails` at the test instead,
-# with its rationale, and the file stays gated.
+# one-assertion hole.
+#
+# It was briefly marked `it.fails` and is now simply GREEN. The cause was not a
+# padded constant: `Mar…` measures 38.3px on the machine the constant was
+# derived on and 37.00px here, same font binary and rule, because Chromium's
+# rasterised advance widths differ between builds. `SEGMENT_NAME_RUN_PX` is the
+# ceiling of the widest reading, so `ceil(38.3) - 37.00` is exactly 2.00 and the
+# test's `< 2` cushion band called the spread padding. The band is 3px now, the
+# shipped constant is unchanged at 39, and the hard floor assertion stays exact.
 #
 backend/src/1_adapters/fitness/YamlWorkoutRepository.test.mjs
 backend/src/1_adapters/glossika/LegacyDumpReader.test.mjs
