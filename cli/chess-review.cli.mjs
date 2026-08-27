@@ -44,6 +44,7 @@ export function parseArgs(argv) {
   const options = {
     file: null,
     user: null,
+    opponent: null,
     date: null,
     since: null,
     latest: false,
@@ -52,6 +53,7 @@ export function parseArgs(argv) {
     depth: DEFAULT_DEPTH,
     format: 'report',
     brief: false,
+    dialogue: false,
     out: null,
     help: false,
   };
@@ -63,6 +65,7 @@ export function parseArgs(argv) {
     const token = argv[index];
     if (token === '--file') options.file = requiredValue(argv, index++, token);
     else if (token === '--user') options.user = requiredValue(argv, index++, token);
+    else if (token === '--opponent') options.opponent = requiredValue(argv, index++, token);
     else if (token === '--date') options.date = requiredValue(argv, index++, token);
     else if (token === '--since') options.since = requiredValue(argv, index++, token);
     else if (token === '--depth') options.depth = Number(requiredValue(argv, index++, token));
@@ -71,6 +74,7 @@ export function parseArgs(argv) {
     else if (token === '--all') options.all = true;
     else if (token === '--list') options.list = true;
     else if (token === '--brief') options.brief = true;
+    else if (token === '--dialogue') options.dialogue = true;
     else if (token === '--pgn') setFormat('pgn');
     else if (token === '--drills') setFormat('drills');
     else if (token === '--trend') setFormat('trend');
@@ -101,7 +105,7 @@ function archiveRoot() {
 }
 
 /** Every archived game, newest first, narrowed by user, day, or start date. */
-export function findGames({ user = null, date = null, since = null, root = archiveRoot() } = {}) {
+export function findGames({ user = null, opponent = null, date = null, since = null, root = archiveRoot() } = {}) {
   if (!fs.existsSync(root)) return [];
   const games = [];
   for (const day of fs.readdirSync(root)) {
@@ -114,6 +118,10 @@ export function findGames({ user = null, date = null, since = null, root = archi
       // The filename leads with the user id, so a prefix test avoids opening
       // and parsing every archived game just to filter by player.
       if (user && !name.startsWith(`${user}_`)) continue;
+      if (opponent) {
+        const record = YAML.parse(fs.readFileSync(path.join(dayDir, name), 'utf8'));
+        if (String(record?.opponent?.name || '').toLowerCase() !== String(opponent).toLowerCase()) continue;
+      }
       games.push({ day, name, file: path.join(dayDir, name) });
     }
   }
@@ -215,6 +223,38 @@ function renderTiming(timing, record) {
   return lines.join('\n');
 }
 
+function dialogueEntries(record) {
+  const displayed = record?.commentary?.displayed;
+  if (!Array.isArray(displayed)) return [];
+  return displayed.filter((entry) => entry?.text || entry?.quip).map((entry) => ({
+    ply: entry.ply ?? null,
+    text: String(entry.text || entry.quip).replace(/\s+/g, ' ').trim(),
+    source: entry.source || 'unknown',
+    fallbackReason: entry.fallback_reason || entry.fallbackReason || null,
+  })).filter((entry) => entry.text);
+}
+
+function dialogueSummary(record) {
+  const entries = dialogueEntries(record);
+  if (!entries.length) return record?.commentary?.final_line
+    ? { entries: [], text: `legacy final line only: “${record.commentary.final_line}”` }
+    : { entries: [], text: 'no player-visible dialogue archived' };
+  const sources = entries.reduce((counts, entry) => ({ ...counts, [entry.source]: (counts[entry.source] || 0) + 1 }), {});
+  return { entries, text: `${entries.length} displayed line${entries.length === 1 ? '' : 's'} (${Object.entries(sources).map(([source, count]) => `${source} ${count}`).join(', ')}); last: “${entries.at(-1).text}”` };
+}
+
+export function renderDialogue(record, detailed) {
+  const summary = dialogueSummary(record);
+  const lines = ['  DIALOGUE', `    ${summary.text}`];
+  if (detailed && summary.entries.length) {
+    for (const entry of summary.entries) {
+      const provenance = entry.fallbackReason ? `${entry.source}/${entry.fallbackReason}` : entry.source;
+      lines.push(`    ply ${entry.ply ?? '-'}  [${provenance}] ${entry.text}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 /**
  * Whether the rung is placed right.
  *
@@ -243,7 +283,7 @@ function renderRungFit(playerSide, engineSide, opponent) {
   return lines.join('\n');
 }
 
-export function renderReport(record, review, { brief = false } = {}) {
+export function renderReport(record, review, { brief = false, dialogue = false } = {}) {
   const opponent = record.opponent || {};
   const rung = opponent.rung || {};
   const help = record.help || {};
@@ -287,8 +327,16 @@ export function renderReport(record, review, { brief = false } = {}) {
     lines.push('');
   }
 
-  const timing = renderTiming(analyzeTiming(review, record, { side }), record);
+  const timingReadout = analyzeTiming(review, record, { side });
+  const timing = renderTiming(timingReadout, record);
   if (timing) { lines.push(timing); lines.push(''); }
+  else if (timingReadout.invalid) {
+    lines.push('  ON THE CLOCK');
+    lines.push(`    unavailable: ${timingReadout.reason}.`);
+    lines.push('');
+  }
+  lines.push(renderDialogue(record, dialogue));
+  lines.push('');
 
   if (readout.motifs.length) {
     lines.push('  WHAT TO WORK ON');
@@ -311,7 +359,10 @@ export function renderReport(record, review, { brief = false } = {}) {
   if (review.retracted.length) {
     lines.push('');
     lines.push('  TAKEN BACK');
-    for (const move of review.retracted) lines.push(`    ply ${move.ply}: ${move.san} (${move.color})`);
+    for (const move of review.retracted) {
+      const ply = Number.isInteger(move.ply) ? `ply ${move.ply}` : 'untracked ply';
+      lines.push(`    ${ply}: ${move.san} (${move.color})`);
+    }
   }
   lines.push('');
   lines.push(`  help used: ${help.hints || 0} hints, ${help.best_moves || 0} best-move reveals, ${help.takebacks || 0} takebacks`);
@@ -327,7 +378,7 @@ export function renderReport(record, review, { brief = false } = {}) {
  * games.
  */
 export function renderTrend(rows) {
-  const lines = ['', '  date        opponent        result   ACPL   blunders   opp ACPL', `  ${'-'.repeat(64)}`];
+  const lines = ['', '  date        opponent        result   ACPL   blunders   opp ACPL   dialogue     timing', `  ${'-'.repeat(88)}`];
   for (const row of rows) {
     lines.push([
       `  ${row.played_on}`.padEnd(14),
@@ -336,6 +387,8 @@ export function renderTrend(rows) {
       PAD(row.acpl, 4),
       PAD(row.blunders, 10),
       PAD(row.opponentAcpl, 11),
+      String(row.dialogue).padEnd(13),
+      String(row.timingQuality),
     ].join(''));
   }
   const acpls = rows.map((row) => row.acpl);
@@ -366,6 +419,7 @@ const USAGE = `Review archived Piano Chess games with a full-strength engine.
 Selecting games:
   --file <path>    Archived game YAML to review
   --user <id>      Household user id (e.g. test-user)
+  --opponent <n>   Only games against this named opponent (e.g. Caterpie)
   --date <date>    A single archive day, YYYY-MM-DD
   --since <date>   Every game on or after this day
   --latest         Only the newest match (the default when several match)
@@ -375,6 +429,7 @@ Output:
   (default)        Coaching report: move table, the moment it turned, phase
                    breakdown, recurring mistakes, and whether the rung fits
   --brief          Coaching report without the move-by-move table
+  --dialogue       Print every line actually shown, with its source/reason
   --trend          One row per game plus form over time (implies --all)
   --pgn            Annotated PGN — opens in Lichess or any board GUI
   --drills         The player's own mistakes as re-solvable positions (YAML)
@@ -390,10 +445,10 @@ Options:
 Centipawn-loss labels: inaccuracy >= ${THRESHOLDS.inaccuracy}, mistake >= ${THRESHOLDS.mistake}, blunder >= ${THRESHOLDS.blunder}.
 `;
 
-async function main() {
+export async function main(argv = process.argv.slice(2)) {
   let options;
   try {
-    options = parseArgs(process.argv.slice(2));
+    options = parseArgs(argv);
   } catch (error) {
     process.stderr.write(`${error.message}\n\n${USAGE}`);
     process.exitCode = 2;
@@ -408,7 +463,7 @@ async function main() {
   if (options.file) {
     targets = [{ file: options.file, name: path.basename(options.file), day: null }];
   } else {
-    targets = findGames({ user: options.user, date: options.date, since: options.since });
+    targets = findGames({ user: options.user, opponent: options.opponent, date: options.date, since: options.since });
     if (!targets.length) {
       process.stderr.write('No archived games matched.\n');
       process.exitCode = 1;
@@ -459,6 +514,10 @@ async function main() {
           acpl: player.acpl,
           blunders: player.blunders.length,
           opponentAcpl: opponentSide.acpl,
+          dialogue: dialogueSummary(record).entries.length
+            ? dialogueSummary(record).entries.reduce((out, entry) => `${out}${out ? '/' : ''}${entry.source}`, '')
+            : (record.commentary?.final_line ? 'legacy' : '-'),
+          timingQuality: record.timing?.quality || (record.timing?.mode === 'off' ? 'off' : 'legacy'),
         });
       } else if (options.format === 'json') {
         jsonReports.push({ file: target.file, record, review });
@@ -468,7 +527,7 @@ async function main() {
       } else if (options.format === 'drills') {
         drills.push(...toDrills(record, review));
       } else {
-        emit(renderReport(record, review, { brief: options.brief }));
+        emit(renderReport(record, review, { brief: options.brief, dialogue: options.dialogue }));
       }
     }
 

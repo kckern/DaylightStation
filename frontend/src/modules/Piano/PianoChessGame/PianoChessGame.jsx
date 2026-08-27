@@ -284,6 +284,30 @@ export function PianoChessGame({
   const gameRef = useRef(game);
   gameRef.current = game;
   const terminalSpeechRef = useRef(() => {});
+  // `performance.now()` is monotonic for this browser session. We record each
+  // completed ply here rather than trying to infer it from archive wall times.
+  // A remount cannot continue this clock, so its incomplete ledger is honestly
+  // marked discontinuous when archived.
+  const timingLedgerRef = useRef(null);
+  if (!timingLedgerRef.current || timingLedgerRef.current.gameId !== gameId) {
+    timingLedgerRef.current = {
+      gameId,
+      quality: game.history.length ? 'discontinuous' : (timing.mode === 'off' ? 'off' : 'complete'),
+      lastAt: typeof performance === 'undefined' ? null : performance.now(),
+      byPly: {},
+    };
+  }
+  const recordMoveTiming = useCallback((ply) => {
+    const ledger = timingLedgerRef.current;
+    if (!ledger || ledger.quality === 'off') return;
+    const now = typeof performance === 'undefined' ? null : performance.now();
+    if (now == null || ledger.lastAt == null || !Number.isInteger(ply) || ply < 1) {
+      ledger.quality = 'discontinuous';
+      return;
+    }
+    ledger.byPly[ply] = Math.max(0, Math.round(now - ledger.lastAt));
+    ledger.lastAt = now;
+  }, []);
   const projectAuthority = useCallback((authoritativeSession, nativeState = gameRef.current) => (
     projectChessAuthorityState(authoritativeSession.state, {
       playerColor,
@@ -456,6 +480,10 @@ export function PianoChessGame({
     } else if (event.type === 'moved' || event.type === 'game_over') {
       commitChessMove(event.move).then((authoritativeSession) => {
         const projected = projectAuthority(authoritativeSession, gameRef.current);
+        // Only a move that actually reaches the authoritative board is part of
+        // the archive. Recording before this promise resolves would leave a
+        // failed network commit masquerading as a completed think.
+        recordMoveTiming(projected.history.length);
         if (projected.status?.game_over) terminalSpeechRef.current(projected);
         setGame(projected);
         announce(projected);
@@ -469,7 +497,7 @@ export function PianoChessGame({
       setGame(state);
       logger().debug(`chord-${event.type}`, { square });
     }
-  }, [announce, chessAuthorityReady, commitChessMove, projectAuthority]);
+  }, [announce, chessAuthorityReady, commitChessMove, projectAuthority, recordMoveTiming]);
 
   const [rosterOpen, setRosterOpen] = useState(false);
   const [toast, setToast] = useState(null);
@@ -500,6 +528,7 @@ export function PianoChessGame({
     retryOpponent,
     resetOpponent,
     speech: opponentSpeech,
+    dialogueRef,
     showTerminalSpeech,
   } = useChessOpponentTurn({
     game,
@@ -523,6 +552,7 @@ export function PianoChessGame({
       const authoritativeSession = await commitChessMove(candidate);
       return projectAuthority(authoritativeSession, gameRef.current);
     },
+    recordMoveTiming,
   });
   terminalSpeechRef.current = showTerminalSpeech;
 
@@ -542,7 +572,8 @@ export function PianoChessGame({
     helpUsed,
     timing,
     playerColor,
-    commentary: opponentSpeech,
+    commentary: dialogueRef,
+    timingLedgerRef,
     logger: logger(),
     gateway: CHESS_PERSISTENCE_GATEWAY,
   });

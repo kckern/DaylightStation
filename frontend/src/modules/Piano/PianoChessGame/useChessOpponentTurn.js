@@ -26,6 +26,7 @@ export function useChessOpponentTurn({
   requestMove,
   requestQuip = null,
   commitAuthorityMove = null,
+  recordMoveTiming = null,
 }) {
   const requestedFenRef = useRef(null);
   const effectiveOpponentRef = useRef(null);
@@ -82,7 +83,7 @@ export function useChessOpponentTurn({
         });
         continue;
       }
-      const plan = { fen, served, candidate, committed, reaction: null, reactionSettled: false };
+      const plan = { fen, served, candidate, committed, reaction: null, reactionOutcome: null, reactionSettled: false };
       if (requestQuip) {
         const dialogue = dialogueRef.current.map(({ ply, quip }) => ({ ply, quip }));
         plan.reactionPromise = Promise.resolve(requestQuip({
@@ -94,6 +95,7 @@ export function useChessOpponentTurn({
           dialogue,
           userId,
         })).then((reaction) => {
+          plan.reactionOutcome = reaction || null;
           plan.reaction = reaction?.quip ? reaction : null;
           plan.reactionSettled = true;
           return plan.reaction;
@@ -126,13 +128,26 @@ export function useChessOpponentTurn({
         eventId: `${gameId}:${committedState.history.length}:${move?.san || 'move'}`,
         quip: fallback,
         source: 'fallback',
+        // The player-visible deadline is the opponent's think window. A reply
+        // still pending when that window closes is a timeout for this turn,
+        // even if the transport eventually returns and is logged as late.
+        fallbackReason: plan.reactionOutcome?.fallbackReason || 'timeout',
       };
       if (!plan.reaction && plan.reactionPromise) {
         plan.reactionPromise.then((late) => {
           if (late?.quip) logger.info?.('chess.dialogue.late-discarded', { gameId, ply: committedState.history.length });
         });
       }
-      dialogueRef.current = [...dialogueRef.current, { ply: committedState.history.length, quip: displayed.quip }];
+      const entry = {
+        ply: committedState.history.length,
+        eventId: displayed.eventId,
+        quip: displayed.quip,
+        source: displayed.source || 'fallback',
+        fallbackReason: displayed.fallbackReason || displayed.fallback_reason || null,
+        shownAt: new Date().toISOString(),
+      };
+      dialogueRef.current = [...dialogueRef.current, entry];
+      recordMoveTiming?.(entry.ply);
       setSpeech(displayed);
       setGame(committedState);
       announce(committedState);
@@ -148,8 +163,13 @@ export function useChessOpponentTurn({
         gameId,
         ply: committedState.history.length,
         eventId: displayed.eventId,
-        quip: displayed.quip,
-        source: displayed.source,
+        quip: entry.quip,
+        source: entry.source,
+        fallbackReason: entry.fallbackReason,
+        userId,
+        opponent: plan.served?.opponent?.name || effectiveOpponentRef.current?.name || null,
+        level: ladderLevelRef.current,
+        rosterPack: chessConfig?.ladder?.roster_pack || null,
       });
       return;
     }
@@ -161,7 +181,7 @@ export function useChessOpponentTurn({
     }
     setOpponentError('Opponent could not make a legal move.');
     logger.error?.('opponent-reply-unrecoverable', { gameId, fen });
-  }, [announce, commitAuthorityMove, gameId, gameRef, logger, playerColor, setGame]);
+  }, [announce, chessConfig?.ladder?.roster_pack, commitAuthorityMove, gameId, gameRef, logger, playerColor, recordMoveTiming, setGame, userId]);
 
   const { thinking } = useOpponentReply({
     enabled,
@@ -189,14 +209,23 @@ export function useChessOpponentTurn({
       quip: fallbackCommentary({ move, status: state.status, playerColor }),
       source: 'fallback',
     };
-    dialogueRef.current = [...dialogueRef.current, { ply: state.history.length, quip: displayed.quip }];
+    const entry = {
+      ply: state.history.length,
+      eventId: displayed.eventId,
+      quip: displayed.quip,
+      source: displayed.source,
+      fallbackReason: 'terminal',
+      shownAt: new Date().toISOString(),
+    };
+    dialogueRef.current = [...dialogueRef.current, entry];
     setSpeech(displayed);
     logger.info?.('chess.dialogue.displayed', {
       gameId,
       ply: state.history.length,
       eventId: displayed.eventId,
-      quip: displayed.quip,
-      source: 'terminal-fallback',
+      quip: entry.quip,
+      source: entry.source,
+      fallbackReason: entry.fallbackReason,
     });
   }, [gameId, logger, playerColor]);
 

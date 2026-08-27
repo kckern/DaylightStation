@@ -174,6 +174,21 @@ new subset/order. Grading therefore resolves against the issued snapshot, not
 against mutable bank YAML. Existing v1 banks retain their original schema and
 answer-key behavior.
 
+An item may add profile wording when the assessed fact and option pool are the
+same but the learner needs different scaffolding. The base `prompt` remains the
+required default. The author may use any compatible combination of:
+
+- `prompt_by_profile` for a complete replacement;
+- `prompt_prefix_by_profile` for a clue before the shared prompt; and
+- `prompt_suffix_by_profile` for a clue after it.
+
+At issuance, the worksheet combines them as prefix + replacement (or base
+prompt) + suffix for `lower`, `upper`, `lower-3`, or `upper-5`. The resolved
+wording is stored in the immutable issued snapshot, so reprints and grading
+remain faithful even if the author changes the bank later. This is the right
+place for a lower prefix such as “Look on p. 132.” while the upper profile asks
+the same question directly.
+
 - **Grading is server-side**, for single-source logic rather than secrecy.
   Banks ship with their answers because flashcards must reveal them; this is
   explicitly not a security boundary.

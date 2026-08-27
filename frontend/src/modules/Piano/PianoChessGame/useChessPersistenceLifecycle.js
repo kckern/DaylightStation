@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { elapsedBySide } from './chessClock.js';
 import { buildGameArchive } from './chessGameArchive.js';
 import { buildGameRecord } from './chessGameRecord.js';
 
@@ -25,6 +24,7 @@ export function useChessPersistenceLifecycle({
   timing,
   playerColor,
   commentary = null,
+  timingLedgerRef = null,
   logger,
   gateway,
 }) {
@@ -55,7 +55,8 @@ export function useChessPersistenceLifecycle({
     takebacks: helpUsed.takebacks,
     startedAt: lifecycle.startedAt,
     timing,
-    commentary,
+    commentary: commentary?.current || commentary,
+    timingLedger: timingLedgerRef?.current || null,
   };
   archiveInputsRef.current = sharedInputs;
   completionInputsRef.current = { ...sharedInputs, level: ladderLevel };
@@ -117,9 +118,11 @@ export function useChessPersistenceLifecycle({
 
   const endTiming = useMemo(() => {
     if (!game.status?.game_over || timing.mode === 'off') return null;
-    const spent = elapsedBySide(game.history, lifecycle.startedAt);
-    return { timed: true, totalMs: spent[playerColor] };
-  }, [game.history, game.status?.game_over, lifecycle.startedAt, playerColor, timing.mode]);
+    const ledger = timingLedgerRef?.current;
+    if (ledger?.quality !== 'complete') return null;
+    const totalMs = game.history.reduce((sum, _entry, index) => sum + (ledger.byPly[index + 1] || 0), 0);
+    return { timed: true, totalMs };
+  }, [game.history, game.status?.game_over, playerColor, timing.mode, timingLedgerRef]);
 
   return {
     startedAt: lifecycle.startedAt,

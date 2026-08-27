@@ -53,6 +53,22 @@ function profileSpec(profile) {
   throw new Error(`unknown worksheet profile: ${profile}`);
 }
 
+/**
+ * An item is one assessable fact.  Its profile wording is presentation
+ * scaffolding, not a second item: answers, decoys, source evidence, and the
+ * item id remain shared.  Authors may fully replace a profile prompt, or add
+ * a prefix/suffix clue around the shared prompt.  The final string, not the
+ * authoring recipe, is frozen into the issued snapshot.
+ */
+function promptForProfile(item, profile) {
+  const baseProfile = profile.startsWith('lower') ? 'lower' : profile.startsWith('upper') ? 'upper' : profile;
+  const forProfile = (field) => item[field]?.[profile] ?? item[field]?.[baseProfile];
+  const prefix = forProfile('prompt_prefix_by_profile');
+  const body = forProfile('prompt_by_profile') ?? item.prompt;
+  const suffix = forProfile('prompt_suffix_by_profile');
+  return [prefix, body, suffix].filter(Boolean).join(' ');
+}
+
 /** Issue a fully self-contained worksheet. No later bank lookup is needed to grade it. */
 /**
  * Worksheets are typeset, not code: they must never show a straight quote or
@@ -104,7 +120,7 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
       .slice(0, visibleCount - correct.length);
     const visible = shuffled([...correct, ...distractors], random);
     return {
-      itemId: item.id, type: item.type, prompt: curlyQuotes(item.prompt),
+      itemId: item.id, type: item.type, prompt: curlyQuotes(promptForProfile(item, profile)),
       source: item.source ? { ...item.source } : null,
       options: visible.map((choice, index) => ({
         id: choice.id, label: curlyQuotes(choice.label), letter: LETTERS[index], correct: choice.correct,
