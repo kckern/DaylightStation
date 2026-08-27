@@ -81,6 +81,7 @@ function withAttestedPasses(history, attestations, learnerId) {
 export class PlanProjection {
   #curriculum; #assignments; #sessions; #attestations; #curriculumExceptions;
   #launchers; #timezone; #clock; #logger; #planErrorEvent; #launcherFailedEvent;
+  #declaredEntryActions;
   #inflight = new Map();
 
   /**
@@ -108,6 +109,12 @@ export class PlanProjection {
     timezone = null, clock = () => new Date(),
     planErrorEvent = 'school.plan.errors',
     launcherFailedEvent = 'school.plan.launcher-failed',
+    // Every `learner_action` the household's trigger sources declare, so a
+    // program nothing can start is reported rather than quietly planned.
+    // Omitted (the default) asks nothing, exactly as before; `null` means the
+    // trigger config was unreadable and fails toward reporting. See
+    // `collectProgramStatuses`.
+    declaredEntryActions = undefined,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions) {
@@ -123,7 +130,37 @@ export class PlanProjection {
     this.#clock = clock;
     this.#planErrorEvent = planErrorEvent;
     this.#launcherFailedEvent = launcherFailedEvent;
+    this.#declaredEntryActions = declaredEntryActions;
     this.#logger = logger;
+  }
+
+  /**
+   * The declared `learner_action` set, resolved at PROJECT time.
+   *
+   * A THUNK IS ALLOWED BECAUSE COMPOSITION ORDER FORBIDS A VALUE. School's
+   * lifecycle is assembled well before the trigger API that owns the parsed
+   * sources, so a value read at construction would always be the empty
+   * "nothing is declared" answer — which is precisely the falsely confident
+   * reading this check exists to prevent.
+   *
+   * `undefined` stays `undefined` (the caller is not asking at all). Anything
+   * that goes wrong resolving it becomes `null`, which REPORTS rather than
+   * passes: a thunk that throws means the trigger config could not be read,
+   * and "I could not tell" is never "everything is fine".
+   */
+  #resolveDeclaredEntryActions() {
+    const source = this.#declaredEntryActions;
+    if (source === undefined) return undefined;
+    if (typeof source !== 'function') return source;
+    try {
+      const value = source();
+      return value === undefined ? null : value;
+    } catch (err) {
+      this.#logger?.warn?.('school.plan.entry-actions-unreadable', {
+        error: err?.message ?? String(err),
+      });
+      return null;
+    }
   }
 
   /**
@@ -235,6 +272,7 @@ export class PlanProjection {
     const statuses = programStatuses ?? await collectProgramStatuses({
       plan, learnerId, launchers: this.#launchers, logger: this.#logger,
       logEvent: launcherFailedEvent,
+      declaredEntryActions: this.#resolveDeclaredEntryActions(),
     });
 
     // RAW history, never the overlaid one — see the class header, subtlety 1.

@@ -53,6 +53,16 @@ export class StoryTimeProgramLauncher {
   get locationHint() { return 'on the living room TV'; }
 
   /**
+   * The `learner_action` a reader must declare for a child to start story time
+   * by tapping their card. `locationHint` above is the words; this is the
+   * configuration those words promise, and on 2026-08-26 the two disagreed —
+   * the receipt said "tap your card there" while the living-room source
+   * declared no `learner_action` at all, so the tap resolved to a null intent
+   * and Soren stood at a reader that could not help him.
+   */
+  get entryAction() { return 'reading-session'; }
+
+  /**
    * Explicit, because these launchers are duck-typed rather than extending
    * `IProgramLauncher` — there is no base class to inherit a default from, and
    * an absent getter would read `undefined` rather than the documented `null`.
