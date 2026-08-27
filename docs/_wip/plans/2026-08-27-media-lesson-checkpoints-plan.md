@@ -210,6 +210,29 @@ import { createMediaGate } from './mediaGate.js';
 
 ### Task 3: `useMediaGate` hook + `GateVerdictContext`
 
+> DONE — `bb59c5a55`. **Phase 1 is closed.** Gate suite 81 tests (20 new);
+> 19 deliberate mutations run, all killed, 0 survivors. Three decisions Task 16
+> needs to know about, none of which the sketch below anticipates:
+>
+> 1. **The real `createMediaGate` runs in the tests.** The module is mocked, but the
+>    mock DELEGATES and only wraps `apply`/`detach` in spies. A stubbed gate cannot
+>    exercise the echo filter — the assertion would be against a hand-written model of
+>    the behaviour under test.
+> 2. **DOM `play` is observed too, not just `pause`.** `mediaGate` releases ownership
+>    only when `apply` is next called, which on a stable decision may be never. Without
+>    the observation a person who presses play keeps a stale-true `ownsPause` (so their
+>    NEXT pause is filtered as our echo) and a stuck user-pause latch (so the gate
+>    re-pauses them).
+> 3. **Enforcement is keyed on a VALUE-stabilized decision** (`sameDecision` over the
+>    five scalar fields), not on `verdicts` identity, and the DOM handlers bump a
+>    `transportEpoch` rather than calling `apply` directly — applying from inside a
+>    handler uses the decision from BEFORE that handler's own `setState`, which still
+>    says PAUSED_USER. Both were caught by tests before implementation, not after.
+>
+> The hook returns `{ decision, status }`. `status` is `mediaGate`'s snapshot and
+> arrives ONLY through `subscribe()` — `apply()`'s return is not pushed as well, since
+> that would be a second source of the same truth.
+
 **Files:**
 - Create: `frontend/src/lib/Player/gate/useMediaGate.js`, `frontend/src/lib/Player/gate/GateVerdictContext.jsx`
 - Test: `frontend/src/lib/Player/gate/useMediaGate.test.jsx`
