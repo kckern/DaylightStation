@@ -20,7 +20,7 @@ import { localDay } from './teacherDates.js';
 import TabErrorBoundary from './TabErrorBoundary.jsx';
 import {
   CoursesView, CurriculumView, DashboardView, HistoryView, LearnerDayScreen, LearnerOperationsView,
-  LearnerOverview, OperationsView, QueueView, ReportsView, SessionInspector,
+  OperationsView, QueueView, ReportsView, SessionInspector,
 } from './WorkspaceViews.jsx';
 import './Teacher.scss';
 
@@ -102,6 +102,15 @@ function TeacherShell() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
+  useEffect(() => {
+    // `/students/:id/overview` is a retired alias of the Day record (trim
+    // 5.6) — canonicalize the bookmark to the bare learner path (the Day
+    // record) instead of rendering a second view at the old URL.
+    if (route.kind === 'learner' && route.section === 'overview' && route.learnerId) {
+      navigate(`${route.base}/students/${encodeURIComponent(route.learnerId)}`, true);
+    }
+  }, [route, navigate]);
+
   const learner = kids.find((kid) => kid.id === route.learnerId) ?? null;
   const goGlobal = (section) => navigate(teacherSectionPath(section, route.base));
   const goLearner = (learnerId, section = 'day', detail = null) => navigate(teacherLearnerPath(learnerId, section, detail, route.base));
@@ -123,8 +132,6 @@ function TeacherShell() {
   } else if (route.kind === 'learner' && learner) {
     const views = {
       day: <LearnerDayScreen learnerId={learner.id} learnerName={learner.name} studyDay={studyDay}
-        onChangeStudyDay={goDay} onOpenSession={goSession} />,
-      overview: <LearnerOverview learnerId={learner.id} learnerName={learner.name} studyDay={studyDay}
         onChangeStudyDay={goDay} onOpenSession={goSession} />,
       courses: <CoursesView learnerId={learner.id} learnerName={learner.name} courseId={route.courseId} kids={kids} />,
       history: <HistoryView learnerId={learner.id} learnerName={learner.name} onOpenSession={goSession} />,

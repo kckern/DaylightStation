@@ -245,7 +245,6 @@ export const schoolApi = {
     format: 'json', ...(studyDay ? { studyDay } : {}),
   })}`),
   retract: (body) => req('/retract', body),
-  transcript: (learnerId) => req(`/transcript?learnerId=${encodeURIComponent(learnerId)}`),
   periodsMeta: () => req('/periods-meta'),
   attemptDays: (learnerId) => req(`/attempt-days?learnerId=${encodeURIComponent(learnerId)}`),
   offerRetake: (sessionId, body) => req(`/teacher/sessions/${encodeURIComponent(sessionId)}/remediation`, body),

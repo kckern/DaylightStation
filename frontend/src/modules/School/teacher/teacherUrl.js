@@ -7,7 +7,7 @@
 export const TEACHER_BASE = '/school/teacher';
 
 export const SECTIONS = ['dashboard', 'queue', 'curriculum', 'operations'];
-export const LEARNER_SECTIONS = ['day', 'overview', 'courses', 'history', 'reports', 'operations'];
+export const LEARNER_SECTIONS = ['day', 'courses', 'history', 'reports', 'operations'];
 
 const decode = (value) => {
   try { return decodeURIComponent(value); } catch { return value; }
@@ -43,6 +43,13 @@ export function parseTeacherPath(pathname) {
     if (segments[2] === 'courses' && segments.length === 4) {
       return { kind: 'learner', section: 'courses', learnerId, courseId: segments[3], sessionId: null, base };
     }
+    // `overview` is retired — LearnerOverview was a pure alias of the Day
+    // record (trim wave 5.6). It is no longer a real section, but the
+    // segment must still parse instead of 404ing, so the shell has a
+    // `section: 'overview'` to catch and redirect to the bare learner path.
+    if (segments[2] === 'overview' && segments.length === 3) {
+      return { kind: 'learner', section: 'overview', learnerId, courseId: null, sessionId: null, base };
+    }
     if (LEARNER_SECTIONS.includes(segments[2]) && segments.length === 3) {
       return { kind: 'learner', section: segments[2], learnerId, courseId: null, sessionId: null, base };
     }
@@ -70,9 +77,9 @@ export function teacherSectionPath(section = 'dashboard', base = TEACHER_BASE) {
   return `${base}/${safe}`;
 }
 
-export function teacherLearnerPath(learnerId, section = 'overview', detailId = null, base = TEACHER_BASE) {
+export function teacherLearnerPath(learnerId, section = 'day', detailId = null, base = TEACHER_BASE) {
   if (!learnerId) return teacherSectionPath('dashboard', base);
-  const safe = LEARNER_SECTIONS.includes(section) ? section : 'overview';
+  const safe = LEARNER_SECTIONS.includes(section) ? section : 'day';
   const suffix = detailId && safe === 'courses' ? `/${encodeURIComponent(detailId)}` : '';
   return `${base}/students/${encodeURIComponent(learnerId)}/${safe}${suffix}`;
 }

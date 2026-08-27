@@ -1967,13 +1967,14 @@ did.
 > question starts from a state rather than from a screen.
 
 The grown-up side of the desk is the responsive workspace at
-**`/school/teacher`** (with **`/school/teacher-next`** as an additive alias),
-never a Portal widget and never in kiosk navigation. Its URL is the complete
-workspace state: global dashboard/queue/curriculum/operations views and
-learner-scoped overview, courses, history, reports, operations, and session
-inspection can all be deep-linked and survive refresh/back/forward. The older
-Today, Planning, Records, and Repair panels remain reachable inside this
-workspace while their server-authoritative functions are consolidated.
+**`/school/teacher`** (`/school/teacher-next`, the rollout alias, now
+redirects here rather than 404ing), never a Portal widget and never in kiosk
+navigation. Its URL is the complete workspace state: global
+dashboard/queue/curriculum/operations views and learner-scoped day, courses,
+history, reports, operations, and session inspection can all be deep-linked
+and survive refresh/back/forward. The older Today, Planning, Records, and
+Repair panels remain reachable inside this workspace while their
+server-authoritative functions are consolidated.
 
 **Teachers are config-declared, not age-derived.** `school.yml` `teachers:`
 lists roster ids; `GET /api/v1/school/teachers` resolves them against the
@@ -2079,7 +2080,7 @@ math shared with `GetTeacherToday`.
 | Application | `backend/src/3_applications/school/usecases/GetTeachers.mjs`, `ListLearnerSessions.mjs` |
 | API | `/api/v1/school/teacher/auth/*`; teacher timeline/session/artifact/agenda-dispatch/grade-adjustment endpoints; existing lifecycle reads and gated writes |
 | Frontend | `frontend/src/modules/School/teacher/` — `TeacherConsole`, `WorkspaceViews`, `TeacherProfileContext`, `useTeacherWrite`, legacy `tabs/` and `panels/` |
-| Routes | `frontend/src/main.jsx` — `/school/teacher[/*]`, `/school/teacher-next[/*]`, and `/app/school/teacher` redirect |
+| Routes | `frontend/src/main.jsx` — `/school/teacher[/*]`; `/school/teacher-next[/*]` redirects here (retired rollout alias, trim wave 5.5) |
 | Config | `data/household/school/school.yml` → `teachers:` |
 
 **Design spec:** [`2026-08-06-school-teacher-console-design.md`](../../superpowers/specs/2026-08-06-school-teacher-console-design.md) — includes the full use-case catalog, wave decomposition (mutations, planning domains, renderers, repair), and the placeholder registry future waves work from.
@@ -2100,7 +2101,8 @@ not started, deferred, blocked, or extra. Previewing a day never writes.
   grown-up to start this lesson" — so the QR and digit codes on a previewed
   sheet are inert by construction. Nothing is minted, for today or any day.
 - The dashboard and the History tab both LINK here; neither re-renders it.
-- `/students/:id` and `/students/:id/overview` both resolve to the day record.
+- `/students/:id` is the canonical short form for the day record;
+  `/students/:id/overview` is a retired alias the shell redirects there.
 - Paper records (worksheet PDF, result receipt) are fetched lazily per lesson
   via `SessionPaperRecord`, never eagerly for a whole day.
 - Repair tooling is indexed in `interventions.js`; each tool has exactly one
