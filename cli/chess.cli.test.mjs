@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { INITIAL_FEN } from '../shared/gaming/rulesets/chess/engine.mjs';
-import { parseArgs, renderBoard, playTurn } from './chess.cli.mjs';
+import { main, parseArgs, renderBoard, playTurn } from './chess.cli.mjs';
 
 describe('parseArgs', () => {
   it('defaults to the local dev backend and the learner rung', () => {
@@ -79,5 +79,14 @@ describe('playTurn', () => {
     expect(result.accepted).toBe(true);
     expect(result.gameOver).toBe(true);
     expect(d.requestMove).not.toHaveBeenCalled();
+  });
+});
+
+describe('main', () => {
+  it('delegates the analyze subcommand to the archived-game reviewer', async () => {
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await main(['analyze', '--help']);
+    expect(write).toHaveBeenCalledWith(expect.stringContaining('Review archived Piano Chess games'));
+    write.mockRestore();
   });
 });

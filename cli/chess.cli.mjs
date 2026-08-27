@@ -228,6 +228,7 @@ function outcomeLine(outcome) {
 const USAGE = `Play a real game against the deployed chess engine.
 
   node cli/chess.cli.mjs [options]
+  node cli/chess.cli.mjs analyze [review options]
 
 Options:
   --host <url>     Backend base URL (default ${DEFAULT_HOST})
@@ -238,6 +239,10 @@ Options:
   --json           One JSON object per move instead of a board (for scripting)
   -h, --help       Show this help
 
+Analysis:
+  analyze           Review archived games with full-strength Stockfish. For
+                    example: analyze --user felix --opponent Caterpie --all
+
 In-game commands (typed at the move prompt):
   moves            List legal moves in the current position
   fen              Print the current FEN
@@ -245,10 +250,14 @@ In-game commands (typed at the move prompt):
   quit             Exit
 `;
 
-async function main() {
+export async function main(argv = process.argv.slice(2)) {
+  if (argv[0] === 'analyze') {
+    const { main: reviewMain } = await import('./chess-review.cli.mjs');
+    return reviewMain(argv.slice(1));
+  }
   let options;
   try {
-    options = parseArgs(process.argv.slice(2));
+    options = parseArgs(argv);
   } catch (error) {
     process.stderr.write(`${error.message}\n\n${USAGE}`);
     process.exitCode = 2;
