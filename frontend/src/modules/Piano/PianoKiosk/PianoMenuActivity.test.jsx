@@ -144,11 +144,28 @@ describe('PianoMenuActivity — loading silhouette', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  // WAIT ON THE WRITE, NOT ON THE PAINT. `writeShape` runs in a passive effect
+  // (`PianoMenuActivity.jsx`, the `players` effect), so the cards appearing in
+  // the DOM is a PROXY for that effect having flushed, not proof of it. Waiting
+  // on `loadedCards()` and then asserting `readShape()` in the next statement
+  // reads `localStorage` in whichever tick the DOM assertion happened to
+  // satisfy — usually after the write, and on a loaded machine sometimes
+  // before, which returns the `[2, 2, 2]` fallback and fails with a shape from
+  // a code path this test never exercised.
+  //
+  // It surfaced as a roaming gate flake, passing every solo run: the population
+  // grew from 1447 to 2605 files when frontend/ entered the vitest gate, which
+  // put more files on each worker and widened the window. See
+  // docs/_wip/bugs/2026-08-27-vitest-gate-nondeterministic-at-2605-files.md.
+  //
+  // Waiting on `readShape()` itself is not merely a longer wait — it retries
+  // the actual claim until the effect lands, so the test can no longer pass or
+  // fail on scheduling.
   it('records the rendered shape for the next cold load', async () => {
     response = { players: [player({ courses: [course(), course()] })] };
     render(<PianoMenuActivity onOpenCourse={() => {}} />);
     await waitFor(() => expect(loadedCards()).toHaveLength(1));
-    expect(readShape()).toEqual([2]);
+    await waitFor(() => expect(readShape()).toEqual([2]));
   });
 
   it('falls back to a modest default shape with nothing remembered', () => {
