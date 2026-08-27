@@ -50,6 +50,7 @@
 | How does today's paper and completion gate work? | [Agenda and completion](./agenda-and-completion.md) |
 | How are attempts graded and notes delivered? | [Assessment and feedback](./assessment-and-feedback.md) |
 | What do progress, course grade, and status mean? | [Progress and reporting](./progress-and-reporting.md) |
+| What can a grown-up actually do, and from which state? | [Teacher — every flow](./teacher.md) |
 | How do I inspect or repair live state? | [Operations](./operations.md) |
 | Something is broken right now — day-to-day troubleshooting, logs, hardware | [Day-to-day operations runbook](../../runbooks/school/README.md) |
 | How do external programs plug in? | [Programs](./programs.md) |
@@ -1957,6 +1958,10 @@ did.
 > — screen-element → file table, the two API reads behind the Today tab with
 > curl examples, and how to tell which tree the running container was built
 > from. Read that first when a question starts from something on screen.
+>
+> **Flow model:** [`teacher.md`](./teacher.md) — every lifecycle, every state,
+> and the teacher's move out of each one, as state diagrams. Read that when the
+> question starts from a state rather than from a screen.
 
 The grown-up side of the desk is the responsive workspace at
 **`/school/teacher`** (with **`/school/teacher-next`** as an additive alias),
