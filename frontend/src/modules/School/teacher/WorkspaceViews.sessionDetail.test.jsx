@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { SessionInspector, LearnerOverview } from './WorkspaceViews.jsx';
+import { SessionInspector, LearnerDayScreen } from './WorkspaceViews.jsx';
 
 vi.mock('../schoolApi.js', () => ({
   schoolApi: {
@@ -218,15 +218,14 @@ describe('SessionInspector — offering a retake again (audit 4.2)', () => {
   });
 });
 
-describe('LearnerOverview study day', () => {
+describe('LearnerDayScreen study day', () => {
   afterEach(() => vi.useRealTimers());
 
   it('defaults to the LOCAL date, not the UTC date', async () => {
     vi.useFakeTimers();
     // 9:30pm PDT on Aug 24 is already Aug 25 UTC — the input must say Aug 24.
     vi.setSystemTime(new Date('2026-08-24T21:30:00-07:00'));
-    render(<LearnerOverview learnerId="learner-b" learnerName="Learner B" onOpenSession={() => {}} />);
-    // Overview now aliases the day record, whose picker is labelled "Jump to".
+    render(<LearnerDayScreen learnerId="learner-b" learnerName="Learner B" onOpenSession={() => {}} />);
     const input = screen.getByLabelText('Jump to');
     const expected = (() => {
       const now = new Date();

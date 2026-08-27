@@ -202,14 +202,6 @@ export function LearnerDayScreen({ learnerId, learnerName, studyDay = localDay()
   );
 }
 
-export function LearnerOverview({ learnerId, learnerName, onOpenSession, studyDay, onChangeStudyDay }) {
-  // Overview WAS a second, weaker day view — the plan under a "planning
-  // preview" disclaimer plus a day-scoped session list (UX audit IA3). The
-  // day record owns that now; this alias keeps old bookmarks working.
-  return <LearnerDayScreen learnerId={learnerId} learnerName={learnerName} studyDay={studyDay}
-    onChangeStudyDay={onChangeStudyDay} onOpenSession={onOpenSession} />;
-}
-
 function CourseContext({ courseId, lessonId = null, learnerId = null }) {
   const base = teacherBaseFor(globalThis.location?.pathname ?? '');
   const authorizedRead = useAuthorizedTeacherRead();
@@ -311,7 +303,7 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
     <label>Course<select value={form.courseId} onChange={change('courseId')}><option value="">Any course</option>{courseIds.map((id) => <option key={id} value={id}>{titles.course(id)}</option>)}</select></label>
     {form.kind === 'replaced' && <label>Replacement lesson<select value={form.replacementLessonId} onChange={change('replacementLessonId')}><option value="">Choose…</option>{units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>)}</select></label>}
     <label>Reason{form.kind === 'paused' ? <select value={form.reason} onChange={change('reason')}><option value="">Choose…</option><option value="defective">Defective</option><option value="garbled">Garbled</option><option value="missing">Missing</option><option value="broken">Broken</option><option value="inappropriate">Inappropriate</option></select> : <input value={form.reason} onChange={change('reason')} />}</label>
-  </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
+  </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview exception</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
   {errors['exception-preview'] && <p role="alert">{errors['exception-preview']}</p>}{errors['exception-apply'] && <p role="alert">{errors['exception-apply']}</p>}
   {preview?.effects && <p>Gate: {preview.effects.advancesGate ? 'satisfied without mastery' : preview.effects.remainsOutstanding ? 'still outstanding' : preview.effects.blocksNewWork ? 'new work blocked' : 'unchanged'}.</p>}
   <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ?? 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} {retracting === exception.exceptionId
@@ -366,19 +358,20 @@ export function LearnerOperationsView({ learnerId, learnerName, kids }) {
 export function CurriculumView({ kids, courseId = null, lessonId = null }) {
   // Landing state = the course catalog (cards, one per course). Lessons and
   // per-lesson pass bars live on the drill-in page only (UX audit C10).
-  // Curriculum INSPECTS; the repair tools live once, on School Operations,
-  // and this page links to them instead of re-rendering the form (IA4).
+  // Curriculum INSPECTS; the repair tools — and their one interventions
+  // index — live once, on School Operations, one click away via the global
+  // nav rail. This page does not re-render them (IA4, trim wave 5.3: the
+  // index rendering on both Curriculum branches AND Operations was the
+  // duplication the index exists to prevent).
   return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Published curriculum</p><h2>{courseId ? 'Course curriculum' : 'Courses, units, and policy'}</h2><p>Inspect and operate published curriculum. Authoring remains in reviewed source files.</p></div></div>
     {courseId ? <>
       <CourseContext courseId={courseId} lessonId={lessonId} />
       <CurriculumBrowser courseId={courseId} />
-      <InterventionsIndex scopes={['school']} />
     </> : <>
       <CurriculumCatalog />
       <SyllabiPanel />
       <SchoolMatrix kids={kids} />
       <EnrichmentPanel kids={kids} />
-      <InterventionsIndex scopes={['school']} />
     </>}
   </div>;
 }

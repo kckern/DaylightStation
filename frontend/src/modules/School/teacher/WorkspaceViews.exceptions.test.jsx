@@ -67,7 +67,7 @@ describe('CurriculumExceptionPanel neutral defaults', () => {
     const options = within(decision).getAllByRole('option');
     expect(options[0].textContent).toBe('Choose…');
     expect(options.at(-1).textContent).toBe('Paused globally');
-    expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Preview exception' })).toBeDisabled();
   });
 
   it('choosing Paused globally leaves reason on Choose… until picked', async () => {
@@ -77,7 +77,7 @@ describe('CurriculumExceptionPanel neutral defaults', () => {
     fireEvent.change(within(panel).getByLabelText(/^Decision/), { target: { value: 'paused' } });
     const reason = within(panel).getByLabelText(/^Reason/);
     expect(reason.value).toBe('');
-    expect(within(panel).getByRole('button', { name: 'Preview' })).toBeDisabled();
+    expect(within(panel).getByRole('button', { name: 'Preview exception' })).toBeDisabled();
   });
 
   it('retraction collects its reason inline, never via window.prompt', async () => {
@@ -102,11 +102,13 @@ describe('one home per repair panel (UX audit IA4)', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('renders the curriculum-change form in exactly one place — School Operations', async () => {
+    // Curriculum no longer renders the interventions index at all (trim wave
+    // 5.3) — it inspects; Operations repairs, one click away via the global
+    // nav rail.
     const { unmount } = render(<CurriculumView kids={KIDS} />);
-    // Curriculum links to the tool rather than re-rendering it.
-    expect(await screen.findByRole('link', { name: /Excuse, postpone, swap, or stop a lesson/ }))
-      .toHaveAttribute('href', '/school/teacher/operations');
+    await screen.findByText('Courses, units, and policy');
     expect(screen.queryAllByText('Curriculum exceptions')).toHaveLength(0);
+    expect(screen.queryByText('Which repair do I need?')).not.toBeInTheDocument();
     unmount();
     render(<OperationsView kids={KIDS} />);
     await screen.findByLabelText(/^Decision/);
@@ -115,8 +117,9 @@ describe('one home per repair panel (UX audit IA4)', () => {
 
   it('keeps the curriculum-change form off the course drill-in too', async () => {
     render(<CurriculumView kids={KIDS} courseId="atlas" lessonId="u1" />);
-    expect(await screen.findByRole('link', { name: /Excuse, postpone, swap, or stop a lesson/ })).toBeInTheDocument();
+    await screen.findByText('Course curriculum');
     expect(screen.queryAllByText('Curriculum exceptions')).toHaveLength(0);
+    expect(screen.queryByText('Which repair do I need?')).not.toBeInTheDocument();
   });
 
   it('keeps stuck-session clearing on School Operations only', async () => {

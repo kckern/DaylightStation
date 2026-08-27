@@ -65,7 +65,7 @@ export default function TodayTab({ kids = [], onOpenQueue = null }) {
   // The v2 day projection is the board contract: it preserves the actual
   // session/taxonomy/artifact context rather than flattening rows into the
   // legacy digest's title-only compatibility shape.
-  const today = usePanelFetch(() => (schoolApi.teacherDay ? schoolApi.teacherDay() : schoolApi.teacherToday()), { panel: 'teacher-day' });
+  const today = usePanelFetch(() => schoolApi.teacherDay(), { panel: 'teacher-day' });
 
   // GetTeacherToday answers one row per roster learner when wired, so an
   // empty array next to a non-empty roster means "unwired", not "quiet day".

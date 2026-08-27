@@ -113,10 +113,16 @@ flowchart TD
     SESSION -->|"Give credit for work you saw"| LOPS
     CURRIC -->|course card| CURRIC
     OPS -.->|interventions index| LOPS
-    CURRIC -.->|interventions index| OPS
 ```
 
-`/students/:id` and `/students/:id/overview` both resolve to the Day. A
+The interventions index renders in exactly one place — School Operations —
+not on Curriculum too (trim wave 5.3): Curriculum inspects published
+curriculum, Operations repairs it, and Operations is one click away via the
+global nav rail from any page, including Curriculum.
+
+`/students/:id` is the canonical short form for the Day; `/students/:id/overview`
+is a retired alias that the shell redirects there rather than 404ing (trim
+wave 5.6) — the old bookmark still resolves, just at the canonical URL. A
 learner id that is no longer on the roster renders a named "Student not found"
 screen, not an empty page; an unparseable path renders "Page not found".
 

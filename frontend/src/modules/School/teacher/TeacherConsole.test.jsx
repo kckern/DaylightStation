@@ -96,6 +96,16 @@ describe('TeacherConsole workspace', () => {
     expect(screen.getByRole('button', { name: 'Reports' }).getAttribute('aria-current')).toBe('page');
   });
 
+  it('redirects the retired /overview alias to the canonical short form (trim 5.6)', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/learner-a/overview');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Learner A workspace' })).toBeTruthy());
+    // The bookmark is canonicalized to the bare learner path — the Day
+    // record — not left sitting at the retired /overview URL.
+    expect(window.location.pathname).toBe('/school/teacher/students/learner-a');
+    expect(screen.getByRole('button', { name: 'Day' }).getAttribute('aria-current')).toBe('page');
+  });
+
   it('names an unknown bookmarked learner instead of blanking', async () => {
     window.history.pushState({}, '', '/school/teacher/students/missing/overview');
     render(<TeacherConsole />);
