@@ -25,6 +25,7 @@
  * recorded. A sheet the ENGINE marks needs no identity: nobody is claiming
  * anything.
  */
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { questionItemIds, questionPrompts } from '#domains/school/documents/documentValidation.mjs';
 import { PRINT_DOCUMENT_REF_PATTERN } from '#domains/school/curriculum/unitValidation.mjs';
@@ -35,6 +36,11 @@ import { worksheetInstanceRoster } from '#domains/school/questionBankV2.mjs';
  * `void` — "not markable from the evidence" — resolves the item without
  * giving it a truth value; see `ResolveReviewItem`, which is where a teacher
  * actually says it and where the mandatory child-facing note is enforced.
+ *
+ * This set is the IDENTITY trigger, not the accept list. All three mean a
+ * person is claiming authority over a child's work, so all three demand a
+ * grown-up before anything else happens — and only then is `void` turned away
+ * for arriving on a lane that cannot carry its note.
  */
 const HUMAN_VERDICTS = new Set(['correct', 'incorrect', 'void']);
 
@@ -93,10 +99,13 @@ export class GradeSubmission {
    * @param {object} args
    * @param {string} args.sessionId
    * @param {Record<string,*>} [args.entries] - itemId → given, for machine grading
-   * @param {Record<string,'correct'|'incorrect'|'void'>} [args.verdicts] - a
-   *   person's marks. `void` is "not markable from the evidence"
-   *   (`ResolveReviewItem`): it resolves the item without giving it a truth
-   *   value, and the item leaves the score's denominator entirely.
+   * @param {Record<string,'correct'|'incorrect'>} [args.verdicts] - a person's
+   *   marks. `void` is NOT accepted here and is refused with a
+   *   `ValidationError`: it owes the child a note, and this map is
+   *   `itemId -> string` with nowhere to carry one. `ResolveReviewItem` (the
+   *   review route) is the lane that voids a question. Marking a
+   *   PREVIOUSLY voided question `correct`/`incorrect` here is fine and
+   *   un-voids it — the question returns to the denominator.
    * @param {string} [args.gradedBy] - the roster id of the grown-up who marked
    *   the review items; required (and checked) whenever `verdicts` is non-empty
    * @param {string|null} [args.pin] - the console PIN, consulted only when a
@@ -131,6 +140,21 @@ export class GradeSubmission {
         this.#teacherGate.assert({
           userId: gradedBy, pin, action: 'sessions.grade', context: { sessionId },
         });
+      }
+      // ...and `void` is REFUSED here, after identity, before any write.
+      //
+      // A voided question leaves a child's denominator, and the house rule is
+      // that no decision about their work happens without one sentence they
+      // can read. This map is `itemId -> string`: it has nowhere to put that
+      // sentence, and `IReviewQueue.resolve` neither erases nor invents a
+      // missing note — so a `void` accepted here would drop a question from a
+      // score in silence, over HTTP, with `gradedBy` as the only obstacle.
+      // Accepted-but-unenforced is worse than refused, so the refusal names
+      // the lane that CAN carry the sentence rather than leaving a caller to
+      // guess why the verdict its sibling accepts is rejected here.
+      const voidedHere = Object.entries(verdicts).filter(([, v]) => v === 'void').map(([itemId]) => itemId);
+      if (voidedHere.length) {
+        throw new ValidationError(`a "void" verdict has to carry a note the child can read, and this call cannot: mark ${voidedHere.join(', ')} through POST /lifecycle/sessions/${sessionId}/review/:itemId instead`);
       }
     }
 
@@ -216,14 +240,24 @@ export class GradeSubmission {
     });
 
     // --- a person's verdicts -------------------------------------------------
+    // Only the two that carry a truth value reach here: `void` was refused up
+    // top, where the identity check already happened, because this map has
+    // nowhere to put the note a void owes the child.
     for (const [itemId, verdict] of Object.entries(verdicts)) {
-      if (!HUMAN_VERDICTS.has(verdict)) continue;
+      if (verdict !== 'correct' && verdict !== 'incorrect') continue;
       // eslint-disable-next-line no-await-in-loop
       const resolved = await this.#reviewQueue.resolve({ sessionId, itemId, verdict, gradedBy, at: nowIso });
       // A verdict on something that was never queued still counts — a parent
       // may mark a question the machine thought it could score.
-      if (verdict === 'void') voided.add(itemId);
-      else marked.set(itemId, verdict === 'correct');
+      //
+      // UN-VOIDING. This overwrites the queue row, so a question voided
+      // yesterday and marked today is `correct` on the sheet — and `voided`,
+      // read from that same queue moments ago, has to let go of it. Left in,
+      // the stamp on the append-only `graded` event would name a question a
+      // grown-up had just marked, the denominator would be short by one, and
+      // neither is repairable in place afterwards.
+      voided.delete(itemId);
+      marked.set(itemId, verdict === 'correct');
       if (!resolved) this.#logger.debug?.('school.grade.verdict-unqueued', { sessionId, itemId });
     }
 

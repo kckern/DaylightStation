@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SubmitPaperWork } from '#apps/school/usecases/SubmitPaperWork.mjs';
 import { GradeSubmission } from '#apps/school/usecases/GradeSubmission.mjs';
+import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
 import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
@@ -341,16 +342,23 @@ describe('a question nobody could mark leaves the denominator', () => {
     await issued();
     return submit.execute({ sessionId: SID, entries: {}, blank: PRINTED });
   };
-  /** Four right, one wrong, the last unmarkable — six printed questions. */
-  const FOUR_ONE_ONE = Object.fromEntries(PRINTED.map((id, i) => {
-    if (i === 5) return [id, 'void'];
-    return [id, i === 4 ? 'incorrect' : 'correct'];
-  }));
+  /**
+   * Voiding happens on the REVIEW route, never on the grading call: that is
+   * the only lane with somewhere to put the note the child is owed. These
+   * tests drive it the way the console does.
+   */
+  const voidItem = (itemId, note = 'The scan tore across this one — bring me the paper.') => (
+    new ResolveReviewItem({ reviewQueue, grownUps: fakeGrownUps(clock), clock: clock.now, logger: silentLogger })
+      .execute({ sessionId: SID, itemId, verdict: 'void', gradedBy: 'parent', note })
+  );
+  /** Four right, one wrong — the sixth is voided separately. */
+  const FOUR_AND_ONE = Object.fromEntries(PRINTED.slice(0, 5).map((id, i) => [id, i === 4 ? 'incorrect' : 'correct']));
   const VOIDED = PRINTED[5];
 
   it('scores 4 of 5, not 4 of 6 and not 5 of 6', async () => {
     await submitAllBlank();
-    const result = await grade.execute({ sessionId: SID, verdicts: FOUR_ONE_ONE, gradedBy: 'parent' });
+    await voidItem(VOIDED);
+    const result = await grade.execute({ sessionId: SID, verdicts: FOUR_AND_ONE, gradedBy: 'parent' });
     expect(result).toMatchObject({
       status: 'graded', correct: 4, expected: 5, percent: 80, voidedItemIds: [VOIDED],
     });
@@ -362,14 +370,16 @@ describe('a question nobody could mark leaves the denominator', () => {
 
   it('does NOT leave the voided question outstanding — the session actually grades', async () => {
     await submitAllBlank();
-    const result = await grade.execute({ sessionId: SID, verdicts: FOUR_ONE_ONE, gradedBy: 'parent' });
+    await voidItem(VOIDED);
+    const result = await grade.execute({ sessionId: SID, verdicts: FOUR_AND_ONE, gradedBy: 'parent' });
     expect(result.outstanding).toEqual([]);
     expect(sessions.derive(SID).state).toBe('graded');
   });
 
   it('the voided ids reach the STORED graded event — the field survives the whitelist', async () => {
     await submitAllBlank();
-    await grade.execute({ sessionId: SID, verdicts: FOUR_ONE_ONE, gradedBy: 'parent' });
+    await voidItem(VOIDED);
+    await grade.execute({ sessionId: SID, verdicts: FOUR_AND_ONE, gradedBy: 'parent' });
     // Asserting on what was WRITTEN, not on what was passed in: `createEvent`
     // silently drops any field the schema's `fields` array does not declare,
     // so a stamp that never reached the log would still look fine at the call
@@ -390,12 +400,42 @@ describe('a question nobody could mark leaves the denominator', () => {
     expect(sessions.derive(SID).voidedItemIds).toEqual([]);
   });
 
-  it('a void recorded EARLIER, in its own call, still leaves the denominator', async () => {
-    // The queue is the durable verdict sheet: a void filed yesterday by
-    // `ResolveReviewItem` has to be read back here, not only recognised when
-    // it arrives on this call's own `verdicts` map.
+  it('REFUSES a void on the grading lane, and names the lane that can carry the note', async () => {
+    // The map is `itemId -> string`: there is nowhere to put the sentence the
+    // child is owed, and the queue neither erases nor invents a missing note.
+    // An accepted-but-note-free void would drop a question from a score in
+    // silence over HTTP, so this lane turns it away instead.
     await submitAllBlank();
-    await grade.execute({ sessionId: SID, verdicts: { [VOIDED]: 'void' }, gradedBy: 'parent' });
+    await expect(grade.execute({ sessionId: SID, verdicts: { [VOIDED]: 'void' }, gradedBy: 'parent' }))
+      .rejects.toMatchObject({ name: 'ValidationError' });
+    await expect(grade.execute({ sessionId: SID, verdicts: { [VOIDED]: 'void' }, gradedBy: 'parent' }))
+      .rejects.toThrow(/review/);
+    // Nothing was written: the refusal happens before the queue is touched.
+    expect((await reviewQueue.listForSession(SID)).every((i) => i.verdict === null)).toBe(true);
+    expect(sessions.types(SID)).not.toContain('graded');
+  });
+
+  it('UN-VOIDING through the grading lane returns the question to the denominator', async () => {
+    // A question voided yesterday, marked today: the queue row is overwritten,
+    // so the `voided` set read off that queue moments earlier has to let go of
+    // it too. Left stale, the append-only `graded` event would stamp a
+    // question a grown-up had just marked and the denominator would be short
+    // by one — neither repairable in place afterwards.
+    await submitAllBlank();
+    await voidItem(VOIDED);
+    const all = Object.fromEntries(PRINTED.map((id, i) => [id, i === 4 ? 'incorrect' : 'correct']));
+    const result = await grade.execute({ sessionId: SID, verdicts: all, gradedBy: 'parent' });
+    expect(result).toMatchObject({ status: 'graded', correct: 5, expected: 6, voidedItemIds: [] });
+    const graded = sessions.events(SID).find((e) => e.type === 'graded');
+    expect(graded).toMatchObject({ correctCount: 5, totalCount: 6 });
+    expect(graded).not.toHaveProperty('voidedItemIds');
+  });
+
+  it('a void recorded EARLIER, in its own call, still leaves the denominator', async () => {
+    // The queue is the durable verdict sheet: a void filed yesterday has to be
+    // read back on a later grading call, not merely honoured in the act.
+    await submitAllBlank();
+    await voidItem(VOIDED);
     const rest = Object.fromEntries(PRINTED.slice(0, 5).map((id) => [id, 'correct']));
     const result = await grade.execute({ sessionId: SID, verdicts: rest, gradedBy: 'parent' });
     expect(result).toMatchObject({ status: 'graded', correct: 5, expected: 5, percent: 100 });
@@ -406,9 +446,8 @@ describe('a question nobody could mark leaves the denominator', () => {
     // honest event to write. The session says so and waits for a grown-up to
     // settle it by hand rather than telling a child they scored zero.
     await submitAllBlank();
-    const result = await grade.execute({
-      sessionId: SID, verdicts: Object.fromEntries(PRINTED.map((id) => [id, 'void'])), gradedBy: 'parent',
-    });
+    for (const itemId of PRINTED) await voidItem(itemId); // eslint-disable-line no-await-in-loop
+    const result = await grade.execute({ sessionId: SID });
     expect(result.status).toBe('unavailable');
     expect(result.message).toMatch(/none of them could be marked/);
     expect(sessions.types(SID)).not.toContain('graded');
@@ -420,8 +459,12 @@ describe('a question nobody could mark leaves the denominator', () => {
 
   it('needs a grown-up to void, exactly as it does to mark', async () => {
     await submitAllBlank();
-    await expect(grade.execute({ sessionId: SID, verdicts: { [VOIDED]: 'void' }, gradedBy: 'kid1' }))
-      .rejects.toBeInstanceOf(GuestForbiddenError);
+    const uc = new ResolveReviewItem({
+      reviewQueue, grownUps: fakeGrownUps(clock), clock: clock.now, logger: silentLogger,
+    });
+    await expect(uc.execute({
+      sessionId: SID, itemId: VOIDED, verdict: 'void', gradedBy: 'kid1', note: 'too hard',
+    })).rejects.toBeInstanceOf(GuestForbiddenError);
     expect((await reviewQueue.listForSession(SID)).every((i) => i.verdict === null)).toBe(true);
   });
 
@@ -433,9 +476,8 @@ describe('a question nobody could mark leaves the denominator', () => {
     await issued();
     await submit.execute({ sessionId: SID, entries: without([VOIDED]) });
     await grade.execute({ sessionId: SID, entries: without([VOIDED]) });
-    const result = await grade.execute({
-      sessionId: SID, entries: RIGHT, verdicts: { [VOIDED]: 'void' }, gradedBy: 'parent',
-    });
+    await voidItem(VOIDED);
+    const result = await grade.execute({ sessionId: SID, entries: RIGHT });
     expect(grader.attempts.map((a) => a.itemId)).not.toContain(VOIDED);
     expect(result).toMatchObject({ status: 'graded', correct: 5, expected: 5, percent: 100 });
   });
