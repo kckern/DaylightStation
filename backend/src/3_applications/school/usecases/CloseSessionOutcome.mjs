@@ -44,6 +44,7 @@ import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
 import { chooseForwardAction } from '#domains/school/documents/forwardAction.mjs';
+import { resolveDayCompletion } from '#domains/school/completion.mjs';
 import { PlanProjection } from '../PlanProjection.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
@@ -355,6 +356,24 @@ export class CloseSessionOutcome {
       });
     }
 
+    // Whether the receipt may say "you are done for the day".
+    //
+    // Folded over THIS projection deliberately. `#projectPlan` uses the same
+    // three flags as `GetLearnerDayCompletion` — attested/exceptions/
+    // assignedPrograms all false — so this is the household's one canonical
+    // notion of a finished day, the same one that gates the piano-games
+    // unlock, rather than a second definition invented here.
+    //
+    // Only `complete` earns the line. `indeterminate` (a plan error, an
+    // unavailable required program) is NOT evidence of a finished day, and
+    // saying so would be the one failure mode worth avoiding: telling a child
+    // to stop while work is still outstanding.
+    const dayComplete = passed
+      && resolveDayCompletion({
+        sections: projected?.sections ?? [],
+        planErrors: projected?.plan?.errors ?? [],
+      }).state === 'complete';
+
     const notes = await this.#collectNotes(sessionId);
     const work = (await this.#curriculum.listWorks?.() ?? []).find((candidate) => candidate.work === unit?.courseId);
     const learnerAssignment = await this.#assignments.get(state.learnerId);
@@ -392,6 +411,7 @@ export class CloseSessionOutcome {
       : null;
     const document = ['program_dispatched', 'external_activity_assessed'].includes(state.state) ? null : resultDocument({
       sessionId,
+      dayComplete,
       unitTitle: unit?.title ?? state.unitId,
       result: outcome.result,
       percent: state.gradedPercent,

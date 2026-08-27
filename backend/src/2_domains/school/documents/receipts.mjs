@@ -595,6 +595,7 @@ export function resultDocument({
   taxonomy = null,
   learnerName = null, date = null, time = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
+  dayComplete = false,
 } = {}) {
   const passed = result === 'passed';
   const blocks = [{
@@ -661,8 +662,18 @@ export function resultDocument({
 
   // The invariant §9 exists to protect: nobody is left holding paper with
   // nothing to do next.
+  //
+  // "Nothing to do next" has two very different meanings, and telling them
+  // apart is the whole point of `dayComplete`. When there is more work, this
+  // line sends the child back to the card. When the day is genuinely finished
+  // the same line is actively wrong — it sends a child who is DONE off to scan
+  // for homework that is not there (2026-08-26: a learner finished his last
+  // lesson, the receipt printed, and the only thing on it was an instruction
+  // to go find more). A finished day gets said out loud instead.
   if (!blocks.some((b) => b.type === 'scan_action')) {
-    blocks.push(text('Scan your card to see what is next.'));
+    blocks.push(text(dayComplete
+      ? 'That was the last one — you are done for the day!'
+      : 'Scan your card to see what is next.'));
   }
   // Keep the session-derived id for persistence and diagnostics, but never
   // expose it as the renderer's fallback heading on a child's receipt.
