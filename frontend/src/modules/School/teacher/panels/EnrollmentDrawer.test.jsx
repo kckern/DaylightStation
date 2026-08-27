@@ -126,6 +126,27 @@ describe('EnrollmentDrawer — enrolled, managed cell', () => {
     expect(screen.queryByText(/written by hand/)).toBeNull();
   });
 
+  it('links all three facts — syllabus, profile, pass bar — to the syllabus that set them', () => {
+    render(
+      <EnrollmentDrawer
+        learner={LEARNER}
+        courseId="history-capitals"
+        cell={CELL}
+        syllabi={SYLLABI}
+        onClose={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    );
+    // Named source, not a dead-end read-only fact: each links to the
+    // syllabi panel task 4 built on the Curriculum page.
+    const syllabusLink = screen.getByRole('link', { name: 'Atlas — upper' });
+    const profileLink = screen.getByRole('link', { name: 'upper' });
+    const passingLink = screen.getByRole('link', { name: '80%' });
+    [syllabusLink, profileLink, passingLink].forEach((link) => {
+      expect(link).toHaveAttribute('href', '/school/teacher/curriculum');
+    });
+  });
+
   it('surfaces a 409 refusal from re-materialize as a rendered error, not a silent failure', async () => {
     schoolApi.enroll.mockResolvedValue({
       ok: false, status: 409, data: { error: 'Refused: 2 open sessions on this course.' },
@@ -231,6 +252,21 @@ describe('EnrollmentDrawer — enrolled, hand-authored (unmanaged) cell', () => 
     // A DOM check, not a text-content check: `teacher-panel__error` is a CSS
     // class, never rendered text, so this must query the element tree.
     expect(container.querySelector('.teacher-panel__error')).toBeNull();
+  });
+
+  it('has no syllabus to link to — the facts render as plain text, not a broken link', () => {
+    const { container } = render(
+      <EnrollmentDrawer
+        learner={LEARNER}
+        courseId="history-capitals"
+        cell={CELL}
+        syllabi={SYLLABI}
+        onClose={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    );
+    expect(container.querySelector('.teacher-drawer__facts a')).toBeNull();
+    expect(screen.getByText('upper')).toBeInTheDocument();
   });
 });
 
