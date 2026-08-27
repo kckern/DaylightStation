@@ -16,6 +16,12 @@ describe('budgetStudyDate', () => {
     expect(budgetStudyDate('2026-08-28T09:59:00.000Z', 'America/Los_Angeles')).toBe('2026-08-27');
     expect(budgetStudyDate('2026-08-28T12:01:00.000Z', 'America/Los_Angeles')).toBe('2026-08-28');
   });
+
+  it('requires a timezone rather than silently falling back to UTC (D6)', () => {
+    expect(() => budgetStudyDate(AT)).toThrow(/timezone/);
+    expect(() => budgetStudyDate(AT, '')).toThrow(/timezone/);
+    expect(() => budgetStudyDate(AT, null)).toThrow(/timezone/);
+  });
 });
 
 describe('applySettle — hold-and-settle high-water (D4)', () => {
@@ -35,6 +41,12 @@ describe('applySettle — hold-and-settle high-water (D4)', () => {
     const res = applySettle(day, { sessionId: 'sess_1', cumulativeSeconds: 10, at: AT });
     expect(res.chargedSeconds).toBe(0);
     expect(res.day.sessions.sess_1.cumulativeSeconds).toBe(300); // high-water never regresses
+  });
+
+  it('throws on a sessionId absent from the day', () => {
+    const day = emptyDay('2026-08-27');
+    expect(() => applySettle(day, { sessionId: 'ghost', cumulativeSeconds: 10, at: AT }))
+      .toThrow('unknown session');
   });
 });
 
@@ -76,6 +88,18 @@ describe('balanceFor', () => {
   });
 });
 
+describe('balanceFor — misconfiguration must be loud, never silently unlimited', () => {
+  it('throws when the learner has no override and dailyMinutes is missing', () => {
+    const cfg = { deviceDailyMinutes: 120, users: {} };
+    expect(() => balanceFor(emptyDay('2026-08-27'), cfg, 'kid_b')).toThrow('dailyMinutes');
+  });
+
+  it('throws when deviceDailyMinutes is missing', () => {
+    const cfg = { dailyMinutes: 45, users: {} };
+    expect(() => balanceFor(emptyDay('2026-08-27'), cfg, 'kid_b')).toThrow('deviceDailyMinutes');
+  });
+});
+
 describe('applyClose', () => {
   it('settles the final cumulative then marks closed; further settles throw', () => {
     let { day } = open(emptyDay('2026-08-27'));
@@ -84,5 +108,19 @@ describe('applyClose', () => {
     expect(day.learners.kid_a.totalSeconds).toBe(45);
     expect(() => applySettle(day, { sessionId: 'sess_1', cumulativeSeconds: 60, at: AT }))
       .toThrow('session closed');
+  });
+
+  it('is idempotent: closing an already-closed session is a no-op, not an error (unmount/depletion race)', () => {
+    let { day } = open(emptyDay('2026-08-27'));
+    ({ day } = applyClose(day, { sessionId: 'sess_1', cumulativeSeconds: 45, at: AT }));
+    const again = applyClose(day, { sessionId: 'sess_1', cumulativeSeconds: 999, at: AT });
+    expect(again.chargedSeconds).toBe(0);
+    expect(again.day.learners.kid_a.totalSeconds).toBe(45); // the second call's cumulative is ignored
+  });
+
+  it('throws on a sessionId absent from the day', () => {
+    const day = emptyDay('2026-08-27');
+    expect(() => applyClose(day, { sessionId: 'ghost', cumulativeSeconds: 10, at: AT }))
+      .toThrow('unknown session');
   });
 });

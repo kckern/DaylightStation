@@ -18,7 +18,17 @@
  */
 import { studyDate } from '#domains/school/timing.mjs';
 
-export function budgetStudyDate(instant, timezone = null) {
+/**
+ * The timezone is REQUIRED, not defaulted. `studyDate` treats a falsy
+ * timezone as "shift by the boundary and format in UTC" — a silent fallback
+ * that resets allowances at UTC midnight instead of the household's local
+ * 4am, which is precisely the failure D6 exists to prevent. A missing
+ * timezone is a configuration bug and must be loud, not a quietly-wrong day.
+ */
+export function budgetStudyDate(instant, timezone) {
+  if (typeof timezone !== 'string' || !timezone.trim()) {
+    throw new Error('budgetStudyDate requires a non-empty household timezone (D6: no UTC fallback)');
+  }
   return studyDate(instant instanceof Date ? instant : new Date(instant), timezone);
 }
 
@@ -82,17 +92,49 @@ export function applySettle(day, { sessionId, cumulativeSeconds, at }) {
   return { day: next, chargedSeconds: charged };
 }
 
+/**
+ * Close is called from both unmount and depletion, and those two can race —
+ * a duplicate close is a normal event on this path, not an error. Closing an
+ * already-closed session is therefore idempotent: a no-op that reports zero
+ * charge. This is deliberately narrower than applySettle's throw: a bare
+ * SETTLE after close is a genuine ordering bug (something kept metering after
+ * the session ended) and stays loud; only the second CLOSE is treated as
+ * expected.
+ */
 export function applyClose(day, { sessionId, cumulativeSeconds, at }) {
+  const existing = day.sessions[sessionId];
+  if (!existing) throw new Error('unknown session');
+  if (existing.closed) return { day: clone(day), chargedSeconds: 0 };
   const settled = applySettle(day, { sessionId, cumulativeSeconds, at });
   settled.day.sessions[sessionId].closed = true;
   return settled;
 }
 
+/**
+ * A missing dailyMinutes/deviceDailyMinutes is a config bug, not "unlimited
+ * play": `undefined * 60` is NaN, `Math.max(0, NaN)` is NaN, and a caller
+ * checking `secondsLeft <= 0` would see `NaN <= 0 === false` — the budget
+ * gate would never trip. Throwing here instead of defaulting (either
+ * direction — unlimited is the bug, and locking a child out over an adult's
+ * yaml typo is its own failure) pushes the fix to where it belongs: Task 3's
+ * service catches this, logs it loudly, and fails open unmetered per the
+ * design's stated posture for gate 3 — visibly, not through a silent NaN.
+ */
+function requirePositiveMinutes(value, key) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`gameBudget: config.${key} must be a positive number`);
+  }
+  return value;
+}
+
 export function balanceFor(day, config, learnerId) {
-  const learnerMinutes = config.users?.[learnerId]?.dailyMinutes ?? config.dailyMinutes;
+  const learnerMinutes = requirePositiveMinutes(
+    config.users?.[learnerId]?.dailyMinutes ?? config.dailyMinutes, 'dailyMinutes',
+  );
+  const deviceMinutes = requirePositiveMinutes(config.deviceDailyMinutes, 'deviceDailyMinutes');
   const learnerSecondsLeft = Math.max(0,
     learnerMinutes * 60 - (day.learners[learnerId]?.totalSeconds ?? 0));
   const deviceSecondsLeft = Math.max(0,
-    config.deviceDailyMinutes * 60 - day.device.totalSeconds);
+    deviceMinutes * 60 - day.device.totalSeconds);
   return { learnerSecondsLeft, deviceSecondsLeft, secondsLeft: Math.min(learnerSecondsLeft, deviceSecondsLeft) };
 }
