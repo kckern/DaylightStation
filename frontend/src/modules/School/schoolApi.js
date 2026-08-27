@@ -362,6 +362,11 @@ export const schoolApi = {
   quizRequests: (materialId) => req(`/quiz-requests${materialId ? `?materialId=${encodeURIComponent(materialId)}` : ''}`),
   requestQuiz: (body) => req('/quiz-requests', body),
   printables: () => req('/print/printables'),
+  // Same resolve the print path uses, minus every side effect (§6 of the
+  // teacher reference) — an approver can see the sheet before saying yes.
+  // A URL builder, not a fetcher: opened directly in a new tab like the
+  // sibling worksheet/receipt links, never routed through `req`.
+  printablePreviewUrl: (printableId) => `${BASE}/print/printables/${encodeURIComponent(printableId)}/preview`,
   printQuota: (userId) => req(`/print/quota${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`),
   requestPrint: (body) => req('/print/request', body),
   printRequests: (userId) => req(`/print/requests?userId=${encodeURIComponent(userId)}`),

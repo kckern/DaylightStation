@@ -836,6 +836,10 @@
   }
 }
 
+.teacher-prints__preview { color: #604521; font-weight: 700; font-size: 12px; text-decoration: none; border-bottom: 1px dotted #604521; }
+.teacher-prints__preview:hover { border-bottom-style: solid; }
+.teacher-prints__quota { color: #8a5a2a; font-size: 12px; }
+
 .teacher-prints__actions {
   margin-left: auto;
   display: flex;
