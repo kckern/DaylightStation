@@ -857,7 +857,19 @@ export const SEGMENT_FLOOR_PX = 72;
  * 37 when first derived; the face's rendered metrics have moved since, and
  * the constant follows the measurement — band.measure.test.jsx re-derives it
  * against the shipped stylesheet in real Chromium and fails this number when
- * it drifts). The old sweep read one string; a floor derived from one string
+ * it drifts).
+ *
+ * BOTH READINGS ARE LIVE, and that is why 39 is a ceiling rather than a
+ * measurement. `Mar…` reads 38.3px on the machine this was last derived on and
+ * 37.00px on kckern-server — same font binary, same rule, same string.
+ * Chromium's rasterised advance widths differ between builds and
+ * `getBoundingClientRect` reports what was rasterised. 39 is `ceil` of the
+ * widest reading, so it satisfies the hard floor everywhere; the test's cushion
+ * band is 3px because `ceil(38.3) − 37.00` is exactly 2.00 and a tighter band
+ * would fail on whichever machine happens to render narrowest. Re-derive from
+ * the corpus if it goes red — do not widen the band again.
+ *
+ * The old sweep read one string; a floor derived from one string
  * floors every other name in the set on that string's letterforms. The
  * Eroica's named floor therefore moves in the direction that shows MORE of a
  * compressed name.
