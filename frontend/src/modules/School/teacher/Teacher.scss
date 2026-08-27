@@ -1014,6 +1014,36 @@
   }
 }
 
+.teacher-syllabi {
+  &__list { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+  &__row {
+    padding: 8px 0;
+    border-top: 1px solid #f1ece0;
+    &:first-child { border-top: none; }
+  }
+  &__summary { display: flex; flex-direction: column; gap: 4px; }
+  &__head { display: flex; align-items: baseline; gap: 8px; }
+  &__title { font-weight: 700; }
+  &__course { color: #8a8272; font-size: 12px; }
+  &__meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: #8a8272; font-size: 12px; }
+  &__editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 13px;
+
+    button {
+      align-self: flex-start;
+      border: 1px solid #d9bfae;
+      background: #fff;
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+  }
+}
+
 .teacher-enrichment {
   margin: 0;
   padding: 0;
