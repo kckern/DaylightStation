@@ -10,7 +10,7 @@ import FitnessPlayerOverlay from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
 import { useFitnessVolumeControls } from '@/modules/Fitness/nav/useFitnessVolumeControls.js';
 import { resolveMediaIdentity, resolveContentId, normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
-import { resolvePause, PAUSE_REASON } from '@/modules/Player/utils/pauseArbiter.js';
+import { resolvePause, PAUSE_REASON } from '@/lib/Player/gate/pauseArbiter.js';
 import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
 import FitnessChartBackButton from './FitnessChartBackButton.jsx';
 import FitnessChartVoiceMemoFab from './FitnessChartVoiceMemoFab.jsx';
@@ -426,7 +426,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
   const pauseDecision = useMemo(() => resolvePause({
     seeking: { active: isSeeking },
-    governance: { locked: Boolean(effectiveGovernanceState?.videoLocked) },
+    // Fitness contributes exactly one gate. Naming it keeps the telemetry id
+    // ('governance') stable now that the arbiter composes N gates.
+    gates: [{ blocked: Boolean(effectiveGovernanceState?.videoLocked), reason: 'governance', seekCeiling: null }],
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
@@ -434,7 +436,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     user: { paused: isPaused }
   }), [isSeeking, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
-  const governancePaused = pauseDecision.reason === PAUSE_REASON.GOVERNANCE && pauseDecision.paused;
+  const governancePaused = pauseDecision.reason === PAUSE_REASON.GATE && pauseDecision.gate === 'governance' && pauseDecision.paused;
 
   // Drive the governance stall-pause off the live resilience state. GovernanceEngine
   // subscribes to playback:stalled/playback:recovered to pause its penalty timers
