@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { resolvePause, PAUSE_REASON } from '../../../../../frontend/src/modules/Player/utils/pauseArbiter.js';
+import { resolvePause, PAUSE_REASON } from '../../../../../frontend/src/lib/Player/gate/pauseArbiter.js';
 
 describe('Governance video pause contract', () => {
 
@@ -7,22 +7,25 @@ describe('Governance video pause contract', () => {
     const result = resolvePause({ governance: { locked: true } });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
-    expect(result.reason).toBe('PAUSED_GOVERNANCE');
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
+    expect(result.reason).toBe('PAUSED_GATE');
   });
 
   test('governance.blocked also triggers pause', () => {
     const result = resolvePause({ governance: { blocked: true } });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
   });
 
   test('governance.videoLocked also triggers pause', () => {
     const result = resolvePause({ governance: { videoLocked: true } });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
   });
 
   test('governance unlock resumes playback (paused:false when not locked)', () => {
@@ -53,8 +56,9 @@ describe('Governance video pause contract', () => {
     });
 
     expect(result.paused).toBe(true);
-    // Must be GOVERNANCE, not USER - governance is the controlling reason
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    // Must be the governance GATE, not USER - the gate is the controlling reason
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
     expect(result.reason).not.toBe(PAUSE_REASON.USER);
   });
 
@@ -65,7 +69,8 @@ describe('Governance video pause contract', () => {
     });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
     expect(result.reason).not.toBe(PAUSE_REASON.BUFFERING);
   });
 
@@ -119,7 +124,8 @@ describe('Seeking suppresses pause', () => {
     });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
   });
 
   test('no seeking bucket does not suppress', () => {
@@ -128,6 +134,7 @@ describe('Seeking suppresses pause', () => {
     });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
   });
 });

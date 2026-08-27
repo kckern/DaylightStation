@@ -43,7 +43,10 @@ export const resolvePause = ({
   resilience = {},
   user = {}
 } = {}) => {
-  const allGates = governance ? [...gates, governanceAsGate(governance)] : gates;
+  // `gates = []` only defaults on undefined; callers hand us governor state that
+  // can legitimately be null before it has resolved, so normalize rather than throw.
+  const supplied = Array.isArray(gates) ? gates : [];
+  const allGates = governance ? [...supplied, governanceAsGate(governance)] : supplied;
 
   // A ceiling is a standing rule, not a pause side-effect: it composes regardless
   // of whether any gate is blocked, so a caller can keep clamping seeks while
