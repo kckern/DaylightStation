@@ -22,6 +22,8 @@ vi.mock('../../schoolApi.js', () => ({
     agendaPreview: vi.fn(),
     lifecycleReview: vi.fn(),
     printPending: vi.fn(),
+    printQuota: vi.fn(async () => ({ ok: true, status: 200, data: { pagesInWindow: 0, pagesPerWindow: 5, remaining: 5, windowMinutes: 60 } })),
+    printablePreviewUrl: (printableId) => `/api/v1/school/print/printables/${printableId}/preview`,
     quizRequests: vi.fn(),
     teachers: vi.fn(),
     resolveReview: vi.fn(),
