@@ -68,6 +68,9 @@ describe('gates array (GateVerdict composition)', () => {
   it('no gates, no ceiling: seekCeiling is null and result shape is stable', () => {
     expect(resolvePause({})).toEqual({ paused: false, reason: PAUSE_REASON.PLAYING, gate: null, seekCeiling: null });
   });
+  it('a null gates slot is tolerated like an absent one (callers pass state that can be null)', () => {
+    expect(resolvePause({ gates: null })).toEqual({ paused: false, reason: PAUSE_REASON.PLAYING, gate: null, seekCeiling: null });
+  });
 });
 
 describe('pauseArbiter — precedence below the gate layer', () => {
