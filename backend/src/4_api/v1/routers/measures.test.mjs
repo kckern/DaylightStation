@@ -9,7 +9,7 @@ const TZ = 'America/Los_Angeles';
 // Wednesday 2026-08-26, 12:00 local.
 const NOW = new Date('2026-08-26T19:00:00Z');
 
-function app({ sessions = [], roster = [{ id: 'milo' }, { id: 'felix' }] } = {}) {
+function app({ sessions = [], roster = [{ id: 'user_4' }, { id: 'user_3' }] } = {}) {
   const registry = new MeasureRegistry().register(createFitnessRingsProvider({
     timezone: TZ,
     sessions: { listSessions: async () => sessions },
@@ -41,14 +41,14 @@ describe('GET /measures/weekly', () => {
     // A missing card would read as "that child does not exist"; a zero reads
     // as "that child has not moved". Only the second is true.
     const res = await request(app({
-      sessions: [session('2026-08-24T16:00:00Z', { milo: { rings: 40 } })],
+      sessions: [session('2026-08-24T16:00:00Z', { user_4: { rings: 40 } })],
     })).get('/measures/weekly');
 
-    expect(res.body.learners.map((l) => l.learnerId)).toEqual(['milo', 'felix']);
+    expect(res.body.learners.map((l) => l.learnerId)).toEqual(['user_4', 'user_3']);
     const ringOf = (id) => res.body.learners
       .find((l) => l.learnerId === id).measures.find((m) => m.id === 'fitness.rings');
-    expect(ringOf('milo').value).toBe(40);
-    expect(ringOf('felix').value).toBe(0);
+    expect(ringOf('user_4').value).toBe(40);
+    expect(ringOf('user_3').value).toBe(0);
   });
 
   it('labels the measure for a board that has no idea what fitness.rings is', async () => {
@@ -69,9 +69,9 @@ describe('GET /measures/weekly', () => {
 
   it('ignores a fitness participant who is not a school learner', async () => {
     const res = await request(app({
-      sessions: [session('2026-08-24T16:00:00Z', { kckern: { rings: 999 }, milo: { rings: 5 } })],
+      sessions: [session('2026-08-24T16:00:00Z', { kckern: { rings: 999 }, user_4: { rings: 5 } })],
     })).get('/measures/weekly');
-    expect(res.body.learners.map((l) => l.learnerId)).toEqual(['milo', 'felix']);
+    expect(res.body.learners.map((l) => l.learnerId)).toEqual(['user_4', 'user_3']);
     expect(res.body.learners[0].measures[0].value).toBe(5);
   });
 });

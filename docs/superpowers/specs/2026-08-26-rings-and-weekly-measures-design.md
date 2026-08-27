@@ -170,7 +170,7 @@ fitness provider.
 GET /api/v1/measures/weekly?week=YYYY-MM-DD
 
 { "window": { "from": "2026-08-23", "to": "2026-08-29" },
-  "learners": [ { "learnerId": "milo",
+  "learners": [ { "learnerId": "user_4",
                   "measures": [ { "id": "fitness.rings", "label": "Rings",
                                   "unit": "rings", "value": 40 } ] } ] }
 ```

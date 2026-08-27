@@ -5,7 +5,7 @@
 
 ## 1. The problem, stated exactly
 
-On 2026-08-26 Soren tapped his card at the living-room reader and then tapped a
+On 2026-08-26 User_2 tapped his card at the living-room reader and then tapped a
 book. Nothing happened. The obvious diagnoses were all wrong, and each one cost
 time:
 
@@ -22,7 +22,7 @@ The actual cause was one absent line of configuration. The living-room source in
 `NfcResolver` resolved the card, produced a null intent, and routed the tap into
 the ordinary unknown-tag capture. Every layer behaved exactly as written.
 
-**Alan and Soren were assigned a daily obligation that nothing in the house was
+**User_5 and User_2 were assigned a daily obligation that nothing in the house was
 configured to let them start, and the system had no opinion about that.** It is
 the gap between "assigned" and "startable" that this design closes. Adding the
 missing line fixed today; it did not make tomorrow's equivalent detectable.

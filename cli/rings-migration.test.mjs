@@ -29,7 +29,7 @@ describe('key shapes are rewritten', () => {
   });
 
   it('rewrites the v2 namespaced cumulative metric', () => {
-    expect(migrateText('user:milo:coins_total').text).toBe('user:milo:rings_total');
+    expect(migrateText('user:user_4:coins_total').text).toBe('user:user_4:rings_total');
   });
 
   it('rewrites JSON key forms', () => {
@@ -69,7 +69,7 @@ describe('THE SHAKESPEARE GUARD — prose is never touched', () => {
 
 describe('idempotence', () => {
   it('a second pass changes nothing', () => {
-    const once = migrateText("    milo:coins: '[1]'\n  totalCoins: 5\n");
+    const once = migrateText("    user_4:coins: '[1]'\n  totalCoins: 5\n");
     expect(once.changed).toBe(true);
     const twice = migrateText(once.text);
     expect(twice.changed).toBe(false);

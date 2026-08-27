@@ -58,7 +58,7 @@ export class StoryTimeProgramLauncher {
    * configuration those words promise, and on 2026-08-26 the two disagreed —
    * the receipt said "tap your card there" while the living-room source
    * declared no `learner_action` at all, so the tap resolved to a null intent
-   * and Soren stood at a reader that could not help him.
+   * and User_2 stood at a reader that could not help him.
    */
   get entryAction() { return 'reading-session'; }
 

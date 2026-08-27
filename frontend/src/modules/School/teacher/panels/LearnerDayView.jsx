@@ -308,8 +308,8 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
       <PrintedAgenda learnerId={learnerId} studyDay={studyDay} />
       {/* Keyed on learner+day: a plain re-render (switching Students-rail rows
           reuses this element type at the same position) would otherwise carry
-          a stale `preview`/`idempotencyKey` across children — Alan's ready
-          count and Idempotency-Key sitting under Milo's name. The key forces
+          a stale `preview`/`idempotencyKey` across children — User_5's ready
+          count and Idempotency-Key sitting under User_4's name. The key forces
           a remount, which is the only thing that resets that state. */}
       <AgendaDispatch key={`${learnerId}:${studyDay}`} learnerId={learnerId} learnerName={learnerName} studyDay={studyDay} />
       {/* The heading deliberately avoids repeating the row chip's exact words:

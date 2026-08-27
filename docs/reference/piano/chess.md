@@ -325,7 +325,7 @@ node cli/chess.cli.mjs analyze --user <child> --latest --dialogue # exact displa
 node cli/chess-review.cli.mjs --user <child> --trend             # form over every game
 node cli/chess-review.cli.mjs --user <child> --latest --pgn      # annotated PGN
 node cli/chess-review.cli.mjs --user <child> --all --drills      # mistakes to re-solve
-node cli/chess.cli.mjs analyze --user felix --opponent Caterpie --all --brief
+node cli/chess.cli.mjs analyze --user user_3 --opponent Caterpie --all --brief
                                                                # the player-facing CLI entry point
 ```
 
