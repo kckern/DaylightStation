@@ -99,6 +99,34 @@ describe('gates array (GateVerdict composition)', () => {
       paused: false, reason: PAUSE_REASON.PLAYING, blocked: false, gate: null, seekCeiling: null
     });
   });
+
+  // `useMediaGate` forwards `player: { seeking, resilience, user }` straight through,
+  // and any of those is null before its source resolves. Destructuring defaults only
+  // fire on `undefined`, so each null slot has to be normalized or the first read
+  // (`seeking.active`) throws inside a kiosk render.
+  it('a null seeking slot is tolerated', () => {
+    expect(resolvePause({ seeking: null })).toEqual({
+      paused: false, reason: PAUSE_REASON.PLAYING, blocked: false, gate: null, seekCeiling: null
+    });
+  });
+
+  it('a null resilience slot is tolerated', () => {
+    expect(resolvePause({ resilience: null })).toEqual({
+      paused: false, reason: PAUSE_REASON.PLAYING, blocked: false, gate: null, seekCeiling: null
+    });
+  });
+
+  it('a null user slot is tolerated', () => {
+    expect(resolvePause({ user: null })).toEqual({
+      paused: false, reason: PAUSE_REASON.PLAYING, blocked: false, gate: null, seekCeiling: null
+    });
+  });
+
+  it('every slot null at once still yields the stable PLAYING shape', () => {
+    expect(resolvePause({ seeking: null, gates: null, resilience: null, user: null })).toEqual({
+      paused: false, reason: PAUSE_REASON.PLAYING, blocked: false, gate: null, seekCeiling: null
+    });
+  });
 });
 
 describe('pauseArbiter — precedence below the gate layer', () => {
