@@ -53,9 +53,10 @@ const ORDERINGS = ['fixed', 'sequence', 'shuffle_once'];
 const idFromLabel = (label) => label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 function SyllabusEditor({
-  mode, original, courseIds, titles, existingIds = [], onCancel, onSaved,
+  mode, original, courseIds, titles, onCancel, onSaved,
 }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'syllabi' });
+  const [checkingId, setCheckingId] = useState(false);
   const [draft, setDraft] = useState(() => ({
     syllabusId: original.syllabusId ?? '',
     title: original.title ?? '',
@@ -90,13 +91,23 @@ function SyllabusEditor({
     syllabusId: mode === 'create' && !d.idTouched ? idFromLabel(value) : d.syllabusId,
   }));
 
-  const save = () => {
+  const save = async () => {
     if (mode === 'create') {
       if (!SLUG.test(draft.syllabusId)) {
         setLocalError('Syllabus id must be lowercase letters, numbers, and hyphens, starting with a letter or number.');
         return;
       }
-      if (existingIds.includes(draft.syllabusId)) {
+      // The list this panel renders is ALREADY filtered to non-archived
+      // records (YamlSyllabusStore.list()) — checking a create id against it
+      // would miss an archived syllabus with the same id, and the PUT itself
+      // does an unconditional upsert with no existence check of its own. The
+      // single-record GET does NOT filter archived (YamlSyllabusStore.get()
+      // has no such filter), so it is the one read that actually closes this:
+      // a 200 here means the id is taken, archived or not.
+      setCheckingId(true);
+      const existing = await schoolApi.syllabus(draft.syllabusId);
+      setCheckingId(false);
+      if (existing.ok) {
         setLocalError(`"${draft.syllabusId}" is already in use — pick a different id.`);
         return;
       }
@@ -204,7 +215,7 @@ function SyllabusEditor({
         </label>
       </div>
       <div className="teacher-assignments__actions">
-        <button type="button" disabled={busy === 'save'} onClick={save}>Save</button>
+        <button type="button" disabled={busy === 'save' || checkingId} onClick={save}>Save</button>
         <button type="button" onClick={onCancel}>Cancel</button>
       </div>
       {(localError || errors.save) && <p className="teacher-panel__error">{localError ?? errors.save}</p>}
@@ -320,7 +331,6 @@ export default function SyllabiPanel() {
                 original={{}}
                 courseIds={courseIds}
                 titles={titles}
-                existingIds={list.map((s) => s.syllabusId)}
                 onCancel={stopEditing}
                 onSaved={afterSave}
               />
