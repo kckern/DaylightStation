@@ -95,6 +95,8 @@ export function createSchoolRouter({
   // Wave-5 repair (spec D1/D2/D3) — writes gated inside their use cases.
   attestationLog = null,
   recordAttestation = null,
+  // Study-day program excusals (piano lesson gate) — same gated-inside rule.
+  manageProgramDayBypass = null,
   teacherNotesStore = null,
   recordTeacherNote = null,
   reassignEvidence = null,
@@ -1150,6 +1152,28 @@ export function createSchoolRouter({
     if (!recordAttestation) throw new EntityNotFoundError('attestations', 'not configured');
     const { learnerId, unitId, reason, attestedBy = null, pin = null } = req.body || {};
     res.status(201).json(await recordAttestation.execute({ learnerId, unitId, reason, attestedBy, pin }));
+  }));
+
+  // Study-day program excusals: a grown-up letting one learner off one day's
+  // program obligation (today, the piano lesson). Attestation-weight — day
+  // scoped, reversible, fully attributed — so no step-up grant, just the
+  // teacherGate assert the use case already makes.
+  router.get('/program-day-bypasses', wrap(async (req, res) => {
+    if (!manageProgramDayBypass) throw new EntityNotFoundError('program day bypasses', 'not configured');
+    res.set('Cache-Control', 'no-store')
+      .json(await manageProgramDayBypass.list({ learnerId: textQuery(req.query.learnerId) }));
+  }));
+  router.post('/program-day-bypasses', wrap(async (req, res) => {
+    if (!manageProgramDayBypass) throw new EntityNotFoundError('program day bypasses', 'not configured');
+    const { learnerId, programId = 'piano-course', reason, decidedBy = null, pin = null } = req.body || {};
+    res.status(201).json(await manageProgramDayBypass.grant({ learnerId, programId, reason, decidedBy, pin }));
+  }));
+  router.post('/program-day-bypasses/:bypassId/retract', wrap(async (req, res) => {
+    if (!manageProgramDayBypass) throw new EntityNotFoundError('program day bypasses', 'not configured');
+    const { reason, retractedBy = null, pin = null } = req.body || {};
+    res.json(await manageProgramDayBypass.retract({
+      bypassId: req.params.bypassId, reason, retractedBy, pin,
+    }));
   }));
   router.get('/teacher-notes', wrap((req, res) => {
     res.json({ entries: teacherNotesStore ? teacherNotesStore.list({

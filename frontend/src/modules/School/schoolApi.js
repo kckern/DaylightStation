@@ -229,6 +229,19 @@ export const schoolApi = {
   // Wave-5 repair.
   attestations: (learnerId) => req(learnerId ? `/attestations?learnerId=${encodeURIComponent(learnerId)}` : '/attestations'),
   postAttestation: (body) => req('/attestations', body),
+  // Study-day program excusals (the piano lesson gate's parent override).
+  // `pianoLessonGate` is the same read the kiosk makes — the panel shows what
+  // it is about to excuse rather than asking a parent to guess.
+  programDayBypasses: (learnerId) => req(learnerId
+    ? `/program-day-bypasses?learnerId=${encodeURIComponent(learnerId)}`
+    : '/program-day-bypasses'),
+  grantProgramDayBypass: (body) => req('/program-day-bypasses', body),
+  retractProgramDayBypass: (bypassId, body) => req(
+    `/program-day-bypasses/${encodeURIComponent(bypassId)}/retract`, body,
+  ),
+  pianoLessonGate: (learnerId) => req(
+    `/lifecycle/learners/${encodeURIComponent(learnerId)}/piano-lesson-gate`,
+  ),
   teacherNotes: (learnerId) => req(`/teacher-notes?learnerId=${encodeURIComponent(learnerId)}`),
   postTeacherNote: (body) => req('/teacher-notes', body),
   attemptsSummary: (learnerId, day) => req(

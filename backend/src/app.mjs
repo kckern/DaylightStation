@@ -3892,6 +3892,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     reprintIssuedArtifact: schoolLifecycle.useCases?.reprintIssuedArtifact ?? null,
     reprintResultReceiptArtifact: schoolLifecycle.useCases?.reprintResultReceiptArtifact ?? null,
     manageCurriculumException: schoolLifecycle.useCases?.manageCurriculumException ?? null,
+    manageProgramDayBypass: schoolLifecycle.useCases?.manageProgramDayBypass ?? null,
     teacherCapabilitySessions,
     teacherGate: schoolTeacherGate,
     openRemediation: schoolLifecycle.useCases?.openRemediation ?? null,

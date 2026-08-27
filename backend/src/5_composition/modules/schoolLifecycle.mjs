@@ -475,18 +475,33 @@ export async function createSchoolLifecycle({
   if (rubiksCubeService && rubiksCubeGrants && RUBIKS_CUBE_COURSE_ID) {
     launchers.set('rubiks-cube', new RubiksCubeProgramLauncher({ service: rubiksCubeService, grants: rubiksCubeGrants, donow }));
   }
+  // Parent day-bypass ledger. Constructed BEFORE the launcher because the
+  // launcher consumes it: a bypass has to settle `status()` itself, which is
+  // what makes the kiosk gate, the agenda card and the completion ceremony
+  // agree about an excused day without any of them knowing the others exist.
+  const { YamlProgramDayBypassStore } = await import('#adapters/persistence/yaml/YamlProgramDayBypassStore.mjs');
+  const programDayBypassStore = new YamlProgramDayBypassStore({ configService });
+
   // Registered BEFORE the `school.yml` `programs:` loop below, so a config
   // entry that reuses this id trips that loop's collision check rather than
   // silently replacing an evidence-backed launcher with an honour-system one.
   let pianoCourseLauncher = null;
   if (pianoPlayableUnits) {
     pianoCourseLauncher = new PianoCourseProgramLauncher({
-      getPlayableUnits: pianoPlayableUnits, donow, timezone, clock, logger,
+      getPlayableUnits: pianoPlayableUnits, donow, dayBypasses: programDayBypassStore, timezone, clock, logger,
     });
     launchers.set(pianoCourseLauncher.id, pianoCourseLauncher);
   } else {
     logger.warn?.('school.lifecycle.piano-course-unwired', { reason: 'no pianoPlayableUnits' });
   }
+
+  // The piano kiosk's menu gate — "does this learner owe a lesson right now?".
+  // Null without a launcher, which makes the lifecycle router skip the route
+  // and the kiosk hook fail open to the ordinary menu.
+  const { GetPianoLessonGate } = await import('#apps/school/usecases/GetPianoLessonGate.mjs');
+  const getPianoLessonGate = pianoCourseLauncher
+    ? new GetPianoLessonGate({ assignments: stores.assignments, launcher: pianoCourseLauncher, logger })
+    : null;
 
   // Story time — a daily obligation with no course behind it. Unconditional:
   // its only dependencies are a YAML store and the assignments store, both of
@@ -613,6 +628,15 @@ export async function createSchoolLifecycle({
   const { ManageCurriculumException } = await import('#apps/school/usecases/ManageCurriculumException.mjs');
   const curriculumExceptionStore = new YamlCurriculumExceptionStore({ configService });
   const manageCurriculumException = new ManageCurriculumException({ store: curriculumExceptionStore, curriculum, teacherGate, clock });
+  // The Teacher Console's write side of the day-bypass ledger the piano
+  // launcher already reads (constructed above). `eventBus` is optional here
+  // for the same reason it is everywhere else in this file: no bus means no
+  // live push to the kiosk, and the kiosk's own poll still catches up.
+  const { ManageProgramDayBypass } = await import('#apps/school/usecases/ManageProgramDayBypass.mjs');
+  const manageProgramDayBypass = new ManageProgramDayBypass({
+    store: programDayBypassStore, assignments: stores.assignments, teacherGate,
+    eventBus, timezone, clock, logger,
+  });
   // Mid-period pass-criteria overrides (W3-2): read at grade time, one
   // consumption point (CloseSessionOutcome).
   const passOverrides = new YamlPassOverrideStore({ configService, logger });
@@ -1234,6 +1258,7 @@ export async function createSchoolLifecycle({
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
+    getPianoLessonGate, manageProgramDayBypass,
   };
 
   const router = createSchoolLifecycleRouter({
@@ -1319,6 +1344,7 @@ export async function createSchoolLifecycle({
     // rather than a second store pointed at a directory that could drift.
     stores: {
       ...stores, curriculum, printDocuments, allocationStore, worksheetInstances, companions, issuedArtifacts, curriculumExceptionStore,
+      programDayBypassStore,
     },
     // The `RenderPrintDocument` instance the print-document pipeline shares
     // between `issueDocument`'s tracked-quiz path and any other caller (proof

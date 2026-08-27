@@ -23,6 +23,7 @@ import PrintPendingView from './panels/PrintPendingView.jsx';
 import QuizRequestBacklog from './panels/QuizRequestBacklog.jsx';
 import FeedbackNotes, { NoteComposer } from './panels/FeedbackNotes.jsx';
 import AttestationPanel from './panels/AttestationPanel.jsx';
+import ProgramDayBypassPanel from './panels/ProgramDayBypassPanel.jsx';
 import ReassignPanel from './panels/ReassignPanel.jsx';
 import StaleSessions from './panels/StaleSessions.jsx';
 import InterventionsIndex from './panels/InterventionsIndex.jsx';
@@ -352,6 +353,7 @@ export function LearnerOperationsView({ learnerId, learnerName, kids }) {
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Student operations</p><h2>Repair {learnerName}’s record</h2><p>Use the narrowest intervention that matches what actually happened. Every write is attributed and auditable.</p></div></div>
       <InterventionsIndex learnerId={learnerId} />
       <AttestationPanel learnerId={learnerId} learnerName={learnerName} />
+      <ProgramDayBypassPanel learnerId={learnerId} learnerName={learnerName} />
       <ReassignPanel learnerId={learnerId} learnerName={learnerName} kids={kids} />
     </div>
   );
