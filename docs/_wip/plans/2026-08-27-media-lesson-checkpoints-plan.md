@@ -239,10 +239,22 @@ import { createMediaGate } from './mediaGate.js';
 > the very pause it was enforcing.
 >
 > **The fix is a status surface on `mediaGate`** (added in Task 2's follow-up): the gate
-> is the only thing that knows it issued that pause, so it must say so. Read its status
-> — `owned`/`pausedEl` — and treat a DOM `pause` as user intent ONLY when the gate does
-> not own the pause. `useMediaClock.js` two files up already has the `getState()` /
-> `subscribe()` precedent; follow it rather than inventing a channel.
+> is the only thing that knows it issued that pause, so it must say so. The SHIPPED
+> surface is `{ apply, getState, subscribe, detach }`, where `getState()` (and the frozen
+> snapshot `apply()` returns) carries:
+> `{ blocked, gate, seekCeiling, ownsPause, resumeBlocked, detached }`.
+> Treat a DOM `pause` as user intent ONLY when `ownsPause` is false.
+>
+> ⚠ **`ownsPause` stays true across the in-flight window of a SUCCESSFUL resume**, and
+> releases when the promise settles — not synchronously inside `apply`. That is
+> deliberate: holding ownership through that window is what makes a rejected `play()`
+> retryable, and it is also what stops you misreading the DOM events of your own resume.
+> Do not "fix" it.
+>
+> `resumeBlocked` is the autoplay affordance flag — use it if you surface an
+> "autoplay blocked, press play" hint. `subscribe()` is not decorative: `resumeBlocked`
+> only flips on a promise rejection, long after the `apply()` that started it, so a
+> pull-only read would miss it.
 >
 > **Construct the gate INSIDE the effect, not in `useMemo`/`useRef`.** `detach()` is
 > terminal (`detached = true` is never cleared), so a gate detached by an effect cleanup
