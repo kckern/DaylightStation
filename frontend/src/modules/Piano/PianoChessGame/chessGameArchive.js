@@ -1,5 +1,4 @@
 import { INITIAL_FEN } from '@shared-gaming/rulesets/chess/engine.mjs';
-import { elapsedBySide, moveDurations } from './chessClock.js';
 
 /**
  * The full account of a game, for the household history.
@@ -72,7 +71,7 @@ function serializeMove(entry, ply, undone, thinkMs = null) {
 export function buildGameArchive({
   game, gameId, userId, rungId, opponent = null, addressing = 'chords',
   hints = 0, bestMoves = 0, takebacks = 0, startedAt, endedAt, endedBy = 'left',
-  timing = null, commentary = null,
+  timing = null, commentary = null, timingLedger = null,
 }) {
   const history = Array.isArray(game?.history) ? game.history : [];
   const rewound = Array.isArray(game?.undoneHistory) ? game.undoneHistory : [];
@@ -82,8 +81,26 @@ export function buildGameArchive({
   // down and tried something, and that is the thing worth knowing.
   if (!history.length && !rewound.length) return null;
 
-  const durations = moveDurations(history, startedAt);
-  const spent = elapsedBySide(history, startedAt);
+  // Think times are captured from the browser's monotonic clock as each move
+  // lands. Never reconstruct them at archive time from wall-clock timestamps:
+  // a resumed authority session can contain yesterday's move timestamps and a
+  // newly-created lifecycle start, producing very convincing nonsense.
+  const timed = timing?.mode && timing.mode !== 'off';
+  const ledgerDurations = history.map((_, index) => {
+    const value = timingLedger?.byPly?.[index + 1];
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  });
+  const hasCompleteLedger = timed && timingLedger?.quality === 'complete'
+    && ledgerDurations.every((value) => value != null);
+  // Backward-compatible read support belongs in the analyzer. New archives
+  // must never silently fall back to the old reconstruction method.
+  const durations = hasCompleteLedger ? ledgerDurations : history.map(() => null);
+  const spent = hasCompleteLedger
+    ? history.reduce((total, entry, index) => {
+      if (entry.color === 'w' || entry.color === 'b') total[entry.color] += durations[index];
+      return total;
+    }, { w: 0, b: 0 })
+    : { w: 0, b: 0 };
 
   const completed = !!game?.status?.game_over;
   const outcome = completed ? game.status.outcome : null;
@@ -110,9 +127,28 @@ export function buildGameArchive({
     player_color: playerColor,
     rung: rungId || null,
     opponent,
-    // One final, player-visible line is enough for cross-game rivalry memory.
-    // Keep no full dialogue transcript in the archive.
-    ...(commentary?.quip ? { commentary: { final_line: String(commentary.quip).slice(0, 96), source: commentary.source || null } } : {}),
+    // This is the authoritative player-visible dialogue ledger. It intentionally
+    // excludes planned, rejected, and late-discarded lines: if it is here, it
+    // reached the screen. `final_line` remains the compact cross-game memory.
+    ...(() => {
+      const seen = new Set();
+      const displayed = (Array.isArray(commentary) ? commentary : commentary ? [commentary] : [])
+        .map((entry) => ({
+          ply: Number(entry?.ply) || null,
+          event_id: String(entry?.eventId || entry?.event_id || '').slice(0, 160),
+          text: String(entry?.quip || entry?.text || '').replace(/\s+/g, ' ').trim().slice(0, 96),
+          source: entry?.source || null,
+          fallback_reason: entry?.fallbackReason || entry?.fallback_reason || null,
+          shown_at: entry?.shownAt || entry?.shown_at || null,
+        }))
+        .filter((entry) => entry.text && entry.event_id && !seen.has(entry.event_id) && seen.add(entry.event_id));
+      if (!displayed.length) return {};
+      return { commentary: {
+        displayed,
+        final_line: displayed.at(-1).text,
+        source: displayed.at(-1).source,
+      } };
+    })(),
 
     // How the squares were addressed. Without this the chords below cannot be
     // interpreted — 'C/B' is two staff notes, 'Cm' is a chord.
@@ -143,10 +179,10 @@ export function buildGameArchive({
     // lost.
     timing: {
       mode: timing?.mode || 'off',
+      quality: timed ? (hasCompleteLedger ? 'complete' : 'discontinuous') : 'off',
       initial_ms: timing?.initial_ms ?? null,
       increment_ms: timing?.increment_ms ?? null,
-      // Summed from the moves rather than from the clock display, so the
-      // archive agrees with the move list it ships alongside.
+      // Summed from monotonic per-move captures rather than the clock display.
       spent_ms: spent,
       timed_moves: durations.filter((value) => value != null).length,
     },

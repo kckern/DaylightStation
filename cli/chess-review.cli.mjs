@@ -53,6 +53,7 @@ export function parseArgs(argv) {
     depth: DEFAULT_DEPTH,
     format: 'report',
     brief: false,
+    dialogue: false,
     out: null,
     help: false,
   };
@@ -73,6 +74,7 @@ export function parseArgs(argv) {
     else if (token === '--all') options.all = true;
     else if (token === '--list') options.list = true;
     else if (token === '--brief') options.brief = true;
+    else if (token === '--dialogue') options.dialogue = true;
     else if (token === '--pgn') setFormat('pgn');
     else if (token === '--drills') setFormat('drills');
     else if (token === '--trend') setFormat('trend');
@@ -221,6 +223,38 @@ function renderTiming(timing, record) {
   return lines.join('\n');
 }
 
+function dialogueEntries(record) {
+  const displayed = record?.commentary?.displayed;
+  if (!Array.isArray(displayed)) return [];
+  return displayed.filter((entry) => entry?.text || entry?.quip).map((entry) => ({
+    ply: entry.ply ?? null,
+    text: String(entry.text || entry.quip).replace(/\s+/g, ' ').trim(),
+    source: entry.source || 'unknown',
+    fallbackReason: entry.fallback_reason || entry.fallbackReason || null,
+  })).filter((entry) => entry.text);
+}
+
+function dialogueSummary(record) {
+  const entries = dialogueEntries(record);
+  if (!entries.length) return record?.commentary?.final_line
+    ? { entries: [], text: `legacy final line only: “${record.commentary.final_line}”` }
+    : { entries: [], text: 'no player-visible dialogue archived' };
+  const sources = entries.reduce((counts, entry) => ({ ...counts, [entry.source]: (counts[entry.source] || 0) + 1 }), {});
+  return { entries, text: `${entries.length} displayed line${entries.length === 1 ? '' : 's'} (${Object.entries(sources).map(([source, count]) => `${source} ${count}`).join(', ')}); last: “${entries.at(-1).text}”` };
+}
+
+export function renderDialogue(record, detailed) {
+  const summary = dialogueSummary(record);
+  const lines = ['  DIALOGUE', `    ${summary.text}`];
+  if (detailed && summary.entries.length) {
+    for (const entry of summary.entries) {
+      const provenance = entry.fallbackReason ? `${entry.source}/${entry.fallbackReason}` : entry.source;
+      lines.push(`    ply ${entry.ply ?? '-'}  [${provenance}] ${entry.text}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 /**
  * Whether the rung is placed right.
  *
@@ -249,7 +283,7 @@ function renderRungFit(playerSide, engineSide, opponent) {
   return lines.join('\n');
 }
 
-export function renderReport(record, review, { brief = false } = {}) {
+export function renderReport(record, review, { brief = false, dialogue = false } = {}) {
   const opponent = record.opponent || {};
   const rung = opponent.rung || {};
   const help = record.help || {};
@@ -301,6 +335,8 @@ export function renderReport(record, review, { brief = false } = {}) {
     lines.push(`    unavailable: ${timingReadout.reason}.`);
     lines.push('');
   }
+  lines.push(renderDialogue(record, dialogue));
+  lines.push('');
 
   if (readout.motifs.length) {
     lines.push('  WHAT TO WORK ON');
@@ -342,7 +378,7 @@ export function renderReport(record, review, { brief = false } = {}) {
  * games.
  */
 export function renderTrend(rows) {
-  const lines = ['', '  date        opponent        result   ACPL   blunders   opp ACPL', `  ${'-'.repeat(64)}`];
+  const lines = ['', '  date        opponent        result   ACPL   blunders   opp ACPL   dialogue     timing', `  ${'-'.repeat(88)}`];
   for (const row of rows) {
     lines.push([
       `  ${row.played_on}`.padEnd(14),
@@ -351,6 +387,8 @@ export function renderTrend(rows) {
       PAD(row.acpl, 4),
       PAD(row.blunders, 10),
       PAD(row.opponentAcpl, 11),
+      String(row.dialogue).padEnd(13),
+      String(row.timingQuality),
     ].join(''));
   }
   const acpls = rows.map((row) => row.acpl);
@@ -391,6 +429,7 @@ Output:
   (default)        Coaching report: move table, the moment it turned, phase
                    breakdown, recurring mistakes, and whether the rung fits
   --brief          Coaching report without the move-by-move table
+  --dialogue       Print every line actually shown, with its source/reason
   --trend          One row per game plus form over time (implies --all)
   --pgn            Annotated PGN — opens in Lichess or any board GUI
   --drills         The player's own mistakes as re-solvable positions (YAML)
@@ -475,6 +514,10 @@ export async function main(argv = process.argv.slice(2)) {
           acpl: player.acpl,
           blunders: player.blunders.length,
           opponentAcpl: opponentSide.acpl,
+          dialogue: dialogueSummary(record).entries.length
+            ? dialogueSummary(record).entries.reduce((out, entry) => `${out}${out ? '/' : ''}${entry.source}`, '')
+            : (record.commentary?.final_line ? 'legacy' : '-'),
+          timingQuality: record.timing?.quality || (record.timing?.mode === 'off' ? 'off' : 'legacy'),
         });
       } else if (options.format === 'json') {
         jsonReports.push({ file: target.file, record, review });
@@ -484,7 +527,7 @@ export async function main(argv = process.argv.slice(2)) {
       } else if (options.format === 'drills') {
         drills.push(...toDrills(record, review));
       } else {
-        emit(renderReport(record, review, { brief: options.brief }));
+        emit(renderReport(record, review, { brief: options.brief, dialogue: options.dialogue }));
       }
     }
 

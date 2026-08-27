@@ -89,7 +89,7 @@ describe('requestOpponentQuip', () => {
 
   it('fails open when commentary is offline', async () => {
     DaylightAPI.mockRejectedValue(new Error('offline'));
-    expect(await requestOpponentQuip({ gameId: 'g1', ply: 1, game: {} })).toBeNull();
+    await expect(requestOpponentQuip({ gameId: 'g1', ply: 1, game: {} })).resolves.toEqual({ fallbackReason: 'client_error' });
   });
 });
 

@@ -96,15 +96,15 @@ export async function requestBestMove({ fen, userId = null }) {
 export async function requestOpponentQuip({ gameId, ply, level, playerColor, game, dialogue = [], userId = null }) {
   const request = DaylightAPI(withUser('api/v1/piano-games/chess/quip', userId), {
     gameId, ply, level, playerColor, game, dialogue,
-  }, 'POST').then((body) => (body?.quip ? body : null)).catch((error) => {
+  }, 'POST').then((body) => (body?.quip ? body : { fallbackReason: 'invalid_output' })).catch((error) => {
     logger().warn('chess.quip.request-error', { error: error.message, gameId, ply });
-    return null;
+    return { fallbackReason: 'client_error' };
   });
   let timer;
   const deadline = new Promise((resolve) => {
     timer = setTimeout(() => {
       logger().warn('chess.quip.timeout', { gameId, ply, timeoutMs: QUIP_TIMEOUT_MS });
-      resolve(null);
+      resolve({ fallbackReason: 'client_timeout' });
     }, QUIP_TIMEOUT_MS);
   });
   try {

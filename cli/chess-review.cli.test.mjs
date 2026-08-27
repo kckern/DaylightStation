@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { findGames, parseArgs, renderTrend } from './chess-review.cli.mjs';
+import { findGames, parseArgs, renderDialogue, renderTrend } from './chess-review.cli.mjs';
 
 describe('parseArgs', () => {
   it('defaults to a full report at a reproducible depth', () => {
@@ -14,8 +14,8 @@ describe('parseArgs', () => {
   });
 
   it('reads selection and output flags', () => {
-    const options = parseArgs(['--user', 'test-user', '--opponent', 'Caterpie', '--date', '2026-08-15', '--brief']);
-    expect(options).toMatchObject({ user: 'test-user', opponent: 'Caterpie', date: '2026-08-15', brief: true });
+    const options = parseArgs(['--user', 'test-user', '--opponent', 'Caterpie', '--date', '2026-08-15', '--brief', '--dialogue']);
+    expect(options).toMatchObject({ user: 'test-user', opponent: 'Caterpie', date: '2026-08-15', brief: true, dialogue: true });
   });
 
   it('takes a bare path as the file', () => {
@@ -46,6 +46,14 @@ describe('parseArgs', () => {
 
   it('rejects unknown flags', () => {
     expect(() => parseArgs(['--nope'])).toThrow(/Unknown argument/);
+  });
+});
+
+describe('dialogue reporting', () => {
+  it('prints only the durable displayed transcript with provenance when requested', () => {
+    const record = { commentary: { displayed: [{ ply: 2, text: 'A careful answer.', source: 'fallback', fallback_reason: 'timeout' }] } };
+    const text = renderDialogue(record, true);
+    expect(text).toContain('ply 2  [fallback/timeout] A careful answer.');
   });
 });
 

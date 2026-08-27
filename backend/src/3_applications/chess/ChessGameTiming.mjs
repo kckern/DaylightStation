@@ -91,6 +91,10 @@ export function rushedErrors(moves, { maxThinkMs = 5000, minLossCp = 150 } = {})
  */
 export function analyzeTiming(review, record, { side = 'w' } = {}) {
   const mode = record?.timing?.mode || 'off';
+  const quality = record?.timing?.quality;
+  if (quality && quality !== 'complete') {
+    return { timed: false, invalid: quality === 'discontinuous', mode, reason: quality === 'off' ? null : 'timing was interrupted by a resumed session' };
+  }
   const duration = record?.duration_ms;
   const recordedSpent = record?.timing?.spent_ms?.[side];
   // Clock data is derived in the browser. A stale tab or a resumed session can

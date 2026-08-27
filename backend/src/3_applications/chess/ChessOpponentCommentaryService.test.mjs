@@ -40,7 +40,7 @@ describe('ChessOpponentCommentaryService', () => {
     const result = await service.react({
       userId: 'learner4', gameId: 'g1', ply: 2, level: 0, playerColor: 'w', game,
     });
-    expect(result).toEqual({ eventId: 'g1:2:Nf6', quip: 'That knight has plans.', source: 'ai' });
+    expect(result).toEqual({ eventId: 'g1:2:Nf6', quip: 'That knight has plans.', source: 'ai', fallbackReason: null });
     expect(chat).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ role: 'user', content: expect.stringContaining('Tempo') }),
     ]), expect.objectContaining({ model: 'gpt-5.6-luna', reasoningEffort: 'none', maxTokens: 40 }));

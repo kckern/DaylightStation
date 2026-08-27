@@ -121,6 +121,14 @@ export class LogDispatcher {
     return this.transports.map(t => t.name);
   }
 
+  /** Per-sink health, including file writability and remote delivery drops. */
+  getTransportStatuses() {
+    return this.transports.map((transport) => ({
+      name: transport.name,
+      ...(typeof transport.getStatus === 'function' ? transport.getStatus() : { status: 'unknown' }),
+    }));
+  }
+
   async flush() {
     await Promise.all(
       this.transports
