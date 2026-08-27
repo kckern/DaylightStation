@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import SystemHealthPanel from './SystemHealthPanel.jsx';
 
 vi.mock('../../schoolApi.js', () => ({
@@ -77,5 +77,38 @@ describe('SystemHealthPanel', () => {
     render(<SystemHealthPanel kids={KIDS} />);
     await screen.findByTestId('system-health-banks-ok');
     await waitFor(() => expect(screen.getByText(/Couldn.t load Superseded report-card versions/)).toBeInTheDocument());
+  });
+
+  // Review finding (IMPORTANT #1): a failed versions read must never render
+  // the reassuring "all clear" sentence beside its own error banner — that
+  // contradiction is exactly what this panel exists to prevent.
+  it('a failed versions read shows ONLY the error — never the reassuring sentence alongside it', async () => {
+    schoolApi.bankHealth.mockResolvedValue({ ok: true, status: 200, data: { warmedAt: null, banks: 3, failed: [] } });
+    schoolApi.reportCardFrozenVersions.mockResolvedValue({ ok: false, status: 500, data: null });
+    render(<SystemHealthPanel kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText(/Couldn.t load Superseded report-card versions/)).toBeInTheDocument());
+    expect(screen.queryByTestId('system-health-versions-ok')).toBeNull();
+    expect(screen.queryByTestId('system-health-frozen-versions')).toBeNull();
+  });
+
+  // Review finding (IMPORTANT #2): the learner/period controls choose what
+  // to fetch, so they must live outside the PanelFrame they drive and
+  // survive every selection instead of unmounting to a loading skeleton.
+  it('the learner and period controls survive a selection change', async () => {
+    schoolApi.bankHealth.mockResolvedValue({ ok: true, status: 200, data: { warmedAt: null, banks: 1, failed: [] } });
+    render(<SystemHealthPanel kids={KIDS} />);
+    await screen.findByTestId('system-health-versions-ok');
+    const learnerSelect = screen.getByLabelText('Learner');
+    expect(learnerSelect).toBeInTheDocument();
+    fireEvent.change(learnerSelect, { target: { value: 'learner-b' } });
+    // Immediately after the selection — the versions read is now re-entering
+    // 'loading' — the control itself must still be in the document, not
+    // unmounted by the PanelFrame it lives outside of.
+    expect(screen.getByLabelText('Learner')).toBeInTheDocument();
+    expect(screen.getByLabelText('Learner').value).toBe('learner-b');
+    await waitFor(() => expect(schoolApi.reportCardFrozenVersions).toHaveBeenCalledWith(
+      expect.objectContaining({ learnerId: 'learner-b' }),
+    ));
+    expect(screen.getByLabelText('Learner')).toBeInTheDocument();
   });
 });
