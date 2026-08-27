@@ -6,6 +6,7 @@ import { schoolApi } from '../../schoolApi.js';
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: {
     syllabi: vi.fn(),
+    syllabus: vi.fn(),
     curriculumUnits: vi.fn(),
     putSyllabus: vi.fn(),
     archiveSyllabus: vi.fn(),
@@ -94,6 +95,14 @@ describe('SyllabiPanel — the round-trip guarantee', () => {
     // survive a save untouched, byte for byte.
     expect(body.timingTemplate).toEqual(FULL_SYLLABUS.timingTemplate);
     expect(body.schedule).toEqual(FULL_SYLLABUS.schedule);
+    // `policy` IS an edited field (not a round-tripped one — see the field
+    // vocabulary), but this save never touched the policy selects, so it
+    // must come back exactly as it was seeded from the original record. This
+    // pins the seed on SyllabusEditor's initial draft state
+    // (`original.policy?.module_order ?? ''` etc.): remove that seed and the
+    // draft starts blank, which would silently drop this on ANY save that
+    // doesn't also re-pick every policy field.
+    expect(body.policy).toEqual(FULL_SYLLABUS.policy);
     // Everything else this form does not edit also round-trips.
     expect(body.courseId).toBe('history-capitals');
     expect(body.profile).toBe('upper');
@@ -128,6 +137,50 @@ describe('SyllabiPanel — syllabusId settled-ness', () => {
     const idInput = screen.getByLabelText('Syllabus id');
     expect(idInput).toBeDisabled();
     expect(idInput.value).toBe('atlas-upper');
+  });
+});
+
+describe('SyllabiPanel — the create-id guard reaches archived syllabi', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // `schoolApi.syllabi()` (the LIST) is already filtered to non-archived
+  // records (YamlSyllabusStore.list()), so checking a new id against the
+  // visible list alone would miss an archived syllabus holding that id —
+  // and the PUT itself does an unconditional upsert with no existence check
+  // of its own. `schoolApi.syllabus(id)` (the single-record GET) does NOT
+  // filter archived, so a 200 there — even for an archived record — is the
+  // collision this guard must catch.
+  it('refuses to create over an id an archived syllabus still holds', async () => {
+    mockCatalogAndSyllabi([]); // the list is empty — the archived record is invisible here
+    schoolApi.syllabus.mockResolvedValue({
+      ok: true, status: 200, data: { ...FULL_SYLLABUS, archivedAt: '2026-01-01T00:00:00Z' },
+    });
+    render(<SyllabiPanel />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add syllabus' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Add syllabus' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'New Atlas' } });
+    fireEvent.change(screen.getByLabelText('Syllabus id'), { target: { value: 'atlas-upper' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(schoolApi.syllabus).toHaveBeenCalledWith('atlas-upper'));
+    expect(await screen.findByText('"atlas-upper" is already in use — pick a different id.')).toBeInTheDocument();
+    expect(schoolApi.putSyllabus).not.toHaveBeenCalled();
+  });
+
+  it('creates once the id-existence check comes back 404 (free)', async () => {
+    mockCatalogAndSyllabi([]);
+    schoolApi.syllabus.mockResolvedValue({ ok: false, status: 404, data: null });
+    schoolApi.putSyllabus.mockResolvedValue({ ok: true, status: 200, data: {} });
+    render(<SyllabiPanel />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add syllabus' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Add syllabus' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'World Capitals' } });
+    fireEvent.change(screen.getByLabelText('Course'), { target: { value: 'history-capitals' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(schoolApi.syllabus).toHaveBeenCalledWith('world-capitals'));
+    await waitFor(() => expect(schoolApi.putSyllabus).toHaveBeenCalled());
+    expect(schoolApi.putSyllabus.mock.calls[0][0]).toBe('world-capitals');
   });
 });
 
