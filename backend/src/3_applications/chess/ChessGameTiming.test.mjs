@@ -63,6 +63,17 @@ describe('analyzeTiming', () => {
     const { review, record } = fixture([{ ply: 1, thinkMs: 1000 }]);
     expect(analyzeTiming(review, record, { side: 'w' }).opponentMs).toBe(2000);
   });
+
+  it('rejects corrupt clock telemetry that exceeds the total game duration', () => {
+    const { review, record } = fixture([{ ply: 1, thinkMs: 50000 }]);
+    record.duration_ms = 10000;
+    record.timing.spent_ms.w = 50000;
+    expect(analyzeTiming(review, record, { side: 'w' })).toMatchObject({
+      timed: false,
+      invalid: true,
+      reason: 'recorded player time exceeds game duration',
+    });
+  });
 });
 
 describe('haste', () => {

@@ -34,6 +34,7 @@ function loggingStatus() {
   return {
     metrics: dispatcher.getMetrics(),
     transports: dispatcher.getTransportNames(),
+    transportStatus: dispatcher.getTransportStatuses(),
     sessionFile: getSessionFileTransport()?.getStatus() ?? null,
   };
 }

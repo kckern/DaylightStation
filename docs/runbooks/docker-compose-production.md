@@ -13,24 +13,25 @@ services:
     environment:
       - NODE_ENV=production
     ports:
-      - 3112:3112
-      - 3119:3119
+      - 3111:3111
     volumes:
       - /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data:/usr/src/app/data
       - /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/media:/usr/src/app/media
+      - /media/kckern/DockerDrive/daylight-logs:/usr/src/app/logs
     restart: unless-stopped
 ```
 
 ## Deploy Command
 
 ```bash
-ssh homeserver.local 'docker stop daylight-station && docker rm daylight-station && docker run -d --name daylight-station --restart unless-stopped -p 3112:3112 -p 3119:3119 -v /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data:/usr/src/app/data -v /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/media:/usr/src/app/media kckern/daylight-station:latest'
+ssh homeserver.local 'docker stop daylight-station && docker rm daylight-station && docker run -d --name daylight-station --restart unless-stopped --network kckern-net -p 3111:3111 -v /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data:/usr/src/app/data -v /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/media:/usr/src/app/media -v /media/kckern/DockerDrive/daylight-logs:/usr/src/app/logs -v /media/kckern/Media/Archives:/usr/src/app/archives kckern/daylight-station:latest'
 ```
 
 ## Critical Notes
 
 - **Data mount**: Must point to Dropbox sync location (not Docker/DaylightStation/data)
-- **Ports**: Both 3112 (main HTTP/WS) and 3119 (secondary API) required
+- **Port and network**: The production container exposes its combined HTTP/WS service on 3111 and joins `kckern-net`.
+- **Logs mount**: `/usr/src/app/logs` must be bound to `DockerDrive/daylight-logs`; without it the configured general file sink is intentionally disabled. Check the API status's `logging.transportStatus` after deploy for file writability and remote-sink drops.
 - **Config**: System config at `/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/system/`
 - **Secrets**: API keys and auth stored in `/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/system/secrets.yml`
 
@@ -41,7 +42,7 @@ ssh homeserver.local 'docker stop daylight-station && docker rm daylight-station
 ssh homeserver.local 'docker ps | grep daylight'
 
 # Test endpoint directly
-curl -s http://10.0.0.10:3112/home/entropy | jq '.summary'
+curl -s http://10.0.0.10:3111/api/v1/info | jq '.logging'
 
 # Check mounts
 ssh homeserver.local 'docker exec daylight-station ls -la /usr/src/app/data/system/'

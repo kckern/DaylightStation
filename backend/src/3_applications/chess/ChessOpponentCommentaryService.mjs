@@ -160,7 +160,10 @@ export function createChessOpponentCommentaryService({
         logger?.warn?.('chess.commentary.memory-fallback', { gameId, reason: error.message });
       }
       if (!personality.enabled || !aiGateway?.chat) {
-        return { eventId, quip: fallback, source: personality.enabled ? 'fallback' : 'disabled' };
+        return {
+          eventId, quip: fallback, source: personality.enabled ? 'fallback' : 'disabled',
+          fallbackReason: personality.enabled ? 'generation_error' : 'disabled',
+        };
       }
 
       try {
@@ -181,7 +184,7 @@ export function createChessOpponentCommentaryService({
         logger?.info?.('chess.commentary.generated', {
           gameId, ply: game.moves.length, level: resolved.level, opponent: opponent.name, quip,
         });
-        return { eventId, quip, source: 'ai' };
+        return { eventId, quip, source: 'ai', fallbackReason: null };
       } catch (error) {
         logger?.warn?.('chess.commentary.fallback', {
           gameId,
@@ -192,7 +195,9 @@ export function createChessOpponentCommentaryService({
           apiError: error.apiError || null,
           quip: fallback,
         });
-        return { eventId, quip: fallback, source: 'fallback' };
+        const fallbackReason = error.message === 'commentary_timeout' ? 'timeout'
+          : error.message === 'invalid_commentary' ? 'invalid_output' : 'generation_error';
+        return { eventId, quip: fallback, source: 'fallback', fallbackReason };
       }
     },
   };
