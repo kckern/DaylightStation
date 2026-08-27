@@ -44,6 +44,9 @@ const CEILING_SLACK_S = 0.25;
 /** A held fast-forward fires `seeking` continuously; the clamp log must not flood. */
 const CLAMP_LOG_PER_MINUTE = 10;
 
+/** A blocked autoplay policy re-rejects on every retry; same flood shape, same budget. */
+const RESUME_FAIL_LOG_PER_MINUTE = 10;
+
 const finiteOrNull = (n) => (typeof n === 'number' && Number.isFinite(n) ? n : null);
 
 /**
@@ -63,11 +66,13 @@ export function createMediaGate({ getMediaEl, logger: injectedLogger = null } = 
   let gateId = null;           // latest blocking gate id, for clamp/release logs
   let detached = false;
 
-  // The plan calls this `#gatePausedByUs`. It tracks OUR pause regardless of which
-  // reason produced it (gate, buffering, user-intent sync) — that is what makes the
-  // user-pause invariant hold: an element the user paused was never paused by us,
-  // so we never play it. Resume is still gated on `!blocked` above.
-  let pausedByUs = false;
+  // The plan calls this `#gatePausedByUs`. Held as the ELEMENT we paused rather than
+  // a bare flag, so ownership is tied to an identity: it survives a tick where the ref
+  // is momentarily null, and cannot be spent on a different element that arrives later.
+  // It tracks OUR pause regardless of which reason produced it (gate, buffering,
+  // user-intent sync) — that is what makes the user-pause invariant hold: an element
+  // the user paused was never paused by us, so we never play it.
+  let pausedEl = null;
   let resumeInFlight = false;
 
   // Last-seen standing block, for TRANSITION-only logging. `apply` is called from a
@@ -103,42 +108,61 @@ export function createMediaGate({ getMediaEl, logger: injectedLogger = null } = 
     if (el) {
       try { el.removeEventListener('seeking', onSeeking); } catch (_) { /* element already gone */ }
     }
+    // A DIFFERENT element is one we have not paused, so ownership does not carry
+    // over — otherwise the gate would auto-play a fresh element the user never
+    // started. But `null` is NOT a swap: it means "the ref has not resolved this
+    // tick" (a React remount leaves it null for a render). Clearing ownership there
+    // would strand a gated lesson paused with nobody left to resume it once the same
+    // element comes back, so a null hand-back only unbinds the listener. Ownership is
+    // released the moment a genuinely different element arrives — which also drops our
+    // reference to the outgoing one.
+    if (next && pausedEl && next !== pausedEl) {
+      pausedEl = null;
+      resumeInFlight = false;
+    }
     el = next;
-    // A new element is one we have not paused. Carrying the flag over would let the
-    // gate auto-play a fresh element the user never started.
-    pausedByUs = false;
-    resumeInFlight = false;
     if (el) {
       try { el.addEventListener('seeking', onSeeking); } catch (_) { /* not an element we can bind */ }
     }
   };
 
+  // Sampled, not `warn`. `apply` runs from a render effect and a rejected resume
+  // KEEPS pause ownership so a later apply retries — which is the whole point, but it
+  // means a persistently-blocking autoplay policy (the garage kiosk's Firefox) would
+  // otherwise emit one warn per render, forever. Same flood shape as the clamp log,
+  // same budget.
+  const logResumeFailed = (err) => {
+    log().sampled('gate.resume-failed',
+      { gate: lastGateSeen, error: String(err?.message || err) },
+      { maxPerMinute: RESUME_FAIL_LOG_PER_MINUTE, aggregate: true });
+  };
+
   const resume = (target) => {
-    if (!pausedByUs || resumeInFlight) return;
-    if (!target.paused) { pausedByUs = false; return; }
+    if (pausedEl !== target || resumeInFlight) return;
+    if (!target.paused) { pausedEl = null; return; }
     resumeInFlight = true;
     let promise;
     try {
       promise = target.play();
     } catch (err) {
       resumeInFlight = false;
-      log().warn('gate.resume-failed', { gate: lastGateSeen, error: String(err?.message || err) });
+      logResumeFailed(err);
       return;
     }
     if (!promise || typeof promise.then !== 'function') {
       resumeInFlight = false;
-      pausedByUs = false;
+      pausedEl = null;
       return;
     }
     // `play()` rejects for real in this house: the garage kiosk's Firefox blocks
     // audible autoplay until a gesture. Swallow it into a warn — an unhandled
     // rejection here would surface as a page-level error on a kiosk nobody is
-    // watching. `pausedByUs` stays true so a later `apply` can try again.
+    // watching. Ownership is HELD so a later `apply` can try again.
     promise.then(
-      () => { resumeInFlight = false; pausedByUs = false; },
+      () => { resumeInFlight = false; pausedEl = null; },
       (err) => {
         resumeInFlight = false;
-        log().warn('gate.resume-failed', { gate: lastGateSeen, error: String(err?.message || err) });
+        logResumeFailed(err);
       }
     );
   };
@@ -179,7 +203,7 @@ export function createMediaGate({ getMediaEl, logger: injectedLogger = null } = 
       if (d.paused) {
         if (!el.paused) {
           el.pause();
-          pausedByUs = true;
+          pausedEl = el;
         }
         return;
       }
@@ -199,7 +223,7 @@ export function createMediaGate({ getMediaEl, logger: injectedLogger = null } = 
       try { el.removeEventListener('seeking', onSeeking); } catch (_) { /* element already gone */ }
     }
     el = null;
-    pausedByUs = false;
+    pausedEl = null;
     resumeInFlight = false;
   };
 

@@ -118,9 +118,30 @@ describe('mediaGate — releasing', () => {
     await Promise.resolve();
     // The gate it was resuming FROM must survive into the log — that is the field
     // that tells you which lesson is now stuck paused on the kiosk.
-    expect(logger.warn).toHaveBeenCalledWith('gate.resume-failed',
-      { gate: 'checkpoint', error: expect.stringContaining('NotAllowedError') });
+    expect(logger.sampled).toHaveBeenCalledWith('gate.resume-failed',
+      { gate: 'checkpoint', error: expect.stringContaining('NotAllowedError') },
+      { maxPerMinute: 10, aggregate: true });
+    expect(logger.warn).not.toHaveBeenCalled();
     expect(el.paused).toBe(true);
+  });
+
+  // `apply` runs from a render effect, and a rejected resume keeps ownership so every
+  // later apply retries. Under a standing autoplay block (garage Firefox) that is an
+  // unbounded stream unless the log is rate-limited — same hazard as the clamp log.
+  it('rate-limits the resume-failure log rather than emitting one per apply', async () => {
+    const el = makeEl({ paused: false, play: () => Promise.reject(new Error('NotAllowedError')) });
+    const gate = createMediaGate({ getMediaEl: () => el, logger });
+    gate.apply(BLOCKING);
+    for (let i = 0; i < 50; i += 1) {
+      gate.apply(RELEASED);
+      await Promise.resolve(); await Promise.resolve();
+    }
+    expect(el.play.mock.calls.length).toBeGreaterThan(1);   // it really did keep retrying
+    expect(logger.warn).not.toHaveBeenCalled();
+    logger.sampled.mock.calls.forEach(([event, , opts]) => {
+      expect(event).toBe('gate.resume-failed');
+      expect(opts).toEqual({ maxPerMinute: 10, aggregate: true });
+    });
   });
 
   // A rejected resume must not become a permanently stuck lesson: the gate keeps
@@ -265,6 +286,45 @@ describe('mediaGate — lifecycle', () => {
     expect(second.listenerCount('seeking')).toBe(1);
     gate.detach();
     expect(second.listenerCount('seeking')).toBe(0);
+  });
+
+  // A React remount leaves the ref null for a tick. That is "not resolved yet", not a
+  // swap: dropping pause ownership there strands a gated lesson paused with nobody
+  // left to resume it when the SAME element comes back.
+  it('holds pause ownership across a tick where the element ref is momentarily null', () => {
+    const el = makeEl({ paused: false });
+    let current = el;
+    const gate = createMediaGate({ getMediaEl: () => current, logger });
+    gate.apply(BLOCKING);
+    expect(el.pause).toHaveBeenCalledTimes(1);
+
+    current = null;             // ref not resolved this render
+    gate.apply(BLOCKING);
+    expect(el.listenerCount('seeking')).toBe(0);   // still unbinds while unresolved
+
+    current = el;               // same element back
+    gate.apply(RELEASED);
+    expect(el.play).toHaveBeenCalledTimes(1);
+    expect(el.listenerCount('seeking')).toBe(1);   // and rebinds
+  });
+
+  // What the swap-clear in `bindTo` actually protects now that `resume` checks element
+  // identity: an in-flight `play()` on the OUTGOING element must not leave the
+  // in-flight latch stuck, or the incoming element can never be resumed again.
+  it('does not strand the resume latch when the element swaps mid-play()', () => {
+    const first = makeEl({ paused: false, play: () => new Promise(() => {}) }); // never settles
+    const second = makeEl({ paused: false });
+    let current = first;
+    const gate = createMediaGate({ getMediaEl: () => current, logger });
+
+    gate.apply(BLOCKING);
+    gate.apply(RELEASED);
+    expect(first.play).toHaveBeenCalledTimes(1);   // in flight, unresolved
+
+    current = second;
+    gate.apply(BLOCKING);
+    gate.apply(RELEASED);
+    expect(second.play).toHaveBeenCalledTimes(1);
   });
 
   it('does not resume a freshly swapped-in element the gate never paused', () => {
