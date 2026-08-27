@@ -1,6 +1,4 @@
-import { promises as fs } from 'node:fs';
-import yaml from 'js-yaml';
-import { saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import { loadYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 
 /** Append-only, study-day-scoped program obligation bypass ledger. */
 export class YamlProgramDayBypassStore {
@@ -11,9 +9,10 @@ export class YamlProgramDayBypassStore {
   }
   #file() { return this.#configService.getHouseholdPath('school/records/program-day-bypasses.yml'); }
 
+  /** Missing file (nothing has ever been excused) reads as an empty ledger. */
   async list() {
-    try { const raw = yaml.load(await fs.readFile(this.#file(), 'utf8')); return Array.isArray(raw) ? raw : []; }
-    catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+    const raw = loadYamlFromPath(this.#file());
+    return Array.isArray(raw) ? raw : [];
   }
 
   async append(record) {
