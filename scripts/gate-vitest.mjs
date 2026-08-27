@@ -7,8 +7,19 @@
  * every gate undetected (see docs/_wip/audits/2026-07-08-test-runner-
  * bifurcation-ungated-vitest.md, the P1.4 PeriodResolver escape).
  *
+ * FRONTEND IS IN THE POPULATION. It was not, until 2026-08-27, and nothing
+ * announced that: `ROOTS` simply did not list it, so all ~1,150 vitest files
+ * under `frontend/` were run by no gate at all. The tell was quiet — adding
+ * three tests to a branch left the gate's count unchanged — and the cost was
+ * not: during the teacher-console remediation a stale `schoolApi` test-double
+ * broke ten tests in `TodayTab.test.jsx` and the branch-end gate reported OK,
+ * because it never ran the file. A human noticing was the only thing standing
+ * there. Note this is a WIDER statement than the "panel specs sit outside the
+ * gate" note that work logged repeatedly: it was never about panels.
+ *
  * Population (SSOT, computed here): every test.{js,jsx,mjs} file under
- * tests/unit, tests/isolated and backend/ that vitest owns, excluding:
+ * tests/unit, tests/isolated, backend/ and frontend/ that vitest owns,
+ * excluding:
  *   - tests/unit/suite/       (jest — gated by `npm run test:unit`)
  *   - any node_modules/ path
  *   - any .claude/ or .worktrees/ path (sibling worktree copies)
@@ -42,7 +53,7 @@ import os from 'node:os';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const BASELINE = path.join(ROOT, 'scripts/audit-baseline.vitest.txt');
-const ROOTS = ['tests/unit', 'tests/isolated', 'backend'];
+const ROOTS = ['tests/unit', 'tests/isolated', 'backend', 'frontend'];
 const EXCLUDE = [/\/node_modules\//, /\/\.claude\//, /\/\.worktrees\//];
 
 /**
@@ -115,12 +126,21 @@ function runVitest(files) {
   // the run parallel while leaving each worker enough headroom to be
   // deterministic.
   const workers = Math.max(2, Math.floor((os.cpus?.().length ?? 4) / 2));
+  // NO `shell: true`. With it, node collapses argv into ONE `/bin/sh -c`
+  // string, and Linux caps a single argument at MAX_ARG_STRLEN (128 KiB,
+  // 32 pages) — a limit independent of the 2 MiB ARG_MAX everyone reaches
+  // for first. At 1,447 files the joined command was ~90 KiB and fit; adding
+  // frontend/ took it to ~165 KiB and every run died instantly with
+  // `spawnSync /bin/sh E2BIG`, an empty stderr, and no JSON report. Without
+  // the shell each path is its own argv entry, so only the 2 MiB total
+  // applies and 2,605 files use ~165 KiB of it. `npx` resolves from PATH, so
+  // the shell bought nothing here anyway.
   const res = spawnSync(
     'npx',
     ['vitest', 'run', ...files, '--config', 'vitest.config.mjs',
      `--max-workers=${workers}`,
      '--reporter=json', `--outputFile=${outFile}`],
-    { cwd: ROOT, encoding: 'utf8', shell: true, maxBuffer: 1 << 28 }
+    { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 }
   );
   if (!existsSync(outFile)) {
     console.error('gate-vitest: vitest produced no JSON report.\n' + (res.stderr || '').slice(-2000));

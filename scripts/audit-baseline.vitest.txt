@@ -1,6 +1,6 @@
 # GATE-VITEST baseline — the SET of vitest files currently failing.
-# Population: *.test.{js,jsx,mjs} under tests/unit, tests/isolated and
-# backend/ that vitest OWNS (explicit vitest import, or bare globals with
+# Population: *.test.{js,jsx,mjs} under tests/unit, tests/isolated,
+# backend/ and frontend/ that vitest OWNS (explicit vitest import, or bare globals with
 # no runner import), minus suite/ (jest) and node:test files.
 # A file failing that is NOT listed here is a REGRESSION (gate exits 1).
 # Captured: 15176 tests, 15079 pass, 42 fail.
@@ -30,3 +30,10 @@ backend/src/4_api/v1/routers/piano.effect-audit.test.mjs
 backend/src/4_api/v1/routers/piano.loop-manifest.test.mjs
 tests/isolated/adapter/content/filesystem/resolvers/scripture.test.mjs
 tests/isolated/assembly/infrastructure/infrastructure-ownership.test.mjs
+# Added 2026-08-27 when frontend/ entered the population. Pre-existing and
+# deterministic: the rail name-floor assertion is `2 < 2` at the exact
+# boundary, so it reads as a cushion rather than a measurement. It fails
+# in isolation, is unrelated to the gate change, and belongs to whoever
+# owns Surround/band — fixing a design tolerance as a rider on a gate
+# change would be the wrong call. Drop this line when it is fixed.
+frontend/src/modules/Surround/band.measure.test.jsx
