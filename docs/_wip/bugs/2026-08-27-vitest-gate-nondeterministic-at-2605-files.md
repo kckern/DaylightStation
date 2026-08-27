@@ -63,10 +63,17 @@ chosen for — while the worker count did not change. Per-worker load went from
 
 ## Plausible directions, in order of appeal
 
-1. **Fix the specs.** The `PianoMenuActivity` case is a genuine missing
-   `waitFor` around the persisted-shape assertion and is a small fix. Diagnose
-   the other four the same way before assuming they share a cause — the evidence
-   so far says they do not.
+1. **Fix the specs.** `PianoMenuActivity` is **DONE** (`5a9ace55e`): the
+   assertion now waits on `readShape()` instead of on the cards, and the race was
+   reproduced deterministically before and after — delaying only that key's write
+   by 800ms fails the old assertion with the production error verbatim and passes
+   with the new one. Worth copying the method: patch `localStorage` on its
+   **prototype**, since assigning `localStorage.setItem` directly never fires
+   under happy-dom and yields a probe that appears to work while changing nothing.
+
+   The other four are still undiagnosed. Do not assume they share a cause — the
+   `PianoMenuActivity` failure was not a timeout, and the evidence so far says
+   each is its own bug.
 2. **Re-calibrate concurrency for the new size** — fewer workers, or
    `isolate`/`fileParallelism` tuning — and say in the comment what population
    the new number was chosen for, so the next doubling invalidates it loudly.
