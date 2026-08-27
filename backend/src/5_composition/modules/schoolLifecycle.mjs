@@ -208,6 +208,13 @@ export async function createSchoolLifecycle({
   rubiksCubeGrants = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
+  // A THUNK returning every `learner_action` the household's trigger sources
+  // declare (or `null` when they could not be read). A function, not a value,
+  // because this module is composed before the trigger API that owns the
+  // parsed sources — see `PlanProjection#resolveDeclaredEntryActions`. Omitted
+  // means the reachability question is not asked at all, which is the
+  // behaviour every composition had before 2026-08-26.
+  declaredEntryActions = undefined,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
@@ -219,7 +226,7 @@ export async function createSchoolLifecycle({
     return {
       wired: false, reason, handlesCode: () => false, handleScan: null,
       reporter: null, router: null, devicesRouter: null, selfServiceRouter: null,
-      useCases: {}, stores: {}, devices: {}, renderers: {},
+      useCases: {}, stores: {}, devices: {}, renderers: {}, launchers: new Map(),
       donowSchoolBridge: null, grownUps: null, teacherGate: null, passOverrides: null,
     };
   };
@@ -632,6 +639,7 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, logger,
+    declaredEntryActions,
   });
 
   // --- use cases -------------------------------------------------------------
@@ -1317,6 +1325,11 @@ export async function createSchoolLifecycle({
     // renders from a future admin surface) — exposed for the same reuse
     // reason as `stores.printDocuments`/`stores.allocationStore` above.
     renderPrintDocument,
+    // The program launchers, exposed so a caller can ask each one how it is
+    // ENTERED (`entryAction`) without re-deriving the registry. app.mjs uses
+    // this for the startup reachability report — the fast signal that pairs
+    // with the per-projection fault.
+    launchers,
     devices,
     // The renderers this console built, exposed for inspection. `receipt` is
     // the ESC/POS text renderer (fallback + transcript source now, not the
