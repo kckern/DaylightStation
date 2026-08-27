@@ -130,6 +130,111 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
   thin HTTP shell; registered in `app.mjs` (`v1Routers.economy`) and the
   `api.mjs` routeMap (`'/economy': 'economy'`).
 
+## Roadmap: reinforcement programs
+
+The ledger is a dependable accounting primitive, but it is not by itself a
+parenting program. Later economy work should support small, configurable,
+time-bounded **reinforcement programs**: help a particular learner establish
+one observable habit, then fade the external reward as the habit becomes more
+reliable. Coins and privileges are optional consequences, not the point of the
+program and not a substitute for specific human acknowledgement.
+
+### Program model
+
+A program config should express the whole loop, rather than only an `earn`
+action:
+
+```yaml
+id: piano-starting-routine
+learner: child-a
+goal:
+  observable: begins the assigned piano activity
+  current_step: sits down, opens it, and plays the first prompt
+reinforcement:
+  coins: 1
+  acknowledgement: "You got yourself started."
+  choices: [choose-next-game, choose-dessert]
+schedule:
+  type: fixed
+  max_per_day: 1
+support:
+  choices: [start-alone, start-together, choose-activity-order]
+  prompt: "Would you like to begin together or on your own?"
+fading:
+  after: { successes: 8, within_days: 10 }
+  next: { coins: 0, acknowledgement: true }
+privacy: learner-and-parents
+pause_when: [illness, travel, family-stress]
+review: weekly
+```
+
+The goal is intentionally concrete and begins at the learner's present
+ability. A program may use successive **shaping rungs** (for example: begin
+with support → begin independently → complete a short loop) instead of paying
+only for a distant ideal. Every program must also have an explicit fading or
+exit condition; economy should help launch habits, not make permanent payment
+the price of ordinary responsibility.
+
+### Product rules
+
+- Use coins for bounded, elective privileges. Do not make affection, family
+  belonging, essential needs, or broad "good behavior" purchasable.
+- Preserve learner choice where possible: order, mode, support level, or a
+  pre-agreed reward menu. Configuration is an invitation, not merely a rule.
+- Pair every awarded transaction with an opportunity for immediate, specific
+  acknowledgement by a parent or trusted adult. A notification may prompt this,
+  but must not demand a response or block settlement.
+- Support an observation-only baseline and a periodic review: if the target
+  behavior is not becoming more frequent or easier, change the support or
+  consequence rather than escalating it automatically.
+- Pausing a program must be ordinary and consequence-free during illness,
+  travel, family stress, or other approved context changes. A pause neither
+  creates debt nor lowers standing.
+- Privacy, visibility, caps, eligibility, reward menus, support, and exit
+  criteria are household- and learner-configurable. Shared displays should
+  communicate logistics and encouragement, never rankings or public failure.
+- Where developmentally appropriate, let the learner co-author a program's
+  goal, support choices, and reward menu; a parent still approves the policy.
+  This makes the program practice negotiation and commitment, not only
+  compliance.
+- Limit the number of active programs per learner. A household should not turn
+  every worthwhile behavior into a simultaneous behavior-management project.
+- Declare the accepted evidence source for an award (`parent-confirmed`,
+  `self-report`, `trusted-device-event`, or `assessment-result`) and its
+  policy. This makes trust explicit rather than silently treating every child
+  action as suspicious.
+- A repeated miss is a **help-not-fail** signal: notify the parent privately to
+  lower the current rung, offer a start-together option, change the support, or
+  pause the program. Never create automatic penalties, debt, or public failure
+  from missed targets.
+- Reviews may include a small optional learner reflection (for example, “too
+  easy / about right / too hard” or “what helped?”). Reflection is not a grade
+  or a condition of earning.
+- Each program should name its intended natural reward or social destination
+  (such as playing a piece for someone, choosing a duet, or fluently making a
+  chess move). Fade coins as that destination becomes reinforcing in its own
+  right.
+- Permit parent-issued, optionally private appreciation deposits with a note
+  outside any performance program. Generosity and recognition must not imply
+  that all care is transactional.
+- On exit, retain the program and its ledger evidence in a private “graduated
+  habits” archive rather than leaving it among active obligations.
+
+### Delivery sequence
+
+1. Build the configuration schema and read-only program status; do not add new
+   automatic awards yet.
+2. Pilot one learner-selected, low-stakes program with a parent-configured
+   baseline, one current shaping rung, and a small fixed reward.
+3. Add an idempotent award path whose ledger `ref` identifies the program,
+   learner, rung, and qualifying occurrence. Record a reviewable program event
+   alongside the financial transaction.
+4. Add review, pause, rung advancement, and fading/exit actions. Advancement
+   must be explicit or policy-derived and auditable, never an opaque score.
+5. Only after household experience validates the model, consider broader
+   reward menus, parent surfaces, and real-money cash-out. Cash-out remains a
+   separate, parent-approved concern.
+
 ## Not yet built (later phases)
 
 TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
