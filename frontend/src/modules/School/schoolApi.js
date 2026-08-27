@@ -158,6 +158,10 @@ export const schoolApi = {
     return req(`/report-card/frozen?${p}`);
   },
   lifecycleReview: () => req('/lifecycle/review'),
+  // The HOUSEHOLD-WIDE review queue is `lifecycleReview` above. This is the
+  // per-session read a stuck-session row needs before it can say why a
+  // `submitted` session is still open: usually a mark nobody has made yet.
+  sessionReview: (sessionId) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/review`),
   learnerSessions: (learnerId, { window = null } = {}) => req(
     `/lifecycle/learners/${encodeURIComponent(learnerId)}/sessions${window ? `?window=${encodeURIComponent(window)}` : ''}`,
   ),
