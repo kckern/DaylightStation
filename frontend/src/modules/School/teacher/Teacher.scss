@@ -1438,6 +1438,13 @@
   background: #fdf0ed; color: #7c2417; font-weight: 800; cursor: pointer; white-space: nowrap;
 }
 .teacher-stale__row button { white-space: nowrap; }
+.teacher-stale__settle { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; white-space: nowrap; }
+.teacher-stale__settle-link { font-weight: 700; text-decoration: none; color: #2b2620;
+  &:hover { text-decoration: underline; }
+}
+.teacher-stale__pending { color: #a15b16; font-weight: 700; text-decoration: none;
+  &:hover { text-decoration: underline; }
+}
 
 .teacher-exception-panel {
   ul { margin: 1rem 0 0; padding-left: 1.25rem; }
