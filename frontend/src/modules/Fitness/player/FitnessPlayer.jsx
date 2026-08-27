@@ -428,7 +428,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     seeking: { active: isSeeking },
     // Fitness contributes exactly one gate. Naming it keeps the telemetry id
     // ('governance') stable now that the arbiter composes N gates.
-    gates: [{ blocked: Boolean(effectiveGovernanceState?.videoLocked), reason: 'governance', seekCeiling: null }],
+    gates: [{ blocked: Boolean(effectiveGovernanceState?.videoLocked), id: 'governance', seekCeiling: null }],
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay

@@ -8,10 +8,34 @@
  * decision, so callers never have to know how many governors exist or which
  * one is live.
  *
+ * ## `blocked` vs `paused` — two different questions
+ *
+ * - **`blocked`** — a gate says no. A STANDING FACT about permission, true
+ *   whenever some gate refuses, regardless of what the player is doing.
+ * - **`paused`** — act on it NOW. The transport instruction for this tick.
+ *
+ * They diverge during a seek: mid-seek we suppress the pause (see the seeking
+ * rule below) but the gate has not released, so `paused:false` while
+ * `blocked:true`. Collapsing the two would make a blocking checkpoint
+ * indistinguishable from a released one for the duration of the seek — an
+ * enforcement layer reading only `paused` would call `play()` mid-seek and
+ * re-pause on seek end, reintroducing the exact thrash the seeking rule exists
+ * to prevent.
+ *
+ * So: enforcement acts on `paused`; anything asking "may this proceed at all"
+ * (seek clamps, overlays, agenda/reporting) reads `blocked`.
+ *
  * @typedef {object} GateVerdict
  * @property {boolean} blocked          playback may not proceed
- * @property {string}  reason           stable id for logs ('checkpoint', 'governance', …)
+ * @property {string}  id               stable id for logs ('checkpoint', 'governance', …)
  * @property {number|null} [seekCeiling] furthest seekable position (s); null/absent = unclamped
+ *
+ * @typedef {object} PauseDecision
+ * @property {boolean} paused            act now: the transport should be paused this tick
+ * @property {string}  reason            a `PAUSE_REASON` value naming what decided it
+ * @property {boolean} blocked           standing fact: some gate refuses, seek or not
+ * @property {string|null} gate          id of the first blocking gate; null when none blocks
+ * @property {number|null} seekCeiling   min of all non-null ceilings; null = unclamped
  */
 
 export const PAUSE_REASON = Object.freeze({
@@ -24,29 +48,23 @@ export const PAUSE_REASON = Object.freeze({
 
 const truthy = (value) => Boolean(value);
 
-/** Legacy alias: a `governance` slot becomes one gate named 'governance'. */
-const governanceAsGate = (governance = {}) => ({
-  blocked: truthy(
-    governance.blocked
-    ?? governance.paused
-    ?? governance.locked
-    ?? governance.videoLocked
-  ),
-  reason: 'governance',
-  seekCeiling: null
-});
-
+/**
+ * @param {object} [input]
+ * @param {{active?: boolean}} [input.seeking]
+ * @param {GateVerdict[]} [input.gates]
+ * @param {object} [input.resilience]
+ * @param {object} [input.user]
+ * @returns {PauseDecision}
+ */
 export const resolvePause = ({
   seeking = {},
   gates = [],
-  governance = null,
   resilience = {},
   user = {}
 } = {}) => {
   // `gates = []` only defaults on undefined; callers hand us governor state that
   // can legitimately be null before it has resolved, so normalize rather than throw.
-  const supplied = Array.isArray(gates) ? gates : [];
-  const allGates = governance ? [...supplied, governanceAsGate(governance)] : supplied;
+  const allGates = Array.isArray(gates) ? gates : [];
 
   // A ceiling is a standing rule, not a pause side-effect: it composes regardless
   // of whether any gate is blocked, so a caller can keep clamping seeks while
@@ -55,20 +73,30 @@ export const resolvePause = ({
     (min, g) => (Number.isFinite(g?.seekCeiling) ? (min == null ? g.seekCeiling : Math.min(min, g.seekCeiling)) : min),
     null
   );
-  const base = { gate: null, seekCeiling };
 
-  // Seeking is highest priority — suppress all pause while the video is mid-seek
-  // to prevent pause/resume thrashing from gate events during seeks (this was the
-  // fitness governance-challenge lesson; it applies to every gate).
+  // Computed ABOVE the seeking check on purpose: `blocked`, `gate` and
+  // `seekCeiling` are standing facts that must survive every early return.
+  // The FIRST blocking gate in array order names the decision, so the reported
+  // gate is stable for logs and overlays.
+  const blockedGate = allGates.find((g) => truthy(g?.blocked));
+  const base = {
+    blocked: Boolean(blockedGate),
+    // `||` not `??`: an empty-string id must fall back too, or it reads as a
+    // falsy gate name downstream while `blocked` is true.
+    gate: blockedGate ? (blockedGate.id || 'gate') : null,
+    seekCeiling
+  };
+
+  // Seeking is highest priority — suppress the pause ACTION while the video is
+  // mid-seek to prevent pause/resume thrashing from gate events during seeks
+  // (this was the fitness governance-challenge lesson; it applies to every gate).
+  // Note this suppresses `paused` only: `blocked` above still reports the truth.
   if (truthy(seeking.active)) {
     return { paused: false, reason: PAUSE_REASON.SEEKING, ...base };
   }
 
-  // Any blocked gate pauses; the FIRST blocked one in array order names the
-  // decision, so the reported reason is stable for logs and overlays.
-  const blockedGate = allGates.find((g) => truthy(g?.blocked));
   if (blockedGate) {
-    return { paused: true, reason: PAUSE_REASON.GATE, gate: blockedGate.reason ?? 'gate', seekCeiling };
+    return { paused: true, reason: PAUSE_REASON.GATE, ...base };
   }
 
   // Note: resilience.stalled is NOT included - stalled state triggers reload, not pause

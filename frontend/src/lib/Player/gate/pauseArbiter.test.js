@@ -1,39 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { resolvePause, PAUSE_REASON } from './pauseArbiter.js';
 
-describe('pauseArbiter — governance lock is a real lock', () => {
-  it('resolves to paused (reason GATE, gate governance) while locked, even if the user is trying to play', () => {
+describe('pauseArbiter — a blocked gate is a real block', () => {
+  it('pauses while a gate blocks, even if the user is trying to play', () => {
     const decision = resolvePause({
       seeking: { active: false },
-      governance: { locked: true },
+      gates: [{ blocked: true, id: 'governance', seekCeiling: null }],
       resilience: { stalled: false, waitingToPlay: false },
       user: { paused: false } // user wants to play
     });
     expect(decision.paused).toBe(true);
+    expect(decision.blocked).toBe(true);
     expect(decision.reason).toBe(PAUSE_REASON.GATE);
     expect(decision.gate).toBe('governance');
   });
 
-  it('also locks when expressed as videoLocked', () => {
+  it('does not pause once the gate releases and the user wants to play', () => {
     const decision = resolvePause({
       seeking: { active: false },
-      governance: { videoLocked: true },
-      resilience: {},
-      user: { paused: false }
-    });
-    expect(decision.paused).toBe(true);
-    expect(decision.reason).toBe(PAUSE_REASON.GATE);
-    expect(decision.gate).toBe('governance');
-  });
-
-  it('does not pause for governance once the lock clears and the user wants to play', () => {
-    const decision = resolvePause({
-      seeking: { active: false },
-      governance: { locked: false },
+      gates: [{ blocked: false, id: 'governance', seekCeiling: null }],
       resilience: { stalled: false, waitingToPlay: false },
       user: { paused: false }
     });
     expect(decision.reason).not.toBe(PAUSE_REASON.GATE);
+    expect(decision.blocked).toBe(false);
     expect(decision.gate).toBe(null);
   });
 });
@@ -41,35 +31,73 @@ describe('pauseArbiter — governance lock is a real lock', () => {
 describe('gates array (GateVerdict composition)', () => {
   it('any blocked gate pauses, first blocked in array order wins the reason', () => {
     const r = resolvePause({ gates: [
-      { blocked: false, reason: 'household', seekCeiling: null },
-      { blocked: true, reason: 'checkpoint', seekCeiling: 312 },
-      { blocked: true, reason: 'governance', seekCeiling: null },
+      { blocked: false, id: 'household', seekCeiling: null },
+      { blocked: true, id: 'checkpoint', seekCeiling: 312 },
+      { blocked: true, id: 'governance', seekCeiling: null },
     ] });
-    expect(r).toEqual({ paused: true, reason: PAUSE_REASON.GATE, gate: 'checkpoint', seekCeiling: 312 });
+    expect(r).toEqual({ paused: true, reason: PAUSE_REASON.GATE, blocked: true, gate: 'checkpoint', seekCeiling: 312 });
   });
   it('seeking suppresses gate pause (anti-thrash rule unchanged)', () => {
-    const r = resolvePause({ seeking: { active: true }, gates: [{ blocked: true, reason: 'checkpoint' }] });
+    const r = resolvePause({ seeking: { active: true }, gates: [{ blocked: true, id: 'checkpoint' }] });
     expect(r.paused).toBe(false);
     expect(r.reason).toBe(PAUSE_REASON.SEEKING);
   });
+
+  // The contract the enforcement layer depends on. `paused` is suppressed mid-seek,
+  // but `blocked`/`gate`/`seekCeiling` are standing facts and MUST survive — a
+  // "simplification" of the SEEKING branch to `{paused:false, reason:SEEKING}`
+  // passes every other test here while silently killing the seek clamp in production.
+  it('blocked, gate and seekCeiling all survive a seek', () => {
+    const r = resolvePause({
+      seeking: { active: true },
+      gates: [{ blocked: true, id: 'checkpoint', seekCeiling: 312 }]
+    });
+    expect(r).toEqual({
+      paused: false, reason: PAUSE_REASON.SEEKING, blocked: true, gate: 'checkpoint', seekCeiling: 312
+    });
+  });
+
   it('seekCeiling composes as min of non-null ceilings, even with no gate blocked', () => {
     const r = resolvePause({ gates: [
-      { blocked: false, reason: 'a', seekCeiling: 500 },
-      { blocked: false, reason: 'b', seekCeiling: 312 },
-      { blocked: false, reason: 'c', seekCeiling: null },
+      { blocked: false, id: 'a', seekCeiling: 500 },
+      { blocked: false, id: 'b', seekCeiling: 312 },
+      { blocked: false, id: 'c', seekCeiling: null },
     ] });
     expect(r.paused).toBe(false);
     expect(r.seekCeiling).toBe(312);
   });
-  it('legacy governance slot still maps to a gate (alias)', () => {
-    const r = resolvePause({ governance: { locked: true } });
-    expect(r).toMatchObject({ paused: true, reason: PAUSE_REASON.GATE, gate: 'governance' });
+
+  // 0 is a plausible ceiling ("no seeking at all"), and it is finite — it must not
+  // be dropped by a falsy check.
+  it('a seekCeiling of 0 composes rather than being dropped as falsy', () => {
+    const r = resolvePause({ gates: [
+      { blocked: false, id: 'a', seekCeiling: 0 },
+      { blocked: false, id: 'b', seekCeiling: 312 },
+    ] });
+    expect(r.seekCeiling).toBe(0);
   });
-  it('no gates, no ceiling: seekCeiling is null and result shape is stable', () => {
-    expect(resolvePause({})).toEqual({ paused: false, reason: PAUSE_REASON.PLAYING, gate: null, seekCeiling: null });
+
+  it('an empty-string id falls back to a usable gate name', () => {
+    const r = resolvePause({ gates: [{ blocked: true, id: '' }] });
+    expect(r.blocked).toBe(true);
+    expect(r.gate).toBe('gate');
+  });
+
+  it('a null entry inside gates does not throw', () => {
+    const r = resolvePause({ gates: [null, { blocked: true, id: 'checkpoint' }] });
+    expect(r.paused).toBe(true);
+    expect(r.gate).toBe('checkpoint');
+  });
+
+  it('no gates, no ceiling: result shape is stable', () => {
+    expect(resolvePause({})).toEqual({
+      paused: false, reason: PAUSE_REASON.PLAYING, blocked: false, gate: null, seekCeiling: null
+    });
   });
   it('a null gates slot is tolerated like an absent one (callers pass state that can be null)', () => {
-    expect(resolvePause({ gates: null })).toEqual({ paused: false, reason: PAUSE_REASON.PLAYING, gate: null, seekCeiling: null });
+    expect(resolvePause({ gates: null })).toEqual({
+      paused: false, reason: PAUSE_REASON.PLAYING, blocked: false, gate: null, seekCeiling: null
+    });
   });
 });
 
@@ -77,7 +105,7 @@ describe('pauseArbiter — precedence below the gate layer', () => {
   it('buffering pauses when no gate blocks', () => {
     const decision = resolvePause({ resilience: { waiting: true }, user: { paused: false } });
     expect(decision).toEqual({
-      paused: true, reason: PAUSE_REASON.BUFFERING, gate: null, seekCeiling: null
+      paused: true, reason: PAUSE_REASON.BUFFERING, blocked: false, gate: null, seekCeiling: null
     });
   });
 
@@ -90,13 +118,13 @@ describe('pauseArbiter — precedence below the gate layer', () => {
   it('user pause is honoured last, once nothing above it applies', () => {
     const decision = resolvePause({ user: { paused: true } });
     expect(decision).toEqual({
-      paused: true, reason: PAUSE_REASON.USER, gate: null, seekCeiling: null
+      paused: true, reason: PAUSE_REASON.USER, blocked: false, gate: null, seekCeiling: null
     });
   });
 
   it('a blocked gate outranks a user pause (the gate reason is what surfaces)', () => {
     const decision = resolvePause({
-      gates: [{ blocked: true, reason: 'checkpoint' }],
+      gates: [{ blocked: true, id: 'checkpoint' }],
       user: { paused: true }
     });
     expect(decision.reason).toBe(PAUSE_REASON.GATE);
