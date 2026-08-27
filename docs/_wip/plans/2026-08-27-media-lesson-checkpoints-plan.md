@@ -20,6 +20,14 @@
 
 ### Task 1: Promote `pauseArbiter`, make it N-ary
 
+> ✅ **DONE** — `b56d06038`, `0a4d16e61`, `9268020a7`. Spec-reviewed ✅ and
+> quality-reviewed. **The code sketch below is the ORIGINAL, PRE-AMENDMENT spec, kept
+> as a historical record — it is NOT the shipped contract and must not be copied.** It
+> still shows `governanceAsGate` (deleted), `reason:` as the verdict's id field
+> (renamed to `id`), and a `base` without `blocked` (the blocked/paused split came
+> later). For the real contract, read `frontend/src/lib/Player/gate/pauseArbiter.js`
+> and the "Standing rules" section at the end of this document.
+
 **Files:**
 - Move: `frontend/src/modules/Player/utils/pauseArbiter.js` → `frontend/src/lib/Player/gate/pauseArbiter.js` (use `git mv`)
 - Move: `frontend/src/modules/Player/utils/pauseArbiter.test.js` → `frontend/src/lib/Player/gate/pauseArbiter.test.js`
@@ -186,7 +194,11 @@ import { createMediaGate } from './mediaGate.js';
 - Re-resolve the element via `getMediaEl()` on every `apply` (late mount / element swap, same reason `useMediaClock` does).
 - All logging uses the structured framework (`app: 'player', component: 'media-gate'`). **No raw console.**
 
-**Step 4: Run — pass. Step 5: Commit** `feat(player): mediaGate enforcement core (pause + seek clamp)`
+**Step 4: Run — pass.**
+
+**Step 4b: Harden the arbiter's remaining slots.** Task 1 added `Array.isArray(gates) ? gates : []` but left `seeking`, `resilience`, and `user` undefaulted against `null` — they only default on `undefined`, so `resolvePause({ seeking: null })` throws at the `seeking.active` read. THIS task is the one that starts passing all three from a hook (`useMediaGate` forwards `player: { seeking, resilience, user }`, any of which can be null before its source resolves), so harden them here rather than discovering it in a kiosk: normalize each to `{}` the same way, and add one test per slot asserting `null` yields the stable PLAYING shape.
+
+**Step 5: Commit** `feat(player): mediaGate enforcement core (pause + seek clamp)`
 
 ### Task 3: `useMediaGate` hook + `GateVerdictContext`
 
@@ -393,7 +405,21 @@ Add: `lessonSession(sessionId)`, `lessonAnswer(sessionId, body)`, `lessonPositio
 - Create: `frontend/src/modules/School/lesson/useCheckpointGate.js`
 - Test: `frontend/src/modules/School/lesson/useCheckpointGate.test.jsx`
 
-Pure derivation, mirroring `mediaCheckpoints.mjs` client-side (duplicated by hand like the SUBJECT_IDS twin — note it in both headers): input `{ position, checkpoints, clearedIds }` → `{ verdict: GateVerdict, dueCheckpoint }`. `blocked` when a due checkpoint is uncleared; `reason: 'checkpoint'`; `seekCeiling` = first uncleared `at`. Include the approach signal: `{ approaching: dueWithin(position, 5) }` for the chrome pulse. TDD; **Commit** `feat(school): useCheckpointGate authority hook`.
+Pure derivation, mirroring `mediaCheckpoints.mjs` client-side (duplicated by hand like the SUBJECT_IDS twin — note it in both headers): input `{ position, checkpoints, clearedIds }` → `{ verdict: GateVerdict, dueCheckpoint }`. `blocked` when a due checkpoint is uncleared; **`id: GATE_ID.CHECKPOINT`** (see below); `seekCeiling` = first uncleared `at`.
+
+> ⚠ **The verdict field is `id`, NOT `reason`.** An earlier draft of this task said
+> `reason: 'checkpoint'`; under the shipped arbiter that field is ignored and `gate`
+> silently falls back to the string `'gate'` — a gate that blocks correctly but cannot
+> be identified in logs or by `mediaGate`'s telemetry. Caught in Task 1's spec
+> re-review before it was written.
+>
+> **Also add `GATE_ID` while you are here.** `'governance'` is currently a bare string
+> literal on both the producer (`FitnessPlayer.jsx:428`) and the consumer (`:439`), and
+> this task adds a second id. Create `frontend/src/lib/Player/gate/gateIds.js` exporting
+> `export const GATE_ID = Object.freeze({ GOVERNANCE: 'governance', CHECKPOINT: 'checkpoint' })`,
+> use it in both FitnessPlayer sites and here, and assert in a test that the two sides
+> agree. Two literals that must match, in files that never import each other, is a
+> drift waiting to happen. Include the approach signal: `{ approaching: dueWithin(position, 5) }` for the chrome pulse. TDD; **Commit** `feat(school): useCheckpointGate authority hook`.
 
 ### Task 13: `useMediaLessonSession` — the state machine
 
@@ -490,6 +516,20 @@ Use superpowers:finishing-a-development-branch — verify full suite, then merge
 - **A failing gate must be attributed, not waved past.** Compare against
   `docs/_wip/plans/2026-08-27-baseline.md` (task R2). Anything not in that baseline
   is ours.
+- **ONE RED GATE RUN IS NOT EVIDENCE.** Measured during R2: two back-to-back
+  `npm run test:unit:vitest` runs on identical code gave exit 1 then exit 0 (7 files
+  failing, then 5). The gate is non-deterministic under a starvation flake that moves
+  between files. Before calling any gate failure a regression: run it twice, then run
+  the specific file SOLO. A file that passes solo is a flake, not your bug. The
+  baseline doc lists the 6 known roamers.
+- **Tests must run with cwd = worktree root, and `.env` must stay symlinked.** Two
+  suites resolve the data path by parsing `path.join(process.cwd(), '.env')` — not by
+  env var alone. Running them from elsewhere reproduces the "no data path" failure
+  that looks like a code bug and is not. `ls -l .env` if you see that error.
+- **Do not read `npx vitest run` (bare, whole repo) as a result.** It globs past every
+  gate into `_extensions/`, `tests/live/`, `tests/integrated/` and a `backend/shared/`
+  symlink, and reports ~526 `node:test` files as failures they are not. Scope your run,
+  or use the gate.
 - **Both reviews return ✅ before the next task is dispatched** — spec compliance
   first, then quality. A fix in response to EITHER review requires that review to run
   again. Task 1 shipped with this loop shortcut (the controller substituted a
