@@ -149,13 +149,28 @@ Then `grep -rn "modules/Player/utils/pauseArbiter" frontend/src` — must return
 
 **Read first:** `frontend/src/lib/Player/useMediaClock.js:1-120` — copy its style: framework-free factory, injected `getMediaEl`, lazy module logger (CLAUDE.md "Module-Level Loggers"), never throws outward.
 
+> **AMENDED after Task 1's code review.** `resolvePause` now returns
+> `{ blocked, paused, reason, gate, seekCeiling }`, where **`blocked` is the standing
+> fact ("a gate says no") and `paused` is the instruction ("act on it now")**. They
+> differ during a seek: pause is suppressed to prevent thrash, but a checkpoint may
+> still be blocking. **Resume MUST be conditioned on `!blocked`, never on
+> `paused === false` alone** — the original wording of this task said
+> `apply({paused:false}) → el.play()`, which would have called `play()` mid-seek on a
+> gated lesson and then re-paused on seek end: the very thrash the seeking rule exists
+> to prevent, reintroduced from the other side.
+
 **Step 1: Failing tests** against a fake element (`{ paused, currentTime, play: vi.fn(), pause: vi.fn(), addEventListener, removeEventListener, dispatchEvent }` — a tiny EventTarget-ish stub is fine):
 
 ```js
 import { createMediaGate } from './mediaGate.js';
-// - apply({paused:true, gate:'checkpoint'}) on a playing element → el.pause() called once
-// - apply({paused:false}) on a gate-paused element → el.play() called; but NEVER
-//   auto-plays an element the gate did not itself pause (user-paused stays paused)
+// - apply({blocked:true, paused:true, gate:'checkpoint'}) on a playing element
+//   → el.pause() called once
+// - apply({blocked:false, paused:false}) on an element the gate itself paused
+//   → el.play() called; but NEVER auto-plays an element the gate did not pause
+//   (user-paused stays paused)
+// - MID-SEEK, STILL BLOCKED: apply({blocked:true, paused:false, reason:'SEEKING',
+//   gate:'checkpoint'}) → el.play() is NOT called. This is the regression the
+//   amendment above exists to prevent; assert it explicitly.
 // - a 'seeking' event with currentTime > effective ceiling → currentTime snapped
 //   back to ceiling; a seek below ceiling untouched
 // - ceiling null → no clamping listener behavior
@@ -454,6 +469,47 @@ Use superpowers:finishing-a-development-branch — verify full suite, then merge
 ---
 
 ## Standing rules for every task
+
+- **Any move/rename verifies REPO-WIDE, never scoped to one tree.** Task 1's spec
+  said `grep -rn <old path> frontend/src` and a consumer in `tests/isolated/` was
+  therefore invisible: it went to `Cannot find module` and **0 tests collected**,
+  which is the quietest way to lose 14 assertions. Grep the whole repo (excluding
+  `node_modules`/`.git`), and check `tests/` explicitly.
+- **The gate contract is `{ blocked, paused, reason, gate, seekCeiling }`.** `blocked`
+  = a gate says no (standing); `paused` = apply it to the element now. They diverge
+  during a seek. Governors emit `GateVerdict = { blocked, id, seekCeiling }` — the
+  field is `id`, NOT `reason`.
+- **The controller does not edit files in this worktree while an implementer subagent
+  is live.** Task 1 collided: the implementer's `git add -A` swept the controller's
+  in-progress plan edits into its commit. It caught and amended, but the amend window
+  briefly reverted the file on disk. Batch controller edits BETWEEN tasks.
+- **Subagents stage by explicit path.** Never `git add -A`, never `git commit -a` —
+  this checkout has concurrent writers.
+- **Reports must give REAL numbers**: the command run and its actual output counts.
+  "Tests pass" is not a result.
+- **A failing gate must be attributed, not waved past.** Compare against
+  `docs/_wip/plans/2026-08-27-baseline.md` (task R2). Anything not in that baseline
+  is ours.
+- **Both reviews return ✅ before the next task is dispatched** — spec compliance
+  first, then quality. A fix in response to EITHER review requires that review to run
+  again. Task 1 shipped with this loop shortcut (the controller substituted a
+  two-command self-check); task R4 repays it. Do not repeat the shortcut.
+
+### Per-task verification checklist
+
+Before reporting a task complete, the implementer must have run and QUOTED:
+
+1. The task's own new tests (count).
+2. The suites the changed files belong to (count).
+3. A repo-wide grep for anything moved or renamed — **by PATH and by SYMBOL NAME**,
+   `--include` on code extensions, excluding `node_modules`/`.git`. Both, always:
+   Task 1's regression hid from a path-grep scoped to one tree, and a stale string
+   literal (`'PAUSED_GOVERNANCE'`) was found only because a reviewer happened to be
+   reading that file.
+4. A check that no test file fails to LOAD — `grep "Cannot find module\|0 tests"` over
+   the run output. A load failure reports as zero tests, which is invisible in a
+   pass/fail count and is exactly how 14 assertions went silently dark in Task 1.
+5. `npm run test:unit:vitest`, with every failure attributed against the baseline doc.
 
 - Structured logging framework only — never raw `console.*` (CLAUDE.md).
 - Backend imports use the `#domains/` / `#apps/` / `#api/` aliases as seen in neighbors.
