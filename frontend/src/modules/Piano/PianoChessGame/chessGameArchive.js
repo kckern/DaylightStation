@@ -72,7 +72,7 @@ function serializeMove(entry, ply, undone, thinkMs = null) {
 export function buildGameArchive({
   game, gameId, userId, rungId, opponent = null, addressing = 'chords',
   hints = 0, bestMoves = 0, takebacks = 0, startedAt, endedAt, endedBy = 'left',
-  timing = null,
+  timing = null, commentary = null,
 }) {
   const history = Array.isArray(game?.history) ? game.history : [];
   const rewound = Array.isArray(game?.undoneHistory) ? game.undoneHistory : [];
@@ -110,6 +110,9 @@ export function buildGameArchive({
     player_color: playerColor,
     rung: rungId || null,
     opponent,
+    // One final, player-visible line is enough for cross-game rivalry memory.
+    // Keep no full dialogue transcript in the archive.
+    ...(commentary?.quip ? { commentary: { final_line: String(commentary.quip).slice(0, 96), source: commentary.source || null } } : {}),
 
     // How the squares were addressed. Without this the chords below cannot be
     // interpreted — 'C/B' is two staff notes, 'Cm' is a chord.

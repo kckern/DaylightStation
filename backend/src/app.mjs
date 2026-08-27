@@ -280,6 +280,7 @@ import { chessArchiveDayDir } from '#shared/gaming/rulesets/chess/archivePaths.m
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
 import { createChessOpponentCommentaryService } from './3_applications/chess/ChessOpponentCommentaryService.mjs';
+import { createChessRivalryMemoryService } from './3_applications/chess/ChessRivalryMemoryService.mjs';
 import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
 import { GroupPlayCatalog } from './3_applications/gaming/usecases/GroupPlayCatalog.mjs';
@@ -1908,9 +1909,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     writeProgress: (userId, progress) => dataService.user.write('apps/chess/ladder', progress, userId),
     logger: rootLogger.child({ module: 'chess-ladder' }),
   });
+  const chessRivalryMemory = createChessRivalryMemoryService({
+    readMemory: (userId) => dataService.user.read('apps/chess/rivalries', userId),
+    writeMemory: (userId, memory) => dataService.user.write('apps/chess/rivalries', memory, userId),
+    logger: rootLogger.child({ module: 'chess-rivalry' }),
+  });
   const chessCommentaryService = createChessOpponentCommentaryService({
     aiGateway: sharedAiGateway,
     ladderService: chessLadderService,
+    rivalryMemory: chessRivalryMemory,
     readConfig: (userId) => chessConfigService.read(userId),
     logger: rootLogger.child({ module: 'chess-commentary' }),
   });
@@ -1943,6 +1950,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     ladderService: chessLadderService,
     commentaryService: chessCommentaryService,
+    rivalryMemory: chessRivalryMemory,
     logger: rootLogger.child({ module: 'chess-api' }),
   });
 

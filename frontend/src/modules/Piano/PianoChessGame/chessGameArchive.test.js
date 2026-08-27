@@ -33,6 +33,14 @@ describe('the household game archive', () => {
     expect(archive.move_count).toBe(2);
   });
 
+  it('keeps only the final player-visible dialogue line for rivalry memory', () => {
+    const game = played([['e2', 'e4']]);
+    const archive = buildGameArchive(inputs(game, {
+      commentary: { quip: 'A small step with plans.', source: 'fallback' },
+    }));
+    expect(archive.commentary).toEqual({ final_line: 'A small step with plans.', source: 'fallback' });
+  });
+
   it('is replayable: the start position plus every move in both notations', () => {
     const game = played([['e2', 'e4'], ['e7', 'e5'], ['g1', 'f3']]);
     const archive = buildGameArchive(inputs(game));

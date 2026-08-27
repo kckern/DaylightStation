@@ -93,9 +93,9 @@ export async function requestBestMove({ fen, userId = null }) {
  * separate, shorter request: speech may arrive late or not at all, but chess
  * input and opponent turns never wait for it.
  */
-export async function requestOpponentQuip({ gameId, ply, level, playerColor, game, userId = null }) {
+export async function requestOpponentQuip({ gameId, ply, level, playerColor, game, dialogue = [], userId = null }) {
   const request = DaylightAPI(withUser('api/v1/piano-games/chess/quip', userId), {
-    gameId, ply, level, playerColor, game,
+    gameId, ply, level, playerColor, game, dialogue,
   }, 'POST').then((body) => (body?.quip ? body : null)).catch((error) => {
     logger().warn('chess.quip.request-error', { error: error.message, gameId, ply });
     return null;

@@ -496,7 +496,7 @@ mid-write would lose a rung a child had earned — the one piece of state here t
 mind losing. A guest climbs nothing and always faces the bottom of the roster, and the screen says
 so rather than showing a progress bar that resets on reload.
 
-The roster is data. Each character is a name, a face, and a colour. The face defaults to an
+The roster is data. Each character is a name, a face, a colour, and a dialogue profile. The face defaults to an
 identicon generated from the name — the same generator the card game uses, so a name wears one face
 across this house's games — and the colour retints the board's dark squares, so arriving at a new
 character looks like arriving somewhere new. Both are derived from the level unless the roster says
@@ -505,6 +505,14 @@ otherwise, which means twenty-one characters exist without twenty-one entries be
 Replacing the roster in YAML re-themes the whole ladder without touching the promotion arithmetic,
 which is how a franchise theme roster gets in: weakest creature at 0, legendaries at the top, artwork and
 board colour per entry.
+
+Each authored `dialogue` profile has three intentionally separate responsibilities: `persona` is
+the character voice, `chess_voice` bounds what that strength may plausibly notice, and `lore`
+contains only approved in-universe references. The backend supplies these alongside private move
+facts and the already displayed dialogue; the player never sees coordinates, algebraic notation,
+FEN, or technical engine analysis. If model output crosses that boundary, repeats shown wording,
+or mentions a vocabulary term not approved for the current character, it is discarded for a
+deterministic fallback.
 
 The character is present while you play. The chord rail shows their face, their name, and what they
 are doing — thinking, what they last played, what they just took off you, and how the game ended.

@@ -114,7 +114,7 @@ It renders the board and rails, owns immediate interaction state, and wires thes
 
 - `useChessSessionIdentity` latches the player for one game and relatches both id and display name on restart.
 - `useChessPersistenceLifecycle` owns completion records, page-exit/unmount archives, and restart bookkeeping. It consumes an injected persistence gateway; it does not import HTTP itself.
-- `useChessOpponentTurn` owns request timing, stale-game cancellation, local fallback, and committing the served move. The HTTP request function is injected at the composition root.
+- `useChessOpponentTurn` owns request timing, stale-game cancellation, local fallback, planned dialogue, and committing the served move. The HTTP request functions are injected at the composition root.
 - `useChessAddressingProgress` records the separate skill of turning staff/chord input into a valid square address.
 - `chessRailViewModel` and `opponentViewModel` are pure derivation modules for rail copy, opponent state, onboarding, turn labels, and safe board theming.
 
@@ -123,15 +123,30 @@ pure chess rules and injected API clients. These React hooks are presentation co
 DDD application layer. New persistence, opponent, identity, or rail-copy behavior belongs in the
 corresponding unit rather than growing `PianoChessGame.jsx` again.
 
-Opponent speech follows a separate fail-open path: `OpponentPortrait` → `chessApi` →
-`ChessOpponentCommentaryService` (application layer) → `IAIGateway` (port) → configured AI adapter.
-The application service replays the submitted game and resolves the ladder opponent on the server;
-the browser cannot invent a persona or feed unverified move facts to the prompt. Commentary is
-cosmetic: a short deadline and deterministic fallback ensure it never gates move input, opponent
-play, persistence, or ranking. Optional chess config lives under `personality` (`enabled`, `model`,
-`timeout_ms`, and `max_chars`); safe defaults require no user-layer migration. The model is currently
-allowlisted to the cost-capped Luna model, and timeout/length overrides are clamped server-side so a
-crafted user preference cannot turn decorative copy into an expensive request.
+Opponent speech is planned as part of an opponent turn: `useChessOpponentTurn` selects a legal
+reply into a temporary state, starts `chessApi` commentary during the visible think time, then
+commits the board move and exactly one line together. The line is the model result only when it is
+ready by that existing think-time floor; otherwise the shared deterministic fallback is shown and
+late model results are discarded. A player move that ends the game gets an immediate deterministic
+farewell. This preserves pacing and guarantees that commentary never gates chess authority,
+persistence, ranking, or input.
+
+The server service replays the submitted full current game, resolves the ladder opponent, receives
+only the lines the player has already seen in that game, and calls `IAIGateway`. It also loads a
+compact player/opponent rivalry ledger: completed-game results, notable factual moves, and the final
+visible line—not raw transcripts. The prompt receives lifetime W/L/D, the seven most recent game
+summaries, and the current promotion-window status. `cli/chess-rivalry-backfill.cli.mjs` rebuilds
+that ledger idempotently from durable completed archives. Guests have no durable rivalry memory.
+Opponent character content is household data, not application code: the selected `ladder.rosters`
+entry carries a `dialogue` profile with `persona`, `chess_voice`, and an optional, data-authored
+`lore` allowlist. A child selects only `ladder.roster_pack`; the backend resolves the complete
+profile. The generic and Pokémon packs share this schema. Chess move notation remains private
+prompt context and the shared gaming dialogue policy rejects it, repeated visible phrasing, and
+unapproved lore references before anything reaches the player.
+Optional chess config lives under `personality` (`enabled`, `model`, `timeout_ms`, and `max_chars`);
+safe defaults require no user-layer migration. The model is currently allowlisted to the cost-capped
+Luna model, and timeout/length overrides are clamped server-side so a crafted preference cannot turn
+decorative copy into an expensive request.
 
 ## Opponent pacing
 
