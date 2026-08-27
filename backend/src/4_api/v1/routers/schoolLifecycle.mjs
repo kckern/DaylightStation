@@ -396,12 +396,20 @@ export function createSchoolLifecycleRouter({
     // person's mark overrides the engine, so it has to be a person who may.
     // `pin` is forwarded unconditionally — the use case only ever consults it
     // when a `teacherGate` is wired AND verdicts are on the call.
+    //
+    // `settle` says this call is the teacher console finishing stuck work by
+    // hand rather than a scan or the finisher closing the loop. It carries no
+    // verdicts, so it would meet no gate at all; the use case charges it a
+    // `sessions.settle` step-up instead. The flag is the only thing added to
+    // this route's contract — nothing about how the work is marked changes.
     router.post('/sessions/:sessionId/grade', guarded(async (req, res) => {
       const {
         entries = {}, verdicts = {}, gradedBy = null, pin = null,
+        settle = false, settledBy = null,
       } = req.body || {};
       reply(res, await gradeSubmission.execute({
         sessionId: req.params.sessionId, entries, verdicts, gradedBy, pin,
+        settle: settle === true, settledBy,
       }));
     }));
   }

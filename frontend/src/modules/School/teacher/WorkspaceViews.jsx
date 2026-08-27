@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 import { usePanelFetch } from './usePanelFetch.js';
@@ -495,6 +495,127 @@ function GradeAdjustmentRetraction({ sessionId, adjustment, revision, onApplied 
   );
 }
 
+/**
+ * The states a session can be settled by hand FROM: it came back, and marking
+ * or closing never finished. Everything earlier belongs to the stuck-session
+ * panel's Abandon, which is exactly the complement `MarkSessionAbandoned`
+ * refuses — so the two surfaces never both offer a move, and never both
+ * withhold one.
+ */
+const SETTLEABLE_STATES = new Set(['submitted', 'graded', 'outcome_recorded']);
+
+/**
+ * The use-case outcomes each half of a settle may report and still be finished.
+ * Read as an ALLOW-list, not a deny-list: `awaiting_review` comes back 200 and
+ * `ok`, but it means questions are still waiting on a person — closing after
+ * one would report "that work has not been marked yet" and blame the wrong
+ * half. Anything not named here stops the sequence.
+ */
+const MARKED_OUTCOMES = new Set(['graded', 'duplicate']);
+const SETTLED_OUTCOMES = new Set(['settled', 'already_settled']);
+
+/** What a use case said about itself, preferred over any generic HTTP text. */
+const saidBy = (response, fallback) => {
+  if (typeof response?.data?.message === 'string' && response.data.message) return response.data.message;
+  if (typeof response?.data?.error === 'string' && response.data.error) return response.data.error;
+  return fallback;
+};
+
+/**
+ * Settle this by hand — the way out for a session that came back but never
+ * finished marking: a scan that produced no attempts, a paper lesson somebody
+ * marked off-screen, every question voided as unmarkable. `abandoned` is not
+ * legal from any of those states, so the stuck-session panel links here rather
+ * than offering a verb the server would refuse.
+ *
+ * THREE WRITES, ONE ACT, in the order a person would want them:
+ *
+ *  1. The reason, as a teacher note. It is the only half the CHILD ever reads
+ *     — `RecordTeacherNote` puts it on the agenda's "Notes for you" and the
+ *     student panel — so it goes first: nothing about their work moves before
+ *     the why is on record.
+ *  2. `graded`, flagged `settle` so it costs a session-scoped step-up. A
+ *     hand-settle carries no verdicts and would otherwise meet no gate at all.
+ *  3. `outcome_recorded`. Grading and stopping there would have moved the
+ *     problem rather than solved it — the session would sit at `graded`, still
+ *     open, still on the stuck list.
+ *
+ * `duplicate` and `already_settled` are SUCCESS here: they say the half in
+ * question was already on record, which is the state this form is trying to
+ * reach. Anything else stops the sequence and is reported as what it is. A
+ * settle that got partway is never announced as a settle.
+ */
+function SettleByHand({ sessionId, learnerId, learnerName, currentPercent, onSettled }) {
+  const [reason, setReason] = useState('');
+  const [preview, setPreview] = useState(false);
+  // Which reason is already delivered. `useTeacherWrite` replays a 403'd call
+  // once after re-authorizing, and a replay must not send the note twice — the
+  // child would read the same sentence from two different days.
+  const deliveredRef = useRef(null);
+  const { run, busy, errors } = useTeacherWrite({ panel: 'session-settle' });
+  const key = `settle:${sessionId}`;
+  const alreadyMarked = typeof currentPercent === 'number';
+  const valid = Boolean(reason.trim());
+
+  const settle = () => run(key, async ({ actorId, pin, stepUpToken }) => {
+    const note = reason.trim();
+    if (deliveredRef.current !== note) {
+      const delivered = await schoolApi.postTeacherNote({ learnerId, note, from: actorId, pin });
+      if (!delivered.ok) return delivered;
+      deliveredRef.current = note;
+    }
+    const graded = await schoolApi.gradeSession(sessionId, {
+      gradedBy: actorId, pin, settle: true, settledBy: actorId,
+    }, stepUpToken);
+    if (!MARKED_OUTCOMES.has(graded.data?.status)) {
+      // A 403 is the one refusal `useTeacherWrite` can act on (it re-prompts
+      // and replays), so it travels unrewritten. Everything else says what
+      // actually happened, including the half that did land.
+      if (graded.status === 403) return graded;
+      return { ok: false, status: graded.status, data: { error:
+        `${learnerName} has your note, but the marking didn’t go through: ${saidBy(graded, 'that work could not be marked')}` } };
+    }
+    const closed = await schoolApi.closeSession(sessionId, { pin });
+    if (!SETTLED_OUTCOMES.has(closed.data?.status)) {
+      return { ok: false, status: closed.status, data: { error:
+        `It is marked, but closing it out didn’t go through: ${saidBy(closed, 'the close was refused')}. Settle it again to finish.` } };
+    }
+    return { ok: true, status: closed.status, data: closed.data };
+  }, {
+    stepUp: { action: 'sessions.settle', resource: sessionId },
+    onSuccess: () => { setPreview(false); setReason(''); deliveredRef.current = null; onSettled?.(); },
+  });
+
+  return (
+    <section className="teacher-panel teacher-session-settle">
+      <h3 className="teacher-panel__title">Settle this by hand</h3>
+      <p>This lesson came back but never finished marking. Record what it earned and close it out.</p>
+      <label>Reason <input aria-label="Settlement reason" maxLength="240"
+        placeholder={`What happened? ${learnerName} will see this.`}
+        value={reason} onChange={(event) => { setReason(event.target.value); setPreview(false); }} /></label>
+      {preview && (
+        <div className="teacher-action-preview">
+          <strong>Settling does three things</strong>
+          <ol>
+            <li>{learnerName} gets your note: “{reason.trim()}”</li>
+            <li>{alreadyMarked
+              ? `The ${Math.round(currentPercent)}% already on record stands.`
+              : 'The mark is finished from the answers already on record.'}</li>
+            <li>The result is recorded and a receipt goes to the printer.</li>
+          </ol>
+        </div>
+      )}
+      <div className="teacher-action-row">
+        {!preview && <button type="button" disabled={!valid || busy === key}
+          onClick={() => setPreview(true)}>Preview settlement</button>}
+        {preview && <button type="button" disabled={!valid || busy === key} onClick={settle}>Settle it</button>}
+        {preview && <button type="button" onClick={() => setPreview(false)}>Cancel</button>}
+      </div>
+      {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
+    </section>
+  );
+}
+
 function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
   const [preview, setPreview] = useState(null);
   const [idempotencyKey, setIdempotencyKey] = useState(null);
@@ -548,6 +669,11 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   const effectiveGrade = session?.scores?.effective?.percent ?? sessionState?.effectiveGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const gradeAdjustments = sessionState?.gradeAdjustments ?? [];
   const canOfferRetake = sessionState?.outcome?.result === 'needs_remediation' && !sessionState?.remediation;
+  // No learner, no settle: the reason is delivered TO a child by name, and a
+  // form that cannot name one would write a note nobody receives.
+  const settleLearnerId = result.ownerId ?? learnerId ?? null;
+  const canSettleByHand = Boolean(settleLearnerId)
+    && SETTLEABLE_STATES.has(sessionState?.state) && sessionState?.terminal !== true;
   const { run, busy, errors } = useTeacherWrite({ panel: 'session-retake' });
   const offerRetake = () => run(sessionId, ({ actorId, pin }) => schoolApi.offerRetake(sessionId, {
     openedBy: actorId, pin,
@@ -598,6 +724,17 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
             </div>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
+          {/* Below the repair a teacher came for, never above it: settling
+              stuck bookkeeping is the exception path. Shown only where it
+              means anything — a session that came back and has not finished.
+              Earlier states are abandoned, not settled, and the stuck-session
+              panel routes those elsewhere; a terminal one is already done.
+              Nothing at all rather than a disabled button (UX audit IA4). */}
+          {canSettleByHand && (
+            <SettleByHand sessionId={sessionId} learnerId={settleLearnerId}
+              learnerName={ownerName} currentPercent={effectiveGrade}
+              onSettled={() => setAttempt((n) => n + 1)} />
+          )}
           {(session?.assignment || session?.assessment?.items?.length > 0) && (
             <section className="teacher-panel">
               <h3 className="teacher-panel__title">Questions and answers</h3>

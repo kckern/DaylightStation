@@ -110,6 +110,12 @@ export class GradeSubmission {
    *   the review items; required (and checked) whenever `verdicts` is non-empty
    * @param {string|null} [args.pin] - the console PIN, consulted only when a
    *   `teacherGate` is wired AND a human verdict is present
+   * @param {boolean} [args.settle] - the teacher console's hand-settle lane: a
+   *   grown-up is finishing a session automatic grading never finished. It
+   *   costs a step-up (see below); it changes nothing about how the work is
+   *   marked
+   * @param {string|null} [args.settledBy] - the roster id of that grown-up;
+   *   checked whenever `settle` is true
    * @returns {Promise<{ status: 'graded'|'awaiting_review'|'duplicate'|'unavailable',
    *                     sessionId: string, percent: number|null, correct: number,
    *                     expected: number, attemptIds: string[], outstanding: string[],
@@ -120,7 +126,29 @@ export class GradeSubmission {
    */
   async execute({
     sessionId, entries = {}, verdicts = {}, gradedBy = null, pin = null,
+    settle = false, settledBy = null,
   } = {}) {
+    // THE HAND-SETTLE LANE (teacher console, task 1.3). A session that came
+    // back but never finished marking — a scan that produced no attempts, a
+    // paper lesson someone marked off-screen, every question voided as
+    // unmarkable — sits at `submitted` forever, and `abandoned` is not legal
+    // from there. A grown-up finishes it from the session inspector.
+    //
+    // Such a call carries NO verdicts, so the block below never fires for it
+    // and it would otherwise cost nothing. `sessions.settle` is a step-up
+    // action, so the gate asks for a fresh, session-scoped confirmation on
+    // top of the capability — the same price correcting one machine verdict
+    // already pays, for a mark no machine produced at all.
+    //
+    // This is the console's price, not a new lock on the route: an unflagged
+    // call still finishes a session exactly as it always has, because the
+    // scan bridge and the self-closing finisher both come through here.
+    if (settle === true && this.#teacherGate) {
+      this.#teacherGate.assert({
+        userId: settledBy, pin, action: 'sessions.settle', context: { sessionId },
+      });
+    }
+
     // Before anything is read, let alone written: a human verdict is a claim of
     // authority over a child's work, and this is the only place it can be
     // checked once for every caller — HTTP, a scan, or a reconciliation job.

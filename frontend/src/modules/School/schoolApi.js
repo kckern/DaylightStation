@@ -169,6 +169,21 @@ export const schoolApi = {
   allAssignments: () => req('/lifecycle/assignments'),
   staleSessions: () => req('/lifecycle/sessions/stale'),
   abandonSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/abandon`, body),
+  // Settling stuck work by hand (session inspector). Two calls because they
+  // are two events — `submitted → graded → outcome_recorded` is the whole
+  // legal path and the transition table offers no shortcut, however the
+  // console presents it.
+  //
+  // The step-up grant rides the GRADE only. It is the half that writes a mark
+  // no machine produced, and a grant is one-use: presenting the same token
+  // twice spends it on the first call and fails the second. Closing a graded
+  // session is open by contract (a scan does it unattended), so it needs
+  // nothing beyond the capability cookie.
+  gradeSession: (sessionId, body, grantToken = null) => req(
+    `/lifecycle/sessions/${encodeURIComponent(sessionId)}/grade`, body, 'POST',
+    grantToken ? { 'X-Teacher-Step-Up': grantToken } : {},
+  ),
+  closeSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/close`, body, 'POST'),
   curriculumUnits: () => req('/lifecycle/curriculum/units'),
   // Teacher console writes (wave 2): every body carries the teacher stamp and
   // the console pin; the server's TeacherGate is the enforcer.

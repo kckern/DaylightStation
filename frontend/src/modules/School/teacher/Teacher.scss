@@ -262,6 +262,11 @@
   input { min-height: 38px; border: 1px solid #d8cfbe; border-radius: 7px; padding: 0 9px; background: white; color: #30291f; font: inherit; }
   .teacher-action-preview, .teacher-action-row, .teacher-panel__error { grid-column: 1 / -1; }
 }
+.teacher-session-settle {
+  label { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; color: #6c604f; font-size: 12px; font-weight: 700; }
+  input { min-height: 38px; border: 1px solid #d8cfbe; border-radius: 7px; padding: 0 9px; background: white; color: #30291f; font: inherit; font-weight: 400; }
+  .teacher-action-preview { strong { color: #59462f; font-size: 13px; } ol { margin: 6px 0 0; padding-left: 18px; color: #696052; font-size: 13px; } }
+}
 .teacher-item-verdicts { grid-column: 1 / -1; display: grid; gap: 6px; margin: 4px 0; padding: 10px; border: 1px solid #ded3bf; border-radius: 8px;
   label { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; padding-top: 6px; border-top: 1px solid #eee6d8; }
   label:first-of-type { border-top: 0; } span { display: grid; } small { color: #887e6e; font-weight: 400; } select { min-height: 38px; }
