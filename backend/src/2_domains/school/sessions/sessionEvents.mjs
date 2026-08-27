@@ -232,8 +232,15 @@ const SCHEMA = {
     }),
   },
   reassigned: {
-    fields: ['fromLearnerId', 'toLearnerId', 'reviewedBy'],
-    validate: allOf(stringField('fromLearnerId'), stringField('toLearnerId'), (raw, push) => {
+    // `reason` is REQUIRED, not optional-when-present. Moving a child's work
+    // onto a sibling is a decision with an author and a why (the
+    // no-silent-verbs contract), and the event log is where that why has to
+    // live: a separate audit trail can go missing or be written best-effort,
+    // whereas this fact travels with the work forever. `reviewedBy` names the
+    // author; whether that author was allowed is the writer's TeacherGate to
+    // decide, not this table's.
+    fields: ['fromLearnerId', 'toLearnerId', 'reviewedBy', 'reason'],
+    validate: allOf(stringField('fromLearnerId'), stringField('toLearnerId'), stringField('reason'), (raw, push) => {
       // A reassignment to the same learner records no fact and would still
       // rewrite attribution downstream — reject it rather than store a no-op.
       if (isNonEmptyString(raw.toLearnerId) && raw.toLearnerId === raw.fromLearnerId) {
@@ -321,11 +328,35 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'reward_reconciled', 'reward_reconciliation_failed',
   'result_receipt_captured', 'result_receipt_reprinted',
 ]));
+/**
+ * The annotations that stay legal after the session has settled.
+ *
+ * The default is the other way round: a terminal state closes an annotation
+ * out, because most of them describe work still in motion — a `failed` print
+ * on a session nobody will ever print again is a fact about something that has
+ * already stopped. Membership here is the deliberately narrow exception, one
+ * reason per group:
+ *
+ * - `grade_adjusted` / `grade_adjustment_retracted`, and the
+ *   `reward_reconciled` / `reward_reconciliation_failed` pair that follows
+ *   them: a mark discovered wrong AFTER the coins were paid must still be
+ *   correctable, and the reward reconciles from the corrected grade.
+ * - `result_receipt_captured` / `result_receipt_reprinted`: settlement closes
+ *   the state before its retained receipt can be linked. These are
+ *   evidence-only and must remain legal afterwards.
+ * - `reassigned`: a reassignment changes ATTRIBUTION, never lifecycle position
+ *   — the same argument that already admits `grade_adjusted`. Finding the
+ *   wrong child's name on a `rewarded` lesson is exactly the moment the move
+ *   is needed, and leaving it illegal there would mean settled work is the one
+ *   work that can never be given back to whoever actually did it. The coin
+ *   ledger is NOT rewritten by an attribution change — where coins have to
+ *   follow, the reward reconciliation above is the mechanism, exactly as it is
+ *   for a corrected grade.
+ */
 const TERMINAL_ANNOTATIONS = new Set([
   'grade_adjusted', 'grade_adjustment_retracted', 'reward_reconciled', 'reward_reconciliation_failed',
-  // Settlement closes the state before its retained receipt can be linked.
-  // These are evidence-only annotations and must remain legal afterwards.
   'result_receipt_captured', 'result_receipt_reprinted',
+  'reassigned',
 ]);
 
 /** States the table can reach but never leave. */

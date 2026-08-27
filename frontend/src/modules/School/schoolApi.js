@@ -224,6 +224,11 @@ export const schoolApi = {
     `/attempts-summary?learnerId=${encodeURIComponent(learnerId)}&day=${encodeURIComponent(day)}`,
   ),
   reassign: (body) => req('/reassign', body),
+  // The session-level repair, and a different verb from `reassign` above: that
+  // one moves a day's attempt EVENTS between learners, this appends one
+  // `reassigned` event to a work session, which is the only way to re-credit
+  // work no machine recorded answers for. Reason is mandatory server-side.
+  reassignSession: (body) => req('/reassign-session', body),
   // The dry-run daily plan as data (advocacy A3) — no side effects.
   agendaPreview: (learnerId, studyDay = null) => req(`/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?${new URLSearchParams({
     format: 'json', ...(studyDay ? { studyDay } : {}),
