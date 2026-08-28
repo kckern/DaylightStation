@@ -25,6 +25,10 @@
  *    `gate.unavailable`. A malformed `repertoire` is NOT infrastructure: it is
  *    a config mistake that would hand out free matches for as long as the typo
  *    survived, so `resolveRepertoire` falls back to a playable level instead.
+ *    Nor is a level whose every material spec is mistyped: `isConfigOnlyDecline`
+ *    tells that apart from a bank that could not be reached, and the answer is
+ *    the same — substitute `FALLBACK_LEVEL`'s material and log
+ *    `gate.material-config-invalid`, rather than grant.
  *    Nor is "nobody has chosen a player": it is permanent, known, and fixed by
  *    one tap, so failing open on it would make the Guest profile a reliable
  *    one-tap bypass of the whole gate. That gets its own non-granting panel.
@@ -53,10 +57,11 @@ import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
 import { clientStudyDate } from '../../clientStudyDate.js';
 import ExerciseRun from '../Exercises/ExerciseRun.jsx';
 import {
-  climbLevel, degradeLevel, isFloorLevel, levelById, materialKey, resolveRepertoire, startLevelFor,
+  climbLevel, degradeLevel, FALLBACK_LEVEL, isFloorLevel, levelById, materialKey, resolveRepertoire,
+  startLevelFor,
 } from './gateRepertoire.js';
 import { askForMaterial, framingFor, requirementForLevel } from './gateAsk.js';
-import { pickGateMaterial } from './gateMaterial.js';
+import { isConfigOnlyDecline, pickGateMaterial } from './gateMaterial.js';
 import './GameGate.scss';
 
 /** The design's `gameGate` block. A household that sets none of it gets these. */
@@ -343,9 +348,40 @@ export default function GameGate({
       setPhase('attempt');
       return () => { alive = false; };
     }
-    pickGateMaterial(level, {
-      lastMaterialId: stored.lastMaterialId, pickIndex: stored.pickIndex, mode: requirement.mode,
-    })
+    /**
+     * What this level can actually put in front of the child — and what to do
+     * when the answer is "nothing, because somebody mistyped it".
+     *
+     * `pickGateMaterial`'s decline reasons already separate the two kinds, and
+     * the gate used to flatten them: a `kind: exercies` typo in every spec of a
+     * level failed open exactly like a bank 502, so the level handed out free
+     * matches for as long as the typo survived, silently. That is the same
+     * failure `resolveRepertoire` refuses for a malformed `repertoire`, and it
+     * gets the same answer — substitute something playable rather than grant.
+     *
+     * The substitute is `FALLBACK_LEVEL`'s material: C major, right hand, an
+     * instance addressed by id and therefore always resolvable. The LEVEL does
+     * not change — the rung, the tier and the requirement all stay the ones the
+     * child is standing on — because a config typo is not a reason to move a
+     * ladder. If even the fallback cannot be fetched, THAT is infrastructure,
+     * and the decline that comes back from it fails open below like any other.
+     */
+    const serve = async () => {
+      const picked = await pickGateMaterial(level, {
+        lastMaterialId: stored.lastMaterialId, pickIndex: stored.pickIndex, mode: requirement.mode,
+      });
+      if (picked.ok || !isConfigOnlyDecline(picked.skipped)) return picked;
+      emitNow('gate.material-config-invalid', {
+        rung: level.id, tier: level.tier, reasons: picked.skipped.map((entry) => entry.reason),
+      }, 'warn');
+      const substitute = await pickGateMaterial(FALLBACK_LEVEL, {
+        pickIndex: stored.pickIndex, mode: requirement.mode,
+      });
+      // Both skip lists travel on: the typos are why the substitute happened,
+      // and dropping them would leave the warn above as the only trace.
+      return { ...substitute, skipped: [...picked.skipped, ...(substitute.skipped ?? [])] };
+    };
+    serve()
       .then((picked) => {
         if (!alive) return;
         for (const skip of picked.skipped ?? []) {

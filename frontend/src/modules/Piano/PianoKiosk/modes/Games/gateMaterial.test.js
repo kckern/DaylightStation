@@ -16,7 +16,9 @@ vi.mock('../../../../../lib/api.mjs', async (importOriginal) => ({
   DaylightAPIText: h.text,
 }));
 
-const { resolveGateMaterial, pickGateMaterial, keysInstance } = await import('./gateMaterial.js');
+const {
+  resolveGateMaterial, pickGateMaterial, keysInstance, isConfigOnlyDecline,
+} = await import('./gateMaterial.js');
 
 const FOUR_BARS = '<?xml version="1.0"?><score-partwise><part id="P1"/></score-partwise>';
 
@@ -296,5 +298,49 @@ describe('pickGateMaterial — a level becomes something the run can grade', () 
     );
     expect(picked.ok).toBe(false);
     expect(picked.error).toBe('no-seed-for-level');
+  });
+});
+
+/**
+ * Which declines are the household's typo and which are the network's bad day.
+ *
+ * The gate flattened both into "fail open", so a `kind: exercies` in every spec
+ * of a level handed out free matches for as long as the typo survived — the
+ * exact posture `resolveRepertoire` already refuses for a malformed
+ * `repertoire`. The reasons were always distinguishable; nothing was reading
+ * them.
+ */
+describe('isConfigOnlyDecline', () => {
+  const skips = (...reasons) => reasons.map((reason) => ({ kind: 'exercise', reason }));
+
+  it('names the three reasons decided without touching the network', () => {
+    expect(isConfigOnlyDecline(skips('no-score-source'))).toBe(true);
+    expect(isConfigOnlyDecline(skips('no-collection-or-instance'))).toBe(true);
+    expect(isConfigOnlyDecline(skips('unknown-material-kind'))).toBe(true);
+    expect(isConfigOnlyDecline(skips('no-score-source', 'unknown-material-kind'))).toBe(true);
+  });
+
+  it('calls everything that depends on what the bank served infrastructure', () => {
+    for (const reason of [
+      'instance-unavailable', 'catalog-unavailable', 'score-unavailable',
+      'no-seed-for-level', 'no-instance-for-level', 'keys-material-unresolved',
+    ]) {
+      expect(isConfigOnlyDecline(skips(reason))).toBe(false);
+    }
+  });
+
+  it('refuses to call a level a config mistake when ONE spec had an outage', () => {
+    // The child should get their match: a level whose reachable spec 502'd is
+    // an outage even if a second spec beside it has a typo.
+    expect(isConfigOnlyDecline(skips('unknown-material-kind', 'instance-unavailable'))).toBe(false);
+  });
+
+  it('answers false for an empty or absent skip list', () => {
+    // Nothing was tried, so nothing has been shown to be mistyped — and a
+    // vacuous true here would substitute the fallback for a level that simply
+    // has no material at all.
+    expect(isConfigOnlyDecline([])).toBe(false);
+    expect(isConfigOnlyDecline(undefined)).toBe(false);
+    expect(isConfigOnlyDecline(null)).toBe(false);
   });
 });
