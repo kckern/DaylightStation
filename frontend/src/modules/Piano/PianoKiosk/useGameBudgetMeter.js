@@ -408,8 +408,17 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
         // arm the interval — nothing was charged, so there is nothing to
         // settle or close; the effect's unmount cleanup still closes this
         // session normally if the component goes away.
+        // Both fall back to Infinity, NOT to the local seed. `secondsLeftLocal`
+        // is 0 whenever `res.secondsLeft` was itself non-finite, so seeding the
+        // learner side from it turned one malformed `enabled:true` response —
+        // a truncated proxy reply, a partial 200 during a restart — into
+        // "Games are done for today" for a child with a full allowance, logged
+        // as `budget.depleted` and therefore indistinguishable in the store
+        // from a real depletion. Infrastructure fails OPEN; only an
+        // affirmative balance closes the gate. A depletion the server actually
+        // means always arrives as a finite 0.
         const learnerSecondsLeft = Number.isFinite(res.learnerSecondsLeft)
-          ? res.learnerSecondsLeft : secondsLeftLocal.current;
+          ? res.learnerSecondsLeft : Infinity;
         const deviceSecondsLeft = Number.isFinite(res.deviceSecondsLeft)
           ? res.deviceSecondsLeft : Infinity;
         if (learnerSecondsLeft <= 0) {
