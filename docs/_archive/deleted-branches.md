@@ -6,6 +6,7 @@ To restore: `git checkout -b branch-name <commit-hash>`
 
 | Date | Branch | Commit | Description |
 |------|--------|--------|-------------|
+| 2026-08-28 | school/companion-media-gating | 5ee432f7e | Companion media gating — a required read-along gates the worksheet via an A–E finish code on an OMR gate row. Merged to main (31 commits + merge). History was rewritten before push to scrub household names from the requirements doc, so pre-rewrite hashes do not resolve; the merge commit on main is the restore point. Inert until a lesson authors `participation: required`. |
 | 2026-07-29 | feature/printable-sheet-framework | 4f0b44b6f | Config-driven printable sheet framework (SheetLayout/QRSheetRenderer/SheetService, provider + cell-kind seams, npm run sheet) + nutrition control grammar clear/undo/done with one-deep undo - merged to main |
 | 2026-07-29 | worktree-sheetmusic-tabs | 27bc39c5a | Sheet Music wave 2 (score tabs, header ModeSheet, key-name transpose, 3x3 tempo, loop toggle, ViewSheet, hand toggles, video-chrome convergence, guest-progress fix) - merged to main (fast-forward, 27bc39c5a) |
 | 2026-07-28 | worktree-piano-transport-design-system | d0fcd7c2e | PianoKiosk transport design system wave 1 (transport/ primitives, Key/Tempo/Loop/Volume sheets, player migrations, 3 video-player bug fixes) - merged to main (93eb928fc) |
