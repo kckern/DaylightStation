@@ -154,6 +154,30 @@ unchanged. Score-thresholded levels keep the existing `passScore` mechanism.
 - Hands-together material (L5+) uses the existing two-voice melody path
   (`generateMelodyAbc`), which is already correct for that case.
 
+## Engraving accountability
+
+The deeper failure behind the bass-clef bug is that the engraving layer is blind to its
+own output — nothing anywhere checks what actually renders. These rules become checked
+properties, not conventions:
+
+1. **Clef is chosen, never defaulted.** Order of authority: the material's declared
+   hand, then its `staff` key (set in the bank today and read by nothing), then the
+   pitch range (notes sitting mostly below middle C → bass, above → treble). A staff
+   with no notes on it never renders.
+2. **Staff count equals hands in use.** One hand, one staff. Two staves only for
+   genuinely two-hand material.
+3. **Notes sit sensibly in the viewport.** Correct vertical position on the chosen
+   clef, readable scale, no far-off-center rendering; ottava markers only when the
+   material genuinely leaves the staff, never as a crutch for a wrong clef.
+4. **The cursor is legible.** The current note is visibly marked on the staff, advances
+   note-by-note as played, and the wrong-note state is visually distinct — for tiers
+   0–1 the lit keys are the cursor and the same properties apply to them.
+5. **Rendered output is the authority.** The Playwright checks (Testing, below) assert
+   these on the real rendered DOM — clef glyph present/absent, note elements inside the
+   staff's bounding box, cursor class on the expected element — not on the ABC string.
+   String-level assertions remain as fast unit guards, but a green ABC string proves
+   nothing about what a child sees; that lesson is the origin of this spec.
+
 ## Chrome and copy
 
 - Header: Exit · framing line · plain-words ask. The exercise-bank title ("Intervals")
@@ -194,8 +218,10 @@ persistence/evidence pipeline, and the three terminal states with `onUnavailable
   (completeness-only passes with wrong notes present — the D9 regression test extends to
   L1; L7 fails below the cleanliness threshold).
 - **Visual (Playwright, real compiled SCSS, same harness as `GameGate.measure.test.jsx`):
-  ** one scenario per tier asserting staff count (zero at tier 0, one elsewhere — never
-  two), clef, the ask line present before any input, and no start button for free asks.
+  ** one scenario per tier asserting the engraving-accountability rules on the rendered
+  DOM — staff count (zero at tier 0, one elsewhere, two only for two-hand material),
+  clef glyph, notes inside the staff's bounding box, cursor on the expected note, the
+  ask line present before any input, and no start button for free asks.
 - **Score kind:** a fixture MusicXML passage compiles, renders through the sheet-music
   renderer (not the exercise ABC path), and grades — free (completeness) and cued
   (placement) both.
