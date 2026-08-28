@@ -16,10 +16,10 @@ import React, { useCallback, useState } from 'react';
 import { Modal } from '@mantine/core';
 import { IconPlayerPlayFilled } from '@tabler/icons-react';
 import { useCastTarget } from './useCastTarget.js';
-import { useFleetContext } from '../fleet/FleetProvider.jsx';
+import { useFleetContext } from '../fleet/useFleetContext.js';
 import { deviceName } from '../fleet/deviceDisplay.js';
 import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
-import { useDismissLayer } from '../shell/DismissStackProvider.jsx';
+import { useDismissLayer } from '../shell/useDismissLayer.js';
 import mediaLog from '../logging/mediaLog.js';
 import './Cast.scss';
 

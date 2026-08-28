@@ -9,7 +9,7 @@ vi.mock('../../../services/WebSocketService.js', () => ({
   default: { send: (...a) => sendFn(...a), subscribe: (...a) => subscribeFn(...a), onStatusChange: vi.fn(() => () => {}) },
 }));
 
-vi.mock('../identity/ClientIdentityProvider.jsx', () => ({
+vi.mock('../identity/useClientIdentity.js', () => ({
   useClientIdentity: vi.fn(() => ({ clientId: 'c1', displayName: 'D' })),
 }));
 

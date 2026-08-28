@@ -19,7 +19,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
-import { useSchoolBreadcrumb } from '../SchoolBreadcrumbContext.jsx';
+import { useSchoolBreadcrumb } from '../useSchoolBreadcrumb.js';
 import MaterialGrid from './MaterialGrid.jsx';
 import MaterialDetail from './MaterialDetail.jsx';
 import CollectionDetail from './CollectionDetail.jsx';

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Icon from '../../ui/icons/Icon.jsx';
-import { usePianoMix } from '../PianoMixContext.jsx';
+import { usePianoMix } from '../usePianoMix.js';
 import { STEPS, stepToLevel, levelToStep } from '../volumeCurve.js';
 import TransportSheet from './TransportSheet.jsx';
 import TransportButton from './TransportButton.jsx';

@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
 import { getWidgetRegistry } from './widgets/registry.js';
-import { useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
+import { useMenuNavigationContext } from '../context/useMenuNavigationContext.js';
 import getLogger from '../lib/logging/Logger.js';
 import { BROWSE_NAV_TYPES } from './screenActivity.js';
 

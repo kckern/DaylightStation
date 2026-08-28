@@ -11,8 +11,8 @@ const sessions = [
     participants: { user_1: { displayName: 'User_1', zoneMinutes: { active: 20, warm: 10, cool: 5 } } },
   },
 ];
-vi.mock('@/screen-framework/data/ScreenDataProvider.jsx', () => ({ useScreenData: () => ({ sessions, total: 1 }) }));
-vi.mock('@/modules/Fitness/FitnessScreenProvider.jsx', () => ({
+vi.mock('@/screen-framework/data/useScreenData.js', () => ({ useScreenData: () => ({ sessions, total: 1 }) }));
+vi.mock('@/modules/Fitness/useFitnessScreen.js', () => ({
   useFitnessScreen: () => ({
     // user_1 carries a group_label so the resolver should render "Dad", not "User_1".
     roster: [{ id: 'user_1', name: 'User_1', group_label: 'Dad' }, { id: 'user_2', name: 'User_2' }],

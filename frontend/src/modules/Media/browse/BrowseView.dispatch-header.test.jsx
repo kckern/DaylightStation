@@ -59,10 +59,10 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
 
 // ── DestinationLine's own leaf deps ──
 let fleetDevices = [];
-vi.mock('../fleet/FleetProvider.jsx', () => ({
+vi.mock('../fleet/useFleetContext.js', () => ({
   useFleetContext: () => ({ devices: fleetDevices }),
 }));
-vi.mock('../shell/DismissStackProvider.jsx', () => ({
+vi.mock('../shell/useDismissLayer.js', () => ({
   useDismissLayer: () => {},
 }));
 vi.mock('../cast/DispatchTargetPicker.jsx', () => ({

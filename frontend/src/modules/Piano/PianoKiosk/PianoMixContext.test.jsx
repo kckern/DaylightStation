@@ -9,7 +9,8 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),
 }));
 
-import { PianoMixProvider, usePianoMix } from './PianoMixContext.jsx';
+import { PianoMixProvider } from './PianoMixContext.jsx';
+import { usePianoMix } from './usePianoMix.js';
 
 function Harness() {
   const { pianoLevel, mediaLevel, setPianoLevel, setMediaLevel } = usePianoMix();

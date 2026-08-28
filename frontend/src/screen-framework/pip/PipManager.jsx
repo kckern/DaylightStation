@@ -1,5 +1,5 @@
 // frontend/src/screen-framework/pip/PipManager.jsx
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { createContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
 import getLogger from '../../lib/logging/Logger.js';
@@ -11,7 +11,7 @@ function logger() {
   return _logger;
 }
 
-const PipContext = createContext(null);
+export const PipContext = createContext(null);
 
 const DEFAULTS = {
   position: 'bottom-right',
@@ -307,14 +307,3 @@ function PipPanelPortal({ slotNode, dismissing, Component, componentProps, dismi
   );
 }
 
-export function usePip() {
-  const ctx = useContext(PipContext);
-  if (!ctx) {
-    return {
-      show: () => {}, dismiss: () => {}, promote: () => {},
-      state: 'idle', hasPip: false,
-      registerSlot: () => {}, unregisterSlot: () => {},
-    };
-  }
-  return ctx;
-}

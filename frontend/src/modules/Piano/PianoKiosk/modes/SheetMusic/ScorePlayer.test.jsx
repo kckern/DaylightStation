@@ -127,7 +127,7 @@ vi.mock('../../PianoMidiContext.jsx', async () => {
     },
   };
 });
-vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
+vi.mock('../../usePianoPlayback.js', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));

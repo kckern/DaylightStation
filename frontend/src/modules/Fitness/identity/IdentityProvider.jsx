@@ -1,5 +1,5 @@
 import React, {
-  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
+  createContext, useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
@@ -42,7 +42,7 @@ const DEFAULT_UNLOCK_VOLUME = 0.15;
 // (silent/autoplay-rejected device), resolve the verdict anyway after this.
 const SUCCESS_HOLD_CAP_MS = 6000;
 
-const IdentityContext = createContext(null);
+export const IdentityContext = createContext(null);
 
 /**
  * Frontend router for `fitness.identity.detected`. Single owner of the emergency
@@ -311,12 +311,6 @@ export function IdentityProvider({ children }) {
       {children}
     </IdentityContext.Provider>
   );
-}
-
-export function useIdentity() {
-  const ctx = useContext(IdentityContext);
-  if (!ctx) throw new Error('useIdentity must be used within an IdentityProvider');
-  return ctx;
 }
 
 export default IdentityProvider;

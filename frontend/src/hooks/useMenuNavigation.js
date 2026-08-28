@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useMenuNavigationContext, useHasMenuNavigationContext } from '../context/MenuNavigationContext';
+import { useMenuNavigationContext, useHasMenuNavigationContext } from '../context/useMenuNavigationContext.js';
 
 /**
  * Hook for menu keyboard navigation.

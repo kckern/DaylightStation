@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
+import { createContext, useState, useMemo, useCallback } from 'react';
 
-const Ctx = createContext({
+export const Ctx = createContext({
   playing: false, setPlaying: () => {},
   videoActive: false, setVideoActive: () => {},
   playerLocks: [], claimPlayerLock: () => () => {},
@@ -31,22 +31,6 @@ export function PianoPlaybackProvider({ children }) {
     [playing, setPlaying, videoActive, setVideoActive, playerLocks, claimPlayerLock],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
-}
-
-export const usePianoPlayback = () => useContext(Ctx);
-
-/**
- * Hold the player-switch lock for as long as this component is mounted.
- *
- * `reason` is what the chip tells the child when they tap it, so it must read
- * as an instruction they can act on, not as a rule they have broken.
- */
-export function usePlayerLock(active, reason) {
-  const { claimPlayerLock } = useContext(Ctx);
-  useEffect(() => {
-    if (!active) return undefined;
-    return claimPlayerLock(reason);
-  }, [active, reason, claimPlayerLock]);
 }
 
 export default Ctx;

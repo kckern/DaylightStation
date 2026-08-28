@@ -87,6 +87,7 @@ export function PianoMidiProvider({ children, preferredInputName }) {
 }
 
 /** Access the shared piano MIDI surface (see useWebMidiBLE for its shape). */
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoMidi is co-located with its Context/Provider (standard pattern); 61 consumers, splitting out of scope for a lint pass
 export function usePianoMidi() {
   const ctx = useContext(PianoMidiContext);
   if (!ctx) throw new Error('usePianoMidi must be used within a PianoMidiProvider');
@@ -99,6 +100,7 @@ export function usePianoMidi() {
  * re-renders per note event by design. Everything else uses usePianoMidi(),
  * whose value is now identity-stable across note traffic (2026-07-06 audit R1).
  */
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoMidiNotes is co-located with its Context/Provider (standard pattern); 31 consumers, splitting out of scope for a lint pass
 export function usePianoMidiNotes() {
   const { notes } = usePianoMidi();
   return useSyncExternalStore(notes.subscribe, notes.getSnapshot, notes.getSnapshot);
@@ -121,11 +123,13 @@ const NO_SUBSCRIBE = () => () => {};
 const NO_SNAPSHOT = () => NO_NOTES_SNAPSHOT;
 
 /** The MIDI surface, or null when there is no provider above. Never throws. */
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoMidiOptional is co-located with its Context/Provider (standard pattern); 6 consumers, splitting out of scope for a lint pass
 export function usePianoMidiOptional() {
   return useContext(PianoMidiContext) ?? null;
 }
 
 /** Live notes, or a stable empty snapshot when there is no provider. Never throws. */
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoMidiNotesOptional is co-located with its Context/Provider (standard pattern); 6 consumers, splitting out of scope for a lint pass
 export function usePianoMidiNotesOptional() {
   const notes = useContext(PianoMidiContext)?.notes ?? null;
   // Both callbacks must be passed unconditionally — the hook count cannot vary.

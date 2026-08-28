@@ -80,6 +80,7 @@ export function PianoUserProvider({ pianoId, children }) {
   return <PianoUserContext.Provider value={value}>{children}</PianoUserContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoUser is co-located with its Context/Provider (standard pattern); 41 consumers, splitting out of scope for a lint pass
 export function usePianoUser() {
   const ctx = useContext(PianoUserContext);
   if (!ctx) throw new Error('usePianoUser must be used within a PianoUserProvider');

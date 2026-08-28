@@ -176,6 +176,8 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       }
 
       return { months, pastData, cumulativeInterestData, futureSeries, maxY, monthTicks, yearLines };
+      // today forces recompute on day rollover — not read directly in the memo body
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mortgage, today]);
   
     // Early-exit if we have no months at all:

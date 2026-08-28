@@ -15,10 +15,10 @@ import { render, screen } from '@testing-library/react';
 import SingalongPlayer from './SingalongPlayer.jsx';
 
 // --- Piano context modules: minimal stand-ins (mirrors PianoVideoPlayer.resume.test.jsx) ---
-vi.mock('../../PianoPlaybackContext.jsx', () => ({
+vi.mock('../../usePianoPlayback.js', () => ({
   usePianoPlayback: () => ({ setPlaying: vi.fn(), setVideoActive: vi.fn(), playing: false, videoActive: false }),
 }));
-vi.mock('../../PianoMixContext.jsx', () => ({
+vi.mock('../../usePianoMix.js', () => ({
   usePianoMix: () => ({ mediaLevel: 1, setMediaLevel: vi.fn() }),
 }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({

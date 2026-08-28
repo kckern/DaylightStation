@@ -11,7 +11,8 @@ vi.mock('../logging/mediaLog.js', () => {
 });
 
 import mediaLog from '../logging/mediaLog.js';
-import { DispatchProvider, useDispatch } from './DispatchProvider.jsx';
+import { DispatchProvider } from './DispatchProvider.jsx';
+import { useDispatch } from './useDispatch.js';
 
 const TIMING_WINDOW = 6_000; // > DISPATCH_DEDUPE_WINDOW_MS (5s)
 

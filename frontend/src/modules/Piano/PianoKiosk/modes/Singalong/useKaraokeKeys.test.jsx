@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
   audios: [],
   fetch: vi.fn(() => Promise.resolve({ ok: false })),
 }));
-vi.mock('../../PianoMixContext.jsx', () => ({ usePianoMix: () => h.mix }));
+vi.mock('../../usePianoMix.js', () => ({ usePianoMix: () => h.mix }));
 vi.mock('../../../../../lib/api.mjs', () => ({ DaylightMediaPath: (p) => `http://test${p}` }));
 
 class FakeAudio {

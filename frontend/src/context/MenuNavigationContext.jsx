@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useState, useCallback, useEffect, useRef } from 'react';
 import getLogger from '../lib/logging/Logger.js';
 
 let _navLogger;
@@ -7,7 +7,7 @@ function navLogger() {
   return _navLogger;
 }
 
-const MenuNavigationContext = createContext(null);
+export const MenuNavigationContext = createContext(null);
 
 /**
  * Navigation state and actions for the menu system.
@@ -201,29 +201,6 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
       {children}
     </MenuNavigationContext.Provider>
   );
-}
-
-/**
- * Hook to access navigation context
- * @returns {Object} Navigation context value
- * @throws {Error} If used outside of MenuNavigationProvider
- */
-export function useMenuNavigationContext() {
-  const context = useContext(MenuNavigationContext);
-  if (!context) {
-    throw new Error('useMenuNavigationContext must be used within MenuNavigationProvider');
-  }
-  return context;
-}
-
-/**
- * Hook to check if we're within a MenuNavigationProvider
- * (useful for components that can work with or without the provider)
- * @returns {boolean}
- */
-export function useHasMenuNavigationContext() {
-  const context = useContext(MenuNavigationContext);
-  return context !== null;
 }
 
 export default MenuNavigationContext;

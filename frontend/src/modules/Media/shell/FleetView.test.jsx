@@ -9,7 +9,7 @@ import { MantineProvider } from '@mantine/core';
 
 const fleet = { devices: [], entries: {} };
 
-vi.mock('../fleet/FleetProvider.jsx', () => ({
+vi.mock('../fleet/useFleetContext.js', () => ({
   useFleetContext: () => ({ devices: fleet.devices, loading: false, error: null, store: {} }),
 }));
 vi.mock('../fleet/useDevice.js', () => ({

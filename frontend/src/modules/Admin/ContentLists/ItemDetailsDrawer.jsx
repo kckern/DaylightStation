@@ -98,6 +98,8 @@ export function ItemDetailsDrawer({ opened, onClose, contentValue }) {
     setNavStack([]);
     setCurrentContentId(null);
     fetchItemDetails(contentValue);
+    // fetchItemDetails is recreated every render — adding it would re-fetch on every render while the drawer is open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, contentValue]);
 
   const watchedCount = children.filter(c => c.watched || c.viewCount > 0).length;

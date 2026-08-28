@@ -52,7 +52,7 @@ vi.mock('../player/useModuleStorage', () => ({
 const registerUnlock = vi.fn();
 const clearUnlock = vi.fn();
 let unlockState = 'idle';
-vi.mock('@/modules/Fitness/identity/IdentityProvider', () => ({
+vi.mock('@/modules/Fitness/identity/useIdentity.js', () => ({
   __esModule: true,
   useIdentity: () => ({ registerUnlock, clearUnlock, unlockState, unlockedUser: null, activeLock: null }),
 }));

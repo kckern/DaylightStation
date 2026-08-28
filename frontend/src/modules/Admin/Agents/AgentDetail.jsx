@@ -45,6 +45,8 @@ function AgentDetail() {
         setUsers([]);
       })
       .finally(() => setUsersLoading(false));
+    // mount-only fetch — adding userId would re-fetch on every subsequent change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync tab to URL hash

@@ -14,9 +14,9 @@ vi.mock('./usePianoPreset.js', () => ({
 }));
 vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { shortlist: { voices: [{ pc: 0, name: 'Grand' }, { pc: 40, bank: 0, name: 'Violin' }] } } }) }));
 const groups = [{ group: 'Piano', voices: [{ pc: 0, bank: 0, name: 'Grand' }] }, { group: 'Strings', voices: [{ pc: 40, bank: 0, name: 'Violin' }, { pc: 42, bank: 0, name: 'Cello' }] }];
-vi.mock('./PianoSoundContext.jsx', () => ({ usePianoSound: () => ({ device: { voiceGroups: groups, effects: { reverb: { types: [{ value: 1, label: 'Hall' }] }, chorus: { types: [{ value: 2, label: 'Wide' }] } } } }) }));
+vi.mock('./usePianoSound.js', () => ({ usePianoSound: () => ({ device: { voiceGroups: groups, effects: { reverb: { types: [{ value: 1, label: 'Hall' }] }, chorus: { types: [{ value: 2, label: 'Wide' }] } } } }) }));
 const setPianoLevel = vi.fn();
-vi.mock('./PianoMixContext.jsx', () => ({ usePianoMix: () => ({ pianoLevel: 0.75, setPianoLevel }) }));
+vi.mock('./usePianoMix.js', () => ({ usePianoMix: () => ({ pianoLevel: 0.75, setPianoLevel }) }));
 vi.mock('../ui/icons/Icon.jsx', () => ({ default: () => <span /> }));
 
 import SoundPanel from './SoundPanel.jsx';

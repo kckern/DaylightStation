@@ -27,7 +27,7 @@ import { IconX, IconAlertTriangle } from '@tabler/icons-react';
 import { useContentCombobox } from '../../Content/combobox/useContentCombobox.js';
 import { StreamStatusLine } from '../../Content/combobox/StreamStatusLine.jsx';
 import { ResultRow } from '../../Content/combobox/ResultRow.jsx';
-import { useSearchContext } from './SearchProvider.jsx';
+import { useSearchContext } from './useSearchContext.js';
 import { ScopeChips } from './ScopeChips.jsx';
 import { DestinationLine } from '../cast/DestinationLine.jsx';
 import { useContentDispatch } from './useContentDispatch.js';

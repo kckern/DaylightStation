@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { planEffectSysex } from './effectSysex.js';
@@ -14,7 +14,7 @@ import { getDeviceProfile } from './devices/suzukiMdg400.js';
  * The chrome status chip reads `activeName`; `usePianoSoundBundle` composes
  * voice + effects into the SoundPreset used by the player surface.
  */
-const SoundContext = createContext(null);
+export const SoundContext = createContext(null);
 
 export function PianoSoundProvider({ children }) {
   const { config, pianoId } = usePianoKioskConfig();
@@ -143,12 +143,6 @@ export function PianoSoundProvider({ children }) {
   }), [activeName, resync, device, deviceVoice, selectVoice, effects, setEffect]);
 
   return <SoundContext.Provider value={value}>{children}</SoundContext.Provider>;
-}
-
-export function usePianoSound() {
-  const value = useContext(SoundContext);
-  if (!value) throw new Error('usePianoSound must be used within PianoSoundProvider');
-  return value;
 }
 
 export default PianoSoundProvider;

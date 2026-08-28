@@ -57,8 +57,11 @@ export const STAFF_ASPECT = 100 / 112;
 export function SvgStaffRenderer({ targetPitches = [], activeNotes = null, matched = false }) {
   const validPitches = targetPitches.filter((p) => p != null);
 
+  // validPitches.join(',') is a deliberate value-key: a stable string proxy for array
+  // *content*, avoiding recompute on every render when targetPitches is a fresh array literal.
   const notePositions = useMemo(
     () => validPitches.map((pitch) => ({ pitch, ...getStaffPosition(pitch) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [validPitches.join(',')]
   );
 
@@ -66,6 +69,9 @@ export function SvgStaffRenderer({ targetPitches = [], activeNotes = null, match
   const clef = notePositions[0]?.clef ?? 'treble';
 
   // Ghost notes: currently pressed notes at 50% opacity, excluding targets.
+  // validPitches.join(',') is a deliberate value-key: a stable string proxy for array
+  // *content*, avoiding recompute on every render when targetPitches is a fresh array literal.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const targetSet = useMemo(() => new Set(validPitches), [validPitches.join(',')]);
   const ghostNotes = useMemo(() => {
     if (!activeNotes || activeNotes.size === 0) return [];

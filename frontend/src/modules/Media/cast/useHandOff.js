@@ -4,7 +4,7 @@
 // by the dispatch provider — local stops only on confirmed success (C7.4).
 import { useCallback } from 'react';
 import { useSessionController } from '../controller/useSessionController.js';
-import { useDispatch } from './DispatchProvider.jsx';
+import { useDispatch } from './useDispatch.js';
 import mediaLog from '../logging/mediaLog.js';
 
 export function useHandOff() {

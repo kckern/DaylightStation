@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { ScreenOverlayProvider, useScreenOverlay } from './ScreenOverlayProvider.jsx';
-import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/MenuNavigationContext.jsx';
+import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
 import { getActionBus } from '../input/ActionBus.js';
 
 // The provider emits `screen:overlay-mounted` on the real bus; mock it so the
@@ -15,7 +15,7 @@ vi.mock('../input/ActionBus.js', () => {
 // MenuNavigationProvider (ScreenRenderer.jsx). Mock the nav context module so
 // each test can control whether nav context exists and what it reports,
 // without needing a real MenuNavigationProvider ancestor.
-vi.mock('../../context/MenuNavigationContext.jsx', () => ({
+vi.mock('../../context/useMenuNavigationContext.js', () => ({
   useHasMenuNavigationContext: vi.fn(() => false),
   useMenuNavigationContext: vi.fn(() => ({ currentContent: null })),
 }));

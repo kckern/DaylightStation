@@ -1,7 +1,8 @@
 // frontend/src/screen-framework/providers/ScreenSceneContext.test.jsx
 import { describe, it, expect } from 'vitest';
 import { render, act } from '@testing-library/react';
-import { ScreenSceneProvider, useScreenScene } from './ScreenSceneContext.jsx';
+import { ScreenSceneProvider } from './ScreenSceneContext.jsx';
+import { useScreenScene } from './useScreenScene.js';
 
 let api = null;
 function Capture() { api = useScreenScene(); return null; }

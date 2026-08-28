@@ -37,11 +37,15 @@ export function usePlayableLifecycle({
     if (meta) {
       onResolvedMeta?.(meta);
     }
+    // documented fire-once contract (see JSDoc): callbacks fire once and must be stable references
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta]);
 
   // Register media access on mount
    
   useEffect(() => {
     onRegisterMediaAccess?.(mediaAccess || NO_MEDIA_ACCESS);
+    // documented fire-once contract (see JSDoc): callbacks fire once on mount and must be stable references
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

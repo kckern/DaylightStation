@@ -157,10 +157,4 @@ export function DispatchProvider({ children }) {
   return <DispatchContext.Provider value={value}>{children}</DispatchContext.Provider>;
 }
 
-export function useDispatch() {
-  const ctx = useContext(DispatchContext);
-  if (!ctx) throw new Error('useDispatch must be used inside DispatchProvider');
-  return ctx;
-}
-
 export default DispatchProvider;

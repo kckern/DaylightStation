@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
 import TouchChrome from './TouchChrome.jsx';
-import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/MenuNavigationContext.jsx';
+import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
 import { BROWSE_NAV_TYPES } from '../screenActivity.js';
 import getLogger from '../../lib/logging/Logger.js';
 import './ScreenOverlayProvider.css';
@@ -265,6 +265,7 @@ export function ScreenOverlayProvider({ children, inputType = null }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- useScreenOverlay is co-located with its Context/Provider (standard pattern); 22 consumers, splitting out of scope for a lint pass
 export function useScreenOverlay() {
   const ctx = useContext(ScreenOverlayContext);
   if (!ctx) {

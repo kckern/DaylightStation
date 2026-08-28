@@ -1,7 +1,7 @@
 // frontend/src/modules/Media/shell/ConfirmDialog.jsx
 import React from 'react';
 import { Modal, Button, Group, Text } from '@mantine/core';
-import { useDismissLayer } from './DismissStackProvider.jsx';
+import { useDismissLayer } from './useDismissLayer.js';
 
 export function ConfirmDialog({ open, title, message, confirmLabel = 'OK', cancelLabel = 'Cancel', onConfirm, onCancel }) {
   // Mantine Modal closes itself on Escape; register as a managed layer so the

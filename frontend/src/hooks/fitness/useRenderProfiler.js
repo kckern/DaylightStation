@@ -169,6 +169,8 @@ export function useRenderProfiler(componentName) {
       // Cleanup on unmount - update global stats
       updateGlobalState();
     };
+    // mount/unmount tracking only — intentionally empty deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps = track mount/unmount only
 }
 
@@ -211,6 +213,8 @@ export function useEffectProfiler(effectName, callback, deps) {
 
     // Run the actual effect
     return callback();
+    // generic hook forwards a caller-supplied deps array — can't be statically enumerated
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 }
 

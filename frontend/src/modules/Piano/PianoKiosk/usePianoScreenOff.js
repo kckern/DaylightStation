@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { useScreenControl } from './useScreenControl.js';
-import { useScreenOffCooldown } from './usePianoScreensaver.jsx';
+import { useScreenOffCooldown } from './usePianoScreensaverHooks.js';
 import { usePianoUser } from './PianoUserContext.jsx';
 import getLogger from '../../../lib/logging/Logger.js';
 

@@ -12,7 +12,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: h.config }) }));
 vi.mock('./useScreenControl.js', () => ({ useScreenControl: () => ({ turnOffScreen: h.turnOffScreen }) }));
-vi.mock('./usePianoScreensaver.jsx', () => ({ useScreenOffCooldown: () => h.beginScreenOffCooldown }));
+vi.mock('./usePianoScreensaverHooks.js', () => ({ useScreenOffCooldown: () => h.beginScreenOffCooldown }));
 vi.mock('./PianoUserContext.jsx', () => ({ usePianoUser: () => ({ setCurrentUser: h.setCurrentUser }), default: {} }));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: h.DaylightAPI }));
 

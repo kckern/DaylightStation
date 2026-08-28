@@ -214,6 +214,9 @@ export default function VideoCall({ deviceId, clear }) {
       refTapRef.current = null;
       logger.info('aec-ref-tap-stopped');
     };
+    // narrowed to bridge.feedReference (the stable method), not the bridge object — this is a
+    // live WebRTC echo-cancellation audio tap; real-time audio/hardware capture code.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peer.remoteStream, bridgeActive, bridge.feedReference, logger]);
 
   // Attach remote stream to video element

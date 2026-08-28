@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext } from 'react';
 
 /**
  * ScreenAmbientContext — carries the current screen's ambient config
@@ -14,10 +14,6 @@ export function ScreenAmbientProvider({ value, children }) {
       {children}
     </ScreenAmbientContext.Provider>
   );
-}
-
-export function useScreenAmbient() {
-  return useContext(ScreenAmbientContext);
 }
 
 export default ScreenAmbientContext;

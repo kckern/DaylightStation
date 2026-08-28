@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useMemo } from 'react';
 import { useMediaDevices } from './useMediaDevices.js';
 import { useWebcamStream } from './useWebcamStream.js';
 
-const WebcamContext = createContext(null);
+export const WebcamContext = createContext(null);
 
 export function FitnessWebcamProvider({
   children,
@@ -80,16 +80,3 @@ export function FitnessWebcamProvider({
   );
 }
 
-export function useSharedWebcam() {
-  return useContext(WebcamContext);
-}
-
-export function useSharedWebcamStream() {
-  const ctx = useSharedWebcam();
-  return {
-    stream: ctx?.stream ?? null,
-    status: ctx?.status ?? 'idle',
-    error: ctx?.error ?? null,
-    permissionError: ctx?.permissionError ?? null,
-  };
-}

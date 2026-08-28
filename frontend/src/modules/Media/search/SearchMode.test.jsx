@@ -75,10 +75,10 @@ vi.mock('@mantine/notifications', () => ({
 
 // ── DestinationLine's own leaf deps (mounted for real otherwise) ──
 let fleetDevices = [];
-vi.mock('../fleet/FleetProvider.jsx', () => ({
+vi.mock('../fleet/useFleetContext.js', () => ({
   useFleetContext: () => ({ devices: fleetDevices }),
 }));
-vi.mock('../shell/DismissStackProvider.jsx', () => ({
+vi.mock('../shell/useDismissLayer.js', () => ({
   useDismissLayer: () => {},
 }));
 vi.mock('../cast/DispatchTargetPicker.jsx', () => ({

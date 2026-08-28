@@ -328,6 +328,14 @@ export function SinglePlayer(props = {}) {
     } else if (open) {
       setGoToApp(open);
     }
+  // `play` itself is deliberately excluded: it is commonly passed as a fresh
+  // object literal from parents, and depending on it directly reproduces a
+  // documented incident (2026-08-16) where object-identity churn on `play`
+  // caused runaway remounts and 495 Plex transcode sessions in four minutes.
+  // The four `play?.*` fields above are the ones this effect actually branches
+  // on; the rest (id/contentId/assetId/resumePosition) are read only inside the
+  // direct-play bypass's early-return branch.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.seconds, play?.resume, plexClientSession, remountDiagnostics]);
 
   useEffect(() => {

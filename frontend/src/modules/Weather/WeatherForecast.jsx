@@ -3,7 +3,7 @@ import React from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
-import { useScreenData } from '../../screen-framework/data/ScreenDataProvider.jsx';
+import { useScreenData } from '../../screen-framework/data/useScreenData.js';
 
 export default function WeatherForecast({ weatherData: weatherDataProp }) {
   const screenData = useScreenData('weather');

@@ -1,5 +1,5 @@
 import { useEffect, useId } from 'react';
-import { useUnsavedGuardRegistry } from './UnsavedGuardContext.jsx';
+import { useUnsavedGuardRegistry } from './useUnsavedGuardRegistry.js';
 import getLogger from '../../../lib/logging/Logger.js';
 
 let _logger;

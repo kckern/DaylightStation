@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, Group, Stack, Badge } from '@mantine/core';
-import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
+import { useScreenData } from '@/screen-framework/data/useScreenData.js';
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
 import './FitnessNutritionWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
