@@ -123,6 +123,20 @@ Handlers own the action: they may mount a local renderer, open a player, print,
 dispatch to a surface, or emit an application event. Progress is optional and
 implemented only by handlers that have meaningful progress to record.
 
+**`required` narrows both of those, and unit validation enforces it.** A gate
+row has to be printable and its code has to be releasable, so a required
+companion must sit on a unit with a `bank` or a `document`, and on a handler
+that reports completion — today that is **`readalong` alone**. Every other
+handler mounts a renderer and reports nothing, which would leave a child holding
+a gate with no lock; publishing one is refused, naming the handler. An
+`optional` companion has no gate and may use any handler.
+
+**A gate row rides on a solo bank worksheet, and only there.** A lesson with a
+required companion refuses to print through the composed-worksheet path (several
+sessions on one sheet — it has to be printed on its own), and through the
+tracked-quiz and legacy-document paths, which have no gate row to give. A card
+carries exactly one gate.
+
 Time-sensitive work follows the same boundary: a syllabus may offer defaults,
 but an enrollment or standalone-work plan owns the resolved household dates and
 priority. See [Time-sensitive School planning](./timing-and-priority.md).

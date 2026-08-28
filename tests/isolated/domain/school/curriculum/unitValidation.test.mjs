@@ -690,3 +690,94 @@ describe('companion.requireParts', () => {
       .toContain('companion.require_parts is not a field; use companion.requireParts');
   });
 });
+
+/**
+ * D12: A GATE WITH NO LOCK IS REFUSED AT AUTHORING TIME.
+ *
+ * "A required companion with no document is refused at publish. So is one on a
+ * renderer that declares no completion contract. Authoring errors belong to the
+ * author, not to a child holding a gate with no lock."
+ *
+ * Both halves are reachable by hand: the README advertises `singalong, player,
+ * program, surface` alongside `readalong`, and only `readalong` implements
+ * `recordProgress` — the one method that can ever release a finish code. A
+ * required companion on any of the others validated clean, minted a code,
+ * printed a gate row, and then nothing in the system could ever open it:
+ * `open()` answered "not available on this screen" and `recordProgress()`
+ * answered `{ok: true, tracked: false}` with no verdict at all.
+ */
+describe('a required companion must have a lock its gate can actually open (D12)', () => {
+  const companionUnit = (companion, over = {}) => valid({
+    companion: { participation: 'required', ...companion }, ...over,
+  });
+
+  it('accepts the one handler that can report completion', () => {
+    expect(errs(companionUnit({ handler: 'readalong' }))).toEqual([]);
+    expect(errs(companionUnit({}))).toEqual([]);
+  });
+
+  it.each(['singalong', 'player', 'program', 'surface', 'video-lecture'])(
+    "rejects handler '%s', naming the handler and the fix",
+    (handler) => {
+      const messages = errs(companionUnit({ handler }));
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain(`'${handler}'`);
+      expect(messages[0]).toContain('readalong');
+      expect(messages[0]).toContain('participation: optional');
+    },
+  );
+
+  it('leaves an OPTIONAL companion free to use any handler', () => {
+    // The regression this must not cause. An optional companion has no gate at
+    // all, so a handler that only mounts a renderer is exactly right for it.
+    for (const handler of ['singalong', 'player', 'program', 'surface']) {
+      expect(errs(valid({ companion: { participation: 'optional', handler } }))).toEqual([]);
+    }
+    // And with no `participation` authored at all, which defaults to optional.
+    expect(errs(valid({ companion: { handler: 'player' } }))).toEqual([]);
+  });
+
+  it('rejects a required companion on a unit with no sheet to print the gate row on', () => {
+    // `review`-only work is marked by a person and prints no bubbles, so there
+    // is nowhere for the gate row to go.
+    const messages = errs({
+      unitId: 'reading-log',
+      title: 'Reading log',
+      subject: 'english',
+      review: { rubric: 'A grown-up reads it with them.' },
+      companion: { participation: 'required', handler: 'readalong' },
+      provenance: { source: 'hand-authored', reviewState: 'draft' },
+    });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain('bank');
+    expect(messages[0]).toContain('document');
+    expect(messages[0]).toContain('participation: optional');
+  });
+
+  it.each([
+    ['a bank', { bank: 'math-fractions', document: undefined }],
+    ['a document', {}],
+  ])('accepts a required companion on a unit with %s', (_label, over) => {
+    expect(errs(companionUnit({ handler: 'readalong' }, over))).toEqual([]);
+  });
+
+  it('says nothing about a companion the author switched OFF', () => {
+    // `enabled: false` settles `participation` along with it — there is no
+    // companion here, so there is no gate and nothing to refuse over. This is
+    // the same reading `IssueDocument#prepareCompanion` takes on its first
+    // line; disagreeing would refuse to publish a lesson whose companion is
+    // parked, which is a normal thing for an author to do mid-edit.
+    expect(errs(companionUnit({ enabled: false, handler: 'player' }))).toEqual([]);
+  });
+
+  it('still lets an OPTIONAL companion sit on a sheetless unit', () => {
+    expect(errs({
+      unitId: 'reading-log',
+      title: 'Reading log',
+      subject: 'english',
+      review: { rubric: 'A grown-up reads it with them.' },
+      companion: { participation: 'optional', handler: 'readalong' },
+      provenance: { source: 'hand-authored', reviewState: 'draft' },
+    })).toEqual([]);
+  });
+});

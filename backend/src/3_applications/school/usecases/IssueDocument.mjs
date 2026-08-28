@@ -48,6 +48,9 @@ import { slugify } from '#domains/school/documents/receipts.mjs';
 import { DEFAULT_PRINT_POLICY } from '#domains/school/index.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { worksheetPresentation } from '#domains/school/curriculum/worksheetPresentation.mjs';
+// The publish-time gate's own list (D12), read here rather than re-stated: the
+// handlers that can actually release a finish code. See its doc comment.
+import { COMPANION_COMPLETION_HANDLERS } from '#domains/school/curriculum/unitValidation.mjs';
 import { resolveScripturePlaylist } from '../readalong/resolveScripturePlaylist.mjs';
 
 /**
@@ -927,18 +930,35 @@ export class IssueDocument {
       // 500 — bypassing the very slip this branch exists to hand a grown-up. The
       // store trims for the same reason: this codebase has a standing YAML
       // leading-space gotcha, so a household id of `'   '` is a real shape.
+      //
+      // `no-completion-contract` is BELT AND BRACES behind D12's publish-time
+      // check in `unitValidation`: the handler decides which renderer mounts,
+      // and only the handlers in `COMPANION_COMPLETION_HANDLERS` implement a
+      // `recordProgress` that can ever release the finish code. On any other
+      // handler the code would mint, the gate row would print, and nothing in
+      // the system could open it — a child holding a gate with no lock. A unit
+      // that reaches here that way was published before the validation existed,
+      // or written into the tree by hand, so it is refused rather than trusted.
       const missing = !companion ? 'no-media'
-        : !this.#companions ? 'store-not-configured'
-          : !this.#companionCodes ? 'code-store-not-configured'
-            : !this.#householdId?.trim?.() ? 'no-household' : null;
+        : !COMPANION_COMPLETION_HANDLERS.includes(companion.handler) ? 'no-completion-contract'
+          : !this.#companions ? 'store-not-configured'
+            : !this.#companionCodes ? 'code-store-not-configured'
+              : !this.#householdId?.trim?.() ? 'no-household' : null;
       if (missing) {
         this.#logger.warn?.('school.issue.companion-required-unavailable', {
           sessionId: instance.sessionId, lessonId: instance.lessonId, reason: missing,
+          ...(missing === 'no-completion-contract' ? { handler: companion.handler } : {}),
         });
         return {
           refusal: {
             reason: `companion-${missing}`,
-            message: 'This lesson needs a read-along that is not ready. Tell a grown-up.',
+            // Two sentences, because they are two different facts for the
+            // grown-up who gets fetched: a read-along that is not ready yet may
+            // simply need its media, while one nothing can finish needs the
+            // lesson re-authored.
+            message: missing === 'no-completion-contract'
+              ? 'This lesson needs a read-along that nothing can finish. Tell a grown-up.'
+              : 'This lesson needs a read-along that is not ready. Tell a grown-up.',
           },
         };
       }
