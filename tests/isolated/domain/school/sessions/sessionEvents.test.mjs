@@ -108,6 +108,39 @@ describe('append-only teacher grade corrections', () => {
     expect(state.rewardTxn).toBe('txn_1');
   });
 
+  it('never projects a gate-vetoed outcome into a pass — the correction moves the SCORE, not the gate', () => {
+    // The projection re-derives pass/fail from percent-vs-bar alone, which is
+    // the whole rule for an ungated sheet and only half of it for a gated one.
+    // Left that way, ANY grade correction on a sheet blocked by its finish-code
+    // row flipped it to `passed` — including a correction that changed nothing
+    // about the score — and a later close/resettle reported the pass. That is
+    // the same bypass the review queue had, reached from the teacher console.
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { percent: 100, passingPercent: 80, correctCount: 10, totalCount: 10, companionGate: { status: 'blank' } },
+      outcome_recorded: { result: 'needs_remediation', reason: 'companion_incomplete' },
+    });
+    events.push(ev('grade_adjusted', {
+      adjustmentId: 'adj_regrade', percent: 100, correctCount: 10, totalCount: 10,
+      reason: 'remarked question 3 by hand', adjustedBy: 'parent1',
+    }));
+    const state = reduceSession(events);
+    expect(state.errors).toEqual([]);
+    expect(state.companionGate).toEqual({ status: 'blank' });
+    expect(state.outcome).toMatchObject({ result: 'needs_remediation', reason: 'companion_incomplete' });
+  });
+
+  it('still projects a correction through pass state once the gate is satisfied', () => {
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { percent: 60, passingPercent: 80, correctCount: 3, totalCount: 5, companionGate: { status: 'satisfied' } },
+      outcome_recorded: { result: 'needs_remediation', reason: 'below_passing' },
+    });
+    events.push(ev('grade_adjusted', {
+      adjustmentId: 'adj_eraser', percent: 80, correctCount: 4, totalCount: 5,
+      reason: 'eraser read as two marks', adjustedBy: 'parent1',
+    }));
+    expect(reduceSession(events).outcome).toMatchObject({ result: 'passed', adjustmentId: 'adj_eraser' });
+  });
+
   it('retraction restores the machine grade without deleting correction history', () => {
     const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
       graded: { percent: 60, passingPercent: 80 }, outcome_recorded: { result: 'needs_remediation' },

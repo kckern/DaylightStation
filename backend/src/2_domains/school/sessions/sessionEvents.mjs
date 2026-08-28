@@ -27,7 +27,7 @@
 // than behaviour: the three things a scanned finish-code row can say. Copying
 // the strings would give the event schema and the outcome rule that reads
 // them two places to drift apart, over a vocabulary that must agree exactly.
-import { GATE_STATUSES } from '#domains/school/companionCode.mjs';
+import { GATE_STATUSES, GATE_SATISFIED } from '#domains/school/companionCode.mjs';
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isSeq = (v) => Number.isInteger(v) && v >= 1;
@@ -52,6 +52,39 @@ const booleanIfPresent = (field) => (raw, push) => {
 
 const TRANSPORTS = ['paper', 'screen'];
 const RESULTS = ['passed', 'needs_remediation'];
+
+/**
+ * `companionGate` — the scan's verdict on the sheet's finish-code row.
+ *
+ * ONE validator, because more than one event carries it. Task 10 put it on
+ * `graded` alone, which is where a sheet the scanner marks end to end records
+ * it. But a sheet with an ambiguous bubble goes to a grown-up instead, and the
+ * only event written on THAT path is `submitted` — `GradeSubmission` writes the
+ * `graded` later, from the verdict sheet, and knows nothing about a finish-code
+ * row. So a single ambiguous bubble was enough to lose the verdict entirely and
+ * pass a sheet whose companion was never played. It rides both events now, with
+ * the same shape and the same rules, checked here once.
+ */
+const gateField = (raw, push) => {
+  if (raw.companionGate === undefined) return;
+  const gate = raw.companionGate;
+  if (!gate || typeof gate !== 'object' || Array.isArray(gate) || !GATE_STATUSES.includes(gate.status)) {
+    push(`companionGate: must be an object with status ${GATE_STATUSES.join('|')} when present`);
+  }
+};
+
+/**
+ * Fold one event's gate verdict into the derived state — the LATEST read wins.
+ *
+ * An event carrying no gate leaves the field exactly as it was rather than
+ * clearing it: an ungated sheet has nothing to say here, and `GradeSubmission`'s
+ * own gate-less `graded` must never read as "the gate was cleared".
+ */
+const applyGate = (s, e) => {
+  if (e.companionGate && GATE_STATUSES.includes(e.companionGate.status)) {
+    s.companionGate = { status: e.companionGate.status };
+  }
+};
 const percentIfPresent = (field) => (raw, push) => {
   if (raw[field] !== undefined && (typeof raw[field] !== 'number'
       || !Number.isFinite(raw[field]) || raw[field] < 0 || raw[field] > 100)) {
@@ -188,7 +221,17 @@ const SCHEMA = {
         }
       }),
   },
-  submitted: { fields: ['transport'], validate: oneOfField('transport', TRANSPORTS) },
+  // `companionGate` (optional, Task 11) is the scan's verdict on the sheet's
+  // finish-code row, stamped by the SCAN that turned the work in. It matters
+  // most on the path that never reaches a `graded` event of its own: an
+  // ambiguous bubble or a write-on sends the sheet to a grown-up, and this is
+  // the only event `RecordCardScanOutcome` writes before it hands over. The
+  // `graded` `GradeSubmission` writes afterwards carries no gate and — by the
+  // reducer's "absent never clears" rule — cannot erase this one.
+  submitted: {
+    fields: ['transport', 'companionGate'],
+    validate: allOf(oneOfField('transport', TRANSPORTS), gateField),
+  },
   graded: {
     // `passingPercent` (optional) is the bar IN EFFECT at grading time
     // (student-advocacy A4): a later pass-override edit must never move the
@@ -210,12 +253,7 @@ const SCHEMA = {
     // the score. Absent on every ungated sheet, which is all of them today.
     fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds', 'voidedItemIds', 'companionGate'],
     validate: (raw, push) => {
-      if (raw.companionGate !== undefined) {
-        const gate = raw.companionGate;
-        if (!gate || typeof gate !== 'object' || Array.isArray(gate) || !GATE_STATUSES.includes(gate.status)) {
-          push(`companionGate: must be an object with status ${GATE_STATUSES.join('|')} when present`);
-        }
-      }
+      gateField(raw, push);
       if (raw.passingPercent !== undefined && (typeof raw.passingPercent !== 'number'
           || !Number.isFinite(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {
         push('passingPercent: must be a number from 1-100 when present');
@@ -758,6 +796,9 @@ const APPLY = {
   submitted(s, e) {
     s.transport = e.transport ?? null;
     s.lastFailure = null;
+    // The verdict the SCAN read, recorded before anyone knows whether this
+    // sheet will reach `graded` through the scanner or through a grown-up.
+    applyGate(s, e);
   },
   graded(s, e) {
     (Array.isArray(e.attemptIds) ? e.attemptIds : []).forEach((id) => {
@@ -770,13 +811,8 @@ const APPLY = {
     if (Array.isArray(e.missedItemIds)) s.missedItemIds = [...e.missedItemIds];
     if (Array.isArray(e.voidedItemIds)) s.voidedItemIds = [...e.voidedItemIds];
     // A re-scan of the same sheet re-states the gate; the latest read wins,
-    // which is what makes Task 11's repair-by-re-scan possible at all. A
-    // graded event that carries no gate leaves the field exactly as it was
-    // rather than clearing it — an ungated sheet has nothing to say here, and
-    // "absent" must never read as "the gate was cleared".
-    if (e.companionGate && GATE_STATUSES.includes(e.companionGate.status)) {
-      s.companionGate = { status: e.companionGate.status };
-    }
+    // which is what makes Task 11's repair-by-re-scan possible at all.
+    applyGate(s, e);
     s.machineGrade = {
       percent: typeof e.percent === 'number' ? e.percent : null,
       passingPercent: typeof e.passingPercent === 'number' ? e.passingPercent : null,
@@ -1033,9 +1069,23 @@ export function reduceSession(events) {
       s.voidedItemIds = s.voidedItemIds.filter((itemId) => stillVoid.has(itemId));
     }
     if (s.outcome && typeof s.gradedPercent === 'number' && typeof s.gradedPassingPercent === 'number') {
+      // A CORRECTION MOVES THE SCORE. IT CANNOT MOVE THE FINISH-CODE GATE.
+      //
+      // This projection re-derives pass/fail from percent-vs-bar, which is the
+      // whole rule for an ungated sheet and only half of it for a gated one
+      // (`./outcome.mjs`'s `evaluateOutcome` checks both). Left at half, ANY
+      // grade correction on a sheet blocked by its gate row flipped it to
+      // `passed` — a correction that changed nothing about the score included
+      // — and the next close/resettle reported the pass. Same shape as the
+      // review-queue bypass, reached from the teacher console instead.
+      //
+      // Read exactly as `evaluateOutcome` reads it: a gate PRESENT at all is a
+      // gate, and only `satisfied` clears it, so a status this fold does not
+      // understand blocks rather than waves through.
+      const gateBlocks = s.companionGate != null && s.companionGate.status !== GATE_SATISFIED;
       s.outcome = {
         ...s.outcome,
-        result: s.gradedPercent >= s.gradedPassingPercent ? 'passed' : 'needs_remediation',
+        result: (!gateBlocks && s.gradedPercent >= s.gradedPassingPercent) ? 'passed' : 'needs_remediation',
         adjustedBy: effective.adjustedBy,
         adjustmentId: effective.adjustmentId,
       };
