@@ -11,7 +11,7 @@ const text = (value) => (typeof value === 'string' && value.trim() ? value.trim(
 const STEP_UP_ACTIONS = new Set([
   'agenda.dispatch', 'attempts.regrade', 'sessions.grade-adjust',
   'sessions.grade-adjustment.retract', 'artifact.postview', 'report-card.close',
-  'sessions.settle',
+  'sessions.settle', 'companion.finish-code.reveal',
 ]);
 
 // Every action in the Set above needs a branch below, and vice versa:
@@ -27,6 +27,12 @@ export function teacherResource(action, context = {}) {
   // at least as consequential as correcting one — and correcting one is
   // already up there. Scoped to the one session the teacher is looking at.
   if (action === 'sessions.settle') return text(context.sessionId);
+  // Reading the finish code out hands a child the one secret their gate is
+  // made of. The console cookie alone is not enough for that: a teacher panel
+  // left unlocked on a household screen is exactly the situation where a child
+  // would go looking. Scoped to the session in front of the grown-up, so one
+  // deliberate confirmation unblocks one stuck sheet.
+  if (action === 'companion.finish-code.reveal') return text(context.sessionId);
   if (action === 'sessions.grade-adjustment.retract') {
     const sessionId = text(context.sessionId);
     const adjustmentId = text(context.adjustmentId);

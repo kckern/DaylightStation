@@ -154,9 +154,14 @@ const COMPANION_CODE_SCHEMA = 'school.companion-code/v1';
  * @param {object} unit
  * @param {string} [fallback] - `instance.lessonId`, for a standalone unit with
  *   no course placement at all. Never empty: `keyFor` rejects a blank part.
+ * EXPORTED because `GetCompanionFinishCode` has to resolve the SAME record this
+ * mints, and a second copy of the fallback chain that drifted by one link would
+ * read a grown-up letters that cannot clear the child's printed gate. One
+ * function, one scope.
+ *
  * @returns {string|null}
  */
-function companionLessonDay(unit, fallback = null) {
+export function companionLessonDay(unit, fallback = null) {
   const usable = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
   return usable(unit?.module) ?? usable(unit?.courseId) ?? usable(unit?.unitId) ?? usable(fallback);
 }
