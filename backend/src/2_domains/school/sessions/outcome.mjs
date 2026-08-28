@@ -88,8 +88,11 @@ export function evaluateOutcome({
   // the cost is one sheet a grown-up has to look at, against a required
   // read-along nobody ever did.
   if (companionGate != null) {
-    // Two reasons, not one: the child-facing instruction differs. A blank row
-    // means "go and do it"; a wrong one means "you did it — check the letters".
+    // Three reasons, not one: the child-facing instruction differs. A blank row
+    // means "go and do it"; a wrong one means "you did it — check the letters";
+    // an exhausted one means every bubble in the row is filled, so no letter
+    // can be added and no re-scan of THIS sheet can ever clear it (Task 11).
+    if (companionGate.status === 'exhausted') return fail('companion_code_exhausted');
     if (companionGate.status === 'wrong') return fail('companion_code_wrong');
     if (companionGate.status !== 'satisfied') return fail('companion_incomplete');
   }
@@ -105,12 +108,19 @@ export function evaluateOutcome({
  * this child get a retry ticket for a fresh worksheet (no — their answers were
  * fine), and what does the receipt tell them to do next.
  *
+ * `exhausted` answers them DIFFERENTLY from the other two, and that is the
+ * point of keeping it separate: a blank or wrong row is repairable on the sheet
+ * in the child's hand, so no retry ticket is minted and the receipt sends them
+ * back to it. A full row is not repairable at all, so a fresh worksheet is the
+ * only way forward and the ticket IS the remedy.
+ *
  * @param {string|null} reason - an `evaluateOutcome` reason code
- * @returns {'blank'|'wrong'|null} the gate status that vetoed, or null
+ * @returns {'blank'|'wrong'|'exhausted'|null} the gate status that vetoed, or null
  */
 export function companionVetoStatus(reason) {
   if (reason === 'companion_incomplete') return 'blank';
   if (reason === 'companion_code_wrong') return 'wrong';
+  if (reason === 'companion_code_exhausted') return 'exhausted';
   return null;
 }
 

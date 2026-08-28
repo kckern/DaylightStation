@@ -94,6 +94,14 @@ describe('evaluateOutcome', () => {
         .toEqual({ result: 'needs_remediation', reason: 'companion_code_wrong' });
     });
 
+    it('blocks an EXHAUSTED gate row with a reason of its own — this sheet can never clear', () => {
+      // Every bubble in the row is filled and the code is still wrong. Marks
+      // cannot be erased, so no re-scan of this sheet can ever satisfy it, and
+      // "check the letters and scan it again" is advice with no exit.
+      expect(evaluate({ gradedPercent: 100, companionGate: { status: 'exhausted' } }))
+        .toEqual({ result: 'needs_remediation', reason: 'companion_code_exhausted' });
+    });
+
     it('reports the score problem ahead of the gate when both apply', () => {
       // That child owes a retry either way, and the retry prints a fresh gate
       // row with it. Sending them off to play audio for a sheet they have to
@@ -118,6 +126,7 @@ describe('companionVetoStatus', () => {
   it('names the gate status behind a gate-vetoed reason, and nothing else', () => {
     expect(companionVetoStatus('companion_incomplete')).toBe('blank');
     expect(companionVetoStatus('companion_code_wrong')).toBe('wrong');
+    expect(companionVetoStatus('companion_code_exhausted')).toBe('exhausted');
     expect(companionVetoStatus('below_passing')).toBeNull();
     expect(companionVetoStatus('met_passing')).toBeNull();
     expect(companionVetoStatus(null)).toBeNull();

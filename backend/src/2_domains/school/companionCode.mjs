@@ -62,7 +62,23 @@ export const COMPANION_GATE_ITEM_ID = '__companion_gate';
 export const GATE_SATISFIED = 'satisfied';
 export const GATE_BLANK = 'blank';
 export const GATE_WRONG = 'wrong';
-export const GATE_STATUSES = Object.freeze([GATE_SATISFIED, GATE_BLANK, GATE_WRONG]);
+/**
+ * A FOURTH, AND IT IS A FACT ABOUT THE PAPER, NOT ABOUT THE CHILD (Task 11).
+ *
+ * A wrong code is repairable: the child fills in the letters they were missing
+ * and feeds the same sheet again. Paper is append-only, so those repairs walk a
+ * chain of supersets — A, AB, ABC, ABCD, ABCDE — and once every bubble in the
+ * row is filled there is no mark left to add. A full row that is still wrong
+ * can never become right, on this sheet, ever.
+ *
+ * It earns its own status rather than folding into `wrong` because the two owe
+ * the child opposite instructions: `wrong` says "check the letters and scan
+ * this again", which is precisely the advice that cannot work here. This one
+ * says "ask for a new sheet" — and it is what lets the repair lane stop
+ * inviting a sixth attempt without keeping a counter of its own.
+ */
+export const GATE_EXHAUSTED = 'exhausted';
+export const GATE_STATUSES = Object.freeze([GATE_SATISFIED, GATE_BLANK, GATE_WRONG, GATE_EXHAUSTED]);
 
 const LETTER_INDEX = new Map(CODE_LETTERS.map((letter, index) => [letter, index]));
 
@@ -142,6 +158,6 @@ export function parseCode(text) {
 
 export default {
   CODE_LETTERS, COMPANION_GATE_ITEM_ID, ALL_CODES, GATE_STATUSES,
-  GATE_SATISFIED, GATE_BLANK, GATE_WRONG,
+  GATE_SATISFIED, GATE_BLANK, GATE_WRONG, GATE_EXHAUSTED,
   mintCode, codesMatch, formatCode, parseCode,
 };

@@ -37,6 +37,9 @@ import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/
 import { planRows, resolveAmbiguousCardId } from '#domains/school/documents/allocation.mjs';
 import { gradeAnswer } from '#domains/school/grading.mjs';
 import { creditsAsEraser, leniencyCap } from '#domains/school/documents/ambiguityLeniency.mjs';
+import {
+  CODE_LETTERS, GATE_SATISFIED, GATE_BLANK, GATE_WRONG, GATE_EXHAUSTED,
+} from '#domains/school/companionCode.mjs';
 import { prepareV2Document, mergeBank } from './RenderPrintDocument.mjs';
 
 /**
@@ -317,6 +320,30 @@ function applyLeniency({
 }
 
 /**
+ * The gate row's four-way verdict (Task 10, extended Task 11).
+ *
+ * `exhausted` is the one that is not about the code at all — it is about the
+ * PAPER. A child repairs a wrong finish code by filling in more bubbles and
+ * feeding the same sheet again, which walks a chain of supersets (A, AB, ABC,
+ * ...) because a mark cannot be taken back. Every bubble filled and still
+ * wrong means there is no mark left to add: this sheet's gate can never clear,
+ * and the receipt has to say "ask for a new sheet" rather than "check the
+ * letters and scan this again", which is advice that cannot work.
+ *
+ * Read off the marks, not off a counter: the physics IS the bound, so nothing
+ * has to remember how many times the card went through the roller.
+ *
+ * @param {{status: string, given: *}} gateRow - the graded gate row
+ * @returns {'satisfied'|'blank'|'wrong'|'exhausted'}
+ */
+function gateVerdict(gateRow) {
+  if (gateRow.status === 'correct') return GATE_SATISFIED;
+  if (gateRow.status === 'blank') return GATE_BLANK;
+  const marks = new Set(Array.isArray(gateRow.given) ? gateRow.given : [gateRow.given]);
+  return CODE_LETTERS.every((letter) => marks.has(letter)) ? GATE_EXHAUSTED : GATE_WRONG;
+}
+
+/**
  * Row->item mapping drift (F4 review fix — "bank-select scan integrity vs
  * mutable external banks"): true when ANY of `record.rowItems`'s OWNED-row
  * entries disagrees with what `planRows` just re-derived for that same row —
@@ -482,7 +509,8 @@ export class ResolveCardScan {
    *   item's own prompt text, `null` when it has none; `concepts` is the
    *   resolved bank item's own optional `concepts` array (R2,
    *   questionBankValidation.mjs), empty when it has none; `companionGate`
-   *   (Task 10) is `{itemId, row, status: 'satisfied'|'blank'|'wrong', given}`
+   *   (Task 10) is
+   *   `{itemId, row, status: 'satisfied'|'blank'|'wrong'|'exhausted', given}`
    *   on a GATED sheet only — the gate row is never inside `results`, because
    *   it is a veto rather than a question and belongs in no score, no attempt
    *   ledger and no review queue, and it never carries the expected finish
@@ -892,7 +920,7 @@ export class ResolveCardScan {
       ? {
         itemId: gateRow.itemId,
         row: gateRow.row,
-        status: gateRow.status === 'correct' ? 'satisfied' : (gateRow.status === 'blank' ? 'blank' : 'wrong'),
+        status: gateVerdict(gateRow),
         given: gateRow.given,
       }
       : null;

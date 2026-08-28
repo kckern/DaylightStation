@@ -70,6 +70,16 @@ const gateField = (raw, push) => {
   const gate = raw.companionGate;
   if (!gate || typeof gate !== 'object' || Array.isArray(gate) || !GATE_STATUSES.includes(gate.status)) {
     push(`companionGate: must be an object with status ${GATE_STATUSES.join('|')} when present`);
+    return;
+  }
+  // `given` (optional) is the letters the CHILD marked — never the code they
+  // were supposed to copy. It is here because a status alone cannot tell a
+  // repair from a repeat: a child walking A -> AB -> ABC re-scans a different
+  // row every time and every one of them reads `wrong`. The marks are the only
+  // thing that changed, so the marks are what a re-scan compares.
+  if (gate.given !== undefined && gate.given !== null
+      && !(Array.isArray(gate.given) && gate.given.every(isNonEmptyString))) {
+    push('companionGate.given: must be an array of marked letters, or null, when present');
   }
 };
 
@@ -82,7 +92,10 @@ const gateField = (raw, push) => {
  */
 const applyGate = (s, e) => {
   if (e.companionGate && GATE_STATUSES.includes(e.companionGate.status)) {
-    s.companionGate = { status: e.companionGate.status };
+    s.companionGate = {
+      status: e.companionGate.status,
+      ...(Array.isArray(e.companionGate.given) ? { given: [...e.companionGate.given] } : {}),
+    };
   }
 };
 const percentIfPresent = (field) => (raw, push) => {
@@ -287,6 +300,23 @@ const SCHEMA = {
       }
     },
   },
+  // A LATER SCAN RE-READ THE FINISH-CODE ROW (Task 11).
+  //
+  // This is how a sheet blocked by its gate is repaired: the child fills in the
+  // code bubbles and feeds the SAME card again. It carries the gate and nothing
+  // else — no percent, no attempt ids, no verdicts — because that is the entire
+  // point: only the gate row is re-read, and the score the sheet already earned
+  // stands untouched. Re-grading the questions on a repair scan would let a
+  // child add the right bubble beside a wrong answer and gain credit, turning a
+  // gate repair into a score repair.
+  //
+  // AN ANNOTATION, NOT A TRANSITION, and that is what makes it work at all. The
+  // sheet has usually already reached `outcome_recorded` by the time the child
+  // comes back with the code, and neither `graded` nor `submitted` is legal
+  // from there. This one is legal wherever the session is still alive, and it
+  // moves the lifecycle nowhere: the work did not un-happen, its verdict on one
+  // row simply changed.
+  companion_gate_read: { fields: ['companionGate'], validate: gateField },
   outcome_recorded: {
     fields: ['outcomeId', 'result', 'reason'],
     validate: allOf(stringField('outcomeId'), oneOfField('result', RESULTS)),
@@ -409,7 +439,15 @@ export const TRANSITIONS = Object.freeze({
   external_activity_assessed: ['outcome_recorded'],
   submitted: ['graded'],
   graded: ['outcome_recorded'],
-  outcome_recorded: ['rewarded', 'remediation_opened'],
+  // `outcome_recorded -> outcome_recorded` is a SUPERSEDING result, not a
+  // second one (Task 11): the reducer keeps only the latest, the outcome id is
+  // derived from the session so it does not change, and `#recordOutcomeAndSettle`
+  // only writes one when the RULE that decided has actually changed. It exists
+  // for exactly one move — a companion gate that was blocking this sheet has
+  // since been read again and now says something else — which is the only way a
+  // settled sheet can honestly change its verdict without a grown-up. Same
+  // shape as the `reprinted -> reprinted` self-edge above.
+  outcome_recorded: ['rewarded', 'remediation_opened', 'outcome_recorded'],
 });
 
 /**
@@ -427,11 +465,16 @@ export const TRANSITIONS = Object.freeze({
  *   lesson has not finished, so the state must stay `media_dispatched` — an
  *   advancing event here would release the linked quiz halfway through the
  *   video, which is the exact thing the gate exists to prevent.
+ * - `companion_gate_read` (Task 11) is a re-read of the finish-code row by a
+ *   later scan of the same sheet. It changes the verdict on one row, never the
+ *   lifecycle position: the work was handed in and graded exactly when it was,
+ *   and a child coming back with the code does not un-submit it.
  */
 export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'failed', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted',
   'reward_reconciled', 'reward_reconciliation_failed',
   'result_receipt_captured', 'result_receipt_reprinted', 'checkpoint_cleared',
+  'companion_gate_read',
 ]));
 /**
  * Annotations that are legal only from specific states, overriding the default
@@ -821,6 +864,12 @@ const APPLY = {
       missedItemIds: Array.isArray(e.missedItemIds) ? [...e.missedItemIds] : [],
       attemptIds: Array.isArray(e.attemptIds) ? [...e.attemptIds] : [],
     };
+  },
+  companion_gate_read(s, e) {
+    // Latest read wins, same rule the `graded` and `submitted` stamps follow —
+    // that is what makes repair-by-re-scan work: the child fills in the code,
+    // feeds the sheet again, and this restates the row.
+    applyGate(s, e);
   },
   outcome_recorded(s, e) {
     // `reason` (already a declared field on this event, and already written by
