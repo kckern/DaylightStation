@@ -99,7 +99,16 @@ const GAMES = [
   ['space-invaders', () => <SpaceInvadersGame activeNotes={new Map()} noteHistory={[]} />],
   ['side-scroller', () => <SideScrollerGame activeNotes={new Map()} />],
   ['flashcards', () => <PianoFlashcards activeNotes={new Map()} />],
-  ['hero', () => <HeroGame song={{ id: 'song-1', title: 'Song' }} chart={HERO_CHART} gameConfig={{ noteSelect: false }} />],
+  // `runStarted` is hero's boundary signal — a run has already happened this
+  // visit, so this start is a replay. It is owned by PianoHeroGame so it
+  // survives the song picker remounting HeroGame; that half is pinned by
+  // PianoHeroGame.rematch.test.jsx, which drives the real picker.
+  ['hero', () => (
+    <HeroGame
+      song={{ id: 'song-1', title: 'Song' }} chart={HERO_CHART}
+      gameConfig={{ noteSelect: false }} runStarted
+    />
+  )],
 ];
 
 beforeEach(() => {
@@ -186,8 +195,9 @@ describe('every game routes its replay through the gate (D12)', () => {
     expect(h.start, `${id} stopped restarting itself outside the kiosk`).toHaveBeenCalledTimes(1);
   });
 
-  it('lets Piano Hero start its FIRST run of a song without paying the gate twice', () => {
-    // 'ready' is not a match boundary — the gate stood at game entry.
+  it('lets Piano Hero start the first run of a visit without paying the gate twice', () => {
+    // No run yet this visit (`runStarted` unset) — the gate stood at game entry
+    // and that pass buys exactly one run, whichever song it is spent on.
     h.heroPhase = 'ready';
     const requestRematch = vi.fn();
     mountWith(

@@ -46,6 +46,21 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
   const playAgain = useMatchRematch(game.startGame);
   useAnyKeyToContinue({ enabled: game.phase === 'COMPLETE', activeNotes, onContinue: playAgain });
 
+  // The level chip is the OTHER way into a new run, and it renders in every
+  // phase — including COMPLETE. `selectLevel` zeroes the score and deals a
+  // fresh card, so from a finished run, alternating between two of the ~nine
+  // configured levels is an endless supply of matches that never passes the
+  // gate. Same failure as the replay button, through a control that looks like
+  // settings.
+  //
+  // But it IS settings while the run is untouched: a child who lands on the
+  // wrong level must be able to fix it without being asked to play a scale
+  // first, and swapping levels before answering anything yields no extra play —
+  // there is still exactly one run in flight. So the boundary is the first
+  // ANSWER, not the entry: once attempts exist, changing level abandons a match
+  // for a new one and goes through the host.
+  const changeLevel = useMatchRematch(game.selectLevel, game.attempts.length > 0);
+
   const [pickerOpen, setPickerOpen] = useState(false);
   const levels = gameConfig?.levels ?? [];
 
@@ -76,8 +91,12 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
   const handleLevelSelect = (idx) => {
     setPickerOpen(false);
     if (idx === game.level) return;
-    game.selectLevel(idx);
+    changeLevel(idx);
     prefAppliedRef.current = true;
+    // The preference is saved even when the gate takes the request: the child
+    // asked for this level, and the pass that follows remounts the game, where
+    // the preference effect puts them on it. Without this the challenge would
+    // land them back on the level they were trying to leave.
     if (isPersistentUser(currentUser) && levels[idx]?.name) {
       DaylightAPI(
         `api/v1/piano/users/${currentUser}/preferences`,

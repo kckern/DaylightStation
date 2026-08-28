@@ -206,6 +206,10 @@ export function HeroHighway({ chart, targets, elapsedMs, fallDurationMs, metrono
 export function HeroGame({
   song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff,
   subscribe: subscribeProp = null, activeNotes: activeNotesProp = null,
+  // Has a run already begun since the game was entered? Owned by
+  // PianoHeroGame, because it has to survive this component being remounted by
+  // a song change — which is precisely the loop it closes.
+  runStarted = false, onRunStarted = null,
 }) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-hero-game' }), []);
   const midiCtx = usePianoMidiOptional();
@@ -233,13 +237,23 @@ export function HeroGame({
   // now, on the ready screen and on the result screen alike. The keys still down
   // from the run that just ended do not count.
   const needsKeys = keyFallbackNeeded(gameConfig);
-  // Hero shares one `start` between two different events, and only one of them
-  // is a match boundary. From 'ready' it is the FIRST run of the song just
-  // chosen — the gate was already paid on the way in, and tolling it again
-  // would charge the child twice for one match. From 'complete' it is a replay,
-  // which is exactly what D12 says must not slip past the gate. So the boundary
-  // is decided by phase, not by the callback.
-  const startRun = useMatchRematch(game.start, game.phase === 'complete');
+  // Hero shares one `start` between two different events, and what separates
+  // them is not the phase — it is whether a run has happened yet.
+  //
+  // Phase looked right and was not: 'ready' is the first run of the song just
+  // chosen, which the gate at game entry has already paid for — but ONLY for
+  // the first song of the mount. "Choose a song" (below, and the header songs
+  // button) drops back to the picker, and picking anything, the same song
+  // included, remounts this component at 'ready' again. Two taps, unlimited
+  // unpaid matches — the exact "pay once, replay forever" loop the replay
+  // button was gated to close, one tap to its left. It is reachable mid-run
+  // too, trading a paid match for an unpaid one. No route param changes, so
+  // GameHost's own re-arm never sees it.
+  //
+  // `runStarted` is the honest question and it lives above this component, so a
+  // song change cannot reset it. One free run per entry; every start after that
+  // is a boundary, whichever door it came through.
+  const startRun = useMatchRematch(() => { onRunStarted?.(); game.start(); }, runStarted);
   useAnyKeyToContinue({
     enabled: needsKeys && (game.phase === 'ready' || game.phase === 'complete'),
     activeNotes, onContinue: startRun,
@@ -397,6 +411,12 @@ export function PianoHeroGame({
   const kioskConfig = usePianoKioskConfigOptional();
   const config = appConfig ?? kioskConfig?.config ?? {};
   const [song, setSong] = useState(null);
+  // One free run per entry to the game — the one the gate at the door paid for.
+  // Held HERE rather than in HeroGame because it must outlive a song change,
+  // which remounts HeroGame and would otherwise hand out a fresh free run every
+  // time the picker was visited. Reset by a remount of this component, which is
+  // what a passed gate produces — so a challenge always buys exactly one run.
+  const [runStarted, setRunStarted] = useState(false);
   const [chart, setChart] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -453,6 +473,8 @@ export function PianoHeroGame({
       onNoteOff={onNoteOff}
       subscribe={subscribeProp}
       activeNotes={activeNotesProp}
+      runStarted={runStarted}
+      onRunStarted={() => setRunStarted(true)}
     />
   );
 }

@@ -363,10 +363,14 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
               game blanked the whole display. */}
           {/* Keyed on the launch, not just the id: re-picking the game already
               running must hand back a NEW game, not the finished board that was
-              still on screen. */}
+              still on screen. `gameId` is passed separately so the crash log's
+              `game` field stays the plain id — a saved `data.game:"tetris"`
+              query has to find an office-screen crash and a kiosk one under the
+              same name, not "tetris:7" here and "tetris" there. */}
           <GameBoundary
             key={`${activeGameId}:${launchNonce}`}
             resetKey={`${activeGameId}:${launchNonce}`}
+            gameId={activeGameId}
             label={activeGameEntry.label ?? 'This game'}
             onExit={quitCrashedGame}
           >
