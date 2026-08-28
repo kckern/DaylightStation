@@ -300,6 +300,48 @@ describe('IssueDocument — a required companion binds its finish code before th
     expect(sessions.derive('ses-nomedia').issuedArtifacts).toEqual([]);
   });
 
+  it('REFUSES a required companion on a handler that can never report completion', async () => {
+    // Belt and braces behind D12's publish-time check in `unitValidation`. The
+    // authored handler decides which renderer mounts, and only `readalong`
+    // implements `recordProgress` — the single method that can release a finish
+    // code. On any other handler the code mints, the gate row prints, and then
+    // nothing in the system can ever open it: the child holds a gate with no
+    // lock. A unit that reached runtime this way was published before the
+    // validation existed, or written into the tree by hand.
+    const companionCodes = codeStore();
+    const base = unitFor({ participation: 'required' });
+    const unit = { ...base, companion: { ...base.companion, handler: 'video-lecture' } };
+    const { issueDocument, sessions, companions, printer } = issuer({ companionCodes, units: [unit] });
+    await seedSession(sessions, { sessionId: 'ses-nolock', learnerId: 'kid1', unitId: unit.unitId });
+
+    const result = await issueDocument.execute({ sessionId: 'ses-nolock' });
+
+    expect(result.status).toBe('unavailable');
+    expect(result.message).toMatch(/grown-up/i);
+    expect(printer.jobs).toEqual([]);
+    expect(companions.records).toEqual([]);
+    // Nothing drawn: a code minted here would sit unopenable forever.
+    expect(await codeRecords()).toEqual([]);
+    expect(sessions.derive('ses-nolock').issuedArtifacts).toEqual([]);
+  });
+
+  it('still mounts an OPTIONAL companion on a handler with no completion contract', async () => {
+    // The regression: an optional companion has no gate, so a renderer-only
+    // handler is exactly what it is for.
+    const companionCodes = codeStore();
+    const base = unitFor({ participation: 'optional' });
+    const unit = { ...base, companion: { ...base.companion, handler: 'video-lecture' } };
+    const { issueDocument, sessions, companions, printer } = issuer({ companionCodes, units: [unit] });
+    await seedSession(sessions, { sessionId: 'ses-optlock', learnerId: 'kid1', unitId: unit.unitId });
+
+    const result = await issueDocument.execute({ sessionId: 'ses-optlock' });
+
+    expect(result.status).toBe('issued');
+    expect(printer.jobs).toHaveLength(1);
+    expect(companions.records[0].companion.handler).toBe('video-lecture');
+    expect(await codeRecords()).toEqual([]);
+  });
+
   it('REFUSES a required companion whose stored code is unusable, rather than printing an ungated sheet', async () => {
     // The store validates a record's SHAPE and its identity, never its `code`.
     // A truncated or hand-edited YAML whose `code:` key is gone reads back
