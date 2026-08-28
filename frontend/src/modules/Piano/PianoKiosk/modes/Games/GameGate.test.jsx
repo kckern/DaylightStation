@@ -43,8 +43,12 @@ vi.mock('../Exercises/ExerciseRun.jsx', () => ({
         {/* A COMPLETED attempt that missed the bar — the only thing that may
             move the ladder. Distinct from stub-exit, which is walking away. */}
         <button type="button" onClick={() => props.onFailed?.({ score: 0.62 })}>stub-fail</button>
+        {/* A completed result with no usable number — an aborted attempt, or a
+            floor rung with no numeric bar. The panel must still say something. */}
+        <button type="button" onClick={() => props.onFailed?.({})}>stub-fail-scoreless</button>
         <button type="button" onClick={() => props.onExit?.()}>stub-exit</button>
         <button type="button" onClick={() => props.onUnavailable?.('instance-not-found')}>stub-dead-end</button>
+        <button type="button" onClick={() => props.onUnavailable?.('no-access')}>stub-no-access</button>
       </div>
     );
   },
@@ -290,6 +294,20 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
     expect(eventNamed('gate.failed')[1].score).toBe(0.62);
     expect(panel.textContent).toContain('62%');
     expect(panel.textContent).toContain('80%');
+    expect(panel.textContent).toContain('Play it once more, work on it first, or come back later.');
+  });
+
+  it('still says what to do when the result carries no usable score', async () => {
+    // Gating the panel's only words behind a number reduced it to a bare
+    // heading over three unexplained buttons.
+    renderGate();
+    fireEvent.click(await screen.findByText('stub-fail-scoreless'));
+
+    const panel = await screen.findByRole('status');
+    expect(panel.textContent).toContain('Play it once more, work on it first, or come back later.');
+    expect(panel.textContent).not.toContain('%');
+    expect([...panel.querySelectorAll('button')].map((b) => b.textContent))
+      .toEqual(['Try again', 'Practice this', 'Leave']);
   });
 
   it('Try again re-runs the challenge without granting the match', async () => {
@@ -401,6 +419,26 @@ describe('GameGate — the run’s own dead ends fail open too', () => {
     expect(data.learnerId).toBe('kid1');
   });
 
+  it('does NOT open the match when nobody has chosen a player', async () => {
+    // `no-access` is permanent, known, and fixed by one tap — not
+    // infrastructure. Failing open on it would make picking Guest a reliable
+    // one-tap bypass of the entire gate, which any child who noticed would use
+    // every time. D12 holds: this does not reach a match.
+    const { onPassed, onLeave } = renderGate({ learnerId: 'kid1' });
+    fireEvent.click(await screen.findByText('stub-no-access'));
+
+    expect(onPassed).not.toHaveBeenCalled();
+    expect(await screen.findByText('Choose a player first')).toBeTruthy();
+    expect(screen.queryByTestId('exercise-run')).toBeNull();
+    expect(eventNamed('gate.unavailable')).toBeUndefined();
+    expect(eventNamed('gate.blocked')[1].reason).toBe('no-access');
+
+    // …and the panel is escapable, which is what makes refusing to grant fair.
+    fireEvent.click(screen.getByText('Leave'));
+    expect(onLeave).toHaveBeenCalledTimes(1);
+    expect(onPassed).not.toHaveBeenCalled();
+  });
+
   it('opens the match only once, however many ways the gate is told it is broken', async () => {
     const { onPassed } = renderGate();
     const deadEnd = await screen.findByText('stub-dead-end');
@@ -494,6 +532,38 @@ describe('GameGate — a late-arriving learner keeps their place', () => {
     expect(readGateState('kid1')).toEqual({ rung: EASED_ONCE, failuresAtRung: 0, cleanPasses: 1 });
     // …and the events after hydration name the real child, not the null guest.
     expect(eventNamed('gate.passed')[1].learnerId).toBe('kid1');
+  });
+
+  it('stamps the hydrated learner on events even when the resumed rung is unchanged', async () => {
+    // The case the re-resolve branch does NOT cover, and the one that is
+    // common: a new learner, or one still at the top of the ladder, resumes the
+    // same rung already on screen — so `round` is not bumped and the in-flight
+    // resolution finishes with whatever `emit` it started with. Capturing
+    // `emit` once would send `gate.presented`/`gate.attempt` out stamped
+    // `learnerId: null`, and finding 4 exists precisely to stop that.
+    function Harness() {
+      const [learnerId, setLearnerId] = useState(null);
+      return (
+        <>
+          <button type="button" onClick={() => setLearnerId('kid9')}>hydrate</button>
+          <GameGate learnerId={learnerId} gateConfig={{}} onPassed={() => {}} onLeave={() => {}} />
+        </>
+      );
+    }
+    // Hydrate BEFORE the resolution settles — the real race.
+    let release;
+    h.catalog.mockReturnValue(new Promise((resolve) => { release = () => resolve({ ok: true, status: 200, data: { seeds: SEEDS } }); }));
+    render(<MemoryRouter><Harness /></MemoryRouter>);
+    fireEvent.click(screen.getByText('hydrate'));
+    release();
+    await screen.findByTestId('exercise-run');
+
+    // Same rung on both sides, so nothing re-resolved…
+    expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(1);
+    // …and the one attempt still names the child.
+    for (const name of ['gate.presented', 'gate.attempt']) {
+      expect(eventNamed(name)[1].learnerId, name).toBe('kid9');
+    }
   });
 });
 

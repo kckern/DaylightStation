@@ -17,11 +17,14 @@
  *    genuine pass — which is why `passScore` must always reach it as a finite
  *    number (see `resolveGateConfig`, and the guard in the resolve effect).
  *
- * 2. **Infrastructure fails OPEN.** A catalog 502 during a backend restart —
- *    which this kiosk demonstrably hits — must start the match the child
- *    earned, not block it. Every unresolvable path calls `onPassed()` and logs
- *    `gate.unavailable`. Only the *verdict* can hold a child back, and at the
- *    ladder floor even that cannot (D9).
+ * 2. **Infrastructure fails OPEN — and only infrastructure.** A catalog 502
+ *    during a backend restart, which this kiosk demonstrably hits, must start
+ *    the match the child earned; those paths call `onPassed()` and log
+ *    `gate.unavailable`. "Nobody has chosen a player" is NOT infrastructure: it
+ *    is permanent, known, and fixed by one tap, so failing open on it would
+ *    make the Guest profile a reliable one-tap bypass of the whole gate. That
+ *    gets its own non-granting panel. Only the *verdict* can hold a child back,
+ *    and at the ladder floor even that cannot (D9).
  *
  * 3. **None of the three failure buttons reaches a match** (D12). "Practice
  *    this" leaves for the ordinary `intent=practice` route, which is unmetered
@@ -44,6 +47,7 @@ import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
 import ExerciseRun from '../Exercises/ExerciseRun.jsx';
 import { climbRung, degradeRung, initialRung, isFloor } from './gameGateLadder.js';
 import { pickGateMaterial } from './gateMaterial.js';
+import './GameGate.scss';
 
 /** The design's `gameGate` block. A household that sets none of it gets these. */
 export const GATE_CONFIG_DEFAULTS = Object.freeze({
@@ -243,7 +247,15 @@ export default function GameGate({ learnerId = null, deviceId, gateConfig = null
   useEffect(() => {
     let alive = true;
     setPhase('resolving');
-    const { config: current, rung, emit: emitNow } = latest.current;
+    // `config` and `rung` are read ONCE, deliberately: this resolution is for
+    // the rung as it stood when it started. `emit` is NOT destructured — it is
+    // called through the ref every time, because `learnerId` hydrates mid-flight
+    // and a captured `emit` would send `gate.presented`/`gate.attempt` out
+    // stamped with the null guest. That is the exact field the learner-change
+    // fix below exists to get right, and it is invisible whenever the resumed
+    // rung equals the on-screen one, which is the common case.
+    const { config: current, rung } = latest.current;
+    const emitNow = (...args) => latest.current.emit(...args);
     /**
      * The gate mounted. Emitted once per mount and BEFORE anything can decline,
      * so a fail-open run still anchors its own log query — those are precisely
@@ -372,28 +384,57 @@ export default function GameGate({ learnerId = null, deviceId, gateConfig = null
   const handleAbandoned = () => { emit('gate.abandoned', context); onLeave?.(); };
 
   /**
-   * The run settled into a state it cannot leave: the instance 502'd on ITS
-   * fetch (the gate resolved through `instances(seedId)`, the run re-resolves
-   * through `instance(instanceId)`, so a backend restart between the two lands
-   * here), the attempt could not be built, or this is a guest with nowhere to
-   * record a result. Every one of those renders a dead end with no way forward,
-   * so it is infrastructure failure and it fails OPEN like any other.
+   * The run settled into a state it cannot leave. TWO KINDS, and they resolve
+   * differently — the distinction is the same one the design draws for the gate
+   * as a whole (verdict versus infrastructure).
+   *
+   * `instance-not-found` / `unrunnable` are INFRASTRUCTURE: the instance 502'd
+   * on the run's own fetch (the gate resolved through `instances(seedId)`, the
+   * run re-resolves through `instance(instanceId)`, so a backend restart
+   * between the two lands here), or the attempt could not be built. Nothing the
+   * child can do, and they earned this game: fail open.
+   *
+   * `no-access` is NOT infrastructure. It is permanent, known, and entirely
+   * within the household's control — nobody has chosen a player. Failing open
+   * on it would make picking the Guest profile a deterministic one-tap bypass
+   * of the whole gate, which any child who noticed would use every time. It
+   * gets its own panel instead: say what to do, and offer the way out that now
+   * exists. D12 holds — this does not reach a match.
    */
   const handleUnavailable = (reason) => {
+    if (reason === 'no-access') {
+      emit('gate.blocked', { ...context, reason }, 'warn');
+      setPhase('no-access');
+      return;
+    }
     if (openedRef.current) return;
     openedRef.current = true;
     emit('gate.unavailable', { ...context, error: `run-${reason}` }, 'warn');
     onPassed?.();
   };
 
+  if (phase === 'no-access') {
+    return (
+      <section className="piano-mode__placeholder piano-game-gate piano-game-gate--blocked" role="status">
+        <h2>Choose a player first</h2>
+        <p>A challenge is saved to whoever played it, so the piano needs to know who you are.</p>
+        <div className="piano-game-gate__actions">
+          <button type="button" onClick={handleAbandoned}>Leave</button>
+        </div>
+      </section>
+    );
+  }
+
   if (phase === 'failed') {
     const bar = Number(attempt?.requirement?.passScore);
     return (
       <section className="piano-mode__placeholder piano-game-gate piano-game-gate--failed" role="status">
         <h2>Not this time</h2>
-        {/* The run unmounts the moment it reports a failure, taking its own
-            result readout with it — so the score has to be shown here or the
-            child never learns how close they came. */}
+        {/* Always rendered. A result can arrive without a usable score (an
+            aborted attempt, a floor rung with no numeric bar), and gating the
+            only words on the panel behind a number reduced it to a bare
+            heading over three unexplained buttons. */}
+        <p className="piano-game-gate__guidance">Play it once more, work on it first, or come back later.</p>
         {lastScore !== null && (
           <p className="piano-game-gate__score">
             <strong>{Math.round(lastScore * 100)}%</strong>
@@ -413,7 +454,7 @@ export default function GameGate({ learnerId = null, deviceId, gateConfig = null
   if (phase !== 'attempt' || !attempt) return <SkeletonStage />;
 
   return (
-    <div className="piano-game-gate">
+    <div className="piano-game-gate piano-game-gate--attempt">
       <ExerciseRun
         intent="challenge"
         material={attempt.material}
