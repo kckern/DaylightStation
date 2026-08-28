@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import './ImageFrame.scss';
 import getLogger from '../../../lib/logging/Logger.js';
@@ -103,7 +103,7 @@ export function ImageFrame({
   };
 
   /** Flush per-slide summary to the session log */
-  const perfFlush = () => {
+  const perfFlush = useCallback(() => {
     const p = perfRef.current;
     if (!p) return;
     perfRef.current = null;
@@ -122,17 +122,24 @@ export function ImageFrame({
       maxFrameMs: Math.round(p.maxFrameMs),
       avgFps: p.totalFrames > 1 ? Math.round(p.totalFrames / (displayMs / 1000)) : null,
     });
-  };
+  }, [perfLog]);
   // ── End performance instrumentation ──────────────────────────────────
 
+  // imageId is read through a ref in the cleanup rather than listed as a
+  // dependency: this component isn't remounted per-slide (no `key`), so the
+  // effect must fire mount/unmount exactly once while the cleanup still needs
+  // the LATEST imageId (the slide showing when the frame actually unmounts),
+  // not the one from the first render.
+  const imageIdRef = useRef(imageId);
+  imageIdRef.current = imageId;
   useEffect(() => {
-    logger.debug('image-frame-mount', { imageId });
+    logger.debug('image-frame-mount', { imageId: imageIdRef.current });
     return () => {
       // Flush any in-progress slide metrics on unmount
       perfFlush();
-      logger.debug('image-frame-unmount', { imageId });
+      logger.debug('image-frame-unmount', { imageId: imageIdRef.current });
     };
-  }, []);
+  }, [perfFlush]);
 
   // Consume pre-fetched enrichment or defer JIT fetch to idle time
   useEffect(() => {
@@ -346,7 +353,7 @@ export function ImageFrame({
       cancelled = true;
       preloadRef.current = { thumb: null, orig: null, thumbDone: false, origDone: false };
     };
-  }, [nextMedia?.id]);
+  }, [nextMedia?.id, nextMedia?.mediaUrl, nextMedia?.thumbnail, perfLog]);
 
   // Main effect: handle image transitions (cross-dissolve + Ken Burns)
   useEffect(() => {
@@ -524,7 +531,10 @@ export function ImageFrame({
       if (timerRef.current) clearTimeout(timerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [media?.id, media?.mediaUrl, duration, effect, zoom, focusPerson, slideshow.showMetadata]);
+  }, [
+    media?.id, media?.mediaUrl, media?.thumbnail, media?.title,
+    duration, effect, zoom, focusPerson, slideshow.showMetadata, perfFlush, perfLog,
+  ]);
 
   // Full cleanup on unmount
   useEffect(() => {

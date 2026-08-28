@@ -90,7 +90,7 @@ export function TitleCardRenderer({ media, advance, resilienceBridge }) {
     }, duration);
 
     return () => clearTimeout(timerRef.current);
-  }, [media?.id, duration, advance]);
+  }, [media?.id, duration, advance, card.template]);
 
   return (
     <div ref={containerRef} className={`titlecard ${themeClass}`}>

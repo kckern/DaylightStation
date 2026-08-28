@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { layoutOwnsRouting } from './ScreenRenderer.jsx';
+import { layoutOwnsRouting } from './layoutOwnsRouting.js';
 
 describe('layoutOwnsRouting', () => {
   it('is true when the layout is a single routing-owner widget (the Portal/school)', () => {

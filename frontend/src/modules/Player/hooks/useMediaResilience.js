@@ -296,7 +296,7 @@ export function useMediaResilience({
         seekToIntentMs: seekMs
       });
     }
-  }, [actions, waitKeyFields, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
+  }, [actions, waitKeyFields, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds, maxAttempts]);
 
   const retryFromExhausted = useCallback(() => {
     getRecoveryLedger().userReset(playbackSessionKey);

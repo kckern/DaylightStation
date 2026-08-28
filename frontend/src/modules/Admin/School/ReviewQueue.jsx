@@ -218,7 +218,7 @@ export default function ReviewQueue() {
     } finally {
       setBusyKey(null);
     }
-  }, [verdicts, notes, grader, graderId, logger, refresh]);
+  }, [verdicts, notes, pin, grader, graderId, logger, refresh]);
 
   const ordered = useMemo(() => newestFirst(items), [items]);
 

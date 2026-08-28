@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import getLogger from '../../../lib/logging/Logger.js';
@@ -29,14 +29,14 @@ export function AmbientLayer({
   const { effectiveMaster: masterVolume } = useScreenVolume();
   const effectiveAmbient = Math.max(0, Math.min(1, ambientVolume * masterVolume));
 
-  const cancelFade = (slot) => {
+  const cancelFade = useCallback((slot) => {
     if (fadeRafRef.current[slot]) {
       cancelAnimationFrame(fadeRafRef.current[slot]);
       fadeRafRef.current[slot] = null;
     }
-  };
+  }, []);
 
-  const fade = (slot, to, durationMs, onDone) => {
+  const fade = useCallback((slot, to, durationMs, onDone) => {
     const ref = slot === 'A' ? slotARef : slotBRef;
     const el = ref.current;
     if (!el) { onDone?.(); return; }
@@ -54,7 +54,7 @@ export function AmbientLayer({
       }
     };
     fadeRafRef.current[slot] = requestAnimationFrame(tick);
-  };
+  }, [cancelFade]);
 
   useEffect(() => {
     const active = activeSlotRef.current;
@@ -113,12 +113,12 @@ export function AmbientLayer({
     }
 
     activeSlotRef.current = nextSlot;
-  }, [ambientUrl, effectiveAmbient, fadeMs]);
+  }, [ambientUrl, effectiveAmbient, fadeMs, fade]);
 
   useEffect(() => () => {
     cancelFade('A');
     cancelFade('B');
-  }, []);
+  }, [cancelFade]);
 
   return (
     <div

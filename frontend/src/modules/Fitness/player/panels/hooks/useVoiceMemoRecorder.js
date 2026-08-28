@@ -422,7 +422,12 @@ const useVoiceMemoRecorder = ({
       setUploading(false);
       abortControllerRef.current = null;
     }
-  }, [emitError, emitState, logVoiceMemo, onMemoCaptured, sessionId]);
+  }, [
+    emitError, emitState, logVoiceMemo, onMemoCaptured, sessionId,
+    fitnessCtx?.currentMedia?.grandparentTitle, fitnessCtx?.currentMedia?.showName,
+    fitnessCtx?.currentMedia?.title, fitnessCtx?.fitnessSessionInstance?.roster,
+    fitnessCtx?.householdId, fitnessCtx?.recentlyPlayed,
+  ]);
 
   const startRecording = useCallback(async () => {
     setError(null);

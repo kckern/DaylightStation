@@ -1,5 +1,5 @@
 import moment from "moment";
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import HighchartsTreeMap from "highcharts/modules/treemap";
@@ -543,15 +543,15 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
   const currentTransactions = drillStack[drillStack.length - 1];
   const { topData, drillSeries } = useMemo(() => buildDrillData(currentTransactions), [currentTransactions]);
 
-  const buildCrumbLabel = (point) => {
+  const buildCrumbLabel = useCallback((point) => {
     const percentOfTop = (point.valueReal / grandTotal) * 100;
     if (point.drilldown) {
       return `${formatCompactCurrency(point.valueReal)} (${percentOfTop.toFixed(1)}%)`;
     }
     return point.name;
-  };
+  }, [grandTotal]);
 
-  const handleClick = (point, e) => {
+  const handleClick = useCallback((point, e) => {
     if (e) { e.stopPropagation(); e.preventDefault(); }
     const drillId = point.drilldown;
     if (drillId) {
@@ -571,7 +571,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
     } else {
       setTransactionFilter(point.name);
     }
-  };
+  }, [drillSeries, topData, drillStack, crumbs, setTransactionFilter, buildCrumbLabel]);
 
   const chartOptions = useMemo(() => ({
     chart: { type: "column", marginLeft: 20 },
@@ -706,7 +706,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
         }))
       }
     ]
-  }), [topData, drillSeries, drillStack, crumbs, grandTotal, setTransactionFilter]);
+  }), [topData, handleClick]);
 
   function renderBreadcrumbs(handleBackClick) {
     return crumbs.map((c, i) => {

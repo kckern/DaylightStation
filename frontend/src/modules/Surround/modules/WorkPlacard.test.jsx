@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import * as sass from 'sass-embedded';
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import WorkPlacard, { plateText } from './WorkPlacard.jsx';
+import WorkPlacard from './WorkPlacard.jsx';
+import { plateText } from './plateText.js';
 
 // COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
 // `withStyles()` recompiled it on every call — up to 20 times in this file
