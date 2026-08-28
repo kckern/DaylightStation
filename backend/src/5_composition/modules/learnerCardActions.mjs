@@ -111,7 +111,8 @@ export function makePrintAgendaHandler({ resolvePersonalCard, eventBus, logger =
  * @returns {(args: {learnerId: string, location?: string, target?: string}) => Promise<object>}
  */
 export function makeReadingSessionHandler({
-  sessions, isPlaying = null, wakeScreen = null, eventBus = null, logger = console,
+  sessions, isPlaying = null, wakeScreen = null, alertAdult = null, eventBus = null, logger = console,
+  ackTimeoutMs = 8_000, maxDeliveryAttempts = 3,
 } = {}) {
   if (!sessions) throw new Error('makeReadingSessionHandler requires a sessions store');
 
@@ -214,6 +215,30 @@ export function makeReadingSessionHandler({
       wakeMs,
       woke: woke ? woke.ok !== false : null,
     });
+    // The initial wake is intentionally outside this retry loop: power-on is
+    // expensive and can disturb a person using the TV.  Recovery replays the
+    // state and re-foregrounds the already-selected reader, at most twice.
+    // The card tap has already received its answer; delivery continues without
+    // holding the trigger request open for up to 24 seconds.
+    if (!midStory && active?.sessionId) {
+      void (async () => {
+        for (let attempt = 1; attempt <= maxDeliveryAttempts; attempt += 1) {
+          if (await sessions.waitForAcknowledgement(active.sessionId, ackTimeoutMs)) {
+            log('info', 'school.reading.delivery-acknowledged', { location, sessionId: active.sessionId, attempt });
+            return;
+          }
+          if (attempt === maxDeliveryAttempts) break;
+          sessions.reannounce(location, active.sessionId);
+          try { await wakeScreen?.({ target, location, prepareOnly: true }); } catch (err) {
+            log('warn', 'school.reading.delivery-replay-wake-failed', { location, attempt: attempt + 1, error: err?.message ?? String(err) });
+          }
+        }
+        log('error', 'school.reading.delivery-unacknowledged', { location, learnerId, sessionId: active.sessionId, attempts: maxDeliveryAttempts });
+        try { await alertAdult?.({ location, target, learnerId, sessionId: active.sessionId }); } catch (err) {
+          log('warn', 'school.reading.delivery-alert-failed', { location, error: err?.message ?? String(err) });
+        }
+      })();
+    }
     return {
       status: 'reading_session_open',
       learnerId: (active ?? session).learnerId,
@@ -221,6 +246,7 @@ export function makeReadingSessionHandler({
       // `null` when nothing was asked to wake; `false` only when something was
       // asked and could not. The two are different answers.
       woke: wakeScreen ? woke?.ok !== false : null,
+      sessionId: (active ?? session).sessionId,
     };
   };
 }

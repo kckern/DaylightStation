@@ -92,6 +92,41 @@ export function createReadingRouter({
     if (!location) throw badRequest('location is required');
     return res.json(sessions.snapshot(location));
   }));
+  router.post('/session/ack', asyncHandler(async (req, res) => {
+    const location = trimmed(req.body?.location);
+    const sessionId = trimmed(req.body?.sessionId);
+    if (!location || !sessionId) throw badRequest('location and sessionId are required');
+    const session = sessions.acknowledge(location, sessionId);
+    return res.json({ ok: Boolean(session), session });
+  }));
+  router.post('/progress', asyncHandler(async (req, res) => {
+    const location = trimmed(req.body?.location);
+    const sessionId = trimmed(req.body?.sessionId);
+    const pickId = trimmed(req.body?.pickId);
+    const session = location ? sessions.current(location) : null;
+    if (!session || session.sessionId !== sessionId || session.pick?.pickId !== pickId) {
+      return res.status(409).json({ ok: false, reason: 'session-or-pick-mismatch' });
+    }
+    const positionSec = Number(req.body?.positionSec);
+    const durationSec = Number(req.body?.durationSec);
+    const updated = sessions.update(location, {
+      progress: {
+        positionSec: Number.isFinite(positionSec) ? positionSec : null,
+        durationSec: Number.isFinite(durationSec) ? durationSec : null,
+        paused: req.body?.paused === true,
+        at: new Date().toISOString(),
+      },
+    });
+    return res.json({ ok: true, session: updated });
+  }));
+  router.get('/read-status', asyncHandler(async (req, res) => {
+    const learnerId = trimmed(req.query?.learnerId);
+    const studyDay = trimmed(req.query?.studyDay);
+    const pickId = trimmed(req.query?.pickId);
+    if (!learnerId || !studyDay || !pickId) throw badRequest('learnerId, studyDay, and pickId are required');
+    const read = await readingLog?.findByPickId?.(learnerId, studyDay, pickId) ?? null;
+    return res.json({ recorded: Boolean(read), read });
+  }));
 
   /**
    * The story is on screen. `pickId` and `learnerId` are the screen's pick-time
@@ -105,10 +140,17 @@ export function createReadingRouter({
     const learnerId = trimmed(req.body?.learnerId);
     const contentId = trimmed(req.body?.contentId);
     const pickId = trimmed(req.body?.pickId);
+    const current = sessions.current(location);
+    const serverPick = current?.pick ?? null;
+    if (serverPick?.pickId && serverPick.pickId !== pickId) {
+      return res.status(409).json({ ok: false, reason: 'pick-mismatch' });
+    }
+    const attributedLearnerId = serverPick?.learnerId ?? learnerId;
+    const attributedContentId = serverPick?.contentId ?? contentId;
 
     const updated = sessions.update(location, {
       state: 'reading',
-      playing: { learnerId, contentId, pickId, at: new Date().toISOString() },
+      playing: { learnerId: attributedLearnerId, contentId: attributedContentId, pickId, at: new Date().toISOString() },
     });
     if (!updated) {
       // The session timed out, or a grown-up closed it, while the content
@@ -130,13 +172,13 @@ export function createReadingRouter({
     // attribution it was picked with. Warning about that would put a scary line
     // in the store for correct behaviour — so it is logged at info, and only
     // the null case, which really does lose the read, is a warning.
-    if (!learnerId) {
+    if (!attributedLearnerId) {
       logger.warn?.('school.reading.playing-unattributed', {
         location, contentId, pickId,
         sessionLearnerId: updated.learnerId,
         consequence: 'the completion POST will be rejected and the read lost',
       });
-    } else if (learnerId !== updated.learnerId) {
+    } else if (attributedLearnerId !== updated.learnerId) {
       logger.info?.('school.reading.playing-learner-differs', {
         location, contentId, pickId,
         screenLearnerId: learnerId,
@@ -145,7 +187,7 @@ export function createReadingRouter({
       });
     }
     logger.info?.('school.reading.playback-started', {
-      location, learnerId, contentId, pickId, attributable: Boolean(learnerId),
+      location, learnerId: attributedLearnerId, contentId: attributedContentId, pickId, attributable: Boolean(attributedLearnerId),
     });
     return res.json({ ok: true, state: updated.state, learnerId: updated.learnerId });
   }));
@@ -159,15 +201,26 @@ export function createReadingRouter({
   router.post('/read', asyncHandler(async (req, res) => {
     const body = req.body || {};
     const location = trimmed(body.location);
+    const current = location ? sessions.current(location) : null;
+    const serverPick = location ? sessions.current(location)?.pick ?? null : null;
+    const requestPickId = trimmed(body.pickId);
+    const requestSessionId = trimmed(body.sessionId);
+    if (requestSessionId && (!current || current.sessionId !== requestSessionId || !serverPick)) {
+      return res.status(409).json({ recorded: false, reason: 'session-or-pick-expired' });
+    }
+    if (serverPick?.pickId && serverPick.pickId !== requestPickId) {
+      return res.status(409).json({ recorded: false, reason: 'pick-mismatch' });
+    }
     let read;
     try {
       read = await recordStoryRead.execute({
-        learnerId: body.learnerId,
-        contentId: trimmed(body.contentId),
+        learnerId: serverPick?.learnerId ?? body.learnerId,
+        contentId: serverPick?.contentId ?? trimmed(body.contentId),
         title: trimmed(body.title),
         tagUid: trimmed(body.tagUid),
         location: trimmed(body.location),
-        pickId: trimmed(body.pickId),
+        pickId: serverPick?.pickId ?? requestPickId,
+        studyDay: serverPick?.studyDay ?? null,
       });
     } catch (err) {
       // A REJECTED READ IS THE WORST FAILURE THIS FEATURE HAS, and it was

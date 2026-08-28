@@ -204,6 +204,7 @@ export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
   economyService = null, userService = null, eventBus = null,
   thermalPrinterRegistry = null, playbackAdapter = null, wakeScreen = null,
+  startReadingSession = null,
   languageStudyService = null,
   studyGrants = null,
   languageReelService = null,
@@ -558,7 +559,7 @@ export async function createSchoolLifecycle({
   // before the `school.yml` `programs:` loop for the same reason piano-course
   // is: a config entry reusing the id must trip that loop's collision check.
   launchers.set(STORY_TIME_PROGRAM_ID, new StoryTimeProgramLauncher({
-    readingLog: stores.readingLog, assignments: stores.assignments, timezone, clock, logger,
+    readingLog: stores.readingLog, assignments: stores.assignments, timezone, clock, logger, startReadingSession,
   }));
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config

@@ -50,6 +50,8 @@ import { readingTopic } from './ReadingSessionService.mjs';
 
 export const CLAIMED_BY = 'reading-session';
 
+const mintPickId = () => `pick_${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`}`;
+
 /** The states in which a story is on screen and the mode split applies. */
 const MID_STORY = new Set(['reading']);
 
@@ -129,8 +131,12 @@ export class ReadingSessionInterceptor {
     // PROMPT or CONFIRM: the session owns the screen in BOTH modes. Browsing is
     // relaxed only mid-story; a child who tapped their card still gets their
     // countdown, whatever they owe.
-    const pick = { contentId, target: response.target ?? null, at: this.#clock().toISOString() };
-    if (!this.#broadcast(location, { event: 'book-selected', learnerId, location, ...pick })) return null;
+    const samePick = session.state === 'confirm' && session.pick?.contentId === contentId;
+    const pick = samePick ? session.pick : {
+      pickId: mintPickId(), learnerId, contentId, target: response.target ?? null,
+      studyDay: this.#storyTime?.studyDay?.() ?? null, at: this.#clock().toISOString(),
+    };
+    if (!this.#broadcast(location, { event: 'book-selected', learnerId, location, sessionId: session.sessionId, ...pick })) return null;
     this.#sessions.update(location, { state: 'confirm', pick });
     this.#log('info', 'school.reading.book-selected', { location, learnerId, contentId });
     return { claimed: true, by: CLAIMED_BY, learnerId, contentId };

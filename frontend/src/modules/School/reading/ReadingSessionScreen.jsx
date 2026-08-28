@@ -93,6 +93,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   const listeners = useRef({
     playing: () => handlers.current.notePlaybackStarted?.(),
     ended: () => handlers.current.notePlaybackCompleted?.(),
+    timeupdate: (event) => handlers.current.notePlaybackProgress?.(event.currentTarget),
   });
 
   // LOGGED, because these two listeners are the ONLY witnesses to a story
@@ -106,6 +107,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     if (!el) return;
     el.removeEventListener('playing', listeners.current.playing);
     el.removeEventListener('ended', listeners.current.ended);
+    el.removeEventListener('timeupdate', listeners.current.timeupdate);
     mediaRef.current = null;
     readingLog.playback('media-detached', { reason });
   }, []);
@@ -116,6 +118,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     mediaRef.current = el;
     el.addEventListener('playing', listeners.current.playing);
     el.addEventListener('ended', listeners.current.ended);
+    el.addEventListener('timeupdate', listeners.current.timeupdate);
     readingLog.playback('media-attached', { tag: el.tagName?.toLowerCase?.() ?? null });
   }, [detachMedia]);
 
@@ -155,6 +158,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   handlers.current.notePlaybackDismissed = session.notePlaybackDismissed;
   handlers.current.notePlaybackStarted = session.notePlaybackStarted;
   handlers.current.notePlaybackCompleted = session.notePlaybackCompleted;
+  handlers.current.notePlaybackProgress = session.notePlaybackProgress;
 
   // Named, so an unmount mid-story is distinguishable in the log store from an
   // ordinary element swap. A widget that unmounts while a story is playing has

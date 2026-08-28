@@ -295,6 +295,13 @@ export class YamlReadingLogStore extends IReadingLogStore {
     this.#warnUnrecognised(learnerId, studyDay, loaded);
     return loaded.rows;
   }
+
+  /** @inheritdoc */
+  async findByPickId(learnerId, studyDay, pickId) {
+    if (typeof pickId !== 'string' || !pickId.trim()) return null;
+    const rows = await this.listForDay(learnerId, studyDay);
+    return rows.find((row) => row?.pickId === pickId) ?? null;
+  }
 }
 
 export default YamlReadingLogStore;

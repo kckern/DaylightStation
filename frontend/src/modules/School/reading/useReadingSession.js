@@ -135,6 +135,7 @@ export function useReadingSession({
   const attributionRef = useRef(null);
   const endedRef = useRef(false);
   const startedRef = useRef(false);
+  const lastProgressAt = useRef(0);
   const onPlayRef = useRef(onPlay);
   onPlayRef.current = onPlay;
   const onCueRef = useRef(onCue);
@@ -221,7 +222,11 @@ export function useReadingSession({
       learnerId: who?.id ?? null,
       contentId: current.contentId,
       title: current.title ?? null,
-      pickId: mintPickId(),
+      // The interceptor minted this at claim time. Falling back only preserves
+      // compatibility with an older backend during a rolling restart.
+      pickId: current.pickId ?? mintPickId(),
+      sessionId: current.sessionId ?? null,
+      studyDay: current.studyDay ?? null,
       location,
     };
     attributionRef.current = attribution;
@@ -288,13 +293,28 @@ export function useReadingSession({
       learnerId: attribution.learnerId, contentId: attribution.contentId, pickId: attribution.pickId,
     });
     setView('open');
-    const res = await schoolApi.readingRead({
+    let res = await schoolApi.readingRead({
       learnerId: attribution.learnerId,
       contentId: attribution.contentId,
       title: attribution.title,
       location: attribution.location,
       pickId: attribution.pickId,
+      sessionId: attribution.sessionId,
     });
+    if (!res.ok) {
+      // A network loss leaves the outcome ambiguous: the server may have
+      // appended before its response disappeared. Retry once, then ask the
+      // idempotency key rather than risking a second visible celebration.
+      const retry = res.status === 0 ? await schoolApi.readingRead({
+        learnerId: attribution.learnerId, contentId: attribution.contentId, title: attribution.title,
+        location: attribution.location, pickId: attribution.pickId, sessionId: attribution.sessionId,
+      }) : res;
+      if (retry.ok) res = retry;
+      const status = attribution.studyDay
+        ? await schoolApi.readingReadStatus({ learnerId: attribution.learnerId, studyDay: attribution.studyDay, pickId: attribution.pickId })
+        : null;
+      if (!res.ok && status?.ok && status.data?.recorded) res = { ok: true, status: 200, data: status.data };
+    }
     if (!res.ok) {
       // §9: never claim a read that was not recorded. The child heard the
       // story, so this is not their failure — but the screen must not show a
@@ -315,6 +335,18 @@ export function useReadingSession({
       }, CELEBRATE_MS);
     }
   }, [cue, loadSummary, say]);
+
+  const notePlaybackProgress = useCallback((media) => {
+    const attribution = attributionRef.current;
+    if (!attribution?.sessionId || !attribution.pickId || !media) return;
+    const now = Date.now();
+    if (now - lastProgressAt.current < 5000) return;
+    lastProgressAt.current = now;
+    schoolApi.readingProgress({
+      location: attribution.location, sessionId: attribution.sessionId, pickId: attribution.pickId,
+      positionSec: media.currentTime, durationSec: media.duration, paused: media.paused,
+    }).catch?.(() => {});
+  }, []);
 
   /**
    * The Player went away. If `ended` never fired, the story did not finish —
@@ -383,6 +415,12 @@ export function useReadingSession({
         // The payload carries the authoritative learner — the interceptor reads
         // it straight off the session — so this also records the id we could
         // have used, which is what makes the gap self-evident in the log store.
+        if (payload.learnerId && !learnerRef.current?.id) {
+          const who = { id: payload.learnerId, name: null };
+          learnerRef.current = who;
+          setLearner(who);
+          loadSummary(who.id);
+        }
         if (!learnerRef.current?.id) {
           readingLog.error('pick-without-session', {
             contentId,
@@ -393,7 +431,7 @@ export function useReadingSession({
         }
         const previous = pickRef.current;
         const samePick = previous?.contentId === contentId && viewRef.current === 'picking';
-        const next = samePick ? previous : { contentId, title: null, image: null };
+        const next = samePick ? previous : { contentId, title: null, image: null, pickId: payload.pickId ?? null, sessionId: payload.sessionId ?? null, studyDay: payload.studyDay ?? null };
         pickRef.current = next;
         setPick(next);
         setView('picking');
@@ -470,6 +508,9 @@ export function useReadingSession({
       const session = result.ok ? result.data?.session : null;
       if (cancelled || !session || session.state === 'starting') return;
       handle({ event: 'session-open', ...session });
+      // This is the delivery proof: the client has subscribed, fetched, and
+      // applied the prompt before it tells the starter that the TV is ready.
+      await schoolApi.acknowledgeReadingSession({ location, sessionId: session.sessionId });
     })();
     return () => { cancelled = true; };
   }, [handle, location]);
@@ -484,6 +525,7 @@ export function useReadingSession({
     confirmTotalMs: confirmRemainingMs === null ? null : confirmMs,
     notePlaybackStarted,
     notePlaybackCompleted,
+    notePlaybackProgress,
     notePlaybackDismissed,
     dismissNotice: () => say(null),
   };
