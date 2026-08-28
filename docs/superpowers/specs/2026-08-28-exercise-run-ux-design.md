@@ -172,7 +172,17 @@ properties, not conventions:
 4. **The cursor is legible.** The current note is visibly marked on the staff, advances
    note-by-note as played, and the wrong-note state is visually distinct — for tiers
    0–1 the lit keys are the cursor and the same properties apply to them.
-5. **Rendered output is the authority.** The Playwright checks (Testing, below) assert
+   **Wrong notes are shown, not just flagged:** the note the child actually played
+   renders semi-transparently on the staff at its true position, so they can see where
+   they are relative to the target even when wrong. The benchmark is the house pattern
+   already shipped in `SvgStaffRenderer` (ghost notes at 50% opacity, clef from pitch)
+   used by `StaffNoteLabel` and the game action staves.
+5. **One engraver per job.** Free-timing asks (tiers 0–2 — no beat, no rhythm values)
+   render through a sequence extension of `SvgStaffRenderer`: ordered noteheads on one
+   staff, ghosts native. The ABC path serves only cued material, where rhythm engraving
+   matters; OSMD serves `score` passages. The live-keyboard grand-staff renderer serves
+   nothing in this surface.
+6. **Rendered output is the authority.** The Playwright checks (Testing, below) assert
    these on the real rendered DOM — clef glyph present/absent, note elements inside the
    staff's bounding box, cursor class on the expected element — not on the ABC string.
    String-level assertions remain as fast unit guards, but a green ABC string proves
