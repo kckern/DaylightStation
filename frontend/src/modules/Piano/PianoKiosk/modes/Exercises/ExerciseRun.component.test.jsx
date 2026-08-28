@@ -1,13 +1,15 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ExerciseRun from './ExerciseRun.jsx';
-import { requirementForRung } from '../Games/gameGateLadder.js';
+import { initialRung, requirementForRung } from '../Games/gameGateLadder.js';
 
 const h = vi.hoisted(() => ({
   activeNotes: new Map(),
   record: vi.fn(),
   createAttempt: vi.fn(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  // Per-test instance override; null means "use the standard fixture".
+  instanceData: null,
   instance: {
     id: 'scales/c-major@test',
     title: 'C major fragment',
@@ -46,7 +48,7 @@ vi.mock('./ExerciseNotation.jsx', () => ({
 }));
 vi.mock('./pianoLearningApi.js', () => ({
   pianoLearningApi: {
-    instance: vi.fn(async () => ({ ok: true, data: h.instance })),
+    instance: vi.fn(async () => ({ ok: true, data: h.instanceData ?? h.instance })),
     program: vi.fn(async () => ({ ok: false, data: null })),
   },
 }));
@@ -64,6 +66,7 @@ vi.mock('../../../performance/assessmentSession.js', async (importOriginal) => {
 describe('ExerciseRun shared assessment wiring', () => {
   beforeEach(() => {
     h.activeNotes = new Map();
+    h.instanceData = null;
     h.record.mockReset();
     h.record.mockResolvedValue({ ok: true, status: 201, data: { attempt_id: 'stored' }, durationMs: 4 });
     // mockClear, not mockReset — the implementation is installed once by the
@@ -167,5 +170,67 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(evidence.diagnostics).toMatchObject({ expected_notes: 2, matched_notes: 2, wrong_notes: 3, missed_notes: 0 });
     expect(evidence.criteria.completeness).toBe(1);
     expect(evidence.criteria.cleanliness).toBeLessThan(1);
+  });
+
+  // A non-floor rung: `requirementForRung` emits a passScore and NO rubric, so
+  // the engine's `verdict.passed` is unconditionally true. The surface must
+  // judge on the score, or every child clears the hardest rung instantly.
+  const nonFloorRung = { timing: 'free', hands: 2, span: 1, difficulty: 'major', direction: 'ascending' };
+
+  it('a non-floor rung below its passScore is not a pass, whatever the engine verdict says', async () => {
+    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    expect(requirementOverride).toMatchObject({ mode: 'free', passScore: 0.8 });
+    expect(requirementOverride.rubric).toBeUndefined();
+
+    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
+
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 60);
+    press(view, props, 62); // complete, but cleanliness 2/5 -> score 0.7
+
+    expect(await screen.findByText('Keep working')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Practice first' })).toBeInTheDocument();
+    expect(props.onPassed).not.toHaveBeenCalled();
+
+    // The engine still says "passed" — which is exactly why the surface cannot
+    // read it on a rung that carries no rubric.
+    await waitFor(() => expect(h.record).toHaveBeenCalledTimes(1));
+    expect(h.record.mock.calls[0][1].verdict.passed).toBe(true);
+  });
+
+  it('a non-floor rung at or above its passScore passes, and hands the result to the host', async () => {
+    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
+
+    press(view, props, 60);
+    press(view, props, 62); // clean run -> score 1
+
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    // The host gets the result rather than a click event, so it can read the
+    // score without re-deriving it.
+    expect(props.onPassed).toHaveBeenCalledTimes(1);
+    expect(props.onPassed.mock.calls[0][0]).toMatchObject({ status: 'completed', score: 1 });
+  });
+
+  it('a cued requirement on a tempo-less instance degrades instead of blanking the kiosk', async () => {
+    h.instanceData = { ...h.instance, tempo: undefined };
+    const requirementOverride = requirementForRung(initialRung(), { passScore: 0.8 });
+    expect(requirementOverride.mode).toBe('cued');
+
+    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    render(<ExerciseRun {...props} />);
+
+    expect(await screen.findByText(/Cannot start this one/)).toBeInTheDocument();
+    expect(h.log.warn).toHaveBeenCalledWith('piano.exercise-attempt-unbuildable', expect.objectContaining({
+      id: h.instance.id, mode: 'cued', reason: 'Cued assessment requires a usable tempo',
+    }));
   });
 });

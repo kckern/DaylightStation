@@ -44,6 +44,30 @@ export function wrongEventState(event) {
 }
 
 /**
+ * Did this run clear its bar? The surface must answer this itself, because
+ * `verdict.passed` alone is not the answer for a gate rung.
+ *
+ *  - Practice, and the FLOOR rung (`passScore: null`): the engine's verdict is
+ *    correct and is the only signal. The floor's rubric (`{completeness:1}`) IS
+ *    its contract, and D9 requires it stay unfailable.
+ *  - A NON-FLOOR rung carries a `passScore` and NO rubric — so
+ *    `attempt.requirement.rubric.criteria` is empty, `failedCriteria` is `[]`,
+ *    and with no pace gate `failedGates` is `[]` too. `verdict.passed` is then
+ *    unconditionally true at ANY score, including a run where the child played
+ *    nothing. The score is the contract on those rungs; reading the verdict
+ *    would tell every child "Passed" the instant the gate opened.
+ *
+ * `passScore: null` must be excluded BEFORE the numeric check: `Number(null)`
+ * is 0, which is finite, so a bare `Number.isFinite` would quietly turn the
+ * floor into `score >= 0` and stop testing anything.
+ */
+export function runPassed(result, { challenge = false, passScore = null } = {}) {
+  if (!result) return false;
+  if (challenge && passScore != null && Number.isFinite(Number(passScore))) return result.score >= Number(passScore);
+  return Boolean(result.verdict?.passed);
+}
+
+/**
  * @param {object} props
  * @param {string|null} [props.instanceId] Exercise-bank instance to run.
  * @param {{kind:'exercise'|'score', instanceId?:string}|null} [props.material]
@@ -62,6 +86,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   const [runtime, setRuntime] = useState(null);
   const [lastWrong, setLastWrong] = useState(null);
   const [countdown, setCountdown] = useState(null);
+  const [unrunnable, setUnrunnable] = useState(false);
   const previousNotesRef = useRef([]);
   const activeNotesRef = useRef(activeNotes);
   activeNotesRef.current = activeNotes;
@@ -84,6 +109,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   useEffect(() => {
     let alive = true;
     setInstance(undefined);
+    setUnrunnable(false);
     Promise.all([
       loadInstance(),
       programId ? pianoLearningApi.program(programId) : Promise.resolve({ ok: false, data: null }),
@@ -102,19 +128,30 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     if (!access.allowed || !instance || (challenge && !requirement)) return null;
     const mode = selectedMode;
     const activeRequirement = challenge ? requirement : null;
-    const prepared = prepareExerciseAssessment({
-      instance, mode, purpose: challenge ? 'challenge' : 'practice', requirement: activeRequirement,
-    });
-    // The requirement wins over the surface's defaults — a gate rung can widen
-    // `wrongWindow`, allow extras, or loosen the timing windows without this
-    // component knowing which knob it turned. Practice is deliberately left on
-    // the defaults, exactly as it already ignores a step's rubric and gates.
-    return createAssessmentAttempt({ ...prepared, policy: { ...DEFAULT_POLICY, ...(activeRequirement?.policy ?? {}) } });
-  }, [access.allowed, challenge, instance, requirement, selectedMode]);
+    try {
+      const prepared = prepareExerciseAssessment({
+        instance, mode, purpose: challenge ? 'challenge' : 'practice', requirement: activeRequirement,
+      });
+      // The requirement wins over the surface's defaults — a gate rung can widen
+      // `wrongWindow`, allow extras, or loosen the timing windows without this
+      // component knowing which knob it turned. Practice is deliberately left on
+      // the defaults, exactly as it already ignores a step's rubric and gates.
+      return createAssessmentAttempt({ ...prepared, policy: { ...DEFAULT_POLICY, ...(activeRequirement?.policy ?? {}) } });
+    } catch (error) {
+      // A requirement this instance cannot satisfy — e.g. a cued rung on a bank
+      // instance carrying no tempo, which the engine rejects outright. Without
+      // this catch the throw escapes installRuntime's effect and blanks the
+      // whole kiosk. Same posture as unresolvable material: log, degrade.
+      logger.warn('piano.exercise-attempt-unbuildable', { id: instance.id, mode, reason: error?.message ?? String(error) });
+      setUnrunnable(true);
+      return null;
+    }
+  }, [access.allowed, challenge, instance, logger, requirement, selectedMode]);
 
   const installRuntime = useCallback(() => {
     const attempt = buildAttempt();
     if (!attempt) return;
+    setUnrunnable(false);
     runtimeRef.current?.dispose();
     const next = createAssessmentRuntime({
       attempt,
@@ -174,9 +211,14 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     persist(snapshot.result);
     if (snapshot.result.status === 'completed') logger.info('piano.exercise-complete', {
       id: instance.id, purpose: challenge ? 'challenge' : 'practice', matcher: snapshot.matcher,
-      score: snapshot.result.score, passed: snapshot.result.verdict.passed,
+      score: snapshot.result.score,
+      // `verdict.passed` is the engine's record and stays in the evidence
+      // untouched — but on a non-floor rung it is always true, so it would
+      // tell a false story on its own. `passed` is what the child was shown.
+      engine_verdict: snapshot.result.verdict.passed,
+      passed: runPassed(snapshot.result, { challenge, passScore: requirement?.passScore }),
     });
-  }, [challenge, instance, logger, persist, snapshot]);
+  }, [challenge, instance, logger, persist, requirement, snapshot]);
 
   const start = useCallback(() => {
     if (!runtime) return;
@@ -218,9 +260,15 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     runtimeRef.current?.dispose();
   }, [persist]);
 
-  if (!access.allowed) return <PianoEmpty title="Choose a player" hint="Challenges require a persistent piano profile so the result can be verified and recorded." />;
+  // PianoEmpty's prop is `message` — `title`/`hint` are silently dropped, which
+  // is why these states used to render a bare "Nothing here yet."
+  if (!access.allowed) return <PianoEmpty message="Choose a player. Challenges need a saved piano profile so the result can be recorded." />;
+  // Both degraded states must be checked BEFORE the skeleton. `runtime` stays
+  // null whenever there is no attempt to build, so a `!runtime` test placed
+  // first swallows them and spins on a skeleton forever.
+  if (instance === null) return <PianoEmpty message="Exercise not found. It may have been renamed." />;
+  if (unrunnable) return <PianoEmpty message="Cannot start this one. It is missing something the challenge needs — try another." />;
   if (instance === undefined || (challenge && !requirement) || !runtime) return <SkeletonStage />;
-  if (!instance) return <PianoEmpty title="Exercise not found" hint="It may have been renamed." />;
 
   const progress = assessmentProgress(snapshot);
   const eventIndex = Math.min(progress.eventIndex, instance.events.length);
@@ -233,6 +281,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   // changes. The keyboard footer wants the pitch itself.
   const isWrong = lastWrong !== null;
   const wrongNotes = lastWrong === null ? null : new Set([lastWrong.midi]);
+  const passed = runPassed(result, { challenge, passScore: requirement?.passScore });
   const currentEvent = instance.events[Math.min(eventIndex, instance.events.length - 1)] || instance.events[0];
   const targetNotes = new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }]));
 
@@ -244,15 +293,15 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
         <div className="piano-exercise-run__context"><span>{instance.key}</span><span>{instance.meter}</span>{challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}</div>
       </header>
       <div className="piano-exercise-run__score">
-        <ExerciseNotation instance={instance} eventIndex={eventIndex} wrong={isWrong} complete={phase === 'done' && result?.verdict?.passed} />
+        <ExerciseNotation instance={instance} eventIndex={eventIndex} wrong={isWrong} complete={phase === 'done' && passed} />
         {countdown && <div className="piano-exercise-run__countdown" aria-live="assertive">{countdown}</div>}
       </div>
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{challenge ? 'The tempo and pass criteria are fixed for this run. The count-in starts when you are ready.' : 'Correct mistakes and continue at your own pace. Practice is saved, but it does not unlock a gate.'}</p>{!connected && <span>Waiting for the piano…</span>}<button type="button" onClick={start}>{challenge ? 'Begin challenge' : 'Begin practice'}</button></div>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
-      {phase === 'done' && result && <section className={`piano-exercise-run__result${result.verdict.passed ? ' is-passed' : ' is-developing'}`}>
-        <div><span>{result.verdict.passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span><strong>{Math.round(result.score * 100)}%</strong></div>
+      {phase === 'done' && result && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
+        <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span><strong>{Math.round(result.score * 100)}%</strong></div>
         <dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl>
-        <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !result.verdict.passed && <button type="button" onClick={onExit}>Practice first</button>}{result.verdict.passed && <button type="button" onClick={onPassed}>Continue</button>}</div>
+        <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !passed && <button type="button" onClick={onExit}>Practice first</button>}{passed && <button type="button" onClick={() => onPassed?.(result)}>Continue</button>}</div>
       </section>}
       <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={activeNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>
     </section>
