@@ -71,14 +71,23 @@
  * logged (`school.lesson.checkpoint.no-dpad-input`) because authoring one of
  * these onto a TV lesson is a curriculum bug this screen cannot fix.
  *
- * ## WHAT THIS COMPONENT MUST BE GIVEN — and the contract gap behind it
+ * ## WHAT THIS COMPONENT MUST BE GIVEN
  *
  * `checkpoint.items` must hold ITEM BODIES (`{id, type, prompt, choices}`), not
  * the bare item ids the authored `checkpoints:` block carries.
- * `DispatchMedia.publicCheckpoints` currently strips items entirely
- * (`.map(({id, at}) => ({id, at}))`), so the lesson snapshot as shipped cannot
- * feed this overlay. Rather than render a blank card over a paused picture,
- * anything unrenderable falls to an explicit fault state whose only control is
+ *
+ * When this component was written nothing served those bodies —
+ * `DispatchMedia.publicCheckpoints` strips items to `{id, at}`, and grading
+ * returns no prompt — so every checkpoint would have rendered the fault card.
+ * `ReadLessonSnapshot` (Task 9) closed that gap: `GET /lesson/:sessionId` now
+ * ships a per-type PUBLIC PROJECTION inline on `checkpoints[].items`, picking
+ * `{id, type, prompt, choices}` and withholding `answer`/`accept`/`expected`.
+ * Inline rather than fetched-on-demand deliberately: a by-id fetch would happen
+ * at the moment the gate has already stopped the picture, and a failed request
+ * there strands a child in front of a frozen frame.
+ *
+ * An unresolvable item still arrives as a bare id STRING, and anything
+ * unrenderable falls to an explicit fault state whose only control is
  * "watch it again" — visible to a child, and greppable in the log store as
  * `school.lesson.checkpoint.unrenderable`.
  *
