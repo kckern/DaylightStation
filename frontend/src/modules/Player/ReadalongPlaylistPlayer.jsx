@@ -150,7 +150,13 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
     const { playedRanges, rate } = drainCoverage(part.id);
     onProgress({
       partId: part.id, positionSeconds: last.currentTime, durationSeconds: last.duration, completed,
-      playedRanges, rate,
+      // `maxRate` on the wire, not `rate`. The server's allowlist
+      // (RecordLessonCompanionProgress) names this field exactly, and anything
+      // it does not name is DROPPED — so a mismatch here does not error, it
+      // silently reports no rate at all. The server reads a missing rate as
+      // normal speed and banks the ranges, which is precisely the fast-forward
+      // the drop rule exists to refuse. The name is the whole guarantee.
+      playedRanges, maxRate: rate,
     });
   }, [part, onProgress, last, drainCoverage]);
   latest.current = { part, last };
@@ -160,7 +166,7 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
     const { playedRanges, rate } = drainCoverage(current.part.id);
     onProgress({
       partId: current.part.id, positionSeconds: current.last.currentTime,
-      durationSeconds: current.last.duration, playedRanges, rate,
+      durationSeconds: current.last.duration, playedRanges, maxRate: rate,
     });
   }, [onProgress, drainCoverage]);
 
@@ -188,7 +194,7 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
       });
       onProgress?.({
         partId: part?.id, positionSeconds: next.currentTime, durationSeconds: next.duration,
-        playedRanges, rate,
+        playedRanges, maxRate: rate,
       });
     }
   }, [onProgress, part, progress, ctrl, logger, observePlayed, drainCoverage]);

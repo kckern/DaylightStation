@@ -6,8 +6,13 @@
 // by looking at the real tablet. These tests cover the shell's behavior:
 // chapter chips, transport, progress plumbing, auto-resume, completion writes.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import ReadalongPlaylistPlayer from './ReadalongPlaylistPlayer.jsx';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const h = vi.hoisted(() => ({
   seek: vi.fn(),
@@ -213,14 +218,16 @@ describe('ReadalongPlaylistPlayer — played coverage', () => {
     // Window one: 2x. 21 ticks x 500ms of wall = 10.5s of wall, 21s of media.
     const afterFast = playAt(2, 0, 200);
     const fastReport = reportsFrom(onProgress).at(-1);
-    expect(fastReport.rate).toBe(2);
+    // The wire name is `maxRate`, and that is not cosmetic — see the
+    // cross-boundary test at the bottom of this file.
+    expect(fastReport.maxRate).toBe(2);
     expect(coveredSeconds(fastReport.playedRanges)).toBeGreaterThan(15);
 
     // Window two: back to 1x for one more window.
     playAt(1, afterFast, 200);
     const slowReport = reportsFrom(onProgress).at(-1);
     expect(slowReport).not.toBe(fastReport);
-    expect(slowReport.rate).toBe(1);
+    expect(slowReport.maxRate).toBe(1);
     // THE POINT: the slow sample must not drag the fast window's seconds along
     // with it. Nothing below 21s may appear in it.
     expect(slowReport.playedRanges.length).toBeGreaterThan(0);
@@ -326,7 +333,7 @@ describe('ReadalongPlaylistPlayer — played coverage', () => {
     expect(done).toMatchObject({ partId: 'p1', completed: true });
     for (const report of reportsFrom(onProgress)) {
       expect(Array.isArray(report.playedRanges)).toBe(true);
-      expect(typeof report.rate).toBe('number');
+      expect(typeof report.maxRate).toBe('number');
     }
   });
 
@@ -356,5 +363,46 @@ describe('ReadalongPlaylistPlayer — played coverage', () => {
       const own = report.playedRanges || [];
       for (let i = 1; i < own.length; i += 1) expect(own[i][0]).toBeGreaterThan(own[i - 1][1]);
     }
+  });
+});
+
+/**
+ * The progress payload crosses a boundary NOTHING type-checks: this component
+ * builds it, `SchoolApp` forwards it verbatim, and `RecordLessonCompanionProgress`
+ * destructures a NAMED ALLOWLIST out of it. A field the allowlist does not name is
+ * silently dropped — no error, no warning.
+ *
+ * That is why this test exists rather than a comment. During development this
+ * component sent `rate` while the server named `maxRate`: the ranges arrived, the
+ * rate did not, and the server read a missing rate as normal speed and banked
+ * fast-forwarded audio. The anti-fast-forward guarantee was dead and every test
+ * on both sides still passed, because each side was correct on its own.
+ *
+ * Source-text assertions are the only thing that can see both sides at once. The
+ * same reasoning, and the same technique, as `lib/Player/gate/gateIds.test.js`.
+ */
+describe('the progress wire contract', () => {
+  const USE_CASE = path.resolve(
+    HERE, '../../../../backend/src/3_applications/school/usecases/RecordLessonCompanionProgress.mjs',
+  );
+
+  /** Comment-stripped, so a prose mention never satisfies a code assertion. */
+  const codeOf = (file) => readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n');
+
+  it('sends exactly the coverage fields the server allowlists', () => {
+    const server = codeOf(USE_CASE);
+    const client = codeOf(path.resolve(HERE, 'ReadalongPlaylistPlayer.jsx'));
+
+    for (const field of ['playedRanges', 'maxRate']) {
+      expect(server, `server must allowlist ${field}`).toContain(field);
+      expect(client, `client must send ${field}`).toContain(field);
+    }
+    // The name that was wrong once. `rate:` as an emitted property would mean
+    // the client is back to a name the allowlist drops.
+    expect(client).not.toMatch(/^\s*rate,\s*$/m);
   });
 });
