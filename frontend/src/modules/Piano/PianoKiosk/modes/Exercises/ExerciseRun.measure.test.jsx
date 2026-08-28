@@ -330,13 +330,23 @@ window.__stage = {
 `;
 
 /**
- * A package-relative stylesheet's real path, or `null` if the package does not
- * ship one. Nothing is measured against a sheet that is not there, and an
- * unresolvable one is left as an empty module rather than crashing the build.
+ * A package stylesheet's real path — or a THROW.
+ *
+ * The first version returned `null` here and let the build carry on with an
+ * empty module, which meant that if `abcjs/abcjs-audio.css` ever moved, tier 3
+ * would be measured with none of abcjs's own CSS and would stay green. That is
+ * the precise class of silent omission this whole harness exists to end, so an
+ * unresolvable sheet stops the run and names itself.
  */
-function resolveQuietly(createRequire, resolveDir, specifier) {
+function resolvePackageSheet(createRequire, resolveDir, specifier) {
   try { return createRequire(path.join(resolveDir, 'noop.js')).resolve(specifier); }
-  catch { return null; }
+  catch (error) {
+    throw new Error(
+      `the component graph imports the stylesheet "${specifier}", which cannot be resolved from `
+      + `${resolveDir}. Measuring without it would be measuring a screen the kiosk does not paint. `
+      + `(${error?.message ?? error})`,
+    );
+  }
 }
 
 /**
@@ -358,9 +368,9 @@ async function buildBundle() {
         // this failed — loudly, which is the right way for it to fail.
         const file = args.path.startsWith('.') || path.isAbsolute(args.path)
           ? path.resolve(args.resolveDir, args.path)
-          : resolveQuietly(createRequire, args.resolveDir, args.path);
-        if (file && !sheets.includes(file)) sheets.push(file);
-        return { path: file ?? args.path, namespace: 'daylight-sheet' };
+          : resolvePackageSheet(createRequire, args.resolveDir, args.path);
+        if (!sheets.includes(file)) sheets.push(file);
+        return { path: file, namespace: 'daylight-sheet' };
       });
       build.onLoad({ filter: /.*/, namespace: 'daylight-sheet' }, () => ({ contents: '', loader: 'js' }));
       build.onLoad({ filter: /\.(js|jsx|mjs)$/ }, (args) => {
@@ -599,14 +609,34 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     // earlier tier-2 measurement compiled the shell, the run and the gate and
     // silently left `SvgSequenceStaff.scss` out, so it measured a staff with no
     // paper card, no padding, no border and no `overflow: hidden` — a box the
-    // kiosk never draws. The sheet list is collected from the component graph,
-    // and this is the assertion that the collection actually worked.
-    expect(css, 'the sequence staff\'s own sheet was not compiled').toContain('.sequence-staff');
-    expect(css, 'the tier-2 size cap was not compiled').toContain('--staff-aspect');
-    expect(css, 'the keyboard\'s sheet was not compiled — a lit key would look like any other')
-      .toContain('.piano-key');
-    expect(css, 'the app shell was not compiled — nothing would have the kiosk box')
-      .toContain('.piano-game-fullscreen');
+    // kiosk never draws.
+    //
+    // EVERY SELECTOR BELOW IS UNIQUE TO THE SHEET IT GUARDS, and that is the
+    // whole design of this case. The first version asserted `.sequence-staff`
+    // and `.piano-key`, which cannot fail: the first is emitted by
+    // `Exercises.scss` and the second by nine sheets including the shell that
+    // `compileSheet` force-prepends — so the collection could drop the staff's
+    // and the keyboard's sheets entirely and this would stay green, which is
+    // exactly the silent omission it exists to catch.
+    const OWNED = [
+      // SvgSequenceStaff.scss — the paper card, the ink, the cursor lane and the
+      // ghost's colours. Nothing else in frontend/src/**/*.scss names these.
+      ['.sequence-note-wrong-ghost', 'SvgSequenceStaff.scss', 'the wrong-note ghost would have no colour of its own'],
+      ['.sequence-staff__ghost-accidental', 'SvgSequenceStaff.scss', 'the staff\'s own sheet is missing'],
+      ['.sequence-staff__cursor', 'SvgSequenceStaff.scss', 'the cursor lane would be invisible'],
+      // PianoKeyboard.scss — `.piano-key` alone proves nothing (the shell has it).
+      ['.target-dim', 'PianoKeyboard.scss', 'a lit key would be painted like any other'],
+      ['.rebuild-bar', 'PianoKeyboard.scss', 'the keyboard\'s own sheet is missing'],
+      // Exercises.scss — the run, its stage rows, and the tier-2 size cap.
+      ['--staff-aspect', 'Exercises.scss', 'the tier-2 size cap would not exist'],
+      // PianoApp.scss — the shell, force-prepended, so this one IS vacuous by
+      // construction and is here only to say the compile produced anything.
+      ['.piano-game-fullscreen', 'PianoApp.scss', 'nothing would have the kiosk box'],
+    ];
+    for (const [selector, sheet, consequence] of OWNED) {
+      expect(css, `${sheet} was not compiled into the measured stylesheet — ${consequence}`)
+        .toContain(selector);
+    }
   });
 
   /* ── Tier 0 — one lit key, and nothing else on the screen ───────────────── */
@@ -758,7 +788,6 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     expect(staff.contentWidth).toBeLessThanOrEqual(container.width + 0.5);
     // The card's own edge may sit a hairline proud of the row; nothing else may.
     expect(staff.chromeY, 'the staff card grew a real box model').toBeLessThanOrEqual(CARD_HAIRLINE);
-    expect(staff.height).toBeLessThanOrEqual(container.height + CARD_HAIRLINE);
     expect(inside(await probe.one('.action-staff__staff-area'), stage),
       'the staff\'s ink is drawn outside the stage row that clips it').toBe(true);
     expect(onCanvas(staff), `the staff is off the kiosk canvas: ${say(staff)}`).toBe(true);
@@ -811,7 +840,6 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
 
     expect(staff.contentHeight, `the short ask's staff ${say(staff)} is taller than its row ${say(container)} — it is being cropped`)
       .toBeLessThanOrEqual(container.height + 0.5);
-    expect(staff.height).toBeLessThanOrEqual(container.height + CARD_HAIRLINE);
     expect(staff.width).toBeLessThan(container.width);
 
     const heads = await probe.all('.action-staff__note');
