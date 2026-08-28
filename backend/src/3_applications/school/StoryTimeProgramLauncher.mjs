@@ -210,7 +210,7 @@ export class StoryTimeProgramLauncher {
    */
   async launch({ userId }) {
     if (typeof this.#startReadingSession !== 'function') {
-      return { decision: 'failed', message: 'Story time is not ready right now. Tell a grown-up.' };
+      return { decision: 'failed', message: AT_THE_TV };
     }
     const result = await this.#startReadingSession({ learnerId: userId, origin: 'portal' });
     if (result?.status === 'reading_session_open' || result?.status === 'reading_session_starting') {

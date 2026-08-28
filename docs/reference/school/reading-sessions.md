@@ -341,15 +341,49 @@ mid-assignment child's hardening off with nothing anywhere to say so.
 
 | Route | Body / query | Why it exists |
 |---|---|---|
+| `GET /session`, `POST /session/ack` | `location`, then `location, sessionId` | Snapshot/revision recovery for a TV that booted or reloaded after the broadcast. ACK is delivery proof, not merely a WebSocket connection. |
+| `POST /progress` | `location, sessionId, pickId, positionSec, durationSec, paused` | Liveness heartbeat. A stalled player, long pause, or terminal media without `ended` returns to the prompt without granting credit. |
 | `POST /playing` | `location, learnerId, contentId, pickId` | **Nothing else moves a session to `reading`.** The backend cannot see the first frame; without this, `state` never leaves `confirm`, D5 never fires in the field, and every book tapped during a story is claimed as a fresh prompt. It reports PLAYBACK START, not countdown expiry — they differ by however long the content takes to load, and that gap is exactly when a stray tap misbehaves. |
 | `POST /read` | `learnerId, contentId, title, tagUid, location, pickId` | The only path that writes evidence. `pickId` is the idempotency key. It also performs `READING → PROMPT`: a session left at `reading` refuses the next book while nothing plays (D5) and never expires (D6), so the TV stays on all night. |
+| `GET /read-status` | `learnerId, studyDay, pickId` | Resolves an ambiguous completion response from the durable idempotency key, without guessing or double-counting. |
 | `GET /summary` | `?learnerId=` | What the prompt puts in front of the child: display name, today's count, target, and yesterday's books. Every part degrades on its own — the one thing that must never happen is a blank TV in front of a four-year-old. |
 
-**Attribution is carried, never re-derived.** Both POSTs take `learnerId` from
-the body — the screen's own snapshot of who the session belonged to when the
-book was **picked**. Reading it back off the session here would credit a story
-to whoever wandered past the reader while it played (**D4**), which is the one
-mistake this feature can make that nobody would ever notice.
+**Attribution is minted and owned by the server at pick time.** The client carries
+`sessionId` and `pickId` back as a capability, but the router takes learner,
+content, and study day from the stored pick. A sibling card can still swap the
+prompt context during a story without stealing its credit (**D4**).
+
+### Delivery and recovery loops
+
+```mermaid
+flowchart TD
+  A[Card or Portal launch] --> B[Reserve STARTING session]
+  B --> C[Wake / foreground reader]
+  C --> D[Activate PROMPT and publish revision]
+  D --> E{Screen subscribed, hydrated snapshot, ACKed?}
+  E -->|yes| F[Closed delivery loop]
+  E -->|no, attempt less than 3| G[Replay current revision and re-foreground]
+  G --> E
+  E -->|no, attempt 3| H[One adult HA alert]
+  H --> I[Open session remains recoverable by snapshot]
+```
+
+```mermaid
+flowchart TD
+  A[Player timeupdate] --> B[POST progress: server session and pick match]
+  B --> C{Observed liveness}
+  C -->|advancing| D[Keep READING]
+  C -->|paused over 10 min| E[Reset PROMPT, no credit]
+  C -->|no heartbeat over 90 sec| E
+  C -->|near end but no ended over 20 sec| E
+  F[ended] --> G[POST read with sessionId and pickId]
+  G --> H{Response known?}
+  H -->|yes| I[Refresh summary]
+  H -->|network ambiguous| J[Retry once]
+  J --> K[GET read-status by durable pickId]
+  K -->|recorded| I
+  K -->|not recorded| L[Visible adult-help off-ramp]
+```
 
 ### Where each piece lives
 
@@ -376,10 +410,10 @@ Not state transitions, but each must land somewhere visible.
 | Failure | Behaviour |
 |---|---|
 | Content lookup fails | The player bails today. In a session: back to `PROMPT` with "that one didn't work" |
-| TV fails to wake | The card tap must still answer; log and surface, never fail silent |
+| TV fails to wake or the screen misses the event | Reserve before wake; replay current snapshot up to three times, then send one adult HA alert. The session remains available to a later snapshot. |
 | Reading log write fails | The story still played. Surface it; never claim a read that was not recorded |
 | Backend restart mid-session | Session state is in-memory and is lost — correct; nobody is at the reader after a restart |
-| Player remounts mid-story | Must not double-count. `pickId` dedup in `RecordStoryRead` |
+| Player remounts or completion response is lost | Must not double-count. `pickId` dedup plus one retry and `read-status` recovery. |
 | `ended` fires twice | Same `pickId` dedup |
 | Teardown suppression fails | The TV powers off before the ceremony. Guard with a test — this is the D8 hazard |
 
@@ -388,7 +422,7 @@ Not state transitions, but each must land somewhere visible.
 ## 10. Invariants
 
 1. **A read is credited only on completion** — never on pick, never on play.
-2. **Attribution is decided at pick time** and travels with the pick.
+2. **Attribution is decided and stored server-side at pick time**; the client cannot replace it.
 3. **No session, no credit.** An unclaimed book tap plays and counts for nobody.
 4. **Mode is derived, never stored.** It cannot go stale and it flips by itself.
 5. **Every tap is acknowledged on screen** — the same rule the scan ceremony holds.
@@ -417,12 +451,8 @@ actual living-room TV, and three of these cannot be settled any other way:
    into. The widget dismisses it once on the way out of `idle`; whether that is
    enough on the real screen, at the real idle timings, is a thing to watch.
 
-Two known gaps, both deliberate:
+One known gap remains deliberate:
 
-- **A story abandoned mid-playback leaves the session at `reading`.** The screen
-  knows (`notePlaybackDismissed`), and there is no route that tells the backend.
-  The session then sits exempt from the idle sweep until something else moves
-  it. `POST /read` covers the normal path; a bail does not.
 - **Teardown after the ceremony is the idle timeout, not an explicit step.** The
   screen returns to the prompt after the celebration and the session expires ~2
   minutes later (D6). The TV does power off; it does so on the timeout's clock
