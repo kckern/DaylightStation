@@ -36,6 +36,29 @@ Read these before Task 1. They are short and each one prevents a specific mistak
 | `backend/src/2_domains/school/documents/ambiguityLeniency.mjs` | The rules the gate row must never touch. |
 | `backend/src/2_domains/school/mediaCheckpoints.mjs` header | The precedent for a pure gate module with a hand-copied frontend twin. |
 
+### ⚠ The name `companionCode` is ALREADY TAKEN — use `finishCode`
+
+Verified 2026-08-27. `companionCode` is an existing field meaning the **six-digit numeric
+access code** printed on the lesson card's Read Along panel. It is live in:
+
+- `backend/src/2_domains/school/questionBankV2.mjs:233,286`
+- `backend/src/3_applications/school/usecases/IssueDocument.mjs:570` —
+  `companionCode: companion?.accessCode ?? null`
+- `backend/src/1_rendering/school/documents/measure.mjs:1006,1018`
+- `lessonCardCompanion.render.test.mjs`
+
+**Tasks 7, 8 and 14 touch every one of those files.** Overloading the name would silently
+put an A–E letter set where a six-digit number is expected, and the renderer would print
+whichever arrived last. Call the A–E value **`finishCode`** everywhere — it matches the
+child-facing term in the requirements doc and cannot be confused with the access code.
+
+The two are different things that travel together: the access code OPENS the companion,
+the finish code is what finishing it RELEASES.
+
+Note also that `backend/src/2_domains/school/continuationCode.mjs` is a third, unrelated
+code concept (6-digit learner-slot packing). Three "codes" now live in this domain; keep
+them apart.
+
 ### Running tests
 
 Pure domain tests live under `tests/isolated/domain/school/` and use **vitest**:
@@ -851,27 +874,52 @@ zero on a perfectly filled sheet.
 
 ### Task 10: The scan-time veto
 
-> **Corrected 2026-08-27 after Task 4.** An earlier draft of this plan aimed this task at
-> `ResolveCardScan.mjs`. **That is the wrong file.** `ResolveCardScan` never consumes
-> decoded entries — its only mention of them is a comment at line 322. The sole
-> `decodeOmrSheet` caller in the whole codebase is `SubmitPaperWork.fromOmrSheet`
-> (`SubmitPaperWork.mjs:216`), which hands `decoded.entries / ambiguous / blank` straight
-> into `execute`. That hand-off is where the veto goes.
+> **Read this whole block before touching anything.** Two agents investigated this and
+> reached opposite conclusions; the file below is the verified answer. There are TWO scan
+> paths and they are easy to confuse.
 >
-> **One live hazard, found while proving the above.** `execute` grades by iterating
-> `expectedItems` — `questionItemIds(document)`, falling back to `roster ?? bank.items` —
-> and reads `entries?.[itemId]`. A gate entry that is not in `expectedItems` is simply
-> never visited, which is why the gate row is inert today. But if the gate row ever lands
-> inside `questionItemIds`, it WOULD be visited, miss `bankItemIds`, and be enqueued to the
-> review queue as `free_response` with `given` set to an **array** — a shape that path has
-> never seen. Task 8's renderer work must keep the gate row out of `questionItemIds`, or
-> exclude it explicitly here.
+> **`ResolveCardScan.mjs` is the grading path, and it IS this task's file.** It calls
+> `gradeAnswer` at lines 361, 384 and 391. It does not call `decodeOmrSheet` — it receives
+> `{testId, answers}` from the card-scan path, where `answers` is documented at line 6 as
+> `{row: 'A'|['A','E']}`, already contemplating an array per row. A grep for "does it
+> consume `decoded.entries`" comes back empty and looks conclusive. It is not.
+>
+> **`SubmitPaperWork.fromOmrSheet` (`SubmitPaperWork.mjs:216`) is the OTHER path** — the
+> only `decodeOmrSheet` caller in the codebase. It hands `decoded.entries/ambiguous/blank`
+> into its own `execute`, which routes to a review queue. It contains **no** `gradeAnswer`
+> call and **no** item-type switch. It does not grade, so the veto does not live there.
+>
+> ### The trap, at `ResolveCardScan.mjs:375`
+>
+> `gradeRow` has an **unconditional** guard immediately after the `multi_select` branch:
+>
+> ```javascript
+> if (Array.isArray(given)) {
+>   return { status: 'ambiguous', given, points, earned: 0 };
+> }
+> ```
+>
+> A decoded gate row arrives as an array. Without a `companion_code` branch placed
+> **before** this guard, every gate row grades `ambiguous` and never reaches the
+> `gradeAnswer` added in Task 5 — the gate would fail silently, on every sheet, and look
+> like a scanning fault. Put the branch above line 375.
+>
+> ### Second hazard, for Task 8 rather than this task
+>
+> `SubmitPaperWork.execute` iterates `expectedItems` — `questionItemIds(document)`, falling
+> back to `roster ?? bank.items` — and reads `entries?.[itemId]`. A gate entry not in
+> `expectedItems` is never visited, which is why the gate row is inert on that path today.
+> If the gate row ever lands inside `questionItemIds` it WOULD be visited, miss
+> `bankItemIds`, and be enqueued to the review queue as `free_response` with `given` set to
+> an array — a shape that path has never seen. Task 8 must keep the gate row out of
+> `questionItemIds`.
 >
 > Also established: `entries[gate]` is never an empty array. Zero hits route to `blank`
 > before the set branch, so a consumer may treat "present" as "at least one letter".
 
 **Files:**
-- Modify: `backend/src/3_applications/school/usecases/SubmitPaperWork.mjs`
+- Modify: `backend/src/3_applications/school/documents/ResolveCardScan.mjs` — the
+  `companion_code` branch goes in `gradeRow`, ABOVE the `Array.isArray(given)` guard at :375
 - Test: `tests/unit/applications/school/` — new file beside `resolveCardScanLeniency.test.mjs`
 
 **Behaviour:**
@@ -974,6 +1022,52 @@ recorded as a teacher action.
 **Commit:** `feat(school): a grown-up can read the code out when the media is broken`
 
 ---
+
+## Carry-over fixes — from Task 7's review, apply AFTER Task 8
+
+All of these touch `IssueDocument.mjs`, which Task 8 edits, so they were deferred rather
+than dispatched concurrently. None is severe; all were verified by the reviewer.
+
+1. **A blank-but-not-empty `householdId` escapes the refusal envelope.** `IssueDocument.mjs:830`
+   guards with `!this.#householdId`, which `'   '` passes. `keyFor` then throws
+   ("companion code key requires householdId, lessonId and lessonDay"), which propagates
+   uncaught through `asyncHandler` (`4_api/v1/routers/schoolLifecycle.mjs:373`) to a **500**,
+   bypassing the `#unavailable` slip the `no-household` branch exists to produce. Unreachable
+   in this deployment (`app.mjs:575` can only yield a real string), but the store itself
+   trims precisely because of this codebase's standing YAML leading-space gotcha, and the
+   use-case guard does not share that defence. Fix: `!this.#householdId?.trim?.()`.
+
+2. **Doubled prefix in one refusal reason.** `:828` sets `missing = 'companion-store-not-configured'`
+   and `:837` emits `` `companion-${missing}` `` → `companion-companion-store-not-configured`,
+   which becomes the notice id at `:1298`. The other three branches read correctly.
+
+3. **`companionLessonDay(unit, instance.lessonId)` is evaluated twice** — `:855` for the key
+   and `:869` for the record body. Pure, so they cannot disagree today, but they must stay
+   identical; hoist to one `const lessonDay` so that is structural rather than conventional.
+   The `fallback` parameter is also unreachable: `instance.lessonId` IS `unit.unitId`, which
+   the third link of the chain already covers.
+
+### Known and accepted, not defects
+
+- **`lessonDay` adds no discriminating power.** Since `lessonId` is a globally unique
+  `unitId`, `(householdId, lessonId)` alone already pins one record per lesson per
+  household — proven by the reviewer, who built two units in one course with no `module`
+  and got two distinct records. What the third component DOES add is sensitivity to
+  `unit.module` being re-authored: renaming `w35-aug24` → `w35` mints a fresh code, so a
+  sibling printing afterwards replays audio the household already finished. The three-part
+  scope is what the design specifies, so this is compliant. Worth knowing if codes ever
+  appear to "reset" after a curriculum edit.
+- **`requireParts` is pinned at first print** from `companion.payload?.playlist?.parts?.length ?? 1`
+  (`:874`). Re-authoring a unit's `reading` later does not update it, so coverage grades
+  against the original part count.
+- **`required` is honoured only on the bank-instance path.** `#prepareCompanion` is called
+  only from `#issueWorksheetInstance` (`:630`); a unit routed through `#issuePrintDocument`
+  or `#issueLegacyDocument` gets no companion, no gate, and no refusal. No child is
+  stranded (no gate row prints there either), but "never skip a gate an author required" is
+  not covered the way "never print a gate a child cannot clear" is.
+- **No live content authors `participation:` today**, so the entire required branch is inert
+  in production until a unit opts in. The round-trip test in Task 8 is the only thing
+  exercising it end to end.
 
 ## Definition of done
 

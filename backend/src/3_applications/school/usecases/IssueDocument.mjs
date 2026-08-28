@@ -844,10 +844,15 @@ export class IssueDocument {
       // individually so the log says which one is missing — "companion
       // unavailable" over a mis-wired composition sends a grown-up to the
       // curriculum for a problem that is not there.
+      // `trim()`, not a bare falsiness check: `keyFor` refuses a blank part by
+      // THROWING, and a throw here escapes `execute` through `asyncHandler` as a
+      // 500 — bypassing the very slip this branch exists to hand a grown-up. The
+      // store trims for the same reason: this codebase has a standing YAML
+      // leading-space gotcha, so a household id of `'   '` is a real shape.
       const missing = !companion ? 'no-media'
-        : !this.#companions ? 'companion-store-not-configured'
+        : !this.#companions ? 'store-not-configured'
           : !this.#companionCodes ? 'code-store-not-configured'
-            : !this.#householdId ? 'no-household' : null;
+            : !this.#householdId?.trim?.() ? 'no-household' : null;
       if (missing) {
         this.#logger.warn?.('school.issue.companion-required-unavailable', {
           sessionId: instance.sessionId, lessonId: instance.lessonId, reason: missing,
@@ -869,10 +874,14 @@ export class IssueDocument {
       // on purpose, which is what makes two siblings share one code, and
       // `companionLessonDay` is clock-free, which is what makes a catch-up next
       // week inherit it rather than earn a second one. See that helper.
+      // Derived ONCE. The key and the record body must agree about the day or
+      // the record files itself where no later lookup finds it; computing it
+      // twice makes that agreement a convention rather than a fact.
+      const lessonDay = companionLessonDay(unit, instance.lessonId);
       codeRef = this.#companionCodes.keyFor({
         householdId: this.#householdId,
         lessonId: instance.lessonId,
-        lessonDay: companionLessonDay(unit, instance.lessonId),
+        lessonDay,
       });
       // SYNCHRONOUS by contract: the store's `findOrCreate` is indivisible from
       // its existence check to its write only because nothing inside `create`
@@ -886,7 +895,7 @@ export class IssueDocument {
           id: codeRef,
           householdId: this.#householdId,
           lessonId: instance.lessonId,
-          lessonDay: companionLessonDay(unit, instance.lessonId),
+          lessonDay,
           code: mintCode({ rng: this.#rng }),
           // How many pieces of the companion must be covered before the code is
           // released — one per playlist part, so finishing chapter one of three
