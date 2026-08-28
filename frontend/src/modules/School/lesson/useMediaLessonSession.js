@@ -120,6 +120,22 @@ const eventNameOf = (payload) => payload?.event ?? payload?.type ?? null;
 const finiteOrNull = (v) => (Number.isFinite(v) ? v : null);
 
 /**
+ * How many checkpoints a refused completion still owes.
+ *
+ * The router sends a COUNT (`remaining: result.outstanding ?? 0`), and reading
+ * it as an array is how a child owing one question got told “0 questions are
+ * still waiting”. A list is accepted too, for the same reason `eventNameOf`
+ * accepts two spellings: the producer and this consumer are written by
+ * different tasks, and a number and its own length are the same statement.
+ * Anything else is 0 — the sentence degrades, the refusal still lands.
+ */
+function outstandingCount(remaining) {
+  if (Number.isFinite(remaining)) return Math.max(0, Math.trunc(remaining));
+  if (Array.isArray(remaining)) return remaining.length;
+  return 0;
+}
+
+/**
  * Where "rewind and rewatch" lands: the START of the passage this question is
  * about, i.e. the previous checkpoint, or the beginning when there is none.
  */
@@ -381,22 +397,30 @@ export function useMediaLessonSession({
       setView('done');
       return;
     }
-    if (!res.ok) {
+    // A REFUSAL IS NOT A TRANSPORT FAILURE, AND IT DOES NOT ARRIVE AS A 2xx.
+    // `schoolLifecycle.mjs` maps `checkpoints_outstanding` to 409 deliberately
+    // — Task 8 found that answering 200 there let a client read a refusal as a
+    // finished lesson — and the router sends the full body with it. So the
+    // refusal is recognised by what the BODY says, not by the status, and only
+    // a response that says nothing falls to the transport branch. A 409 with an
+    // empty body really is a lesson that was watched and not written down.
+    const refused = res.data?.completed === false;
+    if (!res.ok && !refused) {
       logger().error('school.lesson.completion.failed', { sessionId, status: res.status });
       cue('error');
       say({ tone: 'error', title: "I couldn't save that lesson", detail: 'Tell a grown-up — you watched it, it just needs writing down.' });
       setView('done');
       return;
     }
-    const remaining = Array.isArray(res.data?.remaining) ? res.data.remaining : EMPTY;
-    if (res.data?.completed === false) {
+    if (refused) {
       // The gate was bypassed somehow (a stuck seek suppresses enforcement).
       // Say what is still owed rather than showing a ✓ nobody earned.
-      logger().warn('school.lesson.completion.refused', { sessionId, remaining: remaining.length });
+      const remaining = outstandingCount(res.data?.remaining);
+      logger().warn('school.lesson.completion.refused', { sessionId, status: res.status, remaining });
       cue('warn');
       say({
         tone: 'warn',
-        title: remaining.length === 1 ? 'One question is still waiting' : `${remaining.length} questions are still waiting`,
+        title: remaining === 1 ? 'One question is still waiting' : `${remaining} questions are still waiting`,
         detail: 'Start the lesson again to finish them.',
       });
       setView('done');

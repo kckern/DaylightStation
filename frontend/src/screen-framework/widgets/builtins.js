@@ -14,6 +14,7 @@ import CameraOverlay from '../../modules/CameraFeed/CameraOverlay.jsx';
 import GroupPlayApp from '../../modules/Gaming/environments/group-play/app/GroupPlayApp.jsx';
 import SchoolApp from '../../modules/School/SchoolApp.jsx';
 import ReadingSessionScreen from '../../modules/School/reading/ReadingSessionScreen.jsx';
+import MediaLessonScreen from '../../modules/School/lesson/MediaLessonScreen.jsx';
 
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();
@@ -38,5 +39,10 @@ export function registerBuiltinWidgets() {
   // nothing at all unless a child has tapped their card at that room's reader,
   // so the screen's own menu and screensaver are untouched by its presence.
   registry.register('school-reading', ReadingSessionScreen);
+  // The living-room hard-gated media lesson. Same shape as school-reading — a
+  // PANEL that renders nothing until a lesson is dispatched to this room — but
+  // it also mounts the Player, the surround frame and the checkpoint gate into
+  // the overlay slot once one is.
+  registry.register('school-lesson', MediaLessonScreen);
   return registry;
 }
