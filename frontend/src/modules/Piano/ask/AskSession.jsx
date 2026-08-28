@@ -31,9 +31,13 @@
  *
  * The `onUnavailable` vocabulary is unchanged and frozen: `no-access`,
  * `instance-not-found`, `unrunnable`. `no-access` and a mounted run's own dead
- * ends are still reported by the run below. Material that never resolved is
- * reported HERE, with a second argument naming which reason it was — and the
- * run is not mounted on nothing.
+ * ends are still reported by the run below, with one argument. Everything THIS
+ * component refuses — material that never resolved, and an ask the schema will
+ * not accept — is reported here with a second argument naming the reason, and
+ * the run is not mounted on nothing. The invariant a host may rely on is about
+ * the ARGUMENT, never about the word: a second argument means the session
+ * refused, its absence means a mounted run died. Both `instance-not-found` and
+ * `unrunnable` occur on both sides of that line.
  *
  * That second argument is the whole reason a host can still tell a config
  * mistake from an outage. The decline strings (`no-collection-or-instance`,
@@ -237,20 +241,6 @@ export default function AskSession({
   const hostRef = useRef(null);
   hostRef.current = { onResolved, onUnavailable };
 
-  const askErrors = useMemo(
-    () => (ask ? askTupleFor(ask, materialSpec).errors : []),
-    [ask, materialSpec],
-  );
-  const refusedRef = useRef(null);
-  useEffect(() => {
-    if (!askErrors.length) return;
-    const signature = askErrors.join('|');
-    if (refusedRef.current === signature) return;
-    refusedRef.current = signature;
-    logger.warn('piano.ask-invalid', { level: ask?.id ?? null, tier: ask?.tier ?? null, errors: askErrors });
-    hostRef.current.onUnavailable?.('unrunnable');
-  }, [ask, askErrors, logger]);
-
   /**
    * A repertoire level IS its requirement — one is derived from the other and
    * there is nothing to fetch. Memoized because the run below rebuilds its
@@ -268,6 +258,38 @@ export default function AskSession({
   // reason the callbacks are: it must not become a resolution dependency.
   const levelRequirementRef = useRef(null);
   levelRequirementRef.current = levelRequirement;
+
+  const askErrors = useMemo(
+    () => (ask ? askTupleFor(ask, materialSpec).errors : []),
+    [ask, materialSpec],
+  );
+  /**
+   * An ask the schema refuses, reported once per (ask, spec) pair.
+   *
+   * The SPEC is half the key, not a detail. A host walking a level's material
+   * hands down a different spec after each refusal, and two of them can refuse
+   * with the identical error list — a level asserting `hints: 'after-stall'`
+   * refuses whatever it is paired with. Keyed on the message alone, the second
+   * spec's refusal would be swallowed as a repeat, the host would never be told,
+   * and a child would sit on "Cannot start this one" with no gate behind it
+   * doing anything about it.
+   *
+   * The decline travels the same way a material decline does, and for the same
+   * reason: this is the SESSION refusing an authored ask, which is a config
+   * mistake a host can substitute its way out of — not a run that died on real
+   * material. Only the host knows which of those is worth a free match.
+   */
+  const refusedRef = useRef(null);
+  useEffect(() => {
+    if (!askErrors.length) return;
+    const signature = askErrors.join('|');
+    if (refusedRef.current?.signature === signature && refusedRef.current?.spec === materialSpec) return;
+    refusedRef.current = { signature, spec: materialSpec };
+    logger.warn('piano.ask-invalid', { level: ask?.id ?? null, tier: ask?.tier ?? null, errors: askErrors });
+    hostRef.current.onUnavailable?.('unrunnable', {
+      kind: materialSpec?.kind ?? null, reason: 'ask-invalid', mode,
+    });
+  }, [ask, askErrors, logger, materialSpec, mode]);
 
   /**
    * The material, and the program step beside it. Refused asks never reach

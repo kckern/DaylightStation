@@ -54,6 +54,11 @@ vi.mock('../../../ask/AskSession.jsx', async () => {
   const { useEffect, useState } = await import('react');
   const { resolveSpec } = await import('./gateMaterial.js');
   const { requirementForLevel } = await import('../../../ask/gateAsk.js');
+  // The REAL schema gate, out of the module being doubled. A double that could
+  // not refuse an ask would be silent about half the seam: at tier 3 a mistyped
+  // `kind` is caught by `askTupleFor` before any resolver sees it, and that is
+  // the path a one-character slip in the live config takes.
+  const { askTupleFor } = await vi.importActual('../../../ask/AskSession.jsx');
   // Named, and capitalised, because it IS a component: it holds state and runs
   // an effect, and the hooks lint (rightly) refuses those in an anonymous arrow.
   function AskSessionDouble(props) {
@@ -71,9 +76,14 @@ vi.mock('../../../ask/AskSession.jsx', async () => {
       if (!h.sessionResolves) return undefined;
       let alive = true;
       const requirement = requirementForLevel(ask);
-      const decline = (reason) => onUnavailable?.('instance-not-found', {
+      const decline = (reason, word = 'instance-not-found') => onUnavailable?.(word, {
         kind: materialSpec?.kind ?? null, reason, mode: requirement.mode,
       });
+      // Refused asks never cost a network round trip, and never mount a run.
+      if (askTupleFor(ask, materialSpec).errors.length) {
+        decline('ask-invalid', 'unrunnable');
+        return undefined;
+      }
       resolveSpec(materialSpec, { pickIndex, mode: requirement.mode })
         .then((picked) => {
           if (!alive) return;
@@ -447,6 +457,40 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
    */
   describe('a level whose material is mistyped substitutes, it does not grant', () => {
     const typoLevel = (material) => ({ repertoire: [{ id: 'typo', tier: 2, material }] });
+
+    it('substitutes at TIER 3, where the schema refuses the typo before any resolver sees it', async () => {
+      // Every fixture below is tier 2, and that is not incidental — it is the
+      // one band where this branch cannot fire. At tier 3 the ask is cued, and
+      // `cued ⇒ a source that can carry note values` is unanswerable when the
+      // spec's `kind` names nothing, so `askTupleFor` refuses the ask and
+      // `unknown-material-kind` is never produced at all. The reason changes;
+      // the mistake and the right answer to it do not.
+      //
+      // The live config is ONE CHARACTER from this: `kind: excercise` on L4.
+      // Read as an outage it would hand every child who climbed that far a
+      // silent free match, for as long as the typo survived — the exact posture
+      // this whole policy exists to refuse, and invisible in every log but one.
+      const { onPassed } = renderGate({
+        gateConfig: {
+          repertoire: [{
+            id: 'typo3', tier: 3, grading: { cleanliness: 0.8 }, material: [{ kind: 'excercise', collection: 'scales' }],
+          }],
+        },
+      });
+      await screen.findByTestId('ask-session');
+
+      expect(onPassed).not.toHaveBeenCalled();
+      expect(h.resolved.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
+      // The rung does not move, and it is still cued: the child is judged by
+      // the level they earned, on material they can actually be given.
+      expect(h.askProps.at(-1).ask.tier).toBe(3);
+      expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('cued');
+      expect(eventNamed('gate.attempt')[1].rung).toBe('typo3');
+
+      const [, data] = eventNamed('gate.material-config-invalid');
+      expect(data).toMatchObject({ rung: 'typo3', tier: 3, reasons: ['ask-invalid'] });
+      expect(eventNamed('gate.unavailable')).toBeUndefined();
+    });
 
     it.each([
       ['a score naming no document', [{ kind: 'score', measures: [1, 4] }], ['no-score-source']],
