@@ -50,7 +50,16 @@ secrets.dev.yaml
 values.dev.yaml
 **/charts
 **/docker-compose*
-**/compose*
+# Compose's modern filenames only. This used to be `**/compose*`, which is a
+# prefix glob over EVERY path segment, not just compose files: it silently
+# dropped `composerCardTiming.js` out of the build context while leaving
+# `ComposerCard.jsx` (capital C) in, so the image failed to build on an import
+# that resolves fine in the repo. Any lowercase compose-prefixed source file
+# would hit the same trap.
+**/compose.yml
+**/compose.yaml
+**/compose.*.yml
+**/compose.*.yaml
 **/obj
 
 # Data and logs (mounted at runtime)
