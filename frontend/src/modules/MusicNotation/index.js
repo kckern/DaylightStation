@@ -5,7 +5,7 @@
 // Also the theory grading engine (tonal) consumes the same model conceptually.
 
 // Model
-export { WHITE_KEYS, NOTE_TO_DIATONIC, isBlackKey, spellAccidental, getStaffPosition } from './model/pitch.js';
+export { WHITE_KEYS, NOTE_TO_DIATONIC, isBlackKey, spellAccidental, getStaffPosition, getStaffPositionOnClef } from './model/pitch.js';
 export { KEY_SIGNATURES, NATURAL_NOTES, PITCH_TO_NATURAL, detectKey } from './model/keySignature.js';
 export { splitByHand, getOttavaInfo } from './model/handSplit.js';
 export { diatonicTranspose, expandDrill, handMidiSequence } from './model/drillTranspose.js';
@@ -13,6 +13,7 @@ export { diatonicTranspose, expandDrill, handMidiSequence } from './model/drillT
 // Renderers
 export { AbcRenderer } from './renderers/AbcRenderer.jsx';
 export { SvgStaffRenderer } from './renderers/SvgStaffRenderer.jsx';
+export { SvgSequenceStaff, sequenceStaffViewBox } from './renderers/SvgSequenceStaff.jsx';
 export { MusicXmlRenderer } from './renderers/MusicXmlRenderer.jsx';
 export { ChordStaffRenderer } from './renderers/ChordStaffRenderer.jsx';
 export { renderChordStaff, midiToVexKey } from './renderers/chordStaff.js';

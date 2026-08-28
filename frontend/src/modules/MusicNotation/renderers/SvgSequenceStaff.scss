@@ -1,0 +1,133 @@
+/**
+ * The sequence staff's paper card.
+ *
+ * Same house treatment as the other staves on this instrument — cream paper,
+ * hairline border, black ink — because notation needs paper under it on a dark
+ * screen (see StaffNoteLabel.scss for the same argument). The rules are scoped
+ * under `.sequence-staff` rather than reusing ActionStaff.scss's top-level
+ * `.action-staff__*` blocks: this component is imported by hosts that have no
+ * reason to pull in the piano games' action-icon chrome, and a staff that only
+ * has ink when some other module happens to be in the bundle is the kind of
+ * silent dependency that ships blank.
+ */
+.sequence-staff {
+  display: flex;
+  flex-direction: column;
+  justify-content: stretch;
+  width: 100%;
+  /* aspect-ratio is set inline by the component: it depends on how many notes
+     the sequence has, and the lines stretch while the notation scales
+     uniformly, so the two only agree at that exact ratio. */
+  padding: 2px 0;
+  border-radius: var(--r-sm, 8px);
+  background: #f5f0e8; // cream/off-white, the house paper
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  transition: none; // TV app kills CSS transitions; use class toggles
+
+  .action-staff__staff-area {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .action-staff__lines-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .action-staff__notation-svg {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  .action-staff__ledger {
+    stroke: rgba(0, 0, 0, 1);
+  }
+
+  .action-staff__stem {
+    stroke: rgba(0, 0, 0, 1);
+    stroke-width: 1.5;
+  }
+
+  // Drawn sharp/flat shapes inherit via currentColor so the whole glyph tints
+  // as one with its note.
+  .action-staff__accidental {
+    color: rgba(0, 0, 0, 1);
+  }
+
+  // ── Run state ─────────────────────────────────────────────────────────────
+  // Ink for what is left to play, spent ink for what is behind, and a filled
+  // ring for the one note being asked for right now. A child reads position
+  // first and colour second, so state never moves a notehead — only its weight.
+  .action-staff__note {
+    fill: rgba(0, 0, 0, 1);
+    stroke: rgba(0, 0, 0, 1);
+    stroke-width: 0.5;
+  }
+
+  .sequence-note-done {
+    fill: rgba(0, 150, 70, 0.85);
+    stroke: rgba(0, 130, 60, 0.85);
+  }
+
+  .sequence-note-next {
+    fill: rgba(0, 0, 0, 1);
+    stroke: rgba(0, 0, 0, 1);
+    stroke-width: 1.5;
+  }
+
+  .sequence-note-todo {
+    fill: rgba(0, 0, 0, 0.55);
+    stroke: rgba(0, 0, 0, 0.55);
+  }
+
+  [data-state='done'] {
+    .action-staff__stem { stroke: rgba(0, 150, 70, 0.85); }
+    .action-staff__accidental { color: rgba(0, 150, 70, 0.85); }
+  }
+
+  [data-state='todo'] {
+    .action-staff__stem { stroke: rgba(0, 0, 0, 0.55); }
+    .action-staff__accidental { color: rgba(0, 0, 0, 0.55); }
+  }
+
+  // The cursor is a lane, not an outline: it sits behind the notehead so the
+  // ink stays the thing being read, and it is wide enough to be found at a
+  // glance from across a room.
+  .sequence-staff__cursor {
+    fill: rgba(255, 200, 60, 0.3);
+    stroke: rgba(200, 150, 0, 0.5);
+    stroke-width: 1;
+  }
+
+  // ── The wrong note, drawn where it actually is ────────────────────────────
+  // Red enough to read as "not this", transparent enough that it never looks
+  // like part of the ask. Its vertical position is the whole point: the child
+  // sees the distance between what they played and what was asked.
+  .sequence-note-wrong-ghost {
+    fill: rgba(200, 40, 40, 0.45);
+    stroke: rgba(160, 20, 20, 0.6);
+    stroke-width: 1;
+  }
+
+  .sequence-staff__ghost-accidental {
+    color: rgba(160, 20, 20, 0.55);
+  }
+
+  .sequence-staff__wrong-ledger {
+    stroke: rgba(160, 20, 20, 0.35);
+  }
+
+  // Held keys that are neither target nor the flagged wrong note: reference
+  // ink at half strength, the same as the single-simultaneity staff.
+  .sequence-staff__held-ghost {
+    fill: rgba(0, 0, 0, 0.15);
+    stroke: rgba(0, 0, 0, 0.1);
+  }
+}
