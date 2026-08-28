@@ -253,8 +253,10 @@ describe('virtual device console, fully wired', () => {
   });
 
   describe('playback', () => {
+    // `sessionId` is required by every implementation of the playback port as
+    // of the real §8 screen adapter — the screen fetches its lesson by it.
     const dispatch = () => playback.dispatch({
-      target: 'tv', contentId: 'plex:670208', learnerId: 'kid1', durationSec: 600,
+      target: 'tv', contentId: 'plex:670208', learnerId: 'kid1', durationSec: 600, sessionId: 'ses_1',
     }).dispatchId;
 
     it('lists current dispatches', async () => {

@@ -64,7 +64,10 @@ describe('DispatchMedia', () => {
     await openSession();
     const result = await dispatch.execute({ sessionId: SID, target: 'living-room-tv' });
     expect(result).toMatchObject({ status: 'dispatched', target: 'living-room-tv', contentId: 'plex:481203', durationSec: MEDIA_SEC });
-    expect(playback.dispatches[0]).toMatchObject({ contentId: 'plex:481203', learnerId: 'kid1', durationSec: MEDIA_SEC });
+    // `sessionId` is part of the playback port as of the real screen adapter
+    // (§8): the screen fetches its lesson BY session id, so a dispatch that
+    // does not carry one reaches a widget that can do nothing with it.
+    expect(playback.dispatches[0]).toMatchObject({ contentId: 'plex:481203', learnerId: 'kid1', durationSec: MEDIA_SEC, sessionId: SID });
   });
 
   it('records the dispatch with its correlator', async () => {

@@ -28,7 +28,7 @@ let dataDir;
 beforeEach(async () => { dataDir = await mkdtemp(path.join(os.tmpdir(), 'school-lifecycle-')); });
 afterEach(async () => { await rm(dataDir, { recursive: true, force: true }); });
 
-const wire = (schoolConfig) => createSchoolLifecycle({
+const wire = (schoolConfig, extra = {}) => createSchoolLifecycle({
   configService: {
     getHouseholdAppConfig: () => schoolConfig,
     getDataDir: () => dataDir,
@@ -38,6 +38,7 @@ const wire = (schoolConfig) => createSchoolLifecycle({
   schoolService: { listBanks: () => [], getBank: () => null },
   eventBus: { broadcast() {}, onClientMessage() {}, subscribe() {} },
   logger: silent,
+  ...extra,
 });
 
 describe('fail closed', () => {
@@ -232,5 +233,57 @@ describe('branch order in the composition root', () => {
     expect(namespaces).toEqual(
       expect.arrayContaining(['content', 'command', 'school', 'nutrition', 'product']),
     );
+  });
+});
+
+/**
+ * The §8 leg: a REAL playback target, not the double.
+ *
+ * Three things can each independently leave the media action printing a ticket
+ * that nothing plays — no bus, no wake service, no configured target — and all
+ * three are silent. So the wiring is pinned in both directions: built when the
+ * house can actually reach a screen, absent (and `dispatchMedia` null) when it
+ * cannot.
+ */
+describe('the real screen playback target', () => {
+  const TARGETS = [{ id: 'livingroom-tv', label: 'the TV', location: 'livingroom', child_selectable: true }];
+  const wakeAndLoad = { execute: async () => ({ ok: true }) };
+  const base = { lifecycle: { enabled: true, media: { targets: TARGETS } }, printing: { host: 'printer.local' } };
+
+  it('builds a ScreenPlaybackAdapter when a wake service and targets are both present', async () => {
+    const result = await wire(base, { wakeAndLoad });
+    expect(result.wired).toBe(true);
+    expect(result.devices.playback).toBeTruthy();
+    expect(result.devices.playback.targets().map((t) => t.id)).toEqual(['livingroom-tv']);
+    expect(result.useCases.dispatchMedia).toBeTruthy();
+  });
+
+  it('leaves the media leg unwired with no wake service — a printed ticket nothing could play', async () => {
+    const result = await wire(base);
+    expect(result.wired).toBe(true);
+    expect(result.devices.playback).toBeUndefined();
+    expect(result.useCases.dispatchMedia).toBeNull();
+  });
+
+  it('leaves it unwired when school.yml names no target', async () => {
+    const result = await wire(
+      { lifecycle: { enabled: true }, printing: { host: 'printer.local' } }, { wakeAndLoad },
+    );
+    expect(result.devices.playback).toBeUndefined();
+    expect(result.useCases.dispatchMedia).toBeNull();
+  });
+
+  it('an explicitly injected adapter still wins — the substitution seam', async () => {
+    const injected = { dispatch: async () => ({ dispatchId: 'x' }), getStatus: () => [] };
+    const result = await wire(base, { wakeAndLoad, playbackAdapter: injected });
+    expect(result.devices.playback).toBeUndefined();
+    expect(result.useCases.dispatchMedia).toBeTruthy();
+  });
+
+  it('does NOT displace the doubles on a virtual-device console', async () => {
+    const result = await wire({ lifecycle: { enabled: true, media: { targets: TARGETS } }, virtualDevices: true }, { wakeAndLoad });
+    // The virtual branch owns `devices.playback` outright; the real adapter
+    // must not be built beside it and dispatch through a second path.
+    expect(result.devices.playback.constructor.name).toBe('VirtualPlaybackAdapter');
   });
 });

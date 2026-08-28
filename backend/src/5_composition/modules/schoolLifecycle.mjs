@@ -150,7 +150,16 @@ function cryptoRng(crypto) {
  *   `launchers` map stays empty and no program entry can ever resolve.
  * @param {object} [deps.eventBus]
  * @param {object} [deps.thermalPrinterRegistry] - the house receipt-printer registry
- * @param {object} [deps.playbackAdapter] - real playback target; null until §8 lands
+ * @param {object} [deps.playbackAdapter] - an already-built playback target.
+ *   Normally absent: with `wakeAndLoad` and at least one configured
+ *   `media.targets` entry this module builds the real `ScreenPlaybackAdapter`
+ *   itself (§8). Passing one overrides that — the seam a test or a future
+ *   headset target uses to substitute its own.
+ * @param {{execute: Function}} [deps.wakeAndLoad] - `WakeAndLoadService`, the
+ *   ONE thing in the house that knows how to bring a dark TV up. School does
+ *   not wake screens itself; it hands this to `ScreenPlaybackAdapter`, which
+ *   delegates to it exactly as `LivingroomTvSurface` does. Absent means no
+ *   real playback target, and the media leg degrades as it always has.
  * @param {object} [deps.donow] - the REAL, household-level `DoNowService`
  *   (Task 13's own `5_composition/modules/donow.mjs`, constructed in
  *   `app.mjs` AFTER the seams every surface needs — `wakeAndLoadService`,
@@ -189,7 +198,7 @@ function cryptoRng(crypto) {
 export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
   economyService = null, userService = null, eventBus = null,
-  thermalPrinterRegistry = null, playbackAdapter = null,
+  thermalPrinterRegistry = null, playbackAdapter = null, wakeAndLoad = null,
   languageStudyService = null,
   studyGrants = null,
   languageReelService = null,
@@ -387,13 +396,47 @@ export async function createSchoolLifecycle({
         logger.warn?.('school.lifecycle.no-receipt-printer', { location: receiptLocation, error: err.message });
       }
     }
-    // Real playback dispatch is NOT wired in this slice: the playback-hub
-    // container is constructed later in the composition root, and mapping a
-    // school target onto a screen or a headset is its own piece of work (§8).
-    // Injected rather than read from YAML, because an adapter is an object and
-    // config is text — a `playbackAdapter:` key in school.yml could only ever
-    // have been dead.
+    // Real playback dispatch (§8). An explicitly injected `playbackAdapter`
+    // always wins — that is the seam a future headset target substitutes
+    // through. Otherwise, if the house can wake a screen and school.yml names
+    // any media target, build the real screen adapter here: it is the ONE
+    // place that holds both the configured targets and the bus the screens
+    // listen on. Still injected rather than read from YAML in the sense that
+    // matters — `wakeAndLoad` is an object and comes from the composition
+    // root; a `playbackAdapter:` key in school.yml could only ever have been
+    // dead text.
     playback = playbackAdapter;
+    if (!playback) {
+      const configuredTargets = lifecycleCfg.media?.targets || [];
+      if (!eventBus || !wakeAndLoad || !configuredTargets.length) {
+        // Named, not silent: "the media action prints but nothing plays" is
+        // otherwise a mystery with three possible causes.
+        logger.info?.('school.lifecycle.no-playback-target', {
+          hasEventBus: Boolean(eventBus),
+          hasWakeAndLoad: Boolean(wakeAndLoad),
+          targets: configuredTargets.length,
+        });
+      } else {
+        const { ScreenPlaybackAdapter } = await import('#adapters/hardware/playback/ScreenPlaybackAdapter.mjs');
+        playback = new ScreenPlaybackAdapter({
+          eventBus,
+          wakeAndLoad,
+          // The whole `media.targets` list, not a screens-only subset: a target
+          // missing its `location:` then refuses BY NAME ("add `location:` to
+          // its media.targets entry") instead of reporting itself unknown.
+          screens: configuredTargets,
+          logger,
+        });
+        // Parked on `devices` for observability and for the wiring test. Safe:
+        // `devices` only ever feeds `createSchoolVirtualDevicesRouter`, which
+        // is built on the `useVirtual` branch alone — the mutually exclusive
+        // one — so a real adapter here can never be driven from a browser.
+        devices.playback = playback;
+        logger.info?.('school.lifecycle.screen-playback', {
+          targets: playback.targets().map((t) => t.id),
+        });
+      }
+    }
   }
 
   // --- persistence -----------------------------------------------------------

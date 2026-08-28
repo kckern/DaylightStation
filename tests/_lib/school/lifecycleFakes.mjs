@@ -420,9 +420,12 @@ export class FakeReceiptPrinter {
 export class FakePlayback {
   constructor() { this.dispatches = []; this.seq = 0; }
 
-  dispatch({ target, contentId, learnerId = null, durationSec = 0 }) {
+  // `sessionId` is part of the port as of the real §8 screen adapter — the
+  // third implementation of the same shape, kept in step deliberately so a
+  // caller that stopped passing it fails here as well as in the living room.
+  dispatch({ target, contentId, sessionId, learnerId = null, durationSec = 0 }) {
     const record = {
-      dispatchId: `dsp_${++this.seq}`, target, contentId, learnerId,
+      dispatchId: `dsp_${++this.seq}`, target, contentId, learnerId, sessionId,
       durationSec, positionSec: 0, status: 'playing',
     };
     this.dispatches.push(record);
