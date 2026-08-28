@@ -4153,31 +4153,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { ReadingSessionInterceptor } = await import('#apps/school/readingSessionInterceptor.mjs');
     const { RecordStoryRead } = await import('#apps/school/usecases/RecordStoryRead.mjs');
     const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
+    const { makeReadingTimeoutHandler } = await import('#composition/modules/learnerCardActions.mjs');
+    const { YamlReadingSessionTimelineStore } = await import('#adapters/persistence/yaml/YamlReadingSessionTimelineStore.mjs');
+    const readingTimeline = new YamlReadingSessionTimelineStore({ configService, logger: readingLogger });
 
     readingSessions = new ReadingSessionService({
       eventBus,
       logger: readingLogger,
+      observationStore: readingTimeline,
       // D6 — the session owns teardown, and this is it. The location's own
       // `end: tv-off` is suppressed while a session is open (D8), so nothing
       // else will ever turn this TV off: an abandoned prompt would leave the
       // living room lit all night and the next card tap would land in a
       // session belonging to a child who left.
-      onTimeout: async (session) => {
-        const source = nfcLocationsForReachability()?.[session.location] ?? {};
-        // A closed reading session always puts the widget back in `idle`; that
-        // is the art/screensaver off-ramp. Powering a display down is an
-        // additional policy, not an intrinsic property of story time. Respect
-        // the same location `end` declaration ordinary trigger playback uses.
-        if (source.end !== 'tv-off') {
-          readingLogger.info?.('school.reading.timeout-idle', {
-            location: session.location, end: source.end ?? null,
-          });
-          return;
-        }
-        const tv = homeAutomationAdapters.tvAdapter;
-        if (!tv?.turnOff) return;
-        await tv.turnOff(source.end_location ?? session.location);
-      },
+      onTimeout: makeReadingTimeoutHandler({
+        locations: nfcLocationsForReachability, tv: homeAutomationAdapters.tvAdapter, logger: readingLogger,
+      }),
     });
     readingSessions.start();
     server?.once?.('close', () => readingSessions.stop());
@@ -4207,6 +4198,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // a worse greeting and not a broken one.
       resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
       logger: readingLogger,
+      observationStore: readingTimeline,
     }));
   } else {
     rootLogger.warn('school.reading.unwired', {

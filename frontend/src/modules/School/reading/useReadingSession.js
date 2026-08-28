@@ -371,6 +371,10 @@ export function useReadingSession({
         setSummary(null);
         say(null);
         loadSummary(payload.learnerId);
+        if (payload.sessionId) {
+          schoolApi.acknowledgeReadingSession({ location: payload.location ?? location, sessionId: payload.sessionId })
+            .catch?.(() => {});
+        }
         // D4: a card tapped MID-STORY swaps the context only. The story keeps
         // playing and keeps the credit it was picked with, so the view does not
         // move and `attributionRef` is deliberately untouched.

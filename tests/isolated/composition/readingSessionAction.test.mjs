@@ -17,7 +17,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
-import { makeReadingSessionHandler } from '#composition/modules/learnerCardActions.mjs';
+import { makeReadingSessionHandler, makeReadingTimeoutHandler } from '#composition/modules/learnerCardActions.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 
@@ -100,6 +100,24 @@ describe('reading-session — an ordinary card tap opens a session', () => {
     const result = await handler(tap({ location: null }));
     expect(result).toMatchObject({ status: 'reading_session_failed' });
     expect(sessions.list()).toEqual([]);
+  });
+});
+
+describe('reading-session timeout composition', () => {
+  it('uses the configured end_location for tv-off', async () => {
+    const turns = [];
+    const timeout = makeReadingTimeoutHandler({
+      locations: () => ({ livingroom: { end: 'tv-off', end_location: 'living_room' } }),
+      tv: { turnOff: async (location) => turns.push(location) }, logger: silent,
+    });
+    await expect(timeout({ location: 'livingroom' })).resolves.toEqual({ action: 'tv-off', location: 'living_room' });
+    expect(turns).toEqual(['living_room']);
+  });
+
+  it('leaves the TV alone so a non-tv-off source returns to its idle/art surface', async () => {
+    const turnOff = () => { throw new Error('must not power off'); };
+    const timeout = makeReadingTimeoutHandler({ locations: () => ({ livingroom: {} }), tv: { turnOff }, logger: silent });
+    await expect(timeout({ location: 'livingroom' })).resolves.toEqual({ action: 'idle' });
   });
 });
 
