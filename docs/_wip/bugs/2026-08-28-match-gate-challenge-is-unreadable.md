@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-28
 **Found by:** first real use — `kckern` opened chess with `gameGate` scoped on
-**Status:** open. The gate works; what it *shows* does not.
+**Status:** resolved on `feat/exercise-run-ux`. See `## Resolution` below.
+**Spec:** `docs/superpowers/specs/2026-08-28-exercise-run-ux-design.md`
 **Severity:** blocks turning the gate on for any child.
 
 ---
@@ -154,3 +155,69 @@ The household default is `enabled: false`. `gameLimit` is off entirely.
 
 Config is in `data/household/piano/config.yml`; it is boot-cached, so a change
 needs a container restart.
+
+---
+
+## Resolution
+
+Shipped on `feat/exercise-run-ux`, against the design in
+`docs/superpowers/specs/2026-08-28-exercise-run-ux-design.md`. The organizing change is
+that **difficulty now selects a presentation tier**, so the level a child is on decides
+what the screen *is* — not just how it is graded. Reference:
+`docs/reference/piano/games-budget-gate.md`.
+
+### A. The material
+
+| # | Issue | What shipped |
+|---|---|---|
+| A1 | Opens on the hardest rung, cold | The five-axis rung is deleted. The ladder is a config-authored repertoire, easiest first, and a child opens at a per-child `startLevel` — `L1` (C major, right hand, free, eight notes) by default, `keys-1` (one lit key) for a preschooler. Nothing opens cued. |
+| A2 | Four of five axes change nothing | The axes are gone rather than made real. A degrade moves one level, and every level differs from its neighbour in tier, root set, or timing — so "we made it a little easier" is true by construction, and the ladder-walk test asserts every step changes the level id. |
+| A3 | `intervals` is a poor first ask | Material is authored per level. The shipped repertoire's first ask is a C major scale; held-dyad material only appears at the keyboard tiers, where it renders as lit keys and the ask says "play these notes together" before a note is played. |
+
+### B. The notation
+
+| # | Issue | What shipped |
+|---|---|---|
+| B1 | Bass clef renders for a treble-only exercise | Exercise notation no longer routes through `generateAbc`, the live-keyboard grand-staff visualiser. Free asks draw on a new single-staff sequence renderer; cued asks use the ABC path; score passages use the sheet-music renderer. The grand-staff renderer serves nothing on this surface, and no test can reach it from here. |
+| B2 | `instance.staff` set and ignored | It is now the first authority for the clef — ahead of hand, ahead of pitch — matching the exercise bank's own contract, where `staff` is an independent re-notate axis ("a left hand can read treble"). Contradiction tests pin the priority, not merely the agreement. |
+| B3 | A dyad is ambiguous by construction | The ask sentence is on screen *before* the attempt starts: "Play these notes together" versus "Play the lit keys in order". It is no longer buried in the `running` status line. |
+| B4 | Range and clef disagree | The clef is chosen from the ask's own pitches, and the same answer that decides *whether* a staff is shown is the one it is drawn on. A G3+C4 ask ties the majority rule 1-1 and used to go treble, putting G3 off the bottom of the card; it now draws on bass, asserted on real engraved geometry in a headless browser. |
+
+### C. The chrome
+
+| # | Issue | What shipped |
+|---|---|---|
+| C1 | "Pass challenge" over a bare exercise title | The header is a host-supplied **framing** line — "Play this to start Chess" — over the ask in plain words. The bank title is not a headline anywhere a child is being gated. |
+| C2 | A bare key letter | The key chip appears only when a staff is shown, and reads "Key of F". It also spells correctly now: the black keys of a flat key draw as flats, resolved through the mode's relative major rather than the bare root letter. |
+| C3 | Ready copy promises criteria it never shows | That line is deleted. The pass bar is not claimed because there is none to claim: every repertoire level is verdict-driven and `passScore` is gone from the config entirely. Where a number does exist — a cued level's cleanliness threshold — it is the rubric, not a second gate. |
+| **C4** | **"Begin challenge" is a second tap for nothing** | **Partly.** The button is deleted for every mode, and a **free** ask now needs no gesture at all: the screen reads "Play the first note to begin" and the first correct note starts the attempt. A **cued** ask still needs one — it reads "Press any key to start. You'll hear 4 clicks, then play at that speed", and any key begins the count-in. That is not the old friction restored: it is on the piano rather than on a touch target, it exists because a metronome count-in has to begin deliberately, and the copy says what will happen before it happens. A child on a cued level does press a key before playing. |
+| C5 | Nothing explains the bargain | The framing line is the bargain, said first: "Play this to start Chess". |
+
+### D. Structural
+
+| # | Issue | What shipped |
+|---|---|---|
+| D1 | No visual coverage of this surface | `ExerciseRun.measure.test.jsx`: the real components bundled into headless Chromium over the shipped compiled SCSS, at the kiosk's 1280×800 canvas, one scenario per tier plus the score stage. It asserts staff count, the clef glyph *as drawn* (a glyph that never sized itself renders invisible and fails), noteheads inside the staff box, the wrong-note ghost at its own height, the ask present before any input, no start button on a free ask, and no percentage on a tier-0 screen. Real abcjs and real OSMD engrave; only I/O is doubled. |
+| D2 | No gate-aware presentation mode | `ExerciseRun` takes `tier`, `framing` and `ask` from its host and changes what it renders accordingly — one context-aware surface, not a gate fork. The gate passes its level's tier; practice and program steps pass their own. |
+
+### Not addressed, deliberately
+
+- **The enharmonic gap.** The exercise bank's root axis publishes only sharp-named pitch
+  classes, so B♭ major is authored as `A#` and its scale spells with sharps. `roots: [Bb]`
+  reads correctly to a person and addresses an instance id that does not exist. The
+  shipped repertoire is written in the bank's own spelling and the reference doc says why;
+  fixing it needs an enharmonic axis on the bank, which is not this branch.
+- **Interval and chord spelling.** `intervals/all.yml` publishes a quality vocabulary
+  (`minor-2nd`…`octave`) the accidental table does not cover, so a C minor-3rd still
+  spells its E♭ as D♯. Not a regression — it was never covered — and no repertoire level
+  serves that material today.
+- **Battle Stadium's rematch** and **the office screen** remain ungated, as before.
+
+### Live state
+
+`gameGate` is still scoped to `users.kckern` on `chess` only, and the household default is
+still `enabled: false`. The data volume's block predates this work — it carries a
+top-level `passScore`, a flat `material:` list, and no `repertoire`, so an enabled gate is
+running on the built-in code fallback until the authored block is applied. The
+ready-to-apply YAML and the canonical sample both live with this change; the config is
+boot-cached, so applying it needs a container restart.

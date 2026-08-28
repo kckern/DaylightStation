@@ -55,7 +55,7 @@ vi.mock('../Exercises/ExerciseRun.jsx', () => ({
 }));
 
 const {
-  default: GameGate, GATE_CONFIG_DEFAULTS, gateStateKey, readGateState, resolveGateConfig,
+  default: GameGate, GATE_CONFIG_DEFAULTS, gateStateKey, materialName, readGateState, resolveGateConfig,
 } = await import('./GameGate.jsx');
 const { pickGateMaterial } = await import('./gateMaterial.js');
 const {
@@ -307,6 +307,39 @@ describe('pickGateMaterial — contract 2: a level resolves to something gradabl
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+describe('materialName — a score passage is named in the log, not left null', () => {
+  // `material` is the one field on gate.presented/gate.attempt that says WHAT a
+  // child was asked to play. A score names no bank instance, so reading
+  // `instanceId` off it left every gate on the study piece logging `null` — a
+  // run of identical lines with the identifying field empty.
+  const SCORE = 'files:sheetmusic/fur-elise.musicxml';
+  const SCORE_LEVEL = { id: 'Lscore', tier: 2, material: [{ kind: 'score', source: SCORE, measures: [1, 4] }] };
+
+  it('names an exercise by its instance id, a passage by document and bars, a lit key not at all', () => {
+    expect(materialName({ kind: 'exercise', instanceId: scaleId('C') })).toBe(scaleId('C'));
+    expect(materialName({ kind: 'score', source: SCORE, measures: [1, 4] })).toBe(`${SCORE}#1-4`);
+    // A range nothing could read means the WHOLE score — which is what the run
+    // plays, so it is named without a fragment rather than with an invented one.
+    expect(materialName({ kind: 'score', source: SCORE, measures: null })).toBe(SCORE);
+    // A synthesized lit key lives nowhere but in the gate's own pickIndex;
+    // `rung`/`tier` already carry everything a query can act on.
+    expect(materialName({ kind: 'keys', instance: { id: 'keys/lit@notes=1' } })).toBeNull();
+    expect(materialName(null)).toBeNull();
+  });
+
+  it('logs the passage on a mounted score level, through every event that carries material', async () => {
+    renderGate({ gateConfig: { repertoire: [SCORE_LEVEL] } });
+    await screen.findByTestId('exercise-run');
+
+    expect(eventNamed('gate.attempt')[1].material).toBe(`${SCORE}#1-4`);
+    expect(eventNamed('gate.presented')[1].material).toBe(`${SCORE}#1-4`);
+    // …and the outcome, which reads the same name off the held attempt.
+    fireEvent.click(screen.getByText('stub-fail'));
+    expect(eventNamed('gate.failed')[1].material).toBe(`${SCORE}#1-4`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 describe('GameGate — contract 3: infrastructure fails OPEN', () => {
   it.each([
     ['a 502 from the bank', () => h.instance.mockResolvedValue({ ok: false, status: 502, data: null })],
@@ -380,10 +413,11 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     expect(onPassed).not.toHaveBeenCalled();
     // The score reaches the LOG, where an adult tuning the ladder can read it.
     expect(eventNamed('gate.failed')[1].score).toBe(0.62);
-    // It does not reach the child. Every repertoire level is verdict-driven
-    // (`passScore: null`), so a bare percentage on the panel would invite
-    // comparison against a target that does not exist — "62%" reads as failing
-    // something, and the words are what say what to do instead.
+    // It does not reach the child, and there is no longer any branch by which
+    // it could: every repertoire level is verdict-driven (`passScore: null`),
+    // so the panel carries no numeric readout at all. A bare percentage would
+    // invite comparison against a target that does not exist — "62%" reads as
+    // failing something, and the words are what say what to do instead.
     expect(panel.textContent).not.toContain('%');
     expect(panel.textContent).toContain('Play it once more, work on it first, or come back later.');
   });

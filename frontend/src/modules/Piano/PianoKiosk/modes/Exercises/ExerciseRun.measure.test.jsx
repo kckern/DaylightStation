@@ -94,14 +94,19 @@ const CHROME_HEIGHT = 70;
  */
 const SETTLE = 80;
 /**
- * The paper card's own edge: `.sequence-staff` is `border: 1px` + `padding: 2px 0`
- * and the app sets no global `border-box`, so the sizing cap — which governs the
- * CONTENT box — always leaves the card's border box a few pixels larger than the
- * row. That hairline is chrome, not notation; every assertion that tolerates it
- * also asserts the measured chrome is no bigger than this, so the tolerance can
- * never grow to cover a real sizing regression.
+ * The paper card's own box model: `.sequence-staff` is `border: 1px` +
+ * `padding: 2px 0`, which is 2px across and 6px down. That is chrome, not
+ * notation, and it is all the card is allowed to be — the assertions below pin
+ * it at exactly this so a card that grew a real box model would be caught.
+ *
+ * It is no longer a TOLERANCE for overflow. The card sizes its BORDER box
+ * (`box-sizing: border-box`, SvgSequenceStaff.scss), so the cap a host writes is
+ * the cap the card obeys and the staff sits inside its container at the ordinary
+ * half-pixel slack. Under the old content-box sizing the border box always stood
+ * 6px proud of the row and the tier-1 assertion had to tolerate it; reverting
+ * that one declaration fails this file.
  */
-const CARD_HAIRLINE = 8;
+const CARD_HAIRLINE = 6;
 
 /* -------------------------------------------------------------------------- */
 /* The fixtures — the shape the gate actually serves                          */
@@ -710,12 +715,12 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     const card = await probe.one('.keys-ask__staff');
     const stage = await probe.one('.piano-exercise-run__ask');
     expect(staff.painted && onCanvas(staff), `the staff is not on canvas: ${say(staff)}`).toBe(true);
-    // The card sizes the staff (`max-width: min(100%, 28rem)`), and the staff's
-    // own 1px border sits a hairline outside it — chrome, not notation. What
-    // may not spill is the INK, so that is what is checked against the row that
-    // clips it.
+    // The card sizes the staff (`max-width: min(100%, 28rem)`) and the staff
+    // sizes its BORDER box, so nothing of it — border included — may sit
+    // outside the card. No overflow tolerance: this is the assertion that the
+    // one-line box-sizing fix bought, and it fails without it.
     expect(staff.chromeX, 'the staff card grew a real box model').toBeLessThanOrEqual(CARD_HAIRLINE);
-    expect(inside(staff, card, CARD_HAIRLINE), `the staff ${say(staff)} overflows its card ${say(card)}`).toBe(true);
+    expect(inside(staff, card), `the staff ${say(staff)} overflows its card ${say(card)}`).toBe(true);
     expect(inside(await probe.one('.action-staff__staff-area'), stage),
       'the staff\'s ink is drawn outside the stage row that clips it').toBe(true);
 
