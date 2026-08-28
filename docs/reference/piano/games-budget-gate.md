@@ -382,10 +382,17 @@ the gate would become a formality that still logged like a gate.
 ### Failing open, and the one case that does not
 
 Infrastructure fails **open**. A catalog or instance fetch that 502s during a backend
-restart, an attempt that will not build, a material configuration nothing can act on —
-all of these start the match the child earned and log `gate.unavailable`. Failing closed
-there would block earned games on an unrelated backend blip, about which the child can do
-nothing.
+restart, or an attempt that will not build — these start the match the child earned and
+log `gate.unavailable`. Failing closed there would block earned games on an unrelated
+backend blip, about which the child can do nothing.
+
+**A configuration mistake is not infrastructure, and does not buy a match.** A level
+whose every material entry fails for a config-class reason (a score naming no document,
+an exercise naming no collection or instance, an unknown kind) substitutes the built-in
+C major scale instead, and logs `gate.material-config-invalid` with the level id and the
+reasons — the child still meets a real, always-resolvable ask while the YAML is wrong.
+Only if even that fallback cannot be fetched does the failure count as infrastructure
+and open the gate.
 
 **"No player chosen" does not fail open.** It is permanent, known, and fixed by one tap,
 so opening on it would make selecting the Guest profile a reliable one-tap bypass of the
@@ -437,7 +444,9 @@ The gate asks for material through a provider seam that names three kinds:
 A level may mix kinds; the rotation serves one per attempt. An entry that cannot be
 served — a bank 502, a score naming no document — is skipped, logged as
 `gate.material-skipped` with its own reason code, and the level's other material is
-served. Only a level where nothing resolves declines, and the gate then fails open.
+served. A level where nothing resolves splits by cause: all config-class reasons
+substitute the built-in C major fallback (see "Failing open, and the one case that does
+not"); any infrastructure reason fails open.
 
 `measures` is written the way a person reads a printed score: `[2, 3]` is the second and
 third bars. A range nothing can read is dropped and the whole score is asked for, rather
@@ -638,6 +647,7 @@ reconstructing — the fail-open ones — are not the ones missing an anchor.
 | `gate.unavailable` | warn | infrastructure failed and the gate opened anyway |
 | `gate.blocked` | warn | no player is chosen; the gate refuses without granting |
 | `gate.material-skipped` | info | a configured material entry was declined, with its reason |
+| `gate.material-config-invalid` | warn | every entry in a level failed for a config-class reason; the built-in C major fallback was served instead |
 
 `gate.rung-changed` and `gate.floor-reached` are the pair that says whether the ladder is
 calibrated: a child who reaches the floor every time is being asked for material above
