@@ -113,9 +113,26 @@ describe('validateAsk — constraints', () => {
     expect(result.errors.some((e) => e.startsWith('cued:'))).toBe(true);
   });
 
+  it('cued with NO source at all is rejected — the positive check, not just the synthesized blocklist', () => {
+    const { source, ...withoutSource } = BANK;
+    const result = validateAsk({ ...withoutSource, timing: 'cued' });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.startsWith('cued:'))).toBe(true);
+  });
+
   it('cued with a bank source is fine (boundary)', () => {
     const result = validateAsk({ ...BANK, timing: 'cued' });
     expect(result.ok).toBe(true);
+  });
+
+  it('cued with a score source is fine on the cued constraint (boundary)', () => {
+    const result = validateAsk({
+      ...BANK,
+      source: { kind: 'score', sourceId: 'x', measureStart: 1, measureEnd: 4 },
+      notationStyle: 'score',
+      timing: 'cued',
+    });
+    expect(result.errors.some((e) => e.startsWith('cued:'))).toBe(false);
   });
 
   it('a score source without style score is rejected', () => {
@@ -227,6 +244,58 @@ describe('validateAsk — not-yet-implemented gate', () => {
   it('hints:none does not trigger the gate', () => {
     const result = validateAsk({ ...BANK, hints: 'none' });
     expect(result.errors).not.toContain('not-yet-implemented: hints');
+  });
+});
+
+describe('validateAsk — complete mode', () => {
+  const REQUIRED = ['texture', 'hands', 'source', 'prompt', 'timing', 'judging'];
+
+  it('partial mode (no options) keeps today\'s behaviour: {} is ok', () => {
+    expect(validateAsk({})).toEqual({ ok: true, errors: [] });
+  });
+
+  it('complete mode rejects {}, naming every missing judging-relevant axis', () => {
+    const result = validateAsk({}, { complete: true });
+    expect(result.ok).toBe(false);
+    for (const axis of REQUIRED) {
+      expect(result.errors).toContain(`missing-axis: ${axis}`);
+    }
+  });
+
+  it('complete mode rejects null — never ok:true', () => {
+    const result = validateAsk(null, { complete: true });
+    expect(result.ok).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it('complete mode rejects an expandAsk(...).presentation output as incomplete', () => {
+    const expanded = expandAsk({
+      id: 'L1',
+      tier: 2,
+      material: [{ kind: 'exercise', collection: 'scales', mode: 'major', roots: ['C'], octaves: 1 }],
+    });
+    const result = validateAsk(expanded.presentation, { complete: true });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain('missing-axis: texture');
+    expect(result.errors).toContain('missing-axis: hands');
+    expect(result.errors).toContain('missing-axis: source');
+    expect(result.errors).toContain('missing-axis: judging');
+  });
+
+  it('complete mode accepts the floor tuple — every required axis is present', () => {
+    expect(validateAsk(FLOOR, { complete: true })).toEqual({ ok: true, errors: [] });
+  });
+
+  it('complete mode does not require secondary, notationStyle, or hints', () => {
+    const { secondary, ...withoutSecondary } = FLOOR;
+    const result = validateAsk(withoutSecondary, { complete: true });
+    expect(result.errors.some((e) => e.startsWith('missing-axis:'))).toBe(false);
+  });
+
+  it('complete mode still runs the constraint table on top of the completeness check', () => {
+    const result = validateAsk({ ...BANK, judging: 'placed', timing: 'free' }, { complete: true });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.startsWith('placed:'))).toBe(true);
   });
 });
 

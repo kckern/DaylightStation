@@ -38,6 +38,20 @@ export const AXES = Object.freeze({
   // Ordered, cumulative: `clean` implies `completion`'s bar was cleared too;
   // `placed` implies `clean`'s. The ordering itself isn't enforced here — it
   // describes the rubric a downstream grader builds, not a schema rule.
+  //
+  // `placed` NAMES THE VOCABULARY TARGET, not today's enforcement. Today's
+  // cued gate (`gateAsk.js:requirementForLevel`) builds a rubric of
+  // `{ completeness, cleanliness }` only — placement is computed and folded
+  // into the score, but `assessmentAttempt.js`'s `failedCriteria` never
+  // checks a placement criterion, so nothing hard-gates on it. Tier-3's
+  // preset below says `judging: 'placed'` because that is the axis value
+  // that *describes* tier 3 in this vocabulary, not because today's engine
+  // enforces a placement threshold. Wiring `placed` to an actual hard gate
+  // is a deliberate future decision (tightening current behaviour), never
+  // an incidental consequence of reading this preset — a caller that wires
+  // it as "require placement" without that decision being made explicitly
+  // would make tier 3 stricter than it is today, breaking SP1's
+  // reproduces-today contract.
   judging: Object.freeze(['completion', 'clean', 'placed']),
   hints: Object.freeze(['none', 'after-stall', 'always']),
 });
@@ -47,6 +61,17 @@ const PRESENTATION_AXES = Object.freeze(['prompt', 'secondary', 'notationStyle',
 
 /** Simple (flat-vocabulary) axes `validateAsk` checks by list membership. `source` is handled separately — its vocabulary is keyed by kind, not a flat array. */
 const SIMPLE_AXES = Object.freeze(['texture', 'hands', 'prompt', 'secondary', 'notationStyle', 'timing', 'judging', 'hints']);
+
+/**
+ * The axes a JUDGED ask cannot be missing: what's played (`texture`,
+ * `hands`, `source`), the primary channel (`prompt`), and how it's timed
+ * and graded (`timing`, `judging`). `secondary`, `notationStyle`, and
+ * `hints` stay optional even in complete mode — they are conditional
+ * (a secondary surface / notation style only matters when a staff renders;
+ * a hint policy only matters once hints exist) rather than always-required.
+ * Used only by `validateAsk`'s `{ complete: true }` mode.
+ */
+const REQUIRED_COMPLETE_AXES = Object.freeze(['texture', 'hands', 'source', 'prompt', 'timing', 'judging']);
 
 /**
  * Today's tiers, re-expressed as named presets. Reproduces current behaviour
@@ -63,6 +88,11 @@ export const PRESETS = Object.freeze({
     timing: 'free',
     judging: 'completion',
   }),
+  // `judging: 'placed'` here names tier 3's vocabulary position, not a hard
+  // placement gate — see the long comment on `AXES.judging` above. Today's
+  // actual tier-3 enforcement is completeness + cleanliness; placement is
+  // score-weighted only. This preset must keep reproducing exactly that
+  // until a later task explicitly decides to tighten it.
   'tier-3': Object.freeze({
     prompt: 'read',
     secondary: 'keyboard-strip',
@@ -149,8 +179,16 @@ export function expandAsk(levelLike) {
  * in `AXES`) and the executable constraint table:
  *
  *  - `placed` judging ⇒ `cued` timing.
- *  - `cued` timing ⇒ a source that can carry note values (`bank`/`score`,
- *    never `synthesized`).
+ *  - `cued` timing ⇒ a source that can carry note values — a POSITIVE check
+ *    (`source.kind` must be `bank` or `score`), not a blocklist on
+ *    `synthesized` alone. A `cued` tuple with no `source` at all is exactly
+ *    as much a violation as one with `source.kind: 'synthesized'` — "cued
+ *    needs a note-carrying source" fails equally whether the source is the
+ *    wrong kind or simply absent. This check runs in BOTH partial and
+ *    complete mode: asserting `timing: 'cued'` is itself an implicit claim
+ *    about `source`, unlike axes that are merely not-yet-decided, so partial
+ *    mode's general "absent axis = not yet specified, skip" leniency does
+ *    not extend to this one cross-axis pairing.
  *  - `score` source ⇒ `score` notation style.
  *  - `recall` prompt ⇒ source is not `score`.
  *  - `sequence` notation style ⇒ a single hand (not `both`) at ≤ 2 octaves.
@@ -159,15 +197,35 @@ export function expandAsk(levelLike) {
  *    not yet implemented (SP2) — reported as a distinct
  *    `'not-yet-implemented: <name>'` error, never a silent drop.
  *
- * A tuple's `notationStyle` and `hints` may be omitted (they apply only when
- * a staff renders / a hint policy is set); every other axis is expected.
+ * **Two modes.** Default (partial) mode treats an absent axis as "not yet
+ * specified" and simply skips its vocabulary check — this is for a caller
+ * validating a tuple that's still being assembled, or checking one
+ * constraint in isolation. It intentionally does NOT require every axis, so
+ * `validateAsk({})` reports `ok: true` — an empty tuple violates no
+ * constraint because it makes no claim. That is by design for partial use,
+ * but it is also the exact shape a careless caller hands in when they meant
+ * to validate a REAL, finished ask (e.g. `expandAsk(level).presentation`,
+ * which never carries `texture`/`hands`/`source`/`judging` at all) — pass
+ * `{ complete: true }` for that: it additionally requires
+ * `REQUIRED_COMPLETE_AXES` (`texture`, `hands`, `source`, `prompt`,
+ * `timing`, `judging`) to be present, emitting `'missing-axis: <name>'` for
+ * each one that's missing. A `null`/`{}` input is NEVER `ok: true` in
+ * complete mode.
  *
  * @param {object} tuple `{ texture, hands, source:{kind,...params}, prompt, secondary, notationStyle?, timing, judging, hints? }`
+ * @param {{ complete?: boolean }} [options] `complete: true` requires the judging-relevant axes to be present.
  * @returns {{ ok: boolean, errors: string[] }}
  */
-export function validateAsk(tuple) {
+export function validateAsk(tuple, options) {
   const errors = [];
   const t = tuple ?? {};
+  const complete = options?.complete === true;
+
+  if (complete) {
+    for (const axis of REQUIRED_COMPLETE_AXES) {
+      if (t[axis] === undefined) errors.push(`missing-axis: ${axis}`);
+    }
+  }
 
   for (const axis of SIMPLE_AXES) {
     const value = t[axis];
@@ -185,9 +243,10 @@ export function validateAsk(tuple) {
     errors.push('placed: requires timing cued');
   }
 
-  // cued ⇒ material that can carry note values (bank/score, not synthesized)
-  if (t.timing === 'cued' && sourceKind === 'synthesized') {
-    errors.push('cued: requires source bank or score, not synthesized');
+  // cued ⇒ material that can carry note values (bank/score) — positive
+  // check, so an ABSENT source fails this exactly like a synthesized one.
+  if (t.timing === 'cued' && !['bank', 'score'].includes(sourceKind)) {
+    errors.push(`cued: requires source bank or score, not ${sourceKind ?? 'absent'}`);
   }
 
   // score source ⇒ style score
