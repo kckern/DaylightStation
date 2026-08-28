@@ -50,6 +50,8 @@ import { readingTopic } from './ReadingSessionService.mjs';
 
 export const CLAIMED_BY = 'reading-session';
 
+const mintPickId = () => `pick_${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`}`;
+
 /** The states in which a story is on screen and the mode split applies. */
 const MID_STORY = new Set(['reading']);
 
@@ -93,6 +95,14 @@ export class ReadingSessionInterceptor {
     const contentId = response.expression?.contentId ?? null;
     const { learnerId } = session;
 
+    if (session.state === 'starting') {
+      this.#broadcast(location, {
+        event: 'book-refused', reason: 'screen-starting', learnerId, location, contentId,
+        at: this.#clock().toISOString(),
+      });
+      return { claimed: true, by: CLAIMED_BY, refused: true, reason: 'screen-starting', learnerId, contentId };
+    }
+
     if (MID_STORY.has(session.state)) {
       const mode = await this.#modeFor(learnerId);
       if (mode === MODE_UNREADABLE) {
@@ -121,8 +131,12 @@ export class ReadingSessionInterceptor {
     // PROMPT or CONFIRM: the session owns the screen in BOTH modes. Browsing is
     // relaxed only mid-story; a child who tapped their card still gets their
     // countdown, whatever they owe.
-    const pick = { contentId, target: response.target ?? null, at: this.#clock().toISOString() };
-    if (!this.#broadcast(location, { event: 'book-selected', learnerId, location, ...pick })) return null;
+    const samePick = session.state === 'confirm' && session.pick?.contentId === contentId;
+    const pick = samePick ? session.pick : {
+      pickId: mintPickId(), learnerId, contentId, target: response.target ?? null,
+      studyDay: this.#storyTime?.studyDay?.() ?? null, at: this.#clock().toISOString(),
+    };
+    if (!this.#broadcast(location, { event: 'book-selected', learnerId, location, sessionId: session.sessionId, ...pick })) return null;
     this.#sessions.update(location, { state: 'confirm', pick });
     this.#log('info', 'school.reading.book-selected', { location, learnerId, contentId });
     return { claimed: true, by: CLAIMED_BY, learnerId, contentId };
@@ -203,7 +217,27 @@ export class ReadingSessionInterceptor {
     if (response?.kind !== 'content') return false;
     const location = response?.location;
     if (!location) return false;
-    return Boolean(this.#sessions.current(location));
+    const session = this.#sessions.current(location);
+    if (!session) return false;
+    // "WHY DIDN'T THE TV TURN OFF?" — this is the answer, and it used to be
+    // unlogged. Taking the location's `end: tv-off` away is the single most
+    // consequential thing this seam does to a room, and it is invisible from
+    // the outside: nothing else in the house reports that a teardown was
+    // cancelled. On 2026-08-28 a session stuck in `reading` (the idle sweep
+    // exempts that state on purpose) suppressed the teardown indefinitely and
+    // the living-room TV stayed on with nobody in the room.
+    //
+    // `sessionState` is the field that makes it diagnosable rather than merely
+    // observable: suppressing under `prompt` is the feature working, and
+    // suppressing under `reading` long after a story should have ended is the
+    // fault. The state is what tells them apart.
+    this.#log('info', 'school.reading.end-suppressed', {
+      location,
+      learnerId: session.learnerId,
+      sessionState: session.state,
+      openedAt: session.openedAt,
+    });
+    return true;
   }
 
   /**

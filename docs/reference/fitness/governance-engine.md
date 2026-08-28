@@ -544,6 +544,44 @@ challenges are not covered by these cues — they have their own audible feedbac
 > For the implementation mechanism (descriptor pipeline, dedupe token, duck/restore
 > lifecycle, and edge cases), see [audio-duck-cues.md](./audio-duck-cues.md).
 
+### Ring Celebration Toasts
+
+Ring awards are a separate, celebratory surface in the same Fitness session UI;
+they do not affect the governance state machine, challenge success, or access to
+video. The `TreasureBox` emits each canonical award after its totals update, and
+`FitnessContext` turns configured totals into a single on-screen ring toast.
+
+Configure the feature at the Fitness-config root:
+
+```yaml
+ring_celebrations:
+  enabled: true
+  sound: fitness/ux/ring.mp3
+  icon: fitness/ux/spinning-ring.svg
+  volume: 0.8
+  duration_ms: 3500
+  coalesce_window_ms: 1500
+  max_visible_contributors: 3
+  individual:
+    thresholds: [100, 200, 250, 500, 750, 1000, 1500]
+  group:
+    min_contributors: 2
+    thresholds: [500, 1000, 1500, 2000]
+```
+
+- Individual and group threshold lists are independently configurable. A group
+  celebration requires the configured number of distinct contributors.
+- Awards arriving inside `coalesce_window_ms` open one card together. If a ring
+  card is already visible, later awards merge into it in place; its animation and
+  dismissal timer restart instead of creating or queueing another toast. Equal
+  individual totals use compact copy such as `500 RINGS EACH`.
+- An ordinary governance or rider toast keeps its priority. Ring awards wait and
+  combine until that toast clears.
+- The ring cue has its own audio player and does not duck or interrupt the
+  governance challenge cues. Reduced-motion mode uses a static ring fallback.
+- Per-session threshold tracking is seeded from current totals, so reopening or
+  resuming a session does not replay previously earned celebrations.
+
 ### Zone Configuration
 
 ```yaml

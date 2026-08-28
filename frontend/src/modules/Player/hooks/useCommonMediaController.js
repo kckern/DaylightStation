@@ -911,7 +911,21 @@ export function useCommonMediaController({
 
     const onEnded = () => {
       getMediaEl();
-      
+
+      // THE TERMINAL EVENT, AND IT WAS SILENT UNTIL 2026-08-28. `onEnd()` below
+      // is what advances a queue or clears a single item, so this is the branch
+      // point for everything that happens after a story/track finishes — and it
+      // emitted nothing at all. A read-along played to its end on the
+      // living-room TV, the Player went away, and the only trace in the log
+      // store was an incidental shader resize. "Did the media actually end, or
+      // did something tear it down?" was unanswerable.
+      mcLog().info('playback.ended', {
+        assetId,
+        type,
+        seconds: Math.round(mediaEl.currentTime || 0),
+        duration: Math.round(mediaEl.duration || 0),
+      });
+
       lastLoggedTimeRef.current = 0;
       // Mark this asset as naturally ended so the unmount cleanup skips it
       endedAssetRef.current = assetId;

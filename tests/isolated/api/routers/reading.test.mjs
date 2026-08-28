@@ -66,6 +66,21 @@ function build({
   return { app, sessions, readingLog, broadcasts };
 }
 
+describe('GET /events — live reading-session observability', () => {
+  it('reports the open session, its ages, and its bounded transition timeline', async () => {
+    const { app, sessions } = build();
+    const session = sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.acknowledge('livingroom', session.sessionId);
+    const res = await request(app).get('/api/v1/school/reading/events?location=livingroom&limit=2');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ location: 'livingroom', session: { sessionId: session.sessionId, learnerId: 'learner-c' } });
+    expect(res.body.ageMs).toEqual(expect.any(Number));
+    expect(res.body.ackAgeMs).toEqual(expect.any(Number));
+    expect(res.body.events).toHaveLength(2);
+    expect(res.body.events.at(-1)).toMatchObject({ type: 'acknowledged', sessionId: session.sessionId });
+  });
+});
+
 describe('POST /read — the read is recorded on completion', () => {
   it('writes one row and answers with it', async () => {
     const { app, readingLog } = build();

@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useContext, useState, Suspense } from 'react';
+import { useMemo, useCallback, useContext, useState, useEffect, Suspense } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
@@ -38,6 +38,17 @@ import { gameSubRouteTarget } from './gameSubRoute.js';
 export function Games() {
   const pianoUser = useContext(PianoUserContext);
   const gameAccess = useSchoolGameAccess(pianoUser?.currentUser ?? null);
+  const navigate = useNavigate();
+
+  // Do not strand a newly-gated child in a picker or a running game.  Waiting
+  // for `ready` matters: the hook intentionally starts closed while the
+  // completion request is in flight, and redirecting on that transient would
+  // eject learners who are actually eligible.
+  useEffect(() => {
+    if (gameAccess.status === 'ready' && !gameAccess.unlocked) {
+      navigate('..', { replace: true, relative: 'path' });
+    }
+  }, [gameAccess.status, gameAccess.unlocked, navigate]);
 
   if (!gameAccess.unlocked) {
     const message = gameAccess.status === 'error'

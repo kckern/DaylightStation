@@ -671,6 +671,47 @@ Flat segments = rest/cool zone (no coins).
 Steep segments = hot/fire zone (high coin rate).
 ```
 
+### Ring celebrations
+
+The UI calls these earned units **rings** (older config and saved sessions may
+still call them `coins`). `TreasureBox` remains the accounting authority: after
+it has committed a ring award it emits a structured event containing the user,
+zone, awarded amount, per-user total, and session total. `FitnessContext`
+derives configured threshold crossings from that event; it never infers them
+from a React render or chart sample.
+
+`ring_celebrations` is an optional top-level fitness config block:
+
+```yaml
+ring_celebrations:
+  enabled: true
+  sound: fitness/ux/ring.mp3
+  icon: fitness/ux/spinning-ring.svg
+  volume: 0.8
+  duration_ms: 3500
+  coalesce_window_ms: 1500
+  max_visible_contributors: 3
+  individual:
+    thresholds: [100, 200, 250, 500, 750, 1000, 1500]
+  group:
+    min_contributors: 2
+    thresholds: [500, 1000, 1500, 2000]
+```
+
+Individual thresholds are once per person per session. Group thresholds use the
+session total only after the configured number of distinct people have earned
+rings. Existing totals seed the tracker on reload/resume, so old earnings never
+replay as new celebrations.
+
+The existing centered Fitness toast is updated in place: when another ring
+threshold arrives while a ring card is visible, it adds the person/total to the
+same card and restarts its animation and full timeout. A non-ring notice (for
+example governance or rider selection) is never changed into a ring card; ring
+events accumulate and display as one card once that notice clears. The card uses
+the supplied spinning ring image, configured profile avatars with initials
+fallback, and a dedicated one-shot sound that does not duck video or interrupt
+governance audio cues.
+
 ---
 
 ## Render Update Model

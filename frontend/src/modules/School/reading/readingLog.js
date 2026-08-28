@@ -19,6 +19,22 @@
  *
  * That last one matters most: a read that played but was never recorded is the
  * one failure a child cannot see and a parent will not believe.
+ *
+ * FIVE MORE, ADDED 2026-08-28 after a read was lost in the field and none of
+ * the seven above could say why. Each one marks a junction that was silent:
+ *   pick-without-session   a book arrived for a session this screen never
+ *                          learned about — attribution WILL be null
+ *   committed-unattributable  the pick was frozen with no learner; the story
+ *                          plays and the completion is already doomed
+ *   media-detached         the `playing`/`ended` listeners came off the element;
+ *                          past this point a story can finish in total silence
+ *   player-cleared         the Player handed back `clear`, distinguishing "the
+ *                          call never came" from "it came and did nothing"
+ *   screensaver-cleared    (pre-existing) — its ABSENCE is the tell that the
+ *                          widget never left `idle`
+ *
+ * The lesson those five encode: this feature fails by staying quiet, so the
+ * events worth having are the ones that fire when a step DOESN'T happen.
  */
 import getLogger from '../../../lib/logging/Logger.js';
 

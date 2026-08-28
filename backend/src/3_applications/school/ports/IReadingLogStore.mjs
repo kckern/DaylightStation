@@ -33,6 +33,9 @@ export class IReadingLogStore {
    * @returns {Promise<object[]>} rows for that learner and study day, oldest first
    */
   async listForDay() { throw new Error('IReadingLogStore.listForDay not implemented'); }
+
+  /** Return the idempotent row, if any, after an ambiguous completion write. */
+  async findByPickId() { throw new Error('IReadingLogStore.findByPickId not implemented'); }
 }
 
 export default IReadingLogStore;

@@ -63,6 +63,10 @@ export function ScreenScreensaver({ config }) {
     const widgetProps = JSON.parse(propsJson);
     let shown = false;
     let timer = null;
+    // Which suppressor was reported last, so `show()` logs transitions rather
+    // than one line per idle tick. Lives in the effect scope: it must reset
+    // with the effect, not outlive a screen config change.
+    let suppressedBy = null;
 
     const schedule = () => {
       if (!idleSeconds) return; // 0 / falsy → no idle timer
@@ -96,7 +100,29 @@ export function ScreenScreensaver({ config }) {
       if (shown) return;
       // Suppressed while content is active — a fullscreen overlay OR a nav-stack
       // player/app/etc. Reschedule so it re-checks once content ends.
-      if (hasOverlayRef.current || contentActiveRef.current) { schedule(); return; }
+      if (hasOverlayRef.current || contentActiveRef.current) {
+        // EDGE-TRIGGERED, not per tick: a two-hour film would otherwise write a
+        // line every `idle` seconds all evening. One line when the suppressor
+        // appears and one when it clears is what actually answers the question
+        // — "why has the screensaver not come back?" — which on 2026-08-28 was
+        // unanswerable from the logs, because deferring here was completely
+        // silent. `by` names WHICH of the two is holding it off; they have very
+        // different causes (a lingering overlay entry vs. a nav stack that
+        // still thinks content is up).
+        const by = hasOverlayRef.current
+          ? (contentActiveRef.current ? 'overlay+content' : 'overlay')
+          : 'content';
+        if (suppressedBy !== by) {
+          suppressedBy = by;
+          logger().info('screensaver.suppressed', { widget: widgetKey, by, idleSeconds });
+        }
+        schedule();
+        return;
+      }
+      if (suppressedBy) {
+        logger().info('screensaver.unsuppressed', { widget: widgetKey, was: suppressedBy });
+        suppressedBy = null;
+      }
       const Component = getWidgetRegistry().get(widgetKey);
       if (!Component) { logger().warn('screensaver.widget-not-found', { widget: widgetKey }); return; }
       reset?.();

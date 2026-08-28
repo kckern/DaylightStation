@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
 import { DEFAULT_TOAST_DURATION_MS } from './fitnessToastSlot.js';
+import { describeRingEntry, describeSameThresholdPeople } from './buildRingCelebrationToast.js';
 import './FitnessToast.scss';
 
 // Fade + collapse exit duration. Keep in sync with FitnessToast.scss transition.
@@ -38,6 +39,77 @@ ContributorChip.propTypes = {
   avatarUrl: PropTypes.string,
 };
 
+function RingContributorFaces({ contributors, maxVisible }) {
+  const visible = contributors.slice(0, maxVisible);
+  const extra = Math.max(0, contributors.length - visible.length);
+  return (
+    <div className="fitness-toast__ring-faces" aria-label={contributors.map((person) => person.name).join(', ')}>
+      {visible.map((person) => <ContributorChip key={person.id} {...person} />)}
+      {extra ? <div className="fitness-toast__ring-more">+{extra}</div> : null}
+    </div>
+  );
+}
+
+RingContributorFaces.propTypes = {
+  contributors: PropTypes.array.isRequired,
+  maxVisible: PropTypes.number.isRequired,
+};
+
+function RingCelebrationToast({ celebration, refreshKey }) {
+  const entries = Array.isArray(celebration?.entries) ? celebration.entries : [];
+  const contributors = Array.isArray(celebration?.contributors) ? celebration.contributors : [];
+  const groupEntries = entries.filter((entry) => entry.scope === 'group');
+  const individualEntries = entries.filter((entry) => entry.scope === 'individual');
+  const group = groupEntries[groupEntries.length - 1] || null;
+  const shared = describeSameThresholdPeople(individualEntries);
+  const maxVisible = Math.max(1, celebration?.maxVisibleContributors || 3);
+
+  return (
+    <>
+      <div className="fitness-toast__ring-stage">
+        {celebration?.iconUrl ? <img key={refreshKey} className="fitness-toast__ring-icon" src={celebration.iconUrl} alt="" /> : null}
+      </div>
+      {group ? (
+        <>
+          <div className="fitness-toast__ring-total">{group.threshold.toLocaleString()} RINGS</div>
+          <div className="fitness-toast__ring-message">Together, you earned them.</div>
+        </>
+      ) : shared ? (
+        <>
+          <div className="fitness-toast__ring-total">{shared.threshold.toLocaleString()} RINGS EACH</div>
+          <div className="fitness-toast__ring-message">{shared.names} reached them together!</div>
+        </>
+      ) : individualEntries.length === 1 ? (
+        <>
+          <div className="fitness-toast__ring-total">{individualEntries[0].threshold.toLocaleString()} RINGS</div>
+          <div className="fitness-toast__ring-message">{individualEntries[0].name} has {individualEntries[0].threshold.toLocaleString()} rings!</div>
+        </>
+      ) : <div className="fitness-toast__ring-total">RINGS!</div>}
+      {contributors.length ? <RingContributorFaces contributors={contributors} maxVisible={maxVisible} /> : null}
+      {individualEntries.length > 1 && !shared ? (
+        <div className="fitness-toast__ring-lines">
+          {individualEntries.map((entry) => (
+            <div className="fitness-toast__ring-line" key={`${entry.userId}:${entry.threshold}`}>
+              <img src={entry.avatarUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+              <span>{describeRingEntry(entry)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+RingCelebrationToast.propTypes = {
+  celebration: PropTypes.shape({
+    iconUrl: PropTypes.string,
+    entries: PropTypes.array,
+    contributors: PropTypes.array,
+    maxVisibleContributors: PropTypes.number,
+  }),
+  refreshKey: PropTypes.string,
+};
+
 /**
  * Ephemeral, centered, self-dismissing notification for the video view.
  * Single-slot: the parent passes the current toast (or null). A new `toast.id`
@@ -49,6 +121,8 @@ export default function FitnessToast({ toast, onDone }) {
   const [exiting, setExiting] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const id = toast?.id ?? null;
+  const revision = toast?.revision ?? 0;
+  const timerKey = `${id}:${revision}`;
   const timersRef = useRef({ hide: null, done: null });
 
   useEffect(() => {
@@ -67,11 +141,11 @@ export default function FitnessToast({ toast, onDone }) {
       clearTimeout(timers.hide);
       clearTimeout(timers.done);
     };
-    // Intentionally keyed on `id` only. onDone/durationMs/variant are read from the
-    // toast captured when this id last changed; ids are monotonic (see normalizeToast),
-    // so the same id never reappears with a different callback/duration — no stale-closure risk.
+    // Usually ids are monotonic (see normalizeToast). Ring celebrations are the
+    // one exception: they retain the visible card's id but increment revision
+    // as another person joins, deliberately restarting this lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [timerKey]);
 
   const handleDismiss = useCallback(() => {
     if (id == null) return;
@@ -87,7 +161,7 @@ export default function FitnessToast({ toast, onDone }) {
 
   if (!toast) return null;
 
-  const { avatarUrl, icon, title, subtitle, contributors, zone, achievement = false, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS } = toast;
+  const { avatarUrl, icon, title, subtitle, contributors, zone, achievement = false, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS, kind, ringCelebration } = toast;
   const hasContributors = Array.isArray(contributors) && contributors.length > 0;
   const className = [
     'fitness-toast',
@@ -98,6 +172,17 @@ export default function FitnessToast({ toast, onDone }) {
     achievement && hasContributors ? 'fitness-toast--achievement' : '',
     exiting ? 'fitness-toast--exiting' : 'fitness-toast--entered',
   ].filter(Boolean).join(' ');
+
+  if (kind === 'ring-celebration' && ringCelebration) {
+    return (
+      <div className={`${className} fitness-toast--ring-celebration`} role="status" aria-live="polite" onClick={handleDismiss}>
+        <RingCelebrationToast celebration={ringCelebration} refreshKey={timerKey} />
+        <div className="fitness-toast__countdown">
+          <div key={timerKey} className="fitness-toast__countdown-bar" style={{ animationDuration: `${durationMs}ms` }} />
+        </div>
+      </div>
+    );
+  }
 
   if (achievement && hasContributors) {
     return (
@@ -193,6 +278,9 @@ FitnessToast.propTypes = {
     }),
     variant: PropTypes.string,
     durationMs: PropTypes.number,
+    revision: PropTypes.number,
+    kind: PropTypes.string,
+    ringCelebration: PropTypes.object,
   }),
   onDone: PropTypes.func,
 };

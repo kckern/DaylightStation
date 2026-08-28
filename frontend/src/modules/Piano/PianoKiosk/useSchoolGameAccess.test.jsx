@@ -6,8 +6,13 @@ const h = vi.hoisted(() => ({ response: { state: 'incomplete' } }));
 vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn(async () => h.response),
 }));
+// Both levels the hook uses. The mock carried only `warn`, which meant a test
+// suite could not have caught the hazard that `info` introduced on 2026-08-28:
+// a logging call inside the fetch's try block turning a successful read into
+// `status: 'error'` — and `error` locks games. A logger double that is missing
+// a level the code calls is a double that tests the wrong program.
 vi.mock('../../../lib/logging/Logger.js', () => ({
-  default: () => ({ child: () => ({ warn: vi.fn() }) }),
+  default: () => ({ child: () => ({ warn: vi.fn(), info: vi.fn() }) }),
 }));
 
 import { DaylightAPI } from '../../../lib/api.mjs';
