@@ -1211,10 +1211,39 @@ chapter played at 2x. The field is named `maxRate` on the wire and the server's
 allowlist drops anything else silently — there is a source-text contract test
 across that boundary in `ReadalongPlaylistPlayer.test.jsx`.
 
+### Where a gate row can and cannot ride
+
+**A required companion is supported on the solo bank-worksheet path only.** Every
+other way of issuing a worksheet refuses it rather than printing an ungated
+sheet:
+
+| Path | Required companion |
+|---|---|
+| `IssueDocument#issueWorksheetInstance` (`unit.bank`, no `unit.document`) | **supported** — mints the code, prints the gate row |
+| `IssueComposedWorksheet` (several lessons on one card) | refused; the lesson must be printed on its own |
+| `IssueDocument#issuePrintDocument` (`print/<id>@<rev>` units) | refused |
+| `IssueDocument#issueLegacyDocument` | refused |
+
+Composed sheets are refused rather than supported because
+`COMPANION_GATE_ITEM_ID` is a single fixed id: two gated sections on one card
+would mint two `extraItems` sharing it, collide in `mergeBank`, and the scan
+resolver's `find(row => row.itemType === 'companion_code')` would return only
+the first — the second lesson's gate vanishing silently. Supporting it properly
+needs a per-section gate id, a per-section partition at scan time, and new
+row-capacity arithmetic.
+
 ### Known limits
 
-- A required companion on a unit with **no document** is refused at publish, as
-  is one on a renderer that declares no completion contract.
+- A required companion on a unit with **no bank and no document** is refused at
+  publish by `unitValidation`, as is one whose `handler` reports no completion
+  (today `readalong` is the only handler that can release a code — the list is
+  `COMPANION_COMPLETION_HANDLERS`). Both errors name the fix.
+- **The page-with-bubbles lane cannot enforce a gate.** Every worksheet-instance
+  render allocates a card, so gate marks never reach a form map and the
+  `selection: 'set'` decode path is currently unreachable in production —
+  correct and tested, but dead. `SubmitPaperWork` throws rather than silently
+  discarding a gate entry, so the day that lane becomes reachable it fails
+  loudly instead of ungating a sheet.
 - The teacher panel can **reveal** a code but never **satisfy** a companion, so
   the record keeps the line between "listened" and "was told".
 - Coverage is client-reported and there is no server-side cross-check. For a LAN
