@@ -83,20 +83,91 @@ describe('PianoGameBudgetService', () => {
     expect(store._days.has('2026-08-28')).toBe(false);
   });
 
-  it('a settle that CROSSES the boundary lands on the new day and says so', async () => {
+  it('a settle that CROSSES the boundary lands on the new day and charges ONLY the post-boundary delta', async () => {
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const svc2 = new PianoGameBudgetService({
       store, config: () => CFG, timezone: 'America/Los_Angeles',
       clock: () => now, idFactory: () => 'sess_x', logger,
     });
     await svc2.open({ learnerId: 'kid_a', deviceId: 'kiosk' });
+    // Spend 90s BEFORE the boundary — this lands on, and stays on, yesterday.
+    await svc2.settle({ sessionId: 'sess_x', learnerId: 'kid_a', cumulativeSeconds: 90 });
+    expect(store._days.get('2026-08-27').learners.kid_a.totalSeconds).toBe(90);
+
     now = new Date('2026-08-28T12:30:00.000Z'); // 05:30 LA — the study day has rolled
-    await svc2.settle({ sessionId: 'sess_x', learnerId: 'kid_a', cumulativeSeconds: 60 });
-    // A session open across 4am does not carry yesterday's spend into today.
+    // The client's cumulative keeps climbing from the same running total —
+    // it does not reset to zero just because the day did.
+    await svc2.settle({ sessionId: 'sess_x', learnerId: 'kid_a', cumulativeSeconds: 150 });
+
+    // The carried session seeds today at the high-water it already held
+    // (90), so only the 60s spent AFTER the boundary (150 - 90) is charged
+    // to the fresh day. A carry that seeded at 0 instead would charge the
+    // full 150 again here — this is the assertion that catches that bug.
     expect(store._days.has('2026-08-28')).toBe(true);
+    expect(store._days.get('2026-08-28').learners.kid_a.totalSeconds).toBe(60);
+    expect(store._days.get('2026-08-27').learners.kid_a.totalSeconds).toBe(90); // untouched
+    expect(logger.info).toHaveBeenCalledWith('budget.day-rollover', expect.objectContaining({
+      learnerId: 'kid_a', from: '2026-08-27', to: '2026-08-28', cumulativeSeconds: 90,
+    }));
+  });
+
+  it('a settle that crosses the boundary in a UTC-9 timezone still carries to the right day', async () => {
+    // Regression for the round-trip date-math bug: an earlier #carryForward
+    // anchored "yesterday" at `${today}T12:00:00Z` minus 24h and re-derived
+    // the study date from THAT instant through budgetStudyDate, rather than
+    // subtracting one calendar day from `today` directly. Two stacked
+    // offsets (the fixed noon anchor, and the household's own UTC offset)
+    // only cancel out to "exactly one day earlier" for a bounded range of
+    // timezones — empirically verified against these exact instants:
+    // America/Los_Angeles (used by the boundary test above) round-tripped
+    // correctly, but America/Anchorage (UTC-9 AKST) did not: the old
+    // formula resolved "yesterday" as 2026-01-14 when the session it needed
+    // to find actually opened on 2026-01-15, so the carry silently failed
+    // to find it and `settle` would have thrown "unknown session". Pure
+    // calendar-string subtraction has no offset in it, so no timezone can
+    // land outside its "safe range" — there isn't one.
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const svc2 = new PianoGameBudgetService({
+      store, config: () => CFG, timezone: 'America/Anchorage',
+      clock: () => now, idFactory: () => 'sess_akst', logger,
+    });
+    now = new Date('2026-01-15T20:00:00.000Z'); // inside the Jan-15 AKST study day
+    await svc2.open({ learnerId: 'kid_a', deviceId: 'kiosk' });
+    now = new Date('2026-01-16T13:00:00.000Z'); // the AKST study day has rolled to Jan-16
+    await svc2.settle({ sessionId: 'sess_akst', learnerId: 'kid_a', cumulativeSeconds: 60 });
+    expect(store._days.has('2026-01-16')).toBe(true);
+    expect(logger.info).toHaveBeenCalledWith('budget.day-rollover', expect.objectContaining({
+      learnerId: 'kid_a', from: '2026-01-15', to: '2026-01-16',
+    }));
+  });
+
+  it('close() also carries a pre-boundary session forward instead of throwing "unknown session"', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const svc2 = new PianoGameBudgetService({
+      store, config: () => CFG, timezone: 'America/Los_Angeles',
+      clock: () => now, idFactory: () => 'sess_close', logger,
+    });
+    await svc2.open({ learnerId: 'kid_a', deviceId: 'kiosk' });
+    await svc2.settle({ sessionId: 'sess_close', learnerId: 'kid_a', cumulativeSeconds: 90 });
+
+    now = new Date('2026-08-28T12:30:00.000Z'); // study day has rolled since the last settle
+    const r = await svc2.close({ sessionId: 'sess_close', learnerId: 'kid_a', cumulativeSeconds: 150 });
+
+    expect(r).toEqual({ ok: true });
+    expect(store._days.has('2026-08-28')).toBe(true);
+    expect(store._days.get('2026-08-28').learners.kid_a.totalSeconds).toBe(60); // only the tail segment
+    expect(store._days.get('2026-08-28').sessions.sess_close.closed).toBe(true);
     expect(logger.info).toHaveBeenCalledWith('budget.day-rollover', expect.objectContaining({
       learnerId: 'kid_a', from: '2026-08-27', to: '2026-08-28',
     }));
+  });
+
+  it('settle rejects a sessionId/learnerId mismatch instead of reporting the wrong allowance', async () => {
+    await svc.open({ learnerId: 'kid_a', deviceId: 'kiosk' });
+    // sess_1 belongs to kid_a; claiming it for kid_b must not silently
+    // compute/report kid_b's balance for kid_a's session.
+    await expect(svc.settle({ sessionId: 'sess_1', learnerId: 'kid_b', cumulativeSeconds: 30 }))
+      .rejects.toThrow('session belongs to a different learner');
   });
 
   // --- Fail-open on the two config-shape throws Task 1 added -------------
@@ -129,7 +200,12 @@ describe('PianoGameBudgetService', () => {
     expect(balanceResult).toEqual({ enabled: false });
 
     const settleResult = await noTz.settle({ sessionId: 'sess_notz', learnerId: 'kid_a', cumulativeSeconds: 30 });
-    expect(settleResult).toEqual({ secondsLeft: Infinity, depleted: false, deviceDepleted: false });
+    // secondsLeft must be a finite number, not Infinity: this response is
+    // JSON-serialized over HTTP, JSON.stringify(Infinity) is `null`, and a
+    // meter checking `secondsLeft <= 0` would read null as depleted —
+    // inverting the whole point of failing open.
+    expect(settleResult).toEqual({ secondsLeft: Number.MAX_SAFE_INTEGER, depleted: false, deviceDepleted: false });
+    expect(Number.isFinite(settleResult.secondsLeft)).toBe(true);
 
     const closeResult = await noTz.close({ sessionId: 'sess_notz', learnerId: 'kid_a', cumulativeSeconds: 30 });
     expect(closeResult).toEqual({ ok: true });
@@ -156,6 +232,11 @@ describe('PianoGameBudgetService', () => {
     // balance computation failed) — settling against it must not throw,
     // and must report the caller as unmetered.
     const settleResult = await badCfg.settle({ sessionId: 'sess_badcfg', learnerId: 'kid_a', cumulativeSeconds: 30 });
-    expect(settleResult).toEqual({ secondsLeft: Infinity, depleted: false, deviceDepleted: false });
+    // secondsLeft must be a finite number, not Infinity: this response is
+    // JSON-serialized over HTTP, JSON.stringify(Infinity) is `null`, and a
+    // meter checking `secondsLeft <= 0` would read null as depleted —
+    // inverting the whole point of failing open.
+    expect(settleResult).toEqual({ secondsLeft: Number.MAX_SAFE_INTEGER, depleted: false, deviceDepleted: false });
+    expect(Number.isFinite(settleResult.secondsLeft)).toBe(true);
   });
 });
