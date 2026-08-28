@@ -5,7 +5,7 @@ import Icon from '../../../ui/icons/Icon.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
 import LoopGroup from '../../transport/LoopGroup.jsx';
 import KeySheet from '../../transport/KeySheet.jsx';
-import TempoSheet, { TEMPO_STEPS, nearestStep } from '../../transport/TempoSheet.jsx';
+import TempoSheet from '../../transport/TempoSheet.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';
 
 /**
@@ -362,7 +362,7 @@ export default function ScoreTransportBar({
   clickActive,
   onToggleClick,
   clickDisabled,
-  bpm,
+  bpm: _bpm,
   baseBpm,
   keyFifths,
   keyMode,

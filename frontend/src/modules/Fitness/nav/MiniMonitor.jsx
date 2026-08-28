@@ -1,7 +1,7 @@
 import React from 'react';
 import './MiniMonitor.scss';
 
-const MiniMonitor = ({ devices = [], type = 'heart-rate' }) => {
+const MiniMonitor = ({ devices = [] }) => {
   // Get the most recent active device of the specified type
   const getActiveDevice = () => {
     if (!devices || devices.length === 0) return null;

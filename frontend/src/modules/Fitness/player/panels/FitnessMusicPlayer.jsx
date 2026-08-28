@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { DaylightMediaPath, ContentDisplayUrl } from '@/lib/api.mjs';
+import { ContentDisplayUrl } from '@/lib/api.mjs';
 import Player from '@/modules/Player/Player.jsx';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume, logVolumeFromLevel, logLevelFromVolume } from './TouchVolumeButtons.jsx';
@@ -28,16 +28,19 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const [controlsOpen, setControlsOpen] = useState(false);
   const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
   const [isVideoAvailable, setIsVideoAvailable] = useState(false);
-  const touchHandledRef = useRef(false);
-  const expansionCooldownRef = useRef(false);
+  useRef(false);
+  useRef(false);
   // BUG-04 Fix: Precise timestamp guarding for interaction transitions
-  const mountTimeRef = useRef(performance.now());
+  useRef(performance.now());
   const interactionLockRef = useRef(0); // stores timestamp of last major UI transition
   
   const fitnessContext = useFitnessContext();
   const { videoPlayerPaused, voiceMemoOverlayState } = fitnessContext || {};
   const voiceMemoOpen = Boolean(voiceMemoOverlayState?.open);
-  const playlists = fitnessContext?.plexConfig?.music_playlists || [];
+  const playlists = useMemo(
+    () => fitnessContext?.plexConfig?.music_playlists || [],
+    [fitnessContext?.plexConfig?.music_playlists],
+  );
   const setGlobalPlaylistId = fitnessContext?.setSelectedPlaylistId;
   const setMusicOverride = fitnessContext?.setMusicOverride;
   const musicEnabled = fitnessContext?.musicEnabled ?? true;
@@ -497,7 +500,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     }
   };
 
-  const videoMediaAvailable = Boolean(videoPlayerRef?.current?.getMediaElement?.());
+  Boolean(videoPlayerRef?.current?.getMediaElement?.());
   const musicMediaAvailable = Boolean(audioPlayerRef.current?.getMediaElement?.());
 
   useEffect(() => {

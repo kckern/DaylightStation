@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef } from 'react';
 export function useWebcamSnapshots({
   enabled = false,
   intervalMs = 0,
-  videoElement,
-  canvasElement,
+  videoElement: _videoElement,
+  canvasElement: _canvasElement,
   makeSnapshot,
   onSnapshot,
   onError,

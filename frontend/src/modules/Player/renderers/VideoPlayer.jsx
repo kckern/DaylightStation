@@ -178,7 +178,6 @@ export function VideoPlayer({
     isPaused,
     duration,
     isStalled,
-    isSeeking,
     handleProgressClick,
     elementKey,
     getMediaEl,
@@ -427,7 +426,7 @@ export function VideoPlayer({
     };
   }, []);
 
-  const { grandparentTitle, parentTitle, title, mediaUrl } = media;
+  const { mediaUrl } = media;
 
   // SSOT for "which <dash-video> generation is this". Both the element key below
   // and the cleanup effect must read the same value, or a replaced element leaks
@@ -892,17 +891,9 @@ export function VideoPlayer({
   }, [seconds, bitrateCapKbps, duration, media, isDash, shader]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
-  const plexIdValue = media?.assetId || media?.key || media?.plex || null;
+    
   
   
-  const heading = !!grandparentTitle && !!parentTitle && !!title
-    ? `${grandparentTitle} - ${parentTitle}: ${title}`
-    : !!grandparentTitle && !!parentTitle
-    ? `${grandparentTitle} - ${parentTitle}`
-    : !!grandparentTitle
-    ? grandparentTitle
-    : title;
-
   return (
     <div className={`video-player ${shader}`}>
       <ProgressBar

@@ -12,7 +12,6 @@ const CRT_MAX_HEIGHT = 480;
 
 // Timing
 const DEFAULT_STABILIZE_MS = 1500;
-const FADE_DURATION_MS = 400;
 
 // Presets define which effects are enabled
 const PRESETS = {
@@ -155,14 +154,12 @@ export function useUpscaleEffects({
     const srcAspect = srcDimensions.width / srcDimensions.height;
     const displayAspect = displayDimensions.width / displayDimensions.height;
 
-    let effectiveWidth, effectiveHeight;
+    let effectiveWidth;
     if (srcAspect > displayAspect) {
       // Letterboxed (horizontal black bars) - width fills container
       effectiveWidth = displayDimensions.width;
-      effectiveHeight = displayDimensions.width / srcAspect;
     } else {
       // Pillarboxed (vertical black bars) - height fills container (portrait videos)
-      effectiveHeight = displayDimensions.height;
       effectiveWidth = displayDimensions.height * srcAspect;
     }
 

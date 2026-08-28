@@ -346,6 +346,32 @@ export const useChallengeOverlays = (governanceState, zones) => {
 };
 
 export const ChallengeOverlay = ({ overlay }) => {
+	// Hooks must run unconditionally, so these are derived with optional
+	// chaining ahead of the `!overlay?.show` early return below, rather than
+	// after destructuring `overlay` (which only happens once `show` is known
+	// true). The computed value is simply unused/discarded when hidden.
+	const clampedProgress = Math.max(0, Math.min(1, overlay?.progress ?? 0));
+	const isSuccess = overlay?.status === 'success';
+	const strokeOffset = overlay?.variant === 'upcoming'
+		? CHALLENGE_RING_CIRCUMFERENCE
+		: isSuccess
+			? 0
+			: CHALLENGE_RING_CIRCUMFERENCE * clampedProgress;
+	const fallbackRingColor = overlay?.variant === 'upcoming'
+		? 'rgba(148, 163, 184, 0.55)'
+		: overlay?.status === 'failed'
+			? FAILURE_RING_COLOR
+			: isSuccess
+				? SUCCESS_RING_COLOR
+				: DEFAULT_RING_COLOR;
+	const resolvedRingColor = overlay?.ringColor || fallbackRingColor;
+	const ringStyle = useMemo(() => ({
+		strokeDasharray: `${CHALLENGE_RING_CIRCUMFERENCE}px`,
+		strokeDashoffset: `${strokeOffset}px`,
+		stroke: resolvedRingColor,
+		'--challenge-ring-circumference': `${CHALLENGE_RING_CIRCUMFERENCE}px`
+	}), [strokeOffset, resolvedRingColor]);
+
 	if (!overlay?.show) {
 		return null;
 	}
@@ -361,31 +387,8 @@ export const ChallengeOverlay = ({ overlay }) => {
 		statusLabel,
 		timeLabel,
 		countdownPaused,
-		ringColor,
 		timeLeftSeconds
 	} = overlay;
-
-	const clampedProgress = Math.max(0, Math.min(1, overlay.progress ?? 0));
-	const isSuccess = status === 'success';
-	const strokeOffset = variant === 'upcoming'
-		? CHALLENGE_RING_CIRCUMFERENCE
-		: isSuccess
-			? 0
-			: CHALLENGE_RING_CIRCUMFERENCE * clampedProgress;
-	const fallbackRingColor = variant === 'upcoming'
-		? 'rgba(148, 163, 184, 0.55)'
-		: status === 'failed'
-			? FAILURE_RING_COLOR
-			: isSuccess
-				? SUCCESS_RING_COLOR
-				: DEFAULT_RING_COLOR;
-	const resolvedRingColor = ringColor || fallbackRingColor;
-	const ringStyle = useMemo(() => ({
-		strokeDasharray: `${CHALLENGE_RING_CIRCUMFERENCE}px`,
-		strokeDashoffset: `${strokeOffset}px`,
-		stroke: resolvedRingColor,
-		'--challenge-ring-circumference': `${CHALLENGE_RING_CIRCUMFERENCE}px`
-	}), [strokeOffset, resolvedRingColor]);
 
 	const classNames = ['challenge-overlay'];
 	if (phase) {

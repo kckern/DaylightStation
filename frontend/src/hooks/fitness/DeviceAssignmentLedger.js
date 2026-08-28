@@ -146,8 +146,7 @@ export class DeviceAssignmentLedger {
     const occupantName = (typeof nameSource === 'string' && nameSource.trim()) ? nameSource.trim() : 'Guest';
     // Use explicit ID if available, otherwise generate a guest ID
     const occupantId = assignment?.occupantId || assignment?.metadata?.profileId || `guest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const baseUserName = typeof assignment?.baseUserName === 'string' ? assignment.baseUserName : null;
-    const baseUserId = assignment?.baseUserId || assignment?.metadata?.baseUserId || null;
+        const baseUserId = assignment?.baseUserId || assignment?.metadata?.baseUserId || null;
     const overridesHash = Array.isArray(assignment?.zones) ? JSON.stringify(assignment.zones) : null;
     const occupantType = assignment?.occupantType || assignment?.metadata?.occupantType || 'guest';
     const timestamp = Number.isFinite(assignment?.updatedAt)

@@ -137,7 +137,7 @@ export class MetricsRecorder {
    * @param {string} [params.pendingSnapshotRef] - Pending snapshot reference
    * @returns {RecordedMetrics}
    */
-  collectMetrics({ timestamp, tickIndex, deviceManager, userManager, treasureBox, pendingSnapshotRef }) {
+  collectMetrics({ timestamp: _timestamp, tickIndex, deviceManager, userManager, treasureBox, pendingSnapshotRef }) {
     const tickPayload = {};
     const activeParticipants = new Set();
     const intervalSeconds = this._intervalMs / 1000;

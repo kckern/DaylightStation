@@ -223,7 +223,7 @@ export function ArcadeSelector({
       }
       // else: silently ignore — including key === "Unidentified" ghost events.
     },
-    [items, selectedIndex, layout, tilePos, findNearest, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]
+    [items, selectedIndex, findNearest, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]
   );
 
   useEffect(() => {
@@ -272,7 +272,7 @@ export function ArcadeSelector({
         setSelectedIndex(selectedIndex, key);
       }
     }
-  }, [items, selectedIndex, currentKey, setSelectedIndex, findKeyForItem]);
+  }, [items, selectedIndex, currentKey, setSelectedIndex, findKeyForItem, logger]);
 
   // --- Web Animations API transition on selection change ---
   useEffect(() => {

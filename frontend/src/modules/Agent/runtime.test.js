@@ -101,7 +101,7 @@ describe('createAgentRuntime(...).runStream (async generator)', () => {
       return { ok: true, body: readableStreamFrom(['data: {"type":"finish"}\n\ndata: {"type":"done"}\n\n']) };
     });
     const runtime = createAgentRuntime('lifeplan-guide');
-    for await (const _ of runtime.runStream({
+    for await (const _chunk of runtime.runStream({
       messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
       userId: 'default',
     })) { /* drain */ }
@@ -140,7 +140,7 @@ describe('createAgentRuntime(...).runStream (async generator)', () => {
 
     const attachments = [{ type: 'period', value: { rolling: 'last_30d' }, label: 'Last 30 days' }];
     const runtime = createAgentRuntime('health-coach');
-    for await (const _ of runtime.runStream({
+    for await (const _chunk of runtime.runStream({
       messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
       userId: 'kc',
       attachments,
@@ -156,7 +156,7 @@ describe('createAgentRuntime(...).runStream (async generator)', () => {
 
     const runtime = createAgentRuntime('health-coach');
     await expect((async () => {
-      for await (const _ of runtime.runStream({
+      for await (const _chunk of runtime.runStream({
         messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
         userId: 'kc',
       })) { /* drain */ }
@@ -379,7 +379,7 @@ describe('createAgentRuntime — threadId', () => {
     await runtime.run({ messages: [{ role: 'user', content: 'a' }], userId: 'user_1' });
     // Now stream
     const iter = runtime.runStream({ messages: [{ role: 'user', content: 'b' }], userId: 'user_1' });
-    for await (const _ of iter) break;
+    for await (const _chunk of iter) break;
     expect(captured[0].threadId).toBeDefined();
     expect(captured[1].threadId).toBe(captured[0].threadId);
   });

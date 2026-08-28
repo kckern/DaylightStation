@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { DaylightAPI } from '../../lib/api.mjs';
 import React from 'react';
-import Highcharts, { color } from 'highcharts';
+import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
 import { useScreenData } from '../../screen-framework/data/ScreenDataProvider.jsx';
@@ -63,7 +62,7 @@ export default function WeatherForecast({ weatherData: weatherDataProp }) {
 
   const minTemp = Math.min(...temps.map(({temp}) => temp));
   const midnightIndices = times.map((t, i) => t === '12am' ? i : -1).filter(i => i >= 0);
-  const midnightLines = midnightIndices.map(i => ({
+  midnightIndices.map(i => ({
     value: i - 0.5, color: '#ffffff55', width: 2, zIndex: 5,
     dashStyle: 'Solid'
   }));

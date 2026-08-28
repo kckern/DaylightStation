@@ -50,9 +50,7 @@ export function AudioPlayer({
     containerRef,
     handleProgressClick,
     getMediaEl,
-    getContainerEl,
-    isPaused,
-    isSeeking
+    getContainerEl
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -100,7 +98,7 @@ export function AudioPlayer({
   }, [resilienceBridge, getMediaEl, getContainerEl, fetchVideoInfo]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
-  const header = !!effectiveArtist && !!effectiveAlbum ? `${effectiveArtist} - ${effectiveAlbum}` : !!effectiveArtist ? effectiveArtist : !!effectiveAlbum ? effectiveAlbum : title || 'Audio Track';
+  const header = !!effectiveArtist && !!effectiveAlbum ? `${effectiveArtist} - ${effectiveAlbum}` : effectiveArtist ? effectiveArtist : effectiveAlbum ? effectiveAlbum : title || 'Audio Track';
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
   const footer = `${title}${effectiveAlbumArtist && effectiveAlbumArtist !== effectiveArtist ? ` (${effectiveAlbumArtist})` : ''}`;
 
@@ -145,7 +143,7 @@ export function AudioPlayer({
         offsetH: document.body.offsetHeight
       };
 
-      const getRect = (el, label) => {
+      const getRect = (el, _label) => {
         if (!el) return null;
         const r = el.getBoundingClientRect();
         const style = window.getComputedStyle(el);
@@ -223,7 +221,7 @@ export function AudioPlayer({
   useEffect(() => {
     const instanceId = instanceIdRef.current;
     return () => { logger.info('unmounted', { instanceId }); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- logger is stable
+  }, []);  
 
   // Mount-time launch params: which shader, volume, queue position, media id, etc.
   // Re-fires only when the underlying media key changes (i.e. a new track loads),

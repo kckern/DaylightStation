@@ -14,7 +14,7 @@ import './FitnessSessionDetailWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
 import { selectPrimaryMedia, buildSelectionConfig } from '@/hooks/fitness/selectPrimaryMedia.js';
-import { mediaDisplayUrl, resolveSessionStartMs, mediaIdentityKey } from './sessionDetailUtils.js';
+import { mediaDisplayUrl, mediaIdentityKey } from './sessionDetailUtils.js';
 import { selectVideoMarkerEvents } from './timelineOverlay.js';
 import { deriveRecap } from './recapVideo.js';
 import { useSettledRecapPlay } from './recapPlayback.js';

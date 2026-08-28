@@ -114,7 +114,7 @@ export function EmulatorConsole({
   game,
   engineConfig,
   governanceGate,
-  identity,
+  identity: _identity,
   actionHandlers = {},
   resolveMediaUrl = (p) => p,
   onExit,

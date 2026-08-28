@@ -74,8 +74,9 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
 
   // Clean up inactivity timers on unmount
   useEffect(() => {
+    const timers = inactivityTimers.current;
     return () => {
-      Object.values(inactivityTimers.current).forEach(clearTimeout);
+      Object.values(timers).forEach(clearTimeout);
     };
   }, []);
 

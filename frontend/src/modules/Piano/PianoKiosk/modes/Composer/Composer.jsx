@@ -134,7 +134,7 @@ export function Composer() {
   return (
     <section className="piano-mode piano-mode--composer">
       {view === 'editor' && !persistent && currentUser && (
-        <p className="composer-guest-note">Playing as Guest — songs won't be saved. Tap the face in the top bar to pick a player.</p>
+        <p className="composer-guest-note">Playing as Guest — songs won&apos;t be saved. Tap the face in the top bar to pick a player.</p>
       )}
       {view === 'editor' && (
         <EditorSurface

@@ -55,7 +55,7 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
   devicesRef.current = devices;
   useEffect(() => {
     mediaLog.castSheetOpened({ offeredDeviceIds: devicesRef.current.map((d) => d.id) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Tap a tile: radio-like in single mode (tap again to deselect),

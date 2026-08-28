@@ -95,7 +95,7 @@ export default function CallApp() {
   const isFrontCamera = useMemo(() => {
     const facingMode = stream?.getVideoTracks()[0]?.getSettings()?.facingMode;
     return facingMode !== 'environment';
-  }, [stream, selectedVideoDevice]);
+  }, [stream]);
 
   const [devices, setDevices] = useState(null); // null = loading, [] = none found
   const [waking, setWaking] = useState(false);

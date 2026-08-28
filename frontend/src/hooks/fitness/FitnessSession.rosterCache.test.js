@@ -56,7 +56,7 @@ describe('FitnessSession — roster is cached across reads but never stale', () 
     const buildSpy = vi.spyOn(session._participantRoster, '_buildZoneLookup');
 
     for (let i = 0; i < 6; i += 1) {
-      // eslint-disable-next-line no-unused-expressions
+       
       session.roster;
     }
 

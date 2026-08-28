@@ -4,7 +4,7 @@
  * presentational components (CurriculumHistoryOverview /
  * InstructionalInsightsOverview) — same read models, teacher-side chrome.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { curriculumTitles } from '../curriculumTitles.js';
 import { usePanelFetch } from '../usePanelFetch.js';
@@ -16,11 +16,11 @@ import PacingPanel from '../panels/PacingPanel.jsx';
 import PeriodSelect, { currentPeriodId } from '../panels/PeriodSelect.jsx';
 import CurriculumHistoryOverview from '../../progress/CurriculumHistoryOverview.jsx';
 import InstructionalInsightsOverview from '../../progress/InstructionalInsightsOverview.jsx';
-export default function RecordsTab({ learnerId, kids = [] }) {
+export default function RecordsTab({ learnerId }) {
   const periods = usePanelFetch(() => schoolApi.periods(), { panel: 'periods' });
   const [periodId, setPeriodId] = useState(null);
   const [frozenRefresh, setFrozenRefresh] = useState(0);
-  const periodList = Array.isArray(periods.data) ? periods.data : [];
+  const periodList = useMemo(() => (Array.isArray(periods.data) ? periods.data : []), [periods.data]);
   useEffect(() => {
     if (!periodId && periodList.length) setPeriodId(currentPeriodId(periodList));
   }, [periodId, periodList]);
@@ -48,8 +48,8 @@ export default function RecordsTab({ learnerId, kids = [] }) {
   // The history tree carries only ids (pure domain); the teacher page owns a
   // catalog read, so it can resolve authored titles the kid surface can't.
   const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'records-catalog', notFoundAs: 'unavailable' });
-  const catalogUnits = catalog.data?.units ?? [];
   const resolveNodeTitle = useCallback((node) => {
+    const catalogUnits = catalog.data?.units ?? [];
     if (!catalogUnits.length) return null;
     const titles = curriculumTitles(catalogUnits);
     if (node.kind === 'unit' || node.kind === 'lesson') {
@@ -61,7 +61,7 @@ export default function RecordsTab({ learnerId, kids = [] }) {
       return title === 'Course title unavailable' ? null : title;
     }
     return null;
-  }, [catalogUnits]);
+  }, [catalog.data?.units]);
 
   if (!learnerId) {
     return (

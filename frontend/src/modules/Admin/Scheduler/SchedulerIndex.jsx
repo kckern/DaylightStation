@@ -1,9 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Stack, Text, Table, Badge, Button, Group, Modal,
-  TextInput, Loader, Center, Alert, UnstyledButton
-} from '@mantine/core';
+import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Loader, Center, Alert }  from '@mantine/core';
 import { IconPlus, IconPlayerPlay, IconAlertCircle, IconClock } from '@tabler/icons-react';
 import { useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
 import { cronToHuman, formatDuration } from '../utils/formatters.js';

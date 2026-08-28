@@ -31,7 +31,7 @@ export default function MilestonesPanel({ learnerId }) {
   const titles = curriculumTitles(units);
 
   const startEditing = () => {
-    setDraft((statuses.data?.milestones ?? []).map(({ status, ...m }) => m));
+    setDraft((statuses.data?.milestones ?? []).map(({ status: _status, ...m }) => m));
     setEditing(true);
   };
 

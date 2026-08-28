@@ -46,7 +46,7 @@ const QuickToolsDrawer = () => {
 
   useTicker(1000);
 
-  const now = useMemo(() => new Date(), []);
+  useMemo(() => new Date(), []);
   const clockLabel = formatClock(new Date(), clockOptions);
 
   const elapsedStopwatch = useMemo(() => {
@@ -69,7 +69,7 @@ const QuickToolsDrawer = () => {
   const hrDevice = heartRateDevices[0];
   const cadenceDevice = cadenceDevices[0];
 
-  const stopwatchSeconds = Math.floor(elapsedStopwatch / 1000);
+  Math.floor(elapsedStopwatch / 1000);
   const stopwatchLabel = new Date(elapsedStopwatch).toISOString().substr(11, 8);
 
   const memoCount = voiceMemos?.length || 0;

@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { useUrlCommand, URL_TOKEN_KEY } from './useUrlCommand.js';
+import { useUrlCommand } from './useUrlCommand.js';
 
 function makeController() {
   return {

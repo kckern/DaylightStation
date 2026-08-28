@@ -21,7 +21,7 @@ function getPortsFromConfig(env) {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ mode }) => {
   // Load env from root .env (one level up from frontend/)
   const env = loadEnv(mode, path.resolve(__dirname, '..'), '');
   const ports = getPortsFromConfig(env);

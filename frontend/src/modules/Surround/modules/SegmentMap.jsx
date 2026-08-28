@@ -66,15 +66,7 @@ import PropTypes from 'prop-types';
 import { smartQuotes } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import { segmentAt } from '../segments.js';
-import {
-  resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
-  bondConnector, elapsedFraction, activeSegmentIndex, placedSegments,
-  numeral, numeralText, numeralStyle, ROMAN,
-  placedRailSegments, railGroups, railFolds, foldWidthPx,
-  railIsFlat, collapseInactiveGroups, foldedShares, densityShares,
-  soundingWidth, idealWidth, nameFloorPx, railFloorPx, railWearsChips,
-  ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE,
-} from '../band.js';
+import { resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction, bondConnector, elapsedFraction, activeSegmentIndex, placedSegments, numeral, numeralText, numeralStyle, ROMAN, placedRailSegments, railGroups, railFolds, foldWidthPx, railIsFlat, collapseInactiveGroups, foldedShares, densityShares, soundingWidth, idealWidth, railFloorPx, railWearsChips, ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE }  from '../band.js';
 import './SegmentMap.scss';
 
 const EMPTY_GROUPS = Object.freeze([]);

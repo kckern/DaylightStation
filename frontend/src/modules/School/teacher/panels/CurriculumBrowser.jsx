@@ -73,7 +73,7 @@ function CourseBulkPassBar({ courseId, units, onSaved }) {
     let last = { ok: true, status: 200, data: {} };
     for (const unit of units) {
       // Sequential on purpose: override writes share one store file.
-      // eslint-disable-next-line no-await-in-loop
+       
       last = await schoolApi.putPassOverride(unit.unitId, { percent, editedBy: actorId, pin });
       if (!last.ok) return last;
     }

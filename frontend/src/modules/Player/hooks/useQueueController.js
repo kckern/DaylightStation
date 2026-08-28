@@ -50,7 +50,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
   );
   const [playQueue, setQueue] = useState([]);
   const [originalQueue, setOriginalQueue] = useState([]);
-  const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
+  const [isShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
   const [shaderUserCycled, setShaderUserCycled] = useState(false);
   const [queueAudio, setQueueAudio] = useState(null);
   const [onDeck, setOnDeckState] = useState(null);

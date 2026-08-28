@@ -30,7 +30,7 @@ const GamesIndex = () => {
       setSchedule(scheduleData?.schedule || null);
       setLoading(false);
     });
-  }, []);
+  }, [logger]);
 
   const handleSync = async () => {
     setSyncing(true);

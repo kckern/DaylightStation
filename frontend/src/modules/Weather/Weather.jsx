@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { DaylightAPI } from "../../lib/api.mjs";
 import moment from "moment-timezone";
 import green from "../../assets/icons/green.png";
 import yellow from "../../assets/icons/yellow.png";

@@ -4,7 +4,6 @@ import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation, useNavi
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
-import RootApp from './Apps/RootApp.jsx';
 import HomeApp from './Apps/HomeApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';

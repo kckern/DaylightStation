@@ -47,13 +47,16 @@ vi.mock('../Surround/SurroundHost.jsx', () => ({
 // the lazy-loaded default. Mock the whole module so both resolve.
 vi.mock('../Player/Player', () => ({
   __esModule: true,
-  default: React.forwardRef((props, ref) => (
-    <div
-      data-testid="player"
-      data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play ?? ''}
-      data-queue={typeof props.queue === 'object' ? JSON.stringify(props.queue) : props.queue ?? ''}
-    />
-  )),
+  default: React.forwardRef(function MockPlayer(props, ref) {
+    return (
+      <div
+        ref={ref}
+        data-testid="player"
+        data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play ?? ''}
+        data-queue={typeof props.queue === 'object' ? JSON.stringify(props.queue) : props.queue ?? ''}
+      />
+    );
+  }),
   PlayerOverlayLoading: () => <div data-testid="loading" />,
 }));
 

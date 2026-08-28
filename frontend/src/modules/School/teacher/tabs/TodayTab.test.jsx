@@ -43,7 +43,7 @@ const fail = (status) => ({ ok: false, status, data: null });
 // composition so tab-level mutation flows exercise the real affordances.
 function ShellProbe() {
   const { pickerOpen, currentTeacher } = useTeacherProfile();
-  return <><span data-testid="claimed-teacher" hidden>{currentTeacher?.id ?? 'none'}</span>{pickerOpen ? <div>Who's teaching?</div> : null}</>;
+  return <><span data-testid="claimed-teacher" hidden>{currentTeacher?.id ?? 'none'}</span>{pickerOpen ? <div>Who&apos;s teaching?</div> : null}</>;
 }
 const mount = (ui) => render(
   <TeacherProfileProvider>{ui}<PinPrompt /><ShellProbe /></TeacherProfileProvider>,

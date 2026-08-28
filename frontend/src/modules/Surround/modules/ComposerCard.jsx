@@ -83,7 +83,7 @@ export default function ComposerCard({
   // eslint-disable-next-line no-unused-vars
   seeking = false,
   data = null,
-  // eslint-disable-next-line no-unused-vars
+   
   region = null,
   logger = null,
 }) {

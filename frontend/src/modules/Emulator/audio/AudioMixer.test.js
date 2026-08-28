@@ -176,7 +176,7 @@ describe('createAudioMixer', () => {
     });
 
     it('muting the cues bus then playCue plays at 0 and does NOT duck', () => {
-      const { mixer, setGameVolume, clips } = setup();
+      const { mixer, setGameVolume } = setup();
       mixer.muteBus('cues');
       const gameCallsBefore = setGameVolume.mock.calls.length;
       const cue = mixer.playCue('chime.mp3');

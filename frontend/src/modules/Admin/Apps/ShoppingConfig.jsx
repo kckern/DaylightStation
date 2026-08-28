@@ -93,7 +93,7 @@ function ShoppingConfigContent({ data, setData }) {
       </Group>
 
       {retailers.length === 0 && (
-        <Text size="sm" c="dimmed">No retailers configured. Click "Add Retailer" to get started.</Text>
+        <Text size="sm" c="dimmed">No retailers configured. Click &quot;Add Retailer&quot; to get started.</Text>
       )}
 
       {retailers.map((retailer, index) => (

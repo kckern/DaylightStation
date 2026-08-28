@@ -468,7 +468,7 @@ describe('CycleGameHome', () => {
     const ghostRoster = [
       { userId: 'ghost:20260701120000:user_1', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
     ];
-    const { getByTestId, queryByTestId } = render(
+    const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} ghostRoster={ghostRoster} />
     );
     // Real bikes still render.

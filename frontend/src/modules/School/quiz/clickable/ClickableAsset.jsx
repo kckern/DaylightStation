@@ -52,7 +52,7 @@ export default function ClickableAsset({ asset, value, verdict, expected, onPick
       className={`school-clickable school-clickable--${asset}${locked ? ' is-locked' : ''}`}
       onClick={handle}
       onKeyDown={handle}
-      // eslint-disable-next-line react/no-danger
+       
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

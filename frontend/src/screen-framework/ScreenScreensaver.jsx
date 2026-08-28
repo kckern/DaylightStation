@@ -120,7 +120,7 @@ export function ScreenScreensaver({ config }) {
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, wake, true));
       if (shown) dismissOverlay('fullscreen');
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [widgetKey, idleSeconds, showOnLoad, interactive, propsJson, showOverlay, dismissOverlay, reset]);
 
   return null;

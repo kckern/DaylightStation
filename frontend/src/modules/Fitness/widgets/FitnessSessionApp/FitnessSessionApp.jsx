@@ -17,7 +17,7 @@ import './FitnessSessionApp.scss';
  * - Fullscreen vitals overlay when in fullscreen mode
  * - Music override during active use
  */
-const FitnessSessionApp = ({ mode = 'standalone', onClose, config = {}, onMount }) => {
+const FitnessSessionApp = ({ onClose: _onClose, onMount }) => {
   const {
     collapseSidebar,
     expandSidebar,
@@ -62,7 +62,7 @@ const FitnessSessionApp = ({ mode = 'standalone', onClose, config = {}, onMount 
     setIsFullscreen(prev => !prev);
   }, []);
 
-  const handleOpenSettings = useCallback(() => {
+  useCallback(() => {
     if (isFullscreen) {
       setIsFullscreen(false);
     }

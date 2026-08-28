@@ -92,7 +92,7 @@ describe('computeKeyboardRange', () => {
   });
 
   it('clamps high end to 108', () => {
-    const { startNote, endNote } = computeKeyboardRange([96, 108]);
+    const { endNote } = computeKeyboardRange([96, 108]);
     expect(endNote).toBe(108);
   });
 

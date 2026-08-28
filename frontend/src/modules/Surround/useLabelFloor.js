@@ -55,7 +55,7 @@ export function useLabelFloorPx(ref) {
   // cost is one `getBoundingClientRect` per render of two modules that render on
   // data changes and resizes only, and `setFloorPx` bails on an unchanged value,
   // so a stable frame settles after one pass.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useLayoutEffect(read);
 
   useEffect(() => {

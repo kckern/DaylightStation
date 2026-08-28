@@ -289,7 +289,7 @@ export default function SurroundHost({
     const timer = setInterval(read, pollMs > 0 ? pollMs : DEFAULT_POLL_MS);
     return () => clearInterval(timer);
     // `readHandle` reads through a ref, so it is deliberately not a dependency.
-  }, [disabled, pollMs, hostLogger, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [disabled, pollMs, hostLogger, mode]);  
 
   // The frame is on for exactly one reason: the backend attached a payload to
   // the item, and the screen did not say 'off'.

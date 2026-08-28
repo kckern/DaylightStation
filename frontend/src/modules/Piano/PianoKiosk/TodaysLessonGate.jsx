@@ -41,7 +41,7 @@ export default function TodaysLessonGate({ lesson, unit, course, basePath, navig
       {lesson?.thumbnail && (
         <img className="piano-lesson-gate__thumb" src={lesson.thumbnail} alt="" role="presentation" />
       )}
-      <p className="piano-lesson-gate__eyebrow">Today's lesson</p>
+      <p className="piano-lesson-gate__eyebrow">Today&apos;s lesson</p>
       <p className="piano-lesson-gate__context">
         {course?.title}{unit?.title ? ` · ${unit.title}` : ''}
       </p>

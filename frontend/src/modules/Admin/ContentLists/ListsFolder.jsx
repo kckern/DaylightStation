@@ -298,17 +298,13 @@ function ListsFolder() {
     setEditorOpen(true);
   };
 
-  const handleEditItem = (item) => {
-    setEditingItem(item);
-    setEditorOpen(true);
-  };
-
+  
   const handleSaveItem = async (itemData) => {
     const res = await mutate('lists.save_item', 'Could not save item', async () => {
       if (editingItem) {
         const oldSection = editingItem.sectionIndex ?? 0;
         const newSection = itemData.sectionIndex ?? oldSection;
-        const { sectionIndex, ...cleanData } = itemData;
+        const { sectionIndex: _sectionIndex, ...cleanData } = itemData;
 
         if (newSection !== oldSection) {
           await moveItem(
@@ -357,7 +353,7 @@ function ListsFolder() {
     const preCount = sections[sectionIndex]?.items?.length ?? 0;
     const res = await mutate('lists.delete_item', 'Could not delete item', () => deleteItem(sectionIndex, itemIndex));
     if (!res.ok || !removed) return;
-    const { sectionIndex: _si, itemIndex: _ii, sectionTitle: _st, index: _idx, ...payload } = removed;
+    const { sectionIndex: _sectionIndex, itemIndex: _itemIndex, sectionTitle: _sectionTitle, index: _index, ...payload } = removed;
     showUndoToast({
       id: `undo-delete-${removed.uid || `${sectionIndex}-${itemIndex}`}`,
       title: 'Item deleted',

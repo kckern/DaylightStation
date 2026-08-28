@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { MantineProvider, Paper, Title, Group, Text, Alert, Grid } from '@mantine/core';
+import { MantineProvider, Text } from '@mantine/core';
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
 import { DaylightAPI, DaylightMediaPath } from '../lib/api.mjs';
@@ -14,7 +14,7 @@ import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
-import { readHeap, heapFields, heapSnapshotFields, isMemoryMonitoringAvailable, reportMemoryMonitoringAvailability } from '../lib/perf/memoryProbe.js';
+import { readHeap, heapFields, heapSnapshotFields, reportMemoryMonitoringAvailability } from '../lib/perf/memoryProbe.js';
 import { sortNavItems, filterNavItemsByDay, isNavItemActive } from '../modules/Fitness/lib/navigationUtils.js';
 import useDayOfWeek from '../hooks/useDayOfWeek.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
@@ -657,7 +657,7 @@ const FitnessApp = () => {
         }
       }
     };
-  }, [kioskUI]);
+  }, [kioskUI, logger]);
   
   // Detect touch events and switch to kiosk mode (hides cursor)
   useEffect(() => {
@@ -685,7 +685,7 @@ const FitnessApp = () => {
         logger.warn('fitness-touch-listener-remove-failed', { message: err?.message });
       }
     };
-  }, []);
+  }, [logger]);
   
   // Expose the queue setter globally for emergency access
   useEffect(() => {
@@ -955,7 +955,7 @@ const FitnessApp = () => {
       if (!playableSegments.length) throw new Error('School Fitness plan has no playable video or saved workout segment');
       for (const [index, segment] of playableSegments.entries()) {
         // Preserve authored warmup/main/cooldown order in one Fitness queue.
-        // eslint-disable-next-line no-await-in-loop
+         
         const loaded = await handlePlayFromUrl(segment.sourceId, {
           nogovern: true, append: index > 0, schoolSegment: segment,
         });
@@ -1042,7 +1042,7 @@ const FitnessApp = () => {
     }
   }, [navigate]);
 
-  const handleNavigate = (type, target, item) => {
+  const handleNavigate = (type, target, _item) => {
     logger.info('fitness-navigate', { type, target });
 
     switch (type) {
@@ -1123,7 +1123,7 @@ const FitnessApp = () => {
         }
         break;
 
-      case 'show':
+      case 'show': {
         // Extract local ID from contentId or legacy plex key
         const showId = String(target.contentId || target.plex || target.id).replace(/^[a-z]+:/i, '');
         setSelectedShow(showId);
@@ -1131,6 +1131,7 @@ const FitnessApp = () => {
         setCurrentView('show');
         navigate(`/fitness/show/${showId}`, { replace: true });
         break;
+      }
 
       case 'movie': {
         //send directly to player queue
@@ -1245,9 +1246,7 @@ const FitnessApp = () => {
         }
 
         // Diagnostics for user + HR color availability
-        const primaryLen = response.fitness?.users?.primary?.length || 0;
-        const secondaryLen = response.fitness?.users?.secondary?.length || 0;
-        // diagnostics removed
+                        // diagnostics removed
 
         // Provide the normalized config to provider
         setFitnessConfiguration(response);
@@ -1304,7 +1303,10 @@ const FitnessApp = () => {
       return;
     }
     handlePlayFromUrl(urlState.id, { nogovern });
-  }, [urlState.view, urlState.id, urlInitialized, loading, fitnessPlayQueue.length]);
+    // handlePlayFromUrl intentionally excluded: it's redefined every render and
+    // including it would re-fire this effect on every render too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlState.view, urlState.id, urlInitialized, loading, fitnessPlayQueue.length, logger, nogovern]);
 
   // Initialize state from URL on mount
   useEffect(() => {
@@ -1400,7 +1402,10 @@ const FitnessApp = () => {
     }
 
     setUrlInitialized(true);
-  }, [urlState, loading, urlInitialized, navigate, location, screensConfig]);
+    // handlePlayFromUrl intentionally excluded: it's redefined every render and
+    // including it would re-fire this effect on every render too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlState, loading, urlInitialized, navigate, location, screensConfig, logger, nogovern]);
 
   // Initialize to the first nav item once navItems arrive
   useEffect(() => {
@@ -1438,7 +1443,10 @@ const FitnessApp = () => {
         handleNavigate(firstItem.type, firstItem.target, firstItem);
       }
     }
-  }, [navItems, activeCollection, activeModule, activeScreen, currentView, urlInitialized, urlState, screensConfig, navigate]);
+    // handleNavigate intentionally excluded: it's redefined every render and
+    // including it would re-fire this effect on every render too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navItems, activeCollection, activeModule, activeScreen, currentView, urlInitialized, urlState, screensConfig, navigate, logger]);
 
   // Stowaway guard: when the day rolls over at midnight, a day-gated collection
   // the user is already sitting in (e.g. a Saturday-only "TV Shows" menu) gets
@@ -1462,7 +1470,10 @@ const FitnessApp = () => {
       logger.info('fitness-nav-day-rollover-redirect', { day: dayOfWeek });
       handleNavigate(first.type, first.target, first);
     }
-  }, [dayOfWeek, navItems, currentView, activeCollection, activeModule, activeScreen]);
+    // handleNavigate intentionally excluded: it's redefined every render and
+    // including it would re-fire this effect on every render too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayOfWeek, navItems, currentView, activeCollection, activeModule, activeScreen, logger]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {
@@ -1546,7 +1557,7 @@ const FitnessApp = () => {
                         window.location.reload();
                       } catch (err) {
                         logger.warn('fitness-reload-fallback', { message: err?.message });
-                        window.location.href = window.location.href;
+                        window.location.replace(window.location.href);
                       }
                     }}
                     onClick={(e) => {
@@ -1556,7 +1567,7 @@ const FitnessApp = () => {
                         window.location.reload();
                       } catch (err) {
                         logger.warn('fitness-reload-fallback', { message: err?.message });
-                        window.location.href = window.location.href;
+                        window.location.replace(window.location.href);
                       }
                     }}
                     onKeyDown={(e) => {
@@ -1566,7 +1577,7 @@ const FitnessApp = () => {
                         window.location.reload();
                       } catch (err) {
                         logger.warn('fitness-reload-fallback', { message: err?.message });
-                        window.location.href = window.location.href;
+                        window.location.replace(window.location.href);
                       }
                     }
                   }}
@@ -1603,7 +1614,7 @@ const FitnessApp = () => {
                     try {
                       window.location.reload();
                     } catch (err) {
-                      window.location.href = window.location.href;
+                      window.location.replace(window.location.href);
                     }
                   }}
                 >
