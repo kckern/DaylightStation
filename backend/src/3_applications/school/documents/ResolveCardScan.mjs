@@ -353,6 +353,33 @@ function gradeRow(item, given, points) {
     };
   }
 
+  // THE COMPANION GATE ROW (Task 10). ABOVE the `Array.isArray(given)` guard
+  // below, and that placement is the whole fix: a decoded gate row IS an array
+  // of letters, so before this branch existed every gate — right or wrong —
+  // fell into that guard, graded `ambiguous`, and never reached `gradeAnswer`
+  // at all. No sheet could fail its gate, and the symptom (a sheet stuck in
+  // review) read like a scanner fault rather than a path nobody had written.
+  //
+  // Its letters ARE its choices (A-E), so there is no `letterToChoice`
+  // indirection: `gradeAnswer` compares the marked letters to `item.code`
+  // through `codesMatch`. `earned: 0` unconditionally — the gate is a VETO,
+  // not a question, and it can never move the score in either direction
+  // (`points` is already 0 from the block's own `points: 0`, stated again here
+  // so a future points default can never accidentally pay it out).
+  //
+  // `{ correct }` ALONE, never `expected`. `gradeAnswer` returns
+  // `{correct, expected}` and for THIS item type `expected` is the finish code
+  // itself; this function's return value travels out through `execute` to a
+  // browser, so destructuring it here would hand a child the answer without
+  // their ever playing the companion.
+  if (item.type === 'companion_code') {
+    const letters = Array.isArray(given) ? given : [given];
+    const { correct } = gradeAnswer(item, letters);
+    return {
+      status: correct ? 'correct' : 'incorrect', given: letters, points, earned: 0,
+    };
+  }
+
   if (item.type === 'multi_select') {
     // Both a single letter (one mark) and an array (several marks) are legal
     // shapes for a multi_select row — normalise to the set gradeAnswer wants.
@@ -454,7 +481,12 @@ export class ResolveCardScan {
    *   unscannedItems: [{itemId, prompt}]}` (`prompt` is the resolved bank
    *   item's own prompt text, `null` when it has none; `concepts` is the
    *   resolved bank item's own optional `concepts` array (R2,
-   *   questionBankValidation.mjs), empty when it has none; `renderedAt` is
+   *   questionBankValidation.mjs), empty when it has none; `companionGate`
+   *   (Task 10) is `{itemId, row, status: 'satisfied'|'blank'|'wrong', given}`
+   *   on a GATED sheet only — the gate row is never inside `results`, because
+   *   it is a veto rather than a question and belongs in no score, no attempt
+   *   ledger and no review queue, and it never carries the expected finish
+   *   code back out; `renderedAt` is
    *   the allocation record's own render timestamp; `unscannedItems` is
    *   the write-on questions/short_answer/essay sugar this record's own
    *   prepared document carries that consumed no card row — empty array
@@ -840,6 +872,31 @@ export class ResolveCardScan {
         };
       });
 
+    // THE GATE LEAVES THROUGH ITS OWN DOOR (Task 10). Partitioned HERE, at
+    // the one place both halves are in hand, rather than filtered again at
+    // every consumer — `results` is what the whole downstream treats as "the
+    // child's answers": the percent denominator and the attempt ledger
+    // (`RecordCardScanOutcome`), `missedItemIds`, the review queue, the
+    // section slices below, and `execute`'s own partial-coverage rule. The
+    // gate belongs in none of them: it is worth no points, it is not the
+    // child's work on this lesson, and folding it in would make a 10-of-10
+    // sheet read 10/11 = 90.91%. One partition, so it cannot be forgotten in
+    // four places independently.
+    const gateRow = rawRowResults.find((row) => row.itemType === 'companion_code') ?? null;
+    const questionRows = gateRow
+      ? rawRowResults.filter((row) => row.itemType !== 'companion_code')
+      : rawRowResults;
+    // `status`, `row` and the child's own marks — never `item.code`. See
+    // `gradeRow`'s companion_code branch: this object reaches a browser.
+    const companionGate = gateRow
+      ? {
+        itemId: gateRow.itemId,
+        row: gateRow.row,
+        status: gateRow.status === 'correct' ? 'satisfied' : (gateRow.status === 'blank' ? 'blank' : 'wrong'),
+        given: gateRow.given,
+      }
+      : null;
+
     // Bounded eraser-leniency (spec §5.4, 2026-08-22 policy): a second pass
     // over the freshly graded rows, because the per-sheet cap is a property
     // of THIS record's own row count, never a single row in isolation.
@@ -849,8 +906,16 @@ export class ResolveCardScan {
     // `worksheet` scan is graded lenient and a `quiz`/`infopage` scan stays
     // exactly as strict as it always was (cap 0, this pass is then a no-op
     // that returns `rawRowResults` untouched).
+    // `questionRows`, NOT `rawRowResults`: the leniency budget is
+    // `max(1, floor(rowCount / 5))`, so counting the gate as a row would buy a
+    // nine-question worksheet a second free promotion. The gate is also never
+    // itself promotable — `correctLetterFor` returns null for an item with no
+    // `item.answer`, so `creditsAsEraser` refuses it — but relying on that
+    // accident would leave the budget wrong, and rule 3 (marks covering every
+    // choice never earn credit) would misread a legitimate all-five `ABCDE`
+    // finish code besides. Keeping it out of the pass entirely settles both.
     const rowResults = applyLeniency({
-      results: rawRowResults, archetype: prepared.archetype, rowContext, logger: this.#logger,
+      results: questionRows, archetype: prepared.archetype, rowContext, logger: this.#logger,
     });
 
     const totalPoints = rowResults.reduce((sum, row) => sum + row.points, 0);
@@ -909,6 +974,10 @@ export class ResolveCardScan {
       totalPoints,
       earnedPoints,
       unscannedItems,
+      // Present ONLY on a gated sheet — an ungated one is byte-identical to
+      // what this method returned before the gate existed, which is the
+      // regression that matters most: every worksheet in the house is ungated.
+      ...(companionGate ? { companionGate } : {}),
       ...(sections.length ? { sections } : {}),
     };
   }

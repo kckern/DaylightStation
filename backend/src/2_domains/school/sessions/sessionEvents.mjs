@@ -23,6 +23,11 @@
  * Error strings use the house `<path>: <message>` notation (see
  * `../documents/blocks.mjs`), with the reducer's path being `event[seq=N]`.
  */
+// The only import this module has, and it is a same-layer constant rather
+// than behaviour: the three things a scanned finish-code row can say. Copying
+// the strings would give the event schema and the outcome rule that reads
+// them two places to drift apart, over a vocabulary that must agree exactly.
+import { GATE_STATUSES } from '#domains/school/companionCode.mjs';
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isSeq = (v) => Number.isInteger(v) && v >= 1;
@@ -195,8 +200,22 @@ const SCHEMA = {
     // 6-of-8 that was voided down from nine reads identically to a 6-of-8 that
     // was always eight, and the difference is exactly what a later reader
     // needs: one of those sheets had a question nobody could mark.
-    fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds', 'voidedItemIds'],
+    // `companionGate` (optional, Task 10) is the scan's verdict on the sheet's
+    // finish-code row: `{status: 'satisfied'|'blank'|'wrong'}`. Stamped HERE,
+    // beside `passingPercent`, for the same reason — it is a fact about the
+    // evidence at grading time, and the close-out must read what the scanner
+    // saw rather than re-derive it from a companion record that may since
+    // have been satisfied by a different sheet. It carries no percent and no
+    // points: the gate can only VETO the pass (`evaluateOutcome`), never move
+    // the score. Absent on every ungated sheet, which is all of them today.
+    fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds', 'voidedItemIds', 'companionGate'],
     validate: (raw, push) => {
+      if (raw.companionGate !== undefined) {
+        const gate = raw.companionGate;
+        if (!gate || typeof gate !== 'object' || Array.isArray(gate) || !GATE_STATUSES.includes(gate.status)) {
+          push(`companionGate: must be an object with status ${GATE_STATUSES.join('|')} when present`);
+        }
+      }
       if (raw.passingPercent !== undefined && (typeof raw.passingPercent !== 'number'
           || !Number.isFinite(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {
         push('passingPercent: must be a number from 1-100 when present');
@@ -595,6 +614,11 @@ const emptyState = () => ({
   gradedPassingPercent: null,
   gradedCorrectCount: null,
   gradedTotalCount: null,
+  // The scan's verdict on the finish-code row (Task 10), or null on an
+  // ungated sheet. NOT part of the grade — it sits beside the percent rather
+  // than inside it, which is exactly how `evaluateOutcome` uses it: a veto
+  // over a sheet that has already scored well enough to pass.
+  companionGate: null,
   missedItemIds: [],
   // The questions a grown-up could not mark at all (`void`). They were left
   // out of the graded event's `totalCount`, so a reader that wants to know
@@ -745,6 +769,14 @@ const APPLY = {
     if (Number.isInteger(e.totalCount)) s.gradedTotalCount = e.totalCount;
     if (Array.isArray(e.missedItemIds)) s.missedItemIds = [...e.missedItemIds];
     if (Array.isArray(e.voidedItemIds)) s.voidedItemIds = [...e.voidedItemIds];
+    // A re-scan of the same sheet re-states the gate; the latest read wins,
+    // which is what makes Task 11's repair-by-re-scan possible at all. A
+    // graded event that carries no gate leaves the field exactly as it was
+    // rather than clearing it — an ungated sheet has nothing to say here, and
+    // "absent" must never read as "the gate was cleared".
+    if (e.companionGate && GATE_STATUSES.includes(e.companionGate.status)) {
+      s.companionGate = { status: e.companionGate.status };
+    }
     s.machineGrade = {
       percent: typeof e.percent === 'number' ? e.percent : null,
       passingPercent: typeof e.passingPercent === 'number' ? e.passingPercent : null,
@@ -755,7 +787,15 @@ const APPLY = {
     };
   },
   outcome_recorded(s, e) {
-    s.outcome = { outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at };
+    // `reason` (already a declared field on this event, and already written by
+    // `CloseSessionOutcome`) is now carried into the derived state too: WHICH
+    // rule decided this is the difference between "you were below the bar" and
+    // "your read-along code was blank", and a reader that can only see
+    // `needs_remediation` cannot tell a child which one they hit.
+    s.outcome = {
+      outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at,
+      ...(isNonEmptyString(e.reason) ? { reason: e.reason } : {}),
+    };
     s.machineOutcome = { ...s.outcome };
   },
   rewarded(s, e) {

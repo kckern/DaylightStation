@@ -41,14 +41,39 @@ export function outcomeIdFor(sessionId) {
  * The reason code says which, because the printed receipt and the parent queue
  * render differently for "try again" than for "waiting on a grown-up".
  *
+ * THE COMPANION GATE IS A VETO, NOT A SCORE (Task 10). A lesson with a
+ * required companion prints a finish-code row; a sheet whose row is blank or
+ * wrong cannot pass however well it scored. It is checked here, at the one
+ * place a pass is decided, and it is deliberately OUTSIDE the percent: mixing
+ * them makes the failure illegible, because a child who scored 7/10 and a
+ * child who scored 10/10 but skipped the audio have different problems and one
+ * percentage cannot tell them apart. So the gate can only ever block a sheet
+ * that already cleared the bar; it never subtracts from one that did not.
+ *
+ * AND IT IS CHECKED AFTER THE SCORE, ON PURPOSE. A sheet that failed on
+ * questions AND has a blank gate reports `below_passing`: that child owes a
+ * retry either way, and the retry prints a fresh gate row with it. Leading
+ * with the companion there would send them off to play audio for a sheet they
+ * have to do again regardless. The gate reason therefore only ever appears on
+ * a sheet whose answers were good enough — which is exactly when it is the
+ * one thing standing in the way, and the only time it is worth saying.
+ *
  * @param {object}  args
  * @param {number}  args.gradedPercent   score from the graded event (0-100)
  * @param {number}  args.passingPercent  the unit's passing rule (inclusive)
+ * @param {{status: string}|null} [args.companionGate] - the scan's verdict on
+ *   the finish-code row (`sessionEvents.mjs`'s `graded` event). `null`/absent
+ *   is an UNGATED sheet — every worksheet without a required companion — and
+ *   changes nothing. PRESENT means this sheet has a gate, and then only
+ *   `satisfied` clears it: a status this function cannot read fails closed,
+ *   because a gate it does not understand is not a gate it may wave through.
  * @param {boolean} [args.requiresSignoff]
  * @param {boolean} [args.signedOff]
  * @returns {{ result: 'passed'|'needs_remediation', reason: string }}
  */
-export function evaluateOutcome({ gradedPercent, passingPercent, requiresSignoff = false, signedOff = false } = {}) {
+export function evaluateOutcome({
+  gradedPercent, passingPercent, companionGate = null, requiresSignoff = false, signedOff = false,
+} = {}) {
   const fail = (reason) => ({ result: 'needs_remediation', reason });
   if (!isPercent(gradedPercent)) return fail('not_graded');
   // A unit with no passing rule cannot auto-pass: the bar is what makes a score
@@ -56,8 +81,37 @@ export function evaluateOutcome({ gradedPercent, passingPercent, requiresSignoff
   // policy the curriculum deliberately left to a person.
   if (!isPercent(passingPercent)) return fail('no_passing_policy');
   if (gradedPercent < passingPercent) return fail('below_passing');
+  // PRESENCE is the question, not readability: a caller that hands over a
+  // gate object at all is saying this sheet HAS a gate, so only `satisfied`
+  // clears it. An unreadable status — a typo, a shape from a future version —
+  // therefore blocks rather than waves through, which is the safe direction:
+  // the cost is one sheet a grown-up has to look at, against a required
+  // read-along nobody ever did.
+  if (companionGate != null) {
+    // Two reasons, not one: the child-facing instruction differs. A blank row
+    // means "go and do it"; a wrong one means "you did it — check the letters".
+    if (companionGate.status === 'wrong') return fail('companion_code_wrong');
+    if (companionGate.status !== 'satisfied') return fail('companion_incomplete');
+  }
   if (requiresSignoff && !signedOff) return fail('awaiting_signoff');
   return { result: 'passed', reason: 'met_passing' };
+}
+
+/**
+ * Did the companion gate — rather than the score — decide this result?
+ *
+ * Exists so the close-out does not have to keep its own copy of the two reason
+ * strings above in order to answer the questions that follow from them: does
+ * this child get a retry ticket for a fresh worksheet (no — their answers were
+ * fine), and what does the receipt tell them to do next.
+ *
+ * @param {string|null} reason - an `evaluateOutcome` reason code
+ * @returns {'blank'|'wrong'|null} the gate status that vetoed, or null
+ */
+export function companionVetoStatus(reason) {
+  if (reason === 'companion_incomplete') return 'blank';
+  if (reason === 'companion_code_wrong') return 'wrong';
+  return null;
 }
 
 /**

@@ -44,6 +44,16 @@
  *    `submitted` — never `graded` — until a grown-up clears it through
  *    `GradeSubmission`, which reads that same queue as the sheet's roster
  *    for a print-document unit.
+ *
+ * THE COMPANION GATE PASSES THROUGH, IT IS NEVER SCORED (Task 10). A gated
+ * sheet's finish-code row arrives on `card.companionGate`, never inside
+ * `card.results` — so it is in no attempt, no percent, no `missedItemIds` and
+ * no verdict sheet. It is stamped onto the `graded` event and travels to
+ * `CloseSessionOutcome`, which is where it can veto a pass. Deliberately NOT
+ * an attempt row: the ledger records what a child answered about the LESSON,
+ * and `attempt.mjs` carries no points field, so a `companion_code` attempt
+ * would sit in a learner's permanent history looking exactly like a question
+ * they got wrong, with nothing to tell any reader it was worth zero.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { createAttempt } from '#domains/school/attempt.mjs';
@@ -62,6 +72,25 @@ export function scanKey(card) {
 /** `YYYY-MM-DDTHH:mm:ss...` -> `YYYY-MM-DD`, or null for anything else. */
 function dayOf(iso) {
   return typeof iso === 'string' && iso.length >= 10 ? iso.slice(0, 10) : null;
+}
+
+/**
+ * FAIL-SAFE: the companion gate row can never be in `results` (Task 10).
+ *
+ * `ResolveCardScan` already partitions it out — the gate leaves through
+ * `card.companionGate` and `results` carries only the child's answers. This
+ * belt is here because `results` is the denominator of the session percent,
+ * the source of the attempt ledger, and the source of `missedItemIds`; a gate
+ * row that ever reached any of them would score a perfect ten-question sheet
+ * 10/11 = 90.91% and file a permanent `correct: false` attempt against an item
+ * worth zero points. Cheap, and it fails in the safe direction for any caller
+ * (a replay of an older resolved scan, a hand-built card) that has not
+ * partitioned.
+ */
+function withoutGateRow(card) {
+  if (!card || !Array.isArray(card.results)) return card;
+  const results = card.results.filter((row) => row?.itemType !== 'companion_code');
+  return results.length === card.results.length ? card : { ...card, results };
 }
 
 export class RecordCardScanOutcome {
@@ -116,7 +145,8 @@ export class RecordCardScanOutcome {
    * @returns {Promise<{recorded: boolean, reason?: string, attemptIds?: string[],
    *   session?: {sessionId: string, advancedTo: string|null, reason?: string}}>}
    */
-  async execute({ testId, card, cardIdInferred = null } = {}) {
+  async execute({ testId, card: scannedCard, cardIdInferred = null } = {}) {
+    const card = withoutGateRow(scannedCard);
     if (!card || card.error || !Array.isArray(card.results)) {
       return { recorded: false, reason: 'not-a-graded-result' };
     }
@@ -137,6 +167,14 @@ export class RecordCardScanOutcome {
             results: section.results,
             totalPoints: section.totalPoints,
             earnedPoints: section.earnedPoints,
+            // One card, one gate row, several lessons: the gate belongs to the
+            // section whose row range physically contains it, and to no other.
+            // Copying it onto every section would veto lessons whose sheets
+            // never had a companion at all.
+            companionGate: (card.companionGate
+              && card.companionGate.row >= section.rowRange.start
+              && card.companionGate.row <= section.rowRange.end)
+              ? card.companionGate : undefined,
             sessionId: section.sessionId ?? null,
             subjectId: section.subjectId ?? null,
             courseId: section.courseId ?? null,
@@ -519,6 +557,13 @@ export class RecordCardScanOutcome {
         correctCount: correctRows,
         totalCount: card.results.length,
         missedItemIds: card.results.filter((row) => row.status !== 'correct').map((row) => row.itemId),
+        // The scan's verdict on the finish-code row, stamped onto the grade
+        // event beside the percent but never inside it (Task 10). This is how
+        // it reaches `CloseSessionOutcome`, which is where a pass is actually
+        // decided; `percent` above is deliberately unaffected by it, so the
+        // gradebook records the child's answers and the gate blocks the pass
+        // as two separate facts. Absent on every ungated sheet.
+        ...(card.companionGate ? { companionGate: { status: card.companionGate.status } } : {}),
       });
       if (graded.errors.length) throw new Error(graded.errors.join('; '));
       await this.#sessions.appendEvent(sessionId, graded.event);
