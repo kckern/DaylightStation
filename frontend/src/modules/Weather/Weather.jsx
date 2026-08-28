@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import moment from "moment-timezone";
 import green from "../../assets/icons/green.png";
 import yellow from "../../assets/icons/yellow.png";
@@ -301,9 +301,9 @@ export default function Weather({ weatherData: weatherDataProp }) {
 
   const [currentWeather, setCurrentWeather] = useState({});
 
-  const processWeatherData = (data) => {
+  const processWeatherData = useCallback((data) => {
     if (!data?.current) return;
-    
+
     const { current } = data;
     const descdata = (codes[current.code]?.[isDaytime() ? "day" : "night"]) || {};
     const processedCurrent = {
@@ -317,13 +317,13 @@ export default function Weather({ weatherData: weatherDataProp }) {
         ? red
         : processedCurrent.aqi >= 100 ? yellow : processedCurrent.aqi >= 50 ? lime : green;
     setCurrentWeather(processedCurrent);
-  };
+  }, []);
 
   useEffect(() => {
     if (weatherData) {
       processWeatherData(weatherData);
     }
-  }, [weatherData]);
+  }, [weatherData, processWeatherData]);
   
   if (!currentWeather.temp) {
     return (

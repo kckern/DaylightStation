@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/react';
-import ExerciseDetail, { detailPath } from './ExerciseDetail.jsx';
+import ExerciseDetail from './ExerciseDetail.jsx';
+import { detailPath } from './exerciseDetailPath.js';
 
 // ── Logger ───────────────────────────────────────────────────────────────────
 const logCalls = vi.hoisted(() => ({ debug: [], info: [], warn: [], error: [] }));

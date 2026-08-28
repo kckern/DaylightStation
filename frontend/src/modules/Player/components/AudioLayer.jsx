@@ -193,7 +193,7 @@ export function AudioLayer({
     } else {
       logger.debug('audio-layer-no-action', { isVideo, wasVideo, behavior });
     }
-  }, [currentItemMediaType, behavior, audioQueue, getAudioEl]);
+  }, [currentItemMediaType, behavior, audioQueue, getAudioEl, contentId, duckLevel, fadeVolume, masterVolume]);
 
   const noop = useCallback(() => {}, []);
 

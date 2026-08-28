@@ -12,20 +12,12 @@ import { getApp } from '../../lib/appRegistry.js';
 import { getWidgetRegistry } from '../widgets/registry.js';
 import { useScreenVolume } from '../../lib/volume/ScreenVolumeContext.js';
 import getLogger from '../../lib/logging/Logger.js';
+import { dispatchCyclePlaybackRate } from './cyclePlaybackRate.js';
 
 let _logger;
 function logger() {
   if (!_logger) _logger = getLogger().child({ component: 'ScreenActionHandler' });
   return _logger;
-}
-
-/**
- * Tell the active Player to cycle its playback rate. We dispatch an event rather
- * than mutate the media element directly: a DOM poke can't reach the <video> inside
- * the dash-video shadow DOM and is overwritten by the Player's controlled rate.
- */
-export function dispatchCyclePlaybackRate() {
-  window.dispatchEvent(new CustomEvent('player:cycle-playback-rate'));
 }
 
 /**
@@ -406,7 +398,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     logger().debug('escape.default', { hadShader: false, dismissed: hasOverlay });
     currentMenuRef.current = null;
     dismissOverlay();
-  }, [dismissOverlay, hasOverlay, actions, pip]);
+  }, [escapeInterceptorRef, pip, actions.escape, hasOverlay, dismissOverlay]);
 
   // --- Hardware Back (popstate) consumer ---
   // Mirror live overlay/pip state into refs so the consumer (invoked at

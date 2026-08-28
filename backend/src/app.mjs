@@ -3428,6 +3428,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       schoolLifecycleLogger.warn('school.piano_lesson_hook.wiring-failed', { error: err.message });
     }
   }
+  /**
+   * Wake a room's screen for a widget that is ALREADY MOUNTED on it: power the
+   * display on, bring the kiosk forward, and stop there.
+   *
+   * Deliberately NOT a content load and NOT `clearContent()`. Both reload the
+   * page, and a reload drops the WebSocket that the broadcast which follows
+   * has to arrive on — the screen would be told at the exact moment it could
+   * not hear. Shared by BOTH broadcast-driven screen features so there is one
+   * answer in the house: story time (`makeReadingSessionHandler`) and gated
+   * media lessons (`ScreenPlaybackAdapter`, §8).
+   *
+   * @param {{target: string}} a - `target` is a devices.yml id
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  const wakeScreenForBroadcast = async ({ target } = {}) => {
+    const device = target ? deviceServices.deviceService.get(target) : null;
+    if (!device) return { ok: false, error: `unknown target: ${target}` };
+    const power = await device.powerOn();
+    const foreground = await device.prepareForContent({ skipCameraCheck: true });
+    return { ok: power?.ok !== false && foreground?.ok !== false, power, foreground };
+  };
+
   try {
     const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
     schoolLifecycle = await createSchoolLifecycle({
@@ -3443,6 +3465,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       userService,
       eventBus,
       thermalPrinterRegistry: printerRegistry,
+      // §8's real playback target: School builds a `ScreenPlaybackAdapter`
+      // around this rather than waking a TV itself.
+      //
+      // NOT `wakeAndLoadService`. That service ends in a content load, and on
+      // the living-room Shield a content load is an unconditional FKB
+      // `loadURL` — a page load, which drops the very WebSocket the lesson is
+      // about to be announced on. `wakeScreenForBroadcast` is the reading
+      // path's seam and is shared with it verbatim, one room, one way to wake
+      // a screen that a mounted widget is about to be told something on.
+      wakeScreen: wakeScreenForBroadcast,
       languageStudyService,
       studyGrants: schoolStudyGrants,
       languageReelService,
@@ -4165,6 +4197,72 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // ==========================================================================
+  // Gated media lessons on the living-room TV — the screen's four HTTP calls.
+  //
+  // Mounted beside the reading router because it is the same screen and the
+  // same doctrine: a widget that renders nothing until a lesson is dispatched
+  // to its room, and four routes for the things the backend cannot see.
+  //
+  // Guarded on the SAME lifecycle the routes' use cases are built from. There
+  // is no `storyTimeLauncher` equivalent to also require — a lesson is
+  // dispatched through `DispatchMedia`, which the lifecycle already owns — but
+  // without `stores.sessions` and `stores.curriculum` there is nothing to read
+  // a lesson out of, and mounting routes that could only 500 would turn "this
+  // household has no school" into an error in front of a child.
+  //
+  // `schoolService` is the bank reader for BOTH the answer grader and the
+  // snapshot's question projection, deliberately the same instance: the
+  // questions the screen shows and the questions the server marks must come
+  // out of one bank, or a child answers something that is not what is being
+  // graded.
+  // ==========================================================================
+  if (schoolLifecycle.wired && schoolLifecycle.stores?.sessions && schoolLifecycle.stores?.curriculum
+      && schoolLifecycle.useCases?.recordMediaCompletion) {
+    try {
+      const lessonLogger = rootLogger.child({ module: 'school-lesson' });
+      const { ReadLessonSnapshot } = await import('#apps/school/usecases/ReadLessonSnapshot.mjs');
+      const { RecordCheckpointAnswer } = await import('#apps/school/usecases/RecordCheckpointAnswer.mjs');
+      const { createMediaLessonRouter } = await import('#api/v1/routers/mediaLesson.mjs');
+
+      v1Routers.school.use('/lesson', createMediaLessonRouter({
+        readLessonSnapshot: new ReadLessonSnapshot({
+          curriculum: schoolLifecycle.stores.curriculum,
+          sessions: schoolLifecycle.stores.sessions,
+          bankReader: schoolService,
+          logger: lessonLogger,
+        }),
+        // Built HERE rather than in the lifecycle because the lifecycle has no
+        // bank reader of its own to hand it — `RenderPrintDocument` keeps one
+        // privately — and `schoolService` is the reader every other on-screen
+        // grading path already goes through.
+        recordCheckpointAnswer: new RecordCheckpointAnswer({
+          curriculum: schoolLifecycle.stores.curriculum,
+          sessions: schoolLifecycle.stores.sessions,
+          bankReader: schoolService,
+          logger: lessonLogger,
+        }),
+        recordMediaCompletion: schoolLifecycle.useCases.recordMediaCompletion,
+        // The playhead heartbeat's destination. Same bus the playback adapters
+        // announce dispatches on.
+        eventBus,
+        // Optional: without it the score placard names the learner id, which is
+        // a worse placard and not a broken lesson.
+        resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
+        logger: lessonLogger,
+      }));
+    } catch (err) {
+      // A lesson router that failed to wire must not take the rest of School
+      // with it: every other surface (agenda, print, grading) is independent of
+      // it, and a household whose TV lessons are broken still has its paper.
+      rootLogger.error('school.lesson.wiring-failed', { error: err.message });
+    }
+  } else {
+    rootLogger.warn('school.lesson.unwired', {
+      reason: schoolLifecycle.wired ? 'no session or curriculum store' : 'school lifecycle not wired',
+    });
+  }
+
   // What a school learner card DOES, per reader. Registered here rather than
   // inside the trigger module so the trigger pipeline keeps no School import:
   // it knows op names and nothing about School.
@@ -4201,14 +4299,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // Power on and bring the kiosk forward. NOT a content load and NOT a
       // `clearContent()`: the reading widget is already mounted on that
       // screen, and reloading the page would drop the very WebSocket that
-      // carried the `session-open` this tap just produced.
-      wakeScreen: async ({ target }) => {
-        const device = target ? deviceServices.deviceService.get(target) : null;
-        if (!device) return { ok: false, error: `unknown target: ${target}` };
-        const power = await device.powerOn();
-        const foreground = await device.prepareForContent({ skipCameraCheck: true });
-        return { ok: power?.ok !== false && foreground?.ok !== false, power, foreground };
-      },
+      // carried the `session-open` this tap just produced. Now shared with
+      // the media-lesson dispatch, which needs it for the same reason — see
+      // `wakeScreenForBroadcast` above.
+      wakeScreen: wakeScreenForBroadcast,
       eventBus,
       logger: rootLogger.child({ module: 'trigger-learner' }),
     }));
@@ -4301,10 +4395,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
   }));
   v1Routers.measures = createMeasuresRouter({
-    registry: measureRegistry,
-    learners: async () => schoolLearnerDirectory.listLearners(),
-    timezone: measuresTimezone,
-    logger: rootLogger.child({ module: 'measures' }),
+    weeklyMeasures: new GetWeeklyMeasures({
+      registry: measureRegistry,
+      learners: async () => schoolLearnerDirectory.listLearners(),
+      timezone: measuresTimezone,
+      logger: rootLogger.child({ module: 'measures' }),
+    }),
   });
   // The action executor is deliberately late-bound: SchoolCalc is composed
   // before the existing print and trigger services, but scans cannot arrive

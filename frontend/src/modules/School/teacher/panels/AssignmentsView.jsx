@@ -15,29 +15,7 @@ import { useTeacherProfile } from '../TeacherProfileContext.jsx';
 import { curriculumTitles } from '../curriculumTitles.js';
 import { labelize } from '../labelize.js';
 import { teacherSectionPath } from '../teacherUrl.js';
-
-/** Stored entries can be strings or {courseId|unitId, elective} objects
- * (CurriculumPlanner.toStored always writes the object form). Everything in
- * this panel normalizes to the bare id — rendering the object raw printed
- * `[object Object]` (admin advocacy #6). */
-const idOf = (entry, key) => (typeof entry === 'string' ? entry : entry?.[key] ?? null);
-const idsOf = (list, key) => (list ?? []).map((e) => idOf(e, key)).filter(Boolean);
-
-/**
- * A save must round-trip whatever the record already held. An entry may carry
- * `profile` and a `school.course-enrollment/v1` block (module order, optional
- * modules, a frozen lessonOrder) which this panel neither renders nor
- * understands — flattening it to a bare id silently destroys the enrollment.
- * Checked ids that already had an object entry keep that entire object.
- */
-export function mergeEntries(originalEntries, checkedIds, key) {
-  const byId = new Map();
-  (originalEntries ?? []).forEach((entry) => {
-    const id = idOf(entry, key);
-    if (id) byId.set(id, entry);
-  });
-  return checkedIds.map((id) => byId.get(id) ?? id);
-}
+import { idsOf, mergeEntries } from './assignmentEntries.js';
 
 export default function AssignmentsView({ learnerId, learnerName }) {
   const record = usePanelFetch(() => schoolApi.assignments(learnerId), {

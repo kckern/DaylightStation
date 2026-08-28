@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { DaylightAPI } from "../../lib/api.mjs";
 import "./Upcoming.scss";
 import moment from "moment";
@@ -35,7 +35,7 @@ export default function Upcoming() {
   const animationDuration = 1000;
   const [listItems, setListItems] = useState([]);
   const [isMoving, setIsMoving] = useState(false);
-  const reloadData = () => {
+  const reloadData = useCallback(() => {
     DaylightAPI("/api/v1/home/events").then(events => {
       // Rotate events
       events = [...events.slice(-1), ...events.slice(0, -1)];
@@ -73,34 +73,39 @@ export default function Upcoming() {
 
 
 
-      // Merge: keep existing items still present in API, add new ones
-      const apiIds = new Set(itemsFromAPI.map(item => item.id));
-      const kept = listItems.filter(item => apiIds.has(item.id));
-      const added = itemsFromAPI.filter(newItem => !listItems.some(existing => existing.id === newItem.id));
-      const items = [...kept, ...added]
-        .filter(item =>
-          (item.type === "todoist" || item.type === "clickup") || moment(item.time).isAfter(moment())
-        )
-        .sort((a, b) => new Date(a.time) - new Date(b.time));
+      // Merge: keep existing items still present in API, add new ones.
+      // Read the PREVIOUS list through setListItems's updater rather than
+      // closing over the `listItems` state directly, so reloadData never
+      // goes stale and can stay a stable (deps-free) function.
+      setListItems(prevListItems => {
+        const apiIds = new Set(itemsFromAPI.map(item => item.id));
+        const kept = prevListItems.filter(item => apiIds.has(item.id));
+        const added = itemsFromAPI.filter(newItem => !prevListItems.some(existing => existing.id === newItem.id));
+        const items = [...kept, ...added]
+          .filter(item =>
+            (item.type === "todoist" || item.type === "clickup") || moment(item.time).isAfter(moment())
+          )
+          .sort((a, b) => new Date(a.time) - new Date(b.time));
 
-      // Pad to at least 5 display items with unique keys
-      let display = [...items];
-      let round = 0;
-      while (display.length < 5) {
-        round++;
-        display = [...display, ...items.map((item, i) => ({ ...item, id: `${item.id}_pad${round}_${i}` }))];
-      }
+        // Pad to at least 5 display items with unique keys
+        let display = [...items];
+        let round = 0;
+        while (display.length < 5) {
+          round++;
+          display = [...display, ...items.map((item, i) => ({ ...item, id: `${item.id}_pad${round}_${i}` }))];
+        }
 
-      setListItems(display);
+        return display;
+      });
     });
-  };
+  }, []);
 
   // Initial load + refresh every 5 minutes
   useEffect(() => {
     reloadData();
     const loadInterval = setInterval(reloadData, 1000 * 60 * 3);
     return () => clearInterval(loadInterval);
-  }, []);
+  }, [reloadData]);
 
   useEffect(
     () => {

@@ -11,7 +11,7 @@ import { useDanceBpm } from './useDanceBpm.js';
 import { useBpmPublisher } from './useBpmPublisher.js';
 import DanceNowPlayingBar from './DanceNowPlayingBar.jsx';
 import { usePersistentVolume } from '../../nav/usePersistentVolume.js';
-import { snapToTouchLevel, logVolumeFromLevel, logLevelFromVolume } from '../../player/panels/TouchVolumeButtons.jsx';
+import { snapToTouchLevel, logVolumeFromLevel, logLevelFromVolume } from '../../player/panels/touchVolumeModel.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './DancePartyWidget.scss';
 

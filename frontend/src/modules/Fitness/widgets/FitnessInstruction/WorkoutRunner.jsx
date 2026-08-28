@@ -4,6 +4,7 @@ import getLogger from '@/lib/logging/Logger.js';
 import { installCueAudioUnlock } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
 import { FitnessContext } from '@/context/FitnessContext.jsx';
 import RestTimer from './RestTimer.jsx';
+import { resolveExercise, targetLabel } from './workoutRunnerDisplay.js';
 import './WorkoutRunner.scss';
 
 /**
@@ -52,40 +53,6 @@ import './WorkoutRunner.scss';
  * runs on a large touchscreen TV where onClick's pointerup + capture delay is
  * perceptible. Enter/Space are kept on the focusable targets.
  */
-
-/** Title-case a slug so a corpus miss still reads as an exercise name. */
-export function humanizeSlug(slug) {
-  const text = typeof slug === 'string' ? slug.trim() : '';
-  if (!text) return 'Exercise';
-  return text
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-/**
- * Resolve one slug against the display lookup. Always returns a usable record —
- * a missing entry, a missing name, or a lookup that is not an object all yield
- * the humanised slug and a null image.
- */
-export function resolveExercise(lookup, slug) {
-  const entry = lookup && typeof lookup === 'object' ? lookup[slug] : null;
-  const name = typeof entry?.name === 'string' && entry.name.trim() ? entry.name.trim() : humanizeSlug(slug);
-  const image = typeof entry?.image === 'string' && entry.image.trim() ? entry.image.trim() : null;
-  return { name, image, known: Boolean(entry) };
-}
-
-/** "12 reps" / "45 sec" / "Until done" — what the athlete is being asked for. */
-export function targetLabel(step) {
-  if (Number.isFinite(step?.reps) && step.reps !== null) {
-    return `${step.reps} ${step.reps === 1 ? 'rep' : 'reps'}`;
-  }
-  if (Number.isFinite(step?.seconds) && step.seconds !== null) {
-    return `${step.seconds} sec`;
-  }
-  return 'Until done';
-}
 
 const GROUP_LABELS = { superset: 'Superset', circuit: 'Circuit', sets: 'Straight sets' };
 
@@ -250,7 +217,7 @@ export default function WorkoutRunner({
       kind: plan[next]?.kind ?? null,
       slug: plan[next]?.slug ?? null
     });
-  }, [logger, plan, title]);
+  }, [logger, plan, finish]);
 
   /**
    * Leave the runner.

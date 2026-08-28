@@ -1,5 +1,5 @@
 
-import { buildDayToDayBudgetOptions } from '../blocks/daytoday'
+import { buildDayToDayBudgetOptions } from '../blocks/dayToDayChartOptions.js'
 import HighchartsReact from 'highcharts-react-official'
 import Highcharts from 'highcharts'
 import { DaylightAPI } from '../../../lib/api.mjs'
@@ -8,7 +8,7 @@ import moment from 'moment'
 import './FinanceChart.scss'
 import upArrow from '../../../assets/icons/upGreen.svg';
 import downArrow from '../../../assets/icons/downRed.svg';
-import { formatAsCurrency } from '../blocks'
+import { formatAsCurrency } from '../lib/format.mjs'
 
 function buildBaselineOptions(monthData) {
   const budget = monthData.budget || 0;

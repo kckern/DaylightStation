@@ -1,6 +1,6 @@
-import { gatherShortTermTransactions } from './blocks/shortterm.jsx';
-import { collectSpendingTransactions } from './blocks.jsx';
-import { loadCellTransactions } from './blocks/monthly.jsx';
+import { gatherShortTermTransactions } from './blocks/shortTermTransactions.js';
+import { collectSpendingTransactions } from './spendingTransactions.js';
+import { loadCellTransactions } from './blocks/monthlyData.js';
 
 const budget = {
   budgetStart: '2026-04-01',

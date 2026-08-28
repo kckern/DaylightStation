@@ -1,38 +1,47 @@
 import { describe, test, expect } from 'vitest';
-import { resolvePause, PAUSE_REASON } from '../../../../../frontend/src/modules/Player/utils/pauseArbiter.js';
+import { resolvePause, PAUSE_REASON } from '../../../../../frontend/src/lib/Player/gate/pauseArbiter.js';
+
+// Characterizes the governance gate exactly as FitnessPlayer passes it. This suite
+// predates the N-ary arbiter and called a `governance:` alias slot; that alias is gone,
+// so each call is now the gates form. The three "also triggers pause" cases were three
+// distinct alias keys (blocked/locked/videoLocked) that collapse to one boolean, so they
+// remain as redundant regression anchors rather than three separate behaviors.
 
 describe('Governance video pause contract', () => {
 
-  test('governance lock pauses video (not just mutes)', () => {
-    const result = resolvePause({ governance: { locked: true } });
+  test('a blocked governance gate pauses video (not just mutes)', () => {
+    const result = resolvePause({ gates: [{ blocked: true, id: 'governance', seekCeiling: null }] });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
-    expect(result.reason).toBe('PAUSED_GOVERNANCE');
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
+    expect(result.reason).toBe('PAUSED_GATE');
   });
 
-  test('governance.blocked also triggers pause', () => {
-    const result = resolvePause({ governance: { blocked: true } });
+  test('a blocked governance gate triggers pause (was: governance.blocked)', () => {
+    const result = resolvePause({ gates: [{ blocked: true, id: 'governance', seekCeiling: null }] });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
   });
 
-  test('governance.videoLocked also triggers pause', () => {
-    const result = resolvePause({ governance: { videoLocked: true } });
+  test('a blocked governance gate triggers pause (was: governance.videoLocked)', () => {
+    const result = resolvePause({ gates: [{ blocked: true, id: 'governance', seekCeiling: null }] });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
   });
 
-  test('governance unlock resumes playback (paused:false when not locked)', () => {
-    const result = resolvePause({ governance: { locked: false } });
+  test('a released governance gate resumes playback', () => {
+    const result = resolvePause({ gates: [{ blocked: false, id: 'governance', seekCeiling: null }] });
 
     expect(result.paused).toBe(false);
     expect(result.reason).toBe(PAUSE_REASON.PLAYING);
   });
 
-  test('no governance state means not paused', () => {
+  test('no gates at all means not paused', () => {
     const result = resolvePause({});
 
     expect(result.paused).toBe(false);
@@ -48,30 +57,32 @@ describe('Governance video pause contract', () => {
 
   test('governance pause takes priority over user pause', () => {
     const result = resolvePause({
-      governance: { locked: true },
+      gates: [{ blocked: true, id: 'governance', seekCeiling: null }],
       user: { paused: true }
     });
 
     expect(result.paused).toBe(true);
-    // Must be GOVERNANCE, not USER - governance is the controlling reason
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    // Must be the governance GATE, not USER - the gate is the controlling reason
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
     expect(result.reason).not.toBe(PAUSE_REASON.USER);
   });
 
   test('governance pause takes priority over buffering pause', () => {
     const result = resolvePause({
-      governance: { locked: true },
+      gates: [{ blocked: true, id: 'governance', seekCeiling: null }],
       resilience: { buffering: true }
     });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
     expect(result.reason).not.toBe(PAUSE_REASON.BUFFERING);
   });
 
   test('user pause still works when governance is not locked', () => {
     const result = resolvePause({
-      governance: { locked: false },
+      gates: [{ blocked: false, id: 'governance', seekCeiling: null }],
       user: { paused: true }
     });
 
@@ -85,7 +96,7 @@ describe('Seeking suppresses pause', () => {
   test('seeking suppresses governance pause', () => {
     const result = resolvePause({
       seeking: { active: true },
-      governance: { locked: true }
+      gates: [{ blocked: true, id: 'governance', seekCeiling: null }]
     });
 
     expect(result.paused).toBe(false);
@@ -115,19 +126,21 @@ describe('Seeking suppresses pause', () => {
   test('seeking:false does not suppress', () => {
     const result = resolvePause({
       seeking: { active: false },
-      governance: { locked: true }
+      gates: [{ blocked: true, id: 'governance', seekCeiling: null }]
     });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
   });
 
   test('no seeking bucket does not suppress', () => {
     const result = resolvePause({
-      governance: { locked: true }
+      gates: [{ blocked: true, id: 'governance', seekCeiling: null }]
     });
 
     expect(result.paused).toBe(true);
-    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+    expect(result.reason).toBe(PAUSE_REASON.GATE);
+    expect(result.gate).toBe('governance');
   });
 });

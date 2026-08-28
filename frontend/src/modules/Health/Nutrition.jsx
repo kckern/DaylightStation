@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Drawer } from '@mantine/core';
 import { DaylightAPI } from "../../lib/api.mjs";
 import moment from 'moment';
@@ -32,7 +32,7 @@ const Nutrition = () => {
         }
     };
 
-    const fetchOverviewData = async () => {
+    const fetchOverviewData = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
@@ -66,7 +66,7 @@ const Nutrition = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     const openDateDrawer = (date) => {
         setSelectedDate(date);
@@ -94,7 +94,7 @@ const Nutrition = () => {
 
     useEffect(() => {
         fetchOverviewData();
-    }, []);
+    }, [fetchOverviewData]);
 
     const getDayTotals = (dayData) => {
         return dayData.reduce((totals, item) => {

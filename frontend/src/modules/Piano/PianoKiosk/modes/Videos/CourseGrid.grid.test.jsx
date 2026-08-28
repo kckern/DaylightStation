@@ -19,7 +19,8 @@ vi.mock('../../usePianoList.js', () => ({
 }));
 vi.mock('./CourseTile.jsx', () => ({ default: ({ item }) => <li>{item.title}</li> }));
 
-import CourseGrid, { tileScaleFor } from './CourseGrid.jsx';
+import CourseGrid from './CourseGrid.jsx';
+import { tileScaleFor } from './tileScale.js';
 import { balancedGrid } from '../../tileGridLayout.js';
 
 describe('CourseGrid one-page adaptive wall', () => {

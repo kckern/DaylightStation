@@ -21,7 +21,7 @@ beforeEach(() => {
 });
 
 const dispatchOne = (over = {}) => playback.dispatch({
-  target: 'tv', contentId: 'plex:670208', learnerId: 'kid1', durationSec: 600, ...over,
+  target: 'tv', contentId: 'plex:670208', learnerId: 'kid1', durationSec: 600, sessionId: 'ses_1', ...over,
 });
 
 describe('construction', () => {
@@ -58,8 +58,23 @@ describe('dispatch', () => {
     expect(() => playback.dispatch({ target: 'tv', learnerId: 'kid1' })).toThrow(/contentId/);
   });
 
+  // The port widening that came with the real screen adapter (§8): the screen
+  // fetches its lesson BY session id, so a dispatch that cannot name its
+  // session is one no screen could act on. Required here too, deliberately —
+  // a double that tolerated its absence would let that ship green.
+  it('rejects a dispatch with no sessionId, exactly as the real screen adapter does', () => {
+    expect(() => playback.dispatch({ target: 'tv', contentId: 'plex:1', learnerId: 'kid1', durationSec: 60 }))
+      .toThrow(/sessionId/);
+  });
+
+  it('carries the sessionId on the record and on the wire', () => {
+    const rec = dispatchOne();
+    expect(rec.sessionId).toBe('ses_1');
+    expect(bus.of('dispatched')[0].sessionId).toBe('ses_1');
+  });
+
   it('registers an unknown target as a new slot', () => {
-    playback.dispatch({ target: 'garage-speaker', contentId: 'plex:1', learnerId: 'kid1', durationSec: 60 });
+    playback.dispatch({ target: 'garage-speaker', contentId: 'plex:1', learnerId: 'kid1', durationSec: 60, sessionId: 'ses_1' });
     expect(playback.getStatus().map((s) => s.color)).toContain('garage-speaker');
   });
 });
@@ -193,7 +208,7 @@ describe('getStatus — mirrors the hub status shape', () => {
   });
 
   it('treats a bare content id as a plex id, like the hub adapter does', () => {
-    playback.dispatch({ target: 'tv', contentId: '670208', learnerId: 'kid1', durationSec: 60 });
+    playback.dispatch({ target: 'tv', contentId: '670208', learnerId: 'kid1', durationSec: 60, sessionId: 'ses_1' });
     expect(playback.getStatus().find((s) => s.color === 'tv').now_playing.queue).toEqual({ source: 'plex', id: '670208' });
   });
 

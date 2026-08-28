@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveAddressedSelection } from '../game-platform/families/addressed-board/interactionGrammars.js';
-import { selectionMessage } from './PianoCheckers.jsx';
+import { selectionMessage } from './checkersAddressingModel.js';
 import { DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, squareForAddress } from './checkersAddress.js';
 
 /** Piano Checkers uses the addressed-board selection grammar and file/rank axes. */

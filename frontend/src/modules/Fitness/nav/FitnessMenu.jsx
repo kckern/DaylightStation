@@ -237,7 +237,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     };
 
     loadShows();
-  }, [activeCollection, collectionsFromConfig]);
+  }, [activeCollection, collectionsFromConfig, activeAppMenu]);
 
   if (loading) {
     return (

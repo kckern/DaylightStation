@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/react';
-import ModeSheet, { MODES } from './ModeSheet.jsx';
+import ModeSheet from './ModeSheet.jsx';
+import { MODES } from './practiceModes.js';
 
 describe('ModeSheet', () => {
   it('offers the four modes with icons, current one lit, and picks', () => {

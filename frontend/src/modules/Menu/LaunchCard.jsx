@@ -11,7 +11,7 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
   const [status, setStatus] = useState('loading');
   const [errorMsg, setErrorMsg] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
-  const [setNextWindow] = useState(null);
+  const [, setNextWindow] = useState(null);
   const progressRef = useRef(null);
 
   // Animated progress bar via Web Animations API (immune to TVApp CSS animation kill)

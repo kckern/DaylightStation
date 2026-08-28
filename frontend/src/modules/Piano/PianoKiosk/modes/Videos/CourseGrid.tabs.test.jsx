@@ -27,7 +27,7 @@ vi.mock('../../usePianoList.js', () => {
 vi.mock('./CourseTile.jsx', () => ({ default: ({ item }) => <li>{item.title}</li> }));
 
 import CourseGrid from './CourseGrid.jsx';
-import { resolveCourseGroups } from './Videos.jsx';
+import { resolveCourseGroups } from './courseGroups.js';
 
 const GROUPS = [
   { label: 'Piano Lessons', collections: ['plex:1'], shows: [], excludeShows: ['plex:20'] },

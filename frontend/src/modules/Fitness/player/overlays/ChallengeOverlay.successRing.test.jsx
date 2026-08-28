@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, renderHook } from '@testing-library/react';
-import ChallengeOverlay, { useChallengeOverlays } from './ChallengeOverlay.jsx';
+import ChallengeOverlay from './ChallengeOverlay.jsx';
+import { useChallengeOverlays } from './challengeMachine.js';
 
 // Issue 1: the success ceremony used to flip the whole ring to green (#22c55e),
 // which collides with the "active" HR zone color. The ring must keep the target

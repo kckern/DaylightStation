@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, within } from '@testing-library/react';
-import GroupEditor, { groupKind, groupLabel, GROUP_LABELS } from './GroupEditor.jsx';
+import GroupEditor from './GroupEditor.jsx';
+import { groupKind, groupLabel, GROUP_LABELS } from './groupKindModel.js';
 // The domain's own derivation, imported so the two cannot drift: the frontend copy
 // exists because no build alias resolves `backend/src` at RUNTIME, but test code runs
 // under Node where the path does resolve.

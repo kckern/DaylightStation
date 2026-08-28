@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
 import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
-import { humanizeSlug } from './WorkoutRunner.jsx';
+import { humanizeSlug } from './workoutRunnerDisplay.js';
+import { detailPath } from './exerciseDetailPath.js';
 import './ExerciseDetail.scss';
 
 /**
@@ -33,11 +34,6 @@ import './ExerciseDetail.scss';
  * onPointerDown, not onClick — the FitnessApp.jsx note. Enter/Space kept on all
  * focusable targets, plus Escape to close.
  */
-
-/** Path for one full record. */
-export function detailPath(slug) {
-  return `api/v1/fitness/exercises/${encodeURIComponent(slug)}`;
-}
 
 function activationKey(event) {
   return event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar';

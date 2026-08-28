@@ -1,9 +1,9 @@
 import { Drawer as TransactionsDrawer } from './drawer';
 import { MortgageDrawer } from './blocks/mortgage.jsx';
 import { PayrollSyncContent } from './PayrollSync.jsx';
-import { loadCellTransactions, getPeriodData } from './blocks/monthly.jsx';
-import { gatherShortTermTransactions } from './blocks/shortterm.jsx';
-import { collectSpendingTransactions } from './blocks.jsx';
+import { loadCellTransactions, getPeriodData } from './blocks/monthlyData.js';
+import { gatherShortTermTransactions } from './blocks/shortTermTransactions.js';
+import { collectSpendingTransactions } from './spendingTransactions.js';
 
 /**
  * Resolves a serializable drawer descriptor against CURRENT data on every

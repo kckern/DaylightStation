@@ -55,6 +55,13 @@ export const useNativeAudioBridge = (config = {}) => {
   // Main-thread AEC state
   const aecRef = useRef(null);
 
+  // `connect` and `scheduleRetry` call each other (a closed WS schedules a
+  // retry, a retry reconnects), so neither can list the other as a
+  // useCallback dependency without a circular declaration. This ref breaks
+  // the cycle: `connect` calls the LATEST scheduleRetry via the ref instead
+  // of closing over it directly.
+  const scheduleRetryRef = useRef(null);
+
   const cleanup = useCallback(() => {
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
@@ -79,120 +86,6 @@ export const useNativeAudioBridge = (config = {}) => {
     setStream(null);
     setVolume(0);
   }, []);
-
-  const connect = useCallback(() => {
-    const { enabled: en, url: wsUrl } = configRef.current;
-    if (!en || !wsUrl) return;
-
-    setStatus('connecting');
-    logger().info('bridge-connecting', { url: wsUrl, retry: retryRef.current });
-
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = 'arraybuffer';
-    wsRef.current = ws;
-
-    let headerReceived = false;
-
-    ws.onopen = () => {
-      logger().info('bridge-ws-open');
-      retryRef.current = 0;
-    };
-
-    ws.onmessage = async (event) => {
-      // First text message is the format header
-      if (!headerReceived && typeof event.data === 'string') {
-        headerReceived = true;
-        try {
-          const format = JSON.parse(event.data);
-
-          if (format.error) {
-            logger().warn('bridge-server-error', { error: format.error });
-            setStatus('unavailable');
-            return;
-          }
-
-          logger().info('bridge-format', format);
-          await setupAudioPipeline(format);
-        } catch (err) {
-          logger().error('bridge-format-parse-error', { error: err.message });
-          setStatus('disconnected');
-        }
-        return;
-      }
-
-      // Binary messages are PCM data — process with AEC or forward raw
-      if (event.data instanceof ArrayBuffer && cleanupRef.current) {
-        const workletNode = cleanupRef.current._workletNode;
-        if (!workletNode) return;
-
-        const aecState = aecRef.current;
-        if (aecState && aecState.hasRef) {
-          // AEC mode: feed mic into ring buffer, process aligned frames.
-          // Once ref has been received, ALL mic data goes through AEC —
-          // never fall back to passthrough (would cause double audio).
-          if (!aecState._loggedFirstRef) {
-            aecState._loggedFirstRef = true;
-            logger().info('bridge-aec-active', { mode: 'aec' });
-          }
-          aecState.feedMic(new Int16Array(event.data));
-          const cleanFrames = aecState.process();
-          if (cleanFrames.length > 0) {
-            const totalLen = cleanFrames.reduce((s, f) => s + f.length, 0);
-            const clean = new Float32Array(totalLen);
-            let offset = 0;
-            for (const f of cleanFrames) {
-              clean.set(f, offset);
-              offset += f.length;
-            }
-            workletNode.port.postMessage({ cleanPcm: clean.buffer }, [clean.buffer]);
-          }
-          // If no clean frames yet (accumulating), worklet plays from its
-          // existing buffer or outputs silence — no data loss, AEC will
-          // catch up on the next mic chunk.
-          return;
-        }
-
-        // Passthrough: no AEC or ref signal not received yet — send raw PCM
-        workletNode.port.postMessage({ pcm: event.data }, [event.data]);
-      }
-    };
-
-    ws.onclose = (event) => {
-      logger().info('bridge-ws-close', { code: event.code, reason: event.reason });
-      cleanup();
-
-      if (!configRef.current.enabled) {
-        setStatus('idle');
-        return;
-      }
-
-      // Don't retry if server explicitly rejected us
-      if (event.code === 1008 || event.code === 1011) {
-        setStatus('unavailable');
-        return;
-      }
-
-      setStatus('disconnected');
-      scheduleRetry();
-    };
-
-    ws.onerror = () => {
-      // onclose will fire after this — handle retry there
-      logger().debug('bridge-ws-error');
-    };
-  }, [cleanup]);
-
-  const scheduleRetry = useCallback(() => {
-    const delay = RETRY_DELAYS[Math.min(retryRef.current, RETRY_DELAYS.length - 1)];
-    retryRef.current++;
-    logger().info('bridge-retry-scheduled', { delay, attempt: retryRef.current });
-    retryTimerRef.current = setTimeout(() => {
-      retryTimerRef.current = null;
-      if (configRef.current.enabled) {
-        connect();
-      }
-    }, delay);
-  }, [connect]);
 
   /**
    * Sets up AudioContext → AudioWorklet → MediaStreamDestination pipeline.
@@ -539,6 +432,122 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
     cleanupFn._workletNode = workletNode;
     cleanupRef.current = cleanupFn;
   }, []);
+
+  const connect = useCallback(() => {
+    const { enabled: en, url: wsUrl } = configRef.current;
+    if (!en || !wsUrl) return;
+
+    setStatus('connecting');
+    logger().info('bridge-connecting', { url: wsUrl, retry: retryRef.current });
+
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+
+    let headerReceived = false;
+
+    ws.onopen = () => {
+      logger().info('bridge-ws-open');
+      retryRef.current = 0;
+    };
+
+    ws.onmessage = async (event) => {
+      // First text message is the format header
+      if (!headerReceived && typeof event.data === 'string') {
+        headerReceived = true;
+        try {
+          const format = JSON.parse(event.data);
+
+          if (format.error) {
+            logger().warn('bridge-server-error', { error: format.error });
+            setStatus('unavailable');
+            return;
+          }
+
+          logger().info('bridge-format', format);
+          await setupAudioPipeline(format);
+        } catch (err) {
+          logger().error('bridge-format-parse-error', { error: err.message });
+          setStatus('disconnected');
+        }
+        return;
+      }
+
+      // Binary messages are PCM data — process with AEC or forward raw
+      if (event.data instanceof ArrayBuffer && cleanupRef.current) {
+        const workletNode = cleanupRef.current._workletNode;
+        if (!workletNode) return;
+
+        const aecState = aecRef.current;
+        if (aecState && aecState.hasRef) {
+          // AEC mode: feed mic into ring buffer, process aligned frames.
+          // Once ref has been received, ALL mic data goes through AEC —
+          // never fall back to passthrough (would cause double audio).
+          if (!aecState._loggedFirstRef) {
+            aecState._loggedFirstRef = true;
+            logger().info('bridge-aec-active', { mode: 'aec' });
+          }
+          aecState.feedMic(new Int16Array(event.data));
+          const cleanFrames = aecState.process();
+          if (cleanFrames.length > 0) {
+            const totalLen = cleanFrames.reduce((s, f) => s + f.length, 0);
+            const clean = new Float32Array(totalLen);
+            let offset = 0;
+            for (const f of cleanFrames) {
+              clean.set(f, offset);
+              offset += f.length;
+            }
+            workletNode.port.postMessage({ cleanPcm: clean.buffer }, [clean.buffer]);
+          }
+          // If no clean frames yet (accumulating), worklet plays from its
+          // existing buffer or outputs silence — no data loss, AEC will
+          // catch up on the next mic chunk.
+          return;
+        }
+
+        // Passthrough: no AEC or ref signal not received yet — send raw PCM
+        workletNode.port.postMessage({ pcm: event.data }, [event.data]);
+      }
+    };
+
+    ws.onclose = (event) => {
+      logger().info('bridge-ws-close', { code: event.code, reason: event.reason });
+      cleanup();
+
+      if (!configRef.current.enabled) {
+        setStatus('idle');
+        return;
+      }
+
+      // Don't retry if server explicitly rejected us
+      if (event.code === 1008 || event.code === 1011) {
+        setStatus('unavailable');
+        return;
+      }
+
+      setStatus('disconnected');
+      scheduleRetryRef.current();
+    };
+
+    ws.onerror = () => {
+      // onclose will fire after this — handle retry there
+      logger().debug('bridge-ws-error');
+    };
+  }, [cleanup, setupAudioPipeline]);
+
+  const scheduleRetry = useCallback(() => {
+    const delay = RETRY_DELAYS[Math.min(retryRef.current, RETRY_DELAYS.length - 1)];
+    retryRef.current++;
+    logger().info('bridge-retry-scheduled', { delay, attempt: retryRef.current });
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      if (configRef.current.enabled) {
+        connect();
+      }
+    }, delay);
+  }, [connect]);
+  scheduleRetryRef.current = scheduleRetry;
+
 
   // Update gain in real-time when config gain or master volume changes.
   // Effective bridge gain = configured gain × master.

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
+import { WetNoteGlyph } from './wetGlyphs.jsx';
 import {
-  WetNoteGlyph, staffPositionOf, stemDirectionFor, stemLengthUnits,
-  MIDDLE_LINE, STEM_LEN_UNITS, STEM_MIN_UNITS,
-} from './wetGlyphs.jsx';
+  staffPositionOf, stemDirectionFor, stemLengthUnits, MIDDLE_LINE, STEM_LEN_UNITS, STEM_MIN_UNITS,
+} from './wetGlyphGeometry.js';
 
 const STAVE = { top: 100, left: 50, right: 500, lineSpacing: 10 };
 // Same derivation as PendingLayer.test.jsx: top line 100, bottom line 100 + 4*10.

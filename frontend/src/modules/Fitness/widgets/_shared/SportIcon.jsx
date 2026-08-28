@@ -1,38 +1,5 @@
 import React from 'react';
-
-/**
- * Generate a deterministic hue from a string (sessionId).
- * Returns a hue 0-360 for use in HSL colors.
- */
-function seededHue(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash) % 360;
-}
-
-/**
- * Format a Strava type into a human-readable label.
- */
-function formatSportType(type) {
-  if (!type) return null;
-  const labels = {
-    Run: 'Run',
-    Ride: 'Ride',
-    WeightTraining: 'Weight Training',
-    Workout: 'Workout',
-    Yoga: 'Yoga',
-    Walk: 'Walk',
-    Hike: 'Hike',
-    Swim: 'Swim',
-    MountainBikeRide: 'Mountain Bike',
-    VirtualRide: 'Virtual Ride',
-    TrailRun: 'Trail Run',
-    VirtualRun: 'Virtual Run',
-  };
-  return labels[type] || type.replace(/([A-Z])/g, ' $1').trim();
-}
+import { seededHue } from './sportIconUtils.js';
 
 // Dumbbell (svgrepo, viewBox 0 0 25 25). Nested in its own viewBox so it scales into
 // the 48×48 frame and inherits the seeded currentColor. Shared by the generic Workout
@@ -124,5 +91,3 @@ export default function SportIcon({ type, sessionId, className = '', variant = '
     </div>
   );
 }
-
-export { seededHue, resolveIconType, formatSportType, SPORT_ICONS };

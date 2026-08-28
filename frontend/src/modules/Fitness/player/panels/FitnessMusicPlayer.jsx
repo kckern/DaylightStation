@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, u
 import { ContentDisplayUrl } from '@/lib/api.mjs';
 import Player from '@/modules/Player/Player.jsx';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
-import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume, logVolumeFromLevel, logLevelFromVolume } from './TouchVolumeButtons.jsx';
+import { TouchVolumeButtons } from './TouchVolumeButtons.jsx';
+import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume, logVolumeFromLevel, logLevelFromVolume } from './touchVolumeModel.js';
 import FitnessPlaylistSelector from './FitnessPlaylistSelector.jsx';
 import '../FitnessSidebar.scss';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';

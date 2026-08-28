@@ -4,7 +4,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 let response;
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve(response)) }));
 import { DaylightAPI } from '../../../lib/api.mjs';
-import PianoMenuActivity, { relativeTime, readShape, writeShape } from './PianoMenuActivity.jsx';
+import PianoMenuActivity from './PianoMenuActivity.jsx';
+import { relativeTime, readShape, writeShape } from './pianoMenuActivityModel.js';
 import { __clearPianoListCache } from './usePianoList.js';
 
 const NOW = Date.parse('2026-07-28T12:00:00Z');

@@ -1299,7 +1299,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Live data is read from refs (sessionRef/getUserVitalsRef/phaseRef) so the
     // interval is set up ONCE for the whole go→racing span and never starved by
     // context churn or torn down by the go→racing phase edge.
-  }, [isEngineLive, applySnapshot, recordRaceEvent, recordOvertimeEvent, log]);
+  }, [isEngineLive, applySnapshot, recordRaceEvent, recordOvertimeEvent, log, recordDramaEvent]);
 
   // ── pagehide best-effort save (audit C1) ─────────────────────────────────
   // A reload/crash may not give the periodic checkpoint a chance to run again

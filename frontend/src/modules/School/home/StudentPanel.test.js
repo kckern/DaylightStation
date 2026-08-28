@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { derivePanelModel, deriveLatestScore } from './StudentPanel.jsx';
+import { derivePanelModel, deriveLatestScore } from './studentPanelModel.js';
 
 const report = (over = {}) => ({
   program: 'language', instanceId: 'x', label: 'Glossika', state: 'active',

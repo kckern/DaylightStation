@@ -46,8 +46,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import CountryMap from '../map/CountryMap.jsx';
 import EraTimeline from '../map/EraTimeline.jsx';
-import { mapPinFrom } from './CountryMapModule.jsx';
-import { DISSOLVE_FADE_MS, prefersReducedMotion, useDissolve } from '../dissolve.js';
+import { mapPinFrom } from './countryMapPayload.js';
+import { prefersReducedMotion, useDissolve } from '../dissolve.js';
+import { PLACE_FADE_MS } from './placeCarouselTiming.js';
 import { countryCaptionFor, cityCaptionFor, eraCaptionFor } from '../placeCaption.js';
 import { smartQuotes, trimmed } from '../typography.js';
 import { surroundLogger, assetUrl } from '../moduleKit.js';
@@ -64,8 +65,6 @@ import './PlaceCarousel.scss';
  * one instant.
  */
 export const PLACE_SLIDE_MS = 12000;
-/** Each half of the dissolve — the house duration, shared with both fact rotations. */
-export const PLACE_FADE_MS = DISSOLVE_FADE_MS;
 
 export default function PlaceCarousel({
   // The clock arrives because the module contract is fixed. This module ignores

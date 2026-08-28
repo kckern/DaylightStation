@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { parseSchoolPath, schoolPathFor } from './SchoolApp.jsx';
+import { parseSchoolPath, schoolPathFor } from './schoolPathModel.js';
 
 // parseSchoolPath reads window.location.pathname; set it per case.
 function at(pathname) {

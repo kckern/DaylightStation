@@ -357,7 +357,7 @@ export function useCommonMediaController({
       duration,
       segment: segment ? { start: segStart, end: segEnd } : null
     });
-  }, [duration, getMediaEl, segStart, segDuration, assetId, segment, segStart, segEnd]);
+  }, [duration, getMediaEl, segStart, segDuration, assetId, segment, segEnd]);
 
   // Use centralized keyboard handler
   useMediaKeyboardHandler({
@@ -442,7 +442,7 @@ export function useCommonMediaController({
     } catch (_) {
       return false;
     }
-  }, [getMediaEl]);
+  }, [assetId, getMediaEl]);
 
   // Soft reinitialisation: rebuild dash element without tearing down React tree
   const softReinitRecovery = useCallback((options = {}) => {
@@ -561,7 +561,7 @@ export function useCommonMediaController({
         mcLog().debug('playback.position-watchdog', { mediaKey: assetId, status: 'ok', expected: expectedTime, actual, drift });
       }
     }, checkDelay);
-  }, [getMediaEl]);
+  }, [assetId, getMediaEl]);
 
   const scheduleStallDetection = useCallback(() => {
     const s = stallStateRef.current;
@@ -788,7 +788,7 @@ export function useCommonMediaController({
         scheduleStallDetection();
       }
     }, STALL_CHECK_INTERVAL_MS);
-  }, [getMediaEl, clearTimers, dismissStallSuspicion, publishStallSnapshot, nudgeRecovery, softReinitRecovery, recoveryScopeKey]);
+  }, [getMediaEl, clearTimers, assetId, dismissStallSuspicion, meta?.title, meta?.name, meta?.artist, meta?.album, meta?.grandparentTitle, meta?.parentTitle, publishStallSnapshot, recoveryScopeKey, nudgeRecovery, softReinitRecovery]);
 
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
@@ -840,7 +840,7 @@ export function useCommonMediaController({
       scheduleStallDetection();
     }
     // Continuous polling in scheduleStallDetection handles rescheduling
-  }, [clearTimers, dismissStallSuspicion, scheduleStallDetection, getMediaEl, publishStallSnapshot, recoveryScopeKey]);
+  }, [getMediaEl, dismissStallSuspicion, assetId, recoveryScopeKey, publishStallSnapshot, clearTimers, scheduleStallDetection]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();

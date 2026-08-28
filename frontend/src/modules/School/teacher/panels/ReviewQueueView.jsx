@@ -21,21 +21,13 @@
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
+import { waitAge } from './waitAge.js';
 
 const REASON_COPY = {
   ambiguous: 'the scanner could not tell which bubble was meant',
   blank: 'the row was left blank',
   free_response: 'a written answer needs a human mark',
 };
-
-export function waitAge(enqueuedAt, now = Date.now()) {
-  const at = Date.parse(enqueuedAt ?? '');
-  if (!Number.isFinite(at)) return null;
-  const mins = Math.max(0, Math.round((now - at) / 60_000));
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
-}
 
 export default function ReviewQueueView({ items, kids, onResolved }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id ?? 'Unknown';

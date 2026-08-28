@@ -10,6 +10,8 @@ import { shouldEmitTrackChanged } from '../lib/shouldEmitTrackChanged.js';
 // Same remount-survival pattern as the recovery ledger (lib/recoveryLedger.js).
 const _signatureCache = new Map();
 
+const classes = ['default', 'focused', 'night', 'blackout'];
+
 function withTimeout(promise, timeoutMs, kind, ctx) {
   if (!timeoutMs || timeoutMs <= 0) return promise;
   let timer;
@@ -31,7 +33,6 @@ function withTimeout(promise, timeoutMs, kind, ctx) {
  * Handles queue initialization, advancement, and shader management
  */
 export function useQueueController({ play, queue, clear, shuffle, onError, contentRef: contentRefArg, queueFetchTimeoutMs = null }) {
-  const classes = ['default', 'focused', 'night', 'blackout'];
   // Legacy aliases: multiple old names can map to the same canonical shader
   const shaderAliases = {
     dark: 'blackout',

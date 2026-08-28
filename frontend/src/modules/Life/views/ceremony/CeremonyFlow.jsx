@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import { Stack, Paper, Title, Text, Group, Button, Stepper, Alert, Anchor } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
 import { IconCheck, IconArrowRight, IconArrowLeft, IconAlertCircle } from '@tabler/icons-react';
@@ -32,18 +32,24 @@ export function CeremonyFlow({ type, username, onComplete }) {
   const ceremony = useCeremony(type, username);
   const { content, loading, error, submitError, step, nextStep, prevStep, submit, submitting, completed } = ceremony;
 
-  const steps = CEREMONY_STEPS[type] || ['Step 1', 'Step 2', 'Confirm'];
+  const steps = useMemo(() => CEREMONY_STEPS[type] || ['Step 1', 'Step 2', 'Confirm'], [type]);
   const implemented = type in CEREMONY_COMPONENTS;
   const CeremonyComponent = CEREMONY_COMPONENTS[type];
 
+  // `completed` is read through a ref in the cleanup rather than listed as a
+  // dependency: this effect must log 'started' exactly once per mount, and
+  // adding `completed` to the deps would re-fire it every time the ceremony
+  // completes. The ref keeps the exit log accurate without that re-fire.
+  const completedRef = useRef(completed);
+  completedRef.current = completed;
   useEffect(() => {
     logger.info('life.ceremony.started', { type, username });
-    return () => logger.info('life.ceremony.exited', { type, completed });
+    return () => logger.info('life.ceremony.exited', { type, completed: completedRef.current });
   }, [type, username, logger]);
 
   useEffect(() => {
     logger.info('life.ceremony.step', { type, step, stepLabel: steps[step] });
-  }, [step, type, logger]);
+  }, [step, type, logger, steps]);
 
   useEffect(() => {
     if (completed) {

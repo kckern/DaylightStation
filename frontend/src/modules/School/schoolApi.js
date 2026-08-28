@@ -406,6 +406,41 @@ export const schoolApi = {
   readingPlaying: (body) => req('/reading/playing', body),
   // `pickId` is the idempotency key: the same one twice is ONE read.
   readingRead: (body) => req('/reading/read', body),
+
+  // ── Media lesson with comprehension checkpoints ────────────────────────────
+  // (backend/src/4_api/v1/routers/mediaLesson.mjs, mounted at .../school/lesson)
+  //
+  // These four back a HARD gate, which is why they live here on the
+  // status-aware client rather than on DaylightAPI. `410 Gone` is the status
+  // that matters: it means the server no longer has that session, so the child
+  // is not paused waiting for a question — the lesson is over. It is passed
+  // THROUGH untouched, exactly like every other status. Normalizing it here
+  // (to an ok, or to a synthesized "ended" payload) would put the decision in
+  // the one place that cannot make it: only the caller knows whether a gone
+  // session means "close the overlay", "let the credits run", or "say nothing
+  // and keep playing" — and this file exists precisely so that choice stays
+  // with the caller.
+  //
+  // `sessionId` is server-minted and lands in a path segment, so it is encoded
+  // the same way `surfaceProfile` encodes its screen id.
+  lessonSession: (sessionId) => req(`/lesson/${encodeURIComponent(sessionId)}`),
+  lessonAnswer: (sessionId, body = {}) => req(`/lesson/${encodeURIComponent(sessionId)}/answer`, body),
+  // The playhead heartbeat (~15s while playing). It returns the same
+  // `{ok, status, data}` as everything else and is NOT fire-and-forget:
+  // `req()` already never throws, so the caller cannot be hurt by ignoring the
+  // result, but a heartbeat is also the first thing to learn that the session
+  // died (410) and the hook needs that to stop the timer. Discarding the
+  // answer here would throw away the only signal a heartbeat carries. What a
+  // caller must NOT do is surface a failed heartbeat as an error on screen.
+  // `position` is passed through UNCONDITIONALLY, never `position ? ... : ...`:
+  // a lesson resumed at the very start heartbeats at 0, and a truthiness test
+  // would drop exactly that one — the first heartbeat of every fresh lesson —
+  // while looking like a successful POST. It is also NOT defaulted: an omitted
+  // position must reach the server as absent, not as a fabricated 0.
+  lessonPosition: (sessionId, position) => req(`/lesson/${encodeURIComponent(sessionId)}/position`, { position }),
+  // The media element's own `ended` fired. A body-less POST still needs a body
+  // argument, for the same reason `answer()` defaults to `{}`.
+  lessonEnded: (sessionId) => req(`/lesson/${encodeURIComponent(sessionId)}/ended`, {}),
 };
 
 export default schoolApi;

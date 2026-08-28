@@ -14,6 +14,27 @@
  *
  * Starting playback is NEVER completion (§8). Nothing here records progress;
  * `RecordMediaCompletion` owns the other end.
+ *
+ * ## The checkpoint list rides along with the dispatch
+ *
+ * A gated unit's `checkpoints:` are handed back HERE, with the dispatch, so the
+ * screen that is about to start playing has its gate positions without a second
+ * round trip — one fewer request between "the video started" and "the gate is
+ * armed" is one fewer window in which a child reaches a stop that nothing is
+ * watching for. `already_playing` answers with the list too, which is the case
+ * that matters most: a screen that reloaded mid-lesson re-scans, and this is how
+ * it re-arms.
+ *
+ * **Ids and positions only — never the items.** A checkpoint's `items` name bank
+ * questions, and the bank holds the ANSWERS; the list travels to a browser a
+ * child is sitting in front of. `RecordCheckpointAnswer` serves the questions
+ * one at a time, and the grading never leaves the backend. This is the same rule
+ * `CurriculumAccess.summarise` states for unit summaries, applied to the one
+ * other payload that reaches the same screen.
+ *
+ * The list is ADVISORY. `RecordMediaCompletion` re-reads the unit and refuses a
+ * completion with anything outstanding, so a client that ignores, loses or edits
+ * what it is given here gains nothing.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
@@ -23,6 +44,21 @@ const DISPATCHABLE = new Set(['created', 'media_stalled']);
 
 /** Tolerates both spellings; household YAML uses snake_case, code camelCase. */
 const isChildSelectable = (target) => target?.childSelectable === true || target?.child_selectable === true;
+
+/**
+ * The gate positions, as a screen may see them: `{id, at}` and nothing else.
+ * Built by picking the two safe fields rather than by deleting `items` — a
+ * later field added to an authored checkpoint then stays behind by default
+ * instead of leaking on the day it is introduced.
+ *
+ * @param {object|null} unit
+ * @returns {Array<{id: string, at: number}>|null} null when the unit is
+ *   ungated, unreadable, or gone — all three mean "no gate to arm", and the
+ *   backend refuses the completion either way.
+ */
+const publicCheckpoints = (unit) => (Array.isArray(unit?.checkpoints)
+  ? unit.checkpoints.map(({ id, at }) => ({ id, at }))
+  : null);
 
 /**
  * Normalise the configured target list.
@@ -43,6 +79,7 @@ export class DispatchMedia {
    * @param {import('../CurriculumAccess.mjs').CurriculumAccess} deps.curriculum
    * @param {import('../ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
    * @param {{dispatch: Function}} deps.playback - playback adapter surface
+   *   (`{target, contentId, sessionId, learnerId, durationSec}` -> correlator)
    * @param {Array} [deps.targets] - configured playback targets
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
@@ -71,6 +108,7 @@ export class DispatchMedia {
    * @returns {Promise<{ status: 'dispatched'|'already_playing'|'unavailable'|'already_done',
    *                     sessionId: string, dispatchId: string|null, target: string|null,
    *                     contentId: string|null, durationSec: number|null,
+   *                     checkpoints: Array<{id: string, at: number}>|null,
    *                     message: string, document: object|null }>}
    */
   async execute({ sessionId, target = null } = {}) {
@@ -81,6 +119,8 @@ export class DispatchMedia {
 
     if (state.state === 'media_dispatched') {
       // The matrix row: no second dispatch, and a friendly answer either way.
+      // The list still comes back: this is the reloaded-screen case, and a gate
+      // it cannot see is a gate it cannot stop at.
       return {
         status: 'already_playing',
         sessionId,
@@ -88,6 +128,7 @@ export class DispatchMedia {
         target: state.mediaDispatch?.target ?? null,
         contentId: state.mediaDispatch?.contentId ?? null,
         durationSec: null,
+        checkpoints: publicCheckpoints(await this.#curriculum.getUnit(state.unitId)),
         message: 'It is already playing. Enjoy!',
         document: null,
       };
@@ -100,6 +141,7 @@ export class DispatchMedia {
         target: null,
         contentId: null,
         durationSec: null,
+        checkpoints: null,
         message: 'You already watched this one. Scan your card to see what is next.',
         document: noticeDocument({
           id: `watched-${sessionId}`,
@@ -124,6 +166,14 @@ export class DispatchMedia {
       dispatch = await this.#playback.dispatch({
         target: chosen.target.id,
         contentId: manifest.locator,
+        // The session id travels with the dispatch because a SCREEN target
+        // opens the lesson by fetching its own snapshot
+        // (`GET /school/lesson/:sessionId`) — see `ScreenPlaybackAdapter`. The
+        // adapter cannot derive it and this is the only caller that has it, so
+        // it is passed rather than invented. Required by every implementation
+        // of the port (`VirtualPlaybackAdapter`, `FakePlayback`) so a caller
+        // that forgot it cannot pass the tests and fail in the living room.
+        sessionId,
         learnerId: state.learnerId,
         durationSec: manifest.durationSec ?? 0,
       });
@@ -154,6 +204,7 @@ export class DispatchMedia {
       target: chosen.target.id,
       contentId: manifest.locator,
       durationSec: manifest.durationSec ?? null,
+      checkpoints: publicCheckpoints(unit),
       message: `Starting on ${chosen.target.label}.`,
       document: null,
     };
@@ -186,6 +237,7 @@ export class DispatchMedia {
       target: null,
       contentId: null,
       durationSec: null,
+      checkpoints: null,
       message: lines[reason],
       document: noticeDocument({
         id: `target-${reason}-${sessionId}`,
@@ -203,6 +255,7 @@ export class DispatchMedia {
       target: null,
       contentId: null,
       durationSec: null,
+      checkpoints: null,
       message: line,
       document: noticeDocument({
         id: `${id}-${sessionId ?? 'none'}`,

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/react';
-import WorkoutBuilder, {
+import WorkoutBuilder from './WorkoutBuilder.jsx';
+import {
   WORKOUTS_PATH,
   RUN_PATH,
   toDisplayList,
@@ -15,7 +16,7 @@ import WorkoutBuilder, {
   totalWorkSteps,
   parseSaveError,
   defaultWorkoutTitle
-} from './WorkoutBuilder.jsx';
+} from './workoutBuilderModel.js';
 // The real expansion, imported so the plan this screen AUTHORS is checked against the
 // ordering the runner will actually walk — not against a hand-written expectation that
 // could drift from the domain. (Test code runs under Node, where the path resolves;

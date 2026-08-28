@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo } from 'react';
-import { computeZoomTarget } from './ImageFrame.jsx';
+import { computeZoomTarget } from './imageFrameZoomTarget.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import './TitleCardRenderer.scss';
 
@@ -90,7 +90,7 @@ export function TitleCardRenderer({ media, advance, resilienceBridge }) {
     }, duration);
 
     return () => clearTimeout(timerRef.current);
-  }, [media?.id, duration, advance]);
+  }, [media?.id, duration, advance, card.template]);
 
   return (
     <div ref={containerRef} className={`titlecard ${themeClass}`}>

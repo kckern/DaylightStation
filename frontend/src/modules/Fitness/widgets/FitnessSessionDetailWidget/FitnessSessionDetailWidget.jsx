@@ -12,7 +12,7 @@ import SportIcon from '../_shared/SportIcon.jsx';
 import RouteMap from './RouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
-import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
+import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.js';
 import { selectPrimaryMedia, buildSelectionConfig } from '@/hooks/fitness/selectPrimaryMedia.js';
 import { mediaDisplayUrl, mediaIdentityKey } from './sessionDetailUtils.js';
 import { selectVideoMarkerEvents } from './timelineOverlay.js';
@@ -279,7 +279,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       stravaType: stravaBlock?.type || null,
       stravaHasMap: !!(stravaBlock?.map?.polyline),
     };
-  }, [sessionData]);
+  }, [sessionData, fitnessCtx?.plexConfig]);
 
   const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: !!header?.hasRecap, srcKey: header?.recapUrl });
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import SchoolMatrix, { deriveMatrix } from './SchoolMatrix.jsx';
+import SchoolMatrix from './SchoolMatrix.jsx';
+import { deriveMatrix } from './schoolMatrixModel.js';
 
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: {

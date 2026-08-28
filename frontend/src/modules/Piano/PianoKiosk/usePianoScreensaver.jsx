@@ -284,7 +284,7 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
       if (Date.now() - lastActivityRef.current >= thresholdMs) setScreen(false);
     }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [enabled, timeoutMinutes, offCooldownMinutes, setScreen]);
+  }, [enabled, timeoutMinutes, offCooldownMinutes, setScreen, deviceId]);
 }
 
 export default usePianoScreensaver;

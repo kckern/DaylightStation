@@ -54,7 +54,8 @@ vi.mock('../../../Emulator/ui/PlayerSelect.jsx', () => ({
   ) : null),
 }));
 
-import EmulatorGameWidget, { fullscreenClass } from './EmulatorGameWidget.jsx';
+import EmulatorGameWidget from './EmulatorGameWidget.jsx';
+import { fullscreenClass } from './emulatorGameWidgetLayout.js';
 
 const fitnessContext = {
   getUserVitals: () => ({ zoneId: 'warm' }),

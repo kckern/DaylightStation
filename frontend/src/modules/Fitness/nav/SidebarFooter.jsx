@@ -13,6 +13,9 @@ import { lookupZoneProgress } from '@/modules/Fitness/domain/zoneProgressIndex.j
 
 // Stable identity so a missing index doesn't churn the memos that read it.
 const EMPTY_ZONE_PROGRESS_INDEX = new Map();
+// Canonical zone ids (cool..fire) for a heart rate device. Module-level so it
+// is a stable reference for the callback below.
+const CANONICAL_ZONES = ['cool', 'active', 'warm', 'hot', 'fire'];
 
 const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   const { 
@@ -117,7 +120,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
       addFrom(usersConfigRaw.secondary);
     }
     return map;
-  }, [participantRoster, usersConfigRaw]);
+  }, [participantRoster, usersConfigRaw, participantsByDevice]);
 
   // Map deviceId -> user ID for avatars, plus participant lookup convenience
   const { userIdMap, participantByHrId } = React.useMemo(() => {
@@ -203,7 +206,6 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   };
 
   // Helper: derive canonical zone id (cool..fire) for a heart rate device or null
-  const canonicalZones = ['cool','active','warm','hot','fire'];
   const resolveDeviceKey = React.useCallback((device) => {
     if (!device) return null;
     const candidates = [device.deviceId, device.id, device.device_id, device.hrDeviceId];
@@ -244,7 +246,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
         zoneId = colorToZoneId[String(color).toLowerCase()] || String(color).toLowerCase();
       }
     }
-    if ((!zoneId || !canonicalZones.includes(zoneId)) && device.heartRate) {
+    if ((!zoneId || !CANONICAL_ZONES.includes(zoneId)) && device.heartRate) {
       const derived = deriveZoneFromHR(device.heartRate, userName);
       if (derived) {
         zoneId = derived.id;
@@ -254,7 +256,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
       return null;
     }
     zoneId = zoneId.toLowerCase();
-    return canonicalZones.includes(zoneId) ? zoneId : null;
+    return CANONICAL_ZONES.includes(zoneId) ? zoneId : null;
   }, [resolveDeviceParticipant, userCurrentZones, colorToZoneId, deriveZoneFromHR]);
 
   const getDeviceZoneColor = React.useCallback((device) => {

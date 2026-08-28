@@ -46,7 +46,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
-import PeriodSelect, { currentPeriodId } from './PeriodSelect.jsx';
+import PeriodSelect from './PeriodSelect.jsx';
+import { currentPeriodId } from './currentPeriodId.js';
 import { teacherDate, humanDateTime } from '../teacherDates.js';
 
 const IconCheck = () => (

@@ -33,6 +33,7 @@ import { bindBackButton, enableGlobalKeyCapture } from '../lib/fkb.js';
 import getLogger from '../lib/logging/Logger.js';
 import { useInitialActionGate } from './hooks/useInitialActionGate.js';
 import { ActionLoadingShell } from './ActionLoadingShell.jsx';
+import { layoutOwnsRouting } from './layoutOwnsRouting.js';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
@@ -53,26 +54,7 @@ enableGlobalKeyCapture();
  * Query-based autoplay emits on the ActionBus for the ScreenActionHandler.
  *
  * Runs once on mount, then cleans the URL to prevent re-triggering on reload.
- *
- * EXCEPTION — routing-owning widgets. A screen whose layout is a full-screen
- * app that owns its own URL (the Portal's `school` widget) keeps the path
- * suffix for the app to parse into its own deep-link state; the menu autoplay
- * must NOT swallow it or clean it away. Query-based autoplay (?queue=…, for
- * casting content OVER the app) still runs — only the path branch is skipped.
  */
-const ROUTING_OWNER_WIDGETS = new Set(['school']);
-
-export function layoutOwnsRouting(layout) {
-  const scan = (node) => {
-    if (!node) return false;
-    if (Array.isArray(node)) return node.some(scan);
-    if (typeof node !== 'object') return false;
-    if (typeof node.widget === 'string' && ROUTING_OWNER_WIDGETS.has(node.widget)) return true;
-    return Object.values(node).some(scan);
-  };
-  return scan(layout);
-}
-
 function ScreenAutoplay({ routes, layout }) {
   const { push } = useMenuNavigationContext();
 

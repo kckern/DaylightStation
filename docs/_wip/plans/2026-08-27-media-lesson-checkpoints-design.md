@@ -1,7 +1,7 @@
 # Media Lessons with Comprehension Checkpoints — Design
 
 **Date:** 2026-08-27
-**Status:** Validated design, pre-implementation
+**Status:** Implemented on `feature/media-lesson-checkpoints` (2026-08-27). Behaviour as built, plus the deployment ordering for the three data edits that are still outstanding, is documented at `docs/reference/school/media-lessons.md` — read that first; this file remains the record of the design reasoning, and a few of its decisions were resolved differently in code (dispatch stayed on the §8 `DispatchMedia` → playback-port path rather than routing through `DoNowService`; `OpenMediaLessonSession` landed as `ReadLessonSnapshot` over the existing work session). Not yet run on the living-room TV.
 **Prior art this builds on:** reading sessions (`docs/reference/school/reading-sessions.md`), fitness governance (`GovernanceEngine` + `pauseArbiter`), the DoNow surface/launcher pipeline, `OpenCatalogLearningSession`.
 
 ## Goal
@@ -53,10 +53,33 @@ two governors share no internals. The verdict IS the abstraction:
 /**
  * @typedef {object} GateVerdict
  * @property {boolean} blocked          playback may not proceed
- * @property {string}  reason           stable id for logs ('checkpoint', 'governance', …)
+ * @property {string}  id               stable governor id for logs ('checkpoint', 'governance', …)
  * @property {number|null} seekCeiling  furthest seekable position (s); null = unclamped
  */
+
+/**
+ * @typedef {object} PauseDecision
+ * @property {boolean} blocked          STANDING: some gate says no, right now
+ * @property {boolean} paused           ACT NOW: apply pause to the element
+ * @property {string}  reason           a PAUSE_REASON enum value (why `paused` is what it is)
+ * @property {string|null} gate         the blocking gate's `id`, whenever one is blocking
+ * @property {number|null} seekCeiling  composed min ceiling
+ */
 ```
+
+**`blocked` and `paused` are deliberately separate**, and the distinction is the
+whole reason the seeking rule is safe. While the element is mid-seek, pause is
+suppressed (`paused: false`) so gate events cannot thrash the player — but a
+checkpoint is still blocking, so `blocked` stays true and `gate` still names it.
+Collapsing the two would make "no opinion right now" indistinguishable from
+"released", and an enforcement layer reading only `paused` would call `play()`
+mid-seek on a gated lesson. Enforcement acts on `paused`; anything asking "may
+this proceed at all" reads `blocked`.
+
+`GateVerdict.id` is NOT called `reason`: the decision object already has a
+`reason` (the `PAUSE_REASON` enum), and one module carrying two different
+meanings for that word — with a third field, `gate`, holding the first one — is
+how a future governor writes the wrong field.
 
 ### `pauseArbiter` — promoted and N-ary
 
@@ -72,14 +95,20 @@ resolvePause({ seeking, gates = [], resilience, user })
   player's intrinsic states, not policy, and never become governors.
 - Priority unchanged: seeking suppresses everything (the anti-thrash rule),
   then any blocked gate, then buffering, then user.
-- `blocked` composes as OR across `gates`. Reported reason is the **first
+- `blocked` composes as OR across `gates`. The naming gate is the **first
   blocked gate in array order** — array order is priority, caller-declared,
-  no priority numbers. Result: `{ paused, reason: PAUSE_REASON.GATE, gate: '<id>' }`.
+  no priority numbers. `blocked` and `gate` are populated on EVERY branch,
+  including the seeking branch (see the `PauseDecision` note above).
 - `seekCeiling` composes as **min of non-null ceilings**, and applies even
   while unblocked — a ceiling is a standing rule, not a pause side-effect.
 - `PAUSE_REASON.GOVERNANCE` retires; `FitnessPlayer` (sole consumer) migrates
-  in the same change, passing `{ blocked, reason: 'governance' }` so its
-  telemetry keeps a stable gate id.
+  in the same change, passing `{ blocked, id: 'governance' }` so its telemetry
+  keeps a stable gate id.
+- **There is no legacy `governance` slot.** An alias was built during Task 1 as
+  migration insurance and then removed once `FitnessPlayer` was migrated in the
+  same change: it had zero production callers, and its only consumer was a test
+  written to exercise it. One way to say a thing (the DRY call, applied here
+  too).
 
 ### `GateVerdictContext` — cross-tree contribution
 
