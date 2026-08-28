@@ -840,8 +840,12 @@ export async function createSchoolLifecycle({
   // household's children — constructed HERE and injected, never imported by the
   // use case (D1: an application may not reach for an adapter).
   const companionCodes = new YamlCompanionCodeStore({ configService, logger });
+  // The SAME code-store instance `IssueDocument` mints against, deliberately:
+  // the record the print binds is the record the read-along satisfies, and a
+  // second instance over the same directory would only be a second way to
+  // describe one file.
   const companionHandlers = new LessonCompanionHandlers([
-    new ReadalongLessonCompanionHandler({ companions, clock }),
+    new ReadalongLessonCompanionHandler({ companions, companionCodes, clock, logger }),
   ]);
   const issuedArtifacts = new YamlIssuedArtifactStore({ configService });
   // Capture the same canvas the thermal raster path draws. The application
