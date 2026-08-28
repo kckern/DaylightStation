@@ -49,6 +49,9 @@ vi.mock('../Exercises/ExerciseRun.jsx', () => ({
         <button type="button" onClick={() => props.onFailed?.({ score: 0.41 })}>stub-fail</button>
         <button type="button" onClick={() => props.onExit?.()}>stub-exit</button>
         <button type="button" onClick={() => props.onUnavailable?.('instance-not-found')}>stub-dead-end</button>
+        {/* The run mounted, its material arrived, and it still cannot become an
+            ask — a score whose document will not engrave is the real case. */}
+        <button type="button" onClick={() => props.onUnavailable?.('unrunnable')}>stub-unrunnable</button>
         <button type="button" onClick={() => props.onUnavailable?.('no-access')}>stub-no-access</button>
       </div>
     );
@@ -339,12 +342,18 @@ describe('gate events', () => {
     expectEvent('gate.presented');
   });
 
-  it('a run that dead-ends after mounting is the same fail-open, tagged with the run reason', async () => {
+  it.each([
+    ['stub-dead-end', 'run-instance-not-found'],
+    // A score that fetched fine and then produced no ask — the document would
+    // not engrave, or the level named bars the file does not have. The child
+    // earned this game and can do nothing about either.
+    ['stub-unrunnable', 'run-unrunnable'],
+  ])('a run that dead-ends after mounting (%s) is the same fail-open, tagged with the run reason', async (button, error) => {
     const { onPassed } = renderGate({ learnerId: 'kid1' });
-    fireEvent.click(await screen.findByText('stub-dead-end'));
+    fireEvent.click(await screen.findByText(button));
 
     expect(onPassed).toHaveBeenCalledTimes(1);
-    expectEvent('gate.unavailable', { error: 'run-instance-not-found' });
+    expectEvent('gate.unavailable', { error });
   });
 
   it('no player chosen is NOT a fail-open — it is blocked, and logged as blocked', async () => {

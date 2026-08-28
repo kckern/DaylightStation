@@ -111,6 +111,11 @@ describe('resolveGateMaterial', () => {
     expect(await measuresFor([0, 3])).toBe(null); // bar 0 is not a bar
     expect(await measuresFor('1-4')).toBe(null); // not a pair at all
     expect(await measuresFor(undefined)).toBe(null);
+    // Bar 1.9 is not a bar. Truncating it into "bars 1 to 3" would be a guess
+    // that puts a child in front of music nobody asked for, with nothing on
+    // screen to say so — the exact failure this validation exists to refuse.
+    expect(await measuresFor([1.9, 3.2])).toBe(null);
+    expect(await measuresFor(['1', '4'])).toBe(null); // a bar number is a number
     expect(await measuresFor([3, 3])).toEqual([3, 3]); // one bar is a passage
   });
 

@@ -204,6 +204,23 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   }, []);
 
   /**
+   * The passage's OTHER terminal answer: there will be no expectation from this
+   * document. Without it a score run has no ending at all — `instance === null`
+   * but `score` holds the document, so nothing here reads as "not found", the
+   * run never becomes unavailable, and a child sits on "Getting the music
+   * ready…" until they give up and press Leave, forfeiting the game they earned
+   * and logging it as an abandonment rather than as the outage it was.
+   *
+   * `unrunnable` is the right terminal state and already exists: the gate reads
+   * it as infrastructure and fails open, which is what a child is owed when the
+   * music could not be put in front of them.
+   */
+  const handleScoreUnrunnable = useCallback((reason) => {
+    logger.warn('piano.exercise-score-unrunnable', { id: material?.source ?? null, reason });
+    setUnrunnable(true);
+  }, [logger, material]);
+
+  /**
    * What this run is OF, for everything that does not care which kind it is:
    * the header, the evidence, the completion log. A bank instance is its own
    * subject; a score stands in for one with the fields those three read.
@@ -385,6 +402,12 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
 
   const held = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const clickBpm = Number(requirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
+  // KNOWN GAP: a score reaches here with no `instance` and therefore no meter,
+  // so a cued passage is always counted in over FOUR beats — a 3/4 passage gets
+  // one beat too many. Only the count-in is affected: the tempo the attempt is
+  // GRADED at comes from the score's own compiled tempo map (see `countIn`
+  // below), so nothing is mis-judged. Closing it means the passage publishing
+  // its meter alongside its expectation.
   const beatsPerMeasure = useMemo(() => {
     const beats = Number(String(instance?.meter ?? '').split('/')[0]);
     return Number.isInteger(beats) && beats > 0 ? beats : 4;
@@ -668,6 +691,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
             sourceId={score.id}
             measures={score.measures}
             onExpectation={takeScoreExpectation}
+            onUnrunnable={handleScoreUnrunnable}
             cursorIndex={eventIndex}
             wrongMidi={lastWrong?.midi ?? null}
           />
