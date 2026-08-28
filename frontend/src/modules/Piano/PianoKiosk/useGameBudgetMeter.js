@@ -162,6 +162,40 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
     const idle = { current: false };
     const settling = { current: false };
     const closed = { current: true }; // no open session to close, by default
+    const warned = { current: false };
+
+    /**
+     * Land on `playing` or `warning` from the current local balance, and
+     * announce the CROSSING into `warning` exactly once.
+     *
+     * `budget.warning` is the design's layer-1 signal that a child is nearly
+     * out of time, and it is deliberately an EDGE rather than a state. The
+     * tick recomputes `warning` every second, so logging on the state would
+     * write one identical line per second for the whole warning window —
+     * with the shipped defaults, 300 lines per child per depletion, into a
+     * 7-day store, drowning the one line that carries information.
+     *
+     * The flag resets whenever the balance is back above the threshold,
+     * because a settle can return a LARGER `secondsLeft` than the local
+     * countdown held (the server is authoritative, and a household can raise
+     * an allowance mid-day). A second window in the same session is a second
+     * piece of news and says so.
+     */
+    const applyBalanceState = () => {
+      const warning = secondsLeftLocal.current <= warnAtSeconds.current;
+      if (!warning) {
+        warned.current = false;
+      } else if (!warned.current) {
+        warned.current = true;
+        log().info('budget.warning', {
+          learnerId,
+          sessionId: sessionId.current,
+          secondsLeft: secondsLeftLocal.current,
+          warnAtSeconds: warnAtSeconds.current,
+        });
+      }
+      setState(warning ? 'warning' : 'playing');
+    };
 
     const clearTick = () => {
       if (tickHandle != null) {
@@ -224,10 +258,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
         }
 
         log().debug('budget.settled', { learnerId, sessionId: sessionId.current, cumulativeSeconds });
-        if (!idle.current) {
-          const warning = secondsLeftLocal.current <= warnAtSeconds.current;
-          setState(warning ? 'warning' : 'playing');
-        }
+        if (!idle.current) applyBalanceState();
       } catch (err) {
         if (cancelled) return;
 
@@ -287,8 +318,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
       secondsLeftLocal.current = Math.max(0, secondsLeftLocal.current - 1);
       setSecondsLeft(secondsLeftLocal.current);
 
-      const warning = secondsLeftLocal.current <= warnAtSeconds.current;
-      setState(warning ? 'warning' : 'playing');
+      applyBalanceState();
 
       secondsSinceSettle.current += 1;
       if (secondsSinceSettle.current >= settleIntervalSec.current) {
@@ -379,7 +409,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
         if (idle.current) {
           setState('idle-paused');
         } else {
-          setState(secondsLeftLocal.current <= warnAtSeconds.current ? 'warning' : 'playing');
+          applyBalanceState();
         }
 
         clearTick();
