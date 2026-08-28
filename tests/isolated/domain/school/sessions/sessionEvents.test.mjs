@@ -142,6 +142,29 @@ describe('append-only teacher grade corrections', () => {
     expect(reduceSession(events).outcome).toMatchObject({ result: 'passed', adjustmentId: 'adj_eraser' });
   });
 
+  it('carries the REASON with the projected result, so the record cannot contradict itself', () => {
+    // The projection used to re-derive `result` and spread the old `reason`
+    // over it, which produced records asserting `passed` beside
+    // `below_passing` — and, until this projection asked the same rule
+    // `evaluateOutcome` asks, `passed` beside `companion_incomplete`. Anything
+    // reading `reason` to decide what to say next (the receipt's gate lines,
+    // the retry ticket) was then reading a stale answer to a question that had
+    // since been re-asked.
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { percent: 60, passingPercent: 80, correctCount: 3, totalCount: 5 },
+      outcome_recorded: { result: 'needs_remediation', reason: 'below_passing' },
+    });
+    events.push(ev('grade_adjusted', {
+      adjustmentId: 'adj_1', percent: 100, correctCount: 5, totalCount: 5,
+      reason: 'misread the eraser on every row', adjustedBy: 'parent1',
+    }));
+    const state = reduceSession(events);
+    expect(state.outcome).toMatchObject({ result: 'passed', reason: 'met_passing' });
+    // The machine's own verdict is untouched: what a person corrected and what
+    // the scanner originally decided stay separately readable.
+    expect(state.machineOutcome).toMatchObject({ result: 'needs_remediation', reason: 'below_passing' });
+  });
+
   it('retraction restores the machine grade without deleting correction history', () => {
     const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
       graded: { percent: 60, passingPercent: 80 }, outcome_recorded: { result: 'needs_remediation' },
