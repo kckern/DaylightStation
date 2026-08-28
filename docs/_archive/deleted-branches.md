@@ -317,3 +317,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-08-27 | chore/gate-vitest-covers-frontend | df722fb7d | vitest gate covers frontend (+1158 files); fixed latent shell E2BIG |
 | 2026-08-27 | feature/piano-lesson-gate | b05582568 | Piano kiosk today's-lesson gate + Teacher Console parent day-bypass; merged to main and pushed, not yet run against a live stack |
 | 2026-08-27 | fix/piano-menu-activity-shape-race | c0b7577b3 | PianoMenuActivity shape assertion waited on paint not on the write |
+| 2026-08-27 | feature/media-lesson-checkpoints | d92133823 | Hard-gated media lessons: video/audio on the living-room TV pausing at curriculum-authored checkpoints for retry-until-correct comprehension questions. 19 tasks; merged to main. |
