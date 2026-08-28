@@ -39,6 +39,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import { activitySignal } from './activitySignal.js';
+import { clientStudyDate } from './clientStudyDate.js';
 
 // Lazy module logger (avoids import-time timing issues; never raw console).
 let _log;
@@ -165,6 +166,31 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
     const warned = { current: false };
 
     /**
+     * Every meter line, stamped with the four identity fields the design
+     * requires of ALL budget and gate events: `learnerId`, `deviceId`,
+     * `studyDate`, `sessionId`. Routed through one helper rather than spelled
+     * at fourteen call sites, so the contract cannot drift a field at a time.
+     *
+     * `deviceId` is the field that answers "which tablet burned the device
+     * cap this afternoon" — the device-wide cap is shared across kiosks, so a
+     * budget line without it can only be joined back to a tablet through
+     * whichever `budget.opened` happened to carry the same session id, which
+     * is a join an operator has to know to make and the seven-day window may
+     * already have dropped.
+     *
+     * `studyDate` is computed HERE, per line, not captured when the session
+     * opened: the household day rolls at 4am and a late-evening match can
+     * outlive it, so a captured value would file the tail of a session under
+     * the wrong day and disagree with the day file the server actually
+     * charged.
+     */
+    const emit = (level, event, data = {}) => {
+      log()[level](event, {
+        learnerId, deviceId, studyDate: clientStudyDate(), sessionId: sessionId.current, ...data,
+      });
+    };
+
+    /**
      * Land on `playing` or `warning` from the current local balance, and
      * announce the CROSSING into `warning` exactly once.
      *
@@ -187,9 +213,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
         warned.current = false;
       } else if (!warned.current) {
         warned.current = true;
-        log().info('budget.warning', {
-          learnerId,
-          sessionId: sessionId.current,
+        emit('info', 'budget.warning', {
           secondsLeft: secondsLeftLocal.current,
           warnAtSeconds: warnAtSeconds.current,
         });
@@ -220,9 +244,8 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
       try {
         await api.close({ learnerId, sessionId: sessionId.current, cumulativeSeconds });
       } catch (err) {
-        log().warn('budget.settle-failed', {
-          learnerId, sessionId: sessionId.current, cumulativeSeconds, phase: 'close',
-          error: err && err.message,
+        emit('warn', 'budget.settle-failed', {
+          cumulativeSeconds, phase: 'close', error: err && err.message,
         });
       }
     }
@@ -245,19 +268,19 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
         }
 
         if (res?.depleted) {
-          log().info('budget.depleted', { learnerId, sessionId: sessionId.current, cumulativeSeconds });
+          emit('info', 'budget.depleted', { cumulativeSeconds });
           setState('depleted');
           await closeSession();
           return;
         }
         if (res?.deviceDepleted) {
-          log().info('budget.device-depleted', { learnerId, sessionId: sessionId.current, cumulativeSeconds });
+          emit('info', 'budget.device-depleted', { cumulativeSeconds });
           setState('device-depleted');
           await closeSession();
           return;
         }
 
-        log().debug('budget.settled', { learnerId, sessionId: sessionId.current, cumulativeSeconds });
+        emit('debug', 'budget.settled', { cumulativeSeconds });
         if (!idle.current) applyBalanceState();
       } catch (err) {
         if (cancelled) return;
@@ -271,9 +294,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
           // the tick and fail open rather than lock the child out; do NOT
           // call closeSession() — this session isn't ours, and closing it
           // would 409 the same way.
-          log().warn('budget.learner-mismatch', {
-            learnerId, sessionId: sessionId.current, cumulativeSeconds, error: err && err.message,
-          });
+          emit('warn', 'budget.learner-mismatch', { cumulativeSeconds, error: err && err.message });
           clearTick();
           closed.current = true; // not ours to close
           setState('unavailable');
@@ -285,9 +306,8 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
         // resends a larger cumulative total. The timeout race is what keeps
         // a hung fetch from wedging `settling` shut (see SETTLE_TIMEOUT_MS)
         // for the rest of the session.
-        log().warn('budget.settle-failed', {
-          learnerId, sessionId: sessionId.current, cumulativeSeconds,
-          error: err && err.message, timedOut: !!err?.timedOut,
+        emit('warn', 'budget.settle-failed', {
+          cumulativeSeconds, error: err && err.message, timedOut: !!err?.timedOut,
         });
       } finally {
         settling.current = false;
@@ -302,7 +322,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
       if (idleNow) {
         if (!idle.current) {
           idle.current = true;
-          log().info('budget.idle-paused', { learnerId, sessionId: sessionId.current });
+          emit('info', 'budget.idle-paused', {});
           setState('idle-paused');
         }
         return;
@@ -310,7 +330,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
 
       if (idle.current) {
         idle.current = false;
-        log().info('budget.idle-resumed', { learnerId, sessionId: sessionId.current });
+        emit('info', 'budget.idle-resumed', {});
         // Fall through: this tick counts as active time immediately.
       }
 
@@ -339,7 +359,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
           // household config doesn't fill level:warn triage with a
           // "failure" that never happened (this is the default today: the
           // live piano config has no gameLimit block).
-          log().debug('budget.disabled', { learnerId, deviceId });
+          emit('debug', 'budget.disabled', {});
           setState('off');
           return;
         }
@@ -366,9 +386,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
           totalSeconds.current = seed;
         } else {
           totalSeconds.current = 0;
-          log().warn('budget.seed-invalid', {
-            learnerId, sessionId: sessionId.current, cumulativeSeconds: seed,
-          });
+          emit('warn', 'budget.seed-invalid', { cumulativeSeconds: seed });
         }
 
         secondsLeftLocal.current = Number.isFinite(res.secondsLeft) ? Math.max(0, res.secondsLeft) : 0;
@@ -395,12 +413,12 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
         const deviceSecondsLeft = Number.isFinite(res.deviceSecondsLeft)
           ? res.deviceSecondsLeft : Infinity;
         if (learnerSecondsLeft <= 0) {
-          log().info('budget.depleted', { learnerId, sessionId: sessionId.current, atOpen: true });
+          emit('info', 'budget.depleted', { atOpen: true });
           setState('depleted');
           return;
         }
         if (deviceSecondsLeft <= 0) {
-          log().info('budget.device-depleted', { learnerId, sessionId: sessionId.current, atOpen: true });
+          emit('info', 'budget.device-depleted', { atOpen: true });
           setState('device-depleted');
           return;
         }
@@ -416,7 +434,7 @@ export default function useGameBudgetMeter({ learnerId, deviceId, active, api = 
         tickHandle = setInterval(tick, TICK_MS);
       } catch (err) {
         if (cancelled) return;
-        log().warn('budget.open-failed', { learnerId, deviceId, error: err && err.message });
+        emit('warn', 'budget.open-failed', { error: err && err.message });
         setState('unavailable');
       }
     }

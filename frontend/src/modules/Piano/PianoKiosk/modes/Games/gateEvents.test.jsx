@@ -68,7 +68,17 @@ const DEVICE = 'yellow-room-tablet';
 // Values are the fields a consumer of that event actually queries on; a name
 // with no path that emits it, or a path that emits it without these fields,
 // fails the coverage gate at the bottom of this file.
-const GATE_IDENTITY = ['learnerId', 'deviceId', 'studyDate', 'sessionId'];
+//
+// `IDENTITY` is the four fields the design requires of EVERY event in the
+// table, gate and budget alike. It is deliberately the same list on both
+// sides: an operator asking "which tablet burned the device cap this
+// afternoon" queries `data.deviceId` directly, and a budget line that carried
+// only `learnerId` + `sessionId` would answer that question with zero rows
+// while looking perfectly healthy. `studyDate` is what pulls one evening back
+// out of the store as a unit — the household day rolls at 4am, so a
+// calendar-date filter splits a late match in half.
+const IDENTITY = ['learnerId', 'deviceId', 'studyDate', 'sessionId'];
+const GATE_IDENTITY = IDENTITY;
 const DECLARED = {
   'gate.presented': [...GATE_IDENTITY, 'rung', 'material', 'mode', 'attemptId'],
   'gate.attempt': [...GATE_IDENTITY, 'rung', 'material', 'mode', 'attemptId'],
@@ -81,10 +91,10 @@ const DECLARED = {
   'gate.unavailable': [...GATE_IDENTITY, 'rung', 'error'],
   'gate.blocked': [...GATE_IDENTITY, 'rung', 'reason'],
   'gate.material-skipped': [...GATE_IDENTITY, 'rung', 'kind', 'reason'],
-  'budget.idle-paused': ['learnerId', 'sessionId'],
-  'budget.idle-resumed': ['learnerId', 'sessionId'],
-  'budget.warning': ['learnerId', 'sessionId', 'secondsLeft', 'warnAtSeconds'],
-  'budget.open-failed': ['learnerId', 'deviceId', 'error'],
+  'budget.idle-paused': [...IDENTITY],
+  'budget.idle-resumed': [...IDENTITY],
+  'budget.warning': [...IDENTITY, 'secondsLeft', 'warnAtSeconds'],
+  'budget.open-failed': [...IDENTITY, 'error'],
 };
 
 /** Names asserted-with-fields so far, across every test in this file. */
@@ -229,14 +239,20 @@ describe('gate events', () => {
   });
 
   it('a climb is the same event in the other direction', async () => {
+    // EXACTLY ONE gate is mounted here, deliberately. An earlier version of
+    // this test rendered a second gate for another learner alongside it and
+    // clicked `findAllByText('stub-pass').at(-1)` — but `findAllBy*` resolves
+    // as soon as the FIRST match appears, so under load it returned one
+    // button and `.at(-1)` drove whichever gate happened to mount first. When
+    // that was the learner sitting at the top of the ladder, `climbRung`
+    // returned the same rung and `gate.rung-changed` never fired: green in
+    // isolation, red in a full sweep. A second mounted gate also pollutes the
+    // shared `lines()` pool, so `expectEvent` could match the other gate's
+    // event even on a passing run. One gate, `findByText` singular — which
+    // additionally FAILS if a second run ever mounts.
+    seedRung('kid1', degradeRung(initialRung()));
     renderGate({ learnerId: 'kid1', gateConfig: { climbAfterCleanPasses: 1 } });
-    // Start one rung down so there is something to climb back to.
-    localStorage.clear();
-    localStorage.setItem(KIOSK_DEVICE_STORAGE_KEY, DEVICE);
-    seedRung('kid2', degradeRung(initialRung()));
-    renderGate({ learnerId: 'kid2', gateConfig: { climbAfterCleanPasses: 1 } });
-    const buttons = await screen.findAllByText('stub-pass');
-    fireEvent.click(buttons.at(-1));
+    fireEvent.click(await screen.findByText('stub-pass'));
 
     const changed = expectEvent('gate.rung-changed', { direction: 'climb' });
     expect(changed.from).toEqual(degradeRung(initialRung()));
@@ -368,6 +384,11 @@ describe('budget meter events', () => {
     const paused = expectEvent('budget.idle-paused');
     expect(paused.learnerId).toBe('kid1');
     expect(paused.sessionId).toBe('sess_1');
+    // The same identity contract the gate honours. A budget line that named
+    // only the child cannot answer "which tablet", and the device cap is
+    // shared ACROSS tablets — that is the question it exists to answer.
+    expect(paused.deviceId).toBe(DEVICE);
+    expect(paused.studyDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     act(() => { activitySignal.bump(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
@@ -391,6 +412,8 @@ describe('budget meter events', () => {
     expect(warning.secondsLeft).toBe(60);
     expect(warning.warnAtSeconds).toBe(60);
     expect(warning.sessionId).toBe('sess_1');
+    // `"budget.warning" AND data.deviceId:<tablet>` has to return rows.
+    expect(warning.deviceId).toBe(DEVICE);
 
     // An EDGE, not a state: the tick recomputes `warning` every second, and a
     // per-second line would put 60 identical entries in the store for this one
