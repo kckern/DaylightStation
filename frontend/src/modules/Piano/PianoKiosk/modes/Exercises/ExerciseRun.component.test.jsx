@@ -9,7 +9,7 @@ import { requirementForLevel } from '../Games/gateAsk.js';
  *
  * The gate no longer produces one — every repertoire level is verdict-driven
  * (`requirementForLevel` returns `passScore: null`). But `ExerciseRun` still
- * honours `requirementOverride.passScore` for any host that sets one, program
+ * honours `requirement.passScore` for any host that sets one, program
  * steps included, and the specs below are that path's only coverage. Keeping
  * the shape here rather than importing it from a module the gate has retired
  * is what stops the coverage disappearing along with the ladder.
@@ -36,7 +36,7 @@ const h = vi.hoisted(() => ({
   // Per-test instance override; null means "use the standard fixture".
   instanceData: null,
   // Per-test knobs for the run's two terminal-state doors.
-  instanceOk: true,
+  instanceMissing: false,
   currentUser: 'learner4',
   instance: {
     id: 'scales/c-major@test',
@@ -53,6 +53,23 @@ const h = vi.hoisted(() => ({
     ],
   },
 }));
+
+/**
+ * WHAT THIS RUN IS OF, the only way it can now be told.
+ *
+ * `ExerciseRun` no longer resolves anything for itself: the `instanceId`/
+ * `material` compatibility path it used to load through was deleted with the
+ * last host that used it (ask-platform SP1, task 6), and `AskSession` hands
+ * down a settled `instance`/`score`/`requirement` instead. Every mount below
+ * therefore names its subject directly — the same object the bank stub used to
+ * answer with, arriving through the door the session actually uses.
+ *
+ * Read at CALL time, so a case that shapes its own material sets
+ * `h.instanceData` first and this picks it up, exactly as the stub did.
+ * `h.instanceMissing` is "the host settled on nothing" — `instance: null`
+ * beside `score: null`, which is what `notFound` reads.
+ */
+const subject = () => (h.instanceMissing ? null : h.instanceData ?? h.instance);
 
 vi.mock('../../../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => h.log }),
@@ -119,14 +136,9 @@ vi.mock('../../../ask/askSchema.js', async (importOriginal) => {
     },
   };
 });
-vi.mock('./pianoLearningApi.js', () => ({
-  pianoLearningApi: {
-    instance: vi.fn(async () => (h.instanceOk
-      ? { ok: true, data: h.instanceData ?? h.instance }
-      : { ok: false, status: 502, data: null })),
-    program: vi.fn(async () => ({ ok: false, data: null })),
-  },
-}));
+// NO `pianoLearningApi` DOUBLE, deliberately: this surface no longer reaches
+// the bank at all. If one grows back here it means resolution has grown a
+// second owner, and the mount should be moved to `AskSession` instead.
 vi.mock('../SheetMusic/useMetronomeClick.js', () => ({ useMetronomeClick: (...args) => h.metronome(...args) }));
 vi.mock('../../../performance/attemptEvidence.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -155,7 +167,7 @@ vi.mock('../../../performance/assessmentSession.js', async (importOriginal) => {
 function resetHarness() {
   h.activeNotes = new Map();
   h.instanceData = null;
-  h.instanceOk = true;
+  h.instanceMissing = false;
   h.currentUser = 'learner4';
   h.deriveStageCalls = [];
   h.record.mockReset();
@@ -204,7 +216,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   };
 
   it('drives MIDI through the shared cursor runtime and persists completed practice evidence', async () => {
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
 
@@ -234,9 +246,9 @@ describe('ExerciseRun shared assessment wiring', () => {
 
   it('requirement.policy overrides the hardcoded defaults', async () => {
     const props = {
-      instanceId: h.instance.id,
+      instance: subject(), score: null,
       intent: 'challenge',
-      requirementOverride: { mode: 'free', policy: { wrongWindow: 5 } },
+      requirement: { mode: 'free', policy: { wrongWindow: 5 } },
       onExit: vi.fn(),
       onPassed: vi.fn(),
     };
@@ -253,7 +265,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   });
 
   it('a wrong event exposes the played midi', async () => {
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     // The wrong note has to land INSIDE a running attempt now: a stray note in
     // the ready phase is a child finding their hands, not a wrong answer.
@@ -276,11 +288,11 @@ describe('ExerciseRun shared assessment wiring', () => {
     // The repertoire floor: rubric `{criteria:{completeness:1}}`, cleanliness
     // deliberately absent. A child who has already walked the ladder to the
     // bottom must be able to finish. Wrong notes are recorded, not disqualifying.
-    const requirementOverride = requirementForLevel(BUILT_IN_FLOOR);
-    expect(requirementOverride.rubric).toEqual({ criteria: { completeness: 1 } });
-    expect(requirementOverride.passScore).toBeNull();
+    const requirement = requirementForLevel(BUILT_IN_FLOOR);
+    expect(requirement.rubric).toEqual({ criteria: { completeness: 1 } });
+    expect(requirement.passScore).toBeNull();
 
-    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     // Same five notes, same evidence — only the order moved: the arming note
     // starts the run, and the three wrongs land against event two.
@@ -306,11 +318,11 @@ describe('ExerciseRun shared assessment wiring', () => {
   // on the score or every child clears it instantly.
 
   it('a non-floor rung below its passScore is not a pass, whatever the engine verdict says', async () => {
-    const requirementOverride = withPassScore({ passScore: 0.8 });
-    expect(requirementOverride).toMatchObject({ mode: 'free', passScore: 0.8 });
-    expect(requirementOverride.rubric).toBeUndefined();
+    const requirement = withPassScore({ passScore: 0.8 });
+    expect(requirement).toMatchObject({ mode: 'free', passScore: 0.8 });
+    expect(requirement.rubric).toBeUndefined();
 
-    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await armFree(view, props);
     press(view, props, 61);
@@ -330,8 +342,8 @@ describe('ExerciseRun shared assessment wiring', () => {
   });
 
   it('a non-floor rung at or above its passScore passes, and hands the result to the host', async () => {
-    const requirementOverride = withPassScore({ passScore: 0.8 });
-    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const requirement = withPassScore({ passScore: 0.8 });
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await armFree(view, props);
     press(view, props, 62); // clean run -> score 1
@@ -346,10 +358,10 @@ describe('ExerciseRun shared assessment wiring', () => {
 
   it('a cued requirement on a tempo-less instance degrades instead of blanking the kiosk', async () => {
     h.instanceData = { ...h.instance, tempo: undefined };
-    const requirementOverride = cuedRequirement({ passScore: 0.8 });
-    expect(requirementOverride.mode).toBe('cued');
+    const requirement = cuedRequirement({ passScore: 0.8 });
+    expect(requirement.mode).toBe('cued');
 
-    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
     render(<ExerciseRun {...props} />);
 
     expect(await screen.findByText(/Cannot start this one/)).toBeInTheDocument();
@@ -366,9 +378,9 @@ describe('ExerciseRun shared assessment wiring', () => {
     // missed attempt from a walked-away one. `onExit` cannot do that: it fires
     // for the header Exit too, so counting it would let a player reach the
     // easiest rung without touching a key.
-    const requirementOverride = withPassScore({ passScore: 0.8 });
+    const requirement = withPassScore({ passScore: 0.8 });
     const props = {
-      instanceId: h.instance.id, intent: 'challenge', requirementOverride,
+      instance: subject(), score: null, intent: 'challenge', requirement,
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
@@ -385,9 +397,9 @@ describe('ExerciseRun shared assessment wiring', () => {
   });
 
   it('does not report a pass as a failure', async () => {
-    const requirementOverride = withPassScore({ passScore: 0.8 });
+    const requirement = withPassScore({ passScore: 0.8 });
     const props = {
-      instanceId: h.instance.id, intent: 'challenge', requirementOverride,
+      instance: subject(), score: null, intent: 'challenge', requirement,
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
@@ -399,7 +411,11 @@ describe('ExerciseRun shared assessment wiring', () => {
   });
 
   it.each([
-    ['the instance fetch fails', { instanceOk: false }, 'instance-not-found', /Exercise not found/],
+    // "Settled with nothing" is what a failed resolution reaches this surface
+    // AS: the session reports its own reason and hands down `instance: null`
+    // beside `score: null`. The fetch that produced it is `AskSession`'s to
+    // fail — the door being pinned here is this run's reading of the result.
+    ['the host settled on no material', { missing: true }, 'instance-not-found', /Exercise not found/],
     ['the attempt cannot be built', { instanceData: null, tempoLess: true }, 'unrunnable', /Cannot start this one/],
     ['a guest opens a challenge', { currentUser: 'guest' }, 'no-access', /Choose a player/],
   ])('reports a dead end through onUnavailable when %s', async (_label, setup, reason, copy) => {
@@ -407,13 +423,13 @@ describe('ExerciseRun shared assessment wiring', () => {
     // A host that mounted this run without chrome of its own — the game gate
     // does exactly that — would strand a child there with no callback and no
     // way forward.
-    if (setup.instanceOk === false) h.instanceOk = false;
+    if (setup.missing) h.instanceMissing = true;
     if (setup.tempoLess) h.instanceData = { ...h.instance, tempo: undefined };
     if (setup.currentUser) h.currentUser = setup.currentUser;
 
     const props = {
-      instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: cuedRequirement({ passScore: 0.8 }),
+      instance: subject(), score: null, intent: 'challenge',
+      requirement: cuedRequirement({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(), onUnavailable: vi.fn(),
     };
     render(<ExerciseRun {...props} />);
@@ -426,8 +442,8 @@ describe('ExerciseRun shared assessment wiring', () => {
   it('a run given neither callback behaves exactly as it always did', async () => {
     // The practice surface passes neither. Nothing may throw, and the existing
     // empty state must still be what a player sees.
-    h.instanceOk = false;
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    h.instanceMissing = true;
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     render(<ExerciseRun {...props} />);
     expect(await screen.findByText(/Exercise not found/)).toBeInTheDocument();
   });
@@ -440,8 +456,8 @@ describe('ExerciseRun shared assessment wiring', () => {
     // and a host that fails open on that hands out a free game every reload.
     h.currentUser = null;
     const props = {
-      instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: cuedRequirement({ passScore: 0.8 }),
+      instance: subject(), score: null, intent: 'challenge',
+      requirement: cuedRequirement({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(), onUnavailable: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
@@ -458,9 +474,9 @@ describe('ExerciseRun shared assessment wiring', () => {
     // paint. Rendering this panel too would flash "Keep working" with two
     // tappable buttons — Retry and Practice first — for a frame before the host
     // swapped it out. On a tablet that is a mis-tap, not a blink.
-    const requirementOverride = withPassScore({ passScore: 0.8 });
+    const requirement = withPassScore({ passScore: 0.8 });
     const props = {
-      instanceId: h.instance.id, intent: 'challenge', requirementOverride,
+      instance: subject(), score: null, intent: 'challenge', requirement,
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
@@ -479,8 +495,8 @@ describe('ExerciseRun shared assessment wiring', () => {
   it('still shows its own panel when no host took onFailed', async () => {
     // The practice surface and the program flow pass neither callback; their
     // result panel is the only one there is and must be untouched.
-    const requirementOverride = withPassScore({ passScore: 0.8 });
-    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const requirement = withPassScore({ passScore: 0.8 });
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await armFree(view, props);
     press(view, props, 61);
@@ -495,9 +511,9 @@ describe('ExerciseRun shared assessment wiring', () => {
   it('a host that took onFailed still gets the run’s own pass panel', async () => {
     // Only the FAILURE panel is the host's business. `onPassed` is
     // player-driven, so Continue must still be there to press.
-    const requirementOverride = withPassScore({ passScore: 0.8 });
+    const requirement = withPassScore({ passScore: 0.8 });
     const props = {
-      instanceId: h.instance.id, intent: 'challenge', requirementOverride,
+      instance: subject(), score: null, intent: 'challenge', requirement,
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
@@ -513,7 +529,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   // to tap, no second gesture between a child and the first note.
 
   it('a free ask arms on the first expected note, and that note is the first graded note', async () => {
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
     expect(h.start).not.toHaveBeenCalled();
@@ -532,7 +548,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   it('a free ask ignores a note it did not ask for, and stays ready', async () => {
     // A child finding their hands is not a wrong answer. Nothing starts,
     // nothing is graded, and nothing flashes red.
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
 
@@ -549,10 +565,10 @@ describe('ExerciseRun shared assessment wiring', () => {
   it('a cued ask arms on ANY key, counts in one measure, and does not grade the arming key', async () => {
     // 4/4 at 60bpm — one measure is exactly four seconds of count-in.
     h.instanceData = { ...h.instance, tempo: { start_bpm: 60 } };
-    const requirementOverride = cuedRequirement({ passScore: 0.8 });
-    expect(requirementOverride.mode).toBe('cued');
+    const requirement = cuedRequirement({ passScore: 0.8 });
+    expect(requirement.mode).toBe('cued');
 
-    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText("Press any key to start. You'll hear 4 clicks, then play at that speed.");
     // The click is silent until a key arms the run.
@@ -579,8 +595,8 @@ describe('ExerciseRun shared assessment wiring', () => {
       tempo: undefined,
       events: [{ id: 'only', value: 'quarter', notes: [{ midi: 60, hand: 'right' }] }],
     };
-    const requirementOverride = cuedRequirement({ passScore: 0.8 });
-    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const requirement = cuedRequirement({ passScore: 0.8 });
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText("Press any key to start. You'll hear 4 clicks, then play at that speed.");
 
@@ -599,7 +615,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     // The mode's whole promise is a grid to settle into, and the first note is
     // now what starts the run — a click that waits for `running` arrives after
     // the moment it exists to guide.
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'metronome', onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'metronome', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
 
@@ -617,7 +633,7 @@ describe('ExerciseRun shared assessment wiring', () => {
       ordering: 'any',
       events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60, hand: 'right' }, { midi: 64, hand: 'right' }] }],
     };
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
 
@@ -647,7 +663,7 @@ describe('ExerciseRun shared assessment wiring', () => {
       ordering: 'any',
       events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60, hand: 'right' }, { midi: 64, hand: 'right' }] }],
     };
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
 
@@ -688,7 +704,7 @@ describe('ExerciseRun shared assessment wiring', () => {
         { id: 'second', value: 'quarter', notes: [{ midi: 50, hand: 'left' }, { midi: 62, hand: 'right' }] },
       ],
     };
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
 
@@ -705,12 +721,12 @@ describe('ExerciseRun shared assessment wiring', () => {
 
   it.each([
     ['practice free', { intent: 'practice', practiceMode: 'free' }, 'Play the first note to begin.'],
-    ['a free challenge', { intent: 'challenge', requirementOverride: { mode: 'free' } }, 'Play the first note to begin.'],
-    ['a cued challenge', { intent: 'challenge', requirementOverride: cuedRequirement({ passScore: 0.8 }) },
+    ['a free challenge', { intent: 'challenge', requirement: { mode: 'free' } }, 'Play the first note to begin.'],
+    ['a cued challenge', { intent: 'challenge', requirement: cuedRequirement({ passScore: 0.8 }) },
       "Press any key to start. You'll hear 4 clicks, then play at that speed."],
   ])('%s has no button to press and no fixed-tempo lecture', async (_label, extra, hint) => {
     h.instanceData = { ...h.instance, tempo: { start_bpm: 60 } };
-    const props = { instanceId: h.instance.id, onExit: vi.fn(), onPassed: vi.fn(), ...extra };
+    const props = { instance: subject(), score: null, onExit: vi.fn(), onPassed: vi.fn(), ...extra };
     render(<ExerciseRun {...props} />);
 
     expect(await screen.findByText(hint)).toBeInTheDocument();
@@ -729,7 +745,7 @@ describe('ExerciseRun tier-driven presentation', () => {
 
   const STAGES = ['keys-ask', 'sequence-staff', 'notation'];
   const practice = (extra = {}) => ({
-    instanceId: h.instance.id, intent: 'practice', practiceMode: 'free',
+    instance: subject(), score: null, intent: 'practice', practiceMode: 'free',
     onExit: vi.fn(), onPassed: vi.fn(), ...extra,
   });
 
@@ -895,8 +911,8 @@ describe('ExerciseRun tier-driven presentation', () => {
     // The failure half of the same panel, and it is the run's own: no host took
     // `onFailed`, so this is the only thing on screen.
     const props = {
-      instanceId: h.instance.id, intent: 'challenge', tier: 0,
-      requirementOverride: withPassScore({ passScore: 0.8 }),
+      instance: subject(), score: null, intent: 'challenge', tier: 0,
+      requirement: withPassScore({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
@@ -1022,8 +1038,8 @@ describe('ExerciseRun tier-driven presentation', () => {
 
   it('a cued requirement derives tier 3 — the ABC notation, as before', async () => {
     const props = {
-      instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: cuedRequirement({ passScore: 0.8 }),
+      instance: subject(), score: null, intent: 'challenge',
+      requirement: cuedRequirement({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(),
     };
     render(<ExerciseRun {...props} />);
@@ -1039,8 +1055,8 @@ describe('ExerciseRun tier-driven presentation', () => {
 
     view.unmount();
     render(<ExerciseRun {...{
-      instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: cuedRequirement({ passScore: 0.8 }),
+      instance: subject(), score: null, intent: 'challenge',
+      requirement: cuedRequirement({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(),
     }} />);
     await screen.findByText(/Press any key to start/);
@@ -1049,8 +1065,8 @@ describe('ExerciseRun tier-driven presentation', () => {
 
   it('shows a BPM chip only where a pace gate actually exists', async () => {
     const view = render(<ExerciseRun {...{
-      instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: { mode: 'free' },
+      instance: subject(), score: null, intent: 'challenge',
+      requirement: { mode: 'free' },
       onExit: vi.fn(), onPassed: vi.fn(),
     }} />);
     await ready();
@@ -1060,8 +1076,8 @@ describe('ExerciseRun tier-driven presentation', () => {
     // A pace gate only exists in cued mode — the engine rejects one anywhere
     // else outright (`A pace gate requires cued mode`).
     render(<ExerciseRun {...{
-      instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: { mode: 'cued', gates: { pace: { target_bpm: 72 } } },
+      instance: subject(), score: null, intent: 'challenge',
+      requirement: { mode: 'cued', gates: { pace: { target_bpm: 72 } } },
       onExit: vi.fn(), onPassed: vi.fn(),
     }} />);
     await screen.findByText(/Press any key to start/);
@@ -1084,7 +1100,7 @@ describe('ExerciseRun tier-driven presentation', () => {
 describe('ExerciseRun stage selection — consults deriveStage via askTupleFor', () => {
   beforeEach(resetHarness);
   const practice = (extra = {}) => ({
-    instanceId: h.instance.id, intent: 'practice', practiceMode: 'free',
+    instance: subject(), score: null, intent: 'practice', practiceMode: 'free',
     onExit: vi.fn(), onPassed: vi.fn(), ...extra,
   });
   const ready = () => screen.findByText('Play the first note to begin.');
@@ -1185,11 +1201,11 @@ describe('ExerciseRun free-challenge stall', () => {
   };
 
   const freeChallenge = (extra = {}) => ({
-    instanceId: h.instance.id,
+    instance: subject(), score: null,
     intent: 'challenge',
     // The shape a repertoire level actually produces: completeness-only, no
     // numeric bar. Nothing below may quietly add one.
-    requirementOverride: { mode: 'free', rubric: { criteria: { completeness: 1 } }, passScore: null },
+    requirement: { mode: 'free', rubric: { criteria: { completeness: 1 } }, passScore: null },
     onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(), ...extra,
   });
 
@@ -1293,7 +1309,7 @@ describe('ExerciseRun free-challenge stall', () => {
 
   it('does not stall practice, which has no ladder to move', async () => {
     h.instanceData = longInstance();
-    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
     press(view, props, 60);
@@ -1310,7 +1326,7 @@ describe('ExerciseRun free-challenge stall', () => {
     // completed failure by itself. A stall on top would be a second clock.
     h.instanceData = { ...longInstance(), tempo: { start_bpm: 60 } };
     const props = freeChallenge({
-      requirementOverride: { mode: 'cued', rubric: { criteria: { completeness: 1, cleanliness: 0.8 } }, passScore: null },
+      requirement: { mode: 'cued', rubric: { criteria: { completeness: 1, cleanliness: 0.8 } }, passScore: null },
     });
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText(/Press any key to start/);
@@ -1348,27 +1364,63 @@ describe('ExerciseRun free-challenge stall', () => {
  * someone closed the tab.
  */
 describe('ExerciseRun metronome pre-pulse', () => {
+  /** The budget itself, so the steps below are stated in terms of the thing. */
+  const PRE_PULSE_LIMIT_MS = 60000;
+
   beforeEach(() => {
     resetHarness();
+    // `shouldAdvanceTime` is REQUIRED, not a convenience: `waitFor` under
+    // vitest's fake timers takes @testing-library's jest branch, which calls a
+    // `jest` global vitest does not define — without the real clock driving the
+    // fake one, every `waitFor`/`findBy*` in this describe hangs until the test
+    // times out. The cost is that fake time also passes while real time does,
+    // which is what the case below has to be written around.
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
   afterEach(() => { vi.useRealTimers(); });
 
   const metronomePractice = () => ({
-    instanceId: h.instance.id, intent: 'practice', practiceMode: 'metronome',
+    instance: subject(), score: null, intent: 'practice', practiceMode: 'metronome',
     onExit: vi.fn(), onPassed: vi.fn(),
   });
 
   it('stops clicking after a minute at a piano nobody armed', async () => {
+    /*
+     * THE REAL-CLOCK DEPENDENCY, AND WHY IT IS GONE.
+     *
+     * This case used to step 59,000ms, assert "still clicking", then step the
+     * last 1,000ms. Both steps were measured from wherever the fake clock
+     * happened to be AFTER the mount — but `shouldAdvanceTime` had been feeding
+     * real elapsed time into that same clock the whole time the render and the
+     * `findByText` took. Under a full parallel sweep that is easily more than
+     * the 1,000ms of headroom the first assertion had, so the budget expired
+     * one step early and the case failed on a machine that was merely busy.
+     * Solo it always passed, which is exactly what made it look like a fluke.
+     *
+     * `beforeMount` is sampled BEFORE anything can be scheduled, so the timer's
+     * own age is bounded by the distance from it no matter how slow the machine
+     * is. Nothing here is a tolerance: both steps are exact.
+     */
+    const beforeMount = Date.now();
     const props = metronomePractice();
     render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 90 });
 
-    act(() => { vi.advanceTimersByTime(59000); });
+    // One millisecond short of the budget, counted from before the timer could
+    // exist. Whatever the mount cost, the pulse cannot have run out yet.
+    act(() => { vi.advanceTimersByTime(PRE_PULSE_LIMIT_MS - 1 - (Date.now() - beforeMount)); });
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true });
 
-    act(() => { vi.advanceTimersByTime(1000); });
+    // The budget is the only thing still scheduled — a piano nobody armed has
+    // no runtime tick, no count-in and no stall clock — so running the next
+    // timer IS running it, and where it lands says how long it was.
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => { vi.advanceTimersToNextTimer(); });
+    const elapsed = Date.now() - beforeMount;
+    expect(elapsed).toBeGreaterThanOrEqual(PRE_PULSE_LIMIT_MS);
+    expect(elapsed).toBeLessThan(PRE_PULSE_LIMIT_MS * 2);
+
     await waitFor(() => expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: false }));
     // The screen is unchanged — the child still arms by playing, and the run
     // brings its own click when it does.

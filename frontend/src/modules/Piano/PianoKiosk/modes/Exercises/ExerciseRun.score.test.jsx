@@ -60,9 +60,10 @@ vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUse
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({
   PianoKeyboard: ({ startNote, endNote }) => <div data-testid="keyboard" data-range={`${startNote}-${endNote}`} />,
 }));
-vi.mock('./pianoLearningApi.js', () => ({
-  pianoLearningApi: { instance: vi.fn(async () => ({ ok: false, data: null })), program: vi.fn(async () => ({ ok: false, data: null })) },
-}));
+// NO `pianoLearningApi` DOUBLE: this surface no longer reaches the bank for
+// anything. `DaylightAPIText` is still doubled, and that one has teeth — the
+// media tree is where a score WOULD be fetched from, and `h.text` never being
+// called is the assertion that this run fetches nothing (`AskSession` did).
 vi.mock('../SheetMusic/useMetronomeClick.js', () => ({ useMetronomeClick: () => {} }));
 vi.mock('../../../../../lib/api.mjs', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -103,16 +104,24 @@ vi.mock('./assessment.js', async (importOriginal) => {
   return { ...actual, prepareExerciseAssessment: (...args) => h.prepareExercise(...args) };
 });
 
-/** Bars 2-3 as a child reads them: E4 F4 G4 A4. */
-const material = Object.freeze({
-  kind: 'score', source: 'files:docs/sheet-music/four-bars.musicxml', measures: [2, 3],
-});
+/** The document a gate level names, and the bars a child reads: E4 F4 G4 A4. */
+const SOURCE = 'files:docs/sheet-music/four-bars.musicxml';
 const requirement = requirementForLevel({ id: 'score-level', tier: 2, grading: null });
+
+/**
+ * What `AskSession` settles on for a `{kind:'score'}` spec and hands down: the
+ * document itself, under the id that IS its source path, with the bars the
+ * level asked for. There is no other way in — `ExerciseRun`'s `material`
+ * compatibility path, which fetched this for itself, was deleted with the last
+ * host that used it (ask-platform SP1, task 6).
+ */
+const settledScore = (over = {}) => Object.freeze({ id: SOURCE, musicXml: fourBars, measures: [2, 3], ...over });
 
 const props = (over = {}) => ({
   intent: 'challenge',
-  material,
-  requirementOverride: requirement,
+  instance: null,
+  score: settledScore(),
+  requirement,
   ask: 'Play this passage as written.',
   tier: 2,
   onExit: vi.fn(),
@@ -139,17 +148,20 @@ beforeEach(() => {
   for (const logger of Object.values(h.log)) logger.mockClear();
 });
 
-describe('ExerciseRun — score material', () => {
+describe('ExerciseRun — score material, handed down as props', () => {
   it('builds the attempt from the compiled score expectation, never from the exercise bank', async () => {
     const current = props();
     render(<ExerciseRun {...current} />);
 
     await screen.findByText('Play the first note to begin.');
+    // Nothing self-resolved: the host already did, and a second load would land
+    // after the first and rebuild the attempt under the child's hands.
+    expect(h.text).not.toHaveBeenCalled();
     // `prepareExerciseAssessment` is bank-only: it reads `instance.events`, and
     // a score has none. Calling it here would throw before a note was played.
     expect(h.prepareExercise).not.toHaveBeenCalled();
     const config = h.createAttempt.mock.calls.at(-1)[0];
-    expect(config.expectation.source).toMatchObject({ kind: 'score', id: material.source });
+    expect(config.expectation.source).toMatchObject({ kind: 'score', id: SOURCE });
     expect(config.expectation.events.flatMap((e) => e.notes.map((n) => n.midi))).toEqual([64, 65, 67, 69]);
     expect(config.matcher).toBe('cursor');
     expect(config.mode).toBe('free');
@@ -160,7 +172,7 @@ describe('ExerciseRun — score material', () => {
     // `createAssessmentAttempt` rejects a timed attempt whose tempo map does not
     // start at onset zero, so a cued score is only buildable at all because the
     // passage read `<sound tempo="80"/>` out of the document.
-    render(<ExerciseRun {...props({ requirementOverride: requirementForLevel({ id: 'cued', tier: 3, grading: null }) })} />);
+    render(<ExerciseRun {...props({ requirement: requirementForLevel({ id: 'cued', tier: 3, grading: null }) })} />);
 
     await waitFor(() => expect(h.createAttempt).toHaveBeenCalled());
     const config = h.createAttempt.mock.calls.at(-1)[0];
@@ -209,40 +221,73 @@ describe('ExerciseRun — score material', () => {
     await waitFor(() => expect(lit()).toEqual([65]));
   });
 
-  it('fails open on a score the media tree could not serve', async () => {
-    h.text.mockRejectedValue(new Error('HTTP 502: Bad Gateway'));
-    const onUnavailable = vi.fn();
-    render(<ExerciseRun {...props({ onUnavailable })} />);
+  /**
+   * A HOST RE-RENDER, with the same document. A run that cleared its
+   * expectation here would rebuild the attempt from nothing and send the child
+   * back to the first note of the passage.
+   *
+   * Scoped exactly to what it proves: the SAME document object, re-rendered.
+   * The hazard an earlier inspection worried about — a host handing down a
+   * FRESH document object per render, wiping `scoreExpectation` on the very
+   * commit the engraver published it — was RUN as a mutation (task 5, teeth)
+   * and does not bite: the clear schedules a re-render, but `installRuntime`
+   * runs later in the same commit with the pre-clear value and installs a
+   * runtime, and the next commit's `buildAttempt` returns null so
+   * `installRuntime` returns early WITHOUT disposing. The already-installed
+   * runtime survives, and `ScorePassage` never republishes (`publishedRef`
+   * guards it) because it never needs to. Do not reintroduce that claim; it
+   * reads plausible and is false.
+   */
+  it('keeps the engraving across a host re-render, so the cursor does not reset', async () => {
+    const current = props();
+    const view = render(<ExerciseRun {...current} />);
+    await screen.findByText('Play the first note to begin.');
+    const lit = () => [...document.querySelectorAll('.mock-notehead.piano-note-lit')].map((el) => Number(el.dataset.midi));
 
-    await waitFor(() => expect(onUnavailable).toHaveBeenCalledWith('instance-not-found'));
-    expect(h.log.warn).toHaveBeenCalledWith(
-      'piano.exercise-material-unresolved',
-      expect.objectContaining({ kind: 'score', error: 'score-unavailable' }),
-    );
+    press(view, current, 64);
+    await waitFor(() => expect(lit()).toEqual([65]));
+
+    // The host re-renders (its own state moved) with the SAME document.
+    act(() => { view.rerender(<ExerciseRun {...current} />); });
+
+    expect(lit()).toEqual([65]);
+    expect(screen.queryByText('Getting the music ready…')).toBeNull();
   });
 
   /**
-   * A score that FETCHES fine and then yields no ask. This is the shape that
-   * used to hang: `instance` is null but `score` holds the document, so nothing
-   * read as "not found", the run never became unavailable, and the child sat on
-   * "Getting the music ready…" until they pressed Leave — forfeiting the game
-   * they had earned, logged as an abandonment rather than as the outage it was.
+   * A SCORE THE MEDIA TREE COULD NOT SERVE is no longer this surface's to
+   * report: the fetch lives in `AskSession`, which declines with the reason and
+   * never mounts a run on nothing. The claim is unchanged and pinned there —
+   * `AskSession.test.jsx` asserts `onUnavailable('instance-not-found', {kind:
+   * 'score', reason: 'score-unavailable'})` alongside the same
+   * `piano.exercise-material-unresolved` warn. What stays here is the other
+   * half, which is this surface's alone: a document that ARRIVES intact and
+   * still yields no ask.
+   *
+   * That is the shape that used to hang: `instance` is null but `score` holds
+   * the document, so nothing read as "not found", the run never became
+   * unavailable, and the child sat on "Getting the music ready…" until they
+   * pressed Leave — forfeiting the game they had earned, logged as an
+   * abandonment rather than as the outage it was.
    *
    * Every row must reach a TERMINAL state the host can fail open on.
+   *
+   * The first row is also the pin on the run's subject reset: the engraver
+   * reports its failure from a CHILD effect during the mounting commit, so a
+   * reset that ran from an effect in `ExerciseRun` would erase it. Move that
+   * reset back into a `useEffect` and this row goes red while the other three
+   * (which fail later, from the passage's own compile) stay green.
    */
   describe.each([
     ['the engraver could not read the document', () => { h.engraveFails = true; }, {}],
     ['the engraving carried no notes', () => { h.steps = []; }, {}],
     ['the range names bars the document does not have', () => {}, { measures: [9, 12] }],
     ['the passage is nothing but rests', () => { h.steps = fourBarSteps().filter((s) => s.measure < 2); }, { measures: [3, 4] }],
-  ])('when %s', (_label, arrange, materialOver) => {
+  ])('when %s', (_label, arrange, scoreOver) => {
     it('ends the run as unrunnable instead of waiting forever', async () => {
       arrange();
       const onUnavailable = vi.fn();
-      const current = props({
-        onUnavailable,
-        material: { ...material, ...materialOver },
-      });
+      const current = props({ onUnavailable, score: settledScore(scoreOver) });
       render(<ExerciseRun {...current} />);
 
       // `unrunnable`, not `instance-not-found`: the document arrived, it simply
@@ -252,109 +297,8 @@ describe('ExerciseRun — score material', () => {
       expect(screen.queryByText('Getting the music ready…')).toBeNull();
       expect(h.log.warn).toHaveBeenCalledWith(
         'piano.exercise-score-unrunnable',
-        expect.objectContaining({ id: material.source }),
+        expect.objectContaining({ id: SOURCE }),
       );
     });
-  });
-});
-
-/**
- * The same passage, arriving the way every host hands it down now: as a
- * SETTLED `score` document beside an explicit `instance: null`, resolved above
- * by `AskSession` rather than fetched here.
- *
- * The block above drives the compatibility path (`material`, self-resolved),
- * and until this block existed that was the only path a real `ScorePassage`
- * had ever been driven through: the props path's safety was argued by
- * inspection, never executed. That is the gap these three close, and the value
- * is coverage of a door nothing took — not a hazard caught in the act.
- *
- * The hazard the inspection worried about — a host handing down a fresh
- * document object per render, wiping `scoreExpectation` on the very commit the
- * engraver published it — was RUN as a mutation (task 5, teeth) and does not
- * bite: the clear schedules a re-render, but `installRuntime` runs later in the
- * same commit with the pre-clear value and installs a runtime, and the next
- * commit's `buildAttempt` returns null so `installRuntime` returns early
- * WITHOUT disposing. The already-installed runtime survives, and
- * `ScorePassage` never republishes (`publishedRef` guards it) because it never
- * needs to. Do not reintroduce that claim; it reads plausible and is false.
- *
- * What actually earns the coverage is the mutation that DOES bite: make the run
- * read `loaded.score` instead of the `score` prop and exactly these three fail
- * while the ten compatibility-path tests above stay green.
- */
-describe('ExerciseRun — score material handed down as props', () => {
-  /** What `AskSession` settles on for `{kind:'score'}`: id, document, bars. */
-  const settledScore = Object.freeze({ id: material.source, musicXml: fourBars, measures: [2, 3] });
-
-  const handedDown = (over = {}) => ({
-    intent: 'challenge',
-    instance: null,
-    score: settledScore,
-    requirement,
-    ask: 'Play this passage as written.',
-    tier: 2,
-    onExit: vi.fn(),
-    onPassed: vi.fn(),
-    ...over,
-  });
-
-  it('engraves the document it was given and builds the attempt from it, fetching nothing', async () => {
-    render(<ExerciseRun {...handedDown()} />);
-
-    await screen.findByText('Play the first note to begin.');
-    // Nothing self-resolved: the host already did, and a second load would land
-    // after the first and rebuild the attempt under the child's hands.
-    expect(h.text).not.toHaveBeenCalled();
-    expect(h.prepareExercise).not.toHaveBeenCalled();
-    expect(screen.getByTestId('engraver')).toBeInTheDocument();
-    expect(document.querySelector('.piano-exercise-run')).toHaveAttribute('data-stage', 'score');
-    const config = h.createAttempt.mock.calls.at(-1)[0];
-    expect(config.expectation.source).toMatchObject({ kind: 'score', id: material.source });
-    expect(config.expectation.events.flatMap((e) => e.notes.map((n) => n.midi))).toEqual([64, 65, 67, 69]);
-    expect(config.requirement).toBe(requirement);
-  });
-
-  // "Real" here is precise: real `ScorePassage`, real `parseMusicXml`, real
-  // `compileScoreExpectation`, real attempt engine. The ENGRAVER is doubled —
-  // OSMD cannot lay out under happy-dom (see the suite header) — so the
-  // geometry is the fixture's, and only the Chromium scenario proves that half.
-  it('plays through to a pass, graded by the real engine off the compiled passage', async () => {
-    const current = handedDown();
-    const view = render(<ExerciseRun {...current} />);
-    await screen.findByText('Play the first note to begin.');
-
-    for (const midi of [64, 65, 67, 69]) press(view, current, midi);
-
-    expect(await screen.findByText('Passed')).toBeInTheDocument();
-    await waitFor(() => expect(h.record).toHaveBeenCalledTimes(1));
-    expect(h.record.mock.calls[0][1]).toMatchObject({
-      status: 'completed', kind: 'score', diagnostics: { expected_notes: 4, matched_notes: 4 },
-    });
-  });
-
-  /**
-   * Scoped exactly to what it proves: the SAME document object, re-rendered.
-   * That is "a host re-render does not reset the cursor" — a real property, and
-   * not the question the header's deferred inspection was about (a FRESH
-   * document object per render), which no assertion here reaches and which the
-   * teeth found harmless anyway.
-   */
-  it('keeps the engraving across a host re-render, so the cursor does not reset', async () => {
-    const current = handedDown();
-    const view = render(<ExerciseRun {...current} />);
-    await screen.findByText('Play the first note to begin.');
-    const lit = () => [...document.querySelectorAll('.mock-notehead.piano-note-lit')].map((el) => Number(el.dataset.midi));
-
-    press(view, current, 64);
-    await waitFor(() => expect(lit()).toEqual([65]));
-
-    // The host re-renders (its own state moved) with the SAME document. A run
-    // that cleared its expectation here would rebuild the attempt from nothing
-    // and send the child back to the first note of the passage.
-    act(() => { view.rerender(<ExerciseRun {...current} />); });
-
-    expect(lit()).toEqual([65]);
-    expect(screen.queryByText('Getting the music ready…')).toBeNull();
   });
 });

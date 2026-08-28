@@ -236,6 +236,7 @@ import { flushSync } from 'react-dom';
 import ExerciseRun from './ExerciseRun.jsx';
 import ScorePassage from './ScorePassage.jsx';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
+import { loadAskSources } from '../../../ask/askResolution.js';
 import { __setNotes } from '../../PianoMidiContext.jsx';
 
 const calls = [];
@@ -280,14 +281,28 @@ window.__stage = {
     globalThis.__scoreXml = null;
     if (globalThis.__logEvents) globalThis.__logEvents.length = 0;
   },
-  /** The run, where the gate mounts it, with the gate's reserved footer beside it. */
-  mountRun({ instance = null, scoreXml = null, props = {} }) {
+  /**
+   * The run, where the gate mounts it, with the gate's reserved footer beside it.
+   *
+   * ExerciseRun resolves nothing for itself any more, so this stands in for
+   * AskSession — through the SESSION'S OWN loader (loadAskSources), not a copy
+   * of it. The media-tree fetch and the bank call are still in the path; only
+   * the component that makes them moved. A scenario names its subject the way a
+   * level does (material, or the stubbed bank via instance) and the settled
+   * instance/score/requirement are what reach the run.
+   */
+  async mountRun({ instance = null, scoreXml = null, props = {} }) {
     globalThis.__instance = instance;
     globalThis.__scoreXml = scoreXml;
+    const { material = null, requirementOverride = null, ...rest } = props;
+    const sources = await loadAskSources({ material, requirementOverride });
     root = createRoot(host());
     flushSync(() => root.render(h(Fragment, null,
       h(ExerciseRun, {
-        ...props,
+        ...rest,
+        instance: sources.instance,
+        score: sources.score,
+        requirement: sources.requirement,
         onExit: () => push('exit'),
         onPassed: (r) => push('passed', { score: r?.score ?? null }),
         onUnavailable: (reason) => push('unavailable', reason),

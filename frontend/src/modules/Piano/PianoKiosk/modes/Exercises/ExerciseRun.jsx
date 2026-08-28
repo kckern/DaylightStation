@@ -32,7 +32,6 @@ import {
   staffFitsAsk,
 } from './runPresentation.js';
 import { askTupleFor, deriveStage } from '../../../ask/askSchema.js';
-import { loadAskSources, PENDING_SOURCES } from '../../../ask/askResolution.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import { countInPlan } from '../SheetMusic/countIn.js';
@@ -158,11 +157,6 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   which reads `instance.events` — is never called for a score.
  * @param {object|null} [props.requirement] What this run is judged by, chosen
  *   above. Practice passes none.
- * @param {string|null} [props.instanceId] COMPATIBILITY. A bank instance this
- *   run loads for itself — see `selfResolving` below. Dies with the last host
- *   that has not moved onto `AskSession`.
- * @param {object|null} [props.material] COMPATIBILITY, same. A material
- *   descriptor this run resolves for itself.
  * @param {((result:object)=>void)} [props.onFailed] A JUDGED attempt that did
  *   not pass — one the child actually played. Two results reach it: a
  *   `completed` attempt below its bar, and a `timeout` one, which is a free
@@ -192,35 +186,23 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  */
-export default function ExerciseRun({ instance: instanceProp, score: scoreProp, requirement: requirementProp, instanceId, material = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, framing = null, ask = null, tier = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, framing = null, ask = null, tier = null, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
   const { connected } = usePianoMidi();
   /**
-   * THE COMPATIBILITY SEAM, and it dies in the same plan that created it
-   * (tasks 4-5, when `GameGate` and `ExerciseRunRoute` mount `AskSession`).
+   * RESOLUTION LIVES ABOVE THIS COMPONENT. `AskSession` owns it and hands down
+   * a settled `instance`/`score`/`requirement`; this surface presents, grades,
+   * persists, and reports, and never asks the network for its own subject.
    *
-   * Resolution belongs above this component now — `AskSession` owns it, and
-   * hands down a settled `instance`/`score`/`requirement`. The two hosts that
-   * have not moved yet still pass `material`/`instanceId` and expect this run
-   * to load for them; until they stop, it does, through the SAME
-   * `loadAskSources` the session calls. One implementation, two callers, never
-   * two copies.
-   *
-   * The discriminator is presence, not truthiness: a host that resolved passes
-   * all three props (any of them may legitimately be `null`), a host that did
-   * not passes none. `requirement` is therefore deliberately left undefaulted.
+   * The compatibility seam that let a host pass `instanceId`/`material` and
+   * have the run load for itself was created and retired inside one plan
+   * (ask-platform SP1, tasks 3-6): every host mounts `AskSession` now, so the
+   * seam had no caller left. `undefined` on either source still means "still
+   * resolving" and shows the skeleton; `null` means "resolved, and there is
+   * none", which together are what `notFound` reads below.
    */
-  const selfResolving = instanceProp === undefined && scoreProp === undefined && requirementProp === undefined;
-  // Score material's two halves: the document (from the load) and the
-  // expectation the engraver's geometry compiles into (from the stage). Both
-  // start `undefined` = "not loaded yet" so the skeleton can tell that apart
-  // from `null` = "loaded, and this run is not a score".
-  const [loaded, setLoaded] = useState(PENDING_SOURCES);
-  const instance = selfResolving ? loaded.instance : instanceProp;
-  const score = selfResolving ? loaded.score : scoreProp;
-  const requirement = selfResolving ? loaded.requirement : requirementProp;
   const [scoreExpectation, setScoreExpectation] = useState(null);
   const [runtime, setRuntime] = useState(null);
   const [lastWrong, setLastWrong] = useState(null);
@@ -246,26 +228,27 @@ export default function ExerciseRun({ instance: instanceProp, score: scoreProp, 
   const { challenge } = access;
   const selectedMode = challenge ? requirement?.mode : practiceMode;
 
-  // The compatibility load. Same inputs, same order, same reset-on-restart as
-  // when this body lived here in full; `loadAskSources` is that body, moved.
-  useEffect(() => {
-    if (!selfResolving) return undefined;
-    let alive = true;
-    setLoaded(PENDING_SOURCES);
+  /**
+   * A NEW subject clears the last one's engraving and its degraded state — a
+   * run must never inherit either from the material before it.
+   *
+   * Adjusted DURING RENDER, and that is ordering rather than style. The stage
+   * below can reach a terminal state inside the very commit it is mounted in:
+   * `ScorePassage` reports `unrunnable` from its own effect when the engraver
+   * cannot read the document, and React runs CHILD effects before the parent's.
+   * A reset living in an effect here would therefore erase that answer a moment
+   * after it was given, and the child would sit on "Getting the music ready…"
+   * with no terminal state, no report to the host, and Leave as the only way
+   * out — the exact hang this state exists to prevent. The compatibility path
+   * hid that by skipping the reset entirely whenever the run resolved for
+   * itself; with resolution gone the reset has to be correct on its own.
+   */
+  const [subjectSources, setSubjectSources] = useState({ instance, score });
+  if (subjectSources.instance !== instance || subjectSources.score !== score) {
+    setSubjectSources({ instance, score });
     setScoreExpectation(null);
     setUnrunnable(false);
-    loadAskSources({ material, instanceId, programId, stepId, requirementOverride, logger })
-      .then((next) => { if (alive) setLoaded(next); });
-    return () => { alive = false; };
-  }, [instanceId, logger, material, programId, requirementOverride, selfResolving, stepId]);
-
-  // The same clearing, for a run whose sources arrive as PROPS: a new subject
-  // must not inherit the last one's engraving or its degraded state.
-  useEffect(() => {
-    if (selfResolving) return;
-    setScoreExpectation(null);
-    setUnrunnable(false);
-  }, [instanceProp, scoreProp, selfResolving]);
+  }
 
   /**
    * The engraver's answer, taken ONCE.
