@@ -14,11 +14,32 @@ import ReadalongPlaylistPlayer from './ReadalongPlaylistPlayer.jsx';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * A media-element double with the two surfaces the seek clamp needs: a settable
+ * `currentTime` and real listener registration. `seekTo` is what a scrub looks
+ * like from the DOM's side — move the playhead, then fire `seeking` — which is
+ * the only event `mediaGate` clamps on.
+ */
+const makeMediaEl = () => {
+  const listeners = {};
+  return {
+    playbackRate: 1,
+    currentTime: 0,
+    paused: true,
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+    removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((f) => f !== fn); },
+    seekTo(seconds) {
+      this.currentTime = seconds;
+      (listeners.seeking || []).forEach((fn) => fn());
+    },
+  };
+};
+
 const h = vi.hoisted(() => ({
   seek: vi.fn(),
   toggle: vi.fn(),
   lastProps: null,
-  media: { playbackRate: 1 },
+  media: null,
 }));
 
 vi.mock('./Player.jsx', async () => {
@@ -39,8 +60,11 @@ vi.mock('./Player.jsx', async () => {
   return { default: MockPlayer };
 });
 
+// `sampled` is part of the real surface (Logger.js) and `mediaGate` — which this
+// shell injects its child logger into for the seek clamp — calls it. A double
+// without it turns a clamp into a TypeError inside a DOM event handler.
 vi.mock('../../lib/logging/Logger.js', () => {
-  const noop = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const noop = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() };
   noop.child = () => noop;
   return { getLogger: () => noop, default: () => noop };
 });
@@ -97,7 +121,7 @@ beforeEach(() => {
   h.seek.mockClear();
   h.toggle.mockClear();
   h.lastProps = null;
-  h.media = { playbackRate: 1 };
+  h.media = makeMediaEl();
   CLOCK.now = 1_700_000_000_000;
   clockSpy = vi.spyOn(Date, 'now').mockImplementation(() => CLOCK.now);
 });
@@ -285,7 +309,7 @@ describe('ReadalongPlaylistPlayer — played coverage', () => {
     playAt(1, 0, 200, 10); // 0 -> 5, still buffered: no throttle window has closed
     // The resilience path swaps the media element under us. Everything kept on
     // the old element is gone; the shell's accumulator must not be.
-    h.media = { playbackRate: 1 };
+    h.media = makeMediaEl();
     tick({ currentTime: 5, duration: 200, paused: false });
     playAt(1, 5, 200, 8); // 5 -> 9 on the fresh element
     unmount();
@@ -363,6 +387,143 @@ describe('ReadalongPlaylistPlayer — played coverage', () => {
       const own = report.playedRanges || [];
       for (let i = 1; i < own.length; i += 1) expect(own[i][0]).toBeGreaterThan(own[i - 1][1]);
     }
+  });
+});
+
+// A REQUIRED companion is the one a worksheet's gate row depends on, so the
+// two cheap ways to shorten it — raise the rate, drag the scrubber — have to
+// stop in front of the child rather than only in the server's arithmetic. The
+// server already refuses both (a sample above 1x has its ranges dropped, and
+// skipped seconds were never in a `playedRanges` delta to begin with); the
+// clamp exists so a child does not spend a chapter walking into a wall they
+// cannot see. An OPTIONAL companion keeps every affordance it had.
+describe('ReadalongPlaylistPlayer — a required companion cannot be skipped past', () => {
+  const seededProgress = { parts: { p1: { lastPositionSeconds: 50, durationSeconds: 200 } } };
+
+  it('pins the playback rate to 1, so no window it reports can be dropped as fast', async () => {
+    const onProgress = vi.fn();
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS} participation="required" onProgress={onProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+
+    playAt(2, 0, 200); // the child (or a restored session rate) asks for 2x
+    expect(h.media.playbackRate).toBe(1);
+    for (const report of reportsFrom(onProgress)) expect(report.maxRate).toBe(1);
+  });
+
+  it('leaves an optional companion’s rate exactly as it was', async () => {
+    const onProgress = vi.fn();
+    render(<ReadalongPlaylistPlayer title="Psalms" parts={PARTS} onProgress={onProgress} />);
+    await screen.findByTestId('mock-player');
+
+    playAt(2, 0, 200);
+    expect(h.media.playbackRate).toBe(2);
+    expect(reportsFrom(onProgress).at(-1).maxRate).toBe(2);
+  });
+
+  it('“Ahead 15s” stops at the furthest point actually reached', async () => {
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS} participation="required" progress={seededProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 40, duration: 200, paused: false });
+    h.seek.mockClear();
+
+    // The controller reports the playhead at 42; 42 + 15 is past the 50s
+    // high-water mark, so the jump lands ON the mark, not beyond it.
+    fireEvent.click(screen.getByRole('button', { name: /Ahead 15s/ }));
+    expect(h.seek).toHaveBeenCalledWith(50);
+  });
+
+  it('“Ahead 15s” inside already-heard audio is not clamped at all', async () => {
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS} participation="required"
+        progress={{ parts: { p1: { lastPositionSeconds: 120, durationSeconds: 200 } } }}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 40, duration: 200, paused: false });
+    h.seek.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: /Ahead 15s/ }));
+    expect(h.seek).toHaveBeenCalledWith(57); // 42 + 15, well inside the mark
+  });
+
+  it('“Ahead 15s” is unbounded for an optional companion — the regression that matters', async () => {
+    render(<ReadalongPlaylistPlayer title="Psalms" parts={PARTS} progress={seededProgress} />);
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 40, duration: 200, paused: false });
+    h.seek.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: /Ahead 15s/ }));
+    expect(h.seek).toHaveBeenCalledWith(57);
+  });
+
+  it('a scrub past the high-water mark is snapped back to it', async () => {
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS} participation="required" progress={seededProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 40, duration: 200, paused: false });
+
+    act(() => { h.media.seekTo(190); });
+    expect(h.media.currentTime).toBe(50);
+  });
+
+  it('the same scrub on an optional companion goes exactly where it was aimed', async () => {
+    render(<ReadalongPlaylistPlayer title="Psalms" parts={PARTS} progress={seededProgress} />);
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 40, duration: 200, paused: false });
+
+    act(() => { h.media.seekTo(190); });
+    expect(h.media.currentTime).toBe(190);
+  });
+
+  it('rewinding, and re-listening, stay free', async () => {
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS} participation="required" progress={seededProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 40, duration: 200, paused: false });
+    h.seek.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: /Back 15s/ }));
+    expect(h.seek).toHaveBeenCalledWith(27); // 42 - 15, untouched
+    act(() => { h.media.seekTo(3); });
+    expect(h.media.currentTime).toBe(3);
+  });
+
+  it('the mark advances with playback, so ordinary listening is never clamped', async () => {
+    render(<ReadalongPlaylistPlayer title="Psalms" parts={PARTS} participation="required" />);
+    await screen.findByTestId('mock-player');
+
+    playAt(1, 0, 200, 40); // 0 -> 20 at normal speed
+    act(() => { h.media.seekTo(19); });
+    expect(h.media.currentTime).toBe(19);
+  });
+
+  it('a chapter already finished is seekable end to end', async () => {
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS} participation="required"
+        progress={{ parts: { p1: { lastPositionSeconds: 12, durationSeconds: 200, completedAt: '2026-08-27T00:00:00Z' } } }}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 12, duration: 200, paused: false });
+
+    act(() => { h.media.seekTo(190); });
+    expect(h.media.currentTime).toBe(190);
   });
 });
 

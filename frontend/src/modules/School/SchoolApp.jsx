@@ -960,6 +960,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             title={active.descriptor.title}
             parts={active.descriptor.parts}
             progress={active.descriptor.state}
+            // Whether this companion gates a worksheet. It rides the backend
+            // handler's `open()` effect and `useSelfService`'s `launchTarget`
+            // already carries it onto the descriptor; this is the last hop. The
+            // player clamps rate and forward seeking only when it is 'required',
+            // so dropping it here would silently give every gated companion the
+            // optional affordances back.
+            participation={active.descriptor.participation}
             onProgress={(payload) => schoolApi.companionProgress(active.descriptor.companionId, payload)}
             onExit={() => setActive(null)}
           />
