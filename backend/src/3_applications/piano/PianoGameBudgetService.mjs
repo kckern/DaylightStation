@@ -233,18 +233,38 @@ export class PianoGameBudgetService {
    * shifted instant. An earlier version anchored at `${today}T12:00:00Z`,
    * subtracted 24h, and re-derived the study date from that instant — two
    * stacked offsets (the anchor hour and the household's DST-dependent UTC
-   * offset) that only cancel out to "exactly one calendar day earlier" for a
-   * narrow band of timezone offsets. America/Los_Angeles sits AT that edge:
-   * it round-tripped correctly in PDT (-7) but not PST (-8), i.e. it was
-   * broken for a third of the year in the household's own timezone. Simple
-   * Y-M-D minus one day has no timezone in it at all, so there is no offset
-   * left to get wrong.
+   * offset) that only canceled out to "exactly one calendar day earlier" for
+   * SOME timezones. Measured against every date in 2025–2026: it was fine
+   * for America/Los_Angeles (this household's own timezone — 0 mismatches,
+   * PST included), New York, Tokyo, and Kiritimati, but wrong for
+   * America/Anchorage (UTC-9, wrong on every AKST day) and Honolulu (wrong
+   * every day, year-round). So the old formula was not a live bug for this
+   * household, but it depended on a timezone-offset coincidence rather than
+   * being correct by construction — removing the round-trip removes that
+   * dependency entirely, for every zone, not just the ones that happened to
+   * cancel out.
    */
   #carryForward({ sessionId, learnerId, today, at }) {
     const yesterdayStr = previousCalendarDate(today);
     const prev = this.#store.loadDay(yesterdayStr);
     const s = prev.sessions[sessionId];
     if (!s || s.closed) return null;
+    // Validate ownership BEFORE any mutation. #carryForward seals yesterday's
+    // session (`s.closed = true`) and persists that seal as its first write.
+    // If a mismatched learnerId were allowed past that point, a settle
+    // arriving right at the boundary with the right sessionId and the wrong
+    // learnerId would seal the true owner's session on yesterday, write
+    // nothing to today, and then throw — stranding the session: every
+    // SUBSEQUENT legitimate settle/close from the real owner would find
+    // nothing on today, get `null` back from this function (the session is
+    // now closed), and hit "unknown session" — the exact 500-on-a-live-
+    // session that finding #1 (close() carrying across the boundary) exists
+    // to prevent. Checking first means a bad request can throw, but it can
+    // never leave the session itself unreachable.
+    if (s.learnerId !== learnerId) {
+      this.#logger.error?.('budget.learner-mismatch', { sessionId, learnerId, ownerLearnerId: s.learnerId });
+      throw Object.assign(new Error('session belongs to a different learner'), { status: 409 });
+    }
     s.closed = true;
     this.#store.saveDay(prev);
     const day = this.#store.loadDay(today);
