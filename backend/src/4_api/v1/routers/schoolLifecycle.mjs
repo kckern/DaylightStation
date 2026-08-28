@@ -52,6 +52,13 @@ const STATUS_BY_OUTCOME = Object.freeze({
   already_playing: 409,
   already_completed: 409,
   not_playing: 409,
+  // The hard checkpoint gate refusing a completion. 409 rather than 200 is the
+  // point: the body says `released: false`, but a client that reads only the
+  // status code would otherwise take the refusal for a finished lesson — and
+  // that client is a screen in front of a child who did not answer the
+  // questions. Same family as `not_playing`: the request was well formed, the
+  // session simply is not where it would have to be.
+  checkpoints_outstanding: 409,
   // The printer is a device this route talks through, so its silence is a
   // gateway failure. A document that could not be DRAWN is not — the request
   // named content this server cannot turn into a sheet, which is 422, and

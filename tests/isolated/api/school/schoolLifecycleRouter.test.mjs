@@ -125,7 +125,13 @@ beforeAll(async () => {
       execute: async ({ sessionId, target }) => ({ status: target === 'nope' ? 'unavailable' : 'dispatched', sessionId, target }),
     },
     recordMediaCompletion: {
-      execute: async ({ dispatchId }) => ({ status: dispatchId === 'ghost' ? 'uncorrelated' : 'completed', released: dispatchId !== 'ghost' }),
+      execute: async ({ dispatchId, sessionId }) => {
+        if (dispatchId === 'ghost') return { status: 'uncorrelated', released: false };
+        if (sessionId === 'ses_gated') {
+          return { status: 'checkpoints_outstanding', released: false, outstanding: 2, seekCeiling: 120 };
+        }
+        return { status: 'completed', released: true };
+      },
       checkStalled: async ({ sessionId, graceSec }) => ({ stalled: graceSec === 0, sessionId }),
     },
     submitPaperWork: {
@@ -256,6 +262,13 @@ describe('media', () => {
     const r = await post('/media/complete', { learnerId: 'kid1', dispatchId: 'ghost' });
     expect(r.status).toBe(204);
     expect(await r.text()).toBe('');
+  });
+
+  it('does NOT answer 200 for a completion the checkpoint gate refused', async () => {
+    const r = await post('/media/complete', { sessionId: 'ses_gated' });
+    // A client that reads only the HTTP status must not conclude the child is done.
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ status: 'checkpoints_outstanding', released: false, outstanding: 2 });
   });
 
   it('passes an explicit grace of 0 through rather than defaulting it', async () => {
