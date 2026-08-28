@@ -153,3 +153,32 @@ describe('gradeAnswer: true_false (A=true, B=false, strict, spec §5.3)', () => 
     expect(gradeAnswer(falseItem, false).correct).toBe(true);
   });
 });
+
+describe('companion_code', () => {
+  const item = { type: 'companion_code', code: ['A', 'C', 'E'] };
+
+  it('is correct only on an exact set match', () => {
+    expect(gradeAnswer(item, ['E', 'C', 'A']).correct).toBe(true);
+    expect(gradeAnswer(item, ['A', 'C']).correct).toBe(false);
+    expect(gradeAnswer(item, ['A', 'C', 'E', 'D']).correct).toBe(false);
+  });
+
+  it('is correct for a single-letter code — no two-answer minimum applies', () => {
+    expect(gradeAnswer({ type: 'companion_code', code: ['B'] }, ['B']).correct).toBe(true);
+  });
+
+  it('is correct for the all-five code', () => {
+    const all = ['A', 'B', 'C', 'D', 'E'];
+    expect(gradeAnswer({ type: 'companion_code', code: all }, all).correct).toBe(true);
+  });
+
+  it('reports the expected code so a receipt can name it', () => {
+    expect(gradeAnswer(item, ['A']).expected).toEqual(['A', 'C', 'E']);
+  });
+
+  it('requires a non-empty array of letters', () => {
+    expect(givenShapeError(item, [])).toMatch(/non-empty/);
+    expect(givenShapeError(item, 'ACE')).toMatch(/array/);
+    expect(givenShapeError(item, ['A'])).toBeNull();
+  });
+});

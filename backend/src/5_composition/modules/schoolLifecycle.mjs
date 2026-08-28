@@ -48,6 +48,7 @@ import { YamlTimingAnchorStore } from '#adapters/persistence/yaml/YamlTimingAnch
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
 import { YamlLessonCompanionStore } from '#adapters/persistence/yaml/YamlLessonCompanionStore.mjs';
+import { YamlCompanionCodeStore } from '#adapters/persistence/yaml/YamlCompanionCodeStore.mjs';
 import { YamlIssuedArtifactStore } from '#adapters/persistence/yaml/YamlIssuedArtifactStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { YamlAgendaCooldownStore } from '#adapters/persistence/yaml/YamlAgendaCooldownStore.mjs';
@@ -103,6 +104,7 @@ import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs
 import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
 import { RunSelfServiceAction } from '#apps/school/usecases/RunSelfServiceAction.mjs';
 import { RecordLessonCompanionProgress } from '#apps/school/usecases/RecordLessonCompanionProgress.mjs';
+import { GetCompanionFinishCode } from '#apps/school/usecases/GetCompanionFinishCode.mjs';
 import { ReadPrinterHealth } from '#apps/school/usecases/ReadPrinterHealth.mjs';
 import { LessonCompanionHandlers, ReadalongLessonCompanionHandler } from '#apps/school/companions/LessonCompanionHandlers.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
@@ -835,8 +837,16 @@ export async function createSchoolLifecycle({
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
   const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
   const companions = new YamlLessonCompanionStore({ configService, logger });
+  // One finish code per (household, lesson, lessonDay), shared across the
+  // household's children — constructed HERE and injected, never imported by the
+  // use case (D1: an application may not reach for an adapter).
+  const companionCodes = new YamlCompanionCodeStore({ configService, logger });
+  // The SAME code-store instance `IssueDocument` mints against, deliberately:
+  // the record the print binds is the record the read-along satisfies, and a
+  // second instance over the same directory would only be a second way to
+  // describe one file.
   const companionHandlers = new LessonCompanionHandlers([
-    new ReadalongLessonCompanionHandler({ companions, clock }),
+    new ReadalongLessonCompanionHandler({ companions, companionCodes, clock, logger }),
   ]);
   const issuedArtifacts = new YamlIssuedArtifactStore({ configService });
   // Capture the same canvas the thermal raster path draws. The application
@@ -911,6 +921,9 @@ export async function createSchoolLifecycle({
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
     printDocuments, renderPrintDocument, allocationStore,
     assignments: stores.assignments, worksheetInstances, companions,
+    // `householdId` is the first third of a finish code's scope — the reason
+    // two houses on the same published lesson never share a code.
+    companionCodes, householdId,
     issuedArtifacts,
     answerSheetPolicy: cfg.answer_sheets ?? null,
     // Same `printing:` block the laser host/port/path and the page-quota
@@ -1288,6 +1301,15 @@ export async function createSchoolLifecycle({
     logger,
   });
   const recordLessonCompanionProgress = new RecordLessonCompanionProgress({ companions, handlers: companionHandlers });
+  // The escape hatch for a companion whose media is broken: a grown-up reads
+  // the finish code out. Built HERE because the code store and `householdId`
+  // are here — the same two things `issueDocument` mints against, deliberately
+  // the SAME INSTANCE, so the record a reveal reads is the record a print
+  // created and a read-along satisfies. The use case never imports the adapter
+  // (D1); it is handed one.
+  const getCompanionFinishCode = new GetCompanionFinishCode({
+    sessions: stores.sessions, curriculum, companionCodes, teacherGate, householdId, clock, logger,
+  });
   // The SAME `laserPrinter` every tracked worksheet and receipt prints
   // through, so "is the printer OK?" is asked of the device the child's paper
   // was actually sent to — not a second, separately-configured one that could
@@ -1304,7 +1326,7 @@ export async function createSchoolLifecycle({
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
-    getPianoLessonGate, manageProgramDayBypass,
+    getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode,
   };
 
   const router = createSchoolLifecycleRouter({

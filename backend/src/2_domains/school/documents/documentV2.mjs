@@ -353,8 +353,11 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
   // document alone, without a resolved bank: a SCORED quiz question whose own
   // nested content wraps a cloze/matching/short_answer block can never
   // resolve to a row-mappable bank item (`ROW_MAPPABLE_TYPES` in
-  // allocation.mjs is multiple_choice/true_false/multi_select only — those
-  // three block types mint items of exactly the types this list excludes).
+  // allocation.mjs is multiple_choice/true_false/multi_select for AUTHORED
+  // blocks — those three block types mint items of exactly the types this list
+  // excludes. The list also carries `companion_code`, but that one is never
+  // authored: the gate row is synthesized at prepare time and reaches no
+  // quiz-archetype block, so it cannot arrive here).
   // Catching it here gives a dotted-path authoring error immediately, rather
   // than a confusing "itemId not found in bank" / "not row-mappable" surfacing
   // later from `planRows`, only once a bank happens to exist.

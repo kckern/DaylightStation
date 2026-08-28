@@ -39,7 +39,9 @@
  * refuses does NOT hold up the settlement — `printed: false` reports it.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
-import { outcomeIdFor, evaluateOutcome, rewardDecision } from '#domains/school/sessions/outcome.mjs';
+import {
+  outcomeIdFor, evaluateOutcome, rewardDecision, companionVetoStatus,
+} from '#domains/school/sessions/outcome.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
@@ -197,6 +199,20 @@ export class CloseSessionOutcome {
     const unit = await this.#curriculum.getUnit(state.unitId);
 
     if (state.outcome) {
+      // ...UNLESS THE GATE HAS SINCE BEEN READ AGAIN (Task 11). A sheet the
+      // finish-code row stopped is repaired by feeding the same card back with
+      // the code filled in, and that repair has to be able to change the
+      // result. It is the one thing a settled session may re-decide without a
+      // grown-up, and only ever in the narrow case `#reviseAfterGateRead`
+      // allows: the gate — never the score — is what blocked it, and the rule
+      // that decides has genuinely changed its answer.
+      const revised = this.#reviseAfterGateRead({ state, unit });
+      if (revised) {
+        return this.#recordOutcomeAndSettle({
+          sessionId, state, unit, nowIso, signedOff, rewardOverride,
+          result: revised.result, reason: revised.reason,
+        });
+      }
       // A second close-out is a retry, not a second result. It re-prints and —
       // crucially — still routes through the reward step, whose own guard sees
       // the existing txn and skips.
@@ -242,10 +258,47 @@ export class CloseSessionOutcome {
       // authored percent is only the fallback for pre-stamp sessions.
       passingPercent: state.gradedPassingPercent
         ?? this.#passOverrides?.percentFor?.(unit?.unitId) ?? unit?.passing?.percent,
+      // The scan's own verdict on the finish-code row (Task 10), stamped onto
+      // the `graded` event by `RecordCardScanOutcome`. Read from the session,
+      // never from the companion record: the question is "did THIS sheet's
+      // gate row carry the right code", and a companion record satisfied
+      // afterwards — or by a sibling on their own sheet — is a different fact.
+      // Null on every ungated sheet, where it changes nothing.
+      companionGate: state.companionGate,
     });
     return this.#recordOutcomeAndSettle({
       sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason,
     });
+  }
+
+  /**
+   * Has a re-read of the finish-code row changed what this settled sheet says?
+   *
+   * NARROW ON PURPOSE, in three ways, because this is the only path on which a
+   * result that has already been recorded and printed can change by itself:
+   *
+   *   1. Only a sheet the GATE stopped is eligible. A sheet that failed on its
+   *      score is not re-decided here however its gate row now reads — that
+   *      child owes a retry, and the retry prints a fresh gate row with it.
+   *   2. The score is read exactly as the first close read it, off the same
+   *      stamped `graded` event. Nothing about the questions is re-derived, so
+   *      a repair can only ever move the GATE half of the decision.
+   *   3. It must actually differ. A re-scan restating the same verdict — a
+   *      still-wrong code of the same shape — resettles and reprints, and does
+   *      not file a second outcome saying what the first already said.
+   *
+   * @returns {{result: string, reason: string}|null} the superseding outcome
+   */
+  #reviseAfterGateRead({ state, unit }) {
+    const blockedByGate = companionVetoStatus(state.outcome?.reason ?? null);
+    if (!blockedByGate) return null;
+    const evaluated = evaluateOutcome({
+      gradedPercent: state.gradedPercent,
+      passingPercent: state.gradedPassingPercent
+        ?? this.#passOverrides?.percentFor?.(unit?.unitId) ?? unit?.passing?.percent,
+      companionGate: state.companionGate,
+    });
+    return evaluated.reason === state.outcome.reason ? null : evaluated;
   }
 
   /**
@@ -264,7 +317,12 @@ export class CloseSessionOutcome {
       sessionId, unitId: state.unitId, result, reason, percent: state.gradedPercent,
     });
 
-    const outcome = { outcomeId, result, at: nowIso };
+    // `reason` rides on the outcome object, not just the event, so `#settle`
+    // can tell WHICH rule failed — the difference between "you were under the
+    // bar" and "your read-along code was blank" is the whole receipt. A
+    // resettle reads the same field back off `state.outcome` (`sessionEvents`'
+    // `outcome_recorded` reducer), so both paths reach `#settle` alike.
+    const outcome = { outcomeId, result, reason, at: nowIso };
     return this.#settle({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false });
   }
 
@@ -281,7 +339,25 @@ export class CloseSessionOutcome {
       ? await this.#applyReward({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso })
       : null;
 
-    const retryToken = passed ? null : await this.#mintRetryToken({ sessionId, state, nowIso });
+    // THE GATE BLOCKS; IT DOES NOT SEND A CHILD BACK OVER THEIR ANSWERS
+    // (Task 10). A retry ticket prints a FRESH worksheet "for the questions
+    // you missed" — the right remedy for a score, and precisely the wrong one
+    // here: this child answered well enough to pass and owes the read-along,
+    // not the arithmetic. Handing them new questions would make the gate
+    // subtract from the score after all, which is the one thing it must never
+    // do. The receipt says what to do instead — finish it and re-scan THIS
+    // sheet — and Task 11 makes that re-scan repair the gate row in place.
+    //
+    // EXCEPT WHEN THE ROW IS FULL (Task 11). `exhausted` means every bubble in
+    // the gate row is marked and still wrong: there is no letter left to add,
+    // so the sheet in the child's hand can never clear and "scan this again"
+    // is advice that cannot work. A fresh worksheet is then the only way
+    // forward, and the retry ticket IS that way forward.
+    const companionVeto = companionVetoStatus(outcome.reason ?? null);
+    const repairableOnThisSheet = companionVeto === 'blank' || companionVeto === 'wrong';
+    const retryToken = (passed || repairableOnThisSheet)
+      ? null
+      : await this.#mintRetryToken({ sessionId, state, nowIso });
     // ONE projection for both of the receipt's forward-looking lines. They used
     // to fan out to the same four reads twice, at two different instants, and
     // could in principle print a "next up" that the progress rows beside it
@@ -420,6 +496,17 @@ export class CloseSessionOutcome {
       questionStart: worksheet?.omr?.rowRange?.start ?? null,
       marks,
       passingPercent: state.gradedPassingPercent ?? unit?.passing?.percent ?? null,
+      // Named, never implied (Task 10): a sheet that answered everything right
+      // and still says TRY AGAIN has to say WHY, in words the child can act
+      // on. The label is the companion's own (`unit.companion.label`, e.g.
+      // "Read Along") and the reading names the actual thing to go and play.
+      companionGate: companionVeto
+        ? {
+          status: companionVeto,
+          label: unit?.companion?.label ?? 'Read Along',
+          reading: unit?.reading ?? null,
+        }
+        : null,
       progress,
       subjectIcon: unit?.subject ?? null,
       learnerName: state.learnerId ? state.learnerId[0].toUpperCase() + state.learnerId.slice(1) : null,
@@ -485,7 +572,14 @@ export class CloseSessionOutcome {
       unlocked,
       nextSubjectToken,
       retryToken,
-      message: passed ? 'Nice work!' : 'Almost there — try again.',
+      message: passed
+        ? 'Nice work!'
+        // "Try again" would be a lie to a child whose answers were all right.
+        : (companionVeto
+          ? (companionVeto === 'exhausted'
+            ? 'Ask a grown-up for a new sheet.'
+            : `Almost there — finish ${unit?.companion?.label ?? 'your read-along'} first.`)
+          : 'Almost there — try again.'),
       document,
       receiptArtifactId: receiptArtifact?.artifact?.manifest?.artifactId ?? null,
       ...printing,
