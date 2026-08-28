@@ -113,9 +113,13 @@ describe('useGameBudgetMeter', () => {
     const { result } = renderHook(() => useGameBudgetMeter({ learnerId: 'kid_a', deviceId: 'kiosk', active: true, api }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(result.current.state).toBe('off');
-    expect(h.logger.warn).toHaveBeenCalledWith('budget.open-failed', expect.objectContaining({
-      learnerId: 'kid_a', deviceId: 'kiosk', enabled: false,
+    // enabled:false is the normal "feature is off" state, not a failure —
+    // it must NOT land on budget.open-failed (level:warn), or turning the
+    // feature off in household config would read as a broken feature.
+    expect(h.logger.debug).toHaveBeenCalledWith('budget.disabled', expect.objectContaining({
+      learnerId: 'kid_a', deviceId: 'kiosk',
     }));
+    expect(h.logger.warn).not.toHaveBeenCalledWith('budget.open-failed', expect.anything());
   });
 
   it('a settle answering depleted:true closes the session and stops metering', async () => {
@@ -196,5 +200,131 @@ describe('useGameBudgetMeter', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(result.current.state).toBe('off');
     expect(api.calls.open).toHaveLength(0);
+  });
+
+  // Important #1 (coordinator review): `open` carries the LIVE balance (the
+  // server holds this session's history across matches within the same
+  // study day). A learner who already exhausted today's allowance and then
+  // starts a NEW match must land in `depleted` immediately — not re-arm a
+  // fresh warning-then-playing window every time `active` flips true again.
+  it('a re-open after depletion enters depleted directly, without re-arming a window', async () => {
+    const api = fakeApi({
+      open: {
+        enabled: true, sessionId: 's1', cumulativeSeconds: 900, secondsLeft: 0,
+        learnerSecondsLeft: 0, deviceSecondsLeft: 500,
+        warnAtSeconds: 60, settleIntervalSec: 60, idleAfterSeconds: 90,
+      },
+    });
+    const { result } = renderHook(() => useGameBudgetMeter({ learnerId: 'kid_a', deviceId: 'kiosk', active: true, api }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.state).toBe('depleted');
+    // No tick was armed: nothing to settle, ever, for this mount.
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(api.calls.settle).toHaveLength(0);
+  });
+
+  it('a re-open with the device (not the learner) depleted enters device-depleted directly', async () => {
+    const api = fakeApi({
+      open: {
+        enabled: true, sessionId: 's1', cumulativeSeconds: 100, secondsLeft: 200,
+        learnerSecondsLeft: 200, deviceSecondsLeft: 0,
+        warnAtSeconds: 60, settleIntervalSec: 60, idleAfterSeconds: 90,
+      },
+    });
+    const { result } = renderHook(() => useGameBudgetMeter({ learnerId: 'kid_a', deviceId: 'kiosk', active: true, api }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.state).toBe('device-depleted');
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(api.calls.settle).toHaveLength(0);
+  });
+
+  // Important #2 (coordinator review): a 409 means the sessionId's recorded
+  // learnerId doesn't match the caller — permanent, never fixed by retrying.
+  it('a 409 from settle is permanent — stops the tick, fails open, and never calls close for a session that is not ours', async () => {
+    const mismatch = Object.assign(
+      new Error('HTTP 409: Conflict - session belongs to a different learner'),
+      { status: 409 },
+    );
+    const api = fakeApi({
+      open: {
+        enabled: true, sessionId: 's1', cumulativeSeconds: 0, secondsLeft: 600,
+        warnAtSeconds: 60, settleIntervalSec: 5, idleAfterSeconds: 90,
+      },
+      settle: mismatch,
+    });
+    const { result } = renderHook(() => useGameBudgetMeter({ learnerId: 'kid_a', deviceId: 'kiosk', active: true, api }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    act(() => { activitySignal.bump(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); }); // first settle window -> 409
+    expect(result.current.state).toBe('unavailable');
+    expect(api.calls.settle).toHaveLength(1);
+    expect(api.calls.close).toHaveLength(0);
+    expect(h.logger.warn).toHaveBeenCalledWith('budget.learner-mismatch', expect.objectContaining({
+      learnerId: 'kid_a', sessionId: 's1',
+    }));
+
+    // Ticking is torn down: advancing further sends no further settles.
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(api.calls.settle).toHaveLength(1);
+  });
+
+  // Important #3 (coordinator review): a settle that never resolves (a
+  // dropped kiosk network) must not wedge `settling` shut for the rest of
+  // the session — the next window has to actually try again.
+  it('a settle that never resolves times out and un-wedges the loop for the next window', async () => {
+    const calls = { open: [], settle: [], close: [] };
+    let settleAttempts = 0;
+    let hungResolve;
+    const hungForever = new Promise((resolve) => { hungResolve = resolve; }); // never resolved in this test
+    const api = {
+      calls,
+      open: vi.fn(async (args) => {
+        calls.open.push(args);
+        return {
+          enabled: true, sessionId: 's1', cumulativeSeconds: 0, secondsLeft: 600,
+          warnAtSeconds: 60, settleIntervalSec: 10, idleAfterSeconds: 90,
+        };
+      }),
+      settle: vi.fn(async (args) => {
+        calls.settle.push(args);
+        settleAttempts += 1;
+        if (settleAttempts === 1) return hungForever;
+        return { secondsLeft: 500, depleted: false, deviceDepleted: false };
+      }),
+      close: vi.fn(async (args) => { calls.close.push(args); return { ok: true }; }),
+      balance: vi.fn(async () => ({ enabled: false })),
+    };
+
+    renderHook(() => useGameBudgetMeter({ learnerId: 'kid_a', deviceId: 'kiosk', active: true, api }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    act(() => { activitySignal.bump(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); }); // first window: hangs
+    expect(calls.settle).toHaveLength(1);
+
+    // Advance past SETTLE_TIMEOUT_MS (15s from the hung call) without ever
+    // resolving it — `settling` must clear via the timeout race, not the hang.
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); }); // t=25s: timeout fires
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); }); // t=30s: next window
+    expect(calls.settle.length).toBeGreaterThanOrEqual(2);
+    expect(h.logger.warn).toHaveBeenCalledWith('budget.settle-failed', expect.objectContaining({ timedOut: true }));
+
+    hungResolve({ secondsLeft: 600, depleted: false, deviceDepleted: false }); // avoid an unhandled-rejection style dangler
+  });
+
+  // Minor (coordinator review): a malformed cumulativeSeconds still fails
+  // open (0 is safe), but must not fail SILENTLY — it is a server-contract
+  // violation this hook's whole design exists to be loud about.
+  it('an invalid cumulativeSeconds seed falls back to 0 but warns loudly', async () => {
+    const api = fakeApi({
+      open: {
+        enabled: true, sessionId: 's1', cumulativeSeconds: null, secondsLeft: 600,
+        warnAtSeconds: 60, settleIntervalSec: 3600, idleAfterSeconds: 3600,
+      },
+    });
+    renderHook(() => useGameBudgetMeter({ learnerId: 'kid_a', deviceId: 'kiosk', active: true, api }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(h.logger.warn).toHaveBeenCalledWith('budget.seed-invalid', expect.objectContaining({
+      learnerId: 'kid_a', sessionId: 's1', cumulativeSeconds: null,
+    }));
   });
 });
