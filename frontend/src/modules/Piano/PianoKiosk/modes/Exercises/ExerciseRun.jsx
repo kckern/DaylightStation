@@ -20,16 +20,39 @@ import ExerciseNotation from './ExerciseNotation.jsx';
 import { pianoLearningApi } from './pianoLearningApi.js';
 import { prepareExerciseAssessment } from './assessment.js';
 import { resolveExerciseRunAccess } from './authorization.js';
+import { resolveGateMaterial } from '../Games/gateMaterial.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import './Exercises.scss';
 
 const EMPTY_SNAPSHOT = Object.freeze({ status: 'prepared', result: null, musicalInput: false });
 
+/** The surface's own windows. A requirement's `policy` is layered over these. */
+const DEFAULT_POLICY = Object.freeze({ matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320 });
+
 function makeId(prefix) {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 }
 
-export default function ExerciseRun({ instanceId, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, onExit, onPassed }) {
+/**
+ * The wrong-note state kept by the run: `null | { midi, eventId }`, never a
+ * bare boolean. Every matcher emits both fields, and the played pitch is what
+ * the keyboard footer highlights — a boolean would throw it away. Exported so
+ * the shape is pinned by a test rather than only by whatever happens to read it.
+ */
+export function wrongEventState(event) {
+  return event?.type === 'wrong' ? { midi: event.midi, eventId: event.eventId } : null;
+}
+
+/**
+ * @param {object} props
+ * @param {string|null} [props.instanceId] Exercise-bank instance to run.
+ * @param {{kind:'exercise'|'score', instanceId?:string}|null} [props.material]
+ *   Gate material seam (D10). When present it REPLACES `instanceId` as the load
+ *   source and is resolved through `resolveGateMaterial`. Pass a stable
+ *   reference (memoize it) — a fresh object rebuilds the attempt, exactly as
+ *   `requirementOverride` already does.
+ */
+export default function ExerciseRun({ instanceId, material = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, onExit, onPassed }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -37,7 +60,7 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
   const [instance, setInstance] = useState(undefined);
   const [requirement, setRequirement] = useState(null);
   const [runtime, setRuntime] = useState(null);
-  const [lastWrong, setLastWrong] = useState(false);
+  const [lastWrong, setLastWrong] = useState(null);
   const [countdown, setCountdown] = useState(null);
   const previousNotesRef = useRef([]);
   const activeNotesRef = useRef(activeNotes);
@@ -48,11 +71,21 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
   const { challenge } = access;
   const selectedMode = challenge ? requirement?.mode : practiceMode;
 
+  const loadInstance = useCallback(async () => {
+    if (!material) return pianoLearningApi.instance(instanceId);
+    const resolved = await resolveGateMaterial(material);
+    if (resolved.ok) return { ok: true, data: resolved.instance };
+    // A material kind this phase cannot render (or a bad id) is skipped, not
+    // thrown: the run shows "Exercise not found" and the gate host moves on.
+    logger.warn('piano.exercise-material-unresolved', { kind: material.kind ?? null, error: resolved.error });
+    return { ok: false, data: null };
+  }, [instanceId, logger, material]);
+
   useEffect(() => {
     let alive = true;
     setInstance(undefined);
     Promise.all([
-      pianoLearningApi.instance(instanceId),
+      loadInstance(),
       programId ? pianoLearningApi.program(programId) : Promise.resolve({ ok: false, data: null }),
     ]).then(([instanceResponse, programResponse]) => {
       if (!alive) return;
@@ -63,15 +96,20 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
       setRequirement(requirementOverride ?? step?.requirement ?? null);
     });
     return () => { alive = false; };
-  }, [instanceId, programId, requirementOverride, stepId]);
+  }, [loadInstance, programId, requirementOverride, stepId]);
 
   const buildAttempt = useCallback(() => {
     if (!access.allowed || !instance || (challenge && !requirement)) return null;
     const mode = selectedMode;
+    const activeRequirement = challenge ? requirement : null;
     const prepared = prepareExerciseAssessment({
-      instance, mode, purpose: challenge ? 'challenge' : 'practice', requirement: challenge ? requirement : null,
+      instance, mode, purpose: challenge ? 'challenge' : 'practice', requirement: activeRequirement,
     });
-    return createAssessmentAttempt({ ...prepared, policy: { matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320 } });
+    // The requirement wins over the surface's defaults — a gate rung can widen
+    // `wrongWindow`, allow extras, or loosen the timing windows without this
+    // component knowing which knob it turned. Practice is deliberately left on
+    // the defaults, exactly as it already ignores a step's rubric and gates.
+    return createAssessmentAttempt({ ...prepared, policy: { ...DEFAULT_POLICY, ...(activeRequirement?.policy ?? {}) } });
   }, [access.allowed, challenge, instance, requirement, selectedMode]);
 
   const installRuntime = useCallback(() => {
@@ -83,12 +121,12 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
       createAttempt: buildAttempt,
       now: () => Date.now(),
       tickMs: 50,
-      onEvent: (event) => setLastWrong(event?.type === 'wrong'),
+      onEvent: (event) => setLastWrong(wrongEventState(event)),
     });
     runtimeRef.current = next;
     previousNotesRef.current = [...activeNotesRef.current.keys()];
     persistedRef.current = false;
-    setLastWrong(false);
+    setLastWrong(null);
     setCountdown(null);
     setRuntime(next);
   }, [buildAttempt]);
@@ -189,6 +227,12 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
   const result = snapshot.result?.status === 'completed' ? snapshot.result : null;
   const phase = snapshot.status === 'prepared' ? 'ready' : snapshot.status === 'completed' ? 'done' : countdown ? 'countdown' : 'running';
   const expected = instance.events.flatMap((event) => event.notes.map((note) => note.midi));
+  // Two consumers, two different things. ExerciseNotation's `wrong` prop is a
+  // FLAG (it only ever colours the cursor note), so it gets a boolean — passing
+  // the object would "work" by truthiness and rot the moment either side
+  // changes. The keyboard footer wants the pitch itself.
+  const isWrong = lastWrong !== null;
+  const wrongNotes = lastWrong === null ? null : new Set([lastWrong.midi]);
   const currentEvent = instance.events[Math.min(eventIndex, instance.events.length - 1)] || instance.events[0];
   const targetNotes = new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }]));
 
@@ -200,17 +244,17 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
         <div className="piano-exercise-run__context"><span>{instance.key}</span><span>{instance.meter}</span>{challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}</div>
       </header>
       <div className="piano-exercise-run__score">
-        <ExerciseNotation instance={instance} eventIndex={eventIndex} wrong={lastWrong} complete={phase === 'done' && result?.verdict?.passed} />
+        <ExerciseNotation instance={instance} eventIndex={eventIndex} wrong={isWrong} complete={phase === 'done' && result?.verdict?.passed} />
         {countdown && <div className="piano-exercise-run__countdown" aria-live="assertive">{countdown}</div>}
       </div>
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{challenge ? 'The tempo and pass criteria are fixed for this run. The count-in starts when you are ready.' : 'Correct mistakes and continue at your own pace. Practice is saved, but it does not unlock a gate.'}</p>{!connected && <span>Waiting for the piano…</span>}<button type="button" onClick={start}>{challenge ? 'Begin challenge' : 'Begin practice'}</button></div>}
-      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${lastWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : lastWrong ? 'That note was not expected — keep going.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
+      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
       {phase === 'done' && result && <section className={`piano-exercise-run__result${result.verdict.passed ? ' is-passed' : ' is-developing'}`}>
         <div><span>{result.verdict.passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span><strong>{Math.round(result.score * 100)}%</strong></div>
         <dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl>
         <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !result.verdict.passed && <button type="button" onClick={onExit}>Practice first</button>}{result.verdict.passed && <button type="button" onClick={onPassed}>Continue</button>}</div>
       </section>}
-      <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={activeNotes} targetNotes={targetNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>
+      <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={activeNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>
     </section>
   );
 }
