@@ -173,6 +173,12 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
         intent: 'challenge',
         return: returnPath,
         requirement: JSON.stringify(checkpoint),
+        // The lesson the child was watching, so the exercise says why it is on
+        // screen ("Pass this to finish Lesson 3") instead of a bare
+        // "Pass challenge" over a bank title. Same value this hands the
+        // pending-checkpoint record below, which is where the RESUME path
+        // (the exercises dashboard's Continue) reads its own label from.
+        ...(lecture.label || lecture.title ? { label: lecture.label || lecture.title } : {}),
       });
       getLogger().child({ component: 'piano-videos' }).info('piano.video.checkpoint-open', {
         courseId, lectureId, exerciseId: checkpoint.exercise_id,

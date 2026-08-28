@@ -133,6 +133,14 @@ describe('framingFor', () => {
     expect(framingFor({ kind: 'program', stepLabel: 'Warm-up' })).toBe('Pass this to finish Warm-up');
   });
 
+  it('lesson context -> "Pass this to finish " + lessonLabel', () => {
+    // A video checkpoint makes the same promise a program step does, and says
+    // it in the same words — but off a different fact, from a different host.
+    // Kept as its own shape so a change to one line cannot silently rewrite
+    // the other.
+    expect(framingFor({ kind: 'lesson', lessonLabel: 'Lesson 3' })).toBe('Pass this to finish Lesson 3');
+  });
+
   it('practice context -> null so practice keeps the exercise title as its headline', () => {
     expect(framingFor({ kind: 'practice' })).toBeNull();
   });
