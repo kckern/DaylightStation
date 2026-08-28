@@ -21,5 +21,10 @@ export default function ExerciseNotation({ instance, eventIndex = 0, wrong = fal
   }, [complete, eventIndex, preview, wrong]);
   useEffect(paint, [paint]);
   const rendered = useCallback((_tune, staffNotes) => { staffRef.current = staffNotes; paint(); }, [paint]);
+  // instanceToAbc returns '' for material this module has no business drawing
+  // (ordering:'any' — that plays through KeysAsk/SvgSequenceStaff instead).
+  // AbcRenderer given abc="" still mounts a real, empty-tune SVG; render
+  // nothing rather than that hairline artifact.
+  if (!abc) return null;
   return <AbcRenderer abc={abc} scale={preview ? 0.72 : 1} singleLine={!preview} fitContent onRender={rendered} />;
 }
