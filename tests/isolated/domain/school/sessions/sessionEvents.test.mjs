@@ -22,6 +22,7 @@ const PAYLOADS = {
   media_dispatched: { dispatchId: 'dsp_1', target: 'shield-tv', contentId: 'plex:1234' },
   media_completed: {},
   media_stalled: {},
+  checkpoint_cleared: { checkpointId: 'cp_1', attempts: 1 },
   launch_dispatched: { surface: 'screen-1', decision: 'auto', approvalId: 'app_1' },
   program_dispatched: { programId: 'language', corpusId: 'glossika-korean', day: 3 },
   external_activity_dispatched: { provider: 'fitness', attemptId: SID, courseRevision: 'course-1', policyRevision: 'policy-1' },
@@ -57,7 +58,7 @@ describe('EVENT_TYPES', () => {
   it('is the closed spec §5.2 set', () => {
     expect(EVENT_TYPES).toEqual([
       'created', 'issued', 'reprinted', 'result_receipt_captured', 'result_receipt_reprinted',
-      'media_dispatched', 'media_completed', 'media_stalled',
+      'media_dispatched', 'media_completed', 'media_stalled', 'checkpoint_cleared',
       'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'external_activity_assessed',
       'submitted', 'graded', 'outcome_recorded', 'rewarded',
       'reward_reconciled', 'reward_reconciliation_failed',
@@ -239,6 +240,7 @@ describe('createEvent: per-type payloads', () => {
     ['media_dispatched', 'dispatchId'],
     ['media_dispatched', 'target'],
     ['media_dispatched', 'contentId'],
+    ['checkpoint_cleared', 'checkpointId'],
     ['launch_dispatched', 'surface'],
     ['outcome_recorded', 'outcomeId'],
     ['rewarded', 'txnId'],
@@ -577,6 +579,122 @@ describe('reduceSession: annotation events', () => {
     const events = log(['created', 'abandoned']);
     const state = reduceSession([...events, { ...ev('failed'), seq: 3 }]);
     expect(state.errors).toContain('event[seq=3]: illegal transition abandoned -> failed');
+  });
+});
+
+describe('checkpoint_cleared: the mid-media gate', () => {
+  const cp = (over = {}) => createEvent({
+    type: 'checkpoint_cleared', at: AT, sessionId: SID, seq: 1, checkpointId: 'cp_1', attempts: 1, ...over,
+  });
+
+  it('requires attempts to be an integer >= 1 — a clear costs at least one answer', () => {
+    expect(cp({ attempts: undefined }).errors).toContain('attempts: must be an integer >= 1');
+    expect(cp({ attempts: 0 }).errors).toContain('attempts: must be an integer >= 1');
+    expect(cp({ attempts: 1.5 }).errors).toContain('attempts: must be an integer >= 1');
+    expect(cp({ attempts: '3' }).errors).toContain('attempts: must be an integer >= 1');
+    expect(cp({ attempts: 1 }).errors).toEqual([]);
+  });
+
+  it('accepts an unbounded retry count — wrong answers re-ask until correct', () => {
+    expect(cp({ attempts: 47 }).errors).toEqual([]);
+  });
+
+  it('keeps `at` as the wall clock, so a media position can never be passed as one', () => {
+    // Every other event in this log uses `at` for wall-clock time. A caller
+    // reaching for `at: 312` to mean "312 seconds in" is rejected outright
+    // rather than filed as a timestamp nobody can read.
+    expect(cp({ at: 312 }).errors).toContain('at: must be an ISO-8601 timestamp');
+  });
+
+  it('drops anything not on the whitelist rather than storing it as evidence', () => {
+    const { event } = cp({ positionSeconds: 312, answer: 'B', learnerId: 'kid1' });
+    expect(Object.keys(event).sort()).toEqual(['at', 'attempts', 'checkpointId', 'seq', 'sessionId', 'type']);
+  });
+
+  it('is an annotation: it does not advance the media dispatch it is evidence inside', () => {
+    expect(ANNOTATION_EVENTS.has('checkpoint_cleared')).toBe(true);
+    const state = reduceSession(log(['created', 'media_dispatched', 'checkpoint_cleared']));
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe('media_dispatched');
+    expect(state.nextAction.kind).toBe('await_media_completion');
+  });
+
+  it('accumulates cleared checkpoints in order', () => {
+    nextSeq = 0;
+    const state = reduceSession([
+      ev('created'), ev('media_dispatched'),
+      ev('checkpoint_cleared', { checkpointId: 'cp_1', attempts: 1, at: '2026-07-27T10:01:00.000Z' }),
+      ev('checkpoint_cleared', { checkpointId: 'cp_2', attempts: 3, at: '2026-07-27T10:04:00.000Z' }),
+    ]);
+    expect(state.errors).toEqual([]);
+    expect(state.clearedCheckpoints).toEqual([
+      { checkpointId: 'cp_1', attempts: 1, at: '2026-07-27T10:01:00.000Z' },
+      { checkpointId: 'cp_2', attempts: 3, at: '2026-07-27T10:04:00.000Z' },
+    ]);
+  });
+
+  it('is idempotent per checkpointId — a retried POST must not double the row', () => {
+    nextSeq = 0;
+    const state = reduceSession([
+      ev('created'), ev('media_dispatched'),
+      ev('checkpoint_cleared', { checkpointId: 'cp_1', attempts: 2, at: '2026-07-27T10:01:00.000Z' }),
+      ev('checkpoint_cleared', { checkpointId: 'cp_1', attempts: 9, at: '2026-07-27T10:09:00.000Z' }),
+    ]);
+    expect(state.errors).toEqual([]);
+    // First clear wins: that is when the gate actually released.
+    expect(state.clearedCheckpoints).toEqual([
+      { checkpointId: 'cp_1', attempts: 2, at: '2026-07-27T10:01:00.000Z' },
+    ]);
+  });
+
+  it('survives the round trip production actually takes: createEvent -> log -> reduceSession', () => {
+    // The reducer tests above hand-build raw events, so they would still pass
+    // if `fields` failed to declare `checkpointId` or `attempts` — the
+    // whitelist only bites on the way IN. This test is the one that notices:
+    // it reduces the events `createEvent` actually built.
+    const built = [
+      { type: 'created', ...PAYLOADS.created },
+      { type: 'media_dispatched', ...PAYLOADS.media_dispatched },
+      { type: 'checkpoint_cleared', checkpointId: 'cp_1', attempts: 4 },
+    ].map((raw, i) => {
+      const { errors, event } = createEvent({ at: AT, sessionId: SID, seq: i + 1, ...raw });
+      expect(errors).toEqual([]);
+      return event;
+    });
+    const state = reduceSession(built);
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe('media_dispatched');
+    expect(state.clearedCheckpoints).toEqual([{ checkpointId: 'cp_1', attempts: 4, at: AT }]);
+  });
+
+  it('is empty on every session that never played anything', () => {
+    expect(reduceSession(log(['created', 'issued'])).clearedCheckpoints).toEqual([]);
+    expect(reduceSession([]).clearedCheckpoints).toEqual([]);
+  });
+
+  it('records a malformed clear without filing a nameless row against the child', () => {
+    // A payload error does not veto the transition (that rule is deliberate and
+    // tested above), so the reducer still sees this event. It must not push a
+    // `{ checkpointId: undefined }` row: every such row would then dedupe
+    // against every other, and the derived cleared set would be junk.
+    const state = reduceSession(log(['created', 'media_dispatched', 'checkpoint_cleared'],
+      { checkpoint_cleared: { checkpointId: '  ' } }));
+    expect(state.errors).toContain('event[seq=3]: checkpointId: must be a non-empty string');
+    expect(state.state).toBe('media_dispatched');
+    expect(state.clearedCheckpoints).toEqual([]);
+  });
+
+  it('is ILLEGAL from created — nothing has been dispatched to clear a checkpoint in', () => {
+    const state = reduceSession(log(['created', 'checkpoint_cleared']));
+    expect(state.errors).toContain('event[seq=2]: illegal transition created -> checkpoint_cleared');
+    expect(state.state).toBe('created');
+    expect(state.clearedCheckpoints).toEqual([]);
+  });
+
+  it('is illegal after the media finished — the gates are behind the playhead by then', () => {
+    const state = reduceSession(log(['created', 'media_dispatched', 'media_completed', 'checkpoint_cleared']));
+    expect(state.errors).toContain('event[seq=4]: illegal transition media_completed -> checkpoint_cleared');
+    expect(state.clearedCheckpoints).toEqual([]);
   });
 });
 
