@@ -23,8 +23,17 @@
   --gg-accent-ink: var(--piano-accent-ink, #07210f);
 
   /* Discrete tap targets, never sliders, and never under 48px: this is a
-     wall-mounted tablet operated by children with the flat of a finger. */
-  button {
+     wall-mounted tablet operated by children with the flat of a finger.
+
+     SCOPED, and that is not tidiness. A bare `button` here matches every
+     button INSIDE the embedded ExerciseRun too, at the same specificity as
+     `.piano-exercise-run button` (Exercises.scss) — and this sheet is imported
+     later, so it wins. "Begin challenge" and "Continue" lost their accent and
+     rendered as flat surface chrome (measured: rgb(31,31,38) where the run
+     asks for rgb(46,196,111)). The gate owns its Leave button and the failure
+     panel's actions; the run owns everything inside itself. */
+  > button,
+  .piano-game-gate__actions button {
     min-height: 48px;
     padding: 0.55rem 1.15rem;
     border: 1px solid var(--gg-border);

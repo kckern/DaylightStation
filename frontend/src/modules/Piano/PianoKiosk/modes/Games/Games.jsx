@@ -1,4 +1,4 @@
-import { useMemo, useContext, Suspense } from 'react';
+import { useMemo, useCallback, useContext, useState, Suspense } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
@@ -13,6 +13,9 @@ import GameBoundary from '../../../game-platform/host/GameBoundary.jsx';
 import { resolvePianoPlayerName } from '../../../game-platform/identity/playerName.js';
 import useSchoolGameAccess from '../../useSchoolGameAccess.js';
 import useGameBudgetMeter from '../../useGameBudgetMeter.js';
+import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
+import GameGate from './GameGate.jsx';
+import MatchGateContext from './MatchGateContext.js';
 
 /**
  * Relative destination for a game-owned URL segment.
@@ -152,25 +155,82 @@ function GameHost() {
   const playerName = resolvePianoPlayerName(currentUser);
   const entry = getGameEntry(gameId);
 
-  // Gate 3 (below the school lock, gate 1): meter the day's game-time budget.
-  // `active: true` only here — D13: only a MOUNTED game is a match, so the
-  // picker and every other mode never open a session. Fail-open states
-  // ('off', 'opening', 'unavailable', 'playing', 'idle-paused', 'warning')
-  // all fall through to the normal game render below; only an affirmative
-  // depletion answer swaps the game for a lock panel.
-  //
   // learnerId MUST be the roster slug (pianoUser.currentUser), never
   // `currentUser` above — that local resolves to the hydrated PROFILE OBJECT
   // once the roster has loaded (`currentProfile ?? currentUser`), which the
   // games themselves want for display/props. Sending the object as a route
   // param stringifies to the literal "[object Object]", so every child on
   // the piano would meter into one shared bucket instead of their own. Gate 1
-  // above (Games()) already keys off this same slug — this keeps both gates
-  // identifying the child the same way.
+  // above (Games()) already keys off this same slug — this keeps all three
+  // gates identifying the child the same way, and the gate's ladder is stored
+  // per child under exactly this key.
   const learnerId = pianoUser?.currentUser ?? null;
+  // Which physical kiosk this browser IS, not which app it is running. A shared
+  // literal ('piano-kiosk') cannot tell a wall tablet from a dev laptop, so two
+  // clients stamp the same id: every per-device log query merges them, and the
+  // device-wide daily cap is one bucket that whichever kiosk is used first
+  // spends for both. `readKioskDeviceId` is the SSOT for that identity (the
+  // launch URL's `?device=`, persisted); a client with none stays null rather
+  // than guessing.
+  const deviceId = useMemo(() => readKioskDeviceId(), []);
+
+  // Gate 2 — the playing challenge at a match boundary (D7/D11). It replaces
+  // the game on the SAME route rather than sitting over it: MIDI has no focus
+  // concept, so exactly one consumer of the note stream at a time.
+  //
+  // `gatePending` starts armed when the household enables the gate, so ENTERING
+  // a game is itself a match boundary (D12: nothing reaches a match without
+  // passing). Config is loaded before any route renders (PianoApp returns null
+  // while the roster is loading), so this initial read is never the "not yet
+  // arrived" false.
+  const gateEnabled = config.gameGate?.enabled === true;
+  const [gatePending, setGatePending] = useState(gateEnabled);
+  // Bumped on every match boundary and used as the game's `key`, so a rematch
+  // is a genuine REMOUNT — a game that kept its board across "play again"
+  // would make the gate a toll on nothing.
+  const [matchId, setMatchId] = useState(1);
+
+  // Gate 3 (below the school lock, gate 1, and below the match gate, gate 2):
+  // meter the day's game-time budget. `active: true` only here — D13: only a
+  // MOUNTED game is a match, so the picker and every other mode never open a
+  // session. That is also why `gatePending` suppresses it: the gate is what you
+  // pay WITH, not what you pay for, and a session opened while the child is
+  // playing a scale would bill the challenge to their game time. Fail-open
+  // states ('off', 'opening', 'unavailable', 'playing', 'idle-paused',
+  // 'warning') all fall through to the normal game render below; only an
+  // affirmative depletion answer swaps the game for a lock panel.
   const meter = useGameBudgetMeter({
-    learnerId, deviceId: 'piano-kiosk', active: config.gameLimit?.enabled === true,
+    learnerId, deviceId, active: config.gameLimit?.enabled === true && !gatePending,
   });
+
+  /**
+   * A game reached a match boundary and is asking what happens there.
+   *
+   * Armed: the gate goes back up and the game unmounts. There is no state to
+   * lose — this is only ever called where the game was about to reset itself.
+   * Unarmed: bump the match id, which remounts the game. That is today's
+   * restart behaviour exactly, expressed as a fresh match.
+   */
+  const requestRematch = useCallback(() => {
+    logger.info('piano.game-rematch', { game: gameId, gated: gateEnabled });
+    if (gateEnabled) { setGatePending(true); return; }
+    setMatchId((value) => value + 1);
+  }, [gameId, gateEnabled, logger]);
+
+  const matchGate = useMemo(
+    () => ({ armed: gateEnabled, requestRematch }),
+    [gateEnabled, requestRematch],
+  );
+
+  /**
+   * The gate resolved in the child's favour — a genuine pass, or an
+   * infrastructure fail-open the child could do nothing about. Both open the
+   * match; the gate has already logged which it was.
+   */
+  const openMatch = useCallback(() => {
+    setGatePending(false);
+    setMatchId((value) => value + 1);
+  }, []);
 
   // Current location in the header breadcrumb (Games › this game). The breadcrumb
   // replaces the old in-canvas back pill — tap the "Games" crumb to exit.
@@ -187,9 +247,9 @@ function GameHost() {
     navigate(gameSubRouteTarget(subRoute, next), { relative: 'path', replace: true });
   };
 
-  if (meter.state === 'depleted') return <BudgetLock kind="learner" />;
-  if (meter.state === 'device-depleted') return <BudgetLock kind="device" />;
-
+  // A game id nothing answers to is not a gate at all — asking a child to play
+  // a scale before telling them the game does not exist would be a toll on
+  // nothing, so this is settled before either gate below.
   if (!entry?.LazyComponent) {
     return (
       <div className="piano-mode__placeholder">
@@ -198,6 +258,27 @@ function GameHost() {
       </div>
     );
   }
+
+  // Gate 2, IN PLACE OF the game (D11) and inside the same fullscreen stage the
+  // game would have had — one route, one MIDI consumer, one box. Above gate 3
+  // deliberately: the challenge is what a match is bought with, so it is asked
+  // before the day's balance is read.
+  if (gatePending) {
+    return (
+      <div className="piano-game-fullscreen">
+        <GameGate
+          learnerId={learnerId}
+          deviceId={deviceId}
+          gateConfig={config.gameGate ?? null}
+          onPassed={openMatch}
+          onLeave={exit}
+        />
+      </div>
+    );
+  }
+
+  if (meter.state === 'depleted') return <BudgetLock kind="learner" />;
+  if (meter.state === 'device-depleted') return <BudgetLock kind="device" />;
 
   return (
     <div className="piano-game-fullscreen">
@@ -210,21 +291,31 @@ function GameHost() {
       )}
       {/* A game that throws costs the player that game — not the kiosk. Without
           this, any throw blanked the whole screen, and the tablet's render
-          watchdog then read a dead page and rebooted it. */}
-      <GameBoundary resetKey={gameId} label={entry.label ?? 'This game'} onExit={exit}>
+          watchdog then read a dead page and rebooted it. `matchId` is in the
+          reset key so a fresh match also clears a caught crash — a rematch the
+          child paid for must not land back on the error card. */}
+      <GameBoundary resetKey={`${gameId}:${matchId}`} label={entry.label ?? 'This game'} onExit={exit}>
         <Suspense fallback={<SkeletonStage />}>
-          <entry.LazyComponent
-            activeNotes={activeNotes}
-            noteHistory={noteHistory}
-            gameConfig={config.games?.[gameId]}
-            subRoute={subRoute ?? null}
-            onSubRoute={goSubRoute}
-            currentUser={currentUser}
-            playerName={playerName}
-            onDeactivate={exit}
-            onNoteOn={pressNote}
-            onNoteOff={releaseNote}
-          />
+          {/* The game announces match boundaries through this context and the
+              host decides what happens at them; `key` makes the decision real
+              by remounting rather than re-rendering. Games mounted anywhere
+              else (the office screen has no provider) read null and restart
+              themselves exactly as they always have. */}
+          <MatchGateContext.Provider value={matchGate}>
+            <entry.LazyComponent
+              key={matchId}
+              activeNotes={activeNotes}
+              noteHistory={noteHistory}
+              gameConfig={config.games?.[gameId]}
+              subRoute={subRoute ?? null}
+              onSubRoute={goSubRoute}
+              currentUser={currentUser}
+              playerName={playerName}
+              onDeactivate={exit}
+              onNoteOn={pressNote}
+              onNoteOff={releaseNote}
+            />
+          </MatchGateContext.Provider>
         </Suspense>
       </GameBoundary>
     </div>

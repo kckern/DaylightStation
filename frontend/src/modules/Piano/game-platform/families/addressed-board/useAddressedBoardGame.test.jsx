@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { useAddressedBoardGame, userIdOf } from './useAddressedBoardGame.js';
+import MatchGateContext from '../../../PianoKiosk/modes/Games/MatchGateContext.js';
 
 function makeClient() {
   return {
@@ -13,17 +14,25 @@ function makeClient() {
   };
 }
 
-/** Drives the hook and exposes its latest return value to the test. */
-function harness(props) {
+/**
+ * Drives the hook and exposes its latest return value to the test.
+ *
+ * `matchGate` is optional and defaults to ABSENT — no provider at all, which is
+ * the office screen's situation and the one every existing test here runs in.
+ */
+function harness(props, matchGate) {
   const seen = { current: null };
   function Probe(inner) {
     seen.current = useAddressedBoardGame(inner);
     return null;
   }
-  const view = render(<Probe {...props} />);
+  const wrap = (element) => (matchGate === undefined
+    ? element
+    : <MatchGateContext.Provider value={matchGate}>{element}</MatchGateContext.Provider>);
+  const view = render(wrap(<Probe {...props} />));
   return {
     seen,
-    rerender: (next) => view.rerender(<Probe {...{ ...props, ...next }} />),
+    rerender: (next) => view.rerender(wrap(<Probe {...{ ...props, ...next }} />)),
     unmount: view.unmount,
   };
 }
@@ -160,6 +169,45 @@ describe('useAddressedBoardGame', () => {
     await act(async () => { rerender({ result: 'win' }); });
     expect(client.saveGame).toHaveBeenCalledTimes(2);
     expect(client.saveGame.mock.calls[1][1]).toMatchObject({ ranked: true });
+  });
+
+  it('hands an ARMED match gate the rematch instead of restarting itself', async () => {
+    // D11/D12: a replay is a match boundary, and a match boundary is where the
+    // gate stands. The host unmounts the game and mounts the challenge, so
+    // resetting local session state here would be both pointless and a lie —
+    // the seed and session id it minted would belong to a match nobody played.
+    const requestRematch = vi.fn();
+    let seen;
+    await act(async () => {
+      ({ seen } = harness(
+        { gameId: 'checkers', client, currentUser: { id: 'ada' }, moves: [1], result: null },
+        { armed: true, requestRematch },
+      ));
+    });
+    const before = seen.current.gameSessionId;
+    const seedBefore = seen.current.seed;
+    await act(async () => { seen.current.noteLocalPractice(); });
+
+    await act(async () => { seen.current.restart(); });
+    expect(requestRematch).toHaveBeenCalledTimes(1);
+    expect(seen.current.gameSessionId).toBe(before);
+    expect(seen.current.seed).toBe(seedBefore);
+    expect(seen.current.localPractice).toBe(true);
+  });
+
+  it('restarts itself when the gate is present but UNARMED', async () => {
+    const requestRematch = vi.fn();
+    let seen;
+    await act(async () => {
+      ({ seen } = harness(
+        { gameId: 'checkers', client, currentUser: { id: 'ada' }, moves: [1], result: null },
+        { armed: false, requestRematch },
+      ));
+    });
+    const before = seen.current.gameSessionId;
+    await act(async () => { seen.current.restart(); });
+    expect(requestRematch).not.toHaveBeenCalled();
+    expect(seen.current.gameSessionId).not.toBe(before);
   });
 
   it('prefers the resolved ladder rung over the configured default', async () => {

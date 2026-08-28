@@ -81,6 +81,15 @@ export const PIANO_CONFIG_DEFAULTS = {
   // reaches whatever eventually needs it, per the resolver's own "silently
   // drops any key not threaded through it" failure mode.
   gameLimit: { enabled: false },
+  // Playing challenge at a match boundary (gate 2). Off by default, like
+  // gameLimit above it. Whole-node passthrough for the same reason and with
+  // the same failure mode: the HOST only reads `enabled` to decide whether to
+  // stand a gate in front of the game, but the rest of the block (passScore,
+  // retriesBeforeDegrade, climbAfterCleanPasses, material, …) is the gate
+  // component's own config and has to survive the resolver to reach it. A key
+  // this projection does not name is dropped in silence — a gate whose config
+  // never arrives is a gate that is permanently off while the YAML says on.
+  gameGate: { enabled: false },
 };
 
 /** Resolve screensaver config: per-piano values override shared, over defaults. */
@@ -180,6 +189,7 @@ export function resolvePianoConfig(raw, pianoId) {
     autoStudio: { ...PIANO_CONFIG_DEFAULTS.autoStudio, ...(shared.autoStudio || {}), ...(p.autoStudio || {}) },
     display: { ...PIANO_CONFIG_DEFAULTS.display, ...(shared.display || {}), ...(p.display || {}) },
     gameLimit: { ...PIANO_CONFIG_DEFAULTS.gameLimit, ...(shared.gameLimit || {}), ...(p.gameLimit || {}) },
+    gameGate: { ...PIANO_CONFIG_DEFAULTS.gameGate, ...(shared.gameGate || {}), ...(p.gameGate || {}) },
   };
 }
 

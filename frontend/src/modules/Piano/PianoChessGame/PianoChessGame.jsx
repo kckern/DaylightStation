@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { INITIAL_FEN, legalDestinations } from '@shared-gaming/rulesets/chess/engine.mjs';
 import { fenToPosition } from '@shared-gaming/rulesets/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
@@ -22,6 +22,7 @@ import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/P
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
 import { usePlayerLock } from '../PianoKiosk/PianoPlaybackContext.jsx';
+import MatchGateContext from '../PianoKiosk/modes/Games/MatchGateContext.js';
 import {
   archiveGame, beaconArchive, fetchChessConfig, fetchLadder, requestBestMove,
   requestOpponentMove, requestOpponentQuip, saveChessConfig, saveGameRecord,
@@ -578,7 +579,27 @@ export function PianoChessGame({
     gateway: CHESS_PERSISTENCE_GATEWAY,
   });
 
+  // Who, if anyone, owns the boundary between one game and the next. Read
+  // through a ref so `restart` keeps a stable identity — it is handed to
+  // `useAnyKeyToContinue` and to the input controller, both of which arm
+  // listeners on it.
+  const matchGate = useContext(MatchGateContext);
+  const matchGateRef = useRef(matchGate);
+  matchGateRef.current = matchGate;
+
   const restart = useCallback(async () => {
+    // Every route into a new board comes through here: the result card's Play
+    // again, the rail's mid-game Play again, the any-key continue, and the
+    // input controller's restart gesture. All four are the SAME boundary, and
+    // all four are gated — a mid-game abandon that skipped the challenge would
+    // be a one-tap bypass of it (start, abandon, play on), which is exactly
+    // what D12 forbids. Board state is discarded on every one of these paths
+    // anyway, so there is nothing to lose by unmounting instead.
+    const gate = matchGateRef.current;
+    if (gate?.armed) {
+      gate.requestRematch();
+      return;
+    }
     const nextSession = beginNextGame();
     // The next game keeps the player's resolved addressing. Rebuilding from the
     // raw props here used to silently reset a configured player to the shipped
