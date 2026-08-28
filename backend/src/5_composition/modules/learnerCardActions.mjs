@@ -74,6 +74,20 @@ export function makePrintAgendaHandler({ resolvePersonalCard, eventBus, logger =
   };
 }
 
+/** Apply the reader's declared end policy when its reading session expires. */
+export function makeReadingTimeoutHandler({ locations = () => ({}), tv = null, logger = console } = {}) {
+  return async (session) => {
+    const source = locations()?.[session?.location] ?? {};
+    if (source.end !== 'tv-off') {
+      logger?.info?.('school.reading.timeout-idle', { location: session?.location ?? null, end: source.end ?? null });
+      return { action: 'idle' };
+    }
+    if (!tv?.turnOff) return { action: 'tv-off-unavailable' };
+    await tv.turnOff(source.end_location ?? session.location);
+    return { action: 'tv-off', location: source.end_location ?? session.location };
+  };
+}
+
 /**
  * The `reading-session` learner action: a preschooler's own card at the
  * living-room reader opens a session scoped to them, and wakes the screen so
@@ -251,4 +265,4 @@ export function makeReadingSessionHandler({
   };
 }
 
-export default { makePrintAgendaHandler, makeReadingSessionHandler };
+export default { makePrintAgendaHandler, makeReadingSessionHandler, makeReadingTimeoutHandler };

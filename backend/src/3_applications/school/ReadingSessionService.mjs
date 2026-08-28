@@ -91,6 +91,7 @@ export class ReadingSessionService {
   #serverEpoch;
   #ackWaiters = new Map();
   #observations = [];
+  #observationStore;
   /** Locations already reported stuck, so the 15s sweep warns once, not always. */
   #stuckReported = new Set();
   #eventBus; #clock; #logger;
@@ -113,7 +114,7 @@ export class ReadingSessionService {
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
     sweepIntervalMs = DEFAULT_SWEEP_INTERVAL_MS,
     onTimeout = null,
-    scheduler = { setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval },
+    scheduler = { setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval }, observationStore = null,
   } = {}) {
     this.#eventBus = eventBus;
     this.#clock = clock;
@@ -123,6 +124,7 @@ export class ReadingSessionService {
     this.#onTimeout = onTimeout;
     this.#scheduler = scheduler;
     this.#serverEpoch = `reading_${Math.random().toString(36).slice(2, 12)}`;
+    this.#observationStore = observationStore;
   }
 
   /**
@@ -441,6 +443,8 @@ export class ReadingSessionService {
       revision: session.revision ?? null, ...extra,
     }));
     if (this.#observations.length > DEFAULT_OBSERVATION_LIMIT) this.#observations.splice(0, this.#observations.length - DEFAULT_OBSERVATION_LIMIT);
+    const event = this.#observations.at(-1);
+    Promise.resolve(this.#observationStore?.append?.(event)).catch((err) => this.#log('warn', 'school.reading.timeline-write-failed', { error: err?.message ?? String(err) }));
   }
 
   /** A broken log transport must not become a broken tap. */

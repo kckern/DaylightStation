@@ -78,7 +78,7 @@ function badRequest(message) {
  */
 export function createReadingRouter({
   recordStoryRead, sessions, storyTime = null, readingLog = null,
-  resolveLearner = null, logger = console,
+  resolveLearner = null, logger = console, observationStore = null,
 } = {}) {
   if (!recordStoryRead) throw new Error('createReadingRouter requires recordStoryRead');
   if (!sessions) throw new Error('createReadingRouter requires a sessions store');
@@ -113,12 +113,17 @@ export function createReadingRouter({
       const at = Date.parse(value);
       return Number.isFinite(at) ? Math.max(0, now - at) : null;
     };
+    const events = observationStore?.list ? await observationStore.list(location, { limit }) : sessions.observations(location, { limit });
+    const visibleState = current?.state ?? (events.at(-1)?.type === 'closed' ? 'idle' : events.at(-1)?.state ?? 'unknown');
+    const stateStart = events.filter((event, index) => event?.state === visibleState && events[index - 1]?.state !== visibleState).at(-1);
     return res.json({
       ...session,
       ageMs: current ? isoAge(current.openedAt) : null,
       ackAgeMs: current?.acknowledgedAt ? isoAge(current.acknowledgedAt) : null,
       progressAgeMs: current?.progress?.at ? isoAge(current.progress.at) : null,
-      events: sessions.observations(location, { limit }),
+      visibleState,
+      displayedSince: stateStart?.at ?? null,
+      events,
     });
   }));
   router.post('/progress', asyncHandler(async (req, res) => {
