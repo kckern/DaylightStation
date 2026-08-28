@@ -488,9 +488,12 @@ const PROBE = `(${function install() {
     const cs = getComputedStyle(el);
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     const px = (name) => parseFloat(cs.getPropertyValue(name)) || 0;
-    // The CONTENT box, and how much the border box exceeds it. The tier-2 size
-    // cap is written against content (the app sets no global `border-box`), so
-    // both numbers have to be available or the cap cannot be checked at all.
+    // The border box, the content box, and the difference. `.sequence-staff`
+    // sets `box-sizing: border-box`, so a size cap written against it governs
+    // the BORDER box and `height`/`width` are the tight numbers; `content*` is
+    // looser by exactly the card's own chrome. Both are published because which
+    // one an assertion should use depends on the element's own box-sizing, and
+    // getting that backwards is how a check goes quietly slack.
     const chromeX = px('border-left-width') + px('border-right-width') + px('padding-left') + px('padding-right');
     const chromeY = px('border-top-width') + px('border-bottom-width') + px('padding-top') + px('padding-bottom');
     return {
@@ -787,11 +790,15 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     // `overflow: hidden`. No committed test asserted any of this before.
     expect(await probe.prop('.piano-exercise-run__sequence', '--staff-aspect'),
       'the host did not publish the staff aspect the cap is computed from').not.toBe('');
-    // The cap governs the CONTENT box, and that is where it must hold exactly.
-    expect(staff.contentHeight, `the staff ${say(staff)} is taller than its row ${say(container)}`)
+    // The cap governs the BORDER box (`box-sizing: border-box`), so that is the
+    // number it must hold for. Asserting `contentHeight` here would be the loose
+    // check — slack by exactly the 6px of chrome the card carries, which is the
+    // whole of what used to overflow — and it would pass a card that spills.
+    expect(staff.height, `the staff ${say(staff)} is taller than its row ${say(container)}`)
       .toBeLessThanOrEqual(container.height + 0.5);
-    expect(staff.contentWidth).toBeLessThanOrEqual(container.width + 0.5);
-    // The card's own edge may sit a hairline proud of the row; nothing else may.
+    expect(staff.width).toBeLessThanOrEqual(container.width + 0.5);
+    // Nothing may sit proud of the row now — but the card's box model is still
+    // pinned, so a card that grew one would be caught here rather than absorbed.
     expect(staff.chromeY, 'the staff card grew a real box model').toBeLessThanOrEqual(CARD_HAIRLINE);
     expect(inside(await probe.one('.action-staff__staff-area'), stage),
       'the staff\'s ink is drawn outside the stage row that clips it').toBe(true);

@@ -260,15 +260,25 @@ still the one it was served for.
 ### The ask, from arriving to done
 
 **Arrive.** One screen, three lines of hierarchy: the **bargain** ("Play this to start
-Chess" — supplied by the host, so a gate, a program step and ordinary practice each say
-why the screen exists without the run guessing), the **ask in plain words** ("C major
-scale, right hand" / "Play these notes together" / "Press the lit key"), and the material
-itself, visible in full before anything starts. Together-versus-in-order is answered
-before a child can wonder about it, not in a status line they reach after deciding.
+Chess"), the **ask in plain words** ("C major scale, right hand" / "Play these notes
+together" / "Press the lit key"), and the material itself, visible in full before anything
+starts. Together-versus-in-order is answered before a child can wonder about it, not in a
+status line they reach after deciding.
 
-The exercise-bank title ("Intervals") is not a headline anywhere a child is being gated.
-A key chip appears only when a staff is shown and is labelled ("Key of F"), never a bare
-letter; a meter chip only when cued; a BPM chip only when a pace gate exists.
+Both the bargain and the plain-words ask are **props the host supplies** (`framing`,
+`ask`), so the run never has to guess why it is on screen. **The match gate is the only
+host that supplies them today.** A program-step challenge, launched from the exercise
+program page, passes neither — so it still shows the old eyebrow ("Pass challenge") over
+the bank's own title. `framingFor` names a `program` shape for it and nothing calls that
+branch yet; the run route would need to carry the two values through its query. Ordinary
+practice supplies neither by design: a child who chose an exercise from the browser has
+its detail page one tap behind them.
+
+Where the ask is supplied, the exercise-bank title ("Intervals") is not the headline —
+which, per the paragraph above, means at the match gate and nowhere else yet. A key chip
+appears only when a staff is shown and is labelled ("Key of F"), never a bare letter; a
+meter chip only when cued; a BPM chip only when a pace gate exists. Those three are
+unconditional: they are the run's own, not a host's.
 
 **Start — from the piano, never from a button.**
 
@@ -490,7 +500,7 @@ gameGate:
       tier: 3
       grading: { cleanliness: 0.8 }
       material:
-        - { kind: exercise, collection: scales, roots: [C, G], hands: right, cued: true }
+        - { kind: exercise, collection: scales, roots: [C, G], hands: right }
         # A passage of real music belongs here — four bars of the study piece,
         # engraved by the sheet-music renderer. The shape, when one is chosen:
         # - { kind: score, source: 'files:sheetmusic/minuet-in-g.musicxml', measures: [1, 4] }
@@ -498,6 +508,11 @@ gameGate:
 
 **No `passScore`, anywhere.** Every level a repertoire can express is judged on the
 verdict; see "Passing". A `passScore` written in this block is read by nothing.
+
+**And no `cued` on a material spec.** Timing is a property of the level — tier 3, or a
+`grading` block — and nothing reads a timing key off the material. Writing one is a line
+that reads true beside `tier: 3` and becomes a lie the moment the level is copied to
+`tier: 2`.
 
 The top level is the default for everybody. `users.{learnerId}` overrides it
 key-by-key for one child, and `games` narrows an enabled gate to named game ids.
