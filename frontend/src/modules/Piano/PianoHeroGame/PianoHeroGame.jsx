@@ -7,6 +7,7 @@ import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { usePianoKioskConfigOptional } from '../PianoKiosk/PianoConfig.jsx';
 import { bindNoteSlots, useNoteSelection, SELECTION_NOTES, SECONDARY_NOTES } from '../game-platform/input/useNoteSelection.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
 import { StaffNoteLabel } from '../game-platform/families/addressed-board/StaffNoteLabel.jsx';
 import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
@@ -232,9 +233,16 @@ export function HeroGame({
   // now, on the ready screen and on the result screen alike. The keys still down
   // from the run that just ended do not count.
   const needsKeys = keyFallbackNeeded(gameConfig);
+  // Hero shares one `start` between two different events, and only one of them
+  // is a match boundary. From 'ready' it is the FIRST run of the song just
+  // chosen — the gate was already paid on the way in, and tolling it again
+  // would charge the child twice for one match. From 'complete' it is a replay,
+  // which is exactly what D12 says must not slip past the gate. So the boundary
+  // is decided by phase, not by the callback.
+  const startRun = useMatchRematch(game.start, game.phase === 'complete');
   useAnyKeyToContinue({
     enabled: needsKeys && (game.phase === 'ready' || game.phase === 'complete'),
-    activeNotes, onContinue: game.start,
+    activeNotes, onContinue: startRun,
   });
   const range = useMemo(() => computeKeyboardRange([activeChart.startNote, activeChart.endNote]), [activeChart.startNote, activeChart.endNote]);
   const imminent = useMemo(() => new Set(game.run.targets
@@ -343,7 +351,7 @@ export function HeroGame({
         <div className="piano-hero-overlay">
           <h2>{song.title}</h2>
           <p>{activeChart.targets.length} note events · {activeChart.tempo} BPM</p>
-          <button type="button" onClick={game.start}>Play</button>
+          <button type="button" onClick={startRun}>Play</button>
         </div>
       )}
       {countdown && <div className="piano-hero-countdown">{countdown}</div>}
@@ -361,7 +369,7 @@ export function HeroGame({
             <p className="piano-hero-overlay__status" role="status">Any key starts a new run</p>
           )}
           <div className="piano-hero-overlay__actions">
-            <button type="button" onClick={game.start}>Play again</button>
+            <button type="button" onClick={startRun}>Play again</button>
             <button type="button" className="is-secondary" onClick={onChooseSong}>Choose a song</button>
           </div>
         </div>

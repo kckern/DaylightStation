@@ -190,6 +190,21 @@ function GameHost() {
   // would make the gate a toll on nothing.
   const [matchId, setMatchId] = useState(1);
 
+  // Re-arm when the game itself changes under a mounted host. `:gameId` and
+  // `:gameId/:subRoute` render the SAME element, so React preserves this
+  // component instance across a params change and the initial `useState` read
+  // above never runs again — a game→game move would walk straight into a match
+  // on a gate that was passed for a different game. No in-app affordance does
+  // that today; this is here so the first one that does cannot silently open a
+  // hole. Adjusting state during render (rather than in an effect) so the new
+  // game never mounts for a frame before the gate replaces it.
+  const [gatedGameId, setGatedGameId] = useState(gameId);
+  if (gatedGameId !== gameId) {
+    setGatedGameId(gameId);
+    setGatePending(gateEnabled);
+    setMatchId((value) => value + 1);
+  }
+
   // Gate 3 (below the school lock, gate 1, and below the match gate, gate 2):
   // meter the day's game-time budget. `active: true` only here — D13: only a
   // MOUNTED game is a match, so the picker and every other mode never open a
@@ -294,7 +309,12 @@ function GameHost() {
           watchdog then read a dead page and rebooted it. `matchId` is in the
           reset key so a fresh match also clears a caught crash — a rematch the
           child paid for must not land back on the error card. */}
-      <GameBoundary resetKey={`${gameId}:${matchId}`} label={entry.label ?? 'This game'} onExit={exit}>
+      <GameBoundary
+        resetKey={`${gameId}:${matchId}`}
+        gameId={gameId}
+        label={entry.label ?? 'This game'}
+        onExit={exit}
+      >
         <Suspense fallback={<SkeletonStage />}>
           {/* The game announces match boundaries through this context and the
               host decides what happens at them; `key` makes the decision real

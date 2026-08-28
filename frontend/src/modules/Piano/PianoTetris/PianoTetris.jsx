@@ -9,6 +9,7 @@ import { TetrisOverlay } from './components/TetrisOverlay.jsx';
 import { ACTIONS } from '../game-platform/families/bound-action/useStaffMatching.js';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import './PianoTetris.scss';
 
@@ -31,7 +32,13 @@ export function PianoTetris({ activeNotes, gameConfig, onDeactivate, onNoteOn, o
     activePhases: ['IDLE', 'STARTING', 'PLAYING'], terminalPhases: ['GAME_OVER'], logger,
   });
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'tetris');
-  useAnyKeyToContinue({ enabled: game.phase === 'GAME_OVER', activeNotes, onContinue: game.startGame });
+  // A replay is a match boundary, so it goes through the host (D12) — this is
+  // the ONLY path back into a new run, and a gate that stood at entry but not
+  // here would be paid once and replayed past forever. `useAutoGameLifecycle`
+  // above keeps the raw `startGame`: that is the FIRST run after entering,
+  // which the gate has already been paid for.
+  const playAgain = useMatchRematch(game.startGame);
+  useAnyKeyToContinue({ enabled: game.phase === 'GAME_OVER', activeNotes, onContinue: playAgain });
 
   // Keyboard range follows the progression's active note range (widens when
   // bass clef unlocks); falls back to the level's note_range, then C4–C5.

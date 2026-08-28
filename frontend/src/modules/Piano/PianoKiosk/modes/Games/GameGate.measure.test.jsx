@@ -97,6 +97,28 @@ const { default: GameGate } = await import('./GameGate.jsx');
 const KIOSK = { width: 1280, height: 800 };
 
 /**
+ * The header bar eats the top of that canvas before the gate sees any of it.
+ * `.piano-app` also contains `<PianoChrome/>` (PianoApp.jsx), `flex: 0 0 auto`
+ * with `padding: .5rem 1rem` and a 1px bottom border, sized by a 2.5rem home
+ * glyph and a user chip. Measuring without it measures a box ~8% taller than
+ * the kiosk ever gives the gate.
+ *
+ * Its real height is content-driven and this fixture does not render the real
+ * component (it needs the breadcrumb, config, user, sound and link-banner
+ * providers — a lot of surface to drag in for a box whose only relevant
+ * property is how tall it is). So it is pinned, deliberately PESSIMISTIC:
+ * geometry that survives the worst case survives the real one, and the number
+ * is stated rather than guessed at.
+ *
+ * 70px of CONTENT plus the sheet's own `padding: .5rem 0` and 1px bottom border
+ * lands on an 87px border box — above the estimated real 55-70px, so the gate
+ * is measured against strictly less room than the kiosk gives it.
+ */
+const CHROME_CONTENT_HEIGHT = 70;
+/** The floor the measured header box must clear to count as a worst case. */
+const CHROME_WORST_CASE = 70;
+
+/**
  * Compile the sheets that actually govern this box: the app shell (`.piano-app`,
  * `.piano-mode`), the run (`.piano-exercise-run`), and the gate's own.
  */
@@ -143,6 +165,7 @@ async function measure(page, css, markup) {
        ${css}
      </style></head><body>
        <div class="piano-app">
+         <header class="piano-chrome" style="height: ${CHROME_CONTENT_HEIGHT}px"></header>
          <div class="piano-game-fullscreen">${markup}</div>
        </div>
      </body></html>`,
@@ -166,6 +189,8 @@ async function measure(page, css, markup) {
     };
     return {
       viewport,
+      chrome: read('.piano-chrome'),
+      stage: read('.piano-game-fullscreen'),
       gate: read('.piano-game-gate'),
       run: read('.piano-exercise-run'),
       leave: read('.piano-game-gate__leave'),
@@ -221,6 +246,15 @@ describe('GameGate geometry at the kiosk canvas (1280x800, real compiled SCSS)',
     // starving the run would leave a stave nobody can read.
     const measured = await measure(page, css, await markupOf());
 
+    // The header takes its bite off the top first, and the stage gets the rest
+    // — asserted so a future chrome that grows past the fixture's pessimistic
+    // 70px shows up here rather than quietly shrinking the gate.
+    expect(measured.chrome.height).toBeGreaterThanOrEqual(CHROME_WORST_CASE);
+    expect(measured.stage.top).toBeGreaterThanOrEqual(measured.chrome.height);
+    expect(measured.stage.bottom).toBeLessThanOrEqual(KIOSK.height);
+    expect(measured.run.height).toBeGreaterThan(measured.stage.height * 0.7);
+    // And, at the pessimistic chrome height, still more than 70% of the whole
+    // canvas — the bar this held to before the header was in the fixture.
     expect(measured.run.height).toBeGreaterThan(KIOSK.height * 0.7);
     // The run ends above the button, and the two do not overlap.
     expect(measured.run.bottom).toBeLessThanOrEqual(measured.leave.top + 0.5);

@@ -8,6 +8,7 @@ import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { SpaceInvadersOverlay } from './components/SpaceInvadersOverlay.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import './SpaceInvadersGame.scss';
 
@@ -33,7 +34,13 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
     metrics: { level: game.levelIndex, health: game.health, fail_reason: game.failReason },
     activePhases: ['IDLE', 'STARTING', 'PLAYING', 'LEVEL_COMPLETE', 'LEVEL_FAILED'], terminalPhases: ['TERMINAL'], logger,
   });
-  useAnyKeyToContinue({ enabled: terminal, activeNotes, onContinue: game.startGame });
+  // A replay is a match boundary, so it goes through the host (D12) — this is
+  // the ONLY path back into a new run, and a gate that stood at entry but not
+  // here would be paid once and replayed past forever. `useAutoGameLifecycle`
+  // above keeps the raw `startGame`: that is the FIRST run after entering,
+  // which the gate has already been paid for.
+  const playAgain = useMatchRematch(game.startGame);
+  useAnyKeyToContinue({ enabled: terminal, activeNotes, onContinue: playAgain });
 
   const [screenFlash, setScreenFlash] = useState(false);
 

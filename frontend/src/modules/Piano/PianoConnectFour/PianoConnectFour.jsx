@@ -3,6 +3,7 @@ import { chooseColumn, CONNECT_FOUR_OPPONENTS } from '@shared-gaming/rulesets/co
 import { playColumn, replayGame } from '@shared-gaming/rulesets/connect-four/engine.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
@@ -344,14 +345,20 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     latchedRef.current = true;
   }, [activeNotes, columns, commitColumn, deal, game, level, logger, moves, recordReading, thinking]);
 
-  const restart = () => {
+  // The gate is consulted HERE, above `resetAuthority()`, and not only inside
+  // `resetSession()`. `resetAuthority()` closes the finished session and mints
+  // a fresh checkpointed one, writing its id into the active-session index —
+  // so asking afterwards would leave an empty, unplayed board recorded as this
+  // player's live game every time the challenge is failed or left. Nothing is
+  // torn down until the host has said the next match may begin.
+  const restart = useMatchRematch(() => {
     resetAuthority();
     setHint(null);
     // A key already down when the game restarts must not immediately address a
     // column — the latch opens on the next release, not on this render.
     latchedRef.current = activeNotes.size > 0;
     resetSession();
-  };
+  });
 
   // No touchscreen on the office screen, so "Play again" is a dead end there:
   // the board is finished and the only way out is the launcher combo. Any fresh

@@ -1,6 +1,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import GameBoundary from './GameBoundary.jsx';
+
+const h = vi.hoisted(() => {
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  logger.child = () => logger;
+  return { logger };
+});
+vi.mock('../../../../lib/logging/Logger.js', () => ({ default: () => h.logger, getLogger: () => h.logger }));
+
+const { default: GameBoundary } = await import('./GameBoundary.jsx');
 
 function Boom({ explode }) {
   if (explode) throw new Error('board fell over');
@@ -51,6 +59,25 @@ describe('GameBoundary', () => {
     );
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).toContain('playing');
+  });
+
+  // `data.game:"tetris"` is what saved log queries filter on. The host composes
+  // a match counter into `resetKey` so a rematch clears a caught crash — and
+  // when the log line read the reset token, every one of those queries silently
+  // stopped matching (`game: "tetris:3"`) with nothing to show it had happened.
+  it('logs the plain game id, not whatever token the caller uses to reset it', () => {
+    render(
+      <GameBoundary resetKey="tetris:3" gameId="tetris" onExit={() => {}}><Boom explode /></GameBoundary>,
+    );
+    expect(h.logger.error).toHaveBeenCalledWith('game.crash', expect.objectContaining({ game: 'tetris' }));
+  });
+
+  it('falls back to the reset key when no game id is given', () => {
+    h.logger.error.mockClear();
+    render(
+      <GameBoundary resetKey="tetris" onExit={() => {}}><Boom explode /></GameBoundary>,
+    );
+    expect(h.logger.error).toHaveBeenCalledWith('game.crash', expect.objectContaining({ game: 'tetris' }));
   });
 
   it('stays latched while the same game keeps rendering', () => {
