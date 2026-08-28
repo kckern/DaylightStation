@@ -141,7 +141,7 @@ const orderedUnits = (credit, parents = {}) => {
 };
 
 export class PianoCourseProgramLauncher {
-  #getPlayableUnits; #donow; #dayBypasses; #timezone; #clock; #logger;
+  #getPlayableUnits; #donow; #dayBypasses; #challengeCompletion; #timezone; #clock; #logger;
 
   /**
    * @param {object} config
@@ -154,7 +154,7 @@ export class PianoCourseProgramLauncher {
    * @param {object} [config.logger]
    */
   constructor({
-    getPlayableUnits, donow = null, dayBypasses = null, timezone = null,
+    getPlayableUnits, donow = null, dayBypasses = null, challengeCompletion = null, timezone = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!getPlayableUnits || typeof getPlayableUnits.execute !== 'function') {
@@ -163,6 +163,7 @@ export class PianoCourseProgramLauncher {
     this.#getPlayableUnits = getPlayableUnits;
     this.#donow = donow;
     this.#dayBypasses = dayBypasses;
+    this.#challengeCompletion = challengeCompletion;
     this.#timezone = timezone;
     this.#clock = clock;
     this.#logger = logger;
@@ -301,6 +302,25 @@ export class PianoCourseProgramLauncher {
         excused: true,
         progressLabel: `Waiting for ${lock.waitingForId} to catch up · ${completed}/${total}`,
       };
+    }
+
+    // A School author may replace THIS owed course lesson with a configured
+    // PianoChallenge. The completion service is the only owner of whether its
+    // durable evidence settles today; this launcher still owns the course's
+    // ordinary video evidence and never writes it on challenge completion.
+    const nextLesson = next ? this.#lessonContext({ result, item: next }) : null;
+    const challenge = nextLesson?.lesson && this.#challengeCompletion?.descriptorFor?.({
+      courseId: programInstance, lessonId: nextLesson.lesson.id,
+    });
+    if (challenge) {
+      if (this.#challengeCompletion.completed({ learnerId: userId, descriptorId: challenge.id })) {
+        return {
+          ...common, doneToday: true, challengeCompleted: true,
+          servedWork: [{ unitId: nextLesson.unit?.id ?? null, title: nextLesson.lesson.title ?? null }],
+          progressLabel: `Done today — ${nextLesson.lesson.title} · PianoChallenge`,
+        };
+      }
+      return { ...common, doneToday: false, nextLesson, challenge, progressLabel: `${completed}/${total} · next: ${next.title}` };
     }
 
     return {

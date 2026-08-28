@@ -9,7 +9,7 @@
  * reconstruction and no restart.
  */
 import {
-  budgetStudyDate, applyOpen, applySettle, applyClose, balanceFor,
+  budgetStudyDate, applyOpen, applySettle, applyClose, applyEarnedCredit, balanceFor,
 } from '#domains/piano/gameBudget.mjs';
 
 const STALE_AFTER_SECONDS = 900; // 15 min: past this, a crashed session is sealed, not resumed.
@@ -215,6 +215,55 @@ export class PianoGameBudgetService {
     const bal = this.#tryBalance(day, cfg, learnerId, {});
     if (bal === null) return ENABLED_FALSE;
     return { enabled: true, ...bal, warnAtSeconds: this.#warnAtSeconds(cfg) };
+  }
+
+  /**
+   * Mint time earned by a passed PianoChallenge assessment. This endpoint is
+   * intentionally unavailable for fixed/economy budgets: an idempotent credit
+   * is a source-specific operation, not an alternate way to change a balance.
+   */
+  async credit({ learnerId, assessmentId, score }) {
+    const cfg = this.#cfg();
+    if (cfg.enabled !== true || cfg.source !== 'earned') return { enabled: false, creditedSeconds: 0, duplicate: false };
+    const today = this.#tryToday({ learnerId, assessmentId });
+    if (today === null) return { enabled: false, creditedSeconds: 0, duplicate: false };
+    let perPassMinutes;
+    try {
+      perPassMinutes = this.#earnedMinutesForScore(cfg, score);
+    } catch (err) {
+      this.#logger.error?.('budget.config-invalid', { key: 'earned.perPassMinutes', error: err?.message, learnerId, assessmentId });
+      return { enabled: false, creditedSeconds: 0, duplicate: false };
+    }
+    const day = this.#store.loadDay(today);
+    const r = applyEarnedCredit(day, {
+      learnerId, assessmentId, earnedSeconds: Math.round(perPassMinutes * 60), at: this.#clock().toISOString(),
+    });
+    try {
+      this.#store.saveDay(r.day);
+    } catch (err) {
+      this.#logger.error?.('budget.credit-failed', { learnerId, assessmentId, error: err?.message });
+      throw err;
+    }
+    const bal = this.#tryBalance(r.day, cfg, learnerId, { assessmentId });
+    if (bal === null) return { enabled: false, creditedSeconds: 0, duplicate: r.duplicate };
+    this.#logger.info?.('budget.credited', {
+      learnerId, assessmentId, score, creditedSeconds: r.creditedSeconds, duplicate: r.duplicate, studyDate: today,
+    });
+    return { enabled: true, creditedSeconds: r.creditedSeconds, duplicate: r.duplicate, ...bal };
+  }
+
+  #earnedMinutesForScore(cfg, score) {
+    if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1) {
+      throw new Error('score must be a finite number from 0 through 1');
+    }
+    const perPass = cfg.earned?.perPassMinutes;
+    if (typeof perPass !== 'number' || !Number.isFinite(perPass) || perPass <= 0) {
+      throw new Error('gameBudget: config.earned.perPassMinutes must be a positive number');
+    }
+    // One score is a fraction of the configured pass award. The returned
+    // precision is rounded only when writing seconds, so a 0.85 score gets
+    // exactly 85% of a 10-minute award rather than a whole-minute guess.
+    return perPass * score;
   }
 
   /**

@@ -6,6 +6,7 @@ const VALUES = Object.freeze({ whole: 4, half: 2, quarter: 1, eighth: 0.5, '8th'
 const DEFAULT_CUED_BPM = 90;
 
 const unit = (value) => Math.max(0, Math.min(1, Number(value) || 0));
+const pitchClassOf = (midi) => ((Number(midi) % 12) + 12) % 12;
 const median = (values) => {
   if (!values.length) return undefined;
   const sorted = [...values].sort((a, b) => a - b);
@@ -228,9 +229,19 @@ export function createAssessmentAttempt(config = {}) {
   if (matcher !== 'timed' && config.requirement?.rubric?.criteria?.placement != null) throw new Error('Placement cannot be required for an untimed attempt');
   effectiveCriterionWeights(config, matcher);
   validatePartWeights(config, expectation);
+  const policy = {
+    matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320, wrongWindow: 24,
+    ...(config.requirement?.policy ?? {}),
+    ...(config.policy ?? {}),
+  };
+  if (policy.pitchClass === true && matcher !== 'held') throw new Error('Pitch-class matching requires a held attempt');
+  if (policy.bassPitchClass !== undefined && policy.pitchClass !== true) throw new Error('Bass pitch-class requires pitch-class matching');
+  if (policy.bassPitchClass !== undefined && (!Number.isInteger(policy.bassPitchClass) || policy.bassPitchClass < 0 || policy.bassPitchClass > 11)) {
+    throw new Error('Bass pitch-class must be an integer from 0 to 11');
+  }
   return {
     expectation, matcher, mode, purpose: config.purpose || 'practice', requirement: config.requirement || null,
-    grading: config.grading || {}, policy: { matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320, wrongWindow: 24, ...config.policy },
+    grading: config.grading || {}, policy,
     status: 'prepared', startedAt: null, originQuarter: 0, leadInMs: 0, clock: config.clock ?? null,
     cursor: skipEmpty(expectation.events, 0), hits: {}, wrong: [], ignored: [], misses: [], responses: [], closedSpans: [], musicalInput: false,
     heldWrongLatched: false,
@@ -325,26 +336,42 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
     if (heldPitches.size === 0) {
       return { attempt: { ...attempt, heldWrongLatched: false }, event: { type: 'ignored', reason: 'held_released' } };
     }
+    const pitchClass = attempt.policy.pitchClass === true;
     const expectedPitches = new Set(current.notes.map((note) => note.midi));
-    const containsExpected = [...expectedPitches].every((midi) => heldPitches.has(midi));
-    const exact = containsExpected && (attempt.policy.allowExtras || heldPitches.size === expectedPitches.size);
+    const expectedKeys = pitchClass
+      ? new Set([...expectedPitches].map(pitchClassOf))
+      : expectedPitches;
+    const heldKeys = pitchClass
+      ? new Set([...heldPitches].map(pitchClassOf))
+      : heldPitches;
+    const containsExpected = [...expectedKeys].every((key) => heldKeys.has(key));
+    const bassPitchClass = attempt.policy.bassPitchClass;
+    const bassMatches = bassPitchClass === undefined
+      || (heldPitches.size > 0 && pitchClassOf(Math.min(...heldPitches)) === bassPitchClass);
+    const exact = containsExpected && bassMatches && (attempt.policy.allowExtras || heldKeys.size === expectedKeys.size);
     if (!exact) {
-      const onlyExpected = [...heldPitches].every((midi) => expectedPitches.has(midi));
-      if (onlyExpected && heldPitches.size < expectedPitches.size) {
+      const onlyExpected = [...heldKeys].every((key) => expectedKeys.has(key));
+      if (onlyExpected && heldKeys.size < expectedKeys.size) {
         return {
           attempt: { ...attempt, musicalInput: true, heldWrongLatched: false },
           event: { type: 'partial', eventId: current.id, held: [...heldPitches] },
         };
       }
       if (attempt.heldWrongLatched) return { attempt, event: { type: 'ignored', reason: 'held_wrong_latched' } };
-      const wrongMidi = [...heldPitches].find((midi) => !expectedPitches.has(midi)) ?? [...heldPitches][0];
+      const wrongMidi = [...heldPitches].find((midi) => !expectedKeys.has(pitchClass ? pitchClassOf(midi) : midi))
+        // Correct pitch classes with an incorrect inversion have no foreign
+        // note to point at. The lowest held note is the fact that violates the
+        // explicit bass policy, so that is the useful feedback target.
+        ?? Math.min(...heldPitches);
       return {
         attempt: { ...attempt, musicalInput: true, heldWrongLatched: true, wrong: [...attempt.wrong, { midi: wrongMidi, time: input.time, spanId: current.spanId, eventId: current.id }] },
         event: { type: 'wrong', eventId: current.id, midi: wrongMidi },
       };
     }
   }
-  const matches = current.notes.filter((note) => !attempt.hits[note.id] && (heldPitches ? heldPitches.has(note.midi) : note.midi === input.midi));
+  const matches = current.notes.filter((note) => !attempt.hits[note.id] && (heldPitches
+    ? (attempt.policy.pitchClass === true ? [...heldPitches].some((midi) => pitchClassOf(midi) === pitchClassOf(note.midi)) : heldPitches.has(note.midi))
+    : note.midi === input.midi));
   if (matches.length) {
     const hits = { ...attempt.hits };
     for (const note of matches) hits[note.id] = { time: input.time };

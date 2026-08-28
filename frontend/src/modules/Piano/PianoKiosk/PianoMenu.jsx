@@ -63,6 +63,9 @@ export function PianoMenu() {
             lesson={lessonGate.lesson}
             unit={lessonGate.unit}
             course={lessonGate.course}
+            challenge={lessonGate.challenge}
+            learnerId={currentUser}
+            onCompleted={lessonGate.refresh}
             basePath={basePath}
             navigate={navigate}
           />

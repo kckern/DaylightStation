@@ -11,25 +11,41 @@
  * verdict-driven (`verdict.passed`), never a second `score >= passScore`
  * gate living alongside it.
  *
- * Pure: no imports, no React, no fetching, no logging, no throwing.
+ * Pure: no React, no fetching, no logging, no throwing.
  */
+
+import { expandAsk } from './askSchema.js';
 
 const CUED_CLEANLINESS_DEFAULT = 0.8;
 
 export function requirementForLevel(level) {
-  const grading = level?.grading ?? null;
-  const cued = level?.tier === 3 || grading !== null;
+  const { presentation, grading } = expandAsk(level);
+  const legacyGrading = level?.grading ?? null;
+  // SP1's legacy levels made the presence of a grading block mean a cued
+  // rung. Explicit grammar owns timing directly, which lets a free recall ask
+  // carry a pitch-class policy without accidentally becoming a timed one.
+  const cued = level?.presentation != null
+    ? presentation.timing === 'cued'
+    : level?.tier === 3 || legacyGrading !== null;
+  const policy = grading.pitchClass === true
+    ? {
+      pitchClass: true,
+      ...(grading.bassPitchClass !== undefined ? { bassPitchClass: grading.bassPitchClass } : {}),
+    }
+    : null;
   if (!cued) {
     return {
       mode: 'free',
       rubric: { criteria: { completeness: 1 } },
       passScore: null,
+      ...(policy ? { policy } : {}),
     };
   }
   return {
     mode: 'cued',
-    rubric: { criteria: { completeness: 1, cleanliness: grading?.cleanliness ?? CUED_CLEANLINESS_DEFAULT } },
+    rubric: { criteria: { completeness: 1, cleanliness: grading.cleanliness ?? CUED_CLEANLINESS_DEFAULT } },
     passScore: null,
+    ...(policy ? { policy } : {}),
   };
 }
 
@@ -60,8 +76,11 @@ function askForExercise(instance) {
   return `${axes.root} ${modeLabel(axes.mode)} scale${handClause}.`;
 }
 
-export function askForMaterial(spec, instance) {
+export function askForMaterial(spec, instance, tuple = null) {
   if (spec?.kind === 'keys') {
+    if (tuple?.prompt === 'recall' && typeof spec.root === 'string' && typeof spec.quality === 'string') {
+      return `Play a ${spec.root} ${spec.quality} chord.`;
+    }
     if (spec.notes === 1) return 'Press the lit key.';
     return spec.arrangement === 'sequence' ? 'Play the lit keys in order.' : 'Play these notes together.';
   }

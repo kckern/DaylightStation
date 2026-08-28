@@ -81,6 +81,8 @@ const JUDGED_STATUSES = Object.freeze(new Set(['completed', 'timeout']));
  * during which that attempt can be stalled.
  */
 const FREE_STALL_MS = 20000;
+/** A recall hint must arrive with enough time left to use it before the stall. */
+const HINT_REVEAL_MS = 12000;
 
 /**
  * How long metronome practice clicks at a piano nobody is sitting at.
@@ -175,6 +177,9 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  * @param {string|null} [props.ask] The one sentence describing what to play
  *   ("Play the lit keys in order."). Stands where the exercise title otherwise
  *   does; a practice caller omits it and keeps the title.
+ * @param {object|null} [props.askTuple] The resolved authored presentation.
+ * When present it is the single source for the stage and hint policy; direct
+ * legacy mounts retain the tier-derived tuple below.
  * @param {0|1|2|3|null} [props.tier] The rung's presentation band, which decides
  *   the STAGE — not how the attempt is graded. Omit it and the run derives one
  *   (see `deriveRunTier`): every caller that predates tiers keeps the screen it
@@ -186,7 +191,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  */
-export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, framing = null, ask = null, tier = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, framing = null, ask = null, askTuple = null, tier = null, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -214,6 +219,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // than as a timestamp inside a ref nothing re-runs on.
   const [noteOnTick, setNoteOnTick] = useState(0);
   const [prePulseStopped, setPrePulseStopped] = useState(false);
+  const [afterStallHint, setAfterStallHint] = useState(false);
   const countInTimerRef = useRef(null);
   const previousNotesRef = useRef([]);
   // The last held set actually handed to the engine. The held matcher grades the
@@ -223,6 +229,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const activeNotesRef = useRef(activeNotes);
   activeNotesRef.current = activeNotes;
   const persistedRef = useRef(false);
+  // One durable assessment identity per installed runtime. Hosts that grant a
+  // stake after a real pass use this same id; retries get a fresh one, while a
+  // repeated Continue tap remains idempotent server-side.
+  const assessmentIdRef = useRef(null);
   const runtimeRef = useRef(null);
   const access = resolveExerciseRunAccess(intent, currentUser);
   const { challenge } = access;
@@ -354,6 +364,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     previousNotesRef.current = [...activeNotesRef.current.keys()];
     lastHeldObservedRef.current = null;
     persistedRef.current = false;
+    assessmentIdRef.current = makeId('attempt');
     globalThis.clearInterval(countInTimerRef.current);
     countInTimerRef.current = null;
     setLastWrong(null);
@@ -380,7 +391,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     const terminalResult = { ...(result || {}), status };
     const body = buildPianoAttemptEvidence({
       result: terminalResult,
-      attemptId: makeId('attempt'),
+      attemptId: assessmentIdRef.current || (assessmentIdRef.current = makeId('attempt')),
       ...(challenge
         ? { challengeId: makeId('exercise-challenge') }
         : { activityId: `exercise:${subject.id}:${selectedMode}` }),
@@ -450,6 +461,19 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
    */
   const stallable = challenge && snapshot.mode === 'free'
     && snapshot.status === 'running' && snapshot.musicalInput === true;
+  const hintPolicy = askTuple?.hints ?? 'none';
+  const hintable = stallable && hintPolicy === 'after-stall';
+  useEffect(() => {
+    setAfterStallHint(false);
+  }, [hintPolicy, subject]);
+  useEffect(() => {
+    if (!hintable) return undefined;
+    // A new note is fresh work on the ask. Hide a previously revealed answer
+    // and begin its quiet interval again, matching the stall clock's reset.
+    setAfterStallHint(false);
+    const timer = globalThis.setTimeout(() => setAfterStallHint(true), HINT_REVEAL_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [hintable, noteOnTick]);
   useEffect(() => {
     if (!stallable) return undefined;
     const timer = globalThis.setTimeout(() => {
@@ -756,7 +780,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // the two agree on every cell. `runTier` itself is unmoved: it still exists
   // to fill `data-tier`/`is-tier-N` below, which `Exercises.scss` keys real
   // layout off, and to gate `askStaff` two lines down.
-  const stage = score ? 'score' : deriveStage(askTupleFor({ tier: runTier }, null).tuple, instance);
+  const presentation = askTuple ?? askTupleFor({ tier: runTier }, null).tuple;
+  const stage = score ? 'score' : deriveStage(presentation, instance);
   // Tier 1's reinforcement staff is offered, not forced: an ask that no single
   // clef holds, or that spans more than an octave, is still a complete ask on
   // lit keys, and a staff it cannot draw legibly helps nobody.
@@ -774,7 +799,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // An empty `expected` is the score stage before its engraving has landed —
   // `Math.min()` of nothing is Infinity, and a keyboard drawn from that is a
   // blank strip where the piano should be.
-  const keyboardFooter = stage !== 'keys' && expected.length > 0;
+  const keyboardFooter = ['sequence', 'notation', 'score'].includes(stage) && expected.length > 0;
+  const hintVisible = hintPolicy === 'always' || afterStallHint;
   /**
    * A percentage belongs to a STAGE, not to a tier.
    *
@@ -824,7 +850,18 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             // clef the ask was JUDGED to fit on to drift from the one drawn.
           />
         )}
-        {stage === 'sequence' && (
+        {stage === 'recall' && (
+          <div className="piano-exercise-run__recall" data-testid="piano-recall-stage">
+            <span>From memory</span>
+            <p>Play the named music without looking at the answer.</p>
+            {hintVisible && (
+              <div className="piano-exercise-run__recall-hint" data-testid="piano-recall-hint">
+                <KeysAsk events={instance.events} cursorIndex={eventIndex} activeNotes={activeNotes} wrongMidi={lastWrong?.midi ?? null} />
+              </div>
+            )}
+          </div>
+        )}
+        {(stage === 'sequence' || stage === 'single-note') && (
           /* The staff carries its own aspect ratio (it depends on how many
              notes the ask has), so the host's only job is to hand it a width
              that cannot make it taller than the row. `--staff-aspect` is that
@@ -832,7 +869,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
              what keeps the stretched staff lines and the uniformly-scaled
              notation on top of each other. */
           <div
-            className="piano-exercise-run__sequence"
+            className={`piano-exercise-run__sequence${stage === 'single-note' ? ' piano-exercise-run__single-note' : ''}`}
             style={{ '--staff-aspect': staffViewBox.width / staffViewBox.height }}
           >
             <SvgSequenceStaff
@@ -872,7 +909,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
           listening, and a piano that ignores you is indistinguishable from a
           broken one. */}
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
-      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
+      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
       {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
         <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are
@@ -881,7 +918,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
         {scoreReadout
           ? <dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl>
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : 'Some of the notes are still missing. Have another go.'}</p>}
-        <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !passed && <button type="button" onClick={onExit}>Practice first</button>}{passed && <button type="button" onClick={() => onPassed?.(result)}>Continue</button>}</div>
+        <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !passed && <button type="button" onClick={onExit}>Practice first</button>}{passed && <button type="button" onClick={() => onPassed?.({ ...result, assessmentId: assessmentIdRef.current })}>Continue</button>}</div>
       </section>}
       {keyboardFooter && <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={activeNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>}
     </section>

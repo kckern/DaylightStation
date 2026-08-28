@@ -31,6 +31,7 @@ import { PianoBreadcrumbProvider } from '../modules/Piano/PianoKiosk/PianoBreadc
 import { PianoSoundProvider } from '../modules/Piano/PianoKiosk/PianoSoundContext.jsx';
 import { PianoPresetProvider } from '../modules/Piano/PianoKiosk/usePianoPreset.js';
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
+import PianoChallengePlacement from '../modules/Piano/PianoKiosk/PianoChallengePlacement.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
 import { useRenderWatchdog } from '../modules/Piano/PianoKiosk/useRenderWatchdog.js';
 import { useJankRebootPrompt } from '../modules/Piano/PianoKiosk/useJankRebootPrompt.js';
@@ -235,7 +236,7 @@ function PianoShell() {
     onEnter: () => navigate(`${basePath}/studio`),
   });
 
-  const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', singalong: 'Karaoke', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', exercises: 'Exercises', studio: 'Studio', composer: 'Composer', producer: 'Producer' };
+  const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', singalong: 'Karaoke', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', exercises: 'Exercises', placement: 'PianoChallenge', studio: 'Studio', composer: 'Composer', producer: 'Producer' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
   // The bridge watchdog is outside the WebView, and a DEAD WebView previously
@@ -270,6 +271,7 @@ function PianoShell() {
             <Route path="sheetmusic/*" element={<SheetMusic />} />
             <Route path="games/*" element={<Games />} />
             <Route path="exercises/*" element={<Exercises />} />
+            <Route path="placement" element={<PianoChallengePlacement />} />
             {/* The old Training route kept working: bookmarks and the kiosk's
                 own history point at it, and a dead link on a wall-mounted
                 tablet is not something anyone goes and fixes. */}

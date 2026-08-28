@@ -54,6 +54,13 @@ describe('resolveGateMaterial', () => {
     expect(h.instance).not.toHaveBeenCalled();
   });
 
+  it('synthesizes an authored named chord rather than a rotating lit-key shape', () => {
+    const chord = keysInstance({ kind: 'keys', root: 'C', quality: 'major', arrangement: 'together' }, 5);
+    expect(chord.title).toBe('C major chord');
+    expect(chord.ordering).toBe('any');
+    expect(chord.events[0].notes.map((note) => note.midi)).toEqual([60, 64, 67]);
+  });
+
   it('reports an unavailable instance rather than throwing', async () => {
     h.instance.mockResolvedValue({ ok: false, status: 404, data: null });
 

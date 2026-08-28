@@ -53,6 +53,21 @@ describe('requirementForLevel', () => {
       passScore: null,
     });
   });
+
+  it('an explicit free recall level preserves its pitch-class policy without becoming cued', () => {
+    const level = {
+      id: 'alan-c-major',
+      material: [{ kind: 'keys', notes: 3, arrangement: 'together' }],
+      presentation: { prompt: 'recall', timing: 'free' },
+      grading: { pitchClass: true, bassPitchClass: 0 },
+    };
+    expect(requirementForLevel(level)).toEqual({
+      mode: 'free',
+      rubric: { criteria: { completeness: 1 } },
+      passScore: null,
+      policy: { pitchClass: true, bassPitchClass: 0 },
+    });
+  });
 });
 
 describe('askForMaterial', () => {
@@ -62,6 +77,14 @@ describe('askForMaterial', () => {
 
   it('keys, notes>1, arrangement:together -> Play these notes together.', () => {
     expect(askForMaterial({ kind: 'keys', notes: 3, arrangement: 'together' })).toBe('Play these notes together.');
+  });
+
+  it('a recall chord uses its authored name instead of describing answer lights', () => {
+    expect(askForMaterial(
+      { kind: 'keys', root: 'C', quality: 'major', arrangement: 'together' },
+      null,
+      { prompt: 'recall' },
+    )).toBe('Play a C major chord.');
   });
 
   it('keys, notes>1, arrangement:sequence -> Play the lit keys in order.', () => {

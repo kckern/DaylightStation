@@ -23,6 +23,21 @@ describe('resolveRepertoire', () => {
     const withFloor = [{ id: 'keys-1', tier: 0, material: [{ kind: 'keys', notes: 1 }] }, ...CONFIG];
     expect(resolveRepertoire(withFloor)[0].id).toBe('keys-1');
   });
+  it('preserves explicit presentation axes for AskSession instead of reducing them back to a tier', () => {
+    const [floor, explicit] = resolveRepertoire([
+      { id: 'floor', tier: 0, material: [{ kind: 'keys', notes: 1 }] },
+      {
+        id: 'alan-c-major', tier: 1,
+        presentation: { prompt: 'recall', secondary: 'none', timing: 'free', hints: 'after-stall' },
+        grading: { pitchClass: true }, material: [{ kind: 'keys', root: 'C', quality: 'major' }],
+      },
+    ]);
+    expect(floor.id).toBe('floor');
+    expect(explicit).toMatchObject({
+      presentation: { prompt: 'recall', secondary: 'none', timing: 'free', hints: 'after-stall' },
+      grading: { pitchClass: true },
+    });
+  });
   it.each([undefined, null, [], 'yes', 42, [{ id: 'bad' }], [{ tier: 2, material: [] }]])(
     'falls back to the built-in C major level on unusable config (%s)', (raw) => {
       const levels = resolveRepertoire(raw);

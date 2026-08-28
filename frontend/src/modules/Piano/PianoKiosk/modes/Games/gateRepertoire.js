@@ -2,7 +2,7 @@
  * gateRepertoire — the pure data structure behind the piano game challenge's
  * config-driven level ladder.
  *
- * A "level" is `{ id, tier, grading, material }`. `tier` is a coarse
+ * A "level" is `{ id, tier, presentation?, grading, material }`. `tier` is a coarse
  * difficulty band (0-3); `grading` is either a rubric-shaped object or
  * `null` (unfailable — used only by the floor). `material` is a non-empty
  * array of specs (see `materialKey` below); a level with more than one
@@ -82,6 +82,11 @@ export function resolveRepertoire(raw) {
   const levels = ordered.map((level) => ({
     id: level.id,
     tier: level.tier,
+    // The explicit ask grammar is not an alternate side channel. Preserve its
+    // presentation axes exactly so `AskSession` can expand them; dropping
+    // this object here used to make a YAML `prompt: recall` silently revert to
+    // the tier preset before the child saw it.
+    ...(level.presentation ? { presentation: level.presentation } : {}),
     grading: level.grading ?? null,
     material: level.material,
   }));

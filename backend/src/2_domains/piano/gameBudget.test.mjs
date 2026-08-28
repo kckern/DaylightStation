@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  budgetStudyDate, emptyDay, applyOpen, applySettle, applyClose, balanceFor,
+  budgetStudyDate, emptyDay, applyOpen, applySettle, applyClose, applyEarnedCredit, balanceFor,
 } from './gameBudget.mjs';
 
 const AT = '2026-08-27T20:00:00.000Z';
@@ -105,6 +105,41 @@ describe('balanceFor', () => {
   it('an unknown learner has the full default allowance', () => {
     const b = balanceFor(emptyDay('2026-08-27'), CFG, 'kid_b');
     expect(b.learnerSecondsLeft).toBe(45 * 60);
+  });
+});
+
+describe('earned budget credits', () => {
+  it('credits one assessment once and spends only what the learner earned', () => {
+    const cfg = {
+      source: 'earned', earned: { perPassMinutes: 10, maxDailyMinutes: 20 },
+      deviceDailyMinutes: 120, users: {},
+    };
+    let day = emptyDay('2026-08-27');
+    let result = applyEarnedCredit(day, {
+      assessmentId: 'attempt-1', learnerId: 'kid_a', earnedSeconds: 600, at: AT,
+    });
+    day = result.day;
+    expect(result).toMatchObject({ duplicate: false, creditedSeconds: 600 });
+    expect(balanceFor(day, cfg, 'kid_a').learnerSecondsLeft).toBe(600);
+    result = applyEarnedCredit(day, {
+      assessmentId: 'attempt-1', learnerId: 'kid_a', earnedSeconds: 600, at: AT,
+    });
+    expect(result).toMatchObject({ duplicate: true, creditedSeconds: 0 });
+    expect(result.day.learners.kid_a.earnedSeconds).toBe(600);
+  });
+
+  it('caps the available earned balance at the household max even if several passes arrive', () => {
+    const cfg = {
+      source: 'earned', earned: { perPassMinutes: 10, maxDailyMinutes: 15 },
+      deviceDailyMinutes: 120, users: {},
+    };
+    let day = applyEarnedCredit(emptyDay('2026-08-27'), {
+      assessmentId: 'attempt-1', learnerId: 'kid_a', earnedSeconds: 600, at: AT,
+    }).day;
+    day = applyEarnedCredit(day, {
+      assessmentId: 'attempt-2', learnerId: 'kid_a', earnedSeconds: 600, at: AT,
+    }).day;
+    expect(balanceFor(day, cfg, 'kid_a').learnerSecondsLeft).toBe(900);
   });
 });
 

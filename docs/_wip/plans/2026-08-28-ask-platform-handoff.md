@@ -122,3 +122,57 @@ Five users on the OLD gate (`feat/exercise-run-ux`, merged + deployed earlier to
 ships), `soren` (keys-1), `milo` (L1). Household default off. Zero gate events observed
 in the log store since that config landed — no kid has met their gate yet as of the last
 check.
+
+## Resume audit — 2026-08-28
+
+The local branch now contains SP1 through Task 6 on `main` (`07c891511`), but it
+is **not deployed**. The homeserver checkout remains at `5cb4e78ba`, 189 commits
+behind `origin/main`, with unrelated uncommitted work; do not reset, stash, or
+deploy from that checkout.
+
+Task 6's missing source review has been performed locally. The compatibility path
+has no production caller, `pickGateMaterial` has no production caller, and the
+score-terminal reset is necessary: it preserves `ScorePassage`'s child-effect
+`unrunnable` result instead of resetting it after mount. Focused verification is
+green: the Piano + MusicNotation sweep passed twice (414 files / 5,096 tests),
+the score regression suite passed (95 tests), and both Chromium measure suites
+passed (15 ExerciseRun and 4 GameGate tests).
+
+The whole-repository Vitest gate now completes rather than aborting on two native
+`canvas` builds. It is still not a release proof: two runs surfaced different
+non-baselined, unrelated files (router/status/gate tests), while their focused
+runs pass. Treat this as a pre-existing cross-suite isolation problem to repair
+separately; do not add those files to the baseline and do not call SP1 deployed.
+
+The next implementation plan is
+`docs/_wip/plans/2026-08-28-piano-challenge-sp2.md`. “PianoChallenge” is the
+preferred product name; existing `AskSession` source identifiers remain in place
+until a deliberately scoped rename can be verified separately.
+
+## Continuation audit — SP3 and SP4 documentation (2026-08-28)
+
+SP2 is implemented locally. SP3 is now complete locally: placement persists a
+learner-scoped start level; the kiosk lesson gate carries a server-authored
+PianoChallenge descriptor and mounts `AskSession`; School completion is
+authenticated, idempotent, re-derived by the School launcher, and fed through
+the existing ceremony/evidence bridge; earned time is a server-side idempotent
+budget credit. The focused cross-host regression suite is green (17 files / 317
+tests), including existing Games, budget, placement, School gate, ceremony, and
+ExerciseRun coverage.
+
+SP4 cannot be applied to the checked-out production data yet. The authoritative
+household piano configuration and music bank live on the production-mounted
+data volume, while the production source checkout remains 189 commits behind
+and dirty. Its current configuration is legacy tier-shaped and the bank lacks
+the requested chromatic/harmonic-minor/melodic-minor/warm-up content. Do not
+write those live files or deploy from that checkout before reconciling a clean,
+compatible source release. The schema-derived reference is now tracked at
+`docs/reference/piano/piano-challenge.md`; its generated section is pinned by
+`scripts/render-piano-challenge-grammar-doc.test.mjs` to prevent drift from
+`askSchema.js`.
+
+An SP4 readiness defect found during the continuation was fixed locally:
+`resolveRepertoire` had dropped an authored level's `presentation` object, so
+an explicit `recall`/`engraved` ask would silently fall back to the tier preset
+before it reached `AskSession`. The object is now preserved unchanged. Grammar,
+AskSession, and GameGate regression coverage is green (4 files / 241 tests).

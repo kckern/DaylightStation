@@ -127,7 +127,7 @@ function pickPresentation(bundle) {
  *    overrides the preset's value one axis at a time.
  *
  * Never throws. Problems (an unknown tier, an out-of-vocabulary explicit
- * value, an unimplemented prompt/hint) are collected into `errors` instead —
+ * value, or a malformed grading policy) are collected into `errors` instead —
  * this function's job is to always produce a usable, inspectable tuple.
  *
  * @param {object} levelLike
@@ -170,9 +170,18 @@ export function expandAsk(levelLike) {
     errors.push(`judging: unknown value ${judging}`);
   }
 
-  if (presentation.prompt === 'recall') errors.push('not-yet-implemented: recall');
-  if (presentation.hints !== undefined && presentation.hints !== 'none') {
-    errors.push('not-yet-implemented: hints');
+  // SP2's held-matcher policy. This is deliberately grading metadata rather
+  // than a second matcher name: the engine still selects `held` from the
+  // material's unordered shape, then changes only how that matcher compares
+  // the currently held set. `bassPitchClass` is meaningful only in that mode.
+  if (explicitGrading.pitchClass !== undefined && typeof explicitGrading.pitchClass !== 'boolean') {
+    errors.push('grading.pitchClass: must be boolean');
+  }
+  if (explicitGrading.bassPitchClass !== undefined) {
+    if (!Number.isInteger(explicitGrading.bassPitchClass) || explicitGrading.bassPitchClass < 0 || explicitGrading.bassPitchClass > 11) {
+      errors.push('grading.bassPitchClass: must be an integer from 0 to 11');
+    }
+    if (explicitGrading.pitchClass !== true) errors.push('grading.bassPitchClass: requires pitchClass');
   }
 
   return { material: level.material ?? null, presentation, grading, errors };
@@ -197,9 +206,8 @@ export function expandAsk(levelLike) {
  *  - `recall` prompt ⇒ source is not `score`.
  *  - `sequence` notation style ⇒ a single hand (not `both`) at ≤ 2 octaves.
  *  - `polyphony` texture ⇒ `engraved` or `score` notation style.
- *  - `recall` prompt, or any `hints` other than `none`, is grammar-valid but
- *    not yet implemented (SP2) — reported as a distinct
- *    `'not-yet-implemented: <name>'` error, never a silent drop.
+ *  - `recall` and the named hint policies are grammar-valid presentation
+ *    values. Their rendering lives below this pure schema in `ExerciseRun`.
  *
  * **Two modes.** Default (partial) mode treats an absent axis as "not yet
  * specified" and simply skips its vocabulary check — this is for a caller
@@ -276,9 +284,6 @@ export function validateAsk(tuple, options) {
   }
 
   // not-yet-implemented gate (SP2)
-  if (t.prompt === 'recall') errors.push('not-yet-implemented: recall');
-  if (t.hints !== undefined && t.hints !== 'none') errors.push('not-yet-implemented: hints');
-
   return { ok: errors.length === 0, errors };
 }
 
@@ -334,6 +339,10 @@ export function validateAsk(tuple, options) {
 export function deriveStage(tuple, instance) {
   const t = tuple ?? {};
   if (t.notationStyle === 'score') return 'score';
+  // Recall's target is named in language, not shown as answer lights. It must
+  // win before unordered material's ordinary keys-stage fallback.
+  if (t.prompt === 'recall') return 'recall';
+  if (t.prompt === 'read' && instance?.events?.length === 1 && instance.events[0]?.notes?.length === 1) return 'single-note';
   if (instance?.ordering === 'any') return 'keys';
   if (t.prompt === 'follow') return 'keys';
   if (t.notationStyle === 'sequence') return sequenceStaffCanDraw(instance) ? 'sequence' : 'notation';

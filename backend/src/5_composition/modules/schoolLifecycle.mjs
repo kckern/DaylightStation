@@ -56,7 +56,8 @@ import { YamlReadingLogStore } from '#adapters/persistence/yaml/YamlReadingLogSt
 import { YamlTeacherActionReceiptStore } from '#adapters/persistence/yaml/YamlTeacherActionReceiptStore.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
-import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { createYamlBankReader } from '#adapters/school/documents/YamlBankReader.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { PlanProjection } from '#apps/school/PlanProjection.mjs';
 import { FitnessCourseCurriculumCatalog } from '#apps/school/FitnessCourseCurriculumCatalog.mjs';
@@ -213,6 +214,9 @@ export async function createSchoolLifecycle({
   // reads the SAME course/progress/lock projection the kiosk itself renders.
   // Null in a composition without Piano: the program simply never registers.
   pianoPlayableUnits = null,
+  // Durable alternate evidence for configured School PianoChallenges. It is
+  // injected from Piano's application layer; School only consumes its port.
+  schoolPianoChallengeCompletionService = null,
   fitnessPlayableService = null,
   fitnessSchoolCourseService = null,
   learningEvidenceRepository = null,
@@ -537,7 +541,8 @@ export async function createSchoolLifecycle({
   let pianoCourseLauncher = null;
   if (pianoPlayableUnits) {
     pianoCourseLauncher = new PianoCourseProgramLauncher({
-      getPlayableUnits: pianoPlayableUnits, donow, dayBypasses: programDayBypassStore, timezone, clock, logger,
+      getPlayableUnits: pianoPlayableUnits, donow, dayBypasses: programDayBypassStore,
+      challengeCompletion: schoolPianoChallengeCompletionService, timezone, clock, logger,
     });
     launchers.set(pianoCourseLauncher.id, pianoCourseLauncher);
   } else {

@@ -28,6 +28,13 @@ const OWED = {
   lesson: { id: 'plex:2', title: 'Lesson 5' },
 };
 
+const CHALLENGE = {
+  id: 'unit-3-c-major',
+  ask: { id: 'named-c-major' },
+  materialSpec: { kind: 'chord', root: 'C', quality: 'major' },
+  framing: 'Play a C major chord.',
+};
+
 const deliver = (msg) => act(() => { h.handlers[0]?.(msg); });
 
 beforeEach(() => {
@@ -48,6 +55,13 @@ describe('usePianoLessonGate', () => {
     expect(DaylightAPI).toHaveBeenCalledWith(
       'api/v1/school/lifecycle/learners/kid-one/piano-lesson-gate',
     );
+  });
+
+  it('surfaces a configured PianoChallenge only while the lesson is gated', async () => {
+    h.response = { ...OWED, challenge: CHALLENGE };
+    const { result } = renderHook(() => usePianoLessonGate('kid-one'));
+    await waitFor(() => expect(result.current.gated).toBe(true));
+    expect(result.current.challenge).toEqual(CHALLENGE);
   });
 
   it('does not gate a discharged day', async () => {

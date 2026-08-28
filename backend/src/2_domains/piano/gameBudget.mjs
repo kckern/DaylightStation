@@ -39,6 +39,10 @@ export function emptyDay(studyDateStr) {
     device: { totalSeconds: 0 },
     learners: {},
     sessions: {},
+    // Idempotency ledger for PianoChallenge-earned time. It is compact (one
+    // assessment id per credited pass/day) and belongs beside the day balance:
+    // retries must not mint a second allowance after a kiosk reload.
+    credits: {},
   };
 }
 
@@ -139,6 +143,23 @@ export function applyClose(day, { sessionId, cumulativeSeconds, at }) {
 }
 
 /**
+ * Add earned seconds exactly once for a passed assessment. Assessment ids are
+ * globally unique identifiers from the attempt pipeline, so they are safe as
+ * the idempotency key across all learners in a study-day record.
+ */
+export function applyEarnedCredit(day, { assessmentId, learnerId, earnedSeconds, at }) {
+  const next = clone(day);
+  next.credits ??= {};
+  if (Object.hasOwn(next.credits, assessmentId)) {
+    return { day: next, duplicate: true, creditedSeconds: 0 };
+  }
+  next.learners[learnerId] ??= { totalSeconds: 0 };
+  next.learners[learnerId].earnedSeconds = (next.learners[learnerId].earnedSeconds ?? 0) + earnedSeconds;
+  next.credits[assessmentId] = { learnerId, earnedSeconds, creditedAt: at };
+  return { day: next, duplicate: false, creditedSeconds: earnedSeconds };
+}
+
+/**
  * A missing dailyMinutes/deviceDailyMinutes is a config bug, not "unlimited
  * play": `undefined * 60` is NaN, `Math.max(0, NaN)` is NaN, and a caller
  * checking `secondsLeft <= 0` would see `NaN <= 0 === false` — the budget
@@ -156,12 +177,17 @@ function requirePositiveMinutes(value, key) {
 }
 
 export function balanceFor(day, config, learnerId) {
-  const learnerMinutes = requirePositiveMinutes(
-    config.users?.[learnerId]?.dailyMinutes ?? config.dailyMinutes, 'dailyMinutes',
-  );
+  const earned = config.source === 'earned';
+  const learnerMinutes = earned
+    ? requirePositiveMinutes(config.earned?.maxDailyMinutes, 'earned.maxDailyMinutes')
+    : requirePositiveMinutes(config.users?.[learnerId]?.dailyMinutes ?? config.dailyMinutes, 'dailyMinutes');
   const deviceMinutes = requirePositiveMinutes(config.deviceDailyMinutes, 'deviceDailyMinutes');
+  const learner = day.learners[learnerId] ?? {};
+  const learnerAllowance = earned
+    ? Math.min(learnerMinutes * 60, learner.earnedSeconds ?? 0)
+    : learnerMinutes * 60;
   const learnerSecondsLeft = Math.max(0,
-    learnerMinutes * 60 - (day.learners[learnerId]?.totalSeconds ?? 0));
+    learnerAllowance - (learner.totalSeconds ?? 0));
   const deviceSecondsLeft = Math.max(0,
     deviceMinutes * 60 - day.device.totalSeconds);
   return { learnerSecondsLeft, deviceSecondsLeft, secondsLeft: Math.min(learnerSecondsLeft, deviceSecondsLeft) };

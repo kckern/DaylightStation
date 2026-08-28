@@ -1,5 +1,7 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
+import AskSession from '../ask/AskSession.jsx';
 import { openPianoCourseLesson } from './pianoContentOpen.js';
 
 let _logger;
@@ -22,7 +24,10 @@ function logger() {
  * address a DIFFERENT physical device from a printed slip, and here the tap
  * originates on the tablet already showing this card.
  */
-export default function TodaysLessonGate({ lesson, unit, course, basePath, navigate }) {
+export default function TodaysLessonGate({
+  lesson, unit, course, challenge = null, learnerId = null, onCompleted, basePath, navigate,
+}) {
+  const [completionError, setCompletionError] = useState(null);
   const onLaunch = useCallback(() => {
     logger().info('piano.lesson-gate.launch', { courseId: course?.id, lessonId: lesson?.id });
     const opened = openPianoCourseLesson({
@@ -35,6 +40,56 @@ export default function TodaysLessonGate({ lesson, unit, course, basePath, navig
       navigate(`${basePath}/videos/${String(course.id).replace(/^plex:/, '')}`);
     }
   }, [course, lesson, basePath, navigate]);
+
+  const onChallengePassed = useCallback(async (result) => {
+    if (!challenge?.id || !learnerId || learnerId === 'guest') {
+      setCompletionError('This PianoChallenge cannot be saved right now.');
+      return;
+    }
+    setCompletionError(null);
+    try {
+      await DaylightAPI(
+        `api/v1/piano/users/${encodeURIComponent(learnerId)}/school-piano-challenges/${encodeURIComponent(challenge.id)}/completion`,
+        {
+          assessmentId: result?.assessmentId,
+          score: result?.score,
+          status: result?.status,
+          passed: true,
+        },
+        'POST',
+      );
+      logger().info('piano.lesson-gate.challenge-completed', { learnerId, descriptorId: challenge.id });
+      await onCompleted?.();
+    } catch (error) {
+      logger().warn('piano.lesson-gate.challenge-save-failed', {
+        learnerId, descriptorId: challenge?.id, error: error?.message ?? String(error),
+      });
+      setCompletionError('Your pass was not saved. Please ask a grown-up, then try again.');
+    }
+  }, [challenge, learnerId, onCompleted]);
+
+  if (challenge) {
+    return (
+      <section className="piano-lesson-gate piano-lesson-gate--challenge">
+        <p className="piano-lesson-gate__eyebrow">Today&apos;s PianoChallenge</p>
+        <p className="piano-lesson-gate__context">
+          {course?.title}{unit?.title ? ` · ${unit.title}` : ''}
+        </p>
+        <h2 className="piano-lesson-gate__title">{lesson?.title}</h2>
+        {challenge.framing && <p className="piano-lesson-gate__description">{challenge.framing}</p>}
+        {completionError && <p className="piano-lesson-gate__error" role="alert">{completionError}</p>}
+        <AskSession
+          ask={challenge.ask}
+          materialSpec={challenge.materialSpec}
+          intent="challenge"
+          framing={challenge.framing}
+          onPassed={onChallengePassed}
+          onExit={() => navigate(basePath)}
+          onUnavailable={() => setCompletionError('This PianoChallenge is not available right now. Try again later.')}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="piano-lesson-gate">

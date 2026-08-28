@@ -227,10 +227,11 @@ export default function AskSession({
   const levelRequirementRef = useRef(null);
   levelRequirementRef.current = levelRequirement;
 
-  const askErrors = useMemo(
-    () => (ask ? askTupleFor(ask, materialSpec).errors : []),
+  const resolvedAsk = useMemo(
+    () => (ask ? askTupleFor(ask, materialSpec) : { tuple: null, errors: [] }),
     [ask, materialSpec],
   );
+  const askErrors = resolvedAsk.errors;
   /**
    * An ask the schema refuses, reported once per (ask, spec) pair.
    *
@@ -293,8 +294,8 @@ export default function AskSession({
   const requirement = levelRequirement ?? sources.requirement;
 
   const askLine = useMemo(
-    () => (materialSpec ? askForMaterial(materialSpec, sources.instance) : null),
-    [materialSpec, sources.instance],
+    () => (materialSpec ? askForMaterial(materialSpec, sources.instance, resolvedAsk.tuple) : null),
+    [materialSpec, resolvedAsk.tuple, sources.instance],
   );
 
   const framingLine = useMemo(() => {
@@ -338,6 +339,7 @@ export default function AskSession({
       requirement={requirement}
       framing={framingLine}
       ask={askLine}
+      askTuple={resolvedAsk.tuple}
       tier={tier}
       onPassed={onPassed}
       onFailed={onFailed}

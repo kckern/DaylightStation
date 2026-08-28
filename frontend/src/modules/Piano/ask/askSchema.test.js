@@ -164,9 +164,9 @@ describe('validateAsk — constraints', () => {
     expect(result.errors.some((e) => e.startsWith('recall:'))).toBe(true);
   });
 
-  it('recall with a bank source is fine on that constraint (still gated by not-yet-implemented)', () => {
+  it('recall with a bank source is a valid SP2 ask', () => {
     const result = validateAsk({ ...BANK, prompt: 'recall' });
-    expect(result.errors.some((e) => e.startsWith('recall:'))).toBe(false);
+    expect(result).toEqual({ ok: true, errors: [] });
   });
 
   it('sequence style with both hands is rejected', () => {
@@ -223,27 +223,25 @@ describe('validateAsk — constraints', () => {
   });
 });
 
-describe('validateAsk — not-yet-implemented gate', () => {
-  it('prompt:recall yields a distinct not-yet-implemented error', () => {
+describe('validateAsk — implemented SP2 presentation values', () => {
+  it('prompt:recall is accepted', () => {
     const result = validateAsk({ ...BANK, prompt: 'recall' });
-    expect(result.ok).toBe(false);
-    expect(result.errors).toContain('not-yet-implemented: recall');
+    expect(result).toEqual({ ok: true, errors: [] });
   });
 
-  it('hints:after-stall yields a distinct not-yet-implemented error', () => {
+  it('hints:after-stall is accepted', () => {
     const result = validateAsk({ ...BANK, hints: 'after-stall' });
-    expect(result.ok).toBe(false);
-    expect(result.errors).toContain('not-yet-implemented: hints');
+    expect(result).toEqual({ ok: true, errors: [] });
   });
 
-  it('hints:always yields the same not-yet-implemented error', () => {
+  it('hints:always is accepted', () => {
     const result = validateAsk({ ...BANK, hints: 'always' });
-    expect(result.errors).toContain('not-yet-implemented: hints');
+    expect(result).toEqual({ ok: true, errors: [] });
   });
 
-  it('hints:none does not trigger the gate', () => {
+  it('hints:none is accepted', () => {
     const result = validateAsk({ ...BANK, hints: 'none' });
-    expect(result.errors).not.toContain('not-yet-implemented: hints');
+    expect(result).toEqual({ ok: true, errors: [] });
   });
 });
 
@@ -432,14 +430,26 @@ describe('expandAsk — explicit {material, presentation, grading} shape', () =>
     expect(result.errors.some((e) => e.startsWith('prompt:'))).toBe(true);
   });
 
-  it('explicit prompt:recall is flagged not-yet-implemented', () => {
+  it('explicit prompt:recall is accepted', () => {
     const result = expandAsk({ material: [], presentation: { prompt: 'recall' } });
-    expect(result.errors).toContain('not-yet-implemented: recall');
+    expect(result.errors).toEqual([]);
   });
 
-  it('explicit hints !== none is flagged not-yet-implemented', () => {
+  it('explicit hints !== none is accepted', () => {
     const result = expandAsk({ material: [], presentation: { hints: 'after-stall' } });
-    expect(result.errors).toContain('not-yet-implemented: hints');
+    expect(result.errors).toEqual([]);
+  });
+
+  it('validates pitch-class grading policy without confusing it with an axis', () => {
+    expect(expandAsk({ material: [], grading: { pitchClass: true, bassPitchClass: 0 } }).errors).toEqual([]);
+  });
+
+  it.each([
+    [{ pitchClass: 'yes' }, 'grading.pitchClass: must be boolean'],
+    [{ pitchClass: true, bassPitchClass: 12 }, 'grading.bassPitchClass: must be an integer from 0 to 11'],
+    [{ bassPitchClass: 0 }, 'grading.bassPitchClass: requires pitchClass'],
+  ])('rejects malformed pitch-class grading %#', (grading, error) => {
+    expect(expandAsk({ material: [], grading }).errors).toContain(error);
   });
 });
 
@@ -477,6 +487,16 @@ describe('deriveStage — tuple-space stage resolution (task 2, replaces stageFo
     if (preset === 'tier-2') return canDraw ? 'sequence' : 'notation'; // read + sequence
     return 'notation'; // tier-3: read + engraved/cued
   }
+
+  it('recall is its own no-lights primary stage, even for unordered chord material', () => {
+    expect(deriveStage({ prompt: 'recall', notationStyle: 'engraved' }, { ordering: 'any' })).toBe('recall');
+  });
+
+  it('a one-note read ask uses the compact staff card', () => {
+    expect(deriveStage({ prompt: 'read', notationStyle: 'sequence' }, {
+      ordering: 'strict', events: [{ notes: [{ midi: 60, hand: 'right' }] }],
+    })).toBe('single-note');
+  });
 
   // Every {preset} x {ordering any/strict} x {canDraw yes/no} cell: 4 x 2 x 2 = 16.
   for (const preset of PRESET_NAMES) {

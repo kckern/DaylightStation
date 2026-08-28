@@ -95,7 +95,18 @@ export class GetPianoLessonGate {
       }
 
       // Owed, and there is something to hand them.
-      if (status.nextLesson) return { ...base, gated: true, reason: 'owed', ...this.#target(status.nextLesson) };
+      if (status.nextLesson) {
+        return {
+          ...base,
+          gated: true,
+          reason: 'owed',
+          ...this.#target(status.nextLesson),
+          // This is an already-authorized, narrow descriptor produced by the
+          // School launcher.  The kiosk may render it, but it may not infer a
+          // challenge from the course lesson or manufacture its own ask.
+          ...(status.challenge ? { challenge: status.challenge } : {}),
+        };
+      }
 
       // Owed nothing: every lesson is watched, so the course is finished and
       // there is no card to show. Not a gate, and not an error either.

@@ -123,6 +123,21 @@ describe('AskSession — the gate shape (an ask level plus a picked material)', 
     expect(lastRun().score).toBeNull();
   });
 
+  it('hands an explicit recall presentation to the run as the resolved tuple', async () => {
+    const recall = {
+      id: 'alan-c-major',
+      material: [spec],
+      presentation: { prompt: 'recall', timing: 'free', hints: 'after-stall' },
+      grading: { pitchClass: true, bassPitchClass: 0 },
+    };
+    render(<AskSession ask={recall} materialSpec={spec} intent="challenge" {...callbacks()} />);
+
+    await waitFor(() => expect(lastRun().instance).toBe(h.instance));
+    expect(lastRun().askTuple).toMatchObject({
+      prompt: 'recall', timing: 'free', hints: 'after-stall', source: { kind: 'bank' }, judging: 'completion',
+    });
+  });
+
   it('writes the ask copy from the spec and the resolved instance, and carries the level tier', async () => {
     render(<AskSession ask={level} materialSpec={spec} framing="Play this to start Chess" intent="challenge" {...callbacks()} />);
 
@@ -390,7 +405,7 @@ describe('AskSession — the reasons a run cannot happen', () => {
     expect(h.runProps).toHaveLength(0);
   });
 
-  it('refuses an ask asking for something SP1 has not built yet', async () => {
+  it('accepts an SP2 hint policy and passes it to the run', async () => {
     const cb = callbacks();
     render(
       <AskSession
@@ -401,36 +416,24 @@ describe('AskSession — the reasons a run cannot happen', () => {
       />,
     );
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
-      'unrunnable', { kind: 'exercise', reason: 'ask-invalid', mode: 'free' },
-    ));
-    expect(h.log.warn).toHaveBeenCalledWith('piano.ask-invalid', expect.objectContaining({
-      errors: expect.arrayContaining(['not-yet-implemented: hints']),
-    }));
+    await waitFor(() => expect(lastRun().instance).toBe(h.instance));
+    expect(lastRun().askTuple.hints).toBe('always');
+    expect(cb.onUnavailable).not.toHaveBeenCalled();
   });
 
-  it('refuses EACH spec a walking host offers, even when the words are identical', async () => {
-    // A host that walks a level's material hands down a new spec after every
-    // refusal. Two of them can refuse with the same error list — an ask
-    // asserting `hints: 'always'` refuses whatever it is paired with — and a
-    // report keyed on the message alone would swallow the second as a repeat.
-    // The host would be told once, would step forward, and would then wait
-    // forever on a session that had already made up its mind: a child left on
-    // "Cannot start this one" with the gate behind it doing nothing.
+  it('keeps a valid hint-policy session stable while the host walks its specs', async () => {
     const cb = callbacks();
     const ask = { id: 'future', tier: 2, presentation: { hints: 'always' }, material: [] };
     const first = { kind: 'exercise', instanceId: h.instance.id };
     const second = { kind: 'exercise', instanceId: 'scales/other' };
     const view = render(<AskSession ask={ask} materialSpec={first} intent="challenge" {...cb} />);
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(lastRun().instance).toBe(h.instance));
     view.rerender(<AskSession ask={ask} materialSpec={second} intent="challenge" {...cb} />);
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledTimes(2));
-    expect(cb.onUnavailable.mock.calls.map(([, decline]) => decline?.kind)).toEqual(['exercise', 'exercise']);
-    // …and it is still once per spec, not once per render.
+    await waitFor(() => expect(lastRun().askTuple.hints).toBe('always'));
     view.rerender(<AskSession ask={ask} materialSpec={second} intent="challenge" {...cb} />);
-    expect(cb.onUnavailable).toHaveBeenCalledTimes(2);
+    expect(cb.onUnavailable).not.toHaveBeenCalled();
   });
 
   it('surfaces a bank that could not be reached as instance-not-found, keeping the decline string in the log', async () => {
@@ -593,6 +596,7 @@ describe('AskSession — what it promises the run underneath', () => {
     // the cursor under the child's hands.
     expect(lastRun().instance).toBe(settled.instance);
     expect(lastRun().requirement).toBe(settled.requirement);
+    expect(lastRun().askTuple).toBe(settled.askTuple);
   });
 
   it('shows the run’s own skeleton while it resolves, never a blank screen', async () => {
@@ -674,10 +678,7 @@ describe('askTupleFor — the tuple a level plus its material actually expresses
 
   it('concatenates the expansion’s errors with the constraint table’s', () => {
     const { errors } = askTupleFor({ tier: 9, presentation: { hints: 'always' } }, { kind: 'keys', notes: 1 });
-    expect(errors).toEqual(expect.arrayContaining([
-      'tier: unknown preset tier-9',
-      'not-yet-implemented: hints',
-    ]));
+    expect(errors).toEqual(['tier: unknown preset tier-9']);
   });
 
   it('refuses a cued level whose material cannot carry note values', () => {

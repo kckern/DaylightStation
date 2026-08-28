@@ -56,6 +56,19 @@ describe('GetPianoLessonGate', () => {
     });
   });
 
+  it("carries the launcher's configured PianoChallenge descriptor without rebuilding it", async () => {
+    const challenge = {
+      id: 'hoffman-unit-3-chord',
+      ask: { id: 'named-c-major', presentation: 'recall', material: [{ kind: 'chord', root: 'C', quality: 'major' }] },
+      materialSpec: { kind: 'chord', root: 'C', quality: 'major' },
+      framing: 'Play a C major chord.',
+    };
+    const launcher = fakeLauncher(async () => ({ doneToday: false, nextLesson: NEXT, challenge }));
+    const uc = new GetPianoLessonGate({ assignments: fakeAssignments(enrolledIn('plex:1')), launcher, logger: console });
+    const result = await uc.execute({ learnerId: 'kid1' });
+    expect(result.challenge).toBe(challenge);
+  });
+
   it('omits absent thumbnail/description rather than emitting empties', async () => {
     const launcher = fakeLauncher(async () => ({
       doneToday: false,

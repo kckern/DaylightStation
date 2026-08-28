@@ -18,6 +18,19 @@ const base = {
 };
 
 describe('instanceToAbc clef chain', () => {
+  it('keeps authored quarter, half, and eighth values in its engraved ABC line', () => {
+    const abc = instanceToAbc({
+      ...base,
+      events: [
+        { value: 'quarter', notes: [{ midi: 60 }] },
+        { value: 'half', notes: [{ midi: 62 }] },
+        { value: 'eighth', notes: [{ midi: 64 }] },
+      ],
+    });
+    expect(abc).toContain('L:1/4');
+    expect(abc).toContain('[V:MAIN] C D2 E/2 |]');
+  });
+
   it('explicit hand: an all-right-hand strict instance gets one treble V: line, no V:LH', () => {
     const abc = instanceToAbc({
       ...base,

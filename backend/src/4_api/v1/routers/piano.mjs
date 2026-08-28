@@ -107,8 +107,9 @@ function attemptPolicyErrors(userId, body) {
  *   POST   /users/:userId/game-budget/session                  → open/adopt a session ({sessionId,cumulativeSeconds,...})
  *   POST   /users/:userId/game-budget/session/:sessionId/settle → charge up to cumulativeSeconds ({secondsLeft,depleted,deviceDepleted})
  *   POST   /users/:userId/game-budget/session/:sessionId/close  → seal a session ({ok:true})
+ *   POST   /users/:userId/game-budget/credits                   → idempotently mint earned time for a passed assessment
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoLearningService = null, pianoGameBudgetService = null, exerciseBank = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, exerciseBank = null, eventBus = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
@@ -355,6 +356,22 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
       sessionId: req.params.sessionId, learnerId: req.params.userId, cumulativeSeconds,
     }));
   }));
+  router.post('/users/:userId/game-budget/credits', asyncHandler(async (req, res) => {
+    if (!pianoGameBudgetService) return res.status(404).json({ error: 'game budget not configured' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    const authority = pianoAttemptAuthority(req, req.params.userId);
+    if (!authority.allowed) return res.status(authority.status).json({ error: authority.status === 401 ? 'Authentication required' : 'Budget credit denied' });
+    const assessmentId = typeof req.body?.assessmentId === 'string' ? req.body.assessmentId.trim() : '';
+    const score = req.body?.score;
+    // A host calls this only from AskSession's onPassed path. Still verify the
+    // terminal result at the HTTP boundary so an aborted/timed-out payload can
+    // never be converted into time merely by knowing an assessment id.
+    if (!assessmentId || assessmentId.length > 200 || req.body?.status !== 'completed' || req.body?.passed !== true
+      || typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1) {
+      return res.status(400).json({ error: 'A completed passed assessment with a 0..1 score is required' });
+    }
+    res.json(await pianoGameBudgetService.credit({ learnerId: req.params.userId, assessmentId, score }));
+  }));
 
   router.post('/users/:userId/challenges/prepare', asyncHandler((req, res) => {
     if (!pianoChallengePolicy) return res.status(501).json({ error: 'Challenge policy unavailable' });
@@ -380,6 +397,57 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
       challengeLabel: prepared.prompt?.label || null,
     });
     res.json(prepared);
+  }));
+
+  // Placement is the only PianoChallenge flow that changes a learner's gate
+  // entry point. Keep this separate from the broad opaque-preferences route:
+  // callers can set one validated level id, never overwrite unrelated piano
+  // preferences or household repertoire.
+  router.get('/users/:userId/piano-challenge-profile', asyncHandler((req, res) => {
+    if (!pianoChallengeProfileService) return res.status(501).json({ error: 'PianoChallenge profile unavailable' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    const authority = pianoAttemptAuthority(req, req.params.userId);
+    if (!authority.allowed) return res.status(authority.status).json({ error: authority.status === 401 ? 'Authentication required' : 'Profile access denied' });
+    res.set('Cache-Control', 'no-store').json(pianoChallengeProfileService.get({ learnerId: req.params.userId }));
+  }));
+
+  router.put('/users/:userId/piano-challenge-profile', asyncHandler((req, res) => {
+    if (!pianoChallengeProfileService) return res.status(501).json({ error: 'PianoChallenge profile unavailable' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    const authority = pianoAttemptAuthority(req, req.params.userId);
+    if (!authority.allowed) return res.status(authority.status).json({ error: authority.status === 401 ? 'Authentication required' : 'Profile write denied' });
+    res.json(pianoChallengeProfileService.setStartLevel({
+      learnerId: req.params.userId, startLevel: req.body?.startLevel,
+    }));
+  }));
+
+  router.post('/users/:userId/school-piano-challenges/:descriptorId/completion', asyncHandler((req, res) => {
+    if (!schoolPianoChallengeCompletionService) return res.status(501).json({ error: 'School PianoChallenge completion unavailable' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    const authority = pianoAttemptAuthority(req, req.params.userId);
+    if (!authority.allowed) return res.status(authority.status).json({ error: authority.status === 401 ? 'Authentication required' : 'Completion write denied' });
+    const assessmentId = typeof req.body?.assessmentId === 'string' ? req.body.assessmentId.trim() : '';
+    const score = req.body?.score;
+    if (!assessmentId || req.body?.status !== 'completed' || req.body?.passed !== true
+      || typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1) {
+      return res.status(400).json({ error: 'A completed passed assessment with a 0..1 score is required' });
+    }
+    const completion = schoolPianoChallengeCompletionService.recordPassed({
+      learnerId: req.params.userId, descriptorId: req.params.descriptorId, assessmentId, score,
+    });
+    // The bridge re-derives whether this evidence actually settles a School
+    // day before it announces anything.  This event is a wake-up, not a second
+    // completion authority, and publishing retries (including duplicates) is
+    // harmless because the bridge's ceremony is learner/day deduplicated.
+    const publish = eventBus?.publish ?? eventBus?.broadcast;
+    if (typeof publish === 'function') {
+      publish.call(eventBus, 'piano.school-challenge.completed', {
+        userId: req.params.userId,
+        descriptorId: req.params.descriptorId,
+        completedAt: completion.completedAt,
+      });
+    }
+    res.json(completion);
   }));
 
   // Learning programs are policy over the bank, not another copy of its notes.
