@@ -12,6 +12,7 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 import GameBoundary from '../../../game-platform/host/GameBoundary.jsx';
 import { resolvePianoPlayerName } from '../../../game-platform/identity/playerName.js';
 import useSchoolGameAccess from '../../useSchoolGameAccess.js';
+import useGameBudgetMeter from '../../useGameBudgetMeter.js';
 
 /**
  * Relative destination for a game-owned URL segment.
@@ -105,6 +106,35 @@ function GamePicker() {
 }
 
 /**
+ * Budget-gate lock panel (gate 3) — shown in place of the game once the day's
+ * piano game-time budget is spent. Two distinct copies: a learner's own
+ * allowance runs out on their schedule, a shared device allowance runs out on
+ * everyone's. Styled like the school lock above it (`piano-mode__placeholder`)
+ * so a depleted-budget refusal reads as the same family of "not right now",
+ * not a different app.
+ */
+const BUDGET_LOCK_COPY = {
+  learner: {
+    heading: 'Games are done for today',
+    body: 'You’ve used your piano game time for today. It comes back tomorrow.',
+  },
+  device: {
+    heading: 'The piano’s games are done for today',
+    body: 'This piano has reached its shared game time for the day.',
+  },
+};
+
+function BudgetLock({ kind }) {
+  const { heading, body } = BUDGET_LOCK_COPY[kind];
+  return (
+    <section className="piano-mode__placeholder piano-games__budget-lock" role="status">
+      <h2>{heading}</h2>
+      <p>{body}</p>
+    </section>
+  );
+}
+
+/**
  * Game host — resolves the game entry from the URL param, wires MIDI, and
  * renders the game fullscreen. Back navigates up (relative).
  */
@@ -122,6 +152,16 @@ function GameHost() {
   const playerName = resolvePianoPlayerName(currentUser);
   const entry = getGameEntry(gameId);
 
+  // Gate 3 (below the school lock, gate 1): meter the day's game-time budget.
+  // `active: true` only here — D13: only a MOUNTED game is a match, so the
+  // picker and every other mode never open a session. Fail-open states
+  // ('off', 'opening', 'unavailable', 'playing', 'idle-paused', 'warning')
+  // all fall through to the normal game render below; only an affirmative
+  // depletion answer swaps the game for a lock panel.
+  const meter = useGameBudgetMeter({
+    learnerId: currentUser, deviceId: 'piano-kiosk', active: config.gameLimit?.enabled === true,
+  });
+
   // Current location in the header breadcrumb (Games › this game). The breadcrumb
   // replaces the old in-canvas back pill — tap the "Games" crumb to exit.
   usePianoBreadcrumb(useMemo(() => [{ label: entry?.label ?? gameId }], [entry?.label, gameId]));
@@ -137,6 +177,9 @@ function GameHost() {
     navigate(gameSubRouteTarget(subRoute, next), { relative: 'path', replace: true });
   };
 
+  if (meter.state === 'depleted') return <BudgetLock kind="learner" />;
+  if (meter.state === 'device-depleted') return <BudgetLock kind="device" />;
+
   if (!entry?.LazyComponent) {
     return (
       <div className="piano-mode__placeholder">
@@ -148,6 +191,13 @@ function GameHost() {
 
   return (
     <div className="piano-game-fullscreen">
+      {/* Non-blocking: the child keeps playing while low on time. Sits above
+          the game but never intercepts input — a countdown, not a wall. */}
+      {meter.warn && (
+        <div className="piano-games__budget-warning" role="status">
+          {Math.ceil(meter.secondsLeft / 60)} min of game time left
+        </div>
+      )}
       {/* A game that throws costs the player that game — not the kiosk. Without
           this, any throw blanked the whole screen, and the tablet's render
           watchdog then read a dead page and rebooted it. */}
