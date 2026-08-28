@@ -13,10 +13,14 @@
  *   - **how it is judged** → `judging` (plus rubric detail such as
  *     `cleanliness`) → `grading`.
  *
- * Pure module: no imports, no React, no fetching, no logging, no `console.*`.
+ * Pure module: no React, no fetching, no logging, no `console.*`. The one
+ * import is `sequenceStaffCanDraw`, `deriveStage`'s own adapter onto the
+ * one-staff renderer's geometry limits (task 2, ask-platform SP1).
  * Every error string is shaped `'<axis-or-rule>: <detail>'` — greppable and
  * stable, never a thrown exception.
  */
+
+import { sequenceStaffCanDraw } from './stagecraft.js';
 
 /** The nine axes and their vocabularies (the roadmap's MECE table, as data). */
 export const AXES = Object.freeze({
@@ -276,4 +280,60 @@ export function validateAsk(tuple, options) {
   if (t.hints !== undefined && t.hints !== 'none') errors.push('not-yet-implemented: hints');
 
   return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Which SCREEN a tuple's presentation axes mount, given the material instance
+ * they are being asked of.
+ *
+ * A thin adapter from tuple-space onto the geometry `stagecraft.js` owns
+ * (`sequenceStaffCanDraw`) — reproduces the routing today's tier-numbered
+ * `stageForTier` (`PianoKiosk/modes/Exercises/runPresentation.js`) computes
+ * from a `0|1|2|3` tier, but reads it off the axis values a tuple actually
+ * carries instead of a tier number. `stageForTier` stays the tier-facing entry
+ * point `ExerciseRun` calls; this is the axis-facing one, and the two must
+ * keep agreeing — every `PRESETS['tier-N']` cell is pinned by
+ * `askSchema.test.js` to answer the same stage `stageForTier(N, instance)`
+ * would.
+ *
+ * @param {object} tuple A flat ask tuple, or a `presentation`-shaped subset of
+ *   one (`expandAsk(level).presentation`, or a `PRESETS['tier-N']` entry
+ *   directly) — only `notationStyle` and `prompt` are read.
+ * @param {object} instance The bank instance the ask is drawn against.
+ *   `instance.ordering === 'any'` and `sequenceStaffCanDraw(instance)` are
+ *   both read from it, exactly as `stageForTier` reads them today.
+ * @returns {'keys'|'sequence'|'notation'|'score'}
+ *
+ * Precedence, most-specific first:
+ *
+ *  1. **`notationStyle: 'score'`** → `'score'`. A tuple only carries this
+ *     value for score-sourced material (`validateAsk`'s `score source ⇒
+ *     notationStyle score` constraint) — the one case with an actual
+ *     engraved document behind it, which `ExerciseRun` today short-circuits
+ *     to before `stageForTier` is even called (`stage = score ? 'score' :
+ *     stageForTier(...)`). Checked first because it is the hardest fact of
+ *     the three: an ask with a document behind it has exactly one honest
+ *     stage, independent of ordering or prompt.
+ *  2. **`instance.ordering === 'any'`** → `'keys'`. There is no ordered
+ *     notation for an unordered ask (a chord, an interval) — true at every
+ *     tier, including one a host named explicitly.
+ *  3. **`prompt: 'follow'`** (tiers 0-1) → `'keys'`. Whether a reinforcement
+ *     staff is offered alongside it is `secondary`'s question, not this
+ *     function's — `stageForTier` never answered it either, and `ExerciseRun`
+ *     computes that from `staffFitsAsk`, unmoved by this task.
+ *  4. **`notationStyle: 'sequence'`** (tier 2) → `'sequence'` when
+ *     `sequenceStaffCanDraw(instance)` allows it, else `'notation'` — the
+ *     one-staff renderer's own limits (a declared grand staff, genuinely
+ *     two-hand material, or a span past one staff's band) fall back to the
+ *     engraved path rather than draw the material dishonestly.
+ *  5. **Otherwise** → `'notation'` — tier 3's `engraved`/cued reading, and the
+ *     fallback for anything else `read`-prompted.
+ */
+export function deriveStage(tuple, instance) {
+  const t = tuple ?? {};
+  if (t.notationStyle === 'score') return 'score';
+  if (instance?.ordering === 'any') return 'keys';
+  if (t.prompt === 'follow') return 'keys';
+  if (t.notationStyle === 'sequence') return sequenceStaffCanDraw(instance) ? 'sequence' : 'notation';
+  return 'notation';
 }

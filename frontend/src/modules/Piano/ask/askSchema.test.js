@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AXES, PRESETS, expandAsk, validateAsk } from './askSchema.js';
+import { AXES, PRESETS, deriveStage, expandAsk, validateAsk } from './askSchema.js';
 
 /** A tuple that satisfies every constraint — the roadmap's unremovable floor. */
 const FLOOR = Object.freeze({
@@ -440,5 +440,97 @@ describe('expandAsk — explicit {material, presentation, grading} shape', () =>
   it('explicit hints !== none is flagged not-yet-implemented', () => {
     const result = expandAsk({ material: [], presentation: { hints: 'after-stall' } });
     expect(result.errors).toContain('not-yet-implemented: hints');
+  });
+});
+
+describe('deriveStage — tuple-space stage resolution (task 2, replaces stageForTier)', () => {
+  // A single-hand, narrow-span instance: the one-staff sequence renderer's own
+  // limits (`sequenceStaffCanDraw`) accept it.
+  const CAN_DRAW = Object.freeze({
+    events: Object.freeze([
+      { notes: [{ midi: 60, hand: 'right' }] },
+      { notes: [{ midi: 64, hand: 'right' }] },
+      { notes: [{ midi: 67, hand: 'right' }] },
+    ]),
+  });
+
+  // `drills/hanon/001`, trimmed: `staff: grand`, both hands on every event, a
+  // span from midi 36 to 91 — the material `sequenceStaffCanDraw` was written
+  // to refuse, on all three counts at once. Same shape `runPresentation.test.js`
+  // pins against `stageForTier`.
+  const CANNOT_DRAW = Object.freeze({
+    staff: 'grand',
+    events: Object.freeze([
+      { notes: [{ midi: 36, hand: 'left' }, { midi: 48, hand: 'right' }] },
+      { notes: [{ midi: 79, hand: 'left' }, { midi: 91, hand: 'right' }] },
+    ]),
+  });
+
+  const instanceFor = (ordering, canDraw) => ({ ...(canDraw ? CAN_DRAW : CANNOT_DRAW), ordering });
+
+  const PRESET_NAMES = ['tier-0', 'tier-1', 'tier-2', 'tier-3'];
+
+  /** The routing table this function must reproduce, independent of its own code. */
+  function expectedStage(preset, ordering, canDraw) {
+    if (ordering === 'any') return 'keys'; // overrides every preset, every tier
+    if (preset === 'tier-0' || preset === 'tier-1') return 'keys'; // prompt: follow
+    if (preset === 'tier-2') return canDraw ? 'sequence' : 'notation'; // read + sequence
+    return 'notation'; // tier-3: read + engraved/cued
+  }
+
+  // Every {preset} x {ordering any/strict} x {canDraw yes/no} cell: 4 x 2 x 2 = 16.
+  for (const preset of PRESET_NAMES) {
+    for (const ordering of ['strict', 'any']) {
+      for (const canDraw of [true, false]) {
+        it(`${preset}, ordering:${ordering}, canDraw:${canDraw} -> ${expectedStage(preset, ordering, canDraw)}`, () => {
+          const instance = instanceFor(ordering, canDraw);
+          expect(deriveStage(PRESETS[preset], instance)).toBe(expectedStage(preset, ordering, canDraw));
+        });
+      }
+    }
+  }
+
+  // Equivalents of runPresentation.test.js's `stageForTier` cases, re-expressed
+  // over the tuple the same preset expands to — the proof this and
+  // `stageForTier(tier, instance)` agree on every tier the tiers still name.
+  it('tier-0 and tier-1 presets both mount keys, matching stageForTier(0|1, ...)', () => {
+    const strict = { ordering: 'strict' };
+    expect(deriveStage(PRESETS['tier-0'], strict)).toBe('keys');
+    expect(deriveStage(PRESETS['tier-1'], strict)).toBe('keys');
+  });
+
+  it('tier-2 preset mounts sequence when the staff can draw it, matching stageForTier(2, ...)', () => {
+    expect(deriveStage(PRESETS['tier-2'], instanceFor('strict', true))).toBe('sequence');
+  });
+
+  it('tier-2 preset falls back to notation on the real Hanon shape, matching stageForTier(2, HANON)', () => {
+    expect(deriveStage(PRESETS['tier-2'], instanceFor('strict', false))).toBe('notation');
+  });
+
+  it('tier-3 preset always mounts notation, matching stageForTier(3, ...)', () => {
+    expect(deriveStage(PRESETS['tier-3'], instanceFor('strict', true))).toBe('notation');
+    expect(deriveStage(PRESETS['tier-3'], instanceFor('strict', false))).toBe('notation');
+  });
+
+  it('ordering:any sends every preset to keys, matching stageForTier(N, {ordering:"any"})', () => {
+    for (const preset of PRESET_NAMES) {
+      expect(deriveStage(PRESETS[preset], { ordering: 'any' })).toBe('keys');
+    }
+  });
+
+  // The one stage stageForTier never had to answer: a score-sourced tuple.
+  // ExerciseRun short-circuits to it today (`stage = score ? 'score' : ...`)
+  // before stageForTier is ever called; deriveStage folds that into the same
+  // function, as the highest-precedence check.
+  it('a score-styled tuple mounts the score stage, ahead of ordering and prompt', () => {
+    expect(deriveStage({ notationStyle: 'score' }, null)).toBe('score');
+    expect(deriveStage({ notationStyle: 'score', prompt: 'read' }, { ordering: 'strict' })).toBe('score');
+    expect(deriveStage({ notationStyle: 'score' }, { ordering: 'any' })).toBe('score');
+  });
+
+  it('a nullish tuple or instance never throws, and answers the read-prompted default', () => {
+    expect(deriveStage(null, null)).toBe('notation');
+    expect(deriveStage(undefined, undefined)).toBe('notation');
+    expect(deriveStage({}, {})).toBe('notation');
   });
 });
