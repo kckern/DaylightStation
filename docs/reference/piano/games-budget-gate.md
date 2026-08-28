@@ -330,7 +330,7 @@ gameLimit:
     user_2: { dailyMinutes: 45 }
 
 gameGate:
-  enabled: false
+  enabled: false            # the household default, for every child
   passScore: 0.80
   retriesBeforeDegrade: 3
   climbAfterCleanPasses: 3
@@ -340,7 +340,24 @@ gameGate:
     - kind: score
       source: current-study-piece
       measures: 4
+  users:                    # optional per-child overrides, merged key-by-key
+    kckern:
+      enabled: true
+      games: [chess]        # optional allowlist; absent means every game
 ```
+
+The top level is the default for everybody. `users.{learnerId}` overrides it
+key-by-key for one child, and `games` narrows an enabled gate to named game ids.
+Both are absent by default, which reads as "everyone, everywhere" — so a block
+without them behaves exactly as an unscoped one. A child with no entry never
+sees a gate the household has not switched on for them, which is what makes a
+rollout to one child on one game possible.
+
+The scoping is decided by the host, not the gate: `Games.jsx` asks
+`gateAppliesTo` before it mounts anything, so a gate that does not apply is
+never constructed. The gate component itself never reads `enabled` — a
+component that opened itself because a key was absent would be a gate that
+quietly stops existing.
 
 Every key above is read, with one exception noted below. **Keys the design named that are
 deliberately absent from that example, because setting them today does nothing:**

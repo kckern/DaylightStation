@@ -15,6 +15,7 @@ import useSchoolGameAccess from '../../useSchoolGameAccess.js';
 import useGameBudgetMeter from '../../useGameBudgetMeter.js';
 import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
 import GameGate from './GameGate.jsx';
+import { gateAppliesTo, gateConfigForLearner } from './gateScope.js';
 import MatchGateContext from './MatchGateContext.js';
 import { gameSubRouteTarget } from './gameSubRoute.js';
 
@@ -167,12 +168,20 @@ function GameHost() {
   // the game on the SAME route rather than sitting over it: MIDI has no focus
   // concept, so exactly one consumer of the note stream at a time.
   //
-  // `gatePending` starts armed when the household enables the gate, so ENTERING
-  // a game is itself a match boundary (D12: nothing reaches a match without
-  // passing). Config is loaded before any route renders (PianoApp returns null
-  // while the roster is loading), so this initial read is never the "not yet
-  // arrived" false.
-  const gateEnabled = config.gameGate?.enabled === true;
+  // `gatePending` starts armed when the gate applies here, so ENTERING a game is
+  // itself a match boundary (D12: nothing reaches a match without passing).
+  // Config is loaded before any route renders (PianoApp returns null while the
+  // roster is loading), so this initial read is never the "not yet arrived"
+  // false.
+  //
+  // "Applies here" is per child AND per game: the household block is the
+  // default, `users.{learnerId}` overrides it key-by-key, and an optional
+  // `games:` allowlist narrows it to named game ids. That is what makes a
+  // careful rollout possible — one child, one game, watched — instead of
+  // switching a challenge on in front of all nine games and every child at
+  // once. Both dimensions are absent by default, which reads as "everyone,
+  // everywhere", so an unscoped block behaves exactly as it always did.
+  const gateEnabled = gateAppliesTo(config.gameGate, { learnerId, gameId });
   const [gatePending, setGatePending] = useState(gateEnabled);
   // Bumped on every match boundary and used as the game's `key`, so a rematch
   // is a genuine REMOUNT — a game that kept its board across "play again"
@@ -273,7 +282,7 @@ function GameHost() {
         <GameGate
           learnerId={learnerId}
           deviceId={deviceId}
-          gateConfig={config.gameGate ?? null}
+          gateConfig={gateConfigForLearner(config.gameGate, learnerId)}
           onPassed={openMatch}
           onLeave={exit}
         />
