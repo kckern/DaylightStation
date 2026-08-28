@@ -40,7 +40,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import PianoEmpty from '../PianoKiosk/PianoEmpty.jsx';
 import ExerciseRun from '../PianoKiosk/modes/Exercises/ExerciseRun.jsx';
-import { keysInstance } from '../PianoKiosk/modes/Games/gateMaterial.js';
+import { resolveSpec } from '../PianoKiosk/modes/Games/gateMaterial.js';
 import { expandAsk, validateAsk } from './askSchema.js';
 import { loadAskSources, PENDING_SOURCES } from './askResolution.js';
 import { askForMaterial, framingFor, requirementForLevel } from './gateAsk.js';
@@ -88,17 +88,39 @@ export function askTupleFor(levelLike, spec) {
 }
 
 /**
- * The descriptor `loadAskSources` loads from.
+ * The whole resolution, in the two steps it has always taken — and it is two,
+ * not one, because an AUTHORED SPEC and a MATERIAL DESCRIPTOR are different
+ * things and only the first of them can name a rotation.
  *
- * A lit-key ask is SYNTHESIZED rather than fetched — there is no bank entry for
- * "press a key", and inventing a network round trip for one would put a 502
- * between a four-year-old and the easiest thing a gate can ask. Every other
- * kind is already addressable, and travels unchanged.
+ *  1. `resolveSpec` turns what a level actually wrote — `{collection, roots}`,
+ *     `{instanceId}`, `{notes, arrangement}`, `{source, measures}` — into a
+ *     descriptor. This is where a lit key is SYNTHESIZED (no bank entry exists
+ *     for "press a key", and a network round trip for one would put a 502
+ *     between a four-year-old and the easiest thing a gate can ask), and where
+ *     `pickIndex` rotates a level's roots so two consecutive gates at
+ *     `roots: [G, D, F]` are two different scales rather than the same one
+ *     twice.
+ *  2. `loadAskSources` loads what that descriptor points at. An exercise
+ *     descriptor already carries its instance and short-circuits; a SCORE one
+ *     carries only a path, deliberately — the rotation may never have served it,
+ *     and a pick that fetched would pull a whole document over the wire to
+ *     decide it had one.
+ *
+ * A spec that cannot resolve is reported on the same event as a material that
+ * cannot, with its own exact reason string, and answers "settled with nothing"
+ * — which the run below reads as `instance-not-found`, exactly as it always has.
  */
-function materialDescriptor(spec, pickIndex) {
-  if (!spec) return null;
-  if (spec.kind === 'keys' && !spec.instance) return { kind: 'keys', instance: keysInstance(spec, pickIndex) };
-  return spec;
+async function resolveSession({
+  materialSpec, pickIndex, mode, instanceId, programId, stepId, requirementOverride, logger,
+}) {
+  const sources = { instanceId, programId, stepId, requirementOverride, logger };
+  if (!materialSpec) return loadAskSources({ material: null, ...sources });
+  const picked = await resolveSpec(materialSpec, { pickIndex, mode });
+  if (!picked.ok) {
+    logger?.warn('piano.exercise-material-unresolved', { kind: materialSpec.kind ?? null, error: picked.error });
+    return { instance: null, score: null, requirement: null, step: null };
+  }
+  return loadAskSources({ material: picked.material, ...sources });
 }
 
 /**
@@ -108,10 +130,20 @@ function materialDescriptor(spec, pickIndex) {
  *   grading}`). Expanded and validated here; an ask the schema refuses is
  *   `unrunnable` rather than a half-built screen. Memoize it: a fresh object
  *   per render would re-resolve the material under the child's hands.
- * @param {object|null} [props.materialSpec] The material the HOST picked (the
- *   gate rotates; this component never does). Memoize it, same reason.
- * @param {number} [props.pickIndex] The host's rotation counter, and the only
- *   source of variation in a synthesized lit-key ask.
+ * @param {object|null} [props.materialSpec] The AUTHORED spec the host picked
+ *   out of the level's material list — `{kind:'exercise', collection, roots}`,
+ *   `{kind:'exercise', instanceId}`, `{kind:'keys', notes, arrangement}` or
+ *   `{kind:'score', source, measures}` — never a descriptor something already
+ *   resolved. It is the single input to BOTH halves of this seam, and that is
+ *   deliberate: the copy a child reads is written from what the level asked for
+ *   (`notes: 1` is what makes the floor say "Press the lit key"), while the
+ *   resolution needs the same shape to know it must rotate roots. Splitting
+ *   them into two props would let a host pass one that says "one lit key" and
+ *   another that plays three. WHICH spec is the host's decision (the gate
+ *   rotates; this component never does) — memoize it, same reason as `ask`.
+ * @param {number} [props.pickIndex] The host's rotation counter: which of a
+ *   level's roots is served today, and the only source of variation in a
+ *   synthesized lit-key ask.
  * @param {string|null} [props.instanceId] A bank instance, for a host with no
  *   spec to pick from (practice, program steps, video checkpoints).
  * @param {string|null} [props.programId] The program a step belongs to. Fetched
@@ -164,27 +196,33 @@ export default function AskSession({
   }, [ask, askErrors, logger, onUnavailable]);
 
   /**
+   * A repertoire level IS its requirement — one is derived from the other and
+   * there is nothing to fetch. Memoized because the run below rebuilds its
+   * attempt when this reference changes, and `requirementForLevel` answers with
+   * a fresh object every time it is asked.
+   *
+   * It is computed BEFORE the resolution because the resolution needs its
+   * `mode`: a catalog-addressed collection is walked for material that supports
+   * the mode this level will be graded in, and a level whose only cued variants
+   * were filtered out is a different answer from one whose bank was down.
+   */
+  const levelRequirement = useMemo(() => (ask ? requirementForLevel(ask) : null), [ask]);
+  const mode = levelRequirement?.mode ?? 'free';
+
+  /**
    * The material, and the program step beside it. Refused asks never reach
    * here: an ask nothing can honour must not also cost a network round trip.
    */
-  const material = useMemo(() => materialDescriptor(materialSpec, pickIndex), [materialSpec, pickIndex]);
   const refused = askErrors.length > 0;
   useEffect(() => {
     if (refused) return undefined;
     let alive = true;
     setSources(PENDING_SOURCES);
-    loadAskSources({ material, instanceId, programId, stepId, requirementOverride, logger })
+    resolveSession({ materialSpec, pickIndex, mode, instanceId, programId, stepId, requirementOverride, logger })
       .then((next) => { if (alive) setSources(next); });
     return () => { alive = false; };
-  }, [instanceId, logger, material, programId, refused, requirementOverride, stepId]);
+  }, [instanceId, logger, materialSpec, mode, pickIndex, programId, refused, requirementOverride, stepId]);
 
-  /**
-   * A repertoire level IS its requirement — one is derived from the other and
-   * there is nothing to fetch. Memoized because the run below rebuilds its
-   * attempt when this reference changes, and `requirementForLevel` answers with
-   * a fresh object every time it is asked.
-   */
-  const levelRequirement = useMemo(() => (ask ? requirementForLevel(ask) : null), [ask]);
   const requirement = levelRequirement ?? sources.requirement;
 
   const askLine = useMemo(

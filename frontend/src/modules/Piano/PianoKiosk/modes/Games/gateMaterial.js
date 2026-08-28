@@ -271,8 +271,17 @@ export function isConfigOnlyDecline(skipped) {
   return reasons.length > 0 && reasons.every((reason) => CONFIG_DECLINE_REASONS.includes(reason));
 }
 
-/** One material spec becomes one runnable thing, or one reason it did not. */
-async function resolveSpec(spec, { pickIndex, mode }) {
+/**
+ * One material spec becomes one runnable thing, or one reason it did not.
+ *
+ * Exported for `AskSession` (task 3, ask-platform SP1), which resolves the
+ * AUTHORED spec a host picked — the same input `pickGateMaterial` walks, minus
+ * the walking. It is the only entry point that can answer for every shape a
+ * level can name: `resolveGateMaterial` handles a descriptor that already knows
+ * its instance or its id, and has nothing to say about `{collection, roots}`,
+ * which is what every staff-level rung in the live config is written as.
+ */
+export async function resolveSpec(spec, { pickIndex, mode }) {
   if (spec?.kind === 'keys') {
     const instance = keysInstance(spec, pickIndex);
     return { ok: true, material: { kind: 'keys', instance }, instance };
