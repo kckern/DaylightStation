@@ -165,11 +165,15 @@ export function makeReadingSessionHandler({
     const midStory = existing?.state === 'reading'
       ? { state: existing.state, playing: existing.playing ?? null }
       : null;
-    const session = sessions.open({ location, learnerId, target });
+    // Reserve the reader before the potentially long wake. A book tap in this
+    // interval must not escape to ordinary playback without attribution.
+    const session = sessions.open({ location, learnerId, target, state: midStory ? 'prompt' : 'starting' });
     if (midStory) sessions.update(location, midStory);
 
     let woke = null;
+    let wakeMs = null;
     if (wakeScreen) {
+      const wakeStartedAt = Date.now();
       try {
         woke = await wakeScreen({ target, location });
       } catch (err) {
@@ -179,15 +183,41 @@ export function makeReadingSessionHandler({
         log('warn', 'school.reading.wake-failed', { location, target, error: err?.message ?? String(err) });
         woke = { ok: false, error: err?.message ?? String(err) };
       }
+      wakeMs = Date.now() - wakeStartedAt;
     }
 
+    // A late wake from a superseded card must not revive the newer learner's
+    // session. `activate` compares the reservation id before publishing.
+    const active = midStory ? sessions.current(location) : sessions.activate(location, session.sessionId);
+
+    // `wakeMs` is the wake CALL's latency, recorded plainly. `sessions.open()`
+    // above has already broadcast `session-open` on this room's topic — before
+    // this wake ran — so how long the wake takes bounds how long the room had
+    // no chance of hearing it. On 2026-08-28 it was 19 seconds, and the only
+    // way to know that was to subtract two timestamps in the log store by hand.
+    //
+    // IT IS NOT A VERDICT, AND AN EARLIER VERSION OF THIS LINE PRETENDED IT
+    // WAS. A `broadcastLikelyMissed` boolean derived from a 1.5s threshold was
+    // wrong on its face: `prepareForContent` spends ~13.5s on the HEALTHY path
+    // (FKB foreground verification alone took 11.97s in the incident), so a TV
+    // that was already on, already subscribed, and received the broadcast
+    // perfectly would still have been flagged and warned about. A field that
+    // fires on every ordinary tap teaches you to ignore it.
+    //
+    // Whether anyone actually heard the broadcast is a question only the bus
+    // can answer — the topic's subscriber count at broadcast time, which
+    // `ScreenPlaybackAdapter.#awaitListener` already reads. Wiring that in is
+    // the real fix (fix 1 in the bug doc); until then this stays a measurement
+    // and does not editorialise.
     log('info', 'school.reading.session-opened', {
       location, learnerId, target, replaced: existing?.learnerId ?? null, midStory: Boolean(midStory),
+      wakeMs,
+      woke: woke ? woke.ok !== false : null,
     });
     return {
       status: 'reading_session_open',
-      learnerId: session.learnerId,
-      location: session.location,
+      learnerId: (active ?? session).learnerId,
+      location: (active ?? session).location,
       // `null` when nothing was asked to wake; `false` only when something was
       // asked and could not. The two are different answers.
       woke: wakeScreen ? woke?.ok !== false : null,

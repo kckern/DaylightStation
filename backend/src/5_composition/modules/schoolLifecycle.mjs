@@ -744,9 +744,12 @@ export async function createSchoolLifecycle({
   // today?", derived on demand, no session or token side effects.
   const getLearnerDayCompletion = new GetLearnerDayCompletion({
     // The SAME projection the agenda plans from — asked for a NARROWER view
-    // (no attested passes, no exceptions, no assigned programs), which is
-    // exactly what this read has always been. That is a completion-semantics
-    // decision and it lives in the use case, stated, not in this wiring.
+    // (no attested passes, no exceptions). Assigned programs ARE included as
+    // of 2026-08-28: excluding them made the day of a programs-only learner
+    // project to zero sections, which reads `no_work_today` and unlocks games.
+    // That is a completion-semantics decision and it lives in the use case,
+    // stated, not in this wiring — but `launchers` below is what makes it
+    // possible, so it must keep being passed.
     planProjection,
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     launchers, timezone, clock, logger,
@@ -1000,6 +1003,9 @@ export async function createSchoolLifecycle({
     // got a panel code even on a household with self-service on — the QR
     // `resultDocument` had no code parameter for at all until this slice.
     selfService: cfg.selfService,
+    // Receipts must use precisely the completion view that governs Piano
+    // Games: programs count, attestations and exceptions do not.
+    planProjection,
     // Every settle publishes `school.session.outcome-recorded` (design
     // 2026-08-23-student-completion-state-machine) for `schoolCompletionBridge`
     // below — optional, so an install with no eventBus settles exactly as

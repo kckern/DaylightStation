@@ -403,6 +403,7 @@ export const schoolApi = {
   // backend's session state cannot see playback, and until it is told, the
   // mid-story branch of the state machine never fires.
   readingSummary: (learnerId) => req(`/reading/summary?learnerId=${encodeURIComponent(learnerId)}`),
+  readingSession: (location) => req(`/reading/session?location=${encodeURIComponent(location)}`),
   readingPlaying: (body) => req('/reading/playing', body),
   // `pickId` is the idempotency key: the same one twice is ONE read.
   readingRead: (body) => req('/reading/read', body),

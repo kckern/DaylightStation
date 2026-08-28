@@ -84,6 +84,15 @@ export function createReadingRouter({
   if (!sessions) throw new Error('createReadingRouter requires a sessions store');
   const router = express.Router();
 
+  // WebSocket delivery is intentionally best-effort. A screen that wakes or
+  // reloads after an event obtains the authoritative room state here instead
+  // of remaining visually idle until the next card tap.
+  router.get('/session', asyncHandler(async (req, res) => {
+    const location = trimmed(req.query?.location);
+    if (!location) throw badRequest('location is required');
+    return res.json(sessions.snapshot(location));
+  }));
+
   /**
    * The story is on screen. `pickId` and `learnerId` are the screen's pick-time
    * snapshot, parked on the session as `playing` so anything reading the
@@ -108,7 +117,36 @@ export function createReadingRouter({
       logger.info?.('school.reading.playing-no-session', { location, learnerId, contentId });
       return res.json({ ok: false, reason: 'no-session', state: null });
     }
-    logger.info?.('school.reading.playback-started', { location, learnerId, contentId, pickId });
+    // THE LAST CHANCE TO NOTICE, and it is ten minutes before the damage lands.
+    // The screen sends the learner it froze at pick time; the session knows who
+    // is actually at the reader. When the screen's copy is missing or disagrees,
+    // the completion POST that follows is already doomed — but the story has
+    // only just started, so this line arrives while there is still time to look.
+    // On 2026-08-28 the screen sent null here and nothing remarked on it.
+    //
+    // ONLY THE MISSING CASE IS A FAULT. A screen learner that merely DIFFERS
+    // from the session's is D4 working as designed: a sibling tapped their card
+    // mid-story, the session swapped, and the running story keeps the
+    // attribution it was picked with. Warning about that would put a scary line
+    // in the store for correct behaviour — so it is logged at info, and only
+    // the null case, which really does lose the read, is a warning.
+    if (!learnerId) {
+      logger.warn?.('school.reading.playing-unattributed', {
+        location, contentId, pickId,
+        sessionLearnerId: updated.learnerId,
+        consequence: 'the completion POST will be rejected and the read lost',
+      });
+    } else if (learnerId !== updated.learnerId) {
+      logger.info?.('school.reading.playing-learner-differs', {
+        location, contentId, pickId,
+        screenLearnerId: learnerId,
+        sessionLearnerId: updated.learnerId,
+        note: 'D4: the story keeps the learner it was picked with; the session has since swapped',
+      });
+    }
+    logger.info?.('school.reading.playback-started', {
+      location, learnerId, contentId, pickId, attributable: Boolean(learnerId),
+    });
     return res.json({ ok: true, state: updated.state, learnerId: updated.learnerId });
   }));
 
@@ -121,14 +159,36 @@ export function createReadingRouter({
   router.post('/read', asyncHandler(async (req, res) => {
     const body = req.body || {};
     const location = trimmed(body.location);
-    const read = await recordStoryRead.execute({
-      learnerId: body.learnerId,
-      contentId: trimmed(body.contentId),
-      title: trimmed(body.title),
-      tagUid: trimmed(body.tagUid),
-      location: trimmed(body.location),
-      pickId: trimmed(body.pickId),
-    });
+    let read;
+    try {
+      read = await recordStoryRead.execute({
+        learnerId: body.learnerId,
+        contentId: trimmed(body.contentId),
+        title: trimmed(body.title),
+        tagUid: trimmed(body.tagUid),
+        location: trimmed(body.location),
+        pickId: trimmed(body.pickId),
+      });
+    } catch (err) {
+      // A REJECTED READ IS THE WORST FAILURE THIS FEATURE HAS, and it was
+      // invisible from the backend: `RecordStoryRead` throws before it logs
+      // anything, so a story that played to its end and was refused left no
+      // trace here at all. Only the screen said so (`record-failed`), and only
+      // if the screen was still alive to say it.
+      //
+      // The learner is echoed RAW, not trimmed — a null or a stray object is
+      // exactly the shape worth seeing, and on 2026-08-28 it was null, frozen
+      // there by a screen that had missed its own `session-open`.
+      logger.error?.('school.reading.read-rejected', {
+        location,
+        learnerId: body.learnerId ?? null,
+        contentId: trimmed(body.contentId),
+        pickId: trimmed(body.pickId),
+        error: err?.message ?? String(err),
+        consequence: 'the story played and the obligation did not move',
+      });
+      throw err;
+    }
 
     // `READING --ended--> PROMPT` (§5). The evidence is written FIRST and this
     // is a courtesy on top of it — but not an optional one, because it is the
