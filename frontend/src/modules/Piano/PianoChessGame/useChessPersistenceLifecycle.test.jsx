@@ -43,10 +43,16 @@ describe('useChessPersistenceLifecycle', () => {
 
   it('persists and archives one completed game from one set of facts', async () => {
     const { result } = renderHook(() => useChessPersistenceLifecycle(props(game(true))));
-    await waitFor(() => expect(api.saveGameRecord).toHaveBeenCalledOnce());
+    // WAIT FOR THE OUTCOME, NOT FOR THE CALL. `ladderOutcome` is set from the
+    // save's own continuation — a promise hop and then a React commit — after
+    // `saveGameRecord` has already been CALLED. A wait that stops at "it was
+    // called" can therefore read `null` and report a hook that never stored the
+    // ladder. That is the whole of the flake: the hook was always right, the
+    // wait was one settlement short, and a machine under load lost the race.
+    await waitFor(() => expect(result.current.ladderOutcome).toEqual({ promoted: true }));
+    expect(api.saveGameRecord).toHaveBeenCalledOnce();
     expect(api.archiveGame).toHaveBeenCalledOnce();
     expect(result.current.finishedRecord).toMatchObject({ result: 'win', level: 2 });
-    expect(result.current.ladderOutcome).toEqual({ promoted: true });
   });
 
   it('re-arms abandoned-game archival when a new game starts', () => {
