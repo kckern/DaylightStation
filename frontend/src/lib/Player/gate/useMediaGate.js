@@ -19,14 +19,24 @@
  *       -> user.paused = true -> PAUSED_USER forever -> the gate never resumes
  *       -> the lesson is stuck AFTER a correct answer.
  *
- * The gate is the only thing that knows it issued that pause, so we ask it. A DOM
- * `pause` is user intent only when `getState().ownsPause` is false — plus one more
- * guard: `applyingRef`. The spec queues the `pause` event as a task, so in a real
- * browser it lands after `apply` returned and `ownsPause` is already true; but an
- * environment (or a test double) that dispatches SYNCHRONOUSLY from inside
- * `el.pause()` arrives BEFORE `mediaGate` has assigned ownership, and `ownsPause`
- * would still read false. `applyingRef` covers that window. It cannot hide a real
- * user pause: nobody presses a button inside a synchronous call stack.
+ * The gate is the only thing that knows it issued that pause, so we ask it — but
+ * `ownsPause` alone is not the right question, and getting this wrong costs a whole
+ * second failure. A DOM `pause` is OUR echo only when BOTH hold:
+ *
+ *   - `getState().ownsPause` — the pause on this element belongs to us; and
+ *   - `lastAppliedPausedRef` — our last transport action was actually a PAUSE.
+ *
+ * The second half exists because ownership is deliberately held across the in-flight
+ * window of a resume, and on a Plex stream that window is however long the media takes
+ * to start. Inside it our last action was `play()`, so a `pause` can only have come
+ * from a person. Filing it as our echo let the browser abort the pending `play()` and
+ * the next apply — any verdict change, any ceiling update — play right over them.
+ *
+ * `applyingRef` is a third, narrower guard. The spec queues the `pause` event as a
+ * task, so in a real browser it lands after `apply` returned; but an environment (or a
+ * test double) that dispatches SYNCHRONOUSLY from inside `el.pause()` arrives BEFORE
+ * `mediaGate` has assigned ownership, and `ownsPause` would still read false. It
+ * cannot hide real intent: nobody presses a button inside a synchronous call stack.
  *
  * DOM `seeking` is NOT wired at all, for the same reason in the other direction:
  * the clamp writes `el.currentTime`, which fires `seeking`, and the arbiter
@@ -132,17 +142,47 @@ const sameDecision = (a, b) => Boolean(a) && Boolean(b)
  *   so an outer household rule outranks a lesson-local one (see that module).
  * @param {{seeking?: object, resilience?: object, user?: object}} [opts.player] live
  *   player state. Any slot may be null before its source resolves.
+ *
+ *   ⚠ `seeking.active` SUSPENDS ALL ENFORCEMENT while it is true — the arbiter's
+ *   anti-thrash rule returns `paused: false` for every verdict, so a blocking gate
+ *   never pauses the element and a child pressing play keeps playing. That is correct
+ *   arbiter behaviour and it makes this slot the easiest way to open a checkpoint-skip
+ *   hole: the caller MUST clear it when the seek ends. A `seeking.active` that sticks
+ *   true is indistinguishable from having no gate at all.
+ *
+ *   `user` is honoured but does NOT outrank a gate: a blocking verdict wins, so a
+ *   parent's pause cannot release a checkpoint (it is already paused either way).
+ * @param {string} [opts.contentId] Correlation id stamped on every gate event. Held in
+ *   a ref, so it may change as the queue advances. Pass it: without one, the school
+ *   widget and the fitness player emit identical lines into the log store, which is the
+ *   only postmortem surface these kiosks have.
  * @param {object} [opts.logger] Logger override — pass the player's child logger so
  *   gate events inherit its session-log routing.
+ *
+ * ## ONE `useMediaGate` PER ELEMENT
+ *
+ * `mediaGate.js` says this about its core and it is just as true of the hook. Two hooks
+ * over one element converge on the same decision but thrash getting there (a release
+ * costs `play: 1, pause: 2`), and each files the OTHER's pause as a human — so a gate
+ * echo becomes PAUSED_USER after all. To add a second governor, contribute a verdict
+ * through `GateVerdictProvider`; that is what it is for.
  * @returns {{ decision: import('./pauseArbiter.js').PauseDecision, status: object }}
- *   `decision` is what the arbiter ruled this tick; `status` is `mediaGate`'s
+ *   `decision` is what the arbiter RULED this tick; `status` is `mediaGate`'s
  *   enforcement snapshot (`ownsPause`, `resumeBlocked` — the "autoplay blocked,
  *   press play" affordance — and `seekCeiling`).
+ *
+ *   ⚠ `decision` is a RULING, NOT TRANSPORT STATE. It reads `PLAYING` whenever nothing
+ *   objects — including while the media sits paused because the autoplay policy
+ *   rejected the resume, or because a seek is suppressing the pause action. Overlay
+ *   chrome driven off `decision.reason` will therefore say "playing" over a stopped
+ *   picture. For what the transport is actually doing, read `status` and the element;
+ *   use `decision` for what is ALLOWED.
  */
 export function useMediaGate({
   getMediaEl,
   verdicts = EMPTY,
   player = null,
+  contentId = null,
   logger: injectedLogger = null
 } = {}) {
   const contributed = useContributedVerdicts();
@@ -183,15 +223,31 @@ export function useMediaGate({
   getElRef.current = getMediaEl;
   const loggerRef = useRef(injectedLogger);
   loggerRef.current = injectedLogger;
+  // Held in a ref, not captured: the hook outlives a queue advance, so an id captured
+  // at mount would mislabel every later event (same reason `useMediaClock` does this).
+  const contentIdRef = useRef(contentId);
+  contentIdRef.current = contentId;
 
   // Read through the ref, so a caller that swaps in its session logger mid-life is
   // followed. `createMediaGate` below is constructed once and can only ever hold the
   // logger it was built with — an acceptable difference, since the player's child
   // logger is created once and does not churn.
   const log = () => loggerRef.current || logger();
+  /**
+   * Every gate event carries the correlation id. Without it the school widget and the
+   * fitness player emit identical lines, and the log store is the only postmortem
+   * surface these kiosks have (CLAUDE.md, "Reading Logs").
+   */
+  const logData = (extra) => ({ contentId: contentIdRef.current, ...extra });
 
   const applyRef = useRef(null);
   const applyingRef = useRef(false);
+
+  // What our LAST transport action was. `ownsPause` alone cannot answer "is this DOM
+  // pause our echo?", because it is deliberately held across the in-flight window of a
+  // resume — and on a Plex stream that window is however long the media takes to start.
+  // A pause arriving while our last action was `play()` is not our echo; it is a person.
+  const lastAppliedPausedRef = useRef(false);
 
   useEffect(() => {
     const resolveEl = () => {
@@ -209,6 +265,7 @@ export function useMediaGate({
       applyingRef.current = true;
       try {
         gate.apply(d);
+        lastAppliedPausedRef.current = Boolean(d?.paused);
       } finally {
         applyingRef.current = false;
       }
@@ -225,12 +282,17 @@ export function useMediaGate({
     let bound = null;
 
     const onPause = () => {
-      if (applyingRef.current || gate.getState().ownsPause) {
+      // BOTH halves are required. `ownsPause` says the pause on this element is ours;
+      // `lastAppliedPausedRef` says our last action was actually a pause. Ownership
+      // survives an in-flight resume, so without the second half a parent pausing
+      // mid-resume is filed as our echo — and once the browser aborts the pending
+      // `play()`, the next apply plays right over them.
+      if (applyingRef.current || (gate.getState().ownsPause && lastAppliedPausedRef.current)) {
         // Our own echo. Header §1 — routing this into `user` deadlocks the lesson.
-        log().debug('gate.pause-echo-ignored', { gate: gate.getState().gate });
+        log().debug('gate.pause-echo-ignored', logData({ gate: gate.getState().gate }));
         return;
       }
-      log().info('gate.user-pause-observed', { gate: gate.getState().gate });
+      log().info('gate.user-pause-observed', logData({ gate: gate.getState().gate }));
       setUserPaused(true);
     };
 
@@ -240,9 +302,9 @@ export function useMediaGate({
       // Attribution only — never a filter. See header §2 for why `ownsPause` cannot
       // gate the bump: it is true for a human's play as well as for our own resume.
       if (gate.getState().ownsPause) {
-        log().debug('gate.play-observed-while-owned', { gate: gate.getState().gate });
+        log().debug('gate.play-observed-while-owned', logData({ gate: gate.getState().gate }));
       } else {
-        log().info('gate.user-play-observed', { gate: gate.getState().gate });
+        log().info('gate.user-play-observed', logData({ gate: gate.getState().gate }));
       }
       // The resulting apply is how `mediaGate` learns the transport moved.
       setTransportEpoch((n) => n + 1);
@@ -262,8 +324,12 @@ export function useMediaGate({
           bound.removeEventListener('pause', onPause);
           bound.removeEventListener('play', onPlay);
         } catch (_) { /* element already gone */ }
-        // A different transport carries no stale intent from the old one.
-        setUserPaused(false);
+        // A DIFFERENT transport carries no stale intent from the old one — but `null`
+        // is NOT a swap, it means the ref is momentarily unresolved (a React remount
+        // leaves it null for a render) and the same element usually comes back.
+        // `mediaGate.js` draws exactly this line for pause ownership; the wrapper has
+        // to draw it too, or the two disagree about state after one null blip.
+        if (next) setUserPaused(false);
       }
       bound = next;
       if (bound) {
@@ -272,7 +338,7 @@ export function useMediaGate({
           bound.addEventListener('play', onPlay);
         } catch (_) { /* not an element we can bind */ }
       }
-      log().debug('gate.element-sync', { bound: Boolean(bound) });
+      log().debug('gate.element-sync', logData({ bound: Boolean(bound) }));
       // On the FIRST pass the decision effect below is about to apply anyway; only a
       // genuine late mount or swap needs enforcement re-run from here.
       if (!wasFirst) setTransportEpoch((n) => n + 1);
@@ -280,7 +346,7 @@ export function useMediaGate({
 
     syncEl();
     const supervisor = setInterval(syncEl, SUPERVISOR_MS);
-    log().info('gate.hook.mounted', {});
+    log().info('gate.hook.mounted', logData({}));
 
     return () => {
       clearInterval(supervisor);
@@ -294,7 +360,7 @@ export function useMediaGate({
       unsubscribe();
       gate.detach();
       applyRef.current = null;
-      log().info('gate.hook.unmounted', {});
+      log().info('gate.hook.unmounted', logData({}));
     };
     // `[]` on purpose: every value this effect reads from the render scope is a ref, a
     // setState, or module scope, so there is nothing for exhaustive-deps to ask for —

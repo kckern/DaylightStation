@@ -38,19 +38,42 @@
  * actually consumes (`blocked`, `id`, `seekCeiling`). Two verdict arrays with equal
  * fields ARE the same verdict as far as every consumer is concerned.
  *
- * The consequence to know: when the fields match, consumers keep the PREVIOUS
- * verdict objects. That is invisible while `blocked`/`id`/`seekCeiling` are the whole
- * contract, and wrong the moment a verdict carries something else a consumer reads —
- * an overlay payload, a question id. So if `GateVerdict` grows a field ANY consumer
- * reads, add it to `signature()` in the same commit.
+ * The consequence, and it is sharp: when the signature fields match, consumers keep
+ * the PREVIOUS verdict OBJECTS. A provider flipping a `questionId` q1 -> q2 -> q3 with
+ * `blocked`/`id`/`seekCeiling` unchanged hands every consumer `q1` three times.
+ *
+ * Worse, the two channels behave DIFFERENTLY. The same verdict object passed through
+ * `useMediaGate`'s own `verdicts` prop stays live, because the hook stabilizes its
+ * OUTPUT (the decision) rather than its inputs. So an identical payload is fresh via
+ * the prop and stale via the provider, with no error and nothing failing.
+ *
+ * A comment is not enough to hold that, so `warnOnExtraFields` below says it out loud
+ * in dev the first time a verdict carries a field this module cannot track. If
+ * `GateVerdict` grows a field ANY consumer reads, add it to `signature()` and to
+ * `SIGNED_FIELDS` in the same commit.
  */
 
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import getLogger from '../../logging/Logger.js';
+
+// Lazy module logger: `getLogger()` at import time binds before the app configures the
+// logger (CLAUDE.md, "Module-Level Loggers").
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ app: 'player', component: 'gate-verdicts' });
+  return _logger;
+}
 
 /** Shared frozen empty: the no-provider default must not be a fresh array per read. */
 const EMPTY = Object.freeze([]);
 
 const GateVerdictContext = createContext(EMPTY);
+
+/**
+ * The fields the signature covers — i.e. exactly what a consumer may rely on being
+ * fresh. Anything else on a verdict is frozen at the last signature change.
+ */
+const SIGNED_FIELDS = new Set(['blocked', 'id', 'seekCeiling']);
 
 /** Exactly the fields `pauseArbiter.resolvePause` reads off a `GateVerdict`. */
 const signature = (list) => list
@@ -66,6 +89,37 @@ export function GateVerdictProvider({ verdicts, children }) {
   const outer = useContext(GateVerdictContext);
   const mine = Array.isArray(verdicts) ? verdicts : EMPTY;
   const key = `${signature(outer)}#${signature(mine)}`;
+
+  // Read through a ref so the dev check below depends only on `key` — it must not
+  // resubscribe on the identity churn this whole module exists to absorb.
+  const mineRef = useRef(mine);
+  mineRef.current = mine;
+  const warnedRef = useRef(null);
+
+  // DEV-only, once per offending field name per provider. See the header: an untracked
+  // field on a verdict goes silently stale here while the same field passed through
+  // `useMediaGate`'s `verdicts` prop stays live, and nothing else would ever say so.
+  useEffect(() => {
+    if (!import.meta.env?.DEV) return;
+    const extras = [];
+    mineRef.current.forEach((verdict) => {
+      Object.keys(verdict || {}).forEach((field) => {
+        if (SIGNED_FIELDS.has(field)) return;
+        if (!warnedRef.current) warnedRef.current = new Set();
+        if (warnedRef.current.has(field)) return;
+        warnedRef.current.add(field);
+        extras.push(field);
+      });
+    });
+    if (!extras.length) return;
+    logger().warn('gate.verdict-untracked-fields', {
+      fields: extras,
+      ids: mineRef.current.map((v) => v?.id ?? null),
+      detail: 'not covered by the context signature — consumers will read a STALE value '
+        + 'once the signed fields stop changing. Add it to signature()/SIGNED_FIELDS, '
+        + 'or pass it through useMediaGate\'s own `verdicts` prop, which stays live.'
+    });
+  }, [key]);
 
   // `key` is the whole dependency on purpose — see the header. `outer` and `mine` are
   // read through it, and any change either can make is a change to the signature.
