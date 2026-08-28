@@ -135,7 +135,7 @@ vi.mock('../../../ask/AskSession.jsx', async () => {
 const {
   default: GameGate, GATE_CONFIG_DEFAULTS, gateStateKey, materialName, readGateState, resolveGateConfig,
 } = await import('./GameGate.jsx');
-const { pickGateMaterial } = await import('./gateMaterial.js');
+const { materialOrder, resolveSpec } = await import('./gateMaterial.js');
 const {
   BUILT_IN_FLOOR, FALLBACK_LEVEL, resolveRepertoire, startLevelFor, materialKey,
 } = await import('./gateRepertoire.js');
@@ -344,9 +344,19 @@ describe('GameGate — contract 1: the level persists per learner', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('pickGateMaterial — contract 2: a level resolves to something gradable', () => {
+/**
+ * The gate's own walk, in the two calls it is made of: `materialOrder` decides
+ * WHICH spec is tried and in what order, `resolveSpec` (inside `AskSession`)
+ * decides what that spec becomes. These cases were written against
+ * `pickGateMaterial`, the batch form of the same walk, which lost its last
+ * caller when the gate began serving one spec at a time and was deleted in
+ * ask-platform SP1 task 6. The claims are unchanged; only the entry point is.
+ */
+describe('the gate walk — contract 2: a level resolves to something gradable', () => {
+  const firstSpecOf = (lvl, pickIndex = 0) => materialOrder(lvl, { pickIndex })[0];
+
   it('addresses the scales bank directly for a collection/roots level', async () => {
-    const picked = await pickGateMaterial(LEVELS[1], { pickIndex: 0, mode: 'free' });
+    const picked = await resolveSpec(firstSpecOf(LEVELS[1]), { pickIndex: 0, mode: 'free' });
 
     expect(picked.ok).toBe(true);
     expect(picked.material).toMatchObject({ kind: 'exercise', instanceId: scaleId('C') });
@@ -354,7 +364,7 @@ describe('pickGateMaterial — contract 2: a level resolves to something gradabl
   });
 
   it('synthesizes the floor’s lit key without a single bank call', async () => {
-    const picked = await pickGateMaterial(BUILT_IN_FLOOR, { pickIndex: 0, mode: 'free' });
+    const picked = await resolveSpec(firstSpecOf(BUILT_IN_FLOOR), { pickIndex: 0, mode: 'free' });
 
     expect(picked.ok).toBe(true);
     expect(picked.instance.events).toHaveLength(1);
@@ -380,9 +390,12 @@ describe('pickGateMaterial — contract 2: a level resolves to something gradabl
       ...LEVELS[1],
       material: [...LEVELS[1].material, { kind: 'score', measures: [1, 4] }],
     };
-    const picked = await pickGateMaterial(mixed, { pickIndex: 1, mode: 'free' });
-    expect(picked.ok).toBe(true);
-    expect(picked.skipped).toContainEqual({ kind: 'score', reason: 'no-score-source' });
+    const order = materialOrder(mixed, { pickIndex: 1 });
+    const declined = await resolveSpec(order[0], { pickIndex: 1, mode: 'free' });
+    expect({ kind: order[0].kind, reason: declined.error }).toEqual({ kind: 'score', reason: 'no-score-source' });
+
+    const served = await resolveSpec(order[1], { pickIndex: 1, mode: 'free' });
+    expect(served.ok).toBe(true);
   });
 });
 
@@ -451,7 +464,7 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
   /**
    * The same doctrine, one level down: a level's MATERIAL can be mistyped too,
    * and that failed open exactly like a bank 502 because the gate read only
-   * "declined" and not why. `pickGateMaterial` has always distinguished them —
+   * "declined" and not why. `resolveSpec` has always distinguished them —
    * `no-score-source`/`no-collection-or-instance`/`unknown-material-kind` are
    * decided without touching the network and cannot be transient.
    */
