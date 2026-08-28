@@ -109,4 +109,31 @@ describe('TeacherCapabilitySessions', () => {
     expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: grant.grantToken },
       action: 'sessions.settle', context: { sessionId: 'ses_1' } })).toThrow(/PIN/);
   });
+
+  // Reading a child's finish code out loud hands over the one secret the
+  // companion gate is made of. An unlocked console left open on a household
+  // screen must not be enough on its own; the grown-up types the PIN again,
+  // for the one session in front of them.
+  it('scopes a finish-code reveal to the one session it is unblocking', () => {
+    expect(requiresTeacherStepUp('companion.finish-code.reveal', { sessionId: 'ses_1' })).toBe(true);
+    expect(teacherResource('companion.finish-code.reveal', { sessionId: 'ses_1' })).toBe('ses_1');
+    expect(requiresTeacherStepUp('companion.finish-code.reveal', {})).toBe(false);
+
+    const f = fixture();
+    const unlocked = f.sessions.unlock({ userId: 'parent', pin: '4321' });
+    const proof = { capabilityToken: unlocked.capabilityToken };
+    expect(() => f.gate.assert({ userId: 'parent', pin: proof,
+      action: 'companion.finish-code.reveal', context: { sessionId: 'ses_1' } })).toThrow(/PIN/);
+    const other = f.sessions.stepUp({ capabilityToken: unlocked.capabilityToken, pin: '4321',
+      action: 'companion.finish-code.reveal', resource: 'ses_2' });
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: other.grantToken },
+      action: 'companion.finish-code.reveal', context: { sessionId: 'ses_1' } })).toThrow(/PIN/);
+    const grant = f.sessions.stepUp({ capabilityToken: unlocked.capabilityToken, pin: '4321',
+      action: 'companion.finish-code.reveal', resource: 'ses_1' });
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: grant.grantToken },
+      action: 'companion.finish-code.reveal', context: { sessionId: 'ses_1' } })).not.toThrow();
+    // One use only: a second child needs a second deliberate reveal.
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: grant.grantToken },
+      action: 'companion.finish-code.reveal', context: { sessionId: 'ses_1' } })).toThrow(/PIN/);
+  });
 });
