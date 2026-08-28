@@ -3397,6 +3397,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       userService,
       eventBus,
       thermalPrinterRegistry: printerRegistry,
+      // §8's real playback target: School builds a `ScreenPlaybackAdapter`
+      // around this rather than waking a TV itself, so the living-room lesson
+      // dispatch runs the SAME wake stack the phone and the DoNow surfaces do.
+      // Declared above at ~3310, well before this call.
+      wakeAndLoad: wakeAndLoadService,
       languageStudyService,
       studyGrants: schoolStudyGrants,
       languageReelService,

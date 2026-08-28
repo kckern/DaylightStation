@@ -43,6 +43,7 @@ export class DispatchMedia {
    * @param {import('../CurriculumAccess.mjs').CurriculumAccess} deps.curriculum
    * @param {import('../ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
    * @param {{dispatch: Function}} deps.playback - playback adapter surface
+   *   (`{target, contentId, sessionId, learnerId, durationSec}` -> correlator)
    * @param {Array} [deps.targets] - configured playback targets
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
@@ -124,6 +125,14 @@ export class DispatchMedia {
       dispatch = await this.#playback.dispatch({
         target: chosen.target.id,
         contentId: manifest.locator,
+        // The session id travels with the dispatch because a SCREEN target
+        // opens the lesson by fetching its own snapshot
+        // (`GET /school/lesson/:sessionId`) — see `ScreenPlaybackAdapter`. The
+        // adapter cannot derive it and this is the only caller that has it, so
+        // it is passed rather than invented. Required by every implementation
+        // of the port (`VirtualPlaybackAdapter`, `FakePlayback`) so a caller
+        // that forgot it cannot pass the tests and fail in the living room.
+        sessionId,
         learnerId: state.learnerId,
         durationSec: manifest.durationSec ?? 0,
       });
