@@ -20,11 +20,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { StrictMode } from 'react';
 import { renderHook, act } from '@testing-library/react';
-import { PAUSE_REASON } from './pauseArbiter.js';
+import { PAUSE_REASON, resolvePause } from './pauseArbiter.js';
 
 // `vi.mock` factories are hoisted above every import, so the spy registry has to be
 // hoisted with them.
-const hoisted = vi.hoisted(() => ({ gates: [] }));
+const hoisted = vi.hoisted(() => ({ gates: [], moduleLogs: [] }));
 
 vi.mock('./mediaGate.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -42,6 +42,18 @@ vi.mock('./mediaGate.js', async (importOriginal) => {
       return wrapped;
     })
   };
+});
+
+// `GateVerdictContext` has no logger injection point (its dev check is not part of the
+// public API), so the module logger is the only way to observe it.
+vi.mock('../../logging/Logger.js', () => {
+  const record = (level) => (event, data) => hoisted.moduleLogs.push({ level, event, data });
+  const child = () => ({
+    debug: record('debug'), info: record('info'),
+    warn: record('warn'), error: record('error'), sampled: record('sampled')
+  });
+  const getLogger = () => ({ child, ...child() });
+  return { getLogger, default: getLogger };
 });
 
 import { createMediaGate } from './mediaGate.js';
@@ -99,6 +111,7 @@ const OPEN = (over = {}) => ({ blocked: false, id: 'checkpoint', seekCeiling: nu
 let logger;
 beforeEach(() => {
   hoisted.gates.length = 0;
+  hoisted.moduleLogs.length = 0;
   createMediaGate.mockClear();
   logger = makeLogger();
 });
@@ -208,6 +221,39 @@ describe('useMediaGate — wiring', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
+  // MINOR from review, and it turned out to be observable. `mediaGate.js` is explicit
+  // that a null hand-back is NOT a swap (a remount leaves the ref null for a render).
+  // Clearing observed user intent there desyncs the wrapper from the module: the
+  // decision flips USER -> PLAYING under a person who never touched anything.
+  it('a null blip in the element ref does not discard observed user intent', () => {
+    vi.useFakeTimers();
+    const el = makeEl({ paused: false, echo: false });
+    let current = el;
+    const { result } = renderHook(() => useMediaGate({
+      getMediaEl: () => current, verdicts: [OPEN()], logger
+    }));
+
+    act(() => { el.paused = true; el.dispatchEvent('pause'); });
+    expect(result.current.decision.reason).toBe(PAUSE_REASON.USER);
+
+    current = null;                                   // one unresolved render
+    act(() => { vi.advanceTimersByTime(300); });
+    current = el;                                     // the same element comes back
+    act(() => { vi.advanceTimersByTime(300); });
+
+    expect(result.current.decision.reason).toBe(PAUSE_REASON.USER);
+    expect(el.play).not.toHaveBeenCalled();
+  });
+
+  it('stamps the correlation id on every gate event', () => {
+    const el = makeEl({ paused: false, echo: false });
+    renderHook(() => useMediaGate({
+      getMediaEl: () => el, verdicts: [BLOCKED()], contentId: 'astronomy-e03', logger
+    }));
+    const mounted = logger.info.mock.calls.find((c) => c[0] === 'gate.hook.mounted');
+    expect(mounted?.[1]).toMatchObject({ contentId: 'astronomy-e03' });
+  });
+
   it('binds and enforces against an element that mounts late', () => {
     vi.useFakeTimers();
     let el = null;
@@ -251,6 +297,37 @@ describe('useMediaGate — the gate must not mistake its own echo for a human', 
     rerender({ verdicts: [OPEN()] });
     expect(result.current.decision.reason).toBe(PAUSE_REASON.PLAYING);
     expect(el.play).toHaveBeenCalledTimes(1);
+  });
+
+  // Pins the OTHER half of the two-part test. `lastAppliedPaused` alone is not enough:
+  // it says our last ACTION was a pause, not that the pause on THIS element is ours.
+  // The seam is real — a decision can be `paused` with no element bound yet (buffering
+  // before the ref resolves), and the element binds one tick before the next apply. A
+  // human pausing in that window is filed correctly only because `ownsPause` is false.
+  it('a human pause on an element the gate does not own reaches the user slot', () => {
+    vi.useFakeTimers();
+    const el = makeEl({ paused: false, echo: false });
+    let current = null;                       // ref not resolved yet
+    const { result, rerender } = renderHook(
+      ({ resilience }) => useMediaGate({
+        getMediaEl: () => current, verdicts: [OPEN()], player: { resilience }, logger
+      }),
+      { initialProps: { resilience: { buffering: true } } }
+    );
+    // Decision is `paused` (BUFFERING) with nothing bound: last action was a pause,
+    // but the gate owns nothing.
+    expect(result.current.decision).toMatchObject({ paused: true, reason: PAUSE_REASON.BUFFERING });
+    expect(result.current.status.ownsPause).toBe(false);
+
+    // The element binds on this supervisor pass; the human pauses before the apply
+    // that the pass schedules can run.
+    current = el;
+    act(() => { vi.advanceTimersByTime(300); el.paused = true; el.dispatchEvent('pause'); });
+
+    // Buffering clears. Their pause must survive it.
+    rerender({ resilience: {} });
+    expect(result.current.decision).toMatchObject({ paused: true, reason: PAUSE_REASON.USER });
+    expect(el.play).not.toHaveBeenCalled();
   });
 
   it('a HUMAN pause DOES reach the user slot', () => {
@@ -328,12 +405,56 @@ describe('useMediaGate — the gate must not mistake its own echo for a human', 
     expect(el.play).toHaveBeenCalledTimes(1);             // no second, overriding play()
     expect(el.paused).toBe(true);
   });
-  // ADVISORY (traced, benign, previously undocumented). `ownsPause` is deliberately
-  // held across the in-flight window of a SUCCESSFUL resume, so a human pause landing
-  // inside that window is filtered as our echo and never reaches the `user` slot. It
-  // is harmless: the settle releases ownership WITHOUT re-playing, so the pause stands.
-  // Written down so a future reader finds the trace instead of re-deriving it.
-  it('filters a human pause landing inside a successful resume, and the pause still stands', async () => {
+  // THE SECOND ECHO WINDOW — the same failure requirement (a) exists to prevent,
+  // arriving one step earlier. While a resume is IN FLIGHT (a Plex stream can take
+  // seconds to start) `ownsPause` is still true, so a parent's pause used to be filed
+  // as our echo; the browser then aborts the pending `play()`, ownership is held for
+  // retry, and the NEXT apply plays right over them. `ownsPause` is the wrong question
+  // here — the right one is whether our last transport action was a pause or a play.
+  it('attributes a pause taken DURING a pending resume to the human, and never plays over it', async () => {
+    let rejectPlay = null;
+    const el = makeEl({
+      paused: false,
+      echo: false,
+      play: vi.fn(() => { el.paused = false; return new Promise((_res, rej) => { rejectPlay = rej; }); })
+    });
+    // Spec-accurate: pause() aborts a pending play() with AbortError.
+    const rawPause = el.pause;
+    el.pause = vi.fn(() => {
+      rawPause();
+      if (rejectPlay) { rejectPlay(new Error('AbortError')); rejectPlay = null; }
+    });
+
+    const { result, rerender } = renderHook(
+      ({ verdicts }) => useMediaGate({ getMediaEl: () => el, verdicts, logger }),
+      { initialProps: { verdicts: [BLOCKED()] } }
+    );
+    expect(el.pause).toHaveBeenCalledTimes(1);
+
+    rerender({ verdicts: [OPEN({ seekCeiling: 312 })] });   // the child answered correctly
+    expect(el.play).toHaveBeenCalledTimes(1);
+    expect(el.paused).toBe(false);                          // stream starting, promise pending
+    expect(result.current.status.ownsPause).toBe(true);     // held, correctly
+
+    // A parent presses pause while the resume is still in flight.
+    act(() => { el.pause(); el.dispatchEvent('pause'); });
+    expect(result.current.decision).toMatchObject({ paused: true, reason: PAUSE_REASON.USER });
+
+    await act(async () => {});                              // the AbortError lands
+    expect(result.current.status.resumeBlocked).toBe(true);
+
+    // Any later apply at all — here a ceiling update — must not play over them.
+    rerender({ verdicts: [OPEN({ seekCeiling: 600 })] });
+    expect(el.play).toHaveBeenCalledTimes(1);
+    expect(el.paused).toBe(true);
+  });
+
+  // The SUCCESSFUL-resume counterpart of the test above. This window was previously
+  // mis-attributed too (filed as our echo, decision stuck at PLAYING); it was benign
+  // only because a successful settle releases ownership without re-playing. The
+  // two-part echo test fixes the attribution, and the outcome is unchanged: their
+  // pause stands either way. Both halves are asserted so a regression in either shows.
+  it('attributes a human pause inside a successful resume, and the pause still stands', async () => {
     let settle;
     const el = makeEl({
       paused: false,
@@ -350,7 +471,7 @@ describe('useMediaGate — the gate must not mistake its own echo for a human', 
 
     // The human pauses while our play() is still unsettled.
     act(() => { el.paused = true; el.dispatchEvent('pause'); });
-    expect(result.current.decision.reason).toBe(PAUSE_REASON.PLAYING);  // filtered as echo
+    expect(result.current.decision).toMatchObject({ paused: true, reason: PAUSE_REASON.USER });
 
     await act(async () => { settle(); });
     expect(result.current.status.ownsPause).toBe(false);      // settle releases ownership
@@ -410,6 +531,115 @@ describe('useMediaGate — the clamp must not suppress the pause it is enforcing
   });
 });
 
+describe('useMediaGate — one apply per materially different decision', () => {
+  // `sameDecision` is what stops caller identity churn reaching enforcement, and the
+  // header calls it "complete by construction". True of the code, and it was untrue of
+  // this suite until now: a mutant dropping any single field survived.
+  //
+  // Only THREE of the five fields are independently reachable, and that is a property
+  // of the arbiter, not a gap here. `paused` is a pure function of `reason`
+  // (SEEKING/PLAYING => false, GATE/BUFFERING/USER => true) and `blocked` is strictly
+  // coupled to `gate` (`gate` is non-null exactly when `blocked`), so no input can move
+  // either one alone. Mutants dropping those two are equivalent, not surviving.
+  //
+  // `seekCeiling` alone is the one that bites in the field: a child clears an early
+  // checkpoint, the ceiling advances, and everything else holds. Miss it and the clamp
+  // keeps enforcing the old ceiling — the child stays locked out of footage they earned.
+  const DECISION_FIELDS = ['paused', 'reason', 'blocked', 'gate', 'seekCeiling'];
+
+  const FIELD_CASES = [
+    {
+      field: 'seekCeiling',                     // a cleared checkpoint advances the ceiling
+      before: { verdicts: [BLOCKED({ seekCeiling: 312 })] },
+      after: { verdicts: [BLOCKED({ seekCeiling: 600 })] }
+    },
+    {
+      field: 'gate',                            // household hands off to checkpoint
+      before: { verdicts: [{ blocked: true, id: 'household', seekCeiling: null }] },
+      after: { verdicts: [{ blocked: true, id: 'lesson', seekCeiling: null }] }
+    },
+    {
+      field: 'reason',                          // BUFFERING <-> USER, both paused
+      before: { verdicts: [OPEN()], player: { resilience: { buffering: true } } },
+      after: { verdicts: [OPEN()], player: { user: { paused: true } } }
+    }
+  ];
+
+  // Turns "the other two mutants are equivalent" from a claim into a checked property.
+  // If the arbiter ever decouples these, this fails and the two dropped comparisons
+  // stop being redundant — at which point they need cases in FIELD_CASES above.
+  it('paused is a function of reason, and blocked of gate — across every return site', () => {
+    const inputs = [
+      { seeking: { active: true }, gates: [{ blocked: true, id: 'cp', seekCeiling: 9 }] },
+      { seeking: { active: true } },
+      { gates: [{ blocked: true, id: 'cp' }] },
+      { gates: [{ blocked: true, id: '' }] },
+      { gates: [{ blocked: false, id: 'cp', seekCeiling: 5 }] },
+      { resilience: { buffering: true } },
+      { resilience: { waiting: true } },
+      { resilience: { requiresPause: true } },
+      { user: { paused: true } },
+      { user: { pauseIntent: 'user' } },
+      {}
+    ];
+    const pausedForReason = new Map();
+    inputs.forEach((input) => {
+      const d = resolvePause(input);
+      if (pausedForReason.has(d.reason)) {
+        expect(pausedForReason.get(d.reason)).toBe(d.paused);
+      } else {
+        pausedForReason.set(d.reason, d.paused);
+      }
+      expect(d.blocked).toBe(d.gate !== null);
+    });
+    // and the inputs really did exercise every reason the arbiter can return
+    expect([...pausedForReason.keys()].sort()).toEqual(Object.values(PAUSE_REASON).sort());
+  });
+
+  it.each(FIELD_CASES)('re-applies when $field alone changes', ({ field, before, after }) => {
+    const el = makeEl({ paused: false, echo: false });
+    const { result, rerender } = renderHook(
+      (props) => useMediaGate({ getMediaEl: () => el, logger, ...props }),
+      { initialProps: before }
+    );
+    const first = result.current.decision;
+    rerender(after);
+    const second = result.current.decision;
+
+    // Proves the case really is a single-field transition, so the apply count below
+    // is evidence about THIS field and not about some other one moving with it.
+    expect(DECISION_FIELDS.filter((k) => first[k] !== second[k])).toEqual([field]);
+    expect(gate().apply).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('useMediaGate — the caller\'s own player state', () => {
+  it('player.user.paused reaches the decision', () => {
+    const el = makeEl({ paused: false, echo: false });
+    const { result } = renderHook(() => useMediaGate({
+      getMediaEl: () => el, verdicts: [OPEN()], player: { user: { paused: true } }, logger
+    }));
+    expect(result.current.decision).toMatchObject({ paused: true, reason: PAUSE_REASON.USER });
+    expect(el.pause).toHaveBeenCalledTimes(1);      // the element is synced to the caller's truth
+  });
+
+  it('player.user.pauseIntent reaches the decision', () => {
+    const el = makeEl({ paused: false, echo: false });
+    const { result } = renderHook(() => useMediaGate({
+      getMediaEl: () => el, verdicts: [OPEN()], player: { user: { pauseIntent: 'user' } }, logger
+    }));
+    expect(result.current.decision).toMatchObject({ paused: true, reason: PAUSE_REASON.USER });
+  });
+
+  it('a blocking gate outranks the caller\'s user pause', () => {
+    const el = makeEl({ paused: false, echo: false });
+    const { result } = renderHook(() => useMediaGate({
+      getMediaEl: () => el, verdicts: [BLOCKED()], player: { user: { paused: true } }, logger
+    }));
+    expect(result.current.decision).toMatchObject({ reason: PAUSE_REASON.GATE, gate: 'checkpoint' });
+  });
+});
+
 describe('GateVerdictContext', () => {
   it('returns an empty array with no provider, and never throws', () => {
     const { result } = renderHook(() => useContributedVerdicts());
@@ -460,6 +690,58 @@ describe('GateVerdictContext', () => {
     expect(result.current.decision).toMatchObject({
       paused: true, reason: PAUSE_REASON.GATE, gate: 'household', seekCeiling: 200
     });
+  });
+
+  // The single most important behavior of this module — a household-level lock
+  // RELEASING — and every other test here was a static snapshot.
+  it('a provider verdict CHANGE reaches the consumer and releases the transport', () => {
+    const el = makeEl({ paused: false, echo: false });
+    let household = [{ blocked: true, id: 'household', seekCeiling: null }];
+    const wrapper = ({ children }) => (
+      <GateVerdictProvider verdicts={household}>{children}</GateVerdictProvider>
+    );
+    const { result, rerender } = renderHook(
+      () => useMediaGate({ getMediaEl: () => el, logger }), { wrapper }
+    );
+    expect(result.current.decision).toMatchObject({ paused: true, gate: 'household' });
+    expect(el.pause).toHaveBeenCalledTimes(1);
+
+    household = [{ blocked: false, id: 'household', seekCeiling: null }];   // the lock lifts
+    rerender();
+
+    expect(result.current.decision.reason).toBe(PAUSE_REASON.PLAYING);
+    expect(el.play).toHaveBeenCalledTimes(1);
+  });
+
+  // FIX for the stale-payload trap: the memo freezes verdict OBJECTS while their
+  // signed fields hold, so an untracked field silently reads stale — and the SAME
+  // field passed through useMediaGate's own `verdicts` prop stays live. Asymmetric,
+  // silent, and previously only a comment.
+  it('warns in dev when a verdict carries a field the signature cannot track', () => {
+    // If DEV were false the assertion below would pass vacuously.
+    expect(import.meta.env?.DEV).toBe(true);
+
+    const wrapper = ({ children }) => (
+      <GateVerdictProvider verdicts={[{ blocked: true, id: 'lesson', seekCeiling: null, questionId: 'q1' }]}>
+        {children}
+      </GateVerdictProvider>
+    );
+    renderHook(() => useContributedVerdicts(), { wrapper });
+
+    const warned = hoisted.moduleLogs.filter((l) => l.event === 'gate.verdict-untracked-fields');
+    expect(warned).toHaveLength(1);
+    expect(warned[0].level).toBe('warn');
+    expect(warned[0].data.fields).toEqual(['questionId']);
+  });
+
+  it('says nothing when every field is one the signature tracks', () => {
+    const wrapper = ({ children }) => (
+      <GateVerdictProvider verdicts={[{ blocked: true, id: 'lesson', seekCeiling: 312 }]}>
+        {children}
+      </GateVerdictProvider>
+    );
+    renderHook(() => useContributedVerdicts(), { wrapper });
+    expect(hoisted.moduleLogs.map((l) => l.event)).not.toContain('gate.verdict-untracked-fields');
   });
 
   it('holds a stable array identity across re-renders with an equal-but-new literal', () => {
