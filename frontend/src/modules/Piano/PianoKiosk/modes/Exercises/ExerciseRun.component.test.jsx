@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ExerciseRun from './ExerciseRun.jsx';
 import { BUILT_IN_FLOOR } from '../Games/gateRepertoire.js';
 import { requirementForLevel } from '../Games/gateAsk.js';
@@ -655,6 +655,32 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(await screen.findByText('Practice complete')).toBeInTheDocument();
   });
 
+  it('observes EVERY note of a co-arriving pair, so a two-hand ask leaves event zero', async () => {
+    // Two keys struck together arrive in ONE commit. `previousNotesRef`
+    // consumes both, so a companion note not observed at the arming boundary
+    // can never become an onset again while it is held — on Hanon-shaped
+    // material (every event a left/right pair) that is a cursor latched on
+    // event zero at a run the child played correctly.
+    h.instanceData = {
+      ...h.instance,
+      events: [
+        { id: 'first', value: 'quarter', notes: [{ midi: 48, hand: 'left' }, { midi: 60, hand: 'right' }] },
+        { id: 'second', value: 'quarter', notes: [{ midi: 50, hand: 'left' }, { midi: 62, hand: 'right' }] },
+      ],
+    };
+    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+
+    hold(view, props, [48, 60]); // both notes of event zero, in one commit
+
+    expect(h.start).toHaveBeenCalledWith({ leadInMs: 0, clock: 'date-now' });
+    // The arming note is still FIRST — it is the note that started the run and
+    // must stay the run's first graded note.
+    expect(h.observe.mock.calls.map((call) => call[0].midi)).toEqual([48, 60]);
+    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '1'));
+  });
+
   it.each([
     ['practice free', { intent: 'practice', practiceMode: 'free' }, 'Play the first note to begin.'],
     ['a free challenge', { intent: 'challenge', requirementOverride: { mode: 'free' } }, 'Play the first note to begin.'],
@@ -994,5 +1020,263 @@ describe('ExerciseRun tier-driven presentation', () => {
     }} />);
     await screen.findByText(/Press any key to start/);
     expect(screen.getByText('72 BPM')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The stall — the only way a FREE challenge can fail.
+ *
+ * A free attempt produces no misses (there is no beat to be late for), so
+ * completeness only ever rises and a completeness-only rubric — every tier 0-2
+ * level, which is D9's whole point — is satisfied the instant the last note
+ * lands and at no point before it. `verdict.passed` is therefore true by
+ * construction at completion and the attempt simply never terminates otherwise:
+ * a child who cannot play the ask sat on a `running` attempt forever, with no
+ * result, no fail panel, no ladder movement, and Exit as the only way out —
+ * which costs them the match they earned.
+ *
+ * Twenty seconds with no note-on ends it. The two rulings it must not break are
+ * both pinned below: wrong notes stay recorded-never-disqualifying (nothing
+ * here adds a cleanliness or passScore bar to a free level), and an attempt
+ * with no musical input in it is never a failure.
+ */
+describe('ExerciseRun free-challenge stall', () => {
+  beforeEach(() => {
+    resetHarness();
+    // `shouldAdvanceTime` keeps the real clock driving the fake one, so
+    // `findBy*`/`waitFor` still resolve normally while `advanceTimersByTime`
+    // can still jump the twenty seconds this suite is about.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  /** Six notes — long enough that a child can play three and still be stuck. */
+  const SIX_NOTES = [60, 62, 64, 65, 67, 69];
+  const longInstance = () => ({
+    ...h.instance,
+    events: SIX_NOTES.map((midi, index) => ({
+      id: `e${index + 1}`, value: 'quarter', notes: [{ midi, hand: 'right' }],
+    })),
+  });
+
+  const press = (view, props, midi) => {
+    act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+  };
+  /**
+   * Advance the clock by `ms` of a child doing nothing.
+   *
+   * The 60ms preamble is not padding: the runtime publishes its store snapshot
+   * on a 50ms throttle, so `musicalInput` — and with it the stall clock — only
+   * reaches React one tick after the note that set it. Jumping straight to
+   * 20,000 would arm the timer at 20,050 and land the test in a run that is
+   * still going, which reads exactly like a stall that does not work.
+   */
+  const wait = async (ms) => {
+    await act(async () => { vi.advanceTimersByTime(60); });
+    await act(async () => { vi.advanceTimersByTime(ms); });
+  };
+
+  const freeChallenge = (extra = {}) => ({
+    instanceId: h.instance.id,
+    intent: 'challenge',
+    // The shape a repertoire level actually produces: completeness-only, no
+    // numeric bar. Nothing below may quietly add one.
+    requirementOverride: { mode: 'free', rubric: { criteria: { completeness: 1 } }, passScore: null },
+    onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(), ...extra,
+  });
+
+  it('ends a stuck attempt as a judged failure and reports it to the host', async () => {
+    h.instanceData = longInstance();
+    const props = freeChallenge();
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+
+    for (const midi of [60, 62, 64]) press(view, props, midi); // three right, then stuck
+    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '3'));
+    expect(props.onFailed).not.toHaveBeenCalled();
+
+    await wait(20000);
+
+    await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
+    // A terminated attempt is finalized WITHOUT a verdict — which is what makes
+    // `runPassed` answer false on its own rather than by assertion here.
+    const result = props.onFailed.mock.calls[0][0];
+    expect(result.status).toBe('timeout');
+    expect(result.verdict).toBeUndefined();
+    expect(result.diagnostics).toMatchObject({ expected_notes: 6, matched_notes: 3, missed_notes: 3 });
+    expect(props.onPassed).not.toHaveBeenCalled();
+    expect(props.onExit).not.toHaveBeenCalled();
+    expect(h.log.info).toHaveBeenCalledWith('piano.exercise-stalled', expect.objectContaining({
+      id: h.instance.id, matcher: 'cursor', stallMs: 20000, matched_notes: 3,
+    }));
+  });
+
+  it('shows the ordinary fail panel — and no percentage — when no host took onFailed', async () => {
+    // Without this, the stall would end the attempt and leave the child looking
+    // at "Follow the highlighted notes" on a run nothing is listening to.
+    h.instanceData = longInstance();
+    const props = freeChallenge({ onFailed: undefined });
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    press(view, props, 60);
+
+    await wait(20000);
+
+    const panel = (await screen.findByText('Keep working')).closest('.piano-exercise-run__result');
+    expect(panel.textContent).toContain('Some of the notes are still missing. Have another go.');
+    // A stalled attempt has no score and no criteria at all; there is no number
+    // to show and none is invented.
+    expect(panel.textContent).not.toMatch(/%/);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Practice first' })).toBeInTheDocument();
+  });
+
+  it('persists the stall with its own status rather than dressing it as completed', async () => {
+    h.instanceData = longInstance();
+    const props = freeChallenge();
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    press(view, props, 60);
+
+    await wait(20000);
+
+    await waitFor(() => expect(h.record).toHaveBeenCalledTimes(1));
+    expect(h.record.mock.calls[0][1]).toMatchObject({ status: 'timeout', purpose: 'challenge' });
+  });
+
+  it('resets the clock on every note, so a child working slowly is never interrupted', async () => {
+    // Nineteen seconds between notes, five times over — 95 seconds of a run
+    // that a single un-reset twenty-second timer would have killed four times.
+    h.instanceData = longInstance();
+    const props = freeChallenge();
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+
+    for (const midi of SIX_NOTES) {
+      press(view, props, midi);
+      await wait(19000);
+      expect(props.onFailed).not.toHaveBeenCalled();
+    }
+
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    expect(props.onFailed).not.toHaveBeenCalled();
+  });
+
+  it('never stalls before a note is played — a walk-away is an abandonment, not a failure', async () => {
+    // The exit-fifteen-times-to-reach-the-floor exploit. An attempt with no
+    // musical input in it must never move a ladder, so it must never become a
+    // failure however long it sits on screen.
+    h.instanceData = longInstance();
+    const props = freeChallenge();
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+
+    await wait(120000);
+
+    expect(props.onFailed).not.toHaveBeenCalled();
+    expect(h.record).not.toHaveBeenCalled();
+    expect(screen.getByText('Play the first note to begin.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Exit' }));
+    expect(props.onExit).toHaveBeenCalledTimes(1);
+    expect(props.onFailed).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it('does not stall practice, which has no ladder to move', async () => {
+    h.instanceData = longInstance();
+    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    press(view, props, 60);
+
+    await wait(120000);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Follow the highlighted notes.');
+    expect(screen.queryByText('Practice complete')).not.toBeInTheDocument();
+    expect(h.log.info).not.toHaveBeenCalledWith('piano.exercise-stalled', expect.anything());
+  });
+
+  it('does not stall a cued challenge, which already fails on its own', async () => {
+    // The timed matcher misses notes that never arrive, so a cued ask reaches a
+    // completed failure by itself. A stall on top would be a second clock.
+    h.instanceData = { ...longInstance(), tempo: { start_bpm: 60 } };
+    const props = freeChallenge({
+      requirementOverride: { mode: 'cued', rubric: { criteria: { completeness: 1, cleanliness: 0.8 } }, passScore: null },
+    });
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText(/Press any key to start/);
+    press(view, props, 60);
+
+    await wait(20000);
+
+    expect(h.log.info).not.toHaveBeenCalledWith('piano.exercise-stalled', expect.anything());
+    view.unmount();
+  });
+
+  it('a wrong note is still a note: it feeds the stall clock and never disqualifies', async () => {
+    // D9 and the child contract. Nothing added here may make a wrong key fail a
+    // free level — it keeps the child alive on the clock instead.
+    h.instanceData = longInstance();
+    const props = freeChallenge();
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    press(view, props, 60);
+    await wait(19000);
+    press(view, props, 61); // wrong, and plausible — recorded, never fatal
+    await wait(19000);
+    expect(props.onFailed).not.toHaveBeenCalled();
+
+    for (const midi of [62, 64, 65, 67, 69]) press(view, props, midi);
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    expect(props.onFailed).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The metronome pre-pulse's budget. The pulse exists so the grid is audible
+ * BEFORE the first note (the first note is what starts the run), and nothing
+ * stopped it: a kiosk left on this screen clicked at an empty room until
+ * someone closed the tab.
+ */
+describe('ExerciseRun metronome pre-pulse', () => {
+  beforeEach(() => {
+    resetHarness();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const metronomePractice = () => ({
+    instanceId: h.instance.id, intent: 'practice', practiceMode: 'metronome',
+    onExit: vi.fn(), onPassed: vi.fn(),
+  });
+
+  it('stops clicking after a minute at a piano nobody armed', async () => {
+    const props = metronomePractice();
+    render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 90 });
+
+    act(() => { vi.advanceTimersByTime(59000); });
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true });
+
+    act(() => { vi.advanceTimersByTime(1000); });
+    await waitFor(() => expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: false }));
+    // The screen is unchanged — the child still arms by playing, and the run
+    // brings its own click when it does.
+    expect(screen.getByText('Play the first note to begin.')).toBeInTheDocument();
+  });
+
+  it('keeps clicking through the run once a child arms it', async () => {
+    const props = metronomePractice();
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+
+    act(() => { h.activeNotes = new Map([[60, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+
+    act(() => { vi.advanceTimersByTime(120000); });
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 90 });
   });
 });

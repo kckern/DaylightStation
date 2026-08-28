@@ -44,6 +44,52 @@ const EMPTY_SNAPSHOT = Object.freeze({ status: 'prepared', result: null, musical
 /** The surface's own windows. A requirement's `policy` is layered over these. */
 const DEFAULT_POLICY = Object.freeze({ matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320 });
 
+/**
+ * The two statuses that carry a JUDGED attempt — one a child played and this
+ * surface is entitled to report an outcome for.
+ *
+ * `completed` is every note eventually accounted for. `timeout` is the stall
+ * below: a challenge that was started, took real notes, and then stopped. Both
+ * are outcomes; `aborted` (the header Exit, an unmount) is not, and is
+ * deliberately absent — a walk-away has nothing to judge.
+ */
+const JUDGED_STATUSES = Object.freeze(new Set(['completed', 'timeout']));
+
+/**
+ * How long a started FREE challenge may sit with no note-on before it is judged
+ * as it stands.
+ *
+ * A free attempt cannot fail on its own. The cursor matcher produces no misses
+ * — there is no beat to be late for — so completeness only ever rises, and a
+ * completeness-only rubric (every tier 0-2 level, D9) is satisfied the instant
+ * the last note lands and at no point before it. A child who cannot play the
+ * ask therefore sits on a `running` attempt forever: no result, no fail panel,
+ * no way down the ladder, and Exit costs them the game they earned.
+ *
+ * The stall is what ends it. Twenty seconds is long enough that a child working
+ * a hard passage out under their hands is never interrupted (the clock resets
+ * on every note-on, so thinking between notes is free) and short enough that
+ * being stuck is over before it becomes being stranded.
+ *
+ * It does NOT run before the first note: an attempt with no musical input in it
+ * is an abandonment, not a failure, and moving the ladder on those would let a
+ * child reach the unfailable floor by walking away `retriesBeforeDegrade`
+ * times without touching a key. Cued asks are excluded because they already
+ * fail on their own — the timed matcher misses notes that never arrive.
+ */
+const FREE_STALL_MS = 20000;
+
+/**
+ * How long metronome practice clicks at a piano nobody is sitting at.
+ *
+ * The pre-pulse exists so the grid is audible BEFORE the first note (the first
+ * note is what starts the run, so a click that waits for `running` arrives
+ * after the moment it exists to guide). Nothing stopped it: a kiosk left on this
+ * screen clicked until someone closed the tab. Once it stops there is nothing
+ * to resume — a child arms by playing, and the run brings its own click.
+ */
+const PRE_PULSE_LIMIT_MS = 60000;
+
 function makeId(prefix) {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 }
@@ -59,22 +105,33 @@ export function wrongEventState(event) {
 }
 
 /**
- * Did this run clear its bar? The surface must answer this itself, because
- * `verdict.passed` alone is not the answer for a gate rung.
+ * Did this run clear its bar?
  *
- *  - Practice, and the FLOOR rung (`passScore: null`): the engine's verdict is
- *    correct and is the only signal. The floor's rubric (`{completeness:1}`) IS
- *    its contract, and D9 requires it stay unfailable.
- *  - A NON-FLOOR rung carries a `passScore` and NO rubric — so
- *    `attempt.requirement.rubric.criteria` is empty, `failedCriteria` is `[]`,
- *    and with no pace gate `failedGates` is `[]` too. `verdict.passed` is then
- *    unconditionally true at ANY score, including a run where the child played
- *    nothing. The score is the contract on those rungs; reading the verdict
- *    would tell every child "Passed" the instant the gate opened.
+ * Two inputs, in this order, and both are needed:
+ *
+ *  - **A host-supplied `passScore`.** No level a `gateRepertoire` can express
+ *    produces one — `requirementForLevel` writes `passScore: null` everywhere,
+ *    because pass is verdict-driven and a second `score >= passScore` gate
+ *    living alongside the rubric is exactly the cleanliness bar D9 forbids
+ *    below tier 3. The branch survives for the OTHER host: a program step,
+ *    whose requirement is authored by hand and may carry a numeric bar with no
+ *    rubric beside it. On such a requirement `rubric.criteria` is empty, so
+ *    `failedCriteria` and `failedGates` are both `[]` and `verdict.passed` is
+ *    unconditionally true at any score — the number is the only real contract
+ *    there, and reading the verdict would tell every child "Passed" the
+ *    instant the run opened.
+ *  - **Otherwise the engine's verdict.** Practice, and every repertoire rung.
+ *    The rubric IS the contract, and at tier 0-2 that rubric is
+ *    completeness-only, which is what keeps the floor unfailable (D9).
+ *
+ * A result with NO verdict is not a pass, and that is load-bearing rather than
+ * incidental: a stalled attempt (`status: 'timeout'`) is finalized without one
+ * — no score, no criteria, no verdict — so it falls to `verdict?.passed` being
+ * `undefined` and answers `false` on its own, with nothing here forcing it.
  *
  * `passScore: null` must be excluded BEFORE the numeric check: `Number(null)`
- * is 0, which is finite, so a bare `Number.isFinite` would quietly turn the
- * floor into `score >= 0` and stop testing anything.
+ * is 0, which is finite, so a bare `Number.isFinite` would quietly turn a
+ * verdict-driven rung into `score >= 0` and stop testing anything.
  */
 export function runPassed(result, { challenge = false, passScore = null } = {}) {
   if (!result) return false;
@@ -99,11 +156,18 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   compiled expectation; the attempt is created from it directly, and
  *   `prepareExerciseAssessment` — which reads `instance.events` — is never
  *   called for a score.
- * @param {((result:object)=>void)} [props.onFailed] A COMPLETED attempt that did
- *   not pass. Distinct from `onExit`, which means the player walked away with
- *   nothing to judge. A host that moves a difficulty ladder must only ever move
- *   it on this one: counting walk-aways as failures lets a player reach the
- *   easiest rung without playing a note.
+ * @param {((result:object)=>void)} [props.onFailed] A JUDGED attempt that did
+ *   not pass — one the child actually played. Two results reach it: a
+ *   `completed` attempt below its bar, and a `timeout` one, which is a free
+ *   challenge that took real notes and then stalled (`FREE_STALL_MS`). The
+ *   second carries diagnostics but NO score, criteria, or verdict, so a host
+ *   reading a number off it must tolerate its absence.
+ *
+ *   Distinct from `onExit`, which means the player walked away with nothing to
+ *   judge. A host that moves a difficulty ladder must only ever move it on this
+ *   one: counting walk-aways as failures lets a player reach the easiest rung
+ *   without playing a note, and an attempt with no musical input in it never
+ *   arrives here for exactly that reason.
  * @param {string|null} [props.framing] Why this run is on screen, in the host's
  *   own words ("Play this to start Tetris"). It REPLACES the intent label — a
  *   child should read one reason, not two.
@@ -138,6 +202,12 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   const [lastWrong, setLastWrong] = useState(null);
   const [countInBeat, setCountInBeat] = useState(null);
   const [unrunnable, setUnrunnable] = useState(false);
+  // The stall clock's reset signal. Bumped by every note-on the run sees, and
+  // read as a dependency by the stall effect below — which is the whole of "the
+  // clock resets on every note-on", expressed where React can see it rather
+  // than as a timestamp inside a ref nothing re-runs on.
+  const [noteOnTick, setNoteOnTick] = useState(0);
+  const [prePulseStopped, setPrePulseStopped] = useState(false);
   const countInTimerRef = useRef(null);
   const previousNotesRef = useRef([]);
   // The last held set actually handed to the engine. The held matcher grades the
@@ -294,6 +364,11 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     countInTimerRef.current = null;
     setLastWrong(null);
     setCountInBeat(null);
+    // A fresh attempt is a fresh stall clock and a fresh pre-pulse budget:
+    // Retry/Again must give a child the same run they were given the first
+    // time, not the remainder of the last one's patience.
+    setNoteOnTick(0);
+    setPrePulseStopped(false);
     setRuntime(next);
   }, [buildAttempt]);
 
@@ -338,24 +413,68 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   useEffect(() => {
     if (!snapshot.result || persistedRef.current) return;
     persist(snapshot.result);
-    if (snapshot.result.status !== 'completed') return;
+    // A JUDGED attempt: completed, or stalled after real input. An `aborted`
+    // one is persisted above and reported nowhere — there is nothing in it to
+    // judge, and a host counting failures must not count a walk-away.
+    if (!JUDGED_STATUSES.has(snapshot.result.status)) return;
     const passed = runPassed(snapshot.result, { challenge, passScore: requirement?.passScore });
     logger.info('piano.exercise-complete', {
       id: subject?.id ?? null, purpose: challenge ? 'challenge' : 'practice', matcher: snapshot.matcher,
-      score: snapshot.result.score,
+      status: snapshot.result.status,
+      // Both are absent on a stalled attempt, which is finalized without a
+      // verdict at all. `null` says "this run produced none" — a hardcoded
+      // `false` would say "the engine judged it and said no".
+      score: snapshot.result.score ?? null,
       // `verdict.passed` is the engine's record and stays in the evidence
-      // untouched — but on a non-floor rung it is always true, so it would
-      // tell a false story on its own. `passed` is what the child was shown.
-      engine_verdict: snapshot.result.verdict.passed,
+      // untouched — but on a requirement carrying only a passScore it is always
+      // true, so it would tell a false story on its own. `passed` is what the
+      // child was shown.
+      engine_verdict: snapshot.result.verdict?.passed ?? null,
       passed,
     });
-    // A judged, completed attempt that did not clear its bar. `onPassed` stays
+    // A judged attempt that did not clear its bar. `onPassed` stays
     // player-driven (the Continue button) because a pass is good news the
     // player should read first; a failure is reported straight to the host so
     // it can offer its own ways forward — and so a host counting failures
     // counts only attempts that actually happened.
     if (!passed) onFailed?.(snapshot.result);
   }, [challenge, logger, onFailed, persist, requirement, snapshot, subject]);
+
+  /**
+   * The stall: a free challenge that was started, took real notes, and stopped.
+   *
+   * Every condition is load-bearing (see `FREE_STALL_MS`): `challenge` because
+   * practice has no ladder and nothing to report a failure to; `free` because a
+   * cued ask already fails on its own; `running` because a prepared attempt has
+   * no input in it and a finished one has an answer already; and `musicalInput`
+   * because an attempt a child never played is an abandonment, not a failure.
+   *
+   * `noteOnTick` is the reset — a new note restarts this effect, and with it
+   * the timer. The runtime is re-read inside the callback rather than closed
+   * over: twenty seconds is long enough for the attempt underneath to have
+   * finished, been retried, or been replaced.
+   */
+  const stallable = challenge && snapshot.mode === 'free'
+    && snapshot.status === 'running' && snapshot.musicalInput === true;
+  useEffect(() => {
+    if (!stallable) return undefined;
+    const timer = globalThis.setTimeout(() => {
+      const active = runtimeRef.current;
+      const state = active?.getSnapshot();
+      if (!state || state.status !== 'running' || !state.musicalInput) return;
+      logger.info('piano.exercise-stalled', {
+        id: subject?.id ?? null,
+        matcher: state.matcher,
+        stallMs: FREE_STALL_MS,
+        matched_notes: Object.keys(state.hits).length,
+      });
+      // The runtime's own terminal path, taken as it stands: it finalizes with
+      // `status: 'timeout'` and no verdict, which is what makes `runPassed`
+      // answer false without this component asserting anything about it.
+      active.timeout();
+    }, FREE_STALL_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [logger, noteOnTick, stallable, subject]);
 
   /**
    * The three states this run cannot leave on its own. Reported through an
@@ -474,12 +593,26 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     return new Set((current?.notes ?? []).map((note) => note.midi));
   }, [snapshot]);
 
+  /**
+   * The pre-pulse, and its end. Metronome practice promises a pulse to settle
+   * into, and the first note is what STARTS the run — so the grid has to be
+   * audible before it, or the click only ever arrives after the moment it was
+   * meant to guide. But a kiosk nobody armed is a room being clicked at, so the
+   * pulse gets a budget: `PRE_PULSE_LIMIT_MS` and then silence.
+   *
+   * The timer only exists while the pre-pulse does, so arming (which makes
+   * `prePulse` false) and unmounting both clear it through the same cleanup.
+   */
+  const prePulse = snapshot.status === 'prepared' && snapshot.mode === 'metronome';
+  useEffect(() => {
+    if (!prePulse || prePulseStopped) return undefined;
+    const timer = globalThis.setTimeout(() => setPrePulseStopped(true), PRE_PULSE_LIMIT_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [prePulse, prePulseStopped]);
+
   useMetronomeClick({
     enabled: (snapshot.status === 'running' && ['metronome', 'cued'].includes(snapshot.mode))
-      // Metronome practice promises a pulse to settle into, and the first note
-      // is now what STARTS the run — so the grid has to be audible before it,
-      // or the click only ever arrives after the moment it was meant to guide.
-      || (snapshot.status === 'prepared' && snapshot.mode === 'metronome'),
+      || (prePulse && !prePulseStopped),
     // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
     // cued rung carries no `gates.pace`, so a tempo-less single-event instance
     // (graded at the engine's default) would leave this NaN — the hook then
@@ -492,6 +625,9 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     const onsets = held.filter((midi) => !previousNotesRef.current.includes(midi));
     previousNotesRef.current = held;
     const time = Date.now();
+    // Every note-on the run sees resets the stall clock — including the one
+    // that arms it, which is the note the clock should be measured from.
+    if (onsets.length) setNoteOnTick((tick) => tick + 1);
     if (snapshot.status === 'prepared') {
       if (!onsets.length) return;
       if (snapshot.mode === 'cued') { startCountIn(); return; }
@@ -518,7 +654,19 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
         const reach = new Map([...activeNotesRef.current].filter(([midi]) => armingPitches.has(midi)));
         runtime.observe({ held: reach, time: armedAt, clock: 'date-now' });
       } else {
-        runtime.observe({ midi: arming, time: armedAt, clock: 'date-now' });
+        // EVERY new onset in this commit, not only the one that armed.
+        //
+        // Two keys struck together arrive in a single MIDI commit, and
+        // `previousNotesRef` above has already consumed both — so a companion
+        // note dropped here is not observed now and can never become an onset
+        // again while it is held. On two-hand material (Hanon: every event is a
+        // left/right pair) that is a cursor that never leaves event zero, at a
+        // run whose first ask the child played correctly.
+        //
+        // The arming note goes first, so the note that started the run is still
+        // the run's first graded note — the same order guarantee as before.
+        const ordered = [arming, ...onsets.filter((midi) => midi !== arming)];
+        for (const midi of ordered) runtime.observe({ midi, time: armedAt, clock: 'date-now' });
       }
       return;
     }
@@ -566,8 +714,12 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   // only place they exist.
   const askEvents = instance ? instance.events : (snapshot.expectation?.events ?? []);
   const eventIndex = Math.min(progress.eventIndex, askEvents.length);
-  const result = snapshot.result?.status === 'completed' ? snapshot.result : null;
-  const phase = snapshot.status === 'prepared' ? 'ready' : snapshot.status === 'completed' ? 'done' : countInBeat ? 'countdown' : 'running';
+  // A judged attempt is over and has something to say, whether it finished or
+  // stalled. Leaving a stalled one out would leave the child on the running
+  // status line — a run that has ended, still saying "follow the highlighted
+  // notes" at a piano nothing is listening to.
+  const result = JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
+  const phase = snapshot.status === 'prepared' ? 'ready' : JUDGED_STATUSES.has(snapshot.status) ? 'done' : countInBeat ? 'countdown' : 'running';
   const expected = askEvents.flatMap((event) => event.notes.map((note) => note.midi));
   // Two consumers, two different things. ExerciseNotation's `wrong` prop is a
   // FLAG (it only ever colours the cursor note), so it gets a boolean — passing
@@ -618,9 +770,20 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   // `Math.min()` of nothing is Infinity, and a keyboard drawn from that is a
   // blank strip where the piano should be.
   const keyboardFooter = stage !== 'keys' && expected.length > 0;
-  // Tiers 0-1 are read by children who cannot read a percentage, and would not
-  // be helped by one if they could. Pass or not, said in words.
-  const scoreReadout = runTier >= 2;
+  /**
+   * A percentage belongs to a STAGE, not to a tier.
+   *
+   * Lit keys are read by children who cannot read a percentage and would not be
+   * helped by one if they could — and lit keys are what `ordering:'any'`
+   * material gets at EVERY tier, including a tier 2 or 3 an authored level
+   * named. Keying this off `runTier` put "83%" under a keyboard on a level
+   * whose whole point is that there is nothing to read.
+   *
+   * A stalled attempt is finalized with no score and no criteria at all, so it
+   * has no number to show either; it takes the words, which are the right ones
+   * for it ("Some of the notes are still missing").
+   */
+  const scoreReadout = stage !== 'keys' && Number.isFinite(result?.score);
 
   return (
     <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage}>

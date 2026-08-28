@@ -46,6 +46,19 @@ vi.mock('../Exercises/ExerciseRun.jsx', () => ({
         {/* A completed result with no usable number — an aborted attempt, or a
             free level, which carries no numeric bar at all. */}
         <button type="button" onClick={() => props.onFailed?.({})}>stub-fail-scoreless</button>
+        {/* A STALL — the only way a free level can fail. The run finalizes a
+            stuck attempt with `status: 'timeout'` and diagnostics only: no
+            score, no criteria, no verdict. This is the exact shape, because
+            every free rung in a repertoire produces it and nothing else. */}
+        <button
+          type="button"
+          onClick={() => props.onFailed?.({
+            status: 'timeout',
+            diagnostics: { expected_notes: 8, matched_notes: 3, wrong_notes: 1, missed_notes: 5 },
+          })}
+        >
+          stub-stall
+        </button>
         <button type="button" onClick={() => props.onExit?.()}>stub-exit</button>
         <button type="button" onClick={() => props.onUnavailable?.('instance-not-found')}>stub-dead-end</button>
         <button type="button" onClick={() => props.onUnavailable?.('no-access')}>stub-no-access</button>
@@ -486,6 +499,43 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
       { from: 'L2', to: 'L1', direction: 'degrade' },
       { from: 'L1', to: BUILT_IN_FLOOR.id, direction: 'degrade' },
     ]);
+  });
+
+  it('walks a FREE level down on stalls, which is the only failure a free level has', async () => {
+    // The whole degrade ladder was unreachable below tier 3 until the run
+    // learned to end a stuck attempt: a free ask produces no misses, so
+    // `verdict.passed` is true by construction at completion and the attempt
+    // simply never terminated otherwise. Three stalls at L2 — a free, tier-2,
+    // completeness-only level — must do exactly what three misses do at a cued
+    // one, and the child must be told at each step.
+    seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
+    renderGate({ learnerId: 'kid1' }); // retriesBeforeDegrade defaults to 3
+
+    await screen.findByTestId('exercise-run');
+    expect(h.runProps.at(-1).requirementOverride.mode).toBe('free');
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      fireEvent.click(await screen.findByText('stub-stall'));
+      // Not eased yet — two stalls is not three, and the banner must not lie.
+      expect(await screen.findByText('Not this time')).toBeTruthy();
+      expect(screen.queryByText('We made it a little easier')).toBeNull();
+      expect(readStored('kid1')).toMatchObject({ levelId: 'L2', failuresAtLevel: attempt + 1 });
+      fireEvent.click(screen.getByText('Try again'));
+      await screen.findByTestId('exercise-run');
+    }
+
+    fireEvent.click(await screen.findByText('stub-stall'));
+    expect(await screen.findByText('We made it a little easier')).toBeTruthy();
+    expect(readStored('kid1')).toMatchObject({ levelId: 'L1', failuresAtLevel: 0 });
+
+    const failures = events().filter(([name]) => name === 'gate.failed').map(([, data]) => data);
+    expect(failures).toHaveLength(3);
+    // A stalled result carries no number, and the gate records that as `null`
+    // rather than inventing a zero a grown-up would read as "played and got
+    // nothing right".
+    expect(failures.every(({ score }) => score === null)).toBe(true);
+    expect(events().filter(([name]) => name === 'gate.rung-changed').map(([, data]) => data))
+      .toMatchObject([{ from: 'L2', to: 'L1', direction: 'degrade' }]);
   });
 
   it('judges the next attempt against the EASED level, not the one that was failed', async () => {

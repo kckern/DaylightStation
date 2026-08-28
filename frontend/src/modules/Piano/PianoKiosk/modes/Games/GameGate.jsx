@@ -429,12 +429,24 @@ export default function GameGate({
   };
 
   /**
-   * A COMPLETED attempt that did not clear its bar. Only this moves the ladder.
+   * A JUDGED attempt that did not clear its bar. Only this moves the ladder.
+   *
+   * Two shapes arrive. A COMPLETED attempt below its bar carries a score. A
+   * STALLED one — a free ask the child started, played into, and then stopped
+   * for twenty seconds — carries none: it is finalized with diagnostics only,
+   * no score and no verdict. That second shape is why a free level can fail at
+   * all; without it `verdict.passed` is true by construction the moment the
+   * last note lands and false at no point before, so a stuck child would sit on
+   * a running attempt with no fail panel, no ways forward, and no way down.
+   * `score` is read defensively for exactly this reason, and the panel's words
+   * never depended on a number.
    *
    * The distinction from `handleAbandoned` below is the whole point: if walking
    * away counted as a failure, a child could press Exit `retriesBeforeDegrade`
    * times per match and arrive at the unfailable floor without ever touching a
-   * key — the gate would become a formality that still logs like a gate.
+   * key — the gate would become a formality that still logs like a gate. The
+   * run enforces that on its side too: an attempt with no musical input in it
+   * never reaches `onFailed`, whether it stalls or is exited.
    */
   const handleFailed = (result) => {
     const score = typeof result?.score === 'number' ? result.score : null;
