@@ -1,7 +1,21 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ExerciseRun from './ExerciseRun.jsx';
-import { initialRung, requirementForRung } from '../Games/gameGateLadder.js';
+import { BUILT_IN_FLOOR } from '../Games/gateRepertoire.js';
+import { requirementForLevel } from '../Games/gateAsk.js';
+
+/**
+ * A host-supplied requirement carrying a NUMERIC bar, as a local fixture.
+ *
+ * The gate no longer produces one — every repertoire level is verdict-driven
+ * (`requirementForLevel` returns `passScore: null`). But `ExerciseRun` still
+ * honours `requirementOverride.passScore` for any host that sets one, program
+ * steps included, and the specs below are that path's only coverage. Keeping
+ * the shape here rather than importing it from a module the gate has retired
+ * is what stops the coverage disappearing along with the ladder.
+ */
+const withPassScore = ({ mode = 'free', passScore }) => ({ mode, hands: 1, span: 1, passScore });
+const cuedRequirement = ({ passScore }) => withPassScore({ mode: 'cued', passScore });
 
 const h = vi.hoisted(() => ({
   activeNotes: new Map(),
@@ -239,12 +253,12 @@ describe('ExerciseRun shared assessment wiring', () => {
   });
 
   it('a completed floor attempt with N wrong notes still passes', async () => {
-    // The Task-8 floor: rubric `{criteria:{completeness:1}}`, cleanliness
-    // deliberately absent. A child who has already failed every rung must be
-    // able to finish. Wrong notes are recorded, not disqualifying.
-    const floor = { timing: 'free', hands: 1, span: 1, difficulty: 'major', direction: 'ascending' };
-    const requirementOverride = requirementForRung(floor, { passScore: 0.9 });
+    // The repertoire floor: rubric `{criteria:{completeness:1}}`, cleanliness
+    // deliberately absent. A child who has already walked the ladder to the
+    // bottom must be able to finish. Wrong notes are recorded, not disqualifying.
+    const requirementOverride = requirementForLevel(BUILT_IN_FLOOR);
     expect(requirementOverride.rubric).toEqual({ criteria: { completeness: 1 } });
+    expect(requirementOverride.passScore).toBeNull();
 
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
@@ -267,13 +281,12 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(evidence.criteria.cleanliness).toBeLessThan(1);
   });
 
-  // A non-floor rung: `requirementForRung` emits a passScore and NO rubric, so
-  // the engine's `verdict.passed` is unconditionally true. The surface must
-  // judge on the score, or every child clears the hardest rung instantly.
-  const nonFloorRung = { timing: 'free', hands: 2, span: 1, difficulty: 'major', direction: 'ascending' };
+  // A host requirement that carries a passScore and NO rubric: the engine's
+  // `verdict.passed` is unconditionally true there, so the surface must judge
+  // on the score or every child clears it instantly.
 
   it('a non-floor rung below its passScore is not a pass, whatever the engine verdict says', async () => {
-    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const requirementOverride = withPassScore({ passScore: 0.8 });
     expect(requirementOverride).toMatchObject({ mode: 'free', passScore: 0.8 });
     expect(requirementOverride.rubric).toBeUndefined();
 
@@ -297,7 +310,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   });
 
   it('a non-floor rung at or above its passScore passes, and hands the result to the host', async () => {
-    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const requirementOverride = withPassScore({ passScore: 0.8 });
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await armFree(view, props);
@@ -313,7 +326,7 @@ describe('ExerciseRun shared assessment wiring', () => {
 
   it('a cued requirement on a tempo-less instance degrades instead of blanking the kiosk', async () => {
     h.instanceData = { ...h.instance, tempo: undefined };
-    const requirementOverride = requirementForRung(initialRung(), { passScore: 0.8 });
+    const requirementOverride = cuedRequirement({ passScore: 0.8 });
     expect(requirementOverride.mode).toBe('cued');
 
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
@@ -333,7 +346,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     // missed attempt from a walked-away one. `onExit` cannot do that: it fires
     // for the header Exit too, so counting it would let a player reach the
     // easiest rung without touching a key.
-    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const requirementOverride = withPassScore({ passScore: 0.8 });
     const props = {
       instanceId: h.instance.id, intent: 'challenge', requirementOverride,
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
@@ -352,7 +365,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   });
 
   it('does not report a pass as a failure', async () => {
-    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const requirementOverride = withPassScore({ passScore: 0.8 });
     const props = {
       instanceId: h.instance.id, intent: 'challenge', requirementOverride,
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
@@ -380,7 +393,7 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     const props = {
       instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }),
+      requirementOverride: cuedRequirement({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(), onUnavailable: vi.fn(),
     };
     render(<ExerciseRun {...props} />);
@@ -408,7 +421,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     h.currentUser = null;
     const props = {
       instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }),
+      requirementOverride: cuedRequirement({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(), onUnavailable: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
@@ -425,7 +438,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     // paint. Rendering this panel too would flash "Keep working" with two
     // tappable buttons — Retry and Practice first — for a frame before the host
     // swapped it out. On a tablet that is a mis-tap, not a blink.
-    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const requirementOverride = withPassScore({ passScore: 0.8 });
     const props = {
       instanceId: h.instance.id, intent: 'challenge', requirementOverride,
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
@@ -446,7 +459,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   it('still shows its own panel when no host took onFailed', async () => {
     // The practice surface and the program flow pass neither callback; their
     // result panel is the only one there is and must be untouched.
-    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const requirementOverride = withPassScore({ passScore: 0.8 });
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await armFree(view, props);
@@ -462,7 +475,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   it('a host that took onFailed still gets the run’s own pass panel', async () => {
     // Only the FAILURE panel is the host's business. `onPassed` is
     // player-driven, so Continue must still be there to press.
-    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const requirementOverride = withPassScore({ passScore: 0.8 });
     const props = {
       instanceId: h.instance.id, intent: 'challenge', requirementOverride,
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
@@ -516,7 +529,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   it('a cued ask arms on ANY key, counts in one measure, and does not grade the arming key', async () => {
     // 4/4 at 60bpm — one measure is exactly four seconds of count-in.
     h.instanceData = { ...h.instance, tempo: { start_bpm: 60 } };
-    const requirementOverride = requirementForRung(initialRung(), { passScore: 0.8 });
+    const requirementOverride = cuedRequirement({ passScore: 0.8 });
     expect(requirementOverride.mode).toBe('cued');
 
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
@@ -546,7 +559,7 @@ describe('ExerciseRun shared assessment wiring', () => {
       tempo: undefined,
       events: [{ id: 'only', value: 'quarter', notes: [{ midi: 60, hand: 'right' }] }],
     };
-    const requirementOverride = requirementForRung(initialRung(), { passScore: 0.8 });
+    const requirementOverride = cuedRequirement({ passScore: 0.8 });
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText("Press any key to start. You'll hear 4 clicks, then play at that speed.");
@@ -645,7 +658,7 @@ describe('ExerciseRun shared assessment wiring', () => {
   it.each([
     ['practice free', { intent: 'practice', practiceMode: 'free' }, 'Play the first note to begin.'],
     ['a free challenge', { intent: 'challenge', requirementOverride: { mode: 'free' } }, 'Play the first note to begin.'],
-    ['a cued challenge', { intent: 'challenge', requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }) },
+    ['a cued challenge', { intent: 'challenge', requirementOverride: cuedRequirement({ passScore: 0.8 }) },
       "Press any key to start. You'll hear 4 clicks, then play at that speed."],
   ])('%s has no button to press and no fixed-tempo lecture', async (_label, extra, hint) => {
     h.instanceData = { ...h.instance, tempo: { start_bpm: 60 } };
@@ -784,6 +797,24 @@ describe('ExerciseRun tier-driven presentation', () => {
     expect(staff).toHaveAttribute('data-notes', JSON.stringify([{ midi: 65 }, { midi: 70 }]));
   });
 
+  it('spells a MINOR instance off its mode axis, not off the root the bank names', async () => {
+    // The bank writes `key` as the root alone ('D') and the quality on an axis,
+    // so reading `instance.key` by itself gives D major's two sharps and draws
+    // D minor's B♭ as A♯. This is the seam that re-joins them.
+    h.instanceData = {
+      ...h.instance,
+      key: 'D',
+      axes: { root: 'D', mode: 'aeolian' },
+      events: [
+        { id: 'first', value: 'quarter', notes: [{ midi: 62, hand: 'right' }] },
+        { id: 'second', value: 'quarter', notes: [{ midi: 70, hand: 'right' }] },
+      ],
+    };
+    render(<ExerciseRun {...practice({ tier: 2 })} />);
+    await ready();
+    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-accidental', 'flat');
+  });
+
   it('puts a left-hand ask on a bass staff', async () => {
     h.instanceData = {
       ...h.instance,
@@ -817,10 +848,7 @@ describe('ExerciseRun tier-driven presentation', () => {
     // `onFailed`, so this is the only thing on screen.
     const props = {
       instanceId: h.instance.id, intent: 'challenge', tier: 0,
-      requirementOverride: requirementForRung(
-        { timing: 'free', hands: 2, span: 1, difficulty: 'major', direction: 'ascending' },
-        { passScore: 0.8 },
-      ),
+      requirementOverride: withPassScore({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
@@ -917,7 +945,7 @@ describe('ExerciseRun tier-driven presentation', () => {
   it('a cued requirement derives tier 3 — the ABC notation, as before', async () => {
     const props = {
       instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }),
+      requirementOverride: cuedRequirement({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(),
     };
     render(<ExerciseRun {...props} />);
@@ -934,7 +962,7 @@ describe('ExerciseRun tier-driven presentation', () => {
     view.unmount();
     render(<ExerciseRun {...{
       instanceId: h.instance.id, intent: 'challenge',
-      requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }),
+      requirementOverride: cuedRequirement({ passScore: 0.8 }),
       onExit: vi.fn(), onPassed: vi.fn(),
     }} />);
     await screen.findByText(/Press any key to start/);

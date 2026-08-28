@@ -24,6 +24,7 @@ import { prepareExerciseAssessment } from './assessment.js';
 import { resolveExerciseRunAccess } from './authorization.js';
 import {
   accidentalForKey,
+  instanceKeySignature,
   clefForAsk,
   clefForInstance,
   deriveRunTier,
@@ -493,7 +494,10 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   // lit keys, and a staff it cannot draw legibly helps nobody.
   const askStaff = runTier >= 1 && staffFitsAsk(instance.events);
   const staffShown = stage === 'keys' ? askStaff : true;
-  const accidental = accidentalForKey(instance.key);
+  // The bank splits a key across `key` (the root) and an axis (the quality);
+  // `instanceKeySignature` re-joins them, so a minor instance is not spelled
+  // with the sharps of its relative major.
+  const accidental = accidentalForKey(instanceKeySignature(instance));
   const staffNotes = eventsToStaffNotes(instance.events);
   const staffViewBox = sequenceStaffViewBox(staffNotes.length);
   const cued = selectedMode === 'cued';

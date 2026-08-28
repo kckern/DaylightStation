@@ -283,6 +283,9 @@ function GameHost() {
           learnerId={learnerId}
           deviceId={deviceId}
           gateConfig={gateConfigForLearner(config.gameGate, learnerId)}
+          // What the child calls this game, so the challenge can say what it is
+          // for ("Play this to start Chess") instead of standing there unexplained.
+          gameLabel={entry?.label ?? gameId}
           onPassed={openMatch}
           onLeave={exit}
         />
