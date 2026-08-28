@@ -18,6 +18,15 @@
  * would renumber every later one and re-fire gates already passed. Deriving
  * from `at` means the id changes only when the position itself does, which is
  * the one case where re-asking IS correct — the gate now sits somewhere else.
+ *
+ * TWIN: `frontend/src/modules/School/lesson/useCheckpointGate.js` hand-copies
+ * `dueCheckpoint` and `seekCeilingFor` (a frontend module cannot import a
+ * backend domain module — the same arrangement as `SUBJECT_IDS` between
+ * `curriculum/unitValidation.mjs` and `School/home/subjects.js`). The two must
+ * change together: this file is the AUTHORITY — it is what refuses a
+ * completion with checkpoints outstanding — and that one is what makes the
+ * stop happen in front of the child. The inclusive `at <= position` boundary,
+ * FIRST-not-nearest, and the `cp-<at>` spelling are copied there verbatim.
  */
 
 /**
