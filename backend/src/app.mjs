@@ -2570,8 +2570,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Both get a real child logger here so budget.opened/settled/depleted/
   // config-invalid events actually reach the log store — until wired they
   // silently defaulted to console.
+  //
+  // historyRoot goes through configService.getHouseholdPath, NOT a hardcoded
+  // `path.join(dataDir, 'household/...')` — the comment above (household
+  // domain-path resolution, ~line 744) exists specifically to keep storage
+  // layout (household vs household-{hid}) out of the application layer.
+  // Identical output today (single-household); wrong the moment a second
+  // household exists.
   const pianoGameBudgetStore = new YamlPianoGameBudgetStore({
-    historyRoot: path.join(dataDir, 'household/history/piano-games'),
+    historyRoot: configService.getHouseholdPath('history/piano-games', householdId),
     logger: rootLogger.child({ component: 'piano-game-budget' }),
   });
   const pianoGameBudgetService = new PianoGameBudgetService({
