@@ -16,8 +16,14 @@
  * companion protocol means adding it HERE, on purpose, which is also the one
  * place to read the wire contract off.
  *
+ * `gate` says which of those the answer is: `none` (optional, nothing gates),
+ * `open` (satisfied, `code` carries the letters), `closed` (required and not
+ * yet done) or `unavailable` (the gate could not be read — show a
+ * tell-a-grown-up slip, never a progress number).
+ *
  * @returns {Promise<{ok: boolean, tracked: boolean, satisfied?: boolean,
- *                    code?: string[]|null, remainingParts?: number}>}
+ *                    code?: string[]|null, remainingParts?: number,
+ *                    gate?: 'none'|'open'|'closed'|'unavailable'}>}
  */
 export class RecordLessonCompanionProgress {
   #companions; #handlers;
@@ -35,9 +41,11 @@ export class RecordLessonCompanionProgress {
    * @param {number} [args.durationSeconds] the part's full length
    * @param {boolean} [args.completed] the player said it ended — telemetry, NOT evidence
    * @param {Array<[number, number]>} [args.playedRanges] what the media element
-   *   reports it actually rendered. This is the evidence, and the only thing a
-   *   dead stream cannot produce.
-   * @param {number} [args.maxRate] the fastest playback rate seen during it
+   *   reports it actually rendered SINCE THE LAST SAMPLE. This is the evidence,
+   *   and the only thing a dead stream cannot produce. Deltas, not the
+   *   element's cumulative `played` — see `LessonCompanionHandlers`.
+   * @param {number} [args.maxRate] the fastest playback rate during that window.
+   *   A sample above 1 has its ranges dropped rather than banked.
    */
   async execute({
     id, partId, positionSeconds, durationSeconds, completed, playedRanges, maxRate,

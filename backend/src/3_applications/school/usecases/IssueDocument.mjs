@@ -161,6 +161,29 @@ function companionLessonDay(unit, fallback = null) {
   return usable(unit?.module) ?? usable(unit?.courseId) ?? usable(unit?.unitId) ?? usable(fallback);
 }
 
+/**
+ * The authored `companion.requireParts` as a COUNT, resolved against the
+ * playlist that actually got built.
+ *
+ * `'all'` and "unauthored" both mean every part — the second because that is
+ * what this minted before the field existed, and a lesson's gate must not
+ * loosen just because someone added the field to the schema.
+ *
+ * Clamped to the playlist for the same reason `LessonCompanionHandlers` clamps
+ * it on the way out: a unit asking for four chapters of a three-chapter reading
+ * is a gate no child could ever open, and an author trimming a reading after
+ * writing the number produces exactly that.
+ *
+ * @param {number|'all'|undefined} authored
+ * @param {number|undefined} total - parts in the resolved playlist
+ * @returns {number} at least 1
+ */
+function resolveRequireParts(authored, total) {
+  const parts = Number.isInteger(total) && total >= 1 ? total : 1;
+  if (!Number.isInteger(authored) || authored < 1) return parts;
+  return Math.min(authored, parts);
+}
+
 /** @returns {{id: string, rev: string}|null} */
 function parsePrintDocumentRef(ref) {
   if (typeof ref !== 'string') return null;
@@ -898,9 +921,16 @@ export class IssueDocument {
           lessonDay,
           code: mintCode({ rng: this.#rng }),
           // How many pieces of the companion must be covered before the code is
-          // released — one per playlist part, so finishing chapter one of three
-          // is not finishing. Coverage arithmetic itself is Task 9's.
-          requireParts: companion.payload?.playlist?.parts?.length ?? 1,
+          // released, RESOLVED TO A COUNT here and frozen with the code: the
+          // record is what grades a sheet already in a child's hand, so a
+          // reading that gains a chapter next week must not move the gate under
+          // paper that has already printed.
+          //
+          // Authored as `companion.requireParts` — a number, or `'all'`, which
+          // only becomes a number once the playlist is resolved (which is here).
+          // Unauthored means all of them, which is what this minted before the
+          // field existed.
+          requireParts: resolveRequireParts(configured.requireParts, companion.payload?.playlist?.parts?.length),
           createdAt: nowIso,
           satisfiedAt: null,
           satisfiedBy: null,

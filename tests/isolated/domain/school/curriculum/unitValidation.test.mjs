@@ -650,3 +650,43 @@ describe('isPublishable', () => {
     expect(isPublishable(unit)).toBe(false);
   });
 });
+
+describe('companion.requireParts', () => {
+  // How many chapters of a multi-part read-along actually gate the worksheet.
+  // Psalms 70–72; 77 is four chapters and typically only ONE has to be
+  // finished; before this field existed the gate always demanded every part,
+  // which is the reading an unauthored unit still gets.
+  const companionUnit = (companion) => valid({ companion: { participation: 'required', ...companion } });
+
+  it.each([
+    ['a positive integer', 1],
+    ['a larger count', 3],
+    ["the word 'all'", 'all'],
+  ])('accepts %s', (_label, requireParts) => {
+    expect(errs(companionUnit({ requireParts }))).toEqual([]);
+    expect(unitOf(companionUnit({ requireParts })).companion.requireParts).toBe(requireParts);
+  });
+
+  it('carries nothing when unauthored, which downstream reads as every part', () => {
+    expect(unitOf(companionUnit({})).companion).not.toHaveProperty('requireParts');
+  });
+
+  it.each([
+    ['zero', 0],
+    ['a negative count', -1],
+    ['a fraction', 1.5],
+    ['a numeric string', '2'],
+    ['some other word', 'every'],
+  ])('rejects %s', (_label, requireParts) => {
+    expect(errs(companionUnit({ requireParts })))
+      .toContain("companion.requireParts must be a positive integer or 'all'");
+  });
+
+  it('names the right key rather than ignoring the snake_case spelling', () => {
+    // Silently dropping it would gate the whole lesson on every chapter when
+    // the author asked for one — the failure is invisible until a child is
+    // stuck, so refuse at authoring time instead.
+    expect(errs(companionUnit({ require_parts: 1 })))
+      .toContain('companion.require_parts is not a field; use companion.requireParts');
+  });
+});

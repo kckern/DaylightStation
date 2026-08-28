@@ -88,6 +88,17 @@ const isPresent = (v) => v !== undefined && v !== null;
 const READALONG_PARTICIPATION = Object.freeze(['optional', 'required']);
 
 /**
+ * `companion.requireParts`: how many playlist parts must be finished before the
+ * finish code is released. A positive integer, or the string `'all'`.
+ *
+ * `'all'` is a WORD and not a number on purpose. A playlist's length is not
+ * known when the unit is authored — it is resolved from `provenance.reading` at
+ * print time — so writing `4` to mean "all of them" silently becomes "the first
+ * four" the week the reading gains a fifth chapter.
+ */
+const isRequireParts = (v) => v === 'all' || (typeof v === 'number' && Number.isInteger(v) && v >= 1);
+
+/**
  * @param {*} raw - one parsed unit YAML
  * @param {{bankIds?: Set<string>, documentIds?: Set<string>, manifestIds?: Set<string>,
  *          programIds?: Set<string>, bankItems?: Map<string, Set<string>>,
@@ -214,12 +225,29 @@ export function validateUnit(raw, sets = {}) {
           errors.push('companion.label must be a non-empty string when present');
         } else if (raw.companion.payload != null && !isPlainObject(raw.companion.payload)) {
           errors.push('companion.payload must be an object when present');
+        } else if (raw.companion.require_parts != null) {
+          // REFUSED, not aliased. Every other authored key on a unit is
+          // camelCase (`courseId`, `moduleRole`, `requiresSignoff`), so the
+          // snake_case spelling is the one an author reaches for from the
+          // requirements prose — and accepting it silently would give the field
+          // two names, while ignoring it silently would gate the whole lesson on
+          // every chapter when the author asked for one. Name the right key.
+          errors.push('companion.require_parts is not a field; use companion.requireParts');
+        } else if (raw.companion.requireParts != null && !isRequireParts(raw.companion.requireParts)) {
+          errors.push("companion.requireParts must be a positive integer or 'all'");
         } else {
           companion = {
             enabled: raw.companion.enabled !== false, participation,
             ...(raw.companion.handler ? { handler: raw.companion.handler.trim() } : {}),
             ...(raw.companion.label ? { label: raw.companion.label.trim() } : {}),
             ...(raw.companion.payload ? { payload: structuredClone(raw.companion.payload) } : {}),
+            // HOW MANY CHAPTERS ACTUALLY GATE. A week's read-along is often
+            // several chapters (Psalms 70–72; 77 is four) and typically only ONE
+            // has to be finished — the rest are enrichment. Carried through
+            // normalised as authored: `'all'` cannot be resolved to a number
+            // here, because the playlist that would give it one is resolved at
+            // print time from `provenance.reading`, not on the unit.
+            ...(raw.companion.requireParts != null ? { requireParts: raw.companion.requireParts } : {}),
           };
         }
       }
