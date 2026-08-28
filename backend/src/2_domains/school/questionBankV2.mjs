@@ -1,4 +1,5 @@
 import { bankContentRev } from './bankRev.mjs';
+import { CODE_LETTERS, COMPANION_GATE_ITEM_ID, formatCode } from './companionCode.mjs';
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 
@@ -226,12 +227,73 @@ export function formatPageSpans(pages) {
   return [...groups.map((g) => (g.length === 1 ? `${g[0]}` : `${g[0]}\u2013${g[g.length - 1]}`)), ...[...new Set(literal)]].join(', ');
 }
 
-/** Convert an instance into a self-contained publishable OMR document source. */
+/**
+ * The gate row (Task 8): the first printed row of a required companion's
+ * worksheet, five positions labelled A–E, where the child fills in the finish
+ * code the read-along released.
+ *
+ * TWO CODES, NEVER THE SAME FIELD. `companionCode` (the option below, and the
+ * lesson card's Read Along panel) is the SIX-DIGIT ACCESS CODE that OPENS the
+ * companion. `finishCode` is the A–E set that finishing it RELEASES. This
+ * block is about the second one only.
+ *
+ * WHY THE CODE ITSELF RIDES ON THE BLOCK. `publishDocument` mints a derived
+ * bank item for a question carrying `answer`/`answers`; this block carries
+ * neither, so it mints nothing and passes through to the published document
+ * unchanged — which is the point. The gate is not a bank item (it is never
+ * `questionBankValidation`-checked, whose `multi_select` two-answer minimum
+ * would make the one-letter code `['A']` illegal), so the ONE place its
+ * expected answer can live and still reach the row planner and the scan-back
+ * resolver is the printed document itself. `validateDocumentV2`'s answer-free
+ * postcondition bans `answer`/`answers`, not `code`, and a published document
+ * is served to a browser nowhere — the only route that reads one renders a
+ * PDF. `RenderPrintDocument#prepareV2Document` synthesizes the
+ * `companion_code` bank item from this block; `formatAnswer` prints it on the
+ * teacher key.
+ *
+ * `points: 0` because the gate is a VETO, not a question: it decides whether a
+ * sheet passes, and it is worth nothing toward the score it gates.
+ */
+function companionGateBlock(finishCode) {
+  return {
+    type: 'question',
+    itemId: COMPANION_GATE_ITEM_ID,
+    number: 1,
+    omr: true,
+    points: 0,
+    companionGate: true,
+    code: [...finishCode],
+    choices: [...CODE_LETTERS],
+    blocks: [
+      { type: 'rich_text', md: 'Read-along finish code. Fill in every letter you were given.' },
+      { type: 'omr_response', itemId: COMPANION_GATE_ITEM_ID, choices: CODE_LETTERS.length },
+    ],
+  };
+}
+
+/**
+ * Convert an instance into a self-contained publishable OMR document source.
+ *
+ * @param {string[]|null} [options.finishCode] - the A–E finish code a REQUIRED
+ *   companion minted for this lesson (`IssueDocument#prepareCompanion`). When
+ *   present, the document grows a gate row ahead of its first question; absent
+ *   or null — an optional companion, or no companion at all — the blocks are
+ *   byte-identical to before the gate existed.
+ */
 export function worksheetInstanceDocument(instance, {
   title = instance.lessonId, description = null,
   sourceTitle = null, printedPages = [], subjectIcon = 'school', subjectName = null, breadcrumb = null,
-  reading = null, passPercent = null, progress = null, companionCode = null,
+  reading = null, passPercent = null, progress = null, companionCode = null, finishCode = null,
 } = {}) {
+  // Null is "no gate" — an optional companion, or none at all. Anything else
+  // that `formatCode` cannot read is a CALLER BUG and is refused loudly rather
+  // than silently dropping the gate: a required companion's sheet that quietly
+  // prints no gate row is exactly the ungated worksheet this feature exists to
+  // prevent, and it would look identical to a correct optional one.
+  if (finishCode != null && !formatCode(finishCode)) {
+    throw new Error(`worksheetInstanceDocument: unusable companion finishCode ${JSON.stringify(finishCode)}`);
+  }
+  const gate = finishCode != null ? companionGateBlock(finishCode) : null;
   const numericSeed = [...String(instance.seed || instance.id)]
     .reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261);
   return {
@@ -288,8 +350,12 @@ export function worksheetInstanceDocument(instance, {
         // consumes the semantic fields above instead.
         blocks: [{ type: 'rich_text', md: title }],
       },
+      // The gate comes FIRST: it is the sheet's precondition, so it reads as
+      // one before the questions rather than as an afterthought below them,
+      // and it takes the first card row of the allocated range.
+      ...(gate ? [gate] : []),
       ...instance.questions.map((question, index) => ({
-        type: 'question', itemId: question.itemId, number: index + 1, omr: true, fillAfter: true,
+        type: 'question', itemId: question.itemId, number: (gate ? 2 : 1) + index, omr: true, fillAfter: true,
         blocks: [
           { type: 'rich_text', md: question.prompt },
           {

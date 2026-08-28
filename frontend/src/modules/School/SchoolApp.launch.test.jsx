@@ -40,6 +40,7 @@ vi.mock('./schoolLog.js', () => ({
 }));
 
 const banksMock = vi.fn();
+const companionProgressMock = vi.fn();
 const materialsMock = vi.fn();
 const materialUnitsMock = vi.fn();
 const unitProgressMock = vi.fn();
@@ -71,6 +72,7 @@ vi.mock('./schoolApi.js', () => ({
     // Today's dry-run plan (debt W7a) — the student panel fetches this
     // unconditionally once a learner is claimed.
     agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })),
+    companionProgress: (...a) => companionProgressMock(...a),
   },
 }));
 
@@ -101,6 +103,7 @@ beforeEach(() => {
     ok: true, status: 200,
     data: [{ id: 'caps', title: 'Caps', audience: 'assigned', subject: null, itemCount: 1 }],
   });
+  companionProgressMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: null });
   materialsMock.mockReset().mockResolvedValue(EMPTY_CATALOG);
   materialUnitsMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { material: {}, units: [] } });
   coursesMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
@@ -186,6 +189,45 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
     expect(await screen.findByText('WA?')).toBeInTheDocument(); // QuizRunner's question
     // The picker-gated path (`onLaunch`) never ran: no ProfilePicker dialog.
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  // The companion descriptor's LAST HOP. `participation` rides the backend
+  // handler's `open()` effect all the way to here, and the player reads it for
+  // two things: the required-companion clamp, and whether to ask the server for
+  // the gate at all. Dropping it on this hop is invisible in every other test —
+  // the read-along still mounts and still plays — so it is pinned end to end,
+  // through the real routing, by the one behaviour that cannot happen without it.
+  const COMPANION = {
+    kind: 'companion', presentation: 'readalong', companionId: 'cmp_1', title: 'Psalms',
+    parts: [{ id: 'p1', title: 'Psalms 49', contentId: 'readalong:scripture/ps-49' }],
+    state: {}, participation: 'required',
+  };
+
+  it('a required companion the household already satisfied opens straight onto its code', async () => {
+    companionProgressMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: { ok: true, tracked: true, satisfied: true, code: ['B', 'D'], remainingParts: 0, gate: 'open' },
+    });
+    render(<SchoolApp clear={() => {}} mode="open" />);
+    await screen.findByText('Civilization');
+
+    deliverLaunch('kid1', COMPANION);
+
+    expect(await screen.findByTestId('readalong-code')).toHaveTextContent('BD');
+    expect(companionProgressMock).toHaveBeenCalledWith('cmp_1', expect.objectContaining({
+      partId: 'p1', playedRanges: [], maxRate: 1,
+    }));
+  });
+
+  it('an optional companion opens with no gate probe and no card', async () => {
+    render(<SchoolApp clear={() => {}} mode="open" />);
+    await screen.findByText('Civilization');
+
+    deliverLaunch('kid1', { ...COMPANION, participation: 'optional' });
+
+    await screen.findByTestId('player-stub');
+    expect(companionProgressMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('readalong-finish')).toBeNull();
   });
 
   it('bank launch for an unknown bankId does nothing visible and logs a warn', async () => {

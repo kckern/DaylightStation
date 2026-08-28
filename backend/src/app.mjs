@@ -3917,6 +3917,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         curriculumExceptions: schoolLifecycle.stores.curriculumExceptionStore ?? null,
         printDocuments: schoolLifecycle.stores.printDocuments ?? null,
       }) : null,
+    // Built inside the lifecycle module, where the companion code store and the
+    // household id live — never re-constructed here over a second store
+    // instance, which would be a second way to describe one file.
+    getCompanionFinishCode: schoolLifecycle.useCases?.getCompanionFinishCode ?? null,
     previewTeacherLessonMaterial: schoolLifecycle.stores?.curriculum && schoolLifecycle.stores?.printDocuments && schoolLifecycle.renderPrintDocument
       ? new PreviewTeacherLessonMaterial({
         curriculum: schoolLifecycle.stores.curriculum,

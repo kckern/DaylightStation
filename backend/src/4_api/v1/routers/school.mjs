@@ -38,6 +38,7 @@ export function createSchoolRouter({
   schoolDatastore = null,
   regradeBankAttempts = null,
   getTeacherSession = null,
+  getCompanionFinishCode = null,
   previewTeacherLessonMaterial = null,
   getLearnerTimeline = null,
   adjustSessionGrade = null,
@@ -1459,6 +1460,31 @@ export function createSchoolRouter({
   router.get('/teacher/sessions/:sessionId', wrap(async (req, res) => {
     if (!getTeacherSession) throw new EntityNotFoundError('teacher session inspector', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getTeacherSession.execute({ sessionId: req.params.sessionId }));
+  }));
+  /**
+   * The finish code, read out to a grown-up when the media will not play.
+   *
+   * A POST, for two reasons that are not stylistic. The capability cookie only
+   * becomes a `pin` on a body-carrying request (see the middleware above), so a
+   * GET would authorize by nothing at all; and revealing WRITES — the use case
+   * records the reveal, which is what makes a sheet that passed against an
+   * unsatisfied companion explicable later. `no-store` on top: these letters
+   * must not sit in a shared browser cache on a household screen.
+   *
+   * The gate is asserted INSIDE the use case, before it reads anything, so a
+   * refusal cannot even reveal whether a code exists. This is also the ONLY
+   * route in the system that serves the letters — nothing child-facing widens
+   * to carry them, exactly as `IssueDocument.execute()` keeps `finishCode` off
+   * the value that travels to `ResolveScanAction`.
+   */
+  router.post('/teacher/sessions/:sessionId/companion-finish-code', wrap(async (req, res) => {
+    if (!getCompanionFinishCode) throw new EntityNotFoundError('companion finish code', 'not configured');
+    const body = req.body || {};
+    res.set('Cache-Control', 'no-store').json(await getCompanionFinishCode.execute({
+      sessionId: req.params.sessionId,
+      revealedBy: body.revealedBy ?? null,
+      pin: body.pin ?? null,
+    }));
   }));
   router.post('/teacher/sessions/:sessionId/remediation', wrap(async (req, res) => {
     if (!openRemediation || !teacherGate) throw new EntityNotFoundError('teacher remediation', 'not configured');

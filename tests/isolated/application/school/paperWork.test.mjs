@@ -15,6 +15,7 @@ import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
 import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
+import { COMPANION_GATE_ITEM_ID } from '#domains/school/companionCode.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeFormMapStore, FakeReviewQueue,
   fakeClock, fakeGrownUps, silentLogger,
@@ -163,6 +164,36 @@ describe('SubmitPaperWork refusals', () => {
 
   it('explains an unknown session', async () => {
     expect(await submit.execute({ sessionId: 'ses_nope' })).toMatchObject({ status: 'unavailable' });
+  });
+
+  /**
+   * THIS LANE CANNOT ENFORCE A GATE, SO IT REFUSES TO SEE ONE.
+   *
+   * `SubmitPaperWork` grades exactly `questionItemIds(document)`, which skips
+   * the gate row by design, and the word `companion` appears nowhere else in
+   * the file. So a decoded gate entry would be read and DISCARDED — the gate
+   * silently ungated, the sheet passing on score alone.
+   *
+   * It is not reachable today: `RenderPrintDocument` sets `card` only when an
+   * allocation exists, `DocumentPdfRenderer` pushes form-map marks only when a
+   * render is NOT card-backed, and every worksheet-instance render allocates a
+   * card — so gate marks never reach a form map. The `selection: 'set'` chain
+   * that decodes them is correct, tested, and dead. The day someone makes that
+   * lane reachable, this throws instead of quietly waving a sheet through.
+   */
+  it('THROWS rather than silently discarding a gate row it cannot enforce', async () => {
+    await issued();
+    await expect(submit.execute({
+      sessionId: SID, entries: { ...RIGHT, [COMPANION_GATE_ITEM_ID]: ['A', 'C', 'E'] },
+    })).rejects.toThrow(/companion gate/i);
+    // Loudly: nothing recorded, so no half-graded sheet to reconcile.
+    expect(sessions.types(SID)).toEqual(['created', 'issued']);
+  });
+
+  it('leaves an ordinary hand-in with no gate entry alone', async () => {
+    await issued();
+    await expect(submit.execute({ sessionId: SID, entries: RIGHT }))
+      .resolves.toMatchObject({ status: 'submitted' });
   });
 });
 

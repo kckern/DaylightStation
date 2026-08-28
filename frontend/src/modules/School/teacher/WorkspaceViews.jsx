@@ -28,6 +28,7 @@ import ReassignPanel from './panels/ReassignPanel.jsx';
 import StaleSessions from './panels/StaleSessions.jsx';
 import InterventionsIndex from './panels/InterventionsIndex.jsx';
 import IssuedArtifactCard from './panels/IssuedArtifactCard.jsx';
+import CompanionFinishCode from './panels/CompanionFinishCode.jsx';
 import GradedWorksheet from './panels/GradedWorksheet.jsx';
 import LearnerDayView from './panels/LearnerDayView.jsx';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
@@ -767,6 +768,12 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
               learnerName={ownerName} currentPercent={effectiveGrade}
               onSettled={() => setAttempt((n) => n + 1)} />
           )}
+          {/* The escape hatch for a read-along that will not play. Offered on
+              every session rather than gated on a companion flag: whether this
+              lesson has one is exactly what the panel asks the server, and
+              pre-loading that would mean shipping the answer to a screen no
+              grown-up has confirmed at. It shows nothing until asked. */}
+          <CompanionFinishCode sessionId={sessionId} />
           {(session?.assignment || session?.assessment?.items?.length > 0) && (
             <section className="teacher-panel">
               <h3 className="teacher-panel__title">Questions and answers</h3>
