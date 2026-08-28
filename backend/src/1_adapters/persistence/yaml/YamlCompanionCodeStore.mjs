@@ -6,8 +6,20 @@ import {
 
 export const COMPANION_CODE_SCHEMA = 'school.companion-code/v1';
 
-const SAFE_ID = /^cmc_[a-f0-9]{16,}$/i;
+// Lower-case only, deliberately: `keyFor` never mints uppercase hex, and a
+// case-variant id resolves to the SAME file on macOS but a DIFFERENT one on the
+// Linux container — i.e. a second code for one scope, passing in dev and
+// splitting in production.
+const SAFE_ID = /^cmc_[a-f0-9]{16,}$/;
 const DUMP = { indent: 2, noRefs: true };
+
+/**
+ * A record is an object, and only an object. A YAML file holding a list, a
+ * string, a number or a bare `false` parses fine and is not a record: read back
+ * it would hand the print task a `code` of `undefined` and print a BLANK gate
+ * row, which is the failure `04442a53c` exists to prevent.
+ */
+const isRecord = (value) => value != null && typeof value === 'object' && !Array.isArray(value);
 
 /**
  * ONE finish code per (household, lesson, lessonDay) — and the first print wins it.
@@ -59,10 +71,14 @@ export class YamlCompanionCodeStore {
    * cannot make two different scopes collide onto one code.
    */
   keyFor({ householdId, lessonId, lessonDay } = {}) {
-    const parts = [householdId, lessonId, lessonDay];
-    if (parts.some((part) => typeof part !== 'string' || part.trim() === '')) {
+    const raw = [householdId, lessonId, lessonDay];
+    if (raw.some((part) => typeof part !== 'string' || part.trim() === '')) {
       throw new Error('companion code key requires householdId, lessonId and lessonDay');
     }
+    // Trimmed before hashing: this codebase has a standing YAML gotcha where
+    // `app: webcam` parses with a leading space, and `' cfm-ot'` hashing to a
+    // different code than `'cfm-ot'` would split one lesson across two records.
+    const parts = raw.map((part) => part.trim());
     return `cmc_${createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 24)}`;
   }
 
@@ -77,12 +93,23 @@ export class YamlCompanionCodeStore {
    * unreadable is an ERROR, because a file that exists and will not parse is a
    * printed code the gate can no longer check, and that must never be inferred
    * from silence.
+   *
+   * "Unreadable" is wider than "will not parse". A file that parses to a list or
+   * a scalar is not a record, and a record filed under one id while carrying
+   * another is invisible to every lookup that would repair it. Both are rejected
+   * here so that `get`, `findOrCreate` and `update` cannot disagree about what
+   * counts as an existing record.
    */
   #read(file, id) {
     if (!fileExists(file)) return null;
     const record = loadYamlFromPath(file);
-    if (record == null) {
-      this.#logger.error?.('school.companion-code.unreadable', { id, file });
+    const reason = (() => {
+      if (!isRecord(record)) return 'not-a-record';
+      if (record.id !== id) return 'id-mismatch';
+      return null;
+    })();
+    if (reason) {
+      this.#logger.error?.('school.companion-code.unreadable', { id, file, reason });
       return null;
     }
     return record;
@@ -115,10 +142,11 @@ export class YamlCompanionCodeStore {
     }
 
     const record = create();
-    if (record == null) throw new Error(`companion code create() produced nothing: ${key}`);
-    // A record filed under one id but carrying another would be invisible to
-    // every later `get(key)`, so refuse it instead of writing it.
-    if (record.id != null && record.id !== key) {
+    if (!isRecord(record)) throw new Error(`companion code create() did not produce a record: ${key}`);
+    // The id must be PRESENT and equal to the key. A record filed under one id
+    // while carrying another — or carrying none — is invisible to every later
+    // `get(key)`, so refuse it here rather than write a record nothing can find.
+    if (record.id !== key) {
       throw new Error(`companion code record id ${record.id} does not match its key ${key}`);
     }
     saveYamlToPathAtomic(file, record, DUMP);
@@ -127,15 +155,31 @@ export class YamlCompanionCodeStore {
 
   /**
    * Read-modify-write, synchronous end to end for the reason in the header.
-   * A mutator that edits its draft in place and returns nothing is honoured —
-   * returning `undefined` must never blank a record.
+   *
+   * WHAT THE MUTATOR MAY HAND BACK is checked, because getting it wrong BRICKS
+   * the scope. The idiomatic concise arrow returns the value it assigned —
+   * `(r) => r.satisfiedAt = ts` returns a string, `(r) => r.coverage[p] = frac`
+   * returns a number — and writing that would leave the file holding a bare
+   * scalar. From there the record is unrecoverable through this store: `get`
+   * answers null, `update` returns null so it can never be repaired, and
+   * `findOrCreate` refuses to mint over it forever. Every child on that lesson
+   * loses the gate. So anything that is not a record throws, loudly, at the
+   * caller that wrote the bug.
+   *
+   * `undefined` is the one accepted non-record: it is what a mutator that edits
+   * its draft in place returns, and honouring it writes the draft — a value that
+   * was already validated on the way in, so this cannot brick anything.
    */
   async update(id, mutate) {
     const file = this.#file(id);
     const current = this.#read(file, id);
     if (!current) return null;
     const draft = structuredClone(current);
-    const next = mutate(draft) ?? draft;
+    const returned = mutate(draft);
+    const next = returned === undefined ? draft : returned;
+    if (!isRecord(next)) {
+      throw new Error(`companion code mutator for ${id} returned ${typeof next}, not the record`);
+    }
     saveYamlToPathAtomic(file, next, DUMP);
     return next;
   }
