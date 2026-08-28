@@ -691,6 +691,34 @@ describe('checkpoint_cleared: the mid-media gate', () => {
     expect(state.clearedCheckpoints).toEqual([]);
   });
 
+  it('is accepted from media_stalled — a gated lesson stalls just by having an attentive child', () => {
+    // checkStalled fires at dispatchedAt + duration + 600s grace, so a
+    // 20-minute lesson stalls at 30 minutes — which is what a 20-minute lesson
+    // with five gates actually takes. Rejecting the clear here would throw away
+    // a CORRECT answer and re-ask it after the replay.
+    const state = reduceSession(log(['created', 'media_dispatched', 'media_stalled', 'checkpoint_cleared']));
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe('media_stalled');
+    expect(state.clearedCheckpoints).toEqual([{ checkpointId: 'cp_1', attempts: 1, at: AT }]);
+  });
+
+  it('carries clears from before a stall through the replay, so nothing is re-asked', () => {
+    nextSeq = 0;
+    const state = reduceSession([
+      ev('created'), ev('media_dispatched'),
+      ev('checkpoint_cleared', { checkpointId: 'cp_1', attempts: 1 }),
+      ev('media_stalled'),
+      ev('checkpoint_cleared', { checkpointId: 'cp_2', attempts: 2 }),
+      ev('media_dispatched'), // the replay: this OVERWRITES s.mediaDispatch wholesale
+      ev('checkpoint_cleared', { checkpointId: 'cp_3', attempts: 1 }),
+    ]);
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe('media_dispatched');
+    // All three survive the replay — which is why clearedCheckpoints is
+    // top-level and not nested under mediaDispatch.
+    expect(state.clearedCheckpoints.map((row) => row.checkpointId)).toEqual(['cp_1', 'cp_2', 'cp_3']);
+  });
+
   it('is illegal after the media finished — the gates are behind the playhead by then', () => {
     const state = reduceSession(log(['created', 'media_dispatched', 'media_completed', 'checkpoint_cleared']));
     expect(state.errors).toContain('event[seq=4]: illegal transition media_completed -> checkpoint_cleared');
