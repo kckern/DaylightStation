@@ -350,12 +350,26 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
  * media ended. Accepting one from `created` would file an answer against a
  * lesson that never played.
  *
+ * `media_stalled` IS accepted, and that is not a loophole — it is the common
+ * case. `RecordMediaCompletion.checkStalled` stalls a dispatch at
+ * `dispatchedAt + duration + grace`, grace defaulting to 600s. A 20-minute
+ * lesson is therefore stalled at 30 minutes of wall clock — and a 20-minute
+ * lesson with five gates, at ~2 minutes per gate while a six-year-old thinks
+ * and answers, takes exactly that. So a perfectly healthy gated lesson wanders
+ * into `media_stalled` just by having an attentive child. Refusing the clear
+ * there would reject a CORRECT answer, lose the evidence, and re-ask the
+ * question after the replay — the precise frustration this feature exists to
+ * prevent, and indistinguishable from a broken gate to the child sitting there.
+ * Nothing is lost by accepting it: `media_stalled -> media_dispatched` is
+ * already a legal replay edge, so the session is alive, and a clear is evidence
+ * about the CHILD, not a claim about the transport that stalled.
+ *
  * (Annotations are absent from `TRANSITIONS` by construction, so
  * `statesAccepting` answers empty for every one of them — `transitionViolation`
  * below is the authority on annotation legality, as it always was.)
  */
 const ANNOTATION_STATES = new Map([
-  ['checkpoint_cleared', new Set(['media_dispatched'])],
+  ['checkpoint_cleared', new Set(['media_dispatched', 'media_stalled'])],
 ]);
 const TERMINAL_ANNOTATIONS = new Set([
   'grade_adjusted', 'grade_adjustment_retracted', 'reward_reconciled', 'reward_reconciliation_failed',
