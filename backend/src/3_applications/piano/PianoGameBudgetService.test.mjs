@@ -170,6 +170,21 @@ describe('PianoGameBudgetService', () => {
       .rejects.toThrow('session belongs to a different learner');
   });
 
+  it('close rejects a sessionId/learnerId mismatch too, not just settle', async () => {
+    // close() has no ownership check of its own in applyClose (it only
+    // resolves the session by sessionId), so the caller-claimed learnerId
+    // must be validated before acting — the HTTP layer takes learnerId from
+    // a client-supplied URL param, so without this a caller who knows a
+    // sibling's sessionId could seal (prematurely end) their still-open
+    // session.
+    await svc.open({ learnerId: 'kid_a', deviceId: 'kiosk' });
+    await expect(svc.close({ sessionId: 'sess_1', learnerId: 'kid_b', cumulativeSeconds: 30 }))
+      .rejects.toThrow('session belongs to a different learner');
+    // Nothing was charged or sealed by the rejected attempt.
+    expect(store._days.get('2026-08-27').sessions.sess_1.closed).toBe(false);
+    expect(store._days.get('2026-08-27').learners.kid_a?.totalSeconds ?? 0).toBe(0);
+  });
+
   it('a mismatched learnerId across the boundary is rejected WITHOUT stranding the real session', async () => {
     // #carryForward's first write seals yesterday's session (closed: true)
     // before today's record even exists. If the ownership check ran AFTER
