@@ -53,10 +53,33 @@ function isUnfailableFloor(level) {
   return level.tier === 0 && (level.grading === null || level.grading === undefined);
 }
 
+/**
+ * Structurally valid AND uniquely identified, in config order. An id that
+ * repeats one already accepted — or that collides with the built-in floor's
+ * own id — is dropped rather than kept: `levelById`/the index walk resolve
+ * only the first match for a given id, so a duplicate would silently make
+ * navigation land on the wrong level. First occurrence in `raw` wins.
+ */
+function collectValidLevels(raw) {
+  const seenIds = new Set([BUILT_IN_FLOOR.id]);
+  const collected = [];
+  for (const level of Array.isArray(raw) ? raw : []) {
+    if (!isValidLevel(level)) continue;
+    if (seenIds.has(level.id)) continue;
+    seenIds.add(level.id);
+    collected.push(level);
+  }
+  return collected;
+}
+
 export function resolveRepertoire(raw) {
-  const validRaw = Array.isArray(raw) ? raw.filter(isValidLevel) : [];
+  const validRaw = collectValidLevels(raw);
   const source = validRaw.length ? validRaw : [FALLBACK_LEVEL];
-  const levels = source.map((level) => ({
+  // Result is ordered easiest-first by tier. Array.prototype.sort is stable,
+  // so two levels sharing a tier keep their config-authored relative order —
+  // only cross-tier order is corrected, never within-tier authoring intent.
+  const ordered = [...source].sort((a, b) => a.tier - b.tier);
+  const levels = ordered.map((level) => ({
     id: level.id,
     tier: level.tier,
     grading: level.grading ?? null,
@@ -74,6 +97,10 @@ export function startLevelFor(levels, config) {
   return requested ?? levels[1] ?? levels[0];
 }
 
+// An id that isn't found (stale save, renamed level) defaults to index 0 —
+// chosen, not accidental: index 0 is always the unfailable floor (D9), so
+// an unresolvable id fails safe toward "can't fail the child" rather than
+// toward whatever level happens to sit at some other index.
 function indexOfId(levels, id) {
   const i = levels.findIndex((level) => level.id === id);
   return i < 0 ? 0 : i;
@@ -108,7 +135,9 @@ export function materialKey(spec) {
   const { kind } = spec;
   if (kind === 'exercise') {
     if (spec.instanceId) return `exercise:${spec.instanceId}`;
-    const roots = Array.isArray(spec.roots) ? spec.roots.join(',') : '';
+    // Roots are a set, not a sequence — ['C','G'] and ['G','C'] name the same
+    // material, so sort before joining rather than trusting authoring order.
+    const roots = Array.isArray(spec.roots) ? [...spec.roots].sort().join(',') : '';
     return `exercise|${spec.collection ?? ''}|${roots}|${spec.hands ?? ''}|${spec.cued ? 'cued' : ''}`;
   }
   if (kind === 'score') {
@@ -121,17 +150,25 @@ export function materialKey(spec) {
 
 /**
  * Deterministic rotation: never the same spec twice running within a
- * level. `candidates` starts as the level's full material list; if there
- * is more than one and the last-served key matches one of them, that one
- * is dropped before indexing, so index `pickIndex % candidates.length`
- * always lands on something else. A single-material level has nothing to
- * rotate to and always serves its one spec.
+ * level, and — across a run of calls whose `pickIndex` advances by one
+ * each time, the way a caller naturally drives it (serve, remember its
+ * key, increment) — every candidate gets reached, not just a 2-cycle.
+ *
+ * Index into the FULL candidate list first (`pickIndex % n`); only if
+ * THAT candidate is the one just served do we step forward one more,
+ * wrapping. Dropping the last-served candidate before taking the modulo
+ * (the earlier approach) shrinks the list to n-1 and re-partitions it
+ * identically every call, which at n=3 starves the middle candidate
+ * forever (A,C,A,C,... — B never served). Indexing the full list first
+ * keeps every position reachable as `pickIndex` advances; the single
+ * extra step only ever fires to avoid an immediate repeat.
  */
 export function pickMaterial(level, lastMaterialId, pickIndex) {
-  let candidates = level.material;
-  if (candidates.length > 1) {
-    const filtered = candidates.filter((spec) => materialKey(spec) !== lastMaterialId);
-    if (filtered.length) candidates = filtered;
+  const candidates = level.material;
+  const n = candidates.length;
+  let index = pickIndex % n;
+  if (n > 1 && materialKey(candidates[index]) === lastMaterialId) {
+    index = (index + 1) % n;
   }
-  return candidates[pickIndex % candidates.length];
+  return candidates[index];
 }
