@@ -179,12 +179,19 @@ const seedLevel = (learnerId, levelId, rest = {}) => localStorage.setItem(
  * it vanish. `pickIndex: 1` puts the rotation on the score entry, so the skip is
  * on the path rather than merely available on it.
  */
-const LEVEL_WITH_SCORE = [{
+/**
+ * A level whose second entry is a config MISTAKE: a score with no source, which
+ * names no document and so can never resolve to one. (A score that names one
+ * resolves and runs — that is `ScorePassage`'s job, covered in the Exercises
+ * suite. What is exercised here is the skip path, which needs an entry that
+ * genuinely cannot be served.)
+ */
+const LEVEL_WITH_BAD_SCORE = [{
   id: 'L1',
   tier: 2,
   material: [
     { kind: 'exercise', collection: 'scales', roots: ['C'], hands: 'right' },
-    { kind: 'score', source: 'current-study-piece', measures: 4 },
+    { kind: 'score', measures: [1, 4] },
   ],
 }];
 
@@ -351,15 +358,15 @@ describe('gate events', () => {
     await screen.findByText('Choose a player first');
   });
 
-  it('material the phase declines is logged, not silently dropped', async () => {
+  it('material that cannot be served is logged, not silently dropped', async () => {
     seedLevel('kid1', 'L1', { pickIndex: 1 });
-    renderGate({ learnerId: 'kid1', gateConfig: { repertoire: LEVEL_WITH_SCORE } });
+    renderGate({ learnerId: 'kid1', gateConfig: { repertoire: LEVEL_WITH_BAD_SCORE } });
     await screen.findByTestId('exercise-run');
 
     const skipped = expectEvent('gate.material-skipped', { kind: 'score' });
-    expect(skipped.reason).toBe('score-material-phase-2');
-    // The exercise entry still resolved — a declined score entry must not take
-    // the whole gate down with it.
+    expect(skipped.reason).toBe('no-score-source');
+    // The exercise entry still resolved — one unusable entry must not take the
+    // whole gate down with it.
     expectEvent('gate.attempt');
   });
 });

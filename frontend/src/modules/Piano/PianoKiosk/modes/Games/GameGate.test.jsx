@@ -292,14 +292,17 @@ describe('pickGateMaterial — contract 2: a level resolves to something gradabl
     expect(requirementForLevel(LEVELS[1]).rubric).toEqual({ criteria: { completeness: 1 } });
   });
 
-  it('skips a `score` entry with a reason instead of crashing on it', async () => {
+  it('skips a `score` entry naming no document, with a reason instead of crashing on it', async () => {
+    // A score that names a source resolves and runs (the `ScorePassage` stage).
+    // One that names none is a config mistake, and the level's other material
+    // must still be served rather than the gate failing over the typo.
     const mixed = {
       ...LEVELS[1],
-      material: [...LEVELS[1].material, { kind: 'score', source: 'current-study-piece', measures: 4 }],
+      material: [...LEVELS[1].material, { kind: 'score', measures: [1, 4] }],
     };
     const picked = await pickGateMaterial(mixed, { pickIndex: 1, mode: 'free' });
     expect(picked.ok).toBe(true);
-    expect(picked.skipped).toContainEqual({ kind: 'score', reason: 'score-material-phase-2' });
+    expect(picked.skipped).toContainEqual({ kind: 'score', reason: 'no-score-source' });
   });
 });
 
@@ -308,11 +311,11 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
   it.each([
     ['a 502 from the bank', () => h.instance.mockResolvedValue({ ok: false, status: 502, data: null })],
     ['a rejected fetch', () => h.instance.mockRejectedValue(new Error('network down'))],
-    ['a level nothing in this phase can render', () => {}],
+    ['a level whose only material names nothing', () => {}],
   ])('opens the gate and logs gate.unavailable on %s', async (label, arrange) => {
     arrange();
-    const gateConfig = label === 'a level nothing in this phase can render'
-      ? { repertoire: [{ id: 'score-only', tier: 2, material: [{ kind: 'score', source: 'fur-elise', measures: [1, 4] }] }] }
+    const gateConfig = label === 'a level whose only material names nothing'
+      ? { repertoire: [{ id: 'score-only', tier: 2, material: [{ kind: 'score', measures: [1, 4] }] }] }
       : CONFIG;
     const { onPassed } = renderGate({ gateConfig });
 

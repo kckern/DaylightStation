@@ -18,6 +18,8 @@ import {
 } from '../../../performance/attemptEvidence.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import KeysAsk from './KeysAsk.jsx';
+import ScorePassage from './ScorePassage.jsx';
+import { titleFromScoreId } from '../SheetMusic/scoreTitle.js';
 import { SvgSequenceStaff, sequenceStaffViewBox } from '../../../../MusicNotation/renderers/SvgSequenceStaff.jsx';
 import { pianoLearningApi } from './pianoLearningApi.js';
 import { prepareExerciseAssessment } from './assessment.js';
@@ -84,11 +86,20 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
 /**
  * @param {object} props
  * @param {string|null} [props.instanceId] Exercise-bank instance to run.
- * @param {{kind:'exercise'|'score', instanceId?:string}|null} [props.material]
+ * @param {{kind:'keys'|'exercise'|'score', instanceId?:string, source?:string,
+ *   measures?:[number,number]}|null} [props.material]
  *   Gate material seam (D10). When present it REPLACES `instanceId` as the load
  *   source and is resolved through `resolveGateMaterial`. Pass a stable
  *   reference (memoize it) — a fresh object rebuilds the attempt, exactly as
  *   `requirementOverride` already does.
+ *
+ *   `kind:'score'` resolves to a MusicXML document rather than to a bank
+ *   instance, and takes a materially different path: there is no authored event
+ *   list, so the attempt cannot be built until the ENGRAVER has reported where
+ *   the notes are. The stage (`ScorePassage`) mounts first and publishes the
+ *   compiled expectation; the attempt is created from it directly, and
+ *   `prepareExerciseAssessment` — which reads `instance.events` — is never
+ *   called for a score.
  * @param {((result:object)=>void)} [props.onFailed] A COMPLETED attempt that did
  *   not pass. Distinct from `onExit`, which means the player walked away with
  *   nothing to judge. A host that moves a difficulty ladder must only ever move
@@ -117,6 +128,12 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   const { activeNotes } = usePianoMidiNotes();
   const { connected } = usePianoMidi();
   const [instance, setInstance] = useState(undefined);
+  // Score material's two halves: the document (from the load) and the
+  // expectation the engraver's geometry compiles into (from the stage). Both
+  // start `undefined` = "not loaded yet" so the skeleton can tell that apart
+  // from `null` = "loaded, and this run is not a score".
+  const [score, setScore] = useState(undefined);
+  const [scoreExpectation, setScoreExpectation] = useState(null);
   const [requirement, setRequirement] = useState(null);
   const [runtime, setRuntime] = useState(null);
   const [lastWrong, setLastWrong] = useState(null);
@@ -139,54 +156,107 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   const loadInstance = useCallback(async () => {
     if (!material) return pianoLearningApi.instance(instanceId);
     const resolved = await resolveGateMaterial(material);
-    if (resolved.ok) return { ok: true, data: resolved.instance };
-    // A material kind this phase cannot render (or a bad id) is skipped, not
-    // thrown: the run shows "Exercise not found" and the gate host moves on.
+    // A score resolves to a DOCUMENT, not an instance. It travels in its own
+    // field rather than being dressed up as one: an instance with no events is
+    // a shape every derivation downstream would have to special-case anyway,
+    // and one that forgot to would silently grade an empty ask as complete.
+    if (resolved.ok && resolved.kind === 'score') return { ok: true, data: null, score: resolved.score };
+    if (resolved.ok) return { ok: true, data: resolved.instance, score: null };
+    // Material that could not be resolved (a bad id, an unreachable score) is
+    // reported, not thrown: the run shows "Exercise not found" and the gate
+    // host moves on — which for a gate means failing open.
     logger.warn('piano.exercise-material-unresolved', { kind: material.kind ?? null, error: resolved.error });
-    return { ok: false, data: null };
+    return { ok: false, data: null, score: null };
   }, [instanceId, logger, material]);
 
   useEffect(() => {
     let alive = true;
     setInstance(undefined);
+    setScore(undefined);
+    setScoreExpectation(null);
     setUnrunnable(false);
     Promise.all([
       loadInstance(),
       programId ? pianoLearningApi.program(programId) : Promise.resolve({ ok: false, data: null }),
     ]).then(([instanceResponse, programResponse]) => {
       if (!alive) return;
-      if (!instanceResponse.ok) { setInstance(null); return; }
+      if (!instanceResponse.ok) { setInstance(null); setScore(null); return; }
       const loaded = instanceResponse.data;
       const step = programResponse.ok ? programResponse.data.steps?.find((entry) => entry.id === stepId) : null;
       setInstance(loaded);
+      setScore(instanceResponse.score ?? null);
       setRequirement(requirementOverride ?? step?.requirement ?? null);
     });
     return () => { alive = false; };
   }, [loadInstance, programId, requirementOverride, stepId]);
 
+  /**
+   * The engraver's answer, taken ONCE.
+   *
+   * `ScorePassage` republishes if a re-engrave (a resize, a reflow) changes its
+   * geometry, and a run that accepted the second one would rebuild its attempt
+   * — resetting the cursor and throwing away every note played so far, under
+   * the child's hands, because the tablet rotated. The first answer stands for
+   * the life of this material; a NEW material clears it above.
+   */
+  const takeScoreExpectation = useCallback((expectation) => {
+    setScoreExpectation((held) => held ?? expectation);
+  }, []);
+
+  /**
+   * What this run is OF, for everything that does not care which kind it is:
+   * the header, the evidence, the completion log. A bank instance is its own
+   * subject; a score stands in for one with the fields those three read.
+   */
+  const subject = useMemo(() => {
+    if (instance) return instance;
+    if (!score) return null;
+    return { id: score.id, title: titleFromScoreId(score.id), form: 'score', level: null };
+  }, [instance, score]);
+
   const buildAttempt = useCallback(() => {
-    if (!access.allowed || !instance || (challenge && !requirement)) return null;
+    if (!access.allowed || (challenge && !requirement)) return null;
+    // A score has no attempt until the engraving reports where the notes are.
+    // Not an error and not a degraded state: the stage is on screen doing the
+    // work, and the run picks this up again the moment it lands.
+    if (!instance && !(score && scoreExpectation)) return null;
     const mode = selectedMode;
     const activeRequirement = challenge ? requirement : null;
+    // The requirement wins over the surface's defaults — a gate rung can widen
+    // `wrongWindow`, allow extras, or loosen the timing windows without this
+    // component knowing which knob it turned. Practice is deliberately left on
+    // the defaults, exactly as it already ignores a step's rubric and gates.
+    const policy = { ...DEFAULT_POLICY, ...(activeRequirement?.policy ?? {}) };
     try {
+      if (!instance) {
+        // The compiled passage IS the expectation — there is nothing for
+        // `prepareExerciseAssessment` to prepare from, and calling it would
+        // throw on the events a score does not have. Free walks a cursor
+        // through the passage; cued is timed against the score's own tempo map,
+        // which the passage compiled from the document.
+        return createAssessmentAttempt({
+          expectation: scoreExpectation,
+          matcher: mode === 'cued' ? 'timed' : 'cursor',
+          mode,
+          purpose: challenge ? 'challenge' : 'practice',
+          requirement: activeRequirement,
+          policy,
+        });
+      }
       const prepared = prepareExerciseAssessment({
         instance, mode, purpose: challenge ? 'challenge' : 'practice', requirement: activeRequirement,
       });
-      // The requirement wins over the surface's defaults — a gate rung can widen
-      // `wrongWindow`, allow extras, or loosen the timing windows without this
-      // component knowing which knob it turned. Practice is deliberately left on
-      // the defaults, exactly as it already ignores a step's rubric and gates.
-      return createAssessmentAttempt({ ...prepared, policy: { ...DEFAULT_POLICY, ...(activeRequirement?.policy ?? {}) } });
+      return createAssessmentAttempt({ ...prepared, policy });
     } catch (error) {
-      // A requirement this instance cannot satisfy — e.g. a cued rung on a bank
+      // A requirement this material cannot satisfy — e.g. a cued rung on a bank
       // instance carrying no tempo, which the engine rejects outright. Without
       // this catch the throw escapes installRuntime's effect and blanks the
       // whole kiosk. Same posture as unresolvable material: log, degrade.
-      logger.warn('piano.exercise-attempt-unbuildable', { id: instance.id, mode, reason: error?.message ?? String(error) });
+      logger.warn('piano.exercise-attempt-unbuildable', { id: subject?.id ?? null, mode, reason: error?.message ?? String(error) });
       setUnrunnable(true);
       return null;
     }
-  }, [access.allowed, challenge, instance, logger, requirement, selectedMode]);
+  }, [access.allowed, challenge, instance, logger, requirement, score, scoreExpectation, selectedMode, subject]);
 
   const installRuntime = useCallback(() => {
     const attempt = buildAttempt();
@@ -220,7 +290,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   );
 
   const persist = useCallback(async (result, status = result?.status || 'completed', { keepalive = false } = {}) => {
-    if (persistedRef.current || !instance) return;
+    if (persistedRef.current || !subject) return;
     persistedRef.current = true;
     const terminalResult = { ...(result || {}), status };
     const body = buildPianoAttemptEvidence({
@@ -228,10 +298,10 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
       attemptId: makeId('attempt'),
       ...(challenge
         ? { challengeId: makeId('exercise-challenge') }
-        : { activityId: `exercise:${instance.id}:${selectedMode}` }),
-      kind: instance.form ?? 'exercise',
+        : { activityId: `exercise:${subject.id}:${selectedMode}` }),
+      kind: subject.form ?? 'exercise',
       purpose: challenge ? 'challenge' : 'practice',
-      prompt: { exercise_id: instance.id, label: instance.title, mode: selectedMode, level: instance.level?.[selectedMode] ?? null },
+      prompt: { exercise_id: subject.id, label: subject.title, mode: selectedMode, level: subject.level?.[selectedMode] ?? null },
       context: { surface: 'exercises', matcher: runtimeRef.current?.getSnapshot().matcher ?? null, program_id: programId, step_id: stepId },
       gradingPolicyVersion: result?.rubric?.id ?? 'exercise-interrupted-v2',
       providerVersion: 'exercise-runtime-v4',
@@ -247,7 +317,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     });
     if (outcome === 'saved') logger.info('piano.exercise-assessment', log);
     else logger.warn('piano.exercise-assessment', log);
-  }, [access.persistent, challenge, currentUser, instance, logger, programId, selectedMode, stepId]);
+  }, [access.persistent, challenge, currentUser, logger, programId, selectedMode, stepId, subject]);
 
   useEffect(() => {
     if (!snapshot.result || persistedRef.current) return;
@@ -255,7 +325,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     if (snapshot.result.status !== 'completed') return;
     const passed = runPassed(snapshot.result, { challenge, passScore: requirement?.passScore });
     logger.info('piano.exercise-complete', {
-      id: instance.id, purpose: challenge ? 'challenge' : 'practice', matcher: snapshot.matcher,
+      id: subject?.id ?? null, purpose: challenge ? 'challenge' : 'practice', matcher: snapshot.matcher,
       score: snapshot.result.score,
       // `verdict.passed` is the engine's record and stays in the evidence
       // untouched — but on a non-floor rung it is always true, so it would
@@ -269,7 +339,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     // it can offer its own ways forward — and so a host counting failures
     // counts only attempts that actually happened.
     if (!passed) onFailed?.(snapshot.result);
-  }, [challenge, instance, logger, onFailed, persist, requirement, snapshot]);
+  }, [challenge, logger, onFailed, persist, requirement, snapshot, subject]);
 
   /**
    * The three states this run cannot leave on its own. Reported through an
@@ -285,8 +355,13 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
    * `null` means not hydrated; `'guest'` means hydrated and not permitted, and
    * only that second one is a real answer.
    */
+  // Both halves are set together by the load, so "settled with nothing" is the
+  // single condition — `instance === null` alone would report a resolved SCORE
+  // as a missing exercise, and the gate would fail open on a passage that had
+  // just arrived intact.
+  const notFound = instance === null && score === null;
   const unavailableReason = !access.allowed ? (currentUser ? 'no-access' : null)
-    : instance === null ? 'instance-not-found'
+    : notFound ? 'instance-not-found'
       : unrunnable ? 'unrunnable' : null;
   const reportedUnavailableRef = useRef(null);
   useEffect(() => {
@@ -452,15 +527,26 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   // Both degraded states must be checked BEFORE the skeleton. `runtime` stays
   // null whenever there is no attempt to build, so a `!runtime` test placed
   // first swallows them and spins on a skeleton forever.
-  if (instance === null) return <PianoEmpty message="Exercise not found. It may have been renamed." />;
+  if (notFound) return <PianoEmpty message="Exercise not found. It may have been renamed." />;
   if (unrunnable) return <PianoEmpty message="Cannot start this one. It is missing something the challenge needs — try another." />;
-  if (instance === undefined || (challenge && !requirement) || !runtime) return <SkeletonStage />;
+  if (instance === undefined || score === undefined || (challenge && !requirement)) return <SkeletonStage />;
+  /**
+   * A score is the ONE case that renders before its runtime exists — and it has
+   * to, because the runtime is built from what the stage below produces. A
+   * skeleton here would never lift: the engraver would never mount, so no
+   * expectation would ever arrive, so no attempt would ever be built.
+   */
+  if (!runtime && !score) return <SkeletonStage />;
 
-  const progress = assessmentProgress(snapshot);
-  const eventIndex = Math.min(progress.eventIndex, instance.events.length);
+  const progress = runtime ? assessmentProgress(snapshot) : { eventIndex: 0 };
+  // What the run is asking for, event by event. A bank instance authored them;
+  // a score's come from the compiled expectation, because the engraving is the
+  // only place they exist.
+  const askEvents = instance ? instance.events : (snapshot.expectation?.events ?? []);
+  const eventIndex = Math.min(progress.eventIndex, askEvents.length);
   const result = snapshot.result?.status === 'completed' ? snapshot.result : null;
   const phase = snapshot.status === 'prepared' ? 'ready' : snapshot.status === 'completed' ? 'done' : countInBeat ? 'countdown' : 'running';
-  const expected = instance.events.flatMap((event) => event.notes.map((note) => note.midi));
+  const expected = askEvents.flatMap((event) => event.notes.map((note) => note.midi));
   // Two consumers, two different things. ExerciseNotation's `wrong` prop is a
   // FLAG (it only ever colours the cursor note), so it gets a boolean — passing
   // the object would "work" by truthiness and rot the moment either side
@@ -478,7 +564,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
    * button are still the only way to take it.
    */
   const hostOwnsFailure = Boolean(onFailed) && !passed;
-  const currentEvent = instance.events[Math.min(eventIndex, instance.events.length - 1)] || instance.events[0];
+  const currentEvent = askEvents[Math.min(eventIndex, askEvents.length - 1)] || askEvents[0];
   const targetNotes = new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }]));
 
   /**
@@ -488,22 +574,28 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
    * requirement and do not know it exists.
    */
   const runTier = tierUsable ? tier : deriveRunTier(instance, selectedMode);
-  const stage = stageForTier(runTier, instance);
+  // A score's stage is the engraved passage at every tier. The tier still
+  // decides the READOUT (words or a percentage) — it just cannot decide the
+  // stage, because there is only one way to draw real sheet music.
+  const stage = score ? 'score' : stageForTier(runTier, instance);
   // Tier 1's reinforcement staff is offered, not forced: an ask that no single
   // clef holds, or that spans more than an octave, is still a complete ask on
   // lit keys, and a staff it cannot draw legibly helps nobody.
-  const askStaff = runTier >= 1 && staffFitsAsk(instance.events);
+  const askStaff = !score && runTier >= 1 && staffFitsAsk(instance.events);
   const staffShown = stage === 'keys' ? askStaff : true;
   // The bank splits a key across `key` (the root) and an axis (the quality);
   // `instanceKeySignature` re-joins them, so a minor instance is not spelled
   // with the sharps of its relative major.
   const accidental = accidentalForKey(instanceKeySignature(instance));
-  const staffNotes = eventsToStaffNotes(instance.events);
+  const staffNotes = eventsToStaffNotes(instance?.events);
   const staffViewBox = sequenceStaffViewBox(staffNotes.length);
   const cued = selectedMode === 'cued';
   // Only the ordered stages carry a keyboard footer: KeysAsk brings its own
   // keyboard as its primary surface, and two pianos on one screen is a puzzle.
-  const keyboardFooter = stage !== 'keys';
+  // An empty `expected` is the score stage before its engraving has landed —
+  // `Math.min()` of nothing is Infinity, and a keyboard drawn from that is a
+  // blank strip where the piano should be.
+  const keyboardFooter = stage !== 'keys' && expected.length > 0;
   // Tiers 0-1 are read by children who cannot read a percentage, and would not
   // be helped by one if they could. Pass or not, said in words.
   const scoreReadout = runTier >= 2;
@@ -512,13 +604,15 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage}>
       <header className="piano-exercise-run__head">
         <button type="button" className="piano-exercise-run__back" onClick={onExit}>Exit</button>
-        <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span><h1>{ask ?? instance.title}</h1></div>
+        <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span><h1>{ask ?? subject.title}</h1></div>
         <div className="piano-exercise-run__context">
           {/* Each chip only where it means something: a key names how a STAFF is
               spelled, so it is silent when there is no staff; a meter is what a
-              cued ask is counted in, and nothing at all in a free one. */}
-          {staffShown && instance.key && <span>Key of {instance.key}</span>}
-          {cued && instance.meter && <span>{instance.meter}</span>}
+              cued ask is counted in, and nothing at all in a free one. A score
+              carries neither: both are printed on the page the child is reading,
+              and a chip repeating them would be the kiosk talking over the music. */}
+          {staffShown && instance?.key && <span>Key of {instance.key}</span>}
+          {cued && instance?.meter && <span>{instance.meter}</span>}
           {challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}
         </div>
       </header>
@@ -564,11 +658,29 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
         {stage === 'notation' && (
           <ExerciseNotation instance={instance} eventIndex={eventIndex} wrong={isWrong} complete={phase === 'done' && passed} />
         )}
+        {stage === 'score' && (
+          /* The passage is BOTH the stage and the source of the ask: it engraves
+             the document, then hands up the expectation the attempt above is
+             built from. It is mounted before there is a runtime, deliberately —
+             see the guard above. */
+          <ScorePassage
+            musicXml={score.musicXml}
+            sourceId={score.id}
+            measures={score.measures}
+            onExpectation={takeScoreExpectation}
+            cursorIndex={eventIndex}
+            wrongMidi={lastWrong?.midi ?? null}
+          />
+        )}
         <CountInOverlay active={countInBeat != null} beat={countInBeat} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
           counts a measure; every other ask arms on the note it is asking for. */}
-      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
+      {/* A run with no attempt yet is a score still engraving. Saying "play the
+          first note" there would be a lie a child would act on: nothing is
+          listening, and a piano that ignores you is indistinguishable from a
+          broken one. */}
+      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
       {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
         <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>

@@ -2991,6 +2991,16 @@
     // typeface, not as a brighter note.
     path, rect, ellipse { stroke: #6b4423; stroke-width: 0; }
   }
+  // The note that was OWED when something else was played (the gate's score
+  // passage). It marks the note the child still has to find, not the one they
+  // played — a wrong key is very often not written on the page at all, so there
+  // is no notehead to mark for it. Same thing the ABC exercise stage says with
+  // `exercise-note-wrong`, in the vocabulary of an engraved score. Declared
+  // after `.piano-note-lit` so it wins on the cursor note, which carries both.
+  .piano-note-wrong {
+    --nh-wrong-color: #c0392b;
+    path, rect, ellipse, text { fill: var(--nh-wrong-color); animation: none; }
+  }
   // Held right now, and written here: the PRINTED note turns green. Declared last
   // so it wins over lit/hit/pending on a note carrying several of these classes —
   // "you are playing this correctly, right now" is the most immediate thing the

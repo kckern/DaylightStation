@@ -1,17 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ instance: vi.fn(), instances: vi.fn(), catalog: vi.fn() }));
+const h = vi.hoisted(() => ({
+  instance: vi.fn(), instances: vi.fn(), catalog: vi.fn(), text: vi.fn(),
+}));
 
 vi.mock('../Exercises/pianoLearningApi.js', () => ({
   pianoLearningApi: { instance: h.instance, instances: h.instances, catalog: h.catalog },
 }));
+// The raw-MusicXML fetch, doubled at the same boundary `SheetMusic.jsx` uses it
+// from. What is asserted below is the ENDPOINT as well as the payload: a score
+// fetched from anywhere but the media stream would be a second way to address
+// the same file, and the two would drift.
+vi.mock('../../../../../lib/api.mjs', async (importOriginal) => ({
+  ...(await importOriginal()),
+  DaylightAPIText: h.text,
+}));
 
 const { resolveGateMaterial, pickGateMaterial, keysInstance } = await import('./gateMaterial.js');
+
+const FOUR_BARS = '<?xml version="1.0"?><score-partwise><part id="P1"/></score-partwise>';
 
 const level = (over = {}) => ({ id: 'L', tier: 2, grading: null, material: [], ...over });
 
 describe('resolveGateMaterial', () => {
-  beforeEach(() => { h.instance.mockReset(); });
+  beforeEach(() => { h.instance.mockReset(); h.text.mockReset(); });
 
   it('loads an exercise instance from the bank', async () => {
     const loaded = { id: 'scales/c-major@hands=1', title: 'C major' };
@@ -47,13 +59,59 @@ describe('resolveGateMaterial', () => {
       .resolves.toEqual({ ok: false, error: 'instance-unavailable' });
   });
 
-  it('accepts score material as a known kind, and declines it for phase 1', async () => {
-    // The seam exists from day one (D10). Phase 1 has no ghost/notation for a
-    // score, so the caller skips it — it must not crash and must not be
-    // mistaken for a typo'd kind.
-    await expect(resolveGateMaterial({ kind: 'score', scoreId: 'bach/minuet' }))
-      .resolves.toEqual({ ok: false, error: 'score-material-phase-2' });
+  it('fetches the score’s MusicXML from the media stream, and carries the measure range with it', async () => {
+    h.text.mockResolvedValue(FOUR_BARS);
+
+    await expect(resolveGateMaterial({
+      kind: 'score', source: 'files:docs/sheet-music/four-bars.musicxml', measures: [2, 3],
+    })).resolves.toEqual({
+      ok: true,
+      kind: 'score',
+      score: {
+        id: 'files:docs/sheet-music/four-bars.musicxml',
+        musicXml: FOUR_BARS,
+        measures: [2, 3],
+      },
+    });
+    // The `files:` scheme is the CONTENT id's, not the media path's — the same
+    // strip `SheetMusic.jsx` does before it streams.
+    expect(h.text).toHaveBeenCalledWith(
+      `api/v1/proxy/media/stream/${encodeURIComponent('docs/sheet-music/four-bars.musicxml')}`,
+    );
     expect(h.instance).not.toHaveBeenCalled();
+  });
+
+  it('reports an unreachable score rather than throwing', async () => {
+    h.text.mockRejectedValue(new Error('HTTP 502: Bad Gateway'));
+
+    await expect(resolveGateMaterial({ kind: 'score', source: 'files:docs/sheet-music/four-bars.musicxml' }))
+      .resolves.toEqual({ ok: false, error: 'score-unavailable' });
+  });
+
+  it('treats an empty document as unavailable — a blank stave is not a passage', async () => {
+    h.text.mockResolvedValue('   ');
+
+    await expect(resolveGateMaterial({ kind: 'score', source: 'files:docs/sheet-music/four-bars.musicxml' }))
+      .resolves.toEqual({ ok: false, error: 'score-unavailable' });
+  });
+
+  it('does not go looking for a score the level did not name', async () => {
+    await expect(resolveGateMaterial({ kind: 'score', measures: [1, 4] }))
+      .resolves.toEqual({ ok: false, error: 'score-unavailable' });
+    expect(h.text).not.toHaveBeenCalled();
+  });
+
+  it('drops a measure range nothing could read, and asks for the whole score', async () => {
+    h.text.mockResolvedValue(FOUR_BARS);
+    const measuresFor = async (measures) => (await resolveGateMaterial({
+      kind: 'score', source: 'four-bars.musicxml', measures,
+    })).score.measures;
+
+    expect(await measuresFor([4, 2])).toBe(null); // backwards
+    expect(await measuresFor([0, 3])).toBe(null); // bar 0 is not a bar
+    expect(await measuresFor('1-4')).toBe(null); // not a pair at all
+    expect(await measuresFor(undefined)).toBe(null);
+    expect(await measuresFor([3, 3])).toEqual([3, 3]); // one bar is a passage
   });
 
   it('declines anything else, including nothing at all', async () => {
@@ -119,6 +177,7 @@ describe('pickGateMaterial — a level becomes something the run can grade', () 
     h.instance.mockReset();
     h.instances.mockReset();
     h.catalog.mockReset();
+    h.text.mockReset();
   });
 
   it('serves a keys level without touching the network', async () => {
@@ -174,28 +233,37 @@ describe('pickGateMaterial — a level becomes something the run can grade', () 
     expect(picked.material.instanceId).toBe('chords/triads@root=C');
   });
 
-  it('declines a score-only level with the phase-2 code, and never throws', async () => {
+  it('serves a score level, and does NOT fetch the document at pick time', async () => {
     const picked = await pickGateMaterial(
-      level({ material: [{ kind: 'score', source: 'fur-elise', measures: [1, 4] }] }), { pickIndex: 0, mode: 'free' },
+      level({ material: [{ kind: 'score', source: 'files:fur-elise.musicxml', measures: [1, 4] }] }),
+      { pickIndex: 0, mode: 'free' },
     );
-    expect(picked.ok).toBe(false);
-    expect(picked.error).toBe('score-material-phase-2');
-    expect(picked.skipped).toContainEqual({ kind: 'score', reason: 'score-material-phase-2' });
+
+    expect(picked.ok).toBe(true);
+    expect(picked.material).toEqual({ kind: 'score', source: 'files:fur-elise.musicxml', measures: [1, 4] });
+    // A score has no bank instance and never gains one: the passage IS the
+    // material, and its expectation comes from the engraver, not the bank.
+    expect(picked.instance).toBe(null);
+    expect(picked.skipped).toEqual([]);
+    // The document is fetched ONCE, by the run — a pick that fetched too would
+    // pull a whole score over the wire for a level the rotation may skip.
+    expect(h.text).not.toHaveBeenCalled();
+    expect(h.instance).not.toHaveBeenCalled();
   });
 
-  it('skips a declined spec and serves the level’s other material rather than failing the gate', async () => {
+  it('skips a score entry the level did not give a source, and serves its other material', async () => {
     h.instance.mockResolvedValue({ ok: true, status: 200, data: { id: 'scales/modes@root=C' } });
     // pickIndex 1 lands on the score entry; the level still has something to play.
     const picked = await pickGateMaterial(level({
       material: [
         { kind: 'exercise', instanceId: 'scales/modes@root=C' },
-        { kind: 'score', source: 'fur-elise', measures: [1, 4] },
+        { kind: 'score', measures: [1, 4] },
       ],
     }), { pickIndex: 1, mode: 'free' });
 
     expect(picked.ok).toBe(true);
     expect(picked.material.instanceId).toBe('scales/modes@root=C');
-    expect(picked.skipped).toContainEqual({ kind: 'score', reason: 'score-material-phase-2' });
+    expect(picked.skipped).toContainEqual({ kind: 'score', reason: 'no-score-source' });
   });
 
   it('reports, rather than throws, when nothing in the level resolves', async () => {

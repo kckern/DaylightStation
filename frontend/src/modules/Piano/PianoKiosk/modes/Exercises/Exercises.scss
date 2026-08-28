@@ -292,6 +292,27 @@
 .piano-exercise-run__score { padding: 0.5rem; border-radius: var(--r-md, 12px); background: #f5f5f3; color: #111; }
 .piano-exercise-run__score .abc-renderer { min-width: 100%; height: 100%; }
 
+/* The `score` material kind: a few bars of real engraved music standing at the
+   gate. Deliberately NOT a viewer — no scroll, no zoom, no transport. A gate
+   passage is short enough to fit the row, and anything that let a child move
+   the page would be one more thing between them and the game.
+
+   The bars either side of the passage stay ENGRAVED, only greyed back: erasing
+   them would leave the ask floating with no clue where in the piece it came
+   from, and a child who reads music reads the run-up. */
+.piano-score-passage {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+
+  .musicxml-renderer__svg { width: 100%; }
+
+  .piano-score-passage__dim {
+    path, rect, ellipse, text { fill: #b6b4ae; }
+  }
+}
+
 /* Tier 2: the sequence staff IS the screen. It fills the stage row, and the
    keyboard below it is reference, not content — so the footer gives back some
    of its height here. */
