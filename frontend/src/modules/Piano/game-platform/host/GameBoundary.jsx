@@ -15,9 +15,16 @@ import './GameBoundary.scss';
  * the game throw is still there. Going back to the picker is a real reset, and
  * it is also the thing a child can do without help.
  *
- * `resetKey` (the game id) clears the failure when the player navigates to a
- * different game, so one crashed game does not leave the boundary latched shut
- * over its neighbours.
+ * `resetKey` clears the failure when the player moves on — to a different game,
+ * or to a new match of the same one — so one crash does not leave the boundary
+ * latched shut over everything after it. It is an opaque token and its shape is
+ * the caller's business.
+ *
+ * `gameId` is separate FOR THE LOG LINE, and that separation is the point: the
+ * crash event's `game` field is what saved queries filter on
+ * (`data.game:"tetris"`), so it has to stay the plain game id no matter what
+ * the caller composes into the reset token. Folding the two together silently
+ * broke every such query the moment the token gained a match counter.
  */
 export default class GameBoundary extends Component {
   constructor(props) {
@@ -36,7 +43,7 @@ export default class GameBoundary extends Component {
 
   componentDidCatch(error, info) {
     getLogger().child({ component: 'piano-games' }).error('game.crash', {
-      game: this.props.resetKey ?? null,
+      game: this.props.gameId ?? this.props.resetKey ?? null,
       error: error?.message ?? String(error),
       // First frame only: the full component stack is pages long and the kiosk
       // ships these over a WebSocket.

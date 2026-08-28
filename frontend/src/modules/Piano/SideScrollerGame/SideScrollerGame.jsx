@@ -10,6 +10,7 @@ import { SideScrollerOverlay } from './components/SideScrollerOverlay.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { PLAYER_X } from './sideScrollerEngine.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import './SideScrollerGame.scss';
 
@@ -23,7 +24,13 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
     activePhases: ['IDLE', 'STARTING', 'PLAYING'], terminalPhases: ['GAME_OVER'], logger,
   });
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'side-scroller');
-  useAnyKeyToContinue({ enabled: game.phase === 'GAME_OVER', activeNotes, onContinue: game.startGame });
+  // A replay is a match boundary, so it goes through the host (D12) — this is
+  // the ONLY path back into a new run, and a gate that stood at entry but not
+  // here would be paid once and replayed past forever. `useAutoGameLifecycle`
+  // above keeps the raw `startGame`: that is the FIRST run after entering,
+  // which the gate has already been paid for.
+  const playAgain = useMatchRematch(game.startGame);
+  useAnyKeyToContinue({ enabled: game.phase === 'GAME_OVER', activeNotes, onContinue: playAgain });
 
   // Keyboard range from current level
   const levels = gameConfig?.levels ?? [];

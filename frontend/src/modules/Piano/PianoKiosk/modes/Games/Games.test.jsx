@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter, Routes, Route, resolvePath } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, resolvePath, useNavigate } from 'react-router-dom';
 
 const schoolAccess = vi.hoisted(() => ({ unlocked: true }));
 const gameBudget = vi.hoisted(() => ({ state: 'off', secondsLeft: 0, warn: false }));
@@ -85,12 +85,24 @@ const testConfig = {
 // id lives in the URL; assertions check the right view per path. `config`
 // defaults to testConfig (no gameLimit key) but a test can pass its own to
 // exercise the gameLimit-enabled wiring.
-function renderGames(initialEntry = '/games', currentUser = 'guest', config = testConfig) {
+/**
+ * A way to drive real navigation from a test. `MemoryRouter.initialEntries` is
+ * read once at mount, so re-rendering the tree with a different entry does not
+ * move the router — the only honest way to exercise a route change under a
+ * MOUNTED host is to navigate from inside it.
+ */
+function Navigator({ to }) {
+  const navigate = useNavigate();
+  return <button type="button" onClick={() => navigate(to)}>{`go:${to}`}</button>;
+}
+
+function renderGames(initialEntry = '/games', currentUser = 'guest', config = testConfig, navTargets = []) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <ActivePianoProvider pianoId="test" config={config}>
         <PianoUserContext.Provider value={{ currentUser, currentProfile: { id: currentUser, name: currentUser } }}>
           <PianoMidiProvider>
+            {navTargets.map((to) => <Navigator key={to} to={to} />)}
             <Routes>
               <Route path="games/*" element={<Games />} />
             </Routes>
@@ -354,6 +366,30 @@ describe('Games mode — match gate (gate 2)', () => {
     expect(screen.queryByTestId('game-gate')).toBeNull();
     expect(screen.getByTestId('probe-game')).toBeTruthy();
     expect(probe.armed).toBe(false);
+  });
+
+  it('re-arms when the game changes under a mounted host', () => {
+    // `:gameId` and `:gameId/:subRoute` render the same element, so React keeps
+    // this host instance across a params change and the initial `useState` read
+    // never runs again. A game→game move would otherwise walk into a match on a
+    // gate passed for a different game.
+    renderGames('/games/probe-game', 'learner1', gatedConfig, ['/games/tetris']);
+    fireEvent.click(screen.getByText('gate-pass'));
+    expect(probe.mounts).toBe(1);
+
+    fireEvent.click(screen.getByText('go:/games/tetris'));
+    expect(screen.getByTestId('game-gate')).toBeTruthy();
+  });
+
+  it('does not re-arm when only the game-owned sub-route changes', () => {
+    // A game switching its own tab is not a match boundary — re-arming there
+    // would put a challenge in front of every tab tap.
+    renderGames('/games/probe-game', 'learner1', gatedConfig, ['/games/probe-game/some-tab']);
+    fireEvent.click(screen.getByText('gate-pass'));
+
+    fireEvent.click(screen.getByText('go:/games/probe-game/some-tab'));
+    expect(screen.queryByTestId('game-gate')).toBeNull();
+    expect(screen.getByTestId('probe-game')).toBeTruthy();
   });
 
   it('keeps the school lock strictly above the gate (gate 1 before gate 2)', () => {

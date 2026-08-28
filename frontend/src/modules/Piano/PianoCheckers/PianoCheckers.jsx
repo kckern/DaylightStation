@@ -3,6 +3,7 @@ import { legalMoves, replayGame } from '@shared-gaming/rulesets/checkers/engine.
 import { chooseMove, CHECKERS_OPPONENTS } from '@shared-gaming/rulesets/checkers/opponent.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import { slideOffsetCells, slideDurationMs } from './moveSlide.js';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
@@ -304,7 +305,14 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     latchedRef.current = true;
   }, [activeNotes, commitMove, game, level, logger, notes, recordReading, selected, thinking]);
 
-  const restart = () => {
+  // The gate is consulted HERE, above `resetAuthority()`, and not only inside
+  // `resetSession()`. `resetAuthority()` closes the finished session and mints
+  // a fresh checkpointed one, writing its id into the
+  // `gaming:piano-checkers:active:{user}` index — so asking afterwards would
+  // leave an empty, unplayed board recorded as this player's live game every
+  // time the challenge is failed or left. Nothing is torn down until the host
+  // has said the next match may begin.
+  const restart = useMatchRematch(() => {
     setSelected(null);
     setMessage(null);
     setHint(null);
@@ -313,7 +321,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     latchedRef.current = activeNotes.size > 0;
     resetAuthority();
     resetSession();
-  };
+  });
 
   // No touchscreen on the office screen, so "Play again" is a dead end there:
   // the board is finished and the only way out is the launcher combo. Any fresh
