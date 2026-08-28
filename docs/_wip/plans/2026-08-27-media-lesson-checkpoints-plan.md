@@ -683,6 +683,31 @@ that risky. Apply:
 Mutation testing stays REQUIRED for anything with a behavioral invariant, at every
 weight — it has found a real gap in every task that used it.
 
+### Open contract questions for Task 9 and Task 18
+
+**1. The broadcast envelope key is inconsistent — resolve it, don't paper over it.**
+Task 10's `ScreenPlaybackAdapter` broadcasts `{ type: 'lesson.open', … }`; the existing
+reading-session broadcaster uses `{ event: … }`. `useMediaLessonSession` currently accepts
+BOTH keys, deliberately — a screen that ignored the wrong spelling would show a black TV
+with nothing in any log to explain it. That tolerance is a safety net, not a decision.
+Task 18 should pick one spelling, make both producers use it, and say so in the reference
+doc; the hook's tolerance can then stay as belt-and-braces.
+
+**2. Task 9 must CONFIRM the snapshot field names, not assume them.**
+`useMediaLessonSession` reads the lesson snapshot using names taken from this plan's Task 9
+description — `cleared` vs `clearedIds`, `learner` vs `learnerId`/`learnerName`. The hook
+accepts both spellings, but the router is the authority: whoever writes it must state the
+real shape and the hook's tolerance should then be narrowed to it. A silently-wrong field
+name reads as absent, which here means "nothing cleared" — the gate re-asks answered
+questions.
+
+**3. Task 15's wiring interface, from Task 13's implementer.**
+The widget MUST feed the gate's ruling back into the session hook via
+`noteCheckpointDue(dueCheckpoint | null)` and the playhead via `notePosition(seconds)`.
+Taking `dueCheckpoint` as a hook ARGUMENT is impossible: `useCheckpointGate` needs the
+session hook's `checkpoints`/`clearedIds`, so an argument would make the two hooks
+circular. `notePosition` writes a ref (10 Hz, no renders).
+
 ### Per-task verification checklist
 
 Before reporting a task complete, the implementer must have run and QUOTED:
