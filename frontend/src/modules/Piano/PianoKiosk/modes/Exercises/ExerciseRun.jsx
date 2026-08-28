@@ -17,9 +17,19 @@ import {
   pianoPersistenceOutcome,
 } from '../../../performance/attemptEvidence.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
+import KeysAsk from './KeysAsk.jsx';
+import { SvgSequenceStaff, sequenceStaffViewBox } from '../../../../MusicNotation/renderers/SvgSequenceStaff.jsx';
 import { pianoLearningApi } from './pianoLearningApi.js';
 import { prepareExerciseAssessment } from './assessment.js';
 import { resolveExerciseRunAccess } from './authorization.js';
+import {
+  accidentalForKey,
+  clefForInstance,
+  deriveRunTier,
+  eventsToStaffNotes,
+  staffFitsAsk,
+  stageForTier,
+} from './runPresentation.js';
 import { resolveGateMaterial } from '../Games/gateMaterial.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
@@ -82,6 +92,16 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   nothing to judge. A host that moves a difficulty ladder must only ever move
  *   it on this one: counting walk-aways as failures lets a player reach the
  *   easiest rung without playing a note.
+ * @param {string|null} [props.framing] Why this run is on screen, in the host's
+ *   own words ("Play this to start Tetris"). It REPLACES the intent label — a
+ *   child should read one reason, not two.
+ * @param {string|null} [props.ask] The one sentence describing what to play
+ *   ("Play the lit keys in order."). Stands where the exercise title otherwise
+ *   does; a practice caller omits it and keeps the title.
+ * @param {0|1|2|3|null} [props.tier] The rung's presentation band, which decides
+ *   the STAGE — not how the attempt is graded. Omit it and the run derives one
+ *   (see `deriveRunTier`): every caller that predates tiers keeps the screen it
+ *   had, apart from `ordering:'any'` material, which now gets lit keys.
  * @param {((reason:'no-access'|'instance-not-found'|'unrunnable')=>void)} [props.onUnavailable]
  *   This run has settled into a terminal state it cannot leave under its own
  *   power. All three render a `PianoEmpty` whose only affordance is the header
@@ -89,7 +109,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  */
-export default function ExerciseRun({ instanceId, material = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instanceId, material = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, framing = null, ask = null, tier = null, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -446,15 +466,83 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   const currentEvent = instance.events[Math.min(eventIndex, instance.events.length - 1)] || instance.events[0];
   const targetNotes = new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }]));
 
+  /**
+   * The rung decides what the screen is. A `tier` prop is the host's own
+   * answer; anything else derives one. The tier is a PRESENTATION band only —
+   * `passed`, the evidence, and every callback above are computed from the
+   * requirement and do not know it exists.
+   */
+  const runTier = Number.isInteger(tier) && tier >= 0 && tier <= 3
+    ? tier : deriveRunTier(instance, selectedMode);
+  const stage = stageForTier(runTier, instance);
+  // Tier 1's reinforcement staff is offered, not forced: an ask that no single
+  // clef holds, or that spans more than an octave, is still a complete ask on
+  // lit keys, and a staff it cannot draw legibly helps nobody.
+  const askStaff = runTier >= 1 && staffFitsAsk(instance.events);
+  const staffShown = stage === 'keys' ? askStaff : true;
+  const accidental = accidentalForKey(instance.key);
+  const staffNotes = eventsToStaffNotes(instance.events);
+  const staffViewBox = sequenceStaffViewBox(staffNotes.length);
+  const cued = selectedMode === 'cued';
+  // Only the ordered stages carry a keyboard footer: KeysAsk brings its own
+  // keyboard as its primary surface, and two pianos on one screen is a puzzle.
+  const keyboardFooter = stage !== 'keys';
+  // Tiers 0-1 are read by children who cannot read a percentage, and would not
+  // be helped by one if they could. Pass or not, said in words.
+  const scoreReadout = runTier >= 2;
+
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase}`}>
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage}>
       <header className="piano-exercise-run__head">
         <button type="button" className="piano-exercise-run__back" onClick={onExit}>Exit</button>
-        <div><span>{challenge ? 'Pass challenge' : 'Practice'}</span><h1>{instance.title}</h1></div>
-        <div className="piano-exercise-run__context"><span>{instance.key}</span><span>{instance.meter}</span>{challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}</div>
+        <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span><h1>{ask ?? instance.title}</h1></div>
+        <div className="piano-exercise-run__context">
+          {/* Each chip only where it means something: a key names how a STAFF is
+              spelled, so it is silent when there is no staff; a meter is what a
+              cued ask is counted in, and nothing at all in a free one. */}
+          {staffShown && instance.key && <span>Key of {instance.key}</span>}
+          {cued && instance.meter && <span>{instance.meter}</span>}
+          {challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}
+        </div>
       </header>
-      <div className="piano-exercise-run__score">
-        <ExerciseNotation instance={instance} eventIndex={eventIndex} wrong={isWrong} complete={phase === 'done' && passed} />
+      {/* Notation and the sequence staff are ink, and ink needs paper on a dark
+          screen — they keep the run's paper card. Lit keys are not ink, and a
+          keyboard on a cream card would read as a picture of a piano. */}
+      <div className={`piano-exercise-run__stage ${stage === 'keys' ? 'piano-exercise-run__ask' : 'piano-exercise-run__score'}`}>
+        {stage === 'keys' && (
+          <KeysAsk
+            events={instance.events}
+            cursorIndex={eventIndex}
+            activeNotes={activeNotes}
+            wrongMidi={lastWrong?.midi ?? null}
+            showStaff={askStaff}
+            accidental={accidental}
+          />
+        )}
+        {stage === 'sequence' && (
+          /* The staff carries its own aspect ratio (it depends on how many
+             notes the ask has), so the host's only job is to hand it a width
+             that cannot make it taller than the row. `--staff-aspect` is that
+             ratio; the sheet caps the width at `aspect × row height`, which is
+             what keeps the stretched staff lines and the uniformly-scaled
+             notation on top of each other. */
+          <div
+            className="piano-exercise-run__sequence"
+            style={{ '--staff-aspect': staffViewBox.width / staffViewBox.height }}
+          >
+            <SvgSequenceStaff
+              notes={staffNotes}
+              cursorIndex={eventIndex}
+              wrongMidi={lastWrong?.midi ?? null}
+              activeNotes={activeNotes}
+              clef={clefForInstance(instance)}
+              accidental={accidental}
+            />
+          </div>
+        )}
+        {stage === 'notation' && (
+          <ExerciseNotation instance={instance} eventIndex={eventIndex} wrong={isWrong} complete={phase === 'done' && passed} />
+        )}
         <CountInOverlay active={countInBeat != null} beat={countInBeat} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
@@ -462,11 +550,16 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
       {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
-        <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span><strong>{Math.round(result.score * 100)}%</strong></div>
-        <dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl>
+        <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
+        {/* A percentage is a reading task of its own, and the tiers below 2 are
+            for children who have not been given it yet. They are told the same
+            thing in words: what happened, and what to do about it. */}
+        {scoreReadout
+          ? <dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl>
+          : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : 'Some of the notes are still missing. Have another go.'}</p>}
         <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !passed && <button type="button" onClick={onExit}>Practice first</button>}{passed && <button type="button" onClick={() => onPassed?.(result)}>Continue</button>}</div>
       </section>}
-      <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={activeNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>
+      {keyboardFooter && <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={activeNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>}
     </section>
   );
 }
