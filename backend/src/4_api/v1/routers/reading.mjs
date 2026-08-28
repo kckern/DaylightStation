@@ -35,7 +35,6 @@
  */
 import express from 'express';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
-import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /** How many of yesterday's books the prompt names. A preschooler remembers a few. */
 const YESTERDAY_LIMIT = 4;
@@ -48,6 +47,23 @@ function dayBefore(studyDay) {
 }
 
 const trimmed = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+/**
+ * A 400 without importing a domain class.
+ *
+ * The `api-no-domains` rule forbids `4_api` from importing the domain layer,
+ * and `errorHandler.mjs` states the alternative in its own comment: routers
+ * that cannot import domain classes "stamp `err.status` by NAME at their
+ * boundary". `getHttpStatusByName` reads `status` first and `name` second, so
+ * this maps to 400 either way — the status and body are identical to what
+ * throwing the domain `ValidationError` produced.
+ */
+function badRequest(message) {
+  const err = new Error(message);
+  err.name = 'ValidationError';
+  err.status = 400;
+  return err;
+}
 
 /**
  * @param {object} deps
@@ -76,7 +92,7 @@ export function createReadingRouter({
    */
   router.post('/playing', asyncHandler(async (req, res) => {
     const location = trimmed(req.body?.location);
-    if (!location) throw new ValidationError('location is required to report playback');
+    if (!location) throw badRequest('location is required to report playback');
     const learnerId = trimmed(req.body?.learnerId);
     const contentId = trimmed(req.body?.contentId);
     const pickId = trimmed(req.body?.pickId);
@@ -138,7 +154,7 @@ export function createReadingRouter({
    */
   router.get('/summary', asyncHandler(async (req, res) => {
     const learnerId = trimmed(req.query?.learnerId);
-    if (!learnerId) throw new ValidationError('learnerId is required');
+    if (!learnerId) throw badRequest('learnerId is required');
 
     let status = null;
     try {

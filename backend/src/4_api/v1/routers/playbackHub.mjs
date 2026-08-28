@@ -25,9 +25,6 @@
 import { Router } from 'express';
 
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
-import { DomainInvariantError } from '#domains/core/errors/DomainInvariantError.mjs';
-import { EntityNotFoundError } from '#domains/core/errors/EntityNotFoundError.mjs';
 import { InfrastructureError } from '#system/utils/errors/InfrastructureError.mjs';
 
 const TERMINAL_SKIP_REASONS = new Set(['unreachable', 'not-found']);
@@ -64,9 +61,17 @@ function commandHttpStatus(result) {
  * @returns {number}
  */
 export function statusForError(err) {
-  if (err instanceof EntityNotFoundError) return 404;
-  if (err instanceof DomainInvariantError) return 422;
-  if (err instanceof ValidationError) return 400;
+  // Matched BY NAME, not by `instanceof`. The `api-no-domains` rule forbids
+  // `4_api` from importing the domain layer, and `errorHandler.mjs` states the
+  // alternative in its own comment — routers that cannot import domain classes
+  // key on `err.name` at their boundary, which is exactly what its
+  // `getHttpStatusByName` does. Every one of these three domain errors sets
+  // `this.name` in its constructor, so the mapping is unchanged for real
+  // instances; it additionally now works for a plain Error stamped with the
+  // same name, which is what a router without the import can throw.
+  if (err?.name === 'EntityNotFoundError') return 404;
+  if (err?.name === 'DomainInvariantError') return 422;
+  if (err?.name === 'ValidationError') return 400;
   if (err instanceof InfrastructureError) {
     return err?.code === 'HUB_TIMEOUT' ? 504 : 502;
   }
