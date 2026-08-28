@@ -117,6 +117,27 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
   // Pure, config-free path-segment guards (HTTP input validation stays here).
   const safeSegment = (s) => typeof s === 'string' && s.length > 0 && !s.includes('/') && !s.includes('\\') && !s.includes('..');
 
+  // Game-budget cumulativeSeconds guard. `Number(x) || 0` (the shape this
+  // came in with) collapses BOTH directions of bad input into something that
+  // silently corrupts the balance: garbage (`undefined`/`"abc"`/`null` — the
+  // last of those coerces via `Number(null) === 0`, so a loose `Number.isFinite`
+  // check alone still lets it through as a *silently accepted* zero-charge,
+  // not a rejection) folds to 0 — a swallowed debit, i.e. free game time
+  // (D16) — while `1e400`/oversized-but-finite input folds to `Infinity`/a
+  // huge finite number that `applySettle` adds into BOTH the learner total
+  // and the single GLOBAL `day.device.totalSeconds`, zeroing every learner's
+  // remaining device time for the rest of the day, not just the caller's.
+  // Requiring `typeof raw === 'number'` up front rejects every non-numeric
+  // shape outright (400); clamping below defends the numeric-but-absurd case
+  // (a huge finite value) to a day's worth of seconds so no single request
+  // can out-charge a plausible day.
+  const MAX_SETTLE_SECONDS = 86400;
+  const parseCumulativeSeconds = (body) => {
+    const raw = body?.cumulativeSeconds;
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) return null;
+    return Math.min(raw, MAX_SETTLE_SECONDS);
+  };
+
   // Write-gate: reject a musicxml payload the app can't read back. The real bar
   // (spec §4) is "well-formed score", NOT "has notes" — a brand-new song from
   // NewSongSetup's makeEmptyScore() is a valid score with 0 notes and must be
@@ -273,30 +294,47 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
   // --- Game-time budget (design 2026-08-27; D3: server is the source of truth) ---
   // Thin by design: the service already fails open on both "not wired" (this
   // router) and "misconfigured household" (inside the service) — these routes
-  // must not re-interpret either, only pass the shape through.
+  // must not re-interpret either, only pass the shape through. The
+  // unwired-service check stays first in every handler (matching the
+  // attempts routes' ordering) so an unwired feature short-circuits before
+  // any user/body validation runs.
   router.get('/users/:userId/game-budget', asyncHandler(async (req, res) => {
     if (!pianoGameBudgetService) return res.json({ enabled: false });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
     res.set('Cache-Control', 'no-store');
     res.json(await pianoGameBudgetService.balance({ learnerId: req.params.userId }));
   }));
   router.post('/users/:userId/game-budget/session', asyncHandler(async (req, res) => {
     if (!pianoGameBudgetService) return res.status(404).json({ error: 'game budget not configured' });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
     res.json(await pianoGameBudgetService.open({
       learnerId: req.params.userId, deviceId: req.body?.deviceId ?? null,
     }));
   }));
   router.post('/users/:userId/game-budget/session/:sessionId/settle', asyncHandler(async (req, res) => {
     if (!pianoGameBudgetService) return res.status(404).json({ error: 'game budget not configured' });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+    const cumulativeSeconds = parseCumulativeSeconds(req.body);
+    if (cumulativeSeconds === null) return res.status(400).json({ error: 'Invalid cumulativeSeconds' });
     res.json(await pianoGameBudgetService.settle({
-      sessionId: req.params.sessionId, learnerId: req.params.userId,
-      cumulativeSeconds: Number(req.body?.cumulativeSeconds) || 0,
+      sessionId: req.params.sessionId, learnerId: req.params.userId, cumulativeSeconds,
     }));
   }));
   router.post('/users/:userId/game-budget/session/:sessionId/close', asyncHandler(async (req, res) => {
     if (!pianoGameBudgetService) return res.status(404).json({ error: 'game budget not configured' });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+    const cumulativeSeconds = parseCumulativeSeconds(req.body);
+    if (cumulativeSeconds === null) return res.status(400).json({ error: 'Invalid cumulativeSeconds' });
     res.json(await pianoGameBudgetService.close({
-      sessionId: req.params.sessionId, learnerId: req.params.userId,
-      cumulativeSeconds: Number(req.body?.cumulativeSeconds) || 0,
+      sessionId: req.params.sessionId, learnerId: req.params.userId, cumulativeSeconds,
     }));
   }));
 
