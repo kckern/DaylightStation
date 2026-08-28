@@ -220,7 +220,7 @@ export const getHipCenter = (keypoints) => {
  * @param {Object} options - Configuration options
  * @returns {Object} - { keypoints: transformed keypoints, hipCenter }
  */
-export const toHipCenteredCoordinates = (keypoints, options = {}) => {
+export const toHipCenteredCoordinates = (keypoints, _options = {}) => {
   const hipCenter = getHipCenter(keypoints);
   if (!hipCenter) {
     return { keypoints, hipCenter: null };

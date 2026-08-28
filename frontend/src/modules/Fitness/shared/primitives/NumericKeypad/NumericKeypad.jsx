@@ -1,6 +1,5 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { AppIconButton } from '../AppIconButton';
 import './NumericKeypad.scss';
 
 const NumericKeypad = ({
@@ -9,11 +8,9 @@ const NumericKeypad = ({
   onSubmit,
   maxLength = 6,
   allowDecimal = true,
-  allowNegative = false,
   placeholder = '0',
   label,
   unit,
-  layout = 'standard',
   showBackspace = true,
   showClear = true,
   size = 'md',

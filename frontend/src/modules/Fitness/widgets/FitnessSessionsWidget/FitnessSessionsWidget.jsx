@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Text, Stack } from '@mantine/core';
 import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
@@ -26,17 +26,6 @@ const StravaIcon = ({ size = 12, color = '#fff' }) => (
   </svg>
 );
 
-const WorkoutPlaceholder = () => (
-  <div className="session-poster session-poster--placeholder">
-    <svg viewBox="0 0 48 48" fill="none" className="session-poster__icon">
-      <rect x="6" y="20" width="6" height="8" rx="1.5" fill="currentColor" opacity="0.5" />
-      <rect x="36" y="20" width="6" height="8" rx="1.5" fill="currentColor" opacity="0.5" />
-      <rect x="2" y="21" width="4" height="6" rx="1" fill="currentColor" opacity="0.35" />
-      <rect x="42" y="21" width="4" height="6" rx="1" fill="currentColor" opacity="0.35" />
-      <rect x="12" y="22" width="24" height="4" rx="1" fill="currentColor" opacity="0.4" />
-    </svg>
-  </div>
-);
 
 /**
  * Build display URL from a media ID that may or may not be namespaced.
@@ -310,7 +299,7 @@ export default function FitnessSessionsWidget() {
   const containerRef = useRef(null);
 
   const loading = rawSessions === null;
-  const sessions = rawSessions?.sessions || [];
+  const sessions = useMemo(() => rawSessions?.sessions || [], [rawSessions]);
 
   // Reflect the open session in the URL so it is deep-linkable / shareable:
   // /fitness/{screen}/session-{id}. Passing null returns to the bare screen path.

@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
-} from './teacherUrl.js';
+import { parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSessionPath }  from './teacherUrl.js';
 
 describe('teacher workspace URL model', () => {
   it('lands roots on the dashboard and rejects malformed paths', () => {

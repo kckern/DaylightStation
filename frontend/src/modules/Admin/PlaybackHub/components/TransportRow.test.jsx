@@ -5,11 +5,9 @@ import { TransportRow } from './TransportRow.jsx';
 
 // Stub LabeledContentPicker so we can drive its onChange directly.
 let pickerOnChangeRef = null;
-let pickerValueRef = null;
 vi.mock('./LabeledContentPicker.jsx', () => ({
   LabeledContentPicker: function PickerStub({ value, onChange, placeholder }) {
     pickerOnChangeRef = onChange;
-    pickerValueRef = value;
     return (
       <input
         data-testid="picker-stub"
@@ -61,7 +59,6 @@ describe('TransportRow', () => {
 
   beforeEach(() => {
     pickerOnChangeRef = null;
-    pickerValueRef = null;
     mutations = {
       sendCommand: vi.fn().mockResolvedValue({ ok: true }),
     };

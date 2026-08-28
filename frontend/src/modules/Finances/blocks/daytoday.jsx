@@ -198,7 +198,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
         zIndex: 2,
         cursor: setDrawerContent ? 'pointer' : undefined,
         events: setDrawerContent ? {
-          click: function (e) {
+          click: function (_e) {
             const header = `Day-to-day transactions for ${moment(inferredMonth).format('MMMM YYYY')}`;
             setDrawerContent({
               type: 'daytoday-month',
@@ -225,7 +225,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
 
 export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
 
-  const dayToDayBudget = budget.dayToDayBudget || {};
+  const dayToDayBudget = useMemo(() => budget.dayToDayBudget || {}, [budget.dayToDayBudget]);
   const months = Object.keys(dayToDayBudget);
   const currentMonth = moment().format("YYYY-MM");
   const [activeMonth, setActiveMonth] = useState(currentMonth);
@@ -243,11 +243,10 @@ export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
     setActiveMonth(available[available.length - 1] ?? Object.keys(dayToDayBudget)[0]);
   }, [activeMonth, dayToDayBudget, currentMonth]);
 
-  const monthData = dayToDayBudget[activeMonth] || {};
   const today = useToday();
   const options = useMemo(
-    () => buildDayToDayBudgetOptions(monthData, setDrawerContent, { now: today }),
-    [monthData, setDrawerContent, today]
+    () => buildDayToDayBudgetOptions(dayToDayBudget[activeMonth] || {}, setDrawerContent, { now: today }),
+    [dayToDayBudget, activeMonth, setDrawerContent, today]
   );
 
   if (Object.keys(budget.dayToDayBudget || {}).length === 0) {

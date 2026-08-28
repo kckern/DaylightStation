@@ -166,7 +166,7 @@ describe('CycleGameContainer — mid-race checkpoint write (audit C1)', () => {
     await act(async () => {
       for (let i = 0; i < 40; i += 1) {
         nowMs += RACE_TICK_MS;
-        // eslint-disable-next-line no-await-in-loop
+         
         await vi.advanceTimersByTimeAsync(RACE_TICK_MS);
       }
     });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, Title, Stack, Group, Badge } from '@mantine/core';
+import { Text, Title, Stack, Badge } from '@mantine/core';
 import { DashboardCard } from '../../Fitness/widgets/_shared/DashboardCard';
 
 export default function SessionsCard({ sessions, onClick }) {

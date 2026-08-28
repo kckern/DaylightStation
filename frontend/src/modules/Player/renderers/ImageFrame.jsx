@@ -99,10 +99,10 @@ export function computeZoomTarget({ people, focusPerson, zoom }) {
 export function ImageFrame({
   media,
   advance,
-  clear,
-  shader,
+  clear: _clear,
+  shader: _shader,
   resilienceBridge,
-  ignoreKeys,
+  ignoreKeys: _ignoreKeys,
   nextMedia,
 }) {
   const containerRef = useRef(null);
@@ -137,7 +137,7 @@ export function ImageFrame({
   const effect = slideshow.effect || 'kenburns';
   const focusPerson = slideshow.focusPerson || null;
   const people = useMemo(() => media?.metadata?.people || [], [media?.metadata?.people]);
-  const hasFaces = useMemo(() => people.some(p => p.faces?.length > 0), [people]);
+  useMemo(() => people.some(p => p.faces?.length > 0), [people]);
 
   // ── Performance instrumentation ──────────────────────────────────────
   // Session logger persists to media/logs/slideshow/*.jsonl via backend.
@@ -605,9 +605,10 @@ export function ImageFrame({
 
   // Full cleanup on unmount
   useEffect(() => {
+    const animations = animationRefs.current;
     return () => {
-      if (animationRefs.current.a) animationRefs.current.a.cancel();
-      if (animationRefs.current.b) animationRefs.current.b.cancel();
+      if (animations.a) animations.a.cancel();
+      if (animations.b) animations.b.cancel();
       if (timerRef.current) clearTimeout(timerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };

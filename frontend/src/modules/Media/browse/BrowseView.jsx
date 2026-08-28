@@ -118,7 +118,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
       )}
       {error && (
         <Alert data-testid="browse-view-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-          Couldn't load this section. Check the connection and try again.
+          Couldn&apos;t load this section. Check the connection and try again.
           <details className="error-detail">
             <summary>Technical details</summary>
             {error.message}

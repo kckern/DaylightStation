@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useMemo } from 'react';
 
 /**
  * SingleThumbnailButton - Gesture handler for thumbnail interactions
@@ -24,8 +24,6 @@ export default function SingleThumbnailButton({
   onZoom,
   enableZoom = true,
   children,
-  globalStart = 0,
-  globalEnd = null,
   seekTime,      // Explicit seek target (defaults to rangeStart)
   labelTime,     // Time shown on label (for zoom signal)
   telemetryMeta = null,
@@ -40,7 +38,10 @@ export default function SingleThumbnailButton({
     Number.isFinite(rangeStart) && 
     Number.isFinite(rangeEnd) && 
     rangeEnd > rangeStart;
-  const zoomBounds = hasValidRange ? [rangeStart, rangeEnd] : null;
+  const zoomBounds = useMemo(
+    () => (hasValidRange ? [rangeStart, rangeEnd] : null),
+    [hasValidRange, rangeStart, rangeEnd],
+  );
 
   /**
    * Resolve the EXACT seek target
@@ -184,7 +185,7 @@ export default function SingleThumbnailButton({
   /**
    * Handle touch start - initiates long press for zoom
    */
-  const handleTouchStart = useCallback((e) => {
+  const handleTouchStart = useCallback((_e) => {
     if (!enableZoom) return;
     longPressTriggered.current = false;
     gestureHandledRef.current = false;

@@ -1,13 +1,6 @@
 import React, { useState } from 'react';
-import {
-  Group, Text, ActionIcon, Badge, Collapse, TextInput, Menu
-} from '@mantine/core';
-import {
-  IconChevronDown, IconChevronRight, IconSettings,
-  IconTrash, IconDotsVertical, IconGripVertical,
-  IconArrowsShuffle, IconSortAscending,
-  IconArrowUp, IconArrowDown
-} from '@tabler/icons-react';
+import { Group, Text, ActionIcon, Badge, TextInput, Menu }  from '@mantine/core';
+import { IconChevronDown, IconChevronRight, IconSettings, IconTrash, IconDotsVertical, IconGripVertical, IconArrowUp, IconArrowDown }  from '@tabler/icons-react';
 
 function SectionHeader({
   section,

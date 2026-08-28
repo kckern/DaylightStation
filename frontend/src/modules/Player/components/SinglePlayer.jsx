@@ -38,7 +38,6 @@ export function SinglePlayer(props = {}) {
     contentId: contentIdProp,
     plex,
     media,
-    rate,
     advance,
     open,
     clear,
@@ -326,7 +325,7 @@ export function SinglePlayer(props = {}) {
 
       setMediaInfo(withCap);
       setIsReady(true);
-    } else if (!!open) {
+    } else if (open) {
       setGoToApp(open);
     }
   }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.seconds, play?.resume, plexClientSession, remountDiagnostics]);
@@ -366,8 +365,6 @@ export function SinglePlayer(props = {}) {
     };
   }, [showVideoMeta, mediaInfo?.id, mediaInfo?.mediaUrl]);
 
-  if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
-  
   // Calculate plexId from available sources - plex prop is passed directly from Player
   const initialPlexId = plex || media || mediaInfo?.assetId || mediaInfo?.key || mediaInfo?.plex || null;
 
@@ -493,6 +490,8 @@ export function SinglePlayer(props = {}) {
       </pre>
     );
   }
+
+  if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
 
   const playerBody = (
     <>

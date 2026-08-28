@@ -157,7 +157,7 @@ export function useMediaResilience({
     epsilonSeconds
   });
 
-  const { targetTimeSeconds, setTargetTimeSeconds, consumeTargetTimeSeconds } = usePlaybackSession({
+  const { targetTimeSeconds, consumeTargetTimeSeconds } = usePlaybackSession({
     sessionKey: playbackSessionKey
   });
 
@@ -792,14 +792,9 @@ export function useMediaResilience({
     isStalled,
     isRecovering,
     isStartup,
-    isSeeking,
-    mediaElSnapshot.seeking,
     effectiveSeeking,
-    isBumpSeek,
     isBuffering,
     isUserPaused,
-    seekGraceActive,
-    seekGraceExpired,
     // Every field of mediaElSnapshot that reaches mediaDetails, `duration`
     // included — it was missing. Nothing observable depended on it, because
     // triggerRecovery's identity changes each render and drags the memo along,

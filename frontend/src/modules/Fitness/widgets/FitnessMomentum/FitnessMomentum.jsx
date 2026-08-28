@@ -104,7 +104,6 @@ export default function FitnessMomentum() {
   // skeleton (same layout as loaded) so hydration doesn't reflow the cards.
   const rawSessions = useScreenData('sessions');
   const loading = rawSessions == null;
-  const sessions = Array.isArray(rawSessions) ? rawSessions : (rawSessions?.sessions || []);
   const { roster, householdLabel, windowDays, compareWeeks } = useFitnessScreen();
 
   // Short, family-friendly names via the device-agnostic resolver ("Dad" etc.).
@@ -117,8 +116,12 @@ export default function FitnessMomentum() {
   }, [roster]);
 
   const data = useMemo(
-    () => computeMomentum(sessions, roster, { householdLabel, windowDays, compareWeeks }),
-    [sessions, roster, householdLabel, windowDays, compareWeeks],
+    () => computeMomentum(
+      Array.isArray(rawSessions) ? rawSessions : (rawSessions?.sessions || []),
+      roster,
+      { householdLabel, windowDays, compareWeeks },
+    ),
+    [rawSessions, roster, householdLabel, windowDays, compareWeeks],
   );
 
   logger.sampled('momentum.render', { members: data.members.length, householdMin: data.household.effortMinutes },

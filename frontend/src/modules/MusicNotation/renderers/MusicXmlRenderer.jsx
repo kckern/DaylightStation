@@ -164,6 +164,10 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         if (!stale()) { setRendering(false); setExtracting(false); }
       }
     })();
+    // renderSeq.current must be read live here — it's the stale-request guard
+    // itself, compared against the `seq` this run captured. Snapshotting it
+    // would defeat the check.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { if (renderSeq.current === seq) renderSeq.current++; };
   }, [musicXml, width, flow, scale, transpose, onLayout, onProgress, onReady, resizeKey]);
 

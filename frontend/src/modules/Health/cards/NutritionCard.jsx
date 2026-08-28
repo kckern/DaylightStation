@@ -22,7 +22,7 @@ export default function NutritionCard({ nutrition, onRefresh, onClick }) {
       .catch(err => {
         logger.warn('nutrition.catalog.load_failed', { error: err?.message });
       });
-  }, [inputState]); // refresh after input cycle
+  }, [inputState, logger]); // refresh after input cycle
 
   const handleSubmit = useCallback(async () => {
     if (!inputText.trim()) return;
@@ -45,7 +45,7 @@ export default function NutritionCard({ nutrition, onRefresh, onClick }) {
       logger.error('nutrition.input.failed', { error: err?.message });
       setInputState('idle');
     }
-  }, [inputText]);
+  }, [inputText, logger]);
 
   const handleAccept = useCallback(async () => {
     logger.info('nutrition.input.accepted', { itemCount: reviewItems.length, hasCallback: !!acceptCallbackData });

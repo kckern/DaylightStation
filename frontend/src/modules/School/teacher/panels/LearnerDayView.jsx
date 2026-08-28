@@ -164,7 +164,7 @@ function AgendaDispatch({ learnerId, learnerName, studyDay }) {
           <p>The planner can&rsquo;t build this day yet</p>
           <ul>
             {preview.errors.map((error, index) => (
-              // eslint-disable-next-line react/no-array-index-key -- order stable within one preview
+               
               <li key={index}>{typeof error === 'string' ? error : error?.message ?? 'The planner refused an item.'}</li>
             ))}
           </ul>
@@ -293,7 +293,7 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
         {(agenda.data?.errors ?? []).length > 0 && (
           <ul className="teacher-workspace__alerts">
             {agenda.data.errors.map((error, index) => (
-              // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
+               
               <li key={index}>{typeof error === 'string' ? error : error?.message ?? 'The planner refused an item.'}</li>
             ))}
           </ul>

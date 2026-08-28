@@ -95,21 +95,21 @@ const AppModal = ({
   );
 };
 
-AppModal.Header = ({ children, className }) => (
-  <div className={`app-modal__header ${className || ''}`}>{children}</div>
-);
+AppModal.Header = function AppModalHeader({ children, className }) {
+  return <div className={`app-modal__header ${className || ''}`}>{children}</div>;
+};
 
-AppModal.Body = ({ children, className }) => (
-  <div className={`app-modal__body ${className || ''}`}>{children}</div>
-);
+AppModal.Body = function AppModalBody({ children, className }) {
+  return <div className={`app-modal__body ${className || ''}`}>{children}</div>;
+};
 
-AppModal.Footer = ({ children, className }) => (
-  <div className={`app-modal__footer ${className || ''}`}>{children}</div>
-);
+AppModal.Footer = function AppModalFooter({ children, className }) {
+  return <div className={`app-modal__footer ${className || ''}`}>{children}</div>;
+};
 
-AppModal.Actions = ({ children, className }) => (
-  <div className={`app-modal__actions ${className || ''}`}>{children}</div>
-);
+AppModal.Actions = function AppModalActions({ children, className }) {
+  return <div className={`app-modal__actions ${className || ''}`}>{children}</div>;
+};
 
 AppModal.propTypes = {
   isOpen: PropTypes.bool,

@@ -1,6 +1,6 @@
 import { Stack, Paper, Text, Group, Badge, Progress, Timeline, Button, Select } from '@mantine/core';
 import { useState } from 'react';
-import { IconTarget, IconFlag, IconHistory } from '@tabler/icons-react';
+import { IconFlag, IconHistory } from '@tabler/icons-react';
 import { useGoalDetail, useGoals } from '../../hooks/useLifePlan.js';
 import { goalStateColor } from '../../theme/semantics.js';
 import { LifePage, LoadingState } from '../../components/index.js';

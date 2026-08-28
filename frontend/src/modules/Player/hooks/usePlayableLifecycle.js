@@ -32,7 +32,7 @@ export function usePlayableLifecycle({
   mediaAccess = null
 } = {}) {
   // Report resolved metadata when meta changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useEffect(() => {
     if (meta) {
       onResolvedMeta?.(meta);
@@ -40,7 +40,7 @@ export function usePlayableLifecycle({
   }, [meta]);
 
   // Register media access on mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useEffect(() => {
     onRegisterMediaAccess?.(mediaAccess || NO_MEDIA_ACCESS);
   }, []);

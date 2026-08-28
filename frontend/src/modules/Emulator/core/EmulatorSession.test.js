@@ -152,7 +152,6 @@ describe('createEmulatorSession.start', () => {
 
   it('falls back to game.system for core when engineConfig.core absent', async () => {
     const engine = makeEngine();
-    const { session } = setup({ engine });
     // override engineConfig via fresh session
     const s = createEmulatorSession({
       engine,

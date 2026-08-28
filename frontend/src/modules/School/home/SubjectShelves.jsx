@@ -83,7 +83,7 @@ export default function SubjectShelves({ shelves }) {
       {bands.map((band, i) => {
         const w = bandTileWidth(band);
         return (
-          // eslint-disable-next-line react/no-array-index-key
+           
           <div className="school-shelf-band" key={i} style={w ? { '--tile-w': `${w}px` } : undefined}>
             {band.shelves.map((s) => <KindShelf key={s.kindId} shelf={s} />)}
           </div>

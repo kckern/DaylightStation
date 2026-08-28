@@ -15,7 +15,7 @@ import { LogDecadeView } from './LogDecadeView.jsx';
  */
 export function LogBrowser({ username }) {
   const [scope, setScope] = useState('week');
-  const [selectedDate, setSelectedDate] = useState(
+  const [selectedDate] = useState(
     () => new Date().toISOString().slice(0, 10)
   );
   const [categories, setCategories] = useState([]);

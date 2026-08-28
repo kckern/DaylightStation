@@ -121,8 +121,8 @@ export const COLOR_SCHEMES = {
   rainbow: {
     id: 'rainbow',
     name: 'Rainbow',
-    getLineColor: (bodyPart, confidence, isLeft, isRight) => getRainbowColor(bodyPart),
-    getPointColor: (bodyPart, confidence, isLeft, isRight) => getRainbowColor(bodyPart),
+    getLineColor: (bodyPart, _confidence, _isLeft, _isRight) => getRainbowColor(bodyPart),
+    getPointColor: (bodyPart, _confidence, _isLeft, _isRight) => getRainbowColor(bodyPart),
   },
   'solid-green': {
     id: 'solid-green',

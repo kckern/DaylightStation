@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Badge } from '@mantine/core';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import getLogger from '@/lib/logging/Logger.js';
@@ -131,7 +131,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     participantRoster,
     getUserByDevice,
     userCollections,
-    fitnessConfiguration, // Household config SSOT for user display labels
     deviceOwnership,
     getDisplayName, // Phase 4 SSOT: Use this instead of hrDisplayNameMap
   } = fitnessContext;
@@ -143,16 +142,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   }, [fitnessDevices, contextAllDevices]);
 
   // Phase 1 SSOT: Use canonical participant list from context
-  const heartRateDevices = activeHeartRateParticipants || [];
-  
-  // Phase 2 SSOT: Use domain selectors from context
-  const rpmDevices = contextRpmDevices || [];
-  const equipmentDevices = contextEquipmentDevices || [];
-
+    
   const zoneProfiles = useZoneProfiles();
 
   const normalizedCollections = userCollections || {};
-  const configuredUsers = normalizedCollections.all || [];
 
   const registeredUsers = React.useMemo(() => {
     if (users instanceof Map) {
@@ -210,9 +203,9 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       addKey(descriptor.groupLabel);
       addKey(descriptor.id); // Also map the id itself
     };
-    configuredUsers.forEach(addEntry);
+    (normalizedCollections.all || []).forEach(addEntry);
     return map;
-  }, [configuredUsers]);
+  }, [normalizedCollections.all]);
 
   const getConfiguredProfileId = React.useCallback((name) => {
     if (!name) return null;
@@ -370,7 +363,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   }, [allDevices]);
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
-  const measureRef = React.useRef(null); // Hidden ref for measurement
+  React.useRef(null); // Hidden ref for measurement
   const rpmGroupRef = React.useRef(null);
 
   // Build lookup maps for heart rate device colors and user assignments
@@ -397,7 +390,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   }, [getDisplayName]);
 
   // Build color -> zoneId map from zones config
-  const colorToZoneId = React.useMemo(() => {
+  React.useMemo(() => {
     const map = {};
     (zones || []).forEach(z => {
       if (z?.color && z?.id) {
@@ -591,8 +584,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const hrDevices = [...(activeHeartRateParticipants || [])];
 
     // Phase 2 SSOT: Use domain selectors from context instead of filtering allDevices
-    const rpmDevicesCopy = [...rpmDevices];
-    const otherDevices = [...equipmentDevices];
+    const rpmDevicesCopy = [...(contextRpmDevices || [])];
+    const otherDevices = [...(contextEquipmentDevices || [])];
 
     // RPM: Sort by appearance time (stable deviceId order), active devices first
     rpmDevicesCopy.sort((a, b) => {
@@ -625,7 +618,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     setSortedDevices(combined);
     // resolveCanonicalUserName/lookupZoneProgress dropped from deps with the HR
     // comparator that used them. equipmentMap was already unused here.
-  }, [equipmentMap, activeHeartRateParticipants, rpmDevices, equipmentDevices]);
+  }, [equipmentMap, activeHeartRateParticipants, contextRpmDevices, contextEquipmentDevices]);
 
   // Decide vertical vs horizontal layout for user (heart_rate) cards
   useLayoutEffect(() => {
@@ -899,7 +892,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 ? Math.max(0, Math.min(1, progressInfo.progress))
                 : null;
               const shouldShowProgressBar = Boolean(progressInfo && (progressInfo.showBar || normalizedProgress !== null));
-              const resolvedHeartRate = Number.isFinite(userVitalsEntry?.heartRate)
+              Number.isFinite(userVitalsEntry?.heartRate)
                 ? userVitalsEntry.heartRate
                 : (Number.isFinite(participantEntry?.heartRate)
                   ? participantEntry.heartRate

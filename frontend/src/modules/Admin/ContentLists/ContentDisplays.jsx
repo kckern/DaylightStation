@@ -250,7 +250,7 @@ function buildSubtitle(item) {
 }
 
 // Shared content item display - used in both table rows and combobox options
-function ContentItemDisplay({ item, isHighlighted, isCurrent, showChevron, onChevronClick, compact = false }) {
+function ContentItemDisplay({ item, isHighlighted: _isHighlighted, isCurrent, showChevron, onChevronClick, compact = false }) {
   const sourceColor = SOURCE_COLORS[item.source] || SOURCE_COLORS.default;
   const isContainer = isContainerItem(item);
   const subtitle = buildSubtitle(item);

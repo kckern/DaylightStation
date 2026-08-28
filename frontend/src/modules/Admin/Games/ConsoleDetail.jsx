@@ -35,7 +35,7 @@ const ConsoleDetail = () => {
         setGames(data?.items || data || []);
         setLoading(false);
       });
-  }, [consoleId]);
+  }, [consoleId, logger]);
 
   // Default to the only target rather than making the parent pick from a list of one.
   useEffect(() => {

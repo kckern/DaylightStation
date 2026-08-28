@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Paper, Text, Group, Button, Collapse } from '@mantine/core';
 import getLogger from '../../../lib/logging/Logger.js';
 import './GameScheduleEditor.scss';

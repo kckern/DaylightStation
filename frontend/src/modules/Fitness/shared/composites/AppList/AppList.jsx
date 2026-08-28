@@ -1,6 +1,5 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { AppIconButton } from '../../primitives';
 import './AppList.scss';
 
 const AppList = ({

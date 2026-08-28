@@ -86,7 +86,7 @@ export function DetailSkeleton({ audio = false }) {
   );
 }
 
-export default function MaterialDetail({ material, userId, onBack, onPlay, notice, sectionLabel, initialUnitId = null }) {
+export default function MaterialDetail({ material, userId, onBack: _onBack, onPlay, notice, sectionLabel: _sectionLabel, initialUnitId = null }) {
   const [units, setUnits] = useState(null);
   const [loadError, setLoadError] = useState(false); // units fetch failed/timed out (vs genuinely empty)
   const [reloadKey, setReloadKey] = useState(0);

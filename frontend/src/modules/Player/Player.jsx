@@ -677,7 +677,7 @@ const Player = forwardRef(function Player(props, ref) {
       forceSinglePlayerRemount(input, { scheduledDelayMs: backoffMs, attempt });
     }, backoffMs);
     // See forceSinglePlayerRemount: playbackMetrics is read via ref, not closed over.
-  }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playerType, resolvedWaitKey, resolvedWaitKeyFields]);
+  }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playerType, resolvedWaitKeyFields]);
 
   // Storm brake for the key below. It belongs on the KEY, not on the explicit
   // remount path: during the 2026-08-16 storm only three of roughly three hundred
@@ -828,7 +828,6 @@ const Player = forwardRef(function Player(props, ref) {
       mediaResilienceConfig: legacyConfig,
       onResilienceState: legacyOnState,
       mediaResilienceRef: legacyControllerRef,
-      key: _unusedKey,
       ...rest
     } = singlePlayerProps;
     return {
@@ -904,7 +903,6 @@ const Player = forwardRef(function Player(props, ref) {
       forceRemount,
       seekToIntentMs,
       refreshUrl,
-      meta: _ignoredMeta,
       ...rest
     } = options || {};
 
@@ -976,7 +974,7 @@ const Player = forwardRef(function Player(props, ref) {
       trigger: triggerDetails,
       conditions
     });
-  }, [scheduleSinglePlayerRemount, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey, resolvedWaitKeyFields, activeSource, resolvedMeta]);
+  }, [scheduleSinglePlayerRemount, transportAdapter, playerType, currentMediaGuid, resolvedWaitKeyFields, activeSource, resolvedMeta]);
 
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
     if (isQueue && hasNextQueueItem) {
@@ -1004,7 +1002,7 @@ const Player = forwardRef(function Player(props, ref) {
   // suppress the resilience overlay which would never exit startup.
   const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
 
-  const { overlayProps, state: resilienceState, cancelDeadline, requestRecovery } = useMediaResilience({
+  const { overlayProps, cancelDeadline, requestRecovery } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
     registrationSignal: mediaAccess,
     meta: effectiveMeta,

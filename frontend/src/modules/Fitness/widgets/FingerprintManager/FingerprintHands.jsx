@@ -12,7 +12,7 @@ const HAND_PATH = 'M567.52,142.808c-18.1-2.46-27.659,12.74-28.846,29.688l-13.495
 // We crop to the upper hand (fingers + thumb), trimming the side margins AND the
 // wrist, so fingertips render large and spread in a short row.
 const VIEW_BOX = '140 0 480 495';
-const VIEW_ASPECT = 480 / 495; // for the hand box aspect-ratio (must match viewBox)
+ // for the hand box aspect-ratio (must match viewBox)
 
 // Fingertip pad coordinates as % of the CROPPED box (recomputed from the
 // full-box calibration thumb[22,44] index[41,13] middle[51,9] ring[61,14]

@@ -20,7 +20,7 @@ const decode = (value) => {
 
 const STUDY_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-export function teacherBaseFor(pathname = '') {
+export function teacherBaseFor(_pathname = '') {
   return TEACHER_BASE;
 }
 

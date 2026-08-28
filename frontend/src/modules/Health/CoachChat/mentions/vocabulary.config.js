@@ -77,7 +77,7 @@ export const FALLBACK_SUGGEST_ENDPOINT = '/api/v1/health/mentions/all';
  * the suggestion's payload as returned by the backend.
  */
 export function buildAttachment(suggestion) {
-  const { group, slug, label, value, has } = suggestion;
+  const { group, slug, label, value } = suggestion;
   if (group === 'period') {
     return { type: 'period', value, label };
   }

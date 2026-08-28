@@ -58,17 +58,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import SurroundFrame from './SurroundFrame.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
-import {
-  accordionShares, soundingWidth, idealWidth, placedSegments, nameFloorPx, railFloorPx, railWearsChips,
-  inactiveRoomPx, numeralStyle, numeralText,
-  SEGMENT_FLOOR_PX, SEGMENT_NAME_RUN_PX, SEGMENT_CHIP_FLOOR_PX,
-} from './band.js';
-import {
-  bandPools, proseFloorPx, labelFloorPx, proseCeilingPx,
-  PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX,
-  PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
-} from './fit.js';
-import { factPools, isComposedContainer, segmentAt } from './segments.js';
+import { accordionShares, soundingWidth, idealWidth, placedSegments, railFloorPx, railWearsChips, inactiveRoomPx, numeralStyle, numeralText, SEGMENT_FLOOR_PX, SEGMENT_NAME_RUN_PX, SEGMENT_CHIP_FLOOR_PX }  from './band.js';
+import { bandPools, proseFloorPx, labelFloorPx, proseCeilingPx, PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX, LEADING_FLOOR, LEADING_MAX }  from './fit.js';
+import { factPools, isComposedContainer } from './segments.js';
 import { smartQuotes } from './typography.js';
 import { smartQuotesAll } from './typography.js';
 import './builtins.js';
@@ -1077,7 +1069,7 @@ describe('the band, measured against the shipped stylesheet', () => {
       const shown = pools.piece.filter((t) => !fit.rejected.some((r) => r.zone === 'piece' && r.text === t));
       const cuts = [];
       for (const text of shown) {
-        // eslint-disable-next-line no-await-in-loop -- one layout at a time, on purpose
+         
         const m = await noteCut(page, { text });
         if (m.cutPx > 0 || m.clamp || m.overflowRule === 'ellipsis') cuts.push({ ...m, at: name });
       }
@@ -1095,7 +1087,7 @@ describe('the band, measured against the shipped stylesheet', () => {
       const shownNow = pools.now.filter((t) => !fit.rejected.some((r) => r.zone === 'now' && r.text === t));
       const nowCuts = [];
       for (const text of shownNow) {
-        // eslint-disable-next-line no-await-in-loop
+         
         const m = await noteCut(page, { zone: 'now', text });
         if (m.cutPx > 0 || m.clamp) nowCuts.push(m);
       }
@@ -2410,7 +2402,7 @@ const CHIP_MARK_SCALE = 1.35;
       // The sixth polonaise, the first polonaise, and the dead time after the
       // sixth has finished (its own file runs 449s; 600 is past the end).
       for (const position of [POLONAISE_POSITION, 100, 600]) {
-        // eslint-disable-next-line no-await-in-loop
+         
         heights.push(await plateAt({ width: 1280, height: 720, position }));
       }
       const [sounding, first, dead] = heights;
