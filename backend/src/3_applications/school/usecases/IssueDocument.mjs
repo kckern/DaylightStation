@@ -36,6 +36,7 @@
 import { reduceSession, createEvent, statesAccepting } from '#domains/school/sessions/sessionEvents.mjs';
 import { mintToken, TOKEN_CLASSES } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
+import { mintCode } from '#domains/school/companionCode.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 import { walkBlocks } from '#domains/school/documents/documentValidation.mjs';
@@ -101,6 +102,65 @@ function normalizeAnswerSheetPolicy(raw) {
   return { reuse, capacity };
 }
 
+/**
+ * The companion-code record's schema tag. A LITERAL, not an import: the schema
+ * belongs to a `1_adapters` store this layer may not import (D1), exactly like
+ * `'school.lesson-companion/v1'` already written by hand a few lines below in
+ * `#prepareCompanion`. It must stay in step with `COMPANION_CODE_SCHEMA` in
+ * `YamlCompanionCodeStore.mjs`.
+ */
+const COMPANION_CODE_SCHEMA = 'school.companion-code/v1';
+
+/**
+ * The `lessonDay` half of a companion code's scope
+ * (`YamlCompanionCodeStore.keyFor`) — "the day the lesson BELONGS to, never the
+ * day it was played".
+ *
+ * THERE IS NO AUTHORED DATE ON A UNIT. `unitValidation.mjs` admits `courseId`,
+ * `sequence`, `module` and `moduleRole` and nothing date-shaped; the finest
+ * authored date in the whole catalog is a course module's `opensOn`/`closesOn`
+ * WEEK window. So this returns the lesson's PLACEMENT — its module, e.g.
+ * `w35-aug24`, which names the week and the date that week opens — and never a
+ * calendar day it does not have.
+ *
+ * That is sufficient, because `lessonId` is `unit.unitId`, which
+ * `YamlCurriculumDatastore` keeps globally unique across every course and
+ * subject, and which for a dated course already names the weekday:
+ * `cfm-w35-d1-psalms-49-61` and `cfm-w35-d3-psalms-70-77` are two different
+ * lessons in one module. `(householdId, lessonId)` therefore already pins one
+ * record per lesson; `lessonDay` records WHEN that lesson sits, it does not
+ * have to separate anything.
+ *
+ * TWO THINGS DELIBERATELY REJECTED, both of which would break the pinning
+ * decision the scope exists for:
+ *
+ *   - Anything clock-derived (`studyDayWindow(nowIso)`, `state.studyDay`,
+ *     `instance.issuedAt`). A sibling catching up a week later would compute a
+ *     different key, mint a SECOND code, and be made to replay audio the
+ *     household has already finished — while the first child's printed sheet
+ *     still names the first code.
+ *   - The true calendar day, `moduleSchedule[module].opensOn + (sequence - 1)`.
+ *     It reads better and it is what the store's own test fixture shows, but
+ *     `moduleSchedule` is a snapshot on the LEARNER'S ENROLLMENT, and a
+ *     mid-course enrollee's copy omits weeks that had already closed. Two
+ *     siblings would then resolve the same lesson differently — one to a date,
+ *     one to a fallback — and land on two records. A scope component that
+ *     varies by learner is precisely what dropping the learner was for.
+ *
+ * Pure: no clock, no I/O, no learner. Two prints of one lesson can only
+ * disagree if the unit itself was re-authored into a different module, which
+ * is a lesson genuinely moving.
+ *
+ * @param {object} unit
+ * @param {string} [fallback] - `instance.lessonId`, for a standalone unit with
+ *   no course placement at all. Never empty: `keyFor` rejects a blank part.
+ * @returns {string|null}
+ */
+function companionLessonDay(unit, fallback = null) {
+  const usable = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+  return usable(unit?.module) ?? usable(unit?.courseId) ?? usable(unit?.unitId) ?? usable(fallback);
+}
+
 /** @returns {{id: string, rev: string}|null} */
 function parsePrintDocumentRef(ref) {
   if (typeof ref !== 'string') return null;
@@ -153,6 +213,7 @@ export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
   #printDocuments; #renderPrintDocument; #allocationStore;
   #assignments; #worksheetInstances; #publishPrintDocument; #companions;
+  #companionCodes; #householdId;
   #issuedArtifacts; #curriculumExceptions;
   #answerSheetPolicy; #printCooldownMinutes;
   #clock; #rng; #newArtifactId; #timezone; #logger;
@@ -181,6 +242,15 @@ export class IssueDocument {
    *   anything; the actual persisting write happens inside `renderPrintDocument`
    *   itself (see `#issuePrintDocument`'s doc comment for why it cannot be
    *   deferred to the form-map slot the way a legacy map is).
+   * @param {{keyFor: Function, findOrCreate: Function, get: Function, update: Function}}
+   *   [deps.companionCodes] - `YamlCompanionCodeStore`-shaped, injected by the
+   *   composition root (never imported here — D1). Holds ONE finish code per
+   *   `(householdId, lessonId, lessonDay)`; a required companion cannot be
+   *   printed without it, because the gate row would name a code nothing can
+   *   check. Absent for an optional companion, which has no gate at all.
+   * @param {string|null} [deps.householdId] - the household whose codes these
+   *   are: the first third of that scope, and the reason two houses on the same
+   *   published lesson never share a code.
    * @param {() => Date} [deps.clock]
    * @param {() => number} [deps.rng]
    * @param {() => string} [deps.newArtifactId]
@@ -194,6 +264,7 @@ export class IssueDocument {
     curriculum, sessions, tokens, renderer, printer, formMaps, bankReader = null,
     printDocuments = null, renderPrintDocument = null, allocationStore = null,
     assignments = null, worksheetInstances = null, publishPrintDocument = null, companions = null,
+    companionCodes = null, householdId = null,
     issuedArtifacts = null, curriculumExceptions = null,
     answerSheetPolicy = null, printCooldownMinutes = null,
     clock = () => new Date(), rng = Math.random, timezone = null,
@@ -215,6 +286,8 @@ export class IssueDocument {
     this.#assignments = assignments;
     this.#worksheetInstances = worksheetInstances;
     this.#companions = companions;
+    this.#companionCodes = companionCodes;
+    this.#householdId = householdId;
     this.#issuedArtifacts = issuedArtifacts;
     this.#curriculumExceptions = curriculumExceptions;
     this.#answerSheetPolicy = normalizeAnswerSheetPolicy(answerSheetPolicy);
@@ -555,6 +628,13 @@ export class IssueDocument {
         itemIds: state.remediationOf && state.remediationItemIds?.length ? state.remediationItemIds : null,
       });
       const companion = await this.#prepareCompanion({ instance, unit, nowIso });
+      // A required companion this lesson cannot actually offer refuses BEFORE
+      // anything is rendered, published, allocated or printed — never a gate a
+      // child cannot clear. Nothing has been written yet at this point, so the
+      // session does not advance and the ticket in their hand stays valid.
+      if (companion?.refusal) {
+        return this.#unavailable(sessionId, companion.refusal.reason, companion.refusal.message);
+      }
       const published = await this.#publishPrintDocument.execute({
         source: worksheetInstanceDocument(instance, {
           title: unit.title,
@@ -689,21 +769,127 @@ export class IssueDocument {
     };
   }
 
-  /** Create the optional offer before rendering, so the retained PDF owns its code. */
+  /**
+   * Create the offer before rendering, so the retained PDF owns its code.
+   *
+   * TWO CODES, TWO MEANINGS, ONE PLACE (Task 7). The six-digit `accessCode`
+   * OPENS the companion; the A–E `finishCode` is what finishing it RELEASES,
+   * and Task 8 prints it as the worksheet's gate row. Both are resolved HERE,
+   * before a single byte is rendered, for the reason this method already
+   * existed: the retained PDF must own what is printed on it. A finish code
+   * settled any later could disagree with the paper in a child's hand, and the
+   * paper is the thing that cannot be edited.
+   *
+   * The two are never the same field. `companionCode` on the lesson card
+   * (`worksheetInstanceDocument`'s option below) has ALWAYS meant the six-digit
+   * access code; the A–E value is `finishCode` everywhere.
+   *
+   * WHY A REQUIRED COMPANION WITH NO MEDIA REFUSES TO PRINT. The gate row is
+   * graded against the record; without media there is no record and no code, so
+   * the row would print blank or print a code nothing can check, and the sheet
+   * could never pass however well it was answered. Refusing is recoverable —
+   * the child keeps a live ticket and a grown-up fixes the lesson — where a
+   * printed unclearable gate is not. The refusal travels back as a `refusal`
+   * envelope rather than a thrown error, so the caller answers with the same
+   * `#unavailable` slip every other "we could not print that" branch uses.
+   *
+   * WHY A REQUIRED COMPANION'S ACCESS CODE OUTLIVES THE STUDY DAY. An optional
+   * companion's code dies at the household's 4am boundary — it is an offer for
+   * today, and tomorrow's list will make a fresh one. A required one is a
+   * dependency of a sheet still sitting in a folder: expiring it overnight
+   * strands the child with a gate row they can no longer reach the audio to
+   * clear. So for `required` the access code lives exactly as long as the
+   * token's own 7-day window.
+   *
+   * @returns {Promise<{accessCode: string, finishCode: string[]|null,
+   *                    codeRef: string|null} | {refusal: {reason: string, message: string}} | null>}
+   */
   async #prepareCompanion({ instance, unit, nowIso }) {
-    if (!this.#companions || unit?.companion?.enabled === false) return null;
-    const configured = unit.companion ?? {};
+    const configured = unit?.companion ?? {};
+    // `enabled: false` is the author saying there is no companion here at all,
+    // which settles `participation` along with it: no offer, no gate, nothing
+    // for a child to clear, so nothing to refuse over either.
+    if (configured.enabled === false) return null;
+    const required = configured.participation === 'required';
+    if (!this.#companions && !required) return null;
+
     const playlist = configured.handler && configured.handler !== 'readalong'
       ? null : resolveScripturePlaylist(unit?.provenance?.reading);
     const companion = configured.handler && configured.handler !== 'readalong'
       ? { handler: configured.handler, label: configured.label ?? 'Open companion', payload: configured.payload ?? {} }
       : playlist ? { handler: 'readalong', label: configured.label ?? 'Read along', payload: { playlist } } : null;
+
+    if (required) {
+      // Everything a gate needs to exist AND to be checkable later. Named
+      // individually so the log says which one is missing — "companion
+      // unavailable" over a mis-wired composition sends a grown-up to the
+      // curriculum for a problem that is not there.
+      const missing = !companion ? 'no-media'
+        : !this.#companions ? 'companion-store-not-configured'
+          : !this.#companionCodes ? 'code-store-not-configured'
+            : !this.#householdId ? 'no-household' : null;
+      if (missing) {
+        this.#logger.warn?.('school.issue.companion-required-unavailable', {
+          sessionId: instance.sessionId, lessonId: instance.lessonId, reason: missing,
+        });
+        return {
+          refusal: {
+            reason: `companion-${missing}`,
+            message: 'This lesson needs a read-along that is not ready. Tell a grown-up.',
+          },
+        };
+      }
+    }
     if (!companion) return null;
+
+    let finishCode = null;
+    let codeRef = null;
+    if (required) {
+      // ONE record per (household, lesson, lessonDay) — the learner is dropped
+      // on purpose, which is what makes two siblings share one code, and
+      // `companionLessonDay` is clock-free, which is what makes a catch-up next
+      // week inherit it rather than earn a second one. See that helper.
+      codeRef = this.#companionCodes.keyFor({
+        householdId: this.#householdId,
+        lessonId: instance.lessonId,
+        lessonDay: companionLessonDay(unit, instance.lessonId),
+      });
+      // SYNCHRONOUS by contract: the store's `findOrCreate` is indivisible from
+      // its existence check to its write only because nothing inside `create`
+      // awaits, and an async `create` would hand it a Promise to serialise.
+      // Passing a function rather than a value is also what lets the caller
+      // that loses the race never draw a code at all.
+      const record = await this.#companionCodes.findOrCreate({
+        key: codeRef,
+        create: () => ({
+          schema: COMPANION_CODE_SCHEMA,
+          id: codeRef,
+          householdId: this.#householdId,
+          lessonId: instance.lessonId,
+          lessonDay: companionLessonDay(unit, instance.lessonId),
+          code: mintCode({ rng: this.#rng }),
+          // How many pieces of the companion must be covered before the code is
+          // released — one per playlist part, so finishing chapter one of three
+          // is not finishing. Coverage arithmetic itself is Task 9's.
+          requireParts: companion.payload?.playlist?.parts?.length ?? 1,
+          createdAt: nowIso,
+          satisfiedAt: null,
+          satisfiedBy: null,
+          satisfiedVia: null,
+          coverage: {},
+        }),
+      });
+      // `code` inside the store, `finishCode` at this boundary — see the header.
+      finishCode = record.code;
+    }
+
     const live = await this.#tokens.liveAccessCodes();
     const accessCode = mintAccessCode({ rng: this.#rng, taken: (code) => live.has(code) });
     const id = `ral_${shortId(12)}`;
     const expiresAt = new Date(Date.parse(nowIso) + 7 * 24 * 3_600_000).toISOString();
-    const accessCodeExpiresAt = new Date(studyDayWindow(Date.parse(nowIso), { timezone: this.#timezone, boundaryHour: 4 }).endAtMs).toISOString();
+    const accessCodeExpiresAt = required
+      ? expiresAt
+      : new Date(studyDayWindow(Date.parse(nowIso), { timezone: this.#timezone, boundaryHour: 4 }).endAtMs).toISOString();
     const token = mintToken({
       tokenClass: 'worksheet_companion',
       subject: { learnerId: instance.learnerId, sessionId: instance.sessionId, worksheetInstanceId: instance.id, lessonId: instance.lessonId, companionId: id },
@@ -713,10 +899,14 @@ export class IssueDocument {
       schema: 'school.lesson-companion/v1', id, createdAt: nowIso,
       learnerId: instance.learnerId, sessionId: instance.sessionId, worksheetInstanceId: instance.id,
       lessonId: instance.lessonId,
+      // The scope key, not the code: this record is per-learner, the code is
+      // per-household, and copying the letters here would give the two places
+      // to drift apart. Task 9 updates satisfaction through this reference.
+      ...(codeRef ? { codeRef } : {}),
       companion, participation: configured.participation ?? 'optional', state: {},
     });
     await this.#tokens.put(token);
-    return { accessCode };
+    return { accessCode, finishCode, codeRef };
   }
 
   async #lessonProgress({ state, unit, nowIso }) {

@@ -48,6 +48,7 @@ import { YamlTimingAnchorStore } from '#adapters/persistence/yaml/YamlTimingAnch
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
 import { YamlLessonCompanionStore } from '#adapters/persistence/yaml/YamlLessonCompanionStore.mjs';
+import { YamlCompanionCodeStore } from '#adapters/persistence/yaml/YamlCompanionCodeStore.mjs';
 import { YamlIssuedArtifactStore } from '#adapters/persistence/yaml/YamlIssuedArtifactStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { YamlAgendaCooldownStore } from '#adapters/persistence/yaml/YamlAgendaCooldownStore.mjs';
@@ -835,6 +836,10 @@ export async function createSchoolLifecycle({
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
   const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
   const companions = new YamlLessonCompanionStore({ configService, logger });
+  // One finish code per (household, lesson, lessonDay), shared across the
+  // household's children — constructed HERE and injected, never imported by the
+  // use case (D1: an application may not reach for an adapter).
+  const companionCodes = new YamlCompanionCodeStore({ configService, logger });
   const companionHandlers = new LessonCompanionHandlers([
     new ReadalongLessonCompanionHandler({ companions, clock }),
   ]);
@@ -911,6 +916,9 @@ export async function createSchoolLifecycle({
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
     printDocuments, renderPrintDocument, allocationStore,
     assignments: stores.assignments, worksheetInstances, companions,
+    // `householdId` is the first third of a finish code's scope — the reason
+    // two houses on the same published lesson never share a code.
+    companionCodes, householdId,
     issuedArtifacts,
     answerSheetPolicy: cfg.answer_sheets ?? null,
     // Same `printing:` block the laser host/port/path and the page-quota
