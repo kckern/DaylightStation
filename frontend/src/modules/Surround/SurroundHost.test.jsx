@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useEffect } from 'react';
 import { render, act } from '@testing-library/react';
-import SurroundHost, { definitionModules } from './SurroundHost.jsx';
+import SurroundHost from './SurroundHost.jsx';
+import { definitionModules } from './surroundHostModules.js';
 import { SurroundSettingContext } from './SurroundSettingContext.js';
 import { registerSurroundModule, getSurroundRegistry } from './registry.js';
 

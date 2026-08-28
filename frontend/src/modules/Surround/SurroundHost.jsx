@@ -46,6 +46,7 @@ import { useMediaClockState } from '../../lib/Player/useMediaClock.js';
 import SurroundFrame from './SurroundFrame.jsx';
 import { resolveContentId, railContentId } from './segments.js';
 import { useSurroundSetting, SURROUND_OFF } from './SurroundSettingContext.js';
+import { definitionModules } from './surroundHostModules.js';
 // Side-effect import: registers segment-map / cue-ticker / composer-card, so
 // neither seam needs a registration call of its own.
 import './builtins.js';
@@ -55,40 +56,6 @@ const DEFAULT_POLL_MS = 1000;
 
 /** Handed to the clock while the frame is off: attaches to nothing, ticks nothing. */
 const NO_MEDIA = () => null;
-
-/**
- * The slots a definition can fill, in the order the frame lays them out.
- *
- * IT IS THE SLOTS THE FRAME RENDERS, and it has to stay that way: naming a slot
- * here that `SurroundFrame` does not lay out would put a module in this event
- * that never mounts — a smaller version of the exact lie this helper was written
- * to end. (`overlay` was dropped when the inert overlay layer was deleted.)
- */
-const REGION_SLOTS = Object.freeze(['top', 'right', 'bottom']);
-
-/**
- * Every module the shipped definition actually mounts, in layout order.
- *
- * THE MOUNT LOG USED TO LIE. It read `regions.right?.module` — a single object —
- * and `right` has been a LIST since the rail gained its carousel, so the rail's
- * modules vanished from the event; `top` was never included at all. For six
- * waves `surround.mount` reported the band and nothing else, and nobody noticed
- * because logs are read when something breaks and this one only ever ran when
- * things worked. Both shapes are legal in a definition (`SurroundFrame`'s own
- * `normalizeRegions` accepts either), so this reads them the same way the frame
- * does rather than the way one slot happened to be authored.
- */
-export function definitionModules(definition) {
-  const regions = definition?.regions;
-  if (!regions || typeof regions !== 'object') return [];
-  return REGION_SLOTS.flatMap((slot) => {
-    const value = regions[slot];
-    if (!value) return [];
-    return (Array.isArray(value) ? value : [value])
-      .map((r) => (r && typeof r === 'object' ? r.module : null))
-      .filter((m) => typeof m === 'string' && m);
-  });
-}
 
 /** The backend omits the key entirely when there is no sidecar — test truthiness. */
 function resolveSurround(item) {

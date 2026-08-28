@@ -4,9 +4,6 @@
 import React, { createContext, useContext, useMemo } from 'react';
 import { STORAGE_KEYS } from '../constants.js';
 
-export const CLIENT_ID_KEY = STORAGE_KEYS.CLIENT_ID;
-export const DISPLAY_NAME_KEY = STORAGE_KEYS.DISPLAY_NAME;
-
 const ClientIdentityContext = createContext(null);
 
 function uuidV4() {

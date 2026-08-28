@@ -7,10 +7,12 @@ import { pressable } from "../lib/a11y.mjs";
 import { Tabs, Badge, Select, TextInput, Tooltip } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useToday } from '../hooks/useToday.mjs';
 
 
+
+const COMMON_AMOUNTS = [1000, 5000, 10000, 25000, 50000];
 
 export function BudgetMortgage({ setDrawerContent, mortgage }) {
   const { accountId } = mortgage;
@@ -531,29 +533,28 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
   function CostOfCapitalCalculator({ mortgage }) {
     const [amount, setAmount] = useState(1000);
-    const commonAmounts = [1000, 5000, 10000, 25000, 50000];
 
-    const costFor = (extraAmount, plan) => calculateCost({
+    const costFor = useCallback((extraAmount, plan) => calculateCost({
       balance: mortgage.balance,
       interestRate: mortgage.interestRate,
       extraAmount,
       plan
-    });
+    }), [mortgage]);
 
     // Recomputes only when the typed amount or the mortgage changes.
     const planCosts = useMemo(
       () => mortgage.paymentPlans.map((plan) => ({ plan, cost: costFor(amount, plan) })),
-      [amount, mortgage]
+      [amount, mortgage, costFor]
     );
 
     // The quick-reference table does NOT depend on the typed amount —
     // previously it re-simulated 5 amounts × N plans on every keystroke.
     const quickReference = useMemo(
-      () => commonAmounts.map((amt) => ({
+      () => COMMON_AMOUNTS.map((amt) => ({
         amt,
         costs: mortgage.paymentPlans.map((plan) => costFor(amt, plan))
       })),
-      [mortgage]
+      [mortgage, costFor]
     );
 
     return (

@@ -279,7 +279,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       stravaType: stravaBlock?.type || null,
       stravaHasMap: !!(stravaBlock?.map?.polyline),
     };
-  }, [sessionData]);
+  }, [sessionData, fitnessCtx?.plexConfig]);
 
   const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: !!header?.hasRecap, srcKey: header?.recapUrl });
 

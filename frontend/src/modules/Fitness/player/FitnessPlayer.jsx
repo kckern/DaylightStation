@@ -501,7 +501,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   useEffect(() => {
     lastKnownTimeRef.current = 0;
     statusUpdateRef.current = { lastSent: 0, inflight: false, endSent: false };
-  }, [currentItem ? currentItem.id : null]);
+  }, [currentItemId]);
 
   useEffect(() => {
     if (!setGovernanceMedia) return;
@@ -1634,7 +1634,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       });
       setCurrentItem(first);
     }
-  }, [queue, currentItem]);
+  }, [queue, currentItem, logger, nogovern]);
 
   const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
 

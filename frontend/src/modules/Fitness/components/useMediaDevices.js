@@ -72,7 +72,7 @@ export function useMediaDevices(enabled = true) {
     permissionError,
     nextVideo: () => selectNext('video'),
     nextAudio: () => selectNext('audio'),
-  }), [devices, activeVideoId, activeAudioId, selectNext, refreshDevices]);
+  }), [devices, activeVideoId, activeAudioId, selectNext, refreshDevices, permissionError]);
 
   return value;
 }

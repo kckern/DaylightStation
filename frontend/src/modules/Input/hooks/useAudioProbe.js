@@ -31,6 +31,121 @@ export const useAudioProbe = (audioDevices, options = {}) => {
   const meterCleanupRef = useRef(null);
   const cancelledRef = useRef(false);
 
+  /**
+   * Start ongoing volume metering using the winning strategy.
+   * For AudioWorklet, create a new worklet. For ScriptProcessor or MediaRecorder
+   * winner, use ScriptProcessor for ongoing metering (MediaRecorder is too
+   * expensive for continuous use).
+   */
+  const startOngoingMeter = useCallback((strategy, stream, device) => {
+    // Clean up any previous meter
+    if (meterCleanupRef.current) meterCleanupRef.current();
+
+    if (strategy.name === 'audioWorklet') {
+      // Re-run AudioWorklet for ongoing metering
+      const ctx = new AudioContext();
+      let setupDone = false;
+
+      const setup = async () => {
+        try {
+          const processorSource = `
+class VolumeMeterProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const input = inputs[0];
+    if (input && input.length > 0) {
+      const samples = input[0];
+      let sum = 0;
+      for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+      this.port.postMessage({ rms: Math.sqrt(sum / samples.length) });
+    }
+    return true;
+  }
+}
+registerProcessor('volume-meter-ongoing', VolumeMeterProcessor);`;
+          const blob = new Blob([processorSource], { type: 'application/javascript' });
+          const url = URL.createObjectURL(blob);
+          await ctx.audioWorklet.addModule(url);
+          URL.revokeObjectURL(url);
+
+          const source = ctx.createMediaStreamSource(stream);
+          const node = new AudioWorkletNode(ctx, 'volume-meter-ongoing');
+          source.connect(node);
+          node.connect(ctx.destination);
+          setupDone = true;
+
+          let sampleCount = 0;
+          let maxLevel = 0;
+
+          node.port.onmessage = (e) => {
+            if (cancelledRef.current) return;
+            const { rms } = e.data;
+            setVolume(rms);
+            sampleCount++;
+            if (rms > maxLevel) maxLevel = rms;
+            if (sampleCount % 250 === 0) {
+              logger().info('audio-probe-volume', {
+                method: 'audioWorklet',
+                maxLevel: Math.round(maxLevel * 1000) / 1000,
+                samples: sampleCount,
+                device: device.label,
+              });
+              maxLevel = 0;
+            }
+          };
+
+          meterCleanupRef.current = () => {
+            node.disconnect();
+            source.disconnect();
+            ctx.close();
+            stream.getTracks().forEach(t => t.stop());
+          };
+        } catch (err) {
+          logger().warn('ongoing-meter-setup-failed', { method: 'audioWorklet', error: err.message });
+          if (!setupDone) ctx.close();
+        }
+      };
+      setup();
+
+    } else {
+      // ScriptProcessor for ongoing metering (also used as fallback for MediaRecorder winner)
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      const processor = ctx.createScriptProcessor(2048, 1, 1);
+      source.connect(processor);
+      processor.connect(ctx.destination);
+
+      let sampleCount = 0;
+      let maxLevel = 0;
+
+      processor.onaudioprocess = (event) => {
+        if (cancelledRef.current) return;
+        const samples = event.inputBuffer.getChannelData(0);
+        let sum = 0;
+        for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+        const rms = Math.sqrt(sum / samples.length);
+        setVolume(rms);
+        sampleCount++;
+        if (rms > maxLevel) maxLevel = rms;
+        if (sampleCount % 250 === 0) {
+          logger().info('audio-probe-volume', {
+            method: 'scriptProcessor',
+            maxLevel: Math.round(maxLevel * 1000) / 1000,
+            samples: sampleCount,
+            device: device.label,
+          });
+          maxLevel = 0;
+        }
+      };
+
+      meterCleanupRef.current = () => {
+        processor.disconnect();
+        source.disconnect();
+        ctx.close();
+        stream.getTracks().forEach(t => t.stop());
+      };
+    }
+  }, []);
+
   // Stable reference to the probe runner
   const runProbe = useCallback(async (devices, preferred) => {
     cancelledRef.current = false;
@@ -173,122 +288,7 @@ export const useAudioProbe = (audioDevices, options = {}) => {
     setProbingDeviceLabel('');
     setDiagnostics(allDiagnostics);
     logger().warn('audio-probe-failed', { diagnostics: allDiagnostics });
-  }, []);
-
-  /**
-   * Start ongoing volume metering using the winning strategy.
-   * For AudioWorklet, create a new worklet. For ScriptProcessor or MediaRecorder
-   * winner, use ScriptProcessor for ongoing metering (MediaRecorder is too
-   * expensive for continuous use).
-   */
-  const startOngoingMeter = useCallback((strategy, stream, device) => {
-    // Clean up any previous meter
-    if (meterCleanupRef.current) meterCleanupRef.current();
-
-    if (strategy.name === 'audioWorklet') {
-      // Re-run AudioWorklet for ongoing metering
-      const ctx = new AudioContext();
-      let setupDone = false;
-
-      const setup = async () => {
-        try {
-          const processorSource = `
-class VolumeMeterProcessor extends AudioWorkletProcessor {
-  process(inputs) {
-    const input = inputs[0];
-    if (input && input.length > 0) {
-      const samples = input[0];
-      let sum = 0;
-      for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
-      this.port.postMessage({ rms: Math.sqrt(sum / samples.length) });
-    }
-    return true;
-  }
-}
-registerProcessor('volume-meter-ongoing', VolumeMeterProcessor);`;
-          const blob = new Blob([processorSource], { type: 'application/javascript' });
-          const url = URL.createObjectURL(blob);
-          await ctx.audioWorklet.addModule(url);
-          URL.revokeObjectURL(url);
-
-          const source = ctx.createMediaStreamSource(stream);
-          const node = new AudioWorkletNode(ctx, 'volume-meter-ongoing');
-          source.connect(node);
-          node.connect(ctx.destination);
-          setupDone = true;
-
-          let sampleCount = 0;
-          let maxLevel = 0;
-
-          node.port.onmessage = (e) => {
-            if (cancelledRef.current) return;
-            const { rms } = e.data;
-            setVolume(rms);
-            sampleCount++;
-            if (rms > maxLevel) maxLevel = rms;
-            if (sampleCount % 250 === 0) {
-              logger().info('audio-probe-volume', {
-                method: 'audioWorklet',
-                maxLevel: Math.round(maxLevel * 1000) / 1000,
-                samples: sampleCount,
-                device: device.label,
-              });
-              maxLevel = 0;
-            }
-          };
-
-          meterCleanupRef.current = () => {
-            node.disconnect();
-            source.disconnect();
-            ctx.close();
-            stream.getTracks().forEach(t => t.stop());
-          };
-        } catch (err) {
-          logger().warn('ongoing-meter-setup-failed', { method: 'audioWorklet', error: err.message });
-          if (!setupDone) ctx.close();
-        }
-      };
-      setup();
-
-    } else {
-      // ScriptProcessor for ongoing metering (also used as fallback for MediaRecorder winner)
-      const ctx = new AudioContext();
-      const source = ctx.createMediaStreamSource(stream);
-      const processor = ctx.createScriptProcessor(2048, 1, 1);
-      source.connect(processor);
-      processor.connect(ctx.destination);
-
-      let sampleCount = 0;
-      let maxLevel = 0;
-
-      processor.onaudioprocess = (event) => {
-        if (cancelledRef.current) return;
-        const samples = event.inputBuffer.getChannelData(0);
-        let sum = 0;
-        for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
-        const rms = Math.sqrt(sum / samples.length);
-        setVolume(rms);
-        sampleCount++;
-        if (rms > maxLevel) maxLevel = rms;
-        if (sampleCount % 250 === 0) {
-          logger().info('audio-probe-volume', {
-            method: 'scriptProcessor',
-            maxLevel: Math.round(maxLevel * 1000) / 1000,
-            samples: sampleCount,
-            device: device.label,
-          });
-          maxLevel = 0;
-        }
-      };
-
-      meterCleanupRef.current = () => {
-        processor.disconnect();
-        source.disconnect();
-        ctx.close();
-        stream.getTracks().forEach(t => t.stop());
-      };
-    }
-  }, []);
+  }, [startOngoingMeter]);
 
   // Run probe when audioDevices change
   useEffect(() => {

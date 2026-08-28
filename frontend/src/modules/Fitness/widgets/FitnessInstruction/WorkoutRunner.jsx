@@ -217,7 +217,7 @@ export default function WorkoutRunner({
       kind: plan[next]?.kind ?? null,
       slug: plan[next]?.slug ?? null
     });
-  }, [logger, plan, title]);
+  }, [logger, plan, finish]);
 
   /**
    * Leave the runner.

@@ -169,7 +169,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     // would defeat the check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { if (renderSeq.current === seq) renderSeq.current++; };
-  }, [musicXml, width, flow, scale, transpose, onLayout, onProgress, onReady, resizeKey]);
+  }, [musicXml, width, flow, scale, transpose, manuscript, onLayout, onProgress, onReady, resizeKey]);
 
   // Release: once holding ends and an extraction is owed, re-run the render effect
   // (cheap repaint + the deferred geometry walk) so overlays catch up. NOTE:

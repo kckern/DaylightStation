@@ -328,7 +328,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     setStatus('connected');
     try { localStorage?.setItem(STORAGE_KEY, input.id); } catch { /* ignore */ }
     logger().info('midi.input-bound', { name: input.name, forced: force, hasOutput: !!outputRef.current });
-  }, [pickInput, armInput, bindOutput]);
+  }, [pickInput, armInput, bindOutput, handleRawMidi]);
 
   // Bridge mode only: open the MIDI INPUT port WITHOUT arming a note handler, so
   // Chrome attaches to the BLE-MIDI device (which is what makes OUTPUT writes
