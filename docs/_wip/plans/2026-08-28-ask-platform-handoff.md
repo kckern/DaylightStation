@@ -122,3 +122,20 @@ Five users on the OLD gate (`feat/exercise-run-ux`, merged + deployed earlier to
 ships), `soren` (keys-1), `milo` (L1). Household default off. Zero gate events observed
 in the log store since that config landed — no kid has met their gate yet as of the last
 check.
+
+## Update: pushed to main without full verification (token-constrained)
+
+`feat/ask-platform` was merged with `origin/main` (8 commits, 48 files, clean — no
+conflicts, no overlap with piano code) and pushed directly to `main` at the user's
+explicit instruction, given the session was out of tokens. **Skipped, in order:**
+
+1. Task 6's review (see above — still the first thing to do).
+2. Re-running the test sweep after the origin/main merge (the merged commits are
+   school/reading/fitness, not piano — likely safe, but unconfirmed).
+3. The final whole-branch review that closed every prior branch in this effort.
+4. Build + deploy. Nothing is deployed from this. The running container is still the
+   earlier `feat/exercise-run-ux` build; the kids are unaffected.
+
+`main` is now at `07c891511`. Resume by dispatching Task 6's review as described above,
+then treat the merge + full branch as needing the same final-review pass every other
+branch in this session got before it went near a deploy.
