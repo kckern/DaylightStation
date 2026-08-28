@@ -101,8 +101,14 @@ function attemptPolicyErrors(userId, body) {
  *
  *   Menu activity strip:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
+ *
+ *   Game-time budget (server is the source of truth; unwired service fails open):
+ *   GET    /users/:userId/game-budget                          → live balance ({enabled:false} if unwired/off)
+ *   POST   /users/:userId/game-budget/session                  → open/adopt a session ({sessionId,cumulativeSeconds,...})
+ *   POST   /users/:userId/game-budget/session/:sessionId/settle → charge up to cumulativeSeconds ({secondsLeft,depleted,deviceDepleted})
+ *   POST   /users/:userId/game-budget/session/:sessionId/close  → seal a session ({ok:true})
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoLearningService = null, exerciseBank = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoLearningService = null, pianoGameBudgetService = null, exerciseBank = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
@@ -262,6 +268,36 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
       }),
     });
     res.status(201).json(attempt);
+  }));
+
+  // --- Game-time budget (design 2026-08-27; D3: server is the source of truth) ---
+  // Thin by design: the service already fails open on both "not wired" (this
+  // router) and "misconfigured household" (inside the service) — these routes
+  // must not re-interpret either, only pass the shape through.
+  router.get('/users/:userId/game-budget', asyncHandler(async (req, res) => {
+    if (!pianoGameBudgetService) return res.json({ enabled: false });
+    res.set('Cache-Control', 'no-store');
+    res.json(await pianoGameBudgetService.balance({ learnerId: req.params.userId }));
+  }));
+  router.post('/users/:userId/game-budget/session', asyncHandler(async (req, res) => {
+    if (!pianoGameBudgetService) return res.status(404).json({ error: 'game budget not configured' });
+    res.json(await pianoGameBudgetService.open({
+      learnerId: req.params.userId, deviceId: req.body?.deviceId ?? null,
+    }));
+  }));
+  router.post('/users/:userId/game-budget/session/:sessionId/settle', asyncHandler(async (req, res) => {
+    if (!pianoGameBudgetService) return res.status(404).json({ error: 'game budget not configured' });
+    res.json(await pianoGameBudgetService.settle({
+      sessionId: req.params.sessionId, learnerId: req.params.userId,
+      cumulativeSeconds: Number(req.body?.cumulativeSeconds) || 0,
+    }));
+  }));
+  router.post('/users/:userId/game-budget/session/:sessionId/close', asyncHandler(async (req, res) => {
+    if (!pianoGameBudgetService) return res.status(404).json({ error: 'game budget not configured' });
+    res.json(await pianoGameBudgetService.close({
+      sessionId: req.params.sessionId, learnerId: req.params.userId,
+      cumulativeSeconds: Number(req.body?.cumulativeSeconds) || 0,
+    }));
   }));
 
   router.post('/users/:userId/challenges/prepare', asyncHandler((req, res) => {
