@@ -36,14 +36,24 @@ function logger() {
  * @param {(p:number) => void} [onProgress] - extraction progress fraction 0..1
  * @param {() => void} [onReady] - fired once geometry extraction completes and
  *   the play-along overlay can be armed (the sheet is already painted before this)
+ * @param {(reason:{error?:string}) => void} [onFailed] - this document could not be
+ *   engraved, and no `onLayout` is coming. Fired exactly where the placeholder
+ *   ("Could not read this score.") is raised, so a consumer that is WAITING on
+ *   geometry has a terminal answer instead of an indefinite wait. Optional and
+ *   additive: a viewer whose only job is to show the placeholder needs nothing,
+ *   but a surface that gates something on the engraving does. Held in a ref and
+ *   deliberately kept OUT of the render effect's deps — it is an error channel,
+ *   not an input, and an unstable identity must never be able to re-trigger an
+ *   engrave.
  * @param {boolean} [holdExtraction] - when true, the sheet still PAINTS on a
  *   re-engrave/repaint but the expensive geometry-extraction cursor walk is
  *   DEFERRED (the transport is playing; we won't stall the main thread). The owed
  *   extraction runs once `holdExtraction` flips back to false.
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, onLayout, onProgress, onReady, holdExtraction = false, children }) {
+export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, onLayout, onProgress, onReady, onFailed, holdExtraction = false, children }) {
   const hostRef = useRef(null);
+  const onFailedRef = useRef(onFailed); onFailedRef.current = onFailed;
   const holdRef = useRef(holdExtraction); holdRef.current = holdExtraction;
   const pendingExtractRef = useRef(false); // an extraction was deferred while held
   const [dims, setDims] = useState({ width: 0, height: 0 });
@@ -158,6 +168,9 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         if (stale()) return;
         setFailed(true);
         logger().warn('musicxml.render-failed', { error: err?.message });
+        // The placeholder is a terminal state: no `onLayout` will follow. Say so,
+        // or a consumer waiting on geometry waits forever.
+        onFailedRef.current?.({ error: err?.message });
       } finally {
         // Only the live render resets its flags; a stale run leaves them to the
         // newer owner (or to unmount), so nothing gets stuck true.

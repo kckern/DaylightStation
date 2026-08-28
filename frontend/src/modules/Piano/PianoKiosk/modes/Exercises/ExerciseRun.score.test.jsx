@@ -31,6 +31,8 @@ const h = vi.hoisted(() => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   text: vi.fn(),
   steps: null,
+  /** Reproduce the placeholder state: OSMD threw, no layout is ever published. */
+  engraveFails: false,
 }));
 
 const notehead = (midi) => {
@@ -69,13 +71,16 @@ vi.mock('../../../../../lib/api.mjs', async (importOriginal) => ({
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
   const { useEffect } = await import('react');
   return {
-    MusicXmlRenderer: ({ musicXml, onLayout, onReady, children }) => {
+    MusicXmlRenderer: ({ musicXml, onLayout, onReady, onFailed, children }) => {
       useEffect(() => {
+        if (h.engraveFails) { onFailed?.({ error: 'Could not read this score.' }); return; }
         onLayout?.({
           width: 800, height: 300, flow: 'wrapped', scale: 1, transpose: 0,
           tempoEntries: [], measures: [0, 1, 2, 3], events: [], notes: [], steps: h.steps,
         });
         onReady?.();
+        // `onFailed` is held in a ref by the real renderer, not a dep — mirrored.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [musicXml, onLayout, onReady]);
       return <div data-testid="engraver" className="musicxml-renderer"><div className="musicxml-renderer__svg" />{children}</div>;
     },
@@ -124,6 +129,7 @@ beforeEach(() => {
   document.body.innerHTML = '';
   h.activeNotes = new Map();
   h.steps = fourBarSteps();
+  h.engraveFails = false;
   h.text.mockReset();
   h.text.mockResolvedValue(fourBars);
   h.record.mockReset();
@@ -213,5 +219,41 @@ describe('ExerciseRun — score material', () => {
       'piano.exercise-material-unresolved',
       expect.objectContaining({ kind: 'score', error: 'score-unavailable' }),
     );
+  });
+
+  /**
+   * A score that FETCHES fine and then yields no ask. This is the shape that
+   * used to hang: `instance` is null but `score` holds the document, so nothing
+   * read as "not found", the run never became unavailable, and the child sat on
+   * "Getting the music ready…" until they pressed Leave — forfeiting the game
+   * they had earned, logged as an abandonment rather than as the outage it was.
+   *
+   * Every row must reach a TERMINAL state the host can fail open on.
+   */
+  describe.each([
+    ['the engraver could not read the document', () => { h.engraveFails = true; }, {}],
+    ['the engraving carried no notes', () => { h.steps = []; }, {}],
+    ['the range names bars the document does not have', () => {}, { measures: [9, 12] }],
+    ['the passage is nothing but rests', () => { h.steps = fourBarSteps().filter((s) => s.measure < 2); }, { measures: [3, 4] }],
+  ])('when %s', (_label, arrange, materialOver) => {
+    it('ends the run as unrunnable instead of waiting forever', async () => {
+      arrange();
+      const onUnavailable = vi.fn();
+      const current = props({
+        onUnavailable,
+        material: { ...material, ...materialOver },
+      });
+      render(<ExerciseRun {...current} />);
+
+      // `unrunnable`, not `instance-not-found`: the document arrived, it simply
+      // cannot become an ask. Either way the gate reads it as infrastructure
+      // and grants the match.
+      await waitFor(() => expect(onUnavailable).toHaveBeenCalledWith('unrunnable'));
+      expect(screen.queryByText('Getting the music ready…')).toBeNull();
+      expect(h.log.warn).toHaveBeenCalledWith(
+        'piano.exercise-score-unrunnable',
+        expect.objectContaining({ id: material.source }),
+      );
+    });
   });
 });

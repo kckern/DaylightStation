@@ -26,6 +26,8 @@ const h = vi.hoisted(() => ({
   steps: null,
   /** How many times the doubled engraver has republished (a re-engrave). */
   publishes: 0,
+  /** Reproduce the placeholder state: OSMD threw, no layout is ever published. */
+  engraveFails: false,
 }));
 
 /** A notehead the engraver would have produced, attached so classes are findable. */
@@ -48,8 +50,12 @@ const fourBarSteps = () => [60, 62, 64, 65, 67, 69, 71, 72].map((midi, index) =>
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
   const { useEffect } = await import('react');
   return {
-    MusicXmlRenderer: ({ musicXml, onLayout, onReady, children }) => {
+    MusicXmlRenderer: ({ musicXml, onLayout, onReady, onFailed, children }) => {
       useEffect(() => {
+        // The real renderer's terminal failure: it raises its placeholder and
+        // NEVER calls onLayout. That is the exact state real OSMD reaches under
+        // happy-dom, and the state a gate used to hang in.
+        if (h.engraveFails) { onFailed?.({ error: 'Could not read this score.' }); return; }
         h.publishes += 1;
         onLayout?.({
           width: 800,
@@ -64,6 +70,10 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
           steps: h.steps,
         });
         onReady?.();
+        // `onFailed` is deliberately NOT a dep — the real renderer holds it in a
+        // ref precisely so an unstable error callback can never re-trigger an
+        // engrave. The double mirrors that contract.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [musicXml, onLayout, onReady]);
       return <div data-testid="engraver" className="musicxml-renderer"><div className="musicxml-renderer__svg" />{children}</div>;
     },
@@ -92,6 +102,7 @@ const renderPassage = (props = {}) => render(
 beforeEach(() => {
   document.body.innerHTML = '';
   h.publishes = 0;
+  h.engraveFails = false;
   h.steps = fourBarSteps();
 });
 
@@ -129,16 +140,87 @@ describe('ScorePassage expectation', () => {
     expect(midisOf(onExpectation.mock.calls.at(-1)[0])).toEqual([60, 62, 64, 65, 67, 69, 71, 72]);
   });
 
-  it('publishes nothing at all when the engraving reported no notes', async () => {
+  it('does not publish while the engraver is still working — that is not an answer', async () => {
+    // The pre-layout state must stay SILENT on both channels. A component that
+    // reported "unrunnable" here would fail every score open before it started.
+    const onExpectation = vi.fn();
+    const onUnrunnable = vi.fn();
+    h.steps = fourBarSteps();
+    renderPassage({ onExpectation, onUnrunnable, musicXml: fourBars });
+
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    expect(onUnrunnable).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The three ways a score can produce no ask at all. Each one used to end in a
+ * component that published nothing and said nothing — which, upstream, was a
+ * child sitting on "Getting the music ready…" forever, because "wait" and "this
+ * will never work" were the same silence.
+ */
+describe('ScorePassage terminal failures', () => {
+  it('reports the engraver reaching its placeholder — no layout is ever coming', async () => {
+    h.engraveFails = true;
+    const onExpectation = vi.fn();
+    const onUnrunnable = vi.fn();
+    renderPassage({ onExpectation, onUnrunnable });
+
+    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('engrave-failed'));
+    expect(onExpectation).not.toHaveBeenCalled();
+  });
+
+  it('reports an engraving that carried no notes', async () => {
     h.steps = [];
     const onExpectation = vi.fn();
-    renderPassage({ onExpectation });
+    const onUnrunnable = vi.fn();
+    renderPassage({ onExpectation, onUnrunnable });
 
-    await waitFor(() => expect(h.publishes).toBeGreaterThan(0));
-    // An empty expectation would build an attempt that is complete before the
-    // first note — a gate that opens itself. Say nothing instead and let the
-    // run stay unstarted, which its host resolves as unavailable (fails open).
+    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('no-engraved-notes'));
     expect(onExpectation).not.toHaveBeenCalled();
+  });
+
+  it('reports a range naming bars the document does not have', async () => {
+    const onExpectation = vi.fn();
+    const onUnrunnable = vi.fn();
+    // Bars 9-12 of a four-bar file. An expectation of no notes builds an attempt
+    // that is COMPLETE before the first note — a gate that opens itself.
+    renderPassage({ measures: [9, 12], onExpectation, onUnrunnable });
+
+    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('passage-empty'));
+    expect(onExpectation).not.toHaveBeenCalled();
+  });
+
+  it('reports a passage of nothing but rests', async () => {
+    // The geometry walk does not emit rests, so a rest-only bar contributes no
+    // notes and the range selects nothing playable. Bars 3-4 here are silent.
+    h.steps = fourBarSteps().filter((step) => step.measure < 2);
+    const onExpectation = vi.fn();
+    const onUnrunnable = vi.fn();
+    renderPassage({ measures: [3, 4], onExpectation, onUnrunnable });
+
+    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('passage-empty'));
+    expect(onExpectation).not.toHaveBeenCalled();
+  });
+
+  it('says so once, not once per render', async () => {
+    h.engraveFails = true;
+    const onUnrunnable = vi.fn();
+    const view = renderPassage({ onExpectation: vi.fn(), onUnrunnable });
+    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledTimes(1));
+
+    view.rerender(
+      <ScorePassage
+        musicXml={fourBars}
+        sourceId="files:docs/sheet-music/four-bars.musicxml"
+        measures={[2, 3]}
+        cursorIndex={0}
+        wrongMidi={null}
+        onExpectation={vi.fn()}
+        onUnrunnable={onUnrunnable}
+      />,
+    );
+    expect(onUnrunnable).toHaveBeenCalledTimes(1);
   });
 });
 

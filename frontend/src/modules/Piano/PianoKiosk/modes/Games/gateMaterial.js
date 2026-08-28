@@ -96,11 +96,17 @@ export function keysInstance(spec, pickIndex = 0) {
  * rather than repaired: a range nobody can read means "the whole score", which
  * is always playable, where a guessed one puts a child in front of the wrong
  * bars with nothing on screen to say so.
+ *
+ * `Number.isInteger` and NOT a truncating coercion, for exactly that reason —
+ * `[1.9, 3.2]` is not "bars 1 to 3", it is a config nobody can have meant, and
+ * rounding it into a plausible answer is the quiet version of the mistake this
+ * whole function exists to refuse. A bar number written as a string is the same
+ * kind of mistake and is refused the same way.
  */
 function passageMeasures(measures) {
   if (!Array.isArray(measures) || measures.length !== 2) return null;
-  const [start, end] = measures.map((value) => Math.trunc(Number(value)));
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  const [start, end] = measures;
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return null;
   if (start < 1 || end < start) return null;
   return [start, end];
 }
