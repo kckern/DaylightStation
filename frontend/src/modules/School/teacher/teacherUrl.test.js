@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
-} from './teacherUrl.js';
+import { parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSessionPath }  from './teacherUrl.js';
 
 describe('teacher workspace URL model', () => {
   it('lands roots on the dashboard and rejects malformed paths', () => {
@@ -23,6 +21,15 @@ describe('teacher workspace URL model', () => {
     expect(parseTeacherPath('/school/teacher-next/queue')).toMatchObject({ kind: 'not-found' });
     expect(parseTeacherPath('/school/teacher/records/learner-a')).toMatchObject({ kind: 'not-found' });
     expect(parseTeacherPath('/school/teacher/planning/learner-a')).toMatchObject({ kind: 'not-found' });
+  });
+
+  it('still parses the retired /overview segment instead of 404ing (trim 5.6)', () => {
+    // LearnerOverview the component is gone, but the shell redirects this
+    // URL rather than 404ing it — which only works if the parser still
+    // recognizes the segment as a learner route for it to catch.
+    expect(parseTeacherPath('/school/teacher/students/learner-a/overview')).toMatchObject({
+      kind: 'learner', section: 'overview', learnerId: 'learner-a',
+    });
   });
 });
 

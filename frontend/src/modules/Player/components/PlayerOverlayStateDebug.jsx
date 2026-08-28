@@ -31,6 +31,9 @@ const formatSeconds = (seconds) => {
   return `${mins}:${secs}`;
 };
 
+// Disabled for now — kept ready to re-enable, but not shown in the live overlay stack.
+const DEBUG_OVERLAY_ENABLED = false;
+
 export function PlayerOverlayStateDebug({
   userIntent,
   status,
@@ -40,7 +43,6 @@ export function PlayerOverlayStateDebug({
   stalled,
   waitingToPlay
 }) {
-    return false; // Disable for now
   const userDisplay = toDisplay(USER_INTENT_LABELS, userIntent, { icon: '❓', label: 'Unknown' });
   const statusDisplay = toDisplay(RESILIENCE_STATUS_LABELS, status, { icon: '❓', label: status || 'Unknown' });
   const healthDisplay = toDisplay(SYSTEM_HEALTH_LABELS, systemHealth, { icon: '❓', label: systemHealth || 'Unknown' });
@@ -64,6 +66,8 @@ export function PlayerOverlayStateDebug({
     ].filter(Boolean);
     return detailBits.length ? detailBits.join(' | ') : 'steady';
   }, [playbackHealth, waitingToPlay, stalled, bufferRunwayMs, bufferLabel]);
+
+  if (!DEBUG_OVERLAY_ENABLED) return false;
 
   return (
     <div className="player-debug-overlay" data-layer="player-debug-overlay">

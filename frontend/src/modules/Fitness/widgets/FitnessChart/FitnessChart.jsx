@@ -216,7 +216,7 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 				.map((item) => ({ id: item.id, reason: item.filterReason || 'unknown' }));
 			const extra = chartIds.filter((id) => !rosterIds.includes(id));
 			// Collect richer diagnostics
-			const details = debugItems.map((item) => {
+			debugItems.map((item) => {
 				const hrSeries = typeof getSeries === 'function' ? getSeries(item.id, 'heart_rate', { clone: true }) || [] : [];
 				const ringsSeries = typeof getSeries === 'function' ? getSeries(item.id, 'rings_total', { clone: true }) || [] : [];
 				const lastHr = hrSeries.length ? hrSeries[hrSeries.length - 1] : null;
@@ -784,7 +784,6 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 					const ay = avatar.y + (avatar.offsetY || 0);
 					const isFocused = !focusedUserId || avatar.id === focusedUserId;
 					const groupOpacity = focusedUserId ? (isFocused ? 1 : 0.1) : 1;
-					const initial = (avatar.name || avatar.id || '?')[0].toUpperCase();
 					return (
 						<g
 							key={clipId}
@@ -855,7 +854,7 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 const RaceChartSvg = React.memo(RaceChartSvgBase);
 RaceChartSvg.displayName = 'RaceChartSvg';
 
-const FitnessChart = ({ mode, onClose, config, onMount, sessionData, primaryMediaKey }) => {
+const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessionData, primaryMediaKey }) => {
 	useRenderProfiler('FitnessChart');
 	// Exempt participants are excluded from the y-scale basis (logScaleBasis.js).
 	const exemptions = useGovernanceExemptions();
@@ -1010,7 +1009,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData, primaryMedi
 	// Guardrail: Verify chart present count matches roster count
 	// If mismatch, dump debug info to help diagnose state synchronization issues
 	useEffect(() => {
-		const rosterCount = Array.isArray(chartParticipants) ? chartParticipants.length : 0;
+		Array.isArray(chartParticipants) ? chartParticipants.length : 0;
 		const chartPresentCount = presentEntries.length;
 
 		// Filter out synthetic entries before mismatch comparison
@@ -1269,7 +1268,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData, primaryMedi
 			badges: resolvedBadges,
 			connectors: layoutConnectors || []
 		};
-	}, [presentEntries, dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY, layoutManager, identityColors]);
+	}, [presentEntries, dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, scaleY, layoutManager, identityColors]);
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];

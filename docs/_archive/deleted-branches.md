@@ -313,3 +313,7 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 `backup/pre-pii-rewrite` (f74979545e) is **deliberately retained**, decision deferred 2026-08-25. No code is lost by deleting it — all six of its substantive commits are on main. What it uniquely holds is the last copy of the repo's pre-rewrite history, which is the only thing that could be diffed against main to confirm the rewrite itself was faithful (never verified end-to-end). Against that: it is also the last local copy of the PII the rewrite existed to remove. Resolve deliberately, not incidentally.
 | 2026-08-26 | school/reading-final | 462582b58 | Safety ref during the living-room reading-session build; main confirmed intact |
 | 2026-08-26 | school/preschool-reading | e81474200 | Preschool daily-reading plan set; fast-forwarded into main |
+| 2026-08-27 | school/teacher-coverage | 30a568eea | Teacher console coverage remediation — 14 audit gaps + 4 merge blockers across 5 waves; merged to main and deployed |
+| 2026-08-27 | chore/gate-vitest-covers-frontend | df722fb7d | vitest gate covers frontend (+1158 files); fixed latent shell E2BIG |
+| 2026-08-27 | feature/piano-lesson-gate | b05582568 | Piano kiosk today's-lesson gate + Teacher Console parent day-bypass; merged to main and pushed, not yet run against a live stack |
+| 2026-08-27 | fix/piano-menu-activity-shape-race | c0b7577b3 | PianoMenuActivity shape assertion waited on paint not on the write |

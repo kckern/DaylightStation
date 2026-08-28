@@ -3,8 +3,8 @@ import { AppButton, Gauge, ProgressBar, ProgressRing, NumericKeypad, TouchSlider
 import useFitnessModule from '@/modules/Fitness/player/useFitnessModule';
 import ComponentCard from '../components/ComponentCard';
 
-const PrimitivesSection = ({ components }) => {
-  const { userVitalsMap, sessionActive, userCurrentZones = [] } = useFitnessModule('component_showcase');
+const PrimitivesSection = ({ components: _components }) => {
+  const { userVitalsMap, userCurrentZones = [] } = useFitnessModule('component_showcase');
   const [progress, setProgress] = useState(42);
   const [gaugeValue, setGaugeValue] = useState(120);
   const [ringValue, setRingValue] = useState(65);

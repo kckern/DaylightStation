@@ -33,16 +33,6 @@ const getUserLabel = (user) => {
 };
 
 /**
- * Format date for display: blank if today, "DD Mon" if past
- */
-const formatItemDate = (datetime) => {
-  if (!datetime) return '';
-  const date = new Date(datetime);
-  if (isToday(date)) return '';
-  return format(date, 'd MMM');
-};
-
-/**
  * Split items into today vs past
  */
 const splitByToday = (items) => {
@@ -72,12 +62,12 @@ const splitByToday = (items) => {
 function GratitudeHeader({ 
   category, 
   currentUser, 
-  users, 
+  users: _users, 
   focused, 
   headerFocus, 
-  onCategoryChange, 
-  onUserChange,
-  onHeaderFocusChange,
+  onCategoryChange: _onCategoryChange, 
+  onUserChange: _onUserChange,
+  onHeaderFocusChange: _onHeaderFocusChange,
   categoryAnim,
   userAnim,
   onCategoryCycle,
@@ -669,11 +659,12 @@ function GratitudeApp({
       case 'header':
         handleHeaderNavigation(event);
         break;
-      case 'queue':
+      case 'queue': {
         // Combine queue with session discarded for navigation
         const combinedQueue = [...currentQueue, ...(sessionDiscarded[category] || [])];
         handleQueueNavigation(event, combinedQueue);
         break;
+      }
       case 'selected':
         handleSelectedNavigation(event, currentSelected);
         break;
@@ -729,13 +720,14 @@ function GratitudeApp({
           }
         }
         break;
-      case 'queue':
+      case 'queue': {
         // Select the top item (could be from queue or sessionDiscarded)
         const allQueueItems = [...currentQueue, ...(sessionDiscarded[category] || [])];
         if (allQueueItems[0]) {
           handleSelect(allQueueItems[0]);
         }
         break;
+      }
       case 'selected':
         // Move item back to queue
         if (currentSelected[focusIndex]) {

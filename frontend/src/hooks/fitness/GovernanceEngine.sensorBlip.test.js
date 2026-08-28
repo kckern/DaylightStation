@@ -366,7 +366,7 @@ describe('Cycle SM — init↔ramp gate symmetry (Task 7)', () => {
   }
 
   it('does not enter locked on init_timeout when rider is pedalling but baseReq is unmet', () => {
-    const { engine, active, advance, getNow } = makeNonManualCycle(42);
+    const { engine, active, advance } = makeNonManualCycle(42);
     // Init timeout in fixture is 10 s. We tick 360 × 200 ms = 72 s. Without
     // the fix this oscillates init→locked→init repeatedly; with the fix the
     // engine holds in init and surfaces waitingForBaseReq=true.

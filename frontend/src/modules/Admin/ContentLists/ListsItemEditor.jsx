@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   TextInput,
@@ -269,7 +269,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, sections = []
     setCustomFields(prev => {
       if (value === undefined) {
         // Delete the field
-        const { [key]: _, ...rest } = prev;
+        const { [key]: _removed, ...rest } = prev;
         return rest;
       }
       return { ...prev, [key]: value };

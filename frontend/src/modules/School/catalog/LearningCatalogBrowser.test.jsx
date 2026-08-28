@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import LearningCatalogBrowser from './LearningCatalogBrowser.jsx';
 import { moduleLaunchAllowed } from './certification.js';
 

@@ -11,12 +11,22 @@ const text = (value) => (typeof value === 'string' && value.trim() ? value.trim(
 const STEP_UP_ACTIONS = new Set([
   'agenda.dispatch', 'attempts.regrade', 'sessions.grade-adjust',
   'sessions.grade-adjustment.retract', 'artifact.postview', 'report-card.close',
+  'sessions.settle',
 ]);
 
+// Every action in the Set above needs a branch below, and vice versa:
+// `requiresTeacherStepUp` is DERIVED from this function returning non-null, so
+// a name added to the Set with no resource branch requires nothing at all —
+// and a step-up that silently requires nothing looks exactly like one that
+// works. The pairing is what the tests assert, not the Set membership.
 export function teacherResource(action, context = {}) {
   if (action === 'agenda.dispatch') return text(context.learnerId);
   if (action === 'attempts.regrade') return text(context.bankId);
   if (action === 'sessions.grade-adjust') return text(context.sessionId);
+  // Settling stuck work by hand writes a grade no machine produced, which is
+  // at least as consequential as correcting one — and correcting one is
+  // already up there. Scoped to the one session the teacher is looking at.
+  if (action === 'sessions.settle') return text(context.sessionId);
   if (action === 'sessions.grade-adjustment.retract') {
     const sessionId = text(context.sessionId);
     const adjustmentId = text(context.adjustmentId);

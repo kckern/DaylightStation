@@ -138,6 +138,10 @@ export class FakeSessionRepository extends IWorkSessionRepository {
       outcome: state.outcome ? { result: state.outcome.result } : null,
       gradedPercent: state.gradedPercent ?? null,
       day: String(events[0]?.at ?? '').slice(0, 10),
+      // The household's 4am-boundary day, as the YAML datastore reports it —
+      // consumers bucket by `studyDay ?? day` and a fake that omitted it would
+      // hide exactly the UTC-slice bug that rule exists to prevent.
+      studyDay: state.studyDay ?? null,
       updatedAt: events[events.length - 1]?.at ?? null,
     }));
   }

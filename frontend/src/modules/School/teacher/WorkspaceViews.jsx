@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 import { usePanelFetch } from './usePanelFetch.js';
@@ -13,7 +13,9 @@ import MilestonesPanel from './panels/MilestonesPanel.jsx';
 import SchoolMatrix from './panels/SchoolMatrix.jsx';
 import CurriculumBrowser from './panels/CurriculumBrowser.jsx';
 import CurriculumCatalog from './panels/CurriculumCatalog.jsx';
+import SyllabiPanel from './panels/SyllabiPanel.jsx';
 import ActiveOverrides from './panels/ActiveOverrides.jsx';
+import SystemHealthPanel from './panels/SystemHealthPanel.jsx';
 import PeriodsTimeline from './panels/PeriodsTimeline.jsx';
 import EnrichmentPanel from './panels/EnrichmentPanel.jsx';
 import ReviewQueueView from './panels/ReviewQueueView.jsx';
@@ -21,6 +23,7 @@ import PrintPendingView from './panels/PrintPendingView.jsx';
 import QuizRequestBacklog from './panels/QuizRequestBacklog.jsx';
 import FeedbackNotes, { NoteComposer } from './panels/FeedbackNotes.jsx';
 import AttestationPanel from './panels/AttestationPanel.jsx';
+import ProgramDayBypassPanel from './panels/ProgramDayBypassPanel.jsx';
 import ReassignPanel from './panels/ReassignPanel.jsx';
 import StaleSessions from './panels/StaleSessions.jsx';
 import InterventionsIndex from './panels/InterventionsIndex.jsx';
@@ -145,7 +148,7 @@ function SessionList({ learnerId, onOpenSession }) {
   );
 }
 
-export function DashboardView({ kids, onSelectLearner, onOpenQueue }) {
+export function DashboardView({ kids, onSelectLearner: _onSelectLearner, onOpenQueue }) {
   // The sidebar/students nav already navigates to workspaces; a duplicate
   // card grid promising "agenda … and repair" (names the tabs don't use)
   // was pure drift (UX audit F25/F26). The dashboard is the Today digest
@@ -197,14 +200,6 @@ export function LearnerDayScreen({ learnerId, learnerName, studyDay = localDay()
       />
     </div>
   );
-}
-
-export function LearnerOverview({ learnerId, learnerName, onOpenSession, studyDay, onChangeStudyDay }) {
-  // Overview WAS a second, weaker day view — the plan under a "planning
-  // preview" disclaimer plus a day-scoped session list (UX audit IA3). The
-  // day record owns that now; this alias keeps old bookmarks working.
-  return <LearnerDayScreen learnerId={learnerId} learnerName={learnerName} studyDay={studyDay}
-    onChangeStudyDay={onChangeStudyDay} onOpenSession={onOpenSession} />;
 }
 
 function CourseContext({ courseId, lessonId = null, learnerId = null }) {
@@ -288,17 +283,19 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   };
   const valid = form.kind && form.targetId.trim() && form.reason.trim() && (form.kind === 'paused' || form.learnerId)
     && (form.kind !== 'replaced' || form.replacementLessonId.trim());
+  // No `stepUp` requirement: `curriculum-exception.apply` / `.retract` are the
+  // audit labels `ManageCurriculumException` stamps on its `teacherGate.assert`,
+  // not grant names the server knows how to mint. Asking for a grant under those
+  // names opened a PIN dialog no PIN could satisfy.
   const save = (apply) => run(`exception-${apply ? 'apply' : 'preview'}`, (auth) => teacherWorkspaceApi.changeCurriculumException({
     ...form, learnerId: form.kind === 'paused' ? null : form.learnerId, courseId: form.courseId || null,
     replacementLessonId: form.kind === 'replaced' ? form.replacementLessonId : null,
     decidedBy: auth.actorId, pin: auth.pin, apply,
-  }, auth.stepUpToken), { onSuccess: (data) => { setPreview(data); if (apply) setRefresh((n) => n + 1); },
-    stepUp: apply ? () => ({ action: 'curriculum-exception.apply', resource: form.targetId }) : null });
+  }), { onSuccess: (data) => { setPreview(data); if (apply) setRefresh((n) => n + 1); } });
   const retract = (exception) => {
     run(`retract-${exception.exceptionId}`, (auth) => teacherWorkspaceApi.retractCurriculumException(exception.exceptionId,
-      { reason: retractReason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }, auth.stepUpToken),
-    { onSuccess: () => { setRetracting(null); setRetractReason(''); setRefresh((n) => n + 1); },
-      stepUp: () => ({ action: 'curriculum-exception.retract', resource: exception.exceptionId }) });
+      { reason: retractReason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }),
+    { onSuccess: () => { setRetracting(null); setRetractReason(''); setRefresh((n) => n + 1); } });
   };
   return <PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
     <label>Decision<select value={form.kind} onChange={change('kind')}><option value="">Choose…</option><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></select></label>
@@ -308,7 +305,7 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
     <label>Course<select value={form.courseId} onChange={change('courseId')}><option value="">Any course</option>{courseIds.map((id) => <option key={id} value={id}>{titles.course(id)}</option>)}</select></label>
     {form.kind === 'replaced' && <label>Replacement lesson<select value={form.replacementLessonId} onChange={change('replacementLessonId')}><option value="">Choose…</option>{units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>)}</select></label>}
     <label>Reason{form.kind === 'paused' ? <select value={form.reason} onChange={change('reason')}><option value="">Choose…</option><option value="defective">Defective</option><option value="garbled">Garbled</option><option value="missing">Missing</option><option value="broken">Broken</option><option value="inappropriate">Inappropriate</option></select> : <input value={form.reason} onChange={change('reason')} />}</label>
-  </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
+  </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview exception</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
   {errors['exception-preview'] && <p role="alert">{errors['exception-preview']}</p>}{errors['exception-apply'] && <p role="alert">{errors['exception-apply']}</p>}
   {preview?.effects && <p>Gate: {preview.effects.advancesGate ? 'satisfied without mastery' : preview.effects.remainsOutstanding ? 'still outstanding' : preview.effects.blocksNewWork ? 'new work blocked' : 'unchanged'}.</p>}
   <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ?? 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} {retracting === exception.exceptionId
@@ -321,7 +318,7 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   </div></PanelFrame>;
 }
 
-export function CoursesView({ learnerId, learnerName, courseId, kids }) {
+export function CoursesView({ learnerId, learnerName, courseId, kids: _kids }) {
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Courses & enrollment</p><h2>{courseId ? 'Course details' : `${learnerName}’s program`}</h2><p>Operate published courses, enrollment, timing, pass bars, and milestones.</p></div></div>
@@ -355,6 +352,7 @@ export function LearnerOperationsView({ learnerId, learnerName, kids }) {
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Student operations</p><h2>Repair {learnerName}’s record</h2><p>Use the narrowest intervention that matches what actually happened. Every write is attributed and auditable.</p></div></div>
       <InterventionsIndex learnerId={learnerId} />
       <AttestationPanel learnerId={learnerId} learnerName={learnerName} />
+      <ProgramDayBypassPanel learnerId={learnerId} learnerName={learnerName} />
       <ReassignPanel learnerId={learnerId} learnerName={learnerName} kids={kids} />
     </div>
   );
@@ -363,24 +361,26 @@ export function LearnerOperationsView({ learnerId, learnerName, kids }) {
 export function CurriculumView({ kids, courseId = null, lessonId = null }) {
   // Landing state = the course catalog (cards, one per course). Lessons and
   // per-lesson pass bars live on the drill-in page only (UX audit C10).
-  // Curriculum INSPECTS; the repair tools live once, on School Operations,
-  // and this page links to them instead of re-rendering the form (IA4).
+  // Curriculum INSPECTS; the repair tools — and their one interventions
+  // index — live once, on School Operations, one click away via the global
+  // nav rail. This page does not re-render them (IA4, trim wave 5.3: the
+  // index rendering on both Curriculum branches AND Operations was the
+  // duplication the index exists to prevent).
   return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Published curriculum</p><h2>{courseId ? 'Course curriculum' : 'Courses, units, and policy'}</h2><p>Inspect and operate published curriculum. Authoring remains in reviewed source files.</p></div></div>
     {courseId ? <>
       <CourseContext courseId={courseId} lessonId={lessonId} />
       <CurriculumBrowser courseId={courseId} />
-      <InterventionsIndex scopes={['school']} />
     </> : <>
       <CurriculumCatalog />
+      <SyllabiPanel />
       <SchoolMatrix kids={kids} />
       <EnrichmentPanel kids={kids} />
-      <InterventionsIndex scopes={['school']} />
     </>}
   </div>;
 }
 
 export function OperationsView({ kids }) {
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><CapabilityNotice>Device health and retained-artifact audit will appear here when their teacher read models are available.</CapabilityNotice></div>;
+  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><SystemHealthPanel kids={kids} /></div>;
 }
 
 function BulkRegradePanel() {
@@ -495,6 +495,140 @@ function GradeAdjustmentRetraction({ sessionId, adjustment, revision, onApplied 
   );
 }
 
+/**
+ * The states a session can be settled by hand FROM: it came back, and marking
+ * or closing never finished. Everything earlier belongs to the stuck-session
+ * panel's Abandon, which is exactly the complement `MarkSessionAbandoned`
+ * refuses — so the two surfaces never both offer a move, and never both
+ * withhold one.
+ */
+const SETTLEABLE_STATES = new Set(['submitted', 'graded', 'outcome_recorded']);
+
+/**
+ * The use-case outcomes each half of a settle may report and still be finished.
+ * Read as an ALLOW-list, not a deny-list: `awaiting_review` comes back 200 and
+ * `ok`, but it means questions are still waiting on a person — closing after
+ * one would report "that work has not been marked yet" and blame the wrong
+ * half. Anything not named here stops the sequence.
+ */
+const MARKED_OUTCOMES = new Set(['graded', 'duplicate']);
+const SETTLED_OUTCOMES = new Set(['settled', 'already_settled']);
+
+/** What a use case said about itself, preferred over any generic HTTP text. */
+const saidBy = (response, fallback) => {
+  if (typeof response?.data?.message === 'string' && response.data.message) return response.data.message;
+  if (typeof response?.data?.error === 'string' && response.data.error) return response.data.error;
+  return fallback;
+};
+
+/**
+ * Settle this by hand — the way out for a session that came back but never
+ * finished marking: a scan that produced no attempts, a paper lesson somebody
+ * marked off-screen, every question voided as unmarkable. `abandoned` is not
+ * legal from any of those states, so the stuck-session panel links here rather
+ * than offering a verb the server would refuse.
+ *
+ * THREE WRITES, ONE ACT:
+ *
+ *  1. `graded`, flagged `settle` so it costs a session-scoped step-up. A
+ *     hand-settle carries no verdicts and would otherwise meet no gate at all.
+ *  2. The reason, as a teacher note. It is the only half the CHILD ever reads
+ *     — `RecordTeacherNote` puts it on the agenda's "Notes for you" and the
+ *     student panel.
+ *  3. `outcome_recorded`. Grading and stopping there would have moved the
+ *     problem rather than solved it — the session would sit at `graded`, still
+ *     open, still on the stuck list.
+ *
+ * WHY THE NOTE IS SECOND, not first. The instinct is to put the why on record
+ * before anything moves. But the write that acts on this child is the GRADE,
+ * and the grade can refuse — an all-voided sheet, a session still waiting on a
+ * person. Note-first meant the child read a sentence about a settlement that
+ * then did not happen, while the work stayed at `submitted`: a false sentence
+ * to a child, which this house forbids more strongly than it demands
+ * earliness. Second still puts it ahead of everything the principle protects —
+ * ahead of `outcome_recorded`, ahead of the printed receipt, ahead of anything
+ * that reaches their day.
+ *
+ * `duplicate` and `already_settled` are SUCCESS here: they say the half in
+ * question was already on record, which is the state this form is trying to
+ * reach. Anything else stops the sequence and is reported as what it is. A
+ * settle that got partway is never announced as a settle.
+ */
+function SettleByHand({ sessionId, learnerId, learnerName, currentPercent, onSettled }) {
+  const [reason, setReason] = useState('');
+  const [preview, setPreview] = useState(false);
+  // Whether this SESSION's note is already on record — keyed to the session id,
+  // never to the reason text. `useTeacherWrite` replays a 403'd call once after
+  // re-authorizing, and a teacher stuck at a refusing grade half will reword
+  // and try again; both must send the child one note, not two.
+  const deliveredRef = useRef(null);
+  const { run, busy, errors } = useTeacherWrite({ panel: 'session-settle' });
+  const key = `settle:${sessionId}`;
+  const alreadyMarked = typeof currentPercent === 'number';
+  const valid = Boolean(reason.trim());
+
+  const settle = () => run(key, async ({ actorId, pin, stepUpToken }) => {
+    const graded = await schoolApi.gradeSession(sessionId, {
+      gradedBy: actorId, pin, settle: true, settledBy: actorId,
+    }, stepUpToken);
+    if (!MARKED_OUTCOMES.has(graded.data?.status)) {
+      // Nothing was written and nothing was said: a refused grade means no
+      // decision was taken about this child, so there is nothing to tell them.
+      // A 403 is the one refusal `useTeacherWrite` can act on (it re-prompts
+      // and replays), so it travels unrewritten; everything else reports the
+      // use case's own sentence about why.
+      if (graded.status === 403) return graded;
+      return { ok: false, status: graded.status, data: { error:
+        `Nothing was changed — the marking didn’t go through: ${saidBy(graded, 'that work could not be marked')}` } };
+    }
+    if (deliveredRef.current !== sessionId) {
+      const delivered = await schoolApi.postTeacherNote({
+        learnerId, note: reason.trim(), from: actorId, pin,
+      });
+      if (!delivered.ok) return delivered;
+      deliveredRef.current = sessionId;
+    }
+    const closed = await schoolApi.closeSession(sessionId, { pin });
+    if (!SETTLED_OUTCOMES.has(closed.data?.status)) {
+      return { ok: false, status: closed.status, data: { error:
+        `It is marked, but closing it out didn’t go through: ${saidBy(closed, 'the close was refused')}. Settle it again to finish.` } };
+    }
+    return { ok: true, status: closed.status, data: closed.data };
+  }, {
+    stepUp: { action: 'sessions.settle', resource: sessionId },
+    onSuccess: () => { setPreview(false); setReason(''); deliveredRef.current = null; onSettled?.(); },
+  });
+
+  return (
+    <section className="teacher-panel teacher-session-settle">
+      <h3 className="teacher-panel__title">Settle this by hand</h3>
+      <p>This lesson came back but never finished marking. Record what it earned and close it out.</p>
+      <label>Reason <input aria-label="Settlement reason" maxLength="240"
+        placeholder={`What happened? ${learnerName} will see this.`}
+        value={reason} onChange={(event) => { setReason(event.target.value); setPreview(false); }} /></label>
+      {preview && (
+        <div className="teacher-action-preview">
+          <strong>Settling does three things</strong>
+          <ol>
+            <li>{alreadyMarked
+              ? `The ${Math.round(currentPercent)}% already on record stands.`
+              : 'The mark is finished from the answers already on record.'}</li>
+            <li>{learnerName} gets your note: “{reason.trim()}”</li>
+            <li>The result is recorded and a receipt goes to the printer.</li>
+          </ol>
+        </div>
+      )}
+      <div className="teacher-action-row">
+        {!preview && <button type="button" disabled={!valid || busy === key}
+          onClick={() => setPreview(true)}>Preview settlement</button>}
+        {preview && <button type="button" disabled={!valid || busy === key} onClick={settle}>Settle it</button>}
+        {preview && <button type="button" onClick={() => setPreview(false)}>Cancel</button>}
+      </div>
+      {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
+    </section>
+  );
+}
+
 function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
   const [preview, setPreview] = useState(null);
   const [idempotencyKey, setIdempotencyKey] = useState(null);
@@ -505,9 +639,11 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
     run(key, ({ actorId, pin }) => teacherWorkspaceApi.reprintArtifact(artifactId,
       { reprintedBy: actorId, pin, apply: false }, requestKey), { onSuccess: setPreview });
   };
-  const print = () => run(key, ({ actorId, pin, stepUpToken }) => teacherWorkspaceApi.reprintArtifact(artifactId,
-    { reprintedBy: actorId, pin, apply: true }, idempotencyKey, stepUpToken), {
-    stepUp: { action: 'artifact.reprint', resource: artifactId },
+  // `artifact.reprint` is ReprintIssuedArtifact's audit label, not a step-up
+  // grant name — the capability cookie is the whole authority the reprint route
+  // checks. Requesting a grant here hung the button on an unsatisfiable dialog.
+  const print = () => run(key, ({ actorId, pin }) => teacherWorkspaceApi.reprintArtifact(artifactId,
+    { reprintedBy: actorId, pin, apply: true }, idempotencyKey), {
     onSuccess: () => { setPreview(null); setIdempotencyKey(null); onPrinted?.(); },
   });
   const label = kind === 'result-receipt' || kind === 'result-correction' ? 'Result receipt' : 'Worksheet';
@@ -547,7 +683,29 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   const machineGrade = session?.scores?.machine?.percent ?? sessionState?.machineGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const effectiveGrade = session?.scores?.effective?.percent ?? sessionState?.effectiveGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const gradeAdjustments = sessionState?.gradeAdjustments ?? [];
-  const canOfferRetake = sessionState?.outcome?.result === 'needs_remediation' && !sessionState?.remediation;
+  // OFFERED ONLY WHILE THE SERVER CAN HONOUR IT — once, and never again.
+  //
+  // `OpenRemediation` returns `already_opened` for any session that has one,
+  // live or abandoned (`OpenRemediation.mjs:57-66`), and the route answers it
+  // at HTTP 201 — which `useTeacherWrite` reads as a save. A button offered
+  // past this point reports success, creates nothing, and tells a parent a
+  // fresh sheet is waiting when the only sheet is a dead one.
+  //
+  // A retake that is abandoned or never scanned therefore strands the parent
+  // session at `remediation_opened` with no second try available. That gap is
+  // real and is filed as a known residual (audit A10, `teacher.md` §16): the
+  // domain has no edge out of `remediation_opened` — see `TRANSITIONS` in
+  // `sessionEvents.mjs`, which the datastore enforces on append — so closing
+  // it means changing the transition table and deciding how `variant` cycles
+  // across a second one. Neither is this component's call. Until then the
+  // console does not offer a move the domain refuses.
+  const canOfferRetake = sessionState?.outcome?.result === 'needs_remediation'
+    && !sessionState?.remediation;
+  // No learner, no settle: the reason is delivered TO a child by name, and a
+  // form that cannot name one would write a note nobody receives.
+  const settleLearnerId = result.ownerId ?? learnerId ?? null;
+  const canSettleByHand = Boolean(settleLearnerId)
+    && SETTLEABLE_STATES.has(sessionState?.state) && sessionState?.terminal !== true;
   const { run, busy, errors } = useTeacherWrite({ panel: 'session-retake' });
   const offerRetake = () => run(sessionId, ({ actorId, pin }) => schoolApi.offerRetake(sessionId, {
     openedBy: actorId, pin,
@@ -598,6 +756,17 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
             </div>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
+          {/* Below the repair a teacher came for, never above it: settling
+              stuck bookkeeping is the exception path. Shown only where it
+              means anything — a session that came back and has not finished.
+              Earlier states are abandoned, not settled, and the stuck-session
+              panel routes those elsewhere; a terminal one is already done.
+              Nothing at all rather than a disabled button (UX audit IA4). */}
+          {canSettleByHand && (
+            <SettleByHand sessionId={sessionId} learnerId={settleLearnerId}
+              learnerName={ownerName} currentPercent={effectiveGrade}
+              onSettled={() => setAttempt((n) => n + 1)} />
+          )}
           {(session?.assignment || session?.assessment?.items?.length > 0) && (
             <section className="teacher-panel">
               <h3 className="teacher-panel__title">Questions and answers</h3>

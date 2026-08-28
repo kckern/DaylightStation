@@ -27,6 +27,11 @@ vi.mock('../schoolApi.js', () => {
     passOverrides: vi.fn(async () => ({ ok: true, status: 200, data: { overrides: {} } })), milestones: vi.fn(async () => ({ ok: true, status: 200, data: { milestones: [] } })),
     enrichment: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
     regradeAttempts: vi.fn(async () => ({ ok: true, status: 200, data: { applied: false, checked: 0, changed: [], sessionsAffected: [] } })),
+    bankHealth: vi.fn(async () => ({ ok: true, status: 200, data: { warmedAt: '2026-08-01T00:00:00.000Z', banks: 4, failed: [] } })),
+    reportCardFrozenVersions: vi.fn(async () => ({ ok: true, status: 200, data: { versions: [] } })),
+    programDayBypasses: vi.fn(async () => ({ ok: true, status: 200, data: { active: [], history: [] } })),
+    pianoLessonGate: vi.fn(async () => ({ ok: true, status: 200, data: { gated: false, reason: 'not-enrolled' } })),
+    grantProgramDayBypass: vi.fn(), retractProgramDayBypass: vi.fn(),
   } };
 });
 vi.mock('./teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
@@ -92,6 +97,16 @@ describe('TeacherConsole workspace', () => {
     act(() => { window.history.pushState({}, '', '/school/teacher/students/learner-b/reports'); window.dispatchEvent(new PopStateEvent('popstate')); });
     await waitFor(() => expect(screen.getByRole('navigation', { name: 'Learner B workspace' })).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Reports' }).getAttribute('aria-current')).toBe('page');
+  });
+
+  it('redirects the retired /overview alias to the canonical short form (trim 5.6)', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/learner-a/overview');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Learner A workspace' })).toBeTruthy());
+    // The bookmark is canonicalized to the bare learner path — the Day
+    // record — not left sitting at the retired /overview URL.
+    expect(window.location.pathname).toBe('/school/teacher/students/learner-a');
+    expect(screen.getByRole('button', { name: 'Day' }).getAttribute('aria-current')).toBe('page');
   });
 
   it('names an unknown bookmarked learner instead of blanking', async () => {

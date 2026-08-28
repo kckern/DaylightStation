@@ -20,7 +20,7 @@ export function useAutoGameLifecycle(phase, startGame, onDeactivate, logger, gam
       logger.info(`${gameName}.auto-start`, {});
       startGame();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentional mount-only
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only
 
   // Auto-deactivate when phase transitions back to IDLE from non-IDLE
   useEffect(() => {

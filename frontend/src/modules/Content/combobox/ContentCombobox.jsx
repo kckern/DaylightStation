@@ -356,7 +356,7 @@ export function ContentCombobox({
     };
     rafId = requestAnimationFrame(attempt);
     return () => { if (rafId) cancelAnimationFrame(rafId); };
-  }, [levelKey, highlightIdx, items.length]); // eslint-disable-line react-hooks/exhaustive-deps -- once per level via positionedLevelRef
+  }, [levelKey, highlightIdx, items.length]);  
 
   // ── Scroll-to-highlighted: ONE writer. Eased snap on navigation, instant
   // jump + wrap-flash on pac-man wrap, skip entirely during pagination. ──
@@ -433,7 +433,7 @@ export function ContentCombobox({
     return () => {
       if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
     };
-  }, [highlightIdx, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [highlightIdx, items.length]);  
 
   // ── Option row (standalone renderer + twin highlight/current classes) ──
   const renderOption = (item, idx) => {

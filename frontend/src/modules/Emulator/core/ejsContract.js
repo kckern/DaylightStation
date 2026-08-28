@@ -67,7 +67,7 @@ export function readPath(root, path) {
 export function matchesType(value, type) {
   if (value === undefined || value === null) return false;
   if (type === 'array') return Array.isArray(value);
-  return typeof value === type; // eslint-disable-line valid-typeof
+  return typeof value === type;  
 }
 
 /**

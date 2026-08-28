@@ -804,7 +804,7 @@ function MenuItems({
       scrollHeight: cache.scrollHeight, containerHeight: cache.containerHeight,
       nextIndex, didScroll,
     }, { maxPerMinute: 10 });
-  }, [containerRef, columns, buildLayoutCache]);
+  }, [containerRef, columns, logger, buildLayoutCache]);
 
   const handleItemActivate = useCallback((index) => {
     const item = items[index];
@@ -870,7 +870,7 @@ function MenuItems({
         }
       }, 100);
     }
-  }, [containerRef, items]);
+  }, [buildLayoutCache, columns, containerRef, items, logger, selectedIndex]);
 
   // Single stable keydown handler — never recreates
   useEffect(() => {
@@ -939,7 +939,7 @@ function MenuItems({
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [columns, navigateTo]);
+  }, [columns, findKeyForItem, logger, navigateTo, setSelectedIndex]);
 
   // Gamepad input now flows through GamepadAdapter (single source of truth):
   // it dispatches synthetic Enter / Escape / Arrow* keydown events that
@@ -988,7 +988,7 @@ function MenuItems({
         setSelectedIndex(selectedIndex, key);
       }
     }
-  }, [items, selectedIndex, currentKey, setSelectedIndex]);
+  }, [items, selectedIndex, currentKey, setSelectedIndex, findKeyForItem]);
 
   // Pre-compute item data outside the render loop for memoization stability.
   // IMPORTANT: imageReadyCount is NOT in the dependency array — it would bust

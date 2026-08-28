@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import CameraRenderer from './CameraRenderer.jsx';
 
-export default function CameraOverlay({ dismiss, crop = true, cameraId: propCameraId }) {
+export default function CameraOverlay({ dismiss: _dismiss, crop = true, cameraId: propCameraId }) {
   const logger = useMemo(() => getChildLogger({ component: 'CameraOverlay' }), []);
   const [camera, setCamera] = useState(propCameraId ? { id: propCameraId } : null);
   const [error, setError] = useState(null);

@@ -66,6 +66,56 @@ describe('mergeEntries — a save must never flatten an enrollment', () => {
   });
 });
 
+describe('AssignmentsView — the enrolled note points at its actual source', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const CATALOG = {
+    ok: true,
+    status: 200,
+    data: {
+      units: [
+        { unitId: 'atlas-unit-1', courseId: 'young-peoples-atlas-us', courseTitle: 'Young People’s Atlas of the US' },
+      ],
+    },
+  };
+
+  it('names the syllabus and links to the syllabi panel on the Curriculum page, for a managed enrollment', async () => {
+    schoolApi.assignments.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { courses: [{ ...ENROLLED, syllabusId: 'atlas-upper' }], units: [], updatedAt: '2026-08-13T00:00:00Z' },
+    });
+    schoolApi.curriculumUnits.mockResolvedValue(CATALOG);
+
+    render(<AssignmentsView learnerId="learner-a" learnerName="Learner A" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Edit assignments/i }));
+
+    const note = await screen.findByText(/has an enrollment — order, profile, and pass bar come from its syllabus/);
+    expect(note).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'Curriculum → Syllabi' });
+    expect(link).toHaveAttribute('href', '/school/teacher/curriculum');
+    // The old dead-end sentence is gone.
+    expect(screen.queryByText(/edited from The whole school/)).toBeNull();
+  });
+
+  it('names it hand-authored and links nowhere when the enrollment carries no syllabusId', async () => {
+    schoolApi.assignments.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { courses: [ENROLLED], units: [], updatedAt: '2026-08-13T00:00:00Z' },
+    });
+    schoolApi.curriculumUnits.mockResolvedValue(CATALOG);
+
+    render(<AssignmentsView learnerId="learner-a" learnerName="Learner A" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Edit assignments/i }));
+
+    expect(await screen.findByText(/has a hand-authored enrollment — order, profile, and pass bar were set directly on the record/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Curriculum → Syllabi' })).toBeNull();
+  });
+});
+
 describe('AssignmentsView — the rendered component preserves enrollments on save', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -178,6 +178,14 @@ describe('teacher console wrappers', () => {
     await schoolApi.reportCardFrozen({ learnerId: 'learner4', periodId: '2026-fall' });
     expect(fetch).toHaveBeenCalledWith('/api/v1/school/report-card/frozen?learnerId=learner4&periodId=2026-fall', expect.any(Object));
   });
+  it('reportCardFrozenVersions() always carries both learner and period — the route 400s without either', async () => {
+    await schoolApi.reportCardFrozenVersions({ learnerId: 'learner4', periodId: '2026-fall' });
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/report-card/frozen/versions?learnerId=learner4&periodId=2026-fall', expect.any(Object));
+  });
+  it('bankHealth() hits /banks/health', async () => {
+    await schoolApi.bankHealth();
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/banks/health', expect.any(Object));
+  });
   it('lifecycleReview() hits the pending queue', async () => {
     await schoolApi.lifecycleReview();
     expect(fetch).toHaveBeenCalledWith('/api/v1/school/lifecycle/review', expect.any(Object));

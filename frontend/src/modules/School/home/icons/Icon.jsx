@@ -40,7 +40,7 @@ export default function Icon({ name, className, label }) {
       role={label ? 'img' : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
-      // eslint-disable-next-line react/no-danger
+       
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

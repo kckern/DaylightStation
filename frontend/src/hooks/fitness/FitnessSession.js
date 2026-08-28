@@ -13,7 +13,6 @@ import { SessionEntityRegistry } from './SessionEntity.js';
 import { DeviceEventRouter } from './DeviceEventRouter.js';
 import { VibrationActivityTracker } from './VibrationActivityTracker.js';
 import { findUnclosedMedia } from './closeOpenMedia.js';
-import moment from 'moment-timezone';
 import getLogger from '../../lib/logging/Logger.js';
 import { heapSnapshotFields } from '../../lib/perf/memoryProbe.js';
 
@@ -54,46 +53,23 @@ const ZONE_SYMBOL_MAP = {
  * @param {string} timezone
  * @returns {string|null}
  */
-const toReadable = (unixMs, timezone) => {
-  if (!Number.isFinite(unixMs)) return null;
-  const tz = timezone || moment.tz.guess() || 'UTC';
-  return moment(unixMs).tz(tz).format('YYYY-MM-DD h:mm:ss a');
-};
 
 /**
  * Resolve the timezone used for persistence.
  * @returns {string}
  */
-const resolvePersistTimezone = () => {
-  const intl = Intl?.DateTimeFormat?.()?.resolvedOptions?.()?.timeZone;
-  return intl || moment.tz.guess() || 'UTC';
-};
 
 /**
  * Derive the numeric session id used in v2 payloads.
  * @param {string|null} sessionId
  * @returns {string|null}
  */
-const deriveNumericSessionId = (sessionId) => {
-  if (!sessionId) return null;
-  const raw = String(sessionId).trim();
-  if (!raw) return null;
-  return raw.startsWith('fs_') ? raw.slice(3) : raw;
-};
 
 /**
  * Derive YYYY-MM-DD from a numeric session id (YYYYMMDDHHmmss).
  * @param {string|null} numericSessionId
  * @returns {string|null}
  */
-const deriveSessionDate = (numericSessionId) => {
-  if (!numericSessionId || numericSessionId.length < 8) return null;
-  const y = numericSessionId.slice(0, 4);
-  const m = numericSessionId.slice(4, 6);
-  const d = numericSessionId.slice(6, 8);
-  if (!y || !m || !d) return null;
-  return `${y}-${m}-${d}`;
-};
 
 /**
  * Convert roster + assignment snapshots into a keyed participant object.
@@ -101,41 +77,6 @@ const deriveSessionDate = (numericSessionId) => {
  * @param {Array<any>} deviceAssignments
  * @returns {Record<string, {display_name?: string, hr_device?: string, is_primary?: boolean, is_guest?: boolean, base_user?: string}>}
  */
-const buildParticipantsForPersist = (roster, deviceAssignments) => {
-  const participants = {};
-
-  const assignmentBySlug = new Map();
-  if (Array.isArray(deviceAssignments)) {
-    deviceAssignments.forEach((entry) => {
-      // Use occupantId (new) or occupantSlug (legacy) as key
-      const key = entry?.occupantId || entry?.occupantSlug;
-      if (!key) return;
-      assignmentBySlug.set(String(key), entry);
-    });
-  }
-
-  const safeRoster = Array.isArray(roster) ? roster : [];
-  safeRoster.forEach((entry, idx) => {
-    if (!entry || typeof entry !== 'object') return;
-    const name = typeof entry.name === 'string' ? entry.name : null;
-    // Use explicit ID from roster entry
-    const participantId = entry.id || entry.profileId || entry.hrDeviceId || `anon-${idx}`;
-    if (!participantId) return;
-
-    const assignment = assignmentBySlug.get(participantId) || null;
-    const hrDevice = entry.hrDeviceId ?? assignment?.deviceId ?? null;
-
-    participants[participantId] = {
-      ...(name ? { display_name: name } : {}),
-      ...(hrDevice != null ? { hr_device: String(hrDevice) } : {}),
-      ...(entry.isPrimary === true ? { is_primary: true } : {}),
-      ...(entry.isGuest === true ? { is_guest: true } : {}),
-      ...(entry.baseUserName ? { base_user: String(entry.baseUserName) } : {})
-    };
-  });
-
-  return participants;
-};
 
 /**
  * Normalize numeric values for persistence.
@@ -177,100 +118,10 @@ export const setFitnessTimeouts = ({ inactive, remove, rpmZero, emptySession, se
 export const getFitnessTimeouts = () => ({ ...FITNESS_TIMEOUTS });
 
 /**
- * Convert legacy v1 series keys to the compact v2-style keys.
- *
- * Examples:
- * - user:user_4:heart_rate   -> user_4:hr
- * - user:user_4:zone_id      -> user_4:zone
- * - user:user_4:heart_beats  -> user_4:beats
- * - user:user_4:rings_total  -> user_4:rings
- * - device:7138:rpm        -> bike:7138:rpm
- * - device:device_7138:rpm -> bike:7138:rpm
- * - device:device_28676:heart_rate -> device:28676:heart_rate
- *
- * @param {string} key
- * @returns {string}
- */
-const mapSeriesKeyForPersist = (key) => {
-  if (!key || typeof key !== 'string') return key;
-  const parts = key.split(':');
-  if (parts.length < 2) return key;
-
-  const kind = parts[0];
-
-  if (kind === 'user' && parts.length >= 3) {
-    const slug = parts[1];
-    const metric = parts.slice(2).join(':');
-    const mappedMetric = (() => {
-      if (metric === 'heart_rate') return 'hr';
-      if (metric === 'zone_id') return 'zone';
-      if (metric === 'heart_beats') return 'beats';
-      if (metric === 'rings_total') return 'rings';
-      return metric;
-    })();
-    return `${slug}:${mappedMetric}`;
-  }
-
-  if (kind === 'device' && parts.length >= 3) {
-    const rawId = parts[1];
-    const id = rawId && rawId.startsWith('device_') ? rawId.slice('device_'.length) : rawId;
-    const metric = parts.slice(2).join(':');
-
-    // Equipment metrics use bike:* namespace in persisted data.
-    if (metric === 'rpm' || metric === 'rotations' || metric === 'power' || metric === 'distance') {
-      return `bike:${id}:${metric}`;
-    }
-
-    // Keep wearable metrics as device:* but fix double-prefix bug.
-    return `device:${id}:${metric}`;
-  }
-
-  return key;
-};
-
-/**
- * Map and copy a series dictionary for persistence.
- * @param {Record<string, unknown>} series
- * @returns {Record<string, unknown>}
- */
-const mapSeriesKeysForPersist = (series = {}) => {
-  const mapped = {};
-  if (!series || typeof series !== 'object') return mapped;
-  Object.entries(series).forEach(([key, value]) => {
-    const nextKey = mapSeriesKeyForPersist(key);
-    mapped[nextKey] = value;
-  });
-  return mapped;
-};
-
-/**
  * Strip runtime/UI fields from roster entries before persistence.
  * @param {unknown[]} roster
  * @returns {Array<{name?: string, profileId?: string, hrDeviceId?: string, isPrimary?: boolean, isGuest?: boolean, baseUserName?: string|null}>}
  */
-const sanitizeRosterForPersist = (roster) => {
-  if (!Array.isArray(roster)) return [];
-  return roster
-    .map((entry) => {
-      if (!entry || typeof entry !== 'object') return null;
-      const name = typeof entry.name === 'string' ? entry.name : null;
-      const profileId = entry.profileId != null ? String(entry.profileId) : null;
-      const hrDeviceId = entry.hrDeviceId != null ? String(entry.hrDeviceId) : null;
-      const isPrimary = entry.isPrimary === true;
-      const isGuest = entry.isGuest === true;
-      const baseUserName = entry.baseUserName != null ? String(entry.baseUserName) : null;
-      if (!name && !profileId && !hrDeviceId) return null;
-      return {
-        ...(name ? { name } : {}),
-        ...(profileId ? { profileId } : {}),
-        ...(hrDeviceId ? { hrDeviceId } : {}),
-        ...(isPrimary ? { isPrimary } : {}),
-        ...(isGuest ? { isGuest } : {}),
-        ...(baseUserName ? { baseUserName } : {})
-      };
-    })
-    .filter(Boolean);
-};
 
 /**
  * Normalize a content id to the canonical "source:localId" form. Bare
@@ -1899,13 +1750,9 @@ export class FitnessSession {
   }
 
   updateSnapshot({
-    users, // Map of user objects (legacy/external)
-    devices, // Map of devices (legacy/external)
     playQueue,
     participantRoster,
-    zoneConfig,
-    mediaPlaylists,
-    screenshotPlan
+    zoneConfig
   } = {}) {
     if (!this.sessionId) return;
 
@@ -2596,7 +2443,7 @@ export class FitnessSession {
     this.activityMonitor = null;
   }
 
-  _encodeSeries(series = {}, tickCount = null) {
+  _encodeSeries(series = {}, _tickCount = null) {
     const encodeValue = (key, value) => {
       if (value == null) return null;
       if (typeof value === 'number') {
@@ -3378,7 +3225,7 @@ export class FitnessSession {
           deviceId: entry.deviceId,
           occupantSlug: slug,
           issue: 'device-mismatch',
-          boundDeviceId
+          boundDeviceId: [...(user.hrDeviceIds || [])]
         }, { severity: 'warn' });
       }
       const device = this.deviceManager.getDevice(entry.deviceId);

@@ -1,8 +1,20 @@
 # Handoff: Externalize household PII from committed code
 
-**Status:** Scrub DONE, verified, and committed on a branch. **NOT yet on `main`, NOT pushed.**
-The only thing left is landing the clean history onto `main` and pushing — blocked purely by
-`main` being a continuously-moving target during this session (see Blocker).
+**Status (2026-08-27): SUPERSEDED for the working tree.** The branches this handoff
+describes (`chore/pii-p3`, `chore/pii-externalize`) and the `.pii-scrub/` tooling did not
+survive; nothing using the `user_N` aliases ever reached `main`. On 2026-08-27 the WORKING
+TREE was scrubbed fresh under this document's scheme (names in
+`.claude/secret-patterns.local.txt` order -> `user_2..user_8`, whole-word, case-aware),
+102 replacements across 17 files, 0 net-new test failures. `.pii-scrub/pii-scrub.mjs` was
+rebuilt and is re-runnable.
+
+**HISTORY IS STILL UNSCRUBBED.** Past commits on the public remote continue to carry the
+real names; only the current tree is clean. The `git filter-repo` step below remains
+undone and remains the user's call — it is a force-push on a public repo.
+
+Original status follows.
+
+~~Scrub DONE, verified, and committed on a branch. NOT yet on `main`, NOT pushed.~~
 
 ---
 

@@ -473,7 +473,7 @@ function ArtMode({
     };
   }, [art]);
 
-  const panels = (!failed && art?.panels) ? art.panels : [];
+  const panels = useMemo(() => ((!failed && art?.panels) ? art.panels : []), [failed, art]);
   const layout = useMemo(() => {
     if (!panels.length) return null;
     const ratios = panels.map((p) =>
@@ -497,7 +497,10 @@ function ArtMode({
     return (s) => ctx.measureText(s).width;
   }, [measureText, fontPx]);
 
-  const placardGeom = isGallery ? (layout?.panels ?? []) : fitWindows;
+  const placardGeom = useMemo(
+    () => (isGallery ? (layout?.panels ?? []) : fitWindows),
+    [isGallery, layout, fitWindows],
+  );
   // Pre-split titles into 1-2 balanced lines per panel (memoized so brightness
   // keypresses, which re-render, don't re-measure every title).
   const placardLines = useMemo(

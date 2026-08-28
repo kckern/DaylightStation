@@ -72,7 +72,7 @@ describe('autoReport', () => {
 
   it('files one report per incident, not one per tick', async () => {
     for (let i = 0; i < 50; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
+       
       await autoReport({ app: 'piano', reason: 'stall-detector' });
     }
 
@@ -109,7 +109,7 @@ describe('autoReport', () => {
 
   it('caps the number of reports one page load can file, whatever the reasons', async () => {
     for (let i = 0; i < AUTO_REPORT_MAX_PER_SESSION + 5; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
+       
       await autoReport({ app: 'piano', reason: `reason-${i}` });
     }
 

@@ -43,9 +43,6 @@ const renderTimeline = (props = {}) => render(
   />,
 );
 
-const labelNames = (container) =>
-  [...container.querySelectorAll('[data-testid="surround-era-label"]')]
-    .map((el) => el.getAttribute('data-era'));
 
 /**
  * THE MEASURED WIDTHS OF THE REAL SLOT.

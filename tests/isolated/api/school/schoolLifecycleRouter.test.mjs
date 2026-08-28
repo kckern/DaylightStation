@@ -138,7 +138,12 @@ beforeAll(async () => {
       execute: async ({ sessionId, entries }) => ({ status: sessionId === 'ses_dup' ? 'duplicate' : 'submitted', sessionId, entries }),
       fromOmrSheet: async ({ sessionId, sheet }) => ({ status: 'submitted', sessionId, viaSheet: true, columns: sheet.marks.length }),
     },
-    gradeSubmission: { execute: async ({ sessionId, verdicts }) => ({ status: sessionId === 'ses_open' ? 'awaiting_review' : 'graded', percent: 100, verdicts }) },
+    // `settle`/`settledBy` are echoed back on purpose. They are the ONLY thing
+    // that makes a hand-settle cost a step-up, and the route is the one hop
+    // that can drop them silently: without the destructure the use case sees
+    // `settle: undefined`, asserts nothing, and answers 200 — a console that
+    // looks like it works and gates nothing.
+    gradeSubmission: { execute: async ({ sessionId, verdicts, settle, settledBy }) => ({ status: sessionId === 'ses_open' ? 'awaiting_review' : 'graded', percent: 100, verdicts, settle, settledBy }) },
     closeSessionOutcome: { execute: async ({ sessionId, signedOff }) => ({ status: sessionId === 'ses_done' ? 'already_settled' : 'settled', signedOff }) },
     openRemediation: { execute: async ({ sessionId }) => ({ status: sessionId === 'ses_open' ? 'already_opened' : 'opened' }) },
     assignments,
@@ -296,6 +301,17 @@ describe('submission, grading and close-out', () => {
   it('grades, and 200s work still awaiting a person', async () => {
     expect((await post('/sessions/ses_1/grade', { entries: { q1: 'C' } })).status).toBe(200);
     expect((await post('/sessions/ses_open/grade', {})).status).toBe(200);
+  });
+
+  it('carries a hand-settle claim through to the use case that gates it', async () => {
+    expect(await (await post('/sessions/ses_1/grade', { settle: true, settledBy: 'parent' })).json())
+      .toMatchObject({ settle: true, settledBy: 'parent' });
+    // Coerced, not trusted: a truthy string must not buy the settle lane, and
+    // an ordinary grade must not wander into it.
+    expect(await (await post('/sessions/ses_1/grade', { settle: 'yes please' })).json())
+      .toMatchObject({ settle: false });
+    expect(await (await post('/sessions/ses_1/grade', { entries: {} })).json())
+      .toMatchObject({ settle: false });
   });
 
   it('closes out, and 409s a second close', async () => {

@@ -53,10 +53,6 @@ export function PlayerOverlayLoading({
   // FIRST so this hook is always called regardless of the early returns below.
   const skipCardPaused = useSyncExternalStore(subscribeSkipCard, isSkipCardPaused, isSkipCardPaused);
 
-  // In blackout mode, keep screen completely dark (TV appears off)
-  if (suppressForBlackout) {
-    return null;
-  }
   // Render whenever the user needs recovery feedback. During a true stall, show
   // the spinner even with the pause overlay active — the pause overlay sits ON TOP
   // (higher z-index in CSS) and tells the user "you paused", while the spinner
@@ -69,7 +65,7 @@ export function PlayerOverlayLoading({
   const componentIdRef = useRef(`overlay-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`);
   const lastPlayheadRef = useRef(null);
   const stallThresholdEmittedRef = useRef(false);
-  const overlayVisibilityRef = useRef({
+  useRef({
     overlayDisplayActive,
     shouldRender,
     isVisible,
@@ -330,7 +326,7 @@ export function PlayerOverlayLoading({
       level: 'info',
       context: overlayLogContext
     });
-  }, [effectiveMetaIsNull, overlayDisplayActive, isVisible, status, seekSummary, mediaSummary, logLabel, overlayLogContext, statusLabel, intentPositionDisplay, normalizedMediaDetails, stalled, waitingToPlay, waitKey, waitKeyHash, overlayLogLabel]);
+  }, [effectiveMetaIsNull, overlayDisplayActive, status, seekSummary, mediaSummary, logLabel, overlayLogContext, statusLabel, intentPositionDisplay, normalizedMediaDetails, stalled, waitingToPlay, waitKey, waitKeyHash, overlayLogLabel]);
 
   // Use a ref to store the latest logOverlaySummary function to avoid timer recreation
   const logOverlaySummaryRef = useRef(logOverlaySummary);
@@ -379,6 +375,11 @@ export function PlayerOverlayLoading({
   }, [effectiveMetaIsNull, overlayLoggingActive, overlayLogContext]);
 
   if (!overlayDisplayActive) {
+    return null;
+  }
+
+  // In blackout mode, keep screen completely dark (TV appears off)
+  if (suppressForBlackout) {
     return null;
   }
 

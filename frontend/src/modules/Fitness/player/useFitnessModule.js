@@ -158,7 +158,7 @@ const useFitnessModule = (moduleId) => {
     
     // App actions
     logAppEvent: (event, payload) => {
-      fitnessCtx.fitnessSessionInstance?.logEvent?.(`app_${appId}_${event}`, payload);
+      fitnessCtx.fitnessSessionInstance?.logEvent?.(`app_${moduleId}_${event}`, payload);
     },
     
     // Video control (for overlay apps)

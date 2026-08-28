@@ -137,6 +137,32 @@ export function summarize(sections, sessions, entries = []) {
     }
   }
 
+  // Then work the planner reports as SERVED today that left no session behind.
+  //
+  // Not every kind of work opens a work-session. A PROGRAM subject — piano is
+  // the one in the house — is served by finishing a lesson in its own app, so
+  // it completes with no session row and no OMR outcome; only the section's
+  // `servedWork` ever knows it happened. Building discs from sessions alone
+  // therefore dropped the piano disc entirely (2026-08-26: User_4 finished piano
+  // in the morning, was served four things, and the board could only see three
+  // — it read "2 OF 3" for a day that was really 3 of 4).
+  //
+  // Sessions still win: this runs after the evidence pass and skips any unit
+  // already claimed, so a served unit whose sheet is still open — a partial
+  // scan the grader refused to bridge — keeps its pending disc instead of
+  // being painted green by the plan's word.
+  for (const section of planned) {
+    for (const work of section.servedWork ?? []) {
+      if (!work?.unitId || byUnit.has(work.unitId)) continue;
+      byUnit.set(work.unitId, {
+        unitId: work.unitId,
+        subject: section.subject ?? null,
+        label: nameFor(section.subject),
+        state: 'passed',
+      });
+    }
+  }
+
   // Then the plan, for work with no session yet.
   const fromEntries = new Map((entries ?? []).map((e) => [e.unitId, e]));
   for (const section of planned) {
@@ -372,7 +398,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                       <li
                         // Two sections can share a subject; the index keeps the
                         // key unique without pretending order is meaningful.
-                        // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
+                         
                         key={`${segment.unitId ?? segment.subject}-${i}`}
                         className="school-status-board__pill"
                         data-state={segment.state}

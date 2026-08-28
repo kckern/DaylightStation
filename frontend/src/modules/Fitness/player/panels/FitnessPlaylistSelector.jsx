@@ -161,7 +161,7 @@ const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onCl
         </div>
 
         <div className="playlist-panel-grid" ref={gridRef}>
-          {visibleItems.map((item, idx) => {
+          {visibleItems.map((item, _idx) => {
             if (item.isNavPrev) {
               return (
                 <div

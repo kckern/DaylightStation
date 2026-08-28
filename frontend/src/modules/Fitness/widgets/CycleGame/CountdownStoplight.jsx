@@ -9,7 +9,7 @@ import './CountdownStoplight.scss';
  * — so yellow never holds for two beats. Sound is triggered by the caller on each
  * change (kept out of this presentational component).
  */
-export default function CountdownStoplight({ remaining, total = 3 }) {
+export default function CountdownStoplight({ remaining }) {
   const isGo = remaining <= 0;
   const n = Math.ceil(remaining);
   const lamp = isGo ? 'green' : n === 1 ? 'yellow' : n === 2 ? 'red' : 'all';

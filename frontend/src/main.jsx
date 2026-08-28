@@ -4,7 +4,6 @@ import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation, useNavi
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
-import RootApp from './Apps/RootApp.jsx';
 import HomeApp from './Apps/HomeApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
@@ -106,6 +105,18 @@ const SchoolDeepLinkRedirect = () => {
   return <Navigate to={`/app${pathname}${search}`} replace />;
 };
 
+// /school/teacher-next[/*] was the rollout alias for the teacher-console
+// rebuild; the rebuild landed at /school/teacher and the alias route itself
+// was already removed from this file. Left alone, a teacher-next bookmark
+// fell through to the /school/* splat above and landed in the KIDS' school
+// app instead of the console — a silent wrong-surface redirect, worse than
+// the 404 it looked like it would be. Redirect explicitly to the real
+// surface instead, sub-path and query preserved.
+const TeacherNextRedirect = () => {
+  const { pathname, search } = useLocation();
+  return <Navigate to={`${pathname.replace(/^\/school\/teacher-next/, '/school/teacher')}${search}`} replace />;
+};
+
 // Standalone /app/:appId route — renders a registered app directly without the TV shell.
 // Used for testing and direct linking to specific apps (e.g. /app/weekly-review).
 const AppDirectRoute = () => {
@@ -177,6 +188,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             kids' shell never parses a /school/teacher URL. */}
         <Route path="/school/teacher" element={<TeacherConsoleRoute />} />
         <Route path="/school/teacher/*" element={<TeacherConsoleRoute />} />
+        {/* Retired rollout alias — redirect, don't 404 (see TeacherNextRedirect above). */}
+        <Route path="/school/teacher-next" element={<TeacherNextRedirect />} />
+        <Route path="/school/teacher-next/*" element={<TeacherNextRedirect />} />
         <Route path="/school/*" element={<SchoolDeepLinkRedirect />} />
         <Route path="/app/:appId/*" element={<AppDirectRoute />} />
         <Route path="/app/:appId" element={<AppDirectRoute />} />

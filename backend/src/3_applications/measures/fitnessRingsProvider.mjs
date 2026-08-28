@@ -8,7 +8,7 @@
  * instead would be far too heavy for a board that repaints every five minutes.
  *
  * Fitness participant ids and school learner ids share a namespace already
- * (`alan`, `felix`, `milo`, `soren`), so no mapping layer exists on purpose.
+ * (`user_5`, `user_3`, `user_4`, `user_2`), so no mapping layer exists on purpose.
  * `kckern` is a fitness participant but not a school learner, which is fine:
  * this is asked per learner, so a non-learner is simply never asked about.
  */

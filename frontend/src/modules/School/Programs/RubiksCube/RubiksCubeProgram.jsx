@@ -7,7 +7,7 @@ const FACE_LABEL = { U: 'Up', R: 'Right', F: 'Front', D: 'Down', L: 'Left', B: '
 const FALLBACK_CUBE = Object.fromEntries(FACES.map((face) => [face, Array(9).fill(COLORS[face])]));
 const PHYSICAL_COLORS = Object.values(COLORS);
 
-function PhysicalCubeCoach({ physical, packet, busy, onImport, onPacket, onCoach, onAdvance, onVerify, lesson }) {
+function PhysicalCubeCoach({ physical, packet, busy, onImport, onPacket, onCoach: _onCoach, onAdvance: _onAdvance, onVerify, lesson }) {
   const [faces, setFaces] = useState(() => structuredClone(FALLBACK_CUBE));
   const [faceIndex, setFaceIndex] = useState(0); const [paint, setPaint] = useState(COLORS.U); const [errors, setErrors] = useState([]);
   const face = FACES[faceIndex];
@@ -72,8 +72,7 @@ export default function RubiksCubeProgram({ userId = null, courseId = 'beginner-
   const importPhysical = (faces) => request(() => schoolApi.rubiksCubePhysicalImport({ userId, courseId, grant: cubeGrant, faces }));
   const startPhysicalCoach = () => request(() => schoolApi.rubiksCubePhysicalCoach({ userId, courseId, grant: cubeGrant, lessonId: lesson.id }));
   const advancePhysicalCoach = () => request(() => schoolApi.rubiksCubePhysicalCoachAdvance({ userId, courseId, grant: cubeGrant }));
-  const verifyPhysical = (faces) => request(() => schoolApi.rubiksCubePhysicalVerify({ userId, courseId, grant: cubeGrant, lessonId: lesson.id, faces }));
-  const makePacket = () => request(() => schoolApi.rubiksCubePacket({ userId, courseId, grant: cubeGrant, lessonId: lesson.id }));
+    const makePacket = () => request(() => schoolApi.rubiksCubePacket({ userId, courseId, grant: cubeGrant, lessonId: lesson.id }));
   const verifyPacket = (faces) => request(() => schoolApi.rubiksCubePacketVerify({ userId, courseId, grant: cubeGrant, packetId: data.packet?.id, faces }));
   const replayDemo = () => {
     if (!lesson?.moves?.length) return;

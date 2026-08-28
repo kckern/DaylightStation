@@ -11,9 +11,6 @@ import { useState, useEffect, useRef } from 'react';
  */
 export const useAnimatedLayout = (targetElements, options = {}) => {
   const { duration = 150, enabled = true, animateBasePosition = false } = options;
-  
-  // If disabled, just return targets immediately
-  if (!enabled) return targetElements;
 
   const [displayElements, setDisplayElements] = useState(targetElements);
   const animationRef = useRef(null);
@@ -25,6 +22,10 @@ export const useAnimatedLayout = (targetElements, options = {}) => {
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
   useEffect(() => {
+    // If disabled, skip the animation loop entirely — displayElements is unused
+    // in that case, since the hook returns targetElements directly below.
+    if (!enabled) return undefined;
+
     // If targets haven't changed deeply, do nothing
     // Simple check: length and IDs and positions
     // For performance, we might trust the caller to memoize targetElements,
@@ -102,7 +103,7 @@ export const useAnimatedLayout = (targetElements, options = {}) => {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [targetElements, duration, animateBasePosition]);
+  }, [targetElements, duration, animateBasePosition, enabled]);
 
-  return displayElements;
+  return enabled ? displayElements : targetElements;
 };

@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect } from 'react';
-import { MantineProvider, AppShell, NavLink, Title, Group, Text, Select, Burger } from '@mantine/core';
+import { MantineProvider, AppShell, NavLink, Title, Group, Select, Burger } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { Notifications } from '@mantine/notifications';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
@@ -27,12 +27,6 @@ import { LifeUserContext, useLifeUser } from '../modules/Life/hooks/useLifeUser.
 import { useAppNotifications } from '../modules/Life/hooks/useAppNotifications.js';
 import { lifeTheme } from './LifeApp.theme.js';
 
-const PlaceholderView = ({ title }) => (
-  <div style={{ padding: '2rem' }}>
-    <Title order={3}>{title}</Title>
-    <Text c="dimmed" mt="sm">Coming soon</Text>
-  </div>
-);
 
 const LogDayRoute = () => {
   const { date } = useParams();

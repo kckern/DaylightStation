@@ -14,8 +14,17 @@ import { usePanelFetch } from '../usePanelFetch.js';
 import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
 import { humanDate, teacherDate, teacherTime, localDay, shiftDay } from '../teacherDates.js';
 import { LessonIdentity, SubjectIdentity } from '../CurriculumIdentity.jsx';
+import { teacherWorkspaceApi } from '../teacherWorkspaceApi.js';
+import { useTeacherWrite } from '../useTeacherWrite.js';
+import { teacherLog } from '../teacherLog.js';
 import PanelFrame from './PanelFrame.jsx';
 import SessionPaperRecord from './SessionPaperRecord.jsx';
+
+// Client-minted, resource-scoped: the same shape ArtifactReprint uses so a
+// double-tap on the print button can never mint two receipts. Not imported
+// from WorkspaceViews.jsx, which imports THIS file — that would be a cycle.
+const newIdempotencyKey = (prefix) => `${prefix}:${typeof globalThis.crypto?.randomUUID === 'function'
+  ? globalThis.crypto.randomUUID() : `${Date.now()}:${Math.random().toString(36).slice(2)}`}`;
 
 // `reviewStatus` is 'pending' | 'complete' | null — null until the session has
 // something reviewable, so an untouched lesson no longer carries a verdict.
@@ -89,6 +98,91 @@ export function PrintedAgenda({ learnerId, studyDay }) {
         </p>
         <img className="teacher-printed-agenda__image" src={src} alt={`Printed agenda for ${humanDate(studyDay) ?? 'the selected day'}`} />
       </>}
+    </section>
+  );
+}
+
+/**
+ * The one console path that drives a physical printer — everything above
+ * this is a read. `PrintedAgenda` is inert by construction; this is not, and
+ * the two must never look like a matched pair. It gets its own box, its own
+ * accent, and no shared row with the preview toggle, because that adjacency
+ * is exactly where a teacher would stop reading the difference.
+ *
+ * Dispatch mints against the planner's OWN current day — it takes no
+ * `studyDay` — so viewing a past or future day and pressing print would
+ * either lie about which day it built, or silently redirect to today without
+ * saying so. Neither is acceptable, so the affordance simply isn't here
+ * unless the viewed day IS today (compared with `localDay()`, never a UTC
+ * date, which flips to tomorrow every evening).
+ *
+ * Idempotency-Key identity is the whole point: `prepare` mints the key once
+ * and shows the plan; `dispatch` reuses that exact key, so a double-tap on
+ * "Print it now" cannot become two printed agendas. `cancel` discards the
+ * key outright, so a cancelled dispatch can never be replayed later under a
+ * key that already looks used — the next prepare mints a fresh one.
+ */
+function AgendaDispatch({ learnerId, learnerName, studyDay }) {
+  const [preview, setPreview] = useState(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(null);
+  const { run, busy, errors } = useTeacherWrite({ panel: 'agenda-dispatch' });
+  const key = `agenda-dispatch:${learnerId}`;
+
+  // Today only — see the block comment above. Hooks above this line still run
+  // every render; only the render output is withheld.
+  if (studyDay !== localDay()) return null;
+
+  const cancel = () => { setPreview(null); setIdempotencyKey(null); };
+  const prepare = () => {
+    const requestKey = newIdempotencyKey(key);
+    setIdempotencyKey(requestKey);
+    run(key, () => teacherWorkspaceApi.agendaDispatchPreview(learnerId, learnerName), { onSuccess: setPreview });
+  };
+  const dispatch = () => run(key, ({ actorId, pin, stepUpToken }) => teacherWorkspaceApi.agendaDispatch(
+    learnerId, { learnerName, dispatchedBy: actorId, pin }, idempotencyKey, stepUpToken,
+  ), {
+    // Already in STEP_UP_ACTIONS with its own teacherResource branch — this
+    // is the pass-through, not a new grant.
+    stepUp: { action: 'agenda.dispatch', resource: learnerId },
+    onSuccess: () => { teacherLog.write('agenda-dispatched', { learnerId }); cancel(); },
+  });
+
+  // The planner already said it can't build this day — printing anyway would
+  // hand a child paper the system itself flagged as broken.
+  const blocked = preview && (!preview.ready || (preview.errors ?? []).length > 0);
+  const subjectCount = preview?.sections?.length ?? 0;
+
+  return (
+    <section className="teacher-agenda-dispatch" aria-label="Dispatch today's agenda">
+      {!preview && (
+        <button type="button" className="teacher-btn teacher-btn--primary" disabled={busy === key} onClick={prepare}>
+          Print the day&rsquo;s agenda&hellip;
+        </button>
+      )}
+      {blocked && (
+        <div className="teacher-agenda-dispatch__blocked">
+          <p>The planner can&rsquo;t build this day yet</p>
+          <ul>
+            {preview.errors.map((error, index) => (
+               
+              <li key={index}>{typeof error === 'string' ? error : error?.message ?? 'The planner refused an item.'}</li>
+            ))}
+          </ul>
+          <button type="button" className="teacher-btn teacher-btn--quiet" onClick={cancel}>Cancel</button>
+        </div>
+      )}
+      {preview && !blocked && (
+        <div className="teacher-agenda-dispatch__ready">
+          <p>{subjectCount} subject{subjectCount === 1 ? '' : 's'} will print for {learnerName ?? 'this learner'}.</p>
+          <div className="teacher-action-row">
+            <button type="button" className="teacher-btn teacher-btn--primary" disabled={busy === key} onClick={dispatch}>
+              Print it now
+            </button>
+            <button type="button" className="teacher-btn" onClick={cancel}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
     </section>
   );
 }
@@ -199,7 +293,7 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
         {(agenda.data?.errors ?? []).length > 0 && (
           <ul className="teacher-workspace__alerts">
             {agenda.data.errors.map((error, index) => (
-              // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
+               
               <li key={index}>{typeof error === 'string' ? error : error?.message ?? 'The planner refused an item.'}</li>
             ))}
           </ul>
@@ -212,6 +306,12 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
           only in the `ok` state, and "what would today's paper look like?"
           is a fair question on a day with nothing planned or recorded. */}
       <PrintedAgenda learnerId={learnerId} studyDay={studyDay} />
+      {/* Keyed on learner+day: a plain re-render (switching Students-rail rows
+          reuses this element type at the same position) would otherwise carry
+          a stale `preview`/`idempotencyKey` across children — User_5's ready
+          count and Idempotency-Key sitting under User_4's name. The key forces
+          a remount, which is the only thing that resets that state. */}
+      <AgendaDispatch key={`${learnerId}:${studyDay}`} learnerId={learnerId} learnerName={learnerName} studyDay={studyDay} />
       {/* The heading deliberately avoids repeating the row chip's exact words:
           "Graded today" is the per-row label, and the section should not say
           the same phrase twice over one list. */}

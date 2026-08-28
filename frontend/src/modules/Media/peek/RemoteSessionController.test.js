@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createFleetStore } from '../fleet/fleetStore.js';
 import { createAckRouter } from './ackRouter.js';
 import { createRemoteSessionController } from './RemoteSessionController.js';

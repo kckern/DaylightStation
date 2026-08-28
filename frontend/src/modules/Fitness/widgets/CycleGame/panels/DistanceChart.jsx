@@ -185,8 +185,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const curWin = { T: winT, D: winD, leaderM, kGap, mix: useLog ? 1 : 0 };
   const stepS = maxSeriesLen > 1 ? elapsedS / (maxSeriesLen - 1) : 1;
   const xForTime = (t) => mapPoint(t, 0, curWin).x;
-  const xFor = (i) => xForTime(i * stepS);
-  const yFor = (d) => mapPoint(0, d, curWin).y;
+    const yFor = (d) => mapPoint(0, d, curWin).y;
 
   // A finished rider's lane freezes at the sample where they crossed the goal.
   const plottedLen = (id) => {
@@ -442,7 +441,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
       });
     });
     return () => { unsub(); clock.stop(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Kick the clock on each new data tick so the lines/tags/markers glide to the

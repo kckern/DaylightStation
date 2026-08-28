@@ -47,7 +47,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
     type = "generic",
     className = "",
     assetId,
-    title,ready,
+    title,ready: _ready,
     subtitle,
     subsubtitle,
     mainMediaUrl,
@@ -320,7 +320,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
         applyPendingSeek();
         reportPlaybackMetrics();
       }
-    }, [mainVolume, masterVolume, applyPendingSeek, reportPlaybackMetrics, isVideo]);
+    }, [mainVolume, masterVolume, applyPendingSeek, reportPlaybackMetrics]);
 
     // Re-apply master × mainVolume to the active media element when either
     // changes mid-playback. Mirrors useCommonMediaController.js:327-336 so the

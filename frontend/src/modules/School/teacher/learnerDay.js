@@ -25,6 +25,15 @@
  * (agenda.mjs does today); two sections sharing a subject each take their own
  * units rather than the first swallowing both.
  *
+ * `status` and `obligation` answer different questions and this join carries
+ * both. `status` is per-row progress, derived here. `obligation` is
+ * `agenda.mjs`'s own per-subject verdict (`{ state, reason }` plus a
+ * `needsGrownUp` flag) — the join passes it through unchanged onto every row
+ * a section produces; it does not recompute it from `next`/`servedToday`.
+ * Without it a structurally broken subject (nothing can start its program, or
+ * it's locked behind something unreachable) rendered exactly like a quiet,
+ * fully-served one, and the only record was a log line.
+ *
  * Pure by design: no fetching, no React, no mutation of the caller's input.
  * The view owns the reads.
  */
@@ -113,6 +122,44 @@ function paperNote(session, status) {
   return worksheet || receipt ? null : 'No worksheet for this one';
 }
 
+/**
+ * The obligation reasons that are a grown-up's problem, not the child's.
+ *
+ * Source of truth: `agenda.mjs`'s excuse ladder (`agenda.mjs:355-410`) and its
+ * two FAULT_REASONS (`program_unavailable`, `blocked_unreachable`) — those
+ * fault because nothing the child does moves them. `caught_up` and
+ * `awaiting_grown_up` don't fault (the day still completes), but both still
+ * dead-end without an adult: an assignment to make, or a dormant unit only a
+ * grown-up can open. The other seven excuses resolve themselves — a date
+ * arrives, a sibling lesson gets done, a focus subject finishes its extra
+ * blocks — so listing them here would tell the teacher to act on nothing.
+ *
+ * A table, not a re-derivation: this reads the planner's own `{state, reason}`
+ * verdict and asks "is this one of the four", it does not recompute what
+ * `agenda.mjs` already decided.
+ */
+const NEEDS_GROWN_UP = new Set([
+  'faulted:program_unavailable',
+  'faulted:blocked_unreachable',
+  'excused:caught_up',
+  'excused:awaiting_grown_up',
+]);
+
+/**
+ * The planner's verdict, carried through unchanged, plus the one thing every
+ * row consumer would otherwise have to hard-code: whether this reason needs a
+ * grown-up. `null` in, `null` out — an older payload or a non-curriculum
+ * section that never computed an obligation is not silently promoted to
+ * `excused`; the screen renders nothing for it (task 8), which is honest
+ * about "the planner didn't say" versus "the planner said fine".
+ */
+function obligationFor(section) {
+  const obligation = section?.obligation ?? null;
+  if (!obligation) return null;
+  const { state, reason } = obligation;
+  return { state, reason, needsGrownUp: NEEDS_GROWN_UP.has(`${state}:${reason}`) };
+}
+
 /** Wrap each session so claims are tracked without touching the caller's array. */
 const claimPool = (sessions) => sessions.map((session) => ({ session, claimed: false }));
 
@@ -191,6 +238,11 @@ export function joinLearnerDay({
       moduleLabel: (section.progressRows ?? []).find((row) => row?.scope === 'module')?.label ?? null,
     } : null;
     const { matched, matchedOn } = claimFor(section, pool);
+    // Per-subject, not per-row — every row a section produces (one lesson or
+    // several) shares the SAME verdict, because the planner judged the
+    // subject, not any one session. See `obligationFor` above for why this
+    // is a pass-through and never a recomputation.
+    const obligation = obligationFor(section);
 
     if (matched.length) {
       // The plan is stated once for the subject, not repeated per session —
@@ -199,7 +251,7 @@ export function joinLearnerDay({
         const status = statusForSession(session, section);
         rows.push({
           key: session.sessionId ?? `${rowKey('done')}:${index}`,
-          subject, status, planned: index === 0 ? planned : null, offer, served, session,
+          subject, status, planned: index === 0 ? planned : null, offer, served, session, obligation,
           detail: paperNote(session, status),
           matchedOn: index === 0 ? matchedOn : null,
         });
@@ -208,14 +260,14 @@ export function joinLearnerDay({
     }
     if (section?.suppressed) {
       rows.push({
-        key: rowKey('deferred'), subject, status: 'deferred', planned, offer, served, session: null,
+        key: rowKey('deferred'), subject, status: 'deferred', planned, offer, served, session: null, obligation,
         detail: section.suppressed.bySubject ? `Deferred for ${section.suppressed.bySubject} focus` : 'Deferred',
       });
       return;
     }
     if (section?.lockedRemedy) {
       rows.push({
-        key: rowKey('blocked'), subject, status: 'blocked', planned, offer, served, session: null,
+        key: rowKey('blocked'), subject, status: 'blocked', planned, offer, served, session: null, obligation,
         detail: section.lockedRemedy,
       });
       return;
@@ -231,7 +283,7 @@ export function joinLearnerDay({
         // carriedOver already flags the provenance.
         carried.forEach((session, index) => rows.push({
           key: session.sessionId ?? `${rowKey('carried')}:${index}`,
-          subject, status: 'done', planned: index === 0 ? planned : null, offer, served, session,
+          subject, status: 'done', planned: index === 0 ? planned : null, offer, served, session, obligation,
           detail: paperNote(session, 'done'), carriedOver: true,
           matchedOn: index === 0 ? carriedOn : null,
         }));
@@ -242,13 +294,13 @@ export function joinLearnerDay({
       // "Completed — no session record" read as an error report about our own
       // bookkeeping; the meaning is that the program owns the completion.
       rows.push({
-        key: rowKey('served'), subject, status: 'done', planned, offer, served, session: null,
+        key: rowKey('served'), subject, status: 'done', planned, offer, served, session: null, obligation,
         detail: 'Completed in its own program',
       });
       return;
     }
     rows.push({
-      key: rowKey('planned'), subject, status: 'planned', planned, offer, served, session: null,
+      key: rowKey('planned'), subject, status: 'planned', planned, offer, served, session: null, obligation,
       detail: section?.timingNotice ?? null,
     });
   });
@@ -266,6 +318,9 @@ export function joinLearnerDay({
       // either: freeing `detail` is what lets an unplanned lesson also say it
       // has no paper, with neither sentence having to win.
       status, unplanned: true, planned: null, offer: null, session,
+      // No section judged this subject today — there is no obligation to
+      // carry, not an implicit `excused`. `null` says the planner never asked.
+      obligation: null,
       detail: paperNote(session, status),
     });
   });

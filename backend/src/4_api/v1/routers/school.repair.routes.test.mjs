@@ -25,6 +25,10 @@ function appWith(over = {}) {
       if (args.pin !== '7410') throw new GuestForbiddenError('The teacher PIN is missing or wrong.');
       return { moved: 3, ...args };
     }) },
+    reassignSession: { execute: vi.fn(async (args) => {
+      if (args.pin !== '7410') throw new GuestForbiddenError('The teacher PIN is missing or wrong.');
+      return { sessionId: args.sessionId, fromLearnerId: 'learner4', toLearnerId: args.toLearnerId, day: '2026-08-06' };
+    }) },
     attemptsStore: { readAttemptDay: vi.fn(() => [
       { sessionId: 'ses_1', itemId: 'q1', at: '2026-08-06T10:00:00Z', bankId: 'creature-quiz-1' },
       { sessionId: 'ses_1', itemId: 'q2', at: '2026-08-06T10:01:00Z', bankId: 'creature-quiz-1' },
@@ -77,6 +81,25 @@ describe('wave-5 repair routes', () => {
     expect(badRes.status).toBe(403);
   });
 
+  it('POST /reassign-session passes the reason through and never takes fromLearnerId from the caller', async () => {
+    const execute = vi.fn(async (args) => {
+      if (args.pin !== '7410') throw new GuestForbiddenError('The teacher PIN is missing or wrong.');
+      return { sessionId: args.sessionId, fromLearnerId: 'learner4', toLearnerId: args.toLearnerId, day: '2026-08-06' };
+    });
+    const app = appWith({ reassignSession: { execute } });
+    const okRes = await request(app).post('/api/v1/school/reassign-session')
+      .send({ sessionId: 'ses_1', toLearnerId: 'learner3', reason: 'wrong child sat down', reassignedBy: 'kckern', pin: '7410', fromLearnerId: 'someone-else' });
+    expect(okRes.status).toBe(200);
+    expect(okRes.body).toMatchObject({ sessionId: 'ses_1', fromLearnerId: 'learner4', toLearnerId: 'learner3' });
+    // The body's `fromLearnerId` is ignored: the use case reads it off the
+    // session's own log, so a stale panel cannot assert whose work this is.
+    expect(execute.mock.calls[0][0]).not.toHaveProperty('fromLearnerId');
+    expect(execute.mock.calls[0][0]).toMatchObject({ reason: 'wrong child sat down', reassignedBy: 'kckern' });
+    const badRes = await request(app).post('/api/v1/school/reassign-session')
+      .send({ sessionId: 'ses_1', toLearnerId: 'learner3', reason: 'r', reassignedBy: 'kckern', pin: '0' });
+    expect(badRes.status).toBe(403);
+  });
+
   it('GET /review/learner merges standalone notes as kind:note, newest first', async () => {
     const res = await request(appWith({
       teacherNotesStore: { list: vi.fn(() => [{ id: 'note_1', learnerId: 'learner4', note: 'Great week!', from: 'kckern', at: '2026-08-06T12:00:00Z' }]) },
@@ -87,10 +110,11 @@ describe('wave-5 repair routes', () => {
   });
 
   it('unwired repair endpoints answer honest shapes', async () => {
-    const app = appWith({ attestationLog: null, recordAttestation: null, teacherNotesStore: null, recordTeacherNote: null, reassignEvidence: null, attemptsStore: null });
+    const app = appWith({ attestationLog: null, recordAttestation: null, teacherNotesStore: null, recordTeacherNote: null, reassignEvidence: null, reassignSession: null, attemptsStore: null });
     expect((await request(app).get('/api/v1/school/attestations?learnerId=x')).body).toEqual({ entries: [] });
     expect((await request(app).post('/api/v1/school/attestations').send({})).status).toBe(404);
     expect((await request(app).post('/api/v1/school/reassign').send({})).status).toBe(404);
+    expect((await request(app).post('/api/v1/school/reassign-session').send({})).status).toBe(404);
     expect((await request(app).get('/api/v1/school/attempts-summary?learnerId=x&day=2026-08-06')).body).toEqual({ assessments: [] });
   });
 });

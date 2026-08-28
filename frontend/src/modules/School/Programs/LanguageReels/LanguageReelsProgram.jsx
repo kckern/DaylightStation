@@ -74,7 +74,10 @@ export default function LanguageReelsProgram({ userId, reelId, reelGrant, onExit
   const [activity, setActivity] = useState(null); const [error, setError] = useState(null); const [saving, setSaving] = useState(false); const [card, setCard] = useState(0); const [revealed, setRevealed] = useState(false); const [mediaComplete, setMediaComplete] = useState(false);
   const load = useCallback(async () => { const result = await languageReelsApi.open(userId, reelId, reelGrant); if (!result.ok) { setError(result.status === 403 ? 'This reel needs a current assignment.' : 'This reel could not open.'); return; } setActivity(result.data); setError(null); }, [userId, reelId, reelGrant]);
   useEffect(() => { load(); }, [load]);
-  const stages = activity?.session?.stages ?? {}; const current = useMemo(() => ORDER.find((stage) => stages[stage] === false) ?? null, [stages]);
+  const current = useMemo(() => {
+    const stages = activity?.session?.stages ?? {};
+    return ORDER.find((stage) => stages[stage] === false) ?? null;
+  }, [activity?.session?.stages]);
   useEffect(() => setMediaComplete(false), [current]);
   const advance = async () => { if (!current || saving) return; setSaving(true); const result = await languageReelsApi.stage(userId, reelId, current, reelGrant); setSaving(false); if (!result.ok) { setError('That step did not save. Try again.'); return; } setActivity((value) => ({ ...value, session: result.data })); };
   if (error) return <div className="lang-program lang-program--error"><p>{error}</p><button type="button" className="lang-btn" onClick={load}>Try again</button></div>;

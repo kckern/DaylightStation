@@ -25,7 +25,7 @@ import './PoseDemo.scss';
 /**
  * Inner component that consumes PoseProvider
  */
-const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
+const PoseDemoInner = ({ mode: _mode, onClose: _onClose, config: _config, onMount }) => {
   const logger = useMemo(() => getLogger().child({ component: 'PoseDemo' }), []);
   const fitnessModule = useFitnessModule('pose_demo');
   const { registerLifecycle } = fitnessModule || {};
@@ -70,11 +70,9 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
   // Consume pose provider
   const {
     poses,
-    hasPose,
     primaryPose,
     isDetecting,
     isLoading,
-    error,
     fps,
     latency,
     backend,
@@ -107,7 +105,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     } catch (err) {
       logger.warn('fitness.pose_demo.confidence_calc_error', { error: err.message || err });
     }
-  }, [primaryPose]);
+  }, [logger, primaryPose]);
   
   // Lifecycle
   useEffect(() => {
@@ -163,7 +161,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
       // Video not ready yet, will auto-start when onStreamReady fires
       logger.warn('fitness.pose_demo.video_not_ready');
     }
-  }, [setVideoSource, start]);
+  }, [logger, setVideoSource, start]);
   
   // Handle model/backend changes (requires restart)
   const handleConfigChange = useCallback(async (changes) => {

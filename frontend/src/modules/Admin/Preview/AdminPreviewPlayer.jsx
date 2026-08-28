@@ -99,7 +99,7 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
     }
   }, [currentIndex]);
 
-  const handleAdvance = useCallback(() => {
+  useCallback(() => {
     if (!queueItems) { onClose(); return; }
     const next = currentIndex + 1;
     if (next >= queueItems.length) {

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useContext, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useContext, useRef, useMemo } from 'react';
 import { useFetchContentData } from './hooks/useFetchContentData';
 import MenuNavigationContext from '../../context/MenuNavigationContext';
 import './PlexViews.scss';
@@ -82,7 +82,7 @@ export function ShowView({ grandparentId, contentId, depth, onSelect, onEscape, 
     }
   }, [navContext, depth]);
 
-  const seasons = data?.items || [];
+  const seasons = useMemo(() => data?.items || [], [data?.items]);
   const showInfo = data?.info || {};
   const showTitle = data?.title || showInfo.title || 'Show';
 

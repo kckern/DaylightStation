@@ -51,7 +51,7 @@ export default function ArtLayer({
   stage, fontPx, measure, frameSrc, visible, transitionMs, onImageLoad,
 }) {
   const isGallery = mode.fit === 'gallery';
-  const panels = art?.panels ?? [];
+  const panels = useMemo(() => art?.panels ?? [], [art]);
 
   const matteVars = useMemo(() => {
     const m = art?.matte;
@@ -73,7 +73,10 @@ export default function ArtLayer({
     () => (panels.length ? objectFitWindows({ count: panels.length, frame, fullWindow: mode.fullWindow }) : []),
     [panels.length, frame, mode.fullWindow]);
 
-  const placardGeom = isGallery ? (layout?.panels ?? []) : fitWindows;
+  const placardGeom = useMemo(
+    () => (isGallery ? (layout?.panels ?? []) : fitWindows),
+    [isGallery, layout, fitWindows],
+  );
   const placardLines = useMemo(
     () => placardGeom.map((g, i) => {
       const t = panels[i]?.meta?.title;

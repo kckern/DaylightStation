@@ -24,7 +24,7 @@ export function loadScoreSettings(id) {
     // machinery itself (wave-3 A) — Listen now performs activeParts like every
     // other mode, so a legacy record has nothing left to restore. Stripping on
     // read also cleans up values written by older builds.
-    const { v, focus, myStaves, ...rest } = obj;
+    const { v: _v, focus: _focus, myStaves: _myStaves, ...rest } = obj;
     return rest;
   } catch {
     return {};

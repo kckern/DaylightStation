@@ -77,11 +77,6 @@ function SeasonViewSkeleton() {
 }
 
 /**
- * Generic loading fallback
- */
-const LoadingFallback = ShowViewSkeleton;
-
-/**
  * PlexMenuRouter: Loads content data and routes to appropriate view
  *
  * For items without a pre-known type, this component:

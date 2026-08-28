@@ -10,7 +10,7 @@
  * matching the behavior described in
  * docs/reference/fitness/unknown-hr-monitors.md.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 import { ParticipantRoster } from './ParticipantRoster.js';
 import { DeviceManager } from './DeviceManager.js';

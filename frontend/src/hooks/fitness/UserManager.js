@@ -1,4 +1,4 @@
-import { resolveDisplayLabel, buildZoneConfig, deriveZoneProgressSnapshot } from './types.js';
+import { buildZoneConfig, deriveZoneProgressSnapshot } from './types.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { DeviceOwnershipIndex } from './DeviceOwnershipIndex.js';
 import { isGenericGuestProfileId } from '../../modules/Fitness/lib/guestPlaceholders.js';
@@ -571,11 +571,11 @@ export class UserManager {
     return {};
   }
 
-  #createLedgerPayload(deviceId, assignment) {
+  #createLedgerPayload(_deviceId, _assignment) {
     return null;
   }
 
-  #writeLedgerEntryFromAssignment(deviceId, assignment) {
+  #writeLedgerEntryFromAssignment(_deviceId, _assignment) {
     return null;
   }
 

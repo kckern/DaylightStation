@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 
 beforeEach(() => { try { window.localStorage.clear(); } catch { /* no storage */ } });

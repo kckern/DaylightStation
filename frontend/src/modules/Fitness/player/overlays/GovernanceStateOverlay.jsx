@@ -133,23 +133,25 @@ function normalizeRequiredCountFromRule(rule, totalCount) {
 const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = [], onUnlock = null }) {
   // Support both new (display) and legacy (overlay + lockRows) format
   const status = display?.status || overlay?.status || 'unknown';
-  const requirements = Array.isArray(display?.requirements)
-    ? display.requirements
-    : (Array.isArray(overlay?.requirements) ? overlay.requirements : []);
+  const requirements = useMemo(() => (
+    Array.isArray(display?.requirements)
+      ? display.requirements
+      : (Array.isArray(overlay?.requirements) ? overlay.requirements : [])
+  ), [display?.requirements, overlay?.requirements]);
   const challenge = display?.challenge || null;
   const activeUserCount = Number.isFinite(display?.activeUserCount)
     ? Math.max(0, Math.round(display.activeUserCount))
     : null;
-  const unsortedRows = (display ? display.rows : lockRows) || [];
   // Sort by progress descending — closest to meeting target bubbles to top
   const rows = useMemo(() => {
+    const unsortedRows = (display ? display.rows : lockRows) || [];
     if (unsortedRows.length <= 1) return unsortedRows;
     return [...unsortedRows].sort((a, b) => {
       const pa = a.progress ?? -1;
       const pb = b.progress ?? -1;
       return pb - pa; // highest progress first
     });
-  }, [unsortedRows]);
+  }, [display, lockRows]);
   const hasRows = rows.length > 0;
 
   const [animatedRows, setAnimatedRows] = useState(() =>

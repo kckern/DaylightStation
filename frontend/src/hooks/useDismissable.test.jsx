@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent, act } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { useDismissable } from './useDismissable.js';
 
 function Host({ open, onDismiss }) {
