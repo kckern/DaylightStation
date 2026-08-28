@@ -333,7 +333,6 @@ gameGate:
   enabled: false
   passScore: 0.80
   retriesBeforeDegrade: 3
-  metered: false            # the gate never drains the budget
   climbAfterCleanPasses: 3
   material:
     - kind: exercise
@@ -343,14 +342,16 @@ gameGate:
       measures: 4
 ```
 
-Every key above is read. **Three keys the design named are deliberately absent from that
-example, because setting them today does nothing:**
+Every key above is read, with one exception noted below. **Keys the design named that are
+deliberately absent from that example, because setting them today does nothing:**
 
 | Key | State |
 |---|---|
 | `gameGate.every` (`match` \| `entry` \| `interval`) | resolved and then **never consumed** — the gate always fires at every match boundary. Setting `entry` to stop gating replays changes nothing. |
+| `gameGate.metered` | resolved and then **never consumed.** The gate is unmetered because nothing meters it — the budget session is closed while a gate stands (`active` is false whenever a gate is pending), not because this key says so. Setting `metered: true` does not make the gate drain the budget. |
 | `gameGate.ladder.axes` | **not read.** The five axes and their order live in the ladder module. |
 | `gameGate.ladder.floor` | **not read.** The floor requirement is built in code (see "The floor cannot fail"). Setting `floor.passScore: 0.5` changes nothing. |
+| `gameLimit.source` | present in the sample and **not read** by any budget code path. `fixed` is the only implemented behaviour; see the note on the source vocabulary below. |
 
 None of these logs anything when set, because the config resolver returns an explicit
 object literal and simply drops the key. A parent who sets one, restarts the kiosk, and
@@ -367,9 +368,11 @@ timezone must be set. A missing or malformed value is logged as `budget.config-i
 and the feature falls open — unmetered play, never a lockout — because the alternative,
 `undefined × 60 = NaN` compared against zero, granted unlimited play in silence.
 
-The budget source is a config selection with one implementation. `fixed` ships. `earned`
+The budget source is a vocabulary, not yet a switch. No budget code path reads
+`gameLimit.source`; `fixed` is what happens regardless of what the key says. `earned`
 (minutes minted by passed gates, scaled by score) and `economy` (household coins through
-the existing hold-and-settle session) are named so the vocabulary cannot drift.
+the existing hold-and-settle session) are named so the vocabulary cannot drift when one of
+them is built.
 
 ---
 
