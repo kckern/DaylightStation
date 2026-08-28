@@ -283,6 +283,38 @@ export function reviewNoteLines(items, { limit = 3, maxChars = 120 } = {}) {
     });
 }
 
+/**
+ * What a sheet blocked by its finish-code row says to the child (Task 10).
+ *
+ * The heading alone reads TRY AGAIN, which on this sheet is close to a lie:
+ * every question was right, and sending the child back over the questions is
+ * the one thing that must not happen. So the receipt names the rule that
+ * actually failed, and says so before it says anything else.
+ *
+ * TWO WORDINGS, BECAUSE THEY ARE TWO DIFFERENT MISTAKES. A blank row is a
+ * child who never played the companion — the instruction is "go and do it,
+ * then come back". A wrong code is a child who DID play it and mis-copied the
+ * letters — telling them to go and listen again would waste twenty minutes on
+ * a problem that lives on the paper in their hand. Both end at the same
+ * place, re-scanning THIS sheet, because their answers are already good and
+ * nothing about the worksheet needs redoing.
+ *
+ * @param {{status: 'blank'|'wrong', label?: string, reading?: string|null}|null} gate
+ * @returns {string[]} zero lines for an ungated sheet or a plain score failure
+ */
+function companionGateLines(gate) {
+  const status = gate?.status;
+  if (status !== 'blank' && status !== 'wrong') return [];
+  const label = isNonEmptyString(gate.label) ? gate.label.trim() : 'Read Along';
+  const what = isNonEmptyString(gate.reading) ? `${label} (${gate.reading.trim()})` : label;
+  return [
+    'Your answers were good enough to pass.',
+    status === 'blank'
+      ? `The ${label} row was left empty. Finish ${what}, write the code it gives you in the first row, then scan this sheet again.`
+      : `The code in the ${label} row was not the right one. Check the letters on your finish card, fix that row, then scan this sheet again.`,
+  ];
+}
+
 /** Appends the "Notes for you" section, informational only — no scan_action. */
 function appendNoteLines(blocks, noteLines) {
   if (!noteLines.length) return;
@@ -585,6 +617,10 @@ export function agendaDocument({
  *   numbered boxes blamed 11 and 12). Omitted when the caller has no
  *   per-question evidence — the renderer falls back to the positional fill
  *   rather than mis-index a partial array.
+ * @param {{status: 'blank'|'wrong', label?: string, reading?: string|null}|null}
+ *   [args.companionGate] set ONLY when the finish-code row — not the score —
+ *   is what stopped this sheet passing (`companionVetoStatus`, Task 10). See
+ *   `companionGateLines` for why this earns two lines of its own.
  * @returns {object}
  */
 export function resultDocument({
@@ -595,7 +631,7 @@ export function resultDocument({
   taxonomy = null,
   learnerName = null, date = null, time = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
-  dayComplete = false,
+  dayComplete = false, companionGate = null,
 } = {}) {
   const passed = result === 'passed';
   const blocks = [{
@@ -630,6 +666,12 @@ export function resultDocument({
       }
       : {}),
   }];
+  // THE RULE THAT ACTUALLY FAILED, FIRST (Task 10). A gate veto means the
+  // answers were good enough and the finish-code row was not — so this goes
+  // straight under the score, ahead of the review hints, which are about
+  // questions this child did not get wrong. Nothing prints for an ungated
+  // sheet, or for one that failed on its score.
+  if (!passed) companionGateLines(companionGate).forEach((line) => blocks.push(text(line)));
   if (!passed && !(Array.isArray(hints) && hints.some(isNonEmptyString))
       && Array.isArray(objectives) && objectives.length) {
     blocks.push(text('## REVIEW BEFORE YOU RETRY'));

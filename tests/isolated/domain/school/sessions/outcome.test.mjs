@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { outcomeIdFor, evaluateOutcome, rewardDecision } from '#domains/school/sessions/outcome.mjs';
+import {
+  outcomeIdFor, evaluateOutcome, rewardDecision, companionVetoStatus,
+} from '#domains/school/sessions/outcome.mjs';
 
 const SID = 'ses_abc123';
 const OUT = `out:${SID}`;
@@ -66,6 +68,59 @@ describe('evaluateOutcome', () => {
   it('never throws on a missing argument object', () => {
     expect(() => evaluateOutcome()).not.toThrow();
     expect(evaluateOutcome().result).toBe('needs_remediation');
+  });
+
+  // The companion gate (Task 10): a required read-along's finish code, filled
+  // into a row on the answer card. It can only ever BLOCK a pass — never
+  // subtract from a score, and never turn a fail into anything else.
+  describe('the companion gate', () => {
+    it('changes nothing at all for an ungated sheet — every worksheet in the house', () => {
+      expect(evaluate({ companionGate: null }).result).toBe('passed');
+      expect(evaluate({ companionGate: undefined }).result).toBe('passed');
+    });
+
+    it('passes a satisfied gate', () => {
+      expect(evaluate({ companionGate: { status: 'satisfied' } }))
+        .toEqual({ result: 'passed', reason: 'met_passing' });
+    });
+
+    it('blocks a passing score on a BLANK gate row', () => {
+      expect(evaluate({ gradedPercent: 100, companionGate: { status: 'blank' } }))
+        .toEqual({ result: 'needs_remediation', reason: 'companion_incomplete' });
+    });
+
+    it('blocks a passing score on a WRONG gate row, with its own reason', () => {
+      expect(evaluate({ gradedPercent: 100, companionGate: { status: 'wrong' } }))
+        .toEqual({ result: 'needs_remediation', reason: 'companion_code_wrong' });
+    });
+
+    it('reports the score problem ahead of the gate when both apply', () => {
+      // That child owes a retry either way, and the retry prints a fresh gate
+      // row with it. Sending them off to play audio for a sheet they have to
+      // do again regardless is the wrong first instruction.
+      expect(evaluate({ gradedPercent: 10, companionGate: { status: 'blank' } }).reason)
+        .toBe('below_passing');
+    });
+
+    it('fails CLOSED on a status it cannot read — a gate this rule does not understand is not one it may wave through', () => {
+      expect(evaluate({ companionGate: { status: 'probably-fine' } }).result).toBe('needs_remediation');
+      expect(evaluate({ companionGate: {} }).result).toBe('needs_remediation');
+    });
+
+    it('is checked before the sign-off — a gated sheet is not "waiting on a grown-up", it is unfinished', () => {
+      expect(evaluate({ companionGate: { status: 'blank' }, requiresSignoff: true, signedOff: false }).reason)
+        .toBe('companion_incomplete');
+    });
+  });
+});
+
+describe('companionVetoStatus', () => {
+  it('names the gate status behind a gate-vetoed reason, and nothing else', () => {
+    expect(companionVetoStatus('companion_incomplete')).toBe('blank');
+    expect(companionVetoStatus('companion_code_wrong')).toBe('wrong');
+    expect(companionVetoStatus('below_passing')).toBeNull();
+    expect(companionVetoStatus('met_passing')).toBeNull();
+    expect(companionVetoStatus(null)).toBeNull();
   });
 });
 

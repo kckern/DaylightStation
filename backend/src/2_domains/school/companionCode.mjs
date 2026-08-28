@@ -45,6 +45,25 @@ export const CODE_LETTERS = Object.freeze(['A', 'B', 'C', 'D', 'E']);
  */
 export const COMPANION_GATE_ITEM_ID = '__companion_gate';
 
+/**
+ * What a scanned gate row can say (Task 10). Three states, not two, because a
+ * BLANK row and a WRONG one are different facts about the child — one never
+ * played the companion, the other played it and mis-copied the letters — and
+ * they earn different instructions on the receipt even though both block the
+ * pass. `satisfied` is the ONLY value that clears the gate: `evaluateOutcome`
+ * treats anything else non-null as a veto, so an unrecognised status fails
+ * closed rather than waving a sheet through.
+ *
+ * Deliberately NOT the row grading vocabulary (`correct`/`incorrect`/
+ * `blank`/`ambiguous`). The gate is not a question and never scores; naming
+ * its states after the score's would invite exactly the folding-in this
+ * feature exists to prevent.
+ */
+export const GATE_SATISFIED = 'satisfied';
+export const GATE_BLANK = 'blank';
+export const GATE_WRONG = 'wrong';
+export const GATE_STATUSES = Object.freeze([GATE_SATISFIED, GATE_BLANK, GATE_WRONG]);
+
 const LETTER_INDEX = new Map(CODE_LETTERS.map((letter, index) => [letter, index]));
 
 /** Every non-empty subset, ordered by bitmask so the list is stable across runs. */
@@ -122,5 +141,7 @@ export function parseCode(text) {
 }
 
 export default {
-  CODE_LETTERS, COMPANION_GATE_ITEM_ID, ALL_CODES, mintCode, codesMatch, formatCode, parseCode,
+  CODE_LETTERS, COMPANION_GATE_ITEM_ID, ALL_CODES, GATE_STATUSES,
+  GATE_SATISFIED, GATE_BLANK, GATE_WRONG,
+  mintCode, codesMatch, formatCode, parseCode,
 };
