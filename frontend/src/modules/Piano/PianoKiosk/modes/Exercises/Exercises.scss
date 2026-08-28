@@ -286,11 +286,9 @@
 .piano-exercise-run__context strong { color: var(--ex-accent-text); }
 .piano-exercise-run__score { position: relative; min-height: 0; padding: 0.5rem; border-radius: var(--r-md, 12px); background: #f5f5f3; color: #111; overflow: hidden; }
 .piano-exercise-run__score .abc-renderer { min-width: 100%; height: 100%; }
-.piano-exercise-run__countdown { position: absolute; inset: 0; display: grid; place-items: center; background: rgb(22 22 27 / 76%); color: #fff; font-size: 6rem; font-weight: 700; }
 .piano-exercise-run__ready { display: flex; align-items: center; gap: 1rem; min-height: 3.25rem; }
 .piano-exercise-run__ready p { max-width: 48rem; margin: 0; color: var(--ex-muted); }
 .piano-exercise-run__ready span { color: var(--ex-danger); }
-.piano-exercise-run__ready button { margin-inline-start: auto; }
 .piano-exercise-run__status { min-height: 2.75rem; margin: 0; padding: 0.6rem 0.8rem; border-radius: var(--r-sm, 8px); background: var(--ex-surface); color: var(--ex-muted); }
 .piano-exercise-run__status.is-wrong { box-shadow: inset 3px 0 var(--ex-danger); color: #f0aaa4; }
 .piano-exercise-run__result { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1.25rem; padding: 0.65rem 0.85rem; border: 1px solid var(--ex-border); border-radius: var(--r-md, 12px); background: var(--ex-surface); }

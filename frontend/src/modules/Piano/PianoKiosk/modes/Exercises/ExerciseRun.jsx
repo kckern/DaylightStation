@@ -22,6 +22,8 @@ import { prepareExerciseAssessment } from './assessment.js';
 import { resolveExerciseRunAccess } from './authorization.js';
 import { resolveGateMaterial } from '../Games/gateMaterial.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
+import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
+import { countInPlan } from '../SheetMusic/countIn.js';
 import './Exercises.scss';
 
 const EMPTY_SNAPSHOT = Object.freeze({ status: 'prepared', result: null, musicalInput: false });
@@ -96,9 +98,14 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   const [requirement, setRequirement] = useState(null);
   const [runtime, setRuntime] = useState(null);
   const [lastWrong, setLastWrong] = useState(null);
-  const [countdown, setCountdown] = useState(null);
+  const [countInBeat, setCountInBeat] = useState(null);
   const [unrunnable, setUnrunnable] = useState(false);
+  const countInTimerRef = useRef(null);
   const previousNotesRef = useRef([]);
+  // The last held set actually handed to the engine. The held matcher grades the
+  // WHOLE set on every observation, so re-sending an unchanged set after the
+  // cursor has moved on would be read as a wrong chord.
+  const lastHeldObservedRef = useRef(null);
   const activeNotesRef = useRef(activeNotes);
   activeNotesRef.current = activeNotes;
   const persistedRef = useRef(false);
@@ -173,9 +180,12 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     });
     runtimeRef.current = next;
     previousNotesRef.current = [...activeNotesRef.current.keys()];
+    lastHeldObservedRef.current = null;
     persistedRef.current = false;
+    globalThis.clearInterval(countInTimerRef.current);
+    countInTimerRef.current = null;
     setLastWrong(null);
-    setCountdown(null);
+    setCountInBeat(null);
     setRuntime(next);
   }, [buildAttempt]);
 
@@ -263,38 +273,120 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     onUnavailable?.(unavailableReason);
   }, [onUnavailable, unavailableReason]);
 
-  const start = useCallback(() => {
-    if (!runtime) return;
-    const leadInMs = runtime.getSnapshot().mode === 'cued' ? 2000 : 0;
-    runtime.start({ leadInMs, clock: 'date-now' });
-    if (!leadInMs) return;
-    setCountdown(2);
-    const timer = globalThis.setInterval(() => {
-      const state = runtime.getSnapshot();
-      const remaining = Math.max(0, Math.ceil((state.startedAt + state.leadInMs - Date.now()) / 1000));
-      setCountdown(remaining || null);
-      if (!remaining || state.status !== 'running') globalThis.clearInterval(timer);
-    }, 100);
-  }, [runtime]);
-
   const held = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const clickBpm = Number(requirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
+  const beatsPerMeasure = useMemo(() => {
+    const beats = Number(String(instance?.meter ?? '').split('/')[0]);
+    return Number.isInteger(beats) && beats > 0 ? beats : 4;
+  }, [instance?.meter]);
+  /**
+   * The cued count-in: exactly ONE measure of the run's own tempo, because that
+   * is the promise the ready line makes and the length a child can hold in their
+   * head. `countInPlan` owns the PULSE inside that measure — above ~140bpm it
+   * coarsens the count so the numbers stay countable instead of becoming a buzz.
+   * `clicks` is therefore how many of the plan's clicks fit in the measure, not
+   * a second opinion about the meter.
+   */
+  const countIn = useMemo(() => {
+    // The attempt's own tempo map is the tempo the engine GRADES against, and
+    // it is not always `clickBpm`: a single-event cued instance carrying no
+    // tempo is given the engine's default. Counting a child in at one tempo and
+    // marking them against another is the one thing this must not do.
+    const graded = Number(snapshot.expectation?.tempoMap?.[0]?.bpm);
+    const bpm = graded > 0 ? graded : clickBpm;
+    if (!(bpm > 0)) return null;
+    const leadInMs = beatsPerMeasure * 60000 / bpm;
+    const { periodMs } = countInPlan({ beats: beatsPerMeasure, bpm });
+    return { leadInMs, periodMs, clicks: Math.max(1, Math.round(leadInMs / periodMs)) };
+  }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
+
+  /**
+   * A cued ask arms on ANY key — the child is saying "I am here", not playing
+   * yet — and then hears one measure of clicks before the first graded beat.
+   * The runtime is `running` for the whole lead-in (only the target times are
+   * shifted), which is exactly why the metronome below needs no special case:
+   * its clicks and the first played beat are one uninterrupted grid.
+   */
+  const startCountIn = useCallback(() => {
+    if (!runtime) return;
+    // No usable tempo to count at — start anyway. A key that does nothing is a
+    // dead surface, and a child cannot tell that apart from a broken piano.
+    runtime.start({ leadInMs: countIn?.leadInMs ?? 0, clock: 'date-now' });
+    if (!countIn) return;
+    setCountInBeat(1);
+    globalThis.clearInterval(countInTimerRef.current);
+    countInTimerRef.current = globalThis.setInterval(() => {
+      const state = runtime.getSnapshot();
+      const elapsed = Date.now() - (state.startedAt ?? 0);
+      if (state.status !== 'running' || elapsed >= countIn.leadInMs) {
+        globalThis.clearInterval(countInTimerRef.current);
+        countInTimerRef.current = null;
+        setCountInBeat(null);
+        return;
+      }
+      setCountInBeat(Math.min(countIn.clicks, Math.floor(elapsed / countIn.periodMs) + 1));
+    }, 100);
+  }, [countIn, runtime]);
+
+  /**
+   * The notes that can arm a free ask: the pitches of the event the cursor is
+   * sitting on. For a single-note ask that is "the first expected note". For a
+   * CHORD — the `held` matcher's `ordering: any` material — it is any member,
+   * because material whose own contract is "any order" must not then demand one
+   * particular finger first; a child reaching the chord from the top would be
+   * left pressing keys at a run that never starts.
+   */
+  const armingPitches = useMemo(() => {
+    const events = snapshot.expectation?.events ?? [];
+    const current = events[snapshot.cursor ?? 0];
+    return new Set((current?.notes ?? []).map((note) => note.midi));
+  }, [snapshot]);
+
   useMetronomeClick({
     enabled: snapshot.status === 'running' && ['metronome', 'cued'].includes(snapshot.mode),
     bpm: clickBpm,
   });
   const heldKey = held.join(',');
   useEffect(() => {
-    if (!runtime || snapshot.status !== 'running') { previousNotesRef.current = held; return; }
-    if (snapshot.matcher === 'held') {
-      runtime.observe({ held: activeNotes, time: Date.now(), clock: 'date-now' });
-    } else {
-      for (const midi of held) if (!previousNotesRef.current.includes(midi)) runtime.observe({ midi, time: Date.now(), clock: 'date-now' });
-    }
+    if (!runtime) return;
+    const onsets = held.filter((midi) => !previousNotesRef.current.includes(midi));
     previousNotesRef.current = held;
-  }, [activeNotes, held, heldKey, runtime, snapshot.matcher, snapshot.status]);
+    const time = Date.now();
+    if (snapshot.status === 'prepared') {
+      if (!onsets.length) return;
+      if (snapshot.mode === 'cued') { startCountIn(); return; }
+      // A note this ask did not want is a child finding their hands, not a
+      // wrong answer: it starts nothing and is never counted against them.
+      const arming = onsets.find((midi) => armingPitches.has(midi));
+      if (arming === undefined) return;
+      // Start FIRST, observe second, so the note that armed the run is also its
+      // first graded note — a free ask asks for eight notes, not nine.
+      runtime.start({ leadInMs: 0, clock: 'date-now' });
+      // The arming note is played AT the start instant, and must be timed from
+      // the runtime's own clock reading: a `Date.now()` sampled a millisecond
+      // earlier is `before_start` to the engine, which silently drops the note.
+      const armedAt = runtime.getSnapshot().startedAt ?? time;
+      if (snapshot.matcher === 'held') {
+        lastHeldObservedRef.current = heldKey;
+        runtime.observe({ held: activeNotesRef.current, time: armedAt, clock: 'date-now' });
+      } else {
+        runtime.observe({ midi: arming, time: armedAt, clock: 'date-now' });
+      }
+      return;
+    }
+    if (snapshot.status !== 'running') return;
+    if (snapshot.matcher === 'held') {
+      if (lastHeldObservedRef.current === heldKey) return;
+      lastHeldObservedRef.current = heldKey;
+      runtime.observe({ held: activeNotes, time, clock: 'date-now' });
+      return;
+    }
+    for (const midi of onsets) runtime.observe({ midi, time, clock: 'date-now' });
+  }, [activeNotes, armingPitches, held, heldKey, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn]);
 
   useEffect(() => () => {
+    globalThis.clearInterval(countInTimerRef.current);
+    countInTimerRef.current = null;
     const active = runtimeRef.current?.getSnapshot();
     if (active?.status === 'running' && active.musicalInput && !persistedRef.current) {
       const interrupted = runtimeRef.current.abort();
@@ -316,7 +408,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   const progress = assessmentProgress(snapshot);
   const eventIndex = Math.min(progress.eventIndex, instance.events.length);
   const result = snapshot.result?.status === 'completed' ? snapshot.result : null;
-  const phase = snapshot.status === 'prepared' ? 'ready' : snapshot.status === 'completed' ? 'done' : countdown ? 'countdown' : 'running';
+  const phase = snapshot.status === 'prepared' ? 'ready' : snapshot.status === 'completed' ? 'done' : countInBeat ? 'countdown' : 'running';
   const expected = instance.events.flatMap((event) => event.notes.map((note) => note.midi));
   // Two consumers, two different things. ExerciseNotation's `wrong` prop is a
   // FLAG (it only ever colours the cursor note), so it gets a boolean — passing
@@ -347,9 +439,11 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
       </header>
       <div className="piano-exercise-run__score">
         <ExerciseNotation instance={instance} eventIndex={eventIndex} wrong={isWrong} complete={phase === 'done' && passed} />
-        {countdown && <div className="piano-exercise-run__countdown" aria-live="assertive">{countdown}</div>}
+        <CountInOverlay active={countInBeat != null} beat={countInBeat} />
       </div>
-      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{challenge ? 'The tempo and pass criteria are fixed for this run. The count-in starts when you are ready.' : 'Correct mistakes and continue at your own pace. Practice is saved, but it does not unlock a gate.'}</p>{!connected && <span>Waiting for the piano…</span>}<button type="button" onClick={start}>{challenge ? 'Begin challenge' : 'Begin practice'}</button></div>}
+      {/* No button: the piano starts the run. A cued ask arms on any key and
+          counts a measure; every other ask arms on the note it is asking for. */}
+      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
       {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
         <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span><strong>{Math.round(result.score * 100)}%</strong></div>
