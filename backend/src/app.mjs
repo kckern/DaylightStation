@@ -3442,10 +3442,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
    * @param {{target: string}} a - `target` is a devices.yml id
    * @returns {Promise<{ok: boolean, error?: string}>}
    */
-  const wakeScreenForBroadcast = async ({ target } = {}) => {
+  let startReadingSession = null;
+  const wakeScreenForBroadcast = async ({ target, prepareOnly = false } = {}) => {
     const device = target ? deviceServices.deviceService.get(target) : null;
     if (!device) return { ok: false, error: `unknown target: ${target}` };
-    const power = await device.powerOn();
+    const power = prepareOnly ? { ok: true, skipped: true } : await device.powerOn();
     const foreground = await device.prepareForContent({ skipCameraCheck: true });
     return { ok: power?.ok !== false && foreground?.ok !== false, power, foreground };
   };
@@ -3475,6 +3476,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // path's seam and is shared with it verbatim, one room, one way to wake
       // a screen that a mounted widget is about to be told something on.
       wakeScreen: wakeScreenForBroadcast,
+      startReadingSession: (args) => startReadingSession?.(args) ?? { status: 'reading_session_failed', message: 'Story time is still starting up.' },
       languageStudyService,
       studyGrants: schoolStudyGrants,
       languageReelService,
@@ -4294,7 +4296,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // is still the right answer for a household with no story-time launcher.
   if (readingSessions) {
     const { makeReadingSessionHandler } = await import('#composition/modules/learnerCardActions.mjs');
-    learnerActions.register('reading-session', makeReadingSessionHandler({
+    const readingSessionHandler = makeReadingSessionHandler({
       sessions: readingSessions,
       // D2 — the one question that can refuse a tap: is unrelated content
       // already up on this reader's TV? The SAME tracker the presence
@@ -4307,9 +4309,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // the media-lesson dispatch, which needs it for the same reason — see
       // `wakeScreenForBroadcast` above.
       wakeScreen: wakeScreenForBroadcast,
+      alertAdult: async ({ target, location, learnerId }) => {
+        const device = target ? deviceServices.deviceService.get(target) : null;
+        if (!device?.notifyService || !homeAutomationAdapters.haGateway?.callService) return;
+        await homeAutomationAdapters.haGateway.callService('notify', device.notifyService, {
+          title: 'Story time screen needs help',
+          message: `${learnerId ?? 'A learner'} started story time at ${location}, but the screen did not respond.`,
+        });
+      },
       eventBus,
       logger: rootLogger.child({ module: 'trigger-learner' }),
-    }));
+    });
+    learnerActions.register('reading-session', readingSessionHandler);
+    startReadingSession = ({ learnerId, origin = 'portal' } = {}) => {
+      const locations = Object.entries(nfcLocationsForReachability() || {})
+        .filter(([, cfg]) => cfg?.learner_action === 'reading-session');
+      if (locations.length !== 1) {
+        return { status: 'reading_session_failed', message: 'Story time needs one configured reading room.' };
+      }
+      const [location, cfg] = locations[0];
+      return readingSessionHandler({ learnerId, location, target: cfg?.target ?? cfg?.device ?? null, origin });
+    };
   }
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality

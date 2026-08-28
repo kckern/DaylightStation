@@ -76,11 +76,18 @@ const IDLE_STATES = new Set(['prompt', 'confirm']);
  * exists to prevent. It only says so, loudly, once.
  */
 export const STUCK_READING_MS = 90 * 60_000;
+/** A running player should report timeupdate every five seconds. */
+export const PLAYBACK_STALL_MS = 90_000;
+/** Paused media may stay paused, but not own the TV indefinitely. */
+export const PAUSED_PLAYBACK_TIMEOUT_MS = 10 * 60_000;
+/** An ended event normally follows a near-end progress sample immediately. */
+export const TERMINAL_PROGRESS_GRACE_MS = 20_000;
 
 export class ReadingSessionService {
   #sessions = new Map();
   #revisions = new Map();
   #serverEpoch;
+  #ackWaiters = new Map();
   /** Locations already reported stuck, so the 15s sweep warns once, not always. */
   #stuckReported = new Set();
   #eventBus; #clock; #logger;
@@ -158,6 +165,30 @@ export class ReadingSessionService {
     const closed = [];
     const now = this.#clock().getTime();
 
+    // Playback is special: unlike a prompt, it has a heartbeat.  A failed
+    // ended callback must not leave a fake story suppressing room teardown,
+    // but a duration wall clock would cut off a perfectly healthy audiobook.
+    // Reset only on the absence of observed progress (or an unclosed terminal
+    // sample), and never award a read here.
+    for (const session of this.#sessions.values()) {
+      if (session.state !== 'reading' || !session.progress) continue;
+      const progressAt = Date.parse(session.progress.at);
+      const age = now - (Number.isFinite(progressAt) ? progressAt : session.lastActivityAt);
+      const terminal = Number.isFinite(session.progress.durationSec)
+        && session.progress.durationSec > 0
+        && Number.isFinite(session.progress.positionSec)
+        && session.progress.positionSec >= session.progress.durationSec - 1;
+      const expired = terminal ? age > TERMINAL_PROGRESS_GRACE_MS
+        : session.progress.paused ? age > PAUSED_PLAYBACK_TIMEOUT_MS
+          : age > PLAYBACK_STALL_MS;
+      if (!expired) continue;
+      this.update(session.location, {
+        state: PROMPT, pick: null, playing: null, progress: null,
+        recovery: { reason: terminal ? 'terminal-without-read' : session.progress.paused ? 'paused-too-long' : 'progress-stalled', at: this.#clock().toISOString() },
+      });
+      this.#log('warn', 'school.reading.playback-recovered', { location: session.location, learnerId: session.learnerId, terminal, age });
+    }
+
     // STUCK DETECTION RUNS FIRST, AND ABOVE THE IDLE-TIMEOUT GUARD.
     //
     // It sat below `if (!this.#idleTimeoutMs) return closed` in its first
@@ -223,6 +254,43 @@ export class ReadingSessionService {
       revision: this.#revisions.get(key) ?? 0,
       serverEpoch: this.#serverEpoch,
     });
+  }
+
+  acknowledge(location, sessionId) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session || session.sessionId !== sessionId) return null;
+    const updated = this.update(location, { acknowledgedAt: this.#clock().toISOString() });
+    const waiter = this.#ackWaiters.get(sessionId);
+    if (waiter) waiter(true);
+    return updated;
+  }
+
+  /** Wait for the screen that applied a snapshot to prove it is listening. */
+  waitForAcknowledgement(sessionId, timeoutMs = 8_000) {
+    if (!sessionId) return Promise.resolve(false);
+    if ([...this.#sessions.values()].some((session) => session.sessionId === sessionId && session.acknowledgedAt)) {
+      return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+      const finish = (value) => {
+        const current = this.#ackWaiters.get(sessionId);
+        if (!current) return;
+        this.#ackWaiters.delete(sessionId);
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      timer?.unref?.();
+      this.#ackWaiters.set(sessionId, finish);
+    });
+  }
+
+  /** Replay the exact current state; snapshots make this safe for a reload. */
+  reannounce(location, sessionId) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session || session.sessionId !== sessionId) return null;
+    this.#broadcast(location, { event: 'session-open', ...session });
+    return session;
   }
 
   /** Every open session, newest state included — for a status endpoint or a sweep. */
@@ -318,6 +386,7 @@ export class ReadingSessionService {
     const session = this.#sessions.get(location) ?? null;
     if (!session) return null;
     this.#sessions.delete(location);
+    this.#ackWaiters.get(session.sessionId)?.(false);
     const revision = this.#nextRevision(session.location);
     this.#stuckReported.delete(location);
     this.#log('info', 'school.reading.session-close', {

@@ -50,17 +50,21 @@ export class RecordStoryRead {
    *
    * @param {{learnerId: string, title?: string|null, contentId?: string|null,
    *          tagUid?: string|null, location?: string|null,
-   *          pickId?: string|null}} input
+   *          pickId?: string|null, studyDay?: string|null}} input
    * @returns {Promise<object>} the stored row
    */
   async execute({
-    learnerId, title = null, contentId = null, tagUid = null, location = null, pickId = null,
+    learnerId, title = null, contentId = null, tagUid = null, location = null, pickId = null, studyDay: requestedStudyDay = null,
   } = {}) {
     if (typeof learnerId !== 'string' || !learnerId.trim()) {
       throw new ValidationError('learnerId is required to record a story read');
     }
     const at = this.#clock().toISOString();
-    const studyDay = this.#studyDay();
+    // A read belongs to the study day on which it was picked, not whichever
+    // day happens to begin while a long audiobook is ending.
+    const studyDay = typeof requestedStudyDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(requestedStudyDay)
+      ? requestedStudyDay
+      : this.#studyDay();
     const stored = await this.#readingLog.append({
       learnerId: learnerId.trim(), studyDay, at, contentId, title, tagUid, location, pickId,
     });
