@@ -28,6 +28,31 @@ table wins.
 | D11 | **A teacher can reveal the code, but not satisfy the companion.** Satisfaction stays false and the records keep the line between "listened" and "was told". Needs a code-lookup surface in the teacher panel. | §10 |
 | D12 | **A required companion with no document is refused at publish.** So is one on a renderer that declares no completion contract. Authoring errors belong to the author, not to a child holding a gate with no lock. | §11, §13.6 |
 | D13 | **The record's 7-day window governs a required companion** — the access code lives as long as the record. *Assumed, not discussed; easy to reverse.* | §14.8 |
+| D14 | **A required companion is supported only on the solo bank-worksheet issue path.** Every other path — a composed multi-lesson sheet, a `print/<id>@<rev>` document unit, a legacy document unit — refuses rather than printing an ungated sheet. | §0.1 |
+
+### 0.1 Why D14, and why it is not D12
+
+Added 2026-08-28, during pre-merge review, after a composed worksheet was found to
+print a required companion's lesson with **no gate row and no refusal** — the sheet then
+passes on score alone, with nothing logged.
+
+**It is deliberately not filed under D12.** D12 is about *authoring* errors caught at
+publish/validation time — a required companion with no document, or one on a renderer
+with no completion contract. D14 is a *print-time composition* case the register never
+contemplated: the authoring is perfectly valid, and the sheet is issued through a
+different door.
+
+**Refusal, not per-path gate rows.** `COMPANION_GATE_ITEM_ID` is one fixed id, justified
+in its own comment by "a worksheet has exactly one gate, so one fixed id is enough". Two
+gated sections on one card would mint two `extraItems` sharing that id, collide in
+`mergeBank`, and `ResolveCardScan`'s `find(row => row.itemType === 'companion_code')`
+would return only the first — the second lesson's gate vanishing silently. Supporting it
+properly needs a per-section gate id, a per-section partition at scan time, and new
+row-capacity arithmetic. That is a feature; this is a fix.
+
+It is also right on the merits: a composed sheet is a batching convenience for a
+learner's day, and a lesson that gates on media is exactly the one to print on its own,
+where the solo path already handles it end to end.
 
 ---
 
