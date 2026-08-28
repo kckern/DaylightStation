@@ -265,17 +265,26 @@ together" / "Press the lit key"), and the material itself, visible in full befor
 starts. Together-versus-in-order is answered before a child can wonder about it, not in a
 status line they reach after deciding.
 
-Both the bargain and the plain-words ask are **props the host supplies** (`framing`,
-`ask`), so the run never has to guess why it is on screen. **The match gate is the only
-host that supplies them today.** A program-step challenge, launched from the exercise
-program page, passes neither — so it still shows the old eyebrow ("Pass challenge") over
-the bank's own title. `framingFor` names a `program` shape for it and nothing calls that
-branch yet; the run route would need to carry the two values through its query. Ordinary
-practice supplies neither by design: a child who chose an exercise from the browser has
-its detail page one tap behind them.
+Both the bargain and the plain-words ask come from the host, through `AskSession`, so the
+run never has to guess why it is on screen. **Every host that asks a child to pass
+something supplies a bargain**, and each names its own context rather than writing the
+sentence — the copy lives in `framingFor` and nowhere else:
 
-Where the ask is supplied, the exercise-bank title ("Intervals") is not the headline —
-which, per the paragraph above, means at the match gate and nowhere else yet. A key chip
+| Host | Context it names | What a child reads |
+|---|---|---|
+| Match gate | `{kind: 'gate', gameLabel}` | "Play this to start Chess" |
+| Program step | `{kind: 'program', stepLabel}` | "Pass this to finish Exercise 1" |
+| Video checkpoint | `{kind: 'lesson', lessonLabel}` | "Pass this to finish Lesson 3" |
+| Practice | `{kind: 'practice'}` | *no line* |
+
+A program step needs no plumbing for it: the session fetches the step for its requirement
+anyway and reads the title off the same answer. A video checkpoint has no step to fetch —
+its requirement is authored JSON travelling in the query — so its lesson title travels
+beside it (`label`). Ordinary practice supplies no line by design: a child who chose an
+exercise from the browser has its detail page one tap behind them, and a program step
+being *practised* is practice, not a promise to finish anything.
+
+Where the ask is supplied, the exercise-bank title ("Intervals") is not the headline. A key chip
 appears only when a staff is shown and is labelled ("Key of F"), never a bare letter; a
 meter chip only when cued; a BPM chip only when a pace gate exists. Those three are
 unconditional: they are the run's own, not a host's.

@@ -72,8 +72,28 @@ export function askForMaterial(spec, instance) {
   return 'Play this.';
 }
 
+/**
+ * Why this screen exists, in one line, from the host's own context.
+ *
+ * Four shapes, and a host names the one it IS rather than the sentence it
+ * wants — the copy lives here and nowhere else, which is what keeps a URL
+ * query or a config file from becoming a second place a child's words are
+ * written.
+ *
+ * `program` and `lesson` say the same words today, deliberately kept apart: a
+ * program step and a video lesson's checkpoint make a child the same promise
+ * ("pass this and the thing you were doing is finished"), but the LABEL is a
+ * different fact about a different host, and a change to one line must not
+ * silently rewrite the other.
+ *
+ * `practice` answers `null` — a child who chose an exercise from the browser
+ * has its detail page one tap behind them, so the exercise's own title stays
+ * the headline. It is a real answer, not a missing one: a host that says
+ * "practice" is refusing a framing line rather than forgetting to supply one.
+ */
 export function framingFor(context) {
   if (context?.kind === 'gate') return `Play this to start ${context.gameLabel}`;
   if (context?.kind === 'program') return `Pass this to finish ${context.stepLabel}`;
+  if (context?.kind === 'lesson') return `Pass this to finish ${context.lessonLabel}`;
   return null;
 }

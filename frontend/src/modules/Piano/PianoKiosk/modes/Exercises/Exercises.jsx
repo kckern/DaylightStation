@@ -4,7 +4,7 @@ import { usePianoUser } from '../../PianoUserContext.jsx';
 import { isPersistentUser } from '../../pianoUser.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonGrid, SkeletonStage } from '../../Skeleton.jsx';
-import ExerciseRun from './ExerciseRun.jsx';
+import AskSession from '../../../ask/AskSession.jsx';
 import { ExercisePreview } from './ExerciseNotation.jsx';
 import { describeInstance, matchesExerciseSearch } from './exerciseQuery.js';
 import { FORM_OPTIONS, HAND_OPTIONS, LEVEL_BANDS, MODE_OPTIONS } from './filters.js';
@@ -63,6 +63,10 @@ function ExerciseDashboard() {
         intent: 'challenge',
         requirement: JSON.stringify(next.requirement),
         ...(next.return_to ? { return: next.return_to } : {}),
+        // The lesson this checkpoint stands in front of. A checkpoint is not a
+        // program step, so the run route has nothing to fetch its own framing
+        // from — the label travels, and `framingFor` writes the sentence.
+        ...(next.title ? { label: next.title } : {}),
       });
       navigate(`${base}/run/${encodeURIComponent(next.requirement.exercise_id)}?${query}`);
       return;
@@ -393,6 +397,29 @@ function ExerciseDetail() {
   );
 }
 
+/**
+ * The one host that arrives through a QUERY STRING, serving three children who
+ * need three different answers to "why is this on screen".
+ *
+ * All three reach the same seam (`AskSession`) with the same plumbing; what
+ * differs is the FRAMING CONTEXT this route hands it, which it is uniquely
+ * placed to know:
+ *
+ *  - **practice** says so explicitly, and `framingFor` answers with no line at
+ *    all. Saying it is not the same as saying nothing: `null` would let the
+ *    session compute a program step's own line, and "Pass this to finish
+ *    Exercise 1" is a promise a practice screen does not make — the child
+ *    pressed Practice, nothing is judged and nothing gets finished.
+ *  - **a video checkpoint** carries its lesson's title in the query (`label`),
+ *    because there is nothing for the session to fetch it from: a checkpoint is
+ *    not a program step, and the requirement it travels with is authored JSON.
+ *  - **a program step** hands down nothing, and the session writes the line
+ *    from the step it already fetched for the requirement — one fetch, not two.
+ *
+ * The route never writes the sentence itself. A finished line arriving in a URL
+ * would be a second place a child's words live, and the one place they live is
+ * `framingFor`.
+ */
 function ExerciseRunRoute() {
   const navigate = useNavigate();
   const base = useExercisesBase();
@@ -405,14 +432,21 @@ function ExerciseRunRoute() {
     try { return requirementText ? JSON.parse(requirementText) : null; } catch { return null; }
   }, [requirementText]);
   const requestedMode = ['free', 'metronome', 'cued'].includes(query.get('mode')) ? query.get('mode') : 'free';
+  const intent = query.get('intent') === 'challenge' ? 'challenge' : 'practice';
+  const label = query.get('label');
+  const framing = useMemo(() => {
+    if (intent !== 'challenge') return { kind: 'practice' };
+    return label ? { kind: 'lesson', lessonLabel: label } : null;
+  }, [intent, label]);
   return (
-    <ExerciseRun
+    <AskSession
       instanceId={instanceId}
-      intent={query.get('intent') === 'challenge' ? 'challenge' : 'practice'}
+      intent={intent}
       practiceMode={requestedMode}
       programId={query.get('program')}
       stepId={query.get('step')}
       requirementOverride={requirementOverride}
+      framing={framing}
       onExit={() => navigate(-1)}
       onPassed={() => returnTo ? navigate(returnTo) : query.get('program') ? navigate(`${base}/program/${encodeURIComponent(query.get('program'))}`) : navigate(base)}
     />

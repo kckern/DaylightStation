@@ -257,3 +257,84 @@ describe('ExerciseRun — score material', () => {
     });
   });
 });
+
+/**
+ * The same passage, arriving the way every host hands it down now: as a
+ * SETTLED `score` document beside an explicit `instance: null`, resolved above
+ * by `AskSession` rather than fetched here.
+ *
+ * The block above drives the compatibility path (`material`, self-resolved),
+ * and until this suite existed that was the only path a REAL `ScorePassage`
+ * had ever been driven through — the props path's safety was argued by
+ * inspection. That argument was load-bearing and thin: the expectation arrives
+ * from the engraver a commit LATE, and the props path clears
+ * `scoreExpectation` on a `[instanceProp, scoreProp]` change. A host handing
+ * down a fresh document object per render would therefore wipe the engraving
+ * on the very commit that published it, and a child would sit on "Getting the
+ * music ready…" forever — with every existing assertion green, because none of
+ * them takes this door.
+ */
+describe('ExerciseRun — score material handed down as props', () => {
+  /** What `AskSession` settles on for `{kind:'score'}`: id, document, bars. */
+  const settledScore = Object.freeze({ id: material.source, musicXml: fourBars, measures: [2, 3] });
+
+  const handedDown = (over = {}) => ({
+    intent: 'challenge',
+    instance: null,
+    score: settledScore,
+    requirement,
+    ask: 'Play this passage as written.',
+    tier: 2,
+    onExit: vi.fn(),
+    onPassed: vi.fn(),
+    ...over,
+  });
+
+  it('engraves the document it was given and builds the attempt from it, fetching nothing', async () => {
+    render(<ExerciseRun {...handedDown()} />);
+
+    await screen.findByText('Play the first note to begin.');
+    // Nothing self-resolved: the host already did, and a second load would land
+    // after the first and rebuild the attempt under the child's hands.
+    expect(h.text).not.toHaveBeenCalled();
+    expect(h.prepareExercise).not.toHaveBeenCalled();
+    expect(screen.getByTestId('engraver')).toBeInTheDocument();
+    expect(document.querySelector('.piano-exercise-run')).toHaveAttribute('data-stage', 'score');
+    const config = h.createAttempt.mock.calls.at(-1)[0];
+    expect(config.expectation.source).toMatchObject({ kind: 'score', id: material.source });
+    expect(config.expectation.events.flatMap((e) => e.notes.map((n) => n.midi))).toEqual([64, 65, 67, 69]);
+    expect(config.requirement).toBe(requirement);
+  });
+
+  it('plays through to a pass, graded by the real engine off the real engraving', async () => {
+    const current = handedDown();
+    const view = render(<ExerciseRun {...current} />);
+    await screen.findByText('Play the first note to begin.');
+
+    for (const midi of [64, 65, 67, 69]) press(view, current, midi);
+
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    await waitFor(() => expect(h.record).toHaveBeenCalledTimes(1));
+    expect(h.record.mock.calls[0][1]).toMatchObject({
+      status: 'completed', kind: 'score', diagnostics: { expected_notes: 4, matched_notes: 4 },
+    });
+  });
+
+  it('keeps the engraving across a host re-render, so the cursor does not reset', async () => {
+    const current = handedDown();
+    const view = render(<ExerciseRun {...current} />);
+    await screen.findByText('Play the first note to begin.');
+    const lit = () => [...document.querySelectorAll('.mock-notehead.piano-note-lit')].map((el) => Number(el.dataset.midi));
+
+    press(view, current, 64);
+    await waitFor(() => expect(lit()).toEqual([65]));
+
+    // The host re-renders (its own state moved) with the SAME document. A run
+    // that cleared its expectation here would rebuild the attempt from nothing
+    // and send the child back to the first note of the passage.
+    act(() => { view.rerender(<ExerciseRun {...current} />); });
+
+    expect(lit()).toEqual([65]);
+    expect(screen.queryByText('Getting the music ready…')).toBeNull();
+  });
+});
