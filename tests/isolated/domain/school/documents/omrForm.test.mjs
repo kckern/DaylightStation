@@ -100,3 +100,31 @@ describe('decodeOmrSheet refusals', () => {
     expect(decodeOmrSheet()).toMatchObject({ entries: {}, ambiguous: [], blank: [] });
   });
 });
+
+describe('a set-valued row', () => {
+  const gateFormMap = {
+    formVersion: 'v1',
+    marks: ['A', 'B', 'C', 'D', 'E'].map((choice, col) => ({
+      itemId: 'gate', choice, label: choice, selection: 'set',
+      xPt: 100 + col * 20, yPt: 100, rPt: 5, page: 1,
+    })),
+  };
+
+  it('encodes every letter of a code into one column', () => {
+    const reader = new VirtualOmrReader({ readerId: 'test' });
+    const sheet = reader.scanSheet({ formMap: gateFormMap, chosen: { gate: ['A', 'C', 'E'] } });
+    // bits 0, 2, 4 -> 0b10101 = 21
+    expect(sheet.marks[0]).toBe(21);
+  });
+
+  it('still accepts a single string choice', () => {
+    const reader = new VirtualOmrReader({ readerId: 'test' });
+    const sheet = reader.scanSheet({ formMap: gateFormMap, chosen: { gate: 'B' } });
+    expect(sheet.marks[0]).toBe(2);
+  });
+
+  it('still refuses a letter the row does not print', () => {
+    const reader = new VirtualOmrReader({ readerId: 'test' });
+    expect(() => reader.scanSheet({ formMap: gateFormMap, chosen: { gate: ['A', 'Z'] } })).toThrow();
+  });
+});
