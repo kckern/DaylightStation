@@ -54,6 +54,14 @@
  * and `attempt.mjs` carries no points field, so a `companion_code` attempt
  * would sit in a learner's permanent history looking exactly like a question
  * they got wrong, with nothing to tell any reader it was worth zero.
+ *
+ * AND IT RIDES `submitted`, NOT ONLY `graded` (Task 11). A sheet with an
+ * ambiguous bubble goes to a grown-up: this bridge returns at `awaiting-review`
+ * having written `submitted` and nothing else, and the `graded`
+ * `GradeSubmission` writes afterwards carries no gate at all. Stamped on
+ * `graded` alone, the verdict was therefore lost on every sheet that needed a
+ * person — one double-bubbled question was enough to pass a lesson whose
+ * read-along was never played.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { createAttempt } from '#domains/school/attempt.mjs';
@@ -399,6 +407,27 @@ export class RecordCardScanOutcome {
   }
 
   /**
+   * Hand the work in, carrying the scan's verdict on the finish-code row.
+   *
+   * Both `#bridgeSession` branches turn a sheet in the same way, and both must
+   * carry the gate: the awaiting-review branch because `submitted` is the only
+   * event it ever writes, and the grading branch so the two paths record the
+   * same fact in the same shape rather than one of them being the exception.
+   * Absent on every ungated sheet, which is all of them today.
+   */
+  async #appendSubmitted({ sessionId, at, card }) {
+    const submitted = createEvent({
+      type: 'submitted',
+      at,
+      sessionId,
+      transport: 'paper',
+      ...(card.companionGate ? { companionGate: { status: card.companionGate.status } } : {}),
+    });
+    if (submitted.errors.length) throw new Error(submitted.errors.join('; '));
+    await this.#sessions.appendEvent(sessionId, submitted.event);
+  }
+
+  /**
    * Advance the issuing work session, when there is one, through the SAME
    * transitions every other transport uses. Never throws — a session-side
    * refusal must not un-record the attempts above.
@@ -500,11 +529,13 @@ export class RecordCardScanOutcome {
         await this.#reviewQueue.enqueue([...machineMarks, ...pending]);
         if (pending.length > 0) {
           if (state.state !== 'submitted') {
-            const submitted = createEvent({
-              type: 'submitted', at, sessionId, transport: 'paper',
-            });
-            if (submitted.errors.length) throw new Error(submitted.errors.join('; '));
-            await this.#sessions.appendEvent(sessionId, submitted.event);
+            // THE GATE VERDICT RIDES THE HAND-OVER (Task 11). This branch
+            // returns without ever writing a `graded` event, and the one
+            // `GradeSubmission` writes when the grown-up is done carries no
+            // gate — so `submitted` is the only place the scan can put what it
+            // read, and until it did, one double-bubbled question was enough
+            // to pass a sheet whose companion was never played.
+            await this.#appendSubmitted({ sessionId, at, card });
           }
           // The reasons/items ride along because the count alone says work
           // stopped without saying WHY. On 2026-08-22 this line read
@@ -532,11 +563,7 @@ export class RecordCardScanOutcome {
       }
 
       if (state.state !== 'submitted') {
-        const submitted = createEvent({
-          type: 'submitted', at, sessionId, transport: 'paper',
-        });
-        if (submitted.errors.length) throw new Error(submitted.errors.join('; '));
-        await this.#sessions.appendEvent(sessionId, submitted.event);
+        await this.#appendSubmitted({ sessionId, at, card });
       }
 
       const correctRows = card.results.filter((row) => row.status === 'correct').length;
