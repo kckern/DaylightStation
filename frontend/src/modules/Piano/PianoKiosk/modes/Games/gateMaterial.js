@@ -294,9 +294,9 @@ export function isConfigOnlyDecline(skipped) {
 /**
  * One material spec becomes one runnable thing, or one reason it did not.
  *
- * Exported for `AskSession` (task 3, ask-platform SP1), which resolves the
- * AUTHORED spec a host picked — the same input `pickGateMaterial` walks, minus
- * the walking. It is the only entry point that can answer for every shape a
+ * Exported for `AskSession` (task 3, ask-platform SP1), which resolves ONE
+ * authored spec — the host walks `materialOrder` and hands them over one at a
+ * time. It is the only entry point that can answer for every shape a
  * level can name: `resolveGateMaterial` handles a descriptor that already knows
  * its instance or its id, and has nothing to say about `{collection, roots}`,
  * which is what every staff-level rung in the live config is written as.
@@ -341,6 +341,13 @@ export async function resolveSpec(spec, { pickIndex, mode }) {
  * already answers — the first time `pickMaterial`'s anti-repeat rule changed,
  * the two would disagree and nothing would say so.
  *
+ * The order is a FALLBACK SEQUENCE, not a preference list: an entry that cannot
+ * resolve — a bank 502, a score naming no source — costs that attempt nothing,
+ * because the host steps to the next entry and serves that instead. Only a
+ * level where nothing resolves declines. Failing a whole gate over one bad
+ * entry would take a match away from a child for a config decision they cannot
+ * see.
+ *
  * @param {{material?:object[]}} level A resolved repertoire level.
  * @param {{lastMaterialId?:string|null, pickIndex?:number}} [options]
  * @returns {object[]} Possibly empty — a level with no material has no order.
@@ -353,47 +360,6 @@ export function materialOrder(level, { lastMaterialId = null, pickIndex = 0 } = 
   const index = Math.abs(Math.trunc(Number(pickIndex)) || 0);
   const first = pickMaterial(level, lastMaterialId, index);
   return [first, ...candidates.filter((spec) => spec !== first)];
-}
-
-/**
- * Choose what a child is asked to play for one gate attempt, from one level.
- *
- * NO PRODUCTION CALLER as of the ask-platform SP1: `GameGate` walks the same
- * order (`materialOrder`) one spec at a time, because the resolution of each
- * one now happens inside `AskSession` and comes back as a callback rather than
- * as the return of a loop. What survives here is the batch form of that walk,
- * still exercised by `gateMaterial.test.js` as the specification of what the
- * order and the skip list mean. It should go when a later task can delete its
- * tests with it, and it must not grow a second caller in the meantime —
- * resolution has one owner now.
- *
- * Rotation picks the STARTING candidate (`pickMaterial`, which avoids the spec
- * served last time); the rest of the level's material is the fallback order. An
- * entry that cannot resolve — a bank 502, a score with no source — therefore
- * costs that attempt nothing: it is skipped and the level's other material is
- * served. Only a level where NOTHING resolves declines, and the gate then fails
- * open. Failing the whole gate over one bad entry would take a match away from
- * a child for a config decision they cannot see.
- *
- * @param {{id:string, tier:number, material:object[]}} level A resolved repertoire level.
- * @param {{lastMaterialId?:string|null, pickIndex?:number, mode?:'free'|'cued'}} [options]
- * @returns {Promise<{ok:boolean, spec?:object, material?:object, instance?:object,
- *                    skipped:Array<{kind:string|null, reason:string}>, error?:string}>}
- */
-export async function pickGateMaterial(level, { lastMaterialId = null, pickIndex = 0, mode = 'free' } = {}) {
-  const skipped = [];
-  const order = materialOrder(level, { lastMaterialId, pickIndex });
-  if (!order.length) return { ok: false, error: 'no-material-in-level', skipped };
-
-  const index = Math.abs(Math.trunc(Number(pickIndex)) || 0);
-  for (const spec of order) {
-    const resolved = await resolveSpec(spec, { pickIndex: index, mode });
-    if (resolved.ok) {
-      return { ok: true, spec, material: resolved.material, instance: resolved.instance, skipped };
-    }
-    skipped.push({ kind: spec?.kind ?? null, reason: resolved.error });
-  }
-  return { ok: false, error: skipped.at(-1)?.reason ?? 'no-material-in-level', skipped };
 }
 
 export default resolveGateMaterial;

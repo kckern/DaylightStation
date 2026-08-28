@@ -17,7 +17,7 @@ vi.mock('../../../../../lib/api.mjs', async (importOriginal) => ({
 }));
 
 const {
-  resolveGateMaterial, pickGateMaterial, keysInstance, isConfigOnlyDecline,
+  resolveGateMaterial, resolveSpec, materialOrder, keysInstance, isConfigOnlyDecline,
 } = await import('./gateMaterial.js');
 
 const FOUR_BARS = '<?xml version="1.0"?><score-partwise><part id="P1"/></score-partwise>';
@@ -179,7 +179,20 @@ describe('keysInstance — the lit-key ask, synthesized locally', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('pickGateMaterial — a level becomes something the run can grade', () => {
+/**
+ * The two halves a level becomes something the run can grade THROUGH.
+ *
+ * These cases were written against `pickGateMaterial`, a batch walk that
+ * ordered a level's material and resolved each entry until one answered. It had
+ * no production caller left once `GameGate` began serving one spec at a time
+ * through `AskSession`, and it was deleted with ask-platform SP1 task 6. Every
+ * claim it carried is below, addressed to the function that actually owns it:
+ * `materialOrder` for the ORDER and the rotation, `resolveSpec` for what one
+ * authored spec resolves to and which reason it declines with. Those two are
+ * exactly what `GameGate` and `AskSession` call, so the specification now
+ * describes the code that runs rather than a wrapper nothing used.
+ */
+describe('resolveSpec — one authored spec becomes something the run can grade', () => {
   beforeEach(() => {
     h.instance.mockReset();
     h.instances.mockReset();
@@ -187,11 +200,8 @@ describe('pickGateMaterial — a level becomes something the run can grade', () 
     h.text.mockReset();
   });
 
-  it('serves a keys level without touching the network', async () => {
-    const picked = await pickGateMaterial(
-      level({ tier: 0, material: [{ kind: 'keys', notes: 1, arrangement: 'together' }] }),
-      { pickIndex: 0, mode: 'free' },
-    );
+  it('serves a keys spec without touching the network', async () => {
+    const picked = await resolveSpec({ kind: 'keys', notes: 1, arrangement: 'together' }, { pickIndex: 0, mode: 'free' });
 
     expect(picked.ok).toBe(true);
     expect(picked.material.kind).toBe('keys');
@@ -204,10 +214,10 @@ describe('pickGateMaterial — a level becomes something the run can grade', () 
 
   it('builds the scales-bank id for a collection/roots spec and rotates the root', async () => {
     h.instance.mockImplementation(async (id) => ({ ok: true, status: 200, data: { id, key: id.split('root=')[1]?.[0] } }));
-    const l2 = level({ material: [{ kind: 'exercise', collection: 'scales', roots: ['G', 'D', 'F'], hands: 'right' }] });
+    const spec = { kind: 'exercise', collection: 'scales', roots: ['G', 'D', 'F'], hands: 'right' };
 
-    const first = await pickGateMaterial(l2, { pickIndex: 0, mode: 'free' });
-    const second = await pickGateMaterial(l2, { pickIndex: 1, mode: 'free' });
+    const first = await resolveSpec(spec, { pickIndex: 0, mode: 'free' });
+    const second = await resolveSpec(spec, { pickIndex: 1, mode: 'free' });
 
     expect(first.material.instanceId).toBe('scales/modes@root=G,mode=ionian,direction=up,span_octaves=1');
     expect(second.material.instanceId).toBe('scales/modes@root=D,mode=ionian,direction=up,span_octaves=1');
@@ -219,9 +229,7 @@ describe('pickGateMaterial — a level becomes something the run can grade', () 
 
   it('takes a named instanceId as given', async () => {
     h.instance.mockResolvedValue({ ok: true, status: 200, data: { id: 'scales/modes@root=C', key: 'C' } });
-    const picked = await pickGateMaterial(
-      level({ material: [{ kind: 'exercise', instanceId: 'scales/modes@root=C' }] }), { pickIndex: 0, mode: 'free' },
-    );
+    const picked = await resolveSpec({ kind: 'exercise', instanceId: 'scales/modes@root=C' }, { pickIndex: 0, mode: 'free' });
     expect(picked.material).toMatchObject({ kind: 'exercise', instanceId: 'scales/modes@root=C' });
     expect(h.instance).toHaveBeenCalledWith('scales/modes@root=C');
   });
@@ -233,17 +241,14 @@ describe('pickGateMaterial — a level becomes something the run can grade', () 
     h.instances.mockResolvedValue({
       ok: true, status: 200, data: { instances: [{ id: 'chords/triads@root=C', supports: ['free'] }] },
     });
-    const picked = await pickGateMaterial(
-      level({ material: [{ kind: 'exercise', collection: 'chords' }] }), { pickIndex: 0, mode: 'free' },
-    );
+    const picked = await resolveSpec({ kind: 'exercise', collection: 'chords' }, { pickIndex: 0, mode: 'free' });
     expect(picked.ok).toBe(true);
     expect(picked.material.instanceId).toBe('chords/triads@root=C');
   });
 
-  it('serves a score level, and does NOT fetch the document at pick time', async () => {
-    const picked = await pickGateMaterial(
-      level({ material: [{ kind: 'score', source: 'files:fur-elise.musicxml', measures: [1, 4] }] }),
-      { pickIndex: 0, mode: 'free' },
+  it('serves a score spec, and does NOT fetch the document at pick time', async () => {
+    const picked = await resolveSpec(
+      { kind: 'score', source: 'files:fur-elise.musicxml', measures: [1, 4] }, { pickIndex: 0, mode: 'free' },
     );
 
     expect(picked.ok).toBe(true);
@@ -251,53 +256,69 @@ describe('pickGateMaterial — a level becomes something the run can grade', () 
     // A score has no bank instance and never gains one: the passage IS the
     // material, and its expectation comes from the engraver, not the bank.
     expect(picked.instance).toBe(null);
-    expect(picked.skipped).toEqual([]);
-    // The document is fetched ONCE, by the run — a pick that fetched too would
-    // pull a whole score over the wire for a level the rotation may skip.
+    // The document is fetched ONCE, by the session — a pick that fetched too
+    // would pull a whole score over the wire for a level the rotation may skip.
     expect(h.text).not.toHaveBeenCalled();
     expect(h.instance).not.toHaveBeenCalled();
   });
 
-  it('skips a score entry the level did not give a source, and serves its other material', async () => {
-    h.instance.mockResolvedValue({ ok: true, status: 200, data: { id: 'scales/modes@root=C' } });
-    // pickIndex 1 lands on the score entry; the level still has something to play.
-    const picked = await pickGateMaterial(level({
-      material: [
-        { kind: 'exercise', instanceId: 'scales/modes@root=C' },
-        { kind: 'score', measures: [1, 4] },
-      ],
-    }), { pickIndex: 1, mode: 'free' });
-
-    expect(picked.ok).toBe(true);
-    expect(picked.material.instanceId).toBe('scales/modes@root=C');
-    expect(picked.skipped).toContainEqual({ kind: 'score', reason: 'no-score-source' });
-  });
-
-  it('reports, rather than throws, when nothing in the level resolves', async () => {
+  it('reports, rather than throws, when a spec cannot resolve', async () => {
     h.instance.mockResolvedValue({ ok: false, status: 502, data: null });
-    const picked = await pickGateMaterial(
-      level({ material: [{ kind: 'exercise', instanceId: 'scales/modes@root=C' }] }), { pickIndex: 0, mode: 'free' },
-    );
+    const picked = await resolveSpec({ kind: 'exercise', instanceId: 'scales/modes@root=C' }, { pickIndex: 0, mode: 'free' });
     expect(picked.ok).toBe(false);
     expect(picked.error).toBe('instance-unavailable');
 
-    const unknown = await pickGateMaterial(level({ material: [{ kind: 'chart' }] }), { pickIndex: 0, mode: 'free' });
+    const unknown = await resolveSpec({ kind: 'chart' }, { pickIndex: 0, mode: 'free' });
     expect(unknown.error).toBe('unknown-material-kind');
-
-    const nothing = await pickGateMaterial(level({ material: [] }), { pickIndex: 0, mode: 'free' });
-    expect(nothing.ok).toBe(false);
-    expect(nothing.error).toBe('no-material-in-level');
   });
 
   it('honours the level mode when it filters the catalog', async () => {
     h.catalog.mockResolvedValue({
       ok: true, status: 200, data: { seeds: [{ id: 'chords/triads', category: 'chords', supports: ['free'] }] },
     });
-    const picked = await pickGateMaterial(
-      level({ material: [{ kind: 'exercise', collection: 'chords' }] }), { pickIndex: 0, mode: 'cued' },
-    );
+    const picked = await resolveSpec({ kind: 'exercise', collection: 'chords' }, { pickIndex: 0, mode: 'cued' });
     expect(picked.ok).toBe(false);
     expect(picked.error).toBe('no-seed-for-level');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('materialOrder — what the gate tries, and in which order', () => {
+  beforeEach(() => {
+    h.instance.mockReset();
+    h.instances.mockReset();
+    h.catalog.mockReset();
+    h.text.mockReset();
+  });
+
+  it('puts a mistyped entry first when the rotation lands on it, and still leaves something to play', async () => {
+    h.instance.mockResolvedValue({ ok: true, status: 200, data: { id: 'scales/modes@root=C' } });
+    // pickIndex 1 lands on the score entry; the level still has something to play.
+    const order = materialOrder(level({
+      material: [
+        { kind: 'exercise', instanceId: 'scales/modes@root=C' },
+        { kind: 'score', measures: [1, 4] },
+      ],
+    }), { pickIndex: 1 });
+
+    // The walk the gate performs: the rotation's pick, then the rest in
+    // authored order. An entry that declines costs the attempt nothing — the
+    // reason is recorded and the next entry is served. Failing the whole gate
+    // over one bad entry would take a match away from a child for a config
+    // decision they cannot see.
+    const declined = await resolveSpec(order[0], { pickIndex: 1, mode: 'free' });
+    expect({ kind: order[0].kind, reason: declined.error }).toEqual({ kind: 'score', reason: 'no-score-source' });
+
+    const served = await resolveSpec(order[1], { pickIndex: 1, mode: 'free' });
+    expect(served.ok).toBe(true);
+    expect(served.material.instanceId).toBe('scales/modes@root=C');
+  });
+
+  it('answers with nothing for a level that has no material at all', () => {
+    // "No material in level" is the gate's own read of an empty order — there
+    // is no spec to decline, so there is no reason to report either.
+    expect(materialOrder(level({ material: [] }))).toEqual([]);
+    expect(materialOrder(level({ material: undefined }))).toEqual([]);
   });
 });
 
