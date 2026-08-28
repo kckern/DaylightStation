@@ -248,7 +248,13 @@ describe('AskSession — every material shape a live level can name', () => {
     const spec = { kind: 'exercise', collection: 'chords' };
     render(<AskSession ask={{ id: 'Lc', tier: 2, material: [spec] }} materialSpec={spec} intent="challenge" {...cb} />);
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('instance-not-found'));
+    // The frozen word FIRST, and the exact reason beside it. A host that must
+    // tell a config mistake from an outage — the gate's substitute-don't-grant
+    // policy is exactly that — cannot read it off the log, and reading it off
+    // the word would mean widening a vocabulary four call sites depend on.
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
+      'instance-not-found', { kind: 'exercise', reason: 'catalog-unavailable', mode: 'free' },
+    ));
     expect(h.log.warn).toHaveBeenCalledWith(
       'piano.exercise-material-unresolved',
       expect.objectContaining({ kind: 'exercise', error: 'catalog-unavailable' }),
@@ -260,7 +266,13 @@ describe('AskSession — every material shape a live level can name', () => {
     const spec = { kind: 'exercise' };
     render(<AskSession ask={{ id: 'Lx', tier: 2, material: [spec] }} materialSpec={spec} intent="challenge" {...cb} />);
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('instance-not-found'));
+    // The frozen word FIRST, and the exact reason beside it. A host that must
+    // tell a config mistake from an outage — the gate's substitute-don't-grant
+    // policy is exactly that — cannot read it off the log, and reading it off
+    // the word would mean widening a vocabulary four call sites depend on.
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
+      'instance-not-found', { kind: 'exercise', reason: 'no-collection-or-instance', mode: 'free' },
+    ));
     expect(h.log.warn).toHaveBeenCalledWith(
       'piano.exercise-material-unresolved',
       expect.objectContaining({ kind: 'exercise', error: 'no-collection-or-instance' }),
@@ -272,7 +284,13 @@ describe('AskSession — every material shape a live level can name', () => {
     const spec = { kind: 'score' };
     render(<AskSession ask={{ id: 'Ls', tier: 3, grading: {}, material: [spec] }} materialSpec={spec} intent="challenge" {...cb} />);
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('instance-not-found'));
+    // The frozen word FIRST, and the exact reason beside it. A host that must
+    // tell a config mistake from an outage — the gate's substitute-don't-grant
+    // policy is exactly that — cannot read it off the log, and reading it off
+    // the word would mean widening a vocabulary four call sites depend on.
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
+      'instance-not-found', { kind: 'score', reason: 'no-score-source', mode: 'cued' },
+    ));
     expect(h.log.warn).toHaveBeenCalledWith(
       'piano.exercise-material-unresolved',
       expect.objectContaining({ kind: 'score', error: 'no-score-source' }),
@@ -395,7 +413,13 @@ describe('AskSession — the reasons a run cannot happen', () => {
       />,
     );
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('instance-not-found'));
+    // The frozen word FIRST, and the exact reason beside it. A host that must
+    // tell a config mistake from an outage — the gate's substitute-don't-grant
+    // policy is exactly that — cannot read it off the log, and reading it off
+    // the word would mean widening a vocabulary four call sites depend on.
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
+      'instance-not-found', { kind: 'exercise', reason: 'instance-unavailable', mode: 'free' },
+    ));
     expect(h.log.warn).toHaveBeenCalledWith(
       'piano.exercise-material-unresolved',
       expect.objectContaining({ kind: 'exercise', error: 'instance-unavailable' }),
@@ -413,7 +437,13 @@ describe('AskSession — the reasons a run cannot happen', () => {
       />,
     );
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('instance-not-found'));
+    // The frozen word FIRST, and the exact reason beside it. A host that must
+    // tell a config mistake from an outage — the gate's substitute-don't-grant
+    // policy is exactly that — cannot read it off the log, and reading it off
+    // the word would mean widening a vocabulary four call sites depend on.
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
+      'instance-not-found', { kind: 'interpretive-dance', reason: 'unknown-material-kind', mode: 'free' },
+    ));
     expect(h.log.warn).toHaveBeenCalledWith(
       'piano.exercise-material-unresolved',
       expect.objectContaining({ kind: 'interpretive-dance', error: 'unknown-material-kind' }),
@@ -432,10 +462,75 @@ describe('AskSession — the reasons a run cannot happen', () => {
       />,
     );
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('instance-not-found'));
+    // The frozen word FIRST, and the exact reason beside it. A host that must
+    // tell a config mistake from an outage — the gate's substitute-don't-grant
+    // policy is exactly that — cannot read it off the log, and reading it off
+    // the word would mean widening a vocabulary four call sites depend on.
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
+      'instance-not-found', { kind: 'score', reason: 'score-unavailable', mode: 'cued' },
+    ));
     expect(h.log.warn).toHaveBeenCalledWith(
       'piano.exercise-material-unresolved',
       expect.objectContaining({ kind: 'score', error: 'score-unavailable' }),
+    );
+  });
+});
+
+describe('AskSession — what it reports back to the host', () => {
+  const level = Object.freeze({ id: 'L2', tier: 2, material: [{ kind: 'exercise', collection: 'scales', roots: ['G'] }] });
+  const spec = Object.freeze({ kind: 'exercise', collection: 'scales', roots: ['G'] });
+
+  it('names what it settled on — the descriptor, the instance and the requirement', async () => {
+    // A host cannot name this itself. The level wrote `roots: ['G','D','F']`;
+    // which of those is on the stand today is decided in here, and a gate that
+    // logged the spec would log the same line for three different scales.
+    const cb = { ...callbacks(), onResolved: vi.fn() };
+    render(<AskSession ask={level} materialSpec={spec} intent="challenge" {...cb} />);
+
+    await waitFor(() => expect(cb.onResolved).toHaveBeenCalledTimes(1));
+    const settled = cb.onResolved.mock.calls[0][0];
+    expect(settled.material).toEqual({ kind: 'exercise', instanceId: h.instance.id, instance: h.instance });
+    expect(settled.instance).toBe(h.instance);
+    // The LEVEL's requirement, not the host's: a repertoire level IS its
+    // requirement, and this is the only place that derivation happens.
+    expect(settled.requirement).toEqual({ mode: 'free', rubric: { criteria: { completeness: 1 } }, passScore: null });
+    // …and it is the same object the run was given, not a second copy.
+    expect(settled.requirement).toBe(lastRun().requirement);
+    expect(cb.onUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('reports a decline on ONE channel, and does not mount a run on nothing', async () => {
+    // The run reports "settled with nothing" as `instance-not-found` too. If it
+    // were mounted here it would say so a second time, WITHOUT the reason — and
+    // a host that acted on the second report would fail open on a config typo.
+    h.instanceOk = false;
+    const cb = { ...callbacks(), onResolved: vi.fn() };
+    render(<AskSession ask={level} materialSpec={{ kind: 'exercise', instanceId: 'scales/nope' }} intent="challenge" {...cb} />);
+
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledTimes(1));
+    expect(cb.onResolved).not.toHaveBeenCalled();
+    // The run mounts while the material is still in flight — that is its
+    // skeleton, and it is correct. What it is never handed is a SETTLED pair
+    // of nothings, which is the state it reports `instance-not-found` from.
+    expect(h.runProps.some((props) => props.instance === null && props.score === null)).toBe(false);
+    expect(screen.getByText('Exercise not found. It may have been renamed.')).toBeInTheDocument();
+  });
+
+  it('answers a REJECTED fetch instead of letting it escape', async () => {
+    // Nothing above catches this. Unhandled, a child sits on a skeleton that
+    // never lifts and a gate that fails open on outages is never told there was
+    // one — the child forfeits a match they earned to a backend restart.
+    pianoLearningApi.instance.mockRejectedValueOnce(new Error('network down'));
+    const cb = { ...callbacks(), onResolved: vi.fn() };
+    render(<AskSession ask={level} materialSpec={spec} intent="challenge" {...cb} />);
+
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
+      'instance-not-found', { kind: 'exercise', reason: 'instance-unavailable', mode: 'free' },
+    ));
+    // The message a human needs survives, on the line a human reads.
+    expect(h.log.warn).toHaveBeenCalledWith(
+      'piano.exercise-material-unresolved',
+      expect.objectContaining({ error: 'instance-unavailable', thrown: 'network down' }),
     );
   });
 });

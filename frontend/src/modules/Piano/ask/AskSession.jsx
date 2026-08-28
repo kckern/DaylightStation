@@ -30,11 +30,19 @@
  * persistence and evidence all stay below, in `ExerciseRun`, which it mounts.
  *
  * The `onUnavailable` vocabulary is unchanged and frozen: `no-access`,
- * `instance-not-found`, `unrunnable`. Two of the three are still reported by
- * the run below (this component hands it a settled `instance`/`score` and the
- * run reads "settled with nothing" exactly as it always has); the third is
- * reported here for the one state the run can never see — an ask the schema
- * refuses.
+ * `instance-not-found`, `unrunnable`. `no-access` and a mounted run's own dead
+ * ends are still reported by the run below. Material that never resolved is
+ * reported HERE, with a second argument naming which reason it was — and the
+ * run is not mounted on nothing.
+ *
+ * That second argument is the whole reason a host can still tell a config
+ * mistake from an outage. The decline strings (`no-collection-or-instance`,
+ * `no-score-source` and `unknown-material-kind` are authored mistakes;
+ * `instance-unavailable`, `catalog-unavailable`, `score-unavailable` are
+ * outages) are produced by `resolveSpec` and by nothing else, and before this
+ * they reached only the log — where `GameGate`'s substitute-don't-grant policy
+ * could not read them. They are SURFACED here, never interpreted: which of
+ * them is worth a free match is the host's decision and stays there.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
@@ -108,19 +116,41 @@ export function askTupleFor(levelLike, spec) {
  *
  * A spec that cannot resolve is reported on the same event as a material that
  * cannot, with its own exact reason string, and answers "settled with nothing"
- * — which the run below reads as `instance-not-found`, exactly as it always has.
+ * — reported as `instance-not-found`, exactly the word it has always carried.
+ *
+ * A REJECTED fetch answers the same way rather than escaping. Nothing above
+ * catches it: an unhandled rejection here would leave a child on a skeleton
+ * that never lifts, and a host that fails open on an outage — which is the
+ * whole point of a gate failing open — would never be told there was one.
  */
 async function resolveSession({
   materialSpec, pickIndex, mode, instanceId, programId, stepId, requirementOverride, logger,
 }) {
   const sources = { instanceId, programId, stepId, requirementOverride, logger };
-  if (!materialSpec) return loadAskSources({ material: null, ...sources });
-  const picked = await resolveSpec(materialSpec, { pickIndex, mode });
-  if (!picked.ok) {
-    logger?.warn('piano.exercise-material-unresolved', { kind: materialSpec.kind ?? null, error: picked.error });
-    return { instance: null, score: null, requirement: null, step: null };
+  const kind = materialSpec?.kind ?? null;
+  try {
+    if (!materialSpec) return { ...(await loadAskSources({ material: null, ...sources })), material: null };
+    const picked = await resolveSpec(materialSpec, { pickIndex, mode });
+    if (!picked.ok) {
+      logger?.warn('piano.exercise-material-unresolved', { kind, error: picked.error });
+      return {
+        instance: null, score: null, requirement: null, step: null, material: null,
+        decline: { kind, reason: picked.error },
+      };
+    }
+    return { ...(await loadAskSources({ material: picked.material, ...sources })), material: picked.material };
+  } catch (error) {
+    // A thrown fetch is the same thing a 502 is: the bank could not answer.
+    // It is named with the vocabulary's word for that so a host classifies it
+    // identically; the message that only a human can use goes to the log.
+    logger?.warn('piano.exercise-material-unresolved', {
+      kind, error: 'instance-unavailable', thrown: error?.message ?? String(error),
+    });
+    return {
+      instance: null, score: null, requirement: null, step: null, material: null,
+      decline: { kind, reason: 'instance-unavailable' },
+    };
   }
-  return loadAskSources({ material: picked.material, ...sources });
 }
 
 /**
@@ -160,7 +190,20 @@ async function resolveSession({
  * @param {(result:object)=>void} [props.onPassed]
  * @param {(result:object)=>void} [props.onFailed] Judged attempts only.
  * @param {()=>void} [props.onExit]
- * @param {(reason:'no-access'|'instance-not-found'|'unrunnable')=>void} [props.onUnavailable]
+ * @param {(settled:{material:object|null, instance:object|null, score:object|null,
+ *   requirement:object|null})=>void} [props.onResolved] What this session settled
+ *   on, once per resolution. A host that only mounts a screen needs none of it;
+ *   a host that LOGS what a child was asked to play, or offers a way to go and
+ *   practise the very thing, cannot name it otherwise — the authored spec says
+ *   `{collection:'scales', roots:['G','D','F']}` and only the resolution knows
+ *   that today that is G major.
+ * @param {(reason:'no-access'|'instance-not-found'|'unrunnable',
+ *   decline?:{kind:string|null, reason:string, mode:'free'|'cued'})=>void} [props.onUnavailable]
+ *   The first argument is the frozen vocabulary and never grows. The second is
+ *   present ONLY when this session is the one refusing — material that would
+ *   not resolve — and carries the exact decline reason. Its absence is
+ *   meaningful: it says the mounted RUN dead-ended, which is a different
+ *   situation with a different answer.
  */
 export default function AskSession({
   ask = null,
@@ -176,10 +219,23 @@ export default function AskSession({
   onPassed,
   onFailed,
   onExit,
+  onResolved,
   onUnavailable,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-ask-session' }), []);
   const [sources, setSources] = useState(PENDING_SOURCES);
+  /**
+   * The host's callbacks, read at CALL time rather than captured.
+   *
+   * The resolution reports its answer from a promise continuation, and a host
+   * that re-renders in response to the report (which the gate does — it puts
+   * the resolved material into its own state) would otherwise be answered
+   * through the closure it had before it moved. Holding them here also keeps
+   * them out of the resolution effect's dependencies, where a fresh arrow per
+   * render would refetch the instance under a child's hands.
+   */
+  const hostRef = useRef(null);
+  hostRef.current = { onResolved, onUnavailable };
 
   const askErrors = useMemo(
     () => (ask ? askTupleFor(ask, materialSpec).errors : []),
@@ -192,8 +248,8 @@ export default function AskSession({
     if (refusedRef.current === signature) return;
     refusedRef.current = signature;
     logger.warn('piano.ask-invalid', { level: ask?.id ?? null, tier: ask?.tier ?? null, errors: askErrors });
-    onUnavailable?.('unrunnable');
-  }, [ask, askErrors, logger, onUnavailable]);
+    hostRef.current.onUnavailable?.('unrunnable');
+  }, [ask, askErrors, logger]);
 
   /**
    * A repertoire level IS its requirement — one is derived from the other and
@@ -208,6 +264,10 @@ export default function AskSession({
    */
   const levelRequirement = useMemo(() => (ask ? requirementForLevel(ask) : null), [ask]);
   const mode = levelRequirement?.mode ?? 'free';
+  // Reported back to the host on settle, and read at call time for the same
+  // reason the callbacks are: it must not become a resolution dependency.
+  const levelRequirementRef = useRef(null);
+  levelRequirementRef.current = levelRequirement;
 
   /**
    * The material, and the program step beside it. Refused asks never reach
@@ -219,7 +279,24 @@ export default function AskSession({
     let alive = true;
     setSources(PENDING_SOURCES);
     resolveSession({ materialSpec, pickIndex, mode, instanceId, programId, stepId, requirementOverride, logger })
-      .then((next) => { if (alive) setSources(next); });
+      .then((next) => {
+        if (!alive) return;
+        setSources(next);
+        const host = hostRef.current;
+        // Exactly one report per resolution, on exactly one channel. A decline
+        // that ALSO handed the run a settled-with-nothing would be reported
+        // twice — once here with its reason, once by the run without it — and
+        // a host reading the second would fail open on a config typo.
+        if (next.decline) host.onUnavailable?.('instance-not-found', { ...next.decline, mode });
+        else {
+          host.onResolved?.({
+            material: next.material ?? null,
+            instance: next.instance ?? null,
+            score: next.score ?? null,
+            requirement: levelRequirementRef.current ?? next.requirement ?? null,
+          });
+        }
+      });
     return () => { alive = false; };
   }, [instanceId, logger, materialSpec, mode, pickIndex, programId, refused, requirementOverride, stepId]);
 
@@ -253,6 +330,12 @@ export default function AskSession({
   if (refused) {
     return <PianoEmpty message="Cannot start this one. It is missing something the challenge needs — try another." />;
   }
+
+  // Material that never resolved. The words are the run's own for this state,
+  // unchanged, because it IS the same state — what moved is only who says so,
+  // and mounting a run on nothing just to have it say it would cost a second
+  // report of the same fact with the reason stripped off.
+  if (sources.decline) return <PianoEmpty message="Exercise not found. It may have been renamed." />;
 
   return (
     <ExerciseRun

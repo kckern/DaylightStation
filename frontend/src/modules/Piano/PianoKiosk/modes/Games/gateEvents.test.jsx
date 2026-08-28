@@ -27,7 +27,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 const h = vi.hoisted(() => {
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() };
   logger.child = () => logger;
-  return { logger, runProps: [], catalog: vi.fn(), instances: vi.fn(), instance: vi.fn() };
+  return { logger, askProps: [], catalog: vi.fn(), instances: vi.fn(), instance: vi.fn() };
 });
 
 // One mock covers BOTH subjects: GameGate and useGameBudgetMeter resolve the
@@ -40,11 +40,45 @@ vi.mock('../../../../../lib/logging/Logger.js', () => ({
 vi.mock('../Exercises/pianoLearningApi.js', () => ({
   pianoLearningApi: { catalog: h.catalog, instances: h.instances, instance: h.instance },
 }));
-vi.mock('../Exercises/ExerciseRun.jsx', () => ({
-  default: (props) => {
-    h.runProps.push(props);
+// The gate's boundary is `AskSession`, so that is what is doubled. It runs the
+// REAL `resolveSpec` at the gate's own `pickIndex` — so a 502 is still a 502
+// and `no-score-source` is still produced by the module that owns the string —
+// and reports the way the session does: material that never resolved comes back
+// on `onUnavailable` WITH its decline reason, a mounted run's dead end without.
+vi.mock('../../../ask/AskSession.jsx', async () => {
+  const { useEffect, useState } = await import('react');
+  const { resolveSpec } = await import('./gateMaterial.js');
+  const { requirementForLevel } = await import('../../../ask/gateAsk.js');
+  // Named, and capitalised, because it IS a component: it holds state and runs
+  // an effect, and the hooks lint (rightly) refuses those in an anonymous arrow.
+  function AskSessionDouble(props) {
+    h.askProps.push(props);
+    const { ask, materialSpec, pickIndex, onResolved, onUnavailable } = props;
+    // Shown once the material has settled — the barrier `exercise-run` was.
+    const [running, setRunning] = useState(false);
+    // The host callbacks are deliberately NOT dependencies: a fresh arrow per
+    // render would re-resolve, which is the bug the real seam holds a ref to avoid.
+    useEffect(() => {
+      setRunning(false);
+      let alive = true;
+      const requirement = requirementForLevel(ask);
+      const decline = (reason) => onUnavailable?.('instance-not-found', {
+        kind: materialSpec?.kind ?? null, reason, mode: requirement.mode,
+      });
+      resolveSpec(materialSpec, { pickIndex, mode: requirement.mode })
+        .then((picked) => {
+          if (!alive) return;
+          if (!picked.ok) { decline(picked.error); return; }
+          setRunning(true);
+          onResolved?.({ material: picked.material, instance: picked.instance, score: null, requirement });
+        })
+        .catch(() => { if (alive) decline('instance-unavailable'); });
+      return () => { alive = false; };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ask, materialSpec, pickIndex]);
+    if (!running) return <div data-testid="ask-session-resolving" />;
     return (
-      <div data-testid="exercise-run">
+      <div data-testid="ask-session">
         <button type="button" onClick={() => props.onPassed?.({ score: 0.94 })}>stub-pass</button>
         <button type="button" onClick={() => props.onFailed?.({ score: 0.41 })}>stub-fail</button>
         <button type="button" onClick={() => props.onExit?.()}>stub-exit</button>
@@ -55,8 +89,9 @@ vi.mock('../Exercises/ExerciseRun.jsx', () => ({
         <button type="button" onClick={() => props.onUnavailable?.('no-access')}>stub-no-access</button>
       </div>
     );
-  },
-}));
+  }
+  return { default: AskSessionDouble };
+});
 
 const { default: GameGate, gateStateKey } = await import('./GameGate.jsx');
 const { BUILT_IN_FLOOR } = await import('./gateRepertoire.js');
@@ -189,11 +224,15 @@ const seedLevel = (learnerId, levelId, rest = {}) => localStorage.setItem(
  * suite. What is exercised here is the skip path, which needs an entry that
  * genuinely cannot be served.)
  */
+// The exercise entry is deliberately NOT C major: `FALLBACK_LEVEL`'s substitute
+// material IS C major, so a level whose good entry were C would be served
+// identically whether the gate walked on to it or gave up and substituted —
+// and "one bad entry does not take the whole gate down" would be untestable.
 const LEVEL_WITH_BAD_SCORE = [{
   id: 'L1',
   tier: 2,
   material: [
-    { kind: 'exercise', collection: 'scales', roots: ['C'], hands: 'right' },
+    { kind: 'exercise', collection: 'scales', roots: ['G'], hands: 'right' },
     { kind: 'score', measures: [1, 4] },
   ],
 }];
@@ -218,7 +257,7 @@ function renderGate({ learnerId = 'kid1', gateConfig = CONFIG, onPassed = vi.fn(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  h.runProps.length = 0;
+  h.askProps.length = 0;
   localStorage.clear();
   localStorage.setItem(KIOSK_DEVICE_STORAGE_KEY, DEVICE);
   serveBank();
@@ -228,7 +267,7 @@ beforeEach(() => {
 describe('gate events', () => {
   it('a mounted gate announces itself and the attempt it is about to run', async () => {
     renderGate({ learnerId: 'kid1' });
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
 
     const presented = expectEvent('gate.presented');
     expect(presented.learnerId).toBe('kid1');
@@ -370,13 +409,16 @@ describe('gate events', () => {
   it('material that cannot be served is logged, not silently dropped', async () => {
     seedLevel('kid1', 'L1', { pickIndex: 1 });
     renderGate({ learnerId: 'kid1', gateConfig: { repertoire: LEVEL_WITH_BAD_SCORE } });
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
 
     const skipped = expectEvent('gate.material-skipped', { kind: 'score' });
     expect(skipped.reason).toBe('no-score-source');
-    // The exercise entry still resolved — one unusable entry must not take the
-    // whole gate down with it.
-    expectEvent('gate.attempt');
+    // The LEVEL'S OWN other entry resolved — G major, which is the whole claim:
+    // one unusable entry must not take the gate down with it, and must not
+    // quietly demote a child to the C-major substitute either. Asserting only
+    // that SOME attempt happened would pass on both.
+    expect(expectEvent('gate.attempt').material).toBe(scaleId('G'));
+    expect(lines().some(([event]) => event === 'gate.material-config-invalid')).toBe(false);
   });
 });
 

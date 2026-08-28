@@ -264,7 +264,9 @@ const CONFIG_DECLINE_REASONS = Object.freeze([
  * match. Only a level where nothing could ever have resolved is a config
  * mistake this can be sure of.
  *
- * @param {Array<{reason:string}>|undefined} skipped `pickGateMaterial`'s skip list.
+ * @param {Array<{reason:string}>|undefined} skipped The declines collected so
+ *   far — `GameGate` accumulates them one at a time as it walks a level's
+ *   material through `AskSession`.
  */
 export function isConfigOnlyDecline(skipped) {
   const reasons = Array.isArray(skipped) ? skipped.map((entry) => entry?.reason) : [];
@@ -310,7 +312,42 @@ export async function resolveSpec(spec, { pickIndex, mode }) {
 }
 
 /**
+ * The order a level's material is TRIED in, for one attempt.
+ *
+ * Rotation picks the starting candidate (`pickMaterial`, which avoids the spec
+ * served last time); everything else in the level follows it, in authored
+ * order, as the fallback sequence. Exported because the walk over that sequence
+ * no longer happens in one place: `GameGate` now serves one spec at a time
+ * through `AskSession` and steps forward when one declines, and an order it
+ * computed for itself would be a second answer to the question this module
+ * already answers — the first time `pickMaterial`'s anti-repeat rule changed,
+ * the two would disagree and nothing would say so.
+ *
+ * @param {{material?:object[]}} level A resolved repertoire level.
+ * @param {{lastMaterialId?:string|null, pickIndex?:number}} [options]
+ * @returns {object[]} Possibly empty — a level with no material has no order.
+ */
+export function materialOrder(level, { lastMaterialId = null, pickIndex = 0 } = {}) {
+  const candidates = Array.isArray(level?.material) ? level.material : [];
+  if (!candidates.length) return [];
+  // One normalization, used by both rotations — the material list's and the
+  // roots' — so a hand-edited counter cannot make them disagree.
+  const index = Math.abs(Math.trunc(Number(pickIndex)) || 0);
+  const first = pickMaterial(level, lastMaterialId, index);
+  return [first, ...candidates.filter((spec) => spec !== first)];
+}
+
+/**
  * Choose what a child is asked to play for one gate attempt, from one level.
+ *
+ * NO PRODUCTION CALLER as of the ask-platform SP1: `GameGate` walks the same
+ * order (`materialOrder`) one spec at a time, because the resolution of each
+ * one now happens inside `AskSession` and comes back as a callback rather than
+ * as the return of a loop. What survives here is the batch form of that walk,
+ * still exercised by `gateMaterial.test.js` as the specification of what the
+ * order and the skip list mean. It should go when a later task can delete its
+ * tests with it, and it must not grow a second caller in the meantime —
+ * resolution has one owner now.
  *
  * Rotation picks the STARTING candidate (`pickMaterial`, which avoids the spec
  * served last time); the rest of the level's material is the fallback order. An
@@ -326,15 +363,11 @@ export async function resolveSpec(spec, { pickIndex, mode }) {
  *                    skipped:Array<{kind:string|null, reason:string}>, error?:string}>}
  */
 export async function pickGateMaterial(level, { lastMaterialId = null, pickIndex = 0, mode = 'free' } = {}) {
-  const candidates = Array.isArray(level?.material) ? level.material : [];
   const skipped = [];
-  if (!candidates.length) return { ok: false, error: 'no-material-in-level', skipped };
+  const order = materialOrder(level, { lastMaterialId, pickIndex });
+  if (!order.length) return { ok: false, error: 'no-material-in-level', skipped };
 
-  // One normalization, used by both rotations — the material list's and the
-  // roots' — so a hand-edited counter cannot make them disagree.
   const index = Math.abs(Math.trunc(Number(pickIndex)) || 0);
-  const first = pickMaterial(level, lastMaterialId, index);
-  const order = [first, ...candidates.filter((spec) => spec !== first)];
   for (const spec of order) {
     const resolved = await resolveSpec(spec, { pickIndex: index, mode });
     if (resolved.ok) {
