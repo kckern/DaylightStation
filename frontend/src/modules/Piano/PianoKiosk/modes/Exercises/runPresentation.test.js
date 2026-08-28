@@ -49,29 +49,80 @@ describe('accidentalForKey', () => {
 });
 
 describe('instanceKeySignature — re-joining the key the bank splits in two', () => {
-  // The bank writes `key` as the root pitch class ALONE and puts the quality on
-  // an axis, so `accidentalForKey(instance.key)` on its own can never reach its
-  // minor branch. Every D minor instance would be spelled with D major's two
+  // The bank writes `key` as the root pitch class ALONE and puts the flavour on
+  // an axis, so `accidentalForKey(instance.key)` on its own can only ever see a
+  // major tonic. Every D minor instance would be spelled with D major's two
   // sharps, and its B♭ drawn as A♯.
-  it('reads the minor off the mode axis a scale instance carries', () => {
-    const dMinor = { key: 'D', axes: { root: 'D', mode: 'aeolian' } };
-    expect(instanceKeySignature(dMinor)).toBe('D minor');
-    expect(accidentalForKey(instanceKeySignature(dMinor))).toBe('flat');
-    // …and without it, the trap this closes.
-    expect(accidentalForKey(dMinor.key)).toBe('sharp');
+  const sigOf = (key, axes) => instanceKeySignature({ key, axes });
+  const spellingOf = (key, axes) => accidentalForKey(sigOf(key, axes));
+
+  it('walks a mode back to its relative major, spelled and not merely pitched', () => {
+    // C aeolian's signature is E♭ major's three flats. Naming it 'D#' — the
+    // same pitch, the sharp-side spelling — would answer sharp and undo the fix.
+    expect(sigOf('C', { mode: 'aeolian' })).toBe('Eb');
+    expect(sigOf('D', { mode: 'aeolian' })).toBe('F');
+    expect(sigOf('G', { mode: 'dorian' })).toBe('F');
+    expect(sigOf('A', { mode: 'dorian' })).toBe('G');
+    expect(sigOf('G', { mode: 'mixolydian' })).toBe('C');
+    expect(sigOf('F', { mode: 'locrian' })).toBe('Gb');
   });
 
-  it('reads it off the quality axis a chord instance carries instead', () => {
-    expect(instanceKeySignature({ key: 'G', axes: { quality: 'minor' } })).toBe('G minor');
-    expect(accidentalForKey(instanceKeySignature({ key: 'G', axes: { quality: 'minor' } }))).toBe('flat');
+  it('covers every mode the live seed publishes', () => {
+    // `data/content/music/scales/modes.yml` expands over exactly these ten.
+    // A mode missing from the table falls through to the root and spells as if
+    // it were major — which for a flat-side mode is the wrong letter.
+    const onG = {
+      ionian: 'sharp', // G major, one sharp
+      dorian: 'flat', // = F major, one flat
+      phrygian: 'flat', // = Eb major, three flats
+      lydian: 'sharp', // = D major, two sharps
+      mixolydian: 'sharp', // = C major, none — nothing to flatten
+      aeolian: 'flat', // = Bb major, two flats
+      locrian: 'flat', // = Ab major, four flats
+      'major-pentatonic': 'sharp',
+      'minor-pentatonic': 'flat',
+      blues: 'flat',
+    };
+    for (const [mode, expected] of Object.entries(onG)) {
+      expect(spellingOf('G', { root: 'G', mode }), `G ${mode}`).toBe(expected);
+    }
+  });
+
+  it('reads the chord vocabulary off the quality axis with the same rule', () => {
+    // C minor is C-E♭-G, C dominant-7th is C-E-G-B♭: both want flats, and both
+    // are read as the degree of a major scale they stand on.
+    expect(spellingOf('C', { quality: 'minor' })).toBe('flat');
+    expect(spellingOf('C', { quality: 'minor-7th' })).toBe('flat');
+    expect(spellingOf('C', { quality: 'dominant-7th' })).toBe('flat');
+    expect(spellingOf('C', { quality: 'half-diminished-7th' })).toBe('flat');
+    expect(spellingOf('C', { quality: 'diminished' })).toBe('flat');
+    // C-E-G♯ is in no key signature at all; it stays on its own tonic.
+    expect(spellingOf('C', { quality: 'augmented' })).toBe('sharp');
+    expect(spellingOf('C', { quality: 'major-7th' })).toBe('sharp');
+  });
+
+  it('is the trap it closes: the same instance read off its root alone', () => {
+    for (const [key, axes] of [['D', { mode: 'aeolian' }], ['G', { mode: 'dorian' }], ['C', { quality: 'minor' }]]) {
+      expect(spellingOf(key, axes), `${key} ${JSON.stringify(axes)}`).toBe('flat');
+      expect(accidentalForKey(key), `${key} read off the root alone`).toBe('sharp');
+    }
   });
 
   it('leaves major material exactly as it was — F major already answered flat', () => {
-    for (const [key, mode] of [['F', 'ionian'], ['C', 'ionian'], ['G', 'ionian'], ['D', 'ionian']]) {
-      expect(instanceKeySignature({ key, axes: { root: key, mode } })).toBe(key);
+    for (const key of ['F', 'C', 'G', 'D']) {
+      expect(sigOf(key, { root: key, mode: 'ionian' })).toBe(key);
     }
-    expect(accidentalForKey(instanceKeySignature({ key: 'F', axes: { mode: 'ionian' } }))).toBe('flat');
-    expect(accidentalForKey(instanceKeySignature({ key: 'G', axes: { mode: 'ionian' } }))).toBe('sharp');
+    expect(spellingOf('F', { mode: 'ionian' })).toBe('flat');
+    expect(spellingOf('G', { mode: 'ionian' })).toBe('sharp');
+    // …and an instance carrying no axes at all is the plain-key case.
+    expect(instanceKeySignature({ key: 'F' })).toBe('F');
+  });
+
+  it('keeps a sharp-named root on the sharp side, which is the bank’s own spelling', () => {
+    // The bank has no enharmonic intent: its roots are all sharp-named, so A♯
+    // minor resolves to C♯ major (seven sharps) rather than to B♭ minor.
+    expect(sigOf('A#', { mode: 'aeolian' })).toBe('C#');
+    expect(spellingOf('A#', { mode: 'aeolian' })).toBe('sharp');
   });
 
   it('answers null for an instance with no readable key, which reads as sharps', () => {
@@ -81,10 +132,12 @@ describe('instanceKeySignature — re-joining the key the bank splits in two', (
     }
   });
 
-  it('leaves a mode it has no rule for alone rather than guessing at it', () => {
-    // Dorian and mixolydian carry flats or sharps depending on the root; the
-    // helper says nothing about them rather than inventing an answer.
-    expect(instanceKeySignature({ key: 'D', axes: { mode: 'dorian' } })).toBe('D');
+  it('leaves a flavour it has no rule for alone rather than guessing at it', () => {
+    expect(sigOf('D', { mode: 'klezmer' })).toBe('D');
+    expect(sigOf('D', { quality: 'sus4' })).toBe('D');
+    // …and a root it cannot parse, however the flavour reads.
+    expect(sigOf('H', { mode: 'aeolian' })).toBe('H');
+    expect(sigOf('Cbb', { mode: 'aeolian' })).toBe('Cbb');
   });
 });
 

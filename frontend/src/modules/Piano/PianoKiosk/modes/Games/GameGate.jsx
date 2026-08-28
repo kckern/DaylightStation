@@ -216,6 +216,9 @@ export default function GameGate({
   const [round, setRound] = useState(0);
   const openedRef = useRef(false);
   const presentedRef = useRef(false);
+  // Why `round` last advanced. `tryAgain` sets it; the mount and a late-arriving
+  // learner do not, and both of those must re-pick.
+  const retryRef = useRef(false);
 
   const emit = useCallback((event, data = {}, level = 'info') => {
     logger[level](event, {
@@ -233,7 +236,7 @@ export default function GameGate({
   //    parent re-render that passes a fresh literal, handing ExerciseRun a NEW
   //    material object and restarting the run under the child's hands.
   const latest = useRef(null);
-  latest.current = { config, levels, state, learnerId, onPassed, emit };
+  latest.current = { config, levels, state, attempt, learnerId, onPassed, emit };
 
   // The roster slug arrives ASYNCHRONOUSLY: `PianoUserContext` starts at null
   // and hydrates. On a reload straight onto a games route the gate would
@@ -283,6 +286,40 @@ export default function GameGate({
       emitNow('gate.unavailable', { ...context, error }, 'warn');
       latest.current.onPassed?.();
     };
+    /**
+     * "Try again" is a SECOND GO AT THE SAME THING, and re-picking here would
+     * quietly make it something else.
+     *
+     * The serve advances `pickIndex` (see below — a child who walks away must
+     * not meet the same ask forever), so a retry that re-picked would rotate:
+     * at a level naming `roots: ['G','D','F']` a child who missed G major and
+     * pressed Try again would be handed D major, and would never get the second
+     * attempt the button promises. At the floor the lit key would move too.
+     *
+     * The one case where the material MUST change is the one where the ladder
+     * moved: an eased level is a different ask by definition. So the held
+     * attempt is reused only while the level is the same one it was served for,
+     * which is exactly the "same thing again" case. The attemptId is fresh —
+     * this is a new attempt at old material, and the log has to say so.
+     */
+    const retrying = retryRef.current;
+    retryRef.current = false;
+    const held = latest.current.attempt;
+    if (retrying && held && held.level.id === level.id) {
+      const attemptId = makeId('gate-attempt');
+      const context = {
+        material: held.material.instanceId ?? null,
+        rung: level.id,
+        tier: level.tier,
+        mode: held.requirement.mode,
+        attemptId,
+      };
+      presentOnce(context);
+      emitNow('gate.attempt', context);
+      setAttempt({ ...held, attemptId });
+      setPhase('attempt');
+      return () => { alive = false; };
+    }
     pickGateMaterial(level, {
       lastMaterialId: stored.lastMaterialId, pickIndex: stored.pickIndex, mode: requirement.mode,
     })
@@ -403,7 +440,12 @@ export default function GameGate({
     setPhase('failed');
   };
 
-  const tryAgain = () => { setEased(false); setLastScore(null); setRound((value) => value + 1); };
+  const tryAgain = () => {
+    retryRef.current = true;
+    setEased(false);
+    setLastScore(null);
+    setRound((value) => value + 1);
+  };
 
   const practiceDetour = () => {
     // The ordinary practice route: unmetered, ungated, and NOT a way into the
@@ -473,7 +515,15 @@ export default function GameGate({
             bar at all), and gating the only words on the panel behind a number
             reduced it to a bare heading over unexplained buttons. */}
         <p className="piano-game-gate__guidance">Play it once more, work on it first, or come back later.</p>
-        {lastScore !== null && (
+        {/* A percentage with no bar beside it invites comparison to a target
+            that does not exist. Every repertoire level is verdict-driven
+            (`passScore: null`), so this is a seam for a level type that carries
+            a numeric bar rather than something the shipped ladder renders.
+            `typeof === 'number'` and NOT `Number.isFinite(Number(bar))`:
+            `Number(null)` is 0, which is finite, so the coercing form shows the
+            percentage on every level — which is the bug this guard exists to
+            fix, written the obvious way. */}
+        {lastScore !== null && typeof attempt?.requirement?.passScore === 'number' && (
           <p className="piano-game-gate__score"><strong>{Math.round(lastScore * 100)}%</strong></p>
         )}
         {eased && <p className="piano-game-gate__eased">We made it a little easier</p>}

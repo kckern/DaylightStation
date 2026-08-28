@@ -243,6 +243,20 @@ describe('GameGate — contract 1: the level persists per learner', () => {
     expect(stateFor('kid1')).toEqual(stored);
   });
 
+  it('zeroes a damaged pickIndex but KEEPS the level the child earned', () => {
+    // `pickIndex` is a rotation hint, not a position. Resetting the whole state
+    // over one would send a child who had walked down to L1 back to the start
+    // level for the sake of a counter that only decides which scale is next.
+    for (const pickIndex of ['banana', -1, 2.5, null, undefined, {}]) {
+      seedGateState('kid1', {
+        levelId: 'L2', failuresAtLevel: 2, cleanPasses: 1, lastMaterialId: null, pickIndex,
+      });
+      expect(stateFor('kid1'), String(pickIndex)).toEqual({
+        levelId: 'L2', failuresAtLevel: 2, cleanPasses: 1, lastMaterialId: null, pickIndex: 0,
+      });
+    }
+  });
+
   it('honours config.startLevel, so a preschooler can open at lit keys', () => {
     const config = { repertoire: REPERTOIRE, startLevel: BUILT_IN_FLOOR.id };
     expect(stateFor('miles', config).levelId).toBe(BUILT_IN_FLOOR.id);
@@ -361,10 +375,13 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     const labels = [...panel.querySelectorAll('button')].map((b) => b.textContent);
     expect(labels).toEqual(['Try again', 'Practice this', 'Leave']);
     expect(onPassed).not.toHaveBeenCalled();
-    // A completed failure has a score, and the panel shows it — the run
-    // unmounts on failure, taking its own result readout with it.
+    // The score reaches the LOG, where an adult tuning the ladder can read it.
     expect(eventNamed('gate.failed')[1].score).toBe(0.62);
-    expect(panel.textContent).toContain('62%');
+    // It does not reach the child. Every repertoire level is verdict-driven
+    // (`passScore: null`), so a bare percentage on the panel would invite
+    // comparison against a target that does not exist — "62%" reads as failing
+    // something, and the words are what say what to do instead.
+    expect(panel.textContent).not.toContain('%');
     expect(panel.textContent).toContain('Play it once more, work on it first, or come back later.');
   });
 
@@ -544,6 +561,67 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
     expect(h.instance).not.toHaveBeenCalled();
     expect(h.instances).not.toHaveBeenCalled();
     expect(h.catalog).not.toHaveBeenCalled();
+  });
+
+  it('Try again is a second go at the SAME scale, not the next one along', async () => {
+    // The serve advances the rotation counter so a child who walks away does
+    // not meet the same ask forever. Re-picking on retry would spend that
+    // advance immediately: miss G major, press Try again, be handed D major,
+    // and never get the second attempt the button promises.
+    seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
+    renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 3 } });
+
+    await screen.findByTestId('exercise-run');
+    const served = h.runProps.at(-1).material.instanceId;
+    expect(served).toBe(scaleId('G'));
+
+    for (let go = 0; go < 2; go += 1) {
+      fireEvent.click(screen.getByText('stub-fail'));
+      fireEvent.click(await screen.findByText('Try again'));
+      await screen.findByTestId('exercise-run');
+      expect(h.runProps.at(-1).material.instanceId, `retry ${go + 1}`).toBe(served);
+      expect(h.runProps.at(-1).ask, `retry ${go + 1}`).toBe('G major scale, right hand.');
+    }
+    // The retry is still its own attempt in the log — same material, new id.
+    const attemptIds = events().filter(([name]) => name === 'gate.attempt').map(([, d]) => d.attemptId);
+    expect(attemptIds).toHaveLength(3);
+    expect(new Set(attemptIds).size).toBe(3);
+
+    // …and the retries did not SPEND the rotation: the next gate still moves on.
+    fireEvent.click(screen.getByText('stub-pass'));
+    renderGate({ learnerId: 'kid1' });
+    await waitFor(() => expect(h.runProps.at(-1).material.instanceId).toBe(scaleId('D')));
+  });
+
+  it('Try again after an EASE serves the eased level’s material, not the held one', async () => {
+    // The one case where the material must change: the ladder moved, so the ask
+    // is a different ask by definition. Reusing the held attempt here would
+    // judge a child against the level they were just moved off.
+    seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
+    renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 1 } });
+
+    await screen.findByTestId('exercise-run');
+    expect(h.runProps.at(-1).material.instanceId).toBe(scaleId('G'));
+    fireEvent.click(screen.getByText('stub-fail'));
+    fireEvent.click(await screen.findByText('Try again'));
+
+    await screen.findByTestId('exercise-run');
+    expect(h.runProps.at(-1).material.instanceId).toBe(scaleId('C')); // L1
+  });
+
+  it('Try again at the floor lights the SAME key, not the next one', async () => {
+    seedGateState('kid1', {
+      levelId: BUILT_IN_FLOOR.id, failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
+    });
+    renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 3 } });
+
+    await screen.findByTestId('exercise-run');
+    const lit = h.runProps.at(-1).material.instance.events[0].notes[0].midi;
+    fireEvent.click(screen.getByText('stub-fail'));
+    fireEvent.click(await screen.findByText('Try again'));
+
+    await screen.findByTestId('exercise-run');
+    expect(h.runProps.at(-1).material.instance.events[0].notes[0].midi).toBe(lit);
   });
 
   it('rotates the root, so two consecutive gates at L2 are not the same scale', async () => {
