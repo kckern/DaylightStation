@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { PianoGameBudgetService } from './PianoGameBudgetService.mjs';
+import { YamlPianoGameBudgetStore } from '../../1_adapters/persistence/yaml/YamlPianoGameBudgetStore.mjs';
 import { emptyDay } from '#domains/piano/gameBudget.mjs';
 
 function makeStore() {
@@ -108,6 +112,46 @@ describe('PianoGameBudgetService', () => {
     expect(store._days.get('2026-08-27').learners.kid_a.totalSeconds).toBe(90); // untouched
     expect(logger.info).toHaveBeenCalledWith('budget.day-rollover', expect.objectContaining({
       learnerId: 'kid_a', from: '2026-08-27', to: '2026-08-28', cumulativeSeconds: 90,
+    }));
+  });
+
+  it('two settles across the 4am boundary land in TWO day FILES on disk, one per study day', async () => {
+    // The same crossing as the test above, run against the REAL yaml store
+    // rather than the in-memory fake. `budget.day-rollover` has no durable
+    // home of its own — the day boundary is recorded by which FILE a charge
+    // lands in, so that is the thing worth asserting. A fake Map keyed by
+    // study date cannot fail the way this can: a store that folded both days
+    // into one file, or derived its filename from the wall clock instead of
+    // the record's own studyDate, would satisfy the Map assertions and lose a
+    // day of history on disk.
+    const root = mkdtempSync(path.join(tmpdir(), 'piano-budget-rollover-'));
+    const yamlStore = new YamlPianoGameBudgetStore({
+      historyRoot: root, logger: { warn: () => {}, error: () => {} },
+    });
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const svc2 = new PianoGameBudgetService({
+      store: yamlStore, config: () => CFG, timezone: 'America/Los_Angeles',
+      clock: () => now, idFactory: () => 'sess_disk', logger,
+    });
+
+    now = new Date('2026-08-28T09:30:00.000Z'); // 02:30 LA — still the Aug-27 study day
+    await svc2.open({ learnerId: 'kid_a', deviceId: 'kiosk' });
+    await svc2.settle({ sessionId: 'sess_disk', learnerId: 'kid_a', cumulativeSeconds: 90 });
+
+    now = new Date('2026-08-28T12:30:00.000Z'); // 05:30 LA — past the 4am boundary
+    await svc2.settle({ sessionId: 'sess_disk', learnerId: 'kid_a', cumulativeSeconds: 150 });
+
+    // Exactly two files, named for the two study days — not one file, and not
+    // a third from the UTC date (which was 2026-08-28 for BOTH settles; a UTC
+    // bucketing bug would collapse them into one file and read as correct).
+    expect(readdirSync(root).sort()).toEqual(['2026-08-27.yml', '2026-08-28.yml']);
+    expect(yamlStore.loadDay('2026-08-27').learners.kid_a.totalSeconds).toBe(90);
+    expect(yamlStore.loadDay('2026-08-28').learners.kid_a.totalSeconds).toBe(60);
+    // Yesterday's session is sealed where it lived; today's continues.
+    expect(yamlStore.loadDay('2026-08-27').sessions.sess_disk.closed).toBe(true);
+    expect(yamlStore.loadDay('2026-08-28').sessions.sess_disk.closed).toBe(false);
+    expect(logger.info).toHaveBeenCalledWith('budget.day-rollover', expect.objectContaining({
+      from: '2026-08-27', to: '2026-08-28',
     }));
   });
 

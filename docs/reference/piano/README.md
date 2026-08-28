@@ -190,7 +190,10 @@ share the School completion gate: the active player unlocks Games after `complet
 locked with an explanation. The kiosk refreshes the derived state while mounted and when
 the tab becomes visible, so finishing work unlocks the tile without a reload. Guest has no
 School identity and follows the `no_work_today` branch. Their engines and rules are
-documented separately in [piano-games.md](./piano-games.md).
+documented separately in [piano-games.md](./piano-games.md). Two further gates sit below
+that School check when the household enables them — a daily game-time budget and a short
+played challenge at every match boundary — and are documented in
+[games-budget-gate.md](./games-budget-gate.md).
 
 ---
 
@@ -303,6 +306,7 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Backend | `backend/src/4_api/v1/routers/piano.mjs` · `backend/src/4_api/v1/routers/admin/apps.mjs` |
 | Hardware + setup | [kiosk-setup.md](./kiosk-setup.md) |
 | Game engines | [piano-games.md](./piano-games.md) |
+| Game time budget + match gate | [games-budget-gate.md](./games-budget-gate.md) |
 | Game platform (host, chrome kit, families) | [piano-game-platform.md](./piano-game-platform.md) |
 | Grid addressing (keys→squares: permutations, config, difficulty ladder) | [grid-addressing.md](./grid-addressing.md) |
 | Sheet music player | [sheet-music-player.md](./sheet-music-player.md) |

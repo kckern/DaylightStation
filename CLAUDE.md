@@ -208,6 +208,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Player surround (classical chrome: sidecars, movement detection) | `docs/reference/player/surround/classical/README.md` |
 | Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
 | Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `docs/reference/piano/grid-addressing.md` |
+| Piano game time budget + match gate (daily minutes, played challenge, day files) | `docs/reference/piano/games-budget-gate.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `docs/reference/fitness/exercise-library.md` |
 | Arcade emulator (EmulatorJS boot contract, gamepad routing, fault handling) | `docs/reference/gaming/emulator-resilience.md` |
 | Household economy (coins) | `docs/reference/economy/economy.md` |
