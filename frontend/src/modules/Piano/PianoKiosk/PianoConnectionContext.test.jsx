@@ -8,12 +8,13 @@ const midi = vi.hoisted(() => ({
 }));
 const resetPianoBridge = vi.hoisted(() => vi.fn());
 vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
-vi.mock('./PianoSoundContext.jsx', () => ({ usePianoSound: () => ({ resync: vi.fn() }) }));
-vi.mock('./PianoMixContext.jsx', () => ({ usePianoMix: () => ({ reassertPianoLevel: vi.fn() }) }));
+vi.mock('./usePianoSound.js', () => ({ usePianoSound: () => ({ resync: vi.fn() }) }));
+vi.mock('./usePianoMix.js', () => ({ usePianoMix: () => ({ reassertPianoLevel: vi.fn() }) }));
 vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ pianoId: 'default' }) }));
 vi.mock('./pianoBridgeClient.js', () => ({ resetPianoBridge }));
 
-import { PianoConnectionProvider, usePianoConnection } from './PianoConnectionContext.jsx';
+import { PianoConnectionProvider } from './PianoConnectionContext.jsx';
+import { usePianoConnection } from './usePianoConnection.js';
 
 let connection;
 function Probe() { connection = usePianoConnection(); return null; }

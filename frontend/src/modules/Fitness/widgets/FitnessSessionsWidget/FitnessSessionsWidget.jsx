@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Text, Stack } from '@mantine/core';
-import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
-import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
+import { useScreenData } from '@/screen-framework/data/useScreenData.js';
+import { useScreen } from '@/screen-framework/providers/useScreen.js';
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
-import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
+import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import SportIcon from '../_shared/SportIcon.jsx';
 import { formatSportType } from '../_shared/sportIconUtils.js';
 import MiniRouteMap from './MiniRouteMap.jsx';

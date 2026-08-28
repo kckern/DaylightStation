@@ -5,7 +5,7 @@ import { NoteWaterfall } from '../../../components/NoteWaterfall.jsx';
 import { SideScrollerGame } from '../../../SideScrollerGame/SideScrollerGame.jsx';
 import { isWhiteKey } from '../../../noteUtils.js';
 import { handleNoteOn, trimHistory } from '../../../noteHistory.js';
-import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
+import { usePianoPlayback } from '../../usePianoPlayback.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { createSimState, stepSim, TEST_DEFAULTS } from './pianoTestStream.js';

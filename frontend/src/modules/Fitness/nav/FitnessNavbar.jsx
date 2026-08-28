@@ -25,6 +25,8 @@ const FitnessNavbar = ({
       firstItem: sortedItems[0]?.name || null,
       firstItemType: sortedItems[0]?.type || null
     });
+    // mount-only init log
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -37,6 +39,8 @@ const FitnessNavbar = ({
         activeModule: currentState.activeModule?.id || null
       });
     }
+    // narrowed to activeItem?.name — the currentState.* fields are log-payload context, not intended triggers
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeItem?.name]);
   
   const getCollectionIcon = (icon) => {

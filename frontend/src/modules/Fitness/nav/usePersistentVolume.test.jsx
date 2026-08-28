@@ -10,7 +10,7 @@ const store = {
   version: 0,
 };
 
-vi.mock('./VolumeProvider.jsx', () => ({
+vi.mock('./useVolumeStore.js', () => ({
   useVolumeStore: () => store,
 }));
 

@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, act, waitFor } from '@testing-library/react';
 import { vi, test, expect, beforeEach } from 'vitest';
-import { IdentityProvider, useIdentity, UNLOCK_COOLDOWN_MS, CEREMONY_DEBOUNCE_MS } from './IdentityProvider';
+import { IdentityProvider, UNLOCK_COOLDOWN_MS, CEREMONY_DEBOUNCE_MS } from './IdentityProvider';
+import { useIdentity } from './useIdentity.js';
 
 const emergency = {
   phase: 'normal', lockedUntil: null, lockedBy: null,

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './EmergencyLockdownOverlay.scss';
 import getLogger from '@/lib/logging/Logger.js';
-import { useIdentity } from '@/modules/Fitness/identity/IdentityProvider';
+import { useIdentity } from '@/modules/Fitness/identity/useIdentity.js';
 
 // Inline the power glyph so `currentColor` + CSS glow apply (a plain <img> can't
 // inherit color or take a drop-shadow on the glyph itself). Path copied from

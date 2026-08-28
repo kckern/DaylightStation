@@ -6,7 +6,8 @@ import { PanelRenderer } from './panels/PanelRenderer.jsx';
 import { ScreenDataProvider } from './data/ScreenDataProvider.jsx';
 import { ScreenProvider } from './providers/ScreenProvider.jsx';
 import { ScreenOverlayProvider, useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
-import { PipManager, usePip } from './pip/PipManager.jsx';
+import { PipManager } from './pip/PipManager.jsx';
+import { usePip } from './pip/usePip.js';
 import { ScreenVolumeProvider } from './providers/ScreenVolumeProvider.jsx';
 import { MasterVolumeToast } from './overlays/MasterVolumeToast.jsx';
 import { PortalKeysBridge } from './PortalKeysBridge.jsx';
@@ -26,7 +27,8 @@ import { getPlayerSessionRegistry } from './publishers/playerSessionRegistry.js'
 import { ScreenSceneProvider } from './providers/ScreenSceneContext.jsx';
 import { ScreenAmbientProvider } from './ambient/ScreenAmbientContext.jsx';
 import { SurroundSettingContext } from '../modules/Surround/SurroundSettingContext.js';
-import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
+import { MenuNavigationProvider } from '../context/MenuNavigationContext.jsx';
+import { useMenuNavigationContext } from '../context/useMenuNavigationContext.js';
 import { parseAutoplayParams, autoplayToAction, AUTOPLAY_ACTIONS } from '../lib/parseAutoplayParams.js';
 import { getApp } from '../lib/appRegistry.js';
 import { bindBackButton, enableGlobalKeyCapture } from '../lib/fkb.js';
@@ -119,6 +121,11 @@ function ScreenAutoplay({ routes, layout }) {
 
     // Clean URL to prevent re-trigger
     window.history.replaceState({}, '', pathname);
+  // Deliberately mount-once (see docblock): this parses the URL for a one-shot
+  // autoplay action and then rewrites the URL specifically so it can't re-fire.
+  // Adding layout/routes would let a later config reload re-trigger the very
+  // autoplay this effect just cleaned up after.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [push]);
 
   return null;

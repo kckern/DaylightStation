@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useMemo } from 'react';
 
 /**
  * SessionSourceContext — lets a descendant component register a
@@ -27,14 +27,6 @@ export function SessionSourceProvider({ source, children }) {
       {children}
     </SessionSourceContext.Provider>
   );
-}
-
-/**
- * Hook: read the injected SessionSource. Returns null when no provider
- * supplied a source.
- */
-export function useSessionSourceContext() {
-  return useContext(SessionSourceContext).source;
 }
 
 export default SessionSourceContext;

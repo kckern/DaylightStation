@@ -15,7 +15,7 @@ import {
   IconVolume,
 } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
-import { usePeek } from '../peek/PeekProvider.jsx';
+import { usePeek } from '../peek/usePeek.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
 import { useStatusOverlay } from '../../../hooks/useStatusOverlay';

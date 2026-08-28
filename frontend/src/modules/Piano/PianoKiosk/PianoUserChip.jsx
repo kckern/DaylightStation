@@ -2,7 +2,7 @@ import { useState, useContext } from 'react';
 import PianoUserContext from './PianoUserContext.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import ProfilePicker from '../../../lib/identity/ProfilePicker.jsx';
-import { usePianoPlayback } from './PianoPlaybackContext.jsx';
+import { usePianoPlayback } from './usePianoPlayback.js';
 import { usePianoScreenOff } from './usePianoScreenOff.js';
 import { GUEST_PROFILE } from './pianoUser.js';
 import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';

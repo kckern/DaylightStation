@@ -36,6 +36,8 @@ const useAnimatedNumber = (value, {
 
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
+    // rAF interpolation: displayValue is read once to seed the animation and is itself what the loop updates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, duration, easing]);
 
   return format(displayValue);

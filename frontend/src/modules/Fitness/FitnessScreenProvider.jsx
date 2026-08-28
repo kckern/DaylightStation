@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useEffect, useMemo, useState } from 'react';
 
-const FitnessScreenContext = createContext(null);
+export const FitnessScreenContext = createContext(null);
 
 /**
  * FitnessScreenProvider - Bridges screen-framework widgets to FitnessApp actions.
@@ -53,22 +53,4 @@ export function FitnessScreenProvider({
       {children}
     </FitnessScreenContext.Provider>
   );
-}
-
-/**
- * useFitnessScreen - Access FitnessApp action callbacks from within a screen-framework widget.
- */
-export function useFitnessScreen() {
-  const ctx = useContext(FitnessScreenContext);
-  if (!ctx) {
-    return {
-      onPlay: null, onNavigate: null, onCtaAction: null,
-      scrollToDate: null, setScrollToDate: () => {},
-      selectedSessionId: null, setSelectedSessionId: () => {},
-      longitudinalSelection: null, setLongitudinalSelection: () => {},
-      lastPlayedContentId: null, setLastPlayedContentId: () => {},
-      roster: [], householdLabel: '', windowDays: 7, compareWeeks: 4,
-    };
-  }
-  return ctx;
 }

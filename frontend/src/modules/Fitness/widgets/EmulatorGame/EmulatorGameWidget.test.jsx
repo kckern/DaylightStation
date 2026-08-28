@@ -36,7 +36,7 @@ const identity = {
   unlockState: 'idle',
   unlockedUser: null,
 };
-vi.mock('../../identity/IdentityProvider', () => ({ useIdentity: () => identity }));
+vi.mock('../../identity/useIdentity.js', () => ({ useIdentity: () => identity }));
 vi.mock('../../player/overlays/UnlockPrompt.jsx', () => ({ default: ({ open }) => (open ? <div data-testid="unlock" /> : null) }));
 
 // Stub saveClient so the resume lookup is controllable (no real fetch).

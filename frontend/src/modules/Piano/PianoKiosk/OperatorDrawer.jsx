@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
-import { usePianoConnection } from './PianoConnectionContext.jsx';
+import { usePianoConnection } from './usePianoConnection.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoScreenOff } from './usePianoScreenOff.js';
 import { screenOffFailureMessage } from './useScreenControl.js';

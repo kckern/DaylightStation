@@ -27,7 +27,8 @@ vi.mock('../../../lib/api.mjs', () => ({
   }),
 }));
 
-import { SearchProvider, useSearchContext } from './SearchProvider.jsx';
+import { SearchProvider } from './SearchProvider.jsx';
+import { useSearchContext } from './useSearchContext.js';
 
 // Legacy persistence key from the pre-session-only scope behavior. No longer
 // exported by SearchProvider (nothing reads/writes it anymore) — a literal

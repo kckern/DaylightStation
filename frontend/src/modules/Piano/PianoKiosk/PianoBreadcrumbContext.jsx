@@ -22,6 +22,7 @@ export function PianoBreadcrumbProvider({ children }) {
 }
 
 /** Read the current extra crumbs + setter. Safe (no-op) outside a provider. */
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoBreadcrumbBar is co-located with its Context/Provider (standard pattern); 6 consumers, splitting out of scope for a lint pass
 export function usePianoBreadcrumbBar() {
   return useContext(BreadcrumbContext) || EMPTY;
 }
@@ -33,6 +34,7 @@ export function usePianoBreadcrumbBar() {
  *
  * @param {Array<{label:string, onClick?:function, icon?:string, image?:string}>} crumbs
  */
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoBreadcrumb is co-located with its Context/Provider (standard pattern); 24 consumers, splitting out of scope for a lint pass
 export function usePianoBreadcrumb(crumbs) {
   const { setCrumbs } = usePianoBreadcrumbBar();
   // Re-publish when the visible labels, icons, or images change (handlers are

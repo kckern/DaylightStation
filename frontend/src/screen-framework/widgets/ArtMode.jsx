@@ -8,10 +8,10 @@ import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, fill
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
-import { useScreenAmbient } from '../ambient/ScreenAmbientContext.jsx';
+import { useScreenAmbient } from '../ambient/useScreenAmbient.js';
 import { resolveAmbient } from './resolveAmbient.js';
 import { useScreenAction } from '../input/useScreenAction.js';
-import { useScreenScene } from '../providers/ScreenSceneContext.jsx';
+import { useScreenScene } from '../providers/useScreenScene.js';
 import { useBackgroundMusic } from '../../lib/Player/useBackgroundMusic.js';
 import MusicPlaque from './MusicPlaque.jsx';
 import ArtLayer from './ArtLayer.jsx';

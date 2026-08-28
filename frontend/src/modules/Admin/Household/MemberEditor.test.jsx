@@ -2,7 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import { UnsavedGuardProvider, useUnsavedGuardRegistry } from '../shared/UnsavedGuardContext.jsx';
+import { UnsavedGuardProvider } from '../shared/UnsavedGuardContext.jsx';
+import { useUnsavedGuardRegistry } from '../shared/useUnsavedGuardRegistry.js';
 
 vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn().mockResolvedValue({

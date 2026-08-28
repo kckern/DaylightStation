@@ -1,7 +1,7 @@
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useMemo, useRef, useState } from 'react';
 import { createVolumeStore } from './volumeStorage.js';
 
-const VolumeContext = createContext(null);
+export const VolumeContext = createContext(null);
 
 const clamp01 = (value) => {
   if (!Number.isFinite(value)) return undefined;
@@ -74,12 +74,4 @@ export const VolumeProvider = ({ children, storage, now }) => {
   );
 
   return <VolumeContext.Provider value={value}>{children}</VolumeContext.Provider>;
-};
-
-export const useVolumeStore = () => {
-  const ctx = useContext(VolumeContext);
-  if (!ctx) {
-    throw new Error('useVolumeStore must be used within VolumeProvider');
-  }
-  return ctx;
 };

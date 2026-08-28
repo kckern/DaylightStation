@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { ClientIdentityProvider, useClientIdentity } from './ClientIdentityProvider.jsx';
+import { ClientIdentityProvider } from './ClientIdentityProvider.jsx';
+import { useClientIdentity } from './useClientIdentity.js';
 import { STORAGE_KEYS } from '../constants.js';
 
 function Probe() {

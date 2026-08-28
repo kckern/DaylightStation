@@ -5,9 +5,9 @@
 import React, { useState, useCallback } from 'react';
 import { Popover, ActionIcon, Indicator, Text } from '@mantine/core';
 import { IconCast } from '@tabler/icons-react';
-import { useDismissLayer } from '../shell/DismissStackProvider.jsx';
+import { useDismissLayer } from '../shell/useDismissLayer.js';
 import { useCastTarget } from './useCastTarget.js';
-import { useFleetContext } from '../fleet/FleetProvider.jsx';
+import { useFleetContext } from '../fleet/useFleetContext.js';
 import { deviceName } from '../fleet/deviceDisplay.js';
 
 export function CastTargetChip() {

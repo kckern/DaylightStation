@@ -125,6 +125,11 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
           setErrorMsg(message);
         }
       });
+    // action-effect gated on status === 'launching', firing a real network launch request.
+    // onClose/title/launch.targetDeviceId/logger are intentionally excluded — onClose in
+    // particular is an unmemoized prop from the parent, and adding it risks a duplicate
+    // launch request if the parent re-renders mid-flight.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, launch?.contentId, retryCount]);
 
   useEffect(() => {

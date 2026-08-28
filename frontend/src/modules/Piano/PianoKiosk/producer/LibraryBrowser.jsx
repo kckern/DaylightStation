@@ -63,7 +63,7 @@ import { RomanProgression } from '../../components/roman/RomanProgression.jsx';
 import { MaterialGlyph } from './MaterialGlyph.jsx';
 import { buildCompatibleSet, rankCompatible, timelineOf, entryIdentity } from './libraryRanking.js';
 import { usePeek } from './usePeek.js';
-import { useKeepScreenAwake } from '../usePianoScreensaver.jsx';
+import { useKeepScreenAwake } from '../usePianoScreensaverHooks.js';
 
 const STORES = [
   { key: 'curated', label: 'Library' },

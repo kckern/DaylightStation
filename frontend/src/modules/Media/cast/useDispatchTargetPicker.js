@@ -5,8 +5,8 @@
 // UI only surfaces the choice when something is actually playing locally.
 // A `snapshot` source dispatches in adopt mode (hand-off).
 import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { useFleetContext } from '../fleet/FleetProvider.jsx';
-import { useDispatch } from './DispatchProvider.jsx';
+import { useFleetContext } from '../fleet/useFleetContext.js';
+import { useDispatch } from './useDispatch.js';
 import { useCastTarget } from './useCastTarget.js';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import mediaLog from '../logging/mediaLog.js';

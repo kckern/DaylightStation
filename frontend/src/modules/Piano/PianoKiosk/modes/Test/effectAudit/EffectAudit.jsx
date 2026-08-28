@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../../PianoMidiContext.jsx';
-import { usePianoSound } from '../../../PianoSoundContext.jsx';
+import { usePianoSound } from '../../../usePianoSound.js';
 import { buildAuditMatrix, buildStimulus, recordTotalMs, STIMULUS } from './matrix.js';
 import { pickBuiltInMic, buildMicConstraints } from './micSelect.js';
 import { uploadClip, uploadManifest } from './upload.js';

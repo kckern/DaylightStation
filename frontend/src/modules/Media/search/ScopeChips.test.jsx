@@ -37,7 +37,7 @@ const baseScopes = [
 
 let scopes = baseScopes;
 
-vi.mock('./SearchProvider.jsx', () => ({
+vi.mock('./useSearchContext.js', () => ({
   useSearchContext: () => ({
     scopes,
     currentScopeKey,

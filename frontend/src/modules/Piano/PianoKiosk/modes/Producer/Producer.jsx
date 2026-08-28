@@ -57,7 +57,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
-import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
+import { useKeepScreenAwake } from '../../usePianoScreensaverHooks.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonList } from '../../Skeleton.jsx';
 import { useLoopLibrary } from '../../useLoopLibrary.js';

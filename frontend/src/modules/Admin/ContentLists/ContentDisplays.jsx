@@ -308,6 +308,7 @@ export function ContentValueCard({ value, contentInfoMap, onStartEdit }) {
  * into the contentInfoMap entry format so the row card renders instantly
  * without waiting for ListsFolder's metadata refetch.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- shares module-level cache/log state with the display components — judged not worth splitting out
 export function contentInfoFromPick(value, item) {
   return {
     value,
@@ -330,6 +331,7 @@ const contentInfoCache = new Map();
 // Deduplicate in-flight requests so concurrent callers share one fetch
 const inflightRequests = new Map();
 
+// eslint-disable-next-line react-refresh/only-export-components -- shares module-level cache/log state with the display components — judged not worth splitting out
 export async function fetchContentMetadata(value) {
   if (!value) return null;
 

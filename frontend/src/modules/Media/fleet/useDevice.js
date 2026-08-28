@@ -1,7 +1,7 @@
 // frontend/src/modules/Media/fleet/useDevice.js
 // Per-device live entry — re-renders only when THIS device's state changes.
 import { useCallback, useSyncExternalStore } from 'react';
-import { useFleetContext } from './FleetProvider.jsx';
+import { useFleetContext } from './useFleetContext.js';
 
 export function useDevice(deviceId) {
   const { store, devices } = useFleetContext();

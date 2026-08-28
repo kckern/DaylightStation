@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useSessionStatePublisher } from './useSessionStatePublisher.js';
 import { createSessionSource } from './SessionSource.js';
-import { useSessionSourceContext } from './SessionSourceContext.jsx';
+import { useSessionSourceContext } from './useSessionSourceContext.js';
 
 /**
  * SessionStatePublisher — renderless component that mounts the

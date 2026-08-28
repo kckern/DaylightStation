@@ -334,6 +334,9 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
         sourceSignatureRef.current = null;
       }
     };
+    // core queue-init network-fetch effect; onError is an unmemoized parent prop —
+    // adding it risks a fetch storm on unrelated parent re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [play, queue, isShuffle, contentRef]);
 
   const advance = useCallback((step = 1) => {

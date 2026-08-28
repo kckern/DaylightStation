@@ -104,6 +104,8 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
     if (input && shouldAutoAdd(input)) {
       doAdd(input, label, action);
     }
+    // deliberately gated on input alone — label/action/doAdd would re-fire the add on every keystroke
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input]);
 
   return (

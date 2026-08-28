@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useScreenAction } from '../input/useScreenAction.js';
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
-import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/MenuNavigationContext.jsx';
-import { usePip } from '../pip/PipManager.jsx';
+import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
+import { usePip } from '../pip/usePip.js';
 import { DaylightAPI } from '../../lib/api.mjs';
 import MenuStack from '../../modules/Menu/MenuStack.jsx';
 import { ScreenPlayer as Player } from '../publishers/ScreenPlayer.jsx';

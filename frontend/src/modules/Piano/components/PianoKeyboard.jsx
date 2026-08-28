@@ -105,6 +105,9 @@ export function PianoKeyboard({
     if (!destroyedKeys || destroyedKeys.size === 0) return undefined;
     const id = setInterval(() => setRebuildTick((t) => t + 1), 100);
     return () => clearInterval(id);
+  // Narrowed to .size on purpose: only the COUNT of destroyed keys should
+  // start/stop this tick, not object identity churn on every note event.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destroyedKeys?.size]);
 
   // Structural descriptors — stable across note changes (depend only on layout).

@@ -6,7 +6,7 @@ import PianoVideoChrome from './PianoVideoChrome.jsx';
 const mix = vi.hoisted(() => ({
   pianoLevel: 0.8, mediaLevel: 0.5, setPianoLevel: vi.fn(), setMediaLevel: vi.fn(),
 }));
-vi.mock('../../PianoMixContext.jsx', () => ({ usePianoMix: () => mix }));
+vi.mock('../../usePianoMix.js', () => ({ usePianoMix: () => mix }));
 
 const baseProps = {
   isPlaying: true, currentTime: 30, duration: 120, rate: 1, loop: { a: null, b: null },

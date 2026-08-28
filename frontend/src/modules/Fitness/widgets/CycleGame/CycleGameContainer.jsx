@@ -502,6 +502,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     }),
     // assignVersion forces a re-read after assign/unassign AND on the idle poll,
     // so live RPM refreshes ~1 Hz on the lobby.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [bikes, session, assignVersion]
   );
 

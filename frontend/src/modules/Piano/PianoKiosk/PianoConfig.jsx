@@ -36,6 +36,7 @@ export function PianoConfigProvider({ children }) {
 }
 
 /** Household roster: { loading, raw, pianos:[{id,label}] }. */
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoRoster is co-located with its Context/Provider (standard pattern); 3 consumers, splitting out of scope for a lint pass
 export function usePianoRoster() {
   const ctx = useContext(RosterContext);
   if (!ctx) throw new Error('usePianoRoster must be used within a PianoConfigProvider');
@@ -62,6 +63,7 @@ export function ActivePianoProvider({ pianoId, basePath, config, children }) {
 }
 
 /** Active piano: { pianoId, basePath, config }. */
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoKioskConfig is co-located with its Context/Provider (standard pattern); 36 consumers, splitting out of scope for a lint pass
 export function usePianoKioskConfig() {
   const ctx = useContext(ActivePianoContext);
   if (!ctx) throw new Error('usePianoKioskConfig must be used within an ActivePianoProvider');
@@ -77,6 +79,7 @@ export function usePianoKioskConfig() {
  * the note launcher made it reachable there; it now takes the config it needs
  * as a prop and uses this only as the kiosk fallback.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- usePianoKioskConfigOptional is co-located with its Context/Provider (standard pattern); 4 consumers, splitting out of scope for a lint pass
 export function usePianoKioskConfigOptional() {
   return useContext(ActivePianoContext) ?? null;
 }

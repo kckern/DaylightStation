@@ -116,6 +116,7 @@ const calculateIntensity = (x, y, z) => {
 };
 
 // Custom hook for using the context
+// eslint-disable-next-line react-refresh/only-export-components -- useFitnessContext is co-located with its Context/Provider (standard pattern); 37 consumers, splitting out of scope for a lint pass
 export const useFitnessContext = () => {
   const context = useContext(FitnessContext);
   if (!context) {
@@ -135,9 +136,11 @@ export const useFitnessContext = () => {
  * around me" — it degrades — and that same shape is what lets it be rendered
  * standalone in a unit test. Use this only where the absence is genuinely handled.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- useOptionalFitnessContext is co-located with its Context/Provider (standard pattern); 3 consumers, splitting out of scope for a lint pass
 export const useOptionalFitnessContext = () => useContext(FitnessContext);
 
 // Custom hook for fitness playlist management
+// eslint-disable-next-line react-refresh/only-export-components -- useFitnessPlaylist is co-located with its Context/Provider (standard pattern); 1 consumer, splitting out of scope for a lint pass
 export const useFitnessPlaylist = () => {
   const context = useFitnessContext();
   return {
@@ -148,6 +151,7 @@ export const useFitnessPlaylist = () => {
 };
 
 // Alias for compatibility
+// eslint-disable-next-line react-refresh/only-export-components -- useFitness is co-located with its Context/Provider (standard pattern); 17 consumers, splitting out of scope for a lint pass
 export const useFitness = useFitnessContext;
 
 // Provider component
@@ -887,11 +891,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [forceUpdate]);
 
   // Voice Memos
+  // version/voiceMemoVersion are force-recompute counters: fitnessSessionRef is a
+  // ref, so mutations to its voiceMemoManager never trigger a re-render on their
+  // own — these two deps exist purely to make React re-run this memo when they do.
   const voiceMemos = React.useMemo(() => {
     const raw = fitnessSessionRef.current?.voiceMemoManager?.memos;
     if (!Array.isArray(raw)) return [];
     return raw.map((memo) => ({ ...memo }));
-  }, [voiceMemoVersion, version]); // Depend on version too
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceMemoVersion, version]);
 
   const getVoiceMemoById = React.useCallback((memoId) => {
     if (!memoId) return null;
@@ -1547,7 +1555,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [normalizedBaseZoneConfig, zoneConfig]);
 
   // Prepare data for context value
+  // version is a force-recompute counter for the fitnessDevices/users Maps below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const allDevicesRaw = React.useMemo(() => Array.from(fitnessDevices.values()), [fitnessDevices, version]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const allUsers = React.useMemo(() => Array.from(users.values()), [users, version]);
   
   // Phase 2 SSOT: Wrap allDevices with deprecation warning in development
@@ -1719,6 +1730,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     rosterCacheRef.current.signature = null;
     rosterCacheRef.current.value = emptyRosterRef.current;
     return rosterCacheRef.current.value;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
 
   React.useMemo(() => {
@@ -1730,6 +1742,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const profiles = session?.zoneProfileStore?.getProfiles() || [];
     const roster = session?.roster || [];
     return buildParticipantDisplayMap(profiles, roster);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, version]);
 
   // Persisted session participants metadata — used by the FitnessChart legend
@@ -1739,6 +1752,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const meta = session?.snapshot?.usersMeta;
     if (!(meta instanceof Map)) return new Map();
     return meta;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, version]);
 
   // ==========================================================================
@@ -1812,6 +1826,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const deviceAssignments = React.useMemo(() => {
     return guestAssignmentLedgerRef.current.snapshot();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ledgerVersion]);
 
   const deviceAssignmentMap = React.useMemo(() => {
@@ -1927,6 +1942,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     });
     return map;
   // Note: preferGroupLabels is included to ensure displayLabel updates when device count changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allUsers, deviceAssignmentMap, getDisplayLabel, preferGroupLabels]);
 
   // Zone-progress lookup index. Keyed by profile ID, device IDs, given name,
@@ -1975,6 +1991,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const userCollections = React.useMemo(() => {
     const collections = session?.userCollections;
     return collections || EMPTY_USER_COLLECTIONS;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, version]);
 
   const configuredUsers = React.useMemo(() => {
@@ -1987,6 +2004,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       return ownership;
     }
     return createEmptyOwnership();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, version]);
 
   // Phase 4 SSOT: Build display name context
@@ -2002,6 +2020,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         }])
       )
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allDevicesRaw, deviceOwnership, deviceAssignmentMap, configuredUsers, version]);
 
   // Phase 4 SSOT: Canonical display name resolver
@@ -2028,6 +2047,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const guestCandidateList = React.useMemo(() => {
     return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, version]);
 
   const zoneProfiles = React.useMemo(() => {
@@ -2052,6 +2072,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           }
         : null
     }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, version]);
 
   const zoneProfileLookup = React.useMemo(() => {
@@ -2165,6 +2186,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const getEquipmentVibration = React.useCallback((equipmentId) => {
     if (!equipmentId) return null;
     return vibrationStateRef.current[equipmentId] || null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
 
   const resolveUserByDevice = React.useCallback((key) => {
@@ -2381,6 +2403,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       getSeriesKey: buildSeriesKey,
       seriesKeys: Object.keys(seriesRef)
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, version]);
 
   // The session already owns the roster; avoid writing it back every render to prevent update loops.

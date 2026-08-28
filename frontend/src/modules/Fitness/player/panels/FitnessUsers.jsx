@@ -667,6 +667,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     } else {
       setLayoutMode('horiz');
     }
+  // activeHeartRateParticipants is covered indirectly: the preceding effect
+  // already depends on it and calls setSortedDevices whenever it changes, which
+  // re-triggers this effect (via sortedDevices) on the next render with the
+  // fresh value. Adding it directly here would just double-fire on the same
+  // update.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortedDevices, allDevices]);
 
   // Auto-scale content to fit container

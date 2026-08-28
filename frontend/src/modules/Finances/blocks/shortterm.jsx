@@ -162,6 +162,10 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
         series
     };
     return { processedData, options };
+    // budgetStart/budgetEnd/shortTermBuckets/buckets are pure derivations of
+    // budget (already a dep), recomputed fresh every render — adding them would
+    // defeat the memo, since buckets is a new array reference on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [budget, setDrawerContent, today]);
 
     if (buckets.length === 0) {

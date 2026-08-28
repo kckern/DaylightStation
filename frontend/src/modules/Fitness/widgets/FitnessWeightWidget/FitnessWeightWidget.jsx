@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, Title, Stack, Badge, Skeleton } from '@mantine/core';
-import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
+import { useScreenData } from '@/screen-framework/data/useScreenData.js';
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
 
 function parseWeightData(raw) {

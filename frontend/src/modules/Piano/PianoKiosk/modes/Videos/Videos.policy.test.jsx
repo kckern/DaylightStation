@@ -30,8 +30,8 @@ const state = {
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: state.config }) }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: state.user }) }));
 vi.mock('./usePianoCoursePlayable.js', () => ({ usePianoCoursePlayable: () => state.playable }));
-vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ playing: false }) }));
-vi.mock('../../usePianoScreensaver.jsx', () => ({ useKeepScreenAwake: () => {} }));
+vi.mock('../../usePianoPlayback.js', () => ({ usePianoPlayback: () => ({ playing: false }) }));
+vi.mock('../../usePianoScreensaverHooks.js', () => ({ useKeepScreenAwake: () => {} }));
 vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ speakerConnected: state.speakerConnected }) }));
 
 // Module-level mount counter — every per-lecture piece of state this route
