@@ -163,6 +163,27 @@ describe('the gate row is graded, not shrugged off as ambiguous', () => {
     expect(card.companionGate).toMatchObject({ status: 'wrong' });
   });
 
+  it('an ALL-FIVE row that is still wrong is exhausted — this sheet can never be repaired', async () => {
+    // A child repairs a wrong code by adding bubbles, which walks a chain of
+    // supersets because paper is append-only. Every letter marked means there
+    // is nothing left to add: the physics IS the attempt limit, so nothing has
+    // to count how many times the card went through the roller.
+    const { card } = await scan(
+      [gateBlock(['A', 'C', 'E']), mcQuestion('q1', 2), mcQuestion('q2', 3)],
+      { 1: [...CODE_LETTERS], 2: 'A', 3: 'A' },
+    );
+    expect(card.companionGate).toMatchObject({ status: 'exhausted', given: [...CODE_LETTERS] });
+  });
+
+  it('a full row that happens to BE the code is still satisfied, not exhausted', async () => {
+    const { card } = await scan(
+      [gateBlock([...CODE_LETTERS]), mcQuestion('q1', 2), mcQuestion('q2', 3)],
+      { 1: [...CODE_LETTERS], 2: 'A', 3: 'A' },
+      { id: 'all-five-code-sheet' },
+    );
+    expect(card.companionGate).toMatchObject({ status: 'satisfied' });
+  });
+
   it('never carries the expected finish code back out — the answer reaches a browser', async () => {
     const { outcome, card } = await scan(
       [gateBlock(['A', 'C', 'E']), mcQuestion('q1', 2), mcQuestion('q2', 3)],

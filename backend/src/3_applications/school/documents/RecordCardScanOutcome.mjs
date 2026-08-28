@@ -65,6 +65,7 @@
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { createAttempt } from '#domains/school/attempt.mjs';
+import { GATE_SATISFIED } from '#domains/school/companionCode.mjs';
 
 /** Session states from which this bridge may advance toward `graded`. */
 const BRIDGEABLE = new Set(['issued', 'reprinted', 'submitted']);
@@ -100,6 +101,25 @@ function withoutGateRow(card) {
   const results = card.results.filter((row) => row?.itemType !== 'companion_code');
   return results.length === card.results.length ? card : { ...card, results };
 }
+
+/**
+ * The gate verdict as it goes into a session event: the status, and the letters
+ * the CHILD marked. Never `item.code` — see `ResolveCardScan#gradeRow`, which
+ * deliberately never carries the expected code out of the resolver at all.
+ */
+function gateStamp(card) {
+  const gate = card.companionGate;
+  return {
+    status: gate.status,
+    ...(Array.isArray(gate.given) ? { given: [...gate.given] } : {}),
+  };
+}
+
+/** The marked letters, order-insensitive — bubbles have no order on paper. */
+const gateMarks = (gate) => (Array.isArray(gate?.given) ? [...gate.given].sort().join('') : '');
+
+/** Same row, same marks: nothing about the finish-code row has changed. */
+const sameGateReading = (a, b) => a.status === b.status && gateMarks(a) === gateMarks(b);
 
 export class RecordCardScanOutcome {
   #datastore; #sessions; #reviewQueue; #resultArtifacts; #renderMachineResult; #clock; #logger;
@@ -241,6 +261,36 @@ export class RecordCardScanOutcome {
       return { recorded: false, reason: 'no-rows-resolved' };
     }
 
+    const at = this.#clock().toISOString();
+
+    // Read + reduce the issuing session ONCE, up front — never inside
+    // `#bridgeSession` (which used to do its own `readEvents` call). A read
+    // failure here must not block attempt recording (the attempts are real
+    // evidence regardless of whether the session bridge can run): caught and
+    // reported as `null`, which `#bridgeSession` below turns into the SAME
+    // `bridge-failed` outcome the old inline try/catch reported.
+    //
+    // It happens BEFORE the dedup below because of the gate: a re-scan whose
+    // only change is the finish-code row carries the same rows as the first
+    // one and would otherwise leave at `duplicate-scan` without ever asking
+    // what the session already knows about the gate.
+    let preReadState = null;
+    if (card.sessionId && this.#sessions) {
+      try {
+        preReadState = reduceSession(await this.#sessions.readEvents(card.sessionId));
+      } catch {
+        preReadState = null;
+      }
+    }
+    const unitId = preReadState?.unitId ?? null;
+
+    // THE REPAIR LANE (Task 11). A gate blocked this sheet; the child filled in
+    // the code and fed the SAME card again. See `#reReadGate` — when it hands
+    // back an outcome, the gate has been restated and NOTHING else about this
+    // scan is recorded.
+    const repaired = await this.#reReadGate({ testId, card, state: preReadState, at });
+    if (repaired) return repaired;
+
     const key = scanKey(card);
     // Dedup only ever needs to see attempts from this card's own printing
     // forward — a card rendered today cannot collide with a day file from
@@ -250,7 +300,7 @@ export class RecordCardScanOutcome {
     const renderedDay = dayOf(card.renderedAt);
     const priorAttempts = (
       renderedDay !== null && typeof this.#datastore.readAttemptsInRange === 'function'
-        ? this.#datastore.readAttemptsInRange(learnerId, renderedDay, dayOf(this.#clock().toISOString()))
+        ? this.#datastore.readAttemptsInRange(learnerId, renderedDay, dayOf(at))
         : this.#datastore.readAllAttempts(learnerId)
     ).filter((attempt) => attempt?.provenance?.recordId === card.recordId);
     const recordedRows = new Set(
@@ -299,23 +349,6 @@ export class RecordCardScanOutcome {
     const subjectId = card.subjectId ?? (documentSegments.length > 1 ? documentSegments[0] : null);
     const courseId = card.courseId ?? (documentSegments.length > 2 ? documentSegments[1] : null);
 
-    // Read + reduce the issuing session ONCE, up front — never inside
-    // `#bridgeSession` (which used to do its own `readEvents` call). A read
-    // failure here must not block attempt recording (the attempts are real
-    // evidence regardless of whether the session bridge can run): caught and
-    // reported as `null`, which `#bridgeSession` below turns into the SAME
-    // `bridge-failed` outcome the old inline try/catch reported.
-    let preReadState = null;
-    if (card.sessionId && this.#sessions) {
-      try {
-        preReadState = reduceSession(await this.#sessions.readEvents(card.sessionId));
-      } catch {
-        preReadState = null;
-      }
-    }
-    const unitId = preReadState?.unitId ?? null;
-
-    const at = this.#clock().toISOString();
     const attemptIds = [];
     // itemId -> attempt id, for the verdict sheet's `attemptId` field. Built
     // from THIS call's fresh appends first, then backfilled from attempts
@@ -407,6 +440,107 @@ export class RecordCardScanOutcome {
   }
 
   /**
+   * THE GATE REPAIR LANE (Task 11): only the finish-code row is re-read.
+   *
+   * A sheet blocked by its gate is repaired the only way a printed sheet can
+   * be — the child fills in the code bubbles and feeds the SAME card again.
+   * This is the branch that notices, because nothing else would: the gate is
+   * not in `card.results`, so a re-scan whose only change is the gate row
+   * produces the identical rows the dedup below already has on file and leaves
+   * at `duplicate-scan` without a second look.
+   *
+   * WHAT IT DELIBERATELY DOES NOT DO. When the sheet already carries a score,
+   * this records the gate and RETURNS: no attempts, no `graded` event, no
+   * verdict-sheet churn. The result receipt already told the child which
+   * questions were wrong, and `ResolveCardScan`'s eraser-leniency credits a
+   * two-mark row containing the right answer — so re-grading the questions
+   * here would let a child add the correct bubble beside a wrong one and gain
+   * credit. That turns a gate repair into a score repair, which is the one
+   * thing the gate must never be able to do.
+   *
+   * WHEN THE SHEET IS NOT SCORED YET (it is sitting with a grown-up, its rows
+   * still being marked) the reading is still restated — `submitted -> submitted`
+   * is not a transition, so this annotation is that lane's only way to say the
+   * row changed — but it returns null so the ordinary path still runs and a row
+   * the child has since filled in still becomes an attempt.
+   *
+   * @returns {Promise<object|null>} an `execute` outcome when the scan was a
+   *   repair and nothing else, otherwise null (carry on with the ordinary path)
+   */
+  async #reReadGate({ testId, card, state, at }) {
+    if (!this.#sessions || card.sessionId == null || !card.companionGate) return null;
+    if (!state?.sessionId) return null;
+    const recorded = state.companionGate;
+    // A gate nobody has read yet, or one that already cleared, is not a repair:
+    // the first reading rides `submitted`/`graded` and a satisfied one is done.
+    if (!recorded || recorded.status === GATE_SATISFIED) return null;
+    // The MARKS, not just the status. A child walking A -> AB -> ABC re-scans a
+    // genuinely different row each time and every one of them reads `wrong`;
+    // comparing statuses alone would call those repeats duplicates and leave
+    // the child feeding a sheet that never answers.
+    if (sameGateReading(recorded, card.companionGate)) return null;
+
+    try {
+      await this.#appendGateRead({ sessionId: card.sessionId, at, card });
+    } catch (error) {
+      // Never fatal: the scan falls through to the ordinary path, which will
+      // report `duplicate-scan` for a rows-identical re-feed. Loud, because a
+      // child is standing at the scanner waiting for a sheet to clear.
+      this.#logger.warn?.('school.print.scan-gate-read-failed', {
+        testId, sessionId: card.sessionId, recordId: card.recordId, error: error.message,
+      });
+      return null;
+    }
+
+    const status = card.companionGate.status;
+    this.#logger.info?.('school.print.scan-gate-re-read', {
+      testId,
+      sessionId: card.sessionId,
+      recordId: card.recordId,
+      cardId: card.cardId,
+      from: recorded.status,
+      to: status,
+      scored: state.gradedPercent !== null,
+    });
+    // Still being marked: the row is restated, but this scan is otherwise an
+    // ordinary one and the path below must still run.
+    if (state.gradedPercent === null) return null;
+    return {
+      recorded: true,
+      reason: 'companion-gate-repaired',
+      attemptIds: [],
+      curriculum: {
+        subjectId: card.subjectId ?? null,
+        courseId: card.courseId ?? null,
+        unitId: state.unitId ?? null,
+        lessonId: card.lessonId ?? null,
+      },
+      session: {
+        sessionId: card.sessionId,
+        advancedTo: null,
+        reason: 'gate-repaired',
+        companionGate: { status },
+        // The score the sheet ALREADY earned, read back off the session rather
+        // than recomputed from this scan's rows — which is the whole promise of
+        // this lane. It rides here so the caller's ceremony can announce the
+        // same numbers the gradebook holds without a second read.
+        percent: state.gradedPercent,
+        correctCount: state.gradedCorrectCount,
+        totalCount: state.gradedTotalCount,
+      },
+    };
+  }
+
+  /** Append the annotation that restates the finish-code row. */
+  async #appendGateRead({ sessionId, at, card }) {
+    const built = createEvent({
+      type: 'companion_gate_read', at, sessionId, companionGate: gateStamp(card),
+    });
+    if (built.errors.length) throw new Error(built.errors.join('; '));
+    await this.#sessions.appendEvent(sessionId, built.event);
+  }
+
+  /**
    * Hand the work in, carrying the scan's verdict on the finish-code row.
    *
    * Both `#bridgeSession` branches turn a sheet in the same way, and both must
@@ -421,7 +555,7 @@ export class RecordCardScanOutcome {
       at,
       sessionId,
       transport: 'paper',
-      ...(card.companionGate ? { companionGate: { status: card.companionGate.status } } : {}),
+      ...(card.companionGate ? { companionGate: gateStamp(card) } : {}),
     });
     if (submitted.errors.length) throw new Error(submitted.errors.join('; '));
     await this.#sessions.appendEvent(sessionId, submitted.event);
@@ -590,7 +724,7 @@ export class RecordCardScanOutcome {
         // decided; `percent` above is deliberately unaffected by it, so the
         // gradebook records the child's answers and the gate blocks the pass
         // as two separate facts. Absent on every ungated sheet.
-        ...(card.companionGate ? { companionGate: { status: card.companionGate.status } } : {}),
+        ...(card.companionGate ? { companionGate: gateStamp(card) } : {}),
       });
       if (graded.errors.length) throw new Error(graded.errors.join('; '));
       await this.#sessions.appendEvent(sessionId, graded.event);

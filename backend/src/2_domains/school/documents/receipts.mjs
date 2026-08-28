@@ -299,20 +299,27 @@ export function reviewNoteLines(items, { limit = 3, maxChars = 120 } = {}) {
  * place, re-scanning THIS sheet, because their answers are already good and
  * nothing about the worksheet needs redoing.
  *
- * @param {{status: 'blank'|'wrong', label?: string, reading?: string|null}|null} gate
+ * A THIRD, AND IT IS THE ONE THAT DOES NOT SAY "SCAN THIS AGAIN" (Task 11).
+ * `exhausted` means every bubble in the row is filled and the code is still
+ * wrong. Marks cannot be erased, so there is nothing left to add and this sheet
+ * can never clear — telling that child to check the letters and re-scan would
+ * send them round a loop with no exit. It asks for a new sheet instead, which
+ * is why it is also the one gate failure that prints a retry ticket.
+ *
+ * @param {{status: 'blank'|'wrong'|'exhausted', label?: string, reading?: string|null}|null} gate
  * @returns {string[]} zero lines for an ungated sheet or a plain score failure
  */
 function companionGateLines(gate) {
   const status = gate?.status;
-  if (status !== 'blank' && status !== 'wrong') return [];
+  if (status !== 'blank' && status !== 'wrong' && status !== 'exhausted') return [];
   const label = isNonEmptyString(gate.label) ? gate.label.trim() : 'Read Along';
   const what = isNonEmptyString(gate.reading) ? `${label} (${gate.reading.trim()})` : label;
-  return [
-    'Your answers were good enough to pass.',
-    status === 'blank'
-      ? `The ${label} row was left empty. Finish ${what}, write the code it gives you in the first row, then scan this sheet again.`
-      : `The code in the ${label} row was not the right one. Check the letters on your finish card, fix that row, then scan this sheet again.`,
-  ];
+  const instruction = {
+    blank: `The ${label} row was left empty. Finish ${what}, write the code it gives you in the first row, then scan this sheet again.`,
+    wrong: `The code in the ${label} row was not the right one. Check the letters on your finish card, fix that row, then scan this sheet again.`,
+    exhausted: `Every letter in the ${label} row is filled in, so this sheet cannot be fixed. Ask a grown-up for a new sheet and try the code once more on that one.`,
+  }[status];
+  return ['Your answers were good enough to pass.', instruction];
 }
 
 /** Appends the "Notes for you" section, informational only — no scan_action. */

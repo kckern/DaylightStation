@@ -29,6 +29,7 @@ const PAYLOADS = {
   external_activity_assessed: { provider: 'fitness', assessmentId: 'fitness-assessment-1', courseRevision: 'course-1', policyRevision: 'policy-1', result: 'passed', measures: { engagements: 1 } },
   submitted: { transport: 'paper' },
   graded: { attemptIds: ['att_1'], percent: 90 },
+  companion_gate_read: { companionGate: { status: 'satisfied', given: ['A', 'C', 'E'] } },
   outcome_recorded: { outcomeId: `out:${SID}`, result: 'passed' },
   rewarded: { txnId: 'txn_1' },
   reward_reconciled: { reconciliationId: 'rec_1', delta: 1, txnId: 'txn_2' },
@@ -60,7 +61,7 @@ describe('EVENT_TYPES', () => {
       'created', 'issued', 'reprinted', 'result_receipt_captured', 'result_receipt_reprinted',
       'media_dispatched', 'media_completed', 'media_stalled', 'checkpoint_cleared',
       'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'external_activity_assessed',
-      'submitted', 'graded', 'outcome_recorded', 'rewarded',
+      'submitted', 'graded', 'companion_gate_read', 'outcome_recorded', 'rewarded',
       'reward_reconciled', 'reward_reconciliation_failed',
       'remediation_opened', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted', 'failed', 'abandoned',
     ]);
@@ -155,6 +156,48 @@ describe('append-only teacher grade corrections', () => {
   });
 });
 
+describe('the finish-code row is re-read after the sheet has settled', () => {
+  it('restates the gate from `outcome_recorded`, where nothing else is legal', () => {
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { attemptIds: ['att_1'], percent: 100, passingPercent: 80, companionGate: { status: 'blank' } },
+      outcome_recorded: { result: 'needs_remediation', reason: 'companion_incomplete' },
+    });
+    events.push(ev('companion_gate_read', { companionGate: { status: 'satisfied', given: ['A', 'C', 'E'] } }));
+    const state = reduceSession(events);
+
+    expect(state.errors).toEqual([]);
+    expect(state.companionGate).toEqual({ status: 'satisfied', given: ['A', 'C', 'E'] });
+    // An ANNOTATION: the work was handed in and graded exactly when it was, and
+    // a child coming back with the code does not un-submit it.
+    expect(state.state).toBe('outcome_recorded');
+    expect(state.gradedPercent).toBe(100);
+  });
+
+  it('lets the outcome be superseded once, and keeps only the latest', () => {
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { attemptIds: ['att_1'], percent: 100, passingPercent: 80, companionGate: { status: 'blank' } },
+      outcome_recorded: { result: 'needs_remediation', reason: 'companion_incomplete' },
+    });
+    events.push(ev('companion_gate_read', { companionGate: { status: 'satisfied', given: ['A', 'C', 'E'] } }));
+    events.push(ev('outcome_recorded', { result: 'passed', reason: 'met_passing' }));
+    const state = reduceSession(events);
+
+    expect(state.errors).toEqual([]);
+    expect(state.outcome).toMatchObject({ result: 'passed', reason: 'met_passing' });
+  });
+
+  it('refuses a gate reading it cannot read, rather than folding it in', () => {
+    const built = createEvent({
+      type: 'companion_gate_read', at: AT, sessionId: SID, companionGate: { status: 'maybe' },
+    });
+    expect(built.errors.join(' ')).toMatch(/companionGate/);
+    const marks = createEvent({
+      type: 'companion_gate_read', at: AT, sessionId: SID, companionGate: { status: 'wrong', given: 'AB' },
+    });
+    expect(marks.errors.join(' ')).toMatch(/companionGate\.given/);
+  });
+});
+
 describe('TRANSITIONS', () => {
   it('is the closed table from the spec', () => {
     expect(TRANSITIONS).toEqual({
@@ -170,7 +213,7 @@ describe('TRANSITIONS', () => {
       external_activity_assessed: ['outcome_recorded'],
       submitted: ['graded'],
       graded: ['outcome_recorded'],
-      outcome_recorded: ['rewarded', 'remediation_opened'],
+      outcome_recorded: ['rewarded', 'remediation_opened', 'outcome_recorded'],
     });
   });
 
