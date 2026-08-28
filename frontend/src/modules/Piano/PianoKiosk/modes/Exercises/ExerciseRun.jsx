@@ -27,7 +27,6 @@ import { resolveExerciseRunAccess } from './authorization.js';
 import {
   accidentalForKey,
   instanceKeySignature,
-  clefForAsk,
   clefForInstance,
   deriveRunTier,
   eventsToStaffNotes,
@@ -651,10 +650,10 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
             wrongMidi={lastWrong?.midi ?? null}
             showStaff={askStaff}
             accidental={accidental}
-            // The clef the ask was JUDGED to fit on (`staffFitsAsk` asks the
-            // same function). Without it the staff re-derives by majority and
-            // a tie goes treble — which puts a two-note bass ask off the card.
-            clef={clefForAsk(instance.events)}
+            // No `clef` prop: KeysAsk's own default IS `clefForAsk(events)` on
+            // the same events, which is also what `staffFitsAsk` above asked.
+            // Computing it a second time here would be a second place for the
+            // clef the ask was JUDGED to fit on to drift from the one drawn.
           />
         )}
         {stage === 'sequence' && (

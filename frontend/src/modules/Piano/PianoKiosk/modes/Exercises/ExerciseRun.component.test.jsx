@@ -863,10 +863,16 @@ describe('ExerciseRun tier-driven presentation', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
-  it('hands the lit-keys staff the clef its ask actually fits', async () => {
+  it('shows the staff for a low ask and leaves the clef to the one place that derives it', async () => {
     // A tie in the staff's own majority rule goes treble, which would put G3
-    // five steps below the bottom line — off the card. The clef the ask was
-    // JUDGED on has to travel with it.
+    // five steps below the bottom line — off the card. The run's job here is
+    // the DECISION that a staff fits at all (`staffFitsAsk`); the clef it fits
+    // on is `clefForAsk` on these same events, which is exactly what KeysAsk's
+    // own default answers with. Computing it a second time here would be a
+    // second place for it to drift, so the prop is deliberately not passed —
+    // the clef that reaches a child is pinned by KeysAsk.test.jsx ("answers
+    // with the ask's own clef when the host named none") and, on real
+    // engraved geometry, by ExerciseRun.measure.test.jsx's G3+C4 case.
     h.instanceData = {
       ...h.instance,
       events: [
@@ -878,7 +884,7 @@ describe('ExerciseRun tier-driven presentation', () => {
     await ready();
     const keys = screen.getByTestId('keys-ask');
     expect(keys).toHaveAttribute('data-show-staff', 'true');
-    expect(keys).toHaveAttribute('data-clef', 'bass');
+    expect(keys).toHaveAttribute('data-clef', '');
   });
 
   it('says so when a tier it cannot use arrives, and falls back to derivation', async () => {

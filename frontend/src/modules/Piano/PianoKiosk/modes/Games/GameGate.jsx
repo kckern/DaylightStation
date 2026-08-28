@@ -173,6 +173,30 @@ function writeGateState(learnerId, state, store = (typeof localStorage !== 'unde
 const makeId = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
 /**
+ * What the log calls the thing a child was asked to play.
+ *
+ * An exercise names its bank instance and that is already the answer. A SCORE
+ * names no instance at all — the ask is bars of a document — so reading
+ * `instanceId` off it gives `null`, and a run of gates on the study piece would
+ * be a run of indistinguishable lines with the one identifying field empty.
+ * The document plus its bars is that identity: `fur-elise.musicxml#1-4`. A
+ * passage with no readable range is the WHOLE score, which is what the run
+ * plays, so it is named without a fragment rather than with an invented one.
+ *
+ * A synthesized lit key stays `null` deliberately: it exists nowhere but in the
+ * gate's own `pickIndex`, and `rung`/`tier` already say everything about it that
+ * a query can act on.
+ */
+export function materialName(material) {
+  if (material?.instanceId) return material.instanceId;
+  if (material?.kind === 'score' && material.source) {
+    const bars = Array.isArray(material.measures) ? `#${material.measures.join('-')}` : '';
+    return `${material.source}${bars}`;
+  }
+  return null;
+}
+
+/**
  * @param {object} props
  * @param {string|null} props.learnerId Roster slug — never the hydrated profile object.
  * @param {string} [props.deviceId] Which physical kiosk this is. Defaults to the
@@ -212,7 +236,6 @@ export default function GameGate({
   const [attempt, setAttempt] = useState(null);
   const [phase, setPhase] = useState('resolving'); // resolving | attempt | failed
   const [eased, setEased] = useState(false);
-  const [lastScore, setLastScore] = useState(null);
   const [round, setRound] = useState(0);
   const openedRef = useRef(false);
   const presentedRef = useRef(false);
@@ -308,7 +331,7 @@ export default function GameGate({
     if (retrying && held && held.level.id === level.id) {
       const attemptId = makeId('gate-attempt');
       const context = {
-        material: held.material.instanceId ?? null,
+        material: materialName(held.material),
         rung: level.id,
         tier: level.tier,
         mode: held.requirement.mode,
@@ -332,7 +355,7 @@ export default function GameGate({
         }
         const attemptId = makeId('gate-attempt');
         const context = {
-          material: picked.material?.instanceId ?? null,
+          material: materialName(picked.material),
           rung: level.id,
           tier: level.tier,
           mode: requirement.mode,
@@ -373,7 +396,7 @@ export default function GameGate({
   }, [round]);
 
   const context = attempt ? {
-    material: attempt.material.instanceId ?? null,
+    material: materialName(attempt.material),
     rung: attempt.level.id,
     tier: attempt.level.tier,
     mode: attempt.requirement.mode,
@@ -415,7 +438,6 @@ export default function GameGate({
    */
   const handleFailed = (result) => {
     const score = typeof result?.score === 'number' ? result.score : null;
-    setLastScore(score);
     emit('gate.failed', { ...context, score });
     const failuresAtLevel = state.failuresAtLevel + 1;
     let next = { ...state, failuresAtLevel, cleanPasses: 0 };
@@ -443,7 +465,6 @@ export default function GameGate({
   const tryAgain = () => {
     retryRef.current = true;
     setEased(false);
-    setLastScore(null);
     setRound((value) => value + 1);
   };
 
@@ -515,17 +536,12 @@ export default function GameGate({
             bar at all), and gating the only words on the panel behind a number
             reduced it to a bare heading over unexplained buttons. */}
         <p className="piano-game-gate__guidance">Play it once more, work on it first, or come back later.</p>
-        {/* A percentage with no bar beside it invites comparison to a target
-            that does not exist. Every repertoire level is verdict-driven
-            (`passScore: null`), so this is a seam for a level type that carries
-            a numeric bar rather than something the shipped ladder renders.
-            `typeof === 'number'` and NOT `Number.isFinite(Number(bar))`:
-            `Number(null)` is 0, which is finite, so the coercing form shows the
-            percentage on every level — which is the bug this guard exists to
-            fix, written the obvious way. */}
-        {lastScore !== null && typeof attempt?.requirement?.passScore === 'number' && (
-          <p className="piano-game-gate__score"><strong>{Math.round(lastScore * 100)}%</strong></p>
-        )}
+        {/* NO PERCENTAGE, and no seam for one. `requirementForLevel` writes
+            `passScore: null` for every level a repertoire can express, so a
+            numeric-bar branch here could never render — and a percentage with
+            no bar beside it invites comparison to a target that does not exist.
+            The score still reaches the log, where an adult tuning the ladder
+            reads it; what a failing child gets is words. */}
         {eased && <p className="piano-game-gate__eased">We made it a little easier</p>}
         <div className="piano-game-gate__actions">
           <button type="button" onClick={tryAgain}>Try again</button>

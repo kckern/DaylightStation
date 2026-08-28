@@ -90,12 +90,6 @@
   p { max-width: 34rem; margin: 0; color: var(--gg-muted); }
 }
 
-.piano-game-gate__score {
-  color: var(--gg-fg) !important;
-
-  strong { font-size: 2rem; color: var(--gg-accent); }
-}
-
 /* The one line that has to be unmissable: the ladder just moved for them. */
 .piano-game-gate__eased {
   padding: 0.35rem 0.9rem;

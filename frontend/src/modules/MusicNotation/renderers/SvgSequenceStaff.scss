@@ -14,6 +14,14 @@
   display: flex;
   flex-direction: column;
   justify-content: stretch;
+  /* The app sets no global `border-box`, and this card carries a real box model
+     (1px border, 2px vertical padding). Under content-box, a host that caps the
+     staff's width — and derives its height from the inline aspect-ratio — is
+     sizing the CONTENT, so the card's border box always stood 6px taller than
+     the row it was given and spilled under that row's `overflow: hidden`.
+     Sizing the border box instead makes the cap the host writes the cap the
+     card actually obeys. */
+  box-sizing: border-box;
   width: 100%;
   /* aspect-ratio is set inline by the component: it depends on how many notes
      the sequence has, and the lines stretch while the notation scales
