@@ -6,7 +6,7 @@ import { useFitness } from '@/context/FitnessContext.jsx';
 import moment from 'moment';
 import { buildVirtualSeasons } from '@/modules/Fitness/lib/playlistVirtualSeasons.js';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
-import { useIdentity } from '../identity/IdentityProvider';
+import { useIdentity } from '../identity/useIdentity.js';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
 import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
 import { isKioskEnv } from '@/lib/kioskEnv.js';

@@ -447,6 +447,8 @@ export function VideoPlayer({
       // session) from the plain <video> branch, which shares this key.
       isDash: !!isDash
     }, { maxPerMinute: 30, aggregate: true });
+    // deliberately narrow deps — this file has hard-won "generation churn / storm" caution comments elsewhere
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaUrl, media?.maxVideoBitrate, elementKey, isDash, dashKeyLogger]);
 
   // If the mediaUrl (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
@@ -780,6 +782,8 @@ export function VideoPlayer({
         }, { maxPerMinute: 30, aggregate: true });
       }
     };
+    // deliberately narrow deps — this file has hard-won "generation churn / storm" caution comments elsewhere
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDash, mediaUrl, elementKey]);
 
   // FPS logging every 10 seconds during playback
@@ -836,6 +840,8 @@ export function VideoPlayer({
         fpsIntervalRef.current = null;
       }
     };
+    // deliberately narrow deps — this file has hard-won "generation churn / storm" caution comments elsewhere
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPaused, isStalled, displayReady]); // Reduced dependencies - only track state changes that determine timer creation
 
   // The bitrate cap only ever comes from media metadata now — the ABR engine

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isWithinQuietHours } from './usePianoScreensaver.jsx';
+import { isWithinQuietHours } from './usePianoScreensaverHooks.js';
 
 const at = (h, m = 0) => { const d = new Date(2026, 5, 22, h, m, 0); return d; };
 

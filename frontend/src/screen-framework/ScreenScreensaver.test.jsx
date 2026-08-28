@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import { ScreenOverlayProvider } from './overlays/ScreenOverlayProvider.jsx';
-import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
+import { MenuNavigationProvider } from '../context/MenuNavigationContext.jsx';
+import { useMenuNavigationContext } from '../context/useMenuNavigationContext.js';
 import { getWidgetRegistry, resetWidgetRegistry } from './widgets/registry.js';
 import { ScreenScreensaver } from './ScreenScreensaver.jsx';
 

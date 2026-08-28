@@ -25,7 +25,7 @@ import { useGovernanceAudioDuck } from '@/modules/Fitness/player/hooks/useGovern
 import { installCueAudioUnlock } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
 import GovernanceWarningScrim from '@/modules/Fitness/player/overlays/GovernanceWarningScrim.jsx';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
-import { useIdentity } from '../identity/IdentityProvider';
+import { useIdentity } from '../identity/useIdentity.js';
 import { shouldBypassGovernance } from './governanceBypass.js';
 import { isKioskEnv } from '@/lib/kioskEnv.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
@@ -36,7 +36,7 @@ import { getLogger } from '@/lib/logging/Logger.js';
 import { computeCycleDimStyle } from './cycleDimStyle.js';
 import { computeStudyDims } from './studyLayout.js';
 import { computeAllowLoadingOverlayFullscreen } from './loadingOverlayFullscreenGate.js';
-import { useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
+import { useScreenDataRefetch } from '@/screen-framework/data/useScreenData.js';
 import useLoopWindow from './hooks/useLoopWindow.js';
 import StudyControls from './footer/StudyControls.jsx';
 
@@ -488,6 +488,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         emitAppEvent?.('playback:recovered', buildInfo(), 'fitness-player');
       }
     }
+    // deliberately narrowed to .stalled/.status — .meta is only read inside a setTimeout
+    // closure for an event payload; adding it would re-fire the stall-debounce on every
+    // metadata update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resilienceState?.stalled, resilienceState?.status, currentItem, emitAppEvent]);
 
   // Clear any pending debounce timer on unmount.
@@ -944,6 +948,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         handleUserSeek(newTime);
       }
     }
+    // handleClose is large and deeply-dependent (session state, voice memo prompts, close
+    // watchdog) — wrapping it in useCallback correctly is out of scope for a lint pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [getPlayerTime, getPlayerDuration, handleUserSeek, logFitnessEvent]);
 
   

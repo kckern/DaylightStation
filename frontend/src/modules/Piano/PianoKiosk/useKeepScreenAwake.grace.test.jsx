@@ -5,11 +5,11 @@
 // exactly what someone singing does not produce.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
+import { PianoWakeLockProvider } from './usePianoScreensaver.jsx';
 import {
-  PianoWakeLockProvider,
   useKeepScreenAwake,
   usePianoWakeLockState,
-} from './usePianoScreensaver.jsx';
+} from './usePianoScreensaverHooks.js';
 
 const GRACE = 150_000;
 

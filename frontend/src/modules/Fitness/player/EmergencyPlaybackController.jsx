@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFitness } from '@/context/FitnessContext.jsx';
-import { useIdentity } from '../identity/IdentityProvider';
+import { useIdentity } from '../identity/useIdentity.js';
 import getLogger from '@/lib/logging/Logger.js';
 
 /**

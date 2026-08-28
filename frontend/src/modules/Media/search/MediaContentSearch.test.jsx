@@ -47,7 +47,7 @@ let searchContext = {
   setScopeKey: vi.fn(),
 };
 
-vi.mock('./SearchProvider.jsx', () => ({
+vi.mock('./useSearchContext.js', () => ({
   useSearchContext: () => searchContext,
 }));
 

@@ -1,4 +1,4 @@
-import { usePianoConnection } from './PianoConnectionContext.jsx';
+import { usePianoConnection } from './usePianoConnection.js';
 
 /** The sole player-facing connection message and repair action. */
 export function PianoLinkBanner() {

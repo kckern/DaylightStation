@@ -19,7 +19,7 @@
 // MediaContentSearch) and the full-screen mobile Search Mode surface
 // (Task 13).
 import React, { useMemo, useState } from 'react';
-import { useSearchContext } from './SearchProvider.jsx';
+import { useSearchContext } from './useSearchContext.js';
 import getLogger from '../../../lib/logging/Logger.js';
 
 export function ScopeChips() {

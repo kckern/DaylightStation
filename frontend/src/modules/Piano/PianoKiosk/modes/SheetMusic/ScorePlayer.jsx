@@ -6,7 +6,7 @@ import LiveKeyboard from '../../LiveKeyboard.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoPreferences } from '../../usePianoPreferences.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
-import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
+import { usePianoPlayback } from '../../usePianoPlayback.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';

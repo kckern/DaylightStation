@@ -4,7 +4,7 @@
 // every command on client-ack.
 import { useEffect } from 'react';
 import { subscribeTopic, publish, topics } from '../net/ws.js';
-import { useClientIdentity } from '../identity/ClientIdentityProvider.jsx';
+import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { applyCommandEnvelope } from './commandHandler.js';
 import mediaLog from '../logging/mediaLog.js';
 

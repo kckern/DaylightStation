@@ -28,6 +28,8 @@ vi.mock('./components/SinglePlayer.jsx', async () => {
       renders.push(plexClientSession);
       useEffect(() => {
         mounts.push(plexClientSession);
+        // deliberately empty deps: this counts MOUNTS ONLY (the test's whole purpose, see docblock above)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
       }, []);
       return <div data-testid="single-player-stub" />;
     }

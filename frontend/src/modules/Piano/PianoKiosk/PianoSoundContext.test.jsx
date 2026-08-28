@@ -17,7 +17,8 @@ vi.mock('./PianoConfig.jsx', () => ({
   }),
 }));
 
-import { PianoSoundProvider, usePianoSound } from './PianoSoundContext.jsx';
+import { PianoSoundProvider } from './PianoSoundContext.jsx';
+import { usePianoSound } from './usePianoSound.js';
 import { getDeviceProfile } from './devices/suzukiMdg400.js';
 
 const device = getDeviceProfile(DEVICE_ID);

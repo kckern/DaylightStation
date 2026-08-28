@@ -29,7 +29,7 @@ vi.mock('../../PianoConfig.jsx', () => ({
   }),
 }));
 const useKeepScreenAwake = vi.hoisted(() => vi.fn());
-vi.mock('../../usePianoScreensaver.jsx', () => ({ useKeepScreenAwake }));
+vi.mock('../../usePianoScreensaverHooks.js', () => ({ useKeepScreenAwake }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({ PianoKeyboard: () => <div data-testid="keyboard" /> }));
 
 // ── sound-engine mocks (wiring focus) ─────────────────────────────────────────

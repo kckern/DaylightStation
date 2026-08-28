@@ -69,11 +69,15 @@ export default function CycleChallengeDemo({ onClose }) {
   }, []);
 
   const ctl = typeof window !== 'undefined' ? window.__fitnessSimController : null;
+  // tick is a 500ms force-recompute counter (see mount effect above)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const equipment = useMemo(() => ctl?.getEquipment?.() || [], [ctl, tick]);
   const cycleAce = equipment.find((e) => e.equipmentId === 'cycle_ace') || null;
   const selection = useMemo(() => {
     const list = ctl?.listCycleSelections?.() || [];
     return list.find((s) => s.equipment === 'cycle_ace') || null;
+    // tick is a 500ms force-recompute counter (see mount effect above)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctl, tick]);
 
   const gov = safeReadGov();
@@ -221,6 +225,10 @@ export default function CycleChallengeDemo({ onClose }) {
       cancelRef.current = true;
       if (sustainRef.current) clearInterval(sustainRef.current);
     };
+    // cycleAce/selection are useMemo'd off tick (recreated every 500ms); this action-effect
+    // drives a live async device-triggering sequence, so it's narrowed to equipmentId/id to
+    // avoid restarting the whole sequence every tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, ctl, cycleAce?.equipmentId, selection?.id, setSustainedRpm, clearChallenge, logger, iteration]);
 
   const handleStop = () => {
@@ -244,6 +252,8 @@ export default function CycleChallengeDemo({ onClose }) {
     const session = window.__fitnessSession;
     const engine = session?.governanceEngine || session?.session?.governanceEngine;
     return engine?.challengeState?.activeChallenge?.lockReason || null;
+    // tick is a 500ms force-recompute counter (see mount effect above)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick]);
 
   const cadence = useMemo(() => {
@@ -251,6 +261,8 @@ export default function CycleChallengeDemo({ onClose }) {
     const session = window.__fitnessSession;
     const engine = session?.governanceEngine || session?.session?.governanceEngine;
     return engine?._latestInputs?.equipmentCadenceMap?.cycle_ace || null;
+    // tick is a 500ms force-recompute counter (see mount effect above)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick]);
 
   const rowStyle = (active) => ({

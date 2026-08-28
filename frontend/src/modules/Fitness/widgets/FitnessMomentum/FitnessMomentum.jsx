@@ -4,8 +4,8 @@
 // so this week visibly stacks up against recent weeks. Names resolve through
 // DisplayNameResolver (group label → "Dad").
 import React, { useMemo } from 'react';
-import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
-import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
+import { useScreenData } from '@/screen-framework/data/useScreenData.js';
+import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import { resolveUserDisplayName } from '@/hooks/fitness/DisplayNameResolver.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { computeMomentum } from './momentum.js';

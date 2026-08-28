@@ -12,7 +12,8 @@ export { ScreenRenderer } from './ScreenRenderer.jsx';
 export { PanelRenderer } from './panels/PanelRenderer.jsx';
 
 // Data coordination
-export { ScreenDataProvider, useScreenData, useScreenDataRefetch } from './data/ScreenDataProvider.jsx';
+export { ScreenDataProvider } from './data/ScreenDataProvider.jsx';
+export { useScreenData, useScreenDataRefetch } from './data/useScreenData.js';
 
 // Overlay system
 export { ScreenOverlayProvider, useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
@@ -39,4 +40,5 @@ export { WidgetRegistry, getWidgetRegistry, resetWidgetRegistry } from './widget
 export { registerBuiltinWidgets } from './widgets/builtins.js';
 
 // Screen provider (replaces slot system in v0.4.0)
-export { ScreenProvider, useScreen } from './providers/ScreenProvider.jsx';
+export { ScreenProvider } from './providers/ScreenProvider.jsx';
+export { useScreen } from './providers/useScreen.js';

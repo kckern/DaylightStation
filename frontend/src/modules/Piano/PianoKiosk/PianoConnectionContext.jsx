@@ -1,13 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
-import { usePianoSound } from './PianoSoundContext.jsx';
-import { usePianoMix } from './PianoMixContext.jsx';
+import { usePianoSound } from './usePianoSound.js';
+import { usePianoMix } from './usePianoMix.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { resetPianoBridge } from './pianoBridgeClient.js';
 import { derivePianoHealth, pianoHealthCopy, runPianoRepair } from './pianoConnection.js';
 
-const Ctx = createContext(null);
+export const Ctx = createContext(null);
 
 const repairMessage = (result) => {
   if (result.ok) return 'Piano reconnected — settings restored.';
@@ -78,10 +78,4 @@ export function PianoConnectionProvider({ children }) {
   }), [state, everReady, midi.midiHealth, midi.inputName, midi.outputName, midi.bridgeLink, midi.bridgeUnavailable]);
   const value = useMemo(() => ({ health, repair, repairConnection }), [health, repair, repairConnection]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
-}
-
-export function usePianoConnection() {
-  const value = useContext(Ctx);
-  if (!value) throw new Error('usePianoConnection must be used within PianoConnectionProvider');
-  return value;
 }

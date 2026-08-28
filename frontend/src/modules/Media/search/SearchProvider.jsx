@@ -4,10 +4,10 @@
 // only. Scope is never persisted: every mount (and every resetScope() call)
 // starts catalog-wide, at the first configured scope.
 // See docs/reference/media/search-scopes.md.
-import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { createContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
-const SearchContext = createContext(null);
+export const SearchContext = createContext(null);
 
 export function SearchProvider({ children }) {
   const [scopes, setScopes] = useState([]);
@@ -55,12 +55,6 @@ export function SearchProvider({ children }) {
   );
 
   return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;
-}
-
-export function useSearchContext() {
-  const ctx = useContext(SearchContext);
-  if (!ctx) throw new Error('useSearchContext must be used inside SearchProvider');
-  return ctx;
 }
 
 export default SearchProvider;

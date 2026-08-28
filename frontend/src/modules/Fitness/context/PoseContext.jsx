@@ -5,7 +5,7 @@
  * Manages a singleton PoseDetectorService instance.
  */
 
-import React, { createContext, useContext, useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import React, { createContext, useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { getPoseDetectorService, disposePoseDetectorService, DEFAULT_CONFIG as SERVICE_DEFAULTS } from '../domain/pose/PoseDetectorService.js';
 import getLogger from '../../../lib/logging/Logger.js';
 
@@ -280,24 +280,6 @@ export const PoseProvider = ({
       {children}
     </PoseContext.Provider>
   );
-};
-
-/**
- * Hook to access pose context (throws if not within provider)
- */
-export const usePoseContext = () => {
-  const ctx = useContext(PoseContext);
-  if (!ctx) {
-    throw new Error('usePoseContext must be used within a PoseProvider');
-  }
-  return ctx;
-};
-
-/**
- * Hook to optionally access pose context (returns null if not within provider)
- */
-export const usePoseContextOptional = () => {
-  return useContext(PoseContext);
 };
 
 export default PoseContext;

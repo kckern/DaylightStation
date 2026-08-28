@@ -1,15 +1,11 @@
 import {
   createContext,
-  useContext,
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
-import { DaylightAPI } from '../../../lib/api.mjs';
-import { isWithinWindow } from './timeWindow.js';
 
 let _logger;
 function logger() {
@@ -17,32 +13,15 @@ function logger() {
   return _logger;
 }
 
-/**
- * Is `now` within the quiet-hours window? Supports overnight ranges where
- * start > end (e.g. 21:30 → 07:00). Returns false when quietHours is unset or
- * malformed (fail-open: no quiet hours rather than always-quiet).
- *
- * Kept exported here (the screensaver is its original home) but implemented by
- * the shared HH:MM window helper, which curfew uses too.
- *
- * @param {Date} now
- * @param {{start?: string, end?: string}|null} quietHours
- * @returns {boolean}
- */
-export function isWithinQuietHours(now, quietHours) {
-  return isWithinWindow(now, quietHours);
-}
-
 // ── Wake-lock registry ──────────────────────────────────────────────────────
 // A ref-counted set of named "keep the screen awake" holds. Modes acquire a
 // hold (e.g. Videos while a video plays) so the screensaver won't sleep the
 // screen mid-playback. Extensible: any reason string is a guardrail.
-const PianoWakeLockContext = createContext(null);
+export const PianoWakeLockContext = createContext(null);
 
 export function PianoWakeLockProvider({ children }) {
   const reasonsRef = useRef(new Set());
   const [held, setHeld] = useState(false);
-
   const setReason = useCallback((reason, active) => {
     const reasons = reasonsRef.current;
     const had = reasons.has(reason);
@@ -58,53 +37,13 @@ export function PianoWakeLockProvider({ children }) {
   return <PianoWakeLockContext.Provider value={value}>{children}</PianoWakeLockContext.Provider>;
 }
 
-/**
- * Hold the screen awake for as long as `active` is true under `reason`.
- * No-op outside a PianoWakeLockProvider (so modes used in tests don't blow up).
- *
- * `graceMs` keeps the hold alive for that long AFTER `active` goes false. A
- * media element drops out of "playing" constantly for reasons that are not the
- * viewer walking away — rebuffering, a DASH source swap, a stall-recovery
- * pause. On 2026-08-17 a singing lecture emitted a pause/resume pair every 45s
- * for twelve minutes straight; without a grace window each of those releases the
- * only thing standing between a hands-off viewer and a dark panel, because the
- * screensaver's other activity signals (MIDI notes, touch) are exactly what
- * someone SINGING does not produce. The grace is released immediately on
- * unmount, so leaving the player still lets the screen sleep on schedule.
- */
-export function useKeepScreenAwake(reason, active, graceMs = 0) {
-  const ctx = useContext(PianoWakeLockContext);
-  useEffect(() => {
-    if (!ctx) return undefined;
-    if (active) {
-      ctx.setReason(reason, true);
-      return undefined;
-    }
-    if (!graceMs) {
-      ctx.setReason(reason, false);
-      return undefined;
-    }
-    // Inactive: keep holding until the grace elapses, then release.
-    const id = setTimeout(() => ctx.setReason(reason, false), graceMs);
-    return () => clearTimeout(id);
-  }, [ctx, reason, active, graceMs]);
-
-  // Release on unmount regardless of where the grace timer had got to.
-  useEffect(() => () => ctx?.setReason(reason, false), [ctx, reason]);
-}
-
-/** Current wake-lock state: true when any hold is active. */
-export function usePianoWakeLockState() {
-  return useContext(PianoWakeLockContext)?.held ?? false;
-}
-
 // ── Manual screen-off cooldown ───────────────────────────────────────────────
 // Bridges the Who's-Playing "Turn off screen" button (in PianoShell, below the
 // connect gate) to the screensaver (in ScreensaverDriver, above it). The button
 // bumps `armNonce`; the screensaver reacts by muting MIDI-wake until the player
 // has been idle for offCooldownMinutes (a touch clears it sooner). Mounted so it
 // wraps BOTH the screensaver and the shell (see PianoApp.jsx ActivePiano).
-const PianoScreenControlContext = createContext(null);
+export const PianoScreenControlContext = createContext(null);
 
 export function PianoScreenControlProvider({ children }) {
   const [armNonce, setArmNonce] = useState(0);
@@ -112,179 +51,3 @@ export function PianoScreenControlProvider({ children }) {
   const value = useMemo(() => ({ armNonce, beginScreenOffCooldown }), [armNonce, beginScreenOffCooldown]);
   return <PianoScreenControlContext.Provider value={value}>{children}</PianoScreenControlContext.Provider>;
 }
-
-/** Returns a function that arms the manual screen-off MIDI-wake cooldown. */
-export function useScreenOffCooldown() {
-  return useContext(PianoScreenControlContext)?.beginScreenOffCooldown ?? (() => {});
-}
-
-// ── Screensaver controller ───────────────────────────────────────────────────
-const POLL_INTERVAL_MS = 15_000;
-
-/**
- * usePianoScreensaver — drives the piano tablet's screen via the backend
- * (`/api/v1/device/:deviceId/screen/{on,off}`):
- *
- *  - A BLE-MIDI note (noteHistory grows) or a touch/keypress wakes the screen.
- *  - After `timeoutMinutes` idle the screen sleeps.
- *
- * Guardrails:
- *  - A held wake lock (e.g. a playing video) keeps the screen awake and resets
- *    the idle timer.
- *  - During quiet hours the screen stays off: notes/touch do NOT wake it, and
- *    an on-screen is slept on the next poll (unless a wake lock is held).
- *
- * Inert (no API calls) when `deviceId` is falsy or `timeoutMinutes` <= 0.
- *
- * @param {Object}   args
- * @param {string}   [args.deviceId]
- * @param {Map}      args.activeNotes      - live notes (any change = activity)
- * @param {Array}    args.noteHistory      - grows on each note-on (= a fresh note)
- * @param {number}   [args.timeoutMinutes]
- * @param {{start?:string,end?:string}|null} [args.quietHours]
- * @param {boolean}  [args.keepAlive]        - while true, hold the screen awake
- *   (a performance is playing). Distinct from activeNotes/noteHistory activity:
- *   Listen-mode playback performs via timestamped sendNoteAt and never churns
- *   the note store, so the global playing flag is the only signal that a
- *   performance is underway. Resets/holds the idle timer like continuous
- *   activity; normal timeout behavior resumes once it goes false.
- */
-export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeoutMinutes, quietHours, offCooldownMinutes = 30, keepAlive = false }) {
-  const enabled = !!deviceId && timeoutMinutes > 0;
-  const held = usePianoWakeLockState();
-  const keepAliveRef = useRef(keepAlive);
-  keepAliveRef.current = keepAlive;
-
-  const historyLen = noteHistory?.length ?? 0;
-  const lastActivityRef = useRef(Date.now());
-  const screenOnRef = useRef(true); // kiosk is showing when we mount → screen on
-  const inFlightRef = useRef(false);
-  const heldRef = useRef(held);
-  heldRef.current = held;
-  const quietRef = useRef(quietHours);
-  quietRef.current = quietHours;
-
-  // Manual screen-off MIDI-wake suppression. Armed by the Who's-Playing button
-  // (via PianoScreenControlContext); cleared by a touch or offCooldownMinutes of
-  // no input (the idle poll below).
-  const midiSuppressedRef = useRef(false);
-  const ctrl = useContext(PianoScreenControlContext);
-  const armNonce = ctrl?.armNonce ?? 0;
-  const prevArmRef = useRef(armNonce);
-
-  // Server-side manual override (physical piano button / on-screen action). An
-  // 'off' window mutes MIDI-wake exactly like the local button-armed cooldown.
-  const serverOffRef = useRef(false);
-  // An 'on' window holds the screen awake: the physical button press bumps no
-  // local activity, so without this the idle clock would sleep the panel
-  // mid-window and the press would look like it had been undone.
-  const serverOnRef = useRef(false);
-
-  // Send a screen on/off command, deduped against believed state + in-flight.
-  const setScreen = useCallback((on) => {
-    if (!deviceId || inFlightRef.current || screenOnRef.current === on) return;
-    inFlightRef.current = true;
-    const state = on ? 'on' : 'off';
-    DaylightAPI(`api/v1/device/${deviceId}/screen/${state}`)
-      .then((res) => {
-        if (res?.ok === false) {
-          logger().warn('piano.screen-rejected', { deviceId, state, error: res.error });
-          return;
-        }
-        screenOnRef.current = on;
-        logger().info('piano.screen', { deviceId, state });
-      })
-      .catch((err) => {
-        logger().warn('piano.screen-failed', { deviceId, state, error: err.message });
-      })
-      .finally(() => { inFlightRef.current = false; });
-  }, [deviceId]);
-
-  // Who's-Playing "Turn off screen": the button already turned the backlight
-  // off, so just record that + start muting MIDI-wake. Not fired on mount
-  // (prevArmRef starts equal to armNonce).
-  useEffect(() => {
-    if (armNonce === prevArmRef.current) return;
-    prevArmRef.current = armNonce;
-    if (!enabled) return;
-    midiSuppressedRef.current = true;
-    screenOnRef.current = false;
-    lastActivityRef.current = Date.now();
-    logger().info('piano.screen-off-cooldown.armed', { offCooldownMinutes });
-  }, [armNonce, enabled, offCooldownMinutes]);
-
-  // Any MIDI activity wakes the screen (unless quiet hours). activeNotes is a
-  // fresh Map on every note on/off, and noteHistory grows on play — but it's
-  // trimmed on an 8s timer so its length is NOT monotonic, hence we key on the
-  // activeNotes identity change too rather than length growth. setScreen dedups
-  // against believed state, so repeated notes don't spam the API. Runs once on
-  // mount (a no-op wake since the screen is already on).
-  useEffect(() => {
-    lastActivityRef.current = Date.now();
-    // While the manual screen-off cooldown is armed, MIDI must NOT wake the
-    // screen — but keep refreshing lastActivity so the "no input" clock (below)
-    // only elapses once the player actually stops.
-    if (enabled && !midiSuppressedRef.current && !serverOffRef.current && !isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
-  }, [activeNotes, historyLen, enabled, setScreen]);
-
-  // Touch/keypress: bump activity and wake (unless quiet hours).
-  useEffect(() => {
-    if (!enabled) return undefined;
-    const bump = () => {
-      lastActivityRef.current = Date.now();
-      // A deliberate touch clears the manual screen-off cooldown (they want it back).
-      if (midiSuppressedRef.current) {
-        midiSuppressedRef.current = false;
-        logger().info('piano.screen-off-cooldown.cleared', { via: 'touch' });
-      }
-      if (!isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
-    };
-    window.addEventListener('pointerdown', bump, true);
-    window.addEventListener('keydown', bump, true);
-    return () => {
-      window.removeEventListener('pointerdown', bump, true);
-      window.removeEventListener('keydown', bump, true);
-    };
-  }, [enabled, setScreen]);
-
-  // Idle poll → sleep the screen (or keep awake while a wake lock is held).
-  useEffect(() => {
-    if (!enabled) return undefined;
-    const thresholdMs = timeoutMinutes * 60_000;
-    const cooldownMs = offCooldownMinutes * 60_000;
-    const id = setInterval(() => {
-      // Fold the shared server override into the poll: an 'off' window mutes
-      // MIDI-wake, an 'on' window holds the screen awake.
-      if (deviceId) {
-        DaylightAPI(`api/v1/device/${deviceId}/screen/override`)
-          .then((r) => {
-            const state = r?.override?.state;
-            serverOffRef.current = state === 'off';
-            serverOnRef.current = state === 'on';
-          })
-          .catch(() => { /* leave prior value; a transient failure shouldn't unmute */ });
-      }
-      // Lift the manual screen-off cooldown once the player has been idle long
-      // enough — MIDI-wake resumes on the next note (see the MIDI effect above).
-      if (midiSuppressedRef.current && Date.now() - lastActivityRef.current >= cooldownMs) {
-        midiSuppressedRef.current = false;
-        logger().info('piano.screen-off-cooldown.cleared', { via: 'idle' });
-      }
-      if (heldRef.current) { lastActivityRef.current = Date.now(); return; } // video etc.
-      // A performance is playing (global playing flag). Listen-mode plays via
-      // timestamped sendNoteAt with no activeNotes churn, so this is the only
-      // hold that keeps the screen awake mid-performance. Refresh activity so the
-      // idle clock only starts elapsing once playback stops.
-      if (keepAliveRef.current) { lastActivityRef.current = Date.now(); return; }
-      // A live 'on' override is an explicit human "keep this lit" — it outranks
-      // the idle clock AND quiet hours. Refresh activity so that when the window
-      // lapses the screen gets a full idle timeout, not an instant sleep.
-      if (serverOnRef.current) { lastActivityRef.current = Date.now(); return; }
-      if (isWithinQuietHours(new Date(), quietRef.current)) { setScreen(false); return; }
-      if (Date.now() - lastActivityRef.current >= thresholdMs) setScreen(false);
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [enabled, timeoutMinutes, offCooldownMinutes, setScreen, deviceId]);
-}
-
-export default usePianoScreensaver;

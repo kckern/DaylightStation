@@ -3,6 +3,7 @@ import { wsService } from '../services/WebSocketService';
 
 const WebSocketContext = createContext();
 
+// eslint-disable-next-line react-refresh/only-export-components -- useWebSocket is co-located with its Context/Provider (standard pattern); 43 consumers, splitting out of scope for a lint pass
 export const useWebSocket = () => {
   const context = useContext(WebSocketContext);
   if (!context) {

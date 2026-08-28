@@ -7,9 +7,9 @@
 // Mantine overlays (Modal/Drawer/Popover/Menu) close themselves on Escape;
 // they register with `managed: true` so this handler knows a layer is open
 // (and suppresses the base action) without double-dismissing it.
-import React, { createContext, useContext, useRef, useEffect, useCallback, useId } from 'react';
+import React, { createContext, useRef, useEffect, useCallback } from 'react';
 
-const DismissContext = createContext(null);
+export const DismissContext = createContext(null);
 
 export function DismissStackProvider({ children, onBaseDismiss }) {
   const layersRef = useRef([]); // [{ id, onDismiss, managed }]
@@ -43,19 +43,6 @@ export function DismissStackProvider({ children, onBaseDismiss }) {
   }, []);
 
   return <DismissContext.Provider value={register}>{children}</DismissContext.Provider>;
-}
-
-/**
- * Register a dismissable layer while `open` is true.
- * `managed: true` for Mantine overlays that close themselves on Escape.
- */
-export function useDismissLayer(open, onDismiss, { managed = false } = {}) {
-  const register = useContext(DismissContext);
-  const id = useId();
-  useEffect(() => {
-    if (!open || !register) return undefined;
-    return register(id, onDismiss, managed);
-  }, [open, onDismiss, managed, register, id]);
 }
 
 export default DismissStackProvider;

@@ -5,7 +5,7 @@ import { LocalSessionContext } from '../session/LocalSessionContext.js';
 
 // ── Mocks (hook-level, per repo convention — see FleetPlayPicker.test.jsx) ──
 const dispatchToTarget = vi.fn();
-vi.mock('./DispatchProvider.jsx', () => ({
+vi.mock('./useDispatch.js', () => ({
   useDispatch: () => ({ dispatchToTarget }),
 }));
 
@@ -13,7 +13,7 @@ let fleetDevices = [
   { id: 'livingroom-tv', name: 'Living Room TV' },
   { id: 'office-tv', name: 'Office TV' },
 ];
-vi.mock('../fleet/FleetProvider.jsx', () => ({
+vi.mock('../fleet/useFleetContext.js', () => ({
   useFleetContext: () => ({ devices: fleetDevices }),
 }));
 

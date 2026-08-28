@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
-import { useVolumeStore } from '../nav/VolumeProvider.jsx';
+import { useVolumeStore } from '../nav/useVolumeStore.js';
 
 const amplifiers = new WeakMap();
 
@@ -150,6 +150,7 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
       cleanupAmplifier(mediaElement);
     };
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaElement]); // keep listener setup tied to the current element only
 
   // Effect to handle boost level changes separately

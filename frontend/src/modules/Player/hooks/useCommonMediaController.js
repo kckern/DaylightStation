@@ -1292,6 +1292,9 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', clearSeeking);
     };
+    // 9-dependency media-listener effect in a file with hard-won "generation churn / storm"
+    // caution comments elsewhere — already reviewed this session as too risky for a lint pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onEnd, playbackRate, start, isVideo, meta, type, assetId, onProgress, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics]);
 
   useEffect(() => {

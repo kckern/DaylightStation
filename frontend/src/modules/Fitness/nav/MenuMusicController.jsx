@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import useMenuMusic from './useMenuMusic.js';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
-import { useIdentity } from '../identity/IdentityProvider';
+import { useIdentity } from '../identity/useIdentity.js';
 import getLogger from '../../../lib/logging/Logger.js';
 
 /**

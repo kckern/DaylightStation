@@ -13,7 +13,7 @@ import { formatAsCurrency, formatCompactCurrency, PALETTE } from "./lib/format.m
 import { matchesTransactionFilter } from './lib/transactionFilter.mjs';
 import { pressable } from './lib/a11y.mjs';
 import { DaylightAPI } from '../../lib/api.mjs';
-import { useFinanceReload } from './FinanceDataContext.jsx';
+import { useFinanceReload } from './useFinanceReload.js';
 import { buildTreemapData, buildDrillData } from './drawerCharts.js';
 
 import externalIcon from "../../assets/icons/external.svg";

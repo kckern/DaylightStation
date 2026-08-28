@@ -26,7 +26,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ContentCombobox } from '../../Content/combobox/ContentCombobox.jsx';
-import { useSearchContext } from './SearchProvider.jsx';
+import { useSearchContext } from './useSearchContext.js';
 import { ScopeChips } from './ScopeChips.jsx';
 import { useContentDispatch } from './useContentDispatch.js';
 import { useSessionController } from '../controller/useSessionController.js';

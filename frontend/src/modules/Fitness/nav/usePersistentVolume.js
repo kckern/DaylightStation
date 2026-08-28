@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useVolumeStore } from './VolumeProvider.jsx';
+import { useVolumeStore } from './useVolumeStore.js';
 
 const defaultState = { level: 0.6, muted: false, source: 'global' };
 

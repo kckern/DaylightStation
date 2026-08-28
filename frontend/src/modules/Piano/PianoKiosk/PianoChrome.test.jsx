@@ -6,10 +6,10 @@ const connection = vi.hoisted(() => ({ health: { state: 'ready', copy: 'ready' }
 const longPressSpy = vi.hoisted(() => vi.fn());
 const breadcrumbBar = vi.hoisted(() => ({ crumbs: [] }));
 
-vi.mock('./PianoConnectionContext.jsx', () => ({
+vi.mock('./usePianoConnection.js', () => ({
   usePianoConnection: () => connection,
 }));
-vi.mock('./PianoSoundContext.jsx', () => ({ usePianoSound: () => ({ activeName: 'Grand Piano' }) }));
+vi.mock('./usePianoSound.js', () => ({ usePianoSound: () => ({ activeName: 'Grand Piano' }) }));
 vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ basePath: '/piano' }) }));
 vi.mock('./PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumbBar: () => breadcrumbBar }));
 vi.mock('../ui/icons/Icon.jsx', () => ({ default: ({ name }) => <span data-icon={name} /> }));

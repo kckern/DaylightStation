@@ -42,6 +42,8 @@ export function useDynamicDimensions(dependencies = []) {
   // Initial measurement on mount and dependency changes
   useEffect(() => {
     measureDimensions();
+    // spread of a caller-supplied deps array — inherent to this hook's API
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [measureDimensions, ...dependencies]);
 
   // Use ResizeObserver for precise dimension tracking
@@ -66,6 +68,8 @@ export function useDynamicDimensions(dependencies = []) {
     return () => {
       resizeObserver.disconnect();
     };
+    // spread of a caller-supplied deps array — inherent to this hook's API
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [measureDimensions, ...dependencies]); // Re-observe when dependencies change
 
   // Window resize listener

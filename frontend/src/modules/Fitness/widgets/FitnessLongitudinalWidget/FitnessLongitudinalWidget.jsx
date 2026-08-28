@@ -1,7 +1,7 @@
 // frontend/src/modules/Fitness/widgets/FitnessLongitudinalWidget/FitnessLongitudinalWidget.jsx
 import React, { useCallback } from 'react';
-import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
-import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
+import { useScreenData } from '@/screen-framework/data/useScreenData.js';
+import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import SparklineRow from './SparklineRow.jsx';
 import './FitnessLongitudinalWidget.scss';
 

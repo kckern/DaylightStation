@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router-dom';
 import { NavLink, Stack, Text, Box } from '@mantine/core';
-import { useUnsavedGuardRegistry } from './shared/UnsavedGuardContext.jsx';
+import { useUnsavedGuardRegistry } from './shared/useUnsavedGuardRegistry.js';
 import ConfirmModal from './shared/ConfirmModal.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 import {

@@ -8,7 +8,7 @@
 // playback lingers briefly with a Remote shortcut. Never modal (N1.3).
 import React, { useEffect } from 'react';
 import { IconAlertCircle, IconRefresh, IconX, IconDeviceRemote, IconPlayerPlayFilled } from '@tabler/icons-react';
-import { useDispatch } from './DispatchProvider.jsx';
+import { useDispatch } from './useDispatch.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { deviceName } from '../fleet/deviceDisplay.js';
 import { useNav } from '../shell/NavProvider.jsx';

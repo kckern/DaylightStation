@@ -252,6 +252,7 @@ export function TeacherProfileProvider({ children }) {
   return <TeacherProfileContext.Provider value={value}>{children}</TeacherProfileContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- useTeacherProfile is co-located with its Context/Provider (standard pattern); 23 consumers, splitting out of scope for a lint pass
 export function useTeacherProfile() {
   const ctx = useContext(TeacherProfileContext);
   if (!ctx) throw new Error('useTeacherProfile requires TeacherProfileProvider');

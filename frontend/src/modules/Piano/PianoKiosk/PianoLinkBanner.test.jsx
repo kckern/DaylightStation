@@ -7,7 +7,7 @@ const connection = vi.hoisted(() => ({
   repair: { state: 'idle', message: null },
   repairConnection,
 }));
-vi.mock('./PianoConnectionContext.jsx', () => ({ usePianoConnection: () => connection }));
+vi.mock('./usePianoConnection.js', () => ({ usePianoConnection: () => connection }));
 
 import PianoLinkBanner from './PianoLinkBanner.jsx';
 

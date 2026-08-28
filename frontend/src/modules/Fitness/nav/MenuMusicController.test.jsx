@@ -14,7 +14,7 @@ vi.mock('../../../context/FitnessContext.jsx', () => ({
   useFitnessContext: () => mockCtx
 }));
 
-vi.mock('../identity/IdentityProvider', () => ({
+vi.mock('../identity/useIdentity.js', () => ({
   useIdentity: () => ({ phase: 'normal' })
 }));
 

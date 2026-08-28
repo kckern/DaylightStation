@@ -95,6 +95,8 @@ const GameCanvas = forwardRef(({
       previousTimeRef.current = undefined;
     }
     return () => cancelAnimationFrame(requestRef.current);
+    // rAF loop: animate is what the loop itself updates every frame — adding it would restart the animation every frame
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunning, onFrame]);
 
   useImperativeHandle(ref, () => ({

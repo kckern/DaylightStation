@@ -30,6 +30,9 @@ export function NoteWaterfall({ noteHistory = [], startNote = 21, endNote = 108,
     const step = () => { setTick(t => t + 1); rafId = requestAnimationFrame(step); };
     rafId = requestAnimationFrame(step);
     return () => cancelAnimationFrame(rafId);
+    // deliberate boolean-coercion dependency: the effect only cares whether gameMode is
+    // truthy (start/stop a rAF loop), not which specific game mode object it is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!gameMode]);
 
   // Static note properties — no animation math, CSS handles movement
@@ -70,6 +73,8 @@ export function NoteWaterfall({ noteHistory = [], startNote = 21, endNote = 108,
         topPercent, progress,
       };
     });
+    // tick is a rAF-driven force-recompute counter (see the mount effect above)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameMode, startNote, endNote, tick]);
 
   const gameLasers = useMemo(() => {
@@ -81,6 +86,8 @@ export function NoteWaterfall({ noteHistory = [], startNote = 21, endNote = 108,
       x: getNotePosition(l.pitch, startNote, endNote),
       bottomPercent: Math.min(1, (now - l.spawnTime) / travelMs) * 100,
     }));
+    // tick is a rAF-driven force-recompute counter (see the mount effect above)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameMode, startNote, endNote, tick]);
 
   // Telemetry: attribute re-render frequency AND rendered-node payload to this

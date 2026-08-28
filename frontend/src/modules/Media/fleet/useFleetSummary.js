@@ -1,7 +1,7 @@
 // frontend/src/modules/Media/fleet/useFleetSummary.js
 // Fleet-at-a-glance numbers for the dock indicator.
 import { useCallback, useSyncExternalStore } from 'react';
-import { useFleetContext } from './FleetProvider.jsx';
+import { useFleetContext } from './useFleetContext.js';
 
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
 

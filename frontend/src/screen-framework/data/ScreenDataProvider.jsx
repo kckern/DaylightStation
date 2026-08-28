@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { createContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 
 let _logger;
@@ -7,8 +7,8 @@ function logger() {
   return _logger;
 }
 
-const ScreenDataContext = createContext({});
-const ScreenDataActionsContext = createContext({ refetch: async () => {} });
+export const ScreenDataContext = createContext({});
+export const ScreenDataActionsContext = createContext({ refetch: async () => {} });
 
 /**
  * ScreenDataProvider - Fetches declared data sources once, refreshes on interval,
@@ -60,14 +60,4 @@ export function ScreenDataProvider({ sources = {}, children }) {
       </ScreenDataActionsContext.Provider>
     </ScreenDataContext.Provider>
   );
-}
-
-export function useScreenData(key) {
-  const store = useContext(ScreenDataContext);
-  return store[key] ?? null;
-}
-
-export function useScreenDataRefetch() {
-  const { refetch } = useContext(ScreenDataActionsContext);
-  return refetch;
 }

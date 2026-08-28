@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useRef, useCallback, useMemo } from 'react';
+import React, { createContext, useRef, useCallback, useMemo } from 'react';
 
 /**
  * UnsavedGuardContext — registry of dirty flags for admin editors.
@@ -9,7 +9,7 @@ import React, { createContext, useContext, useRef, useCallback, useMemo } from '
  * The registry lives in a ref (no re-render on updates — consumers only need
  * a point-in-time answer when the user tries to navigate).
  */
-const UnsavedGuardContext = createContext(null);
+export const UnsavedGuardContext = createContext(null);
 
 export function UnsavedGuardProvider({ children }) {
   const registryRef = useRef(new Map());
@@ -39,14 +39,6 @@ export function UnsavedGuardProvider({ children }) {
       {children}
     </UnsavedGuardContext.Provider>
   );
-}
-
-/**
- * Access the guard registry. Returns null outside a provider so consumers
- * (hook, nav) can degrade gracefully in isolated renders/tests.
- */
-export function useUnsavedGuardRegistry() {
-  return useContext(UnsavedGuardContext);
 }
 
 export default UnsavedGuardContext;

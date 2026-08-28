@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
-import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
+import { useScreenData } from '@/screen-framework/data/useScreenData.js';
+import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import './FitnessCalendarWidget.scss';
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];

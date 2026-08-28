@@ -2,7 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
-import { UnsavedGuardProvider, useUnsavedGuardRegistry } from './UnsavedGuardContext.jsx';
+import { UnsavedGuardProvider } from './UnsavedGuardContext.jsx';
+import { useUnsavedGuardRegistry } from './useUnsavedGuardRegistry.js';
 import { useUnsavedGuard } from './useUnsavedGuard.js';
 
 // Mock useNavigate but keep the rest of react-router-dom real (MemoryRouter, NavLink, ...)

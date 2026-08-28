@@ -108,6 +108,8 @@ export const useMediaDevices = (options = {}) => {
         });
       }
     } catch { /* invalid regex */ }
+    // excludes selectedVideoDevice deliberately — including it would fight a user's manual device choice every time it changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preferredCameraPattern, videoDevices]);
 
   useEffect(() => {
@@ -124,6 +126,8 @@ export const useMediaDevices = (options = {}) => {
         });
       }
     } catch { /* invalid regex */ }
+    // excludes selectedAudioDevice deliberately — including it would fight a user's manual device choice every time it changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preferredMicPattern, audioDevices]);
 
   const cycleVideoDevice = (direction = 'next') => {

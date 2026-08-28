@@ -3,7 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import React, { useEffect, useRef } from 'react';
 import { ScreenOverlayProvider, useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
-import { PipManager, usePip } from './PipManager.jsx';
+import { PipManager } from './PipManager.jsx';
+import { usePip } from './usePip.js';
 
 function MockCameraOverlay() {
   return <div data-testid="camera-overlay">camera</div>;

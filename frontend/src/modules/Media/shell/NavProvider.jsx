@@ -101,6 +101,7 @@ export function NavProvider({ children }) {
   return <NavContext.Provider value={value}>{children}</NavContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- useNav is co-located with its Context/Provider (standard pattern); 24 consumers, splitting out of scope for a lint pass
 export function useNav() {
   const ctx = useContext(NavContext);
   if (!ctx) throw new Error('useNav must be used inside NavProvider');

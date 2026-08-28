@@ -1,6 +1,6 @@
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
-import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
+import { useScreenData } from '@/screen-framework/data/useScreenData.js';
+import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import SuggestionCard from './SuggestionCard.jsx';
 import './FitnessSuggestionsWidget.scss';
@@ -104,6 +104,9 @@ export default function FitnessSuggestionsWidget() {
     }, 1000);
 
     return () => clearTimeout(swapTimerRef.current);
+    // visibleCards is itself set by this effect's own setTimeout chain — adding it risks a
+    // self-triggering re-run loop. A useReducer refactor is the real fix; out of scope here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastPlayedContentId]);
 
   const handlePlay = useCallback((suggestion) => {

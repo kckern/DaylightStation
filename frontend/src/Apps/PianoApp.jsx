@@ -16,17 +16,15 @@ import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityRe
 import { useAutoStudioEntry } from '../modules/Piano/PianoKiosk/useAutoStudioEntry.js';
 import {
   PianoWakeLockProvider,
-  usePianoScreensaver,
   PianoScreenControlProvider,
 } from '../modules/Piano/PianoKiosk/usePianoScreensaver.jsx';
+import { usePianoScreensaver } from '../modules/Piano/PianoKiosk/usePianoScreensaverHooks.js';
 import { usePianoScreenOff } from '../modules/Piano/PianoKiosk/usePianoScreenOff.js';
 import { KIOSK_DEVICE_ID } from '../modules/Piano/PianoKiosk/kioskDeviceIdentity.js';
 import { useKioskLaunchCommand } from '../modules/Piano/PianoKiosk/useKioskLaunchCommand.js';
 import { openPianoContent, openPianoCourseLesson } from '../modules/Piano/PianoKiosk/pianoContentOpen.js';
-import {
-  PianoPlaybackProvider,
-  usePianoPlayback,
-} from '../modules/Piano/PianoKiosk/PianoPlaybackContext.jsx';
+import { PianoPlaybackProvider } from '../modules/Piano/PianoKiosk/PianoPlaybackContext.jsx';
+import { usePianoPlayback } from '../modules/Piano/PianoKiosk/usePianoPlayback.js';
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
 import { DeviceStatePublisher } from '../screen-framework/publishers/DeviceStatePublisher.jsx';
 import { PianoBreadcrumbProvider } from '../modules/Piano/PianoKiosk/PianoBreadcrumbContext.jsx';

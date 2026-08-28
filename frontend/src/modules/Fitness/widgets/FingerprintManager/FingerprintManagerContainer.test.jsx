@@ -15,7 +15,7 @@ const identity = {
   unlockState: 'scanning',
   unlockedUser: null,
 };
-vi.mock('@/modules/Fitness/identity/IdentityProvider', () => ({ useIdentity: () => identity }));
+vi.mock('@/modules/Fitness/identity/useIdentity.js', () => ({ useIdentity: () => identity }));
 
 import FingerprintManagerContainer from './FingerprintManagerContainer.jsx';
 
