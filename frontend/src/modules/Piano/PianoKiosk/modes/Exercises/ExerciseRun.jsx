@@ -30,8 +30,8 @@ import {
   deriveRunTier,
   eventsToStaffNotes,
   staffFitsAsk,
-  stageForTier,
 } from './runPresentation.js';
+import { askTupleFor, deriveStage } from '../../../ask/askSchema.js';
 import { loadAskSources, PENDING_SOURCES } from '../../../ask/askResolution.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
@@ -762,7 +762,18 @@ export default function ExerciseRun({ instance: instanceProp, score: scoreProp, 
   // A score's stage is the engraved passage at every tier. The tier still
   // decides the READOUT (words or a percentage) — it just cannot decide the
   // stage, because there is only one way to draw real sheet music.
-  const stage = score ? 'score' : stageForTier(runTier, instance);
+  //
+  // The stage is now read off the SCHEMA rather than off the tier number
+  // directly (ask-platform SP1, task 5b): `runTier` becomes the tuple
+  // `askTupleFor` would build for a level asserting that tier and no material
+  // (`stageForTier`'s own routing never read `source`, so a spec-less tuple
+  // answers identically), and `deriveStage` reads the tuple's `notationStyle`/
+  // `prompt` plus `instance.ordering` exactly as `stageForTier` read `tier`/
+  // `instance.ordering` — the 16-cell table in `askSchema.test.js` is the proof
+  // the two agree on every cell. `runTier` itself is unmoved: it still exists
+  // to fill `data-tier`/`is-tier-N` below, which `Exercises.scss` keys real
+  // layout off, and to gate `askStaff` two lines down.
+  const stage = score ? 'score' : deriveStage(askTupleFor({ tier: runTier }, null).tuple, instance);
   // Tier 1's reinforcement staff is offered, not forced: an ask that no single
   // clef holds, or that spans more than an octave, is still a complete ask on
   // lit keys, and a staff it cannot draw legibly helps nobody.

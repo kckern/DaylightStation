@@ -27,6 +27,12 @@ const h = vi.hoisted(() => ({
   observe: vi.fn(),
   metronome: vi.fn(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  // Every `deriveStage(tuple, instance)` call the run made, in order. Spied
+  // through (the real function still decides the stage) so a test can assert
+  // WHAT the run handed it — a tuple built by `askTupleFor`, not a tier
+  // number — without weakening the truth-table proof that lives in
+  // `askSchema.test.js`.
+  deriveStageCalls: [],
   // Per-test instance override; null means "use the standard fixture".
   instanceData: null,
   // Per-test knobs for the run's two terminal-state doors.
@@ -100,6 +106,19 @@ vi.mock('../../../../MusicNotation/renderers/SvgSequenceStaff.jsx', async (impor
     />
   ),
 }));
+vi.mock('../../../ask/askSchema.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    // A pass-through wrapper, not a double — same posture as the runtime spy
+    // below: the real function still decides the stage, this only records how
+    // it was called.
+    deriveStage: (tuple, instance) => {
+      h.deriveStageCalls.push({ tuple, instance });
+      return actual.deriveStage(tuple, instance);
+    },
+  };
+});
 vi.mock('./pianoLearningApi.js', () => ({
   pianoLearningApi: {
     instance: vi.fn(async () => (h.instanceOk
@@ -138,6 +157,7 @@ function resetHarness() {
   h.instanceData = null;
   h.instanceOk = true;
   h.currentUser = 'learner4';
+  h.deriveStageCalls = [];
   h.record.mockReset();
   h.record.mockResolvedValue({ ok: true, status: 201, data: { attempt_id: 'stored' }, durationMs: 4 });
   h.start.mockClear();
@@ -1046,6 +1066,67 @@ describe('ExerciseRun tier-driven presentation', () => {
     }} />);
     await screen.findByText(/Press any key to start/);
     expect(screen.getByText('72 BPM')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The stage-selection CALL PATH (ask-platform SP1, task 5b).
+ *
+ * The suite above already proves the resulting DOM is unchanged — the same
+ * `keys-ask`/`sequence-staff`/`notation` testids mount for the same tiers,
+ * unmodified by this task. What it cannot show is HOW the run got there: this
+ * describe asserts the run now consults `deriveStage` with a TUPLE built by
+ * `askTupleFor({ tier: runTier }, null)` — the object `askSchema.test.js`'s
+ * 16-cell table already proves routes identically to the retired
+ * `stageForTier(runTier, instance)` — rather than handing a bare tier number
+ * to a tier-shaped function.
+ */
+describe('ExerciseRun stage selection — consults deriveStage via askTupleFor', () => {
+  beforeEach(resetHarness);
+  const practice = (extra = {}) => ({
+    instanceId: h.instance.id, intent: 'practice', practiceMode: 'free',
+    onExit: vi.fn(), onPassed: vi.fn(), ...extra,
+  });
+  const ready = () => screen.findByText('Play the first note to begin.');
+
+  it.each([
+    [0, { prompt: 'follow', secondary: 'none', timing: 'free', judging: 'completion' }],
+    [1, { prompt: 'follow', secondary: 'staff', timing: 'free', judging: 'completion' }],
+    [2, { prompt: 'read', secondary: 'keyboard-strip', notationStyle: 'sequence', timing: 'free', judging: 'completion' }],
+    [3, { prompt: 'read', secondary: 'keyboard-strip', notationStyle: 'engraved', timing: 'cued', judging: 'placed' }],
+  ])('tier %i hands deriveStage the tier-%i preset tuple, not the number %i', async (tier, tuple) => {
+    render(<ExerciseRun {...practice({ tier })} />);
+    await ready();
+    expect(h.deriveStageCalls.length).toBeGreaterThan(0);
+    const call = h.deriveStageCalls.at(-1);
+    expect(call.tuple).toEqual(tuple);
+    expect(call.instance).toBe(h.instance);
+    // The old signature's first argument was the NUMBER itself.
+    expect(typeof call.tuple).toBe('object');
+  });
+
+  it('ordering:any material still overrides the tuple at deriveStage, not before it', async () => {
+    // Tier 2's tuple says `notationStyle: 'sequence'` — deriveStage, not the
+    // run, is what reads `instance.ordering` and answers 'keys' anyway. This
+    // is the assertion that the INSTANCE, not just the tuple, reaches the call.
+    h.instanceData = { ...h.instance, ordering: 'any' };
+    render(<ExerciseRun {...practice({ tier: 2 })} />);
+    await ready();
+    const call = h.deriveStageCalls.at(-1);
+    expect(call.tuple.notationStyle).toBe('sequence');
+    expect(call.instance.ordering).toBe('any');
+    expect(screen.getByTestId('keys-ask')).toBeInTheDocument();
+  });
+
+  it('a tier the run derives (no tier prop) still reaches deriveStage as a tuple', async () => {
+    // No `tier` prop: `deriveRunTier` picks 2 for sequential free material —
+    // the fallback path, proven here to feed the SAME tuple-building call.
+    render(<ExerciseRun {...practice()} />);
+    await ready();
+    const call = h.deriveStageCalls.at(-1);
+    expect(call.tuple).toEqual({
+      prompt: 'read', secondary: 'keyboard-strip', notationStyle: 'sequence', timing: 'free', judging: 'completion',
+    });
   });
 });
 

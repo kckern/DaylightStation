@@ -6,19 +6,26 @@
  * is reused by the hosts that mount the run (a gate knows its level's tier and
  * its material's key long before the run does).
  *
- * Nothing in this module grades anything. `deriveRunTier` decides what is
- * DRAWN; the requirement decides what is judged, and the two are independent.
- *
  * **Compatibility shim (ask-platform SP1, task 2).** The theory/geometry
  * helpers that used to live here — `accidentalForKey`, `instanceKeySignature`,
  * `clefForAsk`, `clefForInstance`, `sequenceStaffCanDraw` — moved verbatim to
  * `../../../ask/stagecraft.js`, which now owns them, and are re-exported
- * below unchanged so every existing import of this module keeps working. New
- * tuple-driven stage resolution (`deriveStage`) lives in
- * `../../../ask/askSchema.js`; `deriveRunTier` and `stageForTier` — the
- * TIER-based routing only `ExerciseRun` still calls — stay here, along with
- * `staffFitsAsk` and `eventsToStaffNotes`, which are `ExerciseRun`-only
- * concerns rather than schema-level theory.
+ * below unchanged so every existing import of this module keeps working.
+ *
+ * **Thin shim, cont'd (task 5b).** Stage selection itself moved out too:
+ * `ExerciseRun` used to call `stageForTier(runTier, instance)`, a TIER-numbered
+ * mirror of `../../../ask/askSchema.js`'s tuple-driven `deriveStage`, kept here
+ * only because `deriveStage` had no consumer yet. It now has one — `ExerciseRun`
+ * builds a tuple with `askSchema.js`'s `askTupleFor({ tier: runTier }, null)`
+ * and calls `deriveStage(tuple, instance)` directly — so `stageForTier` had no
+ * remaining caller and is deleted, along with the tests that pinned it
+ * (`askSchema.test.js`'s 16-cell `deriveStage` table already proves the two
+ * agreed on every cell). `deriveRunTier` stays: `ExerciseRun` still calls it,
+ * not for stage routing but to fill in a `tier` NUMBER for hosts that name
+ * none — needed for `data-tier`/`is-tier-N`, which `Exercises.scss` keys real
+ * layout off. `staffFitsAsk` and `eventsToStaffNotes` are also unmoved,
+ * unrelated `ExerciseRun`/`ExerciseNotation` concerns rather than schema-level
+ * theory.
  */
 
 import {
@@ -67,20 +74,4 @@ export function eventsToStaffNotes(events) {
 export function deriveRunTier(instance, mode) {
   if (instance?.ordering === 'any') return 1;
   return mode === 'cued' ? 3 : 2;
-}
-
-/**
- * Which stage a tier mounts. `ordering: 'any'` overrides the tier for the
- * reason above — including a tier a host named explicitly, because the
- * alternative is a stage that cannot draw the material it was given.
- *
- * Tier 2's sequence staff is subject to the same rule, and for the same reason:
- * material one staff cannot hold falls back to the ABC path, which engraves a
- * grand staff. The gate's own shipped material — single-hand scales and lit
- * keys — is one-handed and inside an octave, so none of it moves.
- */
-export function stageForTier(tier, instance) {
-  if (instance?.ordering === 'any' || tier <= 1) return 'keys';
-  if (tier === 2) return sequenceStaffCanDraw(instance) ? 'sequence' : 'notation';
-  return 'notation';
 }

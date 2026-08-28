@@ -7,7 +7,6 @@ import {
   eventsToStaffNotes,
   sequenceStaffCanDraw,
   staffFitsAsk,
-  stageForTier,
 } from './runPresentation.js';
 
 const event = (...midis) => ({ notes: midis.map((midi) => ({ midi })) });
@@ -221,29 +220,16 @@ describe('deriveRunTier', () => {
   });
 });
 
-describe('stageForTier', () => {
-  const strict = { ordering: 'strict' };
-  it.each([
-    [0, 'keys'], [1, 'keys'], [2, 'sequence'], [3, 'notation'],
-  ])('tier %i renders the %s stage', (tier, stage) => {
-    expect(stageForTier(tier, strict)).toBe(stage);
-  });
-
-  it('sends ordering:any material to the keys stage at every tier', () => {
-    // Even a host that names tier 3 explicitly: there is no notation for an
-    // unordered ask, which is the branch this surface is retiring.
-    for (const tier of [0, 1, 2, 3]) expect(stageForTier(tier, { ordering: 'any' })).toBe('keys');
-  });
-
-  it('sends material one staff cannot hold to the ABC path at tier 2', () => {
-    // `drills/hanon/001` reached tier 2 as ordinary `ordering:'strict'` free
-    // material and was drawn on ONE treble clef: 42% of its notes off-canvas at
-    // a 20:1 aspect ratio, where the ABC path had engraved a correct grand
-    // staff. The stage has to know what the renderer can actually draw.
-    expect(stageForTier(2, HANON)).toBe('notation');
-    expect(stageForTier(2, strict)).toBe('sequence');
-  });
-});
+// `stageForTier` — the tier-numbered twin of `../../../ask/askSchema.js`'s
+// `deriveStage` — is RETIRED as of ask-platform SP1 task 5b: `ExerciseRun`
+// now calls `deriveStage` directly, and `stageForTier` had no other caller.
+// Its cases are not lost, only re-expressed over the tuple-space function it
+// mirrored: `askSchema.test.js`'s "deriveStage — tuple-space stage
+// resolution" describe carries the identical 16-cell table
+// ({tier-0..3} × {ordering any/strict} × {canDraw yes/no}), including this
+// file's own real Hanon fixture (`instanceFor('strict', false)`, transcribed
+// from the same shape as `HANON` above) for the "material one staff cannot
+// hold falls back to notation at tier 2" case.
 
 /**
  * The one-staff renderer's own limits, named so a stage can ask about them.
