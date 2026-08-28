@@ -238,6 +238,28 @@ describe('useGameBudgetMeter', () => {
     expect(api.calls.settle).toHaveLength(0);
   });
 
+  // Final whole-branch review: the ONE place the assembled system used to fail
+  // CLOSED on infrastructure. A malformed `enabled:true` open — a truncated
+  // proxy reply, a partial 200 during a restart — seeded the learner balance
+  // from `secondsLeftLocal`, which is 0 whenever `secondsLeft` was itself
+  // non-finite, and locked a child with a full allowance out of games behind
+  // "Games are done for today", logged as `budget.depleted` and so
+  // indistinguishable from a real one. Only an affirmative finite balance
+  // closes the gate now.
+  it('a malformed open with no balance fields plays on instead of locking the child out', async () => {
+    const api = fakeApi({
+      open: {
+        enabled: true, sessionId: 's1', cumulativeSeconds: 0,
+        // secondsLeft / learnerSecondsLeft / deviceSecondsLeft all absent.
+        warnAtSeconds: 60, settleIntervalSec: 60, idleAfterSeconds: 90,
+      },
+    });
+    const { result } = renderHook(() => useGameBudgetMeter({ learnerId: 'kid_a', deviceId: 'kiosk', active: true, api }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.state).not.toBe('depleted');
+    expect(result.current.state).not.toBe('device-depleted');
+  });
+
   // Important #2 (coordinator review): a 409 means the sessionId's recorded
   // learnerId doesn't match the caller — permanent, never fixed by retrying.
   it('a 409 from settle is permanent — stops the tick, fails open, and never calls close for a session that is not ours', async () => {
