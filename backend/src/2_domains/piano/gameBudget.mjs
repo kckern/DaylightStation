@@ -45,6 +45,34 @@ export function emptyDay(studyDateStr) {
 const clone = (day) => structuredClone(day);
 const secondsBetween = (a, b) => (Date.parse(b) - Date.parse(a)) / 1000;
 
+/**
+ * `day.sessions[sessionId]` on a plain object keyed straight from
+ * client-supplied input (`sessionId` in `applySettle`/`applyClose` arrives
+ * verbatim from the URL) is a live prototype-pollution vector:
+ * `sessionId = '__proto__'` reads back `Object.prototype` itself — a
+ * truthy, non-`undefined` object — which sails straight past a bare
+ * `if (!s) throw` check. The mutations immediately following
+ * (`s.cumulativeSeconds = ...`, `s.lastSettleAt = ...`) then land directly
+ * ON `Object.prototype`: every plain object in the PROCESS inherits a
+ * `cumulativeSeconds`/`lastSettleAt` property until the container restarts.
+ * `sessionId = 'constructor'`/`'prototype'` are the same class of bug via
+ * other inherited/own properties (the `Object` constructor function, its
+ * `.prototype`) that are equally truthy and equally not a real session.
+ *
+ * The fix is OWNERSHIP, not truthiness: `Object.hasOwn` only ever answers
+ * about the object's own properties, never anything reached via the
+ * prototype chain, so a pollution attempt is indistinguishable from a
+ * genuinely unknown session — both correctly hit "unknown session".
+ *
+ * `openSessionFor` below (used by `applyOpen`'s existing-session scan) is
+ * already immune the same way: `Object.entries` only ever walks own
+ * enumerable string keys, so it can't be tricked into returning a
+ * prototype-chain entry — no change needed there.
+ */
+function ownSession(sessions, sessionId) {
+  return Object.hasOwn(sessions, sessionId) ? sessions[sessionId] : undefined;
+}
+
 function openSessionFor(day, learnerId) {
   return Object.entries(day.sessions).find(
     ([, s]) => s.learnerId === learnerId && !s.closed,
@@ -78,7 +106,7 @@ export function applyOpen(day, { sessionId, learnerId, deviceId, at, staleAfterS
 
 export function applySettle(day, { sessionId, cumulativeSeconds, at }) {
   const next = clone(day);
-  const s = next.sessions[sessionId];
+  const s = ownSession(next.sessions, sessionId);
   if (!s) throw new Error('unknown session');
   if (s.closed) throw new Error('session closed');
   const charged = Math.max(0, cumulativeSeconds - s.cumulativeSeconds);
@@ -102,7 +130,7 @@ export function applySettle(day, { sessionId, cumulativeSeconds, at }) {
  * expected.
  */
 export function applyClose(day, { sessionId, cumulativeSeconds, at }) {
-  const existing = day.sessions[sessionId];
+  const existing = ownSession(day.sessions, sessionId);
   if (!existing) throw new Error('unknown session');
   if (existing.closed) return { day: clone(day), chargedSeconds: 0 };
   const settled = applySettle(day, { sessionId, cumulativeSeconds, at });
