@@ -139,15 +139,32 @@ async function compileSheet() {
   return out.join('\n').replace(/@font-face\s*\{[^}]*\}/g, '');
 }
 
-/** Render the real gate under happy-dom and hand back its settled markup. */
+/**
+ * Stable props, re-rendered by identity. `gateConfig` and the callbacks land in
+ * the gate's own memo dependencies (GameGate.jsx:216) — a fresh literal on a
+ * re-render rebuilds the attempt and throws the run's state away mid-test.
+ */
+const GATE_CONFIG = {};
+const NOOP = () => {};
+const gateElement = () => (
+  <MemoryRouter initialEntries={['/piano/games/tetris']}>
+    <GameGate learnerId="learner4" gateConfig={GATE_CONFIG} onPassed={NOOP} onLeave={NOOP} />
+  </MemoryRouter>
+);
+
+/**
+ * Render the real gate under happy-dom and hand back its settled markup. The
+ * trigger gets the view, because MIDI now reaches the run through renders it
+ * has to ask for: with no button to click, a run sitting in its ready phase
+ * publishes no snapshots and would never see a mutated `h.activeNotes`.
+ */
 async function markupOf(trigger) {
-  const view = render(
-    <MemoryRouter initialEntries={['/piano/games/tetris']}>
-      <GameGate learnerId="learner4" gateConfig={{}} onPassed={() => {}} onLeave={() => {}} />
-    </MemoryRouter>
-  );
-  await screen.findByText('Begin challenge');
-  if (trigger) await trigger();
+  const view = render(gateElement());
+  // The run arms itself from the piano now, so its ready phase has no button to
+  // wait on — the ready hint is the settled-and-ready barrier in its place.
+  // Either hint will do: which one appears depends on the rung's timing.
+  await screen.findByText(/Play the first note to begin\.|Press any key to start\./);
+  if (trigger) await trigger(view);
   const html = document.body.firstElementChild.innerHTML;
   view.unmount();
   return html;
@@ -208,6 +225,7 @@ async function measure(page, css, markup) {
       // question for the cascade check below.
       runButtons: [...document.querySelectorAll('.piano-exercise-run button')].map((b) => ({
         label: b.textContent,
+        classes: b.className,
         background: getComputedStyle(b).backgroundColor,
       })),
       documentScrolls: document.documentElement.scrollHeight > viewport.height,
@@ -267,36 +285,73 @@ describe('GameGate geometry at the kiosk canvas (1280x800, real compiled SCSS)',
     // Two sheets, one element. `.piano-game-gate button` and
     // `.piano-exercise-run button` have identical specificity, and the gate's
     // sheet is imported later — so an unscoped `button` rule here silently
-    // repaints "Begin challenge" and "Continue" as flat surface chrome. jsdom
-    // resolves no cascade at all, so only a measurement can see it; the gate's
-    // own rule is scoped to `> button` and `__actions button` for this reason.
-    const measured = await measure(page, css, await markupOf());
+    // repaints the run's primary action as flat surface chrome. jsdom resolves
+    // no cascade at all, so only a measurement can see it; the gate's own rule
+    // is scoped to `> button` and `__actions button` for this reason.
+    //
+    // The ready phase no longer has a button of its own (the piano starts the
+    // attempt), so the measured action is the other one this always covered:
+    // Continue, on the run's own pass panel, reached by playing a clean run.
+    //
+    // The gate's rung is CUED, so a clean run means playing ON the beat: any
+    // key arms it, one measure of count-in follows (4 beats at 90bpm =
+    // 2666ms), and only then is the performance graded. Fake timers make that
+    // deterministic — real-time sleeps would race the ±220ms match window.
+    const markup = await markupOf(async (view) => {
+      const { act } = await import('@testing-library/react');
+      const press = (midi) => {
+        act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); view.rerender(gateElement()); });
+        act(() => { h.activeNotes = new Map(); view.rerender(gateElement()); });
+      };
+      const advance = async (ms) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+      vi.useFakeTimers();
+      try {
+        press(72);          // any key arms the count-in; it is not graded
+        await advance(2667); // the count-in, to the first graded beat
+        press(60);
+        await advance(667);  // one quarter note at 90bpm
+        press(62);
+        await advance(200);  // let the completed snapshot publish
+      } finally {
+        vi.useRealTimers();
+      }
+      await waitFor(() => expect(screen.getByText('Continue')).toBeTruthy());
+    });
+    const measured = await measure(page, css, markup);
     const dumped = JSON.stringify(measured.runButtons);
-    const begin = measured.runButtons.find((b) => b.label === 'Begin challenge');
+    const primary = measured.runButtons.find((b) => b.label === 'Continue');
 
-    expect(begin, `the run's primary action is not in the markup — ${dumped}`).toBeTruthy();
+    expect(primary, `the run's primary action is not in the markup — ${dumped}`).toBeTruthy();
     // The run's accent — --ex-accent, i.e. --piano-accent #2ec46f.
-    expect(begin.background, `Begin challenge lost the run's accent — ${dumped}`)
+    expect(primary.background, `Continue lost the run's accent — ${dumped}`)
       .toBe('rgb(46, 196, 111)');
     // And nothing the run owns is wearing the GATE's surface (--gg-surface
     // #1f1f26), which is what an unscoped rule here paints them.
-    for (const button of measured.runButtons) {
+    //
+    // Except the run's own QUIET actions: `.piano-exercises__quiet-action` is
+    // painted `var(--ex-surface) !important` by the run, and both tokens
+    // resolve to the same `--piano-surface` #1f1f26 — so that button's colour
+    // cannot tell the two sheets apart (and its `!important` puts it out of an
+    // unscoped rule's reach anyway). The discriminating button is the accented
+    // primary action asserted above.
+    for (const button of measured.runButtons.filter((b) => !b.classes.includes('piano-exercises__quiet-action'))) {
       expect(button.background, `${button.label} was repainted by the gate — ${dumped}`)
         .not.toBe('rgb(31, 31, 38)');
     }
   });
 
   it('puts all three failure buttons on screen as reachable tap targets', async () => {
-    const markup = await markupOf(async () => {
-      // Play the attempt to a genuine, completed miss: three wrong notes then
-      // the two right ones. That is the real path to the fail panel.
-      fireEvent.click(screen.getByText('Begin challenge'));
+    const markup = await markupOf(async (view) => {
+      // Play the attempt to a genuine, completed miss. The first key arms the
+      // cued rung's count-in; everything played during it lands nowhere near
+      // the beat, so both expected notes are missed and the attempt completes
+      // failed. That is the real path to the fail panel.
       const { act } = await import('@testing-library/react');
       const press = (midi) => {
-        act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); });
-        act(() => { h.activeNotes = new Map(); });
+        act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); view.rerender(gateElement()); });
+        act(() => { h.activeNotes = new Map(); view.rerender(gateElement()); });
       };
-      for (const midi of [61, 61, 61, 60, 62]) press(midi);
+      for (const midi of [60, 61, 61, 61, 62]) press(midi);
       await waitFor(() => expect(screen.getByText('Not this time')).toBeTruthy());
     });
     const measured = await measure(page, css, markup);

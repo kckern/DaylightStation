@@ -7,6 +7,11 @@ const h = vi.hoisted(() => ({
   activeNotes: new Map(),
   record: vi.fn(),
   createAttempt: vi.fn(),
+  // The two runtime calls the start model is made of. Spied through, never
+  // replaced: the real engine still grades every note.
+  start: vi.fn(),
+  observe: vi.fn(),
+  metronome: vi.fn(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   // Per-test instance override; null means "use the standard fixture".
   instanceData: null,
@@ -57,7 +62,7 @@ vi.mock('./pianoLearningApi.js', () => ({
     program: vi.fn(async () => ({ ok: false, data: null })),
   },
 }));
-vi.mock('../SheetMusic/useMetronomeClick.js', () => ({ useMetronomeClick: vi.fn() }));
+vi.mock('../SheetMusic/useMetronomeClick.js', () => ({ useMetronomeClick: (...args) => h.metronome(...args) }));
 vi.mock('../../../performance/attemptEvidence.js', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, pianoAttemptClient: { record: h.record } };
@@ -65,7 +70,21 @@ vi.mock('../../../performance/attemptEvidence.js', async (importOriginal) => {
 vi.mock('../../../performance/assessmentSession.js', async (importOriginal) => {
   const actual = await importOriginal();
   h.createAttempt.mockImplementation(actual.createAssessmentAttempt);
-  return { ...actual, createAssessmentAttempt: (...args) => h.createAttempt(...args) };
+  return {
+    ...actual,
+    createAssessmentAttempt: (...args) => h.createAttempt(...args),
+    // A pass-through wrapper, not a double: the surface drives the REAL runtime,
+    // and the spies only record how it was driven (start's lead-in, and which
+    // notes reached observe).
+    createAssessmentRuntime: (...args) => {
+      const runtime = actual.createAssessmentRuntime(...args);
+      return {
+        ...runtime,
+        start: (options) => { h.start(options); return runtime.start(options); },
+        observe: (event) => { h.observe(event); return runtime.observe(event); },
+      };
+    },
+  };
 });
 
 describe('ExerciseRun shared assessment wiring', () => {
@@ -76,6 +95,9 @@ describe('ExerciseRun shared assessment wiring', () => {
     h.currentUser = 'learner4';
     h.record.mockReset();
     h.record.mockResolvedValue({ ok: true, status: 201, data: { attempt_id: 'stored' }, durationMs: 4 });
+    h.start.mockClear();
+    h.observe.mockClear();
+    h.metronome.mockClear();
     // mockClear, not mockReset — the implementation is installed once by the
     // module factory and must survive between tests.
     h.createAttempt.mockClear();
@@ -88,10 +110,29 @@ describe('ExerciseRun shared assessment wiring', () => {
     act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
   };
 
+  // Hold a set of pitches down together (no release) — what a chord ask needs.
+  const hold = (view, props, midis) => {
+    act(() => {
+      h.activeNotes = new Map(midis.map((midi) => [midi, { velocity: 1 }]));
+      view.rerender(<ExerciseRun {...props} />);
+    });
+  };
+
+  /**
+   * The piano starts the run now, so there is no button to click: a free ask
+   * waits for its ready hint and then plays the note the ask actually wants.
+   * That note ARMS the attempt and is also its first graded note, which is why
+   * every wrong-note sequence below now comes after it rather than before it.
+   */
+  const armFree = async (view, props, midi = 60) => {
+    await screen.findByText('Play the first note to begin.');
+    press(view, props, midi);
+  };
+
   it('drives MIDI through the shared cursor runtime and persists completed practice evidence', async () => {
     const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin practice' }));
+    await screen.findByText('Play the first note to begin.');
 
     act(() => { h.activeNotes = new Map([[60, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
     await waitFor(() => expect(screen.getByTestId('notation')).toHaveTextContent('1'));
@@ -123,7 +164,7 @@ describe('ExerciseRun shared assessment wiring', () => {
       onPassed: vi.fn(),
     };
     render(<ExerciseRun {...props} />);
-    await screen.findByRole('button', { name: 'Begin challenge' });
+    await screen.findByText('Play the first note to begin.');
 
     const config = h.createAttempt.mock.calls.at(-1)[0];
     expect(config.policy).toMatchObject({
@@ -137,16 +178,18 @@ describe('ExerciseRun shared assessment wiring', () => {
   it('a wrong event exposes the played midi', async () => {
     const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin practice' }));
+    // The wrong note has to land INSIDE a running attempt now: a stray note in
+    // the ready phase is a child finding their hands, not a wrong answer.
+    await armFree(view, props); // 60 arms and hits event one; event two wants 62
 
-    press(view, props, 61); // a semitone above the expected 60 — wrong, but plausible
+    press(view, props, 61); // a semitone below the expected 62 — wrong, but plausible
 
     await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '61'));
     expect(screen.getByRole('status')).toHaveTextContent('That note was not expected');
     // The notation only ever wanted a flag, and still gets exactly that.
     expect(screen.getByTestId('notation')).toHaveAttribute('data-wrong', 'true');
 
-    press(view, props, 60); // a hit clears it
+    press(view, props, 62); // a hit clears it
     await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', ''));
   });
 
@@ -160,12 +203,12 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
-
+    // Same five notes, same evidence — only the order moved: the arming note
+    // starts the run, and the three wrongs land against event two.
+    await armFree(view, props);
     press(view, props, 61);
     press(view, props, 61);
     press(view, props, 61);
-    press(view, props, 60);
     press(view, props, 62);
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();
@@ -191,12 +234,10 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
-
+    await armFree(view, props);
     press(view, props, 61);
     press(view, props, 61);
     press(view, props, 61);
-    press(view, props, 60);
     press(view, props, 62); // complete, but cleanliness 2/5 -> score 0.7
 
     expect(await screen.findByText('Keep working')).toBeInTheDocument();
@@ -214,9 +255,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
-
-    press(view, props, 60);
+    await armFree(view, props);
     press(view, props, 62); // clean run -> score 1
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();
@@ -255,12 +294,10 @@ describe('ExerciseRun shared assessment wiring', () => {
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
-
+    await armFree(view, props);
     press(view, props, 61);
     press(view, props, 61);
     press(view, props, 61);
-    press(view, props, 60);
     press(view, props, 62); // complete, cleanliness 2/5 -> score 0.7, under the 0.8 bar
 
     await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
@@ -276,9 +313,7 @@ describe('ExerciseRun shared assessment wiring', () => {
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
-
-    press(view, props, 60);
+    await armFree(view, props);
     press(view, props, 62); // clean run -> score 1
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();
@@ -351,12 +386,10 @@ describe('ExerciseRun shared assessment wiring', () => {
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
-
+    await armFree(view, props);
     press(view, props, 61);
     press(view, props, 61);
     press(view, props, 61);
-    press(view, props, 60);
     press(view, props, 62); // score 0.7, under the bar
 
     await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
@@ -371,12 +404,10 @@ describe('ExerciseRun shared assessment wiring', () => {
     const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
     const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
-
+    await armFree(view, props);
     press(view, props, 61);
     press(view, props, 61);
     press(view, props, 61);
-    press(view, props, 60);
     press(view, props, 62);
 
     expect(await screen.findByText('Keep working')).toBeInTheDocument();
@@ -392,13 +423,133 @@ describe('ExerciseRun shared assessment wiring', () => {
       onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
     };
     const view = render(<ExerciseRun {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
-
-    press(view, props, 60);
+    await armFree(view, props);
     press(view, props, 62); // clean -> score 1
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(props.onPassed).toHaveBeenCalledTimes(1);
+  });
+
+  // ── The start model. The piano starts the attempt: nothing to read, nothing
+  // to tap, no second gesture between a child and the first note.
+
+  it('a free ask arms on the first expected note, and that note is the first graded note', async () => {
+    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(h.start).not.toHaveBeenCalled();
+
+    press(view, props, 60);
+
+    expect(h.start).toHaveBeenCalledWith({ leadInMs: 0, clock: 'date-now' });
+    // Order is the whole contract: start FIRST, then the same note observed —
+    // otherwise the note that armed the run is thrown away ungraded.
+    expect(h.start.mock.invocationCallOrder[0]).toBeLessThan(h.observe.mock.invocationCallOrder[0]);
+    expect(h.observe.mock.calls[0][0]).toMatchObject({ midi: 60, clock: 'date-now' });
+    // And it really was graded: the cursor is on event two.
+    await waitFor(() => expect(screen.getByTestId('notation')).toHaveTextContent('1'));
+  });
+
+  it('a free ask ignores a note it did not ask for, and stays ready', async () => {
+    // A child finding their hands is not a wrong answer. Nothing starts,
+    // nothing is graded, and nothing flashes red.
+    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+
+    press(view, props, 61); // a semitone off the 60 this ask wants
+
+    expect(h.start).not.toHaveBeenCalled();
+    expect(h.observe).not.toHaveBeenCalled();
+    expect(screen.getByText('Play the first note to begin.')).toBeInTheDocument();
+    expect(screen.getByTestId('notation')).toHaveTextContent('0');
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('a cued ask arms on ANY key, counts in one measure, and does not grade the arming key', async () => {
+    // 4/4 at 60bpm — one measure is exactly four seconds of count-in.
+    h.instanceData = { ...h.instance, tempo: { start_bpm: 60 } };
+    const requirementOverride = requirementForRung(initialRung(), { passScore: 0.8 });
+    expect(requirementOverride.mode).toBe('cued');
+
+    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText("Press any key to start. You'll hear 4 clicks, then play at that speed.");
+    // The click is silent until a key arms the run.
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: false });
+
+    press(view, props, 63); // any key at all — not a note this ask expects
+
+    expect(h.start).toHaveBeenCalledWith({ leadInMs: 4 * 60000 / 60, clock: 'date-now' });
+    // The arming key is a gesture, not a performance: it is never graded.
+    expect(h.observe).not.toHaveBeenCalled();
+    // The count-in is visible from its first beat…
+    expect(screen.getByLabelText('Count in, beat 1')).toBeInTheDocument();
+    // …and audible: the metronome covers the lead-in, so the last count-in
+    // click and the first played beat are one grid.
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 60 });
+  });
+
+  it('counts a cued ask in at the tempo it is graded at, not at a tempo it has not got', async () => {
+    // A single-event cued instance with no tempo of its own is given the
+    // engine's default (90bpm) to grade against. The count-in has to follow it:
+    // counting at one tempo and marking at another moves every target note.
+    h.instanceData = {
+      ...h.instance,
+      tempo: undefined,
+      events: [{ id: 'only', value: 'quarter', notes: [{ midi: 60, hand: 'right' }] }],
+    };
+    const requirementOverride = requirementForRung(initialRung(), { passScore: 0.8 });
+    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText("Press any key to start. You'll hear 4 clicks, then play at that speed.");
+
+    press(view, props, 72);
+
+    expect(h.start).toHaveBeenCalledWith({ leadInMs: 4 * 60000 / 90, clock: 'date-now' });
+  });
+
+  it('a held (ordering:any) ask arms on ANY note of the chord it is asking for', async () => {
+    // The material's own contract is "any order", so demanding one particular
+    // note to arm would strand a child who reaches the chord from the top.
+    h.instanceData = {
+      ...h.instance,
+      ordering: 'any',
+      events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60, hand: 'right' }, { midi: 64, hand: 'right' }] }],
+    };
+    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+
+    hold(view, props, [67]); // outside the chord — still nothing
+    expect(h.start).not.toHaveBeenCalled();
+    expect(screen.getByText('Play the first note to begin.')).toBeInTheDocument();
+
+    hold(view, props, []);
+    hold(view, props, [64]); // the TOP note of the chord arms it
+
+    expect(h.start).toHaveBeenCalledWith({ leadInMs: 0, clock: 'date-now' });
+    expect(h.observe.mock.calls[0][0]).toMatchObject({ clock: 'date-now' });
+    expect([...h.observe.mock.calls[0][0].held.keys()]).toEqual([64]);
+
+    hold(view, props, [60, 64]); // the whole chord completes it
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['practice free', { intent: 'practice', practiceMode: 'free' }, 'Play the first note to begin.'],
+    ['a free challenge', { intent: 'challenge', requirementOverride: { mode: 'free' } }, 'Play the first note to begin.'],
+    ['a cued challenge', { intent: 'challenge', requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }) },
+      "Press any key to start. You'll hear 4 clicks, then play at that speed."],
+  ])('%s has no button to press and no fixed-tempo lecture', async (_label, extra, hint) => {
+    h.instanceData = { ...h.instance, tempo: { start_bpm: 60 } };
+    const props = { instanceId: h.instance.id, onExit: vi.fn(), onPassed: vi.fn(), ...extra };
+    render(<ExerciseRun {...props} />);
+
+    expect(await screen.findByText(hint)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /begin/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/tempo and pass criteria are fixed/)).not.toBeInTheDocument();
   });
 });
