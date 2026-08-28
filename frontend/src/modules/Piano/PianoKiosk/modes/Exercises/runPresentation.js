@@ -43,28 +43,97 @@ export function accidentalForKey(key) {
   return (minor ? 'DGCF' : 'F').includes(letter) ? 'flat' : 'sharp';
 }
 
-/** Mode/quality axis values that mean "this is a minor key". */
-const MINOR_FLAVOURS = new Set(['aeolian', 'minor', 'natural-minor', 'harmonic-minor', 'melodic-minor']);
+/**
+ * Which DEGREE of a major scale each mode or chord quality is built on.
+ *
+ * That degree is the whole rule: a mode standing on degree n of a major scale
+ * carries that major scale's key signature, so G dorian (degree 2) is F major's
+ * one flat and G mixolydian (degree 5) is C major's none. Both vocabularies the
+ * bank publishes are here — `axes.mode` for `scales/modes` (all ten of its
+ * values) and `axes.quality` for `chords/triads` and `chords/sevenths` — because
+ * they answer the same question and a second table would drift from this one.
+ *
+ * The chord entries are read the same way: a minor triad's flat third is the
+ * relative major's, a dominant 7th's flat seventh is mixolydian's, and a
+ * half-diminished 7th's is locrian's. An augmented triad's raised fifth is not
+ * in any signature, so it stays on its own tonic (degree 1) and spells sharp,
+ * which is what C-E-G♯ wants.
+ */
+const DEGREE_OF = Object.freeze({
+  // scales/modes
+  ionian: 1,
+  dorian: 2,
+  phrygian: 3,
+  lydian: 4,
+  mixolydian: 5,
+  aeolian: 6,
+  locrian: 7,
+  'major-pentatonic': 1,
+  'minor-pentatonic': 6,
+  blues: 6,
+  // chords/triads, chords/sevenths
+  major: 1,
+  'major-7th': 1,
+  augmented: 1,
+  'minor-7th': 2,
+  'dominant-7th': 5,
+  minor: 6,
+  'natural-minor': 6,
+  'harmonic-minor': 6,
+  'melodic-minor': 6,
+  diminished: 7,
+  'half-diminished-7th': 7,
+  'diminished-7th': 7,
+});
+
+const LETTERS = 'CDEFGAB';
+/** Semitones above C for each natural letter, and for each degree of a major scale. */
+const LETTER_SEMITONE = Object.freeze([0, 2, 4, 5, 7, 9, 11]);
+const DEGREE_SEMITONE = Object.freeze([0, 2, 4, 5, 7, 9, 11]);
 
 /**
- * The key of a bank instance, spelled the way `accidentalForKey` needs to read it.
+ * The key whose SIGNATURE a bank instance carries, named as a major tonic.
  *
  * The bank writes `instance.key` as the ROOT PITCH CLASS ALONE — `'D'`, never
- * `'D minor'` — and puts the quality on a separate axis (`axes.mode` for the
- * scale bank, `axes.quality` for chords). So `accidentalForKey(instance.key)`
- * on its own can never reach its minor branch: every D minor instance in the
- * bank would be spelled with sharps, and its B♭ drawn as A♯.
+ * `'D minor'` — and puts the flavour on a separate axis (`axes.mode` /
+ * `axes.quality`). So `accidentalForKey(instance.key)` on its own can never see
+ * anything but a major tonic: every D minor instance would be spelled with D
+ * major's two sharps and its B♭ drawn as A♯, and every G dorian one likewise.
  *
- * That is why this exists rather than a second accidental rule: it re-joins the
- * two halves the bank splits, and the one signature rule stays in one place.
- * Major material is unaffected — F major's `key: 'F'` already answers `flat`.
+ * This re-joins the two halves the bank splits by walking back to the relative
+ * major — letter and semitone together, so the tonic comes out spelled rather
+ * than merely pitched (C aeolian resolves to `'Eb'`, not `'D#'`). The one
+ * accidental rule then stays in `accidentalForKey`, which is the point: this
+ * function decides WHICH key, never which accidental.
+ *
+ * Anything it cannot read — an unknown flavour, a root that is not a letter
+ * with at most one accidental — returns the root unchanged rather than a guess,
+ * which is exactly today's answer for plain major material (F major's `'F'`
+ * already resolves to flats).
  */
 export function instanceKeySignature(instance) {
-  const key = instance?.key;
-  if (typeof key !== 'string' || !key.trim()) return null;
+  const raw = typeof instance?.key === 'string' ? instance.key.trim() : '';
+  if (!raw) return null;
   const axes = instance?.axes ?? {};
-  const flavour = String(axes.mode ?? axes.quality ?? '').trim().toLowerCase();
-  return MINOR_FLAVOURS.has(flavour) ? `${key.trim()} minor` : key;
+  const degree = DEGREE_OF[String(axes.mode ?? axes.quality ?? '').trim().toLowerCase()];
+  if (!degree || degree === 1) return raw;
+
+  const letterIndex = LETTERS.indexOf(raw.charAt(0).toUpperCase());
+  if (letterIndex < 0) return raw;
+  const sign = raw.charAt(1);
+  const shift = (sign === 'b' || sign === '♭') ? -1 : ((sign === '#' || sign === '♯') ? 1 : 0);
+  // A root is a letter plus at most one accidental. Anything longer is a key
+  // this cannot read, and reading it wrong is worse than not reading it.
+  if (raw.length > (shift ? 2 : 1)) return raw;
+
+  const rootSemitone = (LETTER_SEMITONE[letterIndex] + shift + 12) % 12;
+  const tonicLetter = (letterIndex - (degree - 1) + 14) % 7;
+  const tonicSemitone = (rootSemitone - DEGREE_SEMITONE[degree - 1] + 12) % 12;
+  // How far that tonic sits from its own natural letter, folded into [-6, 5].
+  const delta = ((tonicSemitone - LETTER_SEMITONE[tonicLetter] + 18) % 12) - 6;
+  if (Math.abs(delta) > 2) return raw; // beyond a double accidental: unreadable
+  const accidental = (delta < 0 ? 'b' : '#').repeat(Math.abs(delta));
+  return `${LETTERS[tonicLetter]}${accidental}`;
 }
 
 /**
