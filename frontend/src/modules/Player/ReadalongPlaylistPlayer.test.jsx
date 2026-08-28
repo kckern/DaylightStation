@@ -527,6 +527,191 @@ describe('ReadalongPlaylistPlayer — a required companion cannot be skipped pas
   });
 });
 
+// Finishing a REQUIRED companion releases a finish code the child copies onto
+// their worksheet's gate row. Everything below turns on one rule: the card is
+// rendered from the SERVER'S ANSWER and never from this component's belief that
+// playback finished. `Player.handleResilienceExhausted` calls the same `clear()`
+// a real ending does, so a stream that died at 0:05 and one that played through
+// arrive here identically.
+describe('ReadalongPlaylistPlayer — the completion card', () => {
+  const OPEN = { ok: true, tracked: true, satisfied: true, code: ['A', 'C', 'E'], remainingParts: 0, gate: 'open' };
+  const CLOSED = { ok: true, tracked: true, satisfied: false, code: null, remainingParts: 1, gate: 'closed' };
+  const NONE = { ok: true, tracked: true, satisfied: false, code: null, remainingParts: 0, gate: 'none' };
+
+  // Answers in order, then repeats the last one forever. Note that a required
+  // companion puts THREE writes on the wire before the finishing one: the gate
+  // probe at mount, the first progress tick (the throttle window opens closed),
+  // and then `clear()`'s completion write.
+  const answering = (...queue) => {
+    const answers = [...queue];
+    return vi.fn(async () => (answers.length > 1 ? answers.shift() : answers[0] ?? null));
+  };
+  // Fire `clear()` and let React settle, WITHOUT awaiting the promise `ended`
+  // returns: one test deliberately leaves the write in flight forever, and
+  // awaiting it there would hang the test rather than assert on it.
+  const finish = async () => { await act(async () => { h.lastProps.clear(); }); };
+  const code = () => screen.queryByTestId('readalong-code');
+
+  it('shows the finish code, large, when the server says the companion is satisfied', async () => {
+    const onProgress = answering(CLOSED, CLOSED, OPEN);
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS.slice(0, 1)} participation="required" onProgress={onProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 149, duration: 149, paused: false });
+    expect(screen.queryByTestId('readalong-code')).toBeNull(); // nothing said yet
+    await finish();
+
+    // `formatCode`'s spelling: the letters, in order, with nothing between them.
+    expect(code()).toHaveTextContent('ACE');
+    expect(screen.getByTestId('readalong-finish')).toBeInTheDocument();
+  });
+
+  it('a resilience-exhausted clear earns “keep listening”, and no code at all', async () => {
+    const onProgress = answering(CLOSED);
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS.slice(0, 1)} participation="required" onProgress={onProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    // The stream died five seconds in. `clear()` is indistinguishable from a
+    // real ending on this side of the boundary — only the answer separates them.
+    emitProgress({ currentTime: 5, duration: 149, paused: false });
+    await finish();
+
+    expect(screen.getByTestId('readalong-finish')).toHaveTextContent(/keep listening/i);
+    expect(code()).toBeNull();
+  });
+
+  it('opening a companion the household has already satisfied shows the code with no playback at all', async () => {
+    const onProgress = answering({ ...OPEN, code: ['B', 'D'] });
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS} participation="required" onProgress={onProgress}
+        progress={{ parts: { p1: { lastPositionSeconds: 0, durationSeconds: 0 } } }}
+      />
+    );
+    await screen.findByTestId('mock-player');
+
+    // No progress tick, no `clear()`, nothing played: a sibling who never
+    // touched this reading still gets the letters, because the household's
+    // record — not this child's playback — is what the gate is about.
+    expect(await screen.findByTestId('readalong-code')).toHaveTextContent('BD');
+    // …and the probe that fetched it banked no evidence.
+    const [probe] = onProgress.mock.calls[0];
+    expect(probe.playedRanges).toEqual([]);
+    expect(probe.maxRate).toBe(1);
+  });
+
+  it('an optional companion shows no card and no code, before or after it ends', async () => {
+    const onProgress = answering(NONE);
+    render(<ReadalongPlaylistPlayer title="Psalms" parts={PARTS.slice(0, 1)} onProgress={onProgress} />);
+    await screen.findByTestId('mock-player');
+    expect(screen.queryByTestId('readalong-finish')).toBeNull();
+
+    emitProgress({ currentTime: 149, duration: 149, paused: false });
+    await finish();
+
+    expect(screen.queryByTestId('readalong-finish')).toBeNull();
+    expect(code()).toBeNull();
+    expect(screen.getByRole('button', { name: /Play again/ })).toBeInTheDocument();
+  });
+
+  it('renders nothing until the answer lands — the client’s “it ended” is not the verdict', async () => {
+    let answer;
+    const onProgress = vi.fn(() => new Promise((resolve) => { answer = resolve; }));
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS.slice(0, 1)} participation="required" onProgress={onProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 149, duration: 149, paused: false });
+    await finish();
+
+    // The write is in flight. Nothing has been said about the gate yet.
+    expect(screen.queryByTestId('readalong-finish')).toBeNull();
+
+    await act(async () => { answer({ ...OPEN, code: ['A'] }); });
+    expect(code()).toHaveTextContent('A');
+  });
+
+  it('a later ping corrects a card built from a stale snapshot', async () => {
+    // The two-sibling race: the child whose write lands first is told there is
+    // a part outstanding, and the household is satisfied a millisecond later.
+    const onProgress = answering(CLOSED, CLOSED, CLOSED, { ...OPEN, code: ['E'] });
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS.slice(0, 1)} participation="required" onProgress={onProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 149, duration: 149, paused: false });
+    await finish();
+    expect(screen.getByTestId('readalong-finish')).toHaveTextContent(/keep listening/i);
+
+    // One more throttle window of listening, and the next answer supersedes it.
+    await act(async () => { playAt(1, 100, 200); });
+    expect(await screen.findByTestId('readalong-code')).toHaveTextContent('E');
+  });
+
+  it('a handler that tracks nothing — {ok:true, tracked:false} — is not a completion', async () => {
+    // No `gate`, no `satisfied`; `undefined` is falsy and must not read as
+    // "not satisfied, keep listening" either. Nothing is known, so nothing is said.
+    const onProgress = answering({ ok: true, tracked: false });
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS.slice(0, 1)} participation="required" onProgress={onProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 149, duration: 149, paused: false });
+    await finish();
+
+    expect(screen.queryByTestId('readalong-finish')).toBeNull();
+    expect(code()).toBeNull();
+  });
+
+  it('a gate that cannot be read says tell a grown-up — never a code, never a number', async () => {
+    const onProgress = answering({
+      ok: true, tracked: true, satisfied: false, code: null, remainingParts: 0, gate: 'unavailable',
+    });
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS.slice(0, 1)} participation="required" onProgress={onProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 149, duration: 149, paused: false });
+    await finish();
+
+    expect(screen.getByTestId('readalong-finish')).toHaveTextContent(/grown-up/i);
+    expect(code()).toBeNull();
+    // `remainingParts: 0` travels with this answer and means nothing here.
+    expect(screen.getByTestId('readalong-finish')).not.toHaveTextContent(/0/);
+  });
+
+  it('an “open” gate carrying an unusable code shows the slip, never a blank one', async () => {
+    // NOTHING UNUSABLE IS EVER RENDERED AS BLANK (companionCode.mjs): '' is the
+    // printed spelling of "no code at all", and a child cannot copy it.
+    const onProgress = answering({ ok: true, tracked: true, satisfied: true, code: [], remainingParts: 0, gate: 'open' });
+    render(
+      <ReadalongPlaylistPlayer
+        title="Psalms" parts={PARTS.slice(0, 1)} participation="required" onProgress={onProgress}
+      />
+    );
+    await screen.findByTestId('mock-player');
+    emitProgress({ currentTime: 149, duration: 149, paused: false });
+    await finish();
+
+    expect(code()).toBeNull();
+    expect(screen.getByTestId('readalong-finish')).toHaveTextContent(/grown-up/i);
+  });
+});
+
 /**
  * The progress payload crosses a boundary NOTHING type-checks: this component
  * builds it, `SchoolApp` forwards it verbatim, and `RecordLessonCompanionProgress`

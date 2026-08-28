@@ -781,6 +781,33 @@
   }
   &__empty { align-self: center; margin: 0 auto; color: var(--school-muted); font-size: 1.2rem; }
 
+  // The completion card. OVER the stage, not instead of it: the reading stays
+  // mounted behind, so "Keep going" puts a child straight back into it.
+  &__finish {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;
+    padding: 2rem; text-align: center;
+    background: var(--school-surface);
+  }
+  &__finish-lead { margin: 0; max-width: 34ch; font-size: 1.6rem; font-weight: 700; line-height: 1.35; }
+  &__finish-action {
+    min-height: 64px; min-width: 160px; padding: 0 2rem;
+    border: 1px solid transparent; border-radius: 12px;
+    background: var(--school-accent); color: var(--school-accent-ink);
+    font: inherit; font-size: 1.15rem; font-weight: 700; cursor: pointer;
+  }
+  // The letters a child copies onto paper, from across a table, on a 1280x800
+  // kiosk. Everything else on this card exists to point at them, so they are
+  // deliberately enormous — and letter-spaced, because a gate row is filled in
+  // one bubble per letter and the code has to read as separate marks.
+  &__code {
+    margin: 0; padding: 0.5rem 2rem;
+    border-radius: 16px; background: var(--school-surface-2);
+    font-size: clamp(5rem, 18vh, 9rem); font-weight: 800; line-height: 1.1;
+    letter-spacing: 0.18em; text-indent: 0.18em; // trailing tracking, re-centred
+    color: var(--school-fg);
+  }
+
   // One transport row: icon + word on every control, 64px minimum targets.
   &__controls {
     flex: 0 0 auto; display: flex; justify-content: center; align-items: stretch; gap: 0.75rem;
