@@ -42,6 +42,7 @@ import {
 import MenuMusicController from '../modules/Fitness/nav/MenuMusicController.jsx';
 import EmergencyPlaybackController from '../modules/Fitness/player/EmergencyPlaybackController.jsx';
 import { FitnessFeedback, FeedbackCornerButton } from '../modules/Fitness/feedback';
+import { installRingCelebrationAudioUnlock } from '../modules/Fitness/player/overlays/ringCelebrationAudio.js';
 
 registerBuiltinWidgets();
 
@@ -1212,7 +1213,7 @@ const FitnessApp = () => {
         // be listed here, or FitnessContext (which roots at response.fitness)
         // will never see it — that's how dance_party silently went missing.
         // Both spellings: `coin_time_unit_ms` is what the config still says.
-        const unifyKeys = ['ant_devices','equipment','users','ring_time_unit_ms','coin_time_unit_ms','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks','emergency','household_label','momentum'];
+        const unifyKeys = ['ant_devices','equipment','users','ring_time_unit_ms','coin_time_unit_ms','ring_celebrations','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks','emergency','household_label','momentum'];
         unifyKeys.forEach(k => {
           if (response[k] !== undefined && response.fitness[k] === undefined) {
             response.fitness[k] = response[k];
@@ -1825,6 +1826,7 @@ const PressureMatEventBridge = ({ logger }) => {
 
 const GlobalOverlays = () => {
   const fitnessCtx = useFitnessContext();
+  useEffect(() => installRingCelebrationAudioUnlock(), []);
   if (!fitnessCtx) return null;
 
   return (

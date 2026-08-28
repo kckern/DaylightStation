@@ -36,6 +36,9 @@ export class FitnessTreasureBox {
     // Chart uses getSeries() to read from main timeline
     // External mutation callback (set by context) to trigger UI re-render
     this._mutationCb = null;
+    // Structured award callback for ephemeral celebrations. Accounting remains
+    // here; consumers only observe a completed, canonical award.
+    this._ringAwardCb = null;
     this._autoInterval = null; // timer id
     // REMOVED: _governanceCb - governance now reads from ZoneProfileStore on tick boundaries
   }
@@ -68,6 +71,7 @@ export class FitnessTreasureBox {
   }
 
   setMutationCallback(cb) { this._mutationCb = typeof cb === 'function' ? cb : null; }
+  setRingAwardCallback(cb) { this._ringAwardCb = typeof cb === 'function' ? cb : null; }
   _notifyMutation() { if (this._mutationCb) { try { this._mutationCb(); } catch(_){} } }
 
   configure({ ringTimeUnitMs, zones, users }) {
@@ -703,9 +707,21 @@ export class FitnessTreasureBox {
     // Rings are written to main timeline via FitnessSession.assignMetric('user:X:rings_total')
     
     // Log event in session if available
+    const award = {
+      userId: profileId,
+      rings: zone.rings,
+      zone: zone.id || zone.name,
+      color: zone.color,
+      userTotal: acc?.totalRings || 0,
+      totalRings: this.totalRings,
+      awardedAt: now,
+    };
     try {
-      this.sessionRef._log('ring_award', { user: accKey, profileId, zone: zone.id || zone.name, rings: zone.rings, color: zone.color });
+      this.sessionRef._log('ring_award', { user: accKey, ...award });
     } catch (_) { /* ignore */ }
+    try { this._ringAwardCb?.(award); } catch (err) {
+      this._log('ring_award_callback_error', { message: err?.message || String(err) }, 'warn');
+    }
     this._notifyMutation();
   }
 
