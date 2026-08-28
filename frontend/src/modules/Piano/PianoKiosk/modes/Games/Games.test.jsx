@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, resolvePath } from 'react-router-dom';
 
 const schoolAccess = vi.hoisted(() => ({ unlocked: true }));
+const gameBudget = vi.hoisted(() => ({ state: 'off', secondsLeft: 0, warn: false }));
 
 // Keep the games-config fetch hermetic (no real network).
 vi.mock('../../../../../lib/api.mjs', () => ({
@@ -13,6 +14,9 @@ vi.mock('../../useSchoolGameAccess.js', () => ({
     status: 'ready', state: schoolAccess.unlocked ? 'complete' : 'incomplete',
     unlocked: schoolAccess.unlocked, refresh: vi.fn(),
   }),
+}));
+vi.mock('../../useGameBudgetMeter.js', () => ({
+  default: () => gameBudget,
 }));
 
 import { PianoMidiProvider } from '../../PianoMidiContext.jsx';
@@ -47,6 +51,9 @@ function renderGames(initialEntry = '/games', currentUser = 'guest') {
 beforeEach(() => {
   vi.clearAllMocks();
   schoolAccess.unlocked = true;
+  gameBudget.state = 'off';
+  gameBudget.secondsLeft = 0;
+  gameBudget.warn = false;
 });
 
 describe('Games mode', () => {
@@ -132,5 +139,40 @@ describe('Games mode', () => {
     renderGames('/games/nonexistent-game/some-tab');
     fireEvent.click(screen.getByText('Back'));
     expect(screen.getByText('Space Invaders')).toBeTruthy();
+  });
+});
+
+describe('Games mode — budget gate (gate 3, below the school lock)', () => {
+  it('shows the learner-depleted lock and no game when the budget meter reports depleted', () => {
+    gameBudget.state = 'depleted';
+    renderGames('/games/tetris');
+    expect(screen.getByText('Games are done for today')).toBeTruthy();
+    expect(screen.getByText('You’ve used your piano game time for today. It comes back tomorrow.')).toBeTruthy();
+    expect(document.querySelector('.piano-game-fullscreen')).toBeNull();
+  });
+
+  it('shows the distinct device-depleted lock copy when the shared device budget is out', () => {
+    gameBudget.state = 'device-depleted';
+    renderGames('/games/tetris');
+    expect(screen.getByText('The piano’s games are done for today')).toBeTruthy();
+    expect(screen.getByText('This piano has reached its shared game time for the day.')).toBeTruthy();
+    expect(document.querySelector('.piano-game-fullscreen')).toBeNull();
+  });
+
+  it.each(['unavailable', 'off'])('fails open (renders the game) when the meter reports "%s"', (state) => {
+    gameBudget.state = state;
+    renderGames('/games/tetris');
+    expect(document.querySelector('.piano-game-fullscreen')).not.toBeNull();
+    expect(screen.queryByText('Games are done for today')).toBeNull();
+    expect(screen.queryByText('The piano’s games are done for today')).toBeNull();
+  });
+
+  it('shows the non-blocking warning banner alongside the game when the meter reports warning', () => {
+    gameBudget.state = 'warning';
+    gameBudget.warn = true;
+    gameBudget.secondsLeft = 125; // Math.ceil(125/60) === 3
+    renderGames('/games/tetris');
+    expect(document.querySelector('.piano-game-fullscreen')).not.toBeNull();
+    expect(screen.getByText('3 min of game time left')).toBeTruthy();
   });
 });

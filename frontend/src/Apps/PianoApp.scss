@@ -1572,6 +1572,24 @@
   background: var(--piano-stage);   // game canvas stage — dark
 }
 
+// Budget-gate warning (non-blocking): a countdown chip over the game chrome,
+// never a wall. `pointer-events: none` so it can never eat a tap the game
+// underneath was owed.
+.piano-games__budget-warning {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--r-md, 0.5rem);
+  background: var(--piano-surface-2, #2a2a33);
+  color: var(--piano-accent-text, #5fe39a);
+  font-size: 0.85rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
 /* ---- Piano video: course detail ---- */
 /* ---- Course landing: two-panel (info + episodes), FitnessShow-style ---- */
 .piano-course {
