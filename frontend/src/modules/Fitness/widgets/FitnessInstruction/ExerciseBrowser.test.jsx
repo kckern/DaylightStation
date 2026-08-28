@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act, fireEvent, waitFor } from '@testing-library/react';
-import ExerciseBrowser, {
+import ExerciseBrowser from './ExerciseBrowser.jsx';
+import {
   buildExerciseQuery,
   activeFilterCount,
   toggleFacetValue,
   PAGE_SIZE
-} from './ExerciseBrowser.jsx';
+} from './exerciseBrowserModel.js';
 
 // ── Logger (CLAUDE.md: framework logger, never console.*) ────────────────────
 const logCalls = vi.hoisted(() => ({ debug: [], info: [], warn: [], error: [] }));

@@ -527,7 +527,7 @@ export default function CallApp() {
     if (localVideoRef.current && stream) {
       localVideoRef.current.srcObject = new MediaStream(stream.getVideoTracks());
     }
-  }, [stream]);
+  }, [stream, localVideoRef]);
 
   // Clean up call: hangup signaling + power off TV + reset state
   const endCall = useCallback(() => {

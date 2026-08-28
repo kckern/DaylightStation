@@ -9,6 +9,7 @@
  * standing at the printer.
  */
 import { GRADES } from '../grades.mjs';
+import { validateCheckpoints } from '../mediaCheckpoints.mjs';
 
 /**
  * The nine subject shelves. Twin of `frontend/src/modules/School/home/subjects.js`
@@ -89,8 +90,14 @@ const READALONG_PARTICIPATION = Object.freeze(['optional', 'required']);
 /**
  * @param {*} raw - one parsed unit YAML
  * @param {{bankIds?: Set<string>, documentIds?: Set<string>, manifestIds?: Set<string>,
- *          programIds?: Set<string>, surfaceValidators?: Map<string, Function>,
+ *          programIds?: Set<string>, bankItems?: Map<string, Set<string>>,
+ *          surfaceValidators?: Map<string, Function>,
  *          activityValidators?: Map<string, Function>}} [sets]
+ *   `bankItems` maps a bank id to that bank's item ids, and exists so a
+ *   `checkpoints:` block cannot publish naming a question the bank does not
+ *   contain. Like every other set here it is INJECTED — omitting it validates
+ *   checkpoint shape only (the `PRINT_DOCUMENT_REF_PATTERN` precedent: this
+ *   function has no repository of its own).
  *   `surfaceValidators` maps a DoNow surface id to that surface's own
  *   `validateAction` — the same registered-adapter contract `DoNowService`
  *   dispatches through at runtime, reused here so a `launch:` unit cannot
@@ -244,6 +251,30 @@ export function validateUnit(raw, sets = {}) {
     } else {
       review = raw.review;
     }
+  }
+
+  // A gated media lesson: `checkpoints` names the positions at which playback
+  // stops to ask comprehension questions (see `mediaCheckpoints.mjs`). It is
+  // not a composition kind of its own — it MODIFIES the media+bank pair, so it
+  // is meaningless without both: the media is what pauses, the bank is where
+  // the questions live. Two separate field-named errors rather than one
+  // combined message, matching `PROGRAM_EXCLUSIVE_FIELDS` below — an author
+  // who forgot both should be told both, in one pass.
+  let checkpoints;
+  if (isPresent(raw.checkpoints)) {
+    // Presence, not resolvability: a dangling media/bank reference is already
+    // reported by the loop above, and repeating it here would read as a second,
+    // separate authoring mistake.
+    if (!isPresent(raw.media)) errors.push('checkpoints requires media');
+    if (!isPresent(raw.bank)) errors.push('checkpoints requires bank');
+    // Undefined when no `bankItems` was injected — and equally when the map
+    // simply has no entry for this bank. Both degrade to shape-only, which is
+    // the honest answer: an absent corpus is not evidence that every item is
+    // missing, and failing them all would be a confident wrong error.
+    const bankItemIds = sets.bankItems instanceof Map ? sets.bankItems.get(raw.bank) : undefined;
+    const result = validateCheckpoints(raw.checkpoints, { bankItemIds });
+    result.errors.forEach((message) => errors.push(`checkpoints: ${message}`));
+    checkpoints = result.checkpoints;
   }
 
   // The program unit kind: its content IS a whole program (spec Task 2), so it
@@ -409,6 +440,7 @@ export function validateUnit(raw, sets = {}) {
       cadence,
       launch,
       activity,
+      ...(checkpoints ? { checkpoints } : {}),
       ...(schoolcalc ? { schoolcalc } : {}),
       ...(companion ? { companion } : {}),
       provenance: raw.provenance,

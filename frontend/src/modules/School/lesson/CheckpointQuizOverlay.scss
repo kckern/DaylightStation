@@ -1,0 +1,265 @@
+// CheckpointQuizOverlay.scss — the paused-lesson question card, drawn for a
+// sofa. Sibling of `ReadingSessionScreen.scss` and sized the same way: the
+// living-room Shield's WebView is a 960x540 CSS viewport about three metres
+// from the child, so everything is `vh`-relative and nothing depends on a
+// pointer being able to hit it precisely.
+//
+// SELF-CONTAINED ON PURPOSE. `School.scss` is imported by `SchoolApp.jsx` and
+// by nothing else, and it scopes every `--school-*` token to `.school-app` —
+// neither of which exists inside the screen framework. So the `.school-item*`
+// rules the reused quiz components need are restated here, scoped under
+// `.checkpoint-quiz`, at TV sizes rather than the 1280x800 touch-panel sizes
+// School.scss uses. If a class name changes in `quiz/items/*`, it changes here.
+//
+// Roboto Condensed is the house typeface; emphasis comes from scale, colour and
+// the focus ring, never from a second family. No keyframes — the kiosk WebView
+// drops frames under transitions (same rule as School.scss).
+
+.checkpoint-quiz {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 4vw;
+  box-sizing: border-box;
+  font-family: 'Roboto Condensed', 'Helvetica Neue', sans-serif;
+  color: #f6f2e8;
+  // Nearly opaque, not fully: the frozen frame behind stays faintly visible so
+  // the interruption reads as part of the lesson rather than a different app.
+  background: rgba(11, 15, 21, 0.94);
+
+  p { margin: 0; }
+}
+
+.checkpoint-quiz__card {
+  display: flex;
+  flex-direction: column;
+  gap: 2.2vh;
+  width: 100%;
+  max-width: 84vw;
+  padding: 3.4vh 3.6vw;
+  box-sizing: border-box;
+  border-radius: 2.4vh;
+  background: #1a212c;
+  box-shadow: 0 0 0 0.35vh rgba(246, 242, 232, 0.14);
+}
+
+.checkpoint-quiz__head {
+  display: flex;
+  align-items: baseline;
+  gap: 1.6vw;
+}
+
+.checkpoint-quiz__eyebrow {
+  font-size: 2.6vh;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffd479;
+}
+
+.checkpoint-quiz__progress,
+.checkpoint-quiz__who {
+  font-size: 2.4vh;
+  font-weight: 700;
+  color: rgba(246, 242, 232, 0.62);
+}
+
+.checkpoint-quiz__who { margin-left: auto; }
+
+// The question outranks everything else on the screen.
+.checkpoint-quiz .school-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2vh;
+}
+
+.checkpoint-quiz .school-item__prompt {
+  margin: 0;
+  font-size: 5.4vh;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.checkpoint-quiz .school-item__choices {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.6vh 1.6vw;
+}
+
+.checkpoint-quiz .school-item__choice,
+.checkpoint-quiz .school-item__check {
+  min-height: 11vh;
+  padding: 1vh 1.4vw;
+  border: 0.4vh solid rgba(246, 242, 232, 0.22);
+  border-radius: 1.6vh;
+  background: #26303f;
+  color: #f6f2e8;
+  font-family: inherit;
+  font-size: 3.6vh;
+  font-weight: 700;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+// THE FOCUS RING. Applied by the overlay as `data-focused` on whatever DOM node
+// the ring is on — the item components are foreign markup and take no prop for
+// it. `:focus` alone is not enough: a TV has no pointer to explain what is
+// selected, so the ring must be loud, and loud enough to survive a photograph
+// of a screen taken from the sofa.
+.checkpoint-quiz [data-focused='true'] {
+  border-color: #ffd479;
+  box-shadow: 0 0 0 0.5vh rgba(255, 212, 121, 0.45);
+  background: #33404f;
+  outline: none;
+}
+
+// Armed (one press in, one to go). Distinct from the ring: the ring says
+// "here", this says "this one, press OK again".
+.checkpoint-quiz .school-item__choice--armed {
+  border-color: #7fd6a0;
+  background: #2c4238;
+}
+
+// The item component's confirm hint says "tap again" — correct on the touch
+// panel it was written for, wrong on a remote. Swapped rather than forked:
+// duplicating MultipleChoiceItem to change four words would fork the arm/latch
+// logic the whole gate depends on. Keep in step with `.school-item__confirm`
+// in `quiz/items/MultipleChoiceItem.jsx`.
+.checkpoint-quiz .school-item__confirm {
+  display: block;
+  margin-top: 0.4vh;
+  font-size: 0;
+
+  &::after {
+    content: 'press OK again';
+    font-size: 2.4vh;
+    font-weight: 700;
+    color: #7fd6a0;
+  }
+}
+
+// The overlay states this in its own words, under the options.
+.checkpoint-quiz .school-item__choice-hint { display: none; }
+
+.checkpoint-quiz .school-item__input {
+  min-height: 8vh;
+  padding: 0 1.2vw;
+  border: 0.3vh solid rgba(246, 242, 232, 0.22);
+  border-radius: 1.2vh;
+  background: #141b24;
+  color: #f6f2e8;
+  font-family: inherit;
+  font-size: 3.4vh;
+
+  &--inline { display: inline-block; width: 10vw; }
+}
+
+.checkpoint-quiz .school-item__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.6vw;
+}
+
+.checkpoint-quiz .school-item__col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2vh;
+}
+
+.checkpoint-quiz .school-item__chip {
+  min-height: 8vh;
+  width: 100%;
+  border: 0.3vh solid rgba(246, 242, 232, 0.22);
+  border-radius: 1.2vh;
+  background: #26303f;
+  color: #f6f2e8;
+  font-family: inherit;
+  font-size: 3vh;
+  font-weight: 700;
+
+  &--selected { border-color: #ffd479; }
+  &--paired { opacity: 0.5; }
+}
+
+.checkpoint-quiz__hint {
+  font-size: 2.6vh;
+  color: rgba(246, 242, 232, 0.66);
+}
+
+.checkpoint-quiz__prompt {
+  font-size: 5vh;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.checkpoint-quiz__fault {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4vh;
+}
+
+// The escape hatch. Visually a DIFFERENT KIND OF THING from an answer — its own
+// row, its own ink, full width — so a child scanning for "the way out" finds it
+// without reading, and never mistakes it for a fifth answer.
+.checkpoint-quiz__rewind-zone {
+  display: flex;
+  padding-top: 1.4vh;
+  border-top: 0.25vh solid rgba(246, 242, 232, 0.16);
+}
+
+.checkpoint-quiz__rewind {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1vw;
+  width: 100%;
+  min-height: 10vh;
+  border: 0.4vh solid rgba(120, 176, 255, 0.5);
+  border-radius: 1.6vh;
+  background: #1d2b3d;
+  color: #cfe2ff;
+  font-family: inherit;
+  font-size: 3.4vh;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.checkpoint-quiz__rewind-glyph { font-size: 4.4vh; line-height: 1; }
+
+.checkpoint-quiz__notice {
+  padding: 1.4vh 1.6vw;
+  border-radius: 1.2vh;
+  font-size: 2.8vh;
+  line-height: 1.25;
+  background: rgba(224, 168, 58, 0.16);
+  color: #ffd479;
+
+  &--error {
+    background: rgba(224, 90, 79, 0.18);
+    color: #ffb4ac;
+  }
+}
+
+.checkpoint-quiz__blocked {
+  font-size: 2.8vh;
+  font-weight: 700;
+  color: #ffd479;
+}
+
+// The ✓ beat. Its LENGTH belongs to `useMediaLessonSession` — this component
+// paints the tick and waits to be unmounted, and starts no timer of its own.
+.checkpoint-quiz--cleared .checkpoint-quiz__card {
+  align-items: center;
+  text-align: center;
+}
+
+.checkpoint-quiz__tick {
+  font-size: 8vh;
+  font-weight: 800;
+  color: #7fd6a0;
+
+  span { font-size: 12vh; display: block; line-height: 1; }
+}

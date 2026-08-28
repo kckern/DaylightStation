@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import StandingsTower, { ordinal, gapToAboveText, buildStandingsGroups } from './StandingsTower.jsx';
+import StandingsTower from './StandingsTower.jsx';
+import { ordinal, gapToAboveText } from '@/modules/Fitness/lib/cycleGame/standingsFormat.js';
+import { buildStandingsGroups } from './standingsGroups.js';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 
 describe('ordinal', () => {

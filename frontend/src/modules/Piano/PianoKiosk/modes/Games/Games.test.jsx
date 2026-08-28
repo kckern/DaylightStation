@@ -73,7 +73,8 @@ vi.mock('../../useGameBudgetMeter.js', () => ({
 import { PianoMidiProvider } from '../../PianoMidiContext.jsx';
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import PianoUserContext from '../../PianoUserContext.jsx';
-import { Games, gameSubRouteTarget } from './Games.jsx';
+import { Games } from './Games.jsx';
+import { gameSubRouteTarget } from './gameSubRoute.js';
 
 const testConfig = {
   voices: [], videos: { plexCollection: null }, games: {},

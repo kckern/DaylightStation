@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createElement } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { PIANO_MODES, PianoMenu } from './PianoMenu.jsx';
+import { PianoMenu } from './PianoMenu.jsx';
+import { PIANO_MODES } from './pianoModes.js';
 import { __clearPianoListCache } from './usePianoList.js';
 
 // Lightweight stubs so PianoMenu renders without its full context/hardware chain.

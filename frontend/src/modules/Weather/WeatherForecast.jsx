@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import React from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
@@ -16,7 +16,7 @@ export default function WeatherForecast({ weatherData: weatherDataProp }) {
 
   const celciusToFahrenheit = (temp) => Math.round(temp * 9/5 + 32);
 
-  const processWeatherData = (data) => {
+  const processWeatherData = useCallback((data) => {
     if (!data?.hourly) return;
 
     const list = data.hourly || [];
@@ -29,11 +29,11 @@ export default function WeatherForecast({ weatherData: weatherDataProp }) {
     const n = 5;
     setTemps(temps.filter((_, i) => i % n === 0));
     setTimes(times.filter((_, i) => i % n === 0));
-  };
+  }, []);
 
   useEffect(() => {
     if (weatherData) processWeatherData(weatherData);
-  }, [weatherData]);
+  }, [weatherData, processWeatherData]);
 
   useEffect(() => {
     const el = containerRef.current;

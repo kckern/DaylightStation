@@ -12,7 +12,7 @@ import {
 } from '@tabler/icons-react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { ShimmerAvatar } from './ShimmerAvatar.jsx';
-import { CONTAINER_TYPES, SOURCE_COLORS, getTypeIcon, TYPE_LABELS } from './ContentDisplays.jsx';
+import { CONTAINER_TYPES, SOURCE_COLORS, getTypeIcon, TYPE_LABELS } from './contentDisplaysUtils.jsx';
 
 // Lazy admin logger with session logging enabled
 let _adminLog;

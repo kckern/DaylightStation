@@ -3,11 +3,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act, waitFor, fireEvent } from '@testing-library/react';
 import * as sass from 'sass-embedded';
-import PlaceCarousel, { PLACE_SLIDE_MS, PLACE_FADE_MS } from './PlaceCarousel.jsx';
-import { COMPOSER_FACT_FADE_MS } from './ComposerCard.jsx';
-import { CUE_FADE_MS } from './CueTicker.jsx';
+import PlaceCarousel, { PLACE_SLIDE_MS } from './PlaceCarousel.jsx';
+import { PLACE_FADE_MS } from './placeCarouselTiming.js';
+import { COMPOSER_FACT_FADE_MS } from './composerCardTiming.js';
+import { CUE_FADE_MS } from './cueTickerModel.js';
 import { DISSOLVE_FADE_MS, DISSOLVE_COMMIT_MS } from '../dissolve.js';
-import { __resetMapCache } from '../map/CountryMap.jsx';
+import { __resetMapCache } from '../map/countryMapGeoCache.js';
 import { registerSurroundBuiltins, SURROUND_BUILTIN_MODULES } from '../builtins.js';
 import { getSurroundRegistry, resetSurroundRegistry } from '../registry.js';
 

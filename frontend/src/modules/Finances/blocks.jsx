@@ -1,22 +1,8 @@
 import { SpendingPieDrilldownChart } from "./drawer";
 import { EmptyState } from "./EmptyState.jsx";
 import { pressable } from "./lib/a11y.mjs";
-// A bare `export { x } from ...` re-export creates NO local binding — this
-// file also CALLS formatAsCurrency, so import it and re-export explicitly.
 import { formatAsCurrency } from './lib/format.mjs';
-export { formatAsCurrency };
-
-export const collectSpendingTransactions = (budget) => {
-  const monthsDayToDay = Object.keys(budget.dayToDayBudget || {});
-  const monthsMonthly = Object.keys(budget.monthlyBudget || {});
-  const shortTermBuckets = Object.keys(budget.shortTermBuckets || {});
-  const dayToDay = monthsDayToDay.flatMap((m) => budget.dayToDayBudget[m].transactions || []);
-  const monthly = monthsMonthly.flatMap((m) =>
-    Object.values(budget.monthlyBudget[m].monthlyCategories || {}).flatMap((c) => c.transactions || [])
-  );
-  const shortTerm = shortTermBuckets.flatMap((b) => budget.shortTermBuckets[b].transactions || []);
-  return [...dayToDay, ...monthly, ...shortTerm].filter((txn) => txn?.expenseAmount > 0);
-};
+import { collectSpendingTransactions } from './spendingTransactions.js';
 
   // BudgetHoldings.jsx
   export function BudgetHoldings({ setDrawerContent, budget }) {

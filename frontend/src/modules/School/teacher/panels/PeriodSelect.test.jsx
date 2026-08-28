@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { currentPeriodId } from './PeriodSelect.jsx';
+import { currentPeriodId } from './currentPeriodId.js';
 
 const P = (periodId, startsAt, endsAt) => ({ periodId, startsAt, endsAt });
 

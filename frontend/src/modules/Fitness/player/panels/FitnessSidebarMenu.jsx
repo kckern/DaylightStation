@@ -1,7 +1,8 @@
 import React from 'react';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
-import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
+import { TouchVolumeButtons } from './TouchVolumeButtons.jsx';
+import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './touchVolumeModel.js';
 import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from '../../lib/guestOptionsBuilder.js';
 import { genericGuestImageId } from '../../lib/guestPlaceholders.js';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';

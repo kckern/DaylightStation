@@ -1,92 +1,15 @@
-import React, { useRef, useEffect, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import './ImageFrame.scss';
 import getLogger from '../../../lib/logging/Logger.js';
 import { SlideshowMetadataOverlay } from '../components/SlideshowMetadataOverlay.jsx';
+import { computeZoomTarget } from './imageFrameZoomTarget.js';
 
 const logger = getLogger().child({ component: 'ImageFrame' });
 
 const DISSOLVE_MS = 1000;
 // Frame budget at 60fps — frames longer than this are "long frames"
 const LONG_FRAME_THRESHOLD_MS = 50;
-
-/**
- * Compute Ken Burns animation target based on face data.
- * Priority: focusPerson face > center-most face > random center 60%
- */
-export function computeZoomTarget({ people, focusPerson, zoom }) {
-  const maxTranslate = ((zoom - 1) / zoom) * 50;
-
-  let targetX = 0.5;
-  let targetY = 0.5;
-  let found = false;
-  let strategy = 'random';
-
-  const allFaces = (people || []).flatMap(p =>
-    (p.faces || []).map(f => ({ ...f, personName: p.name }))
-  );
-
-  if (focusPerson && allFaces.length > 0) {
-    const match = allFaces.find(f =>
-      f.personName?.toLowerCase() === focusPerson.toLowerCase()
-    );
-    if (match && match.imageWidth && match.imageHeight) {
-      targetX = ((match.x1 + match.x2) / 2) / match.imageWidth;
-      targetY = ((match.y1 + match.y2) / 2) / match.imageHeight;
-      found = true;
-      strategy = 'focus-person';
-    }
-  }
-
-  if (!found && allFaces.length > 0) {
-    let closest = allFaces[0];
-    let closestDist = Infinity;
-    for (const f of allFaces) {
-      if (!f.imageWidth || !f.imageHeight) continue;
-      const cx = ((f.x1 + f.x2) / 2) / f.imageWidth;
-      const cy = ((f.y1 + f.y2) / 2) / f.imageHeight;
-      const dist = (cx - 0.5) ** 2 + (cy - 0.5) ** 2;
-      if (dist < closestDist) {
-        closestDist = dist;
-        closest = f;
-      }
-    }
-    if (closest.imageWidth && closest.imageHeight) {
-      targetX = ((closest.x1 + closest.x2) / 2) / closest.imageWidth;
-      targetY = ((closest.y1 + closest.y2) / 2) / closest.imageHeight;
-      found = true;
-      strategy = 'center-face';
-    }
-  }
-
-  if (!found) {
-    targetX = 0.2 + Math.random() * 0.6;
-    targetY = 0.2 + Math.random() * 0.6;
-  }
-
-  logger.debug('zoom-target-computed', {
-    strategy,
-    focusPerson: focusPerson || null,
-    faceCount: allFaces.length,
-    faceNames: [...new Set(allFaces.map(f => f.personName).filter(Boolean))],
-    targetX: targetX.toFixed(3),
-    targetY: targetY.toFixed(3),
-    zoom,
-  });
-
-  const startOffX = (0.5 - targetX) * maxTranslate * 0.3;
-  const startOffY = (0.5 - targetY) * maxTranslate * 0.3;
-  const endOffX = (0.5 - targetX) * maxTranslate;
-  const endOffY = (0.5 - targetY) * maxTranslate;
-
-  return {
-    startX: `${startOffX.toFixed(2)}%`,
-    startY: `${startOffY.toFixed(2)}%`,
-    endX: `${endOffX.toFixed(2)}%`,
-    endY: `${endOffY.toFixed(2)}%`,
-    strategy,
-  };
-}
 
 /**
  * ImageFrame — photo renderer with Ken Burns, cross-dissolve, and metadata overlay.
@@ -180,7 +103,7 @@ export function ImageFrame({
   };
 
   /** Flush per-slide summary to the session log */
-  const perfFlush = () => {
+  const perfFlush = useCallback(() => {
     const p = perfRef.current;
     if (!p) return;
     perfRef.current = null;
@@ -199,17 +122,24 @@ export function ImageFrame({
       maxFrameMs: Math.round(p.maxFrameMs),
       avgFps: p.totalFrames > 1 ? Math.round(p.totalFrames / (displayMs / 1000)) : null,
     });
-  };
+  }, [perfLog]);
   // ── End performance instrumentation ──────────────────────────────────
 
+  // imageId is read through a ref in the cleanup rather than listed as a
+  // dependency: this component isn't remounted per-slide (no `key`), so the
+  // effect must fire mount/unmount exactly once while the cleanup still needs
+  // the LATEST imageId (the slide showing when the frame actually unmounts),
+  // not the one from the first render.
+  const imageIdRef = useRef(imageId);
+  imageIdRef.current = imageId;
   useEffect(() => {
-    logger.debug('image-frame-mount', { imageId });
+    logger.debug('image-frame-mount', { imageId: imageIdRef.current });
     return () => {
       // Flush any in-progress slide metrics on unmount
       perfFlush();
-      logger.debug('image-frame-unmount', { imageId });
+      logger.debug('image-frame-unmount', { imageId: imageIdRef.current });
     };
-  }, []);
+  }, [perfFlush]);
 
   // Consume pre-fetched enrichment or defer JIT fetch to idle time
   useEffect(() => {
@@ -423,7 +353,7 @@ export function ImageFrame({
       cancelled = true;
       preloadRef.current = { thumb: null, orig: null, thumbDone: false, origDone: false };
     };
-  }, [nextMedia?.id]);
+  }, [nextMedia?.id, nextMedia?.mediaUrl, nextMedia?.thumbnail, perfLog]);
 
   // Main effect: handle image transitions (cross-dissolve + Ken Burns)
   useEffect(() => {
@@ -601,7 +531,10 @@ export function ImageFrame({
       if (timerRef.current) clearTimeout(timerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [media?.id, media?.mediaUrl, duration, effect, zoom, focusPerson, slideshow.showMetadata]);
+  }, [
+    media?.id, media?.mediaUrl, media?.thumbnail, media?.title,
+    duration, effect, zoom, focusPerson, slideshow.showMetadata, perfFlush, perfLog,
+  ]);
 
   // Full cleanup on unmount
   useEffect(() => {

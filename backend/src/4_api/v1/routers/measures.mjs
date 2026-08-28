@@ -11,50 +11,29 @@
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { studyDayFor, weekWindowFor, weekState } from '#domains/measures/weeklyWindow.mjs';
 
-export function createMeasuresRouter({
-  registry,
-  learners,           // () => Promise<Array<{id}>> — the school roster
-  timezone = 'UTC',
-  clock = () => new Date(),
-  logger = null,
-} = {}) {
+export function createMeasuresRouter({ weeklyMeasures } = {}) {
+  if (!weeklyMeasures || typeof weeklyMeasures.execute !== 'function') {
+    throw new Error('createMeasuresRouter requires a weeklyMeasures use case');
+  }
   const router = express.Router();
+
+  // The use case arrives already built, it is not imported. Both layer rules
+  // this router is ratcheted against — `api-no-domains` and `api-no-apps` —
+  // are about IMPORTS, and the house pattern for a router that needs a use
+  // case is the one `createReadingRouter` uses: take the instance as a
+  // dependency and let the composition root wire it.
 
   /**
    * GET /weekly?week=YYYY-MM-DD
    *
-   * `week` is any day inside the wanted week; the Sunday→Saturday window
+   * `week` is any day inside the wanted week; the Sunday-to-Saturday window
    * containing it is returned. Omitted means the current week.
    */
   router.get('/weekly', asyncHandler(async (req, res) => {
-    const asked = typeof req.query.week === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.week)
-      ? req.query.week
-      : studyDayFor(clock(), { timezone });
-    const window = weekWindowFor(asked);
-
-    const roster = (await learners?.()) ?? [];
-    const today = studyDayFor(clock(), { timezone });
-
-    const rows = [];
-    for (const learner of roster) {
-      const learnerId = learner?.id ?? learner?.learnerId;
-      if (!learnerId) continue;
-      const measures = await registry.totalsFor({ learnerId, ...window, logger });
-      rows.push({
-        learnerId,
-        measures: measures.map((m) => ({
-          ...m,
-          // v1 configures no targets, so this is `untargeted` for everyone. It
-          // is computed anyway because it is the vocabulary the eventual gate
-          // needs, and deriving it later would mean revisiting every layer.
-          state: weekState({ value: m.value ?? 0, target: null, day: today, window }),
-        })),
-      });
-    }
-
-    res.set('Cache-Control', 'no-store').json({ window, learners: rows });
+    const week = typeof req.query.week === 'string' ? req.query.week : null;
+    const body = await weeklyMeasures.execute({ week });
+    res.set('Cache-Control', 'no-store').json(body);
   }));
 
   return router;

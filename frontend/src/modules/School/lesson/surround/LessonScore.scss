@@ -1,0 +1,96 @@
+// frontend/src/modules/School/lesson/surround/LessonScore.scss
+//
+// The learner's placard, cut for the `top` region at 960x540. `WorkPlacard` is
+// the neighbour it is modelled on — the same recessive plate straddling the
+// video's edge, the same cap against the frame's MEASURED video width so it
+// stays a badge rather than a band — with two differences that follow from what
+// it carries: it is content-width and left-aligned (a name is not a headline),
+// and it is set in the frame's annotation face rather than its display serif,
+// because this is a label about a person, not an engraved title.
+//
+// SIZED FOR A SOFA, NOT FOR A DESK. The name is the one string here that has to
+// be readable from across a room and it is the only thing set above the label
+// register; everything else — the ✓, the tally — is the frame's published
+// `--label-floor`, which is an ANGULAR measurement (see `_tokens.scss`) and so
+// holds its apparent size across the 960 living room and the 1280 office alike.
+
+@use "../../../Surround/tokens" as *;
+
+.lesson-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* A BADGE, NOT A BANNER. The same mechanism `WorkPlacard` uses: the frame
+     publishes the video's measured width, and the placard may never be more
+     than a third of it — at 960 that is ~300px, which holds an avatar, a first
+     name and a tally, and nothing more. */
+  max-width: calc(var(--surround-media-w, 100%) * 0.34);
+  padding: 0.25rem 0.6rem 0.25rem 0.25rem;
+  box-sizing: border-box;
+  border-radius: $bond-radius;
+  background: #{$rail-ground};
+  box-shadow:
+    inset 0 1px 0 rgba(233, 223, 200, 0.14),
+    0 1px 3px rgba(0, 0, 0, 0.5);
+  font-family: var(--surround-annotation, "Roboto Condensed", ui-sans-serif, system-ui, sans-serif);
+  color: var(--ink, #e9dfc8);
+}
+
+.lesson-score__avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+}
+
+/* `ProfileAvatar` is the household's own round avatar, shared with the reading
+   session screen. It brings `identity.scss`; only the box it sits in is ours. */
+.lesson-score__avatar .piano-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.lesson-score__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;                       /* so the name may ellipsize, not the row */
+  line-height: 1.15;
+}
+
+/* THE NAME IS THE POINT. It is the only string on this placard set above the
+   label register, and it is the reason the placard exists — a lesson on the
+   family television should say whose it is without anyone having to ask. One
+   line; a name that will not fit is cut rather than wrapped, because a placard
+   that grows a line changes the frame's reserved height. */
+.lesson-score__name {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lesson-score__tally {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25em;
+  font-size: var(--label-floor, 11.52px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #a89a80);
+  font-variant-numeric: tabular-nums;
+}
+
+.lesson-score__mark {
+  color: var(--brass, #c79a3e);
+}
+
+/* The count itself, in the frame's parchment rather than the tally's quieter
+   ink: the number is the thing that changes, so it is the thing that reads. */
+.lesson-score__correct {
+  color: var(--ink, #e9dfc8);
+  font-weight: 600;
+}

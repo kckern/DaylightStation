@@ -644,7 +644,108 @@ function GratitudeApp({
   // =========================================================================
   // Keyboard Navigation
   // =========================================================================
-  
+
+  const handleHeaderNavigation = useCallback((event) => {
+    switch (event.key) {
+      case 'ArrowLeft':
+        event.preventDefault();
+        setHeaderFocus('category');
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        setHeaderFocus('user');
+        break;
+      case 'ArrowDown':
+        event.preventDefault();
+        // Move to queue
+        setFocusZone('queue');
+        setFocusIndex(0);
+        break;
+      case 'Escape':
+        event.preventDefault();
+        event.stopPropagation();
+        onExit();
+        break;
+    }
+  }, [onExit]);
+
+  const handleQueueNavigation = useCallback((event, items) => {
+    // Queue: only top item (index 0) is ever focused
+    switch (event.key) {
+      case 'ArrowUp':
+        event.preventDefault();
+        // Go to header
+        setFocusZone('header');
+        setHeaderFocus('category');
+        break;
+      case 'ArrowDown':
+        event.preventDefault();
+        // Cycle user (without going to header)
+        if (users.length && currentUser) {
+          const idx = users.findIndex(u => u.id === currentUser.id);
+          const nextIdx = (idx + 1) % users.length;
+          // Trigger animation
+          setUserAnim('up');
+          setTimeout(() => setUserAnim(null), 300);
+          setCurrentUser(users[nextIdx]);
+        }
+        break;
+      case 'ArrowLeft':
+        event.preventDefault();
+        // Dismiss the top item
+        if (items[0]) {
+          handleDismiss(items[0]);
+        }
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        // Focus the Selected column
+        setFocusZone('selected');
+        setFocusIndex(0);
+        break;
+      case 'Escape':
+        event.preventDefault();
+        event.stopPropagation();
+        onExit();
+        break;
+    }
+  }, [users, currentUser, handleDismiss, onExit]);
+
+  const handleSelectedNavigation = useCallback((event, items) => {
+    switch (event.key) {
+      case 'ArrowUp':
+        event.preventDefault();
+        if (focusIndex > 0) {
+          setFocusIndex(prev => prev - 1);
+        } else {
+          // At top, go to header
+          setFocusZone('header');
+          setHeaderFocus('category');
+        }
+        break;
+      case 'ArrowDown':
+        event.preventDefault();
+        if (focusIndex < items.length - 1) {
+          setFocusIndex(prev => prev + 1);
+        }
+        break;
+      case 'ArrowLeft':
+        event.preventDefault();
+        // Go back to queue
+        setFocusZone('queue');
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        // No action - already rightmost
+        break;
+      case 'Escape':
+        event.preventDefault();
+        event.stopPropagation();
+        onExit();
+        break;
+    }
+  }, [focusIndex, onExit]);
+
   const handleKeyDown = useCallback((event) => {
     // Enter/Space are handled separately for long press detection
     if (event.key === 'Enter' || event.key === ' ') {
@@ -669,31 +770,7 @@ function GratitudeApp({
         handleSelectedNavigation(event, currentSelected);
         break;
     }
-  }, [focusZone, focusIndex, headerFocus, category, queue, selected, sessionDiscarded, users, currentUser]);
-
-  const handleHeaderNavigation = (event) => {
-    switch (event.key) {
-      case 'ArrowLeft':
-        event.preventDefault();
-        setHeaderFocus('category');
-        break;
-      case 'ArrowRight':
-        event.preventDefault();
-        setHeaderFocus('user');
-        break;
-      case 'ArrowDown':
-        event.preventDefault();
-        // Move to queue
-        setFocusZone('queue');
-        setFocusIndex(0);
-        break;
-      case 'Escape':
-        event.preventDefault();
-        event.stopPropagation();
-        onExit();
-        break;
-    }
-  };
+  }, [focusZone, category, queue, selected, sessionDiscarded, handleHeaderNavigation, handleQueueNavigation, handleSelectedNavigation]);
 
   // Handle Enter/Space action (called on keyup if not long press)
   const handleSelectAction = useCallback(() => {
@@ -736,83 +813,6 @@ function GratitudeApp({
         break;
     }
   }, [focusZone, focusIndex, headerFocus, category, queue, selected, sessionDiscarded, users, currentUser, handleSelect, handleRemove]);
-
-  const handleQueueNavigation = (event, items) => {
-    // Queue: only top item (index 0) is ever focused
-    switch (event.key) {
-      case 'ArrowUp':
-        event.preventDefault();
-        // Go to header
-        setFocusZone('header');
-        setHeaderFocus('category');
-        break;
-      case 'ArrowDown':
-        event.preventDefault();
-        // Cycle user (without going to header)
-        if (users.length && currentUser) {
-          const idx = users.findIndex(u => u.id === currentUser.id);
-          const nextIdx = (idx + 1) % users.length;
-          // Trigger animation
-          setUserAnim('up');
-          setTimeout(() => setUserAnim(null), 300);
-          setCurrentUser(users[nextIdx]);
-        }
-        break;
-      case 'ArrowLeft':
-        event.preventDefault();
-        // Dismiss the top item
-        if (items[0]) {
-          handleDismiss(items[0]);
-        }
-        break;
-      case 'ArrowRight':
-        event.preventDefault();
-        // Focus the Selected column
-        setFocusZone('selected');
-        setFocusIndex(0);
-        break;
-      case 'Escape':
-        event.preventDefault();
-        event.stopPropagation();
-        onExit();
-        break;
-    }
-  };
-
-  const handleSelectedNavigation = (event, items) => {
-    switch (event.key) {
-      case 'ArrowUp':
-        event.preventDefault();
-        if (focusIndex > 0) {
-          setFocusIndex(prev => prev - 1);
-        } else {
-          // At top, go to header
-          setFocusZone('header');
-          setHeaderFocus('category');
-        }
-        break;
-      case 'ArrowDown':
-        event.preventDefault();
-        if (focusIndex < items.length - 1) {
-          setFocusIndex(prev => prev + 1);
-        }
-        break;
-      case 'ArrowLeft':
-        event.preventDefault();
-        // Go back to queue
-        setFocusZone('queue');
-        break;
-      case 'ArrowRight':
-        event.preventDefault();
-        // No action - already rightmost
-        break;
-      case 'Escape':
-        event.preventDefault();
-        event.stopPropagation();
-        onExit();
-        break;
-    }
-  };
 
   // Also handle moving from queue to selected via RIGHT when at queue
   useEffect(() => {

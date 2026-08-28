@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback } from 'react';
-import { measureExtent } from './FocusRangeLayer.jsx';
+import { measureExtent } from './focusRangeGeometry.js';
 
 // A press that never travels this far is a TAP, not a drag (wave-3 F). Generous
 // on purpose: a finger on a kiosk glass always wobbles a pixel or three, and the

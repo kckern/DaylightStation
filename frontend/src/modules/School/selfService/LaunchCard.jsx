@@ -8,7 +8,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
-import Icon, { hasIcon } from '../home/icons/Icon.jsx';
+import Icon from '../home/icons/Icon.jsx';
+import { hasIcon } from '../home/icons/iconRegistry.js';
 import { sizedPlexImage, ART_BOX } from '../plexImage.js';
 import { schoolLog } from '../schoolLog.js';
 

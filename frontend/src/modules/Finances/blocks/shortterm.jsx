@@ -1,23 +1,12 @@
 import React, { useMemo } from "react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { formatAsCurrency } from "../blocks";
+import { formatAsCurrency } from "../lib/format.mjs";
 import { EmptyState } from "../EmptyState.jsx";
 import { PALETTE } from "../lib/format.mjs";
 import { budgetProgress } from "../lib/budgetMath.mjs";
 import { useToday } from "../hooks/useToday.mjs";
 import { pressable } from "../lib/a11y.mjs";
-
-export const gatherShortTermTransactions = (budget, key) => {
-  const shortTermBuckets = budget.shortTermBuckets || {};
-  const all = Object.keys(shortTermBuckets)
-    .reduce((acc, label) => acc.concat(shortTermBuckets[label].transactions), [])
-    .sort((b, a) => a.amount - b.amount);
-  if (key === 'budget') return all;
-  if (key === 'spent') return all.filter(t => t.expenseAmount > 0);
-  if (key === 'gained') return all.filter(t => t.expenseAmount < 0);
-  return [];
-};
 
 export function BudgetShortTerm({ setDrawerContent, budget }) {
 

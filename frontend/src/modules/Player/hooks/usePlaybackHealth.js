@@ -194,7 +194,11 @@ export function usePlaybackHealth({
     setFrameInfo(NO_FRAME_INFO);
     setProgressSignal(DEFAULT_PROGRESS_STATE);
     setBufferRunwayMs(null);
-    lastSecondsRef.current = Number.isFinite(seconds) ? seconds : null;
+    // Read via ref, not the `seconds` prop directly: this effect must fire
+    // only on a new load cycle (waitKey), not on every position tick, but
+    // still needs the LATEST seconds at that moment.
+    const latest = currentSecondsRef.current;
+    lastSecondsRef.current = Number.isFinite(latest) ? latest : null;
   }, [waitKey]);
 
   const logHealthEvent = useCallback((event, details = {}, options = {}) => {

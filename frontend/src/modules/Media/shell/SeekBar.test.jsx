@@ -20,7 +20,8 @@ vi.mock('../controller/usePlaybackPosition.js', () => ({
   usePlaybackPosition: () => state.position,
 }));
 
-import { SeekBar, formatTime } from './SeekBar.jsx';
+import { SeekBar } from './SeekBar.jsx';
+import { formatTime } from './formatTime.js';
 
 function makeSnapshot({ duration = 240, isLive = false, position = 0 } = {}) {
   return {

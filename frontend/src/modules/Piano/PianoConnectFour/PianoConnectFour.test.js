@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addressedColumn, columnAddresses, dropDurationMs, lastDrop, shuffledColumns, winningKeys,
-} from './PianoConnectFour.jsx';
+} from './pianoConnectFourModel.js';
 
 const notes = (...values) => new Map(values.map((note) => [note, { velocity: 100 }]));
 const config = {

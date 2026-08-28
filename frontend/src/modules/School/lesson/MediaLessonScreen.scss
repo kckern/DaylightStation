@@ -1,0 +1,117 @@
+/**
+ * MediaLessonScreen.scss — the two things this widget actually paints.
+ *
+ * Almost none of the lesson's pixels are here: the Player owns the picture, the
+ * surround frame owns the chrome, and `CheckpointQuizOverlay.scss` owns the
+ * question card. What is left is the CURTAIN (the seconds between the dispatch
+ * landing and the first frame) and the NOTICE (the only thing that can explain a
+ * lesson that never started), plus the stage box that gives the question card
+ * something to be `position: absolute` inside.
+ *
+ * Sized for the living-room Shield: a 960x540 CSS viewport about three metres
+ * from a child who may not be able to read, so everything is `vh`-relative and
+ * the face is the largest thing on it. Roboto Condensed is the house typeface;
+ * emphasis comes from scale and colour, never a second family. No keyframes —
+ * the kiosk WebView drops frames under transitions (same rule as School.scss).
+ */
+
+/**
+ * The overlay-slot root. It exists for ONE reason: `.checkpoint-quiz` is
+ * `position: absolute; inset: 0`, so it needs a positioned ancestor that is the
+ * whole screen. Without this the card would resolve against the nearest
+ * positioned element in the overlay wrapper and land somewhere arbitrary.
+ */
+.media-lesson-stage {
+  position: absolute;
+  inset: 0;
+}
+
+.media-lesson {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2vh;
+  padding: 4vh 4vw;
+  box-sizing: border-box;
+  font-family: 'Roboto Condensed', 'Helvetica Neue', sans-serif;
+  color: #f6f2e8;
+  background: #0d0f14;
+  text-align: center;
+
+  &--idle {
+    // A refusal or a failed open paints ONLY the notice, over whatever the
+    // screen was already showing — the promise of that failure is that nothing
+    // else moves.
+    background: transparent;
+    justify-content: flex-start;
+    pointer-events: none;
+  }
+}
+
+.media-lesson__who {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1vh;
+
+  img,
+  svg {
+    width: 22vh;
+    height: 22vh;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+}
+
+.media-lesson__name {
+  margin: 0;
+  font-size: 4.4vh;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.media-lesson__title {
+  margin: 0;
+  font-size: 6vh;
+  font-weight: 700;
+  line-height: 1.1;
+  max-width: 80vw;
+}
+
+.media-lesson__hint {
+  margin: 0;
+  font-size: 3vh;
+  color: rgba(246, 242, 232, 0.72);
+}
+
+.media-lesson__curtain,
+.media-lesson__celebrate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2vh;
+}
+
+.media-lesson__notice {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6vh;
+  align-items: center;
+  margin-bottom: 2vh;
+  padding: 2vh 4vw;
+  border-radius: 1.4vh;
+  background: rgba(13, 15, 20, 0.92);
+  border-left: 0.8vh solid #8a8f9a;
+  font-size: 3.2vh;
+  line-height: 1.2;
+
+  strong { font-weight: 700; }
+  span { font-size: 2.6vh; color: rgba(246, 242, 232, 0.78); }
+
+  &--warn { border-left-color: #e0a33e; }
+  &--error { border-left-color: #d05a4c; }
+}

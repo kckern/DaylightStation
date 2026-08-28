@@ -1,13 +1,6 @@
 import TransportSheet from '../../transport/TransportSheet.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
-
-// The practice ladder, selected from the header's mode crumb (wave-2 B).
-export const MODES = [
-  { id: 'listen', label: 'Listen', icon: 'mode-listen' },
-  { id: 'learn', label: 'Learn', icon: 'mode-learn' },
-  { id: 'polish', label: 'Polish', icon: 'mode-polish' },
-  { id: 'perform', label: 'Perform', icon: 'mode-perform' },
-];
+import { MODES } from './practiceModes.js';
 
 /** Centered mode picker: four icon rows; picking switches and closes. */
 export default function ModeSheet({ open, onClose, mode, onPick }) {

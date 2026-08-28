@@ -1,6 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import FingerprintIcon from './FingerprintIcon.jsx';
+import { fingerLabel } from './fingerLabel.js';
 import './FingerprintHands.scss';
 
 // Single-path hand silhouette (svgrepo.com/130068, thumb-left). Drawn once and
@@ -25,15 +26,6 @@ const RIGHT_TIPS = {
   little: [81.2, 34.7],
 };
 const FINGER_ORDER = ['thumb', 'index', 'middle', 'ring', 'little'];
-
-// Human-readable finger label, e.g. 'right-index' → 'Right index'.
-export function fingerLabel(finger) {
-  if (!finger) return '';
-  return finger
-    .split('-')
-    .map((part, i) => (i === 0 ? part[0].toUpperCase() + part.slice(1) : part))
-    .join(' ');
-}
 
 function Hand({ side, enrolledSet, selected, interactive, onFingerTap }) {
   const mirror = side === 'left';

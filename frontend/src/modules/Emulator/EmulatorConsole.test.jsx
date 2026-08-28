@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { render, act } from '@testing-library/react';
-import { EmulatorConsole, computeScreenBox } from './EmulatorConsole.jsx';
+import { EmulatorConsole } from './EmulatorConsole.jsx';
+import { computeScreenBox } from './screenBoxGeometry.js';
 
 /**
  * Build a set of injectable fake factories and capture the objects/args they

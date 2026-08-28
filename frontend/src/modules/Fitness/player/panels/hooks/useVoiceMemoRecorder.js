@@ -135,7 +135,7 @@ const useVoiceMemoRecorder = ({
   onStateChange,
   onLevel,
   onPauseMusic,
-  onResumeMusic
+  onResumeMusic: _onResumeMusic
 } = {}) => {
   const fitnessCtx = useFitness();
   const logVoiceMemo = useCallback((event, payload = {}, options = {}) => {
@@ -422,7 +422,12 @@ const useVoiceMemoRecorder = ({
       setUploading(false);
       abortControllerRef.current = null;
     }
-  }, [emitError, emitState, logVoiceMemo, onMemoCaptured, sessionId]);
+  }, [
+    emitError, emitState, logVoiceMemo, onMemoCaptured, sessionId,
+    fitnessCtx?.currentMedia?.grandparentTitle, fitnessCtx?.currentMedia?.showName,
+    fitnessCtx?.currentMedia?.title, fitnessCtx?.fitnessSessionInstance?.roster,
+    fitnessCtx?.householdId, fitnessCtx?.recentlyPlayed,
+  ]);
 
   const startRecording = useCallback(async () => {
     setError(null);
@@ -499,7 +504,7 @@ const useVoiceMemoRecorder = ({
       emitError(err, 'Failed to access microphone', 'mic_access_denied', false);
       logVoiceMemo('recording-start-error', { error: err?.message || String(err) }, { level: 'warn' });
     }
-  }, [clearDurationTimer, emitError, emitLevel, emitState, handleRecordingStop, logVoiceMemo, onPauseMusic, onResumeMusic, playerRef, preferredMicrophoneId, startLevelMonitor]);
+  }, [cleanupStream, clearDurationTimer, emitError, emitLevel, emitState, handleRecordingStop, logVoiceMemo, onPauseMusic, playerRef, preferredMicrophoneId, startLevelMonitor]);
 
   const stopRecording = useCallback(() => {
     logVoiceMemo('recording-stop-request');

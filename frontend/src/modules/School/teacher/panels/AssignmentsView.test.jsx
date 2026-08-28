@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import AssignmentsView, { mergeEntries } from './AssignmentsView.jsx';
+import AssignmentsView from './AssignmentsView.jsx';
+import { mergeEntries } from './assignmentEntries.js';
 import { schoolApi } from '../../schoolApi.js';
 
 // Mock the API

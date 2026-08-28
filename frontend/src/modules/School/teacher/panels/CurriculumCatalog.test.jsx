@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import CurriculumCatalog, { passSummary } from './CurriculumCatalog.jsx';
+import CurriculumCatalog from './CurriculumCatalog.jsx';
+import { passSummary } from './curriculumPassSummary.js';
 
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: { curriculumUnits: vi.fn(), passOverrides: vi.fn() },

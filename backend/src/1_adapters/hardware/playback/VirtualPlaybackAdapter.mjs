@@ -18,10 +18,20 @@
  *    `POST /play/log` already uses, so the correlation code written in Phase F
  *    reads the same fields for real screens and for this double.
  *
- * ASSUMPTION: the bus topic (`school-playback`) and the event `type` values
- * (`dispatched`/`progress`/`complete`/`stop`) are chosen here because the work
- * session lifecycle that consumes them is not yet built. If Phase F names them
- * differently, change the constructor defaults — no shape changes.
+ * ASSUMPTION (RESOLVED 2026-08-27): the bus topic (`school-playback`) and the
+ * event `type` values (`dispatched`/`progress`/`complete`/`stop`) were chosen
+ * here because the work session lifecycle that consumes them was not yet built.
+ * `ScreenPlaybackAdapter` — the real §8 target — KEPT ALL OF THEM unchanged.
+ *
+ * ONE thing widened when it landed, and it widened HERE TOO so the two cannot
+ * drift: `dispatch()` now takes a REQUIRED `sessionId`, carried on the record
+ * and on every emitted frame. The real screen adapter broadcasts
+ * `lesson.open` with it and the screen fetches its lesson by it, so a dispatch
+ * that cannot name its session is one no screen could act on. It is required
+ * in this double rather than defaulted, because a double that tolerated its
+ * absence would let a caller that forgot it pass the tests and fail in the
+ * living room. `tests/_lib/school/lifecycleFakes.mjs`'s `FakePlayback` is the
+ * third implementation of this port and carries the same field.
  *
  * @module adapters/hardware/playback
  */
@@ -71,16 +81,20 @@ export class VirtualPlaybackAdapter {
    * @param {Object} args
    * @param {string} args.target
    * @param {string} args.contentId
+   * @param {string} args.sessionId - the work session this dispatch belongs to
    * @param {string} [args.learnerId]
    * @param {number} [args.durationSec=0]
    * @returns {Object} dispatch record; `dispatchId` is the correlator the session stores
    */
-  dispatch({ target, contentId, learnerId = null, durationSec = 0 } = {}) {
+  dispatch({ target, contentId, sessionId, learnerId = null, durationSec = 0 } = {}) {
     if (typeof target !== 'string' || !target.trim()) {
       throw new InfrastructureError('dispatch requires a target', { code: 'INVALID_DISPATCH', field: 'target', value: target });
     }
     if (typeof contentId !== 'string' || !contentId.trim()) {
       throw new InfrastructureError('dispatch requires a contentId', { code: 'INVALID_DISPATCH', field: 'contentId', value: contentId });
+    }
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      throw new InfrastructureError('dispatch requires a sessionId', { code: 'INVALID_DISPATCH', field: 'sessionId', value: sessionId });
     }
     if (typeof durationSec !== 'number' || !Number.isFinite(durationSec) || durationSec < 0) {
       throw new InfrastructureError('dispatch requires a non-negative durationSec', { code: 'INVALID_DISPATCH', field: 'durationSec', value: durationSec });
@@ -93,6 +107,7 @@ export class VirtualPlaybackAdapter {
       target,
       contentId,
       learnerId,
+      sessionId,
       durationSec,
       positionSec: 0,
       status: 'playing',
@@ -227,6 +242,7 @@ export class VirtualPlaybackAdapter {
       target: record.target,
       contentId: record.contentId,
       learnerId: record.learnerId,
+      sessionId: record.sessionId,
       seconds: record.positionSec,
       durationSec: record.durationSec,
       percent: record.durationSec > 0 ? Math.round((record.positionSec / record.durationSec) * 100) : 0,

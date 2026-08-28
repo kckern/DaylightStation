@@ -135,7 +135,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
     } else {
       narratableHeightRef.current = 0;
     }
-  }, [contentData]);
+  }, [contentData, contentRef]);
 
 
   const classes = Array.isArray(shaders)? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
@@ -186,7 +186,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
       return candidateType;
     }, []);
 
-    const logTime = async (type, assetId, percent, title) => {
+    const logTime = useCallback(async (type, assetId, percent, title) => {
       const now = Date.now();
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
@@ -208,14 +208,14 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
         }, { level: 'warn' });
       }
       }
-    };
+    }, [duration, resolvePlayLogType, listId]);
 
-    const onTimeUpdate = () => {
+    const onTimeUpdate = useCallback(() => {
       const mainEl = mainRef.current;
       if (!mainEl || !duration) return;
       const percent = (mainEl.currentTime / duration) * 100;
       logTime(type, assetId, percent, title);
-    };
+    }, [duration, logTime, type, assetId, title]);
 
     useEffect(() => {
       const mainEl = mainRef.current;
@@ -223,7 +223,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 
       mainEl.addEventListener('timeupdate', onTimeUpdate);
       return () => mainEl.removeEventListener('timeupdate', onTimeUpdate);
-    }, [mainMediaUrl, duration, title, type, assetId, listId, resolvePlayLogType]);
+    }, [mainMediaUrl, duration, title, type, assetId, listId, resolvePlayLogType, onTimeUpdate]);
 
   
     // Keep time and progress in sync while playing

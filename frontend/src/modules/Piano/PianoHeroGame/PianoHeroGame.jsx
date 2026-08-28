@@ -25,6 +25,7 @@ import { heroMetronomePlan } from './heroMetronome.js';
 import { heroThresholdState } from './heroThreshold.js';
 import { usePianoHeroGame } from './usePianoHeroGame.js';
 import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
+import { noteSelectionEnabled } from './noteSelectionEnabled.js';
 import './PianoHeroGame.scss';
 
 const NOTATION_RE = /\.(musicxml|mxl)$/i;
@@ -45,18 +46,6 @@ const localMediaId = (contentId) => String(contentId || '').replace(/^[a-z]+:/i,
  *   reload or a shared link opens on the same tab.
  * @param {(slug:string)=>void} [onSubRoute] - report a tab change up to the router.
  */
-/**
- * True when this screen has no touch, so a list needs a key-driven way in.
- * `noteSelect` in config overrides it either way — a touchscreen owner may still
- * want to pick from the keys, and a test needs to force it.
- */
-export function noteSelectionEnabled(config, nav = (typeof navigator !== 'undefined' ? navigator : null)) {
-  if (config?.noteSelect === true) return true;
-  if (config?.noteSelect === false) return false;
-  // One answer for "is there a finger here", shared with every other gate.
-  return keyFallbackNeeded(config, nav);
-}
-
 export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRoute, activeNotes = null, noteSelect = null }) {
   const groups = useMemo(() => resolveScoreGroups(sheetmusic).map((group) => ({
     ...group,

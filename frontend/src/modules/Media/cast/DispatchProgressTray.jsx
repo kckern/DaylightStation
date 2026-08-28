@@ -13,6 +13,7 @@ import { useDevice } from '../fleet/useDevice.js';
 import { deviceName } from '../fleet/deviceDisplay.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { friendlyStepLabel, friendlyStepPhrase } from './castCopy.js';
+import { rowPhase } from './dispatchRowPhase.js';
 import './Cast.scss';
 
 // Confirmed playback lingers long enough to be seen, then clears.
@@ -22,15 +23,6 @@ export const CONFIRMED_LINGER_MS = 8_000;
 // broadcast), so a row still unresolved past that will never get one.
 // Generous, not 3 seconds.
 export const SENT_RESOLUTION_TIMEOUT_MS = 100_000;
-
-/** Which lifecycle phase a dispatch entry is in, for rendering. */
-export function rowPhase(d) {
-  if (d.status === 'failed') return 'failed';
-  if (d.status !== 'success') return 'running';
-  if (d.playback === 'confirmed') return 'confirmed';
-  if (d.playback === 'timeout') return 'unconfirmed';
-  return 'sent';
-}
 
 function StatusIcon({ phase }) {
   if (phase === 'running' || phase === 'sent') {

@@ -229,7 +229,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   const prevQueueLengthRef = useRef(0);
   const [activeSeasonId, setActiveSeasonId] = useState(null);
   const seasonBarRef = useRef(null);
-  const [setSeasonBarWidth] = useState(0);
+  const [, setSeasonBarWidth] = useState(0);
   const [selectedInfo, setSelectedInfo] = useState(null); // Selected episode or season for info panel
   const [infoType, setInfoType] = useState('episode'); // 'episode' or 'season'
   const [loadedEpisodeImages, setLoadedEpisodeImages] = useState({});
@@ -468,7 +468,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     return { width: rect.width, height: rect.height };
-  }, [showId]);
+  }, [viewportRef]);
 
   const handleEpisodeSelect = (episode) => {
     setSelectedEpisode(episode);
@@ -992,7 +992,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     const seasonKeysChanged = Object.keys(nextSeasonMap).length !== Object.keys(loadedSeasonImages).length ||
       Object.keys(nextSeasonMap).some(k => !(k in loadedSeasonImages));
     if (seasonKeysChanged) setLoadedSeasonImages(nextSeasonMap);
-  }, [items, seasons]);
+  }, [items, loadedEpisodeImages, loadedSeasonImages, seasons]);
 
   // Initialize/adjust active season when items or seasons change
   useEffect(() => {
@@ -1039,7 +1039,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
       }
       return prev;
     });
-  }, [seasons, items, isEpisodeWatched]);
+  }, [seasons, items, isEpisodeWatched, activeSeasonId]);
 
   // Keep selected episode in sync with filter
   useEffect(() => {
@@ -1050,7 +1050,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     if (!selectedEpisode || !filtered.some(ep => ep.plex === selectedEpisode.plex)) {
       setSelectedEpisode(filtered[0]);
     }
-  }, [items, seasons, activeSeasonId]);
+  }, [items, seasons, activeSeasonId, selectedEpisode]);
 
   const filteredItems = useMemo(() => {
     const list = (seasons.length > 1 && activeSeasonId)

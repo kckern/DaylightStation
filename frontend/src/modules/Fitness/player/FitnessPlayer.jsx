@@ -10,7 +10,8 @@ import FitnessPlayerOverlay from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
 import { useFitnessVolumeControls } from '@/modules/Fitness/nav/useFitnessVolumeControls.js';
 import { resolveContentId, normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
-import { resolvePause, PAUSE_REASON } from '@/modules/Player/utils/pauseArbiter.js';
+import { resolvePause, PAUSE_REASON } from '@/lib/Player/gate/pauseArbiter.js';
+import { GATE_ID } from '@/lib/Player/gate/gateIds.js';
 import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
 import FitnessChartBackButton from './FitnessChartBackButton.jsx';
 import FitnessChartVoiceMemoFab from './FitnessChartVoiceMemoFab.jsx';
@@ -423,7 +424,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
   const pauseDecision = useMemo(() => resolvePause({
     seeking: { active: isSeeking },
-    governance: { locked: Boolean(effectiveGovernanceState?.videoLocked) },
+    // Fitness contributes exactly one gate. Naming it keeps the telemetry id
+    // (GATE_ID.GOVERNANCE) stable now that the arbiter composes N gates. The id
+    // is shared with the consumer below via gateIds.js — two bare literals that
+    // must match, in code that nothing type-checks across, is drift waiting.
+    gates: [{ blocked: Boolean(effectiveGovernanceState?.videoLocked), id: GATE_ID.GOVERNANCE, seekCeiling: null }],
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
@@ -431,7 +436,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     user: { paused: isPaused }
   }), [isSeeking, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
-  const governancePaused = pauseDecision.reason === PAUSE_REASON.GOVERNANCE && pauseDecision.paused;
+  const governancePaused = pauseDecision.reason === PAUSE_REASON.GATE && pauseDecision.gate === GATE_ID.GOVERNANCE && pauseDecision.paused;
 
   // Drive the governance stall-pause off the live resilience state. GovernanceEngine
   // subscribes to playback:stalled/playback:recovered to pause its penalty timers
@@ -496,7 +501,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   useEffect(() => {
     lastKnownTimeRef.current = 0;
     statusUpdateRef.current = { lastSent: 0, inflight: false, endSent: false };
-  }, [currentItem ? currentItem.id : null]);
+  }, [currentItemId]);
 
   useEffect(() => {
     if (!setGovernanceMedia) return;
@@ -1629,7 +1634,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       });
       setCurrentItem(first);
     }
-  }, [queue, currentItem]);
+  }, [queue, currentItem, logger, nogovern]);
 
   const progressMetaRef = useRef({ lastSetTime: 0, lastDuration: 0 });
 

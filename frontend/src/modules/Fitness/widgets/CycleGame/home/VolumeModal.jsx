@@ -1,6 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from '@/modules/Fitness/player/panels/TouchVolumeButtons.jsx';
+import { TouchVolumeButtons } from '@/modules/Fitness/player/panels/TouchVolumeButtons.jsx';
+import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from '@/modules/Fitness/player/panels/touchVolumeModel.js';
 import { useEscapeToClose } from './useEscapeToClose.js';
 import './picker.scss';
 import './VolumeModal.scss';

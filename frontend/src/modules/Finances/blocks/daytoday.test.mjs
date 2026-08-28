@@ -1,4 +1,4 @@
-import { buildDayToDayBudgetOptions } from './daytoday.jsx';
+import { buildDayToDayBudgetOptions } from './dayToDayChartOptions.js';
 import { PALETTE } from '../lib/format.mjs';
 
 // dailyBalances for 2026-03 with a fixed daily burn, viewed as-of day `throughDay`.

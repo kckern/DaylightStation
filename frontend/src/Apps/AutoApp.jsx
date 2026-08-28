@@ -24,6 +24,7 @@ import FuelPanel from '../modules/Auto/FuelPanel.jsx';
 import ServicePanel from '../modules/Auto/ServicePanel.jsx';
 import GlovePanel from '../modules/Auto/GlovePanel.jsx';
 import autoLog from '../modules/Auto/autoLog.js';
+import { describeVehicle } from './autoAppVehicleLabel.js';
 import './AutoApp.scss';
 
 const TABS = [
@@ -190,16 +191,6 @@ export default function AutoApp() {
       </nav>
     </div>
   );
-}
-
-/**
- * `2021 Chrysler Pacifica Touring L`, from the vehicle record's identity block.
- * Returns null rather than an empty string so callers can skip the element.
- */
-export function describeVehicle(vehicle) {
-  const id = vehicle?.identity || vehicle || {};
-  const text = [id.year, id.make, id.model, id.series].filter(Boolean).join(' ');
-  return text || null;
 }
 
 /**

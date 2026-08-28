@@ -443,7 +443,7 @@ export function useMediaReporter({
       mediaEl.removeEventListener('seeked', handleSeeked);
       mediaEl.removeEventListener('ended', handleEnded);
     };
-  }, [mediaIdentityKey, mediaRef, reportPlaybackMetrics]);
+  }, [logExplicitPlaybackToggle, mediaIdentityKey, mediaRef, reportPlaybackMetrics]);
 
   useEffect(() => {
     if (!pollIntervalMs || pollIntervalMs <= 0) {
