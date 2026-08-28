@@ -32,7 +32,7 @@ vi.mock('../Player/Player.jsx', async () => {
   };
 });
 
-vi.mock('../../context/MenuNavigationContext', () => ({
+vi.mock('../../context/useMenuNavigationContext.js', () => ({
   useMenuNavigationContext: () => h.nav,
   MenuNavigationProvider: ({ children }) => children,
 }));

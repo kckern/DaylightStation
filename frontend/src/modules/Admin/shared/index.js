@@ -3,5 +3,6 @@ export { default as ConfigFormWrapper } from './ConfigFormWrapper.jsx';
 export { default as SaveBar } from './SaveBar.jsx';
 export { default as CrudTable } from './CrudTable.jsx';
 export { default as ConfirmModal } from './ConfirmModal.jsx';
-export { UnsavedGuardProvider, useUnsavedGuardRegistry } from './UnsavedGuardContext.jsx';
+export { UnsavedGuardProvider } from './UnsavedGuardContext.jsx';
+export { useUnsavedGuardRegistry } from './useUnsavedGuardRegistry.js';
 export { default as useUnsavedGuard } from './useUnsavedGuard.js';

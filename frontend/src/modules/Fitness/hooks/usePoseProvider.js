@@ -156,6 +156,8 @@ export const useMoveDetector = (detector) => {
     return () => {
       unregisterMoveDetector?.(detector.id);
     };
+    // detector?.id is an intentional proxy — the full object would cause register/unregister thrash
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detector?.id, registerMoveDetector, unregisterMoveDetector]);
   
   // Filter events for this detector

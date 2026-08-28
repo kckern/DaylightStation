@@ -14,7 +14,7 @@ import {
   clearPersistedSession,
 } from './persistence.js';
 import { STORAGE_KEYS } from '../constants.js';
-import { useClientIdentity } from '../identity/ClientIdentityProvider.jsx';
+import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { PlayerBridge } from './PlayerBridge.jsx';
 import { useSessionController } from '../controller/useSessionController.js';
 import { useUrlCommand } from '../externalControl/useUrlCommand.js';

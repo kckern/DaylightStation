@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import { planBundleOps } from './applyBundle.js';
-import { usePianoSound } from './PianoSoundContext.jsx';
+import { usePianoSound } from './usePianoSound.js';
 
 // Resolves a bare {pc,bank} into the full catalog entry (with name/no) so
 // selectVoice always stores a complete voice object — otherwise deviceVoice.name

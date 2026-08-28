@@ -144,8 +144,10 @@ const VoiceMemoOverlay = ({
   // Prefer the live memo from the session list (SSoT) so a redo that replaces a
   // memo in place is reflected immediately, falling back to the inline snapshot
   // only for retroactive memos that have no id in the list. See resolveCurrentMemo.
+  // narrowed to memo/memoId — resolveCurrentMemo only reads those two fields
   const currentMemo = useMemo(
     () => resolveCurrentMemo(overlayState, voiceMemos),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [overlayState?.memo, overlayState?.memoId, voiceMemos]
   );
 
@@ -412,6 +414,9 @@ const VoiceMemoOverlay = ({
       cancelled = true;
       clearInterval(interval);
     };
+    // narrowed to open/mode/autoAccept/startedAt — memoId is only used in a log payload
+    // when auto-accept completes, not to gate the timer
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlayState?.open, overlayState?.mode, overlayState?.autoAccept, overlayState?.startedAt, handleAccept, autoAcceptCancelled, logVoiceMemo]);
 
   useEffect(() => {

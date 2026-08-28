@@ -67,7 +67,7 @@ vi.mock('../../Content/combobox/useContentCombobox.js', () => ({
 
 // ── Sinks the container branch never reaches; the leaf branch lands in queue ──
 const dispatchToTarget = vi.fn(() => Promise.resolve([]));
-vi.mock('../cast/DispatchProvider.jsx', () => ({
+vi.mock('../cast/useDispatch.js', () => ({
   useDispatch: () => ({ dispatchToTarget, dispatches: new Map(), retryLast: vi.fn() }),
 }));
 const queuePlayNow = vi.fn();
@@ -77,10 +77,10 @@ vi.mock('../controller/useSessionController.js', () => ({
     config: { setShuffle: vi.fn() },
   }),
 }));
-vi.mock('../fleet/FleetProvider.jsx', () => ({
+vi.mock('../fleet/useFleetContext.js', () => ({
   useFleetContext: () => ({ devices: [] }),
 }));
-vi.mock('../shell/DismissStackProvider.jsx', () => ({ useDismissLayer: () => {} }));
+vi.mock('../shell/useDismissLayer.js', () => ({ useDismissLayer: () => {} }));
 vi.mock('../cast/DispatchTargetPicker.jsx', () => ({
   DispatchTargetPicker: () => <div data-testid="picker-stub" />,
 }));

@@ -3,8 +3,8 @@ import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, Sus
 import usePlayerController from '../../../../Player/usePlayerController.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
-import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
-import { usePianoMix } from '../../PianoMixContext.jsx';
+import { usePianoPlayback } from '../../usePianoPlayback.js';
+import { usePianoMix } from '../../usePianoMix.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { TheoryPanel } from '../../../components/TheoryPanel.jsx';

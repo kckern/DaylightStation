@@ -1,10 +1,10 @@
 // frontend/src/modules/Media/identity/ClientIdentityProvider.jsx
 // Stable per-browser identity: clientId (UUID, persisted) + display name.
 // Logs, broadcasts, and external control address this browser by these.
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useMemo } from 'react';
 import { STORAGE_KEYS } from '../constants.js';
 
-const ClientIdentityContext = createContext(null);
+export const ClientIdentityContext = createContext(null);
 
 function uuidV4() {
   try {
@@ -34,12 +34,6 @@ export function ClientIdentityProvider({ children }) {
       {children}
     </ClientIdentityContext.Provider>
   );
-}
-
-export function useClientIdentity() {
-  const ctx = useContext(ClientIdentityContext);
-  if (!ctx) throw new Error('useClientIdentity must be used within ClientIdentityProvider');
-  return ctx;
 }
 
 export default ClientIdentityProvider;

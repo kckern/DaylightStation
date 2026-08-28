@@ -10,7 +10,7 @@
 import { useEffect, useRef } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightMediaPath } from '../../../../../lib/api.mjs';
-import { usePianoMix } from '../../PianoMixContext.jsx';
+import { usePianoMix } from '../../usePianoMix.js';
 import { stepToLevel, levelToStep, STEPS } from '../../volumeCurve.js';
 
 // Applause pool: drop numbered mp3s (001.mp3, 002.mp3, … gaps fine) into

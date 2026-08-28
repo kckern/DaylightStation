@@ -1,10 +1,10 @@
 import { render, act } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { PianoScreenControlProvider } from './usePianoScreensaver.jsx';
 import {
-  PianoScreenControlProvider,
   useScreenOffCooldown,
   usePianoScreensaver,
-} from './usePianoScreensaver.jsx';
+} from './usePianoScreensaverHooks.js';
 
 // setScreen calls DaylightAPI(`api/v1/device/:id/screen/{on,off}`); capture it.
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn().mockResolvedValue({ ok: true }) }));

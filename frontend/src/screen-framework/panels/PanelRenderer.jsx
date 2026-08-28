@@ -1,8 +1,8 @@
 // frontend/src/screen-framework/panels/PanelRenderer.jsx
 import React, { useRef, useEffect } from 'react';
 import { getWidgetRegistry } from '../widgets/registry.js';
-import { useScreen } from '../providers/ScreenProvider.jsx';
-import { usePip } from '../pip/PipManager.jsx';
+import { useScreen } from '../providers/useScreen.js';
+import { usePip } from '../pip/usePip.js';
 import './PanelRenderer.css';
 
 function themeVars(theme) {

@@ -10,10 +10,10 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => midiState,
   usePianoMidiNotes: () => midiState,
 }));
-vi.mock('../../PianoPlaybackContext.jsx', () => ({
+vi.mock('../../usePianoPlayback.js', () => ({
   usePianoPlayback: () => ({ setPlaying: vi.fn(), setVideoActive: vi.fn(), playing: false, videoActive: false }),
 }));
-vi.mock('../../PianoMixContext.jsx', () => ({
+vi.mock('../../usePianoMix.js', () => ({
   usePianoMix: () => ({ mediaLevel: 1, setMediaLevel: vi.fn() }),
 }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: () => {} }));

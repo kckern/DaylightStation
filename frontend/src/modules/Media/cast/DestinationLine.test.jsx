@@ -10,12 +10,12 @@ let fleetDevices = [
   { id: 'livingroom-tv', name: 'Living Room TV' },
   { id: 'yellow-room-tablet', name: 'Yellow Room Tablet' },
 ];
-vi.mock('../fleet/FleetProvider.jsx', () => ({
+vi.mock('../fleet/useFleetContext.js', () => ({
   useFleetContext: () => ({ devices: fleetDevices }),
 }));
 
 const dismissLayer = vi.fn();
-vi.mock('../shell/DismissStackProvider.jsx', () => ({
+vi.mock('../shell/useDismissLayer.js', () => ({
   useDismissLayer: (...a) => dismissLayer(...a),
 }));
 

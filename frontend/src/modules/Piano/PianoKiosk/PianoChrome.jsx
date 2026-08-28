@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
-import { usePianoSound } from './PianoSoundContext.jsx';
+import { usePianoSound } from './usePianoSound.js';
 import { usePianoBreadcrumbBar } from './PianoBreadcrumbContext.jsx';
 import { useLongPress } from './useLongPress.js';
 import SoundPanel from './SoundPanel.jsx';
@@ -9,7 +9,7 @@ import OperatorDrawer from './OperatorDrawer.jsx';
 import PianoLinkBanner from './PianoLinkBanner.jsx';
 import PianoUserChip from './PianoUserChip.jsx';
 import Icon from '../ui/icons/Icon.jsx';
-import { usePianoConnection } from './PianoConnectionContext.jsx';
+import { usePianoConnection } from './usePianoConnection.js';
 
 /**
  * PianoChrome — always-on header. Left: a breadcrumb trail `home › mode › …deeper

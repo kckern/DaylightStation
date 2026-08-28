@@ -11,7 +11,7 @@ const screenOff = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const launchAndroidTarget = vi.hoisted(() => vi.fn());
 const daylightAPI = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 
-vi.mock('./PianoConnectionContext.jsx', () => ({ usePianoConnection: () => connection }));
+vi.mock('./usePianoConnection.js', () => ({ usePianoConnection: () => connection }));
 vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
 vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ pianoId: 'default', config: { bluetooth: 'pkg/.Bluetooth', screensaver: { deviceId: 'tablet-1' } } }) }));
 vi.mock('./usePianoScreenOff.js', () => ({ usePianoScreenOff: () => screenOff }));

@@ -3,13 +3,13 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { buildOrder, nextPos, prevPos } from './musicQueue.js';
 import { formatTime } from './musicTracks.js';
 import useVanishingControls from '../../useVanishingControls.js';
-import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
+import { usePianoPlayback } from '../../usePianoPlayback.js';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import Icon from '../../../ui/icons/Icon.jsx';
-import { usePianoMix } from '../../PianoMixContext.jsx';
+import { usePianoMix } from '../../usePianoMix.js';
 import TransportButton from '../../transport/TransportButton.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';
 

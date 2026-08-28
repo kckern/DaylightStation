@@ -291,6 +291,11 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         applied: session.applied, blurAudioSec: +session.blurAudioSec.toFixed(1),
       });
     };
+  // override?.sync?.offsetSec is read only for the 'content-filter.resolved' log
+  // payload above; the real dependency is effectiveCues, which already
+  // incorporates override — adding override directly would re-run this
+  // timer/listener-setup effect on unrelated override field changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, getMediaEl, transport, effectiveCues, sfxPlayer]);
 
   return { activeOverlays, activeCard, effectiveCues };

@@ -1,7 +1,7 @@
 // frontend/src/screen-framework/providers/ScreenProvider.jsx
-import React, { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
+import React, { createContext, useState, useCallback, useMemo, useRef } from 'react';
 
-const ScreenContext = createContext(null);
+export const ScreenContext = createContext(null);
 
 /**
  * Recursively walk the config tree and assign path-based IDs to nodes
@@ -195,20 +195,3 @@ export function ScreenProvider({ config, children }) {
   );
 }
 
-/**
- * Hook to access the screen layout context.
- * Returns { replace, restore, getNode } plus config references.
- */
-export function useScreen() {
-  const ctx = useContext(ScreenContext);
-  if (!ctx) {
-    throw new Error('useScreen() must be used within a <ScreenProvider>');
-  }
-  return {
-    replace: ctx.replace,
-    restore: ctx.restore,
-    getNode: ctx.getNode,
-    mergedConfig: ctx.mergedConfig,
-    originalConfig: ctx.originalConfig,
-  };
-}

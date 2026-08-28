@@ -4,7 +4,7 @@ import { EnrollModal } from './EnrollModal.jsx';
 import FingerprintHands from './FingerprintHands.jsx';
 import { fingerLabel } from './fingerLabel.js';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
-import { useIdentity } from '@/modules/Fitness/identity/IdentityProvider';
+import { useIdentity } from '@/modules/Fitness/identity/useIdentity.js';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';

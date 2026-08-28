@@ -60,10 +60,4 @@ export function PeekProvider({ children }) {
   return <PeekContext.Provider value={value}>{children}</PeekContext.Provider>;
 }
 
-export function usePeek() {
-  const ctx = useContext(PeekContext);
-  if (!ctx) throw new Error('usePeek must be used inside PeekProvider');
-  return ctx;
-}
-
 export default PeekProvider;

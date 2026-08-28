@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { createContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoKioskConfigOptional } from './PianoConfig.jsx';
@@ -104,7 +104,5 @@ export function PianoMixProvider({ children }) {
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
-
-export const usePianoMix = () => useContext(Ctx);
 
 export default Ctx;

@@ -118,6 +118,8 @@ export function useActionCapabilityCheck(input, action) {
     })();
 
     return () => { cancelled = true; };
+    // narrowed to the exact sub-fields parsed contains — equivalent to depending on parsed itself
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkable, parsed?.source, parsed?.localId, resolvedAction, logger]);
 
   return state;

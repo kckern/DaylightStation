@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { Text, Skeleton } from '@mantine/core';
 import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
-import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
-import { useScreenData, useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
-import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
+import { useScreen } from '@/screen-framework/providers/useScreen.js';
+import { useScreenData, useScreenDataRefetch } from '@/screen-framework/data/useScreenData.js';
+import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
 import MarkerGutter from './MarkerGutter.jsx';

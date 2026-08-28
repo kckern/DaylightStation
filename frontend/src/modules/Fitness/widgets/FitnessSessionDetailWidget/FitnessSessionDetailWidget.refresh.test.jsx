@@ -9,7 +9,7 @@ vi.mock('@mantine/core', () => ({
 }));
 
 let sessionsValue = [];
-vi.mock('@/screen-framework/data/ScreenDataProvider.jsx', () => ({
+vi.mock('@/screen-framework/data/useScreenData.js', () => ({
   useScreenData: (key) => (key === 'sessions' ? sessionsValue : null),
   useScreenDataRefetch: () => vi.fn()
 }));
@@ -19,11 +19,11 @@ vi.mock('@/context/FitnessContext.jsx', () => ({
   useFitness: () => ({ openVoiceMemoCapture: vi.fn() })
 }));
 // Stub FitnessScreenProvider (used for navigation)
-vi.mock('@/modules/Fitness/FitnessScreenProvider.jsx', () => ({
+vi.mock('@/modules/Fitness/useFitnessScreen.js', () => ({
   useFitnessScreen: () => ({ onNavigate: vi.fn() })
 }));
-// Stub ScreenProvider (used by useScreen)
-vi.mock('@/screen-framework/providers/ScreenProvider.jsx', () => ({
+// Stub useScreen (used for navigation)
+vi.mock('@/screen-framework/providers/useScreen.js', () => ({
   useScreen: () => ({ restore: vi.fn() })
 }));
 // Stub widget registry

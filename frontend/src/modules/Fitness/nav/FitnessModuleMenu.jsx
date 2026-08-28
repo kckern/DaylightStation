@@ -3,7 +3,7 @@ import { DaylightAPI } from '@/lib/api.mjs';
 import { getModuleManifest } from '../index';
 import useModuleStorage from '../player/useModuleStorage';
 import { useFitness } from '@/context/FitnessContext.jsx';
-import { useIdentity } from '../identity/IdentityProvider';
+import { useIdentity } from '../identity/useIdentity.js';
 import UnlockPrompt from '../player/overlays/UnlockPrompt.jsx';
 import LockIcon from '../player/overlays/LockIcon.jsx';
 import { isKioskEnv } from '@/lib/kioskEnv.js';

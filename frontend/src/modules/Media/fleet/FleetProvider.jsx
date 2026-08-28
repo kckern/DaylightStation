@@ -2,7 +2,7 @@
 // Wires the fleet store to the world: device roster from the Device API
 // (refreshed when the tab regains focus), live state from device-state:*
 // broadcasts, staleness from WS connection status.
-import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useEffect, useMemo, useRef } from 'react';
 import { subscribeTopicKind, onStatus } from '../net/ws.js';
 import { useDevices } from './useDevices.js';
 import { createFleetStore } from './fleetStore.js';
@@ -53,12 +53,6 @@ export function FleetProvider({ children }) {
   );
 
   return <FleetContext.Provider value={value}>{children}</FleetContext.Provider>;
-}
-
-export function useFleetContext() {
-  const ctx = useContext(FleetContext);
-  if (!ctx) throw new Error('useFleetContext must be used inside FleetProvider');
-  return ctx;
 }
 
 export default FleetProvider;

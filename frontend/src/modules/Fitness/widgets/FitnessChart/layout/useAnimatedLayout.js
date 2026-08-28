@@ -103,6 +103,8 @@ export const useAnimatedLayout = (targetElements, options = {}) => {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
+    // rAF interpolation-from-current-value: displayElements is itself what the loop updates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetElements, duration, animateBasePosition, enabled]);
 
   return enabled ? displayElements : targetElements;

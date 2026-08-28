@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const playback = vi.hoisted(() => ({ playing: false, videoActive: false }));
 const screenOff = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
-vi.mock('./PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => playback }));
+vi.mock('./usePianoPlayback.js', () => ({ usePianoPlayback: () => playback }));
 vi.mock('./usePianoScreenOff.js', () => ({ usePianoScreenOff: () => screenOff }));
 vi.mock('../../../lib/identity/ProfileAvatar.jsx', () => ({ default: () => null }));
 vi.mock('@/modules/Fitness/player/overlays/LockIcon.jsx', () => ({ default: () => <span data-testid="lock-icon" /> }));

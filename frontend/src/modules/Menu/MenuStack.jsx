@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, Suspense, lazy } from 'react';
-import { useMenuNavigationContext } from '../../context/MenuNavigationContext';
+import { useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
 import { useScreenOverlay } from '../../screen-framework/overlays/ScreenOverlayProvider.jsx';
 import { TVMenu } from './Menu';
 import { PlayerOverlayLoading } from '../Player/Player';

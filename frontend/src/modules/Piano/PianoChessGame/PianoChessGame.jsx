@@ -19,7 +19,7 @@ import { resolveTiming } from './chessClock.js';
 import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
-import { usePlayerLock } from '../PianoKiosk/PianoPlaybackContext.jsx';
+import { usePlayerLock } from '../PianoKiosk/usePianoPlayback.js';
 import {
   archiveGame, beaconArchive, fetchChessConfig, fetchLadder, requestBestMove,
   requestOpponentMove, requestOpponentQuip, saveChessConfig, saveGameRecord,

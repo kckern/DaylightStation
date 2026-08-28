@@ -36,6 +36,11 @@ export default function FlashcardProgram({ descriptor, onEvent = async () => ({ 
       });
     });
     return () => { live = false; };
+  // descriptor.learning is read only as session-open config (studyApi.open's
+  // `learning` field), not a value this effect needs to stay live-synced with —
+  // it opens once per (studyApi, userId, deck, policy). Adding it risks
+  // re-opening the study session on an unrelated descriptor identity change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studyApi, descriptor?.userId, deck, policy]);
   useEffect(() => {
     if (!sessionId || !studyApi || !descriptor?.userId) return undefined;

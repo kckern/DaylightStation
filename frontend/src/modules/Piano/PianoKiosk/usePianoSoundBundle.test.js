@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
 const selectVoice = vi.fn(), setEffect = vi.fn();
-vi.mock('./PianoSoundContext.jsx', () => ({
+vi.mock('./usePianoSound.js', () => ({
   usePianoSound: () => ({
     selectVoice, setEffect,
     deviceVoice: { pc: 4, bank: 0, name: 'EP' },

@@ -1110,11 +1110,15 @@ const Player = forwardRef(function Player(props, ref) {
   const handleMediaRef = useCallback((el) => {
     exposedMediaRef.current = el;
     if (props.onMediaRef) props.onMediaRef(el);
+    // ESLint's own message says the fix is to destructure specific props, which this already does — do not add `props`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.onMediaRef]);
 
   const handleController = useCallback((controller) => {
     controllerRef.current = controller;
     if (props.onController) props.onController(controller);
+    // ESLint's own message says the fix is to destructure specific props, which this already does — do not add `props`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.onController]);
 
   const withTransport = useCallback((handler, fallback) => {

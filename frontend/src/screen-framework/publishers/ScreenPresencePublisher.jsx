@@ -1,6 +1,6 @@
-import { useMenuNavigationContext } from '../../context/MenuNavigationContext.jsx';
+import { useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
-import { useScreenScene } from '../providers/ScreenSceneContext.jsx';
+import { useScreenScene } from '../providers/useScreenScene.js';
 import { isContentActive } from '../screenActivity.js';
 import { useScreenPresencePublisher } from './useScreenPresencePublisher.js';
 import { useRegistryPlaybackState } from './useRegistryPlaybackState.js';

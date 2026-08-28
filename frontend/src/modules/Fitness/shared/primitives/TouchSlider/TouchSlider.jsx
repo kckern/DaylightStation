@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import './TouchSlider.scss';
 
@@ -26,7 +26,7 @@ const TouchSlider = ({
     }
   }, [value, isDragging]);
 
-  const calculateValue = (clientX, clientY) => {
+  const calculateValue = useCallback((clientX, clientY) => {
     const track = trackRef.current;
     if (!track) return min;
 
@@ -41,12 +41,12 @@ const TouchSlider = ({
     }
 
     percentage = Math.max(0, Math.min(1, percentage));
-    
+
     const rawValue = min + percentage * (max - min);
     const steppedValue = Math.round(rawValue / step) * step;
-    
+
     return Math.max(min, Math.min(max, steppedValue));
-  };
+  }, [min, max, step, orientation]);
 
   const handleStart = (clientX, clientY) => {
     if (disabled) return;
@@ -56,22 +56,22 @@ const TouchSlider = ({
     onChange?.(newValue);
   };
 
-  const handleMove = (clientX, clientY) => {
+  const handleMove = useCallback((clientX, clientY) => {
     if (!isDragging || disabled) return;
     const newValue = calculateValue(clientX, clientY);
     setLocalValue(newValue);
     onChange?.(newValue);
-  };
+  }, [isDragging, disabled, calculateValue, onChange]);
 
-  const handleEnd = () => {
+  const handleEnd = useCallback(() => {
     if (!isDragging) return;
     setIsDragging(false);
     onChangeEnd?.(localValue);
-  };
+  }, [isDragging, localValue, onChangeEnd]);
 
   // Mouse events
   const onMouseDown = (e) => handleStart(e.clientX, e.clientY);
-  
+
   useEffect(() => {
     const onMouseMove = (e) => handleMove(e.clientX, e.clientY);
     const onMouseUp = () => handleEnd();
@@ -85,7 +85,7 @@ const TouchSlider = ({
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [isDragging, localValue]);
+  }, [isDragging, handleMove, handleEnd]);
 
   // Touch events
   const onTouchStart = (e) => handleStart(e.touches[0].clientX, e.touches[0].clientY);

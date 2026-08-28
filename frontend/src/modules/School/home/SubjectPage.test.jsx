@@ -24,7 +24,7 @@ vi.mock('../identity/SchoolProfileContext.jsx', () => ({
   useSchoolProfile: () => profile,
 }));
 
-vi.mock('../SchoolBreadcrumbContext.jsx', () => ({
+vi.mock('../useSchoolBreadcrumb.js', () => ({
   useSchoolBreadcrumb: () => {},
 }));
 

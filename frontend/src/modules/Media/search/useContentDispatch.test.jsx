@@ -14,7 +14,7 @@ const retryLast = vi.fn();
 // the toast-on-failure watcher polls this the same way DispatchProgressTray
 // does. Empty Map by default (nothing pending).
 let dispatchesState = new Map();
-vi.mock('../cast/DispatchProvider.jsx', () => ({
+vi.mock('../cast/useDispatch.js', () => ({
   useDispatch: () => ({ dispatchToTarget, dispatches: dispatchesState, retryLast }),
 }));
 
@@ -38,7 +38,7 @@ vi.mock('../cast/useCastTarget.js', () => ({
 }));
 
 let fleetDevices = [{ id: 'livingroom-tv', name: 'Living Room TV' }, { id: 'office-tv', name: 'Office TV' }];
-vi.mock('../fleet/FleetProvider.jsx', () => ({
+vi.mock('../fleet/useFleetContext.js', () => ({
   useFleetContext: () => ({ devices: fleetDevices }),
 }));
 

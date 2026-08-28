@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
-import { ScreenDataProvider, useScreenData } from './ScreenDataProvider.jsx';
+import { ScreenDataProvider } from './ScreenDataProvider.jsx';
+import { useScreenData } from './useScreenData.js';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -127,7 +128,7 @@ describe('ScreenDataProvider', () => {
     });
 
     const sources = { weather: { source: '/api/v1/home/weather', refresh: 0 } };
-    const { useScreenDataRefetch } = await import('./ScreenDataProvider.jsx');
+    const { useScreenDataRefetch } = await import('./useScreenData.js');
 
     const { result } = renderHook(
       () => ({ data: useScreenData('weather'), refetch: useScreenDataRefetch() }),
@@ -145,7 +146,7 @@ describe('ScreenDataProvider', () => {
   it('refetch is a no-op for an unknown key', async () => {
     mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ temp: 72 }) });
     const sources = { weather: { source: '/api/v1/home/weather', refresh: 0 } };
-    const { useScreenDataRefetch } = await import('./ScreenDataProvider.jsx');
+    const { useScreenDataRefetch } = await import('./useScreenData.js');
     const { result } = renderHook(() => useScreenDataRefetch(), { wrapper: wrapper(sources) });
     await waitFor(() => { expect(mockFetch).toHaveBeenCalledTimes(1); });
     await act(async () => { await result.current('unknown-key'); });
@@ -155,7 +156,7 @@ describe('ScreenDataProvider', () => {
   it('refetch identity is stable across store updates', async () => {
     mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ temp: 72 }) });
     const sources = { weather: { source: '/api/v1/home/weather', refresh: 0 } };
-    const { useScreenDataRefetch } = await import('./ScreenDataProvider.jsx');
+    const { useScreenDataRefetch } = await import('./useScreenData.js');
     const { result } = renderHook(
       () => ({ data: useScreenData('weather'), refetch: useScreenDataRefetch() }),
       { wrapper: wrapper(sources) }

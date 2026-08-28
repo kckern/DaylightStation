@@ -13,7 +13,7 @@ import { facets } from '@shared-music/loopQuery.mjs';
 import { LibraryBrowser } from './LibraryBrowser.jsx';
 
 const useKeepScreenAwake = vi.hoisted(() => vi.fn());
-vi.mock('../usePianoScreensaver.jsx', () => ({ useKeepScreenAwake }));
+vi.mock('../usePianoScreensaverHooks.js', () => ({ useKeepScreenAwake }));
 
 // ── timeline fixtures (root-relative pc sets) ────────────────────────────────
 const TL_I_V = [[0, 4, 7], [0, 4, 7], [2, 7, 11], [0, 4, 7]];

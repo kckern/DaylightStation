@@ -16,6 +16,8 @@ const useFitnessModule = (moduleId) => {
   // This ensures dropped-out users are included when chart remounts
   const historicalParticipants = useMemo(() => {
     return fitnessCtx.fitnessSessionInstance?.getHistoricalParticipants?.() || [];
+    // keyed on sessionId per Fix 8 (bugbash 1B), not the whole session object, to prevent infinite effect loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitnessCtx.fitnessSessionInstance?.sessionId, fitnessCtx.timelineSeriesKeys?.length]);
   
   // Get transfer version from context (triggers re-render when users are transferred)
@@ -26,6 +28,8 @@ const useFitnessModule = (moduleId) => {
   const transferredUsersArray = useMemo(() => {
     const set = fitnessCtx.fitnessSessionInstance?.getTransferredUsers?.();
     return set ? Array.from(set) : [];
+    // keyed on sessionId per Fix 8 (bugbash 1B), not the whole session object, to prevent infinite effect loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitnessCtx.fitnessSessionInstance?.sessionId, fitnessCtx.timelineSeriesKeys?.length, transferVersion]);
   
   // Convert back to Set with stable reference (only changes when array content changes)

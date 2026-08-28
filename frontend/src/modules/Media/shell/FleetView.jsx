@@ -7,7 +7,7 @@ import React, { useCallback, useState } from 'react';
 import { Title, Text, Badge, Button, Progress, Group, Skeleton, Alert, Stack } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay } from '@tabler/icons-react';
-import { useFleetContext } from '../fleet/FleetProvider.jsx';
+import { useFleetContext } from '../fleet/useFleetContext.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { FleetPlayPicker } from '../fleet/FleetPlayPicker.jsx';
 import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
