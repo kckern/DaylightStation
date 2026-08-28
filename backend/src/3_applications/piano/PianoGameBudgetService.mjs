@@ -13,13 +13,38 @@ import {
 } from '#domains/piano/gameBudget.mjs';
 
 const STALE_AFTER_SECONDS = 900; // 15 min: past this, a crashed session is sealed, not resumed.
+const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * `today - 1 calendar day` as pure string/UTC-component arithmetic — no
+ * timezone or DST involved, because `today` is already a resolved
+ * `YYYY-MM-DD` study date. Using `Date.UTC` here is just a calendar
+ * calculator, not a real instant; it never touches the household timezone.
+ */
+function previousCalendarDate(dateStr) {
+  const m = DAY.exec(dateStr);
+  if (!m) throw new Error(`previousCalendarDate: invalid date ${dateStr}`);
+  const [, y, mo, d] = m.map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
 
 // The unmetered shapes returned when the feature is off OR the household
 // config is broken (fail-open posture — see the two config-invalid catches
 // below). Kept as named constants so open/settle/close/balance all agree on
 // exactly what "unmetered" looks like to a caller.
+//
+// secondsLeft is a large FINITE sentinel, not Infinity: this response
+// crosses an HTTP boundary as JSON, and `JSON.stringify(Infinity)` is
+// `null`. A meter on the other end checking `secondsLeft <= 0` for
+// depletion would see `null <= 0 === true` and read "fail open" as
+// "instantly depleted" — exactly the outcome the fail-open ruling exists to
+// prevent. Number.MAX_SAFE_INTEGER survives JSON round-trip as an ordinary
+// finite number.
+const UNMETERED_SECONDS_LEFT = Number.MAX_SAFE_INTEGER;
 const ENABLED_FALSE = { enabled: false };
-const DISABLED_SETTLE = { secondsLeft: Infinity, depleted: false, deviceDepleted: false };
+const DISABLED_SETTLE = { secondsLeft: UNMETERED_SECONDS_LEFT, depleted: false, deviceDepleted: false };
 const OK_CLOSE = { ok: true }; // close's happy-path shape and its fail-open shape are identical.
 
 export class PianoGameBudgetService {
@@ -106,14 +131,19 @@ export class PianoGameBudgetService {
     const today = this.#tryToday({ sessionId, learnerId });
     if (today === null) return DISABLED_SETTLE;
     const at = this.#clock().toISOString();
-    let day = this.#store.loadDay(today);
-    // A session left open across 4am must not spend yesterday's allowance today.
-    // The session lives in the day it opened in; when the study day rolls under
-    // it, seal it there and re-open it on the new day at the same high-water, so
-    // the client's cumulative keeps meaning the same thing (design D6).
-    if (!day.sessions[sessionId]) {
-      const carried = this.#carryForward({ sessionId, learnerId, today, at });
-      if (carried) { day = carried.day; this.#logger.info?.('budget.day-rollover', carried.event); }
+    const day = this.#loadDayForSession({ sessionId, learnerId, today, at });
+    // The charge itself is always attributed to the session's OWN learnerId
+    // (gameBudget.applySettle reads s.learnerId, not the caller's claim), so
+    // a mismatch can't mis-charge. But the balance/depleted flags below are
+    // computed against the CALLER-supplied learnerId and that learner's
+    // allowance — a client sending its own sessionId alongside a sibling's
+    // learnerId would be charged correctly yet reported as never depleted,
+    // and the gate would never trip. Reject the mismatch outright rather
+    // than silently reporting against the wrong person's allowance.
+    const owner = day.sessions[sessionId]?.learnerId;
+    if (owner && owner !== learnerId) {
+      this.#logger.error?.('budget.learner-mismatch', { sessionId, learnerId, ownerLearnerId: owner });
+      throw Object.assign(new Error('session belongs to a different learner'), { status: 409 });
     }
     const r = applySettle(day, { sessionId, cumulativeSeconds, at });
     try {
@@ -146,7 +176,13 @@ export class PianoGameBudgetService {
     const today = this.#tryToday({ sessionId, learnerId });
     if (today === null) return OK_CLOSE;
     const at = this.#clock().toISOString();
-    const day = this.#store.loadDay(today);
+    // Same boundary problem settle has: the last settle can land before 4am
+    // and the child can stop right after it, so the session this close()
+    // targets may only exist in YESTERDAY's file. Without the same carry
+    // step settle uses, applyClose finds nothing on today's record, throws
+    // "unknown session", and the tail segment (and the session's closed
+    // flag) never lands anywhere.
+    const day = this.#loadDayForSession({ sessionId, learnerId, today, at });
     const r = applyClose(day, { sessionId, cumulativeSeconds, at });
     try {
       this.#store.saveDay(r.day);
@@ -169,6 +205,21 @@ export class PianoGameBudgetService {
   }
 
   /**
+   * settle() and close() share this: load today's record, and if the
+   * session isn't on it, try to carry it forward from yesterday (design D6
+   * — a session opened before 4am and touched again after must not lose
+   * itself, or its spend, at the boundary).
+   */
+  #loadDayForSession({ sessionId, learnerId, today, at }) {
+    let day = this.#store.loadDay(today);
+    if (!day.sessions[sessionId]) {
+      const carried = this.#carryForward({ sessionId, learnerId, today, at });
+      if (carried) { day = carried.day; this.#logger.info?.('budget.day-rollover', carried.event); }
+    }
+    return day;
+  }
+
+  /**
    * Find a session that belongs to an earlier study day and continue it on
    * today's record at the same cumulative high-water. Returns null when there
    * is nothing to carry (an unknown session id — applySettle will throw, which
@@ -176,11 +227,21 @@ export class PianoGameBudgetService {
    *
    * Only yesterday is searched: a session idle longer than that is past
    * STALE_AFTER_SECONDS and open() would have sealed it anyway.
+   *
+   * "Yesterday" is computed by pure calendar-string arithmetic on `today`
+   * (a `YYYY-MM-DD`), NOT by round-tripping through `budgetStudyDate` with a
+   * shifted instant. An earlier version anchored at `${today}T12:00:00Z`,
+   * subtracted 24h, and re-derived the study date from that instant — two
+   * stacked offsets (the anchor hour and the household's DST-dependent UTC
+   * offset) that only cancel out to "exactly one calendar day earlier" for a
+   * narrow band of timezone offsets. America/Los_Angeles sits AT that edge:
+   * it round-tripped correctly in PDT (-7) but not PST (-8), i.e. it was
+   * broken for a third of the year in the household's own timezone. Simple
+   * Y-M-D minus one day has no timezone in it at all, so there is no offset
+   * left to get wrong.
    */
   #carryForward({ sessionId, learnerId, today, at }) {
-    const yesterdayStr = budgetStudyDate(
-      new Date(Date.parse(`${today}T12:00:00.000Z`) - 86_400_000), this.#timezone,
-    );
+    const yesterdayStr = previousCalendarDate(today);
     const prev = this.#store.loadDay(yesterdayStr);
     const s = prev.sessions[sessionId];
     if (!s || s.closed) return null;
