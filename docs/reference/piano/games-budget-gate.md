@@ -223,7 +223,7 @@ level is `{ id, tier, grading, material }`: `material` is a non-empty list of sp
   on tier 3.
 - **A degrade moves one level down; a climb moves one level up.** Both after a configured
   count of consecutive outcomes, both stored per child.
-- **Walking away is not failing** (see below), so only completed attempts move anything.
+- **Walking away is not failing** (see below), so only judged attempts move anything.
 - **A level id nothing can resolve** — a stale save, a renamed level — resolves to index 0,
   which is always the unfailable floor. An unresolvable position fails toward "cannot fail
   the child", never toward whatever level happens to sit at some other index.
@@ -347,8 +347,27 @@ survived is the worse failure.
 
 ### Failure
 
-A completed attempt that missed its bar offers three ways on, and none of them reaches a
-match:
+**A free level fails by stalling.** Below tier 3 the matcher waits for the right note, so
+it records no misses and completeness only rises: `verdict.passed` becomes true the
+instant the last note lands and is false at no moment before it. Nothing else can end
+such an attempt, so a child who cannot play the ask would sit on a running attempt with
+no result, no ways forward and no way down — Exit their only move, and it costs them the
+match they earned. Twenty seconds with no note-on therefore ends a started free attempt
+where it stands, and it is judged as a failure. The clock resets on every note, so
+thinking between notes is free; a cued level needs none of this, because its timed
+matcher misses notes that never arrive.
+
+**A stall is not an abandonment.** The clock only runs once the child has actually played
+something. An attempt with no musical input in it is never a failure, however long it
+sits on screen — that is what keeps Exit from being a route to the floor, and it is why
+the stall does not reintroduce the exploit it would otherwise create.
+
+**Wrong notes still cost nothing below tier 3.** The stall is a clock, not a bar: a wrong
+key is a note like any other, it resets the clock, and it is recorded without being
+disqualifying. Nothing here adds cleanliness or a numeric threshold to a free level.
+
+A judged attempt that missed its bar — completed below the bar, or stalled — offers three
+ways on, and none of them reaches a match:
 
 | Button | What it does |
 |---|---|
@@ -393,9 +412,19 @@ The gate asks for material through a provider seam that names three kinds:
   **Roots must be written the way the bank spells them.** Its root axis is `values: all`,
   which expands to the twelve sharp-named pitch classes `C C# D D# E F F# G G# A A# B`.
   `roots: [Bb]` reads correctly to a person and addresses an instance id that does not
-  exist; the level is skipped and the gate falls through to whatever else it has. There is
-  no enharmonic axis yet, so B♭ major is authored as `A#` and the staff spells it with
-  sharps.
+  exist; the level is skipped and the gate falls through to whatever else it has.
+
+  **A root the bank can only spell wrongly is not authored at all.** There is no
+  enharmonic axis, so `A#` addresses B♭ major and `D#` addresses E♭ major — and the staff
+  then spells them with sharps, which for A♯ major means B♯, C♯♯, E♯ and F♯♯: the same
+  staff letter twice in a row, on the one surface a child is reading letters from. Those
+  two are left out of the repertoire rather than shown wrong. The path back is an
+  enharmonic axis on the bank, not a spelling table in the gate.
+
+  **A `roots` level names no other axis.** `scaleInstanceId` composes the whole id —
+  `mode=ionian,direction=up,span_octaves=1` — so a `hands`, `octaves` or `cued` key
+  written beside `roots` reaches nothing and is dropped in silence. (`hands` IS read on
+  a `collection`-only level, where the catalog walk uses it as a preference.)
 - **`score`** — a passage of real sheet music: a MusicXML document off the media tree,
   plus the bars of it the child is asked for. It resolves to no bank instance at all —
   the ask is whatever the engraver finds in the document, so the run engraves the score,
@@ -484,23 +513,23 @@ gameGate:
       tier: 1
       material:
         - { kind: keys, notes: 3, arrangement: sequence }
-    - id: L1                # C major, right hand, one octave
+    - id: L1                # C major, one octave
       tier: 2
       material:
-        - { kind: exercise, collection: scales, roots: [C], hands: right }
+        - { kind: exercise, collection: scales, roots: [C] }
     - id: L2                # one accidental — three roots, so gates differ
       tier: 2
       material:
-        - { kind: exercise, collection: scales, roots: [G, D, F], hands: right }
-    - id: L3                # SHARP-SPELLED: 'A#' is B flat major (see Material)
+        - { kind: exercise, collection: scales, roots: [G, D, F] }
+    - id: L3                # two sharps each; see Material on enharmonics
       tier: 2
       material:
-        - { kind: exercise, collection: scales, roots: ['A', 'E', 'A#', 'D#'], hands: right }
+        - { kind: exercise, collection: scales, roots: ['A', 'E'] }
     - id: L4                # at tempo; the only level where wrong notes cost
       tier: 3
       grading: { cleanliness: 0.8 }
       material:
-        - { kind: exercise, collection: scales, roots: [C, G], hands: right }
+        - { kind: exercise, collection: scales, roots: [C, G] }
         # A passage of real music belongs here — four bars of the study piece,
         # engraved by the sheet-music renderer. The shape, when one is chosen:
         # - { kind: score, source: 'files:sheetmusic/minuet-in-g.musicxml', measures: [1, 4] }
@@ -601,7 +630,7 @@ reconstructing — the fail-open ones — are not the ones missing an anchor.
 | `gate.presented` | info | the gate mounts, before any decision |
 | `gate.attempt` | info | material resolved; the run is about to take the screen |
 | `gate.passed` | info | a genuine pass, with its score |
-| `gate.failed` | info | a completed attempt that missed its bar |
+| `gate.failed` | info | a judged attempt that missed its bar: completed below it, or stalled. `score` is `null` for a stall, which carries no number |
 | `gate.rung-changed` | info | the ladder moved, with `{ from, to, direction }` — both level ids and `climb` \| `degrade` |
 | `gate.floor-reached` | info | the ladder arrived at the floor — once per arrival |
 | `gate.practice-detour` | info | the child left for the practice route |
@@ -697,9 +726,12 @@ settles across 4am produce two files.
 3. **Whether a passed gate should bank credit for more than one match**, so a strong run
    buys a short streak rather than exactly one game.
 4. **Enharmonic spelling in the exercise bank.** Its root axis publishes twelve
-   sharp-named pitch classes, so B♭ major must be authored as `A#` and its scale spells
-   with sharps on the staff a child is reading letters from. The repertoire is written in
-   the bank's spelling today; the fix is an axis on the bank, not a table in the gate.
+   sharp-named pitch classes, so the flat keys can only be addressed by their sharp names
+   and are then spelled that way on the staff a child is reading letters from. L3
+   therefore carries `A` and `E` only: `A#` and `D#` would put the same staff letter
+   twice in a row (B♯, C♯♯, E♯, F♯♯) in front of a child learning exactly those letters.
+   Until an enharmonic axis exists on the bank, the ladder above two sharps has one
+   fewer rung than it should. The fix is that axis, not a spelling table in the gate.
 5. **Where a `score` level belongs in the ladder.** The material kind, the engraving, the
    measure-range compilation and the grading all ship and are tested end to end; no level
    in the household config names a document yet, because no study piece has been chosen.

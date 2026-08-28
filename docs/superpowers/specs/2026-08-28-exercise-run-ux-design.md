@@ -161,9 +161,14 @@ own output — nothing anywhere checks what actually renders. These rules become
 properties, not conventions:
 
 1. **Clef is chosen, never defaulted.** Order of authority: the material's declared
-   hand, then its `staff` key (set in the bank today and read by nothing), then the
-   pitch range (notes sitting mostly below middle C → bass, above → treble). A staff
-   with no notes on it never renders.
+   `staff` key, then the hand it is played by, then the pitch range (notes sitting
+   mostly below middle C → bass, above → treble). A staff with no notes on it never
+   renders. *(AMENDED BY REVIEW — this line originally read hand → `staff` → pitch.
+   Task 7 ruled `staff` first: the exercise bank defines it as a re-notate-only axis
+   explicitly independent of `hand`, so a left hand authored to read treble must get
+   the treble the author asked for. Both engraving surfaces —
+   `exerciseAbc.instanceToAbc` and `runPresentation.clefForInstance` — are
+   staff-first.)*
 2. **Staff count equals hands in use.** One hand, one staff. Two staves only for
    genuinely two-hand material.
 3. **Notes sit sensibly in the viewport.** Correct vertical position on the chosen
