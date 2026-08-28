@@ -4,6 +4,7 @@ import request from 'supertest';
 import { createMeasuresRouter } from './measures.mjs';
 import { MeasureRegistry } from '#apps/measures/MeasureRegistry.mjs';
 import { createFitnessRingsProvider } from '#apps/measures/fitnessRingsProvider.mjs';
+import { GetWeeklyMeasures } from '#apps/measures/GetWeeklyMeasures.mjs';
 
 const TZ = 'America/Los_Angeles';
 // Wednesday 2026-08-26, 12:00 local.
@@ -16,7 +17,9 @@ function app({ sessions = [], roster = [{ id: 'user_4' }, { id: 'user_3' }] } = 
   }));
   const a = express();
   a.use('/measures', createMeasuresRouter({
-    registry, learners: async () => roster, timezone: TZ, clock: () => NOW,
+    weeklyMeasures: new GetWeeklyMeasures({
+      registry, learners: async () => roster, timezone: TZ, clock: () => NOW,
+    }),
   }));
   return a;
 }

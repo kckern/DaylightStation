@@ -4367,10 +4367,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
   }));
   v1Routers.measures = createMeasuresRouter({
-    registry: measureRegistry,
-    learners: async () => schoolLearnerDirectory.listLearners(),
-    timezone: measuresTimezone,
-    logger: rootLogger.child({ module: 'measures' }),
+    weeklyMeasures: new GetWeeklyMeasures({
+      registry: measureRegistry,
+      learners: async () => schoolLearnerDirectory.listLearners(),
+      timezone: measuresTimezone,
+      logger: rootLogger.child({ module: 'measures' }),
+    }),
   });
   // The action executor is deliberately late-bound: SchoolCalc is composed
   // before the existing print and trigger services, but scans cannot arrive
