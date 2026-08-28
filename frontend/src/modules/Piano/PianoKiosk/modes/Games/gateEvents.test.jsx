@@ -49,6 +49,11 @@ vi.mock('../../../ask/AskSession.jsx', async () => {
   const { useEffect, useState } = await import('react');
   const { resolveSpec } = await import('./gateMaterial.js');
   const { requirementForLevel } = await import('../../../ask/gateAsk.js');
+  // The REAL schema gate, out of the module being doubled. A double that could
+  // not refuse an ask would be silent about half the seam: at tier 3 a mistyped
+  // `kind` is caught by `askTupleFor` before any resolver sees it, and that is
+  // the path a one-character slip in the live config takes.
+  const { askTupleFor } = await vi.importActual('../../../ask/AskSession.jsx');
   // Named, and capitalised, because it IS a component: it holds state and runs
   // an effect, and the hooks lint (rightly) refuses those in an anonymous arrow.
   function AskSessionDouble(props) {
@@ -62,9 +67,14 @@ vi.mock('../../../ask/AskSession.jsx', async () => {
       setRunning(false);
       let alive = true;
       const requirement = requirementForLevel(ask);
-      const decline = (reason) => onUnavailable?.('instance-not-found', {
+      const decline = (reason, word = 'instance-not-found') => onUnavailable?.(word, {
         kind: materialSpec?.kind ?? null, reason, mode: requirement.mode,
       });
+      // Refused asks never cost a network round trip, and never mount a run.
+      if (askTupleFor(ask, materialSpec).errors.length) {
+        decline('ask-invalid', 'unrunnable');
+        return undefined;
+      }
       resolveSpec(materialSpec, { pickIndex, mode: requirement.mode })
         .then((picked) => {
           if (!alive) return;
@@ -419,6 +429,11 @@ describe('gate events', () => {
     // that SOME attempt happened would pass on both.
     expect(expectEvent('gate.attempt').material).toBe(scaleId('G'));
     expect(lines().some(([event]) => event === 'gate.material-config-invalid')).toBe(false);
+    // `gate.presented` names what was PRESENTED. Announced on the first decline
+    // it would name the entry that failed — `null`, for a sourceless score —
+    // while G major went on the stand a moment later, and every query anchored
+    // on presented would read a gate that showed a child nothing.
+    expect(expectEvent('gate.presented').material).toBe(scaleId('G'));
   });
 });
 

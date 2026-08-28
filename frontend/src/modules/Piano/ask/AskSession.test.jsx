@@ -375,7 +375,13 @@ describe('AskSession — the reasons a run cannot happen', () => {
     const cb = callbacks();
     render(<AskSession ask={{ id: 'bad', tier: 9, material: [] }} materialSpec={{ kind: 'keys', notes: 1 }} intent="challenge" {...cb} />);
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('unrunnable'));
+    // `unrunnable` WITH a decline. The word alone cannot be classified — a
+    // score that fetched and then would not engrave says `unrunnable` too, and
+    // that one is an outage — so the reason travels beside it, and a host's
+    // substitute-don't-grant policy reads the reason, never the word.
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
+      'unrunnable', { kind: 'keys', reason: 'ask-invalid', mode: 'free' },
+    ));
     expect(h.log.warn).toHaveBeenCalledWith('piano.ask-invalid', expect.objectContaining({
       errors: expect.arrayContaining(['tier: unknown preset tier-9']),
     }));
@@ -395,10 +401,36 @@ describe('AskSession — the reasons a run cannot happen', () => {
       />,
     );
 
-    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('unrunnable'));
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith(
+      'unrunnable', { kind: 'exercise', reason: 'ask-invalid', mode: 'free' },
+    ));
     expect(h.log.warn).toHaveBeenCalledWith('piano.ask-invalid', expect.objectContaining({
       errors: expect.arrayContaining(['not-yet-implemented: hints']),
     }));
+  });
+
+  it('refuses EACH spec a walking host offers, even when the words are identical', async () => {
+    // A host that walks a level's material hands down a new spec after every
+    // refusal. Two of them can refuse with the same error list — an ask
+    // asserting `hints: 'always'` refuses whatever it is paired with — and a
+    // report keyed on the message alone would swallow the second as a repeat.
+    // The host would be told once, would step forward, and would then wait
+    // forever on a session that had already made up its mind: a child left on
+    // "Cannot start this one" with the gate behind it doing nothing.
+    const cb = callbacks();
+    const ask = { id: 'future', tier: 2, presentation: { hints: 'always' }, material: [] };
+    const first = { kind: 'exercise', instanceId: h.instance.id };
+    const second = { kind: 'exercise', instanceId: 'scales/other' };
+    const view = render(<AskSession ask={ask} materialSpec={first} intent="challenge" {...cb} />);
+
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledTimes(1));
+    view.rerender(<AskSession ask={ask} materialSpec={second} intent="challenge" {...cb} />);
+
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledTimes(2));
+    expect(cb.onUnavailable.mock.calls.map(([, decline]) => decline?.kind)).toEqual(['exercise', 'exercise']);
+    // …and it is still once per spec, not once per render.
+    view.rerender(<AskSession ask={ask} materialSpec={second} intent="challenge" {...cb} />);
+    expect(cb.onUnavailable).toHaveBeenCalledTimes(2);
   });
 
   it('surfaces a bank that could not be reached as instance-not-found, keeping the decline string in the log', async () => {

@@ -236,9 +236,26 @@ async function resolveByCatalog(spec, mode) {
  *
  * Every one of these is decided without touching the network: a spec naming a
  * `kind` nothing implements, an `exercise` spec naming neither a collection nor
- * an instance, a `score` spec naming no document. They cannot be transient,
- * they will read the same way on every attempt forever, and they are fixed by
- * editing one line of YAML.
+ * an instance, a `score` spec naming no document, and an ask the SCHEMA refuses.
+ * They cannot be transient, they will read the same way on every attempt
+ * forever, and they are fixed by editing one line of YAML.
+ *
+ * `ask-invalid` is the newest and the least obvious, so it is worth stating why
+ * it belongs here rather than beside the outages. At tier 3 the ask is cued, and
+ * `cued ⇒ a source that can carry note values` cannot be answered when the
+ * spec's `kind` names nothing — so `askTupleFor` refuses the ask before any
+ * resolver is asked for an opinion, and the resolver's own
+ * `unknown-material-kind` is never produced. That is the SAME authoring mistake
+ * arriving one step earlier, and the live config is one character away from it:
+ * `kind: excercise` on L4 would otherwise hand every child who climbed that far
+ * a silent free match, forever, where the same typo one rung lower substitutes
+ * C major and warns. A classification that depends on which validator noticed
+ * first is not a classification.
+ *
+ * This list is the GATE'S OWN, and is not the `onUnavailable` vocabulary — that
+ * one is `no-access | instance-not-found | unrunnable`, it is frozen, and
+ * nothing here touches it. What arrives on `onUnavailable`'s second argument is
+ * classified by this list; the two are read together and confused separately.
  *
  * Their opposites — `instance-unavailable`, `catalog-unavailable`,
  * `score-unavailable`, and the no-seed/no-instance walks that depend on what
@@ -254,6 +271,7 @@ const CONFIG_DECLINE_REASONS = Object.freeze([
   'no-score-source',
   'no-collection-or-instance',
   'unknown-material-kind',
+  'ask-invalid',
 ]);
 
 /**

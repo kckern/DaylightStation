@@ -468,14 +468,6 @@ export default function GameGate({
   function declineMaterial({ kind = null, reason, mode = null }) {
     const held = latest.current.attempt;
     if (!held) return;
-    const context = {
-      material: materialName(held.spec),
-      rung: held.level.id,
-      tier: held.level.tier,
-      mode,
-      attemptId: held.attemptId,
-    };
-    presentOnce(context);
     latest.current.emit('gate.material-skipped', {
       kind, reason, rung: held.level.id, tier: held.level.tier,
     });
@@ -499,6 +491,24 @@ export default function GameGate({
       });
       return;
     }
+    /**
+     * Nothing this level names can be served, and nothing may be claimed about
+     * what was.
+     *
+     * `gate.presented` is announced HERE and not on the way in, because it
+     * carries `material` and there is no honest value for that until something
+     * has actually been served. Announcing on the first decline named the spec
+     * that FAILED: a level whose first entry was a sourceless score logged
+     * `material: null` on presented while G major went on the stand a moment
+     * later — a line that is not merely uninformative but wrong. So the walk is
+     * silent about presentation, `handleResolved` announces it with what the
+     * child got, and this path announces it with `null`, which is the true
+     * answer when the child got nothing.
+     */
+    const context = {
+      material: null, rung: held.level.id, tier: held.level.tier, mode, attemptId: held.attemptId,
+    };
+    presentOnce(context);
     failOpen(reason, context);
   }
 
@@ -611,15 +621,18 @@ export default function GameGate({
    * resolve differently — the distinction is the same one the design draws for
    * the gate as a whole (verdict versus infrastructure versus config).
    *
-   * A `decline` is present only when the SESSION is the one refusing: material
-   * that never resolved, with the exact reason. That is the case
-   * `declineMaterial` above decides, and it is the only one where a substitute
-   * can help — the other two happen after something was successfully served.
+   * **The discriminator is the SECOND ARGUMENT, never the word.** A `decline` is
+   * present exactly when the SESSION is the one refusing — material that never
+   * resolved, or an ask the schema will not accept — and it carries the reason
+   * that tells a typo from an outage. Reading the word instead would get this
+   * wrong in both directions: `instance-not-found` and `unrunnable` each occur
+   * on both sides of the line. A schema refusal arrives as `unrunnable` and is a
+   * config mistake; a score that fetched fine and then would not engrave arrives
+   * as `unrunnable` too and is an outage.
    *
-   * With no decline, a mounted run has dead-ended: `instance-not-found` /
-   * `unrunnable` are INFRASTRUCTURE (the material could not be read, or the
-   * attempt could not be built from it). Nothing the child can do, and they
-   * earned this game: fail open.
+   * With no decline, a mounted run has dead-ended on material that DID resolve:
+   * infrastructure by construction. Nothing the child can do, and they earned
+   * this game: fail open.
    *
    * `no-access` is NOT infrastructure. It is permanent, known, and entirely
    * within the household's control — nobody has chosen a player. Failing open
