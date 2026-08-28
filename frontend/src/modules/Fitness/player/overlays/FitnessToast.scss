@@ -36,6 +36,11 @@
 
   &--success { border-left: 4px solid #22c55e; }
   &--info { border-left: 4px solid #38bdf8; }
+  &--rings {
+    border: 1px solid rgba(255, 202, 49, 0.66);
+    border-left: 4px solid #ffca31;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 38px rgba(255, 168, 30, 0.26);
+  }
 
   &__body { display: flex; align-items: center; gap: 16px; }
 
@@ -105,6 +110,44 @@
     animation-name: fitness-toast-countdown;
     animation-timing-function: linear;
     animation-fill-mode: forwards;
+  }
+}
+
+/* Ring celebrations stay in the same centered-card family as every other
+ * Fitness toast. The supplied asset supplies the motion; this shell only
+ * gives the number, people, and update-friendly reading order a quiet home. */
+.fitness-toast--ring-celebration {
+  width: min(38rem, 78vw);
+  min-width: min(20rem, 78vw);
+  align-items: center;
+  text-align: center;
+  gap: 0.38rem;
+  padding: 1rem 1.6rem 0.85rem;
+
+  .fitness-toast__ring-stage { height: 7rem; display: grid; place-items: center; }
+  .fitness-toast__ring-icon { width: 7.8rem; height: 7.8rem; object-fit: contain; filter: drop-shadow(0 0.4rem 0.75rem rgba(255, 149, 25, 0.32)); }
+  .fitness-toast__ring-total { color: #ffe45c; font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 900; letter-spacing: 0.045em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .fitness-toast__ring-message { font-size: 1.16rem; font-weight: 700; color: #fff8bd; }
+  .fitness-toast__ring-faces { display: flex; align-items: flex-start; justify-content: center; margin-top: 0.18rem; padding-inline: 0.7rem; }
+  .fitness-toast__ring-faces .fitness-toast__contributor { flex-direction: column; gap: 0.2rem; margin-inline: -0.3rem; }
+  .fitness-toast__ring-faces .fitness-toast__contributor-avatar { width: 3.4rem; height: 3.4rem; border: 2px solid rgba(255, 248, 189, 0.95); box-shadow: 0 0.22rem 0.55rem rgba(0, 0, 0, 0.45); }
+  .fitness-toast__ring-faces .fitness-toast__contributor-name { max-width: 5.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.73rem; letter-spacing: 0.02em; }
+  .fitness-toast__ring-more { width: 3.4rem; height: 3.4rem; margin-left: -0.3rem; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 202, 49, 0.22); border: 2px solid rgba(255, 248, 189, 0.9); color: #fff8bd; font-weight: 800; }
+  .fitness-toast__ring-lines { align-self: stretch; display: grid; gap: 0.22rem; margin-top: 0.18rem; text-align: left; }
+  .fitness-toast__ring-line { display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-weight: 650; color: #f8fafc; }
+  .fitness-toast__ring-line img { width: 1.55rem; height: 1.55rem; border-radius: 50%; object-fit: cover; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  // The SVG contains its own turn animation, so hiding it is the reliable way
+  // to honour reduced motion across browser SVG-image implementations.
+  .fitness-toast--ring-celebration .fitness-toast__ring-icon { display: none; }
+  .fitness-toast--ring-celebration .fitness-toast__ring-stage::after {
+    content: '◉';
+    color: #ffe45c;
+    font-size: 5rem;
+    line-height: 1;
+    text-shadow: 0 0 1rem rgba(255, 159, 19, 0.42);
   }
 }
 
