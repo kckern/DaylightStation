@@ -225,11 +225,61 @@ export function deriveRunTier(instance, mode) {
 }
 
 /**
+ * The pitch band ONE staff holds. `SvgSequenceStaff` is 112 view units tall
+ * whatever it is handed, and only draws its held ghosts inside staff positions
+ * -3 to 11 — B3 to B5 on a treble clef, a hair over two octaves. Ink outside
+ * that band is drawn anyway, off the card, with nothing on screen to say so.
+ */
+const SEQUENCE_STAFF_SPAN = 24;
+
+/**
+ * Can the one-staff sequence renderer draw this material HONESTLY?
+ *
+ * Three ways it cannot, and each one is a different kind of dishonest:
+ *
+ *  - **`staff: 'grand'`.** The material's own notation declares two staves.
+ *    Drawing it on one is drawing something the author said it is not.
+ *  - **Genuinely two-hand.** One hand, one staff — the engraving rule this
+ *    redesign is accountable to. Two hands collapsed onto a single clef puts
+ *    the left hand's notes wherever the right hand's clef happens to place
+ *    them, which is not the piece.
+ *  - **A span past one staff's band.** Even one-handed, an ask reaching further
+ *    than `SEQUENCE_STAFF_SPAN` runs off a box that cannot grow to hold it.
+ *
+ * `drills/hanon/001` is all three at once — `staff: grand`, both hands, midi 36
+ * to 91 — and it is the material this predicate exists for: 42% of its notes
+ * rendered off-canvas on a single treble clef at a 20:1 aspect ratio, where the
+ * ABC path had drawn a correct grand staff. Material this answers `false` for
+ * keeps that path.
+ *
+ * Material with no notes answers `true`: there is nothing to draw wrongly, and
+ * the empty-ask behaviour is not this predicate's to change.
+ */
+export function sequenceStaffCanDraw(instance) {
+  const declared = typeof instance?.staff === 'string' ? instance.staff.trim().toLowerCase() : '';
+  if (declared !== '' && declared !== 'treble' && declared !== 'bass') return false;
+  const hands = new Set();
+  for (const event of instance?.events ?? []) {
+    for (const note of event?.notes ?? []) if (note?.hand) hands.add(note.hand);
+  }
+  if (hands.size > 1) return false;
+  const midis = askMidis(instance?.events);
+  if (!midis.length) return true;
+  return Math.max(...midis) - Math.min(...midis) <= SEQUENCE_STAFF_SPAN;
+}
+
+/**
  * Which stage a tier mounts. `ordering: 'any'` overrides the tier for the
  * reason above — including a tier a host named explicitly, because the
  * alternative is a stage that cannot draw the material it was given.
+ *
+ * Tier 2's sequence staff is subject to the same rule, and for the same reason:
+ * material one staff cannot hold falls back to the ABC path, which engraves a
+ * grand staff. The gate's own shipped material — single-hand scales and lit
+ * keys — is one-handed and inside an octave, so none of it moves.
  */
 export function stageForTier(tier, instance) {
   if (instance?.ordering === 'any' || tier <= 1) return 'keys';
-  return tier === 2 ? 'sequence' : 'notation';
+  if (tier === 2) return sequenceStaffCanDraw(instance) ? 'sequence' : 'notation';
+  return 'notation';
 }

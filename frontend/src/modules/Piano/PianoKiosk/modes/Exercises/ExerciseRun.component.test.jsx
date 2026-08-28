@@ -678,7 +678,9 @@ describe('ExerciseRun shared assessment wiring', () => {
     // The arming note is still FIRST — it is the note that started the run and
     // must stay the run's first graded note.
     expect(h.observe.mock.calls.map((call) => call[0].midi)).toEqual([48, 60]);
-    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '1'));
+    // Two-hand material draws on the grand staff (`sequenceStaffCanDraw`), so
+    // the cursor to read is the ABC path's — same cursor, same `eventIndex`.
+    await waitFor(() => expect(screen.getByTestId('notation')).toHaveTextContent('1'));
   });
 
   it.each([
@@ -965,6 +967,30 @@ describe('ExerciseRun tier-driven presentation', () => {
     // Tier-1 treatment: the small staff comes along, spelled for the key.
     expect(screen.getByTestId('keys-ask')).toHaveAttribute('data-show-staff', 'true');
     expect(screen.getByTestId('keys-ask')).toHaveAttribute('data-accidental', 'flat');
+  });
+
+  it('keeps Hanon on the grand staff instead of squashing it onto one clef', async () => {
+    // The real shape, off the bank: `staff: grand`, both hands on every event,
+    // midi 36 to 91. As ordinary `ordering:'strict'` free material it derived
+    // tier 2 and got the one-staff sequence renderer — a fixed 112-unit-tall
+    // box, one treble clef, 42% of the notes off-canvas at a 20:1 aspect. The
+    // ABC path draws it correctly and keeps it.
+    h.instanceData = {
+      ...h.instance,
+      staff: 'grand',
+      meter: '2/4',
+      events: [
+        { id: 'e1', value: '16th', notes: [{ midi: 36, hand: 'left', finger: 5 }, { midi: 48, hand: 'right', finger: 1 }] },
+        { id: 'e2', value: '16th', notes: [{ midi: 40, hand: 'left', finger: 4 }, { midi: 52, hand: 'right', finger: 2 }] },
+        { id: 'e3', value: '16th', notes: [{ midi: 79, hand: 'left', finger: 1 }, { midi: 91, hand: 'right', finger: 5 }] },
+      ],
+    };
+    render(<ExerciseRun {...practice()} />); // no tier prop — derives 2
+    await ready();
+
+    expect(screen.getByTestId('notation')).toBeInTheDocument();
+    expect(screen.queryByTestId('sequence-staff')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('keys-ask')).not.toBeInTheDocument();
   });
 
   it('a sequential practice ask still derives the staff it always had', async () => {
