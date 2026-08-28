@@ -657,6 +657,17 @@ runs it with `--max-warnings 0`.
 measured 2026-08-27.** So it is NOT a regression gate and must not be treated as one.
 
 The rule is therefore: **files you create must lint clean — do not add to the pile.**
+**⚠ NEVER pass a bare directory to eslint — it silently skips `.jsx`.** Measured on this
+branch: `npx eslint src/modules/School/lesson/surround/` inspected **2** files; the same
+path as explicit globs inspected **7**. Five `.jsx` files were skipped and BOTH forms
+exited 0, so a vacuous pass is indistinguishable from a real one. The repo's own script
+passes `--ext js,jsx`; a bare directory argument does not inherit it. Always:
+
+```
+cd frontend && npx eslint 'src/path/*.jsx' 'src/path/*.js' \
+  --report-unused-disable-directives --max-warnings 0
+```
+
 Run `cd frontend && npx eslint <your new files>` and get to zero. Do not attempt to fix
 the pre-existing 2386.
 
