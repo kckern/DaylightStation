@@ -1023,6 +1023,31 @@ recorded as a teacher action.
 
 ---
 
+## ⚠ Task 12's wire contract — DELTAS, not cumulative `played`
+
+Established 2026-08-28, when Task 9 dropped the persisted `maxRate` in favour of dropping
+the ranges of any sample reported at rate > 1. That fix is correct and it removed a
+whole-household permanent lockout — but it **moves the anti-fast-forward guarantee from
+the server onto a client contract that nothing can enforce**, because a delta and a
+cumulative range are indistinguishable on the wire.
+
+**The contract:** each progress report carries the interval played **since the previous
+report**, paired with **that window's** playback rate.
+
+**The trap, spelled out because the wrong answer is the obvious one.** The DOM hands you
+`mediaEl.played` as *cumulative* TimeRanges, and an earlier draft of this plan said to send
+exactly that. Do not. A child plays 0→100s at 2x, then drops to 1x for one second: the
+next sample reports `[[0, 101]]` at `rate: 1`, the server sees a normal-speed sample, and
+**the entire fast play is banked**. The gate is defeated by one second of honest playback.
+
+**Therefore:** track the previous sample's position, emit only the newly-covered interval,
+and carry the maximum rate observed *during that interval*. A seek must break the interval
+rather than bridging it — a jump from 10s to 90s is not 80 seconds of listening.
+
+Task 12 must carry an explicit test for this: a fast window followed by a slow window must
+bank only the slow window's seconds. It is the single most defeat-able point in the
+feature.
+
 ## Carry-over fixes — from Task 7's review, apply AFTER Task 8
 
 All of these touch `IssueDocument.mjs`, which Task 8 edits, so they were deferred rather
