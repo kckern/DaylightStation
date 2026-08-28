@@ -12,18 +12,19 @@
  *   - `exercise` — an instance out of the exercise bank. Either named outright
  *                  (`instanceId`) or addressed by collection/roots, which the
  *                  scales bank can be asked for directly by id.
- *   - `score`    — a compiled score expectation. Named, but declined in phase 1:
- *                  there is no ghost/notation for a score on the run surface
- *                  yet, so a gate that got one would put a child in front of a
- *                  blank stave. The caller LOGS AND SKIPS it; it must never
- *                  crash, and it must never be mistaken for a typo'd kind,
- *                  which is why it has its own error code.
+ *   - `score`    — a passage of REAL sheet music: a MusicXML document off the
+ *                  media tree, plus the bars of it a child is being asked for.
+ *                  Unlike the other two it resolves to no exercise instance at
+ *                  all — the ask is whatever the engraver finds in the
+ *                  document, so what this returns is the raw score and the run
+ *                  surface compiles the expectation from the engraving.
  *
  * Pure of React and of logging: every path resolves to a value describing what
  * happened — `{ ok: true, ... }` or `{ ok: false, error }`, plus a `skipped`
  * list the gate host can log with the learner/device/session context that makes
  * those decisions queryable. Nothing here throws on a bad config.
  */
+import { DaylightAPIText } from '../../../../../lib/api.mjs';
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
 import { pickMaterial } from './gateRepertoire.js';
 
@@ -89,6 +90,51 @@ export function keysInstance(spec, pickIndex = 0) {
 }
 
 /**
+ * The bars a level named, as PRINTED bar numbers — `[2, 3]` is the second and
+ * third bar, which is how a grown-up authoring a level reads them off the page.
+ * Anything that is not an ascending pair of whole bars from 1 up is dropped
+ * rather than repaired: a range nobody can read means "the whole score", which
+ * is always playable, where a guessed one puts a child in front of the wrong
+ * bars with nothing on screen to say so.
+ */
+function passageMeasures(measures) {
+  if (!Array.isArray(measures) || measures.length !== 2) return null;
+  const [start, end] = measures.map((value) => Math.trunc(Number(value)));
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  if (start < 1 || end < start) return null;
+  return [start, end];
+}
+
+/**
+ * The content id of a score, as a media path. The `files:` scheme belongs to
+ * the CONTENT id and is not part of the path — the same strip `SheetMusic.jsx`
+ * does before it streams the raw document.
+ */
+const scoreStreamPath = (source) => `api/v1/proxy/media/stream/${encodeURIComponent(source.replace(/^[a-z]+:/i, ''))}`;
+
+/**
+ * Fetch a score's MusicXML the one way it is fetched anywhere: the media stream
+ * endpoint `SheetMusic.jsx` uses. A second route to the same file would be a
+ * second thing to keep true.
+ *
+ * Every failure is `score-unavailable`, deliberately flattened: a 502 mid
+ * backend restart, a renamed file, a level naming no source at all, and an
+ * empty document are all "there is no passage to put in front of this child",
+ * and the gate's answer to all four is the same — fail open, grant the match.
+ */
+async function loadScore(material) {
+  const source = typeof material?.source === 'string' ? material.source.trim() : '';
+  if (!source) return { ok: false, error: 'score-unavailable' };
+  try {
+    const musicXml = await DaylightAPIText(scoreStreamPath(source));
+    if (typeof musicXml !== 'string' || !musicXml.trim()) return { ok: false, error: 'score-unavailable' };
+    return { ok: true, kind: 'score', score: { id: source, musicXml, measures: passageMeasures(material.measures) } };
+  } catch {
+    return { ok: false, error: 'score-unavailable' };
+  }
+}
+
+/**
  * Load whatever a resolved material descriptor points at.
  *
  * `material.instance` short-circuits the fetch. The gate resolves the instance
@@ -109,7 +155,7 @@ export async function resolveGateMaterial(material) {
     if (!res.ok) return { ok: false, error: 'instance-unavailable' };
     return { ok: true, kind: 'exercise', instance: res.data };
   }
-  if (material?.kind === 'score') return { ok: false, error: 'score-material-phase-2' };
+  if (material?.kind === 'score') return loadScore(material);
   return { ok: false, error: 'unknown-material-kind' };
 }
 
@@ -195,7 +241,16 @@ async function resolveSpec(spec, { pickIndex, mode }) {
     if (typeof spec.collection === 'string' && spec.collection) return resolveByCatalog(spec, mode);
     return { ok: false, error: 'no-collection-or-instance' };
   }
-  if (spec?.kind === 'score') return { ok: false, error: 'score-material-phase-2' };
+  if (spec?.kind === 'score') {
+    const source = typeof spec.source === 'string' ? spec.source.trim() : '';
+    // A level naming no score names nothing; that is a config mistake and it
+    // reads as one in the skip log, rather than as a file that could not be
+    // reached. The DOCUMENT is deliberately not fetched here: the rotation may
+    // never serve this spec, and a pick that fetched would pull a whole score
+    // over the wire to decide it had one. The run fetches it, once.
+    if (!source) return { ok: false, error: 'no-score-source' };
+    return { ok: true, material: { kind: 'score', source, measures: passageMeasures(spec.measures) }, instance: null };
+  }
   return { ok: false, error: 'unknown-material-kind' };
 }
 
@@ -203,12 +258,12 @@ async function resolveSpec(spec, { pickIndex, mode }) {
  * Choose what a child is asked to play for one gate attempt, from one level.
  *
  * Rotation picks the STARTING candidate (`pickMaterial`, which avoids the spec
- * served last time); the rest of the level's material is the fallback order. A
- * `score` entry in an otherwise playable level therefore costs that attempt
- * nothing — it is skipped and the level's other material is served — while a
- * level with nothing BUT score material declines, and the gate fails open.
- * Failing the whole gate because one entry is ahead of its phase would take a
- * match away from a child for a config decision they cannot see.
+ * served last time); the rest of the level's material is the fallback order. An
+ * entry that cannot resolve — a bank 502, a score with no source — therefore
+ * costs that attempt nothing: it is skipped and the level's other material is
+ * served. Only a level where NOTHING resolves declines, and the gate then fails
+ * open. Failing the whole gate over one bad entry would take a match away from
+ * a child for a config decision they cannot see.
  *
  * @param {{id:string, tier:number, material:object[]}} level A resolved repertoire level.
  * @param {{lastMaterialId?:string|null, pickIndex?:number, mode?:'free'|'cued'}} [options]

@@ -270,21 +270,37 @@ the gate anticipated cannot strand a child on a kiosk with no browser chrome.
 
 ### Material
 
-The gate asks for material through a provider seam that names two kinds from the start:
+The gate asks for material through a provider seam that names three kinds:
 
+- **`keys`** — a lit-keyboard ask, synthesized on the spot: one white key, or two to
+  three a third to a fifth apart. The floor of the ladder is made of these, and they
+  reach a child without a network round trip, because a 502 between a four-year-old and
+  the easiest thing the gate can ask is the one outage that must not exist.
 - **`exercise`** — an instance from the exercise bank, chosen from the configured
   collections among seeds that support the rung's mode. Up to three seeds are tried
   before the gate gives up, because a seed can sit in the right collection and still have
   nothing this rung can run.
-- **`score`** — a passage from a compiled score. Accepted at the seam and declined in
-  rendering: there is no wrong-note ghost for a score on the run surface yet, so a gate
-  that served one would put a child in front of a bare stave. Each declined entry is
-  logged as `gate.material-skipped` with its own reason code, so it stays distinguishable
-  from a typo'd kind.
+- **`score`** — a passage of real sheet music: a MusicXML document off the media tree,
+  plus the bars of it the child is asked for. It resolves to no bank instance at all —
+  the ask is whatever the engraver finds in the document, so the run engraves the score,
+  waits for the geometry, compiles the named measure range into an expectation, and
+  builds the attempt from that. Free walks a cursor through the passage; cued is timed
+  against the score's own tempo map. The cursor lights the engraved notehead itself and
+  the bars either side of the passage stay printed but greyed back, so the ask is
+  focused without losing the run-up.
 
-Score-passage parity is the pending work: the assessment side already unifies, the
-notation side does not, because exercises engrave through abcjs and sheet music through
-OSMD and the ghost measures abcjs geometry directly.
+A level may mix kinds; the rotation serves one per attempt. An entry that cannot be
+served — a bank 502, a score naming no document — is skipped, logged as
+`gate.material-skipped` with its own reason code, and the level's other material is
+served. Only a level where nothing resolves declines, and the gate then fails open.
+
+`measures` is written the way a person reads a printed score: `[2, 3]` is the second and
+third bars. A range nothing can read is dropped and the whole score is asked for, rather
+than repaired into a guess that would put a child in front of the wrong bars with nothing
+on screen to say so.
+
+The gate passage is deliberately not a score viewer: no transport, no scroll, no zoom, no
+per-measure grades. It is a few bars, on one screen, over in seconds.
 
 ---
 
@@ -338,8 +354,8 @@ gameGate:
     - kind: exercise
       collections: [scales, arpeggios, intervals, chords]
     - kind: score
-      source: current-study-piece
-      measures: 4
+      source: files:docs/sheet-music/minuet-in-g.musicxml
+      measures: [1, 4]      # printed bar numbers, inclusive
   users:                    # optional per-child overrides, merged key-by-key
     kckern:
       enabled: true
