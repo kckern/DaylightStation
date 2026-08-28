@@ -1,6 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import usePlayerController from './usePlayerController.js';
 import { getLogger } from '../../lib/logging/Logger.js';
+import { createMediaGate } from '../../lib/Player/gate/mediaGate.js';
+import { resolvePause } from '../../lib/Player/gate/pauseArbiter.js';
+import { GATE_ID } from '../../lib/Player/gate/gateIds.js';
 
 const Player = lazy(() => import('./Player.jsx'));
 const THROTTLE_MS = 10000;
@@ -53,13 +56,51 @@ const ICONS = {
   pause: icon(<><path d="M8.5 5.5v13" strokeWidth="3.4" /><path d="M15.5 5.5v13" strokeWidth="3.4" /></>)
 };
 
+// --- the required-companion clamp ------------------------------------------
+// A REQUIRED companion is the one a worksheet's gate row depends on, so the two
+// cheap ways to shorten it — raise the rate, drag the scrubber forward — are
+// refused here as well as on the server. This is NOT the security boundary: the
+// server drops the ranges of any sample above 1x and never saw the seconds a
+// seek skipped, so a client that lied about either earns nothing. The clamp
+// exists so a child does not spend a chapter walking into a wall they cannot
+// see, and is deliberately generous in the one direction that costs nothing —
+// rewinding, and re-listening to already-heard audio, stay completely free.
+//
+// An OPTIONAL companion keeps every affordance it ever had. Nothing below
+// changes for it.
+
+/**
+ * The furthest point a child may jump to in this part, or null for "no ceiling".
+ *
+ * A finished chapter is heard end to end, so it is free to roam; an unfinished
+ * one is capped at the furthest position reached — whichever is greater of what
+ * the server already recorded and what this session has watched go past.
+ */
+const seekCeilingFor = ({ saved = {}, reachedSeconds = 0 } = {}) => {
+  const duration = Number(saved.durationSeconds) || 0;
+  // A completed chapter with no recorded length cannot name a ceiling. Failing
+  // OPEN is right here and only here: the part is already finished, so there is
+  // nothing left ahead of the child to skip.
+  if (saved.completedAt) return duration > 0 ? duration : null;
+  return Math.max(Number(saved.lastPositionSeconds) || 0, reachedSeconds || 0);
+};
+
 /**
  * Generic text-and-audio playlist shell. Content labels and ids come from the
  * caller. Built for a 1280x800 touch kiosk used by children: one chapter rail
  * up top (each chip is both the picker and that chapter's progress bar), the
  * verse stage owning everything in between, one transport row at the bottom.
+ *
+ * @param {'required'|'optional'} [participation] — whether this companion gates
+ *   a worksheet. It arrives on the backend handler's `open()` effect and is
+ *   threaded here by `SchoolApp`. Anything other than `'required'` is treated
+ *   as optional, so an absent value can only ever loosen the clamp, never
+ *   impose one on a companion that was never gated.
  */
-export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = [], progress = {}, onProgress, onExit }) {
+export default function ReadalongPlaylistPlayer({
+  title = 'Read along', parts = [], progress = {}, participation = 'optional', onProgress, onExit,
+}) {
+  const required = participation === 'required';
   const [index, setIndex] = useState(0);
   const [last, setLast] = useState({ currentTime: 0, duration: 0 });
   const [paused, setPaused] = useState(true);
@@ -75,6 +116,14 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
   // anything kept on the element dies with it. `cursor` is the last observed
   // media position, `wall` the Date.now() of that sample.
   const coverage = useRef({ partId: null, ranges: [], maxRate: 0, cursor: null, wall: 0 });
+  // Furthest media position this session has actually watched go past, per part.
+  // A ref, not state: it changes several times a second and nothing renders off
+  // it — the gate and `skip` both read it through `ceiling`.
+  const reached = useRef({});
+  // The live ceiling, so the transport can bound a jump without waiting for a
+  // render. `null` means unclamped (an optional companion, or a finished part).
+  const ceiling = useRef(null);
+  const gateRef = useRef(null);
   const logger = useMemo(() => getLogger().child({ component: 'readalong-playlist' }), []);
   const part = parts[index] ?? null;
   const complete = index === parts.length - 1 && last.duration > 0 && last.currentTime >= last.duration - 0.5;
@@ -105,7 +154,20 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
     const elapsed = acc.wall ? Math.max(0, (now - acc.wall) / 1000) : 0;
     const el = ctrl.getMediaEl?.();
     const reported = Number(el?.playbackRate);
-    const rate = Number.isFinite(reported) && reported > 0 ? reported : 1;
+    let rate = Number.isFinite(reported) && reported > 0 ? reported : 1;
+    // The rate clamp lives on the sample loop rather than on a control, because
+    // this shell HAS no speed control: a rate above 1 can only arrive from
+    // outside it (the `player:cycle-playback-rate` screen action, or a rate this
+    // collection's playback session restored). Player's controlled rate would
+    // re-assert whatever the session holds, so pinning the element on every
+    // sample — the same technique `useCommonMediaController` uses to re-assert
+    // its own rate — is what actually holds. Debug level: if something did fight
+    // us tick by tick this would otherwise flood the store.
+    if (required && el && rate > 1) {
+      try { el.playbackRate = 1; } catch (_) { /* not an element we can write to */ }
+      logger.debug('readalong.rate-clamped', { partId, from: rate });
+      rate = 1;
+    }
     const at = Math.max(0, duration > 0 ? Math.min(currentTime, duration) : currentTime);
     acc.cursor = at;
     acc.wall = now;
@@ -122,7 +184,13 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
     }
     acc.ranges.push([round3(from), round3(at)]);
     acc.maxRate = Math.max(acc.maxRate, rate);
-  }, [ctrl, logger]);
+    // The high-water mark advances ONLY over audio that was banked as played —
+    // the same evidence the server counts. Deriving it from the raw playhead
+    // instead would let one seek the clamp happened to miss (the gate binds on
+    // the first render after the lazy Player resolves) move the frontier to
+    // wherever the seek landed, which is the whole thing being refused.
+    reached.current[partId] = Math.max(reached.current[partId] ?? 0, at);
+  }, [ctrl, logger, required]);
 
   /**
    * Hand the buffered intervals to a report and clear them, so the next report
@@ -170,6 +238,45 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
     });
   }, [onProgress, drainCoverage]);
 
+  /**
+   * The seek clamp, borrowed whole from the checkpoint gate rather than rebuilt:
+   * `mediaGate` already owns the DOM `seeking` listener, the frame of slack a
+   * browser lands a seek within, the element rebinding across a resilience
+   * remount, and a never-throws contract. Only the CEILING is ours.
+   *
+   * The verdict never blocks — `resolvePause` turns `{blocked:false, seekCeiling}`
+   * into a PLAYING decision, and `mediaGate` resumes only what it paused itself,
+   * so nothing here can touch the transport. A ceiling is a standing rule and is
+   * enforced with playback running free, which is exactly what this wants: play
+   * on, rewind at will, but never past the frontier.
+   */
+  useEffect(() => {
+    const gate = createMediaGate({ getMediaEl: () => ctrl.getMediaEl?.() ?? null, logger });
+    gateRef.current = gate;
+    return () => { gateRef.current = null; gate.detach(); };
+  }, [ctrl, logger]);
+
+  const syncGate = useCallback(() => {
+    const current = latest.current.part;
+    const next = required && current
+      ? seekCeilingFor({
+        saved: progress?.parts?.[current.id] ?? {},
+        reachedSeconds: reached.current[current.id] ?? 0,
+      })
+      : null;
+    ceiling.current = next;
+    gateRef.current?.apply(resolvePause({
+      gates: [{ blocked: false, id: GATE_ID.COMPANION, seekCeiling: next }],
+    }));
+  }, [required, progress]);
+
+  // No deps: this is the supervisor. `mediaGate` re-reads the element on every
+  // apply, so running once per render is what binds a player that mounted after
+  // the last verdict change (the lazy Player resolves without re-rendering this
+  // shell) and what re-binds one the resilience layer swapped underneath us.
+  // Cheap by construction — `apply` publishes only when a field actually moved.
+  useEffect(syncGate);
+
   const receiveProgress = useCallback((payload) => {
     const next = { currentTime: Number(payload?.currentTime) || 0, duration: Number(payload?.duration) || 0 };
     setLast(next);
@@ -214,8 +321,14 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
   const skip = useCallback((delta) => {
     const from = ctrl.getCurrentTime();
     const max = ctrl.getDuration() || last.duration || Infinity;
-    logger.debug('readalong.skip', { delta, from: Math.round(from) });
-    ctrl.seek(Math.max(0, Math.min(max, from + delta)));
+    // "Ahead 15s" is bounded by the ceiling as well as by the duration, so the
+    // button lands ON the high-water mark rather than being snapped back off it
+    // by the clamp a beat later — a child gets a jump that visibly stops, not
+    // one that appears to fail.
+    const limit = ceiling.current == null ? max : Math.min(max, ceiling.current);
+    const to = Math.max(0, Math.min(limit, from + delta));
+    logger.debug('readalong.skip', { delta, from: Math.round(from), to: Math.round(to), ceiling: ceiling.current });
+    ctrl.seek(to);
   }, [ctrl, last.duration, logger]);
   const toggle = useCallback(() => {
     logger.debug('readalong.toggle', { paused });
