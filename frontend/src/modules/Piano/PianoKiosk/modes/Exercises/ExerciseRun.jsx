@@ -76,6 +76,11 @@ const JUDGED_STATUSES = Object.freeze(new Set(['completed', 'timeout']));
  * child reach the unfailable floor by walking away `retriesBeforeDegrade`
  * times without touching a key. Cued asks are excluded because they already
  * fail on their own — the timed matcher misses notes that never arrive.
+ *
+ * It does not touch D9's unfailable floor, and does not need a carve-out to
+ * avoid it: no criterion is added, and the built-in floor's ask is ONE lit key,
+ * so the note that arms it is the note that completes it. There is no interval
+ * during which that attempt can be stalled.
  */
 const FREE_STALL_MS = 20000;
 
