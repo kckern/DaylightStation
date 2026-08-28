@@ -197,3 +197,81 @@ describe('teacher console wrappers', () => {
     expect(fetch).toHaveBeenCalledWith('/api/v1/school/lifecycle/curriculum/units', expect.any(Object));
   });
 });
+
+// ── Media-lesson checkpoints (Task 11) ────────────────────────────────────────
+// These four back a HARD gate, so the tests below assert the wire shape, not
+// just "a request happened": a heartbeat that silently degrades to a GET, or a
+// 410 the client swallowed, both look fine from the caller and both break the
+// gate.
+describe('media-lesson endpoints', () => {
+  const okFetch = () => vi.fn(async () => new Response('{}', { status: 200 }));
+
+  it('lessonSession() GETs the snapshot and encodes the server-minted id', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    await schoolApi.lessonSession('ses/med 1');
+    const [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/lesson/ses%2Fmed%201');
+    expect(opts.method).toBe('GET');
+    expect(opts.body).toBeUndefined();
+  });
+
+  it('lessonAnswer() POSTs checkpointId/itemId/given verbatim, falsy answers included', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    await schoolApi.lessonAnswer('ses/1', { checkpointId: 'cp-312', itemId: 'ast3-q4', given: 0 });
+    const [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/lesson/ses%2F1/answer');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ checkpointId: 'cp-312', itemId: 'ast3-q4', given: 0 });
+  });
+
+  it('lessonAnswer() still POSTs when the body is omitted (never degrades to a GET)', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    await schoolApi.lessonAnswer('ses1');
+    expect(fetch.mock.calls.at(-1)[1].method).toBe('POST');
+  });
+
+  it('lessonPosition() POSTs {position}, and position 0 is a real heartbeat, not an omission', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    await schoolApi.lessonPosition('ses/1', 312.5);
+    let [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/lesson/ses%2F1/position');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ position: 312.5 });
+    // The first heartbeat of a lesson resumed at the very start is position 0.
+    // `req()` turns an undefined body into a GET, so a dropped 0 would silently
+    // send the heartbeat as a GET to a POST-only route.
+    await schoolApi.lessonPosition('ses1', 0);
+    [url, opts] = fetch.mock.calls.at(-1);
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ position: 0 });
+  });
+
+  it('lessonEnded() POSTs the media element\'s own ended, with no body of its own', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    await schoolApi.lessonEnded('ses/1');
+    const [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/lesson/ses%2F1/ended');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({});
+  });
+
+  it('passes 410 Gone through on every lesson method — the session is dead, and only the caller can decide what that means on screen', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ error: 'session_gone' }), { status: 410 },
+    )));
+    const calls = [
+      schoolApi.lessonSession('ses1'),
+      schoolApi.lessonAnswer('ses1', { checkpointId: 'cp-1', itemId: 'q1', given: 'a' }),
+      schoolApi.lessonPosition('ses1', 12),
+      schoolApi.lessonEnded('ses1'),
+    ];
+    for (const result of await Promise.all(calls)) {
+      expect(result).toEqual({ ok: false, status: 410, data: { error: 'session_gone' } });
+    }
+  });
+
+  it('a failed heartbeat resolves rather than rejecting — a 15s timer must not raise an unhandled rejection', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('net'); }));
+    await expect(schoolApi.lessonPosition('ses1', 42)).resolves.toEqual({ ok: false, status: 0, data: null });
+  });
+});
