@@ -249,6 +249,37 @@ describe('autoStudio config', () => {
   });
 });
 
+// gameLimit is off by default like curfew, and — like effects/videos/producer
+// — a whole-node passthrough: the server owns dailyMinutes/warnAtMinutes/etc,
+// the client only branches on `enabled`, but every field still has to survive
+// the resolver or a future consumer finds it silently dropped (the resolver's
+// own named failure mode — see the module-header comment on gameLimit).
+describe('gameLimit config', () => {
+  it('defaults to disabled (off by default, like curfew)', () => {
+    expect(resolvePianoConfig({}, 'default').gameLimit).toEqual({ enabled: false });
+  });
+
+  it('passes the whole gameLimit block through (dailyMinutes, warnAtMinutes, users, etc.)', () => {
+    const raw = {
+      gameLimit: {
+        enabled: true, source: 'fixed', dailyMinutes: 45, deviceDailyMinutes: 120,
+        warnAtMinutes: 5, idleAfterSeconds: 90, users: { user_1: { dailyMinutes: 30 } },
+      },
+    };
+    const cfg = resolvePianoConfig(raw, 'default');
+    expect(cfg.gameLimit).toEqual(raw.gameLimit);
+  });
+
+  it('lets a per-piano gameLimit override the shared one', () => {
+    const raw = {
+      gameLimit: { enabled: true, dailyMinutes: 45 },
+      pianos: { upstairs: { gameLimit: { enabled: false } } },
+    };
+    expect(resolvePianoConfig(raw, 'upstairs').gameLimit.enabled).toBe(false);
+    expect(resolvePianoConfig(raw, 'default').gameLimit.enabled).toBe(true);
+  });
+});
+
 // Curfew is config-driven: the code ships it off, and the household's cut-off
 // comes from data/household/piano/config.yml — shared for every piano, or
 // per-piano when one kiosk keeps different hours.

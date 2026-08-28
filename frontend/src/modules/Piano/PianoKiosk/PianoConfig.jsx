@@ -71,6 +71,16 @@ export const PIANO_CONFIG_DEFAULTS = {
   // (SM-T590 = 1280×800) and scales to fit any other browser — same layout
   // everywhere. Null either dimension to disable scaling.
   display: { designWidth: 1280, designHeight: 800 },
+  // Daily piano-game time budget (see docs/_wip/plans/2026-08-27-piano-game-
+  // budget-and-gate-design.md). Off by default, like curfew — a household
+  // that never sets this block gets unmetered games. Whole-node passthrough
+  // (like effects/videos): the server is authoritative for dailyMinutes,
+  // deviceDailyMinutes, warnAtMinutes, idleAfterSeconds, users, etc. — the
+  // client only reads `enabled` to decide whether to open a meter session at
+  // all, but every other field still has to survive the resolver so it
+  // reaches whatever eventually needs it, per the resolver's own "silently
+  // drops any key not threaded through it" failure mode.
+  gameLimit: { enabled: false },
 };
 
 /** Resolve screensaver config: per-piano values override shared, over defaults. */
@@ -169,6 +179,7 @@ export function resolvePianoConfig(raw, pianoId) {
     producer: p.producer ?? shared.producer ?? PIANO_CONFIG_DEFAULTS.producer,
     autoStudio: { ...PIANO_CONFIG_DEFAULTS.autoStudio, ...(shared.autoStudio || {}), ...(p.autoStudio || {}) },
     display: { ...PIANO_CONFIG_DEFAULTS.display, ...(shared.display || {}), ...(p.display || {}) },
+    gameLimit: { ...PIANO_CONFIG_DEFAULTS.gameLimit, ...(shared.gameLimit || {}), ...(p.gameLimit || {}) },
   };
 }
 

@@ -158,8 +158,18 @@ function GameHost() {
   // ('off', 'opening', 'unavailable', 'playing', 'idle-paused', 'warning')
   // all fall through to the normal game render below; only an affirmative
   // depletion answer swaps the game for a lock panel.
+  //
+  // learnerId MUST be the roster slug (pianoUser.currentUser), never
+  // `currentUser` above — that local resolves to the hydrated PROFILE OBJECT
+  // once the roster has loaded (`currentProfile ?? currentUser`), which the
+  // games themselves want for display/props. Sending the object as a route
+  // param stringifies to the literal "[object Object]", so every child on
+  // the piano would meter into one shared bucket instead of their own. Gate 1
+  // above (Games()) already keys off this same slug — this keeps both gates
+  // identifying the child the same way.
+  const learnerId = pianoUser?.currentUser ?? null;
   const meter = useGameBudgetMeter({
-    learnerId: currentUser, deviceId: 'piano-kiosk', active: config.gameLimit?.enabled === true,
+    learnerId, deviceId: 'piano-kiosk', active: config.gameLimit?.enabled === true,
   });
 
   // Current location in the header breadcrumb (Games › this game). The breadcrumb

@@ -4,6 +4,14 @@ import { MemoryRouter, Routes, Route, resolvePath } from 'react-router-dom';
 
 const schoolAccess = vi.hoisted(() => ({ unlocked: true }));
 const gameBudget = vi.hoisted(() => ({ state: 'off', secondsLeft: 0, warn: false }));
+// vi.fn() (not a plain closure) so tests can assert what GameHost actually
+// PASSES the hook — active/learnerId — not just what it renders in response
+// to the hook's return value. A closure-only mock discards the call args
+// entirely, which is exactly how the wiring bugs this file now pins (gate
+// never activating because config.gameLimit isn't threaded through; the
+// hydrated profile object sent as learnerId instead of the roster slug) shipped
+// with 15/15 green the first time around.
+const gameBudgetMeter = vi.hoisted(() => vi.fn());
 
 // Keep the games-config fetch hermetic (no real network).
 vi.mock('../../../../../lib/api.mjs', () => ({
@@ -16,7 +24,7 @@ vi.mock('../../useSchoolGameAccess.js', () => ({
   }),
 }));
 vi.mock('../../useGameBudgetMeter.js', () => ({
-  default: () => gameBudget,
+  default: gameBudgetMeter,
 }));
 
 import { PianoMidiProvider } from '../../PianoMidiContext.jsx';
@@ -31,11 +39,13 @@ const testConfig = {
 
 // Games renders its own <Routes>, so mount it under a "games/*" route inside a
 // MemoryRouter — mirroring how PianoShell mounts it (path="games/*"). The game
-// id lives in the URL; assertions check the right view per path.
-function renderGames(initialEntry = '/games', currentUser = 'guest') {
+// id lives in the URL; assertions check the right view per path. `config`
+// defaults to testConfig (no gameLimit key) but a test can pass its own to
+// exercise the gameLimit-enabled wiring.
+function renderGames(initialEntry = '/games', currentUser = 'guest', config = testConfig) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <ActivePianoProvider pianoId="test" config={testConfig}>
+      <ActivePianoProvider pianoId="test" config={config}>
         <PianoUserContext.Provider value={{ currentUser, currentProfile: { id: currentUser, name: currentUser } }}>
           <PianoMidiProvider>
             <Routes>
@@ -54,6 +64,7 @@ beforeEach(() => {
   gameBudget.state = 'off';
   gameBudget.secondsLeft = 0;
   gameBudget.warn = false;
+  gameBudgetMeter.mockImplementation(() => gameBudget);
 });
 
 describe('Games mode', () => {
@@ -174,5 +185,30 @@ describe('Games mode — budget gate (gate 3, below the school lock)', () => {
     renderGames('/games/tetris');
     expect(document.querySelector('.piano-game-fullscreen')).not.toBeNull();
     expect(screen.getByText('3 min of game time left')).toBeTruthy();
+  });
+
+  // These two pin the WIRING, not just the render: a mock that only returns a
+  // fixed state can never catch either bug it exists to prevent — the gate
+  // never activating because config.gameLimit isn't threaded through
+  // resolvePianoConfig, or the hydrated profile object going out as
+  // learnerId instead of the roster slug (which would silently pool every
+  // child's play time into one bucket keyed "[object Object]").
+  it('meters with active:true and the roster SLUG (not the hydrated profile object) when gameLimit is enabled', () => {
+    renderGames('/games/tetris', 'learner1', { ...testConfig, gameLimit: { enabled: true } });
+    expect(gameBudgetMeter).toHaveBeenCalledWith(expect.objectContaining({
+      active: true,
+      learnerId: 'learner1',
+      deviceId: 'piano-kiosk',
+    }));
+  });
+
+  it('does not meter (active:false) when gameLimit is absent from config', () => {
+    renderGames('/games/tetris', 'learner1', testConfig);
+    expect(gameBudgetMeter).toHaveBeenCalledWith(expect.objectContaining({ active: false }));
+  });
+
+  it('does not meter (active:false) when gameLimit.enabled is explicitly false', () => {
+    renderGames('/games/tetris', 'learner1', { ...testConfig, gameLimit: { enabled: false } });
+    expect(gameBudgetMeter).toHaveBeenCalledWith(expect.objectContaining({ active: false }));
   });
 });
