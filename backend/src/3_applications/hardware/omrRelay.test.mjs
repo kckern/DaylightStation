@@ -82,14 +82,37 @@ describe('createOmrRelay', () => {
   // reaches the expected length (or give up and hand back whatever is there,
   // so a failing `expect(...).toHaveLength(n)` reports the real short count
   // rather than an opaque timeout).
+  /**
+   * Wait for `n` records to land, and FAIL IN WORDS if they do not.
+   *
+   * This used to swallow `until()`'s timeout and return whatever `readRecords`
+   * happened to hold — usually `[]` — so "the write never landed" surfaced
+   * several lines later as `TypeError: Cannot read properties of undefined
+   * (reading 'ts')` in whichever assertion touched `recs[0]` first. That reads
+   * exactly like a bug in the timestamp logic and is nothing of the kind, and
+   * it cost real time to chase more than once.
+   *
+   * The relay writes through async file I/O, so on a loaded machine (several
+   * suites running in parallel) the old 2s deadline was genuinely too short —
+   * which is why this looked like a deterministic failure to some runs and a
+   * clean pass to others. The deadline is generous here for that reason; a
+   * miss past it is a real timeout and now says so.
+   */
+  const RECORD_WAIT_MS = 10_000;
+
   async function waitForRecords(n, id = READER_ID) {
     try {
       return await until(async () => {
         const recs = await readRecords(id);
         return recs.length >= n ? recs : null;
-      });
+      }, { timeoutMs: RECORD_WAIT_MS });
     } catch {
-      return readRecords(id);
+      const found = await readRecords(id);
+      throw new Error(
+        `waitForRecords(${n}) timed out after ${RECORD_WAIT_MS}ms for reader "${id}" — `
+        + `${found.length} record(s) on disk. The relay's write had not landed: `
+        + 'this is a timeout, not a data bug.',
+      );
     }
   }
 
