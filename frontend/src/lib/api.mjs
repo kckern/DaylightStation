@@ -62,7 +62,12 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
     if (!response.ok) {
         const errorText = await response.text();
         getLogger().error('api.response.error', { path, status: response.status, statusText: response.statusText });
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+        // `status` is attached (not just embedded in the message string) so a
+        // caller can distinguish e.g. a permanent 409 (retrying will never
+        // help) from a transient 5xx/network failure without parsing prose.
+        const error = new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+        error.status = response.status;
+        throw error;
     }
     
     const response_data = await response.json();
