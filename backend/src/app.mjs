@@ -4384,6 +4384,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { MeasureRegistry } = await import('#apps/measures/MeasureRegistry.mjs');
   const { createFitnessRingsProvider } = await import('#apps/measures/fitnessRingsProvider.mjs');
   const { createMeasuresRouter } = await import('#api/v1/routers/measures.mjs');
+  const { GetWeeklyMeasures } = await import('#apps/measures/GetWeeklyMeasures.mjs');
   const measuresTimezone = configService.getHouseholdTimezone?.(householdId) || 'UTC';
   const measureRegistry = new MeasureRegistry().register(createFitnessRingsProvider({
     timezone: measuresTimezone,
