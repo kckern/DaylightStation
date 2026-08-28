@@ -29,7 +29,7 @@ export async function* parseSSE(stream) {
           try {
             yield JSON.parse(payload);
           } catch (err) {
-            // eslint-disable-next-line no-console
+             
             console.warn('[parseSSE] malformed JSON, skipping:', payload);
           }
         }

@@ -32,6 +32,12 @@ export const INTERVENTIONS = [
     href: learnerOps,
   },
   {
+    id: 'program-day-bypass', scope: 'learner', label: 'Excuse today’s piano lesson',
+    useWhen: 'Today’s piano lesson shouldn’t be required — recital, illness, travel.',
+    where: 'Student → Operations.',
+    href: learnerOps,
+  },
+  {
     id: 'reassign', scope: 'learner', label: 'Move work to the right child',
     useWhen: 'The wrong child’s name ended up on a lesson.',
     where: 'Student → Operations.',

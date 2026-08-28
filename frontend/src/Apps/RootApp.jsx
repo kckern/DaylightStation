@@ -1,7 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import './RootApp.scss'
 
-import { KeypadMenu } from '../modules/Menu/Menu'
 import { getChildLogger } from '../lib/logging/singleton.js'
 
 /**
@@ -15,9 +14,9 @@ function RootApp() {
   const logger = useMemo(() => getChildLogger({ app: 'root' }), []);
   logger.debug('root.render');
 
-  const [menuSelection, setMenuSelection] = useState(null);
+  const [setMenuSelection] = useState(null);
 
-  const handleMenuSelection = useCallback((selection) => {
+  useCallback((selection) => {
     logger.info('root.menu.selection', { selection });
     setMenuSelection(selection);
   }, [logger]);

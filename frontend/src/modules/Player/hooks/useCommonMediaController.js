@@ -55,7 +55,6 @@ export function useCommonMediaController({
   isVideo = false,
   meta,
   type,
-  onShaderLevelChange = () => {},
   shader,
   volume,
   cycleThroughClasses,
@@ -911,9 +910,8 @@ export function useCommonMediaController({
     };
 
     const onEnded = () => {
-      const mediaEl = getMediaEl();
-      const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
-
+      getMediaEl();
+      
       lastLoggedTimeRef.current = 0;
       // Mark this asset as naturally ended so the unmount cleanup skips it
       endedAssetRef.current = assetId;

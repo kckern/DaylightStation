@@ -386,4 +386,6 @@ export function ChessBoard({
   );
 }
 
-export default memo(ChessBoard);
+const MemoizedChessBoard = memo(ChessBoard);
+MemoizedChessBoard.displayName = 'ChessBoard';
+export default MemoizedChessBoard;

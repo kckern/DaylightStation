@@ -57,14 +57,15 @@ export default function FitnessToast({ toast, onDone }) {
     setImgFailed(false);
     const durationMs = Number.isFinite(toast?.durationMs) ? toast.durationMs : DEFAULT_TOAST_DURATION_MS;
     logger.info('fitness.toast.shown', { id, variant: toast?.variant, durationMs });
-    timersRef.current.hide = setTimeout(() => setExiting(true), durationMs);
-    timersRef.current.done = setTimeout(() => {
+    const timers = timersRef.current;
+    timers.hide = setTimeout(() => setExiting(true), durationMs);
+    timers.done = setTimeout(() => {
       logger.info('fitness.toast.dismissed', { id, reason: 'timeout' });
       if (typeof onDone === 'function') onDone(id);
     }, durationMs + TOAST_EXIT_MS);
     return () => {
-      clearTimeout(timersRef.current.hide);
-      clearTimeout(timersRef.current.done);
+      clearTimeout(timers.hide);
+      clearTimeout(timers.done);
     };
     // Intentionally keyed on `id` only. onDone/durationMs/variant are read from the
     // toast captured when this id last changed; ids are monotonic (see normalizeToast),

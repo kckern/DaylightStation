@@ -1,9 +1,13 @@
 # GATE-VITEST baseline — the SET of vitest files currently failing.
-# Population: *.test.{js,jsx,mjs} under tests/unit, tests/isolated and
-# backend/ that vitest OWNS (explicit vitest import, or bare globals with
-# no runner import), minus suite/ (jest) and node:test files.
+# Population: *.test.{js,jsx,mjs} under tests/unit, tests/isolated, backend, frontend that vitest
+# OWNS (explicit vitest import, or bare globals with no runner import),
+# minus suite/ (jest) and node:test files.
 # A file failing that is NOT listed here is a REGRESSION (gate exits 1).
-# Captured: 15176 tests, 15079 pass, 42 fail.
+# Captured: 28971 tests, 28904 pass, 12 fail, 52 skipped.
+# --update PRESERVES the hand-written `#` prose below: a comment block
+# directly above a path travels with that path; a block closed by a bare
+# `#` is kept in the notes section. Nothing here records WHICH run wrote a
+# line, so say in prose why an entry is here if the reason is not obvious.
 # Regenerate with: node scripts/gate-vitest.mjs --update
 #
 # 2026-08-26: StockfishEngineAdapter.test.mjs was REMOVED from this list by
@@ -13,13 +17,32 @@
 # re-introduced. Removing it means a future regression there is reported as a
 # regression instead of being absorbed as "expected".
 #
-# A blanket --update was deliberately NOT run: four other files below
-# (RenderPrintDocument, piano.courses, scripture, infrastructure-ownership)
-# also passed that run, but they are UNVERIFIED — two of them are named in
-# gate-vitest.mjs's own header as files that have flaked before. Protecting a
-# file that merely happened to pass turns the next flake into a red gate, which
-# is the habit this baseline exists to prevent. They stay listed until someone
-# does for them what was done for Stockfish.
+# A blanket --update was deliberately NOT run: five of the files below
+# (YamlWorkoutRepository, RenderPrintDocument, piano.courses, scripture,
+# infrastructure-ownership) also passed that run, but they are UNVERIFIED —
+# two of them are named in gate-vitest.mjs's own header as files that have
+# flaked before. Protecting a file that merely happened to pass turns the next
+# flake into a red gate, which is the habit this baseline exists to prevent.
+# They stay listed until someone does for them what was done for Stockfish.
+# The case for waiting got STRONGER, not weaker, on 2026-08-27: the population
+# grew 80% when frontend/ entered it, so one green observation now carries less
+# evidence about contention than it did when the run was half the size.
+#
+# 2026-08-27: frontend/src/modules/Surround/band.measure.test.jsx is NOT listed
+# here, though it was red when frontend/ entered the population. That file
+# carries 102 assertions and exactly ONE of them failed; this ratchet is
+# file-granular, so baselining it would have absorbed the other 101 as
+# "expected" and unprotected a 3,000-line measurement suite to close a
+# one-assertion hole.
+#
+# It was briefly marked `it.fails` and is now simply GREEN. The cause was not a
+# padded constant: `Mar…` measures 38.3px on the machine the constant was
+# derived on and 37.00px here, same font binary and rule, because Chromium's
+# rasterised advance widths differ between builds. `SEGMENT_NAME_RUN_PX` is the
+# ceiling of the widest reading, so `ceil(38.3) - 37.00` is exactly 2.00 and the
+# test's `< 2` cushion band called the spread padding. The band is 3px now, the
+# shipped constant is unchanged at 39, and the hard floor assertion stays exact.
+#
 backend/src/1_adapters/fitness/YamlWorkoutRepository.test.mjs
 backend/src/1_adapters/glossika/LegacyDumpReader.test.mjs
 backend/src/3_applications/school/documents/RenderPrintDocument.test.mjs

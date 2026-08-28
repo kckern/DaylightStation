@@ -51,7 +51,7 @@ const jab = (name) => {
  */
 const advance = async (ms, slice = 5_000) => {
   for (let left = ms; left > 0; left -= slice) {
-    // eslint-disable-next-line no-await-in-loop
+     
     await act(async () => { await vi.advanceTimersByTimeAsync(Math.min(slice, left)); });
   }
 };

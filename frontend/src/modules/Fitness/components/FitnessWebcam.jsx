@@ -32,7 +32,6 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
     videoClassName,
     videoStyle,
     snapshotContext = 'webcam',
-    enableHotkeys = true,
   } = props;
 
   const videoRef = useRef(null);

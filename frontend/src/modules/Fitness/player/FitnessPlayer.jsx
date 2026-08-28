@@ -9,7 +9,7 @@ import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
 import { useFitnessVolumeControls } from '@/modules/Fitness/nav/useFitnessVolumeControls.js';
-import { resolveMediaIdentity, resolveContentId, normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
+import { resolveContentId, normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
 import { resolvePause, PAUSE_REASON } from '@/lib/Player/gate/pauseArbiter.js';
 import { GATE_ID } from '@/lib/Player/gate/gateIds.js';
 import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
@@ -146,7 +146,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   const footerRef = useRef(null);
   const [videoDims, setVideoDims] = useState({ width: 0, height: 0, hideFooter: false, footerHeight: 0 });
   // Sidebar is no longer resizable; width is driven by context size mode
-  const [sidebarSide, setSidebarSide] = useState('right'); // 'left' | 'right'
+  const [sidebarSide] = useState('right'); // 'left' | 'right'
   // Mode: fullscreen (no sidebar/ no footer) or normal (standard layout)
   const [playerMode, setPlayerMode] = useState('normal'); // 'fullscreen' | 'normal'
   const lastNonFullscreenRef = useRef('normal');
@@ -186,10 +186,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     voiceMemoOverlayState, // 4A: Voice memo overlay state for exit guard
     voiceMemos, // 4B: Voice memos for 15-minute rule
     openVoiceMemoCapture, // 4B: Open voice memo prompt
-    addVoiceMemoToSession,
-    pauseMusicPlayer,
-    resumeMusicPlayer,
-    preferredMicrophoneId,
     participantRoster: contextParticipantRoster,
     registerVideoPlayer,
     setCurrentMedia,
@@ -262,7 +258,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // Sync media element ref for context
   useEffect(() => {
@@ -293,7 +289,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   const setQueue = setPlayQueue || setFitnessPlayQueue;
   const {
     seek: seekTo,
-    toggle: togglePlay,
     getCurrentTime: getPlayerTime,
     getDuration: getPlayerDuration,
     pause: pausePlayback,
@@ -336,17 +331,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // lock-driven side-channels too (audioDuck / challenge / deadline) so nothing
   // downstream (audio duck, cycle dim, warning scrim) keeps acting on the lock
   // we just released — otherwise the override would be only half-applied.
-  const effectiveGovernanceState = governanceBypassed
-    ? {
-        ...governanceState,
-        videoLocked: false,
-        isGoverned: false,
-        status: 'unlocked',
-        audioDuck: null,
-        challenge: null,
-        deadline: null
-      }
-    : governanceState;
+  const effectiveGovernanceState = useMemo(() => (
+    governanceBypassed
+      ? {
+          ...governanceState,
+          videoLocked: false,
+          isGoverned: false,
+          status: 'unlocked',
+          audioDuck: null,
+          challenge: null,
+          deadline: null
+        }
+      : governanceState
+  ), [governanceBypassed, governanceState]);
 
   // Clear a runtime bypass when the playing item changes so it never leaks past
   // the lock it was granted for. (The per-item `currentItem.nogovern` flag is
@@ -405,7 +402,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Use participantRoster from context, with session roster as fallback for immediate data
   // This eliminates brief "Waiting for participants" flash when roster exists but context hasn't updated
   const sessionRoster = fitnessSessionInstance?.roster;
-  const participants = Array.isArray(contextParticipantRoster) && contextParticipantRoster.length > 0
+  Array.isArray(contextParticipantRoster) && contextParticipantRoster.length > 0
     ? contextParticipantRoster
     : (Array.isArray(sessionRoster) ? sessionRoster : []);
 
@@ -641,9 +638,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     }
   }, [videoPlayerPaused, mediaElement, governancePaused]);
 
-  const TimeDisplay = useMemo(() => React.memo(({ ct, dur }) => (
-    <>{formatTime(ct)} / {formatTime(dur)}</>
-  )), []);
+  const TimeDisplay = useMemo(() => React.memo(function TimeDisplay({ ct, dur }) {
+    return <>{formatTime(ct)} / {formatTime(dur)}</>;
+  }), []);
 
   const enhancedCurrentItem = useMemo(() => {
     if (!currentItem) return null;
@@ -827,7 +824,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     };
     mediaElement.addEventListener('seeked', handleSeeked);
     return () => mediaElement.removeEventListener('seeked', handleSeeked);
-  }, [mediaElement]);
+  }, [logger, mediaElement]);
 
   // Safety timeout: auto-clear isSeeking if seeked event never fires (e.g. network failure)
   useEffect(() => {
@@ -838,7 +835,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       }, 15000);
     }
     return () => clearTimeout(seekTimeoutRef.current);
-  }, [isSeeking]);
+  }, [isSeeking, logger]);
 
   // Function to handle seeking to a specific point in the video
   const handleSeek = useCallback((seconds) => {
@@ -952,26 +949,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   
 
   // Helper function to check if a plex object is valid for thumbnail generation
-  const isValidPlexObj = (plexObj) => {
-    if (!plexObj) return false;
-    
-    // First check if there's a thumbId available
-    if (typeof plexObj === 'object' && plexObj.thumbId) return true;
-    
-    // Fallback to checking if it's a numeric ID or a path that contains metadata
-    const plexId = typeof plexObj === 'object' ? plexObj.id || plexObj.plex || plexObj.ratingKey : plexObj;
-    return (
-      /^\d+$/.test(String(plexId)) || 
-      (typeof plexId === 'string' && plexId.includes('metadata')) ||
-      (typeof plexId === 'object' && (plexId.id || plexId.ratingKey || plexId.metadata))
-    );
-  };
-
+  
   // Container-based sizing with 16:9 invariant: we derive video FIRST then leftover height becomes footer.
   useLayoutEffect(() => {
     if (!viewportRef?.current) return;
 
-    const compute = (reason = 'resize') => {
+    const compute = (_reason = 'resize') => {
       if (!viewportRef.current) return;
       if (stackEvalRef.current.pending) return;
       stackEvalRef.current.pending = true;
@@ -1085,7 +1068,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Resizer removed: no mouse/keyboard resize handlers
   
   // Handle image loading errors for thumbnails
-  const handleThumbnailError = (e, label) => {
+  const handleThumbnailError = (e, _label) => {
     // thumbnail failed to load (warning suppressed)
     e.target.style.display = 'none';
     if (e.target.nextSibling) {
@@ -1633,7 +1616,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         </div>
       );
     });
-  }, [currentItem, currentTime, seekPositions, handleSeek]);
+  }, [currentItem, currentTime, seekPositions]);
 
   // Effect: initialize current item from queue
   useEffect(() => {
@@ -1758,7 +1741,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
   const handlePlayerControllerUpdate = useCallback(() => {}, []);
 
-  const handlePlayerReady = useCallback(({ duration: d }) => {
+  useCallback(({ duration: d }) => {
     if (d && !duration) setDuration(d);
   }, [duration]);
 

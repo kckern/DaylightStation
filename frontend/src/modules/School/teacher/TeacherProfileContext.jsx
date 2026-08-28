@@ -141,6 +141,10 @@ export function TeacherProfileProvider({ children }) {
     }
     setPinPrompt((value) => ({ ...value, busy: true, error: null }));
     let active = authorizationRef.current;
+    // Whether the server has accepted THIS PIN during THIS submission. It is
+    // the only thing that separates "type it again" from "typing it again
+    // cannot help", because both refusals come back as a bare 403.
+    let pinProven = false;
     if (!active.active || active.userId !== pending.teacherId) {
       const unlocked = await teacherWorkspaceApi.unlock(pending.teacherId, normalizedPin);
       if (!unlocked.ok) {
@@ -153,6 +157,7 @@ export function TeacherProfileProvider({ children }) {
       active = { active: true, ...unlocked.data };
       authorizationRef.current = active;
       setAuthorization(active);
+      pinProven = true;
       teacherLog.claim('unlocked', { teacherId: pending.teacherId });
     }
 
@@ -170,6 +175,7 @@ export function TeacherProfileProvider({ children }) {
           active = { active: true, ...unlocked.data };
           authorizationRef.current = active;
           setAuthorization(active);
+          pinProven = true;
           steppedUp = await teacherWorkspaceApi.stepUp({
             pin: normalizedPin, action: pending.action, resource: pending.resource,
           });
@@ -183,9 +189,25 @@ export function TeacherProfileProvider({ children }) {
           authorizationRef.current = nextAuthorization;
           setAuthorization(nextAuthorization);
         }
-        setPinPrompt((value) => ({ ...value, busy: false,
-          error: errorMessage(steppedUp, steppedUp.status === 0 ? 'Couldn’t reach the teacher service.' : 'Fresh confirmation was not accepted.') }));
-        teacherLog.claim('step-up-refused', { teacherId: pending.teacherId, action: pending.action, status: steppedUp.status });
+        const message = errorMessage(steppedUp,
+          steppedUp.status === 0 ? 'Couldn’t reach the teacher service.' : 'Fresh confirmation was not accepted.');
+        // A wrong PIN, or a service we couldn't reach, is worth another go —
+        // hold the dialog open. A 403 the server returned AFTER accepting this
+        // very PIN is about the action, not the person: no PIN will ever
+        // satisfy it, so settle the caller's promise with the refusal and get
+        // out of the way. Leaving it unsettled is what wedged the reprint and
+        // curriculum-exception buttons: a dialog forever, a write that never
+        // resolved, and no error anywhere.
+        const retryable = steppedUp.status === 0 || (steppedUp.status === 403 && !pinProven);
+        teacherLog.claim('step-up-refused', {
+          teacherId: pending.teacherId, action: pending.action, status: steppedUp.status, retryable,
+        });
+        if (retryable) {
+          setPinPrompt((value) => ({ ...value, busy: false, error: message }));
+          return;
+        }
+        setPinPrompt({ open: false, busy: false, error: null, action: null, resource: null });
+        settlePending({ ok: false, refused: true, status: steppedUp.status, message });
         return;
       }
       grantToken = steppedUp.data?.grantToken ?? null;

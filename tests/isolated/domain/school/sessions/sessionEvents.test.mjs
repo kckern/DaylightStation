@@ -34,7 +34,7 @@ const PAYLOADS = {
   reward_reconciled: { reconciliationId: 'rec_1', delta: 1, txnId: 'txn_2' },
   reward_reconciliation_failed: { reconciliationId: 'rec_2', delta: -1, reason: 'economy unavailable' },
   remediation_opened: { newSessionId: 'ses_next', variant: 1 },
-  reassigned: { fromLearnerId: 'kid1', toLearnerId: 'kid2' },
+  reassigned: { fromLearnerId: 'kid1', toLearnerId: 'kid2', reason: 'Learner Two sat down at Learner One’s sheet' },
   failed: { stage: 'print', reason: 'printer offline' },
   grade_adjusted: { adjustmentId: 'adj_1', percent: 100, reason: 'OMR erased answer misread', adjustedBy: 'parent1' },
   grade_adjustment_retracted: { adjustmentId: 'adj_1', reason: 'entered against wrong session', retractedBy: 'parent1' },
@@ -247,6 +247,9 @@ describe('createEvent: per-type payloads', () => {
     ['remediation_opened', 'newSessionId'],
     ['reassigned', 'fromLearnerId'],
     ['reassigned', 'toLearnerId'],
+    // Moving a child's work onto a sibling is a decision with an author and a
+    // why; the why lives in the event, not only in a best-effort audit trail.
+    ['reassigned', 'reason'],
     ['failed', 'stage'],
     ['failed', 'reason'],
   ])('%s requires %s', (type, field) => {
@@ -579,6 +582,79 @@ describe('reduceSession: annotation events', () => {
     const events = log(['created', 'abandoned']);
     const state = reduceSession([...events, { ...ev('failed'), seq: 3 }]);
     expect(state.errors).toContain('event[seq=3]: illegal transition abandoned -> failed');
+  });
+
+  /**
+   * ...with `reassigned` as the deliberate exception. A reassignment changes
+   * ATTRIBUTION, never lifecycle position, so a settled lesson is exactly when
+   * it is most needed: the wrong child's name is usually discovered after the
+   * coins have already been paid. Asserted on the DERIVED state — that the
+   * work now reads as kid2's and the lifecycle did not move — rather than on
+   * the legality call, because "legal" that the reducer then drops would be
+   * the same bug wearing a green tick.
+   */
+  it.each([
+    ['rewarded', ['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'rewarded']],
+    ['remediation_opened', ['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'remediation_opened']],
+    ['abandoned', ['created', 'abandoned']],
+  ])('a reassignment is legal at %s and re-credits the settled work', (terminal, path) => {
+    const events = log(path);
+    const state = reduceSession([...events, { ...ev('reassigned'), seq: events.length + 1 }]);
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe(terminal);
+    expect(state.terminal).toBe(true);
+    expect(state.learnerId).toBe('kid2');
+  });
+});
+
+/**
+ * WHO HOLDS THE COINS is not the same question as who the work belongs to, and
+ * has not been since `reassigned` became legal at `rewarded`. A reversal that
+ * asks the wrong one debits a child who was never paid.
+ */
+describe('reduceSession: rewardPaidTo', () => {
+  const PAID = ['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'rewarded'];
+  const paidLog = (rewarded = {}) => log(PAID, { rewarded: { txnId: 'txn_1', amount: 5, ...rewarded } });
+
+  it('derives the payee from the credited learner when the award names none', () => {
+    // Every award written before `paidTo` existed. Exact, because a
+    // reassignment could not legally follow a reward until it became legal.
+    expect(reduceSession(paidLog()).rewardPaidTo).toBe('kid1');
+  });
+
+  it('prefers the explicitly recorded payee', () => {
+    expect(reduceSession(paidLog({ paidTo: 'kid9' })).rewardPaidTo).toBe('kid9');
+  });
+
+  it('names nobody when nothing was paid', () => {
+    expect(reduceSession(log(PAID, { rewarded: { txnId: 'txn_1', amount: 0 } })).rewardPaidTo).toBeNull();
+  });
+
+  it('leaves the payee where it is when the work is reassigned afterwards', () => {
+    const events = paidLog();
+    const state = reduceSession([...events, { ...ev('reassigned'), seq: events.length + 1 }]);
+    expect(state.errors).toEqual([]);
+    // The work is kid2's now; the coins are still kid1's.
+    expect(state.learnerId).toBe('kid2');
+    expect(state.rewardPaidTo).toBe('kid1');
+  });
+
+  it('moves the payee to whoever a reconciliation actually paid, and clears it at zero', () => {
+    const events = paidLog({ amount: 0 });
+    const reassigned = { ...ev('reassigned'), seq: events.length + 1 };
+    const credited = { type: 'reward_reconciled', at: AT, sessionId: SID, seq: events.length + 2,
+      reconciliationId: 'rec_up', delta: 5, txnId: 'txn_2' };
+    // A session that closed unpaid, moved, then was corrected upward: the
+    // credit created a holder the award never named.
+    const afterCredit = reduceSession([...events, reassigned, credited]);
+    expect(afterCredit.rewardPaidTo).toBe('kid2');
+    expect(afterCredit.rewardAmount).toBe(5);
+
+    const reversed = reduceSession([...events, reassigned, credited,
+      { type: 'reward_reconciled', at: AT, sessionId: SID, seq: events.length + 3,
+        reconciliationId: 'rec_down', delta: -5, txnId: 'txn_3' }]);
+    expect(reversed.rewardAmount).toBe(0);
+    expect(reversed.rewardPaidTo).toBeNull();
   });
 });
 

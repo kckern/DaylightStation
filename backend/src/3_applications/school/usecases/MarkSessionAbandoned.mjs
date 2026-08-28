@@ -16,7 +16,17 @@
  * somebody finally NOTICES.
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
-import { TRANSITIONS } from '#domains/school/sessions/sessionEvents.mjs';
+import { statesAccepting } from '#domains/school/sessions/sessionEvents.mjs';
+
+/**
+ * The one legality check for "may this session still be abandoned" —
+ * `execute`, `listStale`, and `sweepUntouched` all ask THIS, never their own
+ * copy of the state list. A null/unknown state is not permission: `Set#has`
+ * on `null` or a name the table has never heard of is simply `false`.
+ */
+function isAbandonable(state) {
+  return statesAccepting('abandoned').has(state);
+}
 
 export class MarkSessionAbandoned {
   #sessions; #teacherGate; #learnerDirectory; #clock; #logger;
@@ -45,7 +55,7 @@ export class MarkSessionAbandoned {
     // The event machine is the authority (M8 fix): `abandoned` is legal from
     // only some states. Appending it anyway would record a permanent anomaly
     // WITHOUT changing state — the row would 'succeed' and then reappear.
-    if (!(TRANSITIONS[row.state] ?? []).includes('abandoned')) {
+    if (!isAbandonable(row.state)) {
       throw new ValidationError(
         `session ${sessionId} is ${row.state} — that work settles through grading/close, not abandonment`,
       );
@@ -64,6 +74,12 @@ export class MarkSessionAbandoned {
   /**
    * Non-terminal sessions untouched for `olderThanDays`, roster-wide, oldest
    * first. This is the "who notices" read the advocate found missing.
+   *
+   * `abandonable` is stamped here so the panel that renders this list never
+   * has to ask the question itself — the client cannot import the domain
+   * table, and a second copy of it in JSX is the exact mistake
+   * `statesAccepting` was extracted to prevent. A row whose state is null or
+   * unknown is not abandonable: an unknown state is not permission.
    */
   async listStale({ olderThanDays = 7 } = {}) {
     if (!this.#learnerDirectory) return [];
@@ -75,13 +91,17 @@ export class MarkSessionAbandoned {
       const rows = await this.#sessions.listForLearner(learner.id).catch(() => []);
       rows
         .filter((r) => !r.terminal && r.updatedAt && Date.parse(r.updatedAt) < cutoff)
-        .forEach((r) => stale.push({
-          sessionId: r.sessionId,
-          learnerId: learner.id,
-          unitId: r.unitId ?? null,
-          state: r.state ?? null,
-          updatedAt: r.updatedAt,
-        }));
+        .forEach((r) => {
+          const state = r.state ?? null;
+          stale.push({
+            sessionId: r.sessionId,
+            learnerId: learner.id,
+            unitId: r.unitId ?? null,
+            state,
+            updatedAt: r.updatedAt,
+            abandonable: isAbandonable(state),
+          });
+        });
     }
     return stale.sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
   }
@@ -126,7 +146,8 @@ export class MarkSessionAbandoned {
     const skipped = [];
 
     for (const row of candidates) {
-      if (!(TRANSITIONS[row.state] ?? []).includes('abandoned')) {
+      // `candidates` came from `listStale`, which already stamped this.
+      if (!row.abandonable) {
         skipped.push({ ...row, reason: 'state-settles-through-grading' });
         continue;
       }

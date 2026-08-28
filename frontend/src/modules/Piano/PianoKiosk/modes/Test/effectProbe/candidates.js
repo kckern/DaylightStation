@@ -8,13 +8,7 @@
 // `sysex: true` candidates need a SysEx-capable MIDI access; if unavailable the
 // harness skips them and records nothing for that candidate.
 
-import {
-  cc, programChange,
-  GM2_SYSTEM_ON, gmMasterVolume,
-  GS_RESET, gsReverbMacro, gsReverbLevel, gsChorusMacro, gsChorusLevel,
-  XG_SYSTEM_ON, xgReverbType, xgReverbReturn, xgChorusType, xgChorusReturn,
-  gm2ReverbType, gm2ChorusType, isSysex,
-} from './sysex.js';
+import { cc, programChange, GM2_SYSTEM_ON, gmMasterVolume, GS_RESET, gsReverbMacro, gsReverbLevel, gsChorusMacro, gsChorusLevel, gm2ReverbType, gm2ChorusType, isSysex }  from './sysex.js';
 
 const PIANO = programChange(0); // Acoustic Grand — re-assert after any reset
 

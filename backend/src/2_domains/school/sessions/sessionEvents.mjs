@@ -188,7 +188,14 @@ const SCHEMA = {
     // `passingPercent` (optional) is the bar IN EFFECT at grading time
     // (student-advocacy A4): a later pass-override edit must never move the
     // bar under an already-graded kid, so the close reads this stamp first.
-    fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds'],
+    //
+    // `voidedItemIds` (optional) names the questions a grown-up marked `void`
+    // — "not markable from the evidence" — and which were therefore taken OUT
+    // of `totalCount` before the percent was worked out. Without the stamp a
+    // 6-of-8 that was voided down from nine reads identically to a 6-of-8 that
+    // was always eight, and the difference is exactly what a later reader
+    // needs: one of those sheets had a question nobody could mark.
+    fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds', 'voidedItemIds'],
     validate: (raw, push) => {
       if (raw.passingPercent !== undefined && (typeof raw.passingPercent !== 'number'
           || !Number.isFinite(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {
@@ -217,15 +224,37 @@ const SCHEMA = {
           || !raw.missedItemIds.every(isNonEmptyString))) {
         push('missedItemIds: must be an array of non-empty strings when present');
       }
+      if (raw.voidedItemIds !== undefined && (!Array.isArray(raw.voidedItemIds)
+          || !raw.voidedItemIds.every(isNonEmptyString))) {
+        push('voidedItemIds: must be an array of non-empty strings when present');
+      }
     },
   },
   outcome_recorded: {
     fields: ['outcomeId', 'result', 'reason'],
     validate: allOf(stringField('outcomeId'), oneOfField('result', RESULTS)),
   },
-  rewarded: { fields: ['txnId', 'amount'], validate: stringField('txnId') },
+  // `paidTo` (optional) is WHICH CHILD actually holds these coins. It is not
+  // redundant with the session's credited learner: `reassigned` is legal at
+  // `rewarded`, so a session can be re-credited AFTER it paid, and from that
+  // moment the derived `learnerId` and the child holding the coins are two
+  // different people. A later grade correction reconciles the reward by
+  // applying a delta — reversing a payment against whoever `learnerId` names
+  // now would debit a child who was never paid, and pay the household's coins
+  // out twice on a raise. Reconciliation therefore targets THIS field.
+  //
+  // Written only when a positive amount actually moved (see
+  // `CloseSessionOutcome.#recordRewarded`). A skipped or zero reward holds no
+  // coins for anybody, so it names nobody, and reconciliation falls back to the
+  // currently credited learner — which is also the behaviour every session
+  // rewarded before this field existed keeps.
+  rewarded: { fields: ['txnId', 'amount', 'paidTo'], validate: stringField('txnId') },
   reward_reconciled: {
-    fields: ['reconciliationId', 'delta', 'txnId', 'sourceAdjustmentId'],
+    // `paidTo` (optional): whose balance this delta actually landed on. A
+    // reconciliation moves coins, so it can create a payee the award never
+    // named — see `APPLY.reward_reconciled`. Declared here or `createEvent`
+    // drops it, like every other field on this table.
+    fields: ['reconciliationId', 'delta', 'txnId', 'sourceAdjustmentId', 'paidTo'],
     validate: allOf(stringField('reconciliationId'), stringField('txnId'), (raw, push) => {
       if (!Number.isInteger(raw.delta) || raw.delta === 0) push('delta: must be a non-zero integer');
     }),
@@ -246,8 +275,15 @@ const SCHEMA = {
     }),
   },
   reassigned: {
-    fields: ['fromLearnerId', 'toLearnerId', 'reviewedBy'],
-    validate: allOf(stringField('fromLearnerId'), stringField('toLearnerId'), (raw, push) => {
+    // `reason` is REQUIRED, not optional-when-present. Moving a child's work
+    // onto a sibling is a decision with an author and a why (the
+    // no-silent-verbs contract), and the event log is where that why has to
+    // live: a separate audit trail can go missing or be written best-effort,
+    // whereas this fact travels with the work forever. `reviewedBy` names the
+    // author; whether that author was allowed is the writer's TeacherGate to
+    // decide, not this table's.
+    fields: ['fromLearnerId', 'toLearnerId', 'reviewedBy', 'reason'],
+    validate: allOf(stringField('fromLearnerId'), stringField('toLearnerId'), stringField('reason'), (raw, push) => {
       // A reassignment to the same learner records no fact and would still
       // rewrite attribution downstream — reject it rather than store a no-op.
       if (isNonEmptyString(raw.toLearnerId) && raw.toLearnerId === raw.fromLearnerId) {
@@ -371,11 +407,43 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
 const ANNOTATION_STATES = new Map([
   ['checkpoint_cleared', new Set(['media_dispatched', 'media_stalled'])],
 ]);
+
+/**
+ * The annotations that stay legal after the session has settled.
+ *
+ * The default is the other way round: a terminal state closes an annotation
+ * out, because most of them describe work still in motion — a `failed` print
+ * on a session nobody will ever print again is a fact about something that has
+ * already stopped. Membership here is the deliberately narrow exception, one
+ * reason per group:
+ *
+ * - `grade_adjusted` / `grade_adjustment_retracted`, and the
+ *   `reward_reconciled` / `reward_reconciliation_failed` pair that follows
+ *   them: a mark discovered wrong AFTER the coins were paid must still be
+ *   correctable, and the reward reconciles from the corrected grade.
+ * - `result_receipt_captured` / `result_receipt_reprinted`: settlement closes
+ *   the state before its retained receipt can be linked. These are
+ *   evidence-only and must remain legal afterwards.
+ * - `reassigned`: a reassignment changes ATTRIBUTION, never lifecycle position
+ *   — the same argument that already admits `grade_adjusted`. Finding the
+ *   wrong child's name on a `rewarded` lesson is exactly the moment the move
+ *   is needed, and leaving it illegal there would mean settled work is the one
+ *   work that can never be given back to whoever actually did it. The coin
+ *   ledger is NOT rewritten by an attribution change, and NOTHING moves it
+ *   afterwards: no code path debits one child and credits another. The coins
+ *   stay with whoever was paid — which is why the fold tracks `rewardPaidTo`
+ *   across both `rewarded` and `reward_reconciled`, so that a later
+ *   reconciliation reverses a payment against the child who actually holds it
+ *   rather than whoever the work is credited to by then. That holds for every
+ *   log in the store, not only ones written since: where the event carries no
+ *   payee the fold derives one, and it is exact, because a reassignment could
+ *   not legally follow a reward until this change. Making a reassignment MOVE
+ *   coins is a household-economy decision nobody has taken.
+ */
 const TERMINAL_ANNOTATIONS = new Set([
   'grade_adjusted', 'grade_adjustment_retracted', 'reward_reconciled', 'reward_reconciliation_failed',
-  // Settlement closes the state before its retained receipt can be linked.
-  // These are evidence-only annotations and must remain legal afterwards.
   'result_receipt_captured', 'result_receipt_reprinted',
+  'reassigned',
 ]);
 
 /** States the table can reach but never leave. */
@@ -528,6 +596,11 @@ const emptyState = () => ({
   gradedCorrectCount: null,
   gradedTotalCount: null,
   missedItemIds: [],
+  // The questions a grown-up could not mark at all (`void`). They were left
+  // out of the graded event's `totalCount`, so a reader that wants to know
+  // "out of how many, and which ones went missing from that count" has both
+  // here without re-folding the log.
+  voidedItemIds: [],
   transport: null,
   mediaDispatch: null,
   // Rows, not a Set, and shaped exactly as `clearedSetFrom` in
@@ -540,6 +613,10 @@ const emptyState = () => ({
   machineOutcome: null,
   rewardTxn: null,
   rewardAmount: 0,
+  // The child holding the coins this session paid — NOT necessarily the child
+  // it is now credited to, because a session can be reassigned after it was
+  // rewarded. Null when nothing was paid. See the `rewarded` schema comment.
+  rewardPaidTo: null,
   rewardReconciliations: [],
   remediationOf: null,
   remediationItemIds: [],
@@ -667,6 +744,7 @@ const APPLY = {
     if (Number.isInteger(e.correctCount)) s.gradedCorrectCount = e.correctCount;
     if (Number.isInteger(e.totalCount)) s.gradedTotalCount = e.totalCount;
     if (Array.isArray(e.missedItemIds)) s.missedItemIds = [...e.missedItemIds];
+    if (Array.isArray(e.voidedItemIds)) s.voidedItemIds = [...e.voidedItemIds];
     s.machineGrade = {
       percent: typeof e.percent === 'number' ? e.percent : null,
       passingPercent: typeof e.passingPercent === 'number' ? e.passingPercent : null,
@@ -680,9 +758,32 @@ const APPLY = {
     s.outcome = { outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at };
     s.machineOutcome = { ...s.outcome };
   },
-  rewarded(s, e) { s.rewardTxn = e.txnId ?? null; s.rewardAmount = Number.isInteger(e.amount) ? e.amount : 0; },
+  rewarded(s, e) {
+    s.rewardTxn = e.txnId ?? null;
+    s.rewardAmount = Number.isInteger(e.amount) ? e.amount : 0;
+    // Stamp first, DERIVE second. Every log written before `paidTo` existed
+    // carries none, and those sessions are not safe just because they are old:
+    // the session can be reassigned tomorrow, and the reversal that follows
+    // must still find the child who was paid. The derivation is exact for all
+    // of them — a reassignment could not legally follow a reward until this
+    // change, so at the instant `rewarded` folds, `s.learnerId` IS the id
+    // `economy.earn` was called with. Zero paid, nobody named.
+    s.rewardPaidTo = isNonEmptyString(e.paidTo)
+      ? e.paidTo
+      : (Number.isInteger(e.amount) && e.amount > 0 ? s.learnerId : s.rewardPaidTo);
+  },
   reward_reconciled(s, e) {
     s.rewardAmount += e.delta;
+    // A reconciliation MOVES COINS TOO, so it can create a payee where the
+    // award named none — a session that closed unpaid, was reassigned, then
+    // corrected upward paid the child credited at that moment. Same
+    // stamp-then-derive rule, and for the same reason: reconciliations already
+    // on disk carry no `paidTo` and must still resolve to whoever holds the
+    // balance. A balance back at zero is held by nobody, so it names nobody
+    // and the next credit goes to whoever the work belongs to by then.
+    if (isNonEmptyString(e.paidTo)) s.rewardPaidTo = e.paidTo;
+    else if (s.rewardPaidTo === null) s.rewardPaidTo = s.learnerId;
+    if (!(s.rewardAmount > 0)) s.rewardPaidTo = null;
     s.rewardReconciliations.push({ reconciliationId: e.reconciliationId, delta: e.delta,
       txnId: e.txnId, sourceAdjustmentId: e.sourceAdjustmentId ?? null, at: e.at, status: 'applied' });
   },
@@ -880,6 +981,17 @@ export function reduceSession(events) {
     if (Number.isInteger(effective.correctCount)) s.gradedCorrectCount = effective.correctCount;
     if (Number.isInteger(effective.totalCount)) s.gradedTotalCount = effective.totalCount;
     if (Array.isArray(effective.missedItemIds)) s.missedItemIds = [...effective.missedItemIds];
+    // A correction that re-marks a voided question un-voids it (the grading
+    // lane does the same at `GradeSubmission`), so the stamp from the `graded`
+    // event goes stale the moment one does. Left alone, the record asserts
+    // both that a question was unmarkable and that a grown-up marked it.
+    // Only an item-level correction can say anything here: a percent-only one
+    // carries no verdicts and must leave the stamp exactly as it found it.
+    if (Array.isArray(effective.itemVerdicts) && effective.itemVerdicts.length && s.voidedItemIds.length) {
+      const stillVoid = new Set(effective.itemVerdicts
+        .filter((row) => row?.voided === true).map((row) => row.itemId));
+      s.voidedItemIds = s.voidedItemIds.filter((itemId) => stillVoid.has(itemId));
+    }
     if (s.outcome && typeof s.gradedPercent === 'number' && typeof s.gradedPassingPercent === 'number') {
       s.outcome = {
         ...s.outcome,

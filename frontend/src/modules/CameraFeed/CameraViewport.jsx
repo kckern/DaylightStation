@@ -54,9 +54,8 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
     else if (naturalSize.w) setContentDims(naturalSize);
   }, [liveReady, videoSize, naturalSize]);
 
-  const isLoading = mode === 'live' ? !liveReady && !previewSrc : !snapshotSrc;
-
-  const { x, y, zoom, lastZoomTime, handlers, reset, panTo, getDims, MIN_ZOOM } = usePanZoom({
+  
+  const { x, y, zoom, handlers, panTo, getDims, MIN_ZOOM } = usePanZoom({
     containerRef,
     contentWidth: contentDims.w,
     contentHeight: contentDims.h,

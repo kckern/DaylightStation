@@ -76,7 +76,7 @@ const useMenuMusic = ({ isActive, trackChangeKey, volume = 0.075, trackUrls = []
       startFade(audio, audio.volume, volume, FADE_MS, getFadeHandle(activeSlot.current), null);
       logger().info('menu-music.volume-reapplied', { slot: activeSlot.current, volume });
     }
-  }, [volume]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [volume]);  
 
   const trackUrlsRef = useRef(trackUrls);
   useEffect(() => { trackUrlsRef.current = trackUrls; }, [trackUrls]);

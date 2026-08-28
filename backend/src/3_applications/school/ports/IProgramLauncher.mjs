@@ -56,6 +56,29 @@ export class IProgramLauncher {
    * success. `null` degrades to `launch()`, which is always truthful.
    * @returns {string|null|undefined}
    */
+  /**
+   * OPTIONAL. The `learner_action` a trigger source must declare for a child
+   * to be able to START this program by tapping their card — `'reading-session'`
+   * for story time. `null` (the default) means the program is not entered by a
+   * tap at all: a Portal course opened from the panel, a worksheet that arrives
+   * on paper. Those have no reader to configure and reachability is not a
+   * question that applies to them.
+   *
+   * THE LAUNCHER DECLARES THIS BECAUSE THE LAUNCHER IS WHAT KNOWS IT. Holding
+   * the program→action mapping anywhere else would make it a second, separately
+   * maintained copy of "how is this program started", free to drift from the
+   * code that actually starts it.
+   *
+   * `collectProgramStatuses` reads it to answer a question nothing used to ask:
+   * on 2026-08-26 two children were assigned a daily reading obligation that no
+   * reader in the house was configured to let them begin, and every layer
+   * behaved exactly as written while they stood there tapping.
+   * @returns {string|null|undefined}
+   */
+  get entryAction() {
+    return null;
+  }
+
   get surface() {
     return null;
   }

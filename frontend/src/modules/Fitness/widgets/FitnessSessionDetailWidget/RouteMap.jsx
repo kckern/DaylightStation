@@ -119,12 +119,15 @@ export default function RouteMap({ polyline, sessionId, distance, elevation }) {
   }
 
   const activeZoom = zoom ?? initial?.zoom;
-  const activeCenter = center ?? (initial ? { x: initial.centerX, y: initial.centerY } : null);
+  const activeCenter = useMemo(
+    () => center ?? (initial ? { x: initial.centerX, y: initial.centerY } : null),
+    [center, initial],
+  );
 
   const mapData = useMemo(() => {
     if (!decoded || !activeCenter || activeZoom == null || size.width === 0) return null;
     return computeTilesAndRoute(decoded, activeZoom, activeCenter.x, activeCenter.y, size.width, size.height);
-  }, [decoded, activeZoom, activeCenter?.x, activeCenter?.y, size.width, size.height]);
+  }, [decoded, activeZoom, activeCenter, size.width, size.height]);
 
   // Wheel zoom — zoom toward mouse position
   const handleWheel = useCallback((e) => {

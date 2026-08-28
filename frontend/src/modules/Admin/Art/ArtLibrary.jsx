@@ -23,7 +23,7 @@ export default function ArtLibrary() {
 
   const cfg = useAdminConfig(configPath('art'));
   useEffect(() => { cfg.load?.(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-  const quickTags = cfg.data?.quickTags || [];
+  const quickTags = useMemo(() => cfg.data?.quickTags || [], [cfg.data?.quickTags]);
 
   const {
     works, focused, index, loading, autoAdvance,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { SessionInspector, LearnerOverview } from './WorkspaceViews.jsx';
+import { SessionInspector, LearnerDayScreen } from './WorkspaceViews.jsx';
 
 vi.mock('../schoolApi.js', () => ({
   schoolApi: {
@@ -22,13 +22,16 @@ vi.mock('./teacherWorkspaceApi.js', () => ({
     lessonPreviewUrl: () => '',
   },
 }));
+const teacherAuth = vi.hoisted(() => ({
+  requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
+}));
 vi.mock('./TeacherProfileContext.jsx', () => ({
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
+    requestAuthorization: teacherAuth.requestAuthorization,
     invalidateAuthorization: vi.fn(),
     pinPromptOpen: false,
     pickerOpen: false,
@@ -142,17 +145,102 @@ describe('SessionInspector detail coherence', () => {
     const reprint = await screen.findByRole('button', { name: /Print another copy/i });
     expect(reprint.closest('.teacher-issued-artifact')).not.toBeNull();
   });
+
+  // `artifact.reprint` is ReprintIssuedArtifact's audit label; it is not one of
+  // the server's STEP_UP_ACTIONS, so asking for a grant under that name opened
+  // a PIN dialog nothing could satisfy and the print never happened. The
+  // capability cookie is the whole authority the reprint route checks.
+  it('prints a second copy without asking for a step-up grant', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
+    teacherWorkspaceApi.reprintArtifact
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, artifactId: 'art_1' } })
+      .mockResolvedValueOnce({ ok: true, status: 201, data: { applied: true, artifactId: 'art_1' } });
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    (await screen.findByRole('button', { name: /Print another copy/i })).click();
+    const now = await screen.findByRole('button', { name: 'Print now' });
+    now.click();
+    await waitFor(() => expect(teacherWorkspaceApi.reprintArtifact).toHaveBeenCalledTimes(2));
+    expect(teacherWorkspaceApi.reprintArtifact.mock.calls[1][1]).toMatchObject({ apply: true });
+    // No grant token argument — there is no grant to carry.
+    expect(teacherWorkspaceApi.reprintArtifact.mock.calls[1]).toHaveLength(3);
+    expect(teacherAuth.requestAuthorization.mock.calls.every(([arg]) => arg?.action == null)).toBe(true);
+  });
 });
 
-describe('LearnerOverview study day', () => {
+/**
+ * "Offer another try" IS OFFERED EXACTLY ONCE, because that is all the server
+ * can honour. `OpenRemediation` returns `already_opened` for any session that
+ * has a remediation — live, abandoned, or never scanned — and the route
+ * answers it at HTTP 201, which `useTeacherWrite` reads as a save. A button
+ * shown past that point reports success, creates nothing, and tells a parent a
+ * fresh sheet is waiting when the only sheet is a dead one.
+ *
+ * A retake that is abandoned therefore strands the parent session. That gap is
+ * REAL and is filed as a known residual (audit A10) rather than papered over
+ * here: `remediation_opened` has no outgoing edge in the domain's transition
+ * table, so a second one is refused on append. Closing it is a domain change.
+ */
+describe('SessionInspector — offering a retake', () => {
+  const needsRemediation = (extra = {}) => ({
+    schema: 'school.teacher-session/v4',
+    sessionId: 'ses_1',
+    revision: 1,
+    state: { learnerId: 'learner-b', state: 'outcome_recorded', outcome: { result: 'needs_remediation' }, ...extra },
+    taxonomy: { subject: 'math', lessonTitle: 'Fractions' },
+    scores: { machine: null, effective: null },
+    artifacts: [],
+    events: [],
+  });
+  const remediationChild = (sessionId, terminal) => ({
+    schema: 'school.teacher-session/v4', sessionId, state: { terminal },
+  });
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it('offers the retake when no remediation has ever been opened', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: needsRemediation() });
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    expect(await screen.findByRole('button', { name: 'Offer another try' })).toBeInTheDocument();
+  });
+
+  it('withholds it once a remediation exists, even one whose session is finished', async () => {
+    teacherWorkspaceApi.session.mockImplementation(async (id) => (id === 'ses_1'
+      ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_2', variant: 'retry' } }) }
+      : { ok: true, status: 200, data: remediationChild('ses_2', true) }));
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
+    // A terminal retake is exactly the abandoned case, and it is exactly the
+    // case the server refuses. Offering it here is the defect.
+    expect(screen.queryByRole('button', { name: 'Offer another try' })).not.toBeInTheDocument();
+  });
+
+  it('withholds it while the remediation session is still live', async () => {
+    teacherWorkspaceApi.session.mockImplementation(async (id) => (id === 'ses_1'
+      ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_3', variant: 'retry' } }) }
+      : { ok: true, status: 200, data: remediationChild('ses_3', false) }));
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Offer another try' })).not.toBeInTheDocument();
+  });
+
+  it('never reads the remediation child: the answer needs no second request', async () => {
+    teacherWorkspaceApi.session.mockImplementation(async (id) => (id === 'ses_1'
+      ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_4', variant: 'retry' } }) }
+      : { ok: true, status: 200, data: remediationChild('ses_4', true) }));
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
+    expect(teacherWorkspaceApi.session).not.toHaveBeenCalledWith('ses_4');
+  });
+});
+
+describe('LearnerDayScreen study day', () => {
   afterEach(() => vi.useRealTimers());
 
   it('defaults to the LOCAL date, not the UTC date', async () => {
     vi.useFakeTimers();
     // 9:30pm PDT on Aug 24 is already Aug 25 UTC — the input must say Aug 24.
     vi.setSystemTime(new Date('2026-08-24T21:30:00-07:00'));
-    render(<LearnerOverview learnerId="learner-b" learnerName="Learner B" onOpenSession={() => {}} />);
-    // Overview now aliases the day record, whose picker is labelled "Jump to".
+    render(<LearnerDayScreen learnerId="learner-b" learnerName="Learner B" onOpenSession={() => {}} />);
     const input = screen.getByLabelText('Jump to');
     const expected = (() => {
       const now = new Date();

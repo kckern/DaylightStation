@@ -2,15 +2,15 @@ import { useEffect, useRef } from "react";
 import "./Glympse.scss";
 
 export default function GlympseApp({ id }) {
-  if (!id) return <div className="glympse-app">Invalid Glympse ID</div>;
-
   const iframeRef = useRef(null);
 
   useEffect(() => {
-    if (iframeRef.current) {
+    if (id && iframeRef.current) {
       iframeRef.current.src = `https://glympse.com/${id}`;
     }
   }, [id]);
+
+  if (!id) return <div className="glympse-app">Invalid Glympse ID</div>;
 
   return (
     <div className="glympse-app">

@@ -5,7 +5,6 @@ import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import FitnessTreasureBox from './panels/FitnessTreasureBox.jsx';
 import FitnessUsersList from './panels/FitnessUsers.jsx';
 import FitnessSidebarMenu from './panels/FitnessSidebarMenu.jsx';
-import FitnessVideo from './panels/FitnessVideo.jsx';
 import FitnessVoiceMemo from './panels/FitnessVoiceMemo.jsx';
 import FitnessMusicPlayer from './panels/FitnessMusicPlayer.jsx';
 import FitnessGovernance from './panels/FitnessGovernance.jsx';
@@ -37,7 +36,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     usersConfigRaw,
     deviceAssignments = [],
     assignGuestToDevice,
-    clearGuestAssignment,
     sidebarSizeMode,
     musicEnabled,
     setMusicOverride,
@@ -348,5 +346,7 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     </div>
   );
 });
+
+FitnessSidebar.displayName = 'FitnessSidebar';
 
 export default FitnessSidebar;

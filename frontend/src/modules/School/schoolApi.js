@@ -96,6 +96,10 @@ export const schoolApi = {
   },
   banks: (audience) => req(`/banks${audience ? `?audience=${encodeURIComponent(audience)}` : ''}`),
   bank: (id) => req(`/banks/${encodeURIComponent(id)}`),
+  // Content health (admin advocacy #7): which banks failed to parse at the
+  // last warm, by id. `{warmedAt, banks, failed}` — never consumed by any UI
+  // until the System health panel.
+  bankHealth: () => req('/banks/health'),
   learningCatalogs: (learnerId = null) => req(`/catalogs${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`),
   learningLesson: ({ catalogId, subjectId, courseId, unitId, lessonId }, learnerId = null) => req(
     `/catalogs/${encodeURIComponent(catalogId)}`
@@ -157,7 +161,18 @@ export const schoolApi = {
     if (periodId) p.set('periodId', periodId);
     return req(`/report-card/frozen?${p}`);
   },
+  // Superseded freeze versions (admin advocacy #5) — the archived
+  // `{periodId}.v<n>.yml` copies a supersede-close preserves rather than
+  // destroys. The route is learner+period scoped (400 without both), never a
+  // household-wide list.
+  reportCardFrozenVersions: ({ learnerId, periodId }) => req(
+    `/report-card/frozen/versions?${new URLSearchParams({ learnerId, periodId })}`,
+  ),
   lifecycleReview: () => req('/lifecycle/review'),
+  // The HOUSEHOLD-WIDE review queue is `lifecycleReview` above. This is the
+  // per-session read a stuck-session row needs before it can say why a
+  // `submitted` session is still open: usually a mark nobody has made yet.
+  sessionReview: (sessionId) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/review`),
   learnerSessions: (learnerId, { window = null } = {}) => req(
     `/lifecycle/learners/${encodeURIComponent(learnerId)}/sessions${window ? `?window=${encodeURIComponent(window)}` : ''}`,
   ),
@@ -165,6 +180,21 @@ export const schoolApi = {
   allAssignments: () => req('/lifecycle/assignments'),
   staleSessions: () => req('/lifecycle/sessions/stale'),
   abandonSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/abandon`, body),
+  // Settling stuck work by hand (session inspector). Two calls because they
+  // are two events — `submitted → graded → outcome_recorded` is the whole
+  // legal path and the transition table offers no shortcut, however the
+  // console presents it.
+  //
+  // The step-up grant rides the GRADE only. It is the half that writes a mark
+  // no machine produced, and a grant is one-use: presenting the same token
+  // twice spends it on the first call and fails the second. Closing a graded
+  // session is open by contract (a scan does it unattended), so it needs
+  // nothing beyond the capability cookie.
+  gradeSession: (sessionId, body, grantToken = null) => req(
+    `/lifecycle/sessions/${encodeURIComponent(sessionId)}/grade`, body, 'POST',
+    grantToken ? { 'X-Teacher-Step-Up': grantToken } : {},
+  ),
+  closeSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/close`, body, 'POST'),
   curriculumUnits: () => req('/lifecycle/curriculum/units'),
   // Teacher console writes (wave 2): every body carries the teacher stamp and
   // the console pin; the server's TeacherGate is the enforcer.
@@ -199,18 +229,35 @@ export const schoolApi = {
   // Wave-5 repair.
   attestations: (learnerId) => req(learnerId ? `/attestations?learnerId=${encodeURIComponent(learnerId)}` : '/attestations'),
   postAttestation: (body) => req('/attestations', body),
+  // Study-day program excusals (the piano lesson gate's parent override).
+  // `pianoLessonGate` is the same read the kiosk makes — the panel shows what
+  // it is about to excuse rather than asking a parent to guess.
+  programDayBypasses: (learnerId) => req(learnerId
+    ? `/program-day-bypasses?learnerId=${encodeURIComponent(learnerId)}`
+    : '/program-day-bypasses'),
+  grantProgramDayBypass: (body) => req('/program-day-bypasses', body),
+  retractProgramDayBypass: (bypassId, body) => req(
+    `/program-day-bypasses/${encodeURIComponent(bypassId)}/retract`, body,
+  ),
+  pianoLessonGate: (learnerId) => req(
+    `/lifecycle/learners/${encodeURIComponent(learnerId)}/piano-lesson-gate`,
+  ),
   teacherNotes: (learnerId) => req(`/teacher-notes?learnerId=${encodeURIComponent(learnerId)}`),
   postTeacherNote: (body) => req('/teacher-notes', body),
   attemptsSummary: (learnerId, day) => req(
     `/attempts-summary?learnerId=${encodeURIComponent(learnerId)}&day=${encodeURIComponent(day)}`,
   ),
   reassign: (body) => req('/reassign', body),
+  // The session-level repair, and a different verb from `reassign` above: that
+  // one moves a day's attempt EVENTS between learners, this appends one
+  // `reassigned` event to a work session, which is the only way to re-credit
+  // work no machine recorded answers for. Reason is mandatory server-side.
+  reassignSession: (body) => req('/reassign-session', body),
   // The dry-run daily plan as data (advocacy A3) — no side effects.
   agendaPreview: (learnerId, studyDay = null) => req(`/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?${new URLSearchParams({
     format: 'json', ...(studyDay ? { studyDay } : {}),
   })}`),
   retract: (body) => req('/retract', body),
-  transcript: (learnerId) => req(`/transcript?learnerId=${encodeURIComponent(learnerId)}`),
   periodsMeta: () => req('/periods-meta'),
   attemptDays: (learnerId) => req(`/attempt-days?learnerId=${encodeURIComponent(learnerId)}`),
   offerRetake: (sessionId, body) => req(`/teacher/sessions/${encodeURIComponent(sessionId)}/remediation`, body),
@@ -338,6 +385,11 @@ export const schoolApi = {
   quizRequests: (materialId) => req(`/quiz-requests${materialId ? `?materialId=${encodeURIComponent(materialId)}` : ''}`),
   requestQuiz: (body) => req('/quiz-requests', body),
   printables: () => req('/print/printables'),
+  // Same resolve the print path uses, minus every side effect (§6 of the
+  // teacher reference) — an approver can see the sheet before saying yes.
+  // A URL builder, not a fetcher: opened directly in a new tab like the
+  // sibling worksheet/receipt links, never routed through `req`.
+  printablePreviewUrl: (printableId) => `${BASE}/print/printables/${encodeURIComponent(printableId)}/preview`,
   printQuota: (userId) => req(`/print/quota${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`),
   requestPrint: (body) => req('/print/request', body),
   printRequests: (userId) => req(`/print/requests?userId=${encodeURIComponent(userId)}`),

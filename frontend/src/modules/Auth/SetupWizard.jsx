@@ -50,7 +50,7 @@ export default function SetupWizard({ onComplete }) {
         {step === 0 && (
           <Stack align="center" gap="lg">
             <Title order={2}>DaylightStation</Title>
-            <Text c="dimmed" ta="center">Welcome to your new station. Let's get you set up.</Text>
+            <Text c="dimmed" ta="center">Welcome to your new station. Let&apos;s get you set up.</Text>
             <Button onClick={() => setStep(1)} size="lg">Get Started</Button>
           </Stack>
         )}

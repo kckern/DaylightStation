@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  initEditor, replacePitch, serializeFromEditor, insertNote,
-  insertRest, deleteNote, deleteBeforeCaret, setDuration, toggleDot, toggleTriplet, toggleTie,
-  reflowMeasure, nudgePitch, midiToPitch, moveCaret, select, setAttribute, findNoteByTag,
-} from './editor.js';
+import { initEditor, replacePitch, serializeFromEditor, insertNote, insertRest, deleteNote, deleteBeforeCaret, setDuration, toggleDot, toggleTriplet, toggleTie, nudgePitch, midiToPitch, moveCaret, select, setAttribute, findNoteByTag }  from './editor.js';
 import { makeEmptyScore } from './score.js';
 import { makeNote, makeRest, noteDivisions } from './note.js';
 import { parseMusicXml } from '#frontend/modules/MusicNotation/parseMusicXml.js';

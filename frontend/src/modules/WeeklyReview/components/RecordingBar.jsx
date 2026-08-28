@@ -72,7 +72,7 @@ export default function RecordingBar({
               {Array.from({ length: 20 }, (_, i) => <div key={i} className="vu-bar" />)}
             </div>
             {silenceWarning && (
-              <span className="silence-message" role="status">🔈 We can't hear you — speak up or check the mic.</span>
+              <span className="silence-message" role="status">🔈 We can&apos;t hear you — speak up or check the mic.</span>
             )}
           </>
         )}

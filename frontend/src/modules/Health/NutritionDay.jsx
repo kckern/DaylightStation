@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import moment from 'moment';
-import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
+import { DaylightAPI } from "../../lib/api.mjs";
 
-const NutritionDay = ({ selectedDate, selectedDateData, onDataUpdate }) => {
+const NutritionDay = ({ selectedDate: _selectedDate, selectedDateData, onDataUpdate }) => {
     const [updatingItems, setUpdatingItems] = useState(new Set());
     const [localData, setLocalData] = useState(selectedDateData);
 
@@ -146,8 +145,7 @@ const NutritionDay = ({ selectedDate, selectedDateData, onDataUpdate }) => {
             console.log('API Response:', response);
             
             if (response && (response.message || response.data)) {
-                const actionText = factor > 1 ? 'increased' : 'decreased';
-                
+                                
                 // Update local data immediately for smooth UX
                 setLocalData(prev => prev.map(item => 
                     item.uuid === uuid ? { ...item, ...updateData } : item

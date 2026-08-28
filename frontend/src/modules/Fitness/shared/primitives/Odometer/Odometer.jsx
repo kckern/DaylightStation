@@ -7,7 +7,6 @@ const Odometer = ({
   format = 'integer',
   decimals = 0,
   duration = 500,
-  easing = 'ease-out',
   prefix,
   suffix,
   padDigits = 0,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Drawer } from '@mantine/core';
-import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
+import { DaylightAPI } from "../../lib/api.mjs";
 import moment from 'moment';
 import NutritionDay from './NutritionDay';
 

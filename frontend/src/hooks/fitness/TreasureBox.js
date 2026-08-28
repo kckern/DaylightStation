@@ -327,7 +327,7 @@ export class FitnessTreasureBox {
     * @param {Set<string>} activeParticipants - Set of userIds for active participants
    * @param {Object} options - Additional options (legacy, no longer used)
    */
-  processTick(tick, activeParticipants, options = {}) {
+  processTick(tick, activeParticipants, _options = {}) {
     this._log('process_tick', {
       tick,
       perUserSize: this.perUser.size,
@@ -768,7 +768,7 @@ export class FitnessTreasureBox {
    * @param {string} userId - The user slug/id
    * @returns {number[]} - Empty array (deprecated)
    */
-  getUserRingsTimeSeries(userId) {
+  getUserRingsTimeSeries(_userId) {
     getLogger().warn('treasurebox.deprecated_method_called', { method: 'getUserRingsTimeSeries' });
     return [];
   }

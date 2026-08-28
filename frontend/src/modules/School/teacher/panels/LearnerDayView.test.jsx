@@ -1,11 +1,33 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn() },
 }));
-vi.mock('../teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: { session: vi.fn() } }));
+vi.mock('../teacherWorkspaceApi.js', () => ({
+  teacherWorkspaceApi: { session: vi.fn(), agendaDispatchPreview: vi.fn(), agendaDispatch: vi.fn() },
+}));
+// A claimed, server-authorized teacher, so useTeacherWrite calls straight
+// through. `requestAuthorizationMock` is hoisted so every render (and every
+// test) shares the same spy instance — the identity tests below need to
+// inspect what it was called with, not just its return value.
+const { requestAuthorizationMock } = vi.hoisted(() => ({
+  requestAuthorizationMock: vi.fn(async () => ({ ok: true, grantToken: 'grant-1' })),
+}));
+vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfile: () => ({
+    currentTeacher: { id: 'kckern', name: 'KC' },
+    pin: null,
+    openPicker: vi.fn(),
+    openPinPrompt: vi.fn(),
+    requestAuthorization: requestAuthorizationMock,
+    invalidateAuthorization: vi.fn(),
+    pinPromptOpen: false,
+    pickerOpen: false,
+  }),
+}));
 const { schoolApi } = await import('../../schoolApi.js');
+const { teacherWorkspaceApi } = await import('../teacherWorkspaceApi.js');
 const LearnerDayView = (await import('./LearnerDayView.jsx')).default;
 
 const ok = (data) => ({ ok: true, status: 200, data });
@@ -152,5 +174,119 @@ describe('LearnerDayView', () => {
     expect(schoolApi.agendaDispatch).not.toBeDefined();
     // The only agenda call the view makes is the read-only JSON preview.
     expect(schoolApi.agendaPreview).toHaveBeenCalledWith('learner-a', '2026-08-25');
+  });
+});
+
+// --- Dispatching the day's agenda (the one console path that prints) -----
+describe('LearnerDayView — agenda dispatch', () => {
+  beforeEach(() => {
+    // "Today" per the DayNav/AgendaDispatch comparison — matches the fixture
+    // dates above (Tuesday the 25th, Monday the 24th).
+    vi.setSystemTime(new Date('2026-08-25T12:00:00Z'));
+    teacherWorkspaceApi.agendaDispatchPreview.mockReset();
+    teacherWorkspaceApi.agendaDispatch.mockReset();
+    requestAuthorizationMock.mockClear();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const readyPreview = ok({ ready: true, sections: [{ subject: 'math' }, { subject: 'scripture' }], entries: [], errors: [], documentId: 'doc_1' });
+
+  it('offers the print affordance on today and nothing — not a disabled button — on any other day', async () => {
+    const today = mount({ studyDay: '2026-08-25' });
+    await waitFor(() => expect(screen.getByText('Tuesday, Aug 25')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /Print the day.s agenda/i })).toBeInTheDocument();
+    today.unmount();
+
+    mount({ studyDay: '2026-08-24' });
+    await waitFor(() => expect(screen.getByText('Monday, Aug 24')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /Print the day.s agenda/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the planner’s errors verbatim and offers no print button when the day is not ready', async () => {
+    teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValue(ok({
+      ready: false, sections: [], entries: [], errors: ['No syllabus published for math'], documentId: null,
+    }));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: /Print the day.s agenda/i }));
+    await screen.findByText(/planner can.t build this day yet/i);
+    expect(screen.getByText('No syllabus published for math')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Print it now$/i })).not.toBeInTheDocument();
+  });
+
+  it('sends the exact Idempotency-Key minted at prepare time when it actually prints — not a fresh one', async () => {
+    // Two DISTINCT values so the test can fail: a dispatch that minted a new
+    // key at print time (the bug this whole shape exists to prevent) would
+    // send 'uuid-print', not 'uuid-prepare'. A single fixed return value here
+    // would pass even for that bug, which is what the prior version did.
+    const randomUUID = vi.spyOn(globalThis.crypto, 'randomUUID')
+      .mockReturnValueOnce('uuid-prepare').mockReturnValueOnce('uuid-print');
+    teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValue(readyPreview);
+    teacherWorkspaceApi.agendaDispatch.mockResolvedValue(ok({ printed: true }));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: /Print the day.s agenda/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Print it now$/i }));
+    await waitFor(() => expect(teacherWorkspaceApi.agendaDispatch).toHaveBeenCalled());
+    const [, , idempotencyKey] = teacherWorkspaceApi.agendaDispatch.mock.calls[0];
+    expect(idempotencyKey).toContain('uuid-prepare');
+    expect(idempotencyKey).not.toContain('uuid-print');
+    // Only ONE key was ever minted for this prepare-then-print cycle.
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+    randomUUID.mockRestore();
+  });
+
+  it('discards the key on cancel, so a second prepare mints a different one', async () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValueOnce('uuid-1').mockReturnValueOnce('uuid-2');
+    teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValue(readyPreview);
+    teacherWorkspaceApi.agendaDispatch.mockResolvedValue(ok({ printed: true }));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: /Print the day.s agenda/i }));
+    await screen.findByRole('button', { name: /^Print it now$/i });
+    fireEvent.click(screen.getByRole('button', { name: /^Cancel$/i }));
+    // Cancelling returns to the closed state — the same prepare button offered again.
+    fireEvent.click(await screen.findByRole('button', { name: /Print the day.s agenda/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Print it now$/i }));
+    await waitFor(() => expect(teacherWorkspaceApi.agendaDispatch).toHaveBeenCalled());
+    const [, , idempotencyKey] = teacherWorkspaceApi.agendaDispatch.mock.calls[0];
+    expect(idempotencyKey).toContain('uuid-2');
+    expect(idempotencyKey).not.toContain('uuid-1');
+  });
+
+  it('carries the agenda.dispatch step-up grant through to the real dispatch', async () => {
+    requestAuthorizationMock.mockResolvedValueOnce({ ok: true, grantToken: null }); // the preview call
+    requestAuthorizationMock.mockResolvedValueOnce({ ok: true, grantToken: 'grant-xyz' }); // the real dispatch
+    teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValue(readyPreview);
+    teacherWorkspaceApi.agendaDispatch.mockResolvedValue(ok({ printed: true }));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: /Print the day.s agenda/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Print it now$/i }));
+    await waitFor(() => expect(teacherWorkspaceApi.agendaDispatch).toHaveBeenCalled());
+    const [, , , grantToken] = teacherWorkspaceApi.agendaDispatch.mock.calls[0];
+    expect(grantToken).toBe('grant-xyz');
+    expect(requestAuthorizationMock).toHaveBeenCalledWith({ action: 'agenda.dispatch', resource: 'learner-a' });
+  });
+
+  it('does not carry a prepared preview across a learner switch', async () => {
+    // The Students rail re-renders the SAME LearnerDayView position for a new
+    // learnerId — it does not remount the tree by itself. Without a key on
+    // AgendaDispatch, its `preview`/`idempotencyKey` state would survive that
+    // switch: a "ready to print" box built from Learner A's plan, wearing
+    // Learner B's name, offering to print unpreviewed paper for the wrong
+    // child. The fix is a `key={learnerId:studyDay}` on the element, which
+    // this proves by forcing the box back to its closed state on switch.
+    teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValue(readyPreview);
+    const { rerender } = render(
+      <LearnerDayView learnerId="learner-a" learnerName="Learner A" studyDay="2026-08-25"
+        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /Print the day.s agenda/i }));
+    await screen.findByText(/will print for Learner A/);
+
+    rerender(
+      <LearnerDayView learnerId="learner-b" learnerName="Learner B" studyDay="2026-08-25"
+        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Print the day.s agenda/i })).toBeInTheDocument());
+    expect(screen.queryByText(/will print for/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Print it now$/i })).not.toBeInTheDocument();
   });
 });

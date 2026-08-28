@@ -1,9 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import {
-  cc, rolandChecksum, gsParam, GS_RESET, gsReverbLevel, GM_SYSTEM_ON,
-  XG_SYSTEM_ON, xgReverbType, gm2ReverbType, isSysex,
-} from './sysex.js';
+import { cc, rolandChecksum, GS_RESET, gsReverbLevel, GM_SYSTEM_ON, XG_SYSTEM_ON, xgReverbType, gm2ReverbType, isSysex }  from './sysex.js';
 
 describe('cc', () => {
   it('builds a Control Change with masked bytes', () => {

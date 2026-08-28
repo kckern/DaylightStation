@@ -61,7 +61,7 @@ export function Dashboard() {
       {planIsEmpty && (
         <SectionCard p="lg" withBorder radius="md">
           <Stack gap="sm">
-            <Title order={4}>You don't have a life plan yet</Title>
+            <Title order={4}>You don&apos;t have a life plan yet</Title>
             <Text c="dimmed">
               Ten minutes with your coach gets you a working plan — values, a goal or two,
               and your first check-in tomorrow morning.

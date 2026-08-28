@@ -78,17 +78,17 @@ const CountdownRing = ({
     }
   }, [duration, autoStart]);
 
-  const start = useCallback(() => {
+  useCallback(() => {
     startTimeRef.current = Date.now();
     setIsRunning(true);
   }, []);
 
-  const stop = useCallback(() => {
+  useCallback(() => {
     setIsRunning(false);
     startTimeRef.current = null;
   }, []);
 
-  const reset = useCallback(() => {
+  useCallback(() => {
     setProgress(0);
     setRemaining(duration);
     startTimeRef.current = null;

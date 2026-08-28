@@ -23,7 +23,7 @@ export function MarkdownText({ text }) {
           ol: ({ children }) => <ol className="coach-chat__md-ol">{children}</ol>,
           li: ({ children }) => <li className="coach-chat__md-li">{children}</li>,
           // v10 API: no `inline` prop — detect inline code by absence of language className
-          code: ({ className, children, node, ...rest }) =>
+          code: ({ className, children, node: _node, ...rest }) =>
             /language-(\w+)/.exec(className || '')
               ? <pre className="coach-chat__md-code-block"><code className={className} {...rest}>{children}</code></pre>
               : <code className="coach-chat__md-code-inline" {...rest}>{children}</code>,

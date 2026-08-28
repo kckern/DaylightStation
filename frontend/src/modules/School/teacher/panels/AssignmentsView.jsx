@@ -14,6 +14,7 @@ import { useTeacherWrite } from '../useTeacherWrite.js';
 import { useTeacherProfile } from '../TeacherProfileContext.jsx';
 import { curriculumTitles } from '../curriculumTitles.js';
 import { labelize } from '../labelize.js';
+import { teacherSectionPath } from '../teacherUrl.js';
 
 /** Stored entries can be strings or {courseId|unitId, elective} objects
  * (CurriculumPlanner.toStored always writes the object form). Everything in
@@ -132,13 +133,24 @@ export default function AssignmentsView({ learnerId, learnerName }) {
                 {!courseIds.includes(id) && <span className="teacher-assignments__stale-tag">not in catalog</span>}
               </label>
             ))}
-            {idsOf(record.data?.courses, 'courseId')
-              .filter((id) => (record.data.courses ?? []).some(
-                (e) => typeof e === 'object' && e?.courseId === id && e.enrollment,
-              ))
-              .map((id) => (
-                <p key={`enr-${id}`} className="teacher-assignments__enrolled-note">
-                  {titles.course(id)} has an enrollment — order and profile are edited from The whole school.
+            {/* An entry with an `enrollment` block is materialized from a syllabus
+                (school.course-enrollment/v1) — order, profile, and pass bar live
+                there, not here, so the note points a teacher at the actual editor
+                instead of naming a read-only page that dead-ends (task-5 remediation).
+                A hand-authored enrollment (no syllabusId) has no syllabus to send
+                anyone to, so it gets its own true sentence instead. */}
+            {(record.data?.courses ?? [])
+              .filter((entry) => typeof entry === 'object' && entry?.enrollment)
+              .map((entry) => (
+                <p key={`enr-${entry.courseId}`} className="teacher-assignments__enrolled-note">
+                  {entry.syllabusId ? (
+                    <>
+                      {titles.course(entry.courseId)} has an enrollment — order, profile, and pass bar come from its syllabus. Edit it under{' '}
+                      <a href={teacherSectionPath('curriculum')}>Curriculum → Syllabi</a>.
+                    </>
+                  ) : (
+                    <>{titles.course(entry.courseId)} has a hand-authored enrollment — order, profile, and pass bar were set directly on the record, not by a syllabus.</>
+                  )}
                 </p>
               ))}
           </div>

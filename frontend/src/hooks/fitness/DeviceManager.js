@@ -1,4 +1,3 @@
-import { resolveDisplayLabel, deepClone } from './types.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 /**
