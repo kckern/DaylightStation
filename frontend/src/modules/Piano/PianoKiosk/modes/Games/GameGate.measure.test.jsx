@@ -33,7 +33,7 @@
 // canvas (`display.designWidth/designHeight`), i.e. the SM-T590's CSS viewport.
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -161,9 +161,9 @@ const gateElement = () => (
 async function markupOf(trigger) {
   const view = render(gateElement());
   // The run arms itself from the piano now, so its ready phase has no button to
-  // wait on — the ready hint is the settled-and-ready barrier in its place.
-  // Either hint will do: which one appears depends on the rung's timing.
-  await screen.findByText(/Play the first note to begin\.|Press any key to start\./);
+  // wait on — this hint is the settled-and-ready barrier in its place. The
+  // gate's rung is cued (`gameGateLadder.initialRung`), so it is this hint.
+  await screen.findByText(/Press any key to start\./);
   if (trigger) await trigger(view);
   const html = document.body.firstElementChild.innerHTML;
   view.unmount();
