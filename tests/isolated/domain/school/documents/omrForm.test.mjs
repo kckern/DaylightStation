@@ -128,3 +128,53 @@ describe('a set-valued row', () => {
     expect(() => reader.scanSheet({ formMap: gateFormMap, chosen: { gate: ['A', 'Z'] } })).toThrow();
   });
 });
+
+describe('decodeOmrSheet on a set-valued row', () => {
+  const gateFormMap = {
+    formVersion: 'v1',
+    marks: ['A', 'B', 'C', 'D', 'E'].map((choice, col) => ({
+      itemId: 'gate', choice, label: choice, selection: 'set',
+      xPt: 100 + col * 20, yPt: 100, rPt: 5, page: 1,
+    })),
+  };
+  const decode = (chosen) => decodeOmrSheet({
+    formMap: gateFormMap,
+    sheet: new VirtualOmrReader({ readerId: 't' }).scanSheet({ formMap: gateFormMap, chosen }),
+  });
+
+  it('reports every filled bubble as an array, in printed order', () => {
+    const { entries, ambiguous } = decode({ gate: ['E', 'A', 'C'] });
+    expect(entries.gate).toEqual(['A', 'C', 'E']);
+    expect(ambiguous).toEqual([]);
+  });
+
+  it('reports a single filled bubble as a one-entry array, not a bare string', () => {
+    expect(decode({ gate: ['B'] }).entries.gate).toEqual(['B']);
+  });
+
+  it('reports all five without calling it ambiguous', () => {
+    const { entries, ambiguous } = decode({ gate: ['A', 'B', 'C', 'D', 'E'] });
+    expect(entries.gate).toEqual(['A', 'B', 'C', 'D', 'E']);
+    expect(ambiguous).toEqual([]);
+  });
+
+  it('still reports an untouched row as blank', () => {
+    const { entries, blank } = decodeOmrSheet({
+      formMap: gateFormMap,
+      sheet: { marks: [0] },
+    });
+    expect(entries.gate).toBeUndefined();
+    expect(blank).toEqual(['gate']);
+  });
+
+  it('leaves ordinary single-choice rows exactly as they were', () => {
+    const ordinary = {
+      formVersion: 'v1',
+      marks: ['A', 'B'].map((choice, col) => ({
+        itemId: 'q1', choice, label: choice, xPt: 100 + col * 20, yPt: 100, page: 1,
+      })),
+    };
+    expect(decodeOmrSheet({ formMap: ordinary, sheet: { marks: [0b11] } }).ambiguous).toEqual(['q1']);
+    expect(decodeOmrSheet({ formMap: ordinary, sheet: { marks: [0b01] } }).entries.q1).toBe('A');
+  });
+});
