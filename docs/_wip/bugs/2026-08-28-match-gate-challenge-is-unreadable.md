@@ -187,7 +187,7 @@ what the screen *is* — not just how it is graded. Reference:
 
 | # | Issue | What shipped |
 |---|---|---|
-| C1 | "Pass challenge" over a bare exercise title | The header is a host-supplied **framing** line — "Play this to start Chess" — over the ask in plain words. The bank title is not a headline anywhere a child is being gated. |
+| **C1** | **"Pass challenge" over a bare exercise title** | **Partly.** At the match gate, fixed: the header is a host-supplied **framing** line — "Play this to start Chess" — over the ask in plain words, and the bank title is not the headline. But the gate is the only host that supplies `framing`/`ask`. **A child who presses "Pass challenge" on a program step still sees the literal C1 screen** — the eyebrow "Pass challenge" over the bank's own title — because `ExerciseRunRoute` passes neither prop and `framingFor`'s `kind: 'program'` branch has no production caller. Not wired in this round: the two navigate sites are a small change, but the query-to-prop hand-off in the route is the part that could silently do nothing, and it cannot be tested without a router-and-bank harness that does not exist yet. |
 | C2 | A bare key letter | The key chip appears only when a staff is shown, and reads "Key of F". It also spells correctly now: the black keys of a flat key draw as flats, resolved through the mode's relative major rather than the bare root letter. |
 | C3 | Ready copy promises criteria it never shows | That line is deleted. The pass bar is not claimed because there is none to claim: every repertoire level is verdict-driven and `passScore` is gone from the config entirely. Where a number does exist — a cued level's cleanliness threshold — it is the rubric, not a second gate. |
 | **C4** | **"Begin challenge" is a second tap for nothing** | **Partly.** The button is deleted for every mode, and a **free** ask now needs no gesture at all: the screen reads "Play the first note to begin" and the first correct note starts the attempt. A **cued** ask still needs one — it reads "Press any key to start. You'll hear 4 clicks, then play at that speed", and any key begins the count-in. That is not the old friction restored: it is on the piano rather than on a touch target, it exists because a metronome count-in has to begin deliberately, and the copy says what will happen before it happens. A child on a cued level does press a key before playing. |
@@ -211,6 +211,10 @@ what the screen *is* — not just how it is graded. Reference:
   (`minor-2nd`…`octave`) the accidental table does not cover, so a C minor-3rd still
   spells its E♭ as D♯. Not a regression — it was never covered — and no repertoire level
   serves that material today.
+- **Program-step framing** (C1, above). The seam exists on both sides — `framingFor`
+  already names the `program` shape, `ExerciseRun` already takes the props — and only the
+  route's query hand-off is missing. It is one small change plus the test harness that
+  would make it honest, and it belongs with whoever next touches the program surface.
 - **Battle Stadium's rematch** and **the office screen** remain ungated, as before.
 
 ### Live state
