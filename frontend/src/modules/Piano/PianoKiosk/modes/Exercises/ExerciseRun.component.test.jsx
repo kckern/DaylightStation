@@ -54,6 +54,37 @@ vi.mock('./ExerciseNotation.jsx', () => ({
     <div data-testid="notation" data-wrong={String(wrong)}>{eventIndex}</div>
   ),
 }));
+// The other two stages, mocked at the same boundary and for the same reason:
+// what is pinned here is which stage a tier mounts and what it is handed —
+// KeysAsk and SvgSequenceStaff each have their own suite for their rendering.
+vi.mock('./KeysAsk.jsx', () => ({
+  default: (props) => (
+    <div
+      data-testid="keys-ask"
+      data-wrong={props.wrongMidi ?? ''}
+      data-cursor={props.cursorIndex}
+      data-show-staff={String(Boolean(props.showStaff))}
+      data-accidental={props.accidental}
+      data-events={(props.events ?? []).length}
+    />
+  ),
+}));
+// The renderer is doubled; `sequenceStaffViewBox` is NOT — the run uses it to
+// size the staff's box, and a stubbed ratio would let a real sizing mistake
+// through while the test kept measuring the stub's.
+vi.mock('../../../../MusicNotation/renderers/SvgSequenceStaff.jsx', async (importOriginal) => ({
+  ...(await importOriginal()),
+  SvgSequenceStaff: (props) => (
+    <div
+      data-testid="sequence-staff"
+      data-wrong={props.wrongMidi ?? ''}
+      data-cursor={props.cursorIndex}
+      data-clef={props.clef ?? ''}
+      data-accidental={props.accidental}
+      data-notes={JSON.stringify(props.notes)}
+    />
+  ),
+}));
 vi.mock('./pianoLearningApi.js', () => ({
   pianoLearningApi: {
     instance: vi.fn(async () => (h.instanceOk
@@ -87,22 +118,30 @@ vi.mock('../../../performance/assessmentSession.js', async (importOriginal) => {
   };
 });
 
+function resetHarness() {
+  h.activeNotes = new Map();
+  h.instanceData = null;
+  h.instanceOk = true;
+  h.currentUser = 'learner4';
+  h.record.mockReset();
+  h.record.mockResolvedValue({ ok: true, status: 201, data: { attempt_id: 'stored' }, durationMs: 4 });
+  h.start.mockClear();
+  h.observe.mockClear();
+  h.metronome.mockClear();
+  // mockClear, not mockReset — the implementation is installed once by the
+  // module factory and must survive between tests.
+  h.createAttempt.mockClear();
+  for (const logger of Object.values(h.log)) logger.mockClear();
+}
+
+// Press and release, so the next press of the same pitch is seen as a new onset.
+function pressKey(view, props, midi) {
+  act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+  act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+}
+
 describe('ExerciseRun shared assessment wiring', () => {
-  beforeEach(() => {
-    h.activeNotes = new Map();
-    h.instanceData = null;
-    h.instanceOk = true;
-    h.currentUser = 'learner4';
-    h.record.mockReset();
-    h.record.mockResolvedValue({ ok: true, status: 201, data: { attempt_id: 'stored' }, durationMs: 4 });
-    h.start.mockClear();
-    h.observe.mockClear();
-    h.metronome.mockClear();
-    // mockClear, not mockReset — the implementation is installed once by the
-    // module factory and must survive between tests.
-    h.createAttempt.mockClear();
-    for (const logger of Object.values(h.log)) logger.mockClear();
-  });
+  beforeEach(resetHarness);
 
   // Press and release, so the next press of the same pitch is seen as a new onset.
   const press = (view, props, midi) => {
@@ -135,7 +174,10 @@ describe('ExerciseRun shared assessment wiring', () => {
     await screen.findByText('Play the first note to begin.');
 
     act(() => { h.activeNotes = new Map([[60, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
-    await waitFor(() => expect(screen.getByTestId('notation')).toHaveTextContent('1'));
+    // Free practice on sequential material is tier 2 now: the cursor this
+    // watches lives on the sequence staff rather than the ABC notation. Same
+    // cursor, same source (`eventIndex`) — only the stage that draws it moved.
+    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '1'));
     act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
     act(() => { h.activeNotes = new Map([[62, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
 
@@ -186,8 +228,10 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '61'));
     expect(screen.getByRole('status')).toHaveTextContent('That note was not expected');
-    // The notation only ever wanted a flag, and still gets exactly that.
-    expect(screen.getByTestId('notation')).toHaveAttribute('data-wrong', 'true');
+    // Tier 2's staff wants the PITCH, not a flag — it draws the wrong note at
+    // its own position. (The ABC stage still gets the flag; that is asserted
+    // in the tier-3 row of the stage-boundary table below.)
+    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-wrong', '61');
 
     press(view, props, 62); // a hit clears it
     await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', ''));
@@ -448,7 +492,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(h.start.mock.invocationCallOrder[0]).toBeLessThan(h.observe.mock.invocationCallOrder[0]);
     expect(h.observe.mock.calls[0][0]).toMatchObject({ midi: 60, clock: 'date-now' });
     // And it really was graded: the cursor is on event two.
-    await waitFor(() => expect(screen.getByTestId('notation')).toHaveTextContent('1'));
+    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '1'));
   });
 
   it('a free ask ignores a note it did not ask for, and stays ready', async () => {
@@ -463,7 +507,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(h.start).not.toHaveBeenCalled();
     expect(h.observe).not.toHaveBeenCalled();
     expect(screen.getByText('Play the first note to begin.')).toBeInTheDocument();
-    expect(screen.getByTestId('notation')).toHaveTextContent('0');
+    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '0');
     expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
@@ -579,14 +623,16 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(h.start).toHaveBeenCalledWith({ leadInMs: 0, clock: 'date-now' });
     // Only the chord's own member crossed the boundary…
     expect([...h.observe.mock.calls[0][0].held.keys()]).toEqual([64]);
-    // …so nothing is wrong and nothing is latched.
-    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '');
+    // …so nothing is wrong and nothing is latched. `ordering:'any'` material is
+    // a lit-keys ask now, so the keyboard that shows this is KeysAsk's own —
+    // the run has no footer strip under it to look at.
+    expect(screen.getByTestId('keys-ask')).toHaveAttribute('data-wrong', '');
     expect(screen.getByRole('status')).not.toHaveTextContent('That note was not expected');
 
     // Once RUNNING the matcher's normal rules apply to the whole held set, and
     // the stray is an extra like any other.
     hold(view, props, [67, 64, 60]);
-    await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '67'));
+    await waitFor(() => expect(screen.getByTestId('keys-ask')).toHaveAttribute('data-wrong', '67'));
 
     // Lift it and the chord completes. It does not PASS — the extra cost it a
     // clean sheet, which is the matcher's ordinary rule and exactly the price
@@ -608,5 +654,246 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(await screen.findByText(hint)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /begin/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/tempo and pass criteria are fixed/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The rung decides what the screen is. Everything below is about what a child
+ * SEES at a given tier — which stage is mounted, what the header says, and
+ * whether a number appears at the end — never about how the run is graded.
+ */
+describe('ExerciseRun tier-driven presentation', () => {
+  beforeEach(resetHarness);
+
+  const STAGES = ['keys-ask', 'sequence-staff', 'notation'];
+  const practice = (extra = {}) => ({
+    instanceId: h.instance.id, intent: 'practice', practiceMode: 'free',
+    onExit: vi.fn(), onPassed: vi.fn(), ...extra,
+  });
+
+  const ready = () => screen.findByText('Play the first note to begin.');
+
+  it('wears the framing a host gave it, and the intent label when it was given none', async () => {
+    const props = practice({ framing: 'Play this to start Tetris' });
+    const view = render(<ExerciseRun {...props} />);
+    await ready();
+    expect(screen.getByText('Play this to start Tetris')).toBeInTheDocument();
+    // The framing REPLACES the intent label; a child should not read both.
+    expect(screen.queryByText('Practice')).not.toBeInTheDocument();
+
+    view.unmount();
+    const plain = practice();
+    render(<ExerciseRun {...plain} />);
+    await ready();
+    expect(screen.getByText('Practice')).toBeInTheDocument();
+  });
+
+  it.each([[0], [1], [2], [3]])('tier %i reads its ask out before a note is played', async (tier) => {
+    const props = practice({ tier, ask: 'Play the lit keys in order.' });
+    render(<ExerciseRun {...props} />);
+    await ready();
+    expect(screen.getByRole('heading', { name: 'Play the lit keys in order.' })).toBeInTheDocument();
+    // The exercise's own title is what a caller WITHOUT an ask keeps; it is not
+    // a second line under the ask.
+    expect(screen.queryByText('C major fragment')).not.toBeInTheDocument();
+  });
+
+  it('keeps the exercise title as the heading when no ask was given', async () => {
+    render(<ExerciseRun {...practice()} />);
+    await ready();
+    expect(screen.getByRole('heading', { name: 'C major fragment' })).toBeInTheDocument();
+  });
+
+  it('labels the key chip, and drops it entirely where there is no staff to read', async () => {
+    const view = render(<ExerciseRun {...practice({ tier: 2 })} />);
+    await ready();
+    expect(screen.getByText('Key of C')).toBeInTheDocument();
+
+    view.unmount();
+    render(<ExerciseRun {...practice({ tier: 0 })} />);
+    await ready();
+    expect(screen.queryByText(/Key of/)).not.toBeInTheDocument();
+    // …and the bare letter that used to stand there is gone with it: an
+    // unlabeled "C" on a screen with no staff names nothing a child can use.
+    expect(screen.queryByText('C')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [0, 'keys-ask', '61'],
+    [1, 'keys-ask', '61'],
+    [2, 'sequence-staff', '61'],
+    // The ABC path only ever wanted a flag, and still gets exactly that.
+    [3, 'notation', 'true'],
+  ])('tier %i mounts the %s stage alone, and gives it the wrong note', async (tier, stage, wrong) => {
+    const props = practice({ tier });
+    const view = render(<ExerciseRun {...props} />);
+    await ready();
+
+    expect(screen.getByTestId(stage)).toBeInTheDocument();
+    for (const other of STAGES.filter((id) => id !== stage)) {
+      expect(screen.queryByTestId(other)).not.toBeInTheDocument();
+    }
+
+    pressKey(view, props, 60); // arms the run and grades event one
+    pressKey(view, props, 61); // a semitone below the expected 62
+    await waitFor(() => expect(screen.getByTestId(stage)).toHaveAttribute('data-wrong', wrong));
+  });
+
+  it.each([[0, 'false'], [1, 'true']])('tier %i gets the keys ask with showStaff=%s', async (tier, shown) => {
+    render(<ExerciseRun {...practice({ tier })} />);
+    await ready();
+    expect(screen.getByTestId('keys-ask')).toHaveAttribute('data-show-staff', shown);
+    // KeysAsk brings its own keyboard — a footer strip under it would be a
+    // second piano on the same screen.
+    expect(screen.queryByTestId('keyboard')).not.toBeInTheDocument();
+  });
+
+  it.each([[2], [3]])('tier %i keeps the keyboard footer under its staff', async (tier) => {
+    render(<ExerciseRun {...practice({ tier })} />);
+    await ready();
+    expect(screen.getByTestId('keyboard')).toBeInTheDocument();
+  });
+
+  it('advances the new stages on the same cursor the ABC path uses', async () => {
+    const props = practice({ tier: 2 });
+    const view = render(<ExerciseRun {...props} />);
+    await ready();
+    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '0');
+
+    pressKey(view, props, 60);
+    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '1'));
+  });
+
+  it('spells the sequence staff for the key it is actually in', async () => {
+    // The staff's own default is 'sharp', which renders the B♭ of F major as
+    // A♯ — the wrong letter, on the surface a child is reading letters from.
+    h.instanceData = {
+      ...h.instance,
+      key: 'F',
+      events: [
+        { id: 'first', value: 'quarter', notes: [{ midi: 65, hand: 'right' }] },
+        { id: 'second', value: 'quarter', notes: [{ midi: 70, hand: 'right' }] },
+      ],
+    };
+    render(<ExerciseRun {...practice({ tier: 2 })} />);
+    await ready();
+    const staff = screen.getByTestId('sequence-staff');
+    expect(staff).toHaveAttribute('data-accidental', 'flat');
+    expect(staff).toHaveAttribute('data-clef', 'treble');
+    expect(staff).toHaveAttribute('data-notes', JSON.stringify([{ midi: 65 }, { midi: 70 }]));
+  });
+
+  it('puts a left-hand ask on a bass staff', async () => {
+    h.instanceData = {
+      ...h.instance,
+      events: [
+        { id: 'first', value: 'quarter', notes: [{ midi: 48, hand: 'left' }] },
+        { id: 'second', value: 'quarter', notes: [{ midi: 50, hand: 'left' }] },
+      ],
+    };
+    render(<ExerciseRun {...practice({ tier: 2 })} />);
+    await ready();
+    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-clef', 'bass');
+  });
+
+  it('tells a tier-0 child how it went in words, with no percentage anywhere', async () => {
+    const props = practice({ tier: 0 });
+    const view = render(<ExerciseRun {...props} />);
+    await ready();
+    pressKey(view, props, 60);
+    pressKey(view, props, 62);
+
+    const panel = (await screen.findByText('Passed')).closest('.piano-exercise-run__result');
+    expect(panel).not.toBeNull();
+    expect(panel.textContent).not.toMatch(/%/);
+    // A number that is not a percentage is not a loophole either: nothing on
+    // this panel is a score.
+    expect(panel.querySelector('dl')).toBeNull();
+  });
+
+  it('keeps the score readout at tier 2', async () => {
+    const props = practice({ tier: 2 });
+    const view = render(<ExerciseRun {...props} />);
+    await ready();
+    pressKey(view, props, 60);
+    pressKey(view, props, 62);
+
+    const panel = (await screen.findByText('Passed')).closest('.piano-exercise-run__result');
+    expect(panel.textContent).toMatch(/100%/);
+  });
+
+  it('an ordering:any practice ask gets lit keys, not the grand staff', async () => {
+    // The deliberate practice-surface change: the intervals browser used to
+    // render this material through instanceToAbc's `ordering:'any'` branch.
+    h.instanceData = {
+      ...h.instance,
+      ordering: 'any',
+      key: 'F',
+      events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 65, hand: 'right' }, { midi: 69, hand: 'right' }] }],
+    };
+    render(<ExerciseRun {...practice()} />); // no tier prop — a legacy caller
+    await ready();
+
+    expect(screen.getByTestId('keys-ask')).toBeInTheDocument();
+    expect(screen.queryByTestId('notation')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sequence-staff')).not.toBeInTheDocument();
+    // Tier-1 treatment: the small staff comes along, spelled for the key.
+    expect(screen.getByTestId('keys-ask')).toHaveAttribute('data-show-staff', 'true');
+    expect(screen.getByTestId('keys-ask')).toHaveAttribute('data-accidental', 'flat');
+  });
+
+  it('a sequential practice ask still derives the staff it always had', async () => {
+    render(<ExerciseRun {...practice()} />); // no tier prop
+    await ready();
+    expect(screen.getByTestId('sequence-staff')).toBeInTheDocument();
+    expect(screen.queryByTestId('notation')).not.toBeInTheDocument();
+  });
+
+  it('a cued requirement derives tier 3 — the ABC notation, as before', async () => {
+    const props = {
+      instanceId: h.instance.id, intent: 'challenge',
+      requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }),
+      onExit: vi.fn(), onPassed: vi.fn(),
+    };
+    render(<ExerciseRun {...props} />);
+    await screen.findByText(/Press any key to start/);
+    expect(screen.getByTestId('notation')).toBeInTheDocument();
+    expect(screen.queryByTestId('keys-ask')).not.toBeInTheDocument();
+  });
+
+  it('shows the meter only for a cued ask', async () => {
+    const view = render(<ExerciseRun {...practice()} />);
+    await ready();
+    expect(screen.queryByText('4/4')).not.toBeInTheDocument();
+
+    view.unmount();
+    render(<ExerciseRun {...{
+      instanceId: h.instance.id, intent: 'challenge',
+      requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }),
+      onExit: vi.fn(), onPassed: vi.fn(),
+    }} />);
+    await screen.findByText(/Press any key to start/);
+    expect(screen.getByText('4/4')).toBeInTheDocument();
+  });
+
+  it('shows a BPM chip only where a pace gate actually exists', async () => {
+    const view = render(<ExerciseRun {...{
+      instanceId: h.instance.id, intent: 'challenge',
+      requirementOverride: { mode: 'free' },
+      onExit: vi.fn(), onPassed: vi.fn(),
+    }} />);
+    await ready();
+    expect(screen.queryByText(/BPM/)).not.toBeInTheDocument();
+
+    view.unmount();
+    // A pace gate only exists in cued mode — the engine rejects one anywhere
+    // else outright (`A pace gate requires cued mode`).
+    render(<ExerciseRun {...{
+      instanceId: h.instance.id, intent: 'challenge',
+      requirementOverride: { mode: 'cued', gates: { pace: { target_bpm: 72 } } },
+      onExit: vi.fn(), onPassed: vi.fn(),
+    }} />);
+    await screen.findByText(/Press any key to start/);
+    expect(screen.getByText('72 BPM')).toBeInTheDocument();
   });
 });
