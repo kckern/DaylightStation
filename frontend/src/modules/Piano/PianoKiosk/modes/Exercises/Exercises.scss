@@ -284,7 +284,12 @@
 .piano-exercise-run__context { display: flex !important; flex-direction: row; gap: 0.6rem !important; margin-inline-start: auto; align-items: center; color: var(--ex-muted); }
 .piano-exercise-run__context span { padding-inline-end: 0.6rem; border-inline-end: 1px solid var(--ex-border); }
 .piano-exercise-run__context strong { color: var(--ex-accent-text); }
-.piano-exercise-run__score { position: relative; min-height: 0; padding: 0.5rem; border-radius: var(--r-md, 12px); background: #f5f5f3; color: #111; overflow: hidden; }
+/* Every stage sits in the same box: it fills the grid row, it may not push the
+   run taller than the kiosk, and it is the positioning context the count-in
+   overlay is absolutely placed against. What each stage adds on top of that is
+   below. */
+.piano-exercise-run__stage { position: relative; min-height: 0; overflow: hidden; }
+.piano-exercise-run__score { padding: 0.5rem; border-radius: var(--r-md, 12px); background: #f5f5f3; color: #111; }
 .piano-exercise-run__score .abc-renderer { min-width: 100%; height: 100%; }
 
 /* Tier 2: the sequence staff IS the screen. It fills the stage row, and the
@@ -310,7 +315,7 @@
 /* Tiers 0-1: the lit keyboard is the whole reading task, and it is not ink —
    it gets the dark stage rather than the paper card, and there is no footer
    strip under it (KeysAsk brings the only keyboard on screen). */
-.piano-exercise-run__ask { position: relative; min-height: 0; overflow: hidden; }
+.piano-exercise-run__ask { display: grid; }
 .piano-exercise-run[data-stage='keys'] { grid-template-rows: auto minmax(0, 1fr) auto; padding-block-end: 0.65rem; }
 .piano-exercise-run__ready { display: flex; align-items: center; gap: 1rem; min-height: 3.25rem; }
 .piano-exercise-run__ready p { max-width: 48rem; margin: 0; color: var(--ex-muted); }

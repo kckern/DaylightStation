@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import KeysAsk from './KeysAsk.jsx';
 
@@ -18,17 +18,26 @@ vi.mock('../../../components/PianoKeyboard.jsx', () => ({
     />
   ),
 }));
-vi.mock('../../../../MusicNotation/renderers/SvgSequenceStaff.jsx', () => ({
-  SvgSequenceStaff: (props) => (
-    <div
-      data-testid="sequence-staff"
-      data-cursor={props.cursorIndex}
-      data-wrong={props.wrongMidi ?? ''}
-      data-accidental={props.accidental}
-      data-notes={JSON.stringify(props.notes)}
-    />
-  ),
-}));
+// …with ONE exception: the clef case below has to see real engraving, because
+// what it is checking is where a notehead lands on the page. `h.realStaff`
+// swaps the double for the actual component for that test alone.
+const h = vi.hoisted(() => ({ realStaff: false }));
+vi.mock('../../../../MusicNotation/renderers/SvgSequenceStaff.jsx', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    SvgSequenceStaff: (props) => (h.realStaff ? <actual.SvgSequenceStaff {...props} /> : (
+      <div
+        data-testid="sequence-staff"
+        data-cursor={props.cursorIndex}
+        data-wrong={props.wrongMidi ?? ''}
+        data-accidental={props.accidental}
+        data-clef={props.clef ?? ''}
+        data-notes={JSON.stringify(props.notes)}
+      />
+    )),
+  };
+});
 
 const note = (midi) => ({ midi });
 const event = (...midis) => ({ notes: midis.map(note) });
@@ -91,6 +100,47 @@ describe('KeysAsk', () => {
     expect(staff).toHaveAttribute('data-wrong', '61');
     expect(staff).toHaveAttribute('data-accidental', 'flat');
     expect(JSON.parse(staff.getAttribute('data-notes'))).toEqual([{ midi: 60 }, { midi: 64 }]);
+  });
+
+  // ── The clef. Left to the staff it is re-derived from the majority of the
+  // pitches, and a TIE goes treble — which is how a two-note bass ask ends up
+  // drawn below the bottom of the card.
+
+  it('forwards the clef it was given', () => {
+    render(<KeysAsk events={[event(55), event(60)]} cursorIndex={0} showStaff clef="bass" />);
+    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-clef', 'bass');
+  });
+
+  it('answers with the ask\'s own clef when the host named none', () => {
+    // Same rule the host uses to decide the staff may be shown at all
+    // (`clefForAsk`), so the two cannot disagree.
+    render(<KeysAsk events={[event(55), event(60)]} cursorIndex={0} showStaff />);
+    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-clef', 'bass');
+    cleanup();
+    render(<KeysAsk events={[event(60), event(64)]} cursorIndex={0} showStaff />);
+    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-clef', 'treble');
+  });
+
+  it('draws a low two-note ask on a bass staff, both noteheads on the page', () => {
+    // G3 + C4: one pitch each side of the treble/bass boundary, so the
+    // majority rule ties and falls to treble — where G3 sits at position -5,
+    // below the bottom of a viewBox that only reaches -3. Real engraving, not
+    // the double, because the failure is WHERE the ink lands.
+    h.realStaff = true;
+    try {
+      render(<KeysAsk events={[event(55), event(60)]} cursorIndex={0} showStaff />);
+      expect(document.querySelector('.sequence-staff')).toHaveAttribute('data-clef', 'bass');
+      const offsets = [...document.querySelectorAll('.action-staff__note')]
+        .map((note) => Number(note.getAttribute('data-line-offset')));
+      expect(offsets).toEqual([7, 10]); // G3 and C4, both on a bass staff
+      // The band the staff draws within: two ledger lines either side.
+      for (const offset of offsets) {
+        expect(offset).toBeGreaterThanOrEqual(-3);
+        expect(offset).toBeLessThanOrEqual(11);
+      }
+    } finally {
+      h.realStaff = false;
+    }
   });
 
   it('showStaff defaults to false when omitted', () => {

@@ -65,6 +65,7 @@ vi.mock('./KeysAsk.jsx', () => ({
       data-cursor={props.cursorIndex}
       data-show-staff={String(Boolean(props.showStaff))}
       data-accidental={props.accidental}
+      data-clef={props.clef ?? ''}
       data-events={(props.events ?? []).length}
     />
   ),
@@ -809,6 +810,70 @@ describe('ExerciseRun tier-driven presentation', () => {
     // A number that is not a percentage is not a loophole either: nothing on
     // this panel is a score.
     expect(panel.querySelector('dl')).toBeNull();
+  });
+
+  it('tells a tier-0 child what to do when the notes are still missing', async () => {
+    // The failure half of the same panel, and it is the run's own: no host took
+    // `onFailed`, so this is the only thing on screen.
+    const props = {
+      instanceId: h.instance.id, intent: 'challenge', tier: 0,
+      requirementOverride: requirementForRung(
+        { timing: 'free', hands: 2, span: 1, difficulty: 'major', direction: 'ascending' },
+        { passScore: 0.8 },
+      ),
+      onExit: vi.fn(), onPassed: vi.fn(),
+    };
+    const view = render(<ExerciseRun {...props} />);
+    await ready();
+    pressKey(view, props, 60);
+    for (const midi of [61, 61, 61]) pressKey(view, props, midi);
+    pressKey(view, props, 62); // complete, score 0.7 — under the bar
+
+    const panel = (await screen.findByText('Keep working')).closest('.piano-exercise-run__result');
+    expect(panel.textContent).toContain('Some of the notes are still missing. Have another go.');
+    expect(panel.textContent).not.toMatch(/%/);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('hands the lit-keys staff the clef its ask actually fits', async () => {
+    // A tie in the staff's own majority rule goes treble, which would put G3
+    // five steps below the bottom line — off the card. The clef the ask was
+    // JUDGED on has to travel with it.
+    h.instanceData = {
+      ...h.instance,
+      events: [
+        { id: 'first', value: 'quarter', notes: [{ midi: 55, hand: 'left' }] },
+        { id: 'second', value: 'quarter', notes: [{ midi: 60, hand: 'left' }] },
+      ],
+    };
+    render(<ExerciseRun {...practice({ tier: 1 })} />);
+    await ready();
+    const keys = screen.getByTestId('keys-ask');
+    expect(keys).toHaveAttribute('data-show-staff', 'true');
+    expect(keys).toHaveAttribute('data-clef', 'bass');
+  });
+
+  it('says so when a tier it cannot use arrives, and falls back to derivation', async () => {
+    // The caller that will pass this reads it out of authored config, where a
+    // string, a float, or an out-of-range band are all one typo away — and a
+    // tier that never arrives looks exactly like a tier nobody set.
+    render(<ExerciseRun {...practice({ tier: '2' })} />);
+    await ready();
+    expect(h.log.warn).toHaveBeenCalledWith('piano.exercise-tier-invalid', { tier: '2', type: 'string' });
+    // Derivation still runs: sequential free practice is tier 2.
+    expect(screen.getByTestId('sequence-staff')).toBeInTheDocument();
+  });
+
+  it.each([[2.5], [4], [-1]])('refuses tier %s the same way', async (bad) => {
+    render(<ExerciseRun {...practice({ tier: bad })} />);
+    await ready();
+    expect(h.log.warn).toHaveBeenCalledWith('piano.exercise-tier-invalid', { tier: bad, type: 'number' });
+  });
+
+  it('says nothing at all when no tier was given', async () => {
+    render(<ExerciseRun {...practice()} />);
+    await ready();
+    expect(h.log.warn).not.toHaveBeenCalledWith('piano.exercise-tier-invalid', expect.anything());
   });
 
   it('keeps the score readout at tier 2', async () => {

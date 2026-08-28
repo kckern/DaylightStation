@@ -24,6 +24,7 @@ import { prepareExerciseAssessment } from './assessment.js';
 import { resolveExerciseRunAccess } from './authorization.js';
 import {
   accidentalForKey,
+  clefForAsk,
   clefForInstance,
   deriveRunTier,
   eventsToStaffNotes,
@@ -293,6 +294,19 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     onUnavailable?.(unavailableReason);
   }, [onUnavailable, unavailableReason]);
 
+  /**
+   * A `tier` this surface cannot use — `'2'`, `2.5`, `4`, `-1` — falls back to
+   * derivation, which is the right behaviour and the wrong silence: the caller
+   * that will pass this is a config-driven host reading an authored level, and
+   * a tier that never arrives looks exactly like a tier that was never set.
+   * Said once per value, from an effect, so a re-render is not a second report.
+   */
+  const tierUsable = Number.isInteger(tier) && tier >= 0 && tier <= 3;
+  useEffect(() => {
+    if (tier == null || tierUsable) return;
+    logger.warn('piano.exercise-tier-invalid', { tier, type: typeof tier });
+  }, [logger, tier, tierUsable]);
+
   const held = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const clickBpm = Number(requirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
   const beatsPerMeasure = useMemo(() => {
@@ -472,8 +486,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
    * `passed`, the evidence, and every callback above are computed from the
    * requirement and do not know it exists.
    */
-  const runTier = Number.isInteger(tier) && tier >= 0 && tier <= 3
-    ? tier : deriveRunTier(instance, selectedMode);
+  const runTier = tierUsable ? tier : deriveRunTier(instance, selectedMode);
   const stage = stageForTier(runTier, instance);
   // Tier 1's reinforcement staff is offered, not forced: an ask that no single
   // clef holds, or that spans more than an octave, is still a complete ask on
@@ -517,6 +530,10 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
             wrongMidi={lastWrong?.midi ?? null}
             showStaff={askStaff}
             accidental={accidental}
+            // The clef the ask was JUDGED to fit on (`staffFitsAsk` asks the
+            // same function). Without it the staff re-derives by majority and
+            // a tie goes treble — which puts a two-note bass ask off the card.
+            clef={clefForAsk(instance.events)}
           />
         )}
         {stage === 'sequence' && (

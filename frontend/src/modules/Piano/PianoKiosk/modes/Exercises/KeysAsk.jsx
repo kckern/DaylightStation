@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { SvgSequenceStaff } from '../../../../MusicNotation/renderers/SvgSequenceStaff.jsx';
+import { clefForAsk } from './runPresentation.js';
 import './Exercises.scss';
 
 /**
@@ -20,6 +21,14 @@ import './Exercises.scss';
  *
  * `showStaff` adds the tier-1 reinforcement: a small `SvgSequenceStaff` above
  * the keys, fed the same cursor/wrong-note truth as the keyboard.
+ *
+ * `clef` must be the clef the ask was JUDGED to fit on. Left to the staff, it
+ * is re-derived from the majority of the pitches with ties going treble — so a
+ * two-note bass ask like G3+C4 (a 1-1 tie) draws on a treble staff, putting G3
+ * five steps below the bottom line and off the bottom of the card. The host
+ * that decided the staff may be shown decided which clef it fits on; the
+ * default here answers with the same rule (`clefForAsk`) rather than a second
+ * one, so the two can never disagree.
  */
 export default function KeysAsk({
   events = [],
@@ -28,6 +37,7 @@ export default function KeysAsk({
   wrongMidi = null,
   showStaff = false,
   accidental = 'sharp',
+  clef = null,
 }) {
   const isSequence = events.length > 1;
   const currentEvent = isSequence
@@ -64,6 +74,7 @@ export default function KeysAsk({
             wrongMidi={wrongMidi}
             activeNotes={activeNotes}
             accidental={accidental}
+            clef={clef ?? clefForAsk(events)}
           />
         </div>
       )}
