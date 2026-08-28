@@ -1,0 +1,198 @@
+// frontend/src/modules/School/lesson/surround/CheckpointMap.scss
+//
+// The stop map, cut for the `bottom` region of the surround frame at
+// 960x540 — the living-room Shield's measured WebView. That is a small screen
+// read from a sofa, wrapped around a video that has to stay watchable, so the
+// map is a FRAME, not a dashboard: one hairline rail, one mark per stop, and
+// nothing that competes with the picture above it.
+//
+// It borrows the frame's own materials (`../../../Surround/_tokens.scss` and the
+// `--ink` / `--brass` custom properties `SurroundFrame.scss` publishes) rather
+// than opening a second palette. The frame paints the ground these marks sit
+// on; a school-blue rail on mahogany would read as a different application
+// having crashed into the picture.
+//
+// TWO THINGS MOVE, AND BOTH MOVE AS TRANSFORMS.
+// A twenty-minute lesson across a 960px screen advances the cursor well under a
+// pixel a second. A painted box's `left`/`width` is pixel-snapped by the engine,
+// which is exactly what made the concert band's playhead stand still and then
+// jump (SegmentMap, design wave 5). The cursor is a full-width element
+// translated by a percentage OF ITSELF — which is the rail's width, so the
+// percentage is the fraction — and the fill is a scaleX. Neither is ever
+// snapped, and both ride the band's own 120ms linear ramp.
+//
+// The NODES do not move, so they are placed with `left` and cost nothing.
+
+@use "../../../Surround/tokens" as *;
+
+/** The band's ramp, shared with the concert frame's playhead. */
+$ramp: 120ms linear;
+/** One mark, at 960: big enough to read a digit from a sofa, small enough to be punctuation. */
+$node: 17px;
+
+.lesson-checkpoint-map {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: #{$node + 10px};
+  padding: 0 #{$node};                  /* half a mark of air at each end, so an
+                                           at: 0 stop is not cut by the region */
+  box-sizing: border-box;
+  font-family: var(--surround-annotation, "Roboto Condensed", ui-sans-serif, system-ui, sans-serif);
+}
+
+.lesson-checkpoint-map__rail {
+  position: relative;
+  flex: 1 1 auto;
+  height: $node;
+}
+
+/* The rail itself: a hairline through the middle of the marks. Drawn on the
+   container rather than as an element, so the fill below is the only thing on
+   this lane that can be mistaken for progress. */
+.lesson-checkpoint-map__rail::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: var(--ink-soft, #{$mat});
+  opacity: 0.45;
+}
+
+/* HOW MUCH OF THE LESSON IS BEHIND THE CHILD. `scaleX` from the left edge —
+   see the header for why this is not a width. */
+.lesson-checkpoint-map__fill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 2px;
+  transform: scaleX(var(--lesson-map-position, 0));
+  transform-origin: left center;
+  margin-top: -1px;
+  background: var(--brass, #c79a3e);
+  opacity: 0.55;
+  transition: transform $ramp;
+}
+
+.lesson-checkpoint-map__nodes {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lesson-checkpoint-map__node {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--lesson-node-at, 0) * 100%);
+  width: $node;
+  height: $node;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* The digit (or the ✓). The frame's tracked-label register, at its published
+   floor — a ten-foot claim, so it is the measurement the frame publishes and
+   never a hand-set rem. See `_tokens.scss`, `$label-floor`. */
+.lesson-checkpoint-map__mark {
+  font-size: var(--label-floor, 11.52px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* DONE. Filled, quiet, and out of the way: a cleared stop is a fact, not news. */
+.lesson-checkpoint-map__node--cleared {
+  background: var(--brass, #c79a3e);
+  border: 1px solid var(--brass, #c79a3e);
+  color: #{$hall-ink};
+}
+
+/* NEXT. The only lit mark on the rail. */
+.lesson-checkpoint-map__node--current {
+  background: #{$hall-ink};
+  border: 2px solid var(--brass-lit, #f6e3a0);
+  color: var(--brass-lit, #f6e3a0);
+}
+
+/* STILL TO COME. Outlined, unlit — present so the child can count them, and
+   recessive so they are not four warnings at once. */
+.lesson-checkpoint-map__node--locked {
+  background: #{$hall-ink};
+  border: 1px solid var(--ink-soft, #{$mat});
+  color: var(--ink-soft, #a89a80);
+  opacity: 0.75;
+}
+
+/* THE WARNING. Only ever on the CURRENT node, and only while the gate's own
+   `approaching` window is open — a strictly pre-fire window, so the pulse stops
+   the instant the checkpoint fires. A warning that keeps pulsing after the
+   thing it warned about has happened teaches a child to ignore warnings. */
+.lesson-checkpoint-map__node[data-approaching="true"] {
+  animation: lesson-checkpoint-pulse 1s ease-in-out infinite;
+}
+
+@keyframes lesson-checkpoint-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(246, 227, 160, 0.55); }
+  50% { box-shadow: 0 0 0 5px rgba(246, 227, 160, 0); }
+}
+
+/* WHERE THE CHILD IS. A full-width element translated by a percentage of its
+   own width; the visible hairline is the pseudo-element pinned at its left
+   edge. See the header for why this is not `left`. */
+.lesson-checkpoint-map__cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transform: translateX(calc(var(--lesson-map-position, 0) * 100%));
+  transition: transform $ramp;
+}
+
+.lesson-checkpoint-map__cursor::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-1px);
+  background: var(--brass-lit, #f6e3a0);
+  opacity: 0.9;
+}
+
+/* Named for the reader that is not looking at a television. */
+.lesson-checkpoint-map__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A pulse is a motion cue. Where motion is refused, the same warning is carried
+   by the mark's own weight — the node still says "this one is next", it just
+   says it without moving. */
+@media (prefers-reduced-motion: reduce) {
+  .lesson-checkpoint-map__node[data-approaching="true"] {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(246, 227, 160, 0.4);
+  }
+  .lesson-checkpoint-map__fill,
+  .lesson-checkpoint-map__cursor { transition: none; }
+}
