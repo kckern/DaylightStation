@@ -305,6 +305,34 @@
 .piano-exercise-run__result-actions { display: flex; gap: 0.4rem; }
 .piano-exercise-run__keys { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
 
+/* KeysAsk — tier 0-1's own primary stage: the keyboard IS the content, not a
+   footer strip. Badges and the small reinforcement staff stack above it, all
+   three within one flex column that fills the run's stage row. */
+.keys-ask { display: flex; flex-direction: column; gap: 0.5rem; width: 100%; height: 100%; min-height: 0; }
+.keys-ask__staff {
+  flex: 0 0 auto;
+  max-width: min(100%, 28rem);
+  margin-inline: auto;
+  .sequence-staff { width: 100%; }
+}
+.keys-ask__badges { display: flex; flex: 0 0 auto; justify-content: center; gap: 0.5rem; }
+.keys-ask__badge {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--ex-surface-2);
+  color: var(--ex-fg);
+  font-size: 1.1rem;
+  font-weight: 800;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+
+  &.is-current { background: var(--ex-accent); color: var(--ex-accent-ink); }
+  &.is-done { background: var(--ex-surface); color: var(--ex-muted); opacity: 0.55; }
+}
+.keys-ask__keys { flex: 1 1 auto; min-height: 0; width: 100%; }
+
 .exercise-note-done { fill: #2b8e59 !important; color: #2b8e59 !important; }
 .exercise-note-next { fill: #1677c8 !important; color: #1677c8 !important; }
 .exercise-note-wrong { fill: #c13d30 !important; color: #c13d30 !important; }
