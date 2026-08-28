@@ -311,7 +311,51 @@ describe('useMediaLessonSession', () => {
     await act(async () => { await result.current.notePlaybackCompleted(); });
     expect(result.current.view).toBe('done');
     expect(result.current.celebration).toBeNull();
-    expect(result.current.notice).toMatchObject({ tone: 'warn' });
+    expect(result.current.notice).toMatchObject({ tone: 'warn', title: 'One question is still waiting' });
+  });
+
+  /**
+   * THE ROUTER'S ACTUAL SHAPE (`4_api/v1/routers/mediaLesson.mjs`, a978d2576):
+   * `remaining: result.outstanding ?? 0` — a COUNT, and the refusal arrives as
+   * a 409 CARRYING A FULL BODY. Both halves used to be got wrong here, and the
+   * two bugs compounded into the worst possible sentence: a child who owed one
+   * question was told the lesson had failed to save.
+   */
+  it('a 409 refusal carrying a body says what is owed — not that the save failed', async () => {
+    stubApi({
+      lessonEnded: vi.fn(() => bad(409, {
+        status: 'refused', completed: false, remaining: 2, seekCeiling: 741,
+      })),
+    });
+    const { result } = await mountOpen();
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.view).toBe('done');
+    expect(result.current.celebration).toBeNull();
+    expect(result.current.notice).toMatchObject({
+      tone: 'warn', title: '2 questions are still waiting',
+    });
+  });
+
+  it('counts a single outstanding question in the singular', async () => {
+    stubApi({ lessonEnded: vi.fn(() => bad(409, { completed: false, remaining: 1 })) });
+    const { result } = await mountOpen();
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.notice.title).toBe('One question is still waiting');
+  });
+
+  /**
+   * The other half of the same seam: letting a body-carrying 409 through must
+   * NOT turn every failure into a refusal. A 500, or a 409 with nothing in it,
+   * is still a lesson that was watched and not written down.
+   */
+  it('a genuine transport failure still reads as one', async () => {
+    stubApi({ lessonEnded: vi.fn(() => bad(500, null)) });
+    const { result } = await mountOpen();
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.notice).toMatchObject({ tone: 'error', title: "I couldn't save that lesson" });
   });
 
   it('`clear` is NOT `ended` — a bail credits nothing', async () => {
