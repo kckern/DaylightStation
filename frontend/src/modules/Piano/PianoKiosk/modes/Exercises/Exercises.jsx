@@ -66,6 +66,15 @@ function ExerciseDashboard() {
         // The lesson this checkpoint stands in front of. A checkpoint is not a
         // program step, so the run route has nothing to fetch its own framing
         // from — the label travels, and `framingFor` writes the sentence.
+        //
+        // The guard never fires today: the backend already substitutes
+        // `'Lesson checkpoint'` for a title-less checkpoint
+        // (`PianoLearningService.summary`), so a lesson nobody named reads
+        // "Pass this to finish Lesson checkpoint" — a sentence no one wrote on
+        // purpose, made of a placeholder meant for a list row. Harmless, and
+        // the fix belongs at the source: a checkpoint with no title should
+        // arrive with a null one, and be unframed rather than framed with a
+        // stand-in.
         ...(next.title ? { label: next.title } : {}),
       });
       navigate(`${base}/run/${encodeURIComponent(next.requirement.exercise_id)}?${query}`);

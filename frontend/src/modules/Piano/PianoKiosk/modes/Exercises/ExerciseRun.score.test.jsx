@@ -264,15 +264,24 @@ describe('ExerciseRun — score material', () => {
  * by `AskSession` rather than fetched here.
  *
  * The block above drives the compatibility path (`material`, self-resolved),
- * and until this suite existed that was the only path a REAL `ScorePassage`
- * had ever been driven through — the props path's safety was argued by
- * inspection. That argument was load-bearing and thin: the expectation arrives
- * from the engraver a commit LATE, and the props path clears
- * `scoreExpectation` on a `[instanceProp, scoreProp]` change. A host handing
- * down a fresh document object per render would therefore wipe the engraving
- * on the very commit that published it, and a child would sit on "Getting the
- * music ready…" forever — with every existing assertion green, because none of
- * them takes this door.
+ * and until this block existed that was the only path a real `ScorePassage`
+ * had ever been driven through: the props path's safety was argued by
+ * inspection, never executed. That is the gap these three close, and the value
+ * is coverage of a door nothing took — not a hazard caught in the act.
+ *
+ * The hazard the inspection worried about — a host handing down a fresh
+ * document object per render, wiping `scoreExpectation` on the very commit the
+ * engraver published it — was RUN as a mutation (task 5, teeth) and does not
+ * bite: the clear schedules a re-render, but `installRuntime` runs later in the
+ * same commit with the pre-clear value and installs a runtime, and the next
+ * commit's `buildAttempt` returns null so `installRuntime` returns early
+ * WITHOUT disposing. The already-installed runtime survives, and
+ * `ScorePassage` never republishes (`publishedRef` guards it) because it never
+ * needs to. Do not reintroduce that claim; it reads plausible and is false.
+ *
+ * What actually earns the coverage is the mutation that DOES bite: make the run
+ * read `loaded.score` instead of the `score` prop and exactly these three fail
+ * while the ten compatibility-path tests above stay green.
  */
 describe('ExerciseRun — score material handed down as props', () => {
   /** What `AskSession` settles on for `{kind:'score'}`: id, document, bars. */
@@ -306,7 +315,11 @@ describe('ExerciseRun — score material handed down as props', () => {
     expect(config.requirement).toBe(requirement);
   });
 
-  it('plays through to a pass, graded by the real engine off the real engraving', async () => {
+  // "Real" here is precise: real `ScorePassage`, real `parseMusicXml`, real
+  // `compileScoreExpectation`, real attempt engine. The ENGRAVER is doubled —
+  // OSMD cannot lay out under happy-dom (see the suite header) — so the
+  // geometry is the fixture's, and only the Chromium scenario proves that half.
+  it('plays through to a pass, graded by the real engine off the compiled passage', async () => {
     const current = handedDown();
     const view = render(<ExerciseRun {...current} />);
     await screen.findByText('Play the first note to begin.');
@@ -320,6 +333,13 @@ describe('ExerciseRun — score material handed down as props', () => {
     });
   });
 
+  /**
+   * Scoped exactly to what it proves: the SAME document object, re-rendered.
+   * That is "a host re-render does not reset the cursor" — a real property, and
+   * not the question the header's deferred inspection was about (a FRESH
+   * document object per render), which no assertion here reaches and which the
+   * teeth found harmless anyway.
+   */
   it('keeps the engraving across a host re-render, so the cursor does not reset', async () => {
     const current = handedDown();
     const view = render(<ExerciseRun {...current} />);
