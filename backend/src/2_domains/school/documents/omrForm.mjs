@@ -28,6 +28,16 @@
  * `given === item.answer` — so reporting "C" instead of "5/6" scores a
  * perfectly filled sheet zero. A form map old enough to predate `label` falls
  * back to the letter, which is all it can say.
+ *
+ * An entry value is a STRING, except on a SET-VALUED row (`mark.selection ===
+ * 'set'`), where it is an ARRAY of strings in printed left-to-right order — one
+ * per filled bubble, even when only one is filled. That row is the companion
+ * finish-code gate, where several marks together are the answer, so `ambiguous`
+ * would misreport a row that says exactly what it means. The paper is what
+ * distinguishes them: the renderer prints `selection` into the form map, and
+ * nothing downstream could infer it from a mask. Consumers that assume a string
+ * must therefore check — the gate row is its own item type precisely so it can
+ * be routed away from the single-choice path before anything grades it.
  */
 
 /** yPt values within this many points are the same physical response row. */
@@ -40,10 +50,10 @@ const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 /**
  * Group a form map's marks into reader columns.
  *
- * @param {{marks: Array<{itemId: string, choice: string, xPt: number, yPt: number, page?: number}>}} formMap
+ * @param {{marks: Array<{itemId: string, choice: string, xPt: number, yPt: number, page?: number, selection?: string}>}} formMap
  * @returns {{ rows: Array<{page: number, yPt: number, columnIndex: number,
  *             choices: Array<{itemId: string, choice: string, label: string|null,
- *                             xPt: number, bit: number}>}>,
+ *                             selection: string|null, xPt: number, bit: number}>}>,
  *            errors: string[] }}
  */
 export function projectFormMap(formMap) {
@@ -77,6 +87,12 @@ export function projectFormMap(formMap) {
         choice: m.choice,
         // What the child actually read under the bubble; see the header.
         label: typeof m.label === 'string' && m.label !== '' ? m.label : null,
+        // How many bubbles this row may claim at once. Carried from the printed
+        // form because the PAPER is the only thing that knows: a row that says
+        // `set` was printed as a gate row, and nothing downstream of here could
+        // tell that from the mask alone. Absent on every form printed before the
+        // gate existed, which is exactly the single-choice reading.
+        selection: typeof m.selection === 'string' && m.selection !== '' ? m.selection : null,
         xPt: m.xPt,
         bit,
       }));
@@ -92,7 +108,8 @@ export function projectFormMap(formMap) {
  * @param {object} args
  * @param {object} args.formMap - the renderer's artifact for this exact sheet
  * @param {{marks: number[]}} args.sheet - the reader's normalised event
- * @returns {{ entries: Record<string, string>, ambiguous: string[], blank: string[], errors: string[] }}
+ * @returns {{ entries: Record<string, (string|string[])>, ambiguous: string[], blank: string[], errors: string[] }}
+ *   an entry is a string, or an array of strings for a set-valued row; see the header
  */
 export function decodeOmrSheet({ formMap, sheet } = {}) {
   const { rows, errors: projectionErrors } = projectFormMap(formMap);
@@ -118,7 +135,15 @@ export function decodeOmrSheet({ formMap, sheet } = {}) {
     const items = [...new Set(row.choices.map((c) => c.itemId))];
     items.forEach((itemId) => {
       const hits = row.choices.filter((c) => c.itemId === itemId && (mask & (1 << c.bit)) !== 0);
+      // A SET-VALUED row reports every hit. It is the finish-code gate: several
+      // bubbles in one row is its correct answer, not an eraser and not a guess,
+      // so `ambiguous` — which means "the paper cannot say" — would be a lie about
+      // a row that says exactly what it means. This branch is also why
+      // `ambiguityLeniency` never has to know about the gate item: leniency grades
+      // from `entries`, and a set-valued row never reaches it as a two-mark row.
+      const isSet = row.choices.some((c) => c.itemId === itemId && c.selection === 'set');
       if (hits.length === 0) blank.push(itemId);
+      else if (isSet) entries[itemId] = hits.map((c) => c.label ?? c.choice);
       else if (hits.length > 1) ambiguous.push(itemId);
       else entries[itemId] = hits[0].label ?? hits[0].choice;
     });

@@ -29,6 +29,7 @@ const PAYLOADS = {
   external_activity_assessed: { provider: 'fitness', assessmentId: 'fitness-assessment-1', courseRevision: 'course-1', policyRevision: 'policy-1', result: 'passed', measures: { engagements: 1 } },
   submitted: { transport: 'paper' },
   graded: { attemptIds: ['att_1'], percent: 90 },
+  companion_gate_read: { companionGate: { status: 'satisfied', given: ['A', 'C', 'E'] } },
   outcome_recorded: { outcomeId: `out:${SID}`, result: 'passed' },
   rewarded: { txnId: 'txn_1' },
   reward_reconciled: { reconciliationId: 'rec_1', delta: 1, txnId: 'txn_2' },
@@ -60,7 +61,7 @@ describe('EVENT_TYPES', () => {
       'created', 'issued', 'reprinted', 'result_receipt_captured', 'result_receipt_reprinted',
       'media_dispatched', 'media_completed', 'media_stalled', 'checkpoint_cleared',
       'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'external_activity_assessed',
-      'submitted', 'graded', 'outcome_recorded', 'rewarded',
+      'submitted', 'graded', 'companion_gate_read', 'outcome_recorded', 'rewarded',
       'reward_reconciled', 'reward_reconciliation_failed',
       'remediation_opened', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted', 'failed', 'abandoned',
     ]);
@@ -108,6 +109,62 @@ describe('append-only teacher grade corrections', () => {
     expect(state.rewardTxn).toBe('txn_1');
   });
 
+  it('never projects a gate-vetoed outcome into a pass — the correction moves the SCORE, not the gate', () => {
+    // The projection re-derives pass/fail from percent-vs-bar alone, which is
+    // the whole rule for an ungated sheet and only half of it for a gated one.
+    // Left that way, ANY grade correction on a sheet blocked by its finish-code
+    // row flipped it to `passed` — including a correction that changed nothing
+    // about the score — and a later close/resettle reported the pass. That is
+    // the same bypass the review queue had, reached from the teacher console.
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { percent: 100, passingPercent: 80, correctCount: 10, totalCount: 10, companionGate: { status: 'blank' } },
+      outcome_recorded: { result: 'needs_remediation', reason: 'companion_incomplete' },
+    });
+    events.push(ev('grade_adjusted', {
+      adjustmentId: 'adj_regrade', percent: 100, correctCount: 10, totalCount: 10,
+      reason: 'remarked question 3 by hand', adjustedBy: 'parent1',
+    }));
+    const state = reduceSession(events);
+    expect(state.errors).toEqual([]);
+    expect(state.companionGate).toEqual({ status: 'blank' });
+    expect(state.outcome).toMatchObject({ result: 'needs_remediation', reason: 'companion_incomplete' });
+  });
+
+  it('still projects a correction through pass state once the gate is satisfied', () => {
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { percent: 60, passingPercent: 80, correctCount: 3, totalCount: 5, companionGate: { status: 'satisfied' } },
+      outcome_recorded: { result: 'needs_remediation', reason: 'below_passing' },
+    });
+    events.push(ev('grade_adjusted', {
+      adjustmentId: 'adj_eraser', percent: 80, correctCount: 4, totalCount: 5,
+      reason: 'eraser read as two marks', adjustedBy: 'parent1',
+    }));
+    expect(reduceSession(events).outcome).toMatchObject({ result: 'passed', adjustmentId: 'adj_eraser' });
+  });
+
+  it('carries the REASON with the projected result, so the record cannot contradict itself', () => {
+    // The projection used to re-derive `result` and spread the old `reason`
+    // over it, which produced records asserting `passed` beside
+    // `below_passing` — and, until this projection asked the same rule
+    // `evaluateOutcome` asks, `passed` beside `companion_incomplete`. Anything
+    // reading `reason` to decide what to say next (the receipt's gate lines,
+    // the retry ticket) was then reading a stale answer to a question that had
+    // since been re-asked.
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { percent: 60, passingPercent: 80, correctCount: 3, totalCount: 5 },
+      outcome_recorded: { result: 'needs_remediation', reason: 'below_passing' },
+    });
+    events.push(ev('grade_adjusted', {
+      adjustmentId: 'adj_1', percent: 100, correctCount: 5, totalCount: 5,
+      reason: 'misread the eraser on every row', adjustedBy: 'parent1',
+    }));
+    const state = reduceSession(events);
+    expect(state.outcome).toMatchObject({ result: 'passed', reason: 'met_passing' });
+    // The machine's own verdict is untouched: what a person corrected and what
+    // the scanner originally decided stay separately readable.
+    expect(state.machineOutcome).toMatchObject({ result: 'needs_remediation', reason: 'below_passing' });
+  });
+
   it('retraction restores the machine grade without deleting correction history', () => {
     const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
       graded: { percent: 60, passingPercent: 80 }, outcome_recorded: { result: 'needs_remediation' },
@@ -119,6 +176,48 @@ describe('append-only teacher grade corrections', () => {
     expect(state.gradedPercent).toBe(60);
     expect(state.outcome.result).toBe('needs_remediation');
     expect(state.gradeAdjustments[0]).toMatchObject({ adjustmentId: 'adj_1', retracted: true });
+  });
+});
+
+describe('the finish-code row is re-read after the sheet has settled', () => {
+  it('restates the gate from `outcome_recorded`, where nothing else is legal', () => {
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { attemptIds: ['att_1'], percent: 100, passingPercent: 80, companionGate: { status: 'blank' } },
+      outcome_recorded: { result: 'needs_remediation', reason: 'companion_incomplete' },
+    });
+    events.push(ev('companion_gate_read', { companionGate: { status: 'satisfied', given: ['A', 'C', 'E'] } }));
+    const state = reduceSession(events);
+
+    expect(state.errors).toEqual([]);
+    expect(state.companionGate).toEqual({ status: 'satisfied', given: ['A', 'C', 'E'] });
+    // An ANNOTATION: the work was handed in and graded exactly when it was, and
+    // a child coming back with the code does not un-submit it.
+    expect(state.state).toBe('outcome_recorded');
+    expect(state.gradedPercent).toBe(100);
+  });
+
+  it('lets the outcome be superseded once, and keeps only the latest', () => {
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { attemptIds: ['att_1'], percent: 100, passingPercent: 80, companionGate: { status: 'blank' } },
+      outcome_recorded: { result: 'needs_remediation', reason: 'companion_incomplete' },
+    });
+    events.push(ev('companion_gate_read', { companionGate: { status: 'satisfied', given: ['A', 'C', 'E'] } }));
+    events.push(ev('outcome_recorded', { result: 'passed', reason: 'met_passing' }));
+    const state = reduceSession(events);
+
+    expect(state.errors).toEqual([]);
+    expect(state.outcome).toMatchObject({ result: 'passed', reason: 'met_passing' });
+  });
+
+  it('refuses a gate reading it cannot read, rather than folding it in', () => {
+    const built = createEvent({
+      type: 'companion_gate_read', at: AT, sessionId: SID, companionGate: { status: 'maybe' },
+    });
+    expect(built.errors.join(' ')).toMatch(/companionGate/);
+    const marks = createEvent({
+      type: 'companion_gate_read', at: AT, sessionId: SID, companionGate: { status: 'wrong', given: 'AB' },
+    });
+    expect(marks.errors.join(' ')).toMatch(/companionGate\.given/);
   });
 });
 
@@ -137,7 +236,7 @@ describe('TRANSITIONS', () => {
       external_activity_assessed: ['outcome_recorded'],
       submitted: ['graded'],
       graded: ['outcome_recorded'],
-      outcome_recorded: ['rewarded', 'remediation_opened'],
+      outcome_recorded: ['rewarded', 'remediation_opened', 'outcome_recorded'],
     });
   });
 

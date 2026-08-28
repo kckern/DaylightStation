@@ -17,7 +17,16 @@
 
 export const GATE_ID = Object.freeze({
   GOVERNANCE: 'governance',
-  CHECKPOINT: 'checkpoint'
+  CHECKPOINT: 'checkpoint',
+  /**
+   * A REQUIRED lesson companion (`ReadalongPlaylistPlayer`). Unlike the two
+   * above it never blocks — it publishes only a `seekCeiling`, so a child may
+   * rewind and re-listen without limit and only a jump PAST the furthest point
+   * they actually reached is refused. Because `mediaGate` names a gate in its
+   * clamp log from the BLOCKING gate, a clamp attributed to this one logs
+   * `gate: null`; the injected child logger's `component` is what identifies it.
+   */
+  COMPANION: 'companion'
 });
 
 export default GATE_ID;

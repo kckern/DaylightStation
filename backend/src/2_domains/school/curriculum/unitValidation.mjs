@@ -88,6 +88,74 @@ const isPresent = (v) => v !== undefined && v !== null;
 const READALONG_PARTICIPATION = Object.freeze(['optional', 'required']);
 
 /**
+ * The companion handler an author who names none is asking for. `IssueDocument`
+ * makes the same substitution when it resolves the offer (`configured.handler &&
+ * configured.handler !== 'readalong'` — an absent handler takes the readalong
+ * branch), so validating anything else here would disagree with what actually
+ * runs.
+ */
+const DEFAULT_COMPANION_HANDLER = 'readalong';
+
+/**
+ * WHICH HANDLERS CAN CLOSE A GATE (requirements D12).
+ *
+ * A `participation: required` companion prints a gate row, and the ONLY thing
+ * that ever releases the finish code behind it is a handler's `recordProgress`.
+ * `readalong` is the only handler that implements one — every other registered
+ * kind mounts a renderer and reports nothing, so its `recordProgress` answers
+ * `{ok: true, tracked: false}`: no verdict, no code, ever. A required companion
+ * on one of those is a gate with no lock, and the child holding the sheet is
+ * the one who discovers it.
+ *
+ * A TWIN OF THE RUNTIME REGISTRY, kept in step by hand for the same reason
+ * `SUBJECT_IDS` is (a domain module cannot reach into an application): the live
+ * list is what `schoolLifecycle.mjs` passes to `LessonCompanionHandlers`. A
+ * handler added there that implements `recordProgress` belongs here too —
+ * otherwise authors simply cannot use it for a required companion, which fails
+ * safe but fails.
+ */
+export const COMPANION_COMPLETION_HANDLERS = Object.freeze(['readalong']);
+
+/**
+ * Why a `participation: required` companion cannot be published as authored.
+ *
+ * Both clauses are D12 verbatim — "A required companion with no document is
+ * refused at publish. So is one on a renderer that declares no completion
+ * contract. Authoring errors belong to the author, not to a child holding a
+ * gate with no lock."
+ *
+ * Presence, not resolvability, on the sheet check: a dangling `bank`/`document`
+ * reference is already reported by the reference loop, and saying it twice
+ * would read as two separate authoring mistakes.
+ */
+/** The handler this companion will actually run on, authored or defaulted. */
+const companionHandler = (raw) => (isNonEmptyString(raw?.companion?.handler)
+  ? raw.companion.handler.trim()
+  : DEFAULT_COMPANION_HANDLER);
+
+function requiredCompanionErrors(raw, handler) {
+  const problems = [];
+  if (!isPresent(raw.bank) && !isPresent(raw.document)) {
+    problems.push("companion.participation 'required' prints a gate row on the worksheet, and this unit has no sheet to print one on; add a bank or a document, or use participation: optional");
+  }
+  if (!COMPANION_COMPLETION_HANDLERS.includes(handler)) {
+    problems.push(`companion.handler '${handler}' reports no completion, so a required companion on it could never release its finish code; use ${COMPANION_COMPLETION_HANDLERS.join('|')}, or participation: optional`);
+  }
+  return problems;
+}
+
+/**
+ * `companion.requireParts`: how many playlist parts must be finished before the
+ * finish code is released. A positive integer, or the string `'all'`.
+ *
+ * `'all'` is a WORD and not a number on purpose. A playlist's length is not
+ * known when the unit is authored — it is resolved from `provenance.reading` at
+ * print time — so writing `4` to mean "all of them" silently becomes "the first
+ * four" the week the reading gains a fifth chapter.
+ */
+const isRequireParts = (v) => v === 'all' || (typeof v === 'number' && Number.isInteger(v) && v >= 1);
+
+/**
  * @param {*} raw - one parsed unit YAML
  * @param {{bankIds?: Set<string>, documentIds?: Set<string>, manifestIds?: Set<string>,
  *          programIds?: Set<string>, bankItems?: Map<string, Set<string>>,
@@ -208,18 +276,53 @@ export function validateUnit(raw, sets = {}) {
       if (!READALONG_PARTICIPATION.includes(participation)) {
         errors.push(`companion.participation must be ${READALONG_PARTICIPATION.join('|')}`);
       } else {
+        // D12, resolved once: why this companion cannot be published as
+        // authored. Empty for every optional companion, which has no gate and
+        // so has nothing to refuse over — and equally for `enabled: false`,
+        // which is the author saying there is no companion here at all and
+        // settles `participation` along with it. That is the same reading
+        // `IssueDocument#prepareCompanion` takes on its first line, and
+        // disagreeing with it would refuse to publish a lesson whose companion
+        // is switched off and therefore gates nothing.
+        const gateProblems = participation === 'required' && raw.companion.enabled !== false
+          ? requiredCompanionErrors(raw, companionHandler(raw))
+          : [];
         if (raw.companion.handler != null && !isNonEmptyString(raw.companion.handler)) {
           errors.push('companion.handler must be a non-empty string when present');
         } else if (raw.companion.label != null && !isNonEmptyString(raw.companion.label)) {
           errors.push('companion.label must be a non-empty string when present');
         } else if (raw.companion.payload != null && !isPlainObject(raw.companion.payload)) {
           errors.push('companion.payload must be an object when present');
+        } else if (raw.companion.require_parts != null) {
+          // REFUSED, not aliased. Every other authored key on a unit is
+          // camelCase (`courseId`, `moduleRole`, `requiresSignoff`), so the
+          // snake_case spelling is the one an author reaches for from the
+          // requirements prose — and accepting it silently would give the field
+          // two names, while ignoring it silently would gate the whole lesson on
+          // every chapter when the author asked for one. Name the right key.
+          errors.push('companion.require_parts is not a field; use companion.requireParts');
+        } else if (raw.companion.requireParts != null && !isRequireParts(raw.companion.requireParts)) {
+          errors.push("companion.requireParts must be a positive integer or 'all'");
+        } else if (gateProblems.length) {
+          // A required companion needs a sheet to print its gate row on AND a
+          // handler that can release the code that clears it. Both problems are
+          // reported together — an author who wrote a bad handler onto a
+          // sheetless unit should be told both in one pass, the way
+          // `checkpoints` reports its missing media and its missing bank.
+          gateProblems.forEach((message) => errors.push(message));
         } else {
           companion = {
             enabled: raw.companion.enabled !== false, participation,
             ...(raw.companion.handler ? { handler: raw.companion.handler.trim() } : {}),
             ...(raw.companion.label ? { label: raw.companion.label.trim() } : {}),
             ...(raw.companion.payload ? { payload: structuredClone(raw.companion.payload) } : {}),
+            // HOW MANY CHAPTERS ACTUALLY GATE. A week's read-along is often
+            // several chapters (Psalms 70–72; 77 is four) and typically only ONE
+            // has to be finished — the rest are enrichment. Carried through
+            // normalised as authored: `'all'` cannot be resolved to a number
+            // here, because the playlist that would give it one is resolved at
+            // print time from `provenance.reading`, not on the unit.
+            ...(raw.companion.requireParts != null ? { requireParts: raw.companion.requireParts } : {}),
           };
         }
       }

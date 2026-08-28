@@ -4,6 +4,8 @@
  * distance, NO punctuation stripping. "St. Paul" vs "St Paul" is an explicit
  * `accept` entry's job, not a clever matcher's. No clock, no I/O.
  */
+import { codesMatch } from './companionCode.mjs';
+
 const norm = (s) => String(s).trim().replace(/\s+/g, ' ').toLowerCase();
 
 export function givenShapeError(item, given) {
@@ -14,11 +16,23 @@ export function givenShapeError(item, given) {
     }
     return null;
   }
-  // multi_select is the only OTHER item type an array is legal for (spec
-  // §5.5) — every other type below still requires a single string.
+  // multi_select and companion_code are the other two item types an array is
+  // legal for (spec §5.5) — every type below still requires a single string.
   if (item.type === 'multi_select') {
     if (!Array.isArray(given) || given.length === 0) return 'multi_select answer must be a non-empty array of choice strings';
     if (given.some((v) => typeof v !== 'string' || v.length === 0)) return 'every multi_select answer entry must be a non-empty string';
+    return null;
+  }
+  // companion_code: the gate row. An array like multi_select's, but its own
+  // type — see the gradeAnswer branch for why it is not one. Letter VALIDITY is
+  // not checked here: a bubble outside A–E is a wrong code, not a malformed
+  // submission, and `codesMatch` already fails it closed. Rejecting it as a
+  // shape error would turn a mis-scan into a 400 instead of a failed gate,
+  // which loses the child's attempt rather than marking it.
+  if (item.type === 'companion_code') {
+    if (!Array.isArray(given)) return 'companion_code answer must be an array of letters, one per filled bubble in the gate row';
+    if (given.length === 0) return 'companion_code answer must be a non-empty array of letters — a blank gate row is unanswered, not empty';
+    if (given.some((v) => typeof v !== 'string' || v.length === 0)) return 'every companion_code answer entry must be a non-empty letter string';
     return null;
   }
   // true_false (spec §5.3): rendered/graded as A/B on the OMR card, but a
@@ -68,6 +82,20 @@ export function gradeAnswer(item, given) {
     const givenSet = new Set(given);
     const correct = givenSet.size === wantSet.size && [...wantSet].every((v) => givenSet.has(v));
     return { correct, expected: item.answers };
+  }
+  if (item.type === 'companion_code') {
+    // The gate row: exact-set match against the finish code, delegated to
+    // `codesMatch` so the code alphabet has exactly one comparator.
+    //
+    // Deliberately NOT multi_select, which grades identically. Three reasons it
+    // cannot be folded in. (1) The expected value lives on `item.code`, minted
+    // with the companion, not in `item.answers` from a question bank — the item
+    // carries its own answer. (2) It is never question-bank validated, so
+    // reusing the type would drag it under `questionBankValidation`'s rules for
+    // choices it does not have. (3) Chief among those is the two-answer minimum
+    // there, which would make `['A']` an illegal item — but a single-letter
+    // finish code is one of the 31 legal codes and must grade like any other.
+    return { correct: codesMatch(given, item.code), expected: item.code };
   }
   if (item.type === 'true_false') {
     // A='true', B='false' (spec §5.3's Ⓐ True / Ⓑ False card rendering); a

@@ -81,6 +81,14 @@ export const teacherWorkspaceApi = {
     `/sessions/${encodeURIComponent(sessionId)}/grade-adjustments/${encodeURIComponent(adjustmentId)}/retract`,
     { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
   ),
+  // The escape hatch for a broken read-along. A POST, because the reveal is
+  // recorded on the server — and because the capability cookie only becomes an
+  // authorization on a request that carries a body. Its answer is never cached
+  // and never held anywhere but the component that asked for it.
+  revealCompanionFinishCode: (sessionId, body, grantToken = null) => request(
+    `/sessions/${encodeURIComponent(sessionId)}/companion-finish-code`,
+    { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+  ),
   artifact: (artifactId) => request(`/artifacts/${encodeURIComponent(artifactId)}`),
   artifactOriginal: (artifactId) => requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/original`),
   reprintArtifact: (artifactId, body, idempotencyKey, grantToken = null) => request(

@@ -30,6 +30,7 @@ import { DOCUMENT_SOURCE_SCHEMA, publishDocument } from '#domains/school/documen
 import { deriveShuffle, applyShuffle } from '#domains/school/documents/shuffle.mjs';
 import { resolveFitPlan } from '#domains/school/documents/fit.mjs';
 import { planRows } from '#domains/school/documents/allocation.mjs';
+import { formatCode } from '#domains/school/companionCode.mjs';
 import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
 import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
 import { createMeasurementDocument, measureDocumentFragments } from '#rendering/school/documents/measure.mjs';
@@ -246,7 +247,13 @@ function sumScoredPoints(blocks, defaultPoints) {
  */
 function countQuestions(blocks) {
   if (!Array.isArray(blocks)) return 0;
-  return blocks.reduce((total, block) => total + (block?.type === 'question' ? 1 : 0), 0);
+  // The companion gate row is not a question (Task 8): it takes a printed row
+  // and a card row, but it asks nothing about the lesson and is worth no
+  // points. Counting it would turn "6 questions · pass 80%" into "7 questions"
+  // on every gated worksheet, over-reporting the work by one against a
+  // denominator (`questionItemIds`) that has never included it.
+  return blocks.reduce((total, block) => total
+    + (block?.type === 'question' && block.companionGate !== true ? 1 : 0), 0);
 }
 
 /**
@@ -396,6 +403,30 @@ export function prepareV2Document(document, { banks = null } = {}) {
   const expandedBlocks = blocks.flatMap((block) => {
     if (!block || block.type !== 'question') return [block];
 
+    // THE COMPANION GATE ROW (Task 8). Its bank item is synthesized here rather
+    // than published, because it is not a bank item: it never passes through
+    // `questionBankValidation` (whose `multi_select` two-answer minimum would
+    // make the one-letter finish code `['A']` illegal) and it carries its own
+    // answer on `code`, which is what `gradeAnswer` reads for this type.
+    //
+    // Built at this seam ON PURPOSE. `ResolveCardScan` re-derives a printed
+    // card's row->item mapping through this exact function plus `mergeBank`
+    // (see its doc comment above), so the gate reaches the row planner AND the
+    // scan-back resolver from one place, or from neither — never from one and
+    // not the other, which is the drift this seam exists to prevent.
+    if (block.companionGate === true && block.select === undefined) {
+      const number = nextNumber;
+      nextNumber += 1;
+      extraItems.push({
+        id: block.itemId,
+        type: 'companion_code',
+        prompt: 'Read-along finish code',
+        choices: [...(block.choices ?? [])],
+        code: Array.isArray(block.code) ? [...block.code] : block.code,
+      });
+      return [{ ...block, number }];
+    }
+
     if (block.select === undefined) {
       const number = nextNumber;
       nextNumber += 1;
@@ -507,6 +538,12 @@ function formatAnswer(item, letters) {
     case 'short_answer':
     case 'cloze':
       return item.answer;
+    // The companion gate row (Task 8). Its letters ARE its answer, so the key
+    // prints the finish code as the child reads it on the completion card —
+    // `ACE`, not `A, C, E` — which is the one form a grown-up can compare a
+    // bubbled row against without translating anything.
+    case 'companion_code':
+      return formatCode(item.code) ?? '';
     default:
       return String(item.answer ?? '');
   }
@@ -667,8 +704,14 @@ function collectAnswerKeyEntries(blocks, bankItemsById, letters, entries = [], c
  * worksheet, or a bank the caller failed to resolve) — it renders a bare
  * heading and a note, plus a caller-facing warning, rather than failing the
  * whole render.
+ *
+ * EXPORTED so the key's own formatting can be asserted directly. Its only
+ * other observable form is text inside a Flate-compressed PDF stream, which
+ * means a test that renders the key and greps the bytes passes whether or not
+ * the answer is there — exactly the vacuous green this codebase's test
+ * discipline forbids.
  */
-function buildTeacherKeyBlocks(document, bank, letters) {
+export function buildTeacherKeyBlocks(document, bank, letters) {
   const bankItemsById = new Map((bank?.items ?? []).map((item) => [item.id, item]));
   const entries = collectAnswerKeyEntries(document.blocks, bankItemsById, letters);
   const title = `Answer key — ${document.title || document.id} (variant ${document.variant ?? 0})`;

@@ -88,12 +88,22 @@ export function walkBlocks(blocks, visit, ctx = {}) {
  * count as unresolved rather than quietly shrink the total. Derived from the
  * document (what was printed) and never from the submission (what came back).
  *
+ * THE COMPANION GATE ROW IS NOT ONE OF THEM (Task 8). It prints as a question
+ * row and consumes a card row, but it asks nothing about the lesson: it is a
+ * gate on the whole sheet, graded against the finish code its own record
+ * holds, worth no points and part of no denominator — a six-question worksheet
+ * stays out of six when a gate row is added above it. Counting it would also
+ * walk it into `SubmitPaperWork`'s `expectedItems`, where — absent from
+ * `bankItemIds` — it is enqueued for review as a `free_response` whose `given`
+ * is an ARRAY, a shape that path has never handled.
+ *
  * @param {object} document
  * @returns {string[]} unique itemIds
  */
 export function questionItemIds(document) {
   const ids = [];
   walkBlocks(document?.blocks, (block) => {
+    if (block.companionGate === true) return;
     if (block.type === 'question' && typeof block.itemId === 'string' && !ids.includes(block.itemId)) {
       ids.push(block.itemId);
     }
