@@ -4,26 +4,42 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 
 // ── Doubles ─────────────────────────────────────────────────────────────────
-// ExerciseRun is stubbed to its four host callbacks, and the difference between
-// them is the point:
+// `AskSession` is the boundary this gate now speaks across, so it is what is
+// doubled — one level higher than before, because material resolution, the
+// requirement, the ask copy and the framing sentence all moved there. What
+// stayed is what is asserted here: WHICH level, WHICH of its material specs,
+// at WHICH rotation, and what the gate does with every answer.
+//
+// The double is not a fake resolver. It runs the REAL `resolveSpec` at the
+// real `pickIndex`, through the same doubled bank the gate's own tests drive
+// (`h.instance`, `h.catalog`), so "L2 at pickIndex 1 is D major" is still
+// proved end to end rather than asserted against a stub's opinion. The one
+// thing it does not do is fetch a score DOCUMENT — that second stage is
+// `AskSession`'s and the gate cannot see it.
+//
+// The five callbacks, and the difference between them, are the point:
+//   onResolved    — the session settled on material. The gate names it, logs
+//                   the attempt, and spends the rotation.
 //   onPassed      — a GENUINE pass (the surface judges it).
 //   onFailed      — a COMPLETED attempt that missed the bar. The ONLY thing
 //                   allowed to move the ladder.
 //   onExit        — the player walked away. Nothing to judge, ladder unmoved;
 //                   counting these would let a child press Exit their way to
 //                   the unfailable floor without playing a note.
-//   onUnavailable — the run hit a terminal state it cannot leave (its own
-//                   instance fetch 502'd, the attempt would not build, guest).
-// The stub also RECORDS its props, because the gate's most load-bearing output
-// is not what it renders — it is what it hands the run. The requirement decides
-// whether a child can fail at all (D9); `framing`, `ask` and `tier` decide
-// whether the child can read what they are being asked for.
+//   onUnavailable — a terminal state. WITH a second argument it is the session
+//                   saying the material never resolved, and why; WITHOUT one it
+//                   is a mounted run that dead-ended. The gate answers those
+//                   two differently, which is the whole substitution policy.
 const h = vi.hoisted(() => {
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() };
   logger.child = () => logger;
   return {
     logger,
-    runProps: [],
+    askProps: [],
+    resolved: [],
+    // Off, the session never answers — which is how the boundary test observes
+    // that the gate's own serve reads nothing from the bank.
+    sessionResolves: true,
     catalog: vi.fn(),
     instances: vi.fn(),
     instance: vi.fn(),
@@ -34,11 +50,47 @@ vi.mock('../../../../../lib/logging/Logger.js', () => ({ default: () => h.logger
 vi.mock('../Exercises/pianoLearningApi.js', () => ({
   pianoLearningApi: { catalog: h.catalog, instances: h.instances, instance: h.instance },
 }));
-vi.mock('../Exercises/ExerciseRun.jsx', () => ({
-  default: (props) => {
-    h.runProps.push(props);
+vi.mock('../../../ask/AskSession.jsx', async () => {
+  const { useEffect, useState } = await import('react');
+  const { resolveSpec } = await import('./gateMaterial.js');
+  const { requirementForLevel } = await import('../../../ask/gateAsk.js');
+  // Named, and capitalised, because it IS a component: it holds state and runs
+  // an effect, and the hooks lint (rightly) refuses those in an anonymous arrow.
+  function AskSessionDouble(props) {
+    h.askProps.push(props);
+    const { ask, materialSpec, pickIndex, onResolved, onUnavailable } = props;
+    // `ask-session` appears when a run WOULD, i.e. once the material has
+    // settled — the same barrier `exercise-run` used to be. The session is
+    // now mounted from the first frame, so a testid that appeared with the
+    // component would let a test assert against a screen still resolving.
+    const [running, setRunning] = useState(false);
+    // The host callbacks are deliberately NOT dependencies: a fresh arrow per
+    // render would re-resolve, which is the bug the real seam holds a ref to avoid.
+    useEffect(() => {
+      setRunning(false);
+      if (!h.sessionResolves) return undefined;
+      let alive = true;
+      const requirement = requirementForLevel(ask);
+      const decline = (reason) => onUnavailable?.('instance-not-found', {
+        kind: materialSpec?.kind ?? null, reason, mode: requirement.mode,
+      });
+      resolveSpec(materialSpec, { pickIndex, mode: requirement.mode })
+        .then((picked) => {
+          if (!alive) return;
+          if (!picked.ok) { decline(picked.error); return; }
+          const settled = { material: picked.material, instance: picked.instance, score: null, requirement };
+          h.resolved.push(settled);
+          setRunning(true);
+          onResolved?.(settled);
+        })
+        // A rejected fetch is an outage wearing the vocabulary's word for one.
+        .catch(() => { if (alive) decline('instance-unavailable'); });
+      return () => { alive = false; };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ask, materialSpec, pickIndex]);
+    if (!running) return <div data-testid="ask-session-resolving" />;
     return (
-      <div data-testid="exercise-run">
+      <div data-testid="ask-session">
         <button type="button" onClick={() => props.onPassed?.({ score: 0.91 })}>stub-pass</button>
         {/* A COMPLETED attempt that missed the bar — the only thing that may
             move the ladder. Distinct from stub-exit, which is walking away. */}
@@ -60,12 +112,15 @@ vi.mock('../Exercises/ExerciseRun.jsx', () => ({
           stub-stall
         </button>
         <button type="button" onClick={() => props.onExit?.()}>stub-exit</button>
+        {/* NO second argument: a run that mounted on real material and then
+            dead-ended. The gate must not read this as a config mistake. */}
         <button type="button" onClick={() => props.onUnavailable?.('instance-not-found')}>stub-dead-end</button>
         <button type="button" onClick={() => props.onUnavailable?.('no-access')}>stub-no-access</button>
       </div>
     );
-  },
-}));
+  }
+  return { default: AskSessionDouble };
+});
 
 const {
   default: GameGate, GATE_CONFIG_DEFAULTS, gateStateKey, materialName, readGateState, resolveGateConfig,
@@ -185,7 +240,9 @@ function eventNamed(name) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  h.runProps.length = 0;
+  h.askProps.length = 0;
+  h.resolved.length = 0;
+  h.sessionResolves = true;
   localStorage.clear();
   // This browser's captured kiosk self-identity — the SSOT the gate resolves
   // `deviceId` from. A shared constant could not tell two tablets apart, which
@@ -202,16 +259,16 @@ describe('GameGate — contract 1: the level persists per learner', () => {
     });
 
     renderGate({ learnerId: 'kid1' });
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
     // L3 is the cued level; the start level (L1) is free.
-    expect(h.runProps.at(-1).requirementOverride.mode).toBe('cued');
-    expect(h.runProps.at(-1).tier).toBe(3);
+    expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('cued');
+    expect(h.askProps.at(-1).ask.tier).toBe(3);
 
-    h.runProps.length = 0;
+    h.askProps.length = 0;
     renderGate({ learnerId: 'kid2' });
-    await waitFor(() => expect(h.runProps.length).toBeGreaterThan(0));
-    expect(h.runProps.at(-1).requirementOverride.mode).toBe('free');
-    expect(h.runProps.at(-1).tier).toBe(2);
+    await waitFor(() => expect(h.askProps.length).toBeGreaterThan(0));
+    expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('free');
+    expect(h.askProps.at(-1).ask.tier).toBe(2);
   });
 
   it('writes v2 state back under the learner-scoped key after an outcome', async () => {
@@ -342,7 +399,7 @@ describe('materialName — a score passage is named in the log, not left null', 
 
   it('logs the passage on a mounted score level, through every event that carries material', async () => {
     renderGate({ gateConfig: { repertoire: [SCORE_LEVEL] } });
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
 
     expect(eventNamed('gate.attempt')[1].material).toBe(`${SCORE}#1-4`);
     expect(eventNamed('gate.presented')[1].material).toBe(`${SCORE}#1-4`);
@@ -362,7 +419,7 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
     const { onPassed } = renderGate({ gateConfig: CONFIG });
 
     await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
-    expect(screen.queryByTestId('exercise-run')).toBeNull();
+    expect(screen.queryByTestId('ask-session')).toBeNull();
     const [, data] = eventNamed('gate.unavailable');
     expect(data.learnerId).toBe('kid1');
     expect(typeof data.error).toBe('string');
@@ -375,10 +432,10 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
     // A malformed `repertoire` is a config mistake, not an outage. Failing open
     // on it would hand out free matches for as long as the typo survives.
     const { onPassed } = renderGate({ gateConfig: { repertoire: 'scales' } });
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
 
     expect(onPassed).not.toHaveBeenCalled();
-    expect(h.runProps.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
+    expect(h.resolved.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
   });
 
   /**
@@ -402,14 +459,14 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
       ],
     ])('serves the C major fallback for %s', async (_label, material, reasons) => {
       const { onPassed } = renderGate({ gateConfig: typoLevel(material) });
-      await screen.findByTestId('exercise-run');
+      await screen.findByTestId('ask-session');
 
       // The match is NOT granted, and the child gets something playable.
       expect(onPassed).not.toHaveBeenCalled();
-      expect(h.runProps.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
+      expect(h.resolved.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
       // The rung the child is standing on does not move: a typo is not a
       // reason to walk a ladder.
-      expect(h.runProps.at(-1).tier).toBe(2);
+      expect(h.askProps.at(-1).ask.tier).toBe(2);
       expect(eventNamed('gate.attempt')[1].rung).toBe('typo');
 
       const [, data] = eventNamed('gate.material-config-invalid');
@@ -524,7 +581,7 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     fireEvent.click(await screen.findByText('stub-fail'));
     fireEvent.click(await screen.findByText('Try again'));
 
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
     expect(onPassed).not.toHaveBeenCalled();
     expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(2);
   });
@@ -541,7 +598,7 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
       expect(await screen.findByText('We made it a little easier')).toBeTruthy();
       walk.push(readStored('kid1').levelId);
       fireEvent.click(screen.getByText('Try again'));
-      await screen.findByTestId('exercise-run');
+      await screen.findByTestId('ask-session');
     }
     // A third miss at the floor moves nothing, and must not promise it did.
     fireEvent.click(await screen.findByText('stub-fail'));
@@ -567,8 +624,8 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
     renderGate({ learnerId: 'kid1' }); // retriesBeforeDegrade defaults to 3
 
-    await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).requirementOverride.mode).toBe('free');
+    await screen.findByTestId('ask-session');
+    expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('free');
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       fireEvent.click(await screen.findByText('stub-stall'));
@@ -577,7 +634,7 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
       expect(screen.queryByText('We made it a little easier')).toBeNull();
       expect(readStored('kid1')).toMatchObject({ levelId: 'L2', failuresAtLevel: attempt + 1 });
       fireEvent.click(screen.getByText('Try again'));
-      await screen.findByTestId('exercise-run');
+      await screen.findByTestId('ask-session');
     }
 
     fireEvent.click(await screen.findByText('stub-stall'));
@@ -601,14 +658,14 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     seedGateState('kid1', { levelId: 'L3', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
     renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 1 } });
 
-    await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).requirementOverride.mode).toBe('cued'); // L3
+    await screen.findByTestId('ask-session');
+    expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('cued'); // L3
     fireEvent.click(screen.getByText('stub-fail'));
     fireEvent.click(await screen.findByText('Try again'));
 
-    await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).requirementOverride).toEqual(requirementForLevel(LEVELS[2]));
-    expect(h.runProps.at(-1).tier).toBe(2);
+    await screen.findByTestId('ask-session');
+    expect(requirementForLevel(h.askProps.at(-1).ask)).toEqual(requirementForLevel(LEVELS[2]));
+    expect(h.askProps.at(-1).ask.tier).toBe(2);
   });
 
   it('D12: Practice this leaves for the unmetered practice route and never grants the match', async () => {
@@ -646,7 +703,7 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     // chrome and no keyboard, so a state neither component anticipated would
     // otherwise strand a child with nothing to press.
     const { onLeave, onPassed } = renderGate();
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
 
     fireEvent.click(screen.getByText('Leave'));
     expect(onLeave).toHaveBeenCalledTimes(1);
@@ -667,25 +724,34 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GameGate — contract 6: what the child is asked, in words they can read', () => {
-  it('hands the run its framing, its ask and the level’s tier', async () => {
+  it('hands the session its framing context, the level, and the spec that level named', async () => {
+    // The gate no longer writes the sentence a child reads — the session does,
+    // from these three. What the gate is still answerable for is that all three
+    // arrive, and that they are the right ones: the CONTEXT for the framing (a
+    // finished sentence here would be the wording living in two places), the
+    // whole LEVEL (which carries the tier and the requirement), and the spec.
     renderGate({ learnerId: 'kid1', gameLabel: 'Chess' });
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
 
-    const props = h.runProps.at(-1);
-    expect(props.framing).toBe('Play this to start Chess');
-    expect(props.ask).toBe('C major scale, right hand.');
-    // A NUMBER. `ExerciseRun` warns and derives its own band for anything else,
-    // and a YAML tier arriving as a string would silently take that path.
-    expect(props.tier).toBe(2);
-    expect(typeof props.tier).toBe('number');
+    const props = h.askProps.at(-1);
+    expect(props.framing).toEqual({ kind: 'gate', gameLabel: 'Chess' });
+    expect(props.materialSpec).toBe(REPERTOIRE[0].material[0]);
+    expect(props.ask.id).toBe('L1');
+    // A NUMBER on the level. The run warns and derives its own band for
+    // anything else, and a YAML tier arriving as a string would silently take
+    // that path — so what travels is the level's own value, unfiltered.
+    expect(props.ask.tier).toBe(2);
+    expect(typeof props.ask.tier).toBe('number');
+    // …and the scale that reaches the child is the one the spec addresses.
+    expect(h.resolved.at(-1).material.instanceId).toBe(scaleId('C'));
   });
 
   it('says nothing about a game it was not told the name of, rather than naming `undefined`', async () => {
     // `null` is what a host that has no label hands over, and it is also the
     // component's own default for the prop.
     renderGate({ learnerId: 'kid1', gameLabel: null });
-    await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).framing).toBeNull();
+    await screen.findByTestId('ask-session');
+    expect(h.askProps.at(-1).framing).toBeNull();
   });
 
   it('asks for a lit key at the floor, and hands over a tier-0 synthesized instance', async () => {
@@ -693,13 +759,13 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
       levelId: BUILT_IN_FLOOR.id, failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
     });
     renderGate({ learnerId: 'kid1' });
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
 
-    const props = h.runProps.at(-1);
-    expect(props.ask).toBe('Press the lit key.');
-    expect(props.tier).toBe(0);
-    expect(props.material.kind).toBe('keys');
-    expect(props.material.instance.events).toHaveLength(1);
+    const props = h.askProps.at(-1);
+    expect(props.materialSpec).toBe(BUILT_IN_FLOOR.material[0]);
+    expect(props.ask.tier).toBe(0);
+    expect(h.resolved.at(-1).material.kind).toBe('keys');
+    expect(h.resolved.at(-1).material.instance.events).toHaveLength(1);
     // Not one network call between the gate mounting and the key lighting up.
     expect(h.instance).not.toHaveBeenCalled();
     expect(h.instances).not.toHaveBeenCalled();
@@ -714,16 +780,16 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
     seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
     renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 3 } });
 
-    await screen.findByTestId('exercise-run');
-    const served = h.runProps.at(-1).material.instanceId;
+    await screen.findByTestId('ask-session');
+    const served = h.resolved.at(-1).material.instanceId;
     expect(served).toBe(scaleId('G'));
 
     for (let go = 0; go < 2; go += 1) {
       fireEvent.click(screen.getByText('stub-fail'));
       fireEvent.click(await screen.findByText('Try again'));
-      await screen.findByTestId('exercise-run');
-      expect(h.runProps.at(-1).material.instanceId, `retry ${go + 1}`).toBe(served);
-      expect(h.runProps.at(-1).ask, `retry ${go + 1}`).toBe('G major scale, right hand.');
+      await screen.findByTestId('ask-session');
+      expect(h.resolved.at(-1).material.instanceId, `retry ${go + 1}`).toBe(served);
+      expect(h.resolved.at(-1).instance.axes.root, `retry ${go + 1}`).toBe('G');
     }
     // The retry is still its own attempt in the log — same material, new id.
     const attemptIds = events().filter(([name]) => name === 'gate.attempt').map(([, d]) => d.attemptId);
@@ -733,7 +799,7 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
     // …and the retries did not SPEND the rotation: the next gate still moves on.
     fireEvent.click(screen.getByText('stub-pass'));
     renderGate({ learnerId: 'kid1' });
-    await waitFor(() => expect(h.runProps.at(-1).material.instanceId).toBe(scaleId('D')));
+    await waitFor(() => expect(h.resolved.at(-1).material.instanceId).toBe(scaleId('D')));
   });
 
   it('Try again after an EASE serves the eased level’s material, not the held one', async () => {
@@ -743,13 +809,13 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
     seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
     renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 1 } });
 
-    await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).material.instanceId).toBe(scaleId('G'));
+    await screen.findByTestId('ask-session');
+    expect(h.resolved.at(-1).material.instanceId).toBe(scaleId('G'));
     fireEvent.click(screen.getByText('stub-fail'));
     fireEvent.click(await screen.findByText('Try again'));
 
-    await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).material.instanceId).toBe(scaleId('C')); // L1
+    await screen.findByTestId('ask-session');
+    expect(h.resolved.at(-1).material.instanceId).toBe(scaleId('C')); // L1
   });
 
   it('Try again at the floor lights the SAME key, not the next one', async () => {
@@ -758,13 +824,13 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
     });
     renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 3 } });
 
-    await screen.findByTestId('exercise-run');
-    const lit = h.runProps.at(-1).material.instance.events[0].notes[0].midi;
+    await screen.findByTestId('ask-session');
+    const lit = h.resolved.at(-1).material.instance.events[0].notes[0].midi;
     fireEvent.click(screen.getByText('stub-fail'));
     fireEvent.click(await screen.findByText('Try again'));
 
-    await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).material.instance.events[0].notes[0].midi).toBe(lit);
+    await screen.findByTestId('ask-session');
+    expect(h.resolved.at(-1).material.instance.events[0].notes[0].midi).toBe(lit);
   });
 
   it('rotates the root, so two consecutive gates at L2 are not the same scale', async () => {
@@ -773,17 +839,17 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
     seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
 
     const first = renderGate({ learnerId: 'kid1' });
-    await screen.findByTestId('exercise-run');
-    const firstId = h.runProps.at(-1).material.instanceId;
+    await screen.findByTestId('ask-session');
+    const firstId = h.resolved.at(-1).material.instanceId;
     first.unmount();
 
     renderGate({ learnerId: 'kid1' });
-    await waitFor(() => expect(h.runProps.at(-1).material.instanceId).not.toBe(firstId));
-    const secondId = h.runProps.at(-1).material.instanceId;
+    await waitFor(() => expect(h.resolved.at(-1).material.instanceId).not.toBe(firstId));
+    const secondId = h.resolved.at(-1).material.instanceId;
 
     expect([firstId, secondId]).toEqual([scaleId('G'), scaleId('D')]);
     // …and the ask moved with it: the sentence names the scale on the stand.
-    expect(h.runProps.at(-1).ask).toBe('D major scale, right hand.');
+    expect(h.resolved.at(-1).instance.axes.root).toBe('D');
   });
 });
 
@@ -810,7 +876,7 @@ describe('GameGate — the run’s own dead ends fail open too', () => {
 
     expect(onPassed).not.toHaveBeenCalled();
     expect(await screen.findByText('Choose a player first')).toBeTruthy();
-    expect(screen.queryByTestId('exercise-run')).toBeNull();
+    expect(screen.queryByTestId('ask-session')).toBeNull();
     expect(eventNamed('gate.unavailable')).toBeUndefined();
     expect(eventNamed('gate.blocked')[1].reason).toBe('no-access');
 
@@ -900,12 +966,12 @@ describe('GameGate — a late-arriving learner keeps their place', () => {
       );
     }
     render(<MemoryRouter><Harness /></MemoryRouter>);
-    await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).requirementOverride.mode).toBe('free'); // guest: the start level
+    await screen.findByTestId('ask-session');
+    expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('free'); // guest: the start level
 
     fireEvent.click(screen.getByText('hydrate'));
     // The resumed level reaches the run: the child is judged on what they earned.
-    await waitFor(() => expect(h.runProps.at(-1).requirementOverride.mode).toBe('cued'));
+    await waitFor(() => expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('cued'));
 
     fireEvent.click(screen.getByText('stub-pass'));
     expect(stateFor('kid1')).toMatchObject({ levelId: 'L3', failuresAtLevel: 0, cleanPasses: 1 });
@@ -937,7 +1003,7 @@ describe('GameGate — a late-arriving learner keeps their place', () => {
     render(<MemoryRouter><Harness /></MemoryRouter>);
     fireEvent.click(screen.getByText('hydrate'));
     release();
-    await screen.findByTestId('exercise-run');
+    await screen.findByTestId('ask-session');
 
     // Same level on both sides, so nothing re-resolved…
     expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(1);
@@ -983,18 +1049,69 @@ describe('resolveGateConfig — a mistyped number must not become a broken gate'
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+describe('GameGate — the boundary: the gate picks, the session asks', () => {
+  it('reads nothing from the bank on its own — serving an attempt is pure', async () => {
+    // The session is held OFF here, so every bank call in this test would have
+    // had to come from the gate itself. There are none: `serve()` reads a level
+    // list and rotates a material list, both pure, and stops. That is what makes
+    // the seam real rather than decorative — resolution has exactly one owner,
+    // and a second one growing back here would show up as a call count.
+    h.sessionResolves = false;
+    renderGate({ learnerId: 'kid1' });
+    await screen.findByTestId('ask-session-resolving');
+
+    expect(h.instance).not.toHaveBeenCalled();
+    expect(h.instances).not.toHaveBeenCalled();
+    expect(h.catalog).not.toHaveBeenCalled();
+  });
+
+  it('hands over everything the session needs to resolve, and nothing already resolved', async () => {
+    h.sessionResolves = false;
+    seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 1 });
+    renderGate({ learnerId: 'kid1', gameLabel: 'Chess' });
+    await screen.findByTestId('ask-session-resolving');
+
+    const props = h.askProps.at(-1);
+    // The LEVEL (by reference — a fresh one per render would re-resolve), the
+    // AUTHORED spec, and the rotation counter that decides which of its roots
+    // is served. Those three are the gate's whole answer.
+    expect(props.ask.id).toBe('L2');
+    expect(props.materialSpec).toBe(LEVELS[2].material[0]);
+    expect(props.pickIndex).toBe(1);
+    expect(props.intent).toBe('challenge');
+    // …and nothing pre-chewed. A gate that passed a resolved instance, a
+    // requirement or a finished ask sentence would be resolving after all.
+    for (const gone of ['material', 'instance', 'requirement', 'requirementOverride', 'tier', 'instanceId']) {
+      expect(props[gone], gone).toBeUndefined();
+    }
+  });
+
+  it('does not announce an attempt it has not been told it can run', async () => {
+    // `gate.attempt` names the material a child was asked to play. Until the
+    // session says what that is, there is nothing true to put in the field, and
+    // a line emitted early would name `null` on every rung in the live config.
+    h.sessionResolves = false;
+    renderGate({ learnerId: 'kid1' });
+    await screen.findByTestId('ask-session-resolving');
+
+    expect(eventNamed('gate.attempt')).toBeUndefined();
+    expect(eventNamed('gate.presented')).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 describe('GameGate — config defaults', () => {
   it('runs off the built-in fallback level when gateConfig is null or empty', async () => {
     renderGate({ gateConfig: null });
-    await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
-    expect(h.runProps.at(-1).requirementOverride).toEqual(requirementForLevel(FALLBACK_LEVEL));
-    expect(h.runProps.at(-1).intent).toBe('challenge');
+    await screen.findByTestId('ask-session');
+    expect(h.resolved.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
+    expect(requirementForLevel(h.askProps.at(-1).ask)).toEqual(requirementForLevel(FALLBACK_LEVEL));
+    expect(h.askProps.at(-1).intent).toBe('challenge');
     expect(GATE_CONFIG_DEFAULTS.enabled).toBe(false);
   });
 
-  it('never rebuilds the material or requirement reference on a parent re-render', async () => {
-    // Both land in ExerciseRun's load-effect dependencies. A fresh object
+  it('never rebuilds the level or spec reference on a parent re-render', async () => {
+    // Both land in AskSession's resolution-effect dependencies. A fresh object
     // literal per render refetches the instance and rebuilds the attempt —
     // the run would restart under the child's hands, forever. The parent here
     // re-renders with FRESH prop literals, which is the realistic case.
@@ -1008,15 +1125,16 @@ describe('GameGate — config defaults', () => {
       );
     }
     render(<MemoryRouter><Harness /></MemoryRouter>);
-    await screen.findByTestId('exercise-run');
-    const before = h.runProps.at(-1);
+    await screen.findByTestId('ask-session');
+    const before = h.askProps.at(-1);
 
     fireEvent.click(screen.getByText('bump'));
-    await waitFor(() => expect(h.runProps.length).toBeGreaterThan(1));
-    const after = h.runProps.at(-1);
-    expect(after).not.toBe(before); // the run really did re-render
-    expect(after.material).toBe(before.material);
-    expect(after.requirementOverride).toBe(before.requirementOverride);
+    await waitFor(() => expect(h.askProps.length).toBeGreaterThan(1));
+    const after = h.askProps.at(-1);
+    expect(after).not.toBe(before); // the session really did re-render
+    expect(after.materialSpec).toBe(before.materialSpec);
+    expect(after.ask).toBe(before.ask);
+    expect(after.pickIndex).toBe(before.pickIndex);
     expect(after.framing).toBe(before.framing);
     // …and nothing re-resolved behind it: one mount, one bank read, one attempt.
     expect(h.instance).toHaveBeenCalledTimes(1);

@@ -2,19 +2,26 @@
  * GameGate — gate 4 of the Games stack (D11): a short playing challenge that
  * stands at a match boundary, in place of the game rather than over it.
  *
- * It ties together the three pure halves built before it: `gateRepertoire`
- * (which level the child is on, and how that walks up and down),
- * `gateAsk` (what that level requires and what it asks for, in one sentence a
- * child can read) and `gateMaterial` (which actual thing carries that ask
- * today). `ExerciseRun` runs the attempt and judges it; this component owns
- * everything around it — where the level is remembered, what a failure offers,
- * and when the ladder moves.
+ * It owns the LADDER and the STAKE, and nothing else. `gateRepertoire` says
+ * which level the child is on and how that walks up and down; this component
+ * decides which of that level's material to try today, in which order, and
+ * what a failure costs. `AskSession` does the asking — it turns the chosen
+ * spec into an instance, a requirement, a sentence and a screen — and reports
+ * back what it settled on, or the exact reason it could not.
+ *
+ * The division is deliberate and it is the point of the seam: this component
+ * never resolves anything. It hands over a LEVEL and a SPEC and receives an
+ * answer. Everything below is policy applied to that answer, and policy is
+ * exactly what a session must not hold — which material a child meets, whether
+ * a decline is worth a free match, and where a failure leaves them, are all
+ * questions about this household's game boundary and about nothing else.
  *
  * Three things are easy to get wrong here and each one is load-bearing:
  *
  * 1. **Every level is judged on the VERDICT, not on a score.** A repertoire
- *    level carries a rubric and `passScore: null` (`requirementForLevel`), so
- *    `ExerciseRun` reads `verdict.passed`. That is deliberate and it is the
+ *    level carries a rubric and `passScore: null` (`requirementForLevel`, which
+ *    the session derives from the level this gate hands it), so the run reads
+ *    `verdict.passed`. That is deliberate and it is the
  *    whole of D9: below tier 3 the rubric is completeness-only, so a stray
  *    wrong key cannot fail a child, and no second `score >= passScore` gate
  *    lives alongside it to quietly reintroduce one.
@@ -28,7 +35,10 @@
  *    Nor is a level whose every material spec is mistyped: `isConfigOnlyDecline`
  *    tells that apart from a bank that could not be reached, and the answer is
  *    the same — substitute `FALLBACK_LEVEL`'s material and log
- *    `gate.material-config-invalid`, rather than grant.
+ *    `gate.material-config-invalid`, rather than grant. The reason it reads to
+ *    tell them apart arrives on `AskSession`'s `onUnavailable`, second
+ *    argument: the session names what happened, this component decides what
+ *    that is worth.
  *    Nor is "nobody has chosen a player": it is permanent, known, and fixed by
  *    one tap, so failing open on it would make the Guest profile a reliable
  *    one-tap bypass of the whole gate. That gets its own non-granting panel.
@@ -55,13 +65,12 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 import { usePianoKioskConfigOptional } from '../../PianoConfig.jsx';
 import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
 import { clientStudyDate } from '../../clientStudyDate.js';
-import ExerciseRun from '../Exercises/ExerciseRun.jsx';
+import AskSession from '../../../ask/AskSession.jsx';
 import {
   climbLevel, degradeLevel, FALLBACK_LEVEL, isFloorLevel, levelById, materialKey, resolveRepertoire,
   startLevelFor,
 } from './gateRepertoire.js';
-import { askForMaterial, framingFor, requirementForLevel } from './gateAsk.js';
-import { isConfigOnlyDecline, pickGateMaterial } from './gateMaterial.js';
+import { isConfigOnlyDecline, materialOrder } from './gateMaterial.js';
 import './GameGate.scss';
 
 /** The design's `gameGate` block. A household that sets none of it gets these. */
@@ -229,17 +238,34 @@ export default function GameGate({
   const basePath = usePianoKioskConfigOptional()?.basePath ?? '/piano';
   const kioskDeviceId = useMemo(() => deviceId ?? readKioskDeviceId(), [deviceId]);
   // A game nobody named cannot be named in a sentence. The run then wears its
-  // own intent label, which is true if less specific.
-  const framing = useMemo(() => (gameLabel ? framingFor({ kind: 'gate', gameLabel }) : null), [gameLabel]);
+  // own intent label, which is true if less specific. The CONTEXT travels, not
+  // the finished sentence: writing framing copy is the session's job, and this
+  // component knowing the wording would be a second place it lives.
+  const framing = useMemo(() => (gameLabel ? { kind: 'gate', gameLabel } : null), [gameLabel]);
 
   const [state, setState] = useState(() => readGateState(learnerId, levels, config));
-  // `attempt` holds the resolved material/requirement in STATE, not in a memo
-  // over render-scoped values: that is what makes both references stable across
-  // a parent re-render. They land in ExerciseRun's load effect, and a fresh
-  // object per render would refetch the instance and rebuild the attempt —
-  // restarting the run under the child's hands.
+  /**
+   * The attempt this gate is currently making, in STATE rather than in a memo
+   * over render-scoped values: that is what makes `level` and `spec` stable
+   * across a parent re-render. Both land in `AskSession`'s resolution effect,
+   * and a fresh object per render would refetch the instance and rebuild the
+   * attempt — restarting the run under the child's hands.
+   *
+   *  - `level`/`attemptId` — what is being asked, and the id every event of
+   *    this attempt carries.
+   *  - `order`/`index`/`spec` — the level's material in the order it is tried,
+   *    and where in that order we are. A spec that declines steps forward; only
+   *    a level where NOTHING resolves is a decline of the whole attempt.
+   *  - `pickIndex` — the rotation counter this attempt was served at, held here
+   *    rather than read from `state` because the state's advances the moment
+   *    the attempt is served and a retry must resolve to the same material.
+   *  - `skipped`/`substituted` — what declined on the way here, and whether the
+   *    one substitution this attempt gets has been spent.
+   *  - `material`/`requirement` — the session's answer, once it has one. Null
+   *    until then; nothing that reads them may assume otherwise.
+   */
   const [attempt, setAttempt] = useState(null);
-  const [phase, setPhase] = useState('resolving'); // resolving | attempt | failed
+  const [phase, setPhase] = useState('resolving'); // resolving | attempt | failed | no-access | opened
   const [eased, setEased] = useState(false);
   const [round, setRound] = useState(0);
   const openedRef = useRef(false);
@@ -254,15 +280,18 @@ export default function GameGate({
     });
   }, [kioskDeviceId, learnerId, logger, sessionId]);
 
-  // Everything the resolve effect reads but must NOT re-run for, held in refs.
-  // The effect's only trigger is `round` — the mount, Try again, and a learner
-  // arriving late. That is by design, and both mistakes it prevents are silent:
-  //  - a `state.levelId` dependency would re-resolve the instant a failure
+  // Everything the serve effect reads but must NOT re-run for, held in refs;
+  // the session's callbacks read through the same ref, so a report that lands
+  // after `learnerId` hydrates is answered by the current gate, not a captured
+  // one. The effect's only trigger is `round` — the mount, Try again, and a
+  // learner arriving late. That is by design, and both mistakes it prevents
+  // are silent:
+  //  - a `state.levelId` dependency would re-serve the instant a failure
   //    eased the ladder, replacing the fail panel with a fresh attempt so the
   //    child never sees the ways out, and the banner never appears;
-  //  - an `onPassed`/`gateConfig`/`emit` dependency would re-resolve on any
-  //    parent re-render that passes a fresh literal, handing ExerciseRun a NEW
-  //    material object and restarting the run under the child's hands.
+  //  - an `onPassed`/`gateConfig`/`emit` dependency would re-serve on any
+  //    parent re-render that passes a fresh literal, handing the session a NEW
+  //    spec object and restarting the run under the child's hands.
   const latest = useRef(null);
   latest.current = { config, levels, state, attempt, learnerId, onPassed, emit };
 
@@ -282,47 +311,39 @@ export default function GameGate({
     if (resumed.levelId !== latest.current.state.levelId) setRound((value) => value + 1);
   }, [config, learnerId, levels]);
 
+  /**
+   * Serve one attempt — and this is now the whole of it: WHICH level, and
+   * WHICH of that level's material specs to try first.
+   *
+   * Both answers are pure. `levelById`/`startLevelFor` read a list;
+   * `materialOrder` rotates one. Nothing here touches the network, nothing can
+   * fail, and the attempt is on screen in the same tick. The asking — turning
+   * that spec into an instance, a requirement and a sentence — happens in the
+   * session below, which reports back what it settled on.
+   *
+   * `config`, `levels` and the stored position are read ONCE, deliberately:
+   * this attempt is for the level as it stood when it started. `emit` is never
+   * captured — it is called through the ref every time, because `learnerId`
+   * hydrates mid-flight and a captured `emit` would send
+   * `gate.presented`/`gate.attempt` out stamped with the null guest. That is
+   * invisible whenever the resumed level equals the on-screen one, which is
+   * the common case.
+   */
   useEffect(() => {
-    let alive = true;
     setPhase('resolving');
-    // `config`, `levels` and the stored position are read ONCE, deliberately:
-    // this resolution is for the level as it stood when it started. `emit` is
-    // NOT destructured — it is called through the ref every time, because
-    // `learnerId` hydrates mid-flight and a captured `emit` would send
-    // `gate.presented`/`gate.attempt` out stamped with the null guest. That is
-    // invisible whenever the resumed level equals the on-screen one, which is
-    // the common case.
     const { config: current, levels: repertoire, state: stored } = latest.current;
     const level = levelById(repertoire, stored.levelId) ?? startLevelFor(repertoire, current);
-    const requirement = requirementForLevel(level);
-    const emitNow = (...args) => latest.current.emit(...args);
-    /**
-     * The gate mounted. Emitted once per mount and BEFORE anything can decline,
-     * so a fail-open run still anchors its own log query — those are precisely
-     * the runs worth reconstructing, and a `gate.presented` that only fires on
-     * the happy path leaves them with no beginning.
-     */
-    const presentOnce = (context) => {
-      if (presentedRef.current) return;
-      presentedRef.current = true;
-      emitNow('gate.presented', context);
-    };
-    /** Fail open. Once — a second call would grant two matches for one gate. */
-    const failOpen = (error, context) => {
-      if (openedRef.current) return;
-      openedRef.current = true;
-      emitNow('gate.unavailable', { ...context, error }, 'warn');
-      latest.current.onPassed?.();
-    };
     /**
      * "Try again" is a SECOND GO AT THE SAME THING, and re-picking here would
      * quietly make it something else.
      *
-     * The serve advances `pickIndex` (see below — a child who walks away must
-     * not meet the same ask forever), so a retry that re-picked would rotate:
-     * at a level naming `roots: ['G','D','F']` a child who missed G major and
-     * pressed Try again would be handed D major, and would never get the second
-     * attempt the button promises. At the floor the lit key would move too.
+     * The serve advances `pickIndex` (see `handleResolved` — a child who walks
+     * away must not meet the same ask forever), so a retry that re-picked would
+     * rotate: at a level naming `roots: ['G','D','F']` a child who missed G
+     * major and pressed Try again would be handed D major, and would never get
+     * the second attempt the button promises. At the floor the lit key would
+     * move too. The held `pickIndex` is what prevents it: the session resolves
+     * the same spec at the same rotation, and therefore the same material.
      *
      * The one case where the material MUST change is the one where the ladder
      * moved: an eased level is a different ask by definition. So the held
@@ -334,108 +355,162 @@ export default function GameGate({
     retryRef.current = false;
     const held = latest.current.attempt;
     if (retrying && held && held.level.id === level.id) {
-      const attemptId = makeId('gate-attempt');
-      const context = {
-        material: materialName(held.material),
-        rung: level.id,
-        tier: level.tier,
-        mode: held.requirement.mode,
-        attemptId,
-      };
-      presentOnce(context);
-      emitNow('gate.attempt', context);
-      setAttempt({ ...held, attemptId });
+      setAttempt({ ...held, attemptId: makeId('gate-attempt'), skipped: [], retry: true });
       setPhase('attempt');
-      return () => { alive = false; };
+      return;
     }
-    /**
-     * What this level can actually put in front of the child — and what to do
-     * when the answer is "nothing, because somebody mistyped it".
-     *
-     * `pickGateMaterial`'s decline reasons already separate the two kinds, and
-     * the gate used to flatten them: a `kind: exercies` typo in every spec of a
-     * level failed open exactly like a bank 502, so the level handed out free
-     * matches for as long as the typo survived, silently. That is the same
-     * failure `resolveRepertoire` refuses for a malformed `repertoire`, and it
-     * gets the same answer — substitute something playable rather than grant.
-     *
-     * The substitute is `FALLBACK_LEVEL`'s material: C major, right hand, an
-     * instance addressed by id and therefore always resolvable. The LEVEL does
-     * not change — the rung, the tier and the requirement all stay the ones the
-     * child is standing on — because a config typo is not a reason to move a
-     * ladder. If even the fallback cannot be fetched, THAT is infrastructure,
-     * and the decline that comes back from it fails open below like any other.
-     */
-    const serve = async () => {
-      const picked = await pickGateMaterial(level, {
-        lastMaterialId: stored.lastMaterialId, pickIndex: stored.pickIndex, mode: requirement.mode,
-      });
-      if (picked.ok || !isConfigOnlyDecline(picked.skipped)) return picked;
-      emitNow('gate.material-config-invalid', {
-        rung: level.id, tier: level.tier, reasons: picked.skipped.map((entry) => entry.reason),
-      }, 'warn');
-      const substitute = await pickGateMaterial(FALLBACK_LEVEL, {
-        pickIndex: stored.pickIndex, mode: requirement.mode,
-      });
-      // Both skip lists travel on: the typos are why the substitute happened,
-      // and dropping them would leave the warn above as the only trace.
-      return { ...substitute, skipped: [...picked.skipped, ...(substitute.skipped ?? [])] };
-    };
-    serve()
-      .then((picked) => {
-        if (!alive) return;
-        for (const skip of picked.skipped ?? []) {
-          emitNow('gate.material-skipped', {
-            kind: skip.kind, reason: skip.reason, rung: level.id, tier: level.tier,
-          });
-        }
-        const attemptId = makeId('gate-attempt');
-        const context = {
-          material: materialName(picked.material),
-          rung: level.id,
-          tier: level.tier,
-          mode: requirement.mode,
-          attemptId,
-        };
-        presentOnce(context);
-        if (!picked.ok) { failOpen(picked.error, context); return; }
-        emitNow('gate.attempt', context);
-        setAttempt({
-          material: picked.material,
-          requirement,
-          level,
-          ask: askForMaterial(picked.spec, picked.instance),
-          attemptId,
-        });
-        setPhase('attempt');
-        // Remember what was served, and advance the rotation, BEFORE the child
-        // plays a note. Writing this only on an outcome would make "a different
-        // scale next time" depend on finishing this one — the child who walks
-        // away would meet the same ask forever.
-        commitState({
-          ...latest.current.state,
-          lastMaterialId: materialKey(picked.spec),
-          pickIndex: latest.current.state.pickIndex + 1,
-        });
-      })
-      .catch((error) => {
-        // A rejected fetch, a bank payload nothing can read — same posture as a
-        // 502: the child earned this game and cannot do anything about it.
-        if (!alive) return;
-        const context = {
-          material: null, rung: level.id, tier: level.tier, mode: requirement.mode, attemptId: null,
-        };
-        presentOnce(context);
-        failOpen(error?.message ?? String(error), context);
-      });
-    return () => { alive = false; };
+    const pickIndex = Math.abs(Math.trunc(Number(stored.pickIndex)) || 0);
+    const order = materialOrder(level, { lastMaterialId: stored.lastMaterialId, pickIndex });
+    if (!order.length) {
+      // `resolveRepertoire` refuses a level with no material, so nothing in a
+      // resolved repertoire can land here. It is handled anyway rather than
+      // left to render a skeleton forever: a gate with nothing to ask is an
+      // outage from the child's side, and the child earned this game.
+      const context = { material: null, rung: level.id, tier: level.tier, mode: null, attemptId: null };
+      presentOnce(context);
+      failOpen('no-material-in-level', context);
+      return;
+    }
+    setAttempt({
+      level,
+      order,
+      index: 0,
+      spec: order[0],
+      pickIndex,
+      attemptId: makeId('gate-attempt'),
+      skipped: [],
+      substituted: false,
+      material: null,
+      requirement: null,
+      retry: false,
+    });
+    setPhase('attempt');
   }, [round]);
 
+  /**
+   * The gate mounted. Emitted once per mount and BEFORE anything can decline,
+   * so a fail-open run still anchors its own log query — those are precisely
+   * the runs worth reconstructing, and a `gate.presented` that only fires on
+   * the happy path leaves them with no beginning.
+   */
+  function presentOnce(context) {
+    if (presentedRef.current) return;
+    presentedRef.current = true;
+    latest.current.emit('gate.presented', context);
+  }
+
+  /**
+   * Fail open. Once — a second call would grant two matches for one gate. The
+   * phase goes back to the skeleton on the way out: the match is opening, and
+   * the last thing a child should read on the way into it is an error the
+   * gate has already decided not to hold against them.
+   */
+  function failOpen(error, context) {
+    if (openedRef.current) return;
+    openedRef.current = true;
+    latest.current.emit('gate.unavailable', { ...context, error }, 'warn');
+    setPhase('opened');
+    latest.current.onPassed?.();
+  }
+
+  /**
+   * The session settled on something runnable. This is where an attempt
+   * becomes real: it is the first moment the gate can NAME what a child was
+   * asked to play, because the level wrote `{collection:'scales', roots:[…]}`
+   * and only the resolution knows that today that is G major.
+   */
+  function handleResolved({ material, requirement }) {
+    const held = latest.current.attempt;
+    if (!held) return;
+    const context = {
+      material: materialName(material),
+      rung: held.level.id,
+      tier: held.level.tier,
+      mode: requirement?.mode ?? null,
+      attemptId: held.attemptId,
+    };
+    presentOnce(context);
+    latest.current.emit('gate.attempt', context);
+    setAttempt({ ...held, material, requirement });
+    // A retry is the same serve continuing, not a new one: it must not spend
+    // the rotation a second time, or two Try agains would skip a scale.
+    if (held.retry) return;
+    // Remember what was served, and advance the rotation, BEFORE the child
+    // plays a note. Writing this only on an outcome would make "a different
+    // scale next time" depend on finishing this one — the child who walks
+    // away would meet the same ask forever.
+    commitState({
+      ...latest.current.state,
+      lastMaterialId: materialKey(held.spec),
+      pickIndex: latest.current.state.pickIndex + 1,
+    });
+  }
+
+  /**
+   * The session could not serve this spec, and said exactly why.
+   *
+   * Three answers, in order, and the order is the policy:
+   *
+   * 1. **Try the level's other material.** A level may name several specs; one
+   *    that cannot be served costs this attempt nothing while another can be.
+   *    Failing the whole gate over one bad entry would take a match away from a
+   *    child for a config decision they cannot see.
+   * 2. **Substitute, if nothing here could EVER have resolved.**
+   *    `isConfigOnlyDecline` is what tells a mistyped level from a bank that
+   *    could not be reached, and the answer to the first is `FALLBACK_LEVEL`'s
+   *    material — C major, addressed by id, always resolvable. The LEVEL does
+   *    not change: the rung, the tier and the requirement all stay the ones the
+   *    child is standing on, because a config typo is not a reason to move a
+   *    ladder. Once per attempt — if even the fallback declines, THAT is
+   *    infrastructure and it falls through.
+   * 3. **Fail open.** The child earned this game and can do nothing about a 502.
+   */
+  function declineMaterial({ kind = null, reason, mode = null }) {
+    const held = latest.current.attempt;
+    if (!held) return;
+    const context = {
+      material: materialName(held.spec),
+      rung: held.level.id,
+      tier: held.level.tier,
+      mode,
+      attemptId: held.attemptId,
+    };
+    presentOnce(context);
+    latest.current.emit('gate.material-skipped', {
+      kind, reason, rung: held.level.id, tier: held.level.tier,
+    });
+    const skipped = [...held.skipped, { kind, reason }];
+    const next = held.index + 1;
+    if (next < held.order.length) {
+      setAttempt({ ...held, index: next, spec: held.order[next], skipped });
+      return;
+    }
+    if (!held.substituted && isConfigOnlyDecline(skipped)) {
+      latest.current.emit('gate.material-config-invalid', {
+        rung: held.level.id, tier: held.level.tier, reasons: skipped.map((entry) => entry.reason),
+      }, 'warn');
+      setAttempt({
+        ...held,
+        order: [...FALLBACK_LEVEL.material],
+        index: 0,
+        spec: FALLBACK_LEVEL.material[0],
+        skipped,
+        substituted: true,
+      });
+      return;
+    }
+    failOpen(reason, context);
+  }
+
+  // An attempt now exists from the moment it is SERVED, before the session has
+  // resolved it, so both halves are read defensively: `material` falls back to
+  // the spec (which names a score or an addressed instance even unresolved),
+  // and `mode` is `null` rather than a guess until the requirement arrives.
   const context = attempt ? {
-    material: materialName(attempt.material),
+    material: materialName(attempt.material ?? attempt.spec),
     rung: attempt.level.id,
     tier: attempt.level.tier,
-    mode: attempt.requirement.mode,
+    mode: attempt.requirement?.mode ?? null,
     attemptId: attempt.attemptId,
   } : { rung: state.levelId, tier: levelById(levels, state.levelId)?.tier ?? null };
 
@@ -532,13 +607,19 @@ export default function GameGate({
   const handleAbandoned = () => { emit('gate.abandoned', context); onLeave?.(); };
 
   /**
-   * The run settled into a state it cannot leave. TWO KINDS, and they resolve
-   * differently — the distinction is the same one the design draws for the gate
-   * as a whole (verdict versus infrastructure).
+   * The session settled into a state it cannot leave. THREE KINDS, and they
+   * resolve differently — the distinction is the same one the design draws for
+   * the gate as a whole (verdict versus infrastructure versus config).
    *
-   * `instance-not-found` / `unrunnable` are INFRASTRUCTURE: the material could
-   * not be read, or the attempt could not be built from it. Nothing the child
-   * can do, and they earned this game: fail open.
+   * A `decline` is present only when the SESSION is the one refusing: material
+   * that never resolved, with the exact reason. That is the case
+   * `declineMaterial` above decides, and it is the only one where a substitute
+   * can help — the other two happen after something was successfully served.
+   *
+   * With no decline, a mounted run has dead-ended: `instance-not-found` /
+   * `unrunnable` are INFRASTRUCTURE (the material could not be read, or the
+   * attempt could not be built from it). Nothing the child can do, and they
+   * earned this game: fail open.
    *
    * `no-access` is NOT infrastructure. It is permanent, known, and entirely
    * within the household's control — nobody has chosen a player. Failing open
@@ -547,16 +628,17 @@ export default function GameGate({
    * gets its own panel instead: say what to do, and offer the way out that now
    * exists. D12 holds — this does not reach a match.
    */
-  const handleUnavailable = (reason) => {
+  const handleUnavailable = (reason, decline) => {
     if (reason === 'no-access') {
       emit('gate.blocked', { ...context, reason }, 'warn');
       setPhase('no-access');
       return;
     }
-    if (openedRef.current) return;
-    openedRef.current = true;
-    emit('gate.unavailable', { ...context, error: `run-${reason}` }, 'warn');
-    onPassed?.();
+    if (decline) {
+      declineMaterial(decline);
+      return;
+    }
+    failOpen(`run-${reason}`, context);
   };
 
   if (phase === 'no-access') {
@@ -604,16 +686,19 @@ export default function GameGate({
 
   return (
     <div className="piano-game-gate piano-game-gate--attempt">
-      <ExerciseRun
+      <AskSession
         intent="challenge"
-        material={attempt.material}
-        requirementOverride={attempt.requirement}
+        // The LEVEL and the SPEC, and nothing derived from either. What that
+        // level requires, what the spec resolves to, and the sentence a child
+        // reads are all one thing — the ask — and one thing has one owner.
+        ask={attempt.level}
+        materialSpec={attempt.spec}
+        // Which of the level's roots is served today. Held on the attempt, not
+        // read from `state`: the state's counter advances the moment this is
+        // served, and a retry must land on the same scale.
+        pickIndex={attempt.pickIndex}
         framing={framing}
-        ask={attempt.ask}
-        // A NUMBER, straight off the level. `ExerciseRun` warns and derives its
-        // own band for anything else, and a YAML tier that arrived as a string
-        // would take that path in silence.
-        tier={attempt.level.tier}
+        onResolved={handleResolved}
         onPassed={handlePassed}
         onFailed={handleFailed}
         onExit={handleAbandoned}
