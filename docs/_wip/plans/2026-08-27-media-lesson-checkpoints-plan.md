@@ -210,7 +210,7 @@ import { createMediaGate } from './mediaGate.js';
 
 ### Task 3: `useMediaGate` hook + `GateVerdictContext`
 
-> DONE — `bb59c5a55`, `d1b4f5b7b` (lint + log attribution). Spec-reviewed. **Phase 1 is closed.** Gate suite 81 tests (20 new);
+> DONE — `bb59c5a55`, `d1b4f5b7b`, `152764cc0`. Spec ✅, quality ✅. **Phase 1 is closed.** Gate suite 81 tests (20 new);
 > 19 deliberate mutations run, all killed, 0 survivors. Three decisions Task 16
 > needs to know about, none of which the sketch below anticipates:
 >
@@ -229,9 +229,23 @@ import { createMediaGate } from './mediaGate.js';
 >    handler uses the decision from BEFORE that handler's own `setState`, which still
 >    says PAUSED_USER. Both were caught by tests before implementation, not after.
 >
+> **`decision` is a RULING, not transport state** — it reads `PLAYING` while the media
+> sits paused behind a rejected autoplay resume. Overlay chrome must read `status` and
+> the element for transport truth. Two more traps in the hook's JSDoc: a stuck
+> `player.seeking.active` suspends ALL enforcement (the easiest way to open a
+> checkpoint-skip hole), and there must be ONE `useMediaGate` per element — a second
+> governor contributes through `GateVerdictProvider`.
+>
 > The hook returns `{ decision, status }`. `status` is `mediaGate`'s snapshot and
 > arrives ONLY through `subscribe()` — `apply()`'s return is not pushed as well, since
 > that would be a second source of the same truth.
+>
+> ⚠ **The echo test is TWO-PART: `ownsPause && lastAppliedPaused`.** `ownsPause` alone
+> is not enough and the gap is not theoretical — ownership is held across the in-flight
+> window of a resume, which on a Plex stream is however long the media takes to start.
+> A parent pausing inside that window was filed as our echo; the browser aborted the
+> pending `play()`, and the next apply played over them. The second half asks whether
+> our LAST transport action was a pause. Both halves are independently pinned.
 >
 > ⚠ **Do not filter DOM `play` on `ownsPause`.** It reads like the obvious mirror of the
 > `pause` echo filter and it is not: `ownsPause` is TRUE at the exact instant a human
