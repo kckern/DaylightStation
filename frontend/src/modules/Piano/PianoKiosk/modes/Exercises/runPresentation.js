@@ -43,6 +43,30 @@ export function accidentalForKey(key) {
   return (minor ? 'DGCF' : 'F').includes(letter) ? 'flat' : 'sharp';
 }
 
+/** Mode/quality axis values that mean "this is a minor key". */
+const MINOR_FLAVOURS = new Set(['aeolian', 'minor', 'natural-minor', 'harmonic-minor', 'melodic-minor']);
+
+/**
+ * The key of a bank instance, spelled the way `accidentalForKey` needs to read it.
+ *
+ * The bank writes `instance.key` as the ROOT PITCH CLASS ALONE — `'D'`, never
+ * `'D minor'` — and puts the quality on a separate axis (`axes.mode` for the
+ * scale bank, `axes.quality` for chords). So `accidentalForKey(instance.key)`
+ * on its own can never reach its minor branch: every D minor instance in the
+ * bank would be spelled with sharps, and its B♭ drawn as A♯.
+ *
+ * That is why this exists rather than a second accidental rule: it re-joins the
+ * two halves the bank splits, and the one signature rule stays in one place.
+ * Major material is unaffected — F major's `key: 'F'` already answers `flat`.
+ */
+export function instanceKeySignature(instance) {
+  const key = instance?.key;
+  if (typeof key !== 'string' || !key.trim()) return null;
+  const axes = instance?.axes ?? {};
+  const flavour = String(axes.mode ?? axes.quality ?? '').trim().toLowerCase();
+  return MINOR_FLAVOURS.has(flavour) ? `${key.trim()} minor` : key;
+}
+
 /**
  * The pitch windows one staff holds without ledger lines nobody can count.
  * Treble: C4 (one ledger below) up to A5 (one ledger above). Bass: E2 up to C4.

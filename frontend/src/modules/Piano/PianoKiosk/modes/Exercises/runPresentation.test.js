@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   accidentalForKey,
+  instanceKeySignature,
   clefForAsk,
   deriveRunTier,
   eventsToStaffNotes,
@@ -44,6 +45,46 @@ describe('accidentalForKey', () => {
 
   it('falls back to sharps for anything it cannot read, never to a coin flip', () => {
     for (const key of [null, undefined, '', 'H', 42, {}]) expect(accidentalForKey(key)).toBe('sharp');
+  });
+});
+
+describe('instanceKeySignature — re-joining the key the bank splits in two', () => {
+  // The bank writes `key` as the root pitch class ALONE and puts the quality on
+  // an axis, so `accidentalForKey(instance.key)` on its own can never reach its
+  // minor branch. Every D minor instance would be spelled with D major's two
+  // sharps, and its B♭ drawn as A♯.
+  it('reads the minor off the mode axis a scale instance carries', () => {
+    const dMinor = { key: 'D', axes: { root: 'D', mode: 'aeolian' } };
+    expect(instanceKeySignature(dMinor)).toBe('D minor');
+    expect(accidentalForKey(instanceKeySignature(dMinor))).toBe('flat');
+    // …and without it, the trap this closes.
+    expect(accidentalForKey(dMinor.key)).toBe('sharp');
+  });
+
+  it('reads it off the quality axis a chord instance carries instead', () => {
+    expect(instanceKeySignature({ key: 'G', axes: { quality: 'minor' } })).toBe('G minor');
+    expect(accidentalForKey(instanceKeySignature({ key: 'G', axes: { quality: 'minor' } }))).toBe('flat');
+  });
+
+  it('leaves major material exactly as it was — F major already answered flat', () => {
+    for (const [key, mode] of [['F', 'ionian'], ['C', 'ionian'], ['G', 'ionian'], ['D', 'ionian']]) {
+      expect(instanceKeySignature({ key, axes: { root: key, mode } })).toBe(key);
+    }
+    expect(accidentalForKey(instanceKeySignature({ key: 'F', axes: { mode: 'ionian' } }))).toBe('flat');
+    expect(accidentalForKey(instanceKeySignature({ key: 'G', axes: { mode: 'ionian' } }))).toBe('sharp');
+  });
+
+  it('answers null for an instance with no readable key, which reads as sharps', () => {
+    for (const instance of [null, undefined, {}, { key: '' }, { key: 42 }]) {
+      expect(instanceKeySignature(instance)).toBeNull();
+      expect(accidentalForKey(instanceKeySignature(instance))).toBe('sharp');
+    }
+  });
+
+  it('leaves a mode it has no rule for alone rather than guessing at it', () => {
+    // Dorian and mixolydian carry flats or sharps depending on the root; the
+    // helper says nothing about them rather than inventing an answer.
+    expect(instanceKeySignature({ key: 'D', axes: { mode: 'dorian' } })).toBe('D');
   });
 });
 

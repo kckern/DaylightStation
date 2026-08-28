@@ -144,11 +144,23 @@ async function compileSheet() {
  * the gate's own memo dependencies (GameGate.jsx:216) — a fresh literal on a
  * re-render rebuilds the attempt and throws the run's state away mid-test.
  */
-const GATE_CONFIG = {};
+// The repertoire is pinned to ONE cued tier-3 level on purpose. What is measured
+// here is the notation stage — the paper card, the keyboard footer, the result
+// panel — and the tier is what decides that a run mounts it at all. A gate left
+// on the default repertoire would open at tier 2 (the sequence staff) and this
+// file would silently measure a different box than the one it names.
+const GATE_CONFIG = {
+  repertoire: [{
+    id: 'cued-scale',
+    tier: 3,
+    grading: { cleanliness: 0.8 },
+    material: [{ kind: 'exercise', instanceId: 'scales/c-major@hands=2' }],
+  }],
+};
 const NOOP = () => {};
 const gateElement = () => (
   <MemoryRouter initialEntries={['/piano/games/tetris']}>
-    <GameGate learnerId="learner4" gateConfig={GATE_CONFIG} onPassed={NOOP} onLeave={NOOP} />
+    <GameGate learnerId="learner4" gateConfig={GATE_CONFIG} gameLabel="Tetris" onPassed={NOOP} onLeave={NOOP} />
   </MemoryRouter>
 );
 
@@ -162,7 +174,7 @@ async function markupOf(trigger) {
   const view = render(gateElement());
   // The run arms itself from the piano now, so its ready phase has no button to
   // wait on — this hint is the settled-and-ready barrier in its place. The
-  // gate's rung is cued (`gameGateLadder.initialRung`), so it is this hint.
+  // gate's level is cued (`GATE_CONFIG`'s tier-3 level), so it is this hint.
   await screen.findByText(/Press any key to start\./);
   if (trigger) await trigger(view);
   const html = document.body.firstElementChild.innerHTML;

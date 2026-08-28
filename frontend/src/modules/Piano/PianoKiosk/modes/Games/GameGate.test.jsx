@@ -6,7 +6,7 @@ import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 // ── Doubles ─────────────────────────────────────────────────────────────────
 // ExerciseRun is stubbed to its four host callbacks, and the difference between
 // them is the point:
-//   onPassed      — a GENUINE pass (the surface judges it, per Task 9).
+//   onPassed      — a GENUINE pass (the surface judges it).
 //   onFailed      — a COMPLETED attempt that missed the bar. The ONLY thing
 //                   allowed to move the ladder.
 //   onExit        — the player walked away. Nothing to judge, ladder unmoved;
@@ -15,10 +15,9 @@ import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 //   onUnavailable — the run hit a terminal state it cannot leave (its own
 //                   instance fetch 502'd, the attempt would not build, guest).
 // The stub also RECORDS its props, because the gate's most load-bearing output
-// is not what it renders — it is the requirement it hands the run. A
-// requirement with a missing/out-of-range `passScore` makes `ExerciseRun` fall
-// back to `verdict.passed`, unconditionally true on a non-floor rung: a gate
-// that grants game time to a child who played nothing.
+// is not what it renders — it is what it hands the run. The requirement decides
+// whether a child can fail at all (D9); `framing`, `ask` and `tier` decide
+// whether the child can read what they are being asked for.
 const h = vi.hoisted(() => {
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() };
   logger.child = () => logger;
@@ -27,12 +26,13 @@ const h = vi.hoisted(() => {
     runProps: [],
     catalog: vi.fn(),
     instances: vi.fn(),
+    instance: vi.fn(),
   };
 });
 
 vi.mock('../../../../../lib/logging/Logger.js', () => ({ default: () => h.logger, getLogger: () => h.logger }));
 vi.mock('../Exercises/pianoLearningApi.js', () => ({
-  pianoLearningApi: { catalog: h.catalog, instances: h.instances, instance: vi.fn() },
+  pianoLearningApi: { catalog: h.catalog, instances: h.instances, instance: h.instance },
 }));
 vi.mock('../Exercises/ExerciseRun.jsx', () => ({
   default: (props) => {
@@ -44,7 +44,7 @@ vi.mock('../Exercises/ExerciseRun.jsx', () => ({
             move the ladder. Distinct from stub-exit, which is walking away. */}
         <button type="button" onClick={() => props.onFailed?.({ score: 0.62 })}>stub-fail</button>
         {/* A completed result with no usable number — an aborted attempt, or a
-            floor rung with no numeric bar. The panel must still say something. */}
+            free level, which carries no numeric bar at all. */}
         <button type="button" onClick={() => props.onFailed?.({})}>stub-fail-scoreless</button>
         <button type="button" onClick={() => props.onExit?.()}>stub-exit</button>
         <button type="button" onClick={() => props.onUnavailable?.('instance-not-found')}>stub-dead-end</button>
@@ -58,10 +58,34 @@ const {
   default: GameGate, GATE_CONFIG_DEFAULTS, gateStateKey, readGateState, resolveGateConfig,
 } = await import('./GameGate.jsx');
 const { pickGateMaterial } = await import('./gateMaterial.js');
-const { initialRung, degradeRung, isFloor, requirementForRung } = await import('./gameGateLadder.js');
+const {
+  BUILT_IN_FLOOR, FALLBACK_LEVEL, resolveRepertoire, startLevelFor, materialKey,
+} = await import('./gateRepertoire.js');
+const { requirementForLevel } = await import('./gateAsk.js');
 const { KIOSK_DEVICE_STORAGE_KEY } = await import('../../kioskDeviceIdentity.js');
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
+/**
+ * The shape the shipped household config expresses: a one-key floor beneath a
+ * C-major level, a three-root level above it, and a cued level at the top.
+ * `resolveRepertoire` prepends the built-in floor, so the resolved list is
+ * `[floor-key, L1, L2, L3]` and `startLevelFor` opens at L1.
+ */
+const REPERTOIRE = [
+  { id: 'L1', tier: 2, material: [{ kind: 'exercise', collection: 'scales', roots: ['C'], hands: 'right' }] },
+  { id: 'L2', tier: 2, material: [{ kind: 'exercise', collection: 'scales', roots: ['G', 'D', 'F'], hands: 'right' }] },
+  {
+    id: 'L3',
+    tier: 3,
+    grading: { cleanliness: 0.8 },
+    material: [{ kind: 'exercise', collection: 'scales', roots: ['C'], hands: 'right', cued: true }],
+  },
+];
+const LEVELS = resolveRepertoire(REPERTOIRE);
+const CONFIG = { repertoire: REPERTOIRE };
+
+const scaleId = (root) => `scales/modes@root=${root},mode=ionian,direction=up,span_octaves=1`;
+
 const SEEDS = [
   { id: 'scales/c-major', category: 'scales', title: 'C major', supports: ['free', 'metronome', 'cued'] },
   { id: 'songs/twinkle', category: 'songs', title: 'Twinkle', supports: ['free'] },
@@ -70,14 +94,31 @@ const INSTANCES = [
   { id: 'scales/c-major@hands=2', axes: { hands: 2 }, supports: ['free', 'cued'] },
 ];
 
+/**
+ * The bank as the gate meets it: `instance(id)` answers for any id it is asked
+ * for, echoing the root back through `axes`/`key` the way the real bank does —
+ * that is what `askForMaterial` reads to write the child's sentence.
+ */
 function serveBank({ seeds = SEEDS, instances = INSTANCES } = {}) {
   h.catalog.mockResolvedValue({ ok: true, status: 200, data: { seeds } });
   h.instances.mockResolvedValue({ ok: true, status: 200, data: { instances } });
+  h.instance.mockImplementation(async (id) => {
+    const root = /root=([^,]+)/.exec(id)?.[1] ?? 'C';
+    return {
+      ok: true,
+      status: 200,
+      data: {
+        id,
+        title: `${root} major`,
+        key: root,
+        ordering: 'strict',
+        axes: { root, mode: 'ionian' },
+        supports: ['free', 'metronome', 'cued'],
+        events: [{ id: 'e1', value: 'quarter', notes: [{ midi: 60, hand: 'right' }] }],
+      },
+    };
+  });
 }
-
-const FLOOR = { timing: 'free', hands: 1, span: 1, difficulty: 'major', direction: 'ascending' };
-/** One axis eased (timing) — a non-floor rung whose mode is `free`. */
-const EASED_ONCE = { ...initialRung(), timing: 'free' };
 
 function seedGateState(learnerId, value) {
   localStorage.setItem(gateStateKey(learnerId), typeof value === 'string' ? value : JSON.stringify(value));
@@ -87,19 +128,32 @@ function readStored(learnerId) {
   return JSON.parse(localStorage.getItem(gateStateKey(learnerId)));
 }
 
+/** The level a stored state opens at, with the repertoire resolved for it. */
+const stateFor = (learnerId, config = CONFIG) => readGateState(learnerId, resolveRepertoire(config.repertoire), config);
+
 function LocationProbe() {
   const location = useLocation();
   return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
 }
 
-function renderGate({ learnerId = 'kid1', gateConfig = {}, onPassed = vi.fn(), onLeave = vi.fn() } = {}) {
+function renderGate({
+  learnerId = 'kid1', gateConfig = CONFIG, gameLabel = 'Tetris', onPassed = vi.fn(), onLeave = vi.fn(),
+} = {}) {
   const utils = render(
     <MemoryRouter initialEntries={['/piano/games/tetris']}>
       <LocationProbe />
       <Routes>
         <Route
           path="/piano/games/:gameId"
-          element={<GameGate learnerId={learnerId} gateConfig={gateConfig} onPassed={onPassed} onLeave={onLeave} />}
+          element={(
+            <GameGate
+              learnerId={learnerId}
+              gateConfig={gateConfig}
+              gameLabel={gameLabel}
+              onPassed={onPassed}
+              onLeave={onLeave}
+            />
+          )}
         />
         <Route path="*" element={<div>elsewhere</div>} />
       </Routes>
@@ -128,116 +182,124 @@ beforeEach(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('GameGate — contract 1: the rung persists per learner', () => {
-  it('resumes the stored rung for THIS learner and starts a different learner at the top', async () => {
-    seedGateState('kid1', { rung: EASED_ONCE, failuresAtRung: 1, cleanPasses: 2 });
+describe('GameGate — contract 1: the level persists per learner', () => {
+  it('resumes the stored level for THIS learner and starts a different learner at the start level', async () => {
+    seedGateState('kid1', {
+      levelId: 'L3', failuresAtLevel: 1, cleanPasses: 2, lastMaterialId: null, pickIndex: 0,
+    });
 
     renderGate({ learnerId: 'kid1' });
     await screen.findByTestId('exercise-run');
-    // The eased rung's timing is `free`; the top of the ladder is `cued`.
-    expect(h.runProps.at(-1).requirementOverride.mode).toBe('free');
+    // L3 is the cued level; the start level (L1) is free.
+    expect(h.runProps.at(-1).requirementOverride.mode).toBe('cued');
+    expect(h.runProps.at(-1).tier).toBe(3);
 
     h.runProps.length = 0;
     renderGate({ learnerId: 'kid2' });
     await waitFor(() => expect(h.runProps.length).toBeGreaterThan(0));
-    expect(h.runProps.at(-1).requirementOverride.mode).toBe('cued');
+    expect(h.runProps.at(-1).requirementOverride.mode).toBe('free');
+    expect(h.runProps.at(-1).tier).toBe(2);
   });
 
-  it('writes the rung back under the learner-scoped key after an outcome', async () => {
+  it('writes v2 state back under the learner-scoped key after an outcome', async () => {
     renderGate({ learnerId: 'kid1' });
     fireEvent.click(await screen.findByText('stub-pass'));
 
-    expect(readStored('kid1')).toEqual({ rung: initialRung(), failuresAtRung: 0, cleanPasses: 1 });
+    expect(readStored('kid1')).toMatchObject({
+      levelId: 'L1', failuresAtLevel: 0, cleanPasses: 1,
+      // The served material is remembered so the next gate can avoid it.
+      lastMaterialId: materialKey(REPERTOIRE[0].material[0]),
+    });
     expect(localStorage.getItem(gateStateKey('kid2'))).toBeNull();
   });
 
-  it('falls back to initialRung() on corrupt JSON and on parseable-but-wrong shapes', () => {
-    // Contract 1's failure mode. localStorage is a corruptible input: a
-    // half-written value, a hand-edited one, or a value written by an older
-    // shape must all land the child at the TOP of the ladder, never on
-    // `undefined` axes that would degrade into nonsense.
-    const fresh = { rung: initialRung(), failuresAtRung: 0, cleanPasses: 0 };
+  it('falls back to the start level on corrupt JSON, on wrong shapes, and on every OLD five-axis rung', () => {
+    // localStorage is a corruptible input: a half-written value, a hand-edited
+    // one, or a value written by an older shape must all land the child at the
+    // configured start level, never on a level id nothing can resolve.
+    //
+    // The five-axis entry is the migration case and it is not hypothetical —
+    // every kiosk that ran the previous ladder has one of these on disk today.
+    const oldRung = { rung: { timing: 'cued', hands: 2, span: 2, difficulty: 'exotic', direction: 'both' }, failuresAtRung: 2, cleanPasses: 1 };
     const corrupt = [
-      '{"rung":', 'not json at all', 'null', '[]', '"a string"',
-      JSON.stringify({ rung: null, failuresAtRung: 0, cleanPasses: 0 }),
-      JSON.stringify({ rung: { timing: 'free' }, failuresAtRung: 0, cleanPasses: 0 }),
-      JSON.stringify({ rung: { ...initialRung(), timing: 'sideways' }, failuresAtRung: 0, cleanPasses: 0 }),
-      JSON.stringify({ rung: initialRung(), failuresAtRung: -3, cleanPasses: 0 }),
-      JSON.stringify({ rung: initialRung(), failuresAtRung: 0, cleanPasses: 'lots' }),
+      '{"levelId":', 'not json at all', 'null', '[]', '"a string"',
+      JSON.stringify(oldRung),
+      JSON.stringify({ levelId: null, failuresAtLevel: 0, cleanPasses: 0 }),
+      JSON.stringify({ levelId: 'L9-that-was-renamed', failuresAtLevel: 0, cleanPasses: 0 }),
+      JSON.stringify({ levelId: 'L1', failuresAtLevel: -3, cleanPasses: 0 }),
+      JSON.stringify({ levelId: 'L1', failuresAtLevel: 0, cleanPasses: 'lots' }),
     ];
+    const fresh = {
+      levelId: startLevelFor(LEVELS, CONFIG).id, failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
+    };
     for (const value of corrupt) {
       seedGateState('kid1', value);
-      expect(readGateState('kid1')).toEqual(fresh);
+      expect(stateFor('kid1'), String(value).slice(0, 40)).toEqual(fresh);
     }
 
     // …and a well-formed value survives untouched.
-    seedGateState('kid1', { rung: FLOOR, failuresAtRung: 2, cleanPasses: 1 });
-    expect(readGateState('kid1')).toEqual({ rung: FLOOR, failuresAtRung: 2, cleanPasses: 1 });
+    const stored = { levelId: 'L2', failuresAtLevel: 2, cleanPasses: 1, lastMaterialId: 'exercise|scales|G|right|', pickIndex: 5 };
+    seedGateState('kid1', stored);
+    expect(stateFor('kid1')).toEqual(stored);
+  });
+
+  it('honours config.startLevel, so a preschooler can open at lit keys', () => {
+    const config = { repertoire: REPERTOIRE, startLevel: BUILT_IN_FLOOR.id };
+    expect(stateFor('miles', config).levelId).toBe(BUILT_IN_FLOOR.id);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('pickGateMaterial — contract 2: exercise entries only, mode-compatible', () => {
-  it('picks a seed in the configured collections and an instance that supports the rung mode', async () => {
-    const picked = await pickGateMaterial(
-      GATE_CONFIG_DEFAULTS.material, EASED_ONCE, { passScore: 0.8, pick: (list) => list[0] },
-    );
+describe('pickGateMaterial — contract 2: a level resolves to something gradable', () => {
+  it('addresses the scales bank directly for a collection/roots level', async () => {
+    const picked = await pickGateMaterial(LEVELS[1], { pickIndex: 0, mode: 'free' });
 
     expect(picked.ok).toBe(true);
-    expect(picked.material).toEqual({ kind: 'exercise', instanceId: 'scales/c-major@hands=2' });
-    expect(h.instances).toHaveBeenCalledWith('scales/c-major'); // never 'songs/twinkle'
-    expect(picked.requirement.mode).toBe('free');
+    expect(picked.material).toMatchObject({ kind: 'exercise', instanceId: scaleId('C') });
+    expect(picked.instance.axes).toEqual({ root: 'C', mode: 'ionian' });
   });
 
-  it('hands back a requirement carrying a FINITE passScore on a non-floor rung', async () => {
-    // The whole gate rests on this number. `ExerciseRun` only judges on score
-    // when `passScore != null && Number.isFinite(Number(passScore))`; anything
-    // else falls back to `verdict.passed`, which is unconditionally true off
-    // the floor — every child would pass at any score, including zero.
-    const picked = await pickGateMaterial(GATE_CONFIG_DEFAULTS.material, EASED_ONCE, { passScore: 0.8 });
-    expect(isFloor(EASED_ONCE)).toBe(false);
-    expect(Number.isFinite(Number(picked.requirement.passScore))).toBe(true);
-    expect(picked.requirement.passScore).toBe(0.8);
+  it('synthesizes the floor’s lit key without a single bank call', async () => {
+    const picked = await pickGateMaterial(BUILT_IN_FLOOR, { pickIndex: 0, mode: 'free' });
+
+    expect(picked.ok).toBe(true);
+    expect(picked.instance.events).toHaveLength(1);
+    expect(picked.instance.events[0].notes).toHaveLength(1);
+    expect(h.instance).not.toHaveBeenCalled();
+    expect(h.instances).not.toHaveBeenCalled();
+    expect(h.catalog).not.toHaveBeenCalled();
   });
 
-  it('leaves the floor unfailable — null passScore, completeness-only rubric', async () => {
-    const picked = await pickGateMaterial(GATE_CONFIG_DEFAULTS.material, FLOOR, { passScore: 0.8 });
-    expect(picked.requirement.passScore).toBeNull();
-    expect(picked.requirement.rubric).toEqual({ criteria: { completeness: 1 } });
+  it('leaves every level below tier 3 unfailable — null passScore, completeness-only rubric', async () => {
+    const requirement = requirementForLevel(BUILT_IN_FLOOR);
+    expect(requirement.passScore).toBeNull();
+    expect(requirement.rubric).toEqual({ criteria: { completeness: 1 } });
+    // …and the level the child starts on says the same thing.
+    expect(requirementForLevel(LEVELS[1]).rubric).toEqual({ criteria: { completeness: 1 } });
   });
 
   it('skips a `score` entry with a reason instead of crashing on it', async () => {
-    const picked = await pickGateMaterial(GATE_CONFIG_DEFAULTS.material, EASED_ONCE, { pick: (l) => l[0] });
+    const mixed = {
+      ...LEVELS[1],
+      material: [...LEVELS[1].material, { kind: 'score', source: 'current-study-piece', measures: 4 }],
+    };
+    const picked = await pickGateMaterial(mixed, { pickIndex: 1, mode: 'free' });
     expect(picked.ok).toBe(true);
     expect(picked.skipped).toContainEqual({ kind: 'score', reason: 'score-material-phase-2' });
-  });
-
-  it('declines, rather than throws, when nothing usable can be resolved', async () => {
-    expect((await pickGateMaterial(null, EASED_ONCE, {})).error).toBe('no-exercise-material-configured');
-    expect((await pickGateMaterial([{ kind: 'score' }], EASED_ONCE, {})).error).toBe('no-exercise-material-configured');
-
-    h.catalog.mockResolvedValue({ ok: false, status: 502, data: null });
-    expect((await pickGateMaterial(GATE_CONFIG_DEFAULTS.material, EASED_ONCE, {})).error).toBe('catalog-unavailable');
-
-    serveBank({ seeds: [{ id: 'songs/twinkle', category: 'songs', supports: ['free'] }] });
-    expect((await pickGateMaterial(GATE_CONFIG_DEFAULTS.material, EASED_ONCE, {})).error).toBe('no-seed-for-rung');
-
-    serveBank({ instances: [{ id: 'scales/c-major@x=1', supports: ['metronome'] }] });
-    expect((await pickGateMaterial(GATE_CONFIG_DEFAULTS.material, EASED_ONCE, {})).error).toBe('no-instance-for-rung');
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GameGate — contract 3: infrastructure fails OPEN', () => {
   it.each([
-    ['a 502 from the catalog', () => h.catalog.mockResolvedValue({ ok: false, status: 502, data: null })],
-    ['a rejected fetch', () => h.catalog.mockRejectedValue(new Error('network down'))],
-    ['an empty collection', () => serveBank({ seeds: [] })],
-    ['a seed with no compatible instance', () => serveBank({ instances: [] })],
-    ['a malformed material config', () => {}],
+    ['a 502 from the bank', () => h.instance.mockResolvedValue({ ok: false, status: 502, data: null })],
+    ['a rejected fetch', () => h.instance.mockRejectedValue(new Error('network down'))],
+    ['a level nothing in this phase can render', () => {}],
   ])('opens the gate and logs gate.unavailable on %s', async (label, arrange) => {
     arrange();
-    const gateConfig = label === 'a malformed material config' ? { material: 'scales' } : {};
+    const gateConfig = label === 'a level nothing in this phase can render'
+      ? { repertoire: [{ id: 'score-only', tier: 2, material: [{ kind: 'score', source: 'fur-elise', measures: [1, 4] }] }] }
+      : CONFIG;
     const { onPassed } = renderGate({ gateConfig });
 
     await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
@@ -249,12 +311,22 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
     // worth reconstructing, and it needs a beginning in the log.
     expect(eventNamed('gate.presented')).toBeTruthy();
   });
+
+  it('a repertoire nobody can read falls back to a playable level rather than opening the gate', async () => {
+    // A malformed `repertoire` is a config mistake, not an outage. Failing open
+    // on it would hand out free matches for as long as the typo survives.
+    const { onPassed } = renderGate({ gateConfig: { repertoire: 'scales' } });
+    await screen.findByTestId('exercise-run');
+
+    expect(onPassed).not.toHaveBeenCalled();
+    expect(h.runProps.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GameGate — contract 4: passing', () => {
   it('opens the match, logs gate.passed with the score, and banks a clean pass', async () => {
-    const { onPassed } = renderGate({ learnerId: 'kid1', gateConfig: { climbAfterCleanPasses: 3 } });
+    const { onPassed } = renderGate({ learnerId: 'kid1', gateConfig: CONFIG });
     fireEvent.click(await screen.findByText('stub-pass'));
 
     expect(onPassed).toHaveBeenCalledTimes(1);
@@ -262,25 +334,25 @@ describe('GameGate — contract 4: passing', () => {
     expect(data.score).toBe(0.91);
     expect(data.attemptId).toEqual(expect.any(String));
     expect(readStored('kid1').cleanPasses).toBe(1);
-    expect(readStored('kid1').rung).toEqual(initialRung());
+    expect(readStored('kid1').levelId).toBe('L1');
   });
 
-  it('climbs the rung and resets the counter after climbAfterCleanPasses clean passes', async () => {
-    const eased = degradeRung(initialRung()); // one axis down from the top
-    seedGateState('kid1', { rung: eased, failuresAtRung: 0, cleanPasses: 2 });
+  it('climbs a level and resets the counter after climbAfterCleanPasses clean passes', async () => {
+    seedGateState('kid1', { levelId: 'L1', failuresAtLevel: 0, cleanPasses: 2, lastMaterialId: null, pickIndex: 0 });
 
-    renderGate({ learnerId: 'kid1', gateConfig: { climbAfterCleanPasses: 3 } });
+    renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, climbAfterCleanPasses: 3 } });
     fireEvent.click(await screen.findByText('stub-pass'));
 
-    expect(readStored('kid1')).toEqual({ rung: initialRung(), failuresAtRung: 0, cleanPasses: 0 });
+    expect(readStored('kid1')).toMatchObject({ levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0 });
     const [, data] = eventNamed('gate.rung-changed');
     expect(data.direction).toBe('climb');
-    expect(data.rung).toEqual(initialRung());
+    expect(data.from).toBe('L1');
+    expect(data.to).toBe('L2');
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('GameGate — contract 5: failing offers exactly three ways out, none of them the match', () => {
+describe('GameGate — contract 5: failing offers ways out, none of them the match', () => {
   it('shows Try again · Practice this · Leave and no path to the game', async () => {
     const { onPassed } = renderGate();
     fireEvent.click(await screen.findByText('stub-fail'));
@@ -293,13 +365,13 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
     // unmounts on failure, taking its own result readout with it.
     expect(eventNamed('gate.failed')[1].score).toBe(0.62);
     expect(panel.textContent).toContain('62%');
-    expect(panel.textContent).toContain('80%');
     expect(panel.textContent).toContain('Play it once more, work on it first, or come back later.');
   });
 
   it('still says what to do when the result carries no usable score', async () => {
     // Gating the panel's only words behind a number reduced it to a bare
-    // heading over three unexplained buttons.
+    // heading over three unexplained buttons. Every level below tier 3 now
+    // completes without a numeric bar, so this is the ordinary case.
     renderGate();
     fireEvent.click(await screen.findByText('stub-fail-scoreless'));
 
@@ -308,6 +380,20 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
     expect(panel.textContent).not.toContain('%');
     expect([...panel.querySelectorAll('button')].map((b) => b.textContent))
       .toEqual(['Try again', 'Practice this', 'Leave']);
+  });
+
+  it('drops Practice this at the lit-key floor, where there is no exercise to go practise', async () => {
+    // The detour route addresses an exercise-bank instance. A synthesized lit
+    // key has no id in the bank, so the button would navigate to
+    // `/exercises/run/undefined` — a dead end dressed as a way out.
+    seedGateState('kid1', {
+      levelId: BUILT_IN_FLOOR.id, failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
+    });
+    renderGate({ learnerId: 'kid1' });
+    fireEvent.click(await screen.findByText('stub-fail'));
+
+    const panel = await screen.findByRole('status');
+    expect([...panel.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Try again', 'Leave']);
   });
 
   it('Try again re-runs the challenge without granting the match', async () => {
@@ -320,31 +406,49 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
     expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(2);
   });
 
-  it('degrades the rung after retriesBeforeDegrade failures, with the banner and gate.rung-changed', async () => {
-    renderGate({ learnerId: 'kid1', gateConfig: { retriesBeforeDegrade: 3 } });
+  it('walks the ladder down a level at a time — L2 to L1 to the floor — and says so each step', async () => {
+    // Every degrade now changes the level, which is what makes the banner
+    // ("We made it a little easier") true rather than aspirational.
+    seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
+    renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 1 } });
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    const walk = [];
+    for (let step = 0; step < 2; step += 1) {
       fireEvent.click(await screen.findByText('stub-fail'));
-      expect(screen.queryByText('We made it a little easier')).toBeNull();
-      expect(readStored('kid1').rung).toEqual(initialRung());
+      expect(await screen.findByText('We made it a little easier')).toBeTruthy();
+      walk.push(readStored('kid1').levelId);
       fireEvent.click(screen.getByText('Try again'));
+      await screen.findByTestId('exercise-run');
     }
+    // A third miss at the floor moves nothing, and must not promise it did.
     fireEvent.click(await screen.findByText('stub-fail'));
+    await screen.findByRole('status');
+    expect(screen.queryByText('We made it a little easier')).toBeNull();
+    walk.push(readStored('kid1').levelId);
 
-    expect(await screen.findByText('We made it a little easier')).toBeTruthy();
-    expect(readStored('kid1')).toEqual({ rung: degradeRung(initialRung()), failuresAtRung: 0, cleanPasses: 0 });
-    const [, data] = eventNamed('gate.rung-changed');
-    expect(data.direction).toBe('degrade');
-    expect(data.rung).toEqual(degradeRung(initialRung()));
+    expect(walk).toEqual(['L1', BUILT_IN_FLOOR.id, BUILT_IN_FLOOR.id]);
+    const changes = events().filter(([name]) => name === 'gate.rung-changed').map(([, data]) => data);
+    expect(changes.map(({ from, to, direction }) => ({ from, to, direction }))).toEqual([
+      { from: 'L2', to: 'L1', direction: 'degrade' },
+      { from: 'L1', to: BUILT_IN_FLOOR.id, direction: 'degrade' },
+    ]);
+  });
 
-    // …and the EASED rung is what the next attempt is actually judged against.
-    // Nothing else pinned this: the gate's resolve effect reads the rung out of
-    // a ref, so a reordering that let it read a stale one would degrade the
-    // ladder in the log while asking the child for the same hard thing.
-    fireEvent.click(screen.getByText('Try again'));
+  it('judges the next attempt against the EASED level, not the one that was failed', async () => {
+    // Nothing else pins this: the gate's resolve effect reads the level out of
+    // a ref, so a reordering that let it read a stale one would move the ladder
+    // in the log while asking the child for the same hard thing.
+    seedGateState('kid1', { levelId: 'L3', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
+    renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 1 } });
+
     await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).requirementOverride)
-      .toEqual(requirementForRung(degradeRung(initialRung()), { passScore: 0.8 }));
+    expect(h.runProps.at(-1).requirementOverride.mode).toBe('cued'); // L3
+    fireEvent.click(screen.getByText('stub-fail'));
+    fireEvent.click(await screen.findByText('Try again'));
+
+    await screen.findByTestId('exercise-run');
+    expect(h.runProps.at(-1).requirementOverride).toEqual(requirementForLevel(LEVELS[2]));
+    expect(h.runProps.at(-1).tier).toBe(2);
   });
 
   it('D12: Practice this leaves for the unmetered practice route and never grants the match', async () => {
@@ -353,11 +457,11 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
     fireEvent.click(await screen.findByText('Practice this'));
 
     expect(screen.getByTestId('location').textContent)
-      .toBe('/piano/exercises/run/scales%2Fc-major%40hands%3D2?intent=practice&mode=cued');
+      .toBe(`/piano/exercises/run/${encodeURIComponent(scaleId('C'))}?intent=practice&mode=free`);
     expect(onPassed).not.toHaveBeenCalled();
     const [, data] = eventNamed('gate.practice-detour');
-    expect(data.material).toBe('scales/c-major@hands=2');
-    expect(data.mode).toBe('cued');
+    expect(data.material).toBe(scaleId('C'));
+    expect(data.mode).toBe('free');
   });
 
   it('walking away is NOT a failure: the ladder does not move, however many times you Exit', async () => {
@@ -365,7 +469,7 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
     // `retriesBeforeDegrade`, a child could press Exit three times per match
     // and arrive at the unfailable floor without ever touching a key — the gate
     // would become a formality that still logs like a gate.
-    const { onPassed, onLeave } = renderGate({ learnerId: 'kid1', gateConfig: { retriesBeforeDegrade: 1 } });
+    const { onPassed, onLeave } = renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 1 } });
     const exit = await screen.findByText('stub-exit');
     for (let visit = 0; visit < 4; visit += 1) fireEvent.click(exit);
 
@@ -374,7 +478,7 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
     expect(eventNamed('gate.abandoned')).toBeTruthy();
     expect(eventNamed('gate.failed')).toBeUndefined();
     expect(eventNamed('gate.rung-changed')).toBeUndefined();
-    expect(readGateState('kid1')).toEqual({ rung: initialRung(), failuresAtRung: 0, cleanPasses: 0 });
+    expect(stateFor('kid1')).toMatchObject({ levelId: 'L1', failuresAtLevel: 0, cleanPasses: 0 });
   });
 
   it('offers a way out DURING the attempt, not only after it', async () => {
@@ -402,20 +506,76 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+describe('GameGate — contract 6: what the child is asked, in words they can read', () => {
+  it('hands the run its framing, its ask and the level’s tier', async () => {
+    renderGate({ learnerId: 'kid1', gameLabel: 'Chess' });
+    await screen.findByTestId('exercise-run');
+
+    const props = h.runProps.at(-1);
+    expect(props.framing).toBe('Play this to start Chess');
+    expect(props.ask).toBe('C major scale, right hand.');
+    // A NUMBER. `ExerciseRun` warns and derives its own band for anything else,
+    // and a YAML tier arriving as a string would silently take that path.
+    expect(props.tier).toBe(2);
+    expect(typeof props.tier).toBe('number');
+  });
+
+  it('says nothing about a game it was not told the name of, rather than naming `undefined`', async () => {
+    // `null` is what a host that has no label hands over, and it is also the
+    // component's own default for the prop.
+    renderGate({ learnerId: 'kid1', gameLabel: null });
+    await screen.findByTestId('exercise-run');
+    expect(h.runProps.at(-1).framing).toBeNull();
+  });
+
+  it('asks for a lit key at the floor, and hands over a tier-0 synthesized instance', async () => {
+    seedGateState('kid1', {
+      levelId: BUILT_IN_FLOOR.id, failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
+    });
+    renderGate({ learnerId: 'kid1' });
+    await screen.findByTestId('exercise-run');
+
+    const props = h.runProps.at(-1);
+    expect(props.ask).toBe('Press the lit key.');
+    expect(props.tier).toBe(0);
+    expect(props.material.kind).toBe('keys');
+    expect(props.material.instance.events).toHaveLength(1);
+    // Not one network call between the gate mounting and the key lighting up.
+    expect(h.instance).not.toHaveBeenCalled();
+    expect(h.instances).not.toHaveBeenCalled();
+    expect(h.catalog).not.toHaveBeenCalled();
+  });
+
+  it('rotates the root, so two consecutive gates at L2 are not the same scale', async () => {
+    // A level with three roots that always served the first one would be a
+    // three-root level in the config and a one-root level in the child's week.
+    seedGateState('kid1', { levelId: 'L2', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
+
+    const first = renderGate({ learnerId: 'kid1' });
+    await screen.findByTestId('exercise-run');
+    const firstId = h.runProps.at(-1).material.instanceId;
+    first.unmount();
+
+    renderGate({ learnerId: 'kid1' });
+    await waitFor(() => expect(h.runProps.at(-1).material.instanceId).not.toBe(firstId));
+    const secondId = h.runProps.at(-1).material.instanceId;
+
+    expect([firstId, secondId]).toEqual([scaleId('G'), scaleId('D')]);
+    // …and the ask moved with it: the sentence names the scale on the stand.
+    expect(h.runProps.at(-1).ask).toBe('D major scale, right hand.');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 describe('GameGate — the run’s own dead ends fail open too', () => {
   it('opens the gate when the run reports a terminal state it cannot leave', async () => {
-    // The gate resolves material through `instances(seedId)`; the run then
-    // re-resolves it through a DIFFERENT call, `instance(instanceId)`. A
-    // backend restart between the two lands the child on "Exercise not found"
-    // with no affordance and no callback — the fail-open would never fire and
-    // the log would show a `gate.attempt` with nothing after it.
     const { onPassed } = renderGate({ learnerId: 'kid1' });
     fireEvent.click(await screen.findByText('stub-dead-end'));
 
     expect(onPassed).toHaveBeenCalledTimes(1);
     const [, data] = eventNamed('gate.unavailable');
     expect(data.error).toBe('run-instance-not-found');
-    expect(data.material).toBe('scales/c-major@hands=2');
+    expect(data.material).toBe(scaleId('C'));
     expect(data.learnerId).toBe('kid1');
   });
 
@@ -449,15 +609,13 @@ describe('GameGate — the run’s own dead ends fail open too', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('GameGate — contract 6: the floor is announced once per arrival', () => {
-  it('logs gate.floor-reached when the last axis eases, and not again while it sits there', async () => {
-    // One axis short of the floor: the next degrade IS the arrival.
-    const oneAbove = { ...FLOOR, timing: 'cued' };
-    seedGateState('kid1', { rung: oneAbove, failuresAtRung: 0, cleanPasses: 0 });
-    renderGate({ learnerId: 'kid1', gateConfig: { retriesBeforeDegrade: 1 } });
+describe('GameGate — contract 7: the floor is announced once per arrival', () => {
+  it('logs gate.floor-reached on arriving there, and not again while it sits there', async () => {
+    seedGateState('kid1', { levelId: 'L1', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
+    renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 1 } });
 
     fireEvent.click(await screen.findByText('stub-fail'));
-    expect(readStored('kid1').rung).toEqual(FLOOR);
+    expect(readStored('kid1').levelId).toBe(BUILT_IN_FLOOR.id);
     expect(events().filter(([name]) => name === 'gate.floor-reached')).toHaveLength(1);
 
     fireEvent.click(screen.getByText('Try again'));
@@ -467,7 +625,7 @@ describe('GameGate — contract 6: the floor is announced once per arrival', () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('GameGate — contract 7: every event is reconstructable from one query', () => {
+describe('GameGate — contract 8: every event is reconstructable from one query', () => {
   it('stamps learnerId, deviceId, studyDate and sessionId on every gate event', async () => {
     const now = new Date(Date.now() - 4 * 3_600_000);
     const expectedStudyDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -489,14 +647,14 @@ describe('GameGate — contract 7: every event is reconstructable from one query
     expect(sessionIds.size).toBe(1); // one gate mount, one session id
   });
 
-  it('carries material, rung, mode and attemptId on the attempt-shaped events', async () => {
+  it('carries material, level, tier, mode and attemptId on the attempt-shaped events', async () => {
     renderGate({ learnerId: 'kid1' });
     fireEvent.click(await screen.findByText('stub-pass'));
 
     for (const name of ['gate.presented', 'gate.attempt', 'gate.passed']) {
       const [, data] = eventNamed(name);
       expect(data, name).toMatchObject({
-        material: 'scales/c-major@hands=2', rung: initialRung(), mode: 'cued', attemptId: expect.any(String),
+        material: scaleId('C'), rung: 'L1', tier: 2, mode: 'free', attemptId: expect.any(String),
       });
     }
     expect(eventNamed('gate.passed')[1].score).toBe(0.91);
@@ -508,57 +666,59 @@ describe('GameGate — a late-arriving learner keeps their place', () => {
   it('re-reads the ladder when the roster slug hydrates, instead of overwriting it', async () => {
     // `PianoUserContext` starts at null and hydrates asynchronously. On a
     // reload straight onto a games route the gate would otherwise resume at the
-    // guest key (top of the ladder) and then write THAT over a struggling
-    // child's hard-won position on the first outcome.
-    seedGateState('kid1', { rung: EASED_ONCE, failuresAtRung: 1, cleanPasses: 0 });
+    // guest key (the start level) and then write THAT over a struggling child's
+    // hard-won position on the first outcome.
+    seedGateState('kid1', { levelId: 'L3', failuresAtLevel: 1, cleanPasses: 0, lastMaterialId: null, pickIndex: 0 });
     function Harness() {
       const [learnerId, setLearnerId] = useState(null);
       return (
         <>
           <button type="button" onClick={() => setLearnerId('kid1')}>hydrate</button>
-          <GameGate learnerId={learnerId} gateConfig={{}} onPassed={() => {}} onLeave={() => {}} />
+          <GameGate learnerId={learnerId} gateConfig={CONFIG} gameLabel="Tetris" onPassed={() => {}} onLeave={() => {}} />
         </>
       );
     }
     render(<MemoryRouter><Harness /></MemoryRouter>);
     await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).requirementOverride.mode).toBe('cued'); // guest: top of the ladder
+    expect(h.runProps.at(-1).requirementOverride.mode).toBe('free'); // guest: the start level
 
     fireEvent.click(screen.getByText('hydrate'));
-    // The resumed rung reaches the run: the child is judged on what they earned.
-    await waitFor(() => expect(h.runProps.at(-1).requirementOverride.mode).toBe('free'));
+    // The resumed level reaches the run: the child is judged on what they earned.
+    await waitFor(() => expect(h.runProps.at(-1).requirementOverride.mode).toBe('cued'));
 
     fireEvent.click(screen.getByText('stub-pass'));
-    expect(readGateState('kid1')).toEqual({ rung: EASED_ONCE, failuresAtRung: 0, cleanPasses: 1 });
+    expect(stateFor('kid1')).toMatchObject({ levelId: 'L3', failuresAtLevel: 0, cleanPasses: 1 });
     // …and the events after hydration name the real child, not the null guest.
     expect(eventNamed('gate.passed')[1].learnerId).toBe('kid1');
   });
 
-  it('stamps the hydrated learner on events even when the resumed rung is unchanged', async () => {
+  it('stamps the hydrated learner on events even when the resumed level is unchanged', async () => {
     // The case the re-resolve branch does NOT cover, and the one that is
-    // common: a new learner, or one still at the top of the ladder, resumes the
-    // same rung already on screen — so `round` is not bumped and the in-flight
+    // common: a new learner, or one still at the start level, resumes the same
+    // level already on screen — so `round` is not bumped and the in-flight
     // resolution finishes with whatever `emit` it started with. Capturing
     // `emit` once would send `gate.presented`/`gate.attempt` out stamped
-    // `learnerId: null`, and finding 4 exists precisely to stop that.
+    // `learnerId: null`.
     function Harness() {
       const [learnerId, setLearnerId] = useState(null);
       return (
         <>
           <button type="button" onClick={() => setLearnerId('kid9')}>hydrate</button>
-          <GameGate learnerId={learnerId} gateConfig={{}} onPassed={() => {}} onLeave={() => {}} />
+          <GameGate learnerId={learnerId} gateConfig={CONFIG} gameLabel="Tetris" onPassed={() => {}} onLeave={() => {}} />
         </>
       );
     }
     // Hydrate BEFORE the resolution settles — the real race.
     let release;
-    h.catalog.mockReturnValue(new Promise((resolve) => { release = () => resolve({ ok: true, status: 200, data: { seeds: SEEDS } }); }));
+    h.instance.mockReturnValue(new Promise((resolve) => {
+      release = () => resolve({ ok: true, status: 200, data: { id: scaleId('C'), key: 'C', axes: { root: 'C', mode: 'ionian' }, events: [] } });
+    }));
     render(<MemoryRouter><Harness /></MemoryRouter>);
     fireEvent.click(screen.getByText('hydrate'));
     release();
     await screen.findByTestId('exercise-run');
 
-    // Same rung on both sides, so nothing re-resolved…
+    // Same level on both sides, so nothing re-resolved…
     expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(1);
     // …and the one attempt still names the child.
     for (const name of ['gate.presented', 'gate.attempt']) {
@@ -569,20 +729,6 @@ describe('GameGate — a late-arriving learner keeps their place', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('resolveGateConfig — a mistyped number must not become a broken gate', () => {
-  it('rejects a passScore outside (0, 1] in BOTH directions', () => {
-    // 80 is the percent-for-fraction mistake: finite, plausible, and it makes
-    // `score >= 80` — never true. Every child fails to the floor on every match
-    // while the logs read as ordinary `gate.failed`. The mirror is worse: "",
-    // false and [] all coerce to 0, so `score >= 0` passes everyone at every
-    // rung, logged as healthy `gate.passed`.
-    for (const bad of [80, 100, 1.5, 0, -0.5, '', false, [], null, undefined, 'high', NaN, Infinity]) {
-      expect(resolveGateConfig({ passScore: bad }).passScore, String(bad)).toBe(0.8);
-    }
-    for (const good of [0.5, 0.8, 1, '0.75']) {
-      expect(resolveGateConfig({ passScore: good }).passScore, String(good)).toBe(Number(good));
-    }
-  });
-
   it('rejects a fractional retry/climb count instead of flooring it to zero', () => {
     // Validating the raw value and flooring afterwards turns 0.5 into 0:
     // degrade on the first failure, climb on every pass. Both read as "the
@@ -595,10 +741,20 @@ describe('resolveGateConfig — a mistyped number must not become a broken gate'
     expect(resolveGateConfig({ climbAfterCleanPasses: 2 }).climbAfterCleanPasses).toBe(2);
   });
 
+  it('passes the repertoire and startLevel through untouched — the repertoire module validates them', () => {
+    // A second validator here would drift from `resolveRepertoire`'s the first
+    // time the level schema moved, and a validator that drifts silently sends a
+    // child to the wrong level.
+    expect(resolveGateConfig({ repertoire: REPERTOIRE }).repertoire).toBe(REPERTOIRE);
+    expect(resolveGateConfig({ startLevel: 'L2' }).startLevel).toBe('L2');
+    expect(resolveGateConfig({ startLevel: 42 }).startLevel).toBeNull();
+    expect(resolveGateConfig({}).repertoire).toBeNull();
+  });
+
   it('survives null and {} without throwing, and never self-enables', () => {
     for (const raw of [null, undefined, {}, 'nonsense', 42]) {
       expect(resolveGateConfig(raw)).toMatchObject({
-        enabled: false, every: 'match', passScore: 0.8, retriesBeforeDegrade: 3,
+        enabled: false, every: 'match', retriesBeforeDegrade: 3,
         metered: false, climbAfterCleanPasses: 3,
       });
     }
@@ -607,11 +763,13 @@ describe('resolveGateConfig — a mistyped number must not become a broken gate'
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GameGate — config defaults', () => {
-  it('runs off the design defaults when gateConfig is null or empty', async () => {
+  it('runs off the built-in fallback level when gateConfig is null or empty', async () => {
     renderGate({ gateConfig: null });
     await screen.findByTestId('exercise-run');
-    expect(h.runProps.at(-1).requirementOverride.passScore).toBe(0.8);
+    expect(h.runProps.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
+    expect(h.runProps.at(-1).requirementOverride).toEqual(requirementForLevel(FALLBACK_LEVEL));
     expect(h.runProps.at(-1).intent).toBe('challenge');
+    expect(GATE_CONFIG_DEFAULTS.enabled).toBe(false);
   });
 
   it('never rebuilds the material or requirement reference on a parent re-render', async () => {
@@ -624,7 +782,7 @@ describe('GameGate — config defaults', () => {
       return (
         <>
           <button type="button" onClick={() => setN(n + 1)}>bump</button>
-          <GameGate learnerId="kid1" gateConfig={{}} onPassed={() => {}} onLeave={() => {}} />
+          <GameGate learnerId="kid1" gateConfig={CONFIG} gameLabel="Tetris" onPassed={() => {}} onLeave={() => {}} />
         </>
       );
     }
@@ -638,8 +796,9 @@ describe('GameGate — config defaults', () => {
     expect(after).not.toBe(before); // the run really did re-render
     expect(after.material).toBe(before.material);
     expect(after.requirementOverride).toBe(before.requirementOverride);
+    expect(after.framing).toBe(before.framing);
     // …and nothing re-resolved behind it: one mount, one bank read, one attempt.
-    expect(h.catalog).toHaveBeenCalledTimes(1);
+    expect(h.instance).toHaveBeenCalledTimes(1);
     expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(1);
   });
 });
