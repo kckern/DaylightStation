@@ -287,21 +287,23 @@ export function validateAsk(tuple, options) {
  * they are being asked of.
  *
  * A thin adapter from tuple-space onto the geometry `stagecraft.js` owns
- * (`sequenceStaffCanDraw`) — reproduces the routing today's tier-numbered
- * `stageForTier` (`PianoKiosk/modes/Exercises/runPresentation.js`) computes
- * from a `0|1|2|3` tier, but reads it off the axis values a tuple actually
- * carries instead of a tier number. `stageForTier` stays the tier-facing entry
- * point `ExerciseRun` calls; this is the axis-facing one, and the two must
- * keep agreeing — every `PRESETS['tier-N']` cell is pinned by
- * `askSchema.test.js` to answer the same stage `stageForTier(N, instance)`
- * would.
+ * (`sequenceStaffCanDraw`). Built in task 2 of ask-platform SP1 alongside a
+ * tier-numbered twin, `stageForTier` (`PianoKiosk/modes/Exercises/
+ * runPresentation.js`), which computed the identical routing from a `0|1|2|3`
+ * tier rather than from the axis values a tuple actually carries. Task 5b
+ * wired `ExerciseRun` to this function instead — it builds a tuple with
+ * `askTupleFor({ tier: runTier }, null)` and calls `deriveStage(tuple,
+ * instance)` — and deleted `stageForTier`, which had no other caller.
+ * `askSchema.test.js`'s 16-cell table (`{4 presets} × {ordering any/strict} ×
+ * {canDraw yes/no}`) is the proof the two agreed on every cell before the
+ * switch, and stays as the pure-function regression check after it.
  *
  * @param {object} tuple A flat ask tuple, or a `presentation`-shaped subset of
  *   one (`expandAsk(level).presentation`, or a `PRESETS['tier-N']` entry
  *   directly) — only `notationStyle` and `prompt` are read.
  * @param {object} instance The bank instance the ask is drawn against.
  *   `instance.ordering === 'any'` and `sequenceStaffCanDraw(instance)` are
- *   both read from it, exactly as `stageForTier` reads them today.
+ *   both read from it.
  * @returns {'keys'|'sequence'|'notation'|'score'}
  *
  * Precedence, most-specific first:
@@ -309,9 +311,9 @@ export function validateAsk(tuple, options) {
  *  1. **`notationStyle: 'score'`** → `'score'`. A tuple only carries this
  *     value for score-sourced material (`validateAsk`'s `score source ⇒
  *     notationStyle score` constraint) — the one case with an actual
- *     engraved document behind it, which `ExerciseRun` today short-circuits
- *     to before `stageForTier` is even called (`stage = score ? 'score' :
- *     stageForTier(...)`). Checked first because it is the hardest fact of
+ *     engraved document behind it, which `ExerciseRun` short-circuits to
+ *     before this function is even called (`stage = score ? 'score' :
+ *     deriveStage(...)`). Checked first because it is the hardest fact of
  *     the three: an ask with a document behind it has exactly one honest
  *     stage, independent of ordering or prompt.
  *  2. **`instance.ordering === 'any'`** → `'keys'`. There is no ordered
@@ -319,8 +321,8 @@ export function validateAsk(tuple, options) {
  *     tier, including one a host named explicitly.
  *  3. **`prompt: 'follow'`** (tiers 0-1) → `'keys'`. Whether a reinforcement
  *     staff is offered alongside it is `secondary`'s question, not this
- *     function's — `stageForTier` never answered it either, and `ExerciseRun`
- *     computes that from `staffFitsAsk`, unmoved by this task.
+ *     function's — `ExerciseRun` computes that from `staffFitsAsk`, unmoved
+ *     by task 5b.
  *  4. **`notationStyle: 'sequence'`** (tier 2) → `'sequence'` when
  *     `sequenceStaffCanDraw(instance)` allows it, else `'notation'` — the
  *     one-staff renderer's own limits (a declared grand staff, genuinely
@@ -336,4 +338,53 @@ export function deriveStage(tuple, instance) {
   if (t.prompt === 'follow') return 'keys';
   if (t.notationStyle === 'sequence') return sequenceStaffCanDraw(instance) ? 'sequence' : 'notation';
   return 'notation';
+}
+
+/**
+ * Which `source` axis value a material spec's KIND names.
+ *
+ * The schema's source axis and the material vocabulary are two names for one
+ * fact, and this is the only place they meet. Supplying it is what lets the
+ * constraint table say anything at all about a legacy level: a `tier: 3` level
+ * asserts `timing: cued`, and `cued ⇒ a source that can carry note values` can
+ * only be checked once the material it was picked with is known.
+ */
+const SOURCE_KIND = Object.freeze({ keys: 'synthesized', exercise: 'bank', score: 'score' });
+
+/**
+ * The flat ask tuple a level plus its picked material actually expresses.
+ *
+ * Two facts come from the MATERIAL rather than from the level, because the
+ * level never states them:
+ *
+ *  - `source`, above.
+ *  - `notationStyle: 'score'` for score material, at every tier. That is not a
+ *    liberty: it reproduces the short-circuit the run surface has always run
+ *    (`stage = score ? 'score' : deriveStage(...)`) — a document has exactly
+ *    one honest stage, and a tier-2 level naming a passage still engraves it.
+ *
+ * Errors from both halves are concatenated: `expandAsk`'s (an unknown tier, an
+ * out-of-vocabulary axis, a not-yet-implemented one) and the constraint table's.
+ *
+ * **Moved here from `ask/AskSession.jsx` in task 5b of ask-platform SP1**, so
+ * `ExerciseRun` — which builds a tuple from its own resolved `tier` and calls
+ * `deriveStage` with it — can import this alongside `deriveStage` without
+ * reaching into `AskSession.jsx`, which imports `ExerciseRun` back (a cycle).
+ * `AskSession.jsx` re-exports this name unchanged for its own callers and
+ * tests; nothing about its behaviour moved, only its address.
+ *
+ * @param {object} levelLike A repertoire level, legacy or explicit shaped.
+ * @param {object|null} spec The material spec the host picked for it.
+ * @returns {{ tuple: object, errors: string[] }}
+ */
+export function askTupleFor(levelLike, spec) {
+  const { presentation, grading, errors } = expandAsk(levelLike);
+  const sourceKind = SOURCE_KIND[spec?.kind];
+  const tuple = {
+    ...presentation,
+    judging: grading.judging,
+    ...(sourceKind ? { source: { kind: sourceKind } } : {}),
+    ...(sourceKind === 'score' ? { notationStyle: 'score' } : {}),
+  };
+  return { tuple, errors: [...errors, ...validateAsk(tuple).errors] };
 }

@@ -53,51 +53,19 @@ import getLogger from '../../../lib/logging/Logger.js';
 import PianoEmpty from '../PianoKiosk/PianoEmpty.jsx';
 import ExerciseRun from '../PianoKiosk/modes/Exercises/ExerciseRun.jsx';
 import { resolveSpec } from '../PianoKiosk/modes/Games/gateMaterial.js';
-import { expandAsk, validateAsk } from './askSchema.js';
+import { askTupleFor, expandAsk, validateAsk } from './askSchema.js';
 import { loadAskSources, PENDING_SOURCES } from './askResolution.js';
 import { askForMaterial, framingFor, requirementForLevel } from './gateAsk.js';
 
 /**
- * Which `source` axis value a material spec's KIND names.
- *
- * The schema's source axis and the material vocabulary are two names for one
- * fact, and this is the only place they meet. Supplying it is what lets the
- * constraint table say anything at all about a legacy level: a `tier: 3` level
- * asserts `timing: cued`, and `cued ⇒ a source that can carry note values` can
- * only be checked once the material it was picked with is known.
+ * The tuple builder used below to validate an authored ask. Moved to
+ * `askSchema.js` in task 5b of ask-platform SP1 (it is a pure schema
+ * function, not a session concern) so `ExerciseRun` can build one too without
+ * importing this file — which imports `ExerciseRun` back — and re-exported
+ * here unchanged so every existing caller of `askTupleFor` from this module
+ * keeps working.
  */
-const SOURCE_KIND = Object.freeze({ keys: 'synthesized', exercise: 'bank', score: 'score' });
-
-/**
- * The flat ask tuple a level plus its picked material actually expresses.
- *
- * Two facts come from the MATERIAL rather than from the level, because the
- * level never states them:
- *
- *  - `source`, above.
- *  - `notationStyle: 'score'` for score material, at every tier. That is not a
- *    liberty: it reproduces the short-circuit the run surface has always run
- *    (`stage = score ? 'score' : stageForTier(...)`) — a document has exactly
- *    one honest stage, and a tier-2 level naming a passage still engraves it.
- *
- * Errors from both halves are concatenated: `expandAsk`'s (an unknown tier, an
- * out-of-vocabulary axis, a not-yet-implemented one) and the constraint table's.
- *
- * @param {object} levelLike A repertoire level, legacy or explicit shaped.
- * @param {object|null} spec The material spec the host picked for it.
- * @returns {{ tuple: object, errors: string[] }}
- */
-export function askTupleFor(levelLike, spec) {
-  const { presentation, grading, errors } = expandAsk(levelLike);
-  const sourceKind = SOURCE_KIND[spec?.kind];
-  const tuple = {
-    ...presentation,
-    judging: grading.judging,
-    ...(sourceKind ? { source: { kind: sourceKind } } : {}),
-    ...(sourceKind === 'score' ? { notationStyle: 'score' } : {}),
-  };
-  return { tuple, errors: [...errors, ...validateAsk(tuple).errors] };
-}
+export { askTupleFor };
 
 /**
  * The whole resolution, in the two steps it has always taken — and it is two,
