@@ -1,7 +1,7 @@
 # Media Lessons with Comprehension Checkpoints — Design
 
 **Date:** 2026-08-27
-**Status:** Validated design, pre-implementation
+**Status:** Implemented on `feature/media-lesson-checkpoints` (2026-08-27). Behaviour as built, plus the deployment ordering for the three data edits that are still outstanding, is documented at `docs/reference/school/media-lessons.md` — read that first; this file remains the record of the design reasoning, and a few of its decisions were resolved differently in code (dispatch stayed on the §8 `DispatchMedia` → playback-port path rather than routing through `DoNowService`; `OpenMediaLessonSession` landed as `ReadLessonSnapshot` over the existing work session). Not yet run on the living-room TV.
 **Prior art this builds on:** reading sessions (`docs/reference/school/reading-sessions.md`), fitness governance (`GovernanceEngine` + `pauseArbiter`), the DoNow surface/launcher pipeline, `OpenCatalogLearningSession`.
 
 ## Goal
