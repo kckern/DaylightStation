@@ -23,6 +23,10 @@ import { buildRiderToast } from '../modules/Fitness/player/overlays/buildRiderTo
 import { lookupUserName } from '../modules/Fitness/player/overlays/lookupUserName.js';
 import { createChallengeToastTracker, nextChallengeToast } from '../modules/Fitness/player/overlays/challengeToastTracker.js';
 import { buildChallengeToast } from '../modules/Fitness/player/overlays/buildChallengeToast.js';
+import { mergeRingCelebrationToast } from '../modules/Fitness/player/overlays/buildRingCelebrationToast.js';
+import { createRingCelebrationTracker, normalizeRingCelebrationsConfig, ringCelebrationsForAward, seedRingCelebrationTracker } from '../modules/Fitness/player/overlays/ringCelebrations.js';
+import { DaylightMediaPath } from '../lib/api.mjs';
+import { playRingCelebrationCue } from '../modules/Fitness/player/overlays/ringCelebrationAudio.js';
 import { normalizePressureMatMessage, pressureMatFitnessEvent } from './fitnessPressureMat.js';
 
 // Phase 3 SSOT: Domain model imports
@@ -174,6 +178,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [fitnessToast, setFitnessToast] = useState(null);
   const toastIdRef = useRef(0);
   const riderToastRef = useRef(null);
+  const fitnessToastRef = useRef(null);
+  const ringCelebrationTrackerRef = useRef(createRingCelebrationTracker());
+  const pendingRingEntriesRef = useRef([]);
+  const ringFlushTimerRef = useRef(null);
+  const ringConfigSignatureRef = useRef(null);
   const [voiceMemoVersion, setVoiceMemoVersion] = useState(0);
   const [connected, setConnected] = useState(false);
   const [internalPlayQueue, setInternalPlayQueue] = useState([]);
@@ -511,7 +520,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     sessionsConfig,
     cycleGameConfig,
     dancePartyConfig,
-    voiceMemoEligibleUsers
+    voiceMemoEligibleUsers,
+    ringCelebrationsConfig,
   } = React.useMemo(() => {
     const root = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
     // Prefer 'content' config key, fall back to legacy 'plex' key
@@ -565,6 +575,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       // Single source of truth for the dance_party block; null (not {}) when
       // absent so consumers can distinguish "unconfigured" and fail loudly.
       dancePartyConfig: root?.dance_party || null,
+      ringCelebrationsConfig: normalizeRingCelebrationsConfig(root?.ring_celebrations),
       // Gates the session-end voice-memo auto-popup. Empty/absent = everyone.
       voiceMemoEligibleUsers: Array.isArray(root?.voice_memo_eligibility?.users)
         ? root.voice_memo_eligibility.users.filter(Boolean)
@@ -1335,11 +1346,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const pushFitnessToast = useCallback((toast) => {
     toastIdRef.current += 1;
-    setFitnessToast(normalizeToast(toast, toastIdRef.current));
+    const next = normalizeToast(toast, toastIdRef.current);
+    fitnessToastRef.current = next;
+    setFitnessToast(next);
   }, []);
 
   const dismissFitnessToast = useCallback((id) => {
-    setFitnessToast((prev) => (dismissMatches(prev, id) ? null : prev));
+    setFitnessToast((prev) => {
+      const next = dismissMatches(prev, id) ? null : prev;
+      fitnessToastRef.current = next;
+      return next;
+    });
   }, []);
 
   // WebSocket subscription using centralized WebSocketService
@@ -2027,6 +2044,101 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const getDisplayName = React.useCallback((deviceId) => {
     return resolveDisplayName(deviceId, displayNameContext);
   }, [displayNameContext]);
+
+  // Ring celebrations are event-driven: TreasureBox calls us only after it has
+  // committed an award. The first arrival gets a brief coalescing window; once
+  // a ring card is visible, later arrivals merge into it immediately and reset
+  // its whole display lifetime.
+  const flushRingCelebrations = useCallback(() => {
+    if (ringFlushTimerRef.current) {
+      clearTimeout(ringFlushTimerRef.current);
+      ringFlushTimerRef.current = null;
+    }
+    const entries = pendingRingEntriesRef.current.splice(0);
+    if (!entries.length) return;
+    const toastOptions = {
+      resolveUserName: (uid) => lookupUserName(configuredUsers, uid, { preferGroupLabels }),
+      iconUrl: DaylightMediaPath(`/media/${ringCelebrationsConfig.icon}`),
+      durationMs: ringCelebrationsConfig.durationMs,
+      maxVisibleContributors: ringCelebrationsConfig.maxVisibleContributors,
+    };
+    setFitnessToast((previous) => {
+      // A governance/rider toast must retain its own meaning. Keep all ring
+      // arrivals together until that card goes away rather than overwriting it.
+      if (previous && previous.kind !== 'ring-celebration') {
+        pendingRingEntriesRef.current.unshift(...entries);
+        return previous;
+      }
+      const payload = mergeRingCelebrationToast(previous, entries, toastOptions);
+      const next = previous
+        ? { ...previous, ...payload, revision: (previous.revision || 0) + 1 }
+        : normalizeToast({ ...payload, revision: 0 }, ++toastIdRef.current);
+      fitnessToastRef.current = next;
+      return next;
+    });
+    getLogger().info('fitness.ring_celebration.toast', {
+      entryCount: entries.length,
+      entries: entries.map((entry) => ({ scope: entry.scope, threshold: entry.threshold, userId: entry.userId || null })),
+    });
+  }, [configuredUsers, preferGroupLabels, ringCelebrationsConfig]);
+
+  const scheduleRingCelebrationFlush = useCallback(({ immediate = false } = {}) => {
+    if (!pendingRingEntriesRef.current.length) return;
+    if (immediate || fitnessToastRef.current?.kind === 'ring-celebration' || ringCelebrationsConfig.coalesceWindowMs === 0) {
+      flushRingCelebrations();
+      return;
+    }
+    if (!ringFlushTimerRef.current) {
+      ringFlushTimerRef.current = setTimeout(flushRingCelebrations, ringCelebrationsConfig.coalesceWindowMs);
+    }
+  }, [flushRingCelebrations, ringCelebrationsConfig.coalesceWindowMs]);
+
+  const handleRingAward = useCallback((award) => {
+    const result = ringCelebrationsForAward(ringCelebrationTrackerRef.current, award, ringCelebrationsConfig);
+    ringCelebrationTrackerRef.current = result.tracker;
+    if (!result.entries.length) return;
+    pendingRingEntriesRef.current.push(...result.entries);
+    scheduleRingCelebrationFlush({ immediate: fitnessToastRef.current?.kind === 'ring-celebration' });
+  }, [ringCelebrationsConfig, scheduleRingCelebrationFlush]);
+
+  // Attaching after configuration/session changes seeds already-earned totals
+  // first. This prevents a reload or resumed session from congratulating people
+  // again for thresholds they crossed before this UI existed.
+  useEffect(() => {
+    const box = session?.treasureBox;
+    if (!box) return undefined;
+    const signature = JSON.stringify({ sessionId: session?.sessionId || null, ringCelebrationsConfig });
+    if (ringConfigSignatureRef.current !== signature) {
+      ringConfigSignatureRef.current = signature;
+      ringCelebrationTrackerRef.current = seedRingCelebrationTracker(createRingCelebrationTracker(), {
+        userTotals: box.getPerUserTotals?.(),
+        totalRings: box.totalRings,
+      }, ringCelebrationsConfig);
+      pendingRingEntriesRef.current = [];
+    }
+    box.setRingAwardCallback(handleRingAward);
+    return () => {
+      if (box === session?.treasureBox) box.setRingAwardCallback(null);
+    };
+  }, [session, version, ringCelebrationsConfig, handleRingAward]);
+
+  // A non-ring toast may have been visible when awards arrived. As soon as it
+  // clears, show their single accumulated celebration rather than losing it.
+  useEffect(() => {
+    if (!fitnessToast && pendingRingEntriesRef.current.length) scheduleRingCelebrationFlush({ immediate: true });
+  }, [fitnessToast, scheduleRingCelebrationFlush]);
+
+  const ringToastKey = fitnessToast?.kind === 'ring-celebration'
+    ? `${fitnessToast.id}:${fitnessToast.revision || 0}`
+    : null;
+  useEffect(() => {
+    if (!ringToastKey || !ringCelebrationsConfig.enabled) return;
+    playRingCelebrationCue({ sound: ringCelebrationsConfig.sound, volume: ringCelebrationsConfig.volume });
+  }, [ringToastKey, ringCelebrationsConfig]);
+
+  useEffect(() => () => {
+    if (ringFlushTimerRef.current) clearTimeout(ringFlushTimerRef.current);
+  }, []);
 
   // Keep a current rider→toast handler so the WS dispatch can fire a toast without
   // putting getDisplayName (declared below the WS effect) in that effect's deps.

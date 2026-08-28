@@ -93,14 +93,23 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   const listeners = useRef({
     playing: () => handlers.current.notePlaybackStarted?.(),
     ended: () => handlers.current.notePlaybackCompleted?.(),
+    timeupdate: (event) => handlers.current.notePlaybackProgress?.(event.currentTarget),
   });
 
-  const detachMedia = useCallback(() => {
+  // LOGGED, because these two listeners are the ONLY witnesses to a story
+  // starting and finishing. Once they are off the element, a story can play to
+  // its end and complete in total silence — which is exactly what happened on
+  // 2026-08-28: the Player went away with no `ended` and no `clear` reaching
+  // this widget, and there was no line anywhere saying the ears had been
+  // removed. `reason` distinguishes an ordinary swap from a teardown.
+  const detachMedia = useCallback((reason = 'swap') => {
     const el = mediaRef.current;
     if (!el) return;
     el.removeEventListener('playing', listeners.current.playing);
     el.removeEventListener('ended', listeners.current.ended);
+    el.removeEventListener('timeupdate', listeners.current.timeupdate);
     mediaRef.current = null;
+    readingLog.playback('media-detached', { reason });
   }, []);
 
   const attachMedia = useCallback((el) => {
@@ -109,6 +118,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     mediaRef.current = el;
     el.addEventListener('playing', listeners.current.playing);
     el.addEventListener('ended', listeners.current.ended);
+    el.addEventListener('timeupdate', listeners.current.timeupdate);
     readingLog.playback('media-attached', { tag: el.tagName?.toLowerCase?.() ?? null });
   }, [detachMedia]);
 
@@ -123,7 +133,18 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
       play: { contentId: committed.contentId },
       onMediaRef: attachMedia,
       clear: () => {
-        detachMedia();
+        // The Player is done for SOME reason — end of content, a load failure,
+        // a bail, a queue running out. Logged on arrival because `clear` and
+        // the element's own `ended` are the two ways a story can finish, and
+        // on 2026-08-28 NEITHER of them fired: without a line here there is no
+        // way to tell "clear never came" from "clear came and did nothing".
+        // NOT named `ended` — an earlier version was, and it measured the wrong
+        // thing entirely: nothing detaches the media before `clear` on a normal
+        // completed story, so it read `false` after a full playthrough and would
+        // have pointed the next investigation away from the truth. This says
+        // only what it can see — whether the element was already let go.
+        readingLog.playback('player-cleared', { mediaAlreadyDetached: mediaRef.current === null });
+        detachMedia('player-cleared');
         dismissOverlay();
         handlers.current.notePlaybackDismissed?.();
       },
@@ -137,8 +158,12 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   handlers.current.notePlaybackDismissed = session.notePlaybackDismissed;
   handlers.current.notePlaybackStarted = session.notePlaybackStarted;
   handlers.current.notePlaybackCompleted = session.notePlaybackCompleted;
+  handlers.current.notePlaybackProgress = session.notePlaybackProgress;
 
-  useEffect(() => detachMedia, [detachMedia]);
+  // Named, so an unmount mid-story is distinguishable in the log store from an
+  // ordinary element swap. A widget that unmounts while a story is playing has
+  // silently thrown away the completion, and that is worth being able to see.
+  useEffect(() => () => detachMedia('unmount'), [detachMedia]);
 
   // The living-room screen runs the ArtMode screensaver with `showOnLoad`, and
   // a screensaver is a FULLSCREEN OVERLAY — it suppresses itself for active

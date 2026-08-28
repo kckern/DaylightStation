@@ -35,9 +35,9 @@ import { STORY_TIME_PROGRAM_ID, DEFAULT_STORY_TARGET } from '#domains/school/sto
 const AT_THE_TV = 'Story time happens on the living room TV — tap your card there.';
 
 export class StoryTimeProgramLauncher {
-  #readingLog; #assignments; #timezone; #clock; #logger;
+  #readingLog; #assignments; #timezone; #clock; #logger; #startReadingSession;
 
-  constructor({ readingLog, assignments, timezone = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ readingLog, assignments, timezone = null, clock = () => new Date(), logger = console, startReadingSession = null } = {}) {
     if (!readingLog) throw new Error('StoryTimeProgramLauncher requires a readingLog');
     if (!assignments) throw new Error('StoryTimeProgramLauncher requires an assignments store');
     this.#readingLog = readingLog;
@@ -45,6 +45,7 @@ export class StoryTimeProgramLauncher {
     this.#timezone = timezone;
     this.#clock = clock;
     this.#logger = logger;
+    this.#startReadingSession = startReadingSession;
   }
 
   get id() { return STORY_TIME_PROGRAM_ID; }
@@ -207,8 +208,15 @@ export class StoryTimeProgramLauncher {
    * then relay `message` VERBATIM; anything else here and a child is told the
    * generic "ask a grown-up" instead of which room to walk to.
    */
-  async launch() {
-    return { decision: 'failed', message: AT_THE_TV };
+  async launch({ userId }) {
+    if (typeof this.#startReadingSession !== 'function') {
+      return { decision: 'failed', message: AT_THE_TV };
+    }
+    const result = await this.#startReadingSession({ learnerId: userId, origin: 'portal' });
+    if (result?.status === 'reading_session_open' || result?.status === 'reading_session_starting') {
+      return { decision: 'dispatched', message: 'The living room TV is getting ready.' };
+    }
+    return { decision: 'failed', message: result?.message ?? AT_THE_TV };
   }
 }
 

@@ -1092,6 +1092,16 @@ const Player = forwardRef(function Player(props, ref) {
 
   // Create appropriate advance function for single continuous items
   const singleAdvance = useCallback(() => {
+    // Where a NON-queue item goes when it ends: either it loops, or the Player
+    // clears itself. Both were silent, so "the story finished and the Player
+    // vanished" produced no log line naming which of the two happened or why —
+    // and a consumer that depends on `clear` (the school reading session, whose
+    // completion hangs off it) had no way to tell a missing call from a
+    // no-op one. See docs/_wip/bugs/2026-08-28-story-time-portal-launch-*.
+    playbackLog('single-item-ended', {
+      action: singlePlayerProps?.continuous ? 'loop' : 'clear',
+      assetId: singlePlayerProps?.assetId ?? null,
+    });
     if (singlePlayerProps?.continuous) {
       // For continuous single items, check if native loop is already handling it
       const mediaEl = document.querySelector(`[data-key="${singlePlayerProps.assetId || singlePlayerProps.plex}"]`);

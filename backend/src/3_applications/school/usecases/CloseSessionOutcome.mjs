@@ -434,11 +434,23 @@ export class CloseSessionOutcome {
 
     // Whether the receipt may say "you are done for the day".
     //
-    // Folded over THIS projection deliberately. `#projectPlan` uses the same
-    // three flags as `GetLearnerDayCompletion` — attested/exceptions/
-    // assignedPrograms all false — so this is the household's one canonical
-    // notion of a finished day, the same one that gates the piano-games
-    // unlock, rather than a second definition invented here.
+    // Folded over THIS projection deliberately — but the claim this comment
+    // used to make, that it is "the household's one canonical notion of a
+    // finished day", STOPPED BEING TRUE on 2026-08-28.
+    //
+    // `GetLearnerDayCompletion` now passes `assignedPrograms: true`; this use
+    // case still passes `false`, because it is wired with NO launchers and pins
+    // `programStatuses: []`, so appending program entries here would make every
+    // program subject look permanently unserved and no receipt would ever say
+    // "done". The flags no longer match, and the divergence has a direction:
+    // this read sees FEWER sections, so it is the more OPTIMISTIC of the two.
+    //
+    // What that costs, concretely: a child who finishes a worksheet can get a
+    // receipt saying they are done for the day while the piano-games gate still
+    // holds, because a program they have not finished is invisible here and
+    // visible there. That is the safe direction — nothing unlocks early — but
+    // it is an inconsistency a child can notice, and closing it means wiring
+    // this use case with launchers so it can honestly fan out.
     //
     // Only `complete` earns the line. `indeterminate` (a plan error, an
     // unavailable required program) is NOT evidence of a finished day, and
@@ -856,8 +868,8 @@ export class CloseSessionOutcome {
       now: nowIso,
       attested: false,
       exceptions: false,
-      assignedPrograms: false,
-      programStatuses: [],
+      assignedPrograms: true,
+      programStatuses: null,
       planErrorEvent: 'school.outcome.plan-errors',
     });
   }

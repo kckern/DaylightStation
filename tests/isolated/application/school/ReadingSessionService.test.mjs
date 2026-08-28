@@ -35,6 +35,20 @@ describe('ReadingSessionService', () => {
     expect(s.current('livingroom')).toBeNull();
   });
 
+  it('keeps a bounded, timestamped transition timeline for diagnosis', () => {
+    const s = new ReadingSessionService({ clock: () => new Date('2026-08-28T19:00:00Z'), logger: silent });
+    const opened = s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    s.activate('livingroom', opened.sessionId);
+    s.acknowledge('livingroom', opened.sessionId);
+    s.update('livingroom', { state: 'confirm' });
+    expect(s.observations('livingroom')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'opened', sessionId: opened.sessionId, at: '2026-08-28T19:00:00.000Z' }),
+      expect.objectContaining({ type: 'activated' }),
+      expect.objectContaining({ type: 'acknowledged' }),
+      expect.objectContaining({ type: 'updated', state: 'confirm' }),
+    ]));
+  });
+
   it('broadcasts the open so the screen can render it', () => {
     const sent = [];
     const s = new ReadingSessionService({

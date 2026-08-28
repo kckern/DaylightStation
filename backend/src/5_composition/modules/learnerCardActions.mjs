@@ -74,6 +74,20 @@ export function makePrintAgendaHandler({ resolvePersonalCard, eventBus, logger =
   };
 }
 
+/** Apply the reader's declared end policy when its reading session expires. */
+export function makeReadingTimeoutHandler({ locations = () => ({}), tv = null, logger = console } = {}) {
+  return async (session) => {
+    const source = locations()?.[session?.location] ?? {};
+    if (source.end !== 'tv-off') {
+      logger?.info?.('school.reading.timeout-idle', { location: session?.location ?? null, end: source.end ?? null });
+      return { action: 'idle' };
+    }
+    if (!tv?.turnOff) return { action: 'tv-off-unavailable' };
+    await tv.turnOff(source.end_location ?? session.location);
+    return { action: 'tv-off', location: source.end_location ?? session.location };
+  };
+}
+
 /**
  * The `reading-session` learner action: a preschooler's own card at the
  * living-room reader opens a session scoped to them, and wakes the screen so
@@ -111,7 +125,8 @@ export function makePrintAgendaHandler({ resolvePersonalCard, eventBus, logger =
  * @returns {(args: {learnerId: string, location?: string, target?: string}) => Promise<object>}
  */
 export function makeReadingSessionHandler({
-  sessions, isPlaying = null, wakeScreen = null, eventBus = null, logger = console,
+  sessions, isPlaying = null, wakeScreen = null, alertAdult = null, eventBus = null, logger = console,
+  ackTimeoutMs = 8_000, maxDeliveryAttempts = 3,
 } = {}) {
   if (!sessions) throw new Error('makeReadingSessionHandler requires a sessions store');
 
@@ -165,11 +180,15 @@ export function makeReadingSessionHandler({
     const midStory = existing?.state === 'reading'
       ? { state: existing.state, playing: existing.playing ?? null }
       : null;
-    const session = sessions.open({ location, learnerId, target });
+    // Reserve the reader before the potentially long wake. A book tap in this
+    // interval must not escape to ordinary playback without attribution.
+    const session = sessions.open({ location, learnerId, target, state: midStory ? 'prompt' : 'starting' });
     if (midStory) sessions.update(location, midStory);
 
     let woke = null;
+    let wakeMs = null;
     if (wakeScreen) {
+      const wakeStartedAt = Date.now();
       try {
         woke = await wakeScreen({ target, location });
       } catch (err) {
@@ -179,20 +198,71 @@ export function makeReadingSessionHandler({
         log('warn', 'school.reading.wake-failed', { location, target, error: err?.message ?? String(err) });
         woke = { ok: false, error: err?.message ?? String(err) };
       }
+      wakeMs = Date.now() - wakeStartedAt;
     }
 
+    // A late wake from a superseded card must not revive the newer learner's
+    // session. `activate` compares the reservation id before publishing.
+    const active = midStory ? sessions.current(location) : sessions.activate(location, session.sessionId);
+
+    // `wakeMs` is the wake CALL's latency, recorded plainly. `sessions.open()`
+    // above has already broadcast `session-open` on this room's topic — before
+    // this wake ran — so how long the wake takes bounds how long the room had
+    // no chance of hearing it. On 2026-08-28 it was 19 seconds, and the only
+    // way to know that was to subtract two timestamps in the log store by hand.
+    //
+    // IT IS NOT A VERDICT, AND AN EARLIER VERSION OF THIS LINE PRETENDED IT
+    // WAS. A `broadcastLikelyMissed` boolean derived from a 1.5s threshold was
+    // wrong on its face: `prepareForContent` spends ~13.5s on the HEALTHY path
+    // (FKB foreground verification alone took 11.97s in the incident), so a TV
+    // that was already on, already subscribed, and received the broadcast
+    // perfectly would still have been flagged and warned about. A field that
+    // fires on every ordinary tap teaches you to ignore it.
+    //
+    // Whether anyone actually heard the broadcast is a question only the bus
+    // can answer — the topic's subscriber count at broadcast time, which
+    // `ScreenPlaybackAdapter.#awaitListener` already reads. Wiring that in is
+    // the real fix (fix 1 in the bug doc); until then this stays a measurement
+    // and does not editorialise.
     log('info', 'school.reading.session-opened', {
       location, learnerId, target, replaced: existing?.learnerId ?? null, midStory: Boolean(midStory),
+      wakeMs,
+      woke: woke ? woke.ok !== false : null,
     });
+    // The initial wake is intentionally outside this retry loop: power-on is
+    // expensive and can disturb a person using the TV.  Recovery replays the
+    // state and re-foregrounds the already-selected reader, at most twice.
+    // The card tap has already received its answer; delivery continues without
+    // holding the trigger request open for up to 24 seconds.
+    if (!midStory && active?.sessionId) {
+      void (async () => {
+        for (let attempt = 1; attempt <= maxDeliveryAttempts; attempt += 1) {
+          if (await sessions.waitForAcknowledgement(active.sessionId, ackTimeoutMs)) {
+            log('info', 'school.reading.delivery-acknowledged', { location, sessionId: active.sessionId, attempt });
+            return;
+          }
+          if (attempt === maxDeliveryAttempts) break;
+          sessions.reannounce(location, active.sessionId);
+          try { await wakeScreen?.({ target, location, prepareOnly: true }); } catch (err) {
+            log('warn', 'school.reading.delivery-replay-wake-failed', { location, attempt: attempt + 1, error: err?.message ?? String(err) });
+          }
+        }
+        log('error', 'school.reading.delivery-unacknowledged', { location, learnerId, sessionId: active.sessionId, attempts: maxDeliveryAttempts });
+        try { await alertAdult?.({ location, target, learnerId, sessionId: active.sessionId }); } catch (err) {
+          log('warn', 'school.reading.delivery-alert-failed', { location, error: err?.message ?? String(err) });
+        }
+      })();
+    }
     return {
       status: 'reading_session_open',
-      learnerId: session.learnerId,
-      location: session.location,
+      learnerId: (active ?? session).learnerId,
+      location: (active ?? session).location,
       // `null` when nothing was asked to wake; `false` only when something was
       // asked and could not. The two are different answers.
       woke: wakeScreen ? woke?.ok !== false : null,
+      sessionId: (active ?? session).sessionId,
     };
   };
 }
 
-export default { makePrintAgendaHandler, makeReadingSessionHandler };
+export default { makePrintAgendaHandler, makeReadingSessionHandler, makeReadingTimeoutHandler };
