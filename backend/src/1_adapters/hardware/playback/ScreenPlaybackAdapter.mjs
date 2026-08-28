@@ -16,11 +16,12 @@
  *
  * Two steps, in this order and never the other:
  *
- *   1. **Wake.** Delegated whole to `WakeAndLoadService.execute(deviceId, query)`,
- *      exactly as `LivingroomTvSurface` delegates it. This adapter contains no
- *      device-control logic of its own — no HA call, no ADB, no FKB — because
- *      there is already one place that knows how to bring a dark TV up and it
- *      is not here.
+ *   1. **Wake.** Delegated whole to an injected `wakeScreen({target, location})`
+ *      seam — power the display on and bring the kiosk forward, and NOTHING
+ *      else. This adapter contains no device-control logic of its own: no HA
+ *      call, no ADB, no FKB. Composition builds that seam from
+ *      `deviceService.get(id).powerOn()` + `prepareForContent()`, the SAME
+ *      closure the reading path already uses on this same Shield.
  *   2. **Tell the room.** A `{ type: 'lesson.open', sessionId, learnerId }`
  *      frame on `lesson:{location}` — one topic per room, mirroring
  *      `reading:{location}` (`ReadingSessionService.readingTopic`) — so the
@@ -37,19 +38,43 @@
  * the idempotency matrix would then answer every retry with "It is already
  * playing. Enjoy!" for the rest of the day.
  *
- * The same reasoning extends one step further, and this is the one thing here
- * the plan did not ask for. `WakeAndLoadService`'s final step is a CONTENT LOAD
- * (`device.loadContent(screenPath, query)`), which on the living-room Shield is
- * an unconditional FKB `loadURL` — i.e. a page load. The reading path avoids
- * `WakeAndLoadService` for exactly this reason (`app.mjs`'s `wakeScreen`:
- * "reloading the page would drop the very WebSocket that carried the
- * `session-open` this tap just produced"). Since we DO wake through it, the
- * screen's WebSocket is torn down and rebuilt in the middle of the dispatch, so
- * a `lesson.open` published the instant the wake returns is published into an
- * empty room. So: after the wake, wait (bounded) for at least one live
- * subscriber on the room's topic, and if none ever arrives, throw — for the
- * same reason as above, a failure the child can retry beats a silent success
- * nobody heard. A bus that cannot count subscribers simply skips the wait.
+ * ## WHY NOT `WakeAndLoadService` (the first draft, and why it was wrong)
+ *
+ * The obvious wake is `WakeAndLoadService.execute(deviceId, query)` — it is
+ * what `LivingroomTvSurface` delegates to, and this adapter was first written
+ * that way. It is wrong HERE, and deterministically so. That service's final
+ * step is a CONTENT LOAD (`device.loadContent(screenPath, contentQuery)`).
+ * With the empty query a lesson dispatch wants, `hasContentQuery` is false, so
+ * WS-first delivery is skipped (`wsSkipReason: 'no-content'`) and it always
+ * falls through to `FullyKioskContentAdapter.load`, which issues an
+ * UNCONDITIONAL FKB `loadURL`. That is a page load on every dispatch, warm TV
+ * included — and a page load drops the screen's WebSocket, which is the very
+ * socket `lesson.open` has to arrive on. The room would be reloading at the
+ * exact moment it was told, every single time.
+ *
+ * The codebase had already learned this. `app.mjs`'s reading-session
+ * `wakeScreen` says so in its own comment: "NOT a content load and NOT a
+ * `clearContent()`: the reading widget is already mounted on that screen, and
+ * reloading the page would drop the very WebSocket that carried the
+ * `session-open` this tap just produced." Same Shield, same room, same reason.
+ * So a lesson wakes the way a story does.
+ *
+ * ## The listener wait — a guard, not a mitigation
+ *
+ * With no page load there is no socket to lose, so the room is normally
+ * already listening and this returns on its first look. It is kept as a short
+ * belt-and-braces check for the case the wake genuinely cannot fix: a cold
+ * boot where FKB is still starting and the SPA has not mounted at all. Budget
+ * is small (5s) precisely because it is no longer load-bearing — a child
+ * standing in front of a black TV has concluded it is broken long before a
+ * long timeout would expire.
+ *
+ * On timeout it THROWS rather than broadcasting, for the same reason as the
+ * invariant above: broadcasting anyway would let `media_dispatched` be
+ * recorded, and `DispatchMedia`'s idempotency would then answer every retry
+ * with "It is already playing. Enjoy!" — a child stuck in front of a black
+ * screen for the rest of the day. A bus that cannot count subscribers simply
+ * skips the wait.
  *
  * ## SESSION ID — the one port widening
  *
@@ -86,8 +111,12 @@ const SOURCE = 'screen-playback';
 /** Kept from the double so a Phase-F consumer reads one topic, not two. */
 const DEFAULT_TOPIC = 'school-playback';
 
-/** How long to give the screen's SPA to come back after the wake's page load. */
-const DEFAULT_LISTENER_WAIT_MS = 20_000;
+/**
+ * How long to wait for the room to be listening. SHORT on purpose: the wake no
+ * longer reloads the page, so this only ever covers a cold boot whose SPA has
+ * not mounted yet, and it is spent inside a synchronous card scan.
+ */
+const DEFAULT_LISTENER_WAIT_MS = 5_000;
 const DEFAULT_LISTENER_POLL_MS = 250;
 
 /** One topic per room, so a screen hears its own lessons and nothing else. */
@@ -117,19 +146,21 @@ export function normaliseScreens(raw) {
 }
 
 export class ScreenPlaybackAdapter {
-  #eventBus; #wakeAndLoad; #screens; #topic; #wakeQuery;
+  #eventBus; #wakeScreen; #screens; #topic;
   #listenerWaitMs; #listenerPollMs; #sleep; #logger; #clock; #mintId;
 
   /**
    * @param {Object} deps
    * @param {Object} deps.eventBus - IEventBus; `broadcast` is required,
    *   `getTopicSubscriberCount` is used when present
-   * @param {{execute: Function}} deps.wakeAndLoad - WakeAndLoadService
+   * @param {(a: {target: string, location: string}) => Promise<{ok: boolean, error?: string}>}
+   *   deps.wakeScreen - power the room's display on and bring the kiosk
+   *   forward. Deliberately NOT a content load: see the header. Same shape and
+   *   same closure as the reading path's `wakeScreen`.
    * @param {Array} [deps.screens=[]] - configured screen targets:
    *   `{ id, device?, location }` — `location` is what the topic is built from
    * @param {string} [deps.topic='school-playback'] - the port's own topic
-   * @param {Object} [deps.wakeQuery] - extra query for the wake stack (volume, …)
-   * @param {number} [deps.listenerWaitMs=20000]
+   * @param {number} [deps.listenerWaitMs=5000]
    * @param {number} [deps.listenerPollMs=250]
    * @param {(ms: number) => Promise<void>} [deps.sleep]
    * @param {Object} [deps.logger=console]
@@ -137,7 +168,7 @@ export class ScreenPlaybackAdapter {
    * @param {() => string} [deps.mintId]
    */
   constructor({
-    eventBus, wakeAndLoad, screens = [], topic = DEFAULT_TOPIC, wakeQuery = {},
+    eventBus, wakeScreen, screens = [], topic = DEFAULT_TOPIC,
     listenerWaitMs = DEFAULT_LISTENER_WAIT_MS, listenerPollMs = DEFAULT_LISTENER_POLL_MS,
     sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
     logger = console, clock = () => new Date(), mintId = () => `dsp_${randomUUID()}`,
@@ -147,16 +178,15 @@ export class ScreenPlaybackAdapter {
         code: 'MISSING_DEPENDENCY', dependency: 'eventBus',
       });
     }
-    if (!wakeAndLoad || typeof wakeAndLoad.execute !== 'function') {
-      throw new InfrastructureError('ScreenPlaybackAdapter requires wakeAndLoad.execute', {
-        code: 'MISSING_DEPENDENCY', dependency: 'wakeAndLoad',
+    if (typeof wakeScreen !== 'function') {
+      throw new InfrastructureError('ScreenPlaybackAdapter requires a wakeScreen function', {
+        code: 'MISSING_DEPENDENCY', dependency: 'wakeScreen',
       });
     }
     this.#eventBus = eventBus;
-    this.#wakeAndLoad = wakeAndLoad;
+    this.#wakeScreen = wakeScreen;
     this.#screens = normaliseScreens(screens);
     this.#topic = topic;
-    this.#wakeQuery = { ...wakeQuery };
     this.#listenerWaitMs = listenerWaitMs;
     this.#listenerPollMs = listenerPollMs;
     this.#sleep = sleep;
@@ -300,7 +330,7 @@ export class ScreenPlaybackAdapter {
   async #wake(screen, sessionId) {
     let result;
     try {
-      result = await this.#wakeAndLoad.execute(screen.deviceId, { ...this.#wakeQuery });
+      result = await this.#wakeScreen({ target: screen.deviceId, location: screen.location });
     } catch (err) {
       this.#logger.warn?.('screen-playback.wake-threw', {
         target: screen.id, deviceId: screen.deviceId, sessionId, error: err?.message ?? String(err),

@@ -32,16 +32,18 @@ const makeBus = ({ listeners = 1 } = {}) => {
   };
 };
 
-/** WakeAndLoadService-shaped: `execute(deviceId, query)` -> `{ ok }`. */
+/**
+ * The reading path's seam: `wakeScreen({target, location})` -> `{ ok }`.
+ * Power on + bring the kiosk forward, NOT a content load — so the screen's
+ * WebSocket, the one `lesson.open` has to land on, is never dropped.
+ */
 const makeWake = (impl) => {
-  const calls = [];
-  return {
-    calls,
-    execute: async (deviceId, query, options) => {
-      calls.push({ deviceId, query, options });
-      return impl ? impl(deviceId, query, options) : { ok: true, deviceId, steps: {} };
-    },
+  const fn = async (args) => {
+    fn.calls.push(args);
+    return impl ? impl(args) : { ok: true, power: { ok: true }, foreground: { ok: true } };
   };
+  fn.calls = [];
+  return fn;
 };
 
 let bus, wake, adapter;
@@ -50,7 +52,7 @@ const build = (over = {}) => {
   bus = over.bus ?? makeBus();
   wake = over.wake ?? makeWake();
   adapter = new ScreenPlaybackAdapter({
-    eventBus: bus, wakeAndLoad: wake, screens: SCREENS, logger: silent,
+    eventBus: bus, wakeScreen: wake, screens: SCREENS, logger: silent,
     // No real waiting in tests: the poll is injected.
     listenerWaitMs: 50, listenerPollMs: 5, sleep: async () => {},
     ...over.adapter,
@@ -67,13 +69,13 @@ beforeEach(() => { build(); });
 
 describe('construction', () => {
   it('requires an event bus with broadcast', () => {
-    expect(() => new ScreenPlaybackAdapter({ wakeAndLoad: makeWake(), screens: SCREENS }))
+    expect(() => new ScreenPlaybackAdapter({ wakeScreen: makeWake(), screens: SCREENS }))
       .toThrow(/eventBus/);
   });
 
-  it('requires a wake service with execute', () => {
+  it('requires a wakeScreen function', () => {
     expect(() => new ScreenPlaybackAdapter({ eventBus: makeBus(), screens: SCREENS }))
-      .toThrow(/wakeAndLoad/);
+      .toThrow(/wakeScreen/);
   });
 });
 
@@ -81,7 +83,8 @@ describe('dispatch — the happy path', () => {
   it('wakes the screen first, and only then tells it', async () => {
     const rec = await dispatchOne();
     expect(wake.calls).toHaveLength(1);
-    expect(wake.calls[0].deviceId).toBe('livingroom-tv');
+    // The room travels with the wake, exactly as the reading seam takes it.
+    expect(wake.calls[0]).toEqual({ target: 'livingroom-tv', location: 'livingroom' });
     // The wake happened before any broadcast — the ordering the invariant needs.
     expect(bus.broadcasts.length).toBeGreaterThan(0);
     expect(rec.dispatchId).toEqual(expect.any(String));
@@ -131,13 +134,13 @@ describe('dispatch — the happy path', () => {
 
 describe('dispatch — wake failure never reaches the screen', () => {
   it('throws and broadcasts NOTHING when the wake reports not-ok', async () => {
-    build({ wake: makeWake(() => ({ ok: false, error: 'Display did not turn on', failedStep: 'verify' })) });
+    build({ wake: makeWake(() => ({ ok: false, error: 'Display did not turn on' })) });
     await expect(dispatchOne()).rejects.toThrow(/livingroom-tv/);
     expect(bus.broadcasts).toEqual([]);
   });
 
   it('surfaces the failed step so the log says WHY', async () => {
-    build({ wake: makeWake(() => ({ ok: false, error: 'Display did not turn on', failedStep: 'verify' })) });
+    build({ wake: makeWake(() => ({ ok: false, error: 'Display did not turn on' })) });
     await expect(dispatchOne()).rejects.toThrow(/Display did not turn on/);
   });
 
@@ -181,7 +184,7 @@ describe('dispatch — refusals that must happen BEFORE the TV is touched', () =
   it('falls back to the target id as the device id when none is configured', async () => {
     build({ adapter: { screens: [{ id: 'livingroom-tv', location: 'livingroom' }] } });
     await dispatchOne();
-    expect(wake.calls[0].deviceId).toBe('livingroom-tv');
+    expect(wake.calls[0].target).toBe('livingroom-tv');
   });
 });
 

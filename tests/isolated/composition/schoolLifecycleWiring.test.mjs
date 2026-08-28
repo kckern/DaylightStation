@@ -247,18 +247,20 @@ describe('branch order in the composition root', () => {
  */
 describe('the real screen playback target', () => {
   const TARGETS = [{ id: 'livingroom-tv', label: 'the TV', location: 'livingroom', child_selectable: true }];
-  const wakeAndLoad = { execute: async () => ({ ok: true }) };
+  // The reading path's seam, not WakeAndLoadService: power on + kiosk
+  // foreground, never a content load. See ScreenPlaybackAdapter's header.
+  const wakeScreen = async () => ({ ok: true });
   const base = { lifecycle: { enabled: true, media: { targets: TARGETS } }, printing: { host: 'printer.local' } };
 
-  it('builds a ScreenPlaybackAdapter when a wake service and targets are both present', async () => {
-    const result = await wire(base, { wakeAndLoad });
+  it('builds a ScreenPlaybackAdapter when a wake seam and targets are both present', async () => {
+    const result = await wire(base, { wakeScreen });
     expect(result.wired).toBe(true);
     expect(result.devices.playback).toBeTruthy();
     expect(result.devices.playback.targets().map((t) => t.id)).toEqual(['livingroom-tv']);
     expect(result.useCases.dispatchMedia).toBeTruthy();
   });
 
-  it('leaves the media leg unwired with no wake service — a printed ticket nothing could play', async () => {
+  it('leaves the media leg unwired with no wake seam — a printed ticket nothing could play', async () => {
     const result = await wire(base);
     expect(result.wired).toBe(true);
     expect(result.devices.playback).toBeUndefined();
@@ -267,7 +269,7 @@ describe('the real screen playback target', () => {
 
   it('leaves it unwired when school.yml names no target', async () => {
     const result = await wire(
-      { lifecycle: { enabled: true }, printing: { host: 'printer.local' } }, { wakeAndLoad },
+      { lifecycle: { enabled: true }, printing: { host: 'printer.local' } }, { wakeScreen },
     );
     expect(result.devices.playback).toBeUndefined();
     expect(result.useCases.dispatchMedia).toBeNull();
@@ -275,13 +277,13 @@ describe('the real screen playback target', () => {
 
   it('an explicitly injected adapter still wins — the substitution seam', async () => {
     const injected = { dispatch: async () => ({ dispatchId: 'x' }), getStatus: () => [] };
-    const result = await wire(base, { wakeAndLoad, playbackAdapter: injected });
+    const result = await wire(base, { wakeScreen, playbackAdapter: injected });
     expect(result.devices.playback).toBeUndefined();
     expect(result.useCases.dispatchMedia).toBeTruthy();
   });
 
   it('does NOT displace the doubles on a virtual-device console', async () => {
-    const result = await wire({ lifecycle: { enabled: true, media: { targets: TARGETS } }, virtualDevices: true }, { wakeAndLoad });
+    const result = await wire({ lifecycle: { enabled: true, media: { targets: TARGETS } }, virtualDevices: true }, { wakeScreen });
     // The virtual branch owns `devices.playback` outright; the real adapter
     // must not be built beside it and dispatch through a second path.
     expect(result.devices.playback.constructor.name).toBe('VirtualPlaybackAdapter');

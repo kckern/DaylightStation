@@ -151,15 +151,18 @@ function cryptoRng(crypto) {
  * @param {object} [deps.eventBus]
  * @param {object} [deps.thermalPrinterRegistry] - the house receipt-printer registry
  * @param {object} [deps.playbackAdapter] - an already-built playback target.
- *   Normally absent: with `wakeAndLoad` and at least one configured
+ *   Normally absent: with `wakeScreen` and at least one configured
  *   `media.targets` entry this module builds the real `ScreenPlaybackAdapter`
  *   itself (§8). Passing one overrides that — the seam a test or a future
  *   headset target uses to substitute its own.
- * @param {{execute: Function}} [deps.wakeAndLoad] - `WakeAndLoadService`, the
- *   ONE thing in the house that knows how to bring a dark TV up. School does
- *   not wake screens itself; it hands this to `ScreenPlaybackAdapter`, which
- *   delegates to it exactly as `LivingroomTvSurface` does. Absent means no
- *   real playback target, and the media leg degrades as it always has.
+ * @param {(a: {target: string, location: string}) => Promise<{ok: boolean}>} [deps.wakeScreen]
+ *   - power a room's display on and bring the kiosk forward, and nothing else.
+ *   The SAME closure the reading path is wired with (`app.mjs`), deliberately:
+ *   it is NOT `WakeAndLoadService`, because that ends in a content load and a
+ *   content load reloads the page, dropping the WebSocket the lesson is about
+ *   to be announced on. School does not wake screens itself; it hands this to
+ *   `ScreenPlaybackAdapter`. Absent means no real playback target, and the
+ *   media leg degrades as it always has.
  * @param {object} [deps.donow] - the REAL, household-level `DoNowService`
  *   (Task 13's own `5_composition/modules/donow.mjs`, constructed in
  *   `app.mjs` AFTER the seams every surface needs — `wakeAndLoadService`,
@@ -198,7 +201,7 @@ function cryptoRng(crypto) {
 export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
   economyService = null, userService = null, eventBus = null,
-  thermalPrinterRegistry = null, playbackAdapter = null, wakeAndLoad = null,
+  thermalPrinterRegistry = null, playbackAdapter = null, wakeScreen = null,
   languageStudyService = null,
   studyGrants = null,
   languageReelService = null,
@@ -402,25 +405,25 @@ export async function createSchoolLifecycle({
     // any media target, build the real screen adapter here: it is the ONE
     // place that holds both the configured targets and the bus the screens
     // listen on. Still injected rather than read from YAML in the sense that
-    // matters — `wakeAndLoad` is an object and comes from the composition
+    // matters — `wakeScreen` is a function and comes from the composition
     // root; a `playbackAdapter:` key in school.yml could only ever have been
     // dead text.
     playback = playbackAdapter;
     if (!playback) {
       const configuredTargets = lifecycleCfg.media?.targets || [];
-      if (!eventBus || !wakeAndLoad || !configuredTargets.length) {
+      if (!eventBus || typeof wakeScreen !== 'function' || !configuredTargets.length) {
         // Named, not silent: "the media action prints but nothing plays" is
         // otherwise a mystery with three possible causes.
         logger.info?.('school.lifecycle.no-playback-target', {
           hasEventBus: Boolean(eventBus),
-          hasWakeAndLoad: Boolean(wakeAndLoad),
+          hasWakeScreen: typeof wakeScreen === 'function',
           targets: configuredTargets.length,
         });
       } else {
         const { ScreenPlaybackAdapter } = await import('#adapters/hardware/playback/ScreenPlaybackAdapter.mjs');
         playback = new ScreenPlaybackAdapter({
           eventBus,
-          wakeAndLoad,
+          wakeScreen,
           // The whole `media.targets` list, not a screens-only subset: a target
           // missing its `location:` then refuses BY NAME ("add `location:` to
           // its media.targets entry") instead of reporting itself unknown.

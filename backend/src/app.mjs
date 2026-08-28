@@ -3387,6 +3387,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       schoolLifecycleLogger.warn('school.piano_lesson_hook.wiring-failed', { error: err.message });
     }
   }
+  /**
+   * Wake a room's screen for a widget that is ALREADY MOUNTED on it: power the
+   * display on, bring the kiosk forward, and stop there.
+   *
+   * Deliberately NOT a content load and NOT `clearContent()`. Both reload the
+   * page, and a reload drops the WebSocket that the broadcast which follows
+   * has to arrive on — the screen would be told at the exact moment it could
+   * not hear. Shared by BOTH broadcast-driven screen features so there is one
+   * answer in the house: story time (`makeReadingSessionHandler`) and gated
+   * media lessons (`ScreenPlaybackAdapter`, §8).
+   *
+   * @param {{target: string}} a - `target` is a devices.yml id
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  const wakeScreenForBroadcast = async ({ target } = {}) => {
+    const device = target ? deviceServices.deviceService.get(target) : null;
+    if (!device) return { ok: false, error: `unknown target: ${target}` };
+    const power = await device.powerOn();
+    const foreground = await device.prepareForContent({ skipCameraCheck: true });
+    return { ok: power?.ok !== false && foreground?.ok !== false, power, foreground };
+  };
+
   try {
     const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
     schoolLifecycle = await createSchoolLifecycle({
@@ -3398,10 +3420,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       eventBus,
       thermalPrinterRegistry: printerRegistry,
       // §8's real playback target: School builds a `ScreenPlaybackAdapter`
-      // around this rather than waking a TV itself, so the living-room lesson
-      // dispatch runs the SAME wake stack the phone and the DoNow surfaces do.
-      // Declared above at ~3310, well before this call.
-      wakeAndLoad: wakeAndLoadService,
+      // around this rather than waking a TV itself.
+      //
+      // NOT `wakeAndLoadService`. That service ends in a content load, and on
+      // the living-room Shield a content load is an unconditional FKB
+      // `loadURL` — a page load, which drops the very WebSocket the lesson is
+      // about to be announced on. `wakeScreenForBroadcast` is the reading
+      // path's seam and is shared with it verbatim, one room, one way to wake
+      // a screen that a mounted widget is about to be told something on.
+      wakeScreen: wakeScreenForBroadcast,
       languageStudyService,
       studyGrants: schoolStudyGrants,
       languageReelService,
@@ -4145,14 +4172,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // Power on and bring the kiosk forward. NOT a content load and NOT a
       // `clearContent()`: the reading widget is already mounted on that
       // screen, and reloading the page would drop the very WebSocket that
-      // carried the `session-open` this tap just produced.
-      wakeScreen: async ({ target }) => {
-        const device = target ? deviceServices.deviceService.get(target) : null;
-        if (!device) return { ok: false, error: `unknown target: ${target}` };
-        const power = await device.powerOn();
-        const foreground = await device.prepareForContent({ skipCameraCheck: true });
-        return { ok: power?.ok !== false && foreground?.ok !== false, power, foreground };
-      },
+      // carried the `session-open` this tap just produced. Now shared with
+      // the media-lesson dispatch, which needs it for the same reason — see
+      // `wakeScreenForBroadcast` above.
+      wakeScreen: wakeScreenForBroadcast,
       eventBus,
       logger: rootLogger.child({ module: 'trigger-learner' }),
     }));
