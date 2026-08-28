@@ -36,7 +36,7 @@
 import { reduceSession, createEvent, statesAccepting } from '#domains/school/sessions/sessionEvents.mjs';
 import { mintToken, TOKEN_CLASSES } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
-import { mintCode } from '#domains/school/companionCode.mjs';
+import { mintCode, formatCode } from '#domains/school/companionCode.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 import { walkBlocks } from '#domains/school/documents/documentValidation.mjs';
@@ -910,6 +910,27 @@ export class IssueDocument {
       });
       // `code` inside the store, `finishCode` at this boundary — see the header.
       finishCode = record.code;
+      // A FOUND record is not necessarily a usable one. The store validates
+      // shape and identity, never `code`, so a truncated or hand-edited YAML
+      // whose `code:` key is missing or null reads back cleanly — and `null` is
+      // the in-band value meaning "optional, print no gate". The renderer's own
+      // guard cannot catch it (`finishCode != null` is false there) and it has
+      // no way to know the companion was required, so a required lesson would
+      // print an UNGATED sheet with no error anywhere: a child passes without
+      // the media, which is the one outcome this feature exists to prevent.
+      // Only this method knows `required`, and it already owns a refusal
+      // envelope for exactly this class of problem.
+      if (!formatCode(finishCode)) {
+        this.#logger.warn?.('school.issue.companion-code-unusable', {
+          sessionId: instance.sessionId, lessonId: instance.lessonId, codeRef,
+        });
+        return {
+          refusal: {
+            reason: 'companion-code-unusable',
+            message: 'This lesson needs a read-along that is not ready. Tell a grown-up.',
+          },
+        };
+      }
     }
 
     const live = await this.#tokens.liveAccessCodes();
