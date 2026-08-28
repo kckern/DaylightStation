@@ -21,7 +21,6 @@ import KeysAsk from './KeysAsk.jsx';
 import ScorePassage from './ScorePassage.jsx';
 import { titleFromScoreId } from '../SheetMusic/scoreTitle.js';
 import { SvgSequenceStaff, sequenceStaffViewBox } from '../../../../MusicNotation/renderers/SvgSequenceStaff.jsx';
-import { pianoLearningApi } from './pianoLearningApi.js';
 import { prepareExerciseAssessment } from './assessment.js';
 import { resolveExerciseRunAccess } from './authorization.js';
 import {
@@ -33,7 +32,7 @@ import {
   staffFitsAsk,
   stageForTier,
 } from './runPresentation.js';
-import { resolveGateMaterial } from '../Games/gateMaterial.js';
+import { loadAskSources, PENDING_SOURCES } from '../../../ask/askResolution.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import { countInPlan } from '../SheetMusic/countIn.js';
@@ -146,21 +145,24 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
 
 /**
  * @param {object} props
- * @param {string|null} [props.instanceId] Exercise-bank instance to run.
- * @param {{kind:'keys'|'exercise'|'score', instanceId?:string, source?:string,
- *   measures?:[number,number]}|null} [props.material]
- *   Gate material seam (D10). When present it REPLACES `instanceId` as the load
- *   source and is resolved through `resolveGateMaterial`. Pass a stable
- *   reference (memoize it) — a fresh object rebuilds the attempt, exactly as
- *   `requirementOverride` already does.
- *
- *   `kind:'score'` resolves to a MusicXML document rather than to a bank
- *   instance, and takes a materially different path: there is no authored event
- *   list, so the attempt cannot be built until the ENGRAVER has reported where
- *   the notes are. The stage (`ScorePassage`) mounts first and publishes the
- *   compiled expectation; the attempt is created from it directly, and
- *   `prepareExerciseAssessment` — which reads `instance.events` — is never
- *   called for a score.
+ * @param {object|null|undefined} [props.instance] The bank instance this run is
+ *   OF, already resolved by whoever mounted it (`AskSession`). `undefined` is
+ *   "still resolving" and shows the skeleton; `null` is "resolved, and there is
+ *   none". Pass a stable reference — a fresh object rebuilds the attempt.
+ * @param {object|null|undefined} [props.score] The MusicXML DOCUMENT, for score
+ *   material, which resolves to no instance at all. It takes a materially
+ *   different path: there is no authored event list, so the attempt cannot be
+ *   built until the ENGRAVER has reported where the notes are. The stage
+ *   (`ScorePassage`) mounts first and publishes the compiled expectation; the
+ *   attempt is created from it directly, and `prepareExerciseAssessment` —
+ *   which reads `instance.events` — is never called for a score.
+ * @param {object|null} [props.requirement] What this run is judged by, chosen
+ *   above. Practice passes none.
+ * @param {string|null} [props.instanceId] COMPATIBILITY. A bank instance this
+ *   run loads for itself — see `selfResolving` below. Dies with the last host
+ *   that has not moved onto `AskSession`.
+ * @param {object|null} [props.material] COMPATIBILITY, same. A material
+ *   descriptor this run resolves for itself.
  * @param {((result:object)=>void)} [props.onFailed] A JUDGED attempt that did
  *   not pass — one the child actually played. Two results reach it: a
  *   `completed` attempt below its bar, and a `timeout` one, which is a free
@@ -190,19 +192,36 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  */
-export default function ExerciseRun({ instanceId, material = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, framing = null, ask = null, tier = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance: instanceProp, score: scoreProp, requirement: requirementProp, instanceId, material = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, framing = null, ask = null, tier = null, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
   const { connected } = usePianoMidi();
-  const [instance, setInstance] = useState(undefined);
+  /**
+   * THE COMPATIBILITY SEAM, and it dies in the same plan that created it
+   * (tasks 4-5, when `GameGate` and `ExerciseRunRoute` mount `AskSession`).
+   *
+   * Resolution belongs above this component now — `AskSession` owns it, and
+   * hands down a settled `instance`/`score`/`requirement`. The two hosts that
+   * have not moved yet still pass `material`/`instanceId` and expect this run
+   * to load for them; until they stop, it does, through the SAME
+   * `loadAskSources` the session calls. One implementation, two callers, never
+   * two copies.
+   *
+   * The discriminator is presence, not truthiness: a host that resolved passes
+   * all three props (any of them may legitimately be `null`), a host that did
+   * not passes none. `requirement` is therefore deliberately left undefaulted.
+   */
+  const selfResolving = instanceProp === undefined && scoreProp === undefined && requirementProp === undefined;
   // Score material's two halves: the document (from the load) and the
   // expectation the engraver's geometry compiles into (from the stage). Both
   // start `undefined` = "not loaded yet" so the skeleton can tell that apart
   // from `null` = "loaded, and this run is not a score".
-  const [score, setScore] = useState(undefined);
+  const [loaded, setLoaded] = useState(PENDING_SOURCES);
+  const instance = selfResolving ? loaded.instance : instanceProp;
+  const score = selfResolving ? loaded.score : scoreProp;
+  const requirement = selfResolving ? loaded.requirement : requirementProp;
   const [scoreExpectation, setScoreExpectation] = useState(null);
-  const [requirement, setRequirement] = useState(null);
   const [runtime, setRuntime] = useState(null);
   const [lastWrong, setLastWrong] = useState(null);
   const [countInBeat, setCountInBeat] = useState(null);
@@ -227,42 +246,26 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   const { challenge } = access;
   const selectedMode = challenge ? requirement?.mode : practiceMode;
 
-  const loadInstance = useCallback(async () => {
-    if (!material) return pianoLearningApi.instance(instanceId);
-    const resolved = await resolveGateMaterial(material);
-    // A score resolves to a DOCUMENT, not an instance. It travels in its own
-    // field rather than being dressed up as one: an instance with no events is
-    // a shape every derivation downstream would have to special-case anyway,
-    // and one that forgot to would silently grade an empty ask as complete.
-    if (resolved.ok && resolved.kind === 'score') return { ok: true, data: null, score: resolved.score };
-    if (resolved.ok) return { ok: true, data: resolved.instance, score: null };
-    // Material that could not be resolved (a bad id, an unreachable score) is
-    // reported, not thrown: the run shows "Exercise not found" and the gate
-    // host moves on — which for a gate means failing open.
-    logger.warn('piano.exercise-material-unresolved', { kind: material.kind ?? null, error: resolved.error });
-    return { ok: false, data: null, score: null };
-  }, [instanceId, logger, material]);
-
+  // The compatibility load. Same inputs, same order, same reset-on-restart as
+  // when this body lived here in full; `loadAskSources` is that body, moved.
   useEffect(() => {
+    if (!selfResolving) return undefined;
     let alive = true;
-    setInstance(undefined);
-    setScore(undefined);
+    setLoaded(PENDING_SOURCES);
     setScoreExpectation(null);
     setUnrunnable(false);
-    Promise.all([
-      loadInstance(),
-      programId ? pianoLearningApi.program(programId) : Promise.resolve({ ok: false, data: null }),
-    ]).then(([instanceResponse, programResponse]) => {
-      if (!alive) return;
-      if (!instanceResponse.ok) { setInstance(null); setScore(null); return; }
-      const loaded = instanceResponse.data;
-      const step = programResponse.ok ? programResponse.data.steps?.find((entry) => entry.id === stepId) : null;
-      setInstance(loaded);
-      setScore(instanceResponse.score ?? null);
-      setRequirement(requirementOverride ?? step?.requirement ?? null);
-    });
+    loadAskSources({ material, instanceId, programId, stepId, requirementOverride, logger })
+      .then((next) => { if (alive) setLoaded(next); });
     return () => { alive = false; };
-  }, [loadInstance, programId, requirementOverride, stepId]);
+  }, [instanceId, logger, material, programId, requirementOverride, selfResolving, stepId]);
+
+  // The same clearing, for a run whose sources arrive as PROPS: a new subject
+  // must not inherit the last one's engraving or its degraded state.
+  useEffect(() => {
+    if (selfResolving) return;
+    setScoreExpectation(null);
+    setUnrunnable(false);
+  }, [instanceProp, scoreProp, selfResolving]);
 
   /**
    * The engraver's answer, taken ONCE.
@@ -290,9 +293,12 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
    * music could not be put in front of them.
    */
   const handleScoreUnrunnable = useCallback((reason) => {
-    logger.warn('piano.exercise-score-unrunnable', { id: material?.source ?? null, reason });
+    // The document's own id, which IS the source path it was fetched from —
+    // read off the score rather than off the material descriptor, because a
+    // host that resolved above no longer passes one.
+    logger.warn('piano.exercise-score-unrunnable', { id: score?.id ?? null, reason });
     setUnrunnable(true);
-  }, [logger, material]);
+  }, [logger, score]);
 
   /**
    * What this run is OF, for everything that does not care which kind it is:
