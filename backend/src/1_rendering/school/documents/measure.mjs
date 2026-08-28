@@ -477,17 +477,37 @@ function measureAssetNode(ctx, block, { widthPt, path }) {
  *    non-multi_select caller (and `measure.test.mjs`'s own stub, a legacy
  *    suite this task must not touch) returns. Treated exactly as before:
  *    multiple_choice, circles, no instruction line.
- *  - `{labels, multiSelect: true, maxSelect?}` — multi_select's richer shape
- *    (spec §5.5): square checkboxes instead of circles, plus an instruction
- *    caption. `createChoiceResolver` (DocumentPdfRenderer.mjs) is the only
- *    production caller of the second shape, and only for a bank item whose
- *    own `type` is `'multi_select'` — every other item keeps returning the
- *    bare array, so ordinary multiple_choice rendering is untouched.
+ *  - `{labels, multiSelect: true, maxSelect?, selection?}` — multi_select's
+ *    richer shape (spec §5.5): square checkboxes instead of circles, plus an
+ *    instruction caption. `createChoiceResolver` (DocumentPdfRenderer.mjs) is
+ *    the only production caller of the second shape, and only for a bank item
+ *    whose own `type` is `'multi_select'` or `'companion_code'` — every other
+ *    item keeps returning the bare array, so ordinary multiple_choice
+ *    rendering is untouched.
+ *
+ * `selection: 'set'` (the companion finish-code gate, Task 8) is carried
+ * through onto the measured node so the DRAW pass can write it into the form
+ * map. It is the only thing that stops `decodeOmrSheet` reading a three-letter
+ * code as an `ambiguous` smudge, and nothing downstream of the paper could
+ * infer it from a mask — the printed form is what knows.
  */
 function normalizeChoiceResolution(resolved) {
-  if (!resolved) return { labels: null, multiSelect: false, maxSelect: undefined };
-  if (Array.isArray(resolved)) return { labels: resolved, multiSelect: false, maxSelect: undefined };
-  return { labels: resolved.labels, multiSelect: resolved.multiSelect === true, maxSelect: resolved.maxSelect };
+  if (!resolved) {
+    return {
+      labels: null, multiSelect: false, maxSelect: undefined, selection: null,
+    };
+  }
+  if (Array.isArray(resolved)) {
+    return {
+      labels: resolved, multiSelect: false, maxSelect: undefined, selection: null,
+    };
+  }
+  return {
+    labels: resolved.labels,
+    multiSelect: resolved.multiSelect === true,
+    maxSelect: resolved.maxSelect,
+    selection: typeof resolved.selection === 'string' && resolved.selection ? resolved.selection : null,
+  };
 }
 
 /**
@@ -511,7 +531,12 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
   const resolved = ctx.resolveChoices
     ? ctx.resolveChoices(block.itemId, { choices: block.choices, path })
     : null;
-  const { labels, multiSelect, maxSelect } = normalizeChoiceResolution(resolved);
+  const { labels, multiSelect, maxSelect, selection } = normalizeChoiceResolution(resolved);
+  // The gate row's "choice text" IS its position letter — the label under the
+  // bubble would repeat the letter beside it, twice per position. The letters
+  // still reach the form map (that is what `decodeOmrSheet` reports); only the
+  // duplicate ink under them is dropped.
+  const letterOnly = selection === 'set';
   const choiceRuns = (label) => segmentParagraph(label, { italic: false }).flatMap((segment) => {
     if (segment.kind === 'text') return segment.runs;
     const svg = ctx.texToSvg(segment.tex, {
@@ -542,7 +567,7 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
     cells.push({
       choice: theme.omr.letters[index],
       label,
-      lines: label
+      lines: label && !letterOnly
         ? wrapRuns(doc, theme, choiceRuns(label), {
           widthPt: compact ? cellWidthPt - theme.omr.compactLabelWidthPt - 2 : cellWidthPt,
           sizePt: theme.omr.choiceSizePt, leadingPt: theme.omr.choiceLeadingPt,
@@ -586,9 +611,14 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
   // otherwise "Mark all that apply." — never present for an ordinary
   // multiple_choice/probe row, so `instruction` stays null and the height
   // formula below is byte-identical to before this feature existed.
-  const instructionText = multiSelect
-    ? (maxSelect ? `Choose up to ${maxSelect}.` : 'Mark all that apply.')
-    : null;
+  //
+  // The gate row (`selection: 'set'`) says what it is instead: "Mark all that
+  // apply" invites a guess, where the child either has the code or does not.
+  const instructionText = letterOnly
+    ? 'Fill in every letter of your finish code.'
+    : multiSelect
+      ? (maxSelect ? `Choose up to ${maxSelect}.` : 'Mark all that apply.')
+      : null;
   const instruction = instructionText
     ? measureTextLines(doc, theme, [{ text: instructionText, font: 'italic' }], { widthPt, styleKey: 'caption' })
     : null;
@@ -601,6 +631,8 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
     cellWidthPt,
     labelled: Boolean(labels),
     multiSelect,
+    // Written into the form map by `drawOmrRow`; null for every ordinary row.
+    selection,
     layout: compact ? 'compact' : 'row',
     columnCount,
     compactRowHeights,

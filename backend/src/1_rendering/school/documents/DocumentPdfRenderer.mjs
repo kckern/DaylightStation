@@ -151,6 +151,15 @@ function createChoiceResolver(bank) {
     if (item.type === 'multi_select') {
       return { labels, multiSelect: true, maxSelect: item.maxSelect };
     }
+    // The companion finish-code gate (Task 8): several marks in one row are ONE
+    // answer, so it takes multi_select's square-checkbox geometry — and, unlike
+    // multi_select, it declares `selection: 'set'`, which measure carries onto
+    // the node and the draw pass writes into the form map. Without that flag
+    // `decodeOmrSheet` calls a correctly-filled three-letter code an
+    // `ambiguous` smudge and the gate fails a child who did everything right.
+    if (item.type === 'companion_code') {
+      return { labels, multiSelect: true, selection: 'set' };
+    }
     return labels;
   };
 }
@@ -371,6 +380,11 @@ export function createDocumentPdfRenderer({
           yPt: centreY,
           rPt: bubbleRadiusPt,
           page,
+          // How many bubbles this row may claim at once (Task 8). Present only
+          // on the finish-code gate row, and absent — not null — everywhere
+          // else, so every form map printed before the gate existed is
+          // byte-identical and reads as the single-choice row it is.
+          ...(node.selection ? { selection: node.selection } : {}),
         });
       }
     });
