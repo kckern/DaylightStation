@@ -5,7 +5,7 @@ import { isPersistentUser } from '../../pianoUser.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonGrid, SkeletonStage } from '../../Skeleton.jsx';
 import ExerciseRun from './ExerciseRun.jsx';
-import ExerciseNotation from './ExerciseNotation.jsx';
+import { ExercisePreview } from './ExerciseNotation.jsx';
 import { describeInstance, matchesExerciseSearch } from './exerciseQuery.js';
 import { FORM_OPTIONS, HAND_OPTIONS, LEVEL_BANDS, MODE_OPTIONS } from './filters.js';
 import { pianoLearningApi } from './pianoLearningApi.js';
@@ -366,7 +366,7 @@ function ExerciseDetail() {
     <section className="piano-exercises piano-exercises--detail">
       <PageHeader eyebrow={state.seed.derived?.form ?? 'Exercise'} title={state.seed.title} subtitle={state.seed.subtitle ?? state.seed.focus} onBack={() => navigate(-1)} />
       <div className="piano-exercises__detail-grid">
-        <div className="piano-exercises__notation-card"><ExerciseNotation instance={selected} /></div>
+        <div className="piano-exercises__notation-card"><ExercisePreview instance={selected} /></div>
         <aside className="piano-exercises__variant-panel">
           <dl>
             <div><dt>Focus</dt><dd>{state.seed.focus ?? 'Technique and control'}</dd></div>
