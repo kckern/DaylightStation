@@ -4,11 +4,12 @@
  * REQUIREMENT it is judged by.
  *
  * Moved verbatim from `ExerciseRun.loadInstance` and its load effect (task 3 of
- * the ask-platform SP1 plan). It lives here rather than inside `AskSession.jsx`
- * for one reason: `AskSession` renders `ExerciseRun`, so `ExerciseRun` cannot
- * import from it without a cycle — and until every host has migrated (tasks
- * 4-5) `ExerciseRun` keeps a compatibility path that must run THIS code rather
- * than a second copy of it. One implementation, two callers, for one task.
+ * the ask-platform SP1 plan). It lives in its own module rather than inside
+ * `AskSession.jsx` because `AskSession` renders `ExerciseRun`, so anything
+ * `ExerciseRun` might have needed from it would have been a cycle. That is now
+ * moot in the direction it was written for — `ExerciseRun`'s compatibility path
+ * was deleted in task 6 and `AskSession` is the only caller — but a plain,
+ * React-free module is still where this belongs: it is a load, not a screen.
  *
  * No React and no state: an async function that answers with a value. Logging
  * is passed in, so the caller's own component name stays on the event.
