@@ -4,14 +4,21 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 
 // ── Doubles ─────────────────────────────────────────────────────────────────
-// ExerciseRun is stubbed to two buttons: one that fires `onPassed(result)` (the
-// surface only ever calls it on a GENUINE pass — Task 9's `runPassed`), and one
-// that fires `onExit` (what the run's "Practice first"/"Exit" buttons call after
-// a failed attempt). The stub also RECORDS its props, because the gate's most
-// load-bearing output is not what it renders — it is the requirement it hands
-// the run. A requirement with a missing/non-finite `passScore` makes
-// `ExerciseRun` fall back to `verdict.passed`, which is unconditionally true on
-// a non-floor rung: a gate that grants game time to a child who played nothing.
+// ExerciseRun is stubbed to its four host callbacks, and the difference between
+// them is the point:
+//   onPassed      — a GENUINE pass (the surface judges it, per Task 9).
+//   onFailed      — a COMPLETED attempt that missed the bar. The ONLY thing
+//                   allowed to move the ladder.
+//   onExit        — the player walked away. Nothing to judge, ladder unmoved;
+//                   counting these would let a child press Exit their way to
+//                   the unfailable floor without playing a note.
+//   onUnavailable — the run hit a terminal state it cannot leave (its own
+//                   instance fetch 502'd, the attempt would not build, guest).
+// The stub also RECORDS its props, because the gate's most load-bearing output
+// is not what it renders — it is the requirement it hands the run. A
+// requirement with a missing/out-of-range `passScore` makes `ExerciseRun` fall
+// back to `verdict.passed`, unconditionally true on a non-floor rung: a gate
+// that grants game time to a child who played nothing.
 const h = vi.hoisted(() => {
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() };
   logger.child = () => logger;
@@ -33,15 +40,22 @@ vi.mock('../Exercises/ExerciseRun.jsx', () => ({
     return (
       <div data-testid="exercise-run">
         <button type="button" onClick={() => props.onPassed?.({ score: 0.91 })}>stub-pass</button>
+        {/* A COMPLETED attempt that missed the bar — the only thing that may
+            move the ladder. Distinct from stub-exit, which is walking away. */}
+        <button type="button" onClick={() => props.onFailed?.({ score: 0.62 })}>stub-fail</button>
         <button type="button" onClick={() => props.onExit?.()}>stub-exit</button>
+        <button type="button" onClick={() => props.onUnavailable?.('instance-not-found')}>stub-dead-end</button>
       </div>
     );
   },
 }));
 
-const { default: GameGate, GATE_CONFIG_DEFAULTS, gateStateKey, readGateState } = await import('./GameGate.jsx');
+const {
+  default: GameGate, GATE_CONFIG_DEFAULTS, gateStateKey, readGateState, resolveGateConfig,
+} = await import('./GameGate.jsx');
 const { pickGateMaterial } = await import('./gateMaterial.js');
-const { initialRung, degradeRung, isFloor } = await import('./gameGateLadder.js');
+const { initialRung, degradeRung, isFloor, requirementForRung } = await import('./gameGateLadder.js');
+const { KIOSK_DEVICE_STORAGE_KEY } = await import('../../kioskDeviceIdentity.js');
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 const SEEDS = [
@@ -102,6 +116,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.runProps.length = 0;
   localStorage.clear();
+  // This browser's captured kiosk self-identity — the SSOT the gate resolves
+  // `deviceId` from. A shared constant could not tell two tablets apart, which
+  // is the one question the field is on every event to answer.
+  localStorage.setItem(KIOSK_DEVICE_STORAGE_KEY, 'yellow-room-tablet');
   serveBank();
 });
 
@@ -223,6 +241,9 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
     const [, data] = eventNamed('gate.unavailable');
     expect(data.learnerId).toBe('kid1');
     expect(typeof data.error).toBe('string');
+    // The mount is anchored even here — a fail-open run is exactly the one
+    // worth reconstructing, and it needs a beginning in the log.
+    expect(eventNamed('gate.presented')).toBeTruthy();
   });
 });
 
@@ -258,18 +279,22 @@ describe('GameGate — contract 4: passing', () => {
 describe('GameGate — contract 5: failing offers exactly three ways out, none of them the match', () => {
   it('shows Try again · Practice this · Leave and no path to the game', async () => {
     const { onPassed } = renderGate();
-    fireEvent.click(await screen.findByText('stub-exit'));
+    fireEvent.click(await screen.findByText('stub-fail'));
 
     const panel = await screen.findByRole('status');
     const labels = [...panel.querySelectorAll('button')].map((b) => b.textContent);
     expect(labels).toEqual(['Try again', 'Practice this', 'Leave']);
     expect(onPassed).not.toHaveBeenCalled();
-    expect(eventNamed('gate.failed')).toBeTruthy();
+    // A completed failure has a score, and the panel shows it — the run
+    // unmounts on failure, taking its own result readout with it.
+    expect(eventNamed('gate.failed')[1].score).toBe(0.62);
+    expect(panel.textContent).toContain('62%');
+    expect(panel.textContent).toContain('80%');
   });
 
   it('Try again re-runs the challenge without granting the match', async () => {
     const { onPassed } = renderGate();
-    fireEvent.click(await screen.findByText('stub-exit'));
+    fireEvent.click(await screen.findByText('stub-fail'));
     fireEvent.click(await screen.findByText('Try again'));
 
     await screen.findByTestId('exercise-run');
@@ -281,23 +306,32 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
     renderGate({ learnerId: 'kid1', gateConfig: { retriesBeforeDegrade: 3 } });
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      fireEvent.click(await screen.findByText('stub-exit'));
+      fireEvent.click(await screen.findByText('stub-fail'));
       expect(screen.queryByText('We made it a little easier')).toBeNull();
       expect(readStored('kid1').rung).toEqual(initialRung());
       fireEvent.click(screen.getByText('Try again'));
     }
-    fireEvent.click(await screen.findByText('stub-exit'));
+    fireEvent.click(await screen.findByText('stub-fail'));
 
     expect(await screen.findByText('We made it a little easier')).toBeTruthy();
     expect(readStored('kid1')).toEqual({ rung: degradeRung(initialRung()), failuresAtRung: 0, cleanPasses: 0 });
     const [, data] = eventNamed('gate.rung-changed');
     expect(data.direction).toBe('degrade');
     expect(data.rung).toEqual(degradeRung(initialRung()));
+
+    // …and the EASED rung is what the next attempt is actually judged against.
+    // Nothing else pinned this: the gate's resolve effect reads the rung out of
+    // a ref, so a reordering that let it read a stale one would degrade the
+    // ladder in the log while asking the child for the same hard thing.
+    fireEvent.click(screen.getByText('Try again'));
+    await screen.findByTestId('exercise-run');
+    expect(h.runProps.at(-1).requirementOverride)
+      .toEqual(requirementForRung(degradeRung(initialRung()), { passScore: 0.8 }));
   });
 
   it('D12: Practice this leaves for the unmetered practice route and never grants the match', async () => {
     const { onPassed } = renderGate({ learnerId: 'kid1' });
-    fireEvent.click(await screen.findByText('stub-exit'));
+    fireEvent.click(await screen.findByText('stub-fail'));
     fireEvent.click(await screen.findByText('Practice this'));
 
     expect(screen.getByTestId('location').textContent)
@@ -308,14 +342,71 @@ describe('GameGate — contract 5: failing offers exactly three ways out, none o
     expect(data.mode).toBe('cued');
   });
 
+  it('walking away is NOT a failure: the ladder does not move, however many times you Exit', async () => {
+    // The bug this exists to prevent: if `onExit` counted toward
+    // `retriesBeforeDegrade`, a child could press Exit three times per match
+    // and arrive at the unfailable floor without ever touching a key — the gate
+    // would become a formality that still logs like a gate.
+    const { onPassed, onLeave } = renderGate({ learnerId: 'kid1', gateConfig: { retriesBeforeDegrade: 1 } });
+    const exit = await screen.findByText('stub-exit');
+    for (let visit = 0; visit < 4; visit += 1) fireEvent.click(exit);
+
+    expect(onLeave).toHaveBeenCalledTimes(4);
+    expect(onPassed).not.toHaveBeenCalled();
+    expect(eventNamed('gate.abandoned')).toBeTruthy();
+    expect(eventNamed('gate.failed')).toBeUndefined();
+    expect(eventNamed('gate.rung-changed')).toBeUndefined();
+    expect(readGateState('kid1')).toEqual({ rung: initialRung(), failuresAtRung: 0, cleanPasses: 0 });
+  });
+
+  it('offers a way out DURING the attempt, not only after it', async () => {
+    // The run owns the screen while it is up. On a kiosk there is no browser
+    // chrome and no keyboard, so a state neither component anticipated would
+    // otherwise strand a child with nothing to press.
+    const { onLeave, onPassed } = renderGate();
+    await screen.findByTestId('exercise-run');
+
+    fireEvent.click(screen.getByText('Leave'));
+    expect(onLeave).toHaveBeenCalledTimes(1);
+    expect(onPassed).not.toHaveBeenCalled();
+    expect(eventNamed('gate.abandoned')).toBeTruthy();
+  });
+
   it('Leave calls onLeave and logs gate.abandoned — still not the match', async () => {
     const { onPassed, onLeave } = renderGate();
-    fireEvent.click(await screen.findByText('stub-exit'));
+    fireEvent.click(await screen.findByText('stub-fail'));
     fireEvent.click(await screen.findByText('Leave'));
 
     expect(onLeave).toHaveBeenCalledTimes(1);
     expect(onPassed).not.toHaveBeenCalled();
     expect(eventNamed('gate.abandoned')).toBeTruthy();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('GameGate — the run’s own dead ends fail open too', () => {
+  it('opens the gate when the run reports a terminal state it cannot leave', async () => {
+    // The gate resolves material through `instances(seedId)`; the run then
+    // re-resolves it through a DIFFERENT call, `instance(instanceId)`. A
+    // backend restart between the two lands the child on "Exercise not found"
+    // with no affordance and no callback — the fail-open would never fire and
+    // the log would show a `gate.attempt` with nothing after it.
+    const { onPassed } = renderGate({ learnerId: 'kid1' });
+    fireEvent.click(await screen.findByText('stub-dead-end'));
+
+    expect(onPassed).toHaveBeenCalledTimes(1);
+    const [, data] = eventNamed('gate.unavailable');
+    expect(data.error).toBe('run-instance-not-found');
+    expect(data.material).toBe('scales/c-major@hands=2');
+    expect(data.learnerId).toBe('kid1');
+  });
+
+  it('opens the match only once, however many ways the gate is told it is broken', async () => {
+    const { onPassed } = renderGate();
+    const deadEnd = await screen.findByText('stub-dead-end');
+    fireEvent.click(deadEnd);
+    fireEvent.click(deadEnd);
+    expect(onPassed).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -327,12 +418,12 @@ describe('GameGate — contract 6: the floor is announced once per arrival', () 
     seedGateState('kid1', { rung: oneAbove, failuresAtRung: 0, cleanPasses: 0 });
     renderGate({ learnerId: 'kid1', gateConfig: { retriesBeforeDegrade: 1 } });
 
-    fireEvent.click(await screen.findByText('stub-exit'));
+    fireEvent.click(await screen.findByText('stub-fail'));
     expect(readStored('kid1').rung).toEqual(FLOOR);
     expect(events().filter(([name]) => name === 'gate.floor-reached')).toHaveLength(1);
 
     fireEvent.click(screen.getByText('Try again'));
-    fireEvent.click(await screen.findByText('stub-exit'));
+    fireEvent.click(await screen.findByText('stub-fail'));
     expect(events().filter(([name]) => name === 'gate.floor-reached')).toHaveLength(1);
   });
 });
@@ -344,7 +435,7 @@ describe('GameGate — contract 7: every event is reconstructable from one query
     const expectedStudyDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
     renderGate({ learnerId: 'kid1' });
-    fireEvent.click(await screen.findByText('stub-exit'));
+    fireEvent.click(await screen.findByText('stub-fail'));
     fireEvent.click(await screen.findByText('Leave'));
 
     const gateEvents = events().filter(([name]) => name.startsWith('gate.'));
@@ -352,7 +443,7 @@ describe('GameGate — contract 7: every event is reconstructable from one query
     const sessionIds = new Set();
     for (const [name, data] of gateEvents) {
       expect(data, name).toMatchObject({
-        learnerId: 'kid1', deviceId: 'piano-kiosk', studyDate: expectedStudyDate,
+        learnerId: 'kid1', deviceId: 'yellow-room-tablet', studyDate: expectedStudyDate,
         sessionId: expect.any(String),
       });
       sessionIds.add(data.sessionId);
@@ -371,6 +462,76 @@ describe('GameGate — contract 7: every event is reconstructable from one query
       });
     }
     expect(eventNamed('gate.passed')[1].score).toBe(0.91);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('GameGate — a late-arriving learner keeps their place', () => {
+  it('re-reads the ladder when the roster slug hydrates, instead of overwriting it', async () => {
+    // `PianoUserContext` starts at null and hydrates asynchronously. On a
+    // reload straight onto a games route the gate would otherwise resume at the
+    // guest key (top of the ladder) and then write THAT over a struggling
+    // child's hard-won position on the first outcome.
+    seedGateState('kid1', { rung: EASED_ONCE, failuresAtRung: 1, cleanPasses: 0 });
+    function Harness() {
+      const [learnerId, setLearnerId] = useState(null);
+      return (
+        <>
+          <button type="button" onClick={() => setLearnerId('kid1')}>hydrate</button>
+          <GameGate learnerId={learnerId} gateConfig={{}} onPassed={() => {}} onLeave={() => {}} />
+        </>
+      );
+    }
+    render(<MemoryRouter><Harness /></MemoryRouter>);
+    await screen.findByTestId('exercise-run');
+    expect(h.runProps.at(-1).requirementOverride.mode).toBe('cued'); // guest: top of the ladder
+
+    fireEvent.click(screen.getByText('hydrate'));
+    // The resumed rung reaches the run: the child is judged on what they earned.
+    await waitFor(() => expect(h.runProps.at(-1).requirementOverride.mode).toBe('free'));
+
+    fireEvent.click(screen.getByText('stub-pass'));
+    expect(readGateState('kid1')).toEqual({ rung: EASED_ONCE, failuresAtRung: 0, cleanPasses: 1 });
+    // …and the events after hydration name the real child, not the null guest.
+    expect(eventNamed('gate.passed')[1].learnerId).toBe('kid1');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('resolveGateConfig — a mistyped number must not become a broken gate', () => {
+  it('rejects a passScore outside (0, 1] in BOTH directions', () => {
+    // 80 is the percent-for-fraction mistake: finite, plausible, and it makes
+    // `score >= 80` — never true. Every child fails to the floor on every match
+    // while the logs read as ordinary `gate.failed`. The mirror is worse: "",
+    // false and [] all coerce to 0, so `score >= 0` passes everyone at every
+    // rung, logged as healthy `gate.passed`.
+    for (const bad of [80, 100, 1.5, 0, -0.5, '', false, [], null, undefined, 'high', NaN, Infinity]) {
+      expect(resolveGateConfig({ passScore: bad }).passScore, String(bad)).toBe(0.8);
+    }
+    for (const good of [0.5, 0.8, 1, '0.75']) {
+      expect(resolveGateConfig({ passScore: good }).passScore, String(good)).toBe(Number(good));
+    }
+  });
+
+  it('rejects a fractional retry/climb count instead of flooring it to zero', () => {
+    // Validating the raw value and flooring afterwards turns 0.5 into 0:
+    // degrade on the first failure, climb on every pass. Both read as "the
+    // ladder is broken", and neither is visible in a log.
+    expect(resolveGateConfig({ retriesBeforeDegrade: 0.5 }).retriesBeforeDegrade).toBe(3);
+    expect(resolveGateConfig({ climbAfterCleanPasses: 0.5 }).climbAfterCleanPasses).toBe(3);
+    expect(resolveGateConfig({ retriesBeforeDegrade: 0 }).retriesBeforeDegrade).toBe(3);
+    expect(resolveGateConfig({ retriesBeforeDegrade: -2 }).retriesBeforeDegrade).toBe(3);
+    expect(resolveGateConfig({ retriesBeforeDegrade: 5 }).retriesBeforeDegrade).toBe(5);
+    expect(resolveGateConfig({ climbAfterCleanPasses: 2 }).climbAfterCleanPasses).toBe(2);
+  });
+
+  it('survives null and {} without throwing, and never self-enables', () => {
+    for (const raw of [null, undefined, {}, 'nonsense', 42]) {
+      expect(resolveGateConfig(raw)).toMatchObject({
+        enabled: false, every: 'match', passScore: 0.8, retriesBeforeDegrade: 3,
+        metered: false, climbAfterCleanPasses: 3,
+      });
+    }
   });
 });
 

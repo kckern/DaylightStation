@@ -75,8 +75,19 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   source and is resolved through `resolveGateMaterial`. Pass a stable
  *   reference (memoize it) — a fresh object rebuilds the attempt, exactly as
  *   `requirementOverride` already does.
+ * @param {((result:object)=>void)} [props.onFailed] A COMPLETED attempt that did
+ *   not pass. Distinct from `onExit`, which means the player walked away with
+ *   nothing to judge. A host that moves a difficulty ladder must only ever move
+ *   it on this one: counting walk-aways as failures lets a player reach the
+ *   easiest rung without playing a note.
+ * @param {((reason:'no-access'|'instance-not-found'|'unrunnable')=>void)} [props.onUnavailable]
+ *   This run has settled into a terminal state it cannot leave under its own
+ *   power. All three render a `PianoEmpty` whose only affordance is the header
+ *   Exit, so a host that mounted this run WITHOUT its own chrome would strand a
+ *   player on a dead end. Both callbacks are optional and additive: omit them
+ *   and the surface behaves exactly as it did before.
  */
-export default function ExerciseRun({ instanceId, material = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, onExit, onPassed }) {
+export default function ExerciseRun({ instanceId, material = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -209,16 +220,39 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   useEffect(() => {
     if (!snapshot.result || persistedRef.current) return;
     persist(snapshot.result);
-    if (snapshot.result.status === 'completed') logger.info('piano.exercise-complete', {
+    if (snapshot.result.status !== 'completed') return;
+    const passed = runPassed(snapshot.result, { challenge, passScore: requirement?.passScore });
+    logger.info('piano.exercise-complete', {
       id: instance.id, purpose: challenge ? 'challenge' : 'practice', matcher: snapshot.matcher,
       score: snapshot.result.score,
       // `verdict.passed` is the engine's record and stays in the evidence
       // untouched — but on a non-floor rung it is always true, so it would
       // tell a false story on its own. `passed` is what the child was shown.
       engine_verdict: snapshot.result.verdict.passed,
-      passed: runPassed(snapshot.result, { challenge, passScore: requirement?.passScore }),
+      passed,
     });
-  }, [challenge, instance, logger, persist, requirement, snapshot]);
+    // A judged, completed attempt that did not clear its bar. `onPassed` stays
+    // player-driven (the Continue button) because a pass is good news the
+    // player should read first; a failure is reported straight to the host so
+    // it can offer its own ways forward — and so a host counting failures
+    // counts only attempts that actually happened.
+    if (!passed) onFailed?.(snapshot.result);
+  }, [challenge, instance, logger, onFailed, persist, requirement, snapshot]);
+
+  /**
+   * The three states this run cannot leave on its own. Reported through an
+   * effect rather than from render so the host is told once, after the state
+   * has settled, and never mid-render.
+   */
+  const unavailableReason = !access.allowed ? 'no-access'
+    : instance === null ? 'instance-not-found'
+      : unrunnable ? 'unrunnable' : null;
+  const reportedUnavailableRef = useRef(null);
+  useEffect(() => {
+    if (!unavailableReason || reportedUnavailableRef.current === unavailableReason) return;
+    reportedUnavailableRef.current = unavailableReason;
+    onUnavailable?.(unavailableReason);
+  }, [onUnavailable, unavailableReason]);
 
   const start = useCallback(() => {
     if (!runtime) return;
