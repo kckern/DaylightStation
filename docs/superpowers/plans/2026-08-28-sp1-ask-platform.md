@@ -158,12 +158,40 @@ validateAsk(tuple) → { ok, errors:[] }
 
 ---
 
-### Task 6: Sweeps, gate, deploy
+### Task 5b: `deriveStage` wired; `runPresentation` becomes the thin re-export the spec promised
 
-- [ ] **Step 1:** `npx vitest run --config vitest.config.mjs frontend/src/modules/Piano/ frontend/src/modules/MusicNotation/` — expect ≥ 411 files green, zero modified-assertion regressions.
-- [ ] **Step 2:** `npm run test:unit:vitest` once. Known pre-existing reds on main (two ScreenProvider mock gaps, `band.measure`) are not yours; a NEW failing file in this branch's files is. Do not baseline.
-- [ ] **Step 3:** Coordinator deploys per house rules (gate → build → gate → deploy; no config change this SP — the live YAML is legacy-shaped and `expandAsk` serves it).
-- [ ] **Step 4: Commit** any doc corrections found — `git commit -m "feat(piano): the ask platform foundation — four hosts, one seam"`
+**Why this task exists:** Task 2 built `deriveStage(tuple, instance)` and deliberately left it unconsumed (stage selection was frozen for Tasks 3–5, which each correctly declined to touch it). Task 3's report flagged it unclaimed; the coordinator assigned it here rather than letting two SP1 spec items (§1: "runPresentation becomes a thin re-export") exit the plan unshipped.
+
+**Files:**
+- Modify: `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/ExerciseRun.jsx` (stage selection reads `deriveStage` via `askTupleFor`, not `stageForTier`)
+- Modify: `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/runPresentation.js` (drop `stageForTier`/`deriveRunTier` bodies once nothing calls them; keep only what `KeysAsk.jsx` still needs re-exported)
+- Test: `runPresentation.test.js` may lose the now-dead cases (state which); `ExerciseRun`'s stage-selection tests move to asserting `deriveStage` was consulted with the right tuple, not weakened
+
+**Behaviour contract:** identical routing to today (Task 2's 16-cell truth table is the proof — reuse it, don't re-derive). `ExerciseRun` builds the ask tuple via `askTupleFor` (the function Task 3 added and directly tested with all seven live levels) and calls `deriveStage(tuple, instance)` instead of `stageForTier(runTier, instance)`. `runPresentation.js` keeps only what has a real remaining caller (check `KeysAsk.jsx`/`GameGate.jsx`'s accidental helper) — everything else's shim becomes a straight re-export from `ask/`.
+
+- [ ] **Step 1: Failing tests** — the truth table re-expressed as an integration assertion (mock `deriveStage`, assert `ExerciseRun` calls it with the tuple `askTupleFor` would produce, not a tier number); `runPresentation.test.js` updated to prove the file is a shim (every export traces to `ask/`).
+- [ ] **Step 2–4: Fail → implement → pass**, full Exercises + Games + MusicNotation, both Chromium measure specs (unmodified pass required — this changes an internal call path, not visible output).
+- [ ] **Step 5: Commit** — `git commit -m "refactor(piano): the run consults the schema for its stage, not a tier number"`
+
+---
+
+### Task 6: The two flakes, the caller-less compat path, sweeps, gate, deploy
+
+**Files:**
+- Modify: `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/ExerciseRun.jsx` (delete the `instanceId`/`material` compat path — grep-confirmed caller-less as of Task 5)
+- Modify: `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/ExerciseRun.component.test.jsx` (the 1,308-line migration Task 5 deferred: mount via `AskSession` or via the props `ExerciseRun` now exclusively takes)
+- Modify: `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/ExerciseRun.component.test.jsx` — the metronome pre-pulse case (flaked twice under load on this branch; make it deterministic under fake timers rather than load-sensitive — find the real-clock dependency and remove it)
+- Modify: `frontend/src/modules/Piano/PianoChessGame/useChessPersistenceLifecycle.test.jsx:45-49` — the self-contained race: waits for `saveGameRecord` to be *called*, then asserts `ladderOutcome` unguarded, while the hook sets it from a promise continuation two microtasks later. Await the actual settlement, not the call.
+- Modify: `frontend/src/modules/Piano/PianoKiosk/modes/Games/gateMaterial.js` — delete `pickGateMaterial` (no production caller since Task 4's `materialOrder` walk; its own spec goes with it) unless Task 5b's grep finds a new one
+
+**Behaviour contract:** no visible change. Both flake fixes must be proven, not asserted — run each file solo 5× and under the full sweep at least twice before claiming fixed.
+
+- [ ] **Step 1:** Delete the compat path; migrate its test file's mounts (assertions move to the new boundary per every prior task's rule — never weaken).
+- [ ] **Step 2:** Fix both flakes; prove stability per above.
+- [ ] **Step 3:** `npx vitest run --config vitest.config.mjs frontend/src/modules/Piano/ frontend/src/modules/MusicNotation/` — expect ≥ 414 files green, zero modified-assertion regressions.
+- [ ] **Step 4:** `npm run test:unit:vitest` once. Known pre-existing reds on main (two ScreenProvider mock gaps, `band.measure`) are not yours; a NEW failing file in this branch's files is. Do not baseline.
+- [ ] **Step 5:** Coordinator deploys per house rules (gate → build → gate → deploy; no config change this SP — the live YAML is legacy-shaped and `expandAsk` serves it).
+- [ ] **Step 6: Commit** any doc corrections found — `git commit -m "feat(piano): the ask platform foundation — four hosts, one seam"`
 
 ## Self-review (performed while writing)
 
