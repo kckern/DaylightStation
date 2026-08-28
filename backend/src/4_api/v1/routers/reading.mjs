@@ -99,6 +99,28 @@ export function createReadingRouter({
     const session = sessions.acknowledge(location, sessionId);
     return res.json({ ok: Boolean(session), session });
   }));
+  // Operator-facing, bounded timeline. It answers questions such as "when did
+  // this prompt arrive?" without scraping a kiosk screenshot or correlating
+  // several services' logs by hand.
+  router.get('/events', asyncHandler(async (req, res) => {
+    const location = trimmed(req.query?.location);
+    if (!location) throw badRequest('location is required');
+    const limit = Number(req.query?.limit);
+    const session = sessions.snapshot(location);
+    const current = session.session;
+    const now = Date.now();
+    const isoAge = (value) => {
+      const at = Date.parse(value);
+      return Number.isFinite(at) ? Math.max(0, now - at) : null;
+    };
+    return res.json({
+      ...session,
+      ageMs: current ? isoAge(current.openedAt) : null,
+      ackAgeMs: current?.acknowledgedAt ? isoAge(current.acknowledgedAt) : null,
+      progressAgeMs: current?.progress?.at ? isoAge(current.progress.at) : null,
+      events: sessions.observations(location, { limit }),
+    });
+  }));
   router.post('/progress', asyncHandler(async (req, res) => {
     const location = trimmed(req.body?.location);
     const sessionId = trimmed(req.body?.sessionId);
