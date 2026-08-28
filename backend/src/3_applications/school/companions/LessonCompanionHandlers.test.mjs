@@ -55,7 +55,9 @@ beforeEach(async () => {
 });
 afterEach(async () => { await fs.rm(dir, { recursive: true, force: true }); });
 
-const handler = () => new ReadalongLessonCompanionHandler({ companions, companionCodes, clock });
+const handler = () => new ReadalongLessonCompanionHandler({
+  companions, companionCodes, clock, logger: silentLogger,
+});
 
 /**
  * A code record shaped exactly as `IssueDocument.#prepareCompanion` writes it.
@@ -146,22 +148,104 @@ describe('ReadalongLessonCompanionHandler.recordProgress — the verdict', () =>
     expect(result.remainingParts).toBe(1);
   });
 
-  it('refuses a double-speed play at full coverage, and a later 1x report does not launder it', async () => {
-    // The rate persisted is the running MAXIMUM, not the instantaneous one:
-    // otherwise a child sets 2x, plays through, sets it back to 1x before the
-    // final sample, and passes. Refreshing the page must not launder it either.
+  it('banks NOTHING from a sample played above 1x, so a trailing 1x report cannot launder it', async () => {
+    // The cheat: set 2x, play the whole thing, drop back to 1x before the last
+    // sample. The fast sample's ranges are dropped rather than banked, so the
+    // trailing honest sample has nothing to launder — it carries only the
+    // handful of seconds actually played at normal speed.
     const codeRef = await seedCode({ requireParts: 1 });
     const offer = await seedOffer({ codeRef });
 
     const fast = await report(offer, {
-      partId: PARTS[0].id, durationSeconds: 100, playedRanges: [[0, 100]], maxRate: 2,
+      partId: PARTS[0].id, durationSeconds: 100, playedRanges: [[0, 98]], maxRate: 2,
     });
-    expect(fast).toMatchObject({ satisfied: false, code: null });
+    expect(fast).toMatchObject({ satisfied: false, code: null, gate: 'closed' });
 
-    const slow = await report(offer, {
+    const trailing = await report(offer, {
+      partId: PARTS[0].id, durationSeconds: 100, playedRanges: [[98, 100]], maxRate: 1,
+    });
+    expect(trailing).toMatchObject({ satisfied: false, code: null, remainingParts: 1 });
+
+    const record = await companionCodes.get(codeRef);
+    expect(record.coverage[PARTS[0].id].ranges).toEqual([[98, 100]]);
+    // The dropped samples are counted, so "nothing is accumulating" and "every
+    // sample was too fast" are distinguishable in the file a grown-up opens.
+    expect(record.coverage[PARTS[0].id].fastSamplesDropped).toBe(1);
+    expect(record.coverage[PARTS[0].id].maxRate).toBeUndefined();
+  });
+
+  it('lets an honest 1x replay earn coverage a previous 2x skim did not poison', async () => {
+    // The other half, and the reason the rate is NOT persisted. A monotonic
+    // stored maxRate refused this replay forever — and because a gate is
+    // household-wide, it locked the sibling out of a lesson they never touched.
+    const codeRef = await seedCode({ requireParts: 1 });
+    const offer = await seedOffer({ codeRef });
+
+    await report(offer, { partId: PARTS[0].id, durationSeconds: 100, playedRanges: [[0, 100]], maxRate: 2 });
+    const replay = await report(offer, {
       partId: PARTS[0].id, durationSeconds: 100, playedRanges: [[0, 100]], maxRate: 1,
     });
-    expect(slow).toMatchObject({ satisfied: false, code: null, remainingParts: 1 });
+
+    expect(replay).toMatchObject({ satisfied: true, remainingParts: 0, gate: 'open' });
+    expect(replay.code).toEqual(CODE);
+  });
+
+  it('never lets a shrinking duration open the gate: the denominator is a running MAXIMUM', async () => {
+    // Thirty seconds of an hour is not an hour. Re-reporting the SAME part as
+    // thirty seconds long — with no new evidence at all — must not turn the
+    // banked thirty seconds into the whole chapter. `durationSeconds` is paired
+    // with `partId` by the client, so this is a part-change slip as much as it
+    // is a hostile body.
+    const codeRef = await seedCode({ requireParts: 1 });
+    const offer = await seedOffer({ codeRef });
+
+    const honest = await report(offer, {
+      partId: PARTS[0].id, durationSeconds: 3600, playedRanges: [[0, 30]],
+    });
+    expect(honest).toMatchObject({ satisfied: false, code: null });
+
+    const shrunk = await report(offer, { partId: PARTS[0].id, durationSeconds: 30, playedRanges: [] });
+    expect(shrunk).toMatchObject({ satisfied: false, code: null, remainingParts: 1 });
+
+    // The one-second floor: the shortest possible claim must not release it either.
+    const floor = await report(offer, { partId: PARTS[0].id, durationSeconds: 1, playedRanges: [[0, 1]] });
+    expect(floor).toMatchObject({ satisfied: false, code: null });
+
+    const record = await companionCodes.get(codeRef);
+    expect(record.coverage[PARTS[0].id].duration).toBe(3600);
+    expect(record.satisfiedAt).toBeNull();
+  });
+
+  it('clamps banked ranges to the part, so the stored fraction is not a lie', async () => {
+    const codeRef = await seedCode({ requireParts: 1 });
+    const offer = await seedOffer({ codeRef });
+
+    await report(offer, { partId: PARTS[0].id, durationSeconds: 100, playedRanges: [[-100, 200]] });
+
+    const banked = (await companionCodes.get(codeRef)).coverage[PARTS[0].id];
+    expect(banked.ranges).toEqual([[0, 100]]);
+    expect(banked.fraction).toBe(1);
+  });
+
+  it('caps the banked segments, dropping the shortest rather than bridging the gaps', async () => {
+    // The record is SHARED and rewritten on every tick by every listening
+    // child, so 2000 sub-second seeks are not one learner's problem. Coalescing
+    // to stay small would credit the gaps — a size guard turned gate bypass —
+    // so the slivers are dropped instead.
+    const codeRef = await seedCode({ requireParts: 1 });
+    const offer = await seedOffer({ codeRef });
+    // 2000 disjoint slivers over an hour, plus one real ten-minute listen.
+    const slivers = Array.from({ length: 2000 }, (_, i) => [i * 1.5, i * 1.5 + 0.1]);
+
+    await report(offer, {
+      partId: PARTS[0].id, durationSeconds: 3600, playedRanges: [...slivers, [3000, 3600]],
+    });
+
+    const banked = (await companionCodes.get(codeRef)).coverage[PARTS[0].id];
+    expect(banked.ranges.length).toBeLessThanOrEqual(200);
+    // The real listen survives the cull, and the gaps were never bridged.
+    expect(banked.ranges).toContainEqual([3000, 3600]);
+    expect(banked.fraction).toBeLessThan(0.95);
   });
 
   it('require_parts: 1 — the first part to clear releases the code, and satisfiedVia names it', async () => {
@@ -228,7 +312,26 @@ describe('ReadalongLessonCompanionHandler.recordProgress — the verdict', () =>
       partId: PARTS[0].id, durationSeconds: 100, playedRanges: [[0, 100]], completed: true,
     });
 
-    expect(result).toMatchObject({ ok: true, tracked: true, satisfied: false, code: null });
+    expect(result).toMatchObject({ ok: true, tracked: true, satisfied: false, code: null, gate: 'none' });
+  });
+
+  it('tells "no gate here" apart from "the gate is broken"', async () => {
+    // Both answered `{satisfied: false, code: null, remainingParts: 0}` before
+    // `gate` existed — so a card could not tell a child with no gate at all
+    // from one whose code record has gone missing, and would have told the
+    // second they were all set.
+    const optional = await seedOffer({ id: 'ral_option1', participation: 'optional' });
+    expect(await report(optional, { partId: PARTS[0].id })).toMatchObject({ gate: 'none' });
+
+    // A required offer naming a code record that was never written.
+    const orphan = await seedOffer({
+      id: 'ral_orphan1', codeRef: companionCodes.keyFor({
+        householdId: HOUSEHOLD, lessonId: 'gone', lessonDay: LESSON_DAY,
+      }),
+    });
+    expect(await report(orphan, { partId: PARTS[0].id })).toMatchObject({
+      ok: true, tracked: true, satisfied: false, code: null, gate: 'unavailable',
+    });
   });
 
   it('keeps writing the per-learner part telemetry the frontend already sends', async () => {

@@ -431,13 +431,65 @@ describe('IssueDocument — the finish code reaches the printed sheet and nothin
 
     // The whole result, serialised — this is what `ResolveScanAction` answers a
     // browser with. Neither the letters nor the field name may appear in it.
-    const serialised = JSON.stringify(result);
-    expect(serialised).not.toContain('finishCode');
-    expect(serialised).not.toContain(minted.code.join(''));
+    //
+    // RANDOM IDS ARE MASKED FIRST. `shortId` draws from `Math.random`, not the
+    // injected rng, so `ral_uEN4PCaEkHcA` is a fresh mixed-case string every
+    // run — and a single-letter code (5 of the 31 are) joins to one character
+    // that such an id contains often enough to fail this test for nobody's bug.
+    // It flaked that way on 2026-08-28. Masking the ids keeps the assertion at
+    // full strength over every field that actually carries content.
+    const serialised = (value) => JSON.stringify(value).replace(/\bral_[A-Za-z0-9_-]+/g, 'ral_ID');
+    expect(serialised(result)).not.toContain('finishCode');
+    expect(serialised(result)).not.toContain(minted.code.join(''));
     expect(result.document).toBeNull();
     // The companion record a child's list is built from carries the ACCESS code
     // only — the reference to the code record, never the code itself.
     expect(companions.records[0].finishCode ?? null).toBeNull();
-    expect(JSON.stringify(companions.records[0])).not.toContain(minted.code.join(''));
+    expect(serialised(companions.records[0])).not.toContain(minted.code.join(''));
+  });
+});
+
+describe('requireParts is settled at mint time, from the unit', () => {
+  // Psalms 70–72; 77 — four chapters, and typically only ONE has to be
+  // finished. Before `companion.requireParts` was authorable, every code minted
+  // demanded all four, which made the "one chapter" design decision unreachable
+  // in production and turned any single refused chapter into a whole-lesson
+  // lockout for every child in the household.
+  const FOUR_CHAPTERS = 'Psalms 70–72; 77';
+
+  const withRequireParts = (requireParts) => {
+    const unit = unitFor({ participation: 'required', reading: FOUR_CHAPTERS });
+    return { ...unit, companion: { ...unit.companion, ...(requireParts != null ? { requireParts } : {}) } };
+  };
+
+  /** Issue one worksheet and hand back the minted code record. */
+  async function mint(unit) {
+    const companionCodes = codeStore();
+    const { issueDocument, sessions, companions } = issuer({ companionCodes, units: [unit] });
+    await seedSession(sessions, { sessionId: 'ses-rp', learnerId: 'kid1', unitId: unit.unitId });
+    const result = await issueDocument.execute({ sessionId: 'ses-rp' });
+    expect(result.status).toBe('issued');
+    return companionCodes.get(companions.records[0].codeRef);
+  }
+
+  it('mints the authored count, so one chapter of four can be all the gate wants', async () => {
+    expect((await mint(withRequireParts(1))).requireParts).toBe(1);
+  });
+
+  it("resolves 'all' against the playlist that actually got built", async () => {
+    // A word, not a number: the playlist length is not known when the unit is
+    // authored, so writing `4` to mean "all of them" would silently become
+    // "the first four" the week the reading gains a fifth chapter.
+    expect((await mint(withRequireParts('all'))).requireParts).toBe(4);
+  });
+
+  it('defaults an unauthored companion to every part, exactly as it minted before', async () => {
+    expect((await mint(withRequireParts(null))).requireParts).toBe(4);
+  });
+
+  it('clamps a count larger than the reading, so the gate stays openable', async () => {
+    // An author who trims a reading after writing the number would otherwise
+    // leave a gate no child could ever clear.
+    expect((await mint(withRequireParts(9))).requireParts).toBe(4);
   });
 });
