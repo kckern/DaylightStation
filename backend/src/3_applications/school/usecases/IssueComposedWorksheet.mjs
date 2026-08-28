@@ -120,6 +120,33 @@ export class IssueComposedWorksheet {
     if (!state.sessionId || !ISSUABLE.has(state.state)) throw new Error(`session '${sessionId}' is not issuable`);
     const unit = await this.#curriculum.getUnit(state.unitId);
     if (!unit?.bank || unit.document) throw new Error(`session '${sessionId}' is not a bank-only lesson`);
+    // A COMPOSED SHEET HAS NO GATE ROW TO GIVE.
+    //
+    // The gate row is minted in `IssueDocument#prepareCompanion`, which is
+    // called from the SOLO bank-worksheet path and nowhere else. Nothing here
+    // prepares a companion, so before this refusal a grown-up who selected two
+    // open sessions and pressed "print together" got one sheet with NO gate row
+    // for a `participation: required` lesson — and a sheet with no gate row
+    // passes on score alone, silently, which is exactly what the gate exists to
+    // stop.
+    //
+    // A gate row PER SECTION is a feature, not a fix: `COMPANION_GATE_ITEM_ID`
+    // is one fixed constant ("a worksheet has exactly one gate"), so two gated
+    // sections would mint two extra items sharing one id, collide in
+    // `mergeBank`, and `ResolveCardScan`'s single
+    // `find(row => row.itemType === 'companion_code')` would return only the
+    // first — the second lesson's gate vanishing without a word.
+    //
+    // Refusing HERE, rather than later, is what keeps it cheap: this runs
+    // before this section publishes anything, before any card is allocated, and
+    // before the printer is touched, so the batch costs nothing and every
+    // session keeps the state it had.
+    if (unit.companion?.enabled !== false && unit.companion?.participation === 'required') {
+      this.#logger.warn?.('school.composed-worksheet.companion-gate-unsupported', {
+        sessionId, lessonId: unit.unitId, learnerId: state.learnerId,
+      });
+      throw new Error(`lesson '${unit.unitId}' has a required read-along, so it has to be printed on its own`);
+    }
     const assignment = await this.#assignments.get(state.learnerId);
     const course = (assignment?.courses ?? []).find((entry) => entry.courseId === unit.courseId
       || Object.values(entry.enrollment?.lessonOrder ?? {}).flat().includes(unit.unitId));

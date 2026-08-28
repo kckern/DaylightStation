@@ -189,6 +189,22 @@ function resolveRequireParts(authored, total) {
   return Math.min(authored, parts);
 }
 
+/**
+ * Does this unit ask for a GATE ROW — the thing only `#issueWorksheetInstance`
+ * can actually print?
+ *
+ * `enabled: false` is the author saying there is no companion here at all, which
+ * settles `participation` along with it (the same reading `#prepareCompanion`
+ * takes on its first line). Everything else with `participation: required`
+ * wants a gate, and a sheet that cannot carry one must refuse rather than print
+ * an ungated copy: an ungated sheet passes on score alone, which is the single
+ * outcome this whole feature exists to prevent.
+ */
+export function requiresCompanionGate(unit) {
+  const companion = unit?.companion;
+  return Boolean(companion) && companion.enabled !== false && companion.participation === 'required';
+}
+
 /** @returns {{id: string, rev: string}|null} */
 function parsePrintDocumentRef(ref) {
   if (typeof ref !== 'string') return null;
@@ -461,6 +477,40 @@ export class IssueDocument {
     // which it never runs. Everything from here to the end of this method is
     // unchanged for a legacy unit (this branch is simply never taken).
     const printRef = unit?.document ? parsePrintDocumentRef(unit.document) : null;
+
+    // ONLY THE PIPELINE ABOVE CAN CARRY A GATE ROW, so everything below refuses
+    // to print a lesson that needs one.
+    //
+    // `#prepareCompanion` — which mints the finish code and is the whole reason
+    // a gate row exists — is called from `#issueWorksheetInstance` and nowhere
+    // else. Neither `#issuePrintDocument` nor `#issueLegacyDocument` prepares a
+    // companion, so before this guard a `participation: required` lesson on
+    // either of them printed a sheet with NO gate row: the child answers, the
+    // scan reports no `companionGate`, `evaluateOutcome`'s veto clause never
+    // fires, and the sheet passes on score alone with nothing logged anywhere.
+    //
+    // Teaching those pipelines to print a gate row is a FEATURE, not a fix.
+    // `COMPANION_GATE_ITEM_ID` is one fixed constant, justified in its own
+    // comment by "a worksheet has exactly one gate, so one fixed id is enough";
+    // a per-path gate needs a per-section gate id, a matching partition in
+    // `ResolveCardScan`, and new row-capacity arithmetic. Until that exists,
+    // refusing is the honest answer — and it is recoverable, because nothing
+    // has been minted, rendered, allocated or printed at this point, so the
+    // session does not advance and the ticket in the child's hand stays valid.
+    if (requiresCompanionGate(unit)) {
+      this.#logger.warn?.('school.issue.companion-gate-unsupported', {
+        sessionId,
+        unitId: state.unitId,
+        document: unit.document ?? null,
+        pipeline: printRef ? 'print-document' : 'legacy-document',
+      });
+      return this.#unavailable(
+        sessionId,
+        'companion-gate-unsupported',
+        'This lesson needs a read-along that this kind of sheet cannot check. Tell a grown-up.',
+      );
+    }
+
     if (printRef) {
       return this.#issuePrintDocument({
         sessionId, nowIso, state, unit, printRef, replacementArtifactId,

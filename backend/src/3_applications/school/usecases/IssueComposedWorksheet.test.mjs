@@ -306,3 +306,112 @@ describe('IssueComposedWorksheet against the real work-session datastore', () =>
     expect(await typesOf(sessions, 's-gone')).toEqual(['created', 'issued', 'submitted']);
   });
 });
+
+/**
+ * A COMPOSED SHEET CANNOT CARRY A GATE ROW, so it refuses to carry the lesson.
+ *
+ * The gate row is minted in `IssueDocument#prepareCompanion`, which has exactly
+ * one call site — the SOLO bank-worksheet path. Nothing here prepares a
+ * companion, so before this refusal a grown-up who selected two open sessions
+ * and pressed "print together" got one sheet with NO gate row for a lesson
+ * authored `participation: required`: the child answers, scans, `ResolveCardScan`
+ * reports no `companionGate`, `evaluateOutcome`'s veto clause never fires, and
+ * the sheet passes on score alone with nothing logged anywhere.
+ *
+ * Printing a gate row PER SECTION was considered and is a feature, not a fix:
+ * `COMPANION_GATE_ITEM_ID` is one fixed constant ("a worksheet has exactly one
+ * gate, so one fixed id is enough"), so two gated sections would mint two extra
+ * items with the same id, collide in `mergeBank`, and the scan-back resolver's
+ * `find(row => row.itemType === 'companion_code')` would silently return only
+ * the first. So this refuses, and names the fix: print that lesson on its own.
+ */
+describe('IssueComposedWorksheet and a required companion', () => {
+  const unitWith = (companion) => (id) => ({
+    unitId: id, title: `Lesson ${id}`, subject: 'science', courseId: 'chemistry',
+    bank: `bank-${id}`, passing: { percent: 80 },
+    provenance: { source: 'A book', reading: 'Psalms 70' },
+    ...(companion ? { companion } : {}),
+  });
+
+  /** The lesson under test is `s-two`; `s-one` is an ordinary companion-free lesson. */
+  const stack = ({ companion }) => {
+    const sessions = fakeSessions();
+    const instances = new Map();
+    const published = new Map();
+    const cards = new Map();
+    const warns = [];
+    const printer = { jobs: [], async printPdf(bytes) { this.jobs.push(bytes); return { ok: true }; } };
+    const plain = unitWith(null);
+    const gated = unitWith(companion);
+    const useCase = new IssueComposedWorksheet({
+      curriculum: { async getUnit(id) { return (id === 'two' ? gated : plain)(id); } },
+      sessions,
+      assignments: { async get() { return { courses: [{ courseId: 'chemistry', profile: 'lower', enrollment: { enrollmentId: 'enr-1' } }] }; } },
+      worksheetInstances: {
+        async findBySession(id) { return [...instances.values()].find((entry) => entry.sessionId === id) ?? null; },
+        async put(instance) { instances.set(instance.id, instance); return instance; },
+      },
+      bankReader: { getBank(id) { return bank(id); } },
+      printDocuments: { async getPublished(id, rev) { return published.get(`${id}@${rev}`) ?? null; } },
+      publishPrintDocument: {
+        async execute({ source }) { const rev = 'abcdef123'; published.set(`${source.id}@${rev}`, { ...source, rev }); return { id: source.id, rev }; },
+      },
+      allocationStore: {
+        async findReusableCard() { return null; },
+        async findByCard(id) { return cards.get(id) ?? []; },
+        async release() {},
+      },
+      renderPrintDocument: {
+        async execute({ context }) {
+          const cardId = '1234567';
+          const sections = context.sectionAttribution.map((section, index) => ({
+            ...section, rowRange: { start: index * 6 + 1, end: index * 6 + 6 },
+          }));
+          cards.set(cardId, [{ cardId, recordId: 'rec-1', sections }]);
+          return { bytes: Buffer.from('%PDF test'), pageCount: 1, allocation: { cardId, recordId: 'rec-1', rowRange: { start: 1, end: 12 } } };
+        },
+      },
+      printer,
+      clock: () => new Date('2026-08-21T09:00:00.000Z'),
+      logger: { info() {}, warn(event, data) { warns.push({ event, data }); } },
+    });
+    return { useCase, sessions, printer, instances, published, warns };
+  };
+
+  it('REFUSES the batch, and says the lesson has to be printed on its own', async () => {
+    const { useCase, sessions, printer, warns } = stack({
+      companion: { enabled: true, participation: 'required', label: 'Read along' },
+    });
+
+    await expect(useCase.execute({ sessionIds: ['s-one', 's-two'] }))
+      .rejects.toThrow(/printed on its own/i);
+
+    // No paper, and no session recorded an issue against a sheet that was never
+    // handed over.
+    expect(printer.jobs).toEqual([]);
+    expect(sessions.events.get('s-one').map((event) => event.type)).toEqual(['created']);
+    expect(sessions.events.get('s-two').map((event) => event.type)).toEqual(['created']);
+    expect(warns.map((entry) => entry.event)).toContain('school.composed-worksheet.companion-gate-unsupported');
+  });
+
+  it('composes an OPTIONAL companion exactly as it always did', async () => {
+    const { useCase, sessions, printer } = stack({
+      companion: { enabled: true, participation: 'optional', label: 'Read along' },
+    });
+
+    await expect(useCase.execute({ sessionIds: ['s-one', 's-two'] })).resolves.toMatchObject({ learnerId: 'learner3' });
+
+    expect(printer.jobs).toHaveLength(1);
+    expect(sessions.events.get('s-two').map((event) => event.type)).toEqual(['created', 'issued']);
+  });
+
+  it('composes lessons with NO companion at all, the regression that would reach every sheet in the house', async () => {
+    const { useCase, sessions, printer } = stack({ companion: null });
+
+    await expect(useCase.execute({ sessionIds: ['s-one', 's-two'] })).resolves.toMatchObject({ learnerId: 'learner3' });
+
+    expect(printer.jobs).toHaveLength(1);
+    expect(sessions.events.get('s-one').map((event) => event.type)).toEqual(['created', 'issued']);
+    expect(sessions.events.get('s-two').map((event) => event.type)).toEqual(['created', 'issued']);
+  });
+});
