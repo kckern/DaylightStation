@@ -4136,6 +4136,72 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // ==========================================================================
+  // Gated media lessons on the living-room TV — the screen's four HTTP calls.
+  //
+  // Mounted beside the reading router because it is the same screen and the
+  // same doctrine: a widget that renders nothing until a lesson is dispatched
+  // to its room, and four routes for the things the backend cannot see.
+  //
+  // Guarded on the SAME lifecycle the routes' use cases are built from. There
+  // is no `storyTimeLauncher` equivalent to also require — a lesson is
+  // dispatched through `DispatchMedia`, which the lifecycle already owns — but
+  // without `stores.sessions` and `stores.curriculum` there is nothing to read
+  // a lesson out of, and mounting routes that could only 500 would turn "this
+  // household has no school" into an error in front of a child.
+  //
+  // `schoolService` is the bank reader for BOTH the answer grader and the
+  // snapshot's question projection, deliberately the same instance: the
+  // questions the screen shows and the questions the server marks must come
+  // out of one bank, or a child answers something that is not what is being
+  // graded.
+  // ==========================================================================
+  if (schoolLifecycle.wired && schoolLifecycle.stores?.sessions && schoolLifecycle.stores?.curriculum
+      && schoolLifecycle.useCases?.recordMediaCompletion) {
+    try {
+      const lessonLogger = rootLogger.child({ module: 'school-lesson' });
+      const { ReadLessonSnapshot } = await import('#apps/school/usecases/ReadLessonSnapshot.mjs');
+      const { RecordCheckpointAnswer } = await import('#apps/school/usecases/RecordCheckpointAnswer.mjs');
+      const { createMediaLessonRouter } = await import('#api/v1/routers/mediaLesson.mjs');
+
+      v1Routers.school.use('/lesson', createMediaLessonRouter({
+        readLessonSnapshot: new ReadLessonSnapshot({
+          curriculum: schoolLifecycle.stores.curriculum,
+          sessions: schoolLifecycle.stores.sessions,
+          bankReader: schoolService,
+          logger: lessonLogger,
+        }),
+        // Built HERE rather than in the lifecycle because the lifecycle has no
+        // bank reader of its own to hand it — `RenderPrintDocument` keeps one
+        // privately — and `schoolService` is the reader every other on-screen
+        // grading path already goes through.
+        recordCheckpointAnswer: new RecordCheckpointAnswer({
+          curriculum: schoolLifecycle.stores.curriculum,
+          sessions: schoolLifecycle.stores.sessions,
+          bankReader: schoolService,
+          logger: lessonLogger,
+        }),
+        recordMediaCompletion: schoolLifecycle.useCases.recordMediaCompletion,
+        // The playhead heartbeat's destination. Same bus the playback adapters
+        // announce dispatches on.
+        eventBus,
+        // Optional: without it the score placard names the learner id, which is
+        // a worse placard and not a broken lesson.
+        resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
+        logger: lessonLogger,
+      }));
+    } catch (err) {
+      // A lesson router that failed to wire must not take the rest of School
+      // with it: every other surface (agenda, print, grading) is independent of
+      // it, and a household whose TV lessons are broken still has its paper.
+      rootLogger.error('school.lesson.wiring-failed', { error: err.message });
+    }
+  } else {
+    rootLogger.warn('school.lesson.unwired', {
+      reason: schoolLifecycle.wired ? 'no session or curriculum store' : 'school lifecycle not wired',
+    });
+  }
+
   // What a school learner card DOES, per reader. Registered here rather than
   // inside the trigger module so the trigger pipeline keeps no School import:
   // it knows op names and nothing about School.
