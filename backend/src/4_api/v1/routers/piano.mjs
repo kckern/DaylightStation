@@ -138,6 +138,22 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     return Math.min(raw, MAX_SETTLE_SECONDS);
   };
 
+  // Game-budget sessionId guard. `sessionId` is the one client-controlled
+  // segment on the settle/close routes that reaches `day.sessions[sessionId]`
+  // in the domain layer (gameBudget.mjs) — and a plain object keyed straight
+  // from that string is a prototype-pollution vector: `'__proto__'` reads
+  // back `Object.prototype` itself (truthy, sails past `if (!s) throw`), and
+  // `'constructor'`/`'prototype'` are the same class of bug via other
+  // inherited/own properties. The domain layer now rejects these via
+  // `Object.hasOwn` regardless (defense where the lookup happens), but
+  // `safeSegment` — this file's existing path-segment guard — does NOT catch
+  // any of the three (it only blocks `/`, `\`, and `..`), so it must not be
+  // reused here and mistaken for coverage. This is a dedicated guard so a
+  // pollution attempt gets a clean 400 at the boundary instead of a domain
+  // throw.
+  const UNSAFE_SESSION_IDS = new Set(['__proto__', 'constructor', 'prototype']);
+  const safeSessionId = (s) => typeof s === 'string' && s.length > 0 && !UNSAFE_SESSION_IDS.has(s);
+
   // Write-gate: reject a musicxml payload the app can't read back. The real bar
   // (spec §4) is "well-formed score", NOT "has notes" — a brand-new song from
   // NewSongSetup's makeEmptyScore() is a valid score with 0 notes and must be
@@ -320,6 +336,7 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
       return res.status(400).json({ error: 'Invalid user' });
     }
+    if (!safeSessionId(req.params.sessionId)) return res.status(400).json({ error: 'Invalid sessionId' });
     const cumulativeSeconds = parseCumulativeSeconds(req.body);
     if (cumulativeSeconds === null) return res.status(400).json({ error: 'Invalid cumulativeSeconds' });
     res.json(await pianoGameBudgetService.settle({
@@ -331,6 +348,7 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
       return res.status(400).json({ error: 'Invalid user' });
     }
+    if (!safeSessionId(req.params.sessionId)) return res.status(400).json({ error: 'Invalid sessionId' });
     const cumulativeSeconds = parseCumulativeSeconds(req.body);
     if (cumulativeSeconds === null) return res.status(400).json({ error: 'Invalid cumulativeSeconds' });
     res.json(await pianoGameBudgetService.close({

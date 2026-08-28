@@ -48,6 +48,26 @@ describe('applySettle — hold-and-settle high-water (D4)', () => {
     expect(() => applySettle(day, { sessionId: 'ghost', cumulativeSeconds: 10, at: AT }))
       .toThrow('unknown session');
   });
+
+  // `day.sessions['__proto__']` on a plain object reads back
+  // `Object.prototype` itself — truthy, so a bare `if (!s) throw` misses it —
+  // and the mutations right after (`s.cumulativeSeconds = ...`) would then
+  // land ON `Object.prototype`: every object in the PROCESS inherits that
+  // property until restart. `constructor`/`prototype` are the same class of
+  // bug via other inherited/own properties. Each must be treated as an
+  // unknown session (Object.hasOwn, not truthiness), and — the real
+  // assertion — the global Object.prototype must come out clean afterward.
+  it.each(['__proto__', 'constructor', 'prototype'])(
+    'rejects sessionId %j as unknown rather than reading the prototype chain, and does not pollute Object.prototype',
+    (pollutedId) => {
+      const day = emptyDay('2026-08-27');
+      expect(() => applySettle(day, { sessionId: pollutedId, cumulativeSeconds: 10, at: AT }))
+        .toThrow('unknown session');
+      // eslint-disable-next-line no-new-object
+      expect(({}).cumulativeSeconds).toBeUndefined();
+      expect(({}).lastSettleAt).toBeUndefined();
+    },
+  );
 });
 
 describe('applyOpen — one open session per learner, stale adoption (design metering §additions)', () => {
@@ -123,4 +143,19 @@ describe('applyClose', () => {
     expect(() => applyClose(day, { sessionId: 'ghost', cumulativeSeconds: 10, at: AT }))
       .toThrow('unknown session');
   });
+
+  // Same prototype-pollution vector as applySettle (see that describe block
+  // for the full explanation) — applyClose reads `day.sessions[sessionId]`
+  // directly too, so it needs the identical Object.hasOwn guard.
+  it.each(['__proto__', 'constructor', 'prototype'])(
+    'rejects sessionId %j as unknown rather than reading the prototype chain, and does not pollute Object.prototype',
+    (pollutedId) => {
+      const day = emptyDay('2026-08-27');
+      expect(() => applyClose(day, { sessionId: pollutedId, cumulativeSeconds: 10, at: AT }))
+        .toThrow('unknown session');
+      // eslint-disable-next-line no-new-object
+      expect(({}).cumulativeSeconds).toBeUndefined();
+      expect(({}).closed).toBeUndefined();
+    },
+  );
 });

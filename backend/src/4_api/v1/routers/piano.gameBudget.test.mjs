@@ -121,6 +121,36 @@ describe('piano game-budget routes', () => {
     expect(service.settle).toHaveBeenCalledWith({ sessionId: 's1', learnerId: 'kid_a', cumulativeSeconds: 86400 });
   });
 
+  // Route-level defense-in-depth for the prototype-pollution vector fixed at
+  // the domain layer (gameBudget.mjs's Object.hasOwn guard): a clean 400
+  // here, before the service is ever called, rather than relying solely on
+  // the domain throw. safeSegment (this file's other path-segment guard)
+  // does NOT catch these — it only blocks `/`, `\`, `..` — so this is a
+  // dedicated check, not a reuse of that one.
+  it.each(['__proto__', 'constructor', 'prototype'])(
+    'POST settle 400s a %j sessionId without touching the service',
+    async (pollutedId) => {
+      const service = { settle: vi.fn(async () => ({ secondsLeft: 0, depleted: false, deviceDepleted: false })) };
+      const res = await request(appWith(service))
+        .post(`/api/v1/piano/users/kid_a/game-budget/session/${pollutedId}/settle`)
+        .send({ cumulativeSeconds: 30 });
+      expect(res.status).toBe(400);
+      expect(service.settle).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['__proto__', 'constructor', 'prototype'])(
+    'POST close 400s a %j sessionId without touching the service',
+    async (pollutedId) => {
+      const service = { close: vi.fn(async () => ({ ok: true })) };
+      const res = await request(appWith(service))
+        .post(`/api/v1/piano/users/kid_a/game-budget/session/${pollutedId}/close`)
+        .send({ cumulativeSeconds: 30 });
+      expect(res.status).toBe(400);
+      expect(service.close).not.toHaveBeenCalled();
+    },
+  );
+
   it('GET balance answers enabled:false when the feature is off', async () => {
     const service = { balance: vi.fn(async () => ({ enabled: false })) };
     const res = await request(appWith(service)).get('/api/v1/piano/users/kid_a/game-budget');
