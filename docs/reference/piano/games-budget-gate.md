@@ -225,15 +225,11 @@ verdict and strand a child at the bottom of the ladder with nowhere lower to go,
 out of a game they had already earned.
 
 The floor's requirement therefore omits `cleanliness` deliberately and carries no numeric
-bar:
+bar. **This shape is in code, not in config** — the ladder module builds it, and a
+`ladder.floor` block in the household YAML is not read:
 
-```yaml
-floor:
-  mode: free
-  hands: 1
-  span: 1
-  rubric: { criteria: { completeness: 1 } }
-  passScore: null
+```js
+{ mode: 'free', hands: 1, span: 1, rubric: { criteria: { completeness: 1 } }, passScore: null }
 ```
 
 Completeness is structurally 1 when a wait-for-correct run completes, so the floor passes
@@ -335,7 +331,6 @@ gameLimit:
 
 gameGate:
   enabled: false
-  every: match              # match | entry | interval
   passScore: 0.80
   retriesBeforeDegrade: 3
   metered: false            # the gate never drains the budget
@@ -346,14 +341,26 @@ gameGate:
     - kind: score
       source: current-study-piece
       measures: 4
-  ladder:
-    axes: [timing, hands, span, difficulty, direction]
-    floor: { mode: free, hands: 1, span: 1, rubric: { criteria: { completeness: 1 } }, passScore: null }
 ```
+
+Every key above is read. **Three keys the design named are deliberately absent from that
+example, because setting them today does nothing:**
+
+| Key | State |
+|---|---|
+| `gameGate.every` (`match` \| `entry` \| `interval`) | resolved and then **never consumed** — the gate always fires at every match boundary. Setting `entry` to stop gating replays changes nothing. |
+| `gameGate.ladder.axes` | **not read.** The five axes and their order live in the ladder module. |
+| `gameGate.ladder.floor` | **not read.** The floor requirement is built in code (see "The floor cannot fail"). Setting `floor.passScore: 0.5` changes nothing. |
+
+None of these logs anything when set, because the config resolver returns an explicit
+object literal and simply drops the key. A parent who sets one, restarts the kiosk, and
+sees no change gets no explanation — so they are called out here rather than presented as
+working configuration.
 
 Both blocks reach the frontend as **whole-node passthrough**. The client resolver drops
 any key it does not name, and a gate whose config never arrives is a gate that is
-permanently off while the YAML says on.
+permanently off while the YAML says on. That is the same mechanism as the three rows
+above: the difference is only whether something downstream reads the key once it lands.
 
 `dailyMinutes` and `deviceDailyMinutes` must be positive finite numbers and the household
 timezone must be set. A missing or malformed value is logged as `budget.config-invalid`
@@ -372,11 +379,15 @@ Three layers with different lifetimes: the log store answers "what is happening 
 expires in seven days, the day files answer "what happened in October", and the existing
 per-user attempt evidence holds what was actually played.
 
-Every gate event carries `learnerId`, `deviceId`, `studyDate`, and `sessionId`, plus
-`material`, `rung`, `mode` and `attemptId` when an attempt has resolved — so an afternoon
-reconstructs from a single query, and a fail-open run has a beginning to reconstruct
-from. `gate.presented` is emitted before anything can decline, precisely so the runs
-worth reconstructing are not the ones missing an anchor.
+**Every event on both sides carries `learnerId`, `deviceId`, `studyDate`, and
+`sessionId`** — client and server, gate and budget alike. Gate events add `material`,
+`rung`, `mode` and `attemptId` once an attempt has resolved. So an afternoon reconstructs
+from a single query, `"budget.warning" AND data.deviceId:<tablet>` answers "which tablet
+burned the shared cap" without a join, and `studyDate` keeps a late-evening session whole
+across the 4am boundary that a calendar-date filter would cut in half.
+
+`gate.presented` is emitted before anything can decline, precisely so the runs worth
+reconstructing — the fail-open ones — are not the ones missing an anchor.
 
 ### `piano-game-gate`
 
@@ -426,7 +437,14 @@ triage with a failure that never happened.
 `budget.warning` is an **edge, not a state**. The meter recomputes the warning condition
 every second, so a per-state line would write one identical entry per second for the
 whole window — 300 lines per child per depletion with the shipped defaults — and drown
-the one that carries news. It re-arms if the balance climbs back above the threshold.
+the one that carries news.
+
+It re-arms two ways. Within a session, if the balance climbs back above the threshold — a
+settle can return a larger `secondsLeft` than the local countdown held. And **at every
+match boundary**, because the meter is suppressed while the gate is up: with both features
+on, the meter's session tears down and reopens around each challenge, so a child playing
+five short matches inside one warning window gets five lines, not one. Harmless in volume
+(the window is minutes, not hours), but it is a per-match edge, not a per-window one.
 
 `budget.day-rollover` has no durable home of its own. The boundary is recorded by *which
 file* a charge lands in, which is why the day files are the thing worth asserting: two
@@ -446,7 +464,8 @@ settles across 4am produce two files.
 | The client meter | `frontend/src/modules/Piano/PianoKiosk/useGameBudgetMeter.js` |
 | The shared activity signal | `frontend/src/modules/Piano/PianoKiosk/activitySignal.js` |
 | Kiosk device identity | `frontend/src/modules/Piano/PianoKiosk/kioskDeviceIdentity.js` |
-| Config defaults and projection | `frontend/src/modules/Piano/PianoKiosk/PianoConfig.jsx` |
+| Config defaults and projection | `frontend/src/modules/Piano/PianoKiosk/pianoConfigModel.js` |
+| Client study day (the shared 4am boundary) | `frontend/src/modules/Piano/PianoKiosk/clientStudyDate.js` |
 | Budget domain math | `backend/src/2_domains/piano/gameBudget.mjs` |
 | Budget orchestration | `backend/src/3_applications/piano/PianoGameBudgetService.mjs` |
 | Day files | `backend/src/1_adapters/persistence/yaml/YamlPianoGameBudgetStore.mjs` · `data/household/history/piano-games/` |

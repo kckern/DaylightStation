@@ -44,6 +44,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 import { usePianoKioskConfigOptional } from '../../PianoConfig.jsx';
 import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
+import { clientStudyDate } from '../../clientStudyDate.js';
 import ExerciseRun from '../Exercises/ExerciseRun.jsx';
 import { climbRung, degradeRung, initialRung, isFloor } from './gameGateLadder.js';
 import { pickGateMaterial } from './gateMaterial.js';
@@ -159,17 +160,6 @@ export function readGateState(learnerId, store = (typeof localStorage !== 'undef
 
 function writeGateState(learnerId, state, store = (typeof localStorage !== 'undefined' ? localStorage : null)) {
   try { store?.setItem(gateStateKey(learnerId), JSON.stringify(state)); } catch { /* private mode */ }
-}
-
-/**
- * The household study day, client-side: the agenda's day begins at 4am, so a
- * 1am gate belongs to the evening that is still going on. Matches the backend's
- * `studyDate(instant, tz, 4)` boundary without importing a server module.
- */
-export function clientStudyDate(now = new Date()) {
-  const shifted = new Date(now.getTime() - 4 * 3_600_000);
-  const pad = (value) => String(value).padStart(2, '0');
-  return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}-${pad(shifted.getDate())}`;
 }
 
 const makeId = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
