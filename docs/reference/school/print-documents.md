@@ -1072,6 +1072,157 @@ that immutable missed-item roster; issuance then creates a fresh worksheet
 snapshot for only those items while the allocation planner continues on the
 same physical answer sheet when rows remain.
 
+## 8a. The companion gate row
+
+A lesson may attach a **companion**: a second piece of media (today a scripture
+read-along playlist) that the child consumes alongside the worksheet. When the
+offering marks it `participation: required`, the worksheet grows one extra card
+row — the **gate row** — and **a sheet whose gate row is blank or wrong does not
+pass, however well it scored.**
+
+Design rationale and the full decision list live in
+`docs/_wip/plans/2026-08-27-companion-media-gating-requirements.md` §0.
+
+### Three "codes" live in this domain. They are different things.
+
+This is the single most common way to get lost in this code:
+
+| Name | What it is | Where |
+|---|---|---|
+| `companionCode` | The **six-digit numeric access code** printed on the lesson card's Read Along panel. It OPENS the companion. | `questionBankV2.mjs`, `IssueDocument.mjs`, `measure.mjs` |
+| `finishCode` | The **A–E letter set** that finishing the companion RELEASES, and the answer to the gate row. | `companionCode.mjs`, the code store, the gate row |
+| `continuationCode` | Unrelated — a six-digit learner-slot/module packing. | `continuationCode.mjs` |
+
+Never overload `companionCode` for the A–E value. Inside the code store the
+field is `code`; it becomes `finishCode` at the `IssueDocument`/renderer
+boundary.
+
+### The code and its scope
+
+A finish code is any of the **31 non-empty combinations of A–E** — singles,
+pairs, triples, quads, and all five. Only the empty set is excluded, because a
+blank row is how the sheet says "not answered" and the gate must tell a missing
+code from a wrong one.
+
+Codes are scoped `(household, lesson, lessonDay)` — one level broader than a
+worksheet, which is `(lesson, user, day)`. **Dropping the user is the sharing
+mechanism**: two children in one household on the same lesson get the same code
+though their worksheets carry different questions, and when one finishes the
+media the companion is satisfied for both. The next child opens it and the code
+is already there, with no playback — the assumption is they were in the room.
+
+Codes are **pinned, not rotated**, so a child catching up a week later inherits
+what a sibling already earned rather than replaying finished audio. Nothing in
+the key is clock-derived. One record per code lives at
+`school/records/companion-codes/<cmc_*>.yml`.
+
+### How the row is printed and read
+
+The gate row is its **own item type**, `companion_code` — not a `multi_select`
+borrowed from the question bank. It carries its answer on `item.code`, is never
+bank-validated, and never enters `ambiguityLeniency` (whose rule 1 would credit
+`A+B` against a code of `A+C`, and whose rule 3 would refuse a legitimate
+`ABCDE`).
+
+- `ROW_MAPPABLE_TYPES` in `allocation.mjs` must include `companion_code`, or
+  `planRows` errors and **the whole render is refused** — the worksheet does not
+  print at all.
+- The gate item is synthesized into `extraItems` by `prepareV2Document` +
+  `mergeBank`, so the row planner and the scan resolver read it from one place
+  or from neither.
+- On the page-with-bubbles lane the gate's form-map marks carry
+  `selection: 'set'`, which is what makes `decodeOmrSheet` report the row as an
+  **array of letters** instead of `ambiguous`. Its bubble labels must be the
+  bare uppercase letters, because the decoder reports `label ?? choice` — a
+  decorative label like `"a."` fails every gate silently and looks like a
+  scanner fault.
+- The gate row is deliberately **not** in `questionItemIds`, is not in the score
+  denominator, files no attempt row, and never appears in `missedItemIds`.
+
+### Grading: a veto, never a subtraction
+
+A 10-question sheet with a gate row is still scored out of 10. The gate can only
+block. `evaluateOutcome` (`sessions/outcome.mjs`) checks it after
+`below_passing` and before `awaiting_signoff`.
+
+Four gate statuses:
+
+| Status | Meaning | What the child is told |
+|---|---|---|
+| `satisfied` | The code matched. | Nothing; the score decides. |
+| `blank` | The row was left empty. | Finish the read-along, write the code in, scan this sheet again. |
+| `wrong` | The letters did not match. | Check the letters on your finish card, fix that row, scan again. |
+| `exhausted` | All five marked and still wrong. | Ask a grown-up for a new sheet — this one cannot be repaired. |
+
+`blank` and `wrong` are two different mistakes, so they get two different
+sentences: sending a child who already listened back for another twenty minutes
+fixes nothing.
+
+### Repair by re-scan
+
+A failed gate is repaired by filling in the bubbles and feeding **the same
+card** again. Only the gate row is re-read; **the original score stands
+untouched.** Re-grading the questions would turn a gate repair into a score
+repair, because the receipt already tells the child which questions were wrong
+and eraser leniency credits a two-mark row containing the correct answer.
+
+Brute force is bounded by physics rather than by a counter: paper is
+append-only, so a child can only walk up a chain of supersets — `A`, `AB`,
+`ABC`, `ABCD`, `ABCDE` — five attempts at most, and only if the code lies on
+that exact chain. `exhausted` is the end of that road, and it is the one gate
+failure that mints a retry ticket, because a fresh sheet is the only way on.
+
+The dedup exit had to learn about this: the real exit is `freshRows.length === 0`
+and the gate is not in `card.results`, so a re-read compares the gate's **marks**
+— a child walking `A → AB → ABC` reads `wrong` every time, and a status-only
+comparison would call every repair a duplicate.
+
+### Two bypasses that were closed, and are easy to reopen
+
+Both let a gated sheet pass without a satisfied gate, and both were found by
+review rather than by testing:
+
+1. **The review-queue path.** A sheet with one ambiguous bubble routes to review
+   *before* any `graded` event is written, so the gate verdict was never
+   stamped. The gate is now stamped on `submitted` as well, and the reducer
+   keeps a stamped gate when a later event omits the field.
+2. **The effective-adjustment projection** at the tail of `reduceSession`
+   re-decided `result` from percent alone, holding a private copy of the passing
+   rule. **Any** grade correction — even an unfavourable one — promoted a
+   gate-vetoed sheet to `passed`. It now delegates to `evaluateOutcome` rather
+   than duplicating the rule.
+
+The lesson for anyone touching this: the durable event log was correct in both
+cases. What went wrong was a *second* place that decided pass/fail.
+
+### Where satisfaction comes from
+
+The code is released by **coverage**, not by the player saying it ended —
+`handleResilienceExhausted` calls the same `clear()` callback a real ending
+does, so a stream that died at five seconds is indistinguishable from one played
+through. Satisfaction needs ≥95% of the part covered, banked incrementally so a
+reload does not lose it.
+
+**The progress wire carries deltas, not cumulative ranges.** Each report holds
+the interval played since the previous report plus that window's `maxRate`, and
+the server drops the ranges of any sample above 1x. Sending the DOM's cumulative
+`mediaEl.played` instead would let one honest second at 1x launder a whole
+chapter played at 2x. The field is named `maxRate` on the wire and the server's
+allowlist drops anything else silently — there is a source-text contract test
+across that boundary in `ReadalongPlaylistPlayer.test.jsx`.
+
+### Known limits
+
+- A required companion on a unit with **no document** is refused at publish, as
+  is one on a renderer that declares no completion contract.
+- The teacher panel can **reveal** a code but never **satisfy** a companion, so
+  the record keeps the line between "listened" and "was told".
+- Coverage is client-reported and there is no server-side cross-check. For a LAN
+  household app this is an accepted threat model — the child who would forge it
+  could equally read the code off a sibling's sheet — but it is a real limit.
+- `GET /print/<card>?teacher=1&pin=…` renders the teacher key, which prints the
+  finish code. It is PIN-gated, but the PIN travels in a query string.
+
 ## 9. Trust model and known limits
 
 ### Teacher retained-artifact workflow

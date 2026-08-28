@@ -91,9 +91,22 @@ in its lesson card. It opens a generic ordered read-along playlist, so the
 same interaction can support scripture, audiobooks, or other narrated
 material. Handler-owned state lives in `records/companions/`, separately from the
 immutable worksheet and its OMR result. Each offering owns its participation
-policy: it can record opened, position, and completed parts for informational
-use or make that evidence part of a configured completion rule. It never
-changes an OMR score.
+policy.
+
+**`optional`** — the original behaviour, unchanged. Opened, position and
+completed parts are recorded for information. It never affects the score, the
+pass threshold, retry, or completion.
+
+**`required`** — the worksheet grows a **gate row**, and a sheet whose gate row
+is blank or wrong **does not pass, however well it scored**. The score itself is
+still untouched: a ten-question sheet is still marked out of ten, and the gate
+can only ever block, never subtract. Finishing the media releases a **finish
+code** (a set of letters A–E) that the child writes into that row.
+
+The two codes travel together and are not the same thing: the six-digit
+**access code** OPENS the companion, the **finish code** is what finishing it
+RELEASES. See [Print documents §8a](./print-documents.md) for the gate row, the
+scoping rule that lets siblings share one code, and the naming trap.
 
 The offering-level shape is deliberately small:
 
@@ -103,6 +116,7 @@ companion:
   participation: optional # optional | required
   handler: readalong # e.g. readalong, singalong, player, program, surface
   label: Read along # printed/action wording for this companion
+  requireParts: all # how many parts must be completed; a positive integer, or `all`
 ```
 
 Handlers own the action: they may mount a local renderer, open a player, print,
