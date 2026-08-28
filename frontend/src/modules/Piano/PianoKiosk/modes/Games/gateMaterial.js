@@ -231,6 +231,46 @@ async function resolveByCatalog(spec, mode) {
   return { ok: false, error: 'no-instance-for-level' };
 }
 
+/**
+ * The decline reasons that are a CONFIG MISTAKE rather than an outage.
+ *
+ * Every one of these is decided without touching the network: a spec naming a
+ * `kind` nothing implements, an `exercise` spec naming neither a collection nor
+ * an instance, a `score` spec naming no document. They cannot be transient,
+ * they will read the same way on every attempt forever, and they are fixed by
+ * editing one line of YAML.
+ *
+ * Their opposites — `instance-unavailable`, `catalog-unavailable`,
+ * `score-unavailable`, and the no-seed/no-instance walks that depend on what
+ * the bank served — say the bank could not be reached or had nothing today.
+ * Those are infrastructure, and infrastructure fails OPEN: a child who earned
+ * a match must not lose it to a 502 during a backend restart.
+ *
+ * A config mistake failing open is a different thing entirely: it hands out
+ * free matches for as long as the typo survives, silently, which is the exact
+ * posture `resolveRepertoire` already refuses for a malformed `repertoire`.
+ */
+const CONFIG_DECLINE_REASONS = Object.freeze([
+  'no-score-source',
+  'no-collection-or-instance',
+  'unknown-material-kind',
+]);
+
+/**
+ * Did EVERY spec in this level decline for a config reason?
+ *
+ * Every one, deliberately: a level whose one reachable spec 502'd is an outage
+ * even if a second spec beside it has a typo, and the child should get their
+ * match. Only a level where nothing could ever have resolved is a config
+ * mistake this can be sure of.
+ *
+ * @param {Array<{reason:string}>|undefined} skipped `pickGateMaterial`'s skip list.
+ */
+export function isConfigOnlyDecline(skipped) {
+  const reasons = Array.isArray(skipped) ? skipped.map((entry) => entry?.reason) : [];
+  return reasons.length > 0 && reasons.every((reason) => CONFIG_DECLINE_REASONS.includes(reason));
+}
+
 /** One material spec becomes one runnable thing, or one reason it did not. */
 async function resolveSpec(spec, { pickIndex, mode }) {
   if (spec?.kind === 'keys') {

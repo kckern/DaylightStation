@@ -357,13 +357,9 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
   it.each([
     ['a 502 from the bank', () => h.instance.mockResolvedValue({ ok: false, status: 502, data: null })],
     ['a rejected fetch', () => h.instance.mockRejectedValue(new Error('network down'))],
-    ['a level whose only material names nothing', () => {}],
   ])('opens the gate and logs gate.unavailable on %s', async (label, arrange) => {
     arrange();
-    const gateConfig = label === 'a level whose only material names nothing'
-      ? { repertoire: [{ id: 'score-only', tier: 2, material: [{ kind: 'score', measures: [1, 4] }] }] }
-      : CONFIG;
-    const { onPassed } = renderGate({ gateConfig });
+    const { onPassed } = renderGate({ gateConfig: CONFIG });
 
     await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('exercise-run')).toBeNull();
@@ -383,6 +379,66 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
 
     expect(onPassed).not.toHaveBeenCalled();
     expect(h.runProps.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
+  });
+
+  /**
+   * The same doctrine, one level down: a level's MATERIAL can be mistyped too,
+   * and that failed open exactly like a bank 502 because the gate read only
+   * "declined" and not why. `pickGateMaterial` has always distinguished them —
+   * `no-score-source`/`no-collection-or-instance`/`unknown-material-kind` are
+   * decided without touching the network and cannot be transient.
+   */
+  describe('a level whose material is mistyped substitutes, it does not grant', () => {
+    const typoLevel = (material) => ({ repertoire: [{ id: 'typo', tier: 2, material }] });
+
+    it.each([
+      ['a score naming no document', [{ kind: 'score', measures: [1, 4] }], ['no-score-source']],
+      ['an exercise naming neither a collection nor an instance', [{ kind: 'exercise', hands: 'right' }], ['no-collection-or-instance']],
+      ['a kind nothing implements', [{ kind: 'exercies', collection: 'scales' }], ['unknown-material-kind']],
+      [
+        'every spec in a level, each in its own way',
+        [{ kind: 'score' }, { kind: 'exercise' }],
+        ['no-score-source', 'no-collection-or-instance'],
+      ],
+    ])('serves the C major fallback for %s', async (_label, material, reasons) => {
+      const { onPassed } = renderGate({ gateConfig: typoLevel(material) });
+      await screen.findByTestId('exercise-run');
+
+      // The match is NOT granted, and the child gets something playable.
+      expect(onPassed).not.toHaveBeenCalled();
+      expect(h.runProps.at(-1).material.instanceId).toBe(FALLBACK_LEVEL.material[0].instanceId);
+      // The rung the child is standing on does not move: a typo is not a
+      // reason to walk a ladder.
+      expect(h.runProps.at(-1).tier).toBe(2);
+      expect(eventNamed('gate.attempt')[1].rung).toBe('typo');
+
+      const [, data] = eventNamed('gate.material-config-invalid');
+      expect(data).toMatchObject({ rung: 'typo', tier: 2 });
+      expect(data.reasons.sort()).toEqual([...reasons].sort());
+      expect(eventNamed('gate.unavailable')).toBeUndefined();
+    });
+
+    it('still fails open when the bank is down, typo or no typo', async () => {
+      // A 502 is not a config mistake, and a level carrying one good spec that
+      // could not be fetched must keep granting the match the child earned.
+      h.instance.mockResolvedValue({ ok: false, status: 502, data: null });
+      const { onPassed } = renderGate({ gateConfig: CONFIG });
+
+      await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+      expect(eventNamed('gate.material-config-invalid')).toBeUndefined();
+      expect(eventNamed('gate.unavailable')).toBeTruthy();
+    });
+
+    it('fails open when even the fallback cannot be fetched — that IS infrastructure', async () => {
+      h.instance.mockResolvedValue({ ok: false, status: 502, data: null });
+      const { onPassed } = renderGate({ gateConfig: typoLevel([{ kind: 'score' }]) });
+
+      await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+      // The substitution was attempted and said so; the outage is what opened
+      // the gate, and both lines are in the log to say which was which.
+      expect(eventNamed('gate.material-config-invalid')).toBeTruthy();
+      expect(eventNamed('gate.unavailable')[1].error).toBe('instance-unavailable');
+    });
   });
 });
 
