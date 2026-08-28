@@ -170,6 +170,37 @@ describe('PianoGameBudgetService', () => {
       .rejects.toThrow('session belongs to a different learner');
   });
 
+  it('a mismatched learnerId across the boundary is rejected WITHOUT stranding the real session', async () => {
+    // #carryForward's first write seals yesterday's session (closed: true)
+    // before today's record even exists. If the ownership check ran AFTER
+    // that seal, a mismatched request landing right at the boundary would
+    // close the true owner's session on yesterday, write nothing to today,
+    // then throw — and the real owner's next (legitimate) settle would find
+    // nothing to carry and 500 with "unknown session". The check must run
+    // before the seal, so the bad request throws but the session survives
+    // untouched for the real owner to continue.
+    await svc.open({ learnerId: 'kid_a', deviceId: 'kiosk' });
+    await svc.settle({ sessionId: 'sess_1', learnerId: 'kid_a', cumulativeSeconds: 90 });
+
+    now = new Date('2026-08-28T12:30:00.000Z'); // study day has rolled
+
+    // A mismatched claim arrives first, right at the boundary.
+    await expect(svc.settle({ sessionId: 'sess_1', learnerId: 'kid_b', cumulativeSeconds: 150 }))
+      .rejects.toThrow('session belongs to a different learner');
+
+    // Nothing was written: yesterday's session is untouched (not sealed),
+    // and today's file was never created.
+    expect(store._days.get('2026-08-27').sessions.sess_1.closed).toBe(false);
+    expect(store._days.has('2026-08-28')).toBe(false);
+
+    // The real owner's settle — same sessionId, same post-boundary instant —
+    // must still succeed and carry forward normally.
+    const r = await svc.settle({ sessionId: 'sess_1', learnerId: 'kid_a', cumulativeSeconds: 150 });
+    expect(r).toEqual({ secondsLeft: 45 * 60 - 60, depleted: false, deviceDepleted: false });
+    expect(store._days.has('2026-08-28')).toBe(true);
+    expect(store._days.get('2026-08-28').learners.kid_a.totalSeconds).toBe(60); // only the post-boundary delta
+  });
+
   // --- Fail-open on the two config-shape throws Task 1 added -------------
   //
   // Task 1 made `budgetStudyDate` throw on a missing/blank timezone and
