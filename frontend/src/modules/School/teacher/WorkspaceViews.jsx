@@ -34,7 +34,6 @@ import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor, teacherDayPath } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
 import { localDay, humanDate, humanDateTime } from './teacherDates.js';
-import { teacherLog } from './teacherLog.js';
 
 const sessionIdOf = (session) => session?.sessionId ?? session?.id ?? null;
 const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.createdAt ?? session?.issuedAt ?? null;
@@ -149,7 +148,7 @@ function SessionList({ learnerId, onOpenSession }) {
   );
 }
 
-export function DashboardView({ kids, onSelectLearner, onOpenQueue }) {
+export function DashboardView({ kids, onSelectLearner: _onSelectLearner, onOpenQueue }) {
   // The sidebar/students nav already navigates to workspaces; a duplicate
   // card grid promising "agenda … and repair" (names the tabs don't use)
   // was pure drift (UX audit F25/F26). The dashboard is the Today digest
@@ -319,7 +318,7 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   </div></PanelFrame>;
 }
 
-export function CoursesView({ learnerId, learnerName, courseId, kids }) {
+export function CoursesView({ learnerId, learnerName, courseId, kids: _kids }) {
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Courses & enrollment</p><h2>{courseId ? 'Course details' : `${learnerName}’s program`}</h2><p>Operate published courses, enrollment, timing, pass bars, and milestones.</p></div></div>

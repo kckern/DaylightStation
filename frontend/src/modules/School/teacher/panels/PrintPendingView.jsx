@@ -46,7 +46,7 @@ function useQuotaByUser(userIds) {
       });
     });
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands in for `userIds`
+     
   }, [key]);
   return quotaByUser;
 }
@@ -56,7 +56,7 @@ export default function PrintPendingView({ kids }) {
   // 404 = the feature isn't wired on this install — the quiet unavailable
   // copy, never a Retry that can't succeed.
   const pending = usePanelFetch(() => schoolApi.printPending(), { panel: 'print-pending', notFoundAs: 'unavailable' });
-  const jobs = Array.isArray(pending.data) ? pending.data : [];
+  const jobs = useMemo(() => (Array.isArray(pending.data) ? pending.data : []), [pending.data]);
   const { run, busy, errors } = useTeacherWrite({ panel: 'print-pending' });
   const userIds = useMemo(() => [...new Set(jobs.map((job) => job.userId).filter(Boolean))], [jobs]);
   const quotaByUser = useQuotaByUser(userIds);

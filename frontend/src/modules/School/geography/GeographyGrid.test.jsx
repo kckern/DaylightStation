@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import GeographyGrid from './GeographyGrid.jsx';
 
 vi.mock('../schoolApi.js', () => ({ schoolApi: { geoDecks: vi.fn() } }));

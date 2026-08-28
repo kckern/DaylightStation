@@ -81,7 +81,7 @@ export function buildSteps(recs) {
     step.notes.push({ midi: r.midi, staff: r.staff, x: r.x, top: r.top, bottom: r.bottom, width: r.width, el: r.el });
   }
   return [...byQuarter.values()]
-    .map(({ seen, ...s }) => s) // drop the internal de-dupe set from the public shape
+    .map(({ seen: _seen, ...s }) => s) // drop the internal de-dupe set from the public shape
     .sort((a, b) => a.onsetQuarter - b.onsetQuarter);
 }
 

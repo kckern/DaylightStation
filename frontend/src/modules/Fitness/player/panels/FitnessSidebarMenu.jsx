@@ -1,8 +1,7 @@
 import React from 'react';
-import { useFitnessContext, FITNESS_DEBUG } from '@/context/FitnessContext.jsx';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
-import DebugMicButton from './DebugMicButton.jsx';
 import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from '../../lib/guestOptionsBuilder.js';
 import { genericGuestImageId } from '../../lib/guestPlaceholders.js';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
@@ -29,15 +28,11 @@ const FitnessSidebarMenu = ({
   assignGuestToDevice,
   guestCandidates = [],
   playerRef,
-  onReloadVideo,
+  onReloadVideo: _onReloadVideo,
   reloadTargetSeconds = 0,
-  preferredMicrophoneId = '',
-  onSelectMicrophone,
-  sidebarSizeMode = 'regular',
-  viewMode = 'cam',
-  onToggleViewMode = null,
-  showChart = true,
-  onToggleChart = null,
+  onSelectMicrophone: _onSelectMicrophone,
+  sidebarSizeMode: _sidebarSizeMode = 'regular',
+  onToggleChart: _onToggleChart = null,
   boostLevel,
   setBoost,
   videoVolume,
@@ -62,9 +57,15 @@ const FitnessSidebarMenu = ({
     setFeedbackRecordingActive?.(false);
   }, [resumeMusicPlayer, setFeedbackRecordingActive]);
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
-  const deviceAssignments = fitnessContext?.deviceAssignments || [];
+  const deviceAssignments = React.useMemo(
+    () => fitnessContext?.deviceAssignments || [],
+    [fitnessContext?.deviceAssignments],
+  );
   const getDeviceAssignment = fitnessContext?.getDeviceAssignment;
-  const activeHeartRateParticipants = fitnessContext?.activeHeartRateParticipants || [];
+  const activeHeartRateParticipants = React.useMemo(
+    () => fitnessContext?.activeHeartRateParticipants || [],
+    [fitnessContext?.activeHeartRateParticipants],
+  );
   const [selectedTab, setSelectedTab] = React.useState('friends');
   const [confirmEndSession, setConfirmEndSession] = React.useState(false);
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
@@ -94,11 +95,9 @@ const FitnessSidebarMenu = ({
     ? Date.now() - activeAssignment.updatedAt
     : null;
   const segmentWillTransfer = Number.isFinite(segmentAgeMs) && segmentAgeMs < usageThresholdMs;
-  const currentSummaryClass = `guest-summary-value${activeAssignment ? ' guest-summary-value--active' : ''}`;
-  const [mediaElement, setMediaElement] = React.useState(() => playerRef?.current?.getMediaElement?.() || null);
+    const [mediaElement, setMediaElement] = React.useState(() => playerRef?.current?.getMediaElement?.() || null);
 
-  const isWideSidebar = sidebarSizeMode === 'large';
-
+  
   const videoMediaAvailable = Boolean(mediaElement);
 
   // Track media element replacements so boost can rebind after player remounts
@@ -175,12 +174,7 @@ const FitnessSidebarMenu = ({
     hardReload('settings-menu');
   };
 
-  const handleReloadVideo = () => {
-    if (onReloadVideo) {
-      onReloadVideo();
-    }
-  };
-
+  
   const formatSeconds = (seconds) => {
     if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';
     const mins = Math.floor(seconds / 60);
@@ -193,7 +187,7 @@ const FitnessSidebarMenu = ({
     return `${mins}:${String(secs).padStart(2, '0')}`;
   };
 
-  const reloadLabel = formatSeconds(reloadTargetSeconds);
+  formatSeconds(reloadTargetSeconds);
 
   const guestOptions = React.useMemo(() => buildGuestOptions({
     guestCandidates,
@@ -218,11 +212,7 @@ const FitnessSidebarMenu = ({
     ackSelection(component);
   };
 
-  const handleChartToggle = () => {
-    onToggleChart?.();
-    ackSelection('chart');
-  };
-
+  
   const handleMusicToggle = () => {
     onToggleMusic?.();
     ackSelection('music');

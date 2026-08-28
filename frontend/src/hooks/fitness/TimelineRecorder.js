@@ -31,8 +31,6 @@ import { sanitizeHeartRate } from './hrPlausibility.js';
 const sanitizeNumber = (value) => (Number.isFinite(value) ? value : null);
 const sanitizeDistance = (value) => (Number.isFinite(value) && value > 0 ? value : null);
 
-const hasNumericSample = (metrics = {}) =>
-  ['heartRate', 'rpm', 'power', 'distance'].some((key) => metrics[key] != null);
 
 const isValidTickKey = (key) => {
   if (!key || typeof key !== 'string') return false;

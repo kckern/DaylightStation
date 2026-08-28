@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 vi.mock('./model/index.js', () => ({
   serializeFromEditor: (s) => s.__xml,
   parseMusicXml: (xml) => { if (xml === 'BAD') throw new Error('parse fail'); return { ok: true }; },

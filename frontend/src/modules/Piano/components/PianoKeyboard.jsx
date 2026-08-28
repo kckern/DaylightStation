@@ -100,7 +100,7 @@ export function PianoKeyboard({
   const handleNoteOff = useCallback((note) => onNoteOffRef.current?.(note), []);
 
   // Tick for animating rebuild progress bars (games only — destroyedKeys present).
-  const [rebuildTick, setRebuildTick] = useState(0);
+  const [setRebuildTick] = useState(0);
   useEffect(() => {
     if (!destroyedKeys || destroyedKeys.size === 0) return undefined;
     const id = setInterval(() => setRebuildTick((t) => t + 1), 100);

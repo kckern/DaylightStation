@@ -15,47 +15,15 @@ import PropTypes from 'prop-types';
 import SingleThumbnailButton from '@/modules/Fitness/nav/SingleThumbnailButton.jsx';
 import ProgressFrame from './ProgressFrame.jsx';
 import './FitnessPlayerFooterSeekThumbnail.scss';
+import { updateThumbnailTimestamp, supportsLivePreview } from './seekThumbnailPreview.js';
 
 const clampRatio = (value) => (value < 0 ? 0 : value > 1 ? 1 : value);
 const REFRESH_INTERVAL_MS = 8000;
 const THUMBNAIL_TIME_OFFSET_MS = 10000;
 
-// Patterns for detecting live-preview capable thumbnails
-const TIMESTAMP_PATTERNS = [
-  /(\/indexes\/(?:sd|ld)\/)(\d+)/i,
-  /(\/thumb\/)(\d+)/i,
-  /(indexes%2F(?:sd|ld)%2F)(\d+)/i,
-  /(thumb%2F)(\d+)/i
-];
-
-/**
- * Update thumbnail URL timestamp for live preview
- */
-const updateThumbnailTimestamp = (src, seconds) => {
-  if (!src || !Number.isFinite(seconds)) return null;
-  const timestamp = Math.max(0, Math.floor(seconds * 1000));
-  for (const pattern of TIMESTAMP_PATTERNS) {
-    if (pattern.test(src)) {
-      return src.replace(pattern, (match, prefix) => `${prefix}${timestamp}`);
-    }
-  }
-  return null;
-};
-
-/**
- * Check if thumbnail URL supports live preview
- */
-const supportsLivePreview = (src) => {
-  if (!src || typeof src !== 'string') return false;
-  return TIMESTAMP_PATTERNS.some((pattern) => pattern.test(src));
-};
-
 const FitnessPlayerFooterSeekThumbnail = ({
   // Identity
   className,
-  index = 0,
-  
-  // State
   state,           // 'active' | 'past' | 'future'
   isOrigin = false,
   disabled = false,
@@ -259,7 +227,7 @@ const FitnessPlayerFooterSeekThumbnail = ({
    * Handle seek - pass EXACT segmentStart to parent
    * The parent's commitSeek will use this value directly
    */
-  const handleSeek = (target) => {
+  const handleSeek = (_target) => {
     // ALWAYS use segmentStart as the seek target for this thumbnail
     // This ensures we seek to the correct position regardless of displayTime
     onSeek?.(segmentStart);
@@ -370,4 +338,6 @@ FitnessPlayerFooterSeekThumbnail.propTypes = {
 };
 
 // Memoize to prevent re-renders when only other thumbnails change
-export default memo(FitnessPlayerFooterSeekThumbnail);
+const MemoizedFitnessPlayerFooterSeekThumbnail = memo(FitnessPlayerFooterSeekThumbnail);
+MemoizedFitnessPlayerFooterSeekThumbnail.displayName = 'FitnessPlayerFooterSeekThumbnail';
+export default MemoizedFitnessPlayerFooterSeekThumbnail;

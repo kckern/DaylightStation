@@ -14,10 +14,10 @@ const LISTS = {
     { id: 'files:docs/sheet-music/tv-shows/the-adventures-of-tintin-theme.mxl', type: 'notation', title: 'the-adventures-of-tintin-theme' },
   ],
 };
-const usePianoListMock = vi.fn((path) => ({ data: LISTS[path] ?? [], loading: false, error: null }));
+const pianoListMock = vi.fn((path) => ({ data: LISTS[path] ?? [], loading: false, error: null }));
 vi.mock('../../usePianoList.js', () => ({
-  default: (path) => usePianoListMock(path),
-  usePianoList: (path) => usePianoListMock(path),
+  default: (path) => pianoListMock(path),
+  usePianoList: (path) => pianoListMock(path),
 }));
 
 import ScoreGrid from './ScoreGrid.jsx';
@@ -29,7 +29,7 @@ const GROUPS = [
 
 beforeEach(() => {
   window.localStorage.clear();
-  usePianoListMock.mockClear();
+  pianoListMock.mockClear();
 });
 
 describe('ScoreGrid tabs', () => {

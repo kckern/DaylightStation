@@ -291,7 +291,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       ]
     };
 
-    const { totalPaid,totalPrincipalPaid,totalInterestPaid,monthlyRent,monthlyEquity,percentPaidOff,balance,mortgageStartValue } = mortgage;
+    const { totalPaid,totalPrincipalPaid,totalInterestPaid,monthlyRent,monthlyEquity,balance,mortgageStartValue } = mortgage;
     // Historical plan gives total expected interest based on actual payment pace
     const historicalPlan = mortgage.paymentPlans?.find(p => p.info.id === 'historical') || mortgage.paymentPlans?.[0];
     const totalExpectedInterest = (historicalPlan?.info?.totalInterest || 0) + totalInterestPaid;

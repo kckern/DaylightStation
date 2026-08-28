@@ -136,7 +136,7 @@ function ArtPlacard({
 export default function ArtPlacards({
   art, mode, frame, matMargin, cropMaxPerSide, stage, fontPx, measure, animate = true,
 }) {
-  const panels = art?.panels ?? [];
+  const panels = useMemo(() => art?.panels ?? [], [art]);
   const isGallery = mode.fit === 'gallery';
 
   const layout = useMemo(() => {
@@ -150,7 +150,10 @@ export default function ArtPlacards({
     () => (panels.length ? objectFitWindows({ count: panels.length, frame, fullWindow: mode.fullWindow }) : []),
     [panels.length, frame, mode.fullWindow]);
 
-  const geom = isGallery ? (layout?.panels ?? []) : fitWindows;
+  const geom = useMemo(
+    () => (isGallery ? (layout?.panels ?? []) : fitWindows),
+    [isGallery, layout, fitWindows],
+  );
 
   const lines = useMemo(
     () => geom.map((g, i) => {

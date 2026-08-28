@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { AppIconButton } from '../AppIconButton';
 import './VolumeControl.scss';
 
 /**

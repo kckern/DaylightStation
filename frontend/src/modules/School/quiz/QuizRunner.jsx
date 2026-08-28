@@ -225,7 +225,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
         {/* One dot per question, in order — the recap at a glance (audit #5). */}
         <div className="school-runner__dots" data-testid="quiz-dots" aria-label="Question results">
           {outcomes.map((ok, i) => (
-            // eslint-disable-next-line react/no-array-index-key -- question order is the identity
+             
             <span key={i} className={`school-runner__dot ${ok === null ? 'is-unknown' : ok ? 'is-right' : 'is-missed'}`} />
           ))}
         </div>

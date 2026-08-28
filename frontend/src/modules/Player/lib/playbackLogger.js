@@ -32,8 +32,6 @@ const DEFAULT_CONTEXT = Object.freeze({ sessionId: null });
 const OPTION_KEYS = new Set(['level', 'context', 'extra', 'tags', 'sampleRate']);
 
 // WebSocket transport is now handled by UnifiedLogger - these constants kept for backward compat
-const PLAYBACK_SOCKET_SOURCE = 'playback-logger';
-const QUEUE_FALLBACK_LIMIT = 500;
 const THROTTLE_MAP = new Map();
 const THROTTLE_INTERVAL = 15000;
 const RATE_LIMIT_MIN_INTERVAL = 50;

@@ -19,11 +19,10 @@ import React from 'react';
 
 // Capture the WS message + status subscribers so the test can drive them.
 let messageHandler = null;
-let statusHandler = null;
 vi.mock('../services/WebSocketService', () => ({
   wsService: {
     subscribe: (_topics, cb) => { messageHandler = cb; return () => {}; },
-    onStatusChange: (cb) => { statusHandler = cb; return () => {}; },
+    onStatusChange: (_cb) => () => {},
   },
 }));
 
@@ -48,7 +47,7 @@ function vibrationPacket(equipmentId, on) {
 }
 
 describe('FitnessProvider — vibration packets are render-throttled', () => {
-  beforeEach(() => { messageHandler = null; statusHandler = null; });
+  beforeEach(() => { messageHandler = null; });
 
   it('re-renders a consumer far fewer times than the number of vibration packets', async () => {
     const renders = { count: 0 };

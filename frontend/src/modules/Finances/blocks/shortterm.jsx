@@ -28,7 +28,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
     const buckets = Object.keys(shortTermBuckets);
     const today = useToday();
 
-    const { processedData, options } = useMemo(() => {
+    const { options } = useMemo(() => {
     const { weeksLeft, progress } = budgetProgress(budgetStart, budgetEnd);
 
     const processedData = buckets.map((label) => {
@@ -124,8 +124,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
                 const index = this.points[0].point.index;
                 const item = processedData[index];
                 const spent = item.debits;
-                const gained = item.credits;
-                const count = item.transactions.length;
+                                const count = item.transactions.length;
                 const percentageSpent = item.extendedBudget > 0 ? Math.round((spent / item.extendedBudget) * 100) : 0;
                 const rateRemaining = weeksLeft > 0 && item.remaining > 0
                   ? (item.remaining / weeksLeft).toFixed(0)

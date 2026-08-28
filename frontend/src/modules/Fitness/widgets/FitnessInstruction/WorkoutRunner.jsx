@@ -149,7 +149,7 @@ export default function WorkoutRunner({
     return { tickSound: str(cues.tick_sound), goSound: str(cues.go_sound) };
   }, [fitnessCfg]);
 
-  const plan = Array.isArray(steps) ? steps : [];
+  const plan = useMemo(() => (Array.isArray(steps) ? steps : []), [steps]);
   const [cursor, setCursor] = useState(0);
   const [finished, setFinished] = useState(false);
 

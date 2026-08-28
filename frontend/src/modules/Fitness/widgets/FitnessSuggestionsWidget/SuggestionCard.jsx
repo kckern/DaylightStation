@@ -9,7 +9,7 @@ const BADGE_STYLES = {
 };
 
 export default function SuggestionCard({ suggestion, onPlay, onBrowse, transitionClass = '' }) {
-  const { type, title, showTitle, description, thumbnail,
+  const { type, title, description, thumbnail,
           durationMinutes, progress, reason, poster } = suggestion;
 
   const badge = BADGE_STYLES[type] || BADGE_STYLES.discovery;

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   Stack, Paper, Text, Group, Badge, ActionIcon,
   Button, Modal, TextInput, Alert,
@@ -18,7 +18,7 @@ function alignmentColor(state) {
 export function ValuesView({ username }) {
   const { plan, loading, updateSection, createValue } = useLifePlan(username);
 
-  const values = plan?.values || [];
+  const values = useMemo(() => plan?.values || [], [plan?.values]);
 
   const [opened, setOpened] = useState(false);
   const [name, setName] = useState('');

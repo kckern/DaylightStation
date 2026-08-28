@@ -143,7 +143,7 @@ export function FleetView() {
   if (error) {
     return (
       <Alert data-testid="fleet-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-        Couldn't load your devices. Check the connection and try again.
+        Couldn&apos;t load your devices. Check the connection and try again.
         <details className="error-detail">
           <summary>Technical details</summary>
           {error.message}

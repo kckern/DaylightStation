@@ -31,14 +31,15 @@ export default function CycleEventToast({ toast, onDone, durationMs = CYCLE_TOAS
     if (id == null) return undefined;
     setExiting(false);
     logger().info('cycle_game.event_toast.shown', { id, variant: toast?.variant });
-    timersRef.current.hide = setTimeout(() => setExiting(true), durationMs);
-    timersRef.current.done = setTimeout(() => {
+    const timers = timersRef.current;
+    timers.hide = setTimeout(() => setExiting(true), durationMs);
+    timers.done = setTimeout(() => {
       logger().debug('cycle_game.event_toast.dismissed', { id, reason: 'timeout' });
       if (typeof onDone === 'function') onDone(id);
     }, durationMs + CYCLE_TOAST_EXIT_MS);
     return () => {
-      clearTimeout(timersRef.current.hide);
-      clearTimeout(timersRef.current.done);
+      clearTimeout(timers.hide);
+      clearTimeout(timers.done);
     };
     // Keyed on id only: ids are monotonic, so the same id never reappears with a
     // different callback/duration — no stale-closure risk.
@@ -54,7 +55,7 @@ export default function CycleEventToast({ toast, onDone, durationMs = CYCLE_TOAS
       logger().debug('cycle_game.event_toast.dismissed', { id, reason: 'tap' });
       if (typeof onDone === 'function') onDone(id);
     }, CYCLE_TOAST_EXIT_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [id, onDone]);
 
   const className = useMemo(() => [

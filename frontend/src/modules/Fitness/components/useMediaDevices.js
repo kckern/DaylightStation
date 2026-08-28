@@ -27,7 +27,7 @@ export function useMediaDevices(enabled = true) {
         setActiveAudioId(audio[0].deviceId || null);
       }
       setPermissionError(null);
-    } catch (_err) {
+    } catch (err) {
       setDevices(emptyDevices);
       setPermissionError(err);
     }

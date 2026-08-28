@@ -1,4 +1,4 @@
-import { Stack, Paper, Text, Group, Badge, Textarea, Checkbox } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Textarea } from '@mantine/core';
 
 export function UnitIntention({ step, content, responses, setResponse }) {
   if (step === 0) {

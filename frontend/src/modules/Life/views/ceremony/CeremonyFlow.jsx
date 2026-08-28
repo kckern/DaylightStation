@@ -58,7 +58,7 @@ export function CeremonyFlow({ type, username, onComplete }) {
       return (
         <Paper p="xl" withBorder>
           <Stack align="center" gap="md">
-            <Title order={4}>You don't have a life plan yet</Title>
+            <Title order={4}>You don&apos;t have a life plan yet</Title>
             <Text c="dimmed">Ceremonies work against your plan — create one first.</Text>
             <Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>
             <Anchor size="sm" c="dimmed" onClick={() => navigate('/life/plan')}>

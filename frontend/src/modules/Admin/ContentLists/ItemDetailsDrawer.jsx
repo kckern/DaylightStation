@@ -78,18 +78,7 @@ export function ItemDetailsDrawer({ opened, onClose, contentValue }) {
   };
 
   // Navigate back to child
-  const navigateBack = async () => {
-    if (navStack.length === 0) return;
-    log.info('details.navigate_back', { stackDepth: navStack.length });
-
-    const newStack = [...navStack];
-    const target = newStack.pop();
-    setNavStack(newStack);
-    setCurrentContentId(null);
-
-    await fetchItemDetails(target.id);
-  };
-
+  
   // Reset to original item
   const navigateToOriginal = async () => {
     log.info('details.navigate_original', { originalValue: originalValueRef.current });

@@ -231,7 +231,7 @@ function ListSettingsModal({
 
           {/* Default Playback Settings */}
           <Text size="sm" fw={500} mt="sm">Default Playback Settings</Text>
-          <Text size="xs" c="dimmed">These defaults apply to items that don't have their own settings</Text>
+          <Text size="xs" c="dimmed">These defaults apply to items that don&apos;t have their own settings</Text>
 
           <Select
             label="Default Action"

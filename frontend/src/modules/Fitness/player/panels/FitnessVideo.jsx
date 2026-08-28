@@ -58,7 +58,11 @@ const FitnessVideo = ({ minimal = false }) => {
         memory: memoryInfo
       });
     }, 30000); // Every 30 seconds
-    
+
+    /* eslint-disable react-hooks/exhaustive-deps -- errorCount and the webcam
+     * stream are read LIVE here on purpose: the final error tally and the
+     * orphaned-stream check both need the value at teardown time, not a
+     * snapshot from when this effect last (re-)ran. */
     return () => {
       const uptime = Date.now() - mountTimeRef.current;
       logger.info('fitness.video.unmounted', { 
@@ -85,6 +89,7 @@ const FitnessVideo = ({ minimal = false }) => {
         }
       }
     };
+    /* eslint-enable react-hooks/exhaustive-deps */
   }, [minimal, error, loading]);
 
   const videoConstraints = useMemo(() => ({ width: { ideal: 1280 }, height: { ideal: 720 } }), []);

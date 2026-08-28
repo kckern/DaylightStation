@@ -31,7 +31,7 @@ const SECTION_COMPONENTS = {
   hooks: HooksSection
 };
 
-const ComponentShowcase = ({ mode = 'standalone', onClose, onMount }) => {
+const ComponentShowcase = ({ mode = 'standalone', onClose: _onClose, onMount }) => {
   const { sessionActive } = useFitnessModule('component_showcase');
   const [activeTab, setActiveTab] = useState(TABS[0].id);
 

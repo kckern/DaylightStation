@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
 import { ScreenDataProvider, useScreenData } from './ScreenDataProvider.jsx';
@@ -8,9 +8,9 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 function wrapper(sources) {
-  return ({ children }) => (
-    <ScreenDataProvider sources={sources}>{children}</ScreenDataProvider>
-  );
+  return function Wrapper({ children }) {
+    return <ScreenDataProvider sources={sources}>{children}</ScreenDataProvider>;
+  };
 }
 
 describe('ScreenDataProvider', () => {

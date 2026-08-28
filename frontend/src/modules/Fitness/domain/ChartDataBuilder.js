@@ -16,10 +16,8 @@
  * @see /docs/notes/fitness-architecture-review.md Phase 3
  */
 
-import { 
-  ParticipantStatus, 
-  createActivityPeriod,
-  getZoneColor,
+import {
+  ParticipantStatus,
   isDropout
 } from './types.js';
 

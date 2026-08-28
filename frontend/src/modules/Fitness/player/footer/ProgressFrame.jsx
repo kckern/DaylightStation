@@ -139,28 +139,6 @@ const ProgressFrame = ({
     return () => observer.disconnect();
   }, []);
   
-  // ZOOM OVERLAY MODE: Render a positioned rectangle showing zoom range
-  if (isZoomOverlayMode) {
-    return (
-      <div
-        className={`progress-frame-zoom-overlay${className ? ` ${className}` : ''}`}
-        style={{
-          position: 'absolute',
-          left: `${leftPct}%`,
-          width: `${widthPct}%`,
-          top: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(255, 200, 0, 0.5)',
-          border: '1px solid rgba(255, 200, 0, 0.8)',
-          borderRadius: '2px',
-          pointerEvents: 'none',
-          zIndex: 2
-        }}
-        aria-hidden="true"
-      />
-    );
-  }
-  
   // THUMBNAIL PROGRESS MODE: Render SVG border progress
   // Generate path data based on current dimensions
   const pathData = useMemo(() => 
@@ -183,7 +161,29 @@ const ProgressFrame = ({
   );
   
   const hasThumbnailOverlay = typeof perc === 'number' && !Number.isNaN(perc);
-  
+
+  // ZOOM OVERLAY MODE: Render a positioned rectangle showing zoom range
+  if (isZoomOverlayMode) {
+    return (
+      <div
+        className={`progress-frame-zoom-overlay${className ? ` ${className}` : ''}`}
+        style={{
+          position: 'absolute',
+          left: `${leftPct}%`,
+          width: `${widthPct}%`,
+          top: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(255, 200, 0, 0.5)',
+          border: '1px solid rgba(255, 200, 0, 0.8)',
+          borderRadius: '2px',
+          pointerEvents: 'none',
+          zIndex: 2
+        }}
+        aria-hidden="true"
+      />
+    );
+  }
+
   if (!hasThumbnailOverlay) {
     return null;
   }

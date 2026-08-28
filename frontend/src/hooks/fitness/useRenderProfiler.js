@@ -12,7 +12,7 @@
  *   useRenderProfiler('FitnessPlayer');
  */
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 import { heapFields, reportMemoryMonitoringAvailability } from '../../lib/perf/memoryProbe.js';
 
@@ -75,7 +75,7 @@ function updateGlobalState() {
  * @param {string} componentName - Name of the component being profiled
  */
 export function useRenderProfiler(componentName) {
-  const renderStartTime = useRef(null);
+  useRef(null);
   const sustainedThrashingStart = useRef(null);
 
   // Initialize registry entries for this component

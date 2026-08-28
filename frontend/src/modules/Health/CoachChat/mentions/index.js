@@ -9,7 +9,7 @@ import { suggestMetrics } from './suggestMetrics.js';
  * The active category determines which adapter is used. When no category
  * is selected (bare `@`), we hit the fallback /all endpoint.
  */
-export async function fetchSuggestions({ category, prefix, userId, has = null }) {
+export async function fetchSuggestions({ category, prefix, userId }) {
   if (!category) {
     // /all fallback
     if (!userId) return [];

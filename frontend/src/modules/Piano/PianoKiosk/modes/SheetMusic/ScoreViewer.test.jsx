@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const h = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock('../../../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => h.api(...a) }));

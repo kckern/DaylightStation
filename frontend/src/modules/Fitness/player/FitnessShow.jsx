@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { LoadingOverlay, Alert } from '@mantine/core';
-import { DaylightAPI, DaylightMediaPath, ContentDisplayUrl, normalizeImageUrl } from '@/lib/api.mjs';
+import { Alert } from '@mantine/core';
+import { DaylightAPI, ContentDisplayUrl, normalizeImageUrl } from '@/lib/api.mjs';
 import './FitnessShow.scss';
 import { useFitness } from '@/context/FitnessContext.jsx';
 import moment from 'moment';
@@ -215,7 +215,7 @@ const deriveResumeMeta = (episode) => {
   };
 };
 
-const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack, viewportRef, setFitnessPlayQueue, onPlay }) => {
+const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack: _onBack, viewportRef, setFitnessPlayQueue, onPlay }) => {
   // Parse showId - strip any prefix (e.g., "plex:662027" -> "662027")
   // The fitness API assumes plex source, so we only need the numeric ID
   const showId = rawShowId?.replace(/^[a-z]+:/i, '') || rawShowId;
@@ -229,7 +229,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   const prevQueueLengthRef = useRef(0);
   const [activeSeasonId, setActiveSeasonId] = useState(null);
   const seasonBarRef = useRef(null);
-  const [seasonBarWidth, setSeasonBarWidth] = useState(0);
+  const [setSeasonBarWidth] = useState(0);
   const [selectedInfo, setSelectedInfo] = useState(null); // Selected episode or season for info panel
   const [infoType, setInfoType] = useState('episode'); // 'episode' or 'season'
   const [loadedEpisodeImages, setLoadedEpisodeImages] = useState({});
@@ -248,7 +248,6 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     governedLabelSet: contextGovernedLabelSet,
     governedTypeSet: contextGovernedTypeSet,
     fitnessSessionInstance,
-    addVoiceMemoToSession,
     openVoiceMemoCapture,
     setCurrentMedia
   } = fitnessContext;
@@ -464,7 +463,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   }, [showId]);
 
   // Derive viewport dimensions if provided, to avoid using window
-  const viewportSize = useMemo(() => {
+  useMemo(() => {
     const el = viewportRef?.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
@@ -1147,76 +1146,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   }
 
   // Helper function to add an episode to the queue
-  const addToQueue = (episode, sourceEl = null) => {
-    try {
-      if (sourceEl) {
-        const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 24 });
-        if (didScroll) return;
-      }
-      // Extract plex ID from episode.plex, episode.play.plex, or from episode.id (format: "plex:662039")
-      const extractPlexId = (ep) => {
-        if (ep.plex) return String(ep.plex);
-        if (ep.play?.plex) return String(ep.play.plex);
-        if (typeof ep.id === 'string' && ep.id.startsWith('plex:')) {
-          return ep.id.replace('plex:', '');
-        }
-        return null;
-      };
-      const plexId = extractPlexId(episode);
-
-      // Get URL for the playable item if not present
-      let episodeUrl = episode.url || episode.mediaUrl;
-      if (!episodeUrl && plexId) {
-        // Construct the URL using the new API proxy path
-        episodeUrl = `/api/v1/proxy/plex/stream/${plexId}`;
-      }
-
-      if (episodeUrl) {
-        const { resolvedSeconds, normalizedProgress } = deriveResumeMeta(episode);
-
-        // Resolve season and show titles for logging
-        const seasonObj = seasons && seasons.find(s => s.id === episode.parentId);
-        const seasonTitle = seasonObj ? (seasonObj.title || seasonObj.name || seasonObj.rawName) : undefined;
-        const showTitle = info?.title;
-
-        const candidateId = plexId || episode.id || `episode-${Date.now()}`;
-        const queueItem = {
-          id: candidateId,
-          contentId: plexId
-            ? `plex:${plexId}`
-            : (typeof candidateId === 'string' && /^[a-z]+:/i.test(candidateId) ? candidateId : null),
-          plex: plexId, // Ensure plex ID is passed for downstream components
-          source: plexId ? 'plex' : (episode.source || null),
-          show: showTitle,
-          season: seasonTitle,
-          title: episode.label,
-          mediaUrl: episodeUrl,
-          duration: episode.duration,
-          thumbId: episode.thumbId, // Pass thumbId directly to FitnessPlayer
-          image: episode.thumbId ? ContentDisplayUrl(episode.thumbId) : episode.image,
-          parentId: episode.parentId,
-          parentImage: episode.parentId ? ContentDisplayUrl(episode.parentId) : undefined,
-          labels: deriveEpisodeLabels(episode),
-          type: episode.type || 'episode',
-          showId,
-          seconds: resolvedSeconds,
-          watchSeconds: resolvedSeconds || undefined,
-          watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined
-        };
-
-        // Use the appropriate setter
-        if (setFitnessPlayQueue) {
-          setFitnessPlayQueue(prevQueue => [...prevQueue, queueItem]);
-        } else if (contextSetPlayQueue) {
-          contextSetPlayQueue(prevQueue => [...prevQueue, queueItem]);
-        }
-  // added to queue (debug removed)
-      }
-    } catch (error) {
-      console.error('🎬 Error adding to queue:', error);
-    }
-  };
-  
+    
   return (
     <div className="fitness-show">
 
@@ -1331,7 +1261,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                 {seasons.map((s) => {
                   const seasonEpisodes = filteredItems.filter(ep => String(ep.parentId) === String(s.id));
                   if (!seasonEpisodes.length) return null;
-                  const title = Number.isFinite(s.number) && s.number > 0 ? `Season ${s.number}` : (s.rawName || s.name || 'Season');
+                  Number.isFinite(s.number) && s.number > 0 ? `Season ${s.number}` : (s.rawName || s.name || 'Season');
                   return (
                     <div key={s.id} className="season-group">
                       <div className={`episodes-grid ${(() => {
@@ -1462,7 +1392,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
               <div className="no-episodes">
                 <div className="no-episodes-icon">🏋️</div>
                 <div className="no-episodes-title">No Episodes Found</div>
-                <div className="no-episodes-text">This show doesn't have any available episodes</div>
+                <div className="no-episodes-text">This show doesn&apos;t have any available episodes</div>
               </div>
             )}
           </div>
@@ -1477,7 +1407,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                 ['--caption-gap']: '0.35rem',
               }}
             >
-              {seasons.map((s, idx) => (
+              {seasons.map((s, _idx) => (
                 <button
                   key={s.id}
                   className={`season-item ${activeSeasonId === s.id ? 'active' : ''}`}

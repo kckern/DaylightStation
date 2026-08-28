@@ -8,7 +8,7 @@ import './CameraViewApp.scss';
 
 const DEFAULT_CAPTURE_INTERVAL_MS = 5000;
 
-const CameraViewApp = ({ mode, onClose, config, onMount }) => {
+const CameraViewApp = ({ mode, onClose: _onClose, config: _config, onMount }) => {
   const {
     sessionId,
     sessionInstance,

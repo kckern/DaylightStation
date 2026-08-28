@@ -42,13 +42,16 @@ vi.mock('../../modules/Menu/MenuStack.jsx', () => ({
 }));
 
 vi.mock('../../modules/Player/Player.jsx', () => ({
-  default: React.forwardRef((props, ref) => (
-    <div
-      data-testid="player"
-      data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play}
-      data-queue={typeof props.queue === 'object' ? JSON.stringify(props.queue) : props.queue}
-    >Player</div>
-  )),
+  default: React.forwardRef(function MockPlayer(props, ref) {
+    return (
+      <div
+        ref={ref}
+        data-testid="player"
+        data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play}
+        data-queue={typeof props.queue === 'object' ? JSON.stringify(props.queue) : props.queue}
+      >Player</div>
+    );
+  }),
 }));
 
 // Stub the 'art' widget so the scene overlay renders without ArtMode's deps.

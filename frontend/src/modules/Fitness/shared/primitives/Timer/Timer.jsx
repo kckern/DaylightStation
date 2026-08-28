@@ -110,6 +110,8 @@ const Timer = forwardRef(({
   );
 });
 
+Timer.displayName = 'Timer';
+
 Timer.propTypes = {
   initialSeconds: PropTypes.number,
   direction: PropTypes.oneOf(['up', 'down']),

@@ -71,8 +71,11 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
   const [claimConflict, setClaimConflict] = useState(null);
 
   const saveClient = useMemo(() => createSaveClient(), []);
-  const getActivePlayerId = fitnessContext?.getActivePlayerId
-    || (() => fitnessContext?.fitnessSessionInstance?.roster?.[0]?.userId ?? null);
+  const getActivePlayerId = useMemo(
+    () => fitnessContext?.getActivePlayerId
+      || (() => fitnessContext?.fitnessSessionInstance?.roster?.[0]?.userId ?? null),
+    [fitnessContext?.getActivePlayerId, fitnessContext?.fitnessSessionInstance],
+  );
 
   const settings = library?.settings || {};
   const autosaveSeconds = Number.isFinite(Number(settings.autosaveSeconds)) ? Number(settings.autosaveSeconds) : DEFAULT_AUTOSAVE_SECONDS;

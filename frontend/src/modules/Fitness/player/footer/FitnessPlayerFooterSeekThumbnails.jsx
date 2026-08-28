@@ -66,12 +66,10 @@ const FitnessPlayerFooterSeekThumbnails = ({
   // --- SEEK STATE (from hook) ---
   const {
     displayTime,
-    intentTime,
     previewTime,
     isSeekPending,
     lifecycle,
     commitSeek,
-    setPreview,
     setPreviewThrottled,
     clearPreview,
     clearIntent

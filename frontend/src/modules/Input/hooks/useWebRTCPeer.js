@@ -173,8 +173,7 @@ export const useWebRTCPeer = (localStream) => {
     if (senders.length === 0) return;
 
     const tracks = localStream.getTracks();
-    let replaced = 0;
-
+    
     for (const track of tracks) {
       const sender = senders.find(s => {
         if (!s.track) {
@@ -190,7 +189,7 @@ export const useWebRTCPeer = (localStream) => {
 
       const reason = sender.track ? 'device-reselect' : 'late-bind';
       sender.replaceTrack(track)
-        .then(() => { replaced++; logger().info('track-replaced', { kind: track.kind, reason }); })
+        .then(() => { logger().info('track-replaced', { kind: track.kind, reason }); })
         .catch(err => logger().warn('track-replace-failed', { kind: track.kind, error: err.message }));
     }
 

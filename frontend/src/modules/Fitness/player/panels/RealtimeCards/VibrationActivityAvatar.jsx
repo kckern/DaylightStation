@@ -46,9 +46,7 @@ const VibrationActivityAvatar = ({
     status = 'idle',
     sessionDurationMs = 0,
     intensityLevel = 'none',
-    currentIntensity = 0,
     recentIntensityHistory = [],
-    estimatedImpacts = 0,
     peakIntensity = 0
   } = snapshot;
 

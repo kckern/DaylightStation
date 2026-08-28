@@ -2,7 +2,6 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 
 const useGameLoop = ({
   onFrame,
-  targetFps = 60,
   autoStart = true
 }) => {
   const requestRef = useRef(null);

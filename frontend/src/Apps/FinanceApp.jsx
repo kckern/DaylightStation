@@ -22,7 +22,7 @@ const financeLogger = getChildLogger({ app: 'finance' });
 export default function App() {
   useDocumentTitle('Finances');
   const finance = useFinanceData();
-  const { data, error, load, retry } = finance;
+  const { data, error, retry } = finance;
 
   return (
     <MantineProvider>

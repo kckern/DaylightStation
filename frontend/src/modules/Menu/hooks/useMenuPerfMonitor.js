@@ -13,7 +13,7 @@
  * - DOM node count + heap memory (Chrome)
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { heapFields, reportMemoryMonitoringAvailability } from '../../../lib/perf/memoryProbe.js';
 

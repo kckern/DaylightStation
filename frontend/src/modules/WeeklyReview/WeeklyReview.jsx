@@ -112,7 +112,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       atLast: view.itemIndex >= itemCount - 1,
       hasPrevDay, hasNextDay, prevDayIndex, nextDayIndex, prevDayLastIndex,
     };
-  }, [data, view.dayIndex, view.itemIndex, view.level]);
+  }, [data, view.dayIndex, view.itemIndex]);
 
   const autoStartRef = useRef(false);
   // Proactive Shield AudioBridge heal must complete (or time out) before the
@@ -130,7 +130,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
 
   const weekForUploader = recordingWeek || '0000-00-00';
   const uploader = useChunkUploader({ sessionId: sessionIdRef.current, week: weekForUploader });
-  const { enqueue: uploaderEnqueue, flushNow: uploaderFlushNow, beaconFlush: uploaderBeaconFlush, status: uploaderStatus, pendingCount: uploaderPendingCount, pendingCountRef: uploaderPendingCountRef, lastAckedAt: uploaderLastAckedAt } = uploader;
+  const { enqueue: uploaderEnqueue, flushNow: uploaderFlushNow, beaconFlush: uploaderBeaconFlush, status: uploaderStatus, pendingCount: uploaderPendingCount, lastAckedAt: uploaderLastAckedAt } = uploader;
 
   const handleChunk = useCallback(async ({ seq, blob }) => {
     await uploaderEnqueue({ seq, blob });
@@ -194,7 +194,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       dispatchModal({ type: 'CLOSE' });
       onExitWidget();
     }
-  }, [stopRecording, uploaderFlushNow, recordingWeek, recordingDuration, onExitWidget]);
+  }, [stopRecording, uploaderFlushNow, recordingWeek, recordingDuration, logger, onExitWidget]);
 
   // Ref so the pop-guard (registered once) always calls the current onSaveAndExit.
   const onSaveAndExitRef = useRef(onSaveAndExit);
@@ -218,7 +218,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       // Stop routing global logs to the weekly-review session file once we leave.
       configure({ context: { sessionLog: false } });
     };
-  }, []);
+  }, [logger]);
 
   // Proactive AudioBridge heal: relaunch the Shield companion from FKB's
   // foreground BEFORE the recorder probes the mic. Capped at 6s so a slow/dead
@@ -234,16 +234,16 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       logger.info('bridge-heal.ready');
       setBridgeReady(true);
     });
-  }, []);
+  }, [logger]);
 
   useEffect(() => {
     logger.debug('state.uploading', { uploading });
-  }, [uploading]);
+  }, [logger, uploading]);
 
   // Track when recording starts
   useEffect(() => {
     logger.info('state.is-recording', { isRecording });
-  }, [isRecording]);
+  }, [isRecording, logger]);
 
   useEffect(() => {
     if (recorderError) {
@@ -251,7 +251,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       // Surface the non-blocking "record separately" notice; never block the UI.
       setAudioUnavailable(true);
     }
-  }, [recorderError]);
+  }, [logger, recorderError]);
 
   useEffect(() => {
     logger.info('bootstrap.fetching');
@@ -285,7 +285,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       }
     };
     fetchBootstrap();
-  }, []);
+  }, [logger]);
 
   // Swap the grid to another 8-day window. Cached windows land instantly; a
   // fresh one keeps the outgoing window painted (dimmed) until it resolves, so
@@ -330,7 +330,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     } finally {
       if (windowReqRef.current === req) setWindowLoading(false);
     }
-  }, []);
+  }, [logger]);
 
   // Landing focus: coming back we land on the last cell so Up re-arms straight
   // away for a further jump; going forward we land on the first.
@@ -375,7 +375,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     }
     logger.info('window.jump-oldest', { from: current, to: target });
     return pageToWindow(target, GRID_COLS * 2 - 1, 'jumpOldest');
-  }, [windowStart, pageToWindow]);
+  }, [windowStart, logger, pageToWindow]);
 
   // Window-load notices clear themselves; nothing here is worth a dismiss press.
   useEffect(() => {
@@ -399,7 +399,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     autoStartRef.current = true;
     logger.info('recording.auto-start');
     startRecording();
-  }, [data, startRecording, bridgeReady]);
+  }, [data, startRecording, bridgeReady, logger]);
 
   // Ref so the audio-recovery and pop-guard effects can read modal.type without
   // taking modal as a dep (which would tear down/restart inner timers on every
@@ -426,7 +426,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       setAudioUnavailable(true);
     }, 10000);
     return () => clearTimeout(timer);
-  }, [firstAudibleFrameSeen, isRecording]);
+  }, [firstAudibleFrameSeen, isRecording, logger]);
 
   // Task 12: Disconnect detection — attempt bounded reconnect, then force-finalize and exit.
   const disconnectFiredRef = useRef(false);
@@ -475,7 +475,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         dispatchModal({ type: 'OPEN', modal: 'finalizeError', payload: err.message });
       }
     })();
-  }, [disconnected, reconnect, uploaderFlushNow, recordingWeek, recordingDuration, onExitWidget]);
+  }, [disconnected, reconnect, uploaderFlushNow, recordingWeek, recordingDuration, onExitWidget, logger]);
 
   // Mount-time draft recovery: check server and local IndexedDB for unfinalized sessions.
   useEffect(() => {
@@ -511,7 +511,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [recordingWeek]);
+  }, [logger, recordingWeek]);
 
   const finalizePriorDraft = useCallback(async () => {
     const draft = modal.type === 'resumeDraft' ? modal.payload : null;
@@ -573,7 +573,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       if (is404) logger.info('recording.resume.finalize-noop', { reason: 'draft-already-gone' });
       else logger.error('recording.resume.finalize-failed', { error: err.message });
     }
-  }, [modal, recordingWeek]);
+  }, [logger, modal.payload, modal.type, recordingWeek]);
 
   // Pagehide/beforeunload beacon flush
   useEffect(() => {
@@ -589,7 +589,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handlePageHide);
     };
-  }, [isRecording, uploaderPendingCount, uploaderBeaconFlush]);
+  }, [isRecording, uploaderPendingCount, uploaderBeaconFlush, logger]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -673,7 +673,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     });
 
     return () => menuNav.clearPopGuard();
-  }, [isRecording, menuNav]);
+  }, [isRecording, logger, menuNav]);
 
   // The recording bar names the session, which is pinned — it must not move as
   // the user pages around.
@@ -686,7 +686,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   const viewedRangeLabel = useMemo(() => windowRangeLabel(windowStart), [windowStart]);
   const backLabel = useMemo(
     () => windowsBackLabel(windowStart, newestWindowStartRef.current),
-    [windowStart, data]
+    [windowStart]
   );
 
   if (loading) {

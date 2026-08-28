@@ -15,8 +15,7 @@ import { getWidgetRegistry } from './registry.js';
 export function WidgetWrapper({
   name,
   config = {},
-  position = {},
-  children
+  position = {}
 }) {
   const [WidgetComponent, setWidgetComponent] = useState(null);
   const [data, setData] = useState(null);

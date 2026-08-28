@@ -29,7 +29,7 @@ export function ovalPoint(progress, rx, ry) {
  * time-racer wrapping past their circuit target). Synthwave HUD panel; lane-colored
  * markers glide on the shared linear motion clock (imperative transform writes).
  */
-export default function OvalTrack({ riderIds, riders, riderLive = {}, progress = {}, lapLabel = null, lapLengthM = 0, elapsedS = 0 }) {
+export default function OvalTrack({ riderIds, riders, progress = {}, lapLabel = null, lapLengthM = 0, elapsedS = 0 }) {
   // Compact two-row lap strip under the oval (one column per rider): the previous
   // (last completed) lap as a fixed split, and the current lap counting up live.
   // Shown whenever laps are enabled — before the first crossing "Last" reads "—"

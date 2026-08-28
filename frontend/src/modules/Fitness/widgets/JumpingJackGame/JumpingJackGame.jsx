@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import useFitnessModule from '@/modules/Fitness/player/useFitnessModule';
 import { Webcam } from '@/modules/Fitness/components/FitnessWebcam.jsx';
 import './JumpingJackGame.scss';
 
-const JumpingJackGame = ({ mode, onClose, config, onMount }) => {
+const JumpingJackGame = ({ mode, onClose: _onClose, config: _config, onMount }) => {
   const {
-    sessionId,
     registerLifecycle
   } = useFitnessModule('jumping_jack_game');
 
@@ -78,7 +77,7 @@ const JumpingJackGame = ({ mode, onClose, config, onMount }) => {
           
           {gameState === 'finished' && (
             <div className="game-message">
-              <h4>TIME'S UP!</h4>
+              <h4>TIME&apos;S UP!</h4>
               <p>Final Score: {score}</p>
               <button onClick={handleStart}>PLAY AGAIN</button>
             </div>

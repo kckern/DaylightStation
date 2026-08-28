@@ -22,7 +22,7 @@ describe('GridLayout', () => {
     );
 
     const grid = document.querySelector('.screen-grid-layout');
-    const styles = window.getComputedStyle(grid);
+    window.getComputedStyle(grid);
 
     // Check that grid-template-columns is set (3 columns)
     expect(grid.style.gridTemplateColumns).toContain('1fr');

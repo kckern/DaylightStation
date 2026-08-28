@@ -1,9 +1,8 @@
-import { 
-  ParticipantStatus, 
-  ZoneColors, 
-  isDropout, 
-  createChartSegment,
-  getZoneColor 
+import {
+  ParticipantStatus,
+  ZoneColors,
+  isDropout,
+  getZoneColor
 } from '../domain';
 import getLogger from '@/lib/logging/Logger.js';
 
@@ -94,13 +93,6 @@ const forwardFill = (arr = []) => {
   });
 };
 
-const forwardBackwardFill = (arr = []) => {
-  if (!Array.isArray(arr)) return arr;
-  const fwd = forwardFill(arr);
-  // Back-fill leading nulls with first finite value if any
-  let firstFinite = fwd.find((v) => Number.isFinite(v)) ?? null;
-  return fwd.map((v) => (v == null ? firstFinite : v));
-};
 
 /**
  * Preserves interior nulls (dropouts) while filling only leading/trailing edges.
@@ -212,7 +204,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   const heartRate = getSeriesForParticipant('heart_rate');
   
   // HR nulls tracking (silent - only log at debug level if needed)
-  const hrNullCount = heartRate.filter(v => v == null).length;
+  heartRate.filter(v => v == null).length;
   
   const maxLen = Math.max(zones.length, heartRate.length);
   let active = new Array(maxLen).fill(false);
@@ -324,7 +316,7 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
   let inGap = false; // Track if we're currently in a dropout period
 
   // DEBUG: Check if active array has any false values
-  const falseCount = active.filter((a, i) => i > 0 && a === false).length;
+  active.filter((a, i) => i > 0 && a === false).length;
   
   // Find first ACTIVE tick (when user actually started broadcasting)
   let firstActiveTick = -1;
@@ -648,7 +640,7 @@ export const createPaths = (segments = [], options = {}) => {
 
   const scaleY = options.scaleY || defaultScaleY;
 
-    const gapsToRender = mergedSegments.filter(s => s.isGap);
+    mergedSegments.filter(s => s.isGap);
 
   return mergedSegments.map((seg) => {
     const points = seg.points.length === 1 ? [...seg.points, seg.points[0]] : seg.points;

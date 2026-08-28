@@ -518,7 +518,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
     // The old `config?.user?.id` was always undefined — `config` here is the
     // `.composer` subtree, which carries no user.
     startRecorder({ session, score: songId ?? 'draft', ctx: { user }, send: makeInputSender('piano-composer'), flushMs: 1000 });
-  }, [songId, config, user]);
+  }, [songId, user]);
   const stopInputRec = useCallback(() => { stopRecorder(); inputSessionRef.current = null; }, []);
 
   // Kill switch: a deploy-free off/on lever, installed regardless of config so the

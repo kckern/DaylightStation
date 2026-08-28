@@ -37,7 +37,6 @@ const NOTE_DURATION = 'q';
 const PAD = 8;          // stave's x offset inside the drawing canvas
 const TOP_ROOM = 58;    // y of the treble stave's top line (the drawing anchor)
 const STAFF_GAP = 66;   // treble top line → bass top line (one grand-staff system)
-const BASS_STAFF_H = 40;
 const INK = '#1a1a1a';
 // Note area the content floor reserves in a narrow slot. Sized from the ink sweep, not
 // guessed: at 40 a 12-note cluster's accidental columns overran the frame's right edge

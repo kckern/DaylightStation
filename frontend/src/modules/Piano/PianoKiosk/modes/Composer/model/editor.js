@@ -7,7 +7,6 @@
 // larger structural edits.
 import { makeNote, makeRest } from './note.js';
 import { DIVISIONS, decomposeDuration, noteDivisions } from '@/modules/MusicNotation/duration.js';
-import { pitchToMidi } from '@/modules/MusicNotation/parseMusicXml.js';
 import { serializeMusicXml } from '@/modules/MusicNotation/serializeMusicXml.js';
 
 /** Deep clone a score for structural edits. structuredClone handles the plain

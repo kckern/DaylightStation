@@ -59,7 +59,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     getUserByDevice,
     userCurrentZones,
     zones,
-    users: allUsers = [],
+    users: _allUsers = [],
     usersConfigRaw = {},
     equipment = [],
     deviceConfiguration,
@@ -147,7 +147,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
             : null
         };
       });
-  }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, zoneProgressIndex, boostContributions]);
+  }, [getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, zoneProgressIndex, boostContributions]);
 
   const rpmItems = useMemo(() => {
     const cadenceConfig = deviceConfiguration?.cadence || {};

@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback, useLayoutEffect } fro
 import ReactDOM from 'react-dom';
 import PropTypes from 'prop-types';
 import useVoiceMemoRecorder from '../panels/hooks/useVoiceMemoRecorder.js';
-import { MicLevelIndicator, CountdownRing } from '@/modules/Fitness/shared';
+import { MicLevelIndicator } from '@/modules/Fitness/shared';
 import { formatTime } from '@/modules/Fitness/shared/utils/time';
 import './VoiceMemoOverlay.scss';
 import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
@@ -180,7 +180,7 @@ const VoiceMemoOverlay = ({
     }
   }, [overlayState?.autoAccept, autoAcceptCancelled]);
 
-  const handleReviewSelect = useCallback((memoRef) => {
+  useCallback((memoRef) => {
     if (!memoRef) return;
     logVoiceMemo('overlay-select-review', { memoId: memoRef.memoId || null });
     onOpenReview?.(memoRef, { autoAccept: false });
@@ -567,7 +567,7 @@ const VoiceMemoOverlay = ({
   }, [overlayState?.open, overlayState?.mode, isRecording]);
 
   // Stop all events from propagating to player underneath
-  const stopEventPropagation = useCallback((e) => {
+  const stopEventPropagation = useCallback((_e) => {
    // e.stopPropagation();
  //   e.nativeEvent?.stopImmediatePropagation?.();
   }, []);
@@ -654,18 +654,12 @@ const VoiceMemoOverlay = ({
       : 'Voice Memo Review';
 
   const transcript = currentMemo?.transcriptClean || currentMemo?.transcriptRaw || 'Transcription in progress…';
-  const memoTimestamp = currentMemo ? formatMemoTimestamp(currentMemo) : '';
-  const memoVideoTimestamp = currentMemo?.videoTimeSeconds != null
-    ? formatTimeLocal(Math.max(0, Math.round(currentMemo.videoTimeSeconds)))
-    : '';
   const recordingTimeLabel = formatTimeLocal(Math.max(0, Math.floor(recordingDuration / 1000)));
   const displayTranscript = showRedo
     ? (isRecording || (!isProcessing && !isRecording) ? 'Recording…' : 'Processing voice memo…')
     : (showReview && !currentMemo ? 'Finalizing memo…' : transcript);
   const hasMemoId = Boolean(currentMemo?.memoId || overlayState?.memoId);
-  const memoTitle = currentMemo?.title || currentMemo?.name || currentMemo?.label || '';
-  const micLabel = preferredMicrophoneId ? `Mic: ${preferredMicrophoneId}` : '';
-
+    
   const overlayContent = (
     <div
       ref={overlayRef}
