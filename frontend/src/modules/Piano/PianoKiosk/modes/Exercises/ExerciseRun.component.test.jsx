@@ -509,6 +509,26 @@ describe('ExerciseRun shared assessment wiring', () => {
     press(view, props, 72);
 
     expect(h.start).toHaveBeenCalledWith({ leadInMs: 4 * 60000 / 90, clock: 'date-now' });
+    // And the clicks are AUDIBLE at that same tempo. `clickBpm` is NaN here —
+    // a cued rung carries no `gates.pace` and this instance has no tempo — and
+    // the hook creates no scheduler at all for a non-positive bpm, so a child
+    // would have watched a silent count-in and then been graded on placement
+    // against a grid they were never given.
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 90 });
+  });
+
+  it('gives metronome practice its pulse BEFORE the first note, not after it', async () => {
+    // The mode's whole promise is a grid to settle into, and the first note is
+    // now what starts the run — a click that waits for `running` arrives after
+    // the moment it exists to guide.
+    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'metronome', onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 90 });
+
+    press(view, props, 60); // the run arms and keeps clicking, uninterrupted
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 90 });
   });
 
   it('a held (ordering:any) ask arms on ANY note of the chord it is asking for', async () => {
@@ -536,6 +556,43 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     hold(view, props, [60, 64]); // the whole chord completes it
     expect(await screen.findByText('Passed')).toBeInTheDocument();
+  });
+
+  it('a key already down when a held ask arms stays inert — it is not graded as an extra', async () => {
+    // The stray is declared inert in the ready phase, so it must not be
+    // promoted to a graded note by the arming observation: handing the WHOLE
+    // held map over at that boundary would score the chord as wrong, latch it,
+    // and leave the child unable to complete until they lift a finger nothing
+    // told them about.
+    h.instanceData = {
+      ...h.instance,
+      ordering: 'any',
+      events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60, hand: 'right' }, { midi: 64, hand: 'right' }] }],
+    };
+    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+
+    hold(view, props, [67]);     // a stray, and it stays down
+    hold(view, props, [67, 64]); // the intentional reach, on top of it
+
+    expect(h.start).toHaveBeenCalledWith({ leadInMs: 0, clock: 'date-now' });
+    // Only the chord's own member crossed the boundary…
+    expect([...h.observe.mock.calls[0][0].held.keys()]).toEqual([64]);
+    // …so nothing is wrong and nothing is latched.
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '');
+    expect(screen.getByRole('status')).not.toHaveTextContent('That note was not expected');
+
+    // Once RUNNING the matcher's normal rules apply to the whole held set, and
+    // the stray is an extra like any other.
+    hold(view, props, [67, 64, 60]);
+    await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '67'));
+
+    // Lift it and the chord completes. It does not PASS — the extra cost it a
+    // clean sheet, which is the matcher's ordinary rule and exactly the price
+    // the arming boundary must not charge for a key the child never played at.
+    hold(view, props, [64, 60]);
+    expect(await screen.findByText('Practice complete')).toBeInTheDocument();
   });
 
   it.each([

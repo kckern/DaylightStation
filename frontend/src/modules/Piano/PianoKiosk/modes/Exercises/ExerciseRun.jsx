@@ -297,7 +297,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
     if (!(bpm > 0)) return null;
     const leadInMs = beatsPerMeasure * 60000 / bpm;
     const { periodMs } = countInPlan({ beats: beatsPerMeasure, bpm });
-    return { leadInMs, periodMs, clicks: Math.max(1, Math.round(leadInMs / periodMs)) };
+    return { bpm, leadInMs, periodMs, clicks: Math.max(1, Math.round(leadInMs / periodMs)) };
   }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
 
   /**
@@ -343,8 +343,16 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   }, [snapshot]);
 
   useMetronomeClick({
-    enabled: snapshot.status === 'running' && ['metronome', 'cued'].includes(snapshot.mode),
-    bpm: clickBpm,
+    enabled: (snapshot.status === 'running' && ['metronome', 'cued'].includes(snapshot.mode))
+      // Metronome practice promises a pulse to settle into, and the first note
+      // is now what STARTS the run — so the grid has to be audible before it,
+      // or the click only ever arrives after the moment it was meant to guide.
+      || (snapshot.status === 'prepared' && snapshot.mode === 'metronome'),
+    // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
+    // cued rung carries no `gates.pace`, so a tempo-less single-event instance
+    // (graded at the engine's default) would leave this NaN — the hook then
+    // creates no scheduler at all and the count-in counts in silence.
+    bpm: countIn?.bpm ?? clickBpm,
   });
   const heldKey = held.join(',');
   useEffect(() => {
@@ -367,8 +375,16 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
       // earlier is `before_start` to the engine, which silently drops the note.
       const armedAt = runtime.getSnapshot().startedAt ?? time;
       if (snapshot.matcher === 'held') {
+        // Only the chord's own members are handed over at the boundary. A key
+        // already down from before — inert while the run was ready — would
+        // otherwise be graded as an extra the moment the child reaches the
+        // chord: a wrong note, a latch, and a chord that cannot complete until
+        // they lift a finger nothing told them about. The attempt begins from
+        // the intentional reach. Once running, the matcher's normal rules
+        // apply to the whole held set, extras included.
         lastHeldObservedRef.current = heldKey;
-        runtime.observe({ held: activeNotesRef.current, time: armedAt, clock: 'date-now' });
+        const reach = new Map([...activeNotesRef.current].filter(([midi]) => armingPitches.has(midi)));
+        runtime.observe({ held: reach, time: armedAt, clock: 'date-now' });
       } else {
         runtime.observe({ midi: arming, time: armedAt, clock: 'date-now' });
       }
