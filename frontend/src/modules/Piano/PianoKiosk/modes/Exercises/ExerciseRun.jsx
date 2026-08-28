@@ -243,8 +243,17 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
    * The three states this run cannot leave on its own. Reported through an
    * effect rather than from render so the host is told once, after the state
    * has settled, and never mid-render.
+   *
+   * `no-access` is WITHHELD until the user has settled. `currentUser` starts
+   * `null` and hydrates asynchronously (`PianoUserContext`, which retries its
+   * roster fetch on a 2s/5s/15s/30s backoff — precisely during the backend
+   * restarts this reporting exists for), and `resolveExerciseRunAccess` denies a
+   * challenge to a falsy user. Reporting on the first commit would tell a host
+   * "this player is not allowed" about a player who simply has not arrived yet.
+   * `null` means not hydrated; `'guest'` means hydrated and not permitted, and
+   * only that second one is a real answer.
    */
-  const unavailableReason = !access.allowed ? 'no-access'
+  const unavailableReason = !access.allowed ? (currentUser ? 'no-access' : null)
     : instance === null ? 'instance-not-found'
       : unrunnable ? 'unrunnable' : null;
   const reportedUnavailableRef = useRef(null);
@@ -316,6 +325,16 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
   const isWrong = lastWrong !== null;
   const wrongNotes = lastWrong === null ? null : new Set([lastWrong.midi]);
   const passed = runPassed(result, { challenge, passScore: requirement?.passScore });
+  /**
+   * A host that took `onFailed` owns what happens after a miss, and it is told
+   * from a PASSIVE effect — which React schedules after paint. Rendering this
+   * run's own result panel as well would flash "Keep working" with two tappable
+   * buttons (Retry, Practice first) for a frame before the host swapped it out.
+   * On a tablet that is a real mis-tap, not a cosmetic blink. A pass is
+   * unaffected: `onPassed` is player-driven, so the panel and its Continue
+   * button are still the only way to take it.
+   */
+  const hostOwnsFailure = Boolean(onFailed) && !passed;
   const currentEvent = instance.events[Math.min(eventIndex, instance.events.length - 1)] || instance.events[0];
   const targetNotes = new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }]));
 
@@ -332,7 +351,7 @@ export default function ExerciseRun({ instanceId, material = null, intent = 'pra
       </div>
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{challenge ? 'The tempo and pass criteria are fixed for this run. The count-in starts when you are ready.' : 'Correct mistakes and continue at your own pace. Practice is saved, but it does not unlock a gate.'}</p>{!connected && <span>Waiting for the piano…</span>}<button type="button" onClick={start}>{challenge ? 'Begin challenge' : 'Begin practice'}</button></div>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
-      {phase === 'done' && result && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
+      {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
         <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span><strong>{Math.round(result.score * 100)}%</strong></div>
         <dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl>
         <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !passed && <button type="button" onClick={onExit}>Practice first</button>}{passed && <button type="button" onClick={() => onPassed?.(result)}>Continue</button>}</div>

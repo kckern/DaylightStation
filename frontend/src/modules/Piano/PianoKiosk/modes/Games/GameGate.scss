@@ -1,0 +1,111 @@
+/* Game gate — the chrome around the challenge that stands at a match boundary.
+ *
+ * This file exists for one reason: `.piano-exercise-run` is
+ * `height: 100%; overflow: hidden` (Exercises.scss, "Runner"). Left inside a
+ * plain block parent it takes the whole box, and the gate's Leave button — a
+ * sibling appended after it — lands below the fold. During an ordinary attempt
+ * that is merely untidy, because the run has its own header Exit. In a DEAD END
+ * it is the failure: the run has settled into a state it cannot leave, its own
+ * chrome is gone, and this button is the only way out. jsdom cannot see layout,
+ * so a suite that never measures would be green either way — the numbers here
+ * are asserted in Chromium by `GameGate.measure.test.jsx`.
+ *
+ * Palette: the run's own sheet declares `--ex-*` on `.piano-exercise-run`, and
+ * those do not escape it, so the gate reads the kiosk `--piano-*` tokens
+ * directly (with the same fallbacks Exercises.scss uses).
+ */
+.piano-game-gate {
+  --gg-fg: var(--piano-fg, #f1f1f4);
+  --gg-muted: var(--piano-muted, #9a9aa6);
+  --gg-surface: var(--piano-surface, #1f1f26);
+  --gg-border: var(--piano-border, #34343f);
+  --gg-accent: var(--piano-accent, #2ec46f);
+  --gg-accent-ink: var(--piano-accent-ink, #07210f);
+
+  /* Discrete tap targets, never sliders, and never under 48px: this is a
+     wall-mounted tablet operated by children with the flat of a finger. */
+  button {
+    min-height: 48px;
+    padding: 0.55rem 1.15rem;
+    border: 1px solid var(--gg-border);
+    border-radius: var(--r-md, 12px);
+    background: var(--gg-surface);
+    color: var(--gg-fg);
+    font: inherit;
+    cursor: pointer;
+  }
+}
+
+/* The attempt: a column that reserves the footer BEFORE the run gets its share.
+   `height: auto` is load-bearing — a percentage height resolves against the
+   flex container's full height and would overflow the footer straight back off
+   the bottom, which is the bug this rule exists to prevent. */
+.piano-game-gate--attempt {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+
+  > .piano-exercise-run {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+  }
+}
+
+.piano-game-gate__leave {
+  flex: 0 0 auto;
+  align-self: center;
+  min-width: 10rem;
+  margin: 0.4rem 0 0.55rem;
+  color: var(--gg-muted) !important;
+}
+
+/* The two panels that replace the run: a failed attempt, and no chosen player.
+   Both are non-granting — nothing here reaches a match (D12). */
+.piano-game-gate--failed,
+.piano-game-gate--blocked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  height: 100%;
+  min-height: 0;
+  padding: var(--sp-5, 1.5rem);
+  font-style: normal;              /* .piano-mode__placeholder italicises */
+  text-align: center;
+
+  h2 { margin: 0; }
+  p { max-width: 34rem; margin: 0; color: var(--gg-muted); }
+}
+
+.piano-game-gate__score {
+  color: var(--gg-fg) !important;
+
+  strong { font-size: 2rem; color: var(--gg-accent); }
+}
+
+/* The one line that has to be unmissable: the ladder just moved for them. */
+.piano-game-gate__eased {
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--r-sm, 8px);
+  background: var(--gg-surface);
+  color: var(--gg-accent) !important;
+}
+
+.piano-game-gate__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+
+  /* "Try again" is the one that keeps them playing; the other two lead away. */
+  button:first-child {
+    border-color: var(--gg-accent);
+    background: var(--gg-accent);
+    color: var(--gg-accent-ink);
+  }
+}

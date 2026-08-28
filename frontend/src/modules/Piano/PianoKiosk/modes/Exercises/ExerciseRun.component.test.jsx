@@ -318,4 +318,87 @@ describe('ExerciseRun shared assessment wiring', () => {
     render(<ExerciseRun {...props} />);
     expect(await screen.findByText(/Exercise not found/)).toBeInTheDocument();
   });
+
+  it('withholds no-access while the user is still hydrating, and reports it once settled', async () => {
+    // `currentUser` starts null and hydrates asynchronously (the roster fetch
+    // retries on a 2s/5s/15s/30s backoff — exactly during the backend restarts
+    // the dead-end reporting exists for). Reporting on the first commit tells a
+    // host "this player is not allowed" about a player who has not arrived yet,
+    // and a host that fails open on that hands out a free game every reload.
+    h.currentUser = null;
+    const props = {
+      instanceId: h.instance.id, intent: 'challenge',
+      requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }),
+      onExit: vi.fn(), onPassed: vi.fn(), onUnavailable: vi.fn(),
+    };
+    const view = render(<ExerciseRun {...props} />);
+    expect(await screen.findByText(/Choose a player/)).toBeInTheDocument();
+    expect(props.onUnavailable).not.toHaveBeenCalled();
+
+    // 'guest' is hydrated-and-not-permitted — a real answer, and reportable.
+    act(() => { h.currentUser = 'guest'; view.rerender(<ExerciseRun {...props} />); });
+    await waitFor(() => expect(props.onUnavailable).toHaveBeenCalledWith('no-access'));
+  });
+
+  it('leaves its own failure panel to the host that took onFailed', async () => {
+    // `onFailed` fires from a passive effect, which React schedules AFTER
+    // paint. Rendering this panel too would flash "Keep working" with two
+    // tappable buttons — Retry and Practice first — for a frame before the host
+    // swapped it out. On a tablet that is a mis-tap, not a blink.
+    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const props = {
+      instanceId: h.instance.id, intent: 'challenge', requirementOverride,
+      onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
+    };
+    const view = render(<ExerciseRun {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
+
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 60);
+    press(view, props, 62); // score 0.7, under the bar
+
+    await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Keep working')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Practice first' })).not.toBeInTheDocument();
+  });
+
+  it('still shows its own panel when no host took onFailed', async () => {
+    // The practice surface and the program flow pass neither callback; their
+    // result panel is the only one there is and must be untouched.
+    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const props = { instanceId: h.instance.id, intent: 'challenge', requirementOverride, onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
+
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 60);
+    press(view, props, 62);
+
+    expect(await screen.findByText('Keep working')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Practice first' })).toBeInTheDocument();
+  });
+
+  it('a host that took onFailed still gets the run’s own pass panel', async () => {
+    // Only the FAILURE panel is the host's business. `onPassed` is
+    // player-driven, so Continue must still be there to press.
+    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const props = {
+      instanceId: h.instance.id, intent: 'challenge', requirementOverride,
+      onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
+    };
+    const view = render(<ExerciseRun {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
+
+    press(view, props, 60);
+    press(view, props, 62); // clean -> score 1
+
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(props.onPassed).toHaveBeenCalledTimes(1);
+  });
 });
