@@ -42,4 +42,14 @@ describe('exercise notation staff selection', () => {
     expect(abc).toContain('V:RH clef=treble');
     expect(abc).toContain('V:LH clef=bass');
   });
+
+  it('renders nothing for ordering:any material — that plays through KeysAsk, not notation', () => {
+    const abc = instanceToAbc({
+      ...base,
+      ordering: 'any',
+      events: [{ notes: [{ midi: 60 }, { midi: 64 }] }],
+    });
+
+    expect(abc).toBe('');
+  });
 });
