@@ -23,11 +23,19 @@
  * Error strings use the house `<path>: <message>` notation (see
  * `../documents/blocks.mjs`), with the reducer's path being `event[seq=N]`.
  */
-// The only import this module has, and it is a same-layer constant rather
-// than behaviour: the three things a scanned finish-code row can say. Copying
-// the strings would give the event schema and the outcome rule that reads
-// them two places to drift apart, over a vocabulary that must agree exactly.
-import { GATE_STATUSES, GATE_SATISFIED } from '#domains/school/companionCode.mjs';
+// Two same-layer imports, both there so a rule lives in one place.
+//
+// `GATE_STATUSES` is the vocabulary of a scanned finish-code row. Copying the
+// strings would give the event schema and the outcome rule that reads them two
+// places to drift apart, over a vocabulary that must agree exactly.
+//
+// `evaluateOutcome` is the pass rule itself, borrowed by the grade-correction
+// projection at the tail of `reduceSession` — which used to carry a private
+// copy of it and, by carrying only HALF of it, silently erased every clause
+// that rule had learned. `./outcome.mjs` imports nothing at all, so this cannot
+// cycle.
+import { GATE_STATUSES } from '#domains/school/companionCode.mjs';
+import { evaluateOutcome } from './outcome.mjs';
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isSeq = (v) => Number.isInteger(v) && v >= 1;
@@ -1118,23 +1126,39 @@ export function reduceSession(events) {
       s.voidedItemIds = s.voidedItemIds.filter((itemId) => stillVoid.has(itemId));
     }
     if (s.outcome && typeof s.gradedPercent === 'number' && typeof s.gradedPassingPercent === 'number') {
-      // A CORRECTION MOVES THE SCORE. IT CANNOT MOVE THE FINISH-CODE GATE.
+      // A CORRECTION MOVES THE SCORE. IT DOES NOT GET TO RE-DECIDE THE RULE.
       //
-      // This projection re-derives pass/fail from percent-vs-bar, which is the
-      // whole rule for an ungated sheet and only half of it for a gated one
-      // (`./outcome.mjs`'s `evaluateOutcome` checks both). Left at half, ANY
-      // grade correction on a sheet blocked by its gate row flipped it to
-      // `passed` — a correction that changed nothing about the score included
-      // — and the next close/resettle reported the pass. Same shape as the
-      // review-queue bypass, reached from the teacher console instead.
+      // This projection used to carry its own copy of the pass rule —
+      // `gradedPercent >= gradedPassingPercent` — which is the whole rule for
+      // an ungated sheet and only part of it for anything else. Every clause
+      // `evaluateOutcome` had learned since was therefore erased by any grade
+      // correction at all, favourable or not: a sheet blocked by its
+      // finish-code row was promoted to `passed`, and so was one still waiting
+      // on a grown-up's sign-off. Delegating rather than duplicating is the
+      // fix, and it is the only one that stays fixed the next time that
+      // function grows a clause.
       //
-      // Read exactly as `evaluateOutcome` reads it: a gate PRESENT at all is a
-      // gate, and only `satisfied` clears it, so a status this fold does not
-      // understand blocks rather than waves through.
-      const gateBlocks = s.companionGate != null && s.companionGate.status !== GATE_SATISFIED;
+      // `reason` travels with `result` for the same reason. Spreading the old
+      // reason over a freshly derived result produced records asserting
+      // `passed` beside `below_passing`, and every reader that decides what to
+      // SAY from the reason (the receipt's gate lines, the retry ticket) was
+      // reading a stale answer to a question that had just been re-asked.
+      //
+      // One honest gap: sign-off is not part of reducer state, so
+      // `requiresSignoff` defaults false here. That is exactly what this
+      // projection already did, so nothing regresses — but a session whose
+      // reward genuinely awaits a grown-up still projects as `passed` after a
+      // correction, and only the close-out (which CAN see the sign-off) is
+      // authoritative about that.
+      const reEvaluated = evaluateOutcome({
+        gradedPercent: s.gradedPercent,
+        passingPercent: s.gradedPassingPercent,
+        companionGate: s.companionGate,
+      });
       s.outcome = {
         ...s.outcome,
-        result: (!gateBlocks && s.gradedPercent >= s.gradedPassingPercent) ? 'passed' : 'needs_remediation',
+        result: reEvaluated.result,
+        reason: reEvaluated.reason,
         adjustedBy: effective.adjustedBy,
         adjustmentId: effective.adjustmentId,
       };
