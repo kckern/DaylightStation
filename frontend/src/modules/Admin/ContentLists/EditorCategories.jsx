@@ -524,14 +524,3 @@ function EditorCategories({
 }
 
 export default EditorCategories;
-
-// Also export individual categories for potential standalone use
-export {
-  IdentityCategory,
-  PlaybackCategory,
-  SchedulingCategory,
-  DisplayCategory,
-  ProgressCategory,
-  CustomCategory,
-  SHADER_OPTIONS
-};

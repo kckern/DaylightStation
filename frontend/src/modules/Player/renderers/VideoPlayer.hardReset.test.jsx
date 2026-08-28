@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appendRefreshParam, withOffsetParam } from './VideoPlayer.jsx';
+import { appendRefreshParam, withOffsetParam } from './dashStreamUrl.js';
 
 describe('appendRefreshParam', () => {
   it('appends _refresh=<nonce> to a URL without query string', () => {

@@ -1,4 +1,4 @@
-import { buildTreemapData, buildDrillData } from './drawer';
+import { buildTreemapData, buildDrillData } from './drawerCharts.js';
 
 describe('buildTreemapData', () => {
   const txns = [

@@ -2,7 +2,6 @@ import { cardIdenticonCells, GRID_SIZE } from '../../Gaming/experiences/card-bat
 import OpponentSpeech from './OpponentSpeech.jsx';
 import './OpponentPortrait.scss';
 
-export { opponentLine, opponentMood, opponentStatus } from './opponentViewModel.js';
 
 /**
  * The face of the character you are playing.

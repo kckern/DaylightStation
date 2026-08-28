@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   clefSignFor, scaleClefType, fifthsForKeyName, staffMetrics, ghostPlacement, GHOST_GAP_SPACES,
 } from './wrongNoteGhost.js';
-import { staffPositionOf } from '../../PianoKiosk/modes/Composer/wetGlyphs.jsx';
+import { staffPositionOf } from '../../PianoKiosk/modes/Composer/wetGlyphGeometry.js';
 
 // 5 staff lines, 21px apart, 2px thick — the real geometry measured off the
 // deployed card game at 1280×800.

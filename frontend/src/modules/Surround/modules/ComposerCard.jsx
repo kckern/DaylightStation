@@ -37,7 +37,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PropTypes from 'prop-types';
 import { smartQuotes, smartQuotesAll, trimmed } from '../typography.js';
 import { surroundLogger, assetUrl } from '../moduleKit.js';
-import { DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, useDissolve } from '../dissolve.js';
+import { useDissolve } from '../dissolve.js';
+import { COMPOSER_FACT_FADE_MS } from './composerCardTiming.js';
 import './ComposerCard.scss';
 
 /** At most this many surround.asset.missing warnings per card per minute. */
@@ -52,11 +53,6 @@ const ASSET_WARN_WINDOW_MS = 60000;
  * swap. A shared or harmonic beat makes the whole surround look like it blinked.
  */
 export const COMPOSER_FACT_INTERVAL_MS = 27000;
-/** Each half of the dissolve — the house duration, shared with the ticker. */
-export const COMPOSER_FACT_FADE_MS = DISSOLVE_FADE_MS;
-/** The beat of empty ground between the two halves ("through black"). */
-export const COMPOSER_FACT_HOLD_MS = DISSOLVE_HOLD_MS;
-
 const NO_FACT = Object.freeze({ key: 'empty', index: null, text: '' });
 
 /** A blank fact is present but has nothing on screen to fade out of. */

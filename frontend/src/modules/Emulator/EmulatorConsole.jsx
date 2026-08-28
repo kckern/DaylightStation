@@ -22,8 +22,10 @@ import { assertEjsContract } from './core/ejsContract.js';
 import { settleBoot } from './core/bootSettle.js';
 import { createSessionSupervisor } from './core/sessionSupervisor.js';
 import { isActive, readPadActivity, activitySignature } from './input/inputActivity.js';
-import { TouchVolumeButtons, logVolumeFromLevel } from '@/modules/Fitness/player/panels/TouchVolumeButtons.jsx';
+import { TouchVolumeButtons } from '@/modules/Fitness/player/panels/TouchVolumeButtons.jsx';
+import { logVolumeFromLevel } from '@/modules/Fitness/player/panels/touchVolumeModel.js';
 import { createHotspotController } from './core/hotspotController.js';
+import { computeScreenBox } from './screenBoxGeometry.js';
 import { resolveOverlayValue, formatOverlayValue } from './core/resolveOverlayValue.js';
 import { HotspotLayer } from './ui/HotspotLayer.jsx';
 import { OverlayLayer } from './ui/OverlayLayer.jsx';
@@ -58,26 +60,6 @@ const DEFAULT_FACTORIES = {
   createSession: createEmulatorSession,
   createClip: createHtmlAudioClip,
 };
-
-/**
- * Pure integer-lock geometry: largest integer scale N where an
- * N×nativeW × N×nativeH device-px box fits the cutout, centered + pixel-snapped.
- * Exported for unit testing; the layout effect calls it with measured values.
- */
-export function computeScreenBox({ cut, dpr, native }) {
-  const nw = native && Number.isFinite(native.width) ? native.width : 160;
-  const nh = native && Number.isFinite(native.height) ? native.height : 144;
-  const scale = Math.max(1, Math.min(
-    Math.floor((cut.width * dpr) / nw),
-    Math.floor((cut.height * dpr) / nh),
-  ));
-  const width = (scale * nw) / dpr;
-  const height = (scale * nh) / dpr;
-  const left = Math.round((cut.left + (cut.width - width) / 2) * dpr) / dpr;
-  const top = Math.round((cut.top + (cut.height - height) / 2) * dpr) / dpr;
-  const cell = scale / dpr;
-  return { left, top, width, height, cell, scale };
-}
 
 /**
  * Capture the resume blob(s) for a save mode. Battery captures BOTH a state

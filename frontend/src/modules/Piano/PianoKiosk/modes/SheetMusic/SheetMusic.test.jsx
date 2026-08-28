@@ -20,7 +20,8 @@ vi.mock('./ScorePlayer.jsx', () => ({
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import { __clearPianoListCache } from '../../usePianoList.js';
 import { getRecentEvents } from '../../../../../lib/logging/Logger.js';
-import { SheetMusic, collectionListPath, isNotationId } from './SheetMusic.jsx';
+import { SheetMusic } from './SheetMusic.jsx';
+import { collectionListPath, isNotationId } from './sheetMusicModel.js';
 
 // The recent-events ring buffer tails every emitted event with its context, so
 // it is the cheapest way to assert BOTH what was emitted and which log file it

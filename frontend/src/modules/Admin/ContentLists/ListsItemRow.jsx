@@ -20,13 +20,13 @@ import ContentCombobox from '../../Content/combobox/ContentCombobox.jsx';
 import { useAutoResolve } from '../../Content/combobox/useAutoResolve.js';
 import { ShimmerAvatar } from './ShimmerAvatar.jsx';
 import {
-  ContentValueCard, contentInfoFromPick, fetchContentMetadata, normalizeListSource,
+  ContentValueCard, contentInfoFromPick, fetchContentMetadata,
 } from './ContentDisplays.jsx';
+import { normalizeListSource } from './contentDisplaysUtils.jsx';
 import { ItemDetailsDrawer } from './ItemDetailsDrawer.jsx';
 import { AppParamPicker } from './AppParamPicker.jsx';
 import { ActionChipSelect } from './ActionChipSelect.jsx';
 import { CapabilityWarning } from './CapabilityWarning.jsx';
-import { EmptyItemRow, InsertRowButton } from './EmptyItemRow.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
@@ -94,7 +94,7 @@ async function doFetchSiblings(contentId, contentInfo) {
  * Preload siblings for an item into the cache.
  * Skips if already cached or pending. Returns the promise for optional awaiting.
  */
-export async function preloadSiblings(contentId, contentInfo) {
+async function preloadSiblings(contentId, contentInfo) {
   if (!contentId || !contentInfo || contentInfo.unresolved) return null;
 
   // Skip if already cached or pending
@@ -622,4 +622,3 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 }
 
 export default ListsItemRow;
-export { EmptyItemRow, InsertRowButton, ShimmerAvatar, fetchContentMetadata };

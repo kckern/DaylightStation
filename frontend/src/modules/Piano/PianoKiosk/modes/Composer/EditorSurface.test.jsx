@@ -37,12 +37,13 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
     );
   },
 }));
+import { EditorSurface, DEFAULT_ZOOM } from './EditorSurface.jsx';
 import {
-  EditorSurface, caretStepIndex, wetInkAnchor, serializeForDisplay,
-  padDisplayMeasures, withDisplayRests, DISPLAY_MIN_BARS, DEFAULT_ZOOM,
-} from './EditorSurface.jsx';
+  caretStepIndex, wetInkAnchor, serializeForDisplay,
+  padDisplayMeasures, withDisplayRests, DISPLAY_MIN_BARS,
+} from './editorSurfaceModel.js';
 import { CARET_GAP, CARET_WIDTH, MEASURE_START_UNITS } from './CaretLayer.jsx';
-import { WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
+import { WET_ADVANCE_UNITS, WET_RX_UNITS } from './wetGlyphGeometry.js';
 import { makeEmptyScore, makeNote } from './model/index.js';
 import { __resetRecorder, __snapshotForTest, intern, KIND } from '../../../../../lib/logging/inputRecorder.js';
 

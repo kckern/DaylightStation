@@ -20,6 +20,7 @@ import { useFilterData } from '../../../lib/Player/useFilterData.js';
 import { REVIEW_GOTO } from '../../../lib/Player/reviewParams.js';
 import { FilterOverlay } from '../components/FilterOverlay.jsx';
 import { FilterDebugHud } from '../components/FilterDebugHud.jsx';
+import { appendRefreshParam, withOffsetParam } from './dashStreamUrl.js';
 
 // Content filtering is opt-in via ?filter=1 so normal playback is unaffected.
 // The debug HUD (?filter-debug=1) implies filtering is on — it exists to QA cues.
@@ -43,49 +44,6 @@ let _mountSeq = 0;
  * drift into two different formats.
  */
 const buildDashElementKey = ({ mediaUrl, bitrate, elementKey }) => `${mediaUrl}:${bitrate}:${elementKey}`;
-
-/**
- * Append or replace a cache-buster query param on a URL.
- * Used by hardReset to force dash.js to re-fetch the MPD manifest,
- * which causes the backend proxy to mint a fresh Plex transcode session.
- * Works on absolute and relative URLs. Idempotent with respect to an
- * existing _refresh param. Preserves URL fragments (#anchor).
- */
-export function appendRefreshParam(url, nonce) {
-  if (!url) return url;
-  const hashIndex = url.indexOf('#');
-  const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
-  const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
-  // Strip any existing _refresh=<value>, whether it's the first/middle/last param.
-  // After stripping, also clean up an orphaned '?' or trailing '&'.
-  const stripped = base
-    .replace(/([?&])_refresh=[^&]*&/g, '$1')  // middle or first-of-many
-    .replace(/[?&]_refresh=[^&]*$/g, '')       // last
-    .replace(/\?$/, '');                        // orphaned '?' after strip
-  const sep = stripped.includes('?') ? '&' : '?';
-  return `${stripped}${sep}_refresh=${nonce}${hash}`;
-}
-
-/**
- * Rewrite (or add) the Plex transcode `offset=` (start position, in seconds) on a
- * stream URL. Critical for recovering a far-forward-seek stall: a plain URL refresh
- * re-mints the transcode at the ORIGINAL offset, so the seek target is still past
- * the transcoder's head and stalls again. Pointing offset at the seek target makes
- * Plex transcode FROM there, so the seeked position is immediately available.
- * Preserves other params + fragment. No-op for a non-positive/NaN offset.
- */
-export function withOffsetParam(url, offsetSec) {
-  if (!url || !Number.isFinite(offsetSec) || offsetSec <= 0) return url;
-  const off = Math.floor(offsetSec);
-  const hashIndex = url.indexOf('#');
-  const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
-  const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
-  if (/[?&]offset=/.test(base)) {
-    return `${base.replace(/([?&]offset=)[^&]*/, `$1${off}`)}${hash}`;
-  }
-  const sep = base.includes('?') ? '&' : '?';
-  return `${base}${sep}offset=${off}${hash}`;
-}
 
 /**
  * Video player component for playing video content (including DASH video)
@@ -525,7 +483,7 @@ export function VideoPlayer({
       hlsLogger.info('video.hls.attached', { mediaUrl });
     }).catch((e) => hlsLogger.error('video.hls.load_failed', { error: e?.message }));
     return () => { cancelled = true; if (hls) hls.destroy(); };
-  }, [media?.mediaType, mediaUrl, hlsLogger]);
+  }, [media?.mediaType, mediaUrl, hlsLogger, containerRef]);
 
   // Handle dash-video custom element events (web components don't support React synthetic events)
   useEffect(() => {

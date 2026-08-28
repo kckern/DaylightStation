@@ -1,21 +1,10 @@
 import { useMemo, useState } from 'react';
 import OverviewDetail from './OverviewDetail.jsx';
+import { flattenCurriculumHistory } from './curriculumHistoryFlatten.js';
 
 const KIND_LABEL = {
   catalog: 'Catalog', subject: 'Subject', course: 'Course', unit: 'Unit', lesson: 'Lesson', module: 'Module',
 };
-
-export function flattenCurriculumHistory(roots = [], resolveTitle = null) {
-  const items = [];
-  const visit = (node, ancestors = []) => {
-    const label = resolveTitle?.(node) ?? displayId(node.id);
-    const trail = [...ancestors, label];
-    items.push({ ...node, label, trail, depth: ancestors.length });
-    (node.children ?? []).forEach((child) => visit(child, trail));
-  };
-  roots.forEach((root) => visit(root));
-  return items;
-}
 
 /** Cross-surface progress/history view using the shared overview grammar. */
 export default function CurriculumHistoryOverview({ history, resolveTitle = null }) {
@@ -74,19 +63,6 @@ export default function CurriculumHistoryOverview({ history, resolveTitle = null
       )}
     </section>
   );
-}
-
-// Slugs are last-resort labels: page/unit codes (p044) carry no meaning for a
-// human and "us" is an acronym, not a word. A real catalog title (via
-// `resolveTitle`) always beats this prettifier.
-function displayId(value) {
-  return String(value ?? '')
-    .replace(/[-_]+/g, ' ')
-    .replace(/\b[pP]\d{2,4}\b/g, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
-    .replace(/\bUs\b/g, 'US');
 }
 
 function dateLabel(value) {

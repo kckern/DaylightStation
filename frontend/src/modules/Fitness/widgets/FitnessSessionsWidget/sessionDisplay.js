@@ -1,4 +1,4 @@
-import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
+import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.js';
 
 export function resolveSessionActivity(s) {
   if (s?.media?.primary) return null;

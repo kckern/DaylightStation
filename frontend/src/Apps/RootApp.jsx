@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useMemo } from 'react'
 import './RootApp.scss'
 
 import { getChildLogger } from '../lib/logging/singleton.js'
@@ -13,13 +13,6 @@ import { getChildLogger } from '../lib/logging/singleton.js'
 function RootApp() {
   const logger = useMemo(() => getChildLogger({ app: 'root' }), []);
   logger.debug('root.render');
-
-  const [setMenuSelection] = useState(null);
-
-  useCallback((selection) => {
-    logger.info('root.menu.selection', { selection });
-    setMenuSelection(selection);
-  }, [logger]);
 
   return (
     <div className='App root-app'>

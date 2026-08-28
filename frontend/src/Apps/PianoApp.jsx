@@ -8,8 +8,8 @@ import {
   ActivePianoProvider,
   usePianoKioskConfig,
   usePianoRoster,
-  resolvePianoConfig,
 } from '../modules/Piano/PianoKiosk/PianoConfig.jsx';
+import { resolvePianoConfig } from '../modules/Piano/PianoKiosk/pianoConfigModel.js';
 import { PianoMidiProvider, usePianoMidi, usePianoMidiNotes } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';

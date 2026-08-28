@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildHrAreaPath } from './FitnessTimeline.jsx';
+import { buildHrAreaPath } from './hrAreaPath.js';
 
 describe('buildHrAreaPath stats', () => {
   const zones = ['active', 'active', 'active', 'active', 'active'];

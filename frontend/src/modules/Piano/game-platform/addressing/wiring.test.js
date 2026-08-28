@@ -4,9 +4,9 @@ import { buildScheme } from './buildScheme.js';
 import { evaluateAddressing } from './addressingProgress.js';
 import { DEFAULT_CHORD_SCHEME, identifyChord, squareToChord } from '../../PianoChessGame/chordAddress.js';
 import { DEFAULT_STAFF_SCHEME, identifyStaffAddress, noteName, splitFor } from '../../PianoChessGame/staffAddress.js';
-import { configuredAddressing as checkersOverrides } from '../../PianoCheckers/PianoCheckers.jsx';
-import { configuredAddressing as connectFourOverrides, scaleRoots } from '../../PianoConnectFour/PianoConnectFour.jsx';
-import { schemeForAddressing } from '../../PianoChessGame/PianoChessGame.jsx';
+import { configuredAddressing as checkersOverrides } from '../../PianoCheckers/checkersAddressingModel.js';
+import { configuredAddressing as connectFourOverrides, scaleRoots } from '../../PianoConnectFour/pianoConnectFourModel.js';
+import { schemeForAddressing } from '../../PianoChessGame/chessAddressingModel.js';
 
 /**
  * The wiring, pinned.

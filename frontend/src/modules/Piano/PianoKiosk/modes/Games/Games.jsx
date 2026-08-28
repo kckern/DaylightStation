@@ -12,18 +12,7 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 import GameBoundary from '../../../game-platform/host/GameBoundary.jsx';
 import { resolvePianoPlayerName } from '../../../game-platform/identity/playerName.js';
 import useSchoolGameAccess from '../../useSchoolGameAccess.js';
-
-/**
- * Relative destination for a game-owned URL segment.
- *
- * From /games/hero, append the first segment directly. Once a segment already
- * exists, replace that leaf with a sibling. Re-appending the game id from the
- * latter state produces /hero/hero/:segment.
- */
-export function gameSubRouteTarget(currentSubRoute, next) {
-  if (!next) return currentSubRoute ? '..' : '.';
-  return currentSubRoute ? `../${next}` : next;
-}
+import { gameSubRouteTarget } from './gameSubRoute.js';
 
 /**
  * Games mode — picks a registered piano game and mounts it fullscreen, fed by the

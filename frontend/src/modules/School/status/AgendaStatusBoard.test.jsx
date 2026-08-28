@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import AgendaStatusBoard, { dayStatus, summarize, ringsByLearner } from './AgendaStatusBoard.jsx';
+import AgendaStatusBoard from './AgendaStatusBoard.jsx';
+import { dayStatus, summarize, ringsByLearner } from './agendaStatusModel.js';
 
 vi.mock('../schoolApi.js', () => ({
   schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), measuresWeekly: vi.fn() },

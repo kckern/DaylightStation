@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useFingerprintManager } from './useFingerprintManager.js';
 import { EnrollModal } from './EnrollModal.jsx';
-import FingerprintHands, { fingerLabel } from './FingerprintHands.jsx';
+import FingerprintHands from './FingerprintHands.jsx';
+import { fingerLabel } from './fingerLabel.js';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import { useIdentity } from '@/modules/Fitness/identity/IdentityProvider';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';

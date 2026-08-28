@@ -8,15 +8,14 @@
 import React, { useState, useEffect } from 'react';
 import { Text, Loader, Group, Avatar, Badge, Box, ActionIcon } from '@mantine/core';
 import {
-  IconMusic, IconDeviceTv, IconMovie, IconDeviceTvOld, IconStack2,
-  IconUser, IconDisc, IconPhoto, IconPlaylist, IconFile, IconBook,
-  IconChevronRight, IconAlertTriangle, IconCheck,
-  IconList, IconMicrophone, IconVideo, IconFolder, IconFileText, IconSearch,
-  IconBroadcast, IconPresentation, IconSchool, IconUsers, IconStack3,
-  IconPlayerPlay, IconDeviceGamepad2,
+  IconChevronRight, IconAlertTriangle, IconCheck, IconPhoto, IconPlayerPlay,
+  IconSearch, IconList,
 } from '@tabler/icons-react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { ShimmerAvatar } from './ShimmerAvatar.jsx';
+import {
+  isContainerItem, normalizeListSource, SOURCE_COLORS, getTypeIcon, TYPE_LABELS, parseSource,
+} from './contentDisplaysUtils.jsx';
 
 // Lazy admin logger with session logging enabled
 let _adminLog;
@@ -24,151 +23,6 @@ function adminLog(component) {
   if (!_adminLog) _adminLog = getChildLogger({ app: 'admin', sessionLog: true });
   return component ? _adminLog.child({ component }) : _adminLog;
 }
-
-// Types that represent containers (can be drilled into)
-export const CONTAINER_TYPES = [
-  'show', 'season', 'artist', 'album', 'collection', 'playlist', 'watchlist', 'container',
-  'series', 'channel', 'conference', 'query', 'menu', 'program', 'console'
-];
-
-/**
- * Check if an item is a container that can be browsed into
- */
-export function isContainerItem(item) {
-  if (!item) return false;
-  if (item.isContainer || item.itemType === 'container') return true;
-  const type = item.type || item.metadata?.type;
-  return CONTAINER_TYPES.includes(type);
-}
-
-// Type to icon mapping
-const TYPE_ICONS = {
-  track: IconMusic,
-  episode: IconDeviceTv,
-  movie: IconMovie,
-  show: IconDeviceTvOld,
-  season: IconStack2,
-  artist: IconUser,
-  album: IconDisc,
-  image: IconPhoto,
-  photo: IconPhoto,
-  playlist: IconPlaylist,
-  book: IconBook,
-  // Custom types for DaylightStation
-  watchlist: IconList,
-  program: IconList,
-  menu: IconList,
-  query: IconSearch,
-  talk: IconMicrophone,
-  freshvideo: IconVideo,
-  folder: IconFolder,
-  container: IconFolder,
-  media: IconFileText,
-  audio: IconMusic,
-  video: IconVideo,
-  // Container types for talks/channels
-  channel: IconBroadcast,
-  series: IconStack3,
-  conference: IconPresentation,
-  course: IconSchool,
-  meeting: IconUsers,
-  collection: IconStack2,
-  // Format-based icons (preferred over collection-specific)
-  singalong: IconMusic,
-  readalong: IconBook,
-  chapter: IconBook,
-  game: IconDeviceGamepad2,
-  // Legacy collection names (backward compat)
-  hymn: IconMusic,
-  primary: IconMusic,
-  scripture: IconBook,
-  poem: IconFileText,
-  default: IconFile
-};
-
-export function normalizeListSource(source) {
-  return source === 'list' ? 'menu' : source;
-}
-
-// Source badge colors
-export const SOURCE_COLORS = {
-  plex: 'orange',
-  immich: 'blue',
-  abs: 'green',
-  media: 'gray',
-  watchlist: 'violet',
-  query: 'cyan',
-  menu: 'teal',
-  program: 'teal',
-  freshvideo: 'lime',
-  canvas: 'yellow',
-  talk: 'pink',
-  'local-content': 'pink',
-  list: 'violet',
-  singalong: 'indigo',
-  readalong: 'orange',
-  hymn: 'indigo',
-  primary: 'grape',
-  app: 'teal',
-  default: 'gray'
-};
-
-/**
- * Parse source prefix from raw input value
- * @param {string} input - Raw input like "plex:12345"
- * @returns {string} Source name uppercase or "UNKNOWN"
- */
-function parseSource(input) {
-  if (!input) return 'UNKNOWN';
-  const match = input.match(/^([a-z]+):/i);
-  return match ? match[1].toUpperCase() : 'UNKNOWN';
-}
-
-export function getTypeIcon(type) {
-  const Icon = TYPE_ICONS[type] || TYPE_ICONS.default;
-  return <Icon size={14} />;
-}
-
-// Type labels for display
-export const TYPE_LABELS = {
-  track: 'Track',
-  episode: 'Episode',
-  movie: 'Movie',
-  show: 'Show',
-  season: 'Season',
-  artist: 'Artist',
-  album: 'Album',
-  image: 'Image',
-  photo: 'Photo',
-  playlist: 'Playlist',
-  book: 'Book',
-  clip: 'Clip',
-  // Custom types for DaylightStation
-  watchlist: 'Watchlist',
-  program: 'Program',
-  menu: 'Menu',
-  query: 'Query',
-  talk: 'Talk',
-  freshvideo: 'Video',
-  folder: 'Folder',
-  container: 'Container',
-  media: 'Media',
-  audio: 'Audio',
-  video: 'Video',
-  // Container types for talks/channels
-  channel: 'Channel',
-  series: 'Series',
-  conference: 'Conference',
-  course: 'Course',
-  meeting: 'Meeting',
-  collection: 'Collection',
-  singalong: 'Song',
-  readalong: 'Reading',
-  chapter: 'Chapter',
-  hymn: 'Hymn',
-  primary: 'Primary',
-  app: 'App'
-};
 
 // Color palette for seeded avatars (Mantine color names)
 const AVATAR_COLORS = [

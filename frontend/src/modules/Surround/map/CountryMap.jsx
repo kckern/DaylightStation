@@ -40,14 +40,11 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { surroundLogger } from '../moduleKit.js';
 import { LABEL_FLOOR_ANCHOR_PX } from '../fit.js';
 import { useLabelFloorPx } from '../useLabelFloor.js';
+import { getCachedGeo, loadGeo } from './countryMapGeoCache.js';
 import './CountryMap.scss';
-
-/** The shared geodata: Natural Earth 1:110m, public domain, ~41 KB, 52 features. */
-const GEO_PATH = 'media/img/library/_maps/europe.geo.json';
 
 /**
  * The rail is ~420px wide, so the map paints at about this size. These are not a
@@ -96,11 +93,11 @@ const ASPECT = RENDER_W / RENDER_H;
  * has to carry the star at regional zoom; the carousel, which draws two, does
  * not.
  */
-export const ZOOM_PRESETS = Object.freeze({
+const ZOOM_PRESETS = Object.freeze({
   region: { pad: 2.2, showCity: false },
   city: { pad: 0.12, showCity: true },
 });
-export const ZOOMS = Object.keys(ZOOM_PRESETS);
+const ZOOMS = Object.keys(ZOOM_PRESETS);
 const DEFAULT_ZOOM = 'region';
 const presetFor = (zoom) => ZOOM_PRESETS[zoom] ?? ZOOM_PRESETS[DEFAULT_ZOOM];
 /** Floor on a frame's span in degrees, so a sliver of a country cannot divide by ~0. */
@@ -130,11 +127,8 @@ const EUROPE_FALLBACK = { west: -13, east: 42, south: 34, north: 71 };
  * one step up from the floor, a neighbour's is at it — because that ratio is the
  * map's own hierarchy and has nothing to do with which screen it is on.
  */
-const LABEL_PX = LABEL_FLOOR_ANCHOR_PX;
 /** The subject country's own name — the map's primary label, one step up. */
 export const COUNTRY_LABEL_PX = 0.9 * 16;
-/** A neighbour's name: quieter, but never below the ten-foot floor. */
-export const NEIGHBOUR_LABEL_PX = LABEL_PX;
 /** The subject's step up, as a multiple of the floor: 0.9rem / 0.72rem. */
 const SUBJECT_STEP = COUNTRY_LABEL_PX / LABEL_FLOOR_ANCHOR_PX;
 const STAR_R = 6.5;
@@ -341,47 +335,6 @@ const overlaps = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a
 const normalize = (name) => String(name ?? '').trim().toLowerCase();
 
 // ---------------------------------------------------------------------------
-// Geodata: fetched lazily, once, and shared by every card on screen
-// ---------------------------------------------------------------------------
-
-let geoPromise = null;
-let geoResolved;
-
-/** Test seam: forget the cached geodata so a spec starts from a cold fetch. */
-export function __resetMapCache() {
-  geoPromise = null;
-  geoResolved = undefined;
-}
-
-/**
- * Resolves to the FeatureCollection, or to null if it could not be had. Never
- * rejects: a map that cannot load is a missing decoration, not a broken card.
- * The failure is cached too, so a dead asset costs one request, not one per card.
- */
-function loadGeo(log) {
-  if (!geoPromise) {
-    geoPromise = Promise.resolve()
-      .then(() => fetch(DaylightMediaPath(GEO_PATH)))
-      .then((res) => {
-        if (!res?.ok) throw new Error(`HTTP ${res?.status ?? 'error'}`);
-        return res.json();
-      })
-      .then((json) => {
-        const features = Array.isArray(json?.features) ? json.features : null;
-        if (!features?.length) throw new Error('no features');
-        geoResolved = json;
-        return json;
-      })
-      .catch((err) => {
-        log.warn('surround.map.load-failed', { error: err?.message ?? String(err) });
-        geoResolved = null;
-        return null;
-      });
-  }
-  return geoPromise;
-}
-
-// ---------------------------------------------------------------------------
 
 /** A five-pointed star of radius r, centred on the origin. */
 function starPath(r) {
@@ -420,7 +373,7 @@ export default function CountryMap({
   const log = useMemo(() => surroundLogger(logger, 'country-map'), [logger]);
   // Seeded from the module cache so the second card on screen paints on its first
   // render instead of flashing empty while an already-settled promise re-resolves.
-  const [geo, setGeo] = useState(() => geoResolved ?? null);
+  const [geo, setGeo] = useState(() => getCachedGeo() ?? null);
 
   useEffect(() => {
     let alive = true;

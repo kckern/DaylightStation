@@ -18,7 +18,7 @@ import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { teacherLog } from '../teacherLog.js';
 import PanelFrame from './PanelFrame.jsx';
-import { waitAge } from './ReviewQueueView.jsx';
+import { waitAge } from './waitAge.js';
 
 /**
  * One quota read per distinct `userId` on the current job list, keyed off a
