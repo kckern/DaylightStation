@@ -15,8 +15,16 @@ export const ROW_CHOICES = 5;
  * Bank item types that can be printed as a card row (spec §5.3). `true_false`
  * is graded A/B (True/False) and never carries a `choices` array on its bank
  * item — its choice count is fixed at 2, computed in `planRows` below.
+ *
+ * `companion_code` is the finish-code gate row (Task 8). It is here for the
+ * one reason the list exists: without it the gate block is planned, found
+ * un-mappable, and the whole render is refused — so the gate would never reach
+ * a card at all. It is NOT a question-bank type (it is never validated by
+ * `questionBankValidation`, whose `multi_select` two-answer minimum would make
+ * a single-letter code illegal); its item is synthesized from the printed
+ * document at prepare time, and it carries its own answer.
  */
-export const ROW_MAPPABLE_TYPES = ['multiple_choice', 'true_false', 'multi_select'];
+export const ROW_MAPPABLE_TYPES = ['multiple_choice', 'true_false', 'multi_select', 'companion_code'];
 
 /** Allocation record lifecycle states (spec §5.4). */
 export const ALLOCATION_STATUSES = ['live', 'satisfied', 'released', 'superseded'];

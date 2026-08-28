@@ -438,7 +438,15 @@ export function createSchoolPrintScanConsumer({
             // returns the original single outcome shape.
             const outcomes = recorded?.sectionOutcomes ?? [recorded];
             for (const sectionOutcome of outcomes) {
-              if (sectionOutcome?.session?.advancedTo === 'graded') {
+              // `gate-repaired` (Task 11) rides the SAME branch, and must: a
+              // child who has just fed the sheet back with their finish code
+              // needs the settle to run (that is what re-decides the result and
+              // prints the new receipt) and the room to say something. It
+              // carries the same session-sourced percent/counts the graded path
+              // does — the score the sheet already earned, unchanged by the
+              // repair — so nothing below has to know which of the two it is.
+              if (sectionOutcome?.session?.advancedTo === 'graded'
+                  || sectionOutcome?.session?.reason === 'gate-repaired') {
                 // percent/earned/total come from the SESSION
                 // (`RecordCardScanOutcome#bridgeSession`'s row-count
                 // computation), never from points, because that row-count

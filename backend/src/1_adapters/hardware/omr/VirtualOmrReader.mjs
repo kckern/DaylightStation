@@ -93,7 +93,8 @@ export class VirtualOmrReader {
    *
    * @param {Object} args
    * @param {{formVersion:string, marks:Array<Object>}} args.formMap - from the PDF renderer
-   * @param {Object<string,string>} [args.chosen] - itemId → choice
+   * @param {Object<string,(string|string[])>} [args.chosen] - itemId → choice, or an
+   *   array of choices for a set-valued row (the finish-code gate)
    * @param {string[]} [args.ambiguous] - itemIds that get TWO marks in one row
    * @param {string[]} [args.blank] - itemIds that get none
    * @returns {{source:string, type:string, id:string, columns:number, markedColumns:number, marks:number[]}}
@@ -161,16 +162,29 @@ function itemIdsIn(row) {
   return [...new Set(row.choices.map((c) => c.itemId))];
 }
 
-/** @returns {number[]} the single bit for a chosen answer, or none */
+/**
+ * @returns {number[]} the bits for a chosen answer, or none
+ *
+ * An ARRAY of choices fills a whole row — the finish-code gate, where several
+ * bubbles are one answer rather than a smudge. It reuses `chosen` instead of
+ * getting its own `set:` argument beside `ambiguous`/`blank`: a caller already
+ * says what an item answered here, and a second channel would mean two ways to
+ * say the same thing and a conflict rule between them. Every letter is still
+ * looked up individually, so an unprinted one in an array is refused exactly as
+ * a bare unprinted string is.
+ */
 function chosenBits(row, itemId, choice) {
   if (choice === undefined) return [];
-  const hit = row.choices.find((c) => c.itemId === itemId && c.choice === choice);
-  if (!hit) {
-    throw new InfrastructureError(`item ${itemId} has no choice ${choice}`, {
-      code: 'UNKNOWN_OMR_CHOICE', itemId, choice,
-    });
-  }
-  return [hit.bit];
+  const wanted = Array.isArray(choice) ? choice : [choice];
+  return wanted.map((one) => {
+    const hit = row.choices.find((c) => c.itemId === itemId && c.choice === one);
+    if (!hit) {
+      throw new InfrastructureError(`item ${itemId} has no choice ${one}`, {
+        code: 'UNKNOWN_OMR_CHOICE', itemId, choice: one,
+      });
+    }
+    return hit.bit;
+  });
 }
 
 /**

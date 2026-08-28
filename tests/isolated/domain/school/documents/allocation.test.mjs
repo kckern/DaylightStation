@@ -20,7 +20,9 @@ describe('constants', () => {
   it('exposes the physical card shape (spec §5.1)', () => {
     expect(CARD_ROWS).toBe(50);
     expect(ROW_CHOICES).toBe(5);
-    expect(ROW_MAPPABLE_TYPES).toEqual(['multiple_choice', 'true_false', 'multi_select']);
+    // `companion_code` is the finish-code gate row (Task 8) — a printed row
+    // that consumes a card row like any other, but is not a question-bank type.
+    expect(ROW_MAPPABLE_TYPES).toEqual(['multiple_choice', 'true_false', 'multi_select', 'companion_code']);
     expect(ALLOCATION_STATUSES).toEqual(['live', 'satisfied', 'released', 'superseded']);
   });
 });

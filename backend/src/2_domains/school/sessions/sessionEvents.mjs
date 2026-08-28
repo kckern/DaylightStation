@@ -23,6 +23,19 @@
  * Error strings use the house `<path>: <message>` notation (see
  * `../documents/blocks.mjs`), with the reducer's path being `event[seq=N]`.
  */
+// Two same-layer imports, both there so a rule lives in one place.
+//
+// `GATE_STATUSES` is the vocabulary of a scanned finish-code row. Copying the
+// strings would give the event schema and the outcome rule that reads them two
+// places to drift apart, over a vocabulary that must agree exactly.
+//
+// `evaluateOutcome` is the pass rule itself, borrowed by the grade-correction
+// projection at the tail of `reduceSession` — which used to carry a private
+// copy of it and, by carrying only HALF of it, silently erased every clause
+// that rule had learned. `./outcome.mjs` imports nothing at all, so this cannot
+// cycle.
+import { GATE_STATUSES } from '#domains/school/companionCode.mjs';
+import { evaluateOutcome } from './outcome.mjs';
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isSeq = (v) => Number.isInteger(v) && v >= 1;
@@ -47,6 +60,52 @@ const booleanIfPresent = (field) => (raw, push) => {
 
 const TRANSPORTS = ['paper', 'screen'];
 const RESULTS = ['passed', 'needs_remediation'];
+
+/**
+ * `companionGate` — the scan's verdict on the sheet's finish-code row.
+ *
+ * ONE validator, because more than one event carries it. Task 10 put it on
+ * `graded` alone, which is where a sheet the scanner marks end to end records
+ * it. But a sheet with an ambiguous bubble goes to a grown-up instead, and the
+ * only event written on THAT path is `submitted` — `GradeSubmission` writes the
+ * `graded` later, from the verdict sheet, and knows nothing about a finish-code
+ * row. So a single ambiguous bubble was enough to lose the verdict entirely and
+ * pass a sheet whose companion was never played. It rides both events now, with
+ * the same shape and the same rules, checked here once.
+ */
+const gateField = (raw, push) => {
+  if (raw.companionGate === undefined) return;
+  const gate = raw.companionGate;
+  if (!gate || typeof gate !== 'object' || Array.isArray(gate) || !GATE_STATUSES.includes(gate.status)) {
+    push(`companionGate: must be an object with status ${GATE_STATUSES.join('|')} when present`);
+    return;
+  }
+  // `given` (optional) is the letters the CHILD marked — never the code they
+  // were supposed to copy. It is here because a status alone cannot tell a
+  // repair from a repeat: a child walking A -> AB -> ABC re-scans a different
+  // row every time and every one of them reads `wrong`. The marks are the only
+  // thing that changed, so the marks are what a re-scan compares.
+  if (gate.given !== undefined && gate.given !== null
+      && !(Array.isArray(gate.given) && gate.given.every(isNonEmptyString))) {
+    push('companionGate.given: must be an array of marked letters, or null, when present');
+  }
+};
+
+/**
+ * Fold one event's gate verdict into the derived state — the LATEST read wins.
+ *
+ * An event carrying no gate leaves the field exactly as it was rather than
+ * clearing it: an ungated sheet has nothing to say here, and `GradeSubmission`'s
+ * own gate-less `graded` must never read as "the gate was cleared".
+ */
+const applyGate = (s, e) => {
+  if (e.companionGate && GATE_STATUSES.includes(e.companionGate.status)) {
+    s.companionGate = {
+      status: e.companionGate.status,
+      ...(Array.isArray(e.companionGate.given) ? { given: [...e.companionGate.given] } : {}),
+    };
+  }
+};
 const percentIfPresent = (field) => (raw, push) => {
   if (raw[field] !== undefined && (typeof raw[field] !== 'number'
       || !Number.isFinite(raw[field]) || raw[field] < 0 || raw[field] > 100)) {
@@ -183,7 +242,17 @@ const SCHEMA = {
         }
       }),
   },
-  submitted: { fields: ['transport'], validate: oneOfField('transport', TRANSPORTS) },
+  // `companionGate` (optional, Task 11) is the scan's verdict on the sheet's
+  // finish-code row, stamped by the SCAN that turned the work in. It matters
+  // most on the path that never reaches a `graded` event of its own: an
+  // ambiguous bubble or a write-on sends the sheet to a grown-up, and this is
+  // the only event `RecordCardScanOutcome` writes before it hands over. The
+  // `graded` `GradeSubmission` writes afterwards carries no gate and — by the
+  // reducer's "absent never clears" rule — cannot erase this one.
+  submitted: {
+    fields: ['transport', 'companionGate'],
+    validate: allOf(oneOfField('transport', TRANSPORTS), gateField),
+  },
   graded: {
     // `passingPercent` (optional) is the bar IN EFFECT at grading time
     // (student-advocacy A4): a later pass-override edit must never move the
@@ -195,8 +264,17 @@ const SCHEMA = {
     // 6-of-8 that was voided down from nine reads identically to a 6-of-8 that
     // was always eight, and the difference is exactly what a later reader
     // needs: one of those sheets had a question nobody could mark.
-    fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds', 'voidedItemIds'],
+    // `companionGate` (optional, Task 10) is the scan's verdict on the sheet's
+    // finish-code row: `{status: 'satisfied'|'blank'|'wrong'}`. Stamped HERE,
+    // beside `passingPercent`, for the same reason — it is a fact about the
+    // evidence at grading time, and the close-out must read what the scanner
+    // saw rather than re-derive it from a companion record that may since
+    // have been satisfied by a different sheet. It carries no percent and no
+    // points: the gate can only VETO the pass (`evaluateOutcome`), never move
+    // the score. Absent on every ungated sheet, which is all of them today.
+    fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds', 'voidedItemIds', 'companionGate'],
     validate: (raw, push) => {
+      gateField(raw, push);
       if (raw.passingPercent !== undefined && (typeof raw.passingPercent !== 'number'
           || !Number.isFinite(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {
         push('passingPercent: must be a number from 1-100 when present');
@@ -230,6 +308,23 @@ const SCHEMA = {
       }
     },
   },
+  // A LATER SCAN RE-READ THE FINISH-CODE ROW (Task 11).
+  //
+  // This is how a sheet blocked by its gate is repaired: the child fills in the
+  // code bubbles and feeds the SAME card again. It carries the gate and nothing
+  // else — no percent, no attempt ids, no verdicts — because that is the entire
+  // point: only the gate row is re-read, and the score the sheet already earned
+  // stands untouched. Re-grading the questions on a repair scan would let a
+  // child add the right bubble beside a wrong answer and gain credit, turning a
+  // gate repair into a score repair.
+  //
+  // AN ANNOTATION, NOT A TRANSITION, and that is what makes it work at all. The
+  // sheet has usually already reached `outcome_recorded` by the time the child
+  // comes back with the code, and neither `graded` nor `submitted` is legal
+  // from there. This one is legal wherever the session is still alive, and it
+  // moves the lifecycle nowhere: the work did not un-happen, its verdict on one
+  // row simply changed.
+  companion_gate_read: { fields: ['companionGate'], validate: gateField },
   outcome_recorded: {
     fields: ['outcomeId', 'result', 'reason'],
     validate: allOf(stringField('outcomeId'), oneOfField('result', RESULTS)),
@@ -352,7 +447,15 @@ export const TRANSITIONS = Object.freeze({
   external_activity_assessed: ['outcome_recorded'],
   submitted: ['graded'],
   graded: ['outcome_recorded'],
-  outcome_recorded: ['rewarded', 'remediation_opened'],
+  // `outcome_recorded -> outcome_recorded` is a SUPERSEDING result, not a
+  // second one (Task 11): the reducer keeps only the latest, the outcome id is
+  // derived from the session so it does not change, and `#recordOutcomeAndSettle`
+  // only writes one when the RULE that decided has actually changed. It exists
+  // for exactly one move — a companion gate that was blocking this sheet has
+  // since been read again and now says something else — which is the only way a
+  // settled sheet can honestly change its verdict without a grown-up. Same
+  // shape as the `reprinted -> reprinted` self-edge above.
+  outcome_recorded: ['rewarded', 'remediation_opened', 'outcome_recorded'],
 });
 
 /**
@@ -370,11 +473,16 @@ export const TRANSITIONS = Object.freeze({
  *   lesson has not finished, so the state must stay `media_dispatched` — an
  *   advancing event here would release the linked quiz halfway through the
  *   video, which is the exact thing the gate exists to prevent.
+ * - `companion_gate_read` (Task 11) is a re-read of the finish-code row by a
+ *   later scan of the same sheet. It changes the verdict on one row, never the
+ *   lifecycle position: the work was handed in and graded exactly when it was,
+ *   and a child coming back with the code does not un-submit it.
  */
 export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'failed', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted',
   'reward_reconciled', 'reward_reconciliation_failed',
   'result_receipt_captured', 'result_receipt_reprinted', 'checkpoint_cleared',
+  'companion_gate_read',
 ]));
 /**
  * Annotations that are legal only from specific states, overriding the default
@@ -595,6 +703,11 @@ const emptyState = () => ({
   gradedPassingPercent: null,
   gradedCorrectCount: null,
   gradedTotalCount: null,
+  // The scan's verdict on the finish-code row (Task 10), or null on an
+  // ungated sheet. NOT part of the grade — it sits beside the percent rather
+  // than inside it, which is exactly how `evaluateOutcome` uses it: a veto
+  // over a sheet that has already scored well enough to pass.
+  companionGate: null,
   missedItemIds: [],
   // The questions a grown-up could not mark at all (`void`). They were left
   // out of the graded event's `totalCount`, so a reader that wants to know
@@ -734,6 +847,9 @@ const APPLY = {
   submitted(s, e) {
     s.transport = e.transport ?? null;
     s.lastFailure = null;
+    // The verdict the SCAN read, recorded before anyone knows whether this
+    // sheet will reach `graded` through the scanner or through a grown-up.
+    applyGate(s, e);
   },
   graded(s, e) {
     (Array.isArray(e.attemptIds) ? e.attemptIds : []).forEach((id) => {
@@ -745,6 +861,9 @@ const APPLY = {
     if (Number.isInteger(e.totalCount)) s.gradedTotalCount = e.totalCount;
     if (Array.isArray(e.missedItemIds)) s.missedItemIds = [...e.missedItemIds];
     if (Array.isArray(e.voidedItemIds)) s.voidedItemIds = [...e.voidedItemIds];
+    // A re-scan of the same sheet re-states the gate; the latest read wins,
+    // which is what makes Task 11's repair-by-re-scan possible at all.
+    applyGate(s, e);
     s.machineGrade = {
       percent: typeof e.percent === 'number' ? e.percent : null,
       passingPercent: typeof e.passingPercent === 'number' ? e.passingPercent : null,
@@ -754,8 +873,22 @@ const APPLY = {
       attemptIds: Array.isArray(e.attemptIds) ? [...e.attemptIds] : [],
     };
   },
+  companion_gate_read(s, e) {
+    // Latest read wins, same rule the `graded` and `submitted` stamps follow —
+    // that is what makes repair-by-re-scan work: the child fills in the code,
+    // feeds the sheet again, and this restates the row.
+    applyGate(s, e);
+  },
   outcome_recorded(s, e) {
-    s.outcome = { outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at };
+    // `reason` (already a declared field on this event, and already written by
+    // `CloseSessionOutcome`) is now carried into the derived state too: WHICH
+    // rule decided this is the difference between "you were below the bar" and
+    // "your read-along code was blank", and a reader that can only see
+    // `needs_remediation` cannot tell a child which one they hit.
+    s.outcome = {
+      outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at,
+      ...(isNonEmptyString(e.reason) ? { reason: e.reason } : {}),
+    };
     s.machineOutcome = { ...s.outcome };
   },
   rewarded(s, e) {
@@ -993,9 +1126,39 @@ export function reduceSession(events) {
       s.voidedItemIds = s.voidedItemIds.filter((itemId) => stillVoid.has(itemId));
     }
     if (s.outcome && typeof s.gradedPercent === 'number' && typeof s.gradedPassingPercent === 'number') {
+      // A CORRECTION MOVES THE SCORE. IT DOES NOT GET TO RE-DECIDE THE RULE.
+      //
+      // This projection used to carry its own copy of the pass rule —
+      // `gradedPercent >= gradedPassingPercent` — which is the whole rule for
+      // an ungated sheet and only part of it for anything else. Every clause
+      // `evaluateOutcome` had learned since was therefore erased by any grade
+      // correction at all, favourable or not: a sheet blocked by its
+      // finish-code row was promoted to `passed`, and so was one still waiting
+      // on a grown-up's sign-off. Delegating rather than duplicating is the
+      // fix, and it is the only one that stays fixed the next time that
+      // function grows a clause.
+      //
+      // `reason` travels with `result` for the same reason. Spreading the old
+      // reason over a freshly derived result produced records asserting
+      // `passed` beside `below_passing`, and every reader that decides what to
+      // SAY from the reason (the receipt's gate lines, the retry ticket) was
+      // reading a stale answer to a question that had just been re-asked.
+      //
+      // One honest gap: sign-off is not part of reducer state, so
+      // `requiresSignoff` defaults false here. That is exactly what this
+      // projection already did, so nothing regresses — but a session whose
+      // reward genuinely awaits a grown-up still projects as `passed` after a
+      // correction, and only the close-out (which CAN see the sign-off) is
+      // authoritative about that.
+      const reEvaluated = evaluateOutcome({
+        gradedPercent: s.gradedPercent,
+        passingPercent: s.gradedPassingPercent,
+        companionGate: s.companionGate,
+      });
       s.outcome = {
         ...s.outcome,
-        result: s.gradedPercent >= s.gradedPassingPercent ? 'passed' : 'needs_remediation',
+        result: reEvaluated.result,
+        reason: reEvaluated.reason,
         adjustedBy: effective.adjustedBy,
         adjustmentId: effective.adjustmentId,
       };

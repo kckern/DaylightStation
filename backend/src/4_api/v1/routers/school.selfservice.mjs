@@ -139,7 +139,10 @@ export function createSchoolSelfServiceRouter({
   }
   if (recordLessonCompanionProgress) {
     router.post('/companions/:id/progress', asyncHandler(async (req, res) => {
-      const result = await recordLessonCompanionProgress.execute({ id: req.params.id, ...(req.body || {}) });
+      // `id` LAST, so the path wins. Spread second, a body-supplied `id` would
+      // override the path parameter — and `id` is not one field among many, it
+      // selects which learner's companion record gets written.
+      const result = await recordLessonCompanionProgress.execute({ ...(req.body || {}), id: req.params.id });
       res.set('Cache-Control', 'no-store').json(result);
     }));
   }

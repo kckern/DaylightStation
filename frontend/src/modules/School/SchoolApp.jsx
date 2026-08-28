@@ -960,7 +960,23 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             title={active.descriptor.title}
             parts={active.descriptor.parts}
             progress={active.descriptor.state}
-            onProgress={(payload) => schoolApi.companionProgress(active.descriptor.companionId, payload)}
+            // Whether this companion gates a worksheet. It rides the backend
+            // handler's `open()` effect and `useSelfService`'s `launchTarget`
+            // already carries it onto the descriptor; this is the last hop. The
+            // player clamps rate and forward seeking only when it is 'required',
+            // so dropping it here would silently give every gated companion the
+            // optional affordances back.
+            participation={active.descriptor.participation}
+            // Answers with the VERDICT BODY, not `schoolApi`'s `{ok, status,
+            // data}` envelope: the player renders its completion card from what
+            // this resolves to, and an envelope has no `gate` on it — the card
+            // would never appear and nothing would say why. A transport failure
+            // resolves to null, which the player reads as "nothing is known"
+            // and leaves the last good verdict standing.
+            onProgress={async (payload) => {
+              const { ok, data } = await schoolApi.companionProgress(active.descriptor.companionId, payload);
+              return ok ? data : null;
+            }}
             onExit={() => setActive(null)}
           />
         )}
