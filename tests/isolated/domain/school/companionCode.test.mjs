@@ -20,6 +20,21 @@ describe('the finish-code alphabet', () => {
       expect(code).toEqual([...code].sort());
     }
   });
+
+  it('lists all 31 codes exactly once', () => {
+    const spellings = new Set(ALL_CODES.map((code) => code.join('')));
+    expect(spellings.size).toBe(31);
+  });
+
+  it('is frozen, so a caller cannot reshape the shared alphabet', () => {
+    expect(() => { ALL_CODES.push(['A']); }).toThrow();
+    expect(() => { ALL_CODES[0] = ['E']; }).toThrow();
+    expect(() => { ALL_CODES[0].push('B'); }).toThrow();
+    expect(() => { CODE_LETTERS.push('F'); }).toThrow();
+    expect(ALL_CODES).toHaveLength(31);
+    expect(ALL_CODES[0]).toEqual(['A']);
+    expect(CODE_LETTERS).toEqual(['A', 'B', 'C', 'D', 'E']);
+  });
 });
 
 describe('mintCode', () => {
@@ -28,11 +43,26 @@ describe('mintCode', () => {
     expect(mintCode({ rng: () => 0.999999 })).toEqual(ALL_CODES[30]);
   });
 
+  it('can reach every one of the 31 codes (D1)', () => {
+    const minted = new Set();
+    for (let i = 0; i < ALL_CODES.length; i += 1) {
+      minted.add(formatCode(mintCode({ rng: () => (i + 0.5) / ALL_CODES.length })));
+    }
+    expect(minted.size).toBe(31);
+  });
+
   it('never returns the same array instance twice', () => {
     const a = mintCode({ rng: () => 0 });
     const b = mintCode({ rng: () => 0 });
     expect(a).toEqual(b);
     expect(a).not.toBe(b);
+  });
+
+  it('refuses an rng outside [0, 1) instead of silently minting ABCDE', () => {
+    expect(() => mintCode({ rng: () => 1 })).toThrow(/\[0, 1\)/);
+    expect(() => mintCode({ rng: () => 17 })).toThrow(/\[0, 1\)/);
+    expect(() => mintCode({ rng: () => -0.5 })).toThrow(/\[0, 1\)/);
+    expect(() => mintCode({ rng: () => NaN })).toThrow(/\[0, 1\)/);
   });
 });
 
@@ -54,6 +84,11 @@ describe('codesMatch', () => {
     expect(codesMatch(['a'], ['A'])).toBe(false);
     expect(codesMatch(['F'], ['F'])).toBe(false);
   });
+
+  it('refuses a sparse array, whose holes `every` would otherwise skip', () => {
+    expect(codesMatch(new Array(3), new Array(3))).toBe(false);
+    expect(codesMatch([, 'A'], ['A'])).toBe(false); // eslint-disable-line no-sparse-arrays
+  });
 });
 
 describe('formatCode / parseCode', () => {
@@ -66,9 +101,23 @@ describe('formatCode / parseCode', () => {
     expect(parseCode('eca')).toEqual(['A', 'C', 'E']);
   });
 
+  it('tolerates surrounding whitespace on typed or pasted input', () => {
+    expect(parseCode(' ACE ')).toEqual(['A', 'C', 'E']);
+    expect(parseCode('ACE\n')).toEqual(['A', 'C', 'E']);
+    expect(parseCode('   ')).toBeNull();
+  });
+
   it('answers null for anything unusable', () => {
     expect(parseCode('')).toBeNull();
     expect(parseCode('ABF')).toBeNull();
     expect(parseCode(null)).toBeNull();
+  });
+
+  it('refuses to print a blank gate row for a code it cannot read', () => {
+    expect(formatCode(['F'])).toBeNull();
+    expect(formatCode(['a', 'c'])).toBeNull();
+    expect(formatCode('ACE')).toBeNull();
+    expect(formatCode([])).toBeNull();
+    expect(formatCode(null)).toBeNull();
   });
 });

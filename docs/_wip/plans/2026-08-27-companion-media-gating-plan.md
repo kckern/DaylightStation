@@ -96,6 +96,21 @@ describe('the finish-code alphabet', () => {
       expect(code).toEqual([...code].sort());
     }
   });
+
+  it('lists all 31 codes exactly once', () => {
+    const spellings = new Set(ALL_CODES.map((code) => code.join('')));
+    expect(spellings.size).toBe(31);
+  });
+
+  it('is frozen, so a caller cannot reshape the shared alphabet', () => {
+    expect(() => { ALL_CODES.push(['A']); }).toThrow();
+    expect(() => { ALL_CODES[0] = ['E']; }).toThrow();
+    expect(() => { ALL_CODES[0].push('B'); }).toThrow();
+    expect(() => { CODE_LETTERS.push('F'); }).toThrow();
+    expect(ALL_CODES).toHaveLength(31);
+    expect(ALL_CODES[0]).toEqual(['A']);
+    expect(CODE_LETTERS).toEqual(['A', 'B', 'C', 'D', 'E']);
+  });
 });
 
 describe('mintCode', () => {
@@ -104,11 +119,26 @@ describe('mintCode', () => {
     expect(mintCode({ rng: () => 0.999999 })).toEqual(ALL_CODES[30]);
   });
 
+  it('can reach every one of the 31 codes (D1)', () => {
+    const minted = new Set();
+    for (let i = 0; i < ALL_CODES.length; i += 1) {
+      minted.add(formatCode(mintCode({ rng: () => (i + 0.5) / ALL_CODES.length })));
+    }
+    expect(minted.size).toBe(31);
+  });
+
   it('never returns the same array instance twice', () => {
     const a = mintCode({ rng: () => 0 });
     const b = mintCode({ rng: () => 0 });
     expect(a).toEqual(b);
     expect(a).not.toBe(b);
+  });
+
+  it('refuses an rng outside [0, 1) instead of silently minting ABCDE', () => {
+    expect(() => mintCode({ rng: () => 1 })).toThrow(/\[0, 1\)/);
+    expect(() => mintCode({ rng: () => 17 })).toThrow(/\[0, 1\)/);
+    expect(() => mintCode({ rng: () => -0.5 })).toThrow(/\[0, 1\)/);
+    expect(() => mintCode({ rng: () => NaN })).toThrow(/\[0, 1\)/);
   });
 });
 
@@ -130,6 +160,11 @@ describe('codesMatch', () => {
     expect(codesMatch(['a'], ['A'])).toBe(false);
     expect(codesMatch(['F'], ['F'])).toBe(false);
   });
+
+  it('refuses a sparse array, whose holes `every` would otherwise skip', () => {
+    expect(codesMatch(new Array(3), new Array(3))).toBe(false);
+    expect(codesMatch([, 'A'], ['A'])).toBe(false); // eslint-disable-line no-sparse-arrays
+  });
 });
 
 describe('formatCode / parseCode', () => {
@@ -142,10 +177,24 @@ describe('formatCode / parseCode', () => {
     expect(parseCode('eca')).toEqual(['A', 'C', 'E']);
   });
 
+  it('tolerates surrounding whitespace on typed or pasted input', () => {
+    expect(parseCode(' ACE ')).toEqual(['A', 'C', 'E']);
+    expect(parseCode('ACE\n')).toEqual(['A', 'C', 'E']);
+    expect(parseCode('   ')).toBeNull();
+  });
+
   it('answers null for anything unusable', () => {
     expect(parseCode('')).toBeNull();
     expect(parseCode('ABF')).toBeNull();
     expect(parseCode(null)).toBeNull();
+  });
+
+  it('refuses to print a blank gate row for a code it cannot read', () => {
+    expect(formatCode(['F'])).toBeNull();
+    expect(formatCode(['a', 'c'])).toBeNull();
+    expect(formatCode('ACE')).toBeNull();
+    expect(formatCode([])).toBeNull();
+    expect(formatCode(null)).toBeNull();
   });
 });
 ```
@@ -180,8 +229,21 @@ Expected: FAIL — `Failed to resolve import "#domains/school/companionCode.mjs"
  * A code is ALWAYS stored and compared in alphabet order, so one code has exactly
  * one spelling everywhere it is written down.
  *
+ * NOTHING UNUSABLE IS EVER RENDERED AS BLANK. `formatCode` answers null, not `''`,
+ * for input it cannot read — `''` is the printed spelling of "no code at all", and
+ * a worksheet whose gate row printed blank is a gate no child can pass. Callers
+ * must treat null as a bug in the caller, not as an empty code.
+ *
+ * CASE-SENSITIVITY INVARIANT: `parseCode` is case-insensitive and normalises, but
+ * `codesMatch` is case-SENSITIVE and compares only canonical upper-case letters —
+ * `codesMatch(['a'], ['A'])` is false. Anything arriving from outside this module
+ * (an OMR read, a YAML field, a typed lookup) must go through `parseCode` FIRST;
+ * feeding raw letters straight to `codesMatch` fails the gate silently.
+ *
  * Pure: no clock, no I/O, no randomness of its own — `mintCode` takes an rng.
  */
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 export const CODE_LETTERS = Object.freeze(['A', 'B', 'C', 'D', 'E']);
 
 const LETTER_INDEX = new Map(CODE_LETTERS.map((letter, index) => [letter, index]));
@@ -194,9 +256,13 @@ export const ALL_CODES = Object.freeze(
   }),
 );
 
+/**
+ * Spread first: `Array.prototype.every` SKIPS holes, so a sparse array would
+ * otherwise pass this check without any of its slots being a real letter.
+ */
 const isCode = (value) => Array.isArray(value)
   && value.length > 0
-  && value.every((letter) => LETTER_INDEX.has(letter));
+  && [...value].every((letter) => LETTER_INDEX.has(letter));
 
 /** Alphabet order, duplicates dropped. Returns null for anything unusable. */
 const normalise = (value) => {
@@ -205,12 +271,26 @@ const normalise = (value) => {
 };
 
 /**
+ * Draws one of the 31 codes.
+ *
+ * The draw is validated rather than clamped. A clamp is silent exactly where it
+ * must not be: `Math.random` can never return negative or >= 1, so clamping only
+ * guards cases the contract already excludes — while a seeded PRNG handed in with
+ * the common `0..n` integer signature would clamp to `ABCDE` on EVERY call, minting
+ * the one shotgun-shaped code forever with no error. Loud on both ends instead.
+ *
  * @param {{rng?: () => number}} [opts] - injected so tests are deterministic
  * @returns {string[]} a fresh array, alphabet-ordered
+ * @throws {ValidationError} if rng() is not a finite number in [0, 1)
  */
 export function mintCode({ rng = Math.random } = {}) {
-  const index = Math.min(ALL_CODES.length - 1, Math.floor(rng() * ALL_CODES.length));
-  return [...ALL_CODES[index]];
+  const draw = rng();
+  if (!Number.isFinite(draw) || draw < 0 || draw >= 1) {
+    throw new ValidationError('Companion finish-code rng must return a number in [0, 1)', {
+      code: 'COMPANION_CODE_RNG_OUT_OF_RANGE', details: { value: draw },
+    });
+  }
+  return [...ALL_CODES[Math.floor(draw * ALL_CODES.length)]];
 }
 
 /** Exact set equality. A subset, a superset and a disjoint set are all false. */
@@ -221,16 +301,25 @@ export function codesMatch(given, expected) {
   return a.length === b.length && a.every((letter, i) => letter === b[i]);
 }
 
-/** The spelling a child reads on the completion card: `['A','C','E']` -> `'ACE'`. */
+/**
+ * The spelling a child reads on the completion card: `['A','C','E']` -> `'ACE'`.
+ * Null — never `''` — for input this cannot read, so a bad code refuses to print
+ * instead of printing a blank gate row. See the header.
+ */
 export function formatCode(code) {
   const normalised = normalise(code);
-  return normalised ? normalised.join('') : '';
+  return normalised ? normalised.join('') : null;
 }
 
-/** The inverse. Case-insensitive; null for anything that is not a real code. */
+/**
+ * The inverse. Case-insensitive and whitespace-tolerant (typed and pasted codes
+ * routinely carry it); null for anything that is not a real code.
+ */
 export function parseCode(text) {
-  if (typeof text !== 'string' || text.length === 0) return null;
-  return normalise(text.toUpperCase().split(''));
+  if (typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+  return normalise(trimmed.toUpperCase().split(''));
 }
 
 export default { CODE_LETTERS, ALL_CODES, mintCode, codesMatch, formatCode, parseCode };
@@ -238,7 +327,7 @@ export default { CODE_LETTERS, ALL_CODES, mintCode, codesMatch, formatCode, pars
 
 **Step 4: Run the test and watch it pass**
 
-Same command. Expected: PASS, 12 tests.
+Same command. Expected: PASS, 18 tests.
 
 **Step 5: Commit**
 
@@ -762,8 +851,27 @@ zero on a perfectly filled sheet.
 
 ### Task 10: The scan-time veto
 
+> **Corrected 2026-08-27 after Task 4.** An earlier draft of this plan aimed this task at
+> `ResolveCardScan.mjs`. **That is the wrong file.** `ResolveCardScan` never consumes
+> decoded entries — its only mention of them is a comment at line 322. The sole
+> `decodeOmrSheet` caller in the whole codebase is `SubmitPaperWork.fromOmrSheet`
+> (`SubmitPaperWork.mjs:216`), which hands `decoded.entries / ambiguous / blank` straight
+> into `execute`. That hand-off is where the veto goes.
+>
+> **One live hazard, found while proving the above.** `execute` grades by iterating
+> `expectedItems` — `questionItemIds(document)`, falling back to `roster ?? bank.items` —
+> and reads `entries?.[itemId]`. A gate entry that is not in `expectedItems` is simply
+> never visited, which is why the gate row is inert today. But if the gate row ever lands
+> inside `questionItemIds`, it WOULD be visited, miss `bankItemIds`, and be enqueued to the
+> review queue as `free_response` with `given` set to an **array** — a shape that path has
+> never seen. Task 8's renderer work must keep the gate row out of `questionItemIds`, or
+> exclude it explicitly here.
+>
+> Also established: `entries[gate]` is never an empty array. Zero hits route to `blank`
+> before the set branch, so a consumer may treat "present" as "at least one letter".
+
 **Files:**
-- Modify: `backend/src/3_applications/school/documents/ResolveCardScan.mjs`
+- Modify: `backend/src/3_applications/school/usecases/SubmitPaperWork.mjs`
 - Test: `tests/unit/applications/school/` — new file beside `resolveCardScanLeniency.test.mjs`
 
 **Behaviour:**
@@ -869,10 +977,30 @@ recorded as a teacher action.
 
 ## Definition of done
 
-- [ ] `frontend/node_modules/.bin/vitest run --config vitest.config.mjs tests/isolated/domain/school/` green
+- [ ] `frontend/node_modules/.bin/vitest run --config vitest.config.mjs tests/isolated/domain/school/` green.
+      **True pre-feature baseline: 46 files / 1610 tests** (at branch point `111716fdc`).
+      An earlier note circulated 47 / 1621 as the baseline; that figure already included
+      Task 1's own `companionCode.test.mjs` — subtract that one file and its 11 tests and
+      you land exactly on 46 / 1610, which is the arithmetic confirming which figure is
+      the branch-point one. Count from 46 / 1610 when judging whether a task added or lost
+      coverage. Do NOT hard-code a current total here: several tasks land in this one
+      directory, so the running count moves as work merges (it was 48 / 1652 partway
+      through Phase 1). Only the 46 / 1610 anchor is stable.
 - [ ] `npm run test:unit` green
-- [ ] `npm run lint` at 0 problems (it was brought to 0 in `33eac3fdf`; do not regress it)
-- [ ] `npm run audit:layers` green — the new domain modules must not import upward
+- [ ] `npm run lint --prefix frontend` no worse than the branch-point baseline of
+      **9 problems (3 errors, 6 warnings)**. Frontend only — gates Phase 4.
+      Notes, all verified 2026-08-27, because two of them cost an agent time already:
+      there is **no root `lint` script**; the config is the legacy
+      `frontend/.eslintrc.cjs`, NOT a flat `eslint.config.*`, so `npx eslint` from the
+      repo root reports "couldn't find an eslint config" and searching for
+      `eslint.config.*` finds nothing; and although `33eac3fdf` ("get npm run lint to 0
+      problems") IS an ancestor of this branch, the tree has since drifted back to 9.
+      Do not claim a clean lint — match or beat 9.
+- [ ] `npm run audit:layers` green. This is a **ratchet with a per-rule baseline**, not a
+      pass/fail: every rule prints `N (baseline N) ok`. A new domain module must not raise
+      any count. Baseline at branch point: `api-no-config 1`, `api-handrolled-500 86`,
+      `apps-success-false 47`, `no-userdataservice 93`, `domains-tojson 67`, and
+      `no-applications-alias`, `no-deep-relative-layer-cross`, `no-storage-paths` all 0.
 - [ ] A worksheet with `participation: optional` behaves exactly as it does today
 - [ ] Requirements doc §14 gap list updated to match what was actually built
 

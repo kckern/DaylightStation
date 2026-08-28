@@ -17,8 +17,21 @@
  * A code is ALWAYS stored and compared in alphabet order, so one code has exactly
  * one spelling everywhere it is written down.
  *
+ * NOTHING UNUSABLE IS EVER RENDERED AS BLANK. `formatCode` answers null, not `''`,
+ * for input it cannot read — `''` is the printed spelling of "no code at all", and
+ * a worksheet whose gate row printed blank is a gate no child can pass. Callers
+ * must treat null as a bug in the caller, not as an empty code.
+ *
+ * CASE-SENSITIVITY INVARIANT: `parseCode` is case-insensitive and normalises, but
+ * `codesMatch` is case-SENSITIVE and compares only canonical upper-case letters —
+ * `codesMatch(['a'], ['A'])` is false. Anything arriving from outside this module
+ * (an OMR read, a YAML field, a typed lookup) must go through `parseCode` FIRST;
+ * feeding raw letters straight to `codesMatch` fails the gate silently.
+ *
  * Pure: no clock, no I/O, no randomness of its own — `mintCode` takes an rng.
  */
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 export const CODE_LETTERS = Object.freeze(['A', 'B', 'C', 'D', 'E']);
 
 const LETTER_INDEX = new Map(CODE_LETTERS.map((letter, index) => [letter, index]));
@@ -31,9 +44,13 @@ export const ALL_CODES = Object.freeze(
   }),
 );
 
+/**
+ * Spread first: `Array.prototype.every` SKIPS holes, so a sparse array would
+ * otherwise pass this check without any of its slots being a real letter.
+ */
 const isCode = (value) => Array.isArray(value)
   && value.length > 0
-  && value.every((letter) => LETTER_INDEX.has(letter));
+  && [...value].every((letter) => LETTER_INDEX.has(letter));
 
 /** Alphabet order, duplicates dropped. Returns null for anything unusable. */
 const normalise = (value) => {
@@ -42,12 +59,26 @@ const normalise = (value) => {
 };
 
 /**
+ * Draws one of the 31 codes.
+ *
+ * The draw is validated rather than clamped. A clamp is silent exactly where it
+ * must not be: `Math.random` can never return negative or >= 1, so clamping only
+ * guards cases the contract already excludes — while a seeded PRNG handed in with
+ * the common `0..n` integer signature would clamp to `ABCDE` on EVERY call, minting
+ * the one shotgun-shaped code forever with no error. Loud on both ends instead.
+ *
  * @param {{rng?: () => number}} [opts] - injected so tests are deterministic
  * @returns {string[]} a fresh array, alphabet-ordered
+ * @throws {ValidationError} if rng() is not a finite number in [0, 1)
  */
 export function mintCode({ rng = Math.random } = {}) {
-  const index = Math.min(ALL_CODES.length - 1, Math.floor(rng() * ALL_CODES.length));
-  return [...ALL_CODES[index]];
+  const draw = rng();
+  if (!Number.isFinite(draw) || draw < 0 || draw >= 1) {
+    throw new ValidationError('Companion finish-code rng must return a number in [0, 1)', {
+      code: 'COMPANION_CODE_RNG_OUT_OF_RANGE', details: { value: draw },
+    });
+  }
+  return [...ALL_CODES[Math.floor(draw * ALL_CODES.length)]];
 }
 
 /** Exact set equality. A subset, a superset and a disjoint set are all false. */
@@ -58,16 +89,25 @@ export function codesMatch(given, expected) {
   return a.length === b.length && a.every((letter, i) => letter === b[i]);
 }
 
-/** The spelling a child reads on the completion card: `['A','C','E']` -> `'ACE'`. */
+/**
+ * The spelling a child reads on the completion card: `['A','C','E']` -> `'ACE'`.
+ * Null — never `''` — for input this cannot read, so a bad code refuses to print
+ * instead of printing a blank gate row. See the header.
+ */
 export function formatCode(code) {
   const normalised = normalise(code);
-  return normalised ? normalised.join('') : '';
+  return normalised ? normalised.join('') : null;
 }
 
-/** The inverse. Case-insensitive; null for anything that is not a real code. */
+/**
+ * The inverse. Case-insensitive and whitespace-tolerant (typed and pasted codes
+ * routinely carry it); null for anything that is not a real code.
+ */
 export function parseCode(text) {
-  if (typeof text !== 'string' || text.length === 0) return null;
-  return normalise(text.toUpperCase().split(''));
+  if (typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+  return normalise(trimmed.toUpperCase().split(''));
 }
 
 export default { CODE_LETTERS, ALL_CODES, mintCode, codesMatch, formatCode, parseCode };
