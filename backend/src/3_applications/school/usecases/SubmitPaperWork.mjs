@@ -37,6 +37,7 @@ import { questionItemIds, questionPrompts } from '#domains/school/documents/docu
 import { decodeOmrSheet } from '#domains/school/documents/omrForm.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 import { worksheetInstanceRoster } from '#domains/school/questionBankV2.mjs';
+import { COMPANION_GATE_ITEM_ID } from '#domains/school/companionCode.mjs';
 
 /** States from which handing work in is a legal move. */
 const SUBMITTABLE = new Set(['issued', 'reprinted', 'media_completed']);
@@ -90,6 +91,23 @@ export class SubmitPaperWork {
    *                     message: string, document: object|null, pointsAt?: object }>}
    */
   async execute({ sessionId, entries = {}, ambiguous = [], blank = [], submittedBy = null } = {}) {
+    // THIS LANE CANNOT ENFORCE A GATE, SO IT REFUSES TO SEE ONE.
+    //
+    // Grading here is exactly `questionItemIds(document)`, which skips the gate
+    // row by design, and nothing else in this file reads one. A gate entry that
+    // arrived would therefore be decoded and DISCARDED — the sheet ungated and
+    // passing on score alone, with nobody told. The card lane (`ResolveCardScan`)
+    // is where a gate is actually read and vetoed.
+    //
+    // Unreachable today: every worksheet-instance render is card-backed, and
+    // `DocumentPdfRenderer` pushes form-map marks only when a render is not, so
+    // gate marks never reach a form map. That is why this THROWS rather than
+    // degrading politely — the day someone makes that lane reachable, it must
+    // fail loudly instead of ungating a sheet in silence.
+    if (entries && Object.prototype.hasOwnProperty.call(entries, COMPANION_GATE_ITEM_ID)) {
+      this.#logger.error?.('school.submit.companion-gate-unenforceable', { sessionId, submittedBy });
+      throw new Error(`SubmitPaperWork cannot enforce a companion gate: session '${sessionId}' handed in a '${COMPANION_GATE_ITEM_ID}' entry this lane would discard`);
+    }
     const nowIso = this.#clock().toISOString();
     const state = reduceSession(await this.#sessions.readEvents(sessionId));
     if (!state.sessionId) return this.#unavailable(sessionId, 'We could not find that work.');
