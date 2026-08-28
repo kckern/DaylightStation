@@ -58,3 +58,32 @@ export function getStaffPosition(midiNote, accidental) {
 
   return { position, clef, isSharp, isFlat };
 }
+
+/**
+ * Diatonic distance between the two clefs' bottom lines: treble's E4 (30) sits
+ * twelve diatonic steps above bass's G2 (18). Reading a treble position on a
+ * bass staff means adding this; the other way, subtracting it.
+ */
+export const CLEF_POSITION_OFFSET = 12;
+
+/**
+ * Staff position of a pitch on a CHOSEN clef.
+ *
+ * getStaffPosition picks a clef per pitch, which is right for a lone note on
+ * its own staff and wrong for a sequence: every note of a run has to be
+ * measured against the one clef the staff actually draws, or a middle C reads
+ * as if it were sitting where a bass-clef middle C sits.
+ *
+ * @param {number} midiNote
+ * @param {'treble'|'bass'} [clef] - omit to accept the pitch's own clef.
+ * @param {'sharp'|'flat'} [accidental] - spelling override (see spellAccidental).
+ * @returns {{ position: number, clef: 'treble'|'bass', isSharp: boolean, isFlat: boolean }}
+ */
+export function getStaffPositionOnClef(midiNote, clef, accidental) {
+  const natural = getStaffPosition(midiNote, accidental);
+  if (!clef || clef === natural.clef) return natural;
+  const position = clef === 'bass'
+    ? natural.position + CLEF_POSITION_OFFSET
+    : natural.position - CLEF_POSITION_OFFSET;
+  return { ...natural, position, clef };
+}
