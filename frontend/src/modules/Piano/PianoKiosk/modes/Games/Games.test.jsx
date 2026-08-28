@@ -13,9 +13,52 @@ const gameBudget = vi.hoisted(() => ({ state: 'off', secondsLeft: 0, warn: false
 // with 15/15 green the first time around.
 const gameBudgetMeter = vi.hoisted(() => vi.fn());
 
+// A stand-in for a real game. Every registered game is a lazy chunk that never
+// resolves in this environment, so the match-boundary wiring — does the game
+// REMOUNT on a rematch? does it see the context? — cannot be observed through
+// one. `probe-game` is an ordinary component registered alongside the real
+// registry (getGameIds is untouched, so the picker is exactly as it was) that
+// counts its own mounts and exposes the context it was handed.
+const probe = vi.hoisted(() => ({ mounts: 0, armed: null, sawContext: false }));
+const gateProps = vi.hoisted(() => ({ last: null, mounts: 0 }));
+
 // Keep the games-config fetch hermetic (no real network).
 vi.mock('../../../../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn(() => Promise.resolve({ parsed: { games: {} } })),
+}));
+vi.mock('../../../gameRegistry.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  const { useContext, useEffect } = await import('react');
+  const { default: MatchGateContext } = await import('./MatchGateContext.js');
+  function ProbeGame() {
+    const matchGate = useContext(MatchGateContext);
+    probe.sawContext = matchGate !== null && matchGate !== undefined;
+    probe.armed = matchGate?.armed ?? null;
+    useEffect(() => { probe.mounts += 1; }, []);
+    return (
+      <div data-testid="probe-game">
+        <button type="button" onClick={() => matchGate?.requestRematch()}>probe-rematch</button>
+      </div>
+    );
+  }
+  const entry = {
+    id: 'probe-game', label: 'Probe Game', status: 'released', icon: 'game', LazyComponent: ProbeGame,
+  };
+  return { ...actual, getGameEntry: (id) => (id === 'probe-game' ? entry : actual.getGameEntry(id)) };
+});
+// The gate's own behaviour (ladder, material, fail-open) is pinned by
+// GameGate.test.jsx. What is under test HERE is the host's state machine, so
+// the gate is a stub with one button per terminal outcome.
+vi.mock('./GameGate.jsx', () => ({
+  default: (props) => {
+    gateProps.last = props;
+    return (
+      <div data-testid="game-gate">
+        <button type="button" onClick={() => props.onPassed({ score: 1 })}>gate-pass</button>
+        <button type="button" onClick={() => props.onLeave()}>gate-leave</button>
+      </div>
+    );
+  },
 }));
 vi.mock('../../useSchoolGameAccess.js', () => ({
   default: () => ({
@@ -65,6 +108,13 @@ beforeEach(() => {
   gameBudget.secondsLeft = 0;
   gameBudget.warn = false;
   gameBudgetMeter.mockImplementation(() => gameBudget);
+  probe.mounts = 0;
+  probe.armed = null;
+  probe.sawContext = false;
+  gateProps.last = null;
+  // Which physical kiosk this browser is. Captured from the launch URL and
+  // persisted; the host reads it rather than stamping a shared literal.
+  localStorage.setItem('piano.kioskDeviceId', 'yellow-room-tablet');
 });
 
 describe('Games mode', () => {
@@ -198,7 +248,7 @@ describe('Games mode — budget gate (gate 3, below the school lock)', () => {
     expect(gameBudgetMeter).toHaveBeenCalledWith(expect.objectContaining({
       active: true,
       learnerId: 'learner1',
-      deviceId: 'piano-kiosk',
+      deviceId: 'yellow-room-tablet',
     }));
   });
 
@@ -210,5 +260,106 @@ describe('Games mode — budget gate (gate 3, below the school lock)', () => {
   it('does not meter (active:false) when gameLimit.enabled is explicitly false', () => {
     renderGames('/games/tetris', 'learner1', { ...testConfig, gameLimit: { enabled: false } });
     expect(gameBudgetMeter).toHaveBeenCalledWith(expect.objectContaining({ active: false }));
+  });
+
+  it('stamps the device the meter is told about with THIS kiosk, not a shared literal', () => {
+    // Two kiosks that both call themselves 'piano-kiosk' meter into one bucket,
+    // so a device-wide daily cap is spent by whichever tablet is used first.
+    localStorage.setItem('piano.kioskDeviceId', 'playroom-tablet');
+    renderGames('/games/tetris', 'learner1', { ...testConfig, gameLimit: { enabled: true } });
+    expect(gameBudgetMeter).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'playroom-tablet' }));
+  });
+});
+
+// Gate 2: the playing challenge at a match boundary. It sits UNDER the school
+// lock (gate 1, in Games()) and OVER the budget lock (gate 3) — passing it is
+// what reaches a match, and only then does the day's budget have an opinion.
+describe('Games mode — match gate (gate 2)', () => {
+  const gatedConfig = { ...testConfig, gameGate: { enabled: true } };
+
+  it('renders the gate INSTEAD of the game when the gate is enabled (D11: same route, game unmounted)', () => {
+    renderGames('/games/probe-game', 'learner1', gatedConfig);
+    expect(screen.getByTestId('game-gate')).toBeTruthy();
+    expect(screen.queryByTestId('probe-game')).toBeNull();
+    expect(probe.mounts).toBe(0);
+  });
+
+  it('hands the gate the roster slug and the household gameGate block', () => {
+    renderGames('/games/probe-game', 'learner1', gatedConfig);
+    expect(gateProps.last.learnerId).toBe('learner1');
+    expect(gateProps.last.gateConfig).toEqual({ enabled: true });
+  });
+
+  it('mounts the game once the gate passes', () => {
+    renderGames('/games/probe-game', 'learner1', gatedConfig);
+    fireEvent.click(screen.getByText('gate-pass'));
+    expect(screen.getByTestId('probe-game')).toBeTruthy();
+    expect(screen.queryByTestId('game-gate')).toBeNull();
+    expect(probe.mounts).toBe(1);
+  });
+
+  it('leaves the game entirely when the child taps Leave at the gate', () => {
+    renderGames('/games/probe-game', 'learner1', gatedConfig);
+    fireEvent.click(screen.getByText('gate-leave'));
+    // Back at the picker: the gate is not a wall you sit at.
+    expect(screen.getByText('Space Invaders')).toBeTruthy();
+    expect(screen.queryByTestId('game-gate')).toBeNull();
+    expect(probe.mounts).toBe(0);
+  });
+
+  it('re-arms the gate on requestRematch, and the next pass mounts a FRESH match', () => {
+    renderGames('/games/probe-game', 'learner1', gatedConfig);
+    fireEvent.click(screen.getByText('gate-pass'));
+    expect(probe.mounts).toBe(1);
+
+    fireEvent.click(screen.getByText('probe-rematch'));
+    expect(screen.getByTestId('game-gate')).toBeTruthy();
+    expect(screen.queryByTestId('probe-game')).toBeNull();
+
+    fireEvent.click(screen.getByText('gate-pass'));
+    // A remount, not a re-render: the match is new, keyed by matchId.
+    expect(probe.mounts).toBe(2);
+  });
+
+  it('tells the mounted game the gate is armed', () => {
+    renderGames('/games/probe-game', 'learner1', gatedConfig);
+    fireEvent.click(screen.getByText('gate-pass'));
+    expect(probe.sawContext).toBe(true);
+    expect(probe.armed).toBe(true);
+  });
+
+  it('does not meter while the child is at the gate, and does once the match starts (D13)', () => {
+    const config = { ...gatedConfig, gameLimit: { enabled: true } };
+    renderGames('/games/probe-game', 'learner1', config);
+    expect(gameBudgetMeter).toHaveBeenLastCalledWith(expect.objectContaining({ active: false }));
+
+    fireEvent.click(screen.getByText('gate-pass'));
+    expect(gameBudgetMeter).toHaveBeenLastCalledWith(expect.objectContaining({ active: true }));
+  });
+
+  it('never renders the gate when gameGate is absent — and a rematch still starts a fresh match', () => {
+    renderGames('/games/probe-game', 'learner1', testConfig);
+    expect(screen.queryByTestId('game-gate')).toBeNull();
+    expect(probe.mounts).toBe(1);
+    expect(probe.sawContext).toBe(true);
+    expect(probe.armed).toBe(false);
+
+    fireEvent.click(screen.getByText('probe-rematch'));
+    expect(screen.queryByTestId('game-gate')).toBeNull();
+    expect(probe.mounts).toBe(2);
+  });
+
+  it('never renders the gate when gameGate.enabled is explicitly false', () => {
+    renderGames('/games/probe-game', 'learner1', { ...testConfig, gameGate: { enabled: false } });
+    expect(screen.queryByTestId('game-gate')).toBeNull();
+    expect(screen.getByTestId('probe-game')).toBeTruthy();
+    expect(probe.armed).toBe(false);
+  });
+
+  it('keeps the school lock strictly above the gate (gate 1 before gate 2)', () => {
+    schoolAccess.unlocked = false;
+    renderGames('/games/probe-game', 'learner1', gatedConfig);
+    expect(screen.getByText('Games are locked')).toBeTruthy();
+    expect(screen.queryByTestId('game-gate')).toBeNull();
   });
 });

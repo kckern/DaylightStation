@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import MatchGateContext from '../../../PianoKiosk/modes/Games/MatchGateContext.js';
 
 let localSessionSequence = 0;
 
@@ -134,9 +135,30 @@ export function useAddressedBoardGame({
     });
   }, [gameId, gameSessionId, logger]);
 
+  // Who, if anyone, owns the boundary between one match and the next. Read
+  // through a ref so `restart` keeps its stable identity — it is passed to
+  // `useAnyKeyToContinue`, and a callback that changes identity every render
+  // there re-arms the key listener under a player's fingers.
+  const matchGate = useContext(MatchGateContext);
+  const matchGateRef = useRef(matchGate);
+  matchGateRef.current = matchGate;
+
   // The transcript belongs to the game, so clearing it does too — restart resets
   // everything ranked-ness depends on and hands back the new session id.
+  //
+  // Unless a gate stands at this boundary (D11): then the host unmounts this
+  // game and mounts the challenge, and the next match arrives as a REMOUNT with
+  // fresh state of its own. Resetting here first would mint a seed and a
+  // session id for a match nobody plays, and the unmount archive above would
+  // then file that phantom as abandoned. `null` from the context — the office
+  // screen, PianoVisualizer, anywhere outside the kiosk — is the ordinary case
+  // and restarts exactly as before.
   const restart = useCallback(() => {
+    const gate = matchGateRef.current;
+    if (gate?.armed) {
+      gate.requestRematch();
+      return null;
+    }
     setLocalPractice(false);
     rankedRef.current = true;
     savedRef.current = false;

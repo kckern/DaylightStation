@@ -23,10 +23,14 @@
 // `innerHTML` to Chromium. What is measured is what the component builds.
 //
 // WHY THE PARENT BOX IS WHAT IT IS. `.piano-app` is `100vw/100vh`, a flex
-// column, `overflow: hidden`; the mode below it is `flex: 1 1 auto`. The gate
-// replaces the game at that seam (D11). The viewport is 1280x800 — the kiosk's
-// declared design canvas (`display.designWidth/designHeight`), i.e. the
-// SM-T590's CSS viewport.
+// column, `overflow: hidden`. `GameHost` renders `.piano-game-fullscreen`
+// directly inside it (PianoApp's <Routes> adds no wrapper of its own), and the
+// gate replaces the game INSIDE that same stage (D11) — one route, one box.
+// So that is the parent measured here: an earlier version of this file guessed
+// at a `.piano-mode.piano-mode--games` wrapper that the seam turned out not to
+// have, and a fixture that measures a box the app never builds is worth less
+// than no measurement. The viewport is 1280x800 — the kiosk's declared design
+// canvas (`display.designWidth/designHeight`), i.e. the SM-T590's CSS viewport.
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -128,8 +132,8 @@ async function markupOf(trigger) {
 }
 
 /**
- * Put that markup where the gate actually lives — inside the app shell's mode
- * region — and measure it at the kiosk canvas.
+ * Put that markup where the gate actually lives — inside the fullscreen game
+ * stage `GameHost` mounts it into — and measure it at the kiosk canvas.
  */
 async function measure(page, css, markup) {
   await page.setViewportSize(KIOSK);
@@ -139,7 +143,7 @@ async function measure(page, css, markup) {
        ${css}
      </style></head><body>
        <div class="piano-app">
-         <div class="piano-mode piano-mode--games">${markup}</div>
+         <div class="piano-game-fullscreen">${markup}</div>
        </div>
      </body></html>`,
     { waitUntil: 'load' },
@@ -175,6 +179,12 @@ async function measure(page, css, markup) {
           reachable: Boolean(hit) && (hit === b || b.contains(hit)),
         };
       }),
+      // The buttons the RUN owns, inside the gate. Their paint is the whole
+      // question for the cascade check below.
+      runButtons: [...document.querySelectorAll('.piano-exercise-run button')].map((b) => ({
+        label: b.textContent,
+        background: getComputedStyle(b).backgroundColor,
+      })),
       documentScrolls: document.documentElement.scrollHeight > viewport.height,
     };
   }, KIOSK);
@@ -217,6 +227,29 @@ describe('GameGate geometry at the kiosk canvas (1280x800, real compiled SCSS)',
     expect(measured.gate.bottom).toBeLessThanOrEqual(KIOSK.height);
     expect(measured.documentScrolls,
       'the kiosk page scrolls — the canvas is fixed and nothing may push past it').toBe(false);
+  });
+
+  it('leaves the embedded run\'s buttons painted by the RUN, not restyled by the gate', async () => {
+    // Two sheets, one element. `.piano-game-gate button` and
+    // `.piano-exercise-run button` have identical specificity, and the gate's
+    // sheet is imported later — so an unscoped `button` rule here silently
+    // repaints "Begin challenge" and "Continue" as flat surface chrome. jsdom
+    // resolves no cascade at all, so only a measurement can see it; the gate's
+    // own rule is scoped to `> button` and `__actions button` for this reason.
+    const measured = await measure(page, css, await markupOf());
+    const dumped = JSON.stringify(measured.runButtons);
+    const begin = measured.runButtons.find((b) => b.label === 'Begin challenge');
+
+    expect(begin, `the run's primary action is not in the markup — ${dumped}`).toBeTruthy();
+    // The run's accent — --ex-accent, i.e. --piano-accent #2ec46f.
+    expect(begin.background, `Begin challenge lost the run's accent — ${dumped}`)
+      .toBe('rgb(46, 196, 111)');
+    // And nothing the run owns is wearing the GATE's surface (--gg-surface
+    // #1f1f26), which is what an unscoped rule here paints them.
+    for (const button of measured.runButtons) {
+      expect(button.background, `${button.label} was repainted by the gate — ${dumped}`)
+        .not.toBe('rgb(31, 31, 38)');
+    }
   });
 
   it('puts all three failure buttons on screen as reachable tap targets', async () => {

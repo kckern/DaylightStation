@@ -280,6 +280,37 @@ describe('gameLimit config', () => {
   });
 });
 
+// gameGate has the identical failure mode gameLimit had: the host branches on
+// `enabled`, but the whole block is the gate component's own config (passScore,
+// retriesBeforeDegrade, material, …). A key absent from this projection is
+// silently dropped, and a gate whose config never arrives is a gate that is
+// permanently off while the YAML says it is on.
+describe('gameGate config', () => {
+  it('defaults to disabled — an unconfigured piano never stands a challenge in front of a game', () => {
+    expect(resolvePianoConfig({}, 'default').gameGate).toEqual({ enabled: false });
+  });
+
+  it('passes the whole gameGate block through (passScore, retries, material, …)', () => {
+    const raw = {
+      gameGate: {
+        enabled: true, every: 'match', passScore: 0.75, retriesBeforeDegrade: 2,
+        climbAfterCleanPasses: 4, metered: false,
+        material: [{ kind: 'exercise', collections: ['scales'] }],
+      },
+    };
+    expect(resolvePianoConfig(raw, 'default').gameGate).toEqual(raw.gameGate);
+  });
+
+  it('lets a per-piano gameGate override the shared one', () => {
+    const raw = {
+      gameGate: { enabled: true, passScore: 0.9 },
+      pianos: { upstairs: { gameGate: { enabled: false } } },
+    };
+    expect(resolvePianoConfig(raw, 'upstairs').gameGate.enabled).toBe(false);
+    expect(resolvePianoConfig(raw, 'default').gameGate.enabled).toBe(true);
+  });
+});
+
 // Curfew is config-driven: the code ships it off, and the household's cut-off
 // comes from data/household/piano/config.yml — shared for every piano, or
 // per-piano when one kiosk keeps different hours.
