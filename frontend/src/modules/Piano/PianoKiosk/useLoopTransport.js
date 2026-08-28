@@ -17,6 +17,12 @@ import { buildLoopCycle } from '@shared-music/loopScheduler.mjs';
  *
  * @param {{layers:Array, bpm:number, pressNote:Function, releaseNote:Function}} p
  */
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'piano-loop-transport' });
+  return _logger;
+}
+
 export function useLoopTransport({ layers, bpm = 120, pressNote, releaseNote }) {
   const cycle = useMemo(() => buildLoopCycle(layers || [], { bpm }), [layers, bpm]);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -27,12 +33,6 @@ export function useLoopTransport({ layers, bpm = 120, pressNote, releaseNote }) 
   const startWallRef = useRef(0);
   const firedIdxRef = useRef(0);
   const activeRef = useRef(new Set());
-
-  let _logger;
-  const logger = () => {
-    if (!_logger) _logger = getLogger().child({ component: 'piano-loop-transport' });
-    return _logger;
-  };
 
   const releaseAll = useCallback(() => {
     activeRef.current.forEach((n) => { try { releaseNote(n); } catch { /* ignore */ } });

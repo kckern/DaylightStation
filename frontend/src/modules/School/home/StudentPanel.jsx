@@ -7,6 +7,7 @@ import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import { useLearnerFeedback } from './useLearnerFeedback.js';
 import { labelize } from '../teacher/labelize.js';
 import { useLearnerStanding } from './useLearnerStanding.js';
+import { derivePanelModel, deriveLatestScore } from './studentPanelModel.js';
 
 /**
  * The student panel — the top of the home's meta rail. This is where the old
@@ -18,40 +19,6 @@ import { useLearnerStanding } from './useLearnerStanding.js';
  * Unclaimed, the panel IS the claim affordance: a personal dashboard for
  * nobody is meaningless, so it asks who's learning instead.
  */
-
-/** Pure model: which report leads, today's metric, the done flip, last activity. */
-export function derivePanelModel(reports) {
-  const list = reports ?? [];
-  const actionable = list.filter((r) => r.next && r.state !== 'satisfied' && r.state !== 'complete');
-  const primary = actionable[0] ?? null;
-  const today = primary?.metrics?.find((m) => m.kind === 'progress' && m.scope === 'today') ?? null;
-  const allDone = actionable.length === 0 && list.length > 0;
-  const lastActivity = list.reduce(
-    (max, r) => (r.lastActivity && (!max || r.lastActivity > max) ? r.lastActivity : max),
-    null,
-  );
-  return { primary, today, allDone, lastActivity };
-}
-
-/**
- * Pure model: the most recently touched results lane, as an accuracy percent.
- * Results are per-bank lifetime aggregates (spec §5 keeps quiz and flashcard
- * lanes separate), so this is "how you're doing on the thing you last did",
- * not a single attempt's score.
- */
-export function deriveLatestScore(results, bankTitles) {
-  let best = null;
-  for (const r of results ?? []) {
-    for (const lane of ['quiz', 'flashcard']) {
-      const l = r[lane];
-      if (l?.lastAt && l.attempts > 0 && (!best || l.lastAt > best.lastAt)) {
-        best = { lastAt: l.lastAt, pct: Math.round((l.correct / l.attempts) * 100), bankId: r.bankId };
-      }
-    }
-  }
-  if (!best) return null;
-  return { label: bankTitles?.get(best.bankId) ?? best.bankId, pct: best.pct };
-}
 
 /** Kiosk house rule: inline SVG, never unicode glyphs (WebView renders
  * unrecognized unicode as tofu boxes). currentColor so it inherits the

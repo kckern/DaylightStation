@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo } from 'react';
-import { computeZoomTarget } from './ImageFrame.jsx';
+import { computeZoomTarget } from './imageFrameZoomTarget.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import './TitleCardRenderer.scss';
 

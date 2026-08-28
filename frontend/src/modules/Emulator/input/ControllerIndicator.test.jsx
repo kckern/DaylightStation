@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { ControllerIndicator, faultLabel, ariaLabelFor } from './ControllerIndicator.jsx';
+import { ControllerIndicator } from './ControllerIndicator.jsx';
+import { faultLabel, ariaLabelFor } from './controllerIndicatorLabels.js';
 
 describe('ControllerIndicator quiet states', () => {
   it('shows a dim pad dot and a keyboard hint when nothing is connected', () => {

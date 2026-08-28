@@ -13,20 +13,11 @@ import { supportsSave, freshLaunch, loadLaunch } from '../../../Emulator/core/la
 import { buildFitnessGameGate } from './fitnessGameGate.js';
 import { useIdentity } from '../../identity/IdentityProvider';
 import UnlockPrompt from '../../player/overlays/UnlockPrompt.jsx';
+import { fullscreenClass } from './emulatorGameWidgetLayout.js';
 
 const ENGINE_PATH = '/api/v1/emulator/engine/';
 const DEFAULT_AUTOSAVE_SECONDS = 15;
 const DEFAULT_IDLE_RELOCK_MINUTES = 10;
-
-/**
- * Class for the portaled fullscreen wrapper. The running emulator is rendered via
- * createPortal to document.body, so it escapes the `.fitness-app-container.kiosk-ui`
- * cursor-hide scope. Tagging the wrapper with `kiosk-ui` lets EmulatorConsole.scss
- * re-apply the cursor-hide rule there.
- */
-export function fullscreenClass(isKiosk) {
-  return `fitness-emulator-fullscreen${isKiosk ? ' kiosk-ui' : ''}`;
-}
 
 /**
  * Resolve the per-controller gamepad value2 override (special mappings live in

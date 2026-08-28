@@ -17,6 +17,7 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 import { resolveCoursePolicy, nextLectureAfter } from './coursePolicy.js';
 import { useCourseTabPolicy } from './useCourseTabPolicy.js';
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
+import { resolveCourseGroups } from './courseGroups.js';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -25,34 +26,6 @@ const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 // cadence on the yellow-room tablet) without keeping an abandoned paused tab
 // lit for long. Leaving the player releases the hold immediately regardless.
 const VIDEO_WAKE_GRACE_MS = 150_000;
-
-/**
- * Normalize the videos config into ordered tab groups — each `{ label, collections }`
- * becomes one tab whose poster wall merges every collection it lists.
- *
- * Grouped form (preferred): `videos.collections: [{ label, plex: [...] }, ...]`.
- * Legacy form: a flat `videos.plexCollection` (string or array) collapses to a
- * single unlabeled group → a plain grid with no tab bar.
- */
-export function resolveCourseGroups(videos) {
-  const toList = (v) => (Array.isArray(v) ? v : [v]).filter(Boolean);
-  if (Array.isArray(videos?.collections) && videos.collections.length) {
-    return videos.collections
-      .map((g) => ({
-        label: g?.label || null,
-        collections: toList(g?.plex ?? g?.collections),
-        // A tab can also cherry-pick shows out of the shared pool (`shows`) or
-        // hide shows its collections would otherwise include (`exclude_shows`)
-        // — lets e.g. Voice Lessons split out of a piano collection without
-        // restructuring Plex.
-        shows: toList(g?.shows),
-        excludeShows: toList(g?.exclude_shows),
-      }))
-      .filter((g) => g.collections.length || g.shows.length);
-  }
-  const flat = toList(videos?.plexCollection);
-  return flat.length ? [{ label: null, collections: flat, shows: [], excludeShows: [] }] : [];
-}
 
 /**
  * Videos mode — passive lectures from configured Plex collections.

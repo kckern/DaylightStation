@@ -50,5 +50,3 @@ export function TetrisBoard({ board, currentPiece, ghostPiece }) {
     </div>
   );
 }
-
-export { PIECE_COLORS };

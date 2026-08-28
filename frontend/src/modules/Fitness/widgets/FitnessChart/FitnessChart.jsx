@@ -28,7 +28,6 @@ import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVid
 import { resolveSessionStartMs, resolvePrimaryMediaKey } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
-export { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 import { computeHistorySnapshotAction } from './historyMode.js';
 import { assignIdentityColors } from '@/modules/Fitness/lib/participantColors.js';
 import { niceTicks } from '@/modules/Fitness/lib/chartScale.js';

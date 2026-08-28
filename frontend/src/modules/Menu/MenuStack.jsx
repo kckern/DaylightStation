@@ -82,7 +82,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
 
     registerEscapeInterceptor(interceptor);
     return () => unregisterEscapeInterceptor?.();
-  }, [depth, pop, registerEscapeInterceptor, unregisterEscapeInterceptor]);
+  }, [MENU_TIMEOUT, depth, pop, registerEscapeInterceptor, unregisterEscapeInterceptor]);
 
   /**
    * Handle selection from any menu level.

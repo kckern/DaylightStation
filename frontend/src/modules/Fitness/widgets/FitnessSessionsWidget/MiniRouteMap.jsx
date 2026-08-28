@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { seededHue } from '../_shared/SportIcon.jsx';
+import { seededHue } from '../_shared/sportIconUtils.js';
 
 const TILE_SIZE = 256;
 const TILE_URL = 'https://basemaps.cartocdn.com/dark_all';

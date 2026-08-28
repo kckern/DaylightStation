@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { ActivityHeatmap, getHeatColor } from './ActivityHeatmap.jsx';
+import { ActivityHeatmap } from './ActivityHeatmap.jsx';
+import { getHeatColor } from './heatColor.js';
 
 describe('ActivityHeatmap', () => {
   it('uses a subtle surface color for empty days, not near-black dark-6', () => {

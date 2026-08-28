@@ -406,7 +406,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     logger().debug('escape.default', { hadShader: false, dismissed: hasOverlay });
     currentMenuRef.current = null;
     dismissOverlay();
-  }, [dismissOverlay, hasOverlay, actions, pip]);
+  }, [escapeInterceptorRef, pip, actions.escape, hasOverlay, dismissOverlay]);
 
   // --- Hardware Back (popstate) consumer ---
   // Mirror live overlay/pip state into refs so the consumer (invoked at

@@ -6,11 +6,10 @@ import * as sass from 'sass-embedded';
 import ComposerCard, {
   ASSET_WARN_PER_MINUTE,
   COMPOSER_FACT_INTERVAL_MS,
-  COMPOSER_FACT_FADE_MS,
-  COMPOSER_FACT_HOLD_MS,
 } from './ComposerCard.jsx';
-import { FACT_INTERVAL_MS } from './CueTicker.jsx';
-import { __resetMapCache } from '../map/CountryMap.jsx';
+import { COMPOSER_FACT_FADE_MS, COMPOSER_FACT_HOLD_MS } from './composerCardTiming.js';
+import { FACT_INTERVAL_MS } from './cueTickerModel.js';
+import { __resetMapCache } from '../map/countryMapGeoCache.js';
 import { registerSurroundBuiltins, SURROUND_BUILTIN_MODULES } from '../builtins.js';
 import { getSurroundRegistry, resetSurroundRegistry } from '../registry.js';
 

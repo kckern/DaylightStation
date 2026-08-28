@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChallengeEventPayload } from './FitnessPlayerOverlay.jsx';
+import { buildChallengeEventPayload } from './challengeEventPayload.js';
 
 describe('buildChallengeEventPayload', () => {
   it('persists the cycle type', () => {

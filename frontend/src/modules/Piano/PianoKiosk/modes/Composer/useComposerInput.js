@@ -186,22 +186,22 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
   // NOT captured at hook-mount) so an EDIT row carries the bar the note landed
   // in — the "@bar3" correlation the trace exists for. Callers may still pass an
   // explicit measure; the ref is optional so the hook works standalone.
-  const recordEdit = (type, note = 0, measure = caretMeasureRef?.current ?? 0, duration = '') =>
-    record(KIND.EDIT, intern(type), note | 0, measure | 0, intern(duration));
+  const recordEdit = useCallback((type, note = 0, measure = caretMeasureRef?.current ?? 0, duration = '') =>
+    record(KIND.EDIT, intern(type), note | 0, measure | 0, intern(duration)), [caretMeasureRef]);
 
-  const setDuration = useCallback((type) => { sticky.current = { ...sticky.current, type }; sync(); recordEdit('duration', 0, 0, type); log.info('composer.input.duration', { type }); }, [log]);
-  const toggleDot = useCallback(() => { sticky.current = { ...sticky.current, dots: sticky.current.dots ? 0 : 1 }; sync(); recordEdit('dot'); log.info('composer.input.dot', { dots: sticky.current.dots }); }, [log]);
-  const toggleArm = useCallback(() => { armedRef.current = !armedRef.current; sync(); recordEdit('arm'); log.info('composer.input.arm', { armed: armedRef.current }); }, [log]);
+  const setDuration = useCallback((type) => { sticky.current = { ...sticky.current, type }; sync(); recordEdit('duration', 0, 0, type); log.info('composer.input.duration', { type }); }, [log, recordEdit]);
+  const toggleDot = useCallback(() => { sticky.current = { ...sticky.current, dots: sticky.current.dots ? 0 : 1 }; sync(); recordEdit('dot'); log.info('composer.input.dot', { dots: sticky.current.dots }); }, [log, recordEdit]);
+  const toggleArm = useCallback(() => { armedRef.current = !armedRef.current; sync(); recordEdit('arm'); log.info('composer.input.arm', { armed: armedRef.current }); }, [log, recordEdit]);
   const addRest = useCallback(() => {
     recordEdit('insert-rest', 0, undefined, sticky.current.type); // measure ← live caret
     log.info('composer.input.rest', { duration: sticky.current.type, dots: sticky.current.dots });
     setEditorState((s) => applyCommand(s, insertRest, { ...sticky.current }));
-  }, [setEditorState, log]);
+  }, [recordEdit, log, setEditorState]);
   const deleteAtCaret = useCallback(() => {
     recordEdit('delete');
     log.info('composer.input.delete', {});
     setEditorState((s) => applyCommand(s, deleteNote, s.caret));
-  }, [setEditorState, log]);
+  }, [recordEdit, log, setEditorState]);
   // Backspace semantics — deletes the note BEFORE the caret, which is the note
   // just entered. Distinct from deleteAtCaret, which needs the caret parked ON
   // an existing note to do anything.
@@ -209,7 +209,7 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
     recordEdit('delete-back');
     log.info('composer.input.delete-back', {});
     setEditorState((s) => applyCommand(s, deleteBeforeCaret));
-  }, [setEditorState, log]);
+  }, [recordEdit, log, setEditorState]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -246,7 +246,7 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setDuration, toggleDot, toggleArm, addRest, deleteAtCaret, deleteBack, setEditorState, log]);
+  }, [setDuration, toggleDot, toggleArm, addRest, deleteAtCaret, deleteBack, setEditorState, log, recordEdit]);
 
   useEffect(() => {
     if (!subscribe) return undefined;
@@ -374,7 +374,7 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
       pendingOnsetsRef.current.set(evt.note, queue);
     });
     return () => { log.debug('composer.input.midi-unsubscribed', {}); if (unsub) unsub(); };
-  }, [subscribe, setEditorState, log]);
+  }, [subscribe, setEditorState, log, recordEdit]);
 
   return { hud, armed: hud.armed, setDuration, toggleDot, toggleArm, addRest, deleteBack };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { assignmentSatisfied, cardFace, learnPrompt, MODES, RATINGS, recallMatchesAny, resolvePolicy } from './flashcardEngine.js';
+import { assignmentSatisfied, cardFace, learnPrompt, RATINGS, recallMatchesAny, resolvePolicy } from './flashcardEngine.js';
 import './FlashcardProgram.scss';
 
 /**
@@ -126,4 +126,3 @@ function TestNotice({ deck, bank, onEvent }) {
   const safeCount = Math.max(1, Math.min(Number(count) || 1, eligible));
   return <div className="flashcard-program__test"><p>Test uses the course’s graded question bank and its normal review path.</p><label>Questions <input type="number" min="1" max={eligible} value={count} onChange={(event) => setCount(event.target.value)} /></label><fieldset><legend>Question forms</legend>{forms.map((type) => <label key={type}><input type="checkbox" checked={types.includes(type)} onChange={() => toggle(type)} />{type.replaceAll('_', ' ')}</label>)}</fieldset><button type="button" disabled={!types.length} onClick={() => onEvent({ type: 'start_test', deckId: deck.id, testPlan: { count: safeCount, types } })}>Start graded test</button></div>;
 }
-export { MODES };

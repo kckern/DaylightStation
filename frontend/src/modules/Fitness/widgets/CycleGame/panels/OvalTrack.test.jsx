@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import OvalTrack, { ovalPoint } from './OvalTrack.jsx';
+import OvalTrack from './OvalTrack.jsx';
+import { ovalPoint } from '@/modules/Fitness/lib/cycleGame/ovalTrackModel.js';
 
 describe('OvalTrack geometry (start at top, clockwise)', () => {
   it('maps lapProgress to oval positions', () => {

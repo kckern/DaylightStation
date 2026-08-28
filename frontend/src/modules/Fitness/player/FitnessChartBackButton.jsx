@@ -1,8 +1,6 @@
 import React from 'react';
 import { resolveBackButtonLabel } from './FitnessChartBackButton.js';
 
-export { resolveBackButtonLabel };
-
 /**
  * FitnessChartBackButton — small presentational button rendered in the
  * .fitness-chart-overlay wrapper (NOT inside FitnessChart).

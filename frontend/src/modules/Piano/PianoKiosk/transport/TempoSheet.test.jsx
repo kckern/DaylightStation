@@ -1,5 +1,6 @@
 import { render, fireEvent, screen } from '@testing-library/react';
-import TempoSheet, { TEMPO_STEPS } from './TempoSheet.jsx';
+import TempoSheet from './TempoSheet.jsx';
+import { TEMPO_STEPS } from './tempoSteps.js';
 
 describe('TempoSheet', () => {
   it('ladder is 60-175 with 100% dead-center', () => {

@@ -649,7 +649,7 @@ const Player = forwardRef(function Player(props, ref) {
     // playbackMetrics is deliberately NOT a dependency: it is read through
     // playbackMetricsRef so this callback stays stable and a timer-captured copy still
     // observes the CURRENT pause state when it fires.
-  }, [currentMediaGuid, effectiveMeta, isQueue, playerType, resolvedWaitKey, resolvedWaitKeyFields, setTargetTimeSeconds]);
+  }, [currentMediaGuid, isQueue, mediaIdentity, playerType, resolvedWaitKey, resolvedWaitKeyFields, setTargetTimeSeconds]);
 
   const scheduleSinglePlayerRemount = useCallback((input = null) => {
     const attempt = (remountInfoRef.current?.nonce ?? 0) + 1;
@@ -1224,7 +1224,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate]);
+  }), [isQueue, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport]);
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 

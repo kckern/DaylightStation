@@ -1,5 +1,5 @@
 import moment from "moment";
-import { formatAsCurrency } from "../blocks";
+import { formatAsCurrency } from "../lib/format.mjs";
 import { PALETTE, formatCompactCurrency } from "../lib/format.mjs";
 import { calculateCost } from "../lib/costOfCapital.mjs";
 import { EmptyState } from "../EmptyState.jsx";

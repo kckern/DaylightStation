@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import * as sass from 'sass';
 import { fileURLToPath } from 'url';
 import { act, render, screen } from '@testing-library/react';
-import OpponentPortrait, { opponentMood, opponentStatus } from './OpponentPortrait.jsx';
+import OpponentPortrait from './OpponentPortrait.jsx';
+import { opponentMood, opponentStatus } from './opponentViewModel.js';
 import { DEFAULT_ROSTER, themeForLevel, TOP_LEVEL } from '@shared-gaming/rulesets/chess/ladder.mjs';
 
 // COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but

@@ -26,14 +26,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import SafeImg from './SafeImg.jsx';
-import { agendaPreviewSrc } from './LearnerDayView.jsx';
+import { agendaPreviewSrc } from './agendaPreviewSrc.js';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
 import { teacherBaseFor, teacherDayPath, teacherSessionPath, teacherSectionPath, teacherLearnerPath } from '../teacherUrl.js';
 import { localDay } from '../teacherDates.js';
 import { SubjectIdentity } from '../CurriculumIdentity.jsx';
-import Icon, { hasIcon } from '../../home/icons/Icon.jsx';
+import Icon from '../../home/icons/Icon.jsx';
+import { hasIcon } from '../../home/icons/iconRegistry.js';
 import { teacherLog } from '../teacherLog.js';
 import { labelize } from '../labelize.js';
 

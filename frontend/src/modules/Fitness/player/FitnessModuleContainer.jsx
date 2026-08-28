@@ -9,7 +9,7 @@ const FitnessModuleContainer = ({ moduleId, mode = 'standalone', onClose, config
   const fitnessCtx = useFitnessContext();
   const ModuleComponent = getModule(moduleId);
   const manifest = getModuleManifest(moduleId);
-  const [setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   if (!ModuleComponent) {
     return <div className="fitness-module-not-found">Module not found: {moduleId}</div>;

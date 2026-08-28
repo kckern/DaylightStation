@@ -44,7 +44,8 @@ vi.mock('@/lib/logging/Logger.js', () => {
   };
 });
 
-import WorkoutRunner, { humanizeSlug, resolveExercise, targetLabel } from './WorkoutRunner.jsx';
+import WorkoutRunner from './WorkoutRunner.jsx';
+import { humanizeSlug, resolveExercise, targetLabel } from './workoutRunnerDisplay.js';
 
 // ── Fixtures: one authored workout per group shape ──────────────────────────
 // Straight sets carry rest so the expansion interleaves it (and drops the

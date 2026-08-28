@@ -1,22 +1,9 @@
 import { GameField, GameStepper, GameToggle } from '../chrome/index.js';
 import { ADDRESSING_RUNGS } from './dimensions.js';
 import { activeRung, resolveAddressing } from './resolveAddressing.js';
+import { describeAddressing } from './addressingDescription.js';
 
 const RUNG_OPTIONS = ADDRESSING_RUNGS.map((rung) => ({ value: rung.rung, label: rung.label }));
-
-/** What the chosen rung actually does, in one line, so the step is not a guess. */
-export function describeAddressing(resolved) {
-  const vocabulary = { staff: 'Notes on a staff', chords: 'Chords', names: 'Key names' }[resolved.vocabulary];
-  const order = resolved.x.order === 'shuffled' ? 'shuffled'
-    : resolved.x.order === 'reverse' ? 'reversed' : 'in order';
-  const cadence = {
-    never: 'the map stays put', each_game: 're-dealt each game', each_turn: 're-dealt every turn',
-  }[resolved.shuffle];
-  const inversion = resolved.vocabulary === 'chords' && resolved.inversions !== 'any'
-    ? resolved.inversions === 'root' ? ', root in the bass' : ', slash chords'
-    : '';
-  return `${vocabulary}, ${order} — ${cadence}${inversion}.`;
-}
 
 /**
  * The reading level, as one control, for any game on the addressing ladder.

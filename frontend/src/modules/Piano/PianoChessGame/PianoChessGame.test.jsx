@@ -36,7 +36,8 @@ vi.mock('./chessApi.js', () => ({
   fetchLadder: vi.fn(async () => null),
 }));
 
-import { OPPONENT_DELAY_MS, PianoChessGame, promptFor } from './PianoChessGame.jsx';
+import { OPPONENT_DELAY_MS, PianoChessGame } from './PianoChessGame.jsx';
+import { promptFor } from './chessRailViewModel.js';
 import {
   archiveGame, fetchChessConfig, fetchLadder, requestBestMove, requestOpponentMove,
   saveChessConfig, saveGameRecord,

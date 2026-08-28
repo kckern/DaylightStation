@@ -2,7 +2,7 @@ import TransportSheet from '../../transport/TransportSheet.jsx';
 import StepGrid from '../../transport/StepGrid.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
 import ToggleSwitch from '../../transport/ToggleSwitch.jsx';
-import { nearestStep } from '../../transport/TempoSheet.jsx';
+import { nearestStep } from '../../transport/tempoSteps.js';
 
 /**
  * ViewSheet — the "how the score looks" panel behind the View button (audit

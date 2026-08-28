@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { getActivityDisplay, primaryActivity } from './fitnessActivityRegistry.jsx';
+import { getActivityDisplay, primaryActivity } from './fitnessActivityRegistry.js';
 
 describe('fitnessActivityRegistry', () => {
   it('labels cycle-game by race count (singular/plural)', () => {

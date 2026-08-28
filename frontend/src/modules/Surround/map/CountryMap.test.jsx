@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
-import CountryMap, { __resetMapCache, RENDER_W, RENDER_H, LABEL_EM_PER_CHAR, LABEL_MARGIN_EM } from './CountryMap.jsx';
+import CountryMap, { RENDER_W, RENDER_H, LABEL_EM_PER_CHAR, LABEL_MARGIN_EM } from './CountryMap.jsx';
+import { __resetMapCache } from './countryMapGeoCache.js';
 
 /**
  * A tiny stand-in for europe.geo.json. Three squares of very different size and

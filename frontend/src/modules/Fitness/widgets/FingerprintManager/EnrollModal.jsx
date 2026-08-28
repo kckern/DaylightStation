@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import FingerprintIcon from './FingerprintIcon.jsx';
-import FingerprintHands, { fingerLabel } from './FingerprintHands.jsx';
+import FingerprintHands from './FingerprintHands.jsx';
+import { fingerLabel } from './fingerLabel.js';
 import getLogger from '@/lib/logging/Logger.js';
 
 let _logger;

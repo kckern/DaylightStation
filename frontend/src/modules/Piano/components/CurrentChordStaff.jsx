@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChordStaffRenderer } from '../../MusicNotation/renderers/ChordStaffRenderer.jsx';
 import {
-  emptyFlow, pushOnsets, clearIfIdle, flowColumns, flowDurations, IDLE_CLEAR_MS,
+  emptyFlow, pushOnsets, clearIfIdle, flowColumns, flowDurations,
 } from '../../MusicNotation/model/noteFlow.js';
 import { identifyChord } from '../theory/chordNaming.js';
 import { useDetectedKey } from './useDetectedKey.js';
@@ -134,5 +134,4 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
   );
 }
 
-export { IDLE_CLEAR_MS };
 export default CurrentChordStaff;

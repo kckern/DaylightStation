@@ -135,7 +135,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
     } else {
       narratableHeightRef.current = 0;
     }
-  }, [contentData]);
+  }, [contentData, contentRef]);
 
 
   const classes = Array.isArray(shaders)? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];

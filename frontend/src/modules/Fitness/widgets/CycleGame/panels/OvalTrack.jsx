@@ -3,22 +3,12 @@ import PropTypes from 'prop-types';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { createTickLerp } from '@/modules/Fitness/lib/cycleGame/motionClock.js';
+import { ovalPoint } from '@/modules/Fitness/lib/cycleGame/ovalTrackModel.js';
 import './OvalTrack.scss';
 
 // Oval geometry radii (SVG user units) — the track ellipse the markers ride on.
 const RX = 100;
 const RY = 50;
-
-/**
- * Pure geometry helper: map a normalized lap progress (0..1 into the current lap)
- * to a point on an ellipse of radii (rx, ry). θ starts at the top (−π/2) and
- * advances clockwise as progress goes 0→1, so a quarter lap lands on the right
- * side and a half lap at the bottom. y is SVG-style (down is positive).
- */
-export function ovalPoint(progress, rx, ry) {
-  const theta = -Math.PI / 2 + (Number(progress) || 0) * 2 * Math.PI;
-  return { x: rx * Math.cos(theta), y: ry * Math.sin(theta) };
-}
 
 /**
  * Top-down velodrome oval. Each rider's marker sits at `progress` (0→1+) around

@@ -3,14 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import * as sass from 'sass-embedded';
-import EraTimeline, {
-
+import EraTimeline from './EraTimeline.jsx';
+import {
   ERAS, TIMELINE_SPAN, NOMINAL_WIDTH_PX,
   ERA_LABEL_EM, ERA_LABEL_PX, ERA_LABEL_OVERHANG, ERA_LABEL_GAP_EM, ERA_LABEL_CLASH_EM,
   YEAR_ANCHOR_EDGE,
   datelineFor, eraLabelWidthPx, fractionFor, layoutEraLabels, subjectErasFor,
   yearAnchorFor,
-} from './EraTimeline.jsx';
+} from './eraTimelineModel.js';
 
 // COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
 // `withStyles()` recompiled it on every call — up to 20 times in this file

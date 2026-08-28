@@ -31,7 +31,7 @@ const useFitnessModule = (moduleId) => {
   // Convert back to Set with stable reference (only changes when array content changes)
   const transferredUsers = useMemo(() => {
     return new Set(transferredUsersArray);
-  }, [transferredUsersArray.join(',')]);
+  }, [transferredUsersArray]);
   
   // Phase 3: Memoized ChartDataBuilder for clean chart data interface
   const chartDataBuilder = useMemo(() => {

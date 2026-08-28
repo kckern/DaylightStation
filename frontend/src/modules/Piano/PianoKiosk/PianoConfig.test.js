@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { derivePianos, resolvePianoConfig, resolveScreensaver, PIANO_CONFIG_DEFAULTS } from './PianoConfig.jsx';
+import { derivePianos, resolvePianoConfig, resolveScreensaver, PIANO_CONFIG_DEFAULTS } from './pianoConfigModel.js';
 
 describe('derivePianos', () => {
   it('lists the configured pianos', () => {

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
-import FocusRangeLayer, { rangeBands } from './FocusRangeLayer.jsx';
+import FocusRangeLayer from './FocusRangeLayer.jsx';
+import { rangeBands } from './focusRangeGeometry.js';
 
 const measures = [
   { index: 0, firstStep: 0, lastStep: 1 },

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import SchoolApp, { parseSchoolPath } from './SchoolApp.jsx';
+import SchoolApp from './SchoolApp.jsx';
+import { parseSchoolPath } from './schoolPathModel.js';
 import { schoolApi } from './schoolApi.js';
 
 // Spy on the schoolLog facade so the launch-refused path (F12) is directly

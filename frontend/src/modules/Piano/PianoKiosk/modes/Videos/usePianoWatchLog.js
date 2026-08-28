@@ -48,5 +48,5 @@ export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeco
     };
     const id = setInterval(() => { if (!mediaEl.paused) post('progress'); }, LOG_INTERVAL_MS);
     return () => { clearInterval(id); post('close'); };
-  }, [mediaEl, contentId, title, userId]);
+  }, [mediaEl, contentId, title, userId, engagedRef]);
 }

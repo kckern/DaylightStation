@@ -45,3 +45,14 @@ export function ovalProgressFor({ winCondition, distanceM, goalM, ovalCircuitM =
 
 export { DEFAULT_OVAL_CIRCUIT_M };
 export default { circuitTargetFor, circuitProgress, ovalProgressFor, DEFAULT_OVAL_CIRCUIT_M };
+
+/**
+ * Pure geometry helper: map a normalized lap progress (0..1 into the current lap)
+ * to a point on an ellipse of radii (rx, ry). θ starts at the top (−π/2) and
+ * advances clockwise as progress goes 0→1, so a quarter lap lands on the right
+ * side and a half lap at the bottom. y is SVG-style (down is positive).
+ */
+export function ovalPoint(progress, rx, ry) {
+  const theta = -Math.PI / 2 + (Number(progress) || 0) * 2 * Math.PI;
+  return { x: rx * Math.cos(theta), y: ry * Math.sin(theta) };
+}

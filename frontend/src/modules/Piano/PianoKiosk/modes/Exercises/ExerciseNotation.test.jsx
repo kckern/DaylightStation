@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { instanceToAbc } from './ExerciseNotation.jsx';
+import { instanceToAbc } from './exerciseAbc.js';
 
 const base = {
   key: 'C',

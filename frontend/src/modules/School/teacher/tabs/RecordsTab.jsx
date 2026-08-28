@@ -13,7 +13,8 @@ import ReportCardView from '../panels/ReportCardView.jsx';
 import FrozenHistory from '../panels/FrozenHistory.jsx';
 import ClosePeriodPanel from '../panels/ClosePeriodPanel.jsx';
 import PacingPanel from '../panels/PacingPanel.jsx';
-import PeriodSelect, { currentPeriodId } from '../panels/PeriodSelect.jsx';
+import PeriodSelect from '../panels/PeriodSelect.jsx';
+import { currentPeriodId } from '../panels/currentPeriodId.js';
 import CurriculumHistoryOverview from '../../progress/CurriculumHistoryOverview.jsx';
 import InstructionalInsightsOverview from '../../progress/InstructionalInsightsOverview.jsx';
 export default function RecordsTab({ learnerId }) {

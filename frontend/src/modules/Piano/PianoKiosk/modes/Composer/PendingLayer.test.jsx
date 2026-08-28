@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { PendingLayer, simultaneityRuns } from './PendingLayer.jsx';
+import { PendingLayer } from './PendingLayer.jsx';
+import { simultaneityRuns } from './pendingLayerModel.js';
 
 // One system, chosen so the position math lands on round numbers:
 //   top = 100 is the TOP staff line; 5 lines / 4 gaps of 10 → bottom line at 140.

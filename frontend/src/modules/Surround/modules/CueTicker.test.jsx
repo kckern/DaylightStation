@@ -3,10 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
 import * as sass from 'sass-embedded';
-import CueTicker, {
+import CueTicker from './CueTicker.jsx';
+import {
   CUE_FADE_MS, CUE_HOLD_MS, CUE_SWAP_MS, CUE_DWELL_S, FACT_INTERVAL_MS,
   LISTEN_INTERVAL_MS, phaseDelay,
-} from './CueTicker.jsx';
+} from './cueTickerModel.js';
 import { ACCORDION_MS } from '../band.js';
 // THE ANCHOR FLOOR IS THE ONE THAT APPLIES HERE, and that is a fact about this
 // environment rather than a convenience. The prose floor is a function of the
