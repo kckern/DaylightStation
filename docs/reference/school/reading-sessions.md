@@ -342,6 +342,7 @@ mid-assignment child's hardening off with nothing anywhere to say so.
 | Route | Body / query | Why it exists |
 |---|---|---|
 | `GET /session`, `POST /session/ack` | `location`, then `location, sessionId` | Snapshot/revision recovery for a TV that booted or reloaded after the broadcast. ACK is delivery proof, not merely a WebSocket connection. |
+| `GET /events` | `?location=&limit=` | Bounded live timeline: opening age, ACK/progress ages, and timestamped state transitions. This is the operator answer to “what has the TV been doing?” |
 | `POST /progress` | `location, sessionId, pickId, positionSec, durationSec, paused` | Liveness heartbeat. A stalled player, long pause, or terminal media without `ended` returns to the prompt without granting credit. |
 | `POST /playing` | `location, learnerId, contentId, pickId` | **Nothing else moves a session to `reading`.** The backend cannot see the first frame; without this, `state` never leaves `confirm`, D5 never fires in the field, and every book tapped during a story is claimed as a fresh prompt. It reports PLAYBACK START, not countdown expiry — they differ by however long the content takes to load, and that gap is exactly when a stray tap misbehaves. |
 | `POST /read` | `learnerId, contentId, title, tagUid, location, pickId` | The only path that writes evidence. `pickId` is the idempotency key. It also performs `READING → PROMPT`: a session left at `reading` refuses the next book while nothing plays (D5) and never expires (D6), so the TV stays on all night. |
@@ -410,6 +411,7 @@ Not state transitions, but each must land somewhere visible.
 | Failure | Behaviour |
 |---|---|
 | Content lookup fails | The player bails today. In a session: back to `PROMPT` with "that one didn't work" |
+| No book is picked | After two minutes, close the session. `end: tv-off` turns the configured display off; otherwise the widget returns to its idle/art surface. |
 | TV fails to wake or the screen misses the event | Reserve before wake; replay current snapshot up to three times, then send one adult HA alert. The session remains available to a later snapshot. |
 | Reading log write fails | The story still played. Surface it; never claim a read that was not recorded |
 | Backend restart mid-session | Session state is in-memory and is lost — correct; nobody is at the reader after a restart |

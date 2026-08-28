@@ -4163,9 +4163,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // living room lit all night and the next card tap would land in a
       // session belonging to a child who left.
       onTimeout: async (session) => {
+        const source = nfcLocationsForReachability()?.[session.location] ?? {};
+        // A closed reading session always puts the widget back in `idle`; that
+        // is the art/screensaver off-ramp. Powering a display down is an
+        // additional policy, not an intrinsic property of story time. Respect
+        // the same location `end` declaration ordinary trigger playback uses.
+        if (source.end !== 'tv-off') {
+          readingLogger.info?.('school.reading.timeout-idle', {
+            location: session.location, end: source.end ?? null,
+          });
+          return;
+        }
         const tv = homeAutomationAdapters.tvAdapter;
         if (!tv?.turnOff) return;
-        await tv.turnOff(session.location);
+        await tv.turnOff(source.end_location ?? session.location);
       },
     });
     readingSessions.start();

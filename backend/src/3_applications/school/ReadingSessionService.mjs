@@ -82,12 +82,15 @@ export const PLAYBACK_STALL_MS = 90_000;
 export const PAUSED_PLAYBACK_TIMEOUT_MS = 10 * 60_000;
 /** An ended event normally follows a near-end progress sample immediately. */
 export const TERMINAL_PROGRESS_GRACE_MS = 20_000;
+/** Enough context for an operator without turning runtime state into a log DB. */
+export const DEFAULT_OBSERVATION_LIMIT = 200;
 
 export class ReadingSessionService {
   #sessions = new Map();
   #revisions = new Map();
   #serverEpoch;
   #ackWaiters = new Map();
+  #observations = [];
   /** Locations already reported stuck, so the 15s sweep warns once, not always. */
   #stuckReported = new Set();
   #eventBus; #clock; #logger;
@@ -260,6 +263,7 @@ export class ReadingSessionService {
     const session = this.#sessions.get(location) ?? null;
     if (!session || session.sessionId !== sessionId) return null;
     const updated = this.update(location, { acknowledgedAt: this.#clock().toISOString() });
+    this.#observe('acknowledged', updated, { sessionId });
     const waiter = this.#ackWaiters.get(sessionId);
     if (waiter) waiter(true);
     return updated;
@@ -290,7 +294,15 @@ export class ReadingSessionService {
     const session = this.#sessions.get(location) ?? null;
     if (!session || session.sessionId !== sessionId) return null;
     this.#broadcast(location, { event: 'session-open', ...session });
+    this.#observe('reannounced', session, { sessionId });
     return session;
+  }
+
+  /** A compact, queryable transition timeline for live diagnosis. */
+  observations(location, { limit = 50 } = {}) {
+    const key = typeof location === 'string' ? location.trim() : '';
+    const max = Math.max(1, Math.min(Number(limit) || 50, DEFAULT_OBSERVATION_LIMIT));
+    return this.#observations.filter((event) => event.location === key).slice(-max);
   }
 
   /** Every open session, newest state included — for a status endpoint or a sweep. */
@@ -333,8 +345,11 @@ export class ReadingSessionService {
     this.#log('info', 'school.reading.session-open', {
       location: session.location,
       learnerId: session.learnerId,
+      sessionId: session.sessionId,
+      revision: session.revision,
       replaced: previous?.learnerId ?? null,
     });
+    this.#observe(state === STARTING ? 'reserved' : 'opened', session, { replacedSessionId: previous?.sessionId ?? null });
     this.#broadcast(session.location, { event: state === STARTING ? 'session-starting' : 'session-open', ...session });
     return session;
   }
@@ -348,6 +363,7 @@ export class ReadingSessionService {
       lastActivityAt: this.#clock().getTime(),
     });
     this.#sessions.set(location, active);
+    this.#observe('activated', active);
     this.#broadcast(location, { event: 'session-open', ...active });
     return active;
   }
@@ -373,6 +389,7 @@ export class ReadingSessionService {
       serverEpoch: this.#serverEpoch, lastActivityAt: this.#clock().getTime(),
     });
     this.#sessions.set(session.location, updated);
+    this.#observe('updated', updated, { state: updated.state, progress: updated.progress ?? null });
     this.#broadcast(session.location, { event: 'session-update', ...updated });
     return updated;
   }
@@ -389,6 +406,7 @@ export class ReadingSessionService {
     this.#ackWaiters.get(session.sessionId)?.(false);
     const revision = this.#nextRevision(session.location);
     this.#stuckReported.delete(location);
+    this.#observe('closed', session, { reason });
     this.#log('info', 'school.reading.session-close', {
       location: session.location, learnerId: session.learnerId, reason,
     });
@@ -412,6 +430,17 @@ export class ReadingSessionService {
     const next = (this.#revisions.get(location) ?? 0) + 1;
     this.#revisions.set(location, next);
     return next;
+  }
+
+  #observe(type, session, extra = {}) {
+    if (!session?.location) return;
+    const at = this.#clock().toISOString();
+    this.#observations.push(Object.freeze({
+      at, type, location: session.location, sessionId: session.sessionId ?? null,
+      learnerId: session.learnerId ?? null, state: session.state ?? null,
+      revision: session.revision ?? null, ...extra,
+    }));
+    if (this.#observations.length > DEFAULT_OBSERVATION_LIMIT) this.#observations.splice(0, this.#observations.length - DEFAULT_OBSERVATION_LIMIT);
   }
 
   /** A broken log transport must not become a broken tap. */
