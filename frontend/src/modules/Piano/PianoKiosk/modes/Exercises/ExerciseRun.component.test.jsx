@@ -10,6 +10,9 @@ const h = vi.hoisted(() => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   // Per-test instance override; null means "use the standard fixture".
   instanceData: null,
+  // Per-test knobs for the run's two terminal-state doors.
+  instanceOk: true,
+  currentUser: 'learner4',
   instance: {
     id: 'scales/c-major@test',
     title: 'C major fragment',
@@ -33,7 +36,7 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ connected: true }),
   usePianoMidiNotes: () => ({ activeNotes: h.activeNotes }),
 }));
-vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'learner4' }) }));
+vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: h.currentUser }) }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({
   // `wrongNotes` is the real consumer of `lastWrong.midi` — the footer lights the
   // key the child actually played. Surface it so the test can see it.
@@ -48,7 +51,9 @@ vi.mock('./ExerciseNotation.jsx', () => ({
 }));
 vi.mock('./pianoLearningApi.js', () => ({
   pianoLearningApi: {
-    instance: vi.fn(async () => ({ ok: true, data: h.instanceData ?? h.instance })),
+    instance: vi.fn(async () => (h.instanceOk
+      ? { ok: true, data: h.instanceData ?? h.instance }
+      : { ok: false, status: 502, data: null })),
     program: vi.fn(async () => ({ ok: false, data: null })),
   },
 }));
@@ -67,6 +72,8 @@ describe('ExerciseRun shared assessment wiring', () => {
   beforeEach(() => {
     h.activeNotes = new Map();
     h.instanceData = null;
+    h.instanceOk = true;
+    h.currentUser = 'learner4';
     h.record.mockReset();
     h.record.mockResolvedValue({ ok: true, status: 201, data: { attempt_id: 'stored' }, durationMs: 4 });
     // mockClear, not mockReset — the implementation is installed once by the
@@ -232,5 +239,83 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(h.log.warn).toHaveBeenCalledWith('piano.exercise-attempt-unbuildable', expect.objectContaining({
       id: h.instance.id, mode: 'cued', reason: 'Cued assessment requires a usable tempo',
     }));
+  });
+
+  // ── The two host callbacks a gate needs, and a practice surface must not
+  // notice. Both are optional: omitting them is today's behaviour exactly.
+
+  it('reports a COMPLETED miss through onFailed, with the result, and never on a pass', async () => {
+    // A host that moves a difficulty ladder must be able to tell a played-and-
+    // missed attempt from a walked-away one. `onExit` cannot do that: it fires
+    // for the header Exit too, so counting it would let a player reach the
+    // easiest rung without touching a key.
+    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const props = {
+      instanceId: h.instance.id, intent: 'challenge', requirementOverride,
+      onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
+    };
+    const view = render(<ExerciseRun {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
+
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 60);
+    press(view, props, 62); // complete, cleanliness 2/5 -> score 0.7, under the 0.8 bar
+
+    await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
+    expect(props.onFailed.mock.calls[0][0]).toMatchObject({ status: 'completed', score: 0.7 });
+    expect(props.onPassed).not.toHaveBeenCalled();
+    expect(props.onExit).not.toHaveBeenCalled();
+  });
+
+  it('does not report a pass as a failure', async () => {
+    const requirementOverride = requirementForRung(nonFloorRung, { passScore: 0.8 });
+    const props = {
+      instanceId: h.instance.id, intent: 'challenge', requirementOverride,
+      onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
+    };
+    const view = render(<ExerciseRun {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Begin challenge' }));
+
+    press(view, props, 60);
+    press(view, props, 62); // clean run -> score 1
+
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    expect(props.onFailed).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the instance fetch fails', { instanceOk: false }, 'instance-not-found', /Exercise not found/],
+    ['the attempt cannot be built', { instanceData: null, tempoLess: true }, 'unrunnable', /Cannot start this one/],
+    ['a guest opens a challenge', { currentUser: 'guest' }, 'no-access', /Choose a player/],
+  ])('reports a dead end through onUnavailable when %s', async (_label, setup, reason, copy) => {
+    // All three render a PianoEmpty whose only affordance is the header Exit.
+    // A host that mounted this run without chrome of its own — the game gate
+    // does exactly that — would strand a child there with no callback and no
+    // way forward.
+    if (setup.instanceOk === false) h.instanceOk = false;
+    if (setup.tempoLess) h.instanceData = { ...h.instance, tempo: undefined };
+    if (setup.currentUser) h.currentUser = setup.currentUser;
+
+    const props = {
+      instanceId: h.instance.id, intent: 'challenge',
+      requirementOverride: requirementForRung(initialRung(), { passScore: 0.8 }),
+      onExit: vi.fn(), onPassed: vi.fn(), onUnavailable: vi.fn(),
+    };
+    render(<ExerciseRun {...props} />);
+
+    expect(await screen.findByText(copy)).toBeInTheDocument();
+    await waitFor(() => expect(props.onUnavailable).toHaveBeenCalledWith(reason));
+    expect(props.onUnavailable).toHaveBeenCalledTimes(1);
+  });
+
+  it('a run given neither callback behaves exactly as it always did', async () => {
+    // The practice surface passes neither. Nothing may throw, and the existing
+    // empty state must still be what a player sees.
+    h.instanceOk = false;
+    const props = { instanceId: h.instance.id, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    render(<ExerciseRun {...props} />);
+    expect(await screen.findByText(/Exercise not found/)).toBeInTheDocument();
   });
 });

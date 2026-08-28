@@ -40,6 +40,7 @@ import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 import { usePianoKioskConfigOptional } from '../../PianoConfig.jsx';
+import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
 import ExerciseRun from '../Exercises/ExerciseRun.jsx';
 import { climbRung, degradeRung, initialRung, isFloor } from './gameGateLadder.js';
 import { pickGateMaterial } from './gateMaterial.js';
@@ -58,25 +59,41 @@ export const GATE_CONFIG_DEFAULTS = Object.freeze({
   ]),
 });
 
-const positiveInt = (value, fallback) => (Number.isFinite(Number(value)) && Number(value) > 0
-  ? Math.floor(Number(value)) : fallback);
+/**
+ * A count of attempts, so it must be whole. Floor FIRST, then check: validating
+ * the raw value and flooring afterwards turns `retriesBeforeDegrade: 0.5` into
+ * 0 — degrade on the very first failure — and `climbAfterCleanPasses: 0.5` into
+ * a climb on every single pass. Both read as "the ladder is broken", and
+ * neither is visible in a log.
+ */
+const positiveInt = (value, fallback) => {
+  const whole = Math.floor(Number(value));
+  return Number.isFinite(whole) && whole >= 1 ? whole : fallback;
+};
 
 /**
  * Merge a household's `gameGate` block over the defaults. `null` and `{}` are
  * ordinary inputs, not errors.
  *
- * `passScore` is coerced to a finite number here rather than trusted: it is the
- * only thing standing between a non-floor rung and a gate that passes everyone
- * (see the header note). A hand-authored `passScore: "80%"` must degrade to the
- * default, not travel down into the run as a string.
+ * `passScore` is RANGE-checked, not merely coerced: it is the only thing
+ * standing between a non-floor rung and a gate that judges wrong, and it fails
+ * silently in both directions.
+ *  - `passScore: 80` — the percent-for-fraction mistake — is a perfectly finite
+ *    number that reaches the run as `score >= 80`, which is never true. Every
+ *    child fails every rung down to the floor, on every match, while the logs
+ *    read as an unbroken run of ordinary `gate.failed`.
+ *  - `""`, `false`, `[]` all coerce to 0, giving `score >= 0`: everyone passes
+ *    every rung at any score, logged as healthy `gate.passed`.
+ * A score is a fraction of 1, so anything outside `(0, 1]` is the default.
  */
 export function resolveGateConfig(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
+  const passScore = Number(source.passScore);
   return {
     enabled: source.enabled === true,
     every: typeof source.every === 'string' ? source.every : GATE_CONFIG_DEFAULTS.every,
-    passScore: Number.isFinite(Number(source.passScore)) && source.passScore !== null
-      ? Number(source.passScore) : GATE_CONFIG_DEFAULTS.passScore,
+    passScore: Number.isFinite(passScore) && passScore > 0 && passScore <= 1
+      ? passScore : GATE_CONFIG_DEFAULTS.passScore,
     retriesBeforeDegrade: positiveInt(source.retriesBeforeDegrade, GATE_CONFIG_DEFAULTS.retriesBeforeDegrade),
     metered: source.metered === true,
     climbAfterCleanPasses: positiveInt(source.climbAfterCleanPasses, GATE_CONFIG_DEFAULTS.climbAfterCleanPasses),
@@ -156,19 +173,24 @@ const makeId = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${
 /**
  * @param {object} props
  * @param {string|null} props.learnerId Roster slug — never the hydrated profile object.
- * @param {string} [props.deviceId] Which kiosk this is, for the log query.
+ * @param {string} [props.deviceId] Which physical kiosk this is. Defaults to the
+ *   captured self-identity (`readKioskDeviceId`), NOT to a literal: a shared
+ *   constant cannot tell one tablet from another, and telling two kiosks apart
+ *   is the whole reason the field is on every event. Unset stays `null` rather
+ *   than becoming a guess.
  * @param {object|null} props.gateConfig The household's `gameGate` block.
  * @param {(result?:object)=>void} props.onPassed Open the match. Called with the
  *   run's result on a genuine pass, and with NO argument when the gate failed
  *   open — a caller that wants to mint earned minutes (D14) can tell them apart.
  * @param {()=>void} props.onLeave The child chose not to play.
  */
-export default function GameGate({ learnerId = null, deviceId = 'piano-kiosk', gateConfig = null, onPassed, onLeave }) {
+export default function GameGate({ learnerId = null, deviceId, gateConfig = null, onPassed, onLeave }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-game-gate' }), []);
   const sessionId = useMemo(() => makeId('gate'), []);
   const config = useMemo(() => resolveGateConfig(gateConfig), [gateConfig]);
   const navigate = useNavigate();
   const basePath = usePianoKioskConfigOptional()?.basePath ?? '/piano';
+  const kioskDeviceId = useMemo(() => deviceId ?? readKioskDeviceId(), [deviceId]);
 
   const [state, setState] = useState(() => readGateState(learnerId));
   // `attempt` holds the resolved material/requirement in STATE, not in a memo
@@ -179,70 +201,102 @@ export default function GameGate({ learnerId = null, deviceId = 'piano-kiosk', g
   const [attempt, setAttempt] = useState(null);
   const [phase, setPhase] = useState('resolving'); // resolving | attempt | failed
   const [eased, setEased] = useState(false);
+  const [lastScore, setLastScore] = useState(null);
   const [round, setRound] = useState(0);
   const openedRef = useRef(false);
   const presentedRef = useRef(false);
 
   const emit = useCallback((event, data = {}, level = 'info') => {
     logger[level](event, {
-      learnerId, deviceId, studyDate: clientStudyDate(), sessionId, ...data,
+      learnerId, deviceId: kioskDeviceId, studyDate: clientStudyDate(), sessionId, ...data,
     });
-  }, [deviceId, learnerId, logger, sessionId]);
+  }, [kioskDeviceId, learnerId, logger, sessionId]);
 
   // Everything the resolve effect reads but must NOT re-run for, held in refs.
-  // The effect's only triggers are the mount and Try again (`round`) — by
-  // design, and both mistakes it prevents are silent:
+  // The effect's only trigger is `round` — the mount, Try again, and a learner
+  // arriving late. That is by design, and both mistakes it prevents are silent:
   //  - a `state.rung` dependency would re-resolve the instant a failure eased
   //    the ladder, replacing the fail panel with a fresh attempt so the child
   //    never sees the three ways out, and the banner never appears;
-  //  - an `onPassed`/`gateConfig` dependency would re-resolve on any parent
-  //    re-render that passes a fresh literal, handing ExerciseRun a NEW
+  //  - an `onPassed`/`gateConfig`/`emit` dependency would re-resolve on any
+  //    parent re-render that passes a fresh literal, handing ExerciseRun a NEW
   //    material object and restarting the run under the child's hands.
   const latest = useRef(null);
-  latest.current = { config, rung: state.rung, onPassed };
+  latest.current = { config, rung: state.rung, onPassed, emit };
+
+  // The roster slug arrives ASYNCHRONOUSLY: `PianoUserContext` starts at null
+  // and hydrates. On a reload straight onto a games route the gate would
+  // otherwise read the guest key, resume at the top of the ladder, and then
+  // write that over a struggling child's hard-won position on the first
+  // outcome. Re-read when the learner actually changes, and re-resolve if the
+  // resumed rung is not the one already on screen — a child owed an eased rung
+  // must not be judged against a harder one.
+  const learnerRef = useRef(learnerId);
+  useEffect(() => {
+    if (learnerRef.current === learnerId) return;
+    learnerRef.current = learnerId;
+    const resumed = readGateState(learnerId);
+    setState(resumed);
+    if (!sameRung(resumed.rung, latest.current.rung)) setRound((value) => value + 1);
+  }, [learnerId]);
 
   useEffect(() => {
     let alive = true;
     setPhase('resolving');
-    const { config: current, rung } = latest.current;
+    const { config: current, rung, emit: emitNow } = latest.current;
+    /**
+     * The gate mounted. Emitted once per mount and BEFORE anything can decline,
+     * so a fail-open run still anchors its own log query — those are precisely
+     * the runs worth reconstructing, and a `gate.presented` that only fires on
+     * the happy path leaves them with no beginning.
+     */
+    const presentOnce = (context) => {
+      if (presentedRef.current) return;
+      presentedRef.current = true;
+      emitNow('gate.presented', context);
+    };
     /** Fail open. Once — a second call would grant two matches for one gate. */
-    const failOpen = (error, extra = {}) => {
+    const failOpen = (error, context) => {
       if (openedRef.current) return;
       openedRef.current = true;
-      emit('gate.unavailable', { error, ...extra }, 'warn');
+      emitNow('gate.unavailable', { ...context, error }, 'warn');
       latest.current.onPassed?.();
     };
     pickGateMaterial(current.material, rung, { passScore: current.passScore })
       .then((picked) => {
         if (!alive) return;
         for (const skip of picked.skipped ?? []) {
-          emit('gate.material-skipped', { kind: skip.kind, reason: skip.reason, rung });
-        }
-        if (!picked.ok) { failOpen(picked.error, { rung }); return; }
-        const { requirement } = picked;
-        // Belt and braces over `resolveGateConfig`'s coercion: a requirement
-        // that reached the run without a finite passScore on a non-floor rung
-        // would be judged on `verdict.passed`, which is always true there.
-        if (!isFloor(rung) && !Number.isFinite(Number(requirement?.passScore))) {
-          failOpen('requirement-without-pass-score', { rung });
-          return;
+          emitNow('gate.material-skipped', { kind: skip.kind, reason: skip.reason, rung });
         }
         const attemptId = makeId('gate-attempt');
+        const { requirement } = picked;
         const context = {
-          material: picked.material.instanceId, rung, mode: requirement.mode, attemptId,
+          material: picked.material?.instanceId ?? null, rung, mode: requirement?.mode ?? null, attemptId,
         };
-        if (!presentedRef.current) { presentedRef.current = true; emit('gate.presented', context); }
-        emit('gate.attempt', context);
+        presentOnce(context);
+        if (!picked.ok) { failOpen(picked.error, context); return; }
+        // Belt and braces over `resolveGateConfig`'s range check: a requirement
+        // that reached the run without a usable passScore on a non-floor rung
+        // would be judged on `verdict.passed`, which is always true there.
+        const bar = Number(requirement?.passScore);
+        if (!isFloor(rung) && !(Number.isFinite(bar) && bar > 0 && bar <= 1)) {
+          failOpen('requirement-without-pass-score', context);
+          return;
+        }
+        emitNow('gate.attempt', context);
         setAttempt({ ...picked, attemptId });
         setPhase('attempt');
       })
       .catch((error) => {
         // A rejected fetch, a bank payload nothing can read — same posture as a
         // 502: the child earned this game and cannot do anything about it.
-        if (alive) failOpen(error?.message ?? String(error), { rung });
+        if (!alive) return;
+        const context = { material: null, rung, mode: null, attemptId: null };
+        presentOnce(context);
+        failOpen(error?.message ?? String(error), context);
       });
     return () => { alive = false; };
-  }, [emit, round]);
+  }, [round]);
 
   const context = attempt ? {
     material: attempt.material.instanceId,
@@ -270,16 +324,17 @@ export default function GameGate({ learnerId = null, deviceId = 'piano-kiosk', g
   };
 
   /**
-   * The run has handed control back without a pass. `ExerciseRun` calls
-   * `onExit` both for its own "Practice first" button and for the header Exit,
-   * and it has no separate failure callback — so a walked-away attempt and a
-   * played-and-missed one arrive here identically. Both are correct to treat as
-   * "did not pass": neither may reach the match, and both should eventually
-   * ease the rung rather than leave a child stuck. The score is not available
-   * on this path, so `gate.failed` carries `score: null` rather than a guess.
+   * A COMPLETED attempt that did not clear its bar. Only this moves the ladder.
+   *
+   * The distinction from `handleAbandoned` below is the whole point: if walking
+   * away counted as a failure, a child could press Exit `retriesBeforeDegrade`
+   * times per match and arrive at the unfailable floor without ever touching a
+   * key — the gate would become a formality that still logs like a gate.
    */
-  const handleFailed = () => {
-    emit('gate.failed', { ...context, score: null });
+  const handleFailed = (result) => {
+    const score = typeof result?.score === 'number' ? result.score : null;
+    setLastScore(score);
+    emit('gate.failed', { ...context, score });
     const failuresAtRung = state.failuresAtRung + 1;
     let next = { rung: state.rung, failuresAtRung, cleanPasses: 0 };
     let easedNow = false;
@@ -299,7 +354,7 @@ export default function GameGate({ learnerId = null, deviceId = 'piano-kiosk', g
     setPhase('failed');
   };
 
-  const tryAgain = () => { setEased(false); setRound((value) => value + 1); };
+  const tryAgain = () => { setEased(false); setLastScore(null); setRound((value) => value + 1); };
 
   const practiceDetour = () => {
     // The ordinary practice route: unmetered, ungated, and NOT a way into the
@@ -310,18 +365,46 @@ export default function GameGate({ learnerId = null, deviceId = 'piano-kiosk', g
     navigate(`${target}?intent=practice&mode=${encodeURIComponent(attempt.requirement.mode)}`);
   };
 
-  const leave = () => { emit('gate.abandoned', context); onLeave?.(); };
+  /**
+   * The player walked away rather than finishing — the run's header Exit. There
+   * is nothing to judge, so the ladder does not move; the gate simply closes.
+   */
+  const handleAbandoned = () => { emit('gate.abandoned', context); onLeave?.(); };
+
+  /**
+   * The run settled into a state it cannot leave: the instance 502'd on ITS
+   * fetch (the gate resolved through `instances(seedId)`, the run re-resolves
+   * through `instance(instanceId)`, so a backend restart between the two lands
+   * here), the attempt could not be built, or this is a guest with nowhere to
+   * record a result. Every one of those renders a dead end with no way forward,
+   * so it is infrastructure failure and it fails OPEN like any other.
+   */
+  const handleUnavailable = (reason) => {
+    if (openedRef.current) return;
+    openedRef.current = true;
+    emit('gate.unavailable', { ...context, error: `run-${reason}` }, 'warn');
+    onPassed?.();
+  };
 
   if (phase === 'failed') {
+    const bar = Number(attempt?.requirement?.passScore);
     return (
       <section className="piano-mode__placeholder piano-game-gate piano-game-gate--failed" role="status">
         <h2>Not this time</h2>
-        <p>Play it once more, work on it first, or come back later.</p>
+        {/* The run unmounts the moment it reports a failure, taking its own
+            result readout with it — so the score has to be shown here or the
+            child never learns how close they came. */}
+        {lastScore !== null && (
+          <p className="piano-game-gate__score">
+            <strong>{Math.round(lastScore * 100)}%</strong>
+            {Number.isFinite(bar) && bar > 0 ? ` — you need ${Math.round(bar * 100)}%` : ''}
+          </p>
+        )}
         {eased && <p className="piano-game-gate__eased">We made it a little easier</p>}
         <div className="piano-game-gate__actions">
           <button type="button" onClick={tryAgain}>Try again</button>
           <button type="button" onClick={practiceDetour}>Practice this</button>
-          <button type="button" onClick={leave}>Leave</button>
+          <button type="button" onClick={handleAbandoned}>Leave</button>
         </div>
       </section>
     );
@@ -336,8 +419,17 @@ export default function GameGate({ learnerId = null, deviceId = 'piano-kiosk', g
         material={attempt.material}
         requirementOverride={attempt.requirement}
         onPassed={handlePassed}
-        onExit={handleFailed}
+        onFailed={handleFailed}
+        onExit={handleAbandoned}
+        onUnavailable={handleUnavailable}
       />
+      {/* Belt and braces over `onUnavailable`. The run owns the screen while it
+          is up, and a state neither it nor this component anticipated would
+          otherwise strand a child on a kiosk with no keyboard shortcut and no
+          browser chrome. There is always a way out. */}
+      <button type="button" className="piano-game-gate__leave" onClick={handleAbandoned}>
+        Leave
+      </button>
     </div>
   );
 }
