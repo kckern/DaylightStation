@@ -66,7 +66,7 @@ export default function PeriodsTimeline() {
     }
     setLocalError(null);
     run('save', ({ actorId, pin }) => schoolApi.putPeriods({
-    periods: draft.map(({ origStartsAt, origEndsAt, idTouched, cloned, ...row }) => ({
+    periods: draft.map(({ origStartsAt, origEndsAt, idTouched: _idTouched, cloned: _cloned, ...row }) => ({
       ...row,
       startsAt: row.startsAt === day(origStartsAt) ? origStartsAt : withOriginalTime(row.startsAt, origStartsAt),
       endsAt: row.endsAt === day(origEndsAt) ? origEndsAt : withOriginalTime(row.endsAt, origEndsAt),

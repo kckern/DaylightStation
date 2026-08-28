@@ -147,8 +147,8 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
   // catch a broken day say all-clear. The "couldn't load the day's plan"
   // notice lives in the grid, which a collapsed card never mounts, so nothing
   // else on this screen would say otherwise.
-  it.each([['error', 500], ['unavailable', 404]])
-  ('reports a %s agenda read as unknown, never as zero subjects', async (_state, status) => {
+  it.each([['error', 500], ['unavailable', 404]])(
+    'reports a %s agenda read as unknown, never as zero subjects', async (_state, status) => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: false, status, data: null });
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);

@@ -39,8 +39,7 @@ import { buildZoneMetadata } from '../hooks/fitness/zoneMetadata.js';
 // Phase 4 SSOT: Display name resolution
 import {
   buildDisplayNameContext,
-  resolveDisplayName,
-  shouldPreferGroupLabels
+  resolveDisplayName
 } from '../hooks/fitness/DisplayNameResolver.js';
 
 // Developer-only flag for the Fitness app. Gates debug-only UI and logging.
@@ -306,8 +305,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // MEMORY LEAK FIX: Cleanup session on provider unmount
   useEffect(() => {
+    const session = fitnessSessionRef.current;
     return () => {
-      const session = fitnessSessionRef.current;
       if (session) {
         // Stop all timers and cleanup state
         if (typeof session.destroy === 'function') {
@@ -645,10 +644,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [session, ledgerVersion]);
   
   // Legacy compatibility constants (userGroupLabelMap removed - use getDisplayName instead)
-  const lastUpdate = 0;
-  const governancePulse = 0;
-  const effectiveUsersConfig = usersConfig;
-  const normalizedBaseZoneConfig = zoneConfig?.[0] || {};
+        const normalizedBaseZoneConfig = React.useMemo(() => zoneConfig?.[0] || {}, [zoneConfig]);
 
   const primaryConfigByName = React.useMemo(() => {
     const map = new Map();
@@ -773,7 +769,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Actually, session.ensureStarted() creates treasureBox.
     
     forceUpdate();
-  }, [configurationSignature, ant_devices, usersConfig, zoneConfig, governanceConfig, session, forceUpdate]);
+  }, [configurationSignature, ant_devices, usersConfig, zoneConfig, governanceConfig, session, forceUpdate, sessionsConfig?.session_end_cooldown_ms, subscribeToAppEvent, batchedForceUpdate]);
 
   useEffect(() => {
     const session = fitnessSessionRef.current;
@@ -846,7 +842,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Trigger re-render for transferred users (grace period substitution)
     setTransferVersion(v => v + 1);
     forceUpdate();
-  }, [forceUpdate]);
+  }, [forceUpdate, logFitnessContext]);
 
   const clearGuestAssignment = React.useCallback((deviceId) => {
     if (!guestAssignmentServiceRef.current) return;
@@ -855,7 +851,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       logFitnessContext('clear-guest-failed', { deviceId, message: result?.message }, { level: 'warn' });
     }
     forceUpdate();
-  }, [forceUpdate]);
+  }, [forceUpdate, logFitnessContext]);
 
   const suppressDeviceUntilNextReading = React.useCallback((deviceId) => {
     if (deviceId == null) return false;
@@ -1066,7 +1062,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     });
     logVoiceMemo('overlay-open-review', { memoId: id || null, autoAccept: resolvedAutoAccept, hasInlineMemo: Boolean(isObject && !id) });
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'review', memoId: id || null, autoAccept: resolvedAutoAccept });
-  }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
+  }, [emitVoiceMemoTelemetry, getVoiceMemoById, logVoiceMemo, setVoiceMemoOverlayStateGuarded, voiceMemos.length]);
 
   const openVoiceMemoList = React.useCallback(() => {
     // Pause video and music when opening voice memo list
@@ -1082,7 +1078,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     });
     logVoiceMemo('overlay-open-list');
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'list', memoId: null });
-  }, [emitVoiceMemoTelemetry, setVoiceMemoOverlayStateGuarded]);
+  }, [emitVoiceMemoTelemetry, logVoiceMemo, setVoiceMemoOverlayStateGuarded]);
 
   const openVoiceMemoCapture = React.useCallback((memoOrId, { autoAccept = false, fromFitnessVideoEnd = false, onComplete, sessionId: overrideSessionId = null } = {}) => {
     // Pause video and music when opening voice memo overlay
@@ -1124,7 +1120,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     });
     logVoiceMemo('overlay-open-capture', { memoId: id || null, autoAccept, fromFitnessVideoEnd, overrideSessionId: overrideSessionId || null });
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'capture', memoId: id || null, autoAccept, fromFitnessVideoEnd });
-  }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, setVideoPlayerPaused, voiceMemos]);
+  }, [setVoiceMemoOverlayStateGuarded, logVoiceMemo, emitVoiceMemoTelemetry, getVoiceMemoById, voiceMemos.length]);
 
   React.useEffect(() => {
     if (selectedPlaylistId != null) {
@@ -1168,7 +1164,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       return;
     }
     const normalized = Boolean(nextEnabled);
-    setMusicOverride((prev) => (musicAutoEnabled === normalized ? null : normalized));
+    setMusicOverride((_prev) => (musicAutoEnabled === normalized ? null : normalized));
   }, [musicAutoEnabled]);
 
   // Music player control helpers for voice memo coordination
@@ -1230,7 +1226,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     forceUpdate();
   }, [forceUpdate]);
 
-  const updateGovernancePhase = React.useCallback((nextPhase) => {
+  const updateGovernancePhase = React.useCallback((_nextPhase) => {
     // No-op, handled by engine callbacks
   }, []);
   
@@ -1548,7 +1544,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         delete window.__fitnessSimController;
       }
     };
-  }, [normalizedBaseZoneConfig]);
+  }, [normalizedBaseZoneConfig, zoneConfig]);
 
   // Prepare data for context value
   const allDevicesRaw = React.useMemo(() => Array.from(fitnessDevices.values()), [fitnessDevices, version]);
@@ -1579,11 +1575,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   
   // Categorized device arrays
   const heartRateDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'heart_rate'), [allDevicesRaw]);
-  const speedDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'speed'), [allDevicesRaw]);
-  const cadenceDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'cadence'), [allDevicesRaw]);
-  const jumpropeDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'jumprope'), [allDevicesRaw]);
-  const powerDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'power'), [allDevicesRaw]);
-  const unknownDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'unknown'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'speed'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'cadence'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'jumprope'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'power'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'unknown'), [allDevicesRaw]);
 
   // ==========================================================================
   // Phase 2 SSOT: Domain-level device selectors
@@ -1725,7 +1721,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return rosterCacheRef.current.value;
   }, [version]);
 
-  const activeParticipantNames = React.useMemo(() => {
+  React.useMemo(() => {
     return participantRoster.map(p => p.name).filter(Boolean);
   }, [participantRoster]);
 
@@ -2079,7 +2075,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return zoneProfileLookup.get(identifier) || null;
   }, [zoneProfileLookup]);
 
-  const userHeartRateMap = React.useMemo(() => {
+  React.useMemo(() => {
     const map = new Map();
     userVitalsMap.forEach((entry, key) => {
       if (!entry) return;
@@ -2164,7 +2160,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return Number.isFinite(vitals.heartRate) ? vitals.heartRate : null;
   }, [getUserVitals]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on `version` so
+   
   // each throttled publish returns a fresh accessor reading the latest ref value.
   const getEquipmentVibration = React.useCallback((equipmentId) => {
     if (!equipmentId) return null;
@@ -2441,7 +2437,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // BUGFIX: Add version to deps - fitnessDevices is a Map reference that doesn't change
   // when items are updated. version is incremented by forceUpdate/batchedForceUpdate
   // when WebSocket data arrives, so this ensures updateSnapshot runs with fresh data.
-  }, [users, fitnessDevices, fitnessPlayQueue, participantRoster, zoneConfig, version]);
+  }, [users, fitnessDevices, fitnessPlayQueue, participantRoster, zoneConfig, version, logFitnessContext]);
 
   // Legacy governance logic removed (delegated to GovernanceEngine)
 

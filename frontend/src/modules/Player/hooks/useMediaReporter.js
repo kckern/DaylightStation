@@ -348,7 +348,7 @@ export function useMediaReporter({
       return undefined;
     }
 
-    const handlePlay = (event) => {
+    const handlePlay = (_event) => {
       seekingRef.current = false;
       logExplicitPlaybackToggle('play');
       reportPlaybackMetrics({ isPaused: false, isSeeking: false, pauseIntent: null });

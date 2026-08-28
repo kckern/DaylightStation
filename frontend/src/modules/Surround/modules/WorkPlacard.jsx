@@ -347,7 +347,7 @@ export default function WorkPlacard({
       {parts.length > 0 ? (
         <p className="surround-work-placard__meta">
           {parts.map((part, i) => (
-            // eslint-disable-next-line react/no-array-index-key
+             
             <React.Fragment key={`${i}:${part}`}>
               {i > 0 && (
                 <span className="surround-work-placard__sep" aria-hidden="true">·</span>
@@ -360,7 +360,7 @@ export default function WorkPlacard({
       {perfParts.length > 0 && (
         <p className="surround-work-placard__performer" data-testid="surround-placard-performer">
           {perfParts.map((part, i) => (
-            // eslint-disable-next-line react/no-array-index-key
+             
             <React.Fragment key={`p${i}:${part}`}>
               {i > 0 && (
                 <span className="surround-work-placard__sep" aria-hidden="true">·</span>

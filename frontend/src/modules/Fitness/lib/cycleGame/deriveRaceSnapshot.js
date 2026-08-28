@@ -2,7 +2,7 @@ import { lapCount, lapProgress } from './lapModel.js';
 
 // Phase progress thresholds with hysteresis (enter/exit pairs) so phase can't
 // flap at a boundary — mirrors the sticky logRef in CycleRaceScreen.
-const EARLY_ENTER = 0.0, EARLY_EXIT = 0.15;   // EARLY while progress < 0.15
+const EARLY_EXIT = 0.15;   // EARLY while progress < 0.15
 const FINALE_ENTER = 0.85, FINALE_EXIT = 0.80; // FINALE once > 0.85, until < 0.80
 const PHOTO_FINISH_GAP_M = 25;
 

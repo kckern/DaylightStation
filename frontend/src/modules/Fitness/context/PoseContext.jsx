@@ -196,14 +196,15 @@ export const PoseProvider = ({
    * Cleanup on unmount
    */
   useEffect(() => {
+    const moveDetectors = moveDetectorsRef.current;
     return () => {
       // Dispose all move detectors
-      moveDetectorsRef.current.forEach(d => {
+      moveDetectors.forEach(d => {
         d.onDeactivate?.();
         d.dispose?.();
       });
-      moveDetectorsRef.current.clear();
-      
+      moveDetectors.clear();
+
       // Dispose detector service
       disposePoseDetectorService();
       detectorServiceRef.current = null;

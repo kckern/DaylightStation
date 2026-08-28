@@ -97,8 +97,8 @@ const GovernanceAudioPlayer = React.memo(function GovernanceAudioPlayer({
 
   // Cleanup on unmount
   useEffect(() => {
+    const audio = audioRef.current;
     return () => {
-      const audio = audioRef.current;
       if (audio) {
         audio.pause();
         audio.src = '';

@@ -7,7 +7,6 @@ import AdminLayout from '../modules/Admin/AdminLayout.jsx';
 import ListsIndex from '../modules/Admin/ContentLists/ListsIndex.jsx';
 import ListsFolder from '../modules/Admin/ContentLists/ListsFolder.jsx';
 import { ArtLibrary } from '../modules/Admin/Art/index.js';
-import ComingSoon from '../modules/Admin/Placeholders/ComingSoon.jsx';
 import AppConfigEditor from '../modules/Admin/Apps/AppConfigEditor.jsx';
 import ConfigIndex from '../modules/Admin/Config/ConfigIndex.jsx';
 import ConfigFileEditor from '../modules/Admin/Config/ConfigFileEditor.jsx';

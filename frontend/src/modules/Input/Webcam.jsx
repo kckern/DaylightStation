@@ -389,7 +389,7 @@ const STRATEGY_LABELS = {
 
 // ── Meter bar component ──────────────────────────────────────────────
 
-function MeterRow({ name, label, data }) {
+function MeterRow({ name: _name, label, data }) {
   if (!data) return null;
   const pct = Math.min((data.rms || 0) * 500, 100); // scale up for visibility
   const isActive = data.nonSilentCount > 0;
@@ -444,7 +444,7 @@ export default function WebcamApp() {
   }, []);
 
   const {
-    videoDevices, audioDevices,
+    audioDevices,
     selectedVideoDevice, selectedAudioDevice,
     cycleVideoDevice, cycleAudioDevice,
   } = useMediaDevices({
@@ -615,7 +615,7 @@ export default function WebcamApp() {
             {' | '}
             <span>state={trackInfo.readyState}</span>
             {' | '}
-            <span>label="{trackInfo.label}"</span>
+            <span>label=&quot;{trackInfo.label}&quot;</span>
             {trackInfo.settings.sampleRate && <span> | rate={trackInfo.settings.sampleRate}</span>}
             {trackInfo.settings.channelCount && <span> | ch={trackInfo.settings.channelCount}</span>}
           </div>

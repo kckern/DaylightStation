@@ -4,8 +4,8 @@
  * Provides a clean interface to PoseContext with automatic lifecycle management.
  */
 
-import { useEffect, useCallback, useRef } from 'react';
-import { usePoseContext, usePoseContextOptional } from '../context/PoseContext.jsx';
+import { useContext, useEffect, useCallback, useRef } from 'react';
+import PoseContext from '../context/PoseContext.jsx';
 
 /**
  * Hook for modules to consume pose data from PoseProvider
@@ -24,70 +24,44 @@ export const usePoseProvider = (options = {}) => {
     optional = false,
   } = options;
   
-  // Get context (optionally)
-  const ctx = optional ? usePoseContextOptional() : usePoseContext();
-  
+  // Get context directly — usePoseContext/usePoseContextOptional were both
+  // trivial useContext(PoseContext) wrappers, and choosing between two
+  // different hooks by `optional` violated rules-of-hooks. One hook call,
+  // then plain JS decides whether the missing-provider case throws.
+  const ctx = useContext(PoseContext);
+  if (!ctx && !optional) {
+    throw new Error('usePoseContext must be used within a PoseProvider');
+  }
+
   // Track last processed event to avoid duplicates
   const lastMoveEventRef = useRef(null);
   const lastPoseTimestampRef = useRef(0);
-  
-  // If context not available and optional, return safe defaults
-  if (!ctx) {
-    return {
-      // Pose data
-      poses: [],
-      hasPose: false,
-      primaryPose: null,
-      
-      // State
-      isReady: false,
-      isDetecting: false,
-      isLoading: false,
-      error: null,
-      available: false,
-      
-      // Performance
-      fps: 0,
-      latency: 0,
-      backend: null,
-      
-      // Controls (no-ops)
-      start: () => {},
-      stop: () => {},
-      setVideoSource: () => {},
-      
-      // Move detection
-      moveEvents: [],
-      registerMoveDetector: () => {},
-      unregisterMoveDetector: () => {},
-    };
-  }
-  
-  // Pose update callback
+
+  // Pose update callback — hooks must run unconditionally, so the
+  // "no provider" case is handled inside each hook, not via an early return.
   useEffect(() => {
-    if (onPoseUpdate && ctx.poses.length > 0) {
-      const now = Date.now();
-      // Debounce to avoid excessive callbacks
-      if (now - lastPoseTimestampRef.current > 16) {
-        lastPoseTimestampRef.current = now;
-        onPoseUpdate(ctx.poses);
-      }
+    if (!ctx || !onPoseUpdate || ctx.poses.length === 0) return;
+    const now = Date.now();
+    // Debounce to avoid excessive callbacks
+    if (now - lastPoseTimestampRef.current > 16) {
+      lastPoseTimestampRef.current = now;
+      onPoseUpdate(ctx.poses);
     }
-  }, [ctx.poses, onPoseUpdate]);
-  
+  }, [ctx, ctx?.poses, onPoseUpdate]);
+
   // Move event callback
   useEffect(() => {
-    if (onMoveEvent && ctx.moveEvents.length > 0) {
-      const latest = ctx.moveEvents[ctx.moveEvents.length - 1];
-      if (latest && latest !== lastMoveEventRef.current) {
-        lastMoveEventRef.current = latest;
-        onMoveEvent(latest);
-      }
+    if (!ctx || !onMoveEvent || ctx.moveEvents.length === 0) return;
+    const latest = ctx.moveEvents[ctx.moveEvents.length - 1];
+    if (latest && latest !== lastMoveEventRef.current) {
+      lastMoveEventRef.current = latest;
+      onMoveEvent(latest);
     }
-  }, [ctx.moveEvents, onMoveEvent]);
-  
+  }, [ctx, ctx?.moveEvents, onMoveEvent]);
+
   // Auto-start helper
   const setVideoSourceAndStart = useCallback((video) => {
+    if (!ctx) return;
     ctx.setVideoSource(video);
     if (autoStart && video) {
       // Small delay to ensure video source is set
@@ -95,8 +69,40 @@ export const usePoseProvider = (options = {}) => {
         ctx.startDetection();
       }, 100);
     }
-  }, [ctx.setVideoSource, ctx.startDetection, autoStart]);
-  
+  }, [ctx, autoStart]);
+
+  // If context not available and optional, return safe defaults
+  if (!ctx) {
+    return {
+      // Pose data
+      poses: [],
+      hasPose: false,
+      primaryPose: null,
+
+      // State
+      isReady: false,
+      isDetecting: false,
+      isLoading: false,
+      error: null,
+      available: false,
+
+      // Performance
+      fps: 0,
+      latency: 0,
+      backend: null,
+
+      // Controls (no-ops)
+      start: () => {},
+      stop: () => {},
+      setVideoSource: () => {},
+
+      // Move detection
+      moveEvents: [],
+      registerMoveDetector: () => {},
+      unregisterMoveDetector: () => {},
+    };
+  }
+
   return {
     // Pose data
     poses: ctx.poses,

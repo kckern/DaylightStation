@@ -326,9 +326,6 @@ export function usePlayerKeyboard(config) {
     playbackKeys,
     queuePosition,
     ignoreKeys,
-    meta,
-    type,
-    assetId,
     setCurrentTime,
     actionHandlers = {},
     componentOverrides = {}

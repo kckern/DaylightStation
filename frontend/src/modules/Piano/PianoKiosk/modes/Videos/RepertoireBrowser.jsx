@@ -38,7 +38,7 @@ function TreatmentLessons({ lessons, onPlay }) {
  * a single treatment opens it directly.
  */
 export default function RepertoireBrowser({ season, onPlay }) {
-  const items = season?.lessons || [];
+  const items = useMemo(() => season?.lessons || [], [season?.lessons]);
   const facets = useMemo(() => collectFacets(items), [items]);
   const [selected, setSelected] = useState({ style: null, skill: null, instructor: null });
   // view: null | {song} | {song, treatment} | {challenge}

@@ -23,10 +23,6 @@ const FitnessGovernance = () => {
     governanceState?.gracePeriodTotal || 30
   );
 
-  if (!governanceState?.isGoverned) {
-    return null;
-  }
-
   const summary = useMemo(() => {
     const state = governanceState || {};
     const status = STATUS_PRIORITY.includes(state.status) ? state.status : 'idle';
@@ -71,6 +67,10 @@ const FitnessGovernance = () => {
     const seconds = Math.max(0, Math.round(summary.nextChallengeRemaining));
     return `${seconds}`;
   }, [summary.nextChallengeRemaining]);
+
+  if (!governanceState?.isGoverned) {
+    return null;
+  }
 
   return (
     <div className={`fitness-governance ${statusClass}`}>

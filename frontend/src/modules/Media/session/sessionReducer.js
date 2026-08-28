@@ -1,4 +1,4 @@
-import { createIdleSessionSnapshot, createEmptyQueueSnapshot } from '@shared-contracts/media/shapes.mjs';
+import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
 
 const PLAYER_STATE_MAP = {
   idle: 'idle',

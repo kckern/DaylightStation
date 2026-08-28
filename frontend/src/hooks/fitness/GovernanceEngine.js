@@ -499,15 +499,12 @@ export class GovernanceEngine {
   /**
    * Detect and log zone changes for participants
    */
-  _logZoneChanges(userZoneMap, zoneInfoMap) {
+  _logZoneChanges(userZoneMap, _zoneInfoMap) {
     const logger = getLogger();
-    const now = this._now();
-    let hasZoneChange = false;
-
+    this._now();
     for (const [userId, newZone] of Object.entries(userZoneMap)) {
       const prevZone = this._previousUserZoneMap[userId];
       if (prevZone !== newZone && prevZone !== undefined) {
-        hasZoneChange = true;
         // Get roster entry for HR data
         const rosterEntry = this.session?.roster?.find(
           e => (e.id || e.profileId) === userId
@@ -1410,8 +1407,7 @@ export class GovernanceEngine {
    */
   _getParticipantStates(evalContext = null) {
     const userZoneMap = evalContext?.userZoneMap || this._latestInputs.userZoneMap || {};
-    const zoneInfoMap = evalContext?.zoneInfoMap || this._latestInputs.zoneInfoMap || {};
-    const states = [];
+        const states = [];
     for (const [userId, zoneId] of Object.entries(userZoneMap)) {
       const rosterEntry = this.session?.roster?.find(
         e => (e.id || e.profileId) === userId
@@ -2515,7 +2511,7 @@ export class GovernanceEngine {
    * @param {Object} zoneInfoMap - Map of zoneId -> zone metadata (name, color, etc.)
    * @returns {Array} - Array of requirement objects with zone labels but no participant data
    */
-  _buildRequirementShell(requirementMap, zoneRankMap, zoneInfoMap) {
+  _buildRequirementShell(requirementMap, _zoneRankMap, _zoneInfoMap) {
     if (!requirementMap || typeof requirementMap !== 'object') {
       return [];
     }

@@ -1,4 +1,4 @@
-import { describe, it, test, expect, beforeEach } from 'vitest';
+import { test, expect, beforeEach } from 'vitest';
 import { recordRecent, readRecents, RECENTS_KEY, MAX_RECENTS } from './recents.js';
 
 beforeEach(() => { localStorage.clear(); });

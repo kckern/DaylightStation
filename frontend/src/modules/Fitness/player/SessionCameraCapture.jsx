@@ -47,7 +47,7 @@ export default function SessionCameraCapture({ sessionId, intervalMs = 1000, ena
     // surface it (rate-limited so a persistent permission/device fault doesn't flood).
     logger.sampled('camera_frame.stream_error', { error: err?.message || String(err) },
       { maxPerMinute: 4, aggregate: true });
-  }, [logger, sessionId]);
+  }, [logger]);
 
   const handleSnapshot = useCallback(async (meta, blob) => {
     if (!active || !blob) return;

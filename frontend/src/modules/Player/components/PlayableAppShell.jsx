@@ -14,7 +14,7 @@ export default function PlayableAppShell({
   contentId,
   clear,
   advance,
-  onPlaybackMetrics,
+  onPlaybackMetrics: _onPlaybackMetrics,
   onResolvedMeta,
   onRegisterMediaAccess
 }) {

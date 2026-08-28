@@ -77,7 +77,7 @@ async function fetchShowLabels(startId) {
       return { labels: showLabelCache.get(id), visitedIds: [...visitedIds, id] };
     }
 
-    // eslint-disable-next-line no-await-in-loop -- the hops are inherently sequential:
+     
     // each parent id is only known from the previous response.
     const res = await DaylightAPI(`api/v1/fitness/show/${id}`);
     const info = res?.info;

@@ -11,7 +11,7 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
   const [status, setStatus] = useState('loading');
   const [errorMsg, setErrorMsg] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
-  const [nextWindow, setNextWindow] = useState(null);
+  const [setNextWindow] = useState(null);
   const progressRef = useRef(null);
 
   // Animated progress bar via Web Animations API (immune to TVApp CSS animation kill)
@@ -153,19 +153,7 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
 
   const sonicGif = DaylightMediaPath('media/img/ui/sonic-nonono.gif');
 
-  const formatNextWindow = (nw) => {
-    if (!nw) return '';
-    const [h, m] = nw.start.split(':').map(Number);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 || 12;
-    const timeStr = m > 0 ? `${h12}:${String(m).padStart(2, '0')} ${ampm}` : `${h12} ${ampm}`;
-    const dayStr = nw.day.charAt(0).toUpperCase() + nw.day.slice(1);
-    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const today = days[new Date().getDay()];
-    if (nw.day === today) return timeStr;
-    return `${dayStr} at ${timeStr}`;
-  };
-
+  
   return (
     <div className={`launch-card${status === 'blocked' ? ' launch-card--blocked' : ''}`}>
       {status === 'blocked' ? (

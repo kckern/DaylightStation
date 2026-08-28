@@ -17,7 +17,6 @@ const EMPTY_ZONE_PROGRESS_INDEX = new Map();
 const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   const { 
     connected, 
-    heartRateDevices, 
     activeHeartRateParticipants, // Phase 1 SSOT: Canonical participant list
     deviceConfiguration,
     participantRoster,
@@ -73,13 +72,14 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     if (device.hrInactive) return false;
     if (device.isActive !== undefined) return device.isActive;
     
-    // Fallback to timestamp check    const lastSeen = Number(device.lastSeen ?? device.timestamp);
+    // Fallback to timestamp check
+    const lastSeen = Number(device.lastSeen ?? device.timestamp);
     if (!Number.isFinite(lastSeen) || lastSeen <= 0) return true;
     return (Date.now() - lastSeen) <= inactiveTimeout;
   }, [inactiveTimeout]);
   
   // Build color map from context
-  const hrColorMap = React.useMemo(() => {
+  React.useMemo(() => {
     const direct = contextHrColorMap || {};
     if (direct && Object.keys(direct).length > 0) return direct;
     const fallbackSrc = deviceConfiguration?.hr || {};

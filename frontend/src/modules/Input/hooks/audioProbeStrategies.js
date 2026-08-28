@@ -168,7 +168,7 @@ async function probeWithScriptProcessor(stream, timeoutMs = 1500) {
     throw new Error('Web Audio API not supported in this environment');
   }
 
-  const AudioCtx = typeof AudioContext !== 'undefined' ? AudioContext : webkitAudioContext;
+  const AudioCtx = typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext;
   const ctx = new AudioCtx();
   const source = ctx.createMediaStreamSource(stream);
 
@@ -295,7 +295,7 @@ async function probeWithMediaRecorder(stream, recordMs = 300) {
         const blob = new Blob(chunks, { type: mimeType });
         const arrayBuffer = await blob.arrayBuffer();
 
-        const AudioCtx = typeof AudioContext !== 'undefined' ? AudioContext : webkitAudioContext;
+        const AudioCtx = typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext;
         const ctx = new AudioCtx();
 
         let audioBuffer;

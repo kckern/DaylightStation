@@ -34,10 +34,9 @@ export default function FitnessCalendarWidget() {
   const rawSessions = useScreenData('sessions');
   const { setScrollToDate, selectedSessionId } = useFitnessScreen();
 
-  const sessions = rawSessions?.sessions || [];
-
   // Build date → { count, totalSufferScore } map
   const dateMap = useMemo(() => {
+    const sessions = rawSessions?.sessions || [];
     const map = new Map();
     for (const s of sessions) {
       if (!s.date) continue;
@@ -55,7 +54,7 @@ export default function FitnessCalendarWidget() {
       }
     }
     return map;
-  }, [sessions]);
+  }, [rawSessions]);
 
   // Rank active days by intensity for the orange heatmap. Prefer the Strava suffer
   // score; fall back to session duration (minutes) when no suffer score is present

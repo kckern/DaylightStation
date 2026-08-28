@@ -31,7 +31,7 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
     // `data-scale` is the OSMD zoom the editor asked for. Surfaced because the
     // caret's scale-dependent terms MUST be driven by the same number.
     return (
-      <div data-testid="renderer" data-xml-len={String(musicXml || '').length} data-scale={String(scale)} data-manuscript={String(!!manuscript)}>
+      <div data-testid="renderer" data-musicxml-len={String(musicXml || '').length} data-scale={String(scale)} data-manuscript={String(!!manuscript)}>
         {children}
       </div>
     );
@@ -58,7 +58,7 @@ describe('EditorSurface', () => {
   it('mounts, renders the score xml, and shows the duration palette', () => {
     render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
     expect(screen.getByTestId('renderer')).toBeInTheDocument();
-    expect(Number(screen.getByTestId('renderer').getAttribute('data-xml-len'))).toBeGreaterThan(0);
+    expect(Number(screen.getByTestId('renderer').getAttribute('data-musicxml-len'))).toBeGreaterThan(0);
     // Self-documenting palette: the quarter-note button (numpad 5) is present,
     // and it starts active (quarter is the default sticky duration).
     const quarter = screen.getByRole('button', { name: /quarter note \(numpad 5\)/i });
@@ -749,15 +749,15 @@ describe('EditorSurface — playback transport', () => {
 
     // The engraved XML is the observable proxy for the model: if the echo had
     // been recorded, the score would have grown by two notes.
-    const xmlDuringPlayback = screen.getByTestId('renderer').getAttribute('data-xml-len');
+    const xmlDuringPlayback = screen.getByTestId('renderer').getAttribute('data-musicxml-len');
     act(() => { vi.advanceTimersByTime(1000); });
-    expect(screen.getByTestId('renderer').getAttribute('data-xml-len')).toBe(xmlDuringPlayback);
+    expect(screen.getByTestId('renderer').getAttribute('data-musicxml-len')).toBe(xmlDuringPlayback);
 
     // Write is still armed — stop playback and a real key writes again.
     act(() => { fireEvent.click(playBtn()); });
     act(() => { midiHandler({ type: 'note_on', note: 71, velocity: 80 }); });
     act(() => { vi.advanceTimersByTime(1200); }); // let the wet ink settle + re-engrave
-    expect(Number(screen.getByTestId('renderer').getAttribute('data-xml-len')))
+    expect(Number(screen.getByTestId('renderer').getAttribute('data-musicxml-len')))
       .toBeGreaterThan(Number(xmlDuringPlayback));
   });
 
@@ -973,7 +973,7 @@ describe('EditorSurface — rename', () => {
   it('typing Backspace in the name field edits TEXT, not the score', () => {
     const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} title="" onRename={vi.fn()} />);
     playNotes(3);
-    const before = container.querySelector('[data-testid="renderer"]').getAttribute('data-xml-len');
+    const before = container.querySelector('[data-testid="renderer"]').getAttribute('data-musicxml-len');
 
     fireEvent.click(screen.getByRole('button', { name: /name your song|rename/i }));
     const input = screen.getByRole('textbox', { name: /song name/i });
@@ -981,7 +981,7 @@ describe('EditorSurface — rename', () => {
     act(() => { input.dispatchEvent(ev); });
 
     // The score is untouched...
-    expect(container.querySelector('[data-testid="renderer"]').getAttribute('data-xml-len')).toBe(before);
+    expect(container.querySelector('[data-testid="renderer"]').getAttribute('data-musicxml-len')).toBe(before);
     // ...AND the browser's own text editing was left alone to do its job.
     expect(ev.defaultPrevented).toBe(false);
   });

@@ -22,7 +22,7 @@ export function useChessPersistenceLifecycle({
   opponentRef,
   helpUsed,
   timing,
-  playerColor,
+  playerColor: _playerColor,
   commentary = null,
   timingLedgerRef = null,
   logger,
@@ -122,7 +122,7 @@ export function useChessPersistenceLifecycle({
     if (ledger?.quality !== 'complete') return null;
     const totalMs = game.history.reduce((sum, _entry, index) => sum + (ledger.byPly[index + 1] || 0), 0);
     return { timed: true, totalMs };
-  }, [game.history, game.status?.game_over, playerColor, timing.mode, timingLedgerRef]);
+  }, [game.history, game.status?.game_over, timing.mode, timingLedgerRef]);
 
   return {
     startedAt: lifecycle.startedAt,

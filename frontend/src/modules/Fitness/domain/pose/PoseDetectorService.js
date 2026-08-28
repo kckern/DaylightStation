@@ -97,7 +97,7 @@ class PoseDetectorService {
     
     try {
       // Dynamic import TensorFlow.js modules
-      const [tfCore, tfBackendWebgl, tfBackendWasm, tfBackendCpu, poseDetection] = await Promise.all([
+      const [tfCore, tfBackendWasm, poseDetection] = await Promise.all([
         import('@tensorflow/tfjs-core'),
         import('@tensorflow/tfjs-backend-webgl'),
         import('@tensorflow/tfjs-backend-wasm'),

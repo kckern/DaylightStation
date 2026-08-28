@@ -398,7 +398,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                       <li
                         // Two sections can share a subject; the index keeps the
                         // key unique without pretending order is meaningful.
-                        // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
+                         
                         key={`${segment.unitId ?? segment.subject}-${i}`}
                         className="school-status-board__pill"
                         data-state={segment.state}

@@ -95,7 +95,7 @@ function TodayStrip({ digest, status, kidMode = false }) {
           {sessionsToday.length > 0 && (
             <span className="school-report__today-sessions">
               {sessionsToday.map((s, i) => (
-                // eslint-disable-next-line react/no-array-index-key -- unitId can repeat/be null; order is stable within one fetch.
+                 
                 <span key={`${s.unitId ?? 'unit'}-${i}`} className="school-report__today-session">
                   {s.unitId ?? 'Unnamed unit'} · {SESSION_STATE_LABEL[s.state] ?? s.state ?? 'in progress'}
                 </span>

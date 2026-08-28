@@ -49,7 +49,7 @@ export function useAdminLists() {
     try {
       const data = await DaylightAPI(`${API_BASE}/lists/${type}/${listName}`);
       setSections(data.sections || []);
-      const { sections: _, ...metadata } = data;
+      const { sections: _sections, ...metadata } = data;
       setListMetadata(metadata);
       setCurrentType(type);
       setCurrentList(listName);
@@ -318,7 +318,7 @@ export function useAdminLists() {
         'PUT'
       );
       // Update local metadata state
-      const { sections: _, ...metadata } = data;
+      const { sections: _sections, ...metadata } = data;
       setListMetadata(metadata);
       logger.info('admin.lists.settings.updated', { type: currentType, list: currentList });
       return data;

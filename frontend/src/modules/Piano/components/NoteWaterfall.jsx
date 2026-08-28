@@ -21,7 +21,7 @@ const PARTICLE_ANGLES = Array.from({ length: PARTICLE_COUNT }, (_, i) => {
  * - Active notes (held): CSS animation grows height from 0→95% over DISPLAY_DURATION
  * - Released notes: fixed height, CSS animation rises from bottom:0→100% over DISPLAY_DURATION
  */
-export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), startNote = 21, endNote = 108, gameMode = null }) {
+export function NoteWaterfall({ noteHistory = [], startNote = 21, endNote = 108, gameMode = null }) {
   // Tick only needed for game mode (JS-positioned falling notes)
   const [tick, setTick] = useState(0);
   useEffect(() => {

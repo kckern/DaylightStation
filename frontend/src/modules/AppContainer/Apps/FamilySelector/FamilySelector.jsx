@@ -38,8 +38,6 @@ const SEGMENT_COLORS = [
   '#F39C12', // Yellow
 ];
 
-const DEFAULT_TITLE = "Whose turn is it?";
-
 /**
  * Get avatar URL for a user
  */
@@ -162,6 +160,9 @@ function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation
             clipPath={`circle(${half}px)`}
             className="segment-avatar"
             preserveAspectRatio="xMidYMid slice"
+            // SVG <image> does fire an error event in browsers; eslint-plugin-react's
+            // DOM property table just doesn't list it under this tag.
+            // eslint-disable-next-line react/no-unknown-property
             onError={handleImageError}
           />
         ) : (
@@ -234,10 +235,9 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
 /**
  * Inner FamilySelector Component (after data is loaded)
  */
-function FamilySelectorInner({ members, winner, title, exclude }) {
+function FamilySelectorInner({ members, winner, title: _title, exclude }) {
   const riggedWinner = winner || null;
-  const displayTitle = title || DEFAULT_TITLE;
-  const excludeList = (exclude || '')
+    const excludeList = (exclude || '')
     .split(',')
     .filter(Boolean);
 
@@ -348,17 +348,7 @@ useEffect(() => {
     );
   }
 
-  const getInstructionText = () => {
-    switch (wheelState) {
-      case WHEEL_STATE.SPINNING:
-        return 'Spinning...';
-      case WHEEL_STATE.RESULT:
-        return 'Press SPACE to spin again!';
-      default:
-        return 'Press SPACE to spin!';
-    }
-  };
-
+  
   return (
     <div className="family-selector" data-state={wheelState}>
       <div className="family-selector-container">
@@ -399,7 +389,7 @@ useEffect(() => {
 /**
  * Main FamilySelector Container (Bootstrap + Loading)
  */
-export default function FamilySelector({ winner, title, exclude, autoSpin }) {
+export default function FamilySelector({ winner, title, exclude, autoSpin: _autoSpin }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

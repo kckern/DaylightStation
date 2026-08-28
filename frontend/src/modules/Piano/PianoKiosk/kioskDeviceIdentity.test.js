@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readKioskDeviceId, KIOSK_DEVICE_STORAGE_KEY } from './kioskDeviceIdentity.js';
 
 function makeStore(initial = {}) {

@@ -306,7 +306,7 @@ export default function ExerciseDetail({
             {instructions.length > 0 ? (
               <ol className="exercise-detail__steps" data-testid="exercise-detail-instructions">
                 {instructions.map((line, i) => (
-                  // eslint-disable-next-line react/no-array-index-key
+                   
                   <li className="exercise-detail__step" key={`step-${i}`}>{line}</li>
                 ))}
               </ol>

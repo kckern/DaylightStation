@@ -6,7 +6,7 @@
 
 import React, { useEffect, useRef, useCallback, useMemo } from 'react';
 import { BLAZEPOSE_CONNECTIONS, SIMPLIFIED_CONNECTIONS, KEYPOINT_NAMES, getBodyPart, isLeftSide, isRightSide } from '@/modules/Fitness/lib/pose/poseConnections.js';
-import { getColorScheme, COLOR_SCHEMES } from '@/modules/Fitness/lib/pose/poseColors.js';
+import { getColorScheme } from '@/modules/Fitness/lib/pose/poseColors.js';
 import { mirrorKeypoints, toHipCenteredCoordinates, fromHipCenteredCoordinates, getPoseBoundingBox } from '@/modules/Fitness/lib/pose/poseGeometry.js';
 import { calculatePoseConfidence } from '@/modules/Fitness/lib/pose/poseConfidence.js';
 
@@ -42,7 +42,7 @@ const SkeletonCanvas = ({
   style = {},
 }) => {
   const canvasRef = useRef(null);
-  const animationFrameRef = useRef(null);
+  useRef(null);
   
   // Merge options with defaults
   const opts = useMemo(() => ({
@@ -223,13 +223,10 @@ const SkeletonCanvas = ({
     }
     
     // Apply hip-centered transformation if enabled
-    let hipCenterInfo = null;
     if (opts.hipCentered) {
       const result = toHipCenteredCoordinates(keypoints);
-      
+
       if (result.hipCenter) {
-        hipCenterInfo = result;
-        
         // Place hip at center of canvas (or transform area)
         // Shift down slightly (60%) to give more headroom for standing poses
         const centerX = transform 

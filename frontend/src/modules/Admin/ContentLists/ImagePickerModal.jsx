@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Tabs, Image, Button, TextInput, Group, Stack, Text, Box, Loader, ActionIcon } from '@mantine/core';
+import { Modal, Tabs, Image, Button, TextInput, Group, Stack, Text, Box, Loader } from '@mantine/core';
 import { Dropzone, IMAGE_MIME_TYPE } from '@mantine/dropzone';
 import { notifications } from '@mantine/notifications';
 import { IconUpload, IconPhoto, IconLink, IconX, IconTrash } from '@tabler/icons-react';

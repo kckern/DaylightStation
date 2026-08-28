@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { spellNoteName, spellPitchClass, spellChord, isMinorish, rootQualityOf } from './spelling.js';
+import { spellNoteName, spellPitchClass, isMinorish, rootQualityOf } from './spelling.js';
 
 const name = (pc, keySignature, rootQuality) => spellNoteName(pc, { keySignature, rootQuality });
 

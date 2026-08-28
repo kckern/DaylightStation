@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { DaylightAPI } from '@/lib/api.mjs';
-import { listModules, getModuleManifest } from '../index';
+import { getModuleManifest } from '../index';
 import useModuleStorage from '../player/useModuleStorage';
 import { useFitness } from '@/context/FitnessContext.jsx';
 import { useIdentity } from '../identity/IdentityProvider';
@@ -33,7 +33,7 @@ const SettingsControls = ({ onClose }) => {
   );
 };
 
-const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
+const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack: _onBack }) => {
   const [menuConfig, setMenuConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);

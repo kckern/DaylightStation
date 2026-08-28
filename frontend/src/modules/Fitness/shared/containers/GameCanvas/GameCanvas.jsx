@@ -9,7 +9,6 @@ const GameCanvas = forwardRef(({
   aspectRatio = '16:9',
   onFrame,
   onResize,
-  fps = 60,
   autoStart = true,
   pixelRatio = 'auto',
   enableTouch = true,
@@ -31,7 +30,7 @@ const GameCanvas = forwardRef(({
   const [isRunning, setIsRunning] = useState(autoStart);
   
   // Use our responsive size hook for the container
-  const { width: containerWidth, height: containerHeight } = useResponsiveSize({
+  useResponsiveSize({
     onResize: (size) => {
       // Handle canvas resize logic
       const canvas = canvasRef.current;
@@ -137,6 +136,8 @@ const GameCanvas = forwardRef(({
     </div>
   );
 });
+
+GameCanvas.displayName = 'GameCanvas';
 
 GameCanvas.propTypes = {
   width: PropTypes.number,

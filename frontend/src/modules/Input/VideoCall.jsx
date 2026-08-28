@@ -101,7 +101,7 @@ export default function VideoCall({ deviceId, clear }) {
   const { connectionState } = peer;
   const { peerConnected, status, remoteMuteState } = useHomeline('tv', deviceId, peer);
   const [iceError, setIceError] = useState(null);
-  const [statusVisible, setStatusVisible] = useState(true);
+  const [setStatusVisible] = useState(true);
   const [callDuration, setCallDuration] = useState(0);
 
   const remoteVideoRef = useRef(null);

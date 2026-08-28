@@ -11,7 +11,6 @@ const Gauge = ({
   size = 'md',
   zones = [],
   showValue = true,
-  animated = true,
   className,
   ...props
 }) => {

@@ -63,7 +63,7 @@ export class MoveDetectorBase {
    * @param {Array} poseHistory 
    * @returns {MoveEvent|null}
    */
-  _detectMove(currentPoses, poseHistory) {
+  _detectMove(_currentPoses, _poseHistory) {
     throw new Error('_detectMove must be implemented by subclass');
   }
   

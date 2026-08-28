@@ -1,9 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import {
-  Stack, Group, Text, Badge, Button, Paper, TextInput, NumberInput, Select,
-  Alert, Center, Loader, Anchor
-} from '@mantine/core';
+import { Stack, Group, Text, Badge, Button, Paper, TextInput, Select, Alert, Center, Loader, Anchor }  from '@mantine/core';
 import {
   IconArrowBack, IconTrash, IconAlertCircle
 } from '@tabler/icons-react';

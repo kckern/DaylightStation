@@ -519,7 +519,7 @@ const useVoiceMemoRecorder = ({
     //   try { onResumeMusic(); } catch (_) { /* ignore */ }
     // }
     emitLevel(null);
-  }, [cleanupStream, clearDurationTimer, emitLevel, emitState, logVoiceMemo, onResumeMusic, playerRef]);
+  }, [cleanupStream, clearDurationTimer, emitLevel, emitState, logVoiceMemo]);
 
   const cancelUpload = useCallback(() => {
     // Set cancelled flag to prevent handleRecordingStop from processing

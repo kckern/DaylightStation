@@ -52,7 +52,7 @@ export function useDynamicDimensions(dependencies = []) {
       return () => clearInterval(measureInterval);
     }
 
-    const resizeObserver = new ResizeObserver((entries) => {
+    const resizeObserver = new ResizeObserver((_entries) => {
       measureDimensions();
     });
 

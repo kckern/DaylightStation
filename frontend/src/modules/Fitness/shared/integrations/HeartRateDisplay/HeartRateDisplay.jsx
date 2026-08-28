@@ -7,8 +7,6 @@ const HeartRateDisplay = ({
   bpm = 0,
   zone,
   maxHr = 190,
-  showGraph = false,
-  history = [],
   size = 'md',
   className,
   ...props

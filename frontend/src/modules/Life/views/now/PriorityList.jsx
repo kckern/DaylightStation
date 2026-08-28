@@ -57,7 +57,7 @@ export function PriorityList({ priorities = [] }) {
 
   const visible = priorities.filter((p) => !dismissed.has(keyOf(p))).slice(0, 5);
   if (visible.length === 0) {
-    return <Text size="sm" c="dimmed">You're all caught up — nothing needs your attention right now.</Text>;
+    return <Text size="sm" c="dimmed">You&apos;re all caught up — nothing needs your attention right now.</Text>;
   }
 
   return (

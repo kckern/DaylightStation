@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { Tabs, Group, Select, Text, Stack, Center, Loader } from '@mantine/core';
+import { Tabs, Group, Select, Text, Stack, Loader } from '@mantine/core';
 import { IconSettings, IconLayoutDashboard, IconAdjustments } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import OverviewTab from './OverviewTab.jsx';

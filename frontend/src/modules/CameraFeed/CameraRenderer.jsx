@@ -17,7 +17,7 @@ import './CameraRenderer.scss';
  * @param {boolean} [props.interactive=false] - click-to-center, drag-to-pan
  * @param {function} [props.onError] - error callback
  */
-export default function CameraRenderer({ cameraId, crop = true, interactive = false, onError }) {
+export default function CameraRenderer({ cameraId, crop = true, interactive = false, onError: _onError }) {
   const logger = useMemo(() => getChildLogger({ component: 'CameraRenderer', cameraId }), [cameraId]);
   const videoRef = useRef(null);
   const containerRef = useRef(null);
