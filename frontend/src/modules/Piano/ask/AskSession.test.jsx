@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import AskSession from './AskSession.jsx';
+import AskSession, { askTupleFor } from './AskSession.jsx';
 import { pianoLearningApi } from '../PianoKiosk/modes/Exercises/pianoLearningApi.js';
 
 /**
@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   activeNotes: new Map(),
   instanceOk: true,
   program: { ok: false, data: null },
+  catalog: { ok: false, data: null },
   scoreXml: '<score/>',
   scoreOk: true,
   instance: {
@@ -64,6 +65,11 @@ vi.mock('../PianoKiosk/modes/Exercises/pianoLearningApi.js', () => ({
       ? { ok: true, data: h.instance }
       : { ok: false, status: 502, data: null })),
     program: vi.fn(async () => h.program),
+    // The catalog walk, for a collection whose ids cannot be derived. Down by
+    // default: the only live levels that reach it are ones naming a collection
+    // with no roots, and `catalog-unavailable` is the reason that must survive.
+    catalog: vi.fn(async () => h.catalog),
+    instances: vi.fn(async () => ({ ok: false, data: null })),
   },
 }));
 vi.mock('../../../lib/api.mjs', async (importOriginal) => ({
@@ -96,6 +102,7 @@ beforeEach(() => {
   h.activeNotes = new Map();
   h.instanceOk = true;
   h.program = { ok: false, data: null };
+  h.catalog = { ok: false, data: null };
   h.scoreOk = true;
   pianoLearningApi.instance.mockClear();
   pianoLearningApi.program.mockClear();
@@ -156,6 +163,120 @@ describe('AskSession — the gate shape (an ask level plus a picked material)', 
   it('turns a framing OBJECT into the host sentence', async () => {
     render(<AskSession ask={level} materialSpec={spec} framing={{ kind: 'gate', gameLabel: 'Tetris' }} intent="challenge" {...callbacks()} />);
     await waitFor(() => expect(lastRun().framing).toBe('Play this to start Tetris'));
+  });
+});
+
+/**
+ * The FOUR shapes a live repertoire level can actually write
+ * (`data/household/piano/config.yml`), each resolved from the AUTHORED spec —
+ * which is the only shape that carries both what to resolve and what to say.
+ *
+ * The trap this describe exists for: an earlier cut handed the same prop to the
+ * resolver and to the copy writer while meaning two different things by it.
+ * Reading it as a resolved descriptor made the floor say "Play these notes
+ * together" instead of "Press the lit key"; reading it as an authored spec and
+ * resolving it with `resolveGateMaterial` made every staff-level rung
+ * (`{collection, roots}` — L1 through L4, i.e. every scale in the house)
+ * unresolvable, so every one of them failed the gate open and root rotation
+ * died with them. Both readings pass a suite that only ever tries
+ * `{kind:'exercise', instanceId}`, which is why all four are here.
+ */
+describe('AskSession — every material shape a live level can name', () => {
+  const scaleId = (root) => `scales/modes@root=${root},mode=ionian,direction=up,span_octaves=1`;
+
+  it('resolves a collection+roots spec — the shape every staff-level rung is written in', async () => {
+    const level = { id: 'L2', tier: 2, material: [{ kind: 'exercise', collection: 'scales', roots: ['G', 'D', 'F'] }] };
+    render(<AskSession ask={level} materialSpec={level.material[0]} intent="challenge" {...callbacks()} />);
+
+    await waitFor(() => expect(lastRun().instance).toBe(h.instance));
+    expect(pianoLearningApi.instance).toHaveBeenCalledWith(scaleId('G'));
+    // Once, not twice: the descriptor the spec resolves to already carries its
+    // instance, and the load below must short-circuit rather than refetch.
+    expect(pianoLearningApi.instance).toHaveBeenCalledTimes(1);
+    expect(lastRun().ask).toBe('G major scale, right hand.');
+  });
+
+  it('rotates those roots on the host’s pickIndex, so two consecutive gates differ', async () => {
+    const level = { id: 'L2', tier: 2, material: [{ kind: 'exercise', collection: 'scales', roots: ['G', 'D', 'F'] }] };
+    render(<AskSession ask={level} materialSpec={level.material[0]} pickIndex={1} intent="challenge" {...callbacks()} />);
+
+    await waitFor(() => expect(pianoLearningApi.instance).toHaveBeenCalledWith(scaleId('D')));
+    expect(pianoLearningApi.instance).not.toHaveBeenCalledWith(scaleId('G'));
+  });
+
+  it('resolves a spec that names its instance outright', async () => {
+    const level = { id: 'L1', tier: 2, material: [{ kind: 'exercise', instanceId: scaleId('C') }] };
+    render(<AskSession ask={level} materialSpec={level.material[0]} intent="challenge" {...callbacks()} />);
+
+    await waitFor(() => expect(lastRun().instance).toBe(h.instance));
+    expect(pianoLearningApi.instance).toHaveBeenCalledWith(scaleId('C'));
+  });
+
+  /**
+   * The floor's copy, word for word. `keys-1` is the rung a child arrives at
+   * after failing everything above it, and "Press the lit key." is the whole of
+   * what it says. Asserted per shape because the sentence is written from the
+   * spec's own `notes`/`arrangement` — the two fields a resolved descriptor
+   * throws away.
+   */
+  it.each([
+    ['keys-1', { kind: 'keys', notes: 1 }, 'Press the lit key.', 'keys/lit@notes=1,arrangement=together,pick=0'],
+    ['keys-2', { kind: 'keys', notes: 2, arrangement: 'together' }, 'Play these notes together.', 'keys/lit@notes=2,arrangement=together,pick=0'],
+    ['keys-3', { kind: 'keys', notes: 3, arrangement: 'sequence' }, 'Play the lit keys in order.', 'keys/lit@notes=3,arrangement=sequence,pick=0'],
+  ])('synthesizes %s and reads it out in that rung’s own words', async (id, spec, copy, instanceId) => {
+    render(<AskSession ask={{ id, tier: 0, material: [spec] }} materialSpec={spec} intent="challenge" {...callbacks()} />);
+
+    await waitFor(() => expect(lastRun().instance?.id).toBe(instanceId));
+    expect(lastRun().ask).toBe(copy);
+    // Synthesized, never fetched: a 502 must not stand between a four-year-old
+    // and the easiest thing the gate can ask.
+    expect(pianoLearningApi.instance).not.toHaveBeenCalled();
+  });
+
+  it('takes a score spec as a document, fetched once, with the level’s bars', async () => {
+    const spec = { kind: 'score', source: 'files:sheetmusic/minuet.musicxml', measures: [1, 4] };
+    render(<AskSession ask={{ id: 'L4', tier: 3, grading: { cleanliness: 0.8 }, material: [spec] }} materialSpec={spec} intent="challenge" {...callbacks()} />);
+
+    await waitFor(() => expect(lastRun().score?.id).toBe('files:sheetmusic/minuet.musicxml'));
+    expect(lastRun().score.measures).toEqual([1, 4]);
+    expect(lastRun().instance).toBeNull();
+    expect(lastRun().ask).toBe('Play this passage as written.');
+  });
+
+  it('surfaces a catalog that could not be reached, for a collection with no roots', async () => {
+    const cb = callbacks();
+    const spec = { kind: 'exercise', collection: 'chords' };
+    render(<AskSession ask={{ id: 'Lc', tier: 2, material: [spec] }} materialSpec={spec} intent="challenge" {...cb} />);
+
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('instance-not-found'));
+    expect(h.log.warn).toHaveBeenCalledWith(
+      'piano.exercise-material-unresolved',
+      expect.objectContaining({ kind: 'exercise', error: 'catalog-unavailable' }),
+    );
+  });
+
+  it('surfaces a level that named neither a collection nor an instance', async () => {
+    const cb = callbacks();
+    const spec = { kind: 'exercise' };
+    render(<AskSession ask={{ id: 'Lx', tier: 2, material: [spec] }} materialSpec={spec} intent="challenge" {...cb} />);
+
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('instance-not-found'));
+    expect(h.log.warn).toHaveBeenCalledWith(
+      'piano.exercise-material-unresolved',
+      expect.objectContaining({ kind: 'exercise', error: 'no-collection-or-instance' }),
+    );
+  });
+
+  it('surfaces a score spec naming no document', async () => {
+    const cb = callbacks();
+    const spec = { kind: 'score' };
+    render(<AskSession ask={{ id: 'Ls', tier: 3, grading: {}, material: [spec] }} materialSpec={spec} intent="challenge" {...cb} />);
+
+    await waitFor(() => expect(cb.onUnavailable).toHaveBeenCalledWith('instance-not-found'));
+    expect(h.log.warn).toHaveBeenCalledWith(
+      'piano.exercise-material-unresolved',
+      expect.objectContaining({ kind: 'score', error: 'no-score-source' }),
+    );
   });
 });
 
@@ -370,5 +491,92 @@ describe('AskSession — what it promises the run underneath', () => {
     expect(pianoLearningApi.program).toHaveBeenCalledTimes(1);
     expect(lastRun().instanceId).toBeUndefined();
     expect(lastRun().material).toBeUndefined();
+  });
+});
+
+/**
+ * The tuple construction, on its own — the two subtlest decisions in this seam,
+ * observable directly rather than only through how often a refusal fires.
+ *
+ * Both facts come from the MATERIAL because a legacy level never states them,
+ * and without them the constraint table cannot say anything true about one:
+ * every live tier-3 level asserts `timing: cued`, and `cued ⇒ a source that can
+ * carry note values` is unanswerable until the material is known.
+ */
+describe('askTupleFor — the tuple a level plus its material actually expresses', () => {
+  const tupleOf = (level, spec) => askTupleFor(level, spec).tuple;
+
+  it.each([
+    ['keys', { kind: 'keys', notes: 1 }, 'synthesized'],
+    ['exercise', { kind: 'exercise', collection: 'scales' }, 'bank'],
+    ['score', { kind: 'score', source: 'files:x.musicxml' }, 'score'],
+  ])('reads the source axis off a %s spec', (_label, spec, sourceKind) => {
+    expect(tupleOf({ tier: 2 }, spec).source).toEqual({ kind: sourceKind });
+  });
+
+  it('leaves the source axis ABSENT when no material has been picked', () => {
+    expect(tupleOf({ tier: 2 }, null).source).toBeUndefined();
+  });
+
+  it('carries the preset’s presentation axes and the level’s judging', () => {
+    expect(tupleOf({ tier: 3, grading: { cleanliness: 0.8 } }, { kind: 'exercise', instanceId: 'x' })).toEqual({
+      prompt: 'read',
+      secondary: 'keyboard-strip',
+      notationStyle: 'engraved',
+      timing: 'cued',
+      judging: 'placed',
+      source: { kind: 'bank' },
+    });
+  });
+
+  /**
+   * A document has exactly one honest stage. This is not a liberty taken with
+   * the level: it reproduces the short-circuit the run surface has always run
+   * (`stage = score ? 'score' : stageForTier(...)`), and it is what lets a
+   * tier-2 level name a passage without the tuple claiming it will be drawn on
+   * a one-staff sequence renderer that never sees it.
+   */
+  it('forces notationStyle score for score material, at a tier whose preset says otherwise', () => {
+    const spec = { kind: 'score', source: 'files:x.musicxml' };
+    expect(tupleOf({ tier: 2 }, spec).notationStyle).toBe('score');
+    expect(tupleOf({ tier: 3, grading: {} }, spec).notationStyle).toBe('score');
+    // And without that override the level would be refused, which is the whole
+    // reason it is here rather than left to the run to paper over.
+    expect(askTupleFor({ tier: 2 }, spec).errors).toEqual([]);
+  });
+
+  it('concatenates the expansion’s errors with the constraint table’s', () => {
+    const { errors } = askTupleFor({ tier: 9, presentation: { hints: 'always' } }, { kind: 'keys', notes: 1 });
+    expect(errors).toEqual(expect.arrayContaining([
+      'tier: unknown preset tier-9',
+      'not-yet-implemented: hints',
+    ]));
+  });
+
+  it('refuses a cued level whose material cannot carry note values', () => {
+    // A tier-3 lit key: grammatically expressible, and nothing can count a
+    // child in on a note the ask synthesized without a tempo of its own.
+    expect(askTupleFor({ tier: 3, grading: {} }, { kind: 'keys', notes: 1 }).errors).toEqual(
+      expect.arrayContaining(['cued: requires source bank or score, not synthesized']),
+    );
+  });
+
+  /**
+   * Every level the house actually runs, as written in
+   * `data/household/piano/config.yml` — paired with its own first material
+   * spec, which is how `AskSession` will see it. Zero errors is the
+   * reproduces-today contract: a level that validates clean today must not
+   * become `unrunnable` because this seam started checking.
+   */
+  it.each([
+    ['keys-1', { id: 'keys-1', tier: 0, material: [{ kind: 'keys', notes: 1 }] }],
+    ['keys-2', { id: 'keys-2', tier: 1, material: [{ kind: 'keys', notes: 2, arrangement: 'together' }] }],
+    ['keys-3', { id: 'keys-3', tier: 1, material: [{ kind: 'keys', notes: 3, arrangement: 'sequence' }] }],
+    ['L1', { id: 'L1', tier: 2, material: [{ kind: 'exercise', collection: 'scales', roots: ['C'] }] }],
+    ['L2', { id: 'L2', tier: 2, material: [{ kind: 'exercise', collection: 'scales', roots: ['G', 'D', 'F'] }] }],
+    ['L3', { id: 'L3', tier: 2, material: [{ kind: 'exercise', collection: 'scales', roots: ['A', 'E'] }] }],
+    ['L4', { id: 'L4', tier: 3, grading: { cleanliness: 0.8 }, material: [{ kind: 'exercise', collection: 'scales', roots: ['C', 'G'] }] }],
+  ])('accepts the live level %s without a single error', (_id, level) => {
+    expect(askTupleFor(level, level.material[0]).errors).toEqual([]);
   });
 });
