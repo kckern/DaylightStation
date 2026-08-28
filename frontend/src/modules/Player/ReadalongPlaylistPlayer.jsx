@@ -5,6 +5,36 @@ import { getLogger } from '../../lib/logging/Logger.js';
 const Player = lazy(() => import('./Player.jsx'));
 const THROTTLE_MS = 10000;
 
+// --- played-coverage accumulator -------------------------------------------
+// Why this exists: handleResilienceExhausted calls the same clear() callback a
+// real end-of-media event does, so "the player said it finished" is not
+// evidence of anything. The seconds that actually went past the child's ears
+// are, and each report has to carry the interval played SINCE THE LAST REPORT
+// paired with that window's rate. The DOM's cumulative mediaEl.played is the
+// wrong thing and is deliberately not used: play 0→100s at 2x, drop to 1x for
+// one second, and a cumulative range plus a current rate of 1 hands the server
+// a whole chapter of honest-looking coverage. A delta and a cumulative range
+// are indistinguishable on the wire, so the guarantee has to live here.
+
+// A jump larger than the wall clock allows is a seek, not listening.
+const CONTINUITY_SLACK_SECONDS = 0.75; // timer jitter / coalesced timeupdates
+// Hard ceiling on one interval regardless of wall time — a long stall or a
+// remount gap must never let a resume jump be banked as playback.
+const MAX_INTERVAL_SECONDS = 8;
+
+const round3 = (n) => Math.round(n * 1000) / 1000;
+
+/** Sort and coalesce overlapping/touching intervals so one report never double-counts. */
+const mergeRanges = (ranges) => ranges
+  .map(([start, end]) => [start, end])
+  .sort((a, b) => a[0] - b[0])
+  .reduce((out, [start, end]) => {
+    const tail = out[out.length - 1];
+    if (tail && start <= tail[1] + 1e-3) tail[1] = Math.max(tail[1], end);
+    else out.push([start, end]);
+    return out;
+  }, []);
+
 // Inline SVG icon set — this kiosk's WebView renders unicode glyphs as tofu,
 // so every pictogram here is a path. Stroke-based, currentColor, sized by CSS.
 const icon = (paths, viewBox = '0 0 24 24') => (
@@ -40,6 +70,11 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
   // One resume decision per part, made on the first progress event that
   // carries a real duration.
   const resumeDecided = useRef({});
+  // Played coverage for the part currently mounted. Held in a ref so it
+  // outlives the media element — the Player remounts on resilience and
+  // anything kept on the element dies with it. `cursor` is the last observed
+  // media position, `wall` the Date.now() of that sample.
+  const coverage = useRef({ partId: null, ranges: [], maxRate: 0, cursor: null, wall: 0 });
   const logger = useMemo(() => getLogger().child({ component: 'readalong-playlist' }), []);
   const part = parts[index] ?? null;
   const complete = index === parts.length - 1 && last.duration > 0 && last.currentTime >= last.duration - 0.5;
@@ -51,22 +86,89 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logger]);
 
+  /**
+   * Fold one progress sample into the current part's coverage. Records the
+   * newly covered interval only — never the cumulative range — and refuses to
+   * bridge a gap the wall clock cannot account for, so a scrub to the end
+   * earns nothing.
+   */
+  const observePlayed = useCallback((partId, currentTime, duration) => {
+    if (!partId) return;
+    const now = Date.now();
+    if (coverage.current.partId !== partId) {
+      // A part boundary is a hard break: the outgoing chapter's seconds are
+      // not the incoming chapter's.
+      coverage.current = { partId, ranges: [], maxRate: 0, cursor: null, wall: 0 };
+    }
+    const acc = coverage.current;
+    const from = acc.cursor;
+    const elapsed = acc.wall ? Math.max(0, (now - acc.wall) / 1000) : 0;
+    const el = ctrl.getMediaEl?.();
+    const reported = Number(el?.playbackRate);
+    const rate = Number.isFinite(reported) && reported > 0 ? reported : 1;
+    const at = Math.max(0, duration > 0 ? Math.min(currentTime, duration) : currentTime);
+    acc.cursor = at;
+    acc.wall = now;
+    if (from === null) return; // first sample of this element only seeds the cursor
+    const delta = at - from;
+    if (delta <= 0) return; // paused, stalled, or rewound — no new ground covered
+    const plausible = Math.min(MAX_INTERVAL_SECONDS, elapsed * rate + CONTINUITY_SLACK_SECONDS);
+    if (delta > plausible) {
+      logger.debug('readalong.coverage-break', {
+        partId, from: round3(from), to: round3(at), delta: round3(delta),
+        allowed: round3(plausible), elapsed: round3(elapsed), rate,
+      });
+      return;
+    }
+    acc.ranges.push([round3(from), round3(at)]);
+    acc.maxRate = Math.max(acc.maxRate, rate);
+  }, [ctrl, logger]);
+
+  /**
+   * Hand the buffered intervals to a report and clear them, so the next report
+   * carries a delta rather than a restatement. The cursor deliberately
+   * survives — playback is continuous across a report boundary even though the
+   * reported ranges are not. `rate` is the fastest rate seen over these
+   * intervals; the server drops the whole sample when it exceeds 1.
+   */
+  const drainCoverage = useCallback((partId) => {
+    const acc = coverage.current;
+    if (!partId || acc.partId !== partId) return { playedRanges: [], rate: 1 };
+    const playedRanges = mergeRanges(acc.ranges);
+    const rate = acc.maxRate || 1;
+    acc.ranges = [];
+    acc.maxRate = 0;
+    if (playedRanges.length) logger.debug('readalong.coverage-flush', {
+      partId, segments: playedRanges.length, rate, willBeDropped: rate > 1,
+      seconds: round3(playedRanges.reduce((sum, [start, end]) => sum + (end - start), 0)),
+    });
+    return { playedRanges, rate };
+  }, [logger]);
+
   const write = useCallback((completed = false) => {
     if (!part || !onProgress) return;
-    onProgress({ partId: part.id, positionSeconds: last.currentTime, durationSeconds: last.duration, completed });
-  }, [part, onProgress, last]);
+    const { playedRanges, rate } = drainCoverage(part.id);
+    onProgress({
+      partId: part.id, positionSeconds: last.currentTime, durationSeconds: last.duration, completed,
+      playedRanges, rate,
+    });
+  }, [part, onProgress, last, drainCoverage]);
   latest.current = { part, last };
   useEffect(() => () => {
     const current = latest.current;
-    if (current.part && onProgress) onProgress({
-      partId: current.part.id, positionSeconds: current.last.currentTime, durationSeconds: current.last.duration,
+    if (!current.part || !onProgress) return;
+    const { playedRanges, rate } = drainCoverage(current.part.id);
+    onProgress({
+      partId: current.part.id, positionSeconds: current.last.currentTime,
+      durationSeconds: current.last.duration, playedRanges, rate,
     });
-  }, [onProgress]);
+  }, [onProgress, drainCoverage]);
 
   const receiveProgress = useCallback((payload) => {
     const next = { currentTime: Number(payload?.currentTime) || 0, duration: Number(payload?.duration) || 0 };
     setLast(next);
     if (typeof payload?.paused === 'boolean') setPaused(payload.paused);
+    observePlayed(part?.id ?? null, next.currentTime, next.duration);
     // Auto-resume: a child returning mid-chapter should not have to hunt for
     // their place. Decided once per part, only for a meaningful saved position
     // that is not effectively the start or the end.
@@ -80,10 +182,16 @@ export default function ReadalongPlaylistPlayer({ title = 'Read along', parts = 
     }
     if (Date.now() - lastWrite.current >= THROTTLE_MS) {
       lastWrite.current = Date.now();
-      logger.debug('readalong.progress-write', { partId: part?.id, seconds: Math.round(next.currentTime) });
-      onProgress?.({ partId: part?.id, positionSeconds: next.currentTime, durationSeconds: next.duration });
+      const { playedRanges, rate } = drainCoverage(part?.id ?? null);
+      logger.debug('readalong.progress-write', {
+        partId: part?.id, seconds: Math.round(next.currentTime), segments: playedRanges.length, rate,
+      });
+      onProgress?.({
+        partId: part?.id, positionSeconds: next.currentTime, durationSeconds: next.duration,
+        playedRanges, rate,
+      });
     }
-  }, [onProgress, part, progress, ctrl, logger]);
+  }, [onProgress, part, progress, ctrl, logger, observePlayed, drainCoverage]);
   const changePart = useCallback((nextIndex) => {
     const bounded = Math.max(0, Math.min(parts.length - 1, nextIndex));
     logger.info('readalong.part-change', { from: index, to: bounded, partId: parts[bounded]?.id });
