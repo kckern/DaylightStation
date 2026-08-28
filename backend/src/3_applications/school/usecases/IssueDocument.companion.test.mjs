@@ -300,6 +300,33 @@ describe('IssueDocument — a required companion binds its finish code before th
     expect(sessions.derive('ses-nomedia').issuedArtifacts).toEqual([]);
   });
 
+  it('REFUSES a required companion whose stored code is unusable, rather than printing an ungated sheet', async () => {
+    // The store validates a record's SHAPE and its identity, never its `code`.
+    // A truncated or hand-edited YAML whose `code:` key is gone reads back
+    // perfectly cleanly — and `null` is the in-band value meaning "optional,
+    // print no gate", so the renderer's own guard cannot fire and it has no way
+    // to know the companion was required. Without this refusal the sheet prints
+    // UNGATED and a child passes without the media, which is the single outcome
+    // this whole feature exists to prevent.
+    const companionCodes = codeStore();
+    const unit = unitFor({ participation: 'required' });
+    const { issueDocument, sessions, printer } = issuer({ companionCodes, units: [unit] });
+    await seedSession(sessions, { sessionId: 'ses-nocode', learnerId: 'kid1', unitId: unit.unitId });
+
+    // Pre-seed the record the lesson will resolve to, with its code missing.
+    const key = companionCodes.keyFor({
+      householdId: HOUSEHOLD, lessonId: unit.unitId, lessonDay: unit.module,
+    });
+    await companionCodes.findOrCreate({ key, create: () => ({ id: key, code: null }) });
+
+    const result = await issueDocument.execute({ sessionId: 'ses-nocode' });
+
+    expect(result.status).toBe('unavailable');
+    expect(result.message).toMatch(/grown-up/i);
+    expect(printer.jobs).toEqual([]);
+    expect(sessions.derive('ses-nocode').issuedArtifacts).toEqual([]);
+  });
+
   it('lets a REQUIRED companion access code live as long as its record, and leaves an optional one on the study day', async () => {
     // A required gate a child cannot reopen tomorrow morning wedges them for
     // nothing: the sheet is still in the folder, and the 4am boundary already
