@@ -832,6 +832,27 @@ describe('ExerciseRun tier-driven presentation', () => {
     expect(screen.getByTestId('keyboard')).toBeInTheDocument();
   });
 
+  it('a recall tuple mounts a no-lights memory stage, even for an unordered chord', async () => {
+    h.instanceData = { ...h.instance, ordering: 'any', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] };
+    render(<ExerciseRun {...practice({
+      ask: 'Play a C major chord.',
+      askTuple: { prompt: 'recall', timing: 'free', hints: 'none', judging: 'completion' },
+    })} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(screen.getByTestId('piano-recall-stage')).toBeInTheDocument();
+    expect(screen.queryByTestId('keys-ask')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('keyboard')).not.toBeInTheDocument();
+  });
+
+  it('an always hint reveals the answer only inside the recall stage', async () => {
+    h.instanceData = { ...h.instance, ordering: 'any', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] };
+    render(<ExerciseRun {...practice({
+      askTuple: { prompt: 'recall', timing: 'free', hints: 'always', judging: 'completion' },
+    })} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(screen.getByTestId('piano-recall-hint')).toBeInTheDocument();
+  });
+
   it('advances the new stages on the same cursor the ABC path uses', async () => {
     const props = practice({ tier: 2 });
     const view = render(<ExerciseRun {...props} />);
@@ -1284,6 +1305,26 @@ describe('ExerciseRun free-challenge stall', () => {
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();
     expect(props.onFailed).not.toHaveBeenCalled();
+  });
+
+  it('reveals an after-stall recall hint before timeout and resets it on a new note', async () => {
+    h.instanceData = { ...longInstance(), ordering: 'any', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] };
+    const props = freeChallenge({
+      askTuple: { prompt: 'recall', timing: 'free', hints: 'after-stall', judging: 'completion' },
+    });
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    press(view, props, 60);
+
+    await wait(11000);
+    expect(screen.queryByTestId('piano-recall-hint')).not.toBeInTheDocument();
+    await wait(1000);
+    expect(screen.getByTestId('piano-recall-hint')).toBeInTheDocument();
+    expect(props.onFailed).not.toHaveBeenCalled();
+
+    press(view, props, 64);
+    await wait(11000);
+    expect(screen.queryByTestId('piano-recall-hint')).not.toBeInTheDocument();
   });
 
   it('never stalls before a note is played — a walk-away is an abandonment, not a failure', async () => {

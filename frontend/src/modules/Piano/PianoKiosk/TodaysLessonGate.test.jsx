@@ -1,14 +1,19 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => ({ openPianoCourseLesson: vi.fn(() => true) }));
 
 vi.mock('./pianoContentOpen.js', () => ({ openPianoCourseLesson: h.openPianoCourseLesson }));
+vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn(async () => ({})) }));
+vi.mock('../ask/AskSession.jsx', () => ({
+  default: ({ onPassed }) => <button type="button" onClick={() => onPassed({ assessmentId: 'a-1', score: 1, status: 'completed' })}>Pass challenge</button>,
+}));
 vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info: vi.fn(), warn: vi.fn() }) }),
 }));
 
 import TodaysLessonGate from './TodaysLessonGate.jsx';
+import { DaylightAPI } from '../../../lib/api.mjs';
 
 const LESSON = {
   id: 'plex:2', title: 'Lesson 5: Broken Chords',
@@ -33,6 +38,7 @@ const startButton = () => screen.getByRole('button', { name: /start today.s less
 beforeEach(() => {
   h.openPianoCourseLesson.mockReset();
   h.openPianoCourseLesson.mockReturnValue(true);
+  DaylightAPI.mockClear();
 });
 
 describe('TodaysLessonGate', () => {
@@ -77,5 +83,23 @@ describe('TodaysLessonGate', () => {
     mount({ navigate });
     fireEvent.click(startButton());
     expect(navigate).toHaveBeenCalledWith('/piano/videos/1');
+  });
+
+  it('mounts the server descriptor as AskSession and records its passed assessment', async () => {
+    const onCompleted = vi.fn(async () => {});
+    mount({
+      learnerId: 'kid-one', onCompleted,
+      challenge: {
+        id: 'unit-3-c-major', ask: { id: 'named-c-major' },
+        materialSpec: { kind: 'chord', root: 'C', quality: 'major' }, framing: 'Play a C major chord.',
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Pass challenge' }));
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledWith(
+      'api/v1/piano/users/kid-one/school-piano-challenges/unit-3-c-major/completion',
+      { assessmentId: 'a-1', score: 1, status: 'completed', passed: true }, 'POST',
+    ));
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+    expect(h.openPianoCourseLesson).not.toHaveBeenCalled();
   });
 });

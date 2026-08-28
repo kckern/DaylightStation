@@ -141,6 +141,32 @@ describe('canonical compilation', () => {
     expect(cued.requirement.gates.pace.target_bpm).toBe(84);
     expect(cued.expectation.events[0].notes.every((note) => note.part === 'unassigned')).toBe(true);
   });
+
+  it('accepts any octave or doubling for a pitch-class held chord, and can require its bass', () => {
+    const source = expectation([{ notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }]);
+    const requirement = { policy: { pitchClass: true, bassPitchClass: 0 } };
+    const start = () => startAssessmentAttempt(createAssessmentAttempt({ expectation: source, matcher: 'held', requirement }), { time: 0 });
+
+    const rootPosition = observeAssessment(start(), { held: new Map([[48, {}], [55, {}], [64, {}], [72, {}]]), time: 10 });
+    expect(rootPosition.attempt.status).toBe('completed');
+
+    const inversion = observeAssessment(start(), { held: new Map([[52, {}], [55, {}], [60, {}]]), time: 10 });
+    expect(inversion.event).toMatchObject({ type: 'wrong', midi: 52 });
+    expect(inversion.attempt.status).toBe('running');
+  });
+
+  it('rejects a foreign pitch class but leaves exact-MIDI held matching unchanged', () => {
+    const source = expectation([{ notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }]);
+    const pitchClass = startAssessmentAttempt(createAssessmentAttempt({
+      expectation: source, matcher: 'held', requirement: { policy: { pitchClass: true } },
+    }), { time: 0 });
+    const foreign = observeAssessment(pitchClass, { held: new Map([[48, {}], [52, {}], [55, {}], [58, {}]]), time: 10 });
+    expect(foreign.event).toMatchObject({ type: 'wrong', midi: 58 });
+
+    const exact = startAssessmentAttempt(createAssessmentAttempt({ expectation: source, matcher: 'held' }), { time: 0 });
+    const octaveShift = observeAssessment(exact, { held: new Map([[48, {}], [52, {}], [55, {}]]), time: 10 });
+    expect(octaveShift.event).toMatchObject({ type: 'wrong', midi: 48 });
+  });
 });
 
 describe('immutable lifecycle', () => {

@@ -44,6 +44,13 @@ export default {
       'dash-video-element': path.join(frontendNodeModules, 'dash-video-element'),
       'react': path.join(frontendNodeModules, 'react'),
       'react-dom': path.join(frontendNodeModules, 'react-dom'),
+      // The backend keeps its own canvas dependency for production Node
+      // resolution, but Vitest runs backend and root tests in one macOS
+      // process. Loading both native canvas builds registers GIO classes
+      // twice and aborts the runner before it can emit a report. Test every
+      // import against the root build instead; the public canvas API is the
+      // same and production module resolution is deliberately untouched.
+      'canvas': path.join(__dirname, 'node_modules/canvas'),
     },
   },
   test: {

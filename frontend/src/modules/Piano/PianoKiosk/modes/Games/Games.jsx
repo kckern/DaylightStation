@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useContext, useState, useEffect, Suspense } from 'react';
+import { useMemo, useCallback, useContext, useState, Suspense } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
@@ -18,6 +18,8 @@ import GameGate from './GameGate.jsx';
 import { gateAppliesTo, gateConfigForLearner } from './gateScope.js';
 import MatchGateContext from './MatchGateContext.js';
 import { gameSubRouteTarget } from './gameSubRoute.js';
+import usePianoChallengeProfile from '../../../ask/usePianoChallengeProfile.js';
+import { creditPianoChallengeGameTime } from '../../../ask/pianoChallengeEarnedTime.js';
 
 /**
  * Games mode — picks a registered piano game and mounts it fullscreen, fed by the
@@ -38,17 +40,6 @@ import { gameSubRouteTarget } from './gameSubRoute.js';
 export function Games() {
   const pianoUser = useContext(PianoUserContext);
   const gameAccess = useSchoolGameAccess(pianoUser?.currentUser ?? null);
-  const navigate = useNavigate();
-
-  // Do not strand a newly-gated child in a picker or a running game.  Waiting
-  // for `ready` matters: the hook intentionally starts closed while the
-  // completion request is in flight, and redirecting on that transient would
-  // eject learners who are actually eligible.
-  useEffect(() => {
-    if (gameAccess.status === 'ready' && !gameAccess.unlocked) {
-      navigate('..', { replace: true, relative: 'path' });
-    }
-  }, [gameAccess.status, gameAccess.unlocked, navigate]);
 
   if (!gameAccess.unlocked) {
     const message = gameAccess.status === 'error'
@@ -166,6 +157,7 @@ function GameHost() {
   // gates identifying the child the same way, and the gate's ladder is stored
   // per child under exactly this key.
   const learnerId = pianoUser?.currentUser ?? null;
+  const challengeProfile = usePianoChallengeProfile(learnerId);
   // Which physical kiosk this browser IS, not which app it is running. A shared
   // literal ('piano-kiosk') cannot tell a wall tablet from a dev laptop, so two
   // clients stamp the same id: every per-device log query merges them, and the
@@ -251,10 +243,24 @@ function GameHost() {
    * infrastructure fail-open the child could do nothing about. Both open the
    * match; the gate has already logged which it was.
    */
-  const openMatch = useCallback(() => {
+  const openMatch = useCallback((result = null) => {
+    // The gate result is the only browser-side input to earned time. The
+    // server owns source selection, score scaling, caps, and idempotency; a
+    // failed credit must never turn a passed musical challenge into a locked
+    // game, so it is logged and the match still opens.
+    if (config.gameLimit?.source === 'earned'
+      && typeof result?.assessmentId === 'string'
+      && typeof result?.score === 'number'
+      && result?.status === 'completed') {
+      creditPianoChallengeGameTime(learnerId, result).catch((error) => {
+        logger.warn('piano.challenge-earned-time.credit-failed', {
+          learnerId, assessmentId: result.assessmentId, error: error?.message ?? String(error),
+        });
+      });
+    }
     setGatePending(false);
     setMatchId((value) => value + 1);
-  }, []);
+  }, [config.gameLimit?.source, learnerId, logger]);
 
   // Current location in the header breadcrumb (Games › this game). The breadcrumb
   // replaces the old in-canvas back pill — tap the "Games" crumb to exit.
@@ -287,13 +293,18 @@ function GameHost() {
   // game would have had — one route, one MIDI consumer, one box. Above gate 3
   // deliberately: the challenge is what a match is bought with, so it is asked
   // before the day's balance is read.
+  if (gatePending && challengeProfile.loading) return <SkeletonStage />;
+
   if (gatePending) {
     return (
       <div className="piano-game-fullscreen">
         <GameGate
           learnerId={learnerId}
           deviceId={deviceId}
-          gateConfig={gateConfigForLearner(config.gameGate, learnerId)}
+          gateConfig={{
+            ...gateConfigForLearner(config.gameGate, learnerId),
+            ...(challengeProfile.startLevel ? { startLevel: challengeProfile.startLevel } : {}),
+          }}
           // What the child calls this game, so the challenge can say what it is
           // for ("Play this to start Chess") instead of standing there unexplained.
           gameLabel={entry?.label ?? gameId}

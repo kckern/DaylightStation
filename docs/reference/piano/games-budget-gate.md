@@ -507,6 +507,11 @@ gameLimit:
   users:
     user_1: { dailyMinutes: 30 }
     user_2: { dailyMinutes: 45 }
+  # Used only when source: earned. A passed PianoChallenge credits this
+  # fraction of perPassMinutes according to its 0..1 assessment score.
+  earned:
+    perPassMinutes: 10
+    maxDailyMinutes: 30
 
 gameGate:
   enabled: false            # the household default, for every child
@@ -595,7 +600,7 @@ deliberately absent from it, because setting them today does nothing** — plus 
 | `gameGate.passScore` | **not resolved at all**, at the top level or on a level. Pass is the verdict everywhere; the key is dropped before the gate sees it. |
 | `gameGate.material` | **not resolved at all.** The pre-repertoire shape: one flat material list for the whole gate. Material now belongs to a level. A block carrying only this has no repertoire, so it runs on the built-in fallback. |
 | `gameGate.ladder.*` | **not resolved at all.** The five-axis ladder it configured no longer exists. |
-| `gameLimit.source` | present in the sample and **not read** by any budget code path. `fixed` is the only implemented behaviour; see the note on the source vocabulary below. |
+| `gameLimit.source: economy` | Not implemented. It does not open a coin/economy path; use `fixed` or `earned`. |
 
 Neither kind logs anything when set. `every` and `metered` are resolved and then simply
 never asked for; the rest are dropped by a config resolver that returns an explicit object
@@ -608,16 +613,20 @@ any key it does not name, and a gate whose config never arrives is a gate that i
 permanently off while the YAML says on. That is the same mechanism as the rows above: the
 difference is only whether something downstream reads the key once it lands.
 
-`dailyMinutes` and `deviceDailyMinutes` must be positive finite numbers and the household
-timezone must be set. A missing or malformed value is logged as `budget.config-invalid`
+For `fixed`, `dailyMinutes` and `deviceDailyMinutes` must be positive finite numbers; for
+`earned`, `earned.perPassMinutes`, `earned.maxDailyMinutes`, and `deviceDailyMinutes` must
+be positive finite numbers. The household timezone must also be set. A missing or malformed value is logged as `budget.config-invalid`
 and the feature falls open — unmetered play, never a lockout — because the alternative,
 `undefined × 60 = NaN` compared against zero, granted unlimited play in silence.
 
-The budget source is a vocabulary, not yet a switch. No budget code path reads
-`gameLimit.source`; `fixed` is what happens regardless of what the key says. `earned`
-(minutes minted by passed gates, scaled by score) and `economy` (household coins through
-the existing hold-and-settle session) are named so the vocabulary cannot drift when one of
-them is built.
+`gameLimit.source` is now a switch between two server-owned balance models.
+`fixed` uses `dailyMinutes` (and per-user overrides); `earned` begins each learner at
+zero and accepts only idempotent credits from a completed, passed PianoChallenge
+assessment. The credit is `perPassMinutes × score`, rounded to seconds, and the available
+earned balance is capped by `earned.maxDailyMinutes`. A retry carrying the same assessment
+identity credits zero. The browser cannot adjust a balance directly, and an aborted or
+timed-out result is rejected at the HTTP boundary. `economy` remains reserved and is not
+implemented.
 
 ---
 

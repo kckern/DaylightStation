@@ -259,6 +259,8 @@ import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
 import { PianoContainer } from './3_applications/piano/PianoContainer.mjs';
 import { PianoGameBudgetService } from './3_applications/piano/PianoGameBudgetService.mjs';
+import { PianoChallengeProfileService } from './3_applications/piano/PianoChallengeProfileService.mjs';
+import { SchoolPianoChallengeCompletionService } from './3_applications/piano/SchoolPianoChallengeCompletionService.mjs';
 import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioDatastore.mjs';
 import { YamlPianoGameBudgetStore } from '#adapters/persistence/yaml/YamlPianoGameBudgetStore.mjs';
 import { YamlComposerSongStore as ComposerSongStore } from '#adapters/persistence/yaml/YamlComposerSongStore.mjs';
@@ -2590,11 +2592,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     timezone: configService.getTimezone?.() || null,
     logger: rootLogger.child({ component: 'piano-game-budget' }),
   });
+  const pianoChallengeProfileService = new PianoChallengeProfileService({
+    datastore: pianoStudioDatastore,
+  });
+  const schoolPianoChallengeCompletionService = new SchoolPianoChallengeCompletionService({
+    datastore: pianoStudioDatastore,
+    config: () => configService.getHouseholdAppConfig(null, 'piano')?.pianoChallenge ?? {},
+    timezone: configService.getTimezone?.() || null,
+  });
   v1Routers.piano = createPianoRouter({
     pianoContainer,
     pianoAttemptStore,
     pianoLearningService,
     pianoGameBudgetService,
+    pianoChallengeProfileService,
+    schoolPianoChallengeCompletionService,
+    eventBus,
     pianoChallengePolicy: exerciseBank.available()
       ? new BankChallengePolicy({ exerciseBank, attemptStore: pianoAttemptStore })
       : new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
@@ -3485,6 +3498,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // what the kiosk reads (progress, sequential gating, co-progress lock)
       // instead of a second implementation that could disagree with it.
       pianoPlayableUnits: pianoContainer?.getPlayableUnits?.() ?? null,
+      schoolPianoChallengeCompletionService,
       fitnessPlayableService: v1Routers.fitness?.fitnessPlayableService ?? null,
       fitnessSchoolCourseService: v1Routers.fitness?.fitnessSchoolCourseService ?? null,
       learningEvidenceRepository: schoolLearningEvidence,

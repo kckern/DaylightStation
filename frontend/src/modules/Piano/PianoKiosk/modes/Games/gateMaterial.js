@@ -42,6 +42,11 @@ const WHITE_KEYS_IN_ONE_OCTAVE = 7;
 const SPREADS = Object.freeze([2, 3, 4]);
 /** How many keys one ask may light. Single note, dyad, triad — no further. */
 const MAX_LIT_KEYS = 3;
+const ROOT_PITCH_CLASSES = Object.freeze({
+  C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6,
+  G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11,
+});
+const CHORD_INTERVALS = Object.freeze({ major: [0, 4, 7], minor: [0, 3, 7], diminished: [0, 3, 6] });
 
 /**
  * A lit-key ask, built from nothing but the spec and the gate's own pick
@@ -50,6 +55,20 @@ const MAX_LIT_KEYS = 3;
  * a test that names an index gets the same ask every time.
  */
 export function keysInstance(spec, pickIndex = 0) {
+  const chordIntervals = CHORD_INTERVALS[spec?.quality];
+  const rootPitchClass = ROOT_PITCH_CLASSES[spec?.root];
+  if (chordIntervals && Number.isInteger(rootPitchClass)) {
+    const root = 60 + rootPitchClass;
+    const midis = chordIntervals.map((interval) => root + interval);
+    return {
+      id: `keys/chord@root=${spec.root},quality=${spec.quality}`,
+      title: `${spec.root} ${spec.quality} chord`,
+      form: 'keys', ordering: 'any', key: spec.root, meter: '4/4',
+      tempo: { unit: 'quarter', start_bpm: 60 }, level: { free: 1 }, supports: ['free'],
+      axes: { root: spec.root, quality: spec.quality }, staff: 'treble',
+      events: [{ id: 'chord-1', value: 'quarter', notes: midis.map((midi) => ({ midi, hand: 'right' })) }],
+    };
+  }
   const requested = Math.floor(Number(spec?.notes));
   const notes = Number.isFinite(requested) && requested >= 1 ? Math.min(requested, MAX_LIT_KEYS) : 1;
   const arrangement = spec?.arrangement === 'sequence' ? 'sequence' : 'together';

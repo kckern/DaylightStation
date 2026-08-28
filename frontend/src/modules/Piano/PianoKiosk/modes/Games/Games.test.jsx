@@ -4,6 +4,7 @@ import { MemoryRouter, Routes, Route, resolvePath, useNavigate } from 'react-rou
 
 const schoolAccess = vi.hoisted(() => ({ unlocked: true }));
 const gameBudget = vi.hoisted(() => ({ state: 'off', secondsLeft: 0, warn: false }));
+const daylightApi = vi.hoisted(() => vi.fn(() => Promise.resolve({ parsed: { games: {} } })));
 // vi.fn() (not a plain closure) so tests can assert what GameHost actually
 // PASSES the hook — active/learnerId — not just what it renders in response
 // to the hook's return value. A closure-only mock discards the call args
@@ -21,10 +22,11 @@ const gameBudgetMeter = vi.hoisted(() => vi.fn());
 // counts its own mounts and exposes the context it was handed.
 const probe = vi.hoisted(() => ({ mounts: 0, armed: null, sawContext: false }));
 const gateProps = vi.hoisted(() => ({ last: null, mounts: 0 }));
+const gatePassResult = vi.hoisted(() => ({ value: { score: 1 } }));
 
 // Keep the games-config fetch hermetic (no real network).
 vi.mock('../../../../../lib/api.mjs', () => ({
-  DaylightAPI: vi.fn(() => Promise.resolve({ parsed: { games: {} } })),
+  DaylightAPI: daylightApi,
 }));
 vi.mock('../../../gameRegistry.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -54,7 +56,7 @@ vi.mock('./GameGate.jsx', () => ({
     gateProps.last = props;
     return (
       <div data-testid="game-gate">
-        <button type="button" onClick={() => props.onPassed({ score: 1 })}>gate-pass</button>
+        <button type="button" onClick={() => props.onPassed(gatePassResult.value)}>gate-pass</button>
         <button type="button" onClick={() => props.onLeave()}>gate-leave</button>
       </div>
     );
@@ -68,6 +70,11 @@ vi.mock('../../useSchoolGameAccess.js', () => ({
 }));
 vi.mock('../../useGameBudgetMeter.js', () => ({
   default: gameBudgetMeter,
+}));
+// Profile loading is owned by its dedicated hook; Games tests stay focused on
+// the match-boundary state machine and receive the ordinary no-placement case.
+vi.mock('../../../ask/usePianoChallengeProfile.js', () => ({
+  default: () => ({ loading: false, startLevel: null }),
 }));
 
 import { PianoMidiProvider } from '../../PianoMidiContext.jsx';
@@ -125,6 +132,7 @@ beforeEach(() => {
   probe.armed = null;
   probe.sawContext = false;
   gateProps.last = null;
+  gatePassResult.value = { score: 1 };
   // Which physical kiosk this browser is. Captured from the launch URL and
   // persisted; the host reads it rather than stamping a shared literal.
   localStorage.setItem('piano.kioskDeviceId', 'yellow-room-tablet');
@@ -398,5 +406,20 @@ describe('Games mode — match gate (gate 2)', () => {
     renderGames('/games/probe-game', 'learner1', gatedConfig);
     expect(screen.getByText('Games are locked')).toBeTruthy();
     expect(screen.queryByTestId('game-gate')).toBeNull();
+  });
+
+  it('posts a completed passed assessment to the earned-time endpoint without making a credit failure a new gate', () => {
+    gatePassResult.value = { assessmentId: 'attempt-42', score: 0.8, status: 'completed' };
+    renderGames('/games/probe-game', 'learner1', {
+      ...gatedConfig,
+      gameLimit: { enabled: true, source: 'earned' },
+    });
+    fireEvent.click(screen.getByText('gate-pass'));
+    expect(daylightApi).toHaveBeenCalledWith(
+      'api/v1/piano/users/learner1/game-budget/credits',
+      { assessmentId: 'attempt-42', score: 0.8, status: 'completed', passed: true },
+      'POST',
+    );
+    expect(screen.getByTestId('probe-game')).toBeTruthy();
   });
 });

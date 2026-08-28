@@ -9,6 +9,7 @@ const KNOWN_USERS = new Set(['kid_a', 'kid_b']);
 function appWith(service) {
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => { req.roles = ['kiosk']; next(); });
   // Mirror piano.courses.test.mjs's minimal construction — pianoContainer double
   // with only what createPianoRouter dereferences at build time. isKnownUser
   // is real here (not just available:false) because the game-budget routes
@@ -25,6 +26,26 @@ function appWith(service) {
 }
 
 describe('piano game-budget routes', () => {
+  it('credits a completed passed assessment through the server-side service', async () => {
+    const service = { credit: vi.fn(async () => ({ enabled: true, creditedSeconds: 300, duplicate: false, secondsLeft: 300 })) };
+    const res = await request(appWith(service)).post('/api/v1/piano/users/kid_a/game-budget/credits').send({
+      assessmentId: 'assessment-1', score: 0.5, status: 'completed', passed: true,
+    });
+    expect(res.status).toBe(200);
+    expect(service.credit).toHaveBeenCalledWith({ learnerId: 'kid_a', assessmentId: 'assessment-1', score: 0.5 });
+  });
+
+  it.each([
+    { assessmentId: 'assessment-1', score: 1, status: 'aborted', passed: true },
+    { assessmentId: 'assessment-1', score: 1, status: 'timeout', passed: true },
+    { assessmentId: 'assessment-1', score: 1, status: 'completed', passed: false },
+    { assessmentId: '', score: 1, status: 'completed', passed: true },
+  ])('does not credit a non-passing terminal result: %#', async (body) => {
+    const service = { credit: vi.fn() };
+    const res = await request(appWith(service)).post('/api/v1/piano/users/kid_a/game-budget/credits').send(body);
+    expect(res.status).toBe(400);
+    expect(service.credit).not.toHaveBeenCalled();
+  });
   it('POST session opens and returns the seed', async () => {
     const service = { open: vi.fn(async () => ({ enabled: true, sessionId: 's1', cumulativeSeconds: 30, secondsLeft: 100 })) };
     const res = await request(appWith(service))

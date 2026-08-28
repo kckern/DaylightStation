@@ -43,7 +43,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
 }));
 
-const NOT_GATED = { status: 'ready', gated: false, course: null, unit: null, lesson: null };
+const NOT_GATED = { status: 'ready', gated: false, course: null, unit: null, lesson: null, challenge: null };
 const GATED = {
   status: 'ready',
   gated: true,

@@ -18,7 +18,7 @@ function logger() {
 }
 
 const open = (learnerId, status) => ({
-  learnerId, status, gated: false, course: null, unit: null, lesson: null,
+  learnerId, status, gated: false, course: null, unit: null, lesson: null, challenge: null,
 });
 
 /**
@@ -44,7 +44,7 @@ const open = (learnerId, status) => ({
  *
  * @param {string|null} learnerId - the active kiosk player
  * @returns {{status: 'loading'|'ready'|'error', gated: boolean,
- *   course: object|null, unit: object|null, lesson: object|null, refresh: Function}}
+ *   course: object|null, unit: object|null, lesson: object|null, challenge: object|null, refresh: Function}}
  */
 export function usePianoLessonGate(learnerId) {
   const guest = !learnerId || learnerId === 'guest';
@@ -74,6 +74,7 @@ export function usePianoLessonGate(learnerId) {
           course: gated ? result.course ?? null : null,
           unit: gated ? result.unit ?? null : null,
           lesson: gated ? result.lesson ?? null : null,
+          challenge: gated ? result.challenge ?? null : null,
         };
       });
     } catch (error) {

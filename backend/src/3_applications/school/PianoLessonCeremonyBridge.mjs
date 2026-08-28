@@ -88,16 +88,27 @@ export class PianoLessonCeremonyBridge {
     this.#announced = new Map();
   }
 
-  /** Subscribe to `piano.lesson.completed`. Safe to call more than once. */
+  /** Subscribe to Piano's video and PianoChallenge completion signals. Safe to call more than once. */
   start() {
     if (this.#unsubscribe) return;
-    this.#unsubscribe = this.#eventBus.subscribe('piano.lesson.completed', (payload) => (
+    const unsubscribeLesson = this.#eventBus.subscribe('piano.lesson.completed', (payload) => (
       this.#handle(payload).catch((err) => {
         this.#logger.warn?.('school.piano-ceremony.handler-threw', {
           error: err?.message ?? String(err),
         });
       })
     ));
+    const unsubscribeChallenge = this.#eventBus.subscribe('piano.school-challenge.completed', (payload) => (
+      this.#handleChallenge(payload).catch((err) => {
+        this.#logger.warn?.('school.piano-challenge-ceremony.handler-threw', {
+          error: err?.message ?? String(err),
+        });
+      })
+    ));
+    this.#unsubscribe = () => {
+      unsubscribeLesson?.();
+      unsubscribeChallenge?.();
+    };
     // Backfill School's projection from Piano's authoritative completion
     // ledger. Detached from boot: a slow Plex read must not hold up the house.
     this.reconcile().catch((err) => this.#logger.warn?.('school.piano-progress.reconcile-failed', {
@@ -191,6 +202,37 @@ export class PianoLessonCeremonyBridge {
     await this.#fireHook({ learnerId, student, courseId, lesson, status });
   }
 
+  /**
+   * A passed PianoChallenge is alternate evidence for one configured course
+   * lesson.  As with a video event, the bus payload is never trusted as the
+   * completion decision: status() must report the active descriptor settled.
+   */
+  async #handleChallenge(payload) {
+    const learnerId = payload?.userId;
+    const descriptorId = payload?.descriptorId;
+    if (typeof learnerId !== 'string' || !learnerId.trim() || typeof descriptorId !== 'string' || !descriptorId.trim()) return;
+    const assignment = await this.#assignments.get(learnerId);
+    const enrollments = (assignment?.programs ?? []).filter((row) => row?.programId === this.#launcher.id);
+    for (const enrollment of enrollments) {
+      const courseId = enrollment.courseId ?? enrollment.corpusId ?? null;
+      if (!courseId) continue;
+      // eslint-disable-next-line no-await-in-loop -- first authoritative settled course wins.
+      const status = await this.#launcher.status({ userId: learnerId, programInstance: courseId });
+      if (status?.error || status?.challengeCompleted !== true || status?.excused === true) continue;
+      const nowMs = this.#nowMs();
+      const studyDate = studyDayForInstant(nowMs, { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR });
+      await this.#recordChallengeEvidence({ learnerId, enrollment, courseId, descriptorId, completedAt: payload?.completedAt, studyDate, status });
+      if (this.#announced.get(learnerId) === studyDate) return;
+      this.#announced.set(learnerId, studyDate);
+      const student = await this.#studentName(learnerId);
+      const lesson = status?.servedWork?.[0]?.title ?? 'PianoChallenge';
+      this.#logger.info?.('school.piano-challenge-ceremony.satisfied', { learnerId, courseId, descriptorId, studyDate, lesson });
+      this.#broadcast({ learnerId, student, courseId, lesson, status, studyDate });
+      await this.#fireHook({ learnerId, student, courseId, lesson, status });
+      return;
+    }
+  }
+
   async #recordEvidence({ learnerId, enrollment, completion }) {
     if (!this.#evidence?.appendEvidence || !completion?.lesson?.id || !completion?.completedAt) return null;
     const occurredAt = new Date(Date.parse(completion.completedAt)).toISOString();
@@ -222,6 +264,30 @@ export class PianoLessonCeremonyBridge {
       this.#logger.warn?.('school.piano-progress.record-failed', {
         learnerId, lessonId: completion.lesson.id, error: error?.message ?? String(error),
       });
+      return null;
+    }
+  }
+
+  async #recordChallengeEvidence({ learnerId, enrollment, courseId, descriptorId, completedAt, studyDate, status }) {
+    if (!this.#evidence?.appendEvidence) return null;
+    const completedMs = Date.parse(completedAt);
+    if (Number.isNaN(completedMs)) return null;
+    const occurredAt = new Date(completedMs).toISOString();
+    const work = status?.servedWork?.[0] ?? {};
+    const evidence = {
+      schema: 'school.learning-evidence/v1',
+      evidenceId: `piano-challenge:${learnerId}:${studyDate}:${descriptorId}`,
+      learnerId, occurredAt, verification: 'verified',
+      activity: { id: descriptorId, kind: 'piano_challenge', itemId: descriptorId, graded: true, action: 'complete' },
+      learning: {
+        subjectId: enrollment.subject ?? 'arts', courseId,
+        ...(work.unitId ? { unitId: work.unitId } : {}),
+      },
+      measures: { engagements: 1, completions: 1 },
+      source: { surface: 'piano-kiosk', transport: 'piano-challenge' },
+    };
+    try { return await this.#evidence.appendEvidence(evidence); } catch (error) {
+      this.#logger.warn?.('school.piano-challenge-progress.record-failed', { learnerId, descriptorId, error: error?.message ?? String(error) });
       return null;
     }
   }

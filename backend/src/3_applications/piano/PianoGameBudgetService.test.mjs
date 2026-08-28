@@ -29,6 +29,28 @@ beforeEach(() => {
 });
 
 describe('PianoGameBudgetService', () => {
+  it('mints score-scaled earned time idempotently only when the earned source is enabled', async () => {
+    const earnedCfg = {
+      enabled: true, source: 'earned', earned: { perPassMinutes: 10, maxDailyMinutes: 30 },
+      deviceDailyMinutes: 120, users: {},
+    };
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const earned = new PianoGameBudgetService({
+      store, config: () => earnedCfg, timezone: 'America/Los_Angeles', clock: () => now, logger,
+    });
+    const first = await earned.credit({ learnerId: 'kid_a', assessmentId: 'attempt-1', score: 0.85 });
+    expect(first).toMatchObject({ enabled: true, creditedSeconds: 510, duplicate: false, secondsLeft: 510 });
+    const retry = await earned.credit({ learnerId: 'kid_a', assessmentId: 'attempt-1', score: 0.85 });
+    expect(retry).toMatchObject({ enabled: true, creditedSeconds: 0, duplicate: true, secondsLeft: 510 });
+    expect(logger.info).toHaveBeenCalledWith('budget.credited', expect.objectContaining({ assessmentId: 'attempt-1', duplicate: false }));
+  });
+
+  it('does not mint fixed-budget time through the earned credit operation', async () => {
+    expect(await svc.credit({ learnerId: 'kid_a', assessmentId: 'attempt-1', score: 1 }))
+      .toEqual({ enabled: false, creditedSeconds: 0, duplicate: false });
+    expect(store.saveDay).not.toHaveBeenCalled();
+  });
+
   it('open persists the session and returns the seed cumulative + balance', async () => {
     const r = await svc.open({ learnerId: 'kid_a', deviceId: 'kiosk' });
     expect(r).toMatchObject({
