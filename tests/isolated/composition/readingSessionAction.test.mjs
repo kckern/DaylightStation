@@ -58,7 +58,7 @@ describe('reading-session — an ordinary card tap opens a session', () => {
   it('tells the screen who is standing there', async () => {
     const { handler, sent } = build();
     await handler(tap());
-    expect(sent[0]).toMatchObject({
+    expect(sent.find((entry) => entry.payload?.event === 'session-open')).toMatchObject({
       topic: 'reading:livingroom',
       payload: { event: 'session-open', learnerId: 'learner-c' },
     });

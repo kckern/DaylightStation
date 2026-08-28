@@ -229,9 +229,21 @@ export function useReadingSession({
     startedRef.current = false;
     setDeadline(null);
     setView('playing');
+    // `attributable` is EXPLICIT because a null `learnerId` serialises as an
+    // ABSENT field in the log store, and an absent field is invisible to the
+    // query you would write looking for this. A boolean that is present and
+    // `false` is greppable; a missing key is not. This is the moment
+    // attribution is frozen forever, so it is the moment worth being loud at.
     readingLog.pick('countdown-expired', {
       learnerId: attribution.learnerId, contentId: attribution.contentId, pickId: attribution.pickId,
+      attributable: Boolean(attribution.learnerId),
     });
+    if (!attribution.learnerId) {
+      readingLog.error('committed-unattributable', {
+        contentId: attribution.contentId, pickId: attribution.pickId,
+        consequence: 'story will play and the read will be rejected at completion',
+      });
+    }
     try {
       onPlayRef.current?.({ ...attribution, image: current.image ?? null });
     } catch (err) {
@@ -359,6 +371,26 @@ export function useReadingSession({
       case 'book-selected': {
         const contentId = payload.contentId ?? null;
         if (!contentId) return;
+        // THE LOUDEST SIGNAL THIS FEATURE HAS. A book arrived for a session
+        // this screen never learned about — `session-open` was broadcast while
+        // the TV was off/reloading and there is no snapshot fetch to recover
+        // it. Everything downstream still WORKS: the countdown runs, the story
+        // plays, the child sees nothing wrong. But attribution freezes as null
+        // in `commitPick`, the completion POST is rejected, and the read is
+        // lost. On 2026-08-28 that happened in the field and the only trace was
+        // an ABSENT field on two info lines nobody was looking at.
+        //
+        // The payload carries the authoritative learner — the interceptor reads
+        // it straight off the session — so this also records the id we could
+        // have used, which is what makes the gap self-evident in the log store.
+        if (!learnerRef.current?.id) {
+          readingLog.error('pick-without-session', {
+            contentId,
+            payloadLearnerId: payload.learnerId ?? null,
+            view: viewRef.current,
+            consequence: 'attribution will be null; the read cannot be recorded',
+          });
+        }
         const previous = pickRef.current;
         const samePick = previous?.contentId === contentId && viewRef.current === 'picking';
         const next = samePick ? previous : { contentId, title: null, image: null };
@@ -428,6 +460,19 @@ export function useReadingSession({
   }, [commitPick, confirmMs, cue, loadBook, loadSummary, location, say]);
 
   useWebSocketSubscription(readingTopic(location), handle, [handle]);
+
+  // Events are deliberately not a durable queue.  Hydrate after subscribing
+  // so a cold TV or an auto-reloaded page cannot miss its only `session-open`.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await schoolApi.readingSession(location);
+      const session = result.ok ? result.data?.session : null;
+      if (cancelled || !session || session.state === 'starting') return;
+      handle({ event: 'session-open', ...session });
+    })();
+    return () => { cancelled = true; };
+  }, [handle, location]);
 
   return {
     view,

@@ -44,6 +44,7 @@ export const readingTopic = (location) => `reading:${location}`;
 
 /** Where a fresh session starts: nothing picked, nothing playing. */
 export const PROMPT = 'prompt';
+export const STARTING = 'starting';
 
 /** ~2 minutes of quiet. Long enough to fetch a book from the shelf. */
 export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
@@ -58,8 +59,30 @@ export const DEFAULT_SWEEP_INTERVAL_MS = 15_000;
  */
 const IDLE_STATES = new Set(['prompt', 'confirm']);
 
+/**
+ * How long a session may sit in `reading` before the sweep calls it stuck.
+ *
+ * `reading` is EXEMPT from teardown on purpose (D6) — a 45-minute audiobook is
+ * not an empty room — and that exemption is unbounded, which is the hazard.
+ * A session only leaves `reading` when `POST /reading/read` succeeds; if that
+ * write fails (on 2026-08-28: a null `learnerId` the screen had frozen at pick
+ * time), the state never moves. The idle sweep skips it forever, `suppressEnd`
+ * keeps cancelling the room's `end: tv-off`, and the TV stays on all night with
+ * nobody in the room. Nothing anywhere reported this.
+ *
+ * 90 minutes is deliberately well past the longest thing anyone reads along to,
+ * so this NEVER fires on a legitimately long story. It does not tear anything
+ * down — teardown here would cut off a real audiobook, which is the failure D6
+ * exists to prevent. It only says so, loudly, once.
+ */
+export const STUCK_READING_MS = 90 * 60_000;
+
 export class ReadingSessionService {
   #sessions = new Map();
+  #revisions = new Map();
+  #serverEpoch;
+  /** Locations already reported stuck, so the 15s sweep warns once, not always. */
+  #stuckReported = new Set();
   #eventBus; #clock; #logger;
   #idleTimeoutMs; #sweepIntervalMs; #onTimeout; #scheduler; #timer = null;
 
@@ -89,6 +112,7 @@ export class ReadingSessionService {
     this.#sweepIntervalMs = sweepIntervalMs;
     this.#onTimeout = onTimeout;
     this.#scheduler = scheduler;
+    this.#serverEpoch = `reading_${Math.random().toString(36).slice(2, 12)}`;
   }
 
   /**
@@ -132,8 +156,37 @@ export class ReadingSessionService {
    */
   async sweep() {
     const closed = [];
-    if (!this.#idleTimeoutMs) return closed;
     const now = this.#clock().getTime();
+
+    // STUCK DETECTION RUNS FIRST, AND ABOVE THE IDLE-TIMEOUT GUARD.
+    //
+    // It sat below `if (!this.#idleTimeoutMs) return closed` in its first
+    // version, which quietly disabled the watchdog for any household that had
+    // turned the idle timeout off — and a household that would rather leave the
+    // TV on than risk a false teardown is EXACTLY the one that needs to be told
+    // its living-room session has been parked in `reading` since this morning.
+    // A detector switched off by the same setting that creates its failure mode
+    // is the quiet-failure pattern this whole watchdog exists to break.
+    //
+    // Reported, never torn down — see STUCK_READING_MS. Once per session,
+    // because the sweep runs every 15s and a warning that repeats 240 times an
+    // hour is one nobody reads.
+    for (const session of this.#sessions.values()) {
+      if (session.state !== 'reading') continue;
+      if (now - session.lastActivityAt <= STUCK_READING_MS) continue;
+      if (this.#stuckReported.has(session.location)) continue;
+      this.#stuckReported.add(session.location);
+      this.#log('warn', 'school.reading.session-stuck', {
+        location: session.location,
+        learnerId: session.learnerId,
+        state: session.state,
+        idleMs: now - session.lastActivityAt,
+        openedAt: session.openedAt,
+        consequence: 'idle teardown is exempt here and end: tv-off stays suppressed',
+      });
+    }
+
+    if (!this.#idleTimeoutMs) return closed;
     for (const session of [...this.#sessions.values()]) {
       if (!IDLE_STATES.has(session.state)) continue;
       if (now - session.lastActivityAt <= this.#idleTimeoutMs) continue;
@@ -161,6 +214,17 @@ export class ReadingSessionService {
     return this.#sessions.get(location) ?? null;
   }
 
+  /** A replay-safe read for a screen that mounted or reconnected mid-session. */
+  snapshot(location) {
+    const key = typeof location === 'string' ? location.trim() : '';
+    return Object.freeze({
+      location: key,
+      session: this.#sessions.get(key) ?? null,
+      revision: this.#revisions.get(key) ?? 0,
+      serverEpoch: this.#serverEpoch,
+    });
+  }
+
   /** Every open session, newest state included — for a status endpoint or a sweep. */
   list() {
     return [...this.#sessions.values()];
@@ -172,7 +236,7 @@ export class ReadingSessionService {
    * @param {{location: string, learnerId: string, target?: string|null}} a
    * @returns {object} the frozen session
    */
-  open({ location, learnerId, target = null } = {}) {
+  open({ location, learnerId, target = null, state = PROMPT } = {}) {
     if (typeof location !== 'string' || !location.trim()) {
       throw new Error('ReadingSessionService.open requires a location');
     }
@@ -185,7 +249,10 @@ export class ReadingSessionService {
       location: location.trim(),
       learnerId: learnerId.trim(),
       target,
-      state: PROMPT,
+      sessionId: `rs_${Math.random().toString(36).slice(2, 12)}`,
+      revision: this.#nextRevision(location.trim()),
+      serverEpoch: this.#serverEpoch,
+      state,
       openedAt: at.toISOString(),
       // Epoch ms, not an ISO string: the idle sweep compares it on every pass
       // and a re-parse per session per sweep buys nothing. Every tap moves it
@@ -193,13 +260,28 @@ export class ReadingSessionService {
       lastActivityAt: at.getTime(),
     });
     this.#sessions.set(session.location, session);
+    // A fresh session at this reader is a fresh chance to get stuck.
+    this.#stuckReported.delete(session.location);
     this.#log('info', 'school.reading.session-open', {
       location: session.location,
       learnerId: session.learnerId,
       replaced: previous?.learnerId ?? null,
     });
-    this.#broadcast(session.location, { event: 'session-open', ...session });
+    this.#broadcast(session.location, { event: state === STARTING ? 'session-starting' : 'session-open', ...session });
     return session;
+  }
+
+  /** Promote a reserved reader only if it has not been superseded. */
+  activate(location, sessionId) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session || session.sessionId !== sessionId) return null;
+    const active = Object.freeze({
+      ...session, state: PROMPT, revision: this.#nextRevision(session.location),
+      lastActivityAt: this.#clock().getTime(),
+    });
+    this.#sessions.set(location, active);
+    this.#broadcast(location, { event: 'session-open', ...active });
+    return active;
   }
 
   /**
@@ -218,7 +300,10 @@ export class ReadingSessionService {
     // `lastActivityAt` is not patchable for the same reason `learnerId` is not:
     // a caller that could hand in its own value could hold a dead session open
     // forever, and the timeout is what stops the TV running all night (D6).
-    const updated = Object.freeze({ ...session, ...safe, lastActivityAt: this.#clock().getTime() });
+    const updated = Object.freeze({
+      ...session, ...safe, revision: this.#nextRevision(session.location),
+      serverEpoch: this.#serverEpoch, lastActivityAt: this.#clock().getTime(),
+    });
     this.#sessions.set(session.location, updated);
     this.#broadcast(session.location, { event: 'session-update', ...updated });
     return updated;
@@ -233,10 +318,14 @@ export class ReadingSessionService {
     const session = this.#sessions.get(location) ?? null;
     if (!session) return null;
     this.#sessions.delete(location);
+    const revision = this.#nextRevision(session.location);
+    this.#stuckReported.delete(location);
     this.#log('info', 'school.reading.session-close', {
       location: session.location, learnerId: session.learnerId, reason,
     });
-    this.#broadcast(session.location, { event: 'session-close', ...session, reason });
+    this.#broadcast(session.location, {
+      event: 'session-close', ...session, revision, serverEpoch: this.#serverEpoch, reason,
+    });
     return session;
   }
 
@@ -248,6 +337,12 @@ export class ReadingSessionService {
         location, event: payload?.event ?? null, error: err?.message ?? String(err),
       });
     }
+  }
+
+  #nextRevision(location) {
+    const next = (this.#revisions.get(location) ?? 0) + 1;
+    this.#revisions.set(location, next);
+    return next;
   }
 
   /** A broken log transport must not become a broken tap. */
