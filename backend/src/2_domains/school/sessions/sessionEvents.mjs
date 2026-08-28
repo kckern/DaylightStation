@@ -135,6 +135,31 @@ const SCHEMA = {
   // (spec §8); reports need to tell the two confidences apart.
   media_completed: { fields: ['verified'], validate: () => {} },
   media_stalled: { fields: ['reason'], validate: () => {} },
+  // A comprehension gate inside an in-flight dispatch: the media paused at an
+  // authored checkpoint, the child answered, and the answer was right. It is an
+  // ANNOTATION (see `ANNOTATION_EVENTS`) because clearing a gate is evidence
+  // recorded INSIDE `media_dispatched`, not a move out of it — the lesson is
+  // still playing, and only `media_completed`/`media_stalled` end it.
+  //
+  // `at` is the WALL CLOCK, as it is on every other event in this log. The
+  // checkpoint's position in the media is authored on the unit
+  // (`#domains/school/mediaCheckpoints.mjs`) and looked up by `checkpointId`,
+  // so it is deliberately NOT carried here: an `at` that sometimes meant
+  // "312 seconds in" and sometimes meant "10:04 on Monday" is the kind of
+  // field a report reads wrong for a year. A future need for the observed
+  // playhead gets its own unambiguous `positionSeconds`.
+  //
+  // `attempts` is how many answers it took, >= 1 (a clear costs at least one).
+  // There is deliberately NO upper bound: wrong answers re-ask until correct,
+  // so a large count is a real fact about a child who struggled, and the one
+  // place that reads it (a parent asking "which question stumped them?") is
+  // exactly where truncating it would lie.
+  checkpoint_cleared: {
+    fields: ['checkpointId', 'attempts'],
+    validate: allOf(stringField('checkpointId'), (raw, push) => {
+      if (!Number.isInteger(raw.attempts) || raw.attempts < 1) push('attempts: must be an integer >= 1');
+    }),
+  },
   launch_dispatched: {
     fields: ['surface', 'decision', 'approvalId'],
     validate: stringField('surface'),
@@ -304,12 +329,34 @@ export const TRANSITIONS = Object.freeze({
  *   failure is an offline printer, which can strike before anything issued.
  * - `reassigned` (spec §5.3) re-credits the work and rides the existing
  *   `attributedTo` mechanics; the lifecycle position is unchanged.
+ * - `checkpoint_cleared` is evidence from INSIDE an in-flight media dispatch:
+ *   the child answered a mid-lesson gate correctly and the video resumed. The
+ *   lesson has not finished, so the state must stay `media_dispatched` — an
+ *   advancing event here would release the linked quiz halfway through the
+ *   video, which is the exact thing the gate exists to prevent.
  */
 export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'failed', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted',
   'reward_reconciled', 'reward_reconciliation_failed',
-  'result_receipt_captured', 'result_receipt_reprinted',
+  'result_receipt_captured', 'result_receipt_reprinted', 'checkpoint_cleared',
 ]));
+/**
+ * Annotations that are legal only from specific states, overriding the default
+ * "legal anywhere non-terminal".
+ *
+ * `failed` and `reassigned` can strike at any point in a session's life, which
+ * is why the default is as wide as it is. A checkpoint clear cannot: there is
+ * no gate to clear before anything was dispatched, and none left once the
+ * media ended. Accepting one from `created` would file an answer against a
+ * lesson that never played.
+ *
+ * (Annotations are absent from `TRANSITIONS` by construction, so
+ * `statesAccepting` answers empty for every one of them — `transitionViolation`
+ * below is the authority on annotation legality, as it always was.)
+ */
+const ANNOTATION_STATES = new Map([
+  ['checkpoint_cleared', new Set(['media_dispatched'])],
+]);
 const TERMINAL_ANNOTATIONS = new Set([
   'grade_adjusted', 'grade_adjustment_retracted', 'reward_reconciled', 'reward_reconciliation_failed',
   // Settlement closes the state before its retained receipt can be linked.
@@ -374,8 +421,11 @@ export function transitionViolation(state, eventType) {
   if (state === null && !annotation) {
     return eventType === 'created' ? null : MUST_OPEN;
   }
+  const only = ANNOTATION_STATES.get(eventType);
   const legal = annotation
-    ? state !== null && (!TERMINAL_STATES.has(state) || TERMINAL_ANNOTATIONS.has(eventType))
+    ? state !== null && (only
+      ? only.has(state)
+      : (!TERMINAL_STATES.has(state) || TERMINAL_ANNOTATIONS.has(eventType)))
     : (TRANSITIONS[state] || []).includes(eventType);
   return legal ? null : `illegal transition ${state} -> ${eventType}`;
 }
@@ -466,6 +516,12 @@ const emptyState = () => ({
   missedItemIds: [],
   transport: null,
   mediaDispatch: null,
+  // Rows, not a Set, and shaped exactly as `clearedSetFrom` in
+  // `#domains/school/mediaCheckpoints.mjs` consumes them: the derived state is
+  // read back through YAML and HTTP, where a Set serialises to `{}`. Same
+  // posture as `resultReceiptArtifacts` and `gradeAdjustments` above — an
+  // ordered array of plain records, deduped on append.
+  clearedCheckpoints: [],
   outcome: null,
   machineOutcome: null,
   rewardTxn: null,
@@ -540,6 +596,16 @@ const APPLY = {
   },
   media_stalled(s) {
     if (s.mediaDispatch) s.mediaDispatch.status = 'stalled';
+  },
+  // First clear wins. The screen may retry its POST (a resume that the child is
+  // watching for is worth retrying), and a re-delivered clear is the SAME fact:
+  // the gate released at the first one. Overwriting would move `at` forward and
+  // let a duplicate inflate `attempts`, turning one right answer into a record
+  // of a child who struggled.
+  checkpoint_cleared(s, e) {
+    if (!isNonEmptyString(e.checkpointId)) return;
+    if (s.clearedCheckpoints.some((row) => row.checkpointId === e.checkpointId)) return;
+    s.clearedCheckpoints.push({ checkpointId: e.checkpointId, attempts: e.attempts, at: e.at });
   },
   launch_dispatched(s, e) {
     s.launch = {
