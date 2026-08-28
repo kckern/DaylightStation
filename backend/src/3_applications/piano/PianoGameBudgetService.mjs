@@ -183,6 +183,19 @@ export class PianoGameBudgetService {
     // "unknown session", and the tail segment (and the session's closed
     // flag) never lands anywhere.
     const day = this.#loadDayForSession({ sessionId, learnerId, today, at });
+    // Same ownership check settle applies (see there for the full rationale):
+    // #loadDayForSession only validates the claimed learnerId on the
+    // carry-forward path (a session pulled in from yesterday). A session
+    // already present in TODAY's record skipped that check entirely — the
+    // route layer takes learnerId from a client-supplied URL param, so
+    // without this, any caller who knows a sessionId could seal (and
+    // prematurely end) a sibling's still-open session. Rejecting here closes
+    // that gap the same way settle already does.
+    const owner = day.sessions[sessionId]?.learnerId;
+    if (owner && owner !== learnerId) {
+      this.#logger.error?.('budget.learner-mismatch', { sessionId, learnerId, ownerLearnerId: owner });
+      throw Object.assign(new Error('session belongs to a different learner'), { status: 409 });
+    }
     const r = applyClose(day, { sessionId, cumulativeSeconds, at });
     try {
       this.#store.saveDay(r.day);

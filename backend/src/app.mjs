@@ -258,7 +258,9 @@ import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
 import { PianoContainer } from './3_applications/piano/PianoContainer.mjs';
+import { PianoGameBudgetService } from './3_applications/piano/PianoGameBudgetService.mjs';
 import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioDatastore.mjs';
+import { YamlPianoGameBudgetStore } from '#adapters/persistence/yaml/YamlPianoGameBudgetStore.mjs';
 import { YamlComposerSongStore as ComposerSongStore } from '#adapters/persistence/yaml/YamlComposerSongStore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
@@ -2563,10 +2565,29 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     learningService: pianoLearningService,
     logger: rootLogger.child({ module: 'piano-api' })
   });
+  // Game-time budget (design 2026-08-27): layer-2 YAML store (a balance, not
+  // a ledger — see the store's header) behind the pure orchestration service.
+  // Both get a real child logger here so budget.opened/settled/depleted/
+  // config-invalid events actually reach the log store — until wired they
+  // silently defaulted to console.
+  const pianoGameBudgetStore = new YamlPianoGameBudgetStore({
+    historyRoot: path.join(dataDir, 'household/history/piano-games'),
+    logger: rootLogger.child({ component: 'piano-game-budget' }),
+  });
+  const pianoGameBudgetService = new PianoGameBudgetService({
+    store: pianoGameBudgetStore,
+    config: () => configService.getHouseholdAppConfig(null, 'piano')?.gameLimit,
+    // Same accessor School's own composition uses (schoolLifecycle.mjs) —
+    // NOT getHouseholdAppConfig(null,'school')?.timezone. A wrong timezone
+    // here silently moves the 4am study-day boundary (D6).
+    timezone: configService.getTimezone?.() || null,
+    logger: rootLogger.child({ component: 'piano-game-budget' }),
+  });
   v1Routers.piano = createPianoRouter({
     pianoContainer,
     pianoAttemptStore,
     pianoLearningService,
+    pianoGameBudgetService,
     pianoChallengePolicy: exerciseBank.available()
       ? new BankChallengePolicy({ exerciseBank, attemptStore: pianoAttemptStore })
       : new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
