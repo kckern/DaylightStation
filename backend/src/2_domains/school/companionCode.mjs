@@ -34,6 +34,17 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export const CODE_LETTERS = Object.freeze(['A', 'B', 'C', 'D', 'E']);
 
+/**
+ * The itemId the gate row prints under, and the id its synthesized bank item
+ * carries (Task 8). A worksheet has exactly one gate, so one fixed id is
+ * enough — and a fixed id is what lets `questionItemIds`, the row planner and
+ * the scan-back resolver all name the same row without passing it around.
+ *
+ * Double-underscored so it cannot collide with an authored bank item id: every
+ * real item id in this codebase is a slug, and nothing mints this shape.
+ */
+export const COMPANION_GATE_ITEM_ID = '__companion_gate';
+
 const LETTER_INDEX = new Map(CODE_LETTERS.map((letter, index) => [letter, index]));
 
 /** Every non-empty subset, ordered by bitmask so the list is stable across runs. */
@@ -110,4 +121,6 @@ export function parseCode(text) {
   return normalise(trimmed.toUpperCase().split(''));
 }
 
-export default { CODE_LETTERS, ALL_CODES, mintCode, codesMatch, formatCode, parseCode };
+export default {
+  CODE_LETTERS, COMPANION_GATE_ITEM_ID, ALL_CODES, mintCode, codesMatch, formatCode, parseCode,
+};

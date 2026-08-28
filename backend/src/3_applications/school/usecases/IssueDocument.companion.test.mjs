@@ -96,6 +96,7 @@ function unitFor({
 function issuer({
   companionCodes, units, rng = seededRng(1), now = '2026-08-26T17:00:00.000Z',
   householdId = HOUSEHOLD, sessions = new FakeSessionRepository(),
+  cardRequests = [],
 }) {
   const unitsById = new Map(units.map((unit) => [unit.unitId, unit]));
   const instances = new Map();
@@ -147,7 +148,10 @@ function issuer({
         };
       },
     },
-    allocationStore: { async findReusableCard() { return null; }, async release() { return []; } },
+    allocationStore: {
+      async findReusableCard(request) { cardRequests.push(request); return null; },
+      async release() { return []; },
+    },
     companions,
     companionCodes,
     householdId,
@@ -156,7 +160,7 @@ function issuer({
     logger: silentLogger,
   });
 
-  return { issueDocument, sessions, companions, printer, tokens, published };
+  return { issueDocument, sessions, companions, printer, tokens, published, cardRequests };
 }
 
 async function seedSession(sessions, { sessionId, learnerId, unitId, at = '2026-08-26T17:00:00.000Z' }) {
@@ -319,5 +323,94 @@ describe('IssueDocument — a required companion binds its finish code before th
     expect(optionalToken.accessCodeExpiresAt).not.toBe(optionalToken.expiresAt);
     expect(Date.parse(optionalToken.accessCodeExpiresAt))
       .toBeLessThan(Date.parse(optionalToken.expiresAt));
+  });
+});
+
+/**
+ * Task 8: the code has to reach the PAPER, and only the paper.
+ *
+ * Task 7 drew the finish code and deliberately kept it off `execute()`'s return
+ * value, because that result travels to `ResolveScanAction` and out to a
+ * browser — a child who could read it there would clear the gate without ever
+ * playing the media. So the code goes into the published print document (from
+ * which the gate row is drawn and the answer key is printed) and nowhere else.
+ */
+describe('IssueDocument — the finish code reaches the printed sheet and nothing else', () => {
+  const gateOf = (document) => (document?.blocks ?? []).find((block) => block.companionGate === true) ?? null;
+
+  it('prints a gate row carrying the code that was minted for the lesson', async () => {
+    const companionCodes = codeStore();
+    const unit = unitFor({ participation: 'required' });
+    const { issueDocument, sessions, companions, published } = issuer({ companionCodes, units: [unit] });
+    await seedSession(sessions, { sessionId: 'ses-gate', learnerId: 'kid1', unitId: unit.unitId });
+
+    await issueDocument.execute({ sessionId: 'ses-gate' });
+
+    const minted = await companionCodes.get(companions.records[0].codeRef);
+    const [document] = [...published.values()];
+    const gate = gateOf(document);
+
+    expect(gate).not.toBeNull();
+    expect(gate.code).toEqual(minted.code);
+    expect(gate.choices).toEqual(['A', 'B', 'C', 'D', 'E']);
+    expect(gate.omr).toBe(true);
+  });
+
+  it('prints NO gate row for an optional companion', async () => {
+    // The regression that would otherwise alter every worksheet in the house.
+    const companionCodes = codeStore();
+    const unit = unitFor({ participation: 'optional' });
+    const { issueDocument, sessions, published } = issuer({ companionCodes, units: [unit] });
+    await seedSession(sessions, { sessionId: 'ses-nogate', learnerId: 'kid1', unitId: unit.unitId });
+
+    await issueDocument.execute({ sessionId: 'ses-nogate' });
+
+    const [document] = [...published.values()];
+    expect(gateOf(document)).toBeNull();
+    expect(JSON.stringify(document)).not.toContain('companionGate');
+  });
+
+  it('asks for one MORE card row than the worksheet has questions', async () => {
+    // Off by one here and the last question falls off the end of the card.
+    const companionCodes = codeStore();
+    const required = unitFor({ unitId: 'cfm-req', participation: 'required' });
+    const optional = unitFor({ unitId: 'cfm-opt', participation: 'optional' });
+    const { issueDocument, sessions, published, cardRequests } = issuer({
+      companionCodes, units: [required, optional],
+    });
+    await seedSession(sessions, { sessionId: 'ses-rows-r', learnerId: 'kid1', unitId: required.unitId });
+    await seedSession(sessions, { sessionId: 'ses-rows-o', learnerId: 'kid1', unitId: optional.unitId });
+
+    await issueDocument.execute({ sessionId: 'ses-rows-r' });
+    await issueDocument.execute({ sessionId: 'ses-rows-o' });
+
+    const questionCount = [...published.values()]
+      .find((document) => gateOf(document))
+      .blocks.filter((block) => block.type === 'question' && !block.companionGate).length;
+
+    expect(cardRequests).toHaveLength(2);
+    expect(cardRequests[0].rowsNeeded).toBe(questionCount + 1);
+    expect(cardRequests[1].rowsNeeded).toBe(questionCount);
+  });
+
+  it('never puts the finish code anywhere the browser can reach', async () => {
+    const companionCodes = codeStore();
+    const unit = unitFor({ participation: 'required' });
+    const { issueDocument, sessions, companions } = issuer({ companionCodes, units: [unit] });
+    await seedSession(sessions, { sessionId: 'ses-leak', learnerId: 'kid1', unitId: unit.unitId });
+
+    const result = await issueDocument.execute({ sessionId: 'ses-leak' });
+    const minted = await companionCodes.get(companions.records[0].codeRef);
+
+    // The whole result, serialised — this is what `ResolveScanAction` answers a
+    // browser with. Neither the letters nor the field name may appear in it.
+    const serialised = JSON.stringify(result);
+    expect(serialised).not.toContain('finishCode');
+    expect(serialised).not.toContain(minted.code.join(''));
+    expect(result.document).toBeNull();
+    // The companion record a child's list is built from carries the ACCESS code
+    // only — the reference to the code record, never the code itself.
+    expect(companions.records[0].finishCode ?? null).toBeNull();
+    expect(JSON.stringify(companions.records[0])).not.toContain(minted.code.join(''));
   });
 });

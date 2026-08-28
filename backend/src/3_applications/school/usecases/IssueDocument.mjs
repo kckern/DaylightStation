@@ -618,6 +618,10 @@ export class IssueDocument {
 
     let instance = await this.#worksheetInstances.findBySession(sessionId);
     const existingInstance = Boolean(instance);
+    // Whether THIS render's document carries a companion gate row (Task 8).
+    // It costs a card row of its own, so `rowsNeeded` below has to know — an
+    // undercount by one runs the last question off the end of the card.
+    let gateRows = 0;
     if (!instance) {
       const id = `${slugify(unit.subject ?? 'school')}/${slugify(course.courseId)}/ws-${slugify(sessionId)}`;
       const bank = this.#bankReader?.getBank(unit.bank);
@@ -635,6 +639,7 @@ export class IssueDocument {
       if (companion?.refusal) {
         return this.#unavailable(sessionId, companion.refusal.reason, companion.refusal.message);
       }
+      gateRows = companion?.finishCode ? 1 : 0;
       const published = await this.#publishPrintDocument.execute({
         source: worksheetInstanceDocument(instance, {
           title: unit.title,
@@ -648,6 +653,19 @@ export class IssueDocument {
           passPercent: unit.passing?.percent ?? null,
           progress: await this.#lessonProgress({ state, unit, nowIso }),
           companionCode: companion?.accessCode ?? null,
+          // TWO CODES, NEVER THE SAME FIELD. `companionCode` above is the
+          // SIX-DIGIT ACCESS CODE printed on the lesson card's Read Along
+          // panel — the number that OPENS the companion. `finishCode` is the
+          // A–E set that finishing it RELEASES, and it becomes the sheet's
+          // gate row (Task 8). Null for an optional companion, which has no
+          // gate at all, so its worksheet is unchanged.
+          //
+          // This is the ONLY place the finish code leaves this method. It
+          // travels into the published print document (server-side YAML, read
+          // by the renderer and the scan-back resolver, served to a browser by
+          // no route) and never onto `execute()`'s return value, which reaches
+          // `ResolveScanAction` and a child's screen.
+          finishCode: companion?.finishCode ?? null,
         }),
       });
       instance = { ...instance, documentId: published.id, documentRevision: published.rev };
@@ -659,7 +677,9 @@ export class IssueDocument {
     const reusableCard = !existingInstance && typeof this.#allocationStore.findReusableCard === 'function'
       ? await this.#allocationStore.findReusableCard({
         learnerId: instance.learnerId,
-        rowsNeeded: instance.questions.length,
+        // The gate row is a printed row like any other and consumes one of the
+        // card's fifty; `instance.questions` does not know about it.
+        rowsNeeded: instance.questions.length + gateRows,
         capacity: this.#answerSheetPolicy.capacity,
         reuse: this.#answerSheetPolicy.reuse,
       })
