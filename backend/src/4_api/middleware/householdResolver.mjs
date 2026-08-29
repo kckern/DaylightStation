@@ -17,7 +17,7 @@ export function householdResolver({ domainConfig, householdContext }) {
     }
     // 2. Try pattern matching
     else {
-      req.householdId = matchPatterns(host, patterns) || 'default';
+      req.householdId = matchPatterns(host, patterns) || householdContext.resolve();
     }
 
     // 3. Validate household exists

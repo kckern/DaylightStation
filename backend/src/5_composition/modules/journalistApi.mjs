@@ -30,6 +30,7 @@ export function createJournalistApiRouter(config) {
     botId,
     secretToken,
     gateway,
+    aiGatewayAvailable = true,
     logger = console,
     idempotencyStore = new InMemoryRequestDeduplicationStore({ logger })
   } = config;
@@ -50,11 +51,24 @@ export function createJournalistApiRouter(config) {
       })
     : null;
 
+  const unavailableAiOperation = {
+    execute() {
+      const error = new Error('Journalist AI operation is unavailable');
+      error.status = 503;
+      throw error;
+    },
+  };
   const journalistApi = new JournalistApiService({
     exportJournal: journalistServices.journalistContainer.getExportJournalMarkdown?.() || null,
-    initiatePrompt: journalistServices.journalistContainer.getInitiateJournalPrompt(),
-    generateMorningDebrief: journalistServices.journalistContainer.getGenerateMorningDebrief(),
-    sendMorningDebrief: journalistServices.journalistContainer.getSendMorningDebrief(),
+    initiatePrompt: aiGatewayAvailable
+      ? journalistServices.journalistContainer.getInitiateJournalPrompt()
+      : unavailableAiOperation,
+    generateMorningDebrief: aiGatewayAvailable
+      ? journalistServices.journalistContainer.getGenerateMorningDebrief()
+      : unavailableAiOperation,
+    sendMorningDebrief: aiGatewayAvailable
+      ? journalistServices.journalistContainer.getSendMorningDebrief()
+      : unavailableAiOperation,
     principalResolver: new DefaultPrincipalResolver({
       headOfHousehold: () => configService?.getHeadOfHousehold?.(),
       fallback: 'user_1',

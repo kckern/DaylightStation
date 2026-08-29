@@ -13,10 +13,16 @@ function response() {
     send(body) { this.body = body; return this; },
   };
 }
+function routerWith(dependencies) {
+  return createCatalogRouter({
+    contentExpression: { fromQuery: (query) => query },
+    ...dependencies,
+  });
+}
 
 describe('catalog router', () => {
   it('preserves PDF headers and bytes from the injected operation', async () => {
-    const router = createCatalogRouter({
+    const router = routerWith({
       generateCatalog: async () => ({ kind: 'generated', value: { title: 'Family', pdf: Buffer.from('pdf') } }),
     });
     const res = response();
@@ -33,7 +39,7 @@ describe('catalog router', () => {
     [{ kind: 'empty' }, 404, { error: 'No items in list' }],
     [{ kind: 'render_unavailable' }, 500, { error: 'All QR code fetches failed' }],
   ])('translates semantic failures without changing the public envelope', async (outcome, status, body) => {
-    const router = createCatalogRouter({ generateCatalog: async () => outcome });
+    const router = routerWith({ generateCatalog: async () => outcome });
     const res = response();
     await handler(router)({ params: { source: 'plex', id: '1' }, query: {} }, res);
     expect(res).toMatchObject({ statusCode: status, body });
@@ -41,14 +47,14 @@ describe('catalog router', () => {
 
   it('preserves the upstream rejection status without putting HTTP in the use case result', async () => {
     const error = Object.assign(new Error('rejected'), { code: 'catalog_list_source_rejected', status: 503 });
-    const router = createCatalogRouter({ generateCatalog: async () => { throw error; } });
+    const router = routerWith({ generateCatalog: async () => { throw error; } });
     const res = response();
     await handler(router)({ params: { source: 'plex', id: '1' }, query: {} }, res);
     expect(res).toMatchObject({ statusCode: 503, body: { error: 'Failed to fetch list' } });
   });
 
   it('keeps the generic failure response for unexpected errors', async () => {
-    const router = createCatalogRouter({
+    const router = routerWith({
       generateCatalog: async () => { throw new Error('unexpected'); },
       logger: { error() {} },
     });
