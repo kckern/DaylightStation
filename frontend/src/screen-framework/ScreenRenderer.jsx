@@ -36,6 +36,7 @@ import getLogger from '../lib/logging/Logger.js';
 import { useInitialActionGate } from './hooks/useInitialActionGate.js';
 import { ActionLoadingShell } from './ActionLoadingShell.jsx';
 import { layoutOwnsRouting } from './layoutOwnsRouting.js';
+import { resolveScreenAppPath } from './screenAppPath.js';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
@@ -71,13 +72,14 @@ function ScreenAutoplay({ routes, layout }) {
       const logger = getLogger().child({ component: 'ScreenAutoplay' });
       logger.info('screen-autoplay.path', { subPath });
 
-      // Check app registry first — if subPath is a registered app, open it as overlay
-      const appEntry = getApp(subPath);
-      if (appEntry) {
-        logger.info('screen-autoplay.app', { app: subPath });
+      // The first suffix segment identifies the app; the remainder belongs to
+      // that app (for example party-games/charades).
+      const appRoute = resolveScreenAppPath(pathname, (appId) => Boolean(getApp(appId)), routes);
+      if (appRoute) {
+        logger.info('screen-autoplay.app', { app: appRoute.appId, appPath: appRoute.appPath });
         setTimeout(() => {
           const bus = getActionBus();
-          bus.emit('menu:open', { menuId: subPath });
+          bus.emit('menu:open', { menuId: appRoute.menuId });
         }, 500);
       } else if (routes?.[subPath]) {
         // Route defined in screen config — use its content ID and props
@@ -95,9 +97,12 @@ function ScreenAutoplay({ routes, layout }) {
         }, 500);
       }
 
-      // Clean URL to prevent re-trigger
-      const cleanPath = pathname.replace(/\/[^/]+$/, '');
-      window.history.replaceState({}, '', cleanPath);
+      // App deep links are durable: keep the canonical URL so a refresh opens
+      // the same app/game. One-shot menu suffixes retain the legacy cleanup.
+      if (!appRoute?.appPath) {
+        const cleanPath = pathname.replace(/\/[^/]+$/, '');
+        window.history.replaceState({}, '', cleanPath);
+      }
       return;
     }
 

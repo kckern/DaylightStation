@@ -4,6 +4,18 @@
 
 The environment mounts an experience through `PartyGamesExperience`, which injects `gamingServices` capability ports. Jeopardy can arm and subscribe to buzzers or play named audio cues without importing Party Games. This keeps the same experience portable to School, Piano, developer, or future surfaces with different capability implementations.
 
+## Screen deep links
+
+Screen configuration decides whether Party Games is exposed on a particular physical surface:
+
+```yaml
+routes:
+  party-games:
+    app: party-games
+```
+
+With that route mounted, `/screens/{screen}/party-games/{experience}` opens the registered Party Games app and passes `{experience}` as its game parameter. The route parser, app registry, and parameter contract live in code; the surface-specific availability lives in household screen configuration. Experience manifests and content banks remain gaming configuration, not screen configuration.
+
 Jeopardy and Activity Party use the direct Gaming coordinator. Activity Party supports Draw and Charades, performer-ready gates, rounds, deterministic timers and rotation, host modes, progressive reveals, score adjustments, and verifier confirmation for subjective hostless outcomes. Drawing checkpoints are transient and are deleted when an outcome commits.
 
 Charades is also mounted as a focused Party Games experience with a seeded, deterministic family word bank. Its text decoder is an original reusable sixteen-segment SVG display: every segment is illuminated, warm yellow/pink/orange/white segments encode the secret, and cool cyan/blue/green segments provide the mask that dims through a physical red filter. The segment proportions were visually informed by Kaiser Zhar Khan's donationware “Digital Display TFB” font from True Fonts Blog; the font binary and glyph outlines are not bundled. Its image decoder accepts authored SVG artwork, renders the artwork as cyan through a CSS mask, and overlays a deterministic field of red filled bubbles and rings. That keeps source artwork presentation-independent and makes each clue's physical-filter pattern stable.
