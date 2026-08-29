@@ -184,6 +184,7 @@ export function createFitnessRouter(config) {
     // root and injected here — they must NOT be module-scope in this router
     // (shared-state-across-requests bug).
     sessionLockService = null,
+    liveSessionAuthority = null,
     simulationService = null,
     querySessions = null,
     manageAccess = null,
@@ -608,6 +609,28 @@ export function createFitnessRouter(config) {
   }));
 
   // ── Session Lock (leader protocol) ──────────────────────────
+
+  // Claiming happens before a browser creates a local session ID. The
+  // whitelist-approved kiosk becomes writer; every other screen joins as a
+  // live mirror and therefore cannot fork persistence or play reward audio.
+  router.post('/live-session/claim', (req, res) => {
+    if (!liveSessionAuthority) return res.status(503).json({ error: 'Live session authority unavailable' });
+    const { clientId, household } = req.body || {};
+    if (!clientId) return res.status(400).json({ error: 'clientId required' });
+    const householdId = household || req.householdId || defaultHouseholdId;
+    const result = liveSessionAuthority.claim(householdId, clientId, {
+      writerEligible: fitnessConfigService.mayWriteSession(householdId, req.headers['user-agent'] || ''),
+    });
+    res.json(result);
+  });
+
+  router.delete('/live-session', (req, res) => {
+    if (!liveSessionAuthority) return res.status(503).json({ error: 'Live session authority unavailable' });
+    const { clientId, household } = req.body || {};
+    if (!clientId) return res.status(400).json({ error: 'clientId required' });
+    const householdId = household || req.householdId || defaultHouseholdId;
+    res.json({ released: liveSessionAuthority.release(householdId, clientId) });
+  });
 
   /**
    * POST /api/fitness/session_lock - Acquire or renew session lock

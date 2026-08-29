@@ -6,6 +6,7 @@ import { FitnessTreasureBox } from './TreasureBox.js';
 import { VoiceMemoManager } from './VoiceMemoManager.js';
 import { FitnessTimeline } from './FitnessTimeline.js';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { getClientId } from '../../lib/clientId.js';
 import { ZoneProfileStore } from './ZoneProfileStore.js';
 import { EventJournal } from './EventJournal.js';
 import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
@@ -156,6 +157,7 @@ export class FitnessSession {
     // True while an async /resumable backend query is outstanding, so the
     // pre-session buffer re-trigger can't fire overlapping checks.
     this._resumeCheckInFlight = false;
+    this._liveSessionRole = null;
 
     // Track users whose data was transferred to another identity (should be excluded from charts)
     this._transferredUsers = new Set();
@@ -1481,7 +1483,7 @@ export class FitnessSession {
         }
         getLogger().info('fitness.session.resume_check.no_content', { reason, waitedMs });
         this._resumeDeferredSince = null;
-        this.ensureStarted({ reason, force: true });
+        await this._ensureLiveSessionStarted(reason);
       }
       return;
     }
@@ -1504,7 +1506,7 @@ export class FitnessSession {
       });
 
       if (!result.resumable) {
-        if (!this.sessionId) this.ensureStarted({ reason, force: true });
+        if (!this.sessionId) await this._ensureLiveSessionStarted(reason);
         return;
       }
 
@@ -1521,6 +1523,29 @@ export class FitnessSession {
     } finally {
       this._resumeCheckInFlight = false;
     }
+  }
+
+  async _ensureLiveSessionStarted(reason) {
+    try {
+      const claim = await DaylightAPI('api/v1/fitness/live-session/claim', { clientId: getClientId() }, 'POST');
+      if (claim?.role === 'waiting') {
+        this._log('live_session.waiting_for_writer', { reason });
+        return false;
+      }
+      if (claim?.sessionId) {
+        return this.ensureStarted({
+          reason,
+          force: true,
+          sessionId: claim.sessionId,
+          startTime: claim.startTime,
+          liveSessionRole: claim.role,
+        });
+      }
+    } catch (error) {
+      // A temporary authority outage must not make a workout impossible.
+      getLogger().warn('fitness.live_session.claim_failed', { message: error?.message || String(error) });
+    }
+    return this.ensureStarted({ reason, force: true });
   }
 
   /**
@@ -1595,7 +1620,7 @@ export class FitnessSession {
   }
 
   ensureStarted(options = {}) {
-    const { force = false, reason = 'unknown' } = options;
+    const { force = false, reason = 'unknown', sessionId: requestedSessionId = null, startTime: requestedStartTime = null, liveSessionRole = null } = options;
     if (this.sessionId) return false;
     if (!this._kioskMode && !force) {
       this._log('ensure_started_blocked', { reason: 'not_kiosk', requestReason: reason });
@@ -1606,9 +1631,10 @@ export class FitnessSession {
       return false;
     }
     const nowDate = new Date();
-    const now = nowDate.getTime();
-    this.sessionTimestamp = formatSessionId(nowDate);
-    this.sessionId = `fs_${this.sessionTimestamp}`;
+    const now = Number.isFinite(Number(requestedStartTime)) ? Number(requestedStartTime) : nowDate.getTime();
+    this.sessionTimestamp = requestedSessionId ? String(requestedSessionId).replace(/^fs_/, '') : formatSessionId(nowDate);
+    this.sessionId = requestedSessionId || `fs_${this.sessionTimestamp}`;
+    this._liveSessionRole = liveSessionRole;
     this.startTime = now;
     this.lastActivityTime = now;
     this.endTime = null;
@@ -1730,6 +1756,29 @@ export class FitnessSession {
     
     // Update TimelineRecorder with treasureBox reference after creation
     this._timelineRecorder.setTreasureBox(this.treasureBox);
+
+    // A guest can be assigned before the first HR packet arrives.  The roster
+    // is then reconstructed from the ledger, but a fresh session still needs a
+    // fresh entity for its rings and zone state.  Without this bridge the guest
+    // is visible as an unassigned "no zone" participant until reassigned.
+    const guestAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
+    for (const assignment of guestAssignments) {
+      if (assignment?.occupantType !== 'guest' || !assignment.deviceId) continue;
+      const profileId = assignment.occupantId || assignment.metadata?.profileId;
+      if (!profileId) continue;
+      const entity = this.createSessionEntity({
+        profileId,
+        name: assignment.occupantName || assignment.metadata?.name || profileId,
+        deviceId: assignment.deviceId,
+        startTime: now,
+      });
+      this.userManager.assignGuest(assignment.deviceId, assignment.occupantName, {
+        ...(assignment.metadata || {}),
+        profileId,
+        occupantType: 'guest',
+        entityId: entity.entityId,
+      });
+    }
     
     this._persistenceManager?.resetSession();
     this._lastAutosaveAt = 0;
@@ -2245,6 +2294,16 @@ export class FitnessSession {
     // (bypasses lock check) and the window is sub-second.
     if (this._persistenceManager && this.sessionId) {
       this._persistenceManager.releaseLock(this.sessionId);
+    }
+
+    // The writer owns the household live-session lease. Release only after the
+    // final save settles so a new workout cannot claim the lease while this
+    // session's final snapshot is still on its way to the server.
+    if (this._liveSessionRole === 'writer') {
+      this.whenFinalPersistSettled().finally(() => {
+        DaylightAPI('api/v1/fitness/live-session', { clientId: getClientId() }, 'DELETE')
+          .catch((error) => getLogger().warn('fitness.live_session.release_failed', { message: error?.message || String(error) }));
+      });
     }
 
     // 6A: Notify listeners that session has ended

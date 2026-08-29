@@ -258,6 +258,13 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
     return { beats, zones, active };
   }
 
+  // Exempt participants intentionally earn no rings and therefore may have no
+  // rings_total series. The legacy heartbeat fallback below must not turn
+  // their cumulative heartbeats into an apparent ring score.
+  if (options.requireRingSeries === true) {
+    return { beats: new Array(maxLen).fill(0), zones, active };
+  }
+
   // Secondary source: pre-computed heart_beats if available
   const beatsRaw = getSeriesForParticipant('heart_beats');
   if (Array.isArray(beatsRaw) && beatsRaw.length > 0) {

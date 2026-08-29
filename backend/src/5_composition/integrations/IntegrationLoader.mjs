@@ -124,11 +124,17 @@ export class IntegrationLoader {
    */
   #buildAdapterConfig(householdId, provider, serviceConfig) {
     const auth = this.#configService.getHouseholdAuth?.(provider, householdId) ?? {};
+    // Shared provider credentials (notably system/auth/openai.yml) predate the
+    // household auth tree and remain the canonical production location.
+    // Include the common scalar API key so config-driven loading does not make
+    // a configured provider disappear while legacy consumers still work.
+    const systemApiKey = this.#configService.getSystemAuth?.(provider, 'api_key');
     const serviceUrl = this.#configService.resolveServiceUrl?.(provider);
     const secrets = this.#getProviderSecrets(provider);
 
     return this.#normalizeConfig(provider, {
       ...serviceConfig,
+      ...(systemApiKey ? { api_key: systemApiKey } : {}),
       ...auth,
       ...secrets,
       ...(serviceUrl ? { host: serviceUrl } : {}),
