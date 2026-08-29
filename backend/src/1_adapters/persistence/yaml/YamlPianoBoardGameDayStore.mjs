@@ -1,8 +1,9 @@
 import path from 'node:path';
 import { loadYamlSafe, saveYamlToPathAtomic, ensureDir, fileExists } from '#system/utils/FileIO.mjs';
-import { BOARD_GAME_DAY_SCHEMA, emptyBoardGameDay } from '#apps/piano-games/PianoBoardGameDayService.mjs';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const BOARD_GAME_DAY_SCHEMA = 'piano.board-game-day/v1';
+const emptyBoardGameDay = (studyDate) => ({ schema: BOARD_GAME_DAY_SCHEMA, studyDate, learners: {} });
 
 export class YamlPianoBoardGameDayStore {
   #root;

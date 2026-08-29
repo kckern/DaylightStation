@@ -3,6 +3,7 @@ import { BeliefEvaluator } from '#domains/lifeplan/services/BeliefEvaluator.mjs'
 import { BeliefCascadeProcessor } from '#domains/lifeplan/services/BeliefCascadeProcessor.mjs';
 import { DependencyResolver } from '#domains/lifeplan/services/DependencyResolver.mjs';
 import { CadenceService } from '#domains/lifeplan/services/CadenceService.mjs';
+import { presentBelief, presentGoal, presentLifePlan } from './presenters/lifePlanPresenter.mjs';
 
 /**
  * DI container for the lifeplan domain.
@@ -103,6 +104,9 @@ export class LifeplanContainer {
       ceremonyRecordStore: this.getCeremonyRecordStore(),
       dependencyResolver: this.getDependencyResolver(),
       beliefCascadeProcessor: this.getBeliefCascadeProcessor(),
+      presentBelief,
+      presentGoal,
+      presentLifePlan,
     };
   }
 }

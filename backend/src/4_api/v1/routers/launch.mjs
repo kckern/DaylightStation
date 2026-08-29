@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * Launch API Router
  *
@@ -72,7 +73,7 @@ export function createLaunchRouter(config) {
       res.json(result);
     } catch (error) {
       logger.error?.('launch.intent.resolve.error', { contentId, error: error.message });
-      res.status(500).json({ error: error.message });
+      sendInternalError(res, { error: error.message });
     }
   });
 

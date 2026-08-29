@@ -79,10 +79,10 @@ describe('Composition', () => {
 
     it('cannot be mutated through toData()', () => {
       const c = Composition.empty().withDensity(4);
-      const data = c.toData();
+      const data = c.snapshot();
       data.density = 9;
       expect(c.density).toBe(4);
-      expect(c.toData().density).toBe(4);
+      expect(c.snapshot().density).toBe(4);
     });
 
     it('survives being called through a detached reference', () => {
@@ -117,7 +117,7 @@ describe('Composition', () => {
 
     it.each(permutations)('converges identically: %s -> %s -> %s', (a, b, c) => {
       const result = [a, b, c].reduce(apply, Composition.empty());
-      expect(result.toData()).toEqual({
+      expect(result.snapshot()).toEqual({
         grams: 500, unit: 'g', density: 4, container: 'dinner-bowl',
       });
       expect(result.isComplete).toBe(true);
@@ -322,7 +322,7 @@ describe('Composition', () => {
 
     it('is true for a round trip through toData/fromData', () => {
       const a = Composition.empty().withWeight({ grams: 250, unit: 'ml' }).withDensity(9);
-      expect(a.equals(Composition.fromData(a.toData()))).toBe(true);
+      expect(a.equals(Composition.fromSnapshot(a.snapshot()))).toBe(true);
     });
 
     const differing = [
@@ -365,49 +365,49 @@ describe('Composition', () => {
         .withWeight({ grams: 500.5, unit: 'ml' })
         .withDensity(7)
         .withContainer('small-bowl');
-      const b = Composition.fromData(a.toData());
-      expect(b.toData()).toEqual(a.toData());
+      const b = Composition.fromSnapshot(a.snapshot());
+      expect(b.snapshot()).toEqual(a.snapshot());
       expect(b.isComplete).toBe(true);
     });
 
     it('round-trips an empty composition', () => {
-      const data = Composition.empty().toData();
+      const data = Composition.empty().snapshot();
       expect(data).toEqual({ grams: null, unit: null, density: null, container: null });
-      expect(Composition.fromData(data).equals(Composition.empty())).toBe(true);
+      expect(Composition.fromSnapshot(data).equals(Composition.empty())).toBe(true);
     });
 
     it('produces a plain object safe to persist', () => {
-      const data = Composition.empty().withDensity(4).toData();
+      const data = Composition.empty().withDensity(4).snapshot();
       expect(Object.getPrototypeOf(data)).toBe(Object.prototype);
       expect(JSON.parse(JSON.stringify(data))).toEqual(data);
     });
 
     it('treats absent keys as empty slots', () => {
-      expect(Composition.fromData({}).equals(Composition.empty())).toBe(true);
-      expect(Composition.fromData({ density: 4 }).density).toBe(4);
+      expect(Composition.fromSnapshot({}).equals(Composition.empty())).toBe(true);
+      expect(Composition.fromSnapshot({ density: 4 }).density).toBe(4);
     });
 
     it('refuses a payload that is not an object', () => {
-      expect(() => Composition.fromData(null)).toThrow(ValidationError);
-      expect(() => Composition.fromData()).toThrow(ValidationError);
-      expect(() => Composition.fromData('x')).toThrow(ValidationError);
-      expect(() => Composition.fromData([])).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot(null)).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot()).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot('x')).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot([])).toThrow(ValidationError);
     });
 
     it('applies the same validation on reconstitution as on the setters', () => {
       // Stored data is not trusted more than live scans: a corrupted or
       // hand-edited record must fail loudly rather than reach auto-accept.
-      expect(() => Composition.fromData({ grams: '500' })).toThrow(ValidationError);
-      expect(() => Composition.fromData({ grams: NaN })).toThrow(ValidationError);
-      expect(() => Composition.fromData({ density: 0 })).toThrow(ValidationError);
-      expect(() => Composition.fromData({ density: MAX_DENSITY_LEVEL + 1 })).toThrow(ValidationError);
-      expect(() => Composition.fromData({ container: '' })).toThrow(ValidationError);
-      expect(() => Composition.fromData({ unit: 7 })).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot({ grams: '500' })).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot({ grams: NaN })).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot({ density: 0 })).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot({ density: MAX_DENSITY_LEVEL + 1 })).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot({ container: '' })).toThrow(ValidationError);
+      expect(() => Composition.fromSnapshot({ unit: 7 })).toThrow(ValidationError);
     });
 
     it('returns a fresh object each call', () => {
       const c = Composition.empty().withDensity(4);
-      expect(c.toData()).not.toBe(c.toData());
+      expect(c.snapshot()).not.toBe(c.snapshot());
     });
   });
 
@@ -443,7 +443,7 @@ describe('Composition', () => {
         [() => Composition.empty().withWeight(null), 'INVALID_WEIGHT_PAYLOAD', 'weight payload'],
         [() => Composition.empty().withDensity(99), 'INVALID_DENSITY_LEVEL', 'density'],
         [() => Composition.empty().withContainer(''), 'INVALID_CONTAINER_ID', 'container'],
-        [() => Composition.fromData(null), 'INVALID_COMPOSITION_DATA', 'composition data'],
+        [() => Composition.fromSnapshot(null), 'INVALID_COMPOSITION_DATA', 'composition data'],
       ];
       for (const [call, code, field] of codes) {
         try {
@@ -466,7 +466,7 @@ describe('Composition', () => {
 
   describe('absent-value semantics', () => {
     it('reads null and undefined slots in a data payload as empty', () => {
-      const c = Composition.fromData({
+      const c = Composition.fromSnapshot({
         grams: null, unit: undefined, density: null, container: undefined,
       });
       expect(c.equals(Composition.empty())).toBe(true);

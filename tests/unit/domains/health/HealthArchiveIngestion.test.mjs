@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HealthArchiveIngestion } from '#apps/health/archive/HealthArchiveIngestion.mjs';
+import { FilesystemHealthArchiveMirror } from '#adapters/health/FilesystemHealthArchiveMirror.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
@@ -118,7 +119,7 @@ describe('HealthArchiveIngestion', () => {
       },
       '/dest': { type: 'dir' },
     });
-    svc = new HealthArchiveIngestion({ fs });
+    svc = new HealthArchiveIngestion({ archiveMirror: new FilesystemHealthArchiveMirror({ io: fs }) });
   });
 
   it('copies new files when destination does not exist', async () => {
@@ -303,7 +304,7 @@ describe('HealthArchiveIngestion', () => {
 
     it('logs privacy.addition_matched when an addition (not a floor entry) fires', async () => {
       const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-      const taggedSvc = new HealthArchiveIngestion({ fs, logger });
+      const taggedSvc = new HealthArchiveIngestion({ archiveMirror: new FilesystemHealthArchiveMirror({ io: fs }), logger });
       await expect(
         taggedSvc.ingest({
           userId: 'test-user',
@@ -319,7 +320,7 @@ describe('HealthArchiveIngestion', () => {
 
     it('does NOT log privacy.addition_matched when the floor fires (not an addition)', async () => {
       const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-      const taggedSvc = new HealthArchiveIngestion({ fs, logger });
+      const taggedSvc = new HealthArchiveIngestion({ archiveMirror: new FilesystemHealthArchiveMirror({ io: fs }), logger });
       await expect(
         taggedSvc.ingest({
           userId: 'test-user',

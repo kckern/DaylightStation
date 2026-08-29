@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EventAggregationService } from '#apps/home/EventAggregationService.mjs';
+import { DataServiceEventFeedRepository } from '#adapters/home/DataServiceEventFeedRepository.mjs';
 
 describe('EventAggregationService', () => {
   let service;
@@ -24,8 +25,7 @@ describe('EventAggregationService', () => {
       child: vi.fn().mockReturnThis(),
     };
     service = new EventAggregationService({
-      dataService: mockDataService,
-      configService: mockConfigService,
+      eventRepository: new DataServiceEventFeedRepository({ dataService: mockDataService, defaultUser: () => mockConfigService.getHeadOfHousehold() }),
       logger: mockLogger,
     });
   });

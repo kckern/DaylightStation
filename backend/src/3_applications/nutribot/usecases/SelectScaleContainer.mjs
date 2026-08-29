@@ -9,6 +9,7 @@ import {
   buildDensityKeyboard, densityPromptText,
   buildContainerKeyboard, containerPromptText,
 } from '../lib/scaleNutribotConfig.mjs';
+import { serializeFoodItem } from '../nutriLogRecords.mjs';
 
 export class SelectScaleContainer {
   #messagingGateway; #foodLogStore; #conversationStateStore; #scaleConfig; #logger; #encodeCallback;
@@ -40,7 +41,7 @@ export class SelectScaleContainer {
     if (!nutriLog || !nutriLog.items?.length) throw scaleError('log not found', 'LOG_NOT_FOUND', { logUuid });
     if (nutriLog.status !== 'pending') throw scaleError('already processed', 'ALREADY_PROCESSED', { logUuid });
 
-    const item0 = typeof nutriLog.items[0].toJSON === 'function' ? nutriLog.items[0].toJSON() : { ...nutriLog.items[0] };
+    const item0 = serializeFoodItem(nutriLog.items[0]);
     const gross = Math.round(Number(nutriLog.metadata?.grossGrams ?? item0.grams));
 
     // Show mode: the density keyboard's "📦 On a container?" button routes here with

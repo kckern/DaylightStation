@@ -30,19 +30,27 @@ function resolveNative({ gameNative, systemNative, core }) {
  * Load + normalize per-system emulator manifests into the in-memory `cfg`
  * shape consumed by buildCatalog/resolveGameRules.
  *
- * File I/O is fully injected via `readManifests` so this stays pure/testable.
- * The real wiring (scan emulationDir, parse YAML) lives in Task C's
- * emulatorFs.readManifests and is passed in here.
+ * Parsed configuration is supplied through a semantic repository so this
+ * normalization stays pure and testable.
  *
  * @param {object}   opts
  * @param {string}   opts.emulationDir     Base media dir (provenance/logging only).
- * @param {function} opts.readManifests    () => Array<{ system, manifest }>.
- * @param {function} [opts.readInputConfig] () => parsed input.yml object (keyboard/controllers) or null.
- * @param {function} [opts.readConsoles]   () => ordered console-tab list (consoles.yml) or null.
+ * @param {IEmulatorConfigRepository} [opts.configRepository] Parsed config source port.
+ * @param {function} opts.readManifests    legacy test seam for parsed manifests.
+ * @param {function} [opts.readInputConfig] legacy test seam for input policy.
+ * @param {function} [opts.readConsoles]   legacy test seam for ordered console tabs.
  * @param {object}   [opts.logger]         Logger with warn/info/debug/error.
  * @returns {{ systems: object, games: object[], defaults: object, users: object, input: object|null, consoles: object[] }}
  */
-export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfig, readConsoles, readSettings, logger = NOOP_LOGGER }) {
+export function loadEmulatorConfig({
+  emulationDir,
+  configRepository,
+  readManifests = configRepository?.readManifests?.bind(configRepository),
+  readInputConfig = configRepository?.readInputConfig?.bind(configRepository),
+  readConsoles = configRepository?.readConsolesConfig?.bind(configRepository),
+  readSettings = configRepository?.readSettingsConfig?.bind(configRepository),
+  logger = NOOP_LOGGER,
+}) {
   const systems = {};
   const games = [];
 
@@ -119,7 +127,7 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
 
   const input = (typeof readInputConfig === 'function' ? readInputConfig() : null) ?? null;
 
-  // Ordered console-tab list (consoles.yml). Each entry is either a real console
+  // Ordered console-tab list. Each entry is either a real console
   // bound to a `system`, or a blank placeholder (no/unknown system). Resolution
   // of real-vs-placeholder happens in buildCatalog (it knows `systems`). Absent
   // ⇒ empty, and buildCatalog falls back to one tab per discovered system.

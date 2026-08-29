@@ -93,14 +93,16 @@ import yaml from 'js-yaml';
 import { parseArgv } from '../_argv.mjs';
 import { validateAnyDocument, DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
-import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
+import { createYamlBankReader } from '#adapters/school/documents/YamlBankReader.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { buildReprintContext } from '#apps/school/documents/reprintContext.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { rangesOverlap } from '#domains/school/documents/allocation.mjs';
 import { SAFE_WORKSHEET_INSTANCE_ID } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
-import { createSubjectIconResolver } from '#rendering/school/documents/assetResolver.mjs';
+import { createSubjectIconResolver } from '#adapters/school/documents/FilesystemSchoolAssetResolver.mjs';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
@@ -583,7 +585,12 @@ export async function runRender({
   const allocationStore = cardMode
     ? new YamlAllocationStore({ directory: paths.contentRoot })
     : null;
-  const useCase = new RenderPrintDocument({ repository, banks, allocationStore, resolveAsset: resolveSubjectIcon });
+  const useCase = new RenderPrintDocument({
+    rendering: createPrintDocumentRendering({ resolveAsset: resolveSubjectIcon }),
+    repository,
+    banks,
+    allocationStore,
+  });
 
   try {
     const result = await useCase.execute({ document, context: overridesContext(flags) });
@@ -729,7 +736,9 @@ export async function runReprint({ instanceId, outPath, paths }) {
 
   const banks = createYamlBankReader({ dataDir: paths.dataDir });
   const allocationStore = new YamlAllocationStore({ directory: paths.contentRoot });
-  const useCase = new RenderPrintDocument({ repository, banks, allocationStore });
+  const useCase = new RenderPrintDocument({
+    rendering: createPrintDocumentRendering(), repository, banks, allocationStore,
+  });
 
   try {
     const result = await useCase.execute({ document: published, context });

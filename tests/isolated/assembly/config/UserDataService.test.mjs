@@ -19,14 +19,15 @@ import os from 'os';
 import path from 'path';
 import {
   initConfigService,
+  getConfigService,
   resetConfigService,
-  resetDataService,
-  dataService,
-  userDataService,
 } from '#backend/src/0_system/config/index.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
+import { createSecretsProvider } from '#adapters/secrets/createSecretsProvider.mjs';
 
 describe('UserDataService household path resolution', () => {
   let dataDir;
+  let dataService;
 
   beforeAll(async () => {
     // Minimal on-disk config tree: system defaults + one household + one user.
@@ -52,13 +53,12 @@ describe('UserDataService household path resolution', () => {
     );
 
     resetConfigService();
-    resetDataService();
-    await initConfigService(dataDir);
+    await initConfigService(dataDir, { secretsProviderFactory: createSecretsProvider });
+    dataService = new DataService({ configService: getConfigService() });
   });
 
   afterAll(() => {
     resetConfigService();
-    resetDataService();
     if (dataDir && fs.existsSync(dataDir)) {
       fs.rmSync(dataDir, { recursive: true, force: true });
     }
@@ -71,7 +71,7 @@ describe('UserDataService household path resolution', () => {
     // domain-first reorganization retired that root too. It now resolves to
     // the household directory itself, so a domain segment IS the path.
     it('resolves household shared data to the household root, where the data actually lives', () => {
-      const resolved = userDataService.getHouseholdSharedPath('default', 'calendar');
+      const resolved = dataService.household.resolveDir('calendar', 'default');
 
       expect(resolved).toMatch(/household[^/]*\/calendar$/);
       expect(resolved).not.toContain('/shared/');
@@ -79,7 +79,7 @@ describe('UserDataService household path resolution', () => {
     });
 
     it('resolves nested segments as a domain path', () => {
-      const resolved = userDataService.getHouseholdSharedPath('default', 'gratitude', 'options.gratitude');
+      const resolved = dataService.household.resolveDir('gratitude/options.gratitude', 'default');
 
       expect(resolved).toMatch(/household[^/]*\/gratitude\/options\.gratitude$/);
     });
@@ -92,7 +92,7 @@ describe('UserDataService household path resolution', () => {
         'events:\n  - title: Test Event\n    date: 2026-01-21\n'
       );
 
-      const calendar = userDataService.readHouseholdSharedData('default', 'calendar');
+      const calendar = dataService.household.read('calendar', 'default');
 
       expect(calendar).not.toBeNull();
       expect(calendar.events).toHaveLength(1);
@@ -104,7 +104,7 @@ describe('UserDataService household path resolution', () => {
       fs.mkdirSync(sharedDir, { recursive: true });
       fs.writeFileSync(path.join(sharedDir, 'decoy.yml'), 'value: from-shared\n');
 
-      expect(userDataService.readHouseholdSharedData('default', 'decoy')).toBeNull();
+      expect(dataService.household.read('decoy', 'default')).toBeNull();
     });
   });
 

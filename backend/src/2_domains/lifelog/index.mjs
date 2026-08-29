@@ -14,6 +14,3 @@
 
 // Entities
 export * from './entities/index.mjs';
-
-// Extractors
-export * from './extractors/index.mjs';

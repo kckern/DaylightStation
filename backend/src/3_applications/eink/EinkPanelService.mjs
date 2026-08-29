@@ -5,43 +5,33 @@
  * A hardware screen (physical e-ink, e.g. Seeed reTerminal E1003) is a dumb LAN
  * client of DaylightStation: it wakes, asks "what should I show?", and draws the
  * PNG we return. This service owns that interaction:
- *   - loads the panel's screen config (data/household/screens/<id>.yml)
+ *   - loads the panel's semantic screen configuration
  *   - tracks per-panel view state (which view is showing)
  *   - resolves the current view's layout/data/theme and renders a PNG via the
  *     1_rendering/eink framework
  *
- * Layer: 3_applications. Imports 1_rendering (allowed) and 0_system config.
  * View state is in-memory (ephemeral by design — a panel reboot just shows the
  * default view again).
  */
 
-import crypto from 'node:crypto';
-import { render as einkRender, RENDERER_VERSION } from '#rendering/eink/index.mjs';
-import { resolveData } from './DataResolver.mjs';
 import { computeNextWakeSeconds } from './wakeSchedule.mjs';
-import { dataService as defaultDataService } from '#system/config/index.mjs';
+import { isEinkPanelRenderer } from './ports/IEinkPanelRenderer.mjs';
+import { isEinkPanelStore } from './ports/IEinkPanelStore.mjs';
+import { isContentFingerprint } from './ports/IContentFingerprint.mjs';
+import { isEinkDataSourceGateway } from './ports/IEinkDataSourceGateway.mjs';
+import { MissingResourceError } from '#apps/common/errors/SemanticErrors.mjs';
 
 const DEFAULT_WIDTH = 1872;   // E1003 native landscape
 const DEFAULT_HEIGHT = 1404;
 
-// Where the latest per-panel telemetry is persisted (household scope →
-// data/household/state/eink-telemetry.yml). It must survive a server redeploy: a
-// deep-sleep battery panel only reports on its ~6h wake, so an in-memory-only store
-// would show "unknown" for hours after every deploy.
-const TELEMETRY_PATH = 'hardware/eink/telemetry';
-
+// Telemetry must survive a server redeploy: a deep-sleep battery panel only
+// reports on its ~6h wake, so an in-memory-only store would show "unknown" for
+// hours after every deploy.
 // Single-cell LiPo voltage→charge envelope (raw, not a discharge curve): the panel
 // reads battery millivolts off a GPIO divider. ~4.2V full, ~3.3V is the usable floor.
 const BAT_FULL_MV = 4200;
 const BAT_EMPTY_MV = 3300;
 const BAT_LOW_PCT = 15;       // warn/flag at or below this charge
-
-/** Numeric query param → finite Number, or undefined if absent/blank/NaN. */
-function numParam(v) {
-  if (v === undefined || v === null || v === '') return undefined;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
-}
 
 /** Battery millivolts → percent (0..100), or null when unavailable (bat=0/absent). */
 function batteryPercent(mv) {
@@ -55,14 +45,6 @@ function batteryPercent(mv) {
  * same logical value always yields the same string (and thus the same hash),
  * regardless of property insertion order from a data feed.
  */
-function stableStringify(value) {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
-  }
-  return JSON.stringify(value === undefined ? null : value);
-}
-
 /** Local calendar date (YYYY-MM-DD) — the only clock the clock-less panel shows. */
 function localYMD(now) {
   const y = now.getFullYear();
@@ -71,11 +53,32 @@ function localYMD(now) {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * Decide which forecast window belongs in the panel model. This is an
+ * application decision (what to show), not a drawing decision (how to show it).
+ */
+export function prepareEinkRenderData(data, referenceTime) {
+  const weather = data?.weather;
+  if (!weather || typeof weather !== 'object') return data;
+  const hourly = Array.isArray(weather.hourly) ? weather.hourly : [];
+  const referenceUnix = Math.floor(referenceTime.getTime() / 1000);
+  const upcoming = hourly.filter((entry) => entry?.unix >= referenceUnix).slice(0, 12);
+  return {
+    ...data,
+    weather: {
+      ...weather,
+      forecastHours: upcoming.length > 0 ? upcoming : hourly.slice(0, 12),
+    },
+  };
+}
+
 export class EinkPanelService {
-  #baseUrl;
-  #fontDir;
-  #dataService;
+  #panelStore;
   #logger;
+  #dataSourceGateway;
+  #panelRenderer;
+  #fingerprint;
+  #clock;
   #viewIndex = new Map();   // panelId -> current view index
   // panelId -> monotonic counter bumped by the 'refresh' button action. Folded
   // into the /config fingerprint so a press changes image_hash WITHOUT changing
@@ -87,28 +90,28 @@ export class EinkPanelService {
   // first access (null until then) so the last-known reading survives a redeploy.
   #telemetry = null;
 
-  constructor({ baseUrl, fontDir, dataService, logger } = {}) {
-    // Host/port are injected by the composition root from household config
-    // (devices.yml daylightHostInternal) — never hardcoded here.
-    this.#baseUrl = baseUrl;
-    this.#fontDir = fontDir || '/usr/share/fonts';
-    this.#dataService = dataService || defaultDataService;   // household-tier I/O
+  constructor({ panelStore, dataSourceGateway, panelRenderer, fingerprint, clock = () => new Date(), logger } = {}) {
+    if (!isEinkPanelStore(panelStore)) throw new Error('EinkPanelService requires panelStore');
+    if (!isEinkDataSourceGateway(dataSourceGateway)) throw new Error('EinkPanelService requires dataSourceGateway');
+    if (!isEinkPanelRenderer(panelRenderer)) {
+      throw new TypeError('EinkPanelService requires panelRenderer');
+    }
+    if (!isContentFingerprint(fingerprint)) throw new TypeError('EinkPanelService requires fingerprint');
+    this.#panelStore = panelStore;
     this.#logger = logger || console;
+    this.#dataSourceGateway = dataSourceGateway;
+    this.#panelRenderer = panelRenderer;
+    this.#fingerprint = fingerprint;
+    this.#clock = clock;
   }
 
   /** Load the screen config for a panel from household-tier data. */
   #loadScreen(panelId) {
-    let screen = null;
-    try {
-      screen = this.#dataService.household.read(`screens/${panelId}`);
-    } catch (e) {
-      // Missing file surfaces as ENOENT from the YAML reader — treat as not-found.
-      if (e?.code !== 'ENOENT') throw e;
-    }
+    const screen = this.#panelStore.getPanel(panelId);
     if (!screen) {
-      const err = new Error(`eink panel config not found: screens/${panelId}.yml`);
-      err.status = 404;
-      throw err;
+      throw new MissingResourceError(`eink panel config not found: ${panelId}`, {
+        code: 'EINK_PANEL_NOT_FOUND', context: { panelId },
+      });
     }
     return screen;
   }
@@ -121,26 +124,6 @@ export class EinkPanelService {
   }
 
   #wrap(i, len) { return len ? (((i % len) + len) % len) : 0; }
-
-  /**
-   * Scope a view's data-source URLs to one panel so server-side HOLDS (e.g. the
-   * held favorite photo, /home/photo) are per-device, not global. Appends
-   * `hold_key=<panelId>` to each source; feeds that don't hold (calendar/todos/
-   * weather) simply ignore the param. Without this every panel shares the one
-   * global pick — kitchen and upstairs would always show the same photo.
-   */
-  #scopeData(data, panelId) {
-    const out = {};
-    for (const [key, cfg] of Object.entries(data || {})) {
-      if (cfg && typeof cfg === 'object' && typeof cfg.source === 'string') {
-        const sep = cfg.source.includes('?') ? '&' : '?';
-        out[key] = { ...cfg, source: `${cfg.source}${sep}hold_key=${encodeURIComponent(panelId)}` };
-      } else {
-        out[key] = cfg;
-      }
-    }
-    return out;
-  }
 
   /**
    * Resolve the panel's CURRENT view into the inputs a render consumes — the
@@ -165,7 +148,7 @@ export class EinkPanelService {
       height: content.height || display.height || DEFAULT_HEIGHT,
       theme: { ...(content.theme || {}), ...(view.theme || {}) },
       layout: view.layout,
-      data: this.#scopeData(view.data || content.data || {}, panelId),
+      data: view.data || content.data || {},
     };
     return { index, view, screenConfig, grayscale };
   }
@@ -186,11 +169,18 @@ export class EinkPanelService {
     // Resolve data FIRST (application concern), then hand the renderer its
     // inputs. The render path preloads images (loadImages) so widgets like
     // PhotoWidget have ready pixels; the /config snapshot deliberately does not.
-    const data = await resolveData(screenConfig.data, this.#baseUrl, {
+    const resolvedData = await this.#dataSourceGateway.resolve(screenConfig.data, {
       loadImages: true,
+      scopeKey: panelId,
       logger: this.#logger,
     });
-    const png = await einkRender(screenConfig, { data, fontDir: this.#fontDir, grayscale });
+    const renderReferenceTime = this.#clock();
+    const data = prepareEinkRenderData(resolvedData, renderReferenceTime);
+    const png = await this.#panelRenderer.render(screenConfig, {
+      data,
+      grayscale,
+      renderReferenceTime,
+    });
     this.#logger.info?.('eink.panel.rendered', {
       panelId, view: view.id, index, bytes: png.length, grayscale,
       size: `${screenConfig.width}x${screenConfig.height}`,
@@ -223,7 +213,7 @@ export class EinkPanelService {
    * @param {string} panelId
    * @returns {Promise<{ id: string, rotation: number,
    *   buttons: { green: string, right: string, left: string },
-   *   nextWakeSec: number, image: string, imageHash: string, view: string }>}
+   *   nextWakeSec: number, imageHash: string, view: string }>}
    */
   async stateSnapshot(panelId) {
     const screen = this.#loadScreen(panelId);
@@ -232,15 +222,19 @@ export class EinkPanelService {
 
     // Resolve the same data the render path would — but stop there (no canvas,
     // and no image preload: the battery-saving hash check never downloads a photo).
-    const data = await resolveData(screenConfig.data, this.#baseUrl, { logger: this.#logger });
+    const resolvedData = await this.#dataSourceGateway.resolve(screenConfig.data, {
+      logger: this.#logger,
+      scopeKey: panelId,
+    });
 
     // Fingerprint of every pixel-affecting input. Stable key ordering so a feed
     // reordering its JSON keys does not spuriously bust the hash. RENDERER_VERSION
     // folds in code changes so a renderer/widget edit forces a refresh too. The
     // per-panel refreshNonce folds in the manual 'refresh' button: bumping it
     // changes the hash (so the panel redraws) without altering the content.
-    const now = new Date();
-    const fingerprint = stableStringify({
+    const now = this.#clock();
+    const data = prepareEinkRenderData(resolvedData, now);
+    const imageHash = this.#fingerprint.hash({
       date: localYMD(now),
       view: view.id,
       index,
@@ -251,9 +245,8 @@ export class EinkPanelService {
       data,
       grayscale,
       refresh: this.#refreshNonce.get(panelId) ?? 0,
-      renderer: RENDERER_VERSION,
+      renderer: this.#panelRenderer.version,
     });
-    const imageHash = crypto.createHash('sha1').update(fingerprint).digest('hex');
     const nextWakeSec = computeNextWakeSeconds(screen.refresh, now);
 
     const snapshot = {
@@ -265,7 +258,6 @@ export class EinkPanelService {
         left: String(buttons.left || 'prev'),
       },
       nextWakeSec,
-      image: `/api/v1/eink/${encodeURIComponent(panelId)}/panel`,
       imageHash,
       view: view.id,
     };
@@ -310,8 +302,7 @@ export class EinkPanelService {
   /** Lazily hydrate the telemetry map from the persisted household file (once). */
   #loadTelemetry() {
     if (this.#telemetry) return this.#telemetry;
-    let stored = null;
-    try { stored = this.#dataService.household.read(TELEMETRY_PATH); } catch { stored = null; }
+    const stored = this.#panelStore.getTelemetry();
     this.#telemetry = new Map(Object.entries(stored && typeof stored === 'object' ? stored : {}));
     return this.#telemetry;
   }
@@ -319,7 +310,7 @@ export class EinkPanelService {
   /** Write the whole telemetry map back to disk. Never throws into the caller. */
   #persistTelemetry() {
     try {
-      this.#dataService.household.write(TELEMETRY_PATH, Object.fromEntries(this.#loadTelemetry()));
+      this.#panelStore.saveTelemetry(Object.fromEntries(this.#loadTelemetry()));
     } catch (e) {
       this.#logger.warn?.('eink.telemetry.persist_failed', { error: e?.message });
     }
@@ -334,26 +325,26 @@ export class EinkPanelService {
    * not break the panel's wake path.
    *
    * @param {string} panelId
-   * @param {Object} query - the /config request query params (strings)
+   * @param {Object} telemetry - typed telemetry supplied by the HTTP boundary
    * @returns {Object|null} the stored record, or null if nothing to record
    */
-  recordTelemetry(panelId, query = {}) {
+  recordTelemetry(panelId, telemetry = {}) {
     const id = String(panelId || '').trim();
     if (!id) return null;
     const fields = {
-      bat: numParam(query.bat),
-      rssi: numParam(query.rssi),
-      up: numParam(query.up),
-      heap: numParam(query.heap),
-      psram: numParam(query.psram),
-      rst: numParam(query.rst),
-      wake: typeof query.wake === 'string' && query.wake ? query.wake : undefined,
+      bat: telemetry.bat,
+      rssi: telemetry.rssi,
+      up: telemetry.up,
+      heap: telemetry.heap,
+      psram: telemetry.psram,
+      rst: telemetry.rst,
+      wake: telemetry.wake,
     };
     // A wake report must carry at least one known field; otherwise leave the last
     // reading untouched (a bare /config poll is not a telemetry update).
     if (Object.values(fields).every((v) => v === undefined)) return null;
 
-    const record = { at: new Date().toISOString() };
+    const record = { at: this.#clock().toISOString() };
     for (const [k, v] of Object.entries(fields)) if (v !== undefined) record[k] = v;
     if (fields.bat !== undefined) {
       record.batteryPercent = batteryPercent(fields.bat);

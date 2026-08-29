@@ -11,6 +11,7 @@
 import {
   budgetStudyDate, applyOpen, applySettle, applyClose, applyEarnedCredit, balanceFor,
 } from '#domains/piano/gameBudget.mjs';
+import { StateConflictError } from '#apps/common/errors/SemanticErrors.mjs';
 
 const STALE_AFTER_SECONDS = 900; // 15 min: past this, a crashed session is sealed, not resumed.
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -143,7 +144,7 @@ export class PianoGameBudgetService {
     const owner = day.sessions[sessionId]?.learnerId;
     if (owner && owner !== learnerId) {
       this.#logger.error?.('budget.learner-mismatch', { sessionId, learnerId, ownerLearnerId: owner });
-      throw Object.assign(new Error('session belongs to a different learner'), { status: 409 });
+      throw new StateConflictError('session belongs to a different learner', { code: null });
     }
     const r = applySettle(day, { sessionId, cumulativeSeconds, at });
     try {
@@ -194,7 +195,7 @@ export class PianoGameBudgetService {
     const owner = day.sessions[sessionId]?.learnerId;
     if (owner && owner !== learnerId) {
       this.#logger.error?.('budget.learner-mismatch', { sessionId, learnerId, ownerLearnerId: owner });
-      throw Object.assign(new Error('session belongs to a different learner'), { status: 409 });
+      throw new StateConflictError('session belongs to a different learner', { code: null });
     }
     const r = applyClose(day, { sessionId, cumulativeSeconds, at });
     try {
@@ -325,7 +326,7 @@ export class PianoGameBudgetService {
     // never leave the session itself unreachable.
     if (s.learnerId !== learnerId) {
       this.#logger.error?.('budget.learner-mismatch', { sessionId, learnerId, ownerLearnerId: s.learnerId });
-      throw Object.assign(new Error('session belongs to a different learner'), { status: 409 });
+      throw new StateConflictError('session belongs to a different learner', { code: null });
     }
     s.closed = true;
     this.#store.saveDay(prev);

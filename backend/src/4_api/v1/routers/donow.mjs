@@ -5,12 +5,13 @@
 
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { authenticate } from '#apps/trigger/guards/authenticate.mjs';
 
 /**
  * @param {Object} config
  * @param {Object} config.service - DoNowService (`dispatch`, `listSurfaces`).
  * @param {Object} config.approvals - DoNowApprovals (`listPending`, `approve`, `deny`).
+ * @param {(input: { expectedToken: string|null, providedToken: string|null }) => { ok: boolean, code?: string }} config.authenticateApproval
+ *   - Application-owned authentication policy, injected by composition.
  * @param {string|null} [config.expectedToken] - the DoNow `approvalsToken`
  *   secret, injected by composition (this layer does not know where it is
  *   stored). Open (no auth) when falsy — the exact posture the trigger
@@ -19,8 +20,11 @@ import { authenticate } from '#apps/trigger/guards/authenticate.mjs';
  * @param {Object} [config.logger]
  */
 export function createDoNowRouter({
-  service, approvals, expectedToken = null, logger = console,
+  service, approvals, authenticateApproval, expectedToken = null, logger = console,
 } = {}) {
+  if (typeof authenticateApproval !== 'function') {
+    throw new Error('createDoNowRouter: authenticateApproval required');
+  }
   const router = express.Router();
 
   router.post('/dispatch', express.json(), asyncHandler(async (req, res) => {
@@ -42,7 +46,7 @@ export function createDoNowRouter({
   }));
 
   router.post('/approvals/:id/approve', express.json(), asyncHandler(async (req, res) => {
-    const auth = authenticate({ expectedToken, providedToken: readToken(req, logger) });
+    const auth = authenticateApproval({ expectedToken, providedToken: readToken(req, logger) });
     if (!auth.ok) return res.status(401).json({ ok: false, code: auth.code });
 
     const result = await approvals.approve({ id: req.params.id });
@@ -50,7 +54,7 @@ export function createDoNowRouter({
   }));
 
   router.post('/approvals/:id/deny', express.json(), asyncHandler(async (req, res) => {
-    const auth = authenticate({ expectedToken, providedToken: readToken(req, logger) });
+    const auth = authenticateApproval({ expectedToken, providedToken: readToken(req, logger) });
     if (!auth.ok) return res.status(401).json({ ok: false, code: auth.code });
 
     const result = await approvals.deny({ id: req.params.id });

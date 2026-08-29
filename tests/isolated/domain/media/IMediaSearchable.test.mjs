@@ -1,5 +1,6 @@
 // tests/isolated/domain/media/IMediaSearchable.test.mjs
-import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSearchable.mjs';
+import { validateSearchQuery } from '#domains/media/validateMediaSearchQuery.mjs';
+import { isMediaSearchable } from '#apps/content/services/isMediaSearchable.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('IMediaSearchable', () => {

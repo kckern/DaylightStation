@@ -1,17 +1,10 @@
 import express from 'express';
-import { shortId } from '#domains/core/utils/id.mjs';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
 import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from '#shared/music/exerciseBank.mjs';
 import { validateAssessment } from '#shared/music/assessmentRecord.mjs';
 import { buildExerciseCatalog } from '#shared/music/exerciseCatalog.mjs';
-import {
-  PRODUCER_ID_RE,
-  PRODUCER_SCHEMA_VERSION,
-  normalizeProducerRecord,
-  validateProducerRecord,
-} from '#apps/piano/producerRecords.mjs';
 
 const ATTEMPT_WRITER_ROLES = new Set(['sysadmin', 'parent', 'kiosk', 'piano-instructor', 'gaming-host']);
 const GUEST_ATTEMPT_SURFACES = new Set(['piano-challenge']);
@@ -109,8 +102,10 @@ function attemptPolicyErrors(userId, body) {
  *   POST   /users/:userId/game-budget/session/:sessionId/close  → seal a session ({ok:true})
  *   POST   /users/:userId/game-budget/credits                   → idempotently mint earned time for a passed assessment
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, idFactory, producerRecords, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
+  if (typeof idFactory !== 'function') throw new Error('createPianoRouter: idFactory required');
+  if (!producerRecords) throw new Error('createPianoRouter: producerRecords required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
   const cs = pianoContainer.composerSongStore;
@@ -278,7 +273,7 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     try {
       attempt = pianoAttemptStore.save(req.params.userId, {
         ...body,
-        attempt_id: body.attempt_id || shortId(),
+        attempt_id: body.attempt_id || idFactory(),
         trust_source: 'client-midi',
       });
     } catch (error) {
@@ -552,7 +547,7 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     if (!Array.isArray(events) || events.length === 0) {
       return res.status(400).json({ error: 'events (non-empty array) required' });
     }
-    const id = shortId();
+    const id = idFactory();
     const data = {
       id,
       userId: req.params.userId,
@@ -695,12 +690,12 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     const loop = ds.getProducer('loops', loopId);
     return !!loop
       && loop.id === loopId
-      && validateProducerRecord('loops', loop).length === 0;
+      && producerRecords.validateProducerRecord('loops', loop).length === 0;
   };
 
   const inspectStoredProducer = (family, id, raw) => {
     const errors = raw && typeof raw === 'object'
-      ? validateProducerRecord(family, raw, {
+      ? producerRecords.validateProducerRecord(family, raw, {
         hasLoop: hasValidStoredLoop,
       })
       : ['record must be an object'];
@@ -733,7 +728,7 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
 
     // GET /producer/{family}/:id → full record.
     router.get(`/producer/${family}/:id`, (req, res) => {
-      if (!PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
+      if (!producerRecords.PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
       const raw = ds.getProducer(family, req.params.id);
       if (!raw) return res.status(404).json({ error: `${family} record not found` });
       const { data, errors } = inspectStoredProducer(family, req.params.id, raw);
@@ -759,14 +754,14 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
       }
       // shortId() draws from a mixed-case charset; producer ids must be dot-free
       // AND match [a-z0-9-], so lowercase it (collision-safe at 10 chars).
-      const id = shortId().toLowerCase();
-      let data = normalizeProducerRecord(family, {
+      const id = idFactory().toLowerCase();
+      let data = producerRecords.normalizeProducerRecord(family, {
         ...payload,
         id,
         author,
         created: new Date().toISOString(),
       }, { id });
-      const errors = validateProducerRecord(family, data, {
+      const errors = producerRecords.validateProducerRecord(family, data, {
         hasLoop: hasValidStoredLoop,
       });
       if (errors.length) return bad(res, errors.join('; '));
@@ -789,7 +784,7 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
 
     // PATCH /producer/{family}/:id → partial curate (title/favorite + shallow merge).
     router.patch(`/producer/${family}/:id`, asyncHandler((req, res) => {
-      if (!PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
+      if (!producerRecords.PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
       const current = ds.getProducer(family, req.params.id);
       if (!current) return res.status(404).json({ error: `${family} record not found` });
       const currentErrors = inspectStoredProducer(family, req.params.id, current).errors;
@@ -814,16 +809,16 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
         dedupeKey: _dedupeKey, expectedRevision: _expectedRevision, ...mergeable
       } = patch;
       const now = new Date().toISOString();
-      const data = normalizeProducerRecord(family, {
+      const data = producerRecords.normalizeProducerRecord(family, {
         ...current,
         ...mergeable,
         title: typeof patch.title === 'string' && patch.title.trim() ? patch.title.trim() : current.title,
         favorite: typeof patch.favorite === 'boolean' ? patch.favorite : current.favorite,
-        schemaVersion: PRODUCER_SCHEMA_VERSION,
+        schemaVersion: producerRecords.PRODUCER_SCHEMA_VERSION,
         revision: currentRevision + 1,
         modified: now,
       }, { id: req.params.id, now });
-      const errors = validateProducerRecord(family, data, {
+      const errors = producerRecords.validateProducerRecord(family, data, {
         hasLoop: hasValidStoredLoop,
       });
       if (errors.length) return bad(res, errors.join('; '));
@@ -833,7 +828,7 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
 
     // DELETE /producer/{family}/:id → { ok, id }.
     router.delete(`/producer/${family}/:id`, (req, res) => {
-      if (!PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
+      if (!producerRecords.PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
       const deleted = ds.deleteProducer(family, req.params.id);
       if (!deleted) return res.status(404).json({ error: `${family} record not found` });
       res.json({ ok: true, id: req.params.id });

@@ -17,6 +17,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
+import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
 import { makeReadingSessionHandler, makeReadingTimeoutHandler } from '#composition/modules/learnerCardActions.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
@@ -27,7 +28,7 @@ function build({ playing = false, wake = async () => ({ ok: true }) } = {}) {
   // it: `session-open` is the store's own broadcast and `session-refused` is
   // the handler's, and the screen hears both on the same topic.
   const bus = { broadcast: (topic, payload) => sent.push({ topic, payload }) };
-  const store = new ReadingSessionService({ eventBus: bus, logger: silent });
+  const store = new ReadingSessionService({ realtime: new EventBusSchoolRealtimeAdapter({ eventBus: bus }), logger: silent });
   const woke = [];
   const handler = makeReadingSessionHandler({
     sessions: store,

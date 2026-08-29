@@ -75,11 +75,11 @@ describe('Participant', () => {
   });
 
   describe('toJSON/fromJSON', () => {
-    test('round-trips participant data', () => {
+    test('reconstitutes a participant record', () => {
       participant.metadata = { avatar: 'url' };
 
-      const json = participant.toJSON();
-      const restored = Participant.fromJSON(json);
+      const json = { ...participant };
+      const restored = new Participant(json);
 
       expect(restored.name).toBe(participant.name);
       expect(restored.hrDeviceId).toBe(participant.hrDeviceId);

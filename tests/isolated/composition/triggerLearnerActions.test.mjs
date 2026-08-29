@@ -4,6 +4,11 @@ import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs
 import { makePrintAgendaHandler, makeReadingSessionHandler } from '#composition/modules/learnerCardActions.mjs';
 import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
 
+const TEST_RUNTIME = {
+  createDispatchId: () => 'dispatch-test-id',
+  scheduler: { after: () => () => {} },
+};
+
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 
 // The registry shape composition actually hands the dispatcher, with the two
@@ -23,6 +28,7 @@ const registry = {
 
 function makeService(learnerActions, tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }) }) {
   return new TriggerDispatchService({
+    ...TEST_RUNTIME,
     config: registry,
     contentIdResolver: { resolve: (id) => /^plex:/.test(id) ? { source: 'plex' } : null },
     wakeAndLoadService: { execute: vi.fn() },
@@ -121,6 +127,7 @@ describe('trigger learner actions — composition contract', () => {
     const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
     const learnerActions = createLearnerActions({ logger: silent });
     const service = new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: registry,
       contentIdResolver: { resolve: () => null },
       wakeAndLoadService: { execute: vi.fn() },

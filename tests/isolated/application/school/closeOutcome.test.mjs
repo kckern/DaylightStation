@@ -22,7 +22,7 @@ let clock, sessions, tokens, economy, thermal, reviewQueue, close, remediate;
 
 const build = ({
   economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true,
-  passOverrides = null, teacherGate = null, eventBus = null,
+  passOverrides = null, teacherGate = null, realtime = null,
   receiptCapture = null, receiptArtifactPrinter = null,
   assignments: assignmentsOverride = null,
 } = {}) => {
@@ -48,7 +48,7 @@ const build = ({
     teacherGate,
     reviewQueue: wireReviewQueue ? reviewQueue : null,
     passOverrides,
-    eventBus,
+    realtime,
     clock: clock.now, rng: seededRng(5), logger: silentLogger,
   });
   remediate = new OpenRemediation({
@@ -232,7 +232,7 @@ describe('the honor-close door', () => {
 describe('school.session.outcome-recorded publish', () => {
   it('publishes on a passing honor-close, with learnerId/sessionId/unitId/result/at', async () => {
     const published = [];
-    build({ eventBus: { publish: (topic, payload) => published.push({ topic, payload }) } });
+    build({ realtime: { sessionOutcomeRecorded: (payload) => published.push({ topic: 'school.session.outcome-recorded', payload }) } });
     await launched();
     await close.execute({ sessionId: SID, honorClose: true });
     expect(published).toHaveLength(1);
@@ -241,7 +241,7 @@ describe('school.session.outcome-recorded publish', () => {
     expect(typeof published[0].payload.at).toBe('string');
   });
 
-  it('does not throw when no eventBus is supplied (the default)', async () => {
+  it('does not throw when no realtime gateway is supplied (the default)', async () => {
     await launched();
     await expect(close.execute({ sessionId: SID, honorClose: true })).resolves.toMatchObject({ status: 'settled' });
   });

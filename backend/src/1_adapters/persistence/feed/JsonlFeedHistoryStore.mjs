@@ -1,5 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { appendTextFile, deleteFile, dirExists, listEntries, readTextFromPath } from '#system/utils/FileIO.mjs';
 
 const RETENTION_MONTHS = 12;
 const SAVED_PATH = 'feed/saved-items';
@@ -52,8 +52,7 @@ export class JsonlFeedHistoryStore {
     }
     for (const [key, docs] of byMonth) {
       const dir = this.#dataService.user.resolveDir('feed/history', username);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.appendFileSync(path.join(dir, `${key}.jsonl`), `${docs.map(doc => JSON.stringify(doc)).join('\n')}\n`);
+      appendTextFile(path.join(dir, `${key}.jsonl`), `${docs.map(doc => JSON.stringify(doc)).join('\n')}\n`);
     }
     return fresh.length;
   }
@@ -198,16 +197,16 @@ export class JsonlFeedHistoryStore {
         this.#indexDocument(username, item);
       }
     }
-    if (!fs.existsSync(dir)) return;
+    if (!dirExists(dir)) return;
     const cutoff = new Date();
     cutoff.setUTCMonth(cutoff.getUTCMonth() - RETENTION_MONTHS);
-    for (const filename of fs.readdirSync(dir).filter(name => /^\d{4}-\d{2}\.jsonl$/.test(name)).sort()) {
+    for (const filename of listEntries(dir).filter(name => /^\d{4}-\d{2}\.jsonl$/.test(name)).sort()) {
       if (filename.slice(0, 7) < monthKey(cutoff)) {
-        try { fs.unlinkSync(path.join(dir, filename)); }
+        try { deleteFile(path.join(dir, filename)); }
         catch (error) { this.#logger.warn?.('feed.history.prune_failed', { username, filename, error: error.message }); }
         continue;
       }
-      const lines = fs.readFileSync(path.join(dir, filename), 'utf8').split('\n').filter(Boolean);
+      const lines = readTextFromPath(path.join(dir, filename)).split('\n').filter(Boolean);
       for (const line of lines) {
         try {
           const doc = JSON.parse(line);

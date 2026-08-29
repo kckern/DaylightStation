@@ -18,7 +18,10 @@ describe('lifelog router', () => {
     mockAggregator.getAvailableSources.mockReset();
     const { createLifelogRouter } = await import('#backend/src/4_api/v1/routers/lifelog.mjs');
     app = express();
-    app.use('/lifelog', createLifelogRouter({ aggregator: mockAggregator }));
+    app.use('/lifelog', createLifelogRouter({
+      aggregator: mockAggregator,
+      weightService: { read: () => ({ username: 'user_1', data: null }) },
+    }));
   });
 
   it('should return 200 with aggregated data for valid date', async () => {

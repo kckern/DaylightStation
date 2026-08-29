@@ -103,6 +103,17 @@ describe('LifeEventProcessor', () => {
     ]};
     expect(proc.getAnticipatedEvents(plan)).toHaveLength(1);
   });
+
+  it('gets recent occurred events from an explicit reference time', () => {
+    const plan = { life_events: [
+      { state: 'occurred', name: 'At cutoff', occurred_date: '2026-07-29T12:00:00.000Z' },
+      { state: 'occurred', name: 'Too old', occurred_date: '2026-07-29T11:59:59.999Z' },
+      { state: 'anticipated', name: 'Future', date: '2026-08-29T00:00:00.000Z' },
+    ] };
+    expect(proc.getRecentEvents(plan, 30, '2026-08-28T12:00:00.000Z').map(event => event.name))
+      .toEqual(['At cutoff']);
+    expect(() => proc.getRecentEvents(plan)).toThrow('now is required');
+  });
 });
 
 describe('BiasCalibrationService', () => {

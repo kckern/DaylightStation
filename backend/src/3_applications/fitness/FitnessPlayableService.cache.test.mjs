@@ -11,7 +11,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { FitnessPlayableService } from './FitnessPlayableService.mjs';
 
-const configService = { loadRawConfig: () => ({}) };
+const configService = { getProgressClassification: () => ({}), getSuggestionPolicy: () => ({ slots: 8, lookbackDays: 10 }) };
+const catalog = ({ resolvePlayables, getContainerInfo, getItem, enrichWithWatchState = async (items) => items }) => ({
+  canonicalize: (id) => ({ contentId: `plex:${String(id).replace(/^(?:plex:)+/, '')}`, localId: String(id).replace(/^(?:plex:)+/, ''), source: 'plex' }),
+  resolvePlayables,
+  getContainerInfo,
+  getItem,
+  enrichWatchState: enrichWithWatchState,
+  listShows: async () => [],
+});
 
 function makeService({ now = () => 0, structureTtlMs = 1000 } = {}) {
   const resolvePlayables = vi.fn(async () => [{ id: 'plex:1', title: 'Lesson 1' }]);
@@ -20,8 +28,7 @@ function makeService({ now = () => 0, structureTtlMs = 1000 } = {}) {
   const enrichWithWatchState = vi.fn(async (items) => items.map((i) => ({ ...i, watched: true })));
   const service = new FitnessPlayableService({
     fitnessConfigService: configService,
-    contentAdapter: { resolvePlayables, getContainerInfo, getItem },
-    contentQueryService: { enrichWithWatchState },
+    contentCatalog: catalog({ resolvePlayables, getContainerInfo, getItem, enrichWithWatchState }),
     createProgressClassifier: () => ({ classify: () => 'unwatched' }),
     logger: { warn() {}, debug() {}, info() {} },
     structureTtlMs,
@@ -91,7 +98,7 @@ describe('FitnessPlayableService structure cache', () => {
       .mockResolvedValue([{ id: 'plex:1', title: 'Lesson 1' }]);
     const service = new FitnessPlayableService({
       fitnessConfigService: configService,
-      contentAdapter: { resolvePlayables, getContainerInfo: async () => null, getItem: async () => null },
+      contentCatalog: catalog({ resolvePlayables, getContainerInfo: async () => null, getItem: async () => null }),
       createProgressClassifier: () => ({ classify: () => 'unwatched' }),
       logger: { warn() {}, debug() {}, info() {} },
     });

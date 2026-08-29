@@ -1,7 +1,20 @@
 // tests/isolated/services/transcode-prewarm.test.mjs
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { TranscodePrewarmService } from '../../../backend/src/3_applications/devices/services/TranscodePrewarmService.mjs';
+import { TranscodePrewarmService as BaseTranscodePrewarmService } from '../../../backend/src/3_applications/devices/services/TranscodePrewarmService.mjs';
 import { PlayableItem } from '../../../backend/src/2_domains/content/capabilities/Playable.mjs';
+import { resolvedAdapterContentCatalog } from '../../_lib/resolvedAdapterContentCatalog.mjs';
+
+class TranscodePrewarmService extends BaseTranscodePrewarmService {
+  constructor(dependencies) {
+    super({
+      contentCatalog: resolvedAdapterContentCatalog(),
+      clock: { now: () => Date.now() },
+      createToken: () => 'testtoken0000000',
+      scheduler: { after: () => () => {} },
+      ...dependencies,
+    });
+  }
+}
 
 // --- Helpers ---
 
@@ -104,7 +117,7 @@ describe('TranscodePrewarmService', () => {
     });
 
     test('returns skipped status for non-Plex content', async () => {
-      const adapter = mockAdapter();
+      const adapter = mockAdapter({ loadMediaUrl: false });
       const contentIdResolver = mockContentIdResolver({
         resolved: {
           source: 'youtube',

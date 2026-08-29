@@ -8,7 +8,6 @@
  */
 
 import { createCanvas, registerFont } from 'canvas';
-import { existsSync } from 'node:fs';
 
 // Image generation constants
 const SIZE = 500;
@@ -25,9 +24,7 @@ function ensureFontRegistered(fontPath) {
   if (!fontPath || registeredFontPaths.has(fontPath)) return;
   registeredFontPaths.add(fontPath);
   try {
-    if (existsSync(fontPath)) {
-      registerFont(fontPath, { family: 'Roboto Condensed' });
-    }
+    registerFont(fontPath, { family: 'Roboto Condensed' });
   } catch (err) {
     console.warn('placeholderImage: Failed to register Roboto Condensed font:', err.message);
   }

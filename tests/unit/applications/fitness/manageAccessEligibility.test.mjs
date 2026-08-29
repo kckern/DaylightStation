@@ -49,7 +49,7 @@ function buildManageAccess({ profiles = {}, admin = [], primary, unlockService, 
     getAllProfiles: () => new Map(Object.entries(profiles)),
   };
   const fitnessConfigService = {
-    loadRawConfig: () => ({ users: { admin, primary: primary ?? Object.keys(profiles) } }),
+    getAccessPolicy: () => ({ users: { admin, primary: primary ?? Object.keys(profiles) } }),
   };
   return new ManageAccess({
     userService,
@@ -71,7 +71,7 @@ describe('ManageAccess.gate (self/admin authorization gate)', () => {
       unlockService: { requestUnlock },
     });
     const gate = await ma.gate('default', 'test-user');
-    expect(gate).toEqual({ ok: true });
+    expect(gate).toEqual({ kind: 'authorized' });
     expect(requestUnlock).not.toHaveBeenCalled();
   });
 
@@ -83,7 +83,7 @@ describe('ManageAccess.gate (self/admin authorization gate)', () => {
       identityRelay: { adminVerifiedWithin: () => ({ userId: 'admin-a' }) },
     });
     const gate = await ma.gate('default', 'test-user');
-    expect(gate).toEqual({ ok: true });
+    expect(gate).toEqual({ kind: 'authorized' });
     expect(requestUnlock).not.toHaveBeenCalled();
   });
 
@@ -93,7 +93,7 @@ describe('ManageAccess.gate (self/admin authorization gate)', () => {
       unlockService: null,
     });
     const gate = await ma.gate('default', 'test-user');
-    expect(gate).toEqual({ ok: false, status: 503, body: { error: 'unlock-service-unavailable' } });
+    expect(gate).toEqual({ kind: 'unlock_unavailable' });
   });
 
   it('enrolled target scans against the target-plus-admin gallery and is granted on match', async () => {
@@ -103,7 +103,7 @@ describe('ManageAccess.gate (self/admin authorization gate)', () => {
       unlockService: { requestUnlock },
     });
     const gate = await ma.gate('default', 'test-user');
-    expect(gate).toEqual({ ok: true });
+    expect(gate).toEqual({ kind: 'authorized' });
     expect(requestUnlock).toHaveBeenCalledWith('manage:test-user', [{ uuid: 'own-1', username: 'test-user' }]);
   });
 
@@ -114,7 +114,7 @@ describe('ManageAccess.gate (self/admin authorization gate)', () => {
       unlockService: { requestUnlock },
     });
     const gate = await ma.gate('default', 'test-user');
-    expect(gate).toEqual({ ok: false, status: 403, body: { error: 'auth-denied' } });
+    expect(gate).toEqual({ kind: 'denied' });
   });
 
   it('a reader error → 500 auth-failed (never silently grants)', async () => {
@@ -124,7 +124,7 @@ describe('ManageAccess.gate (self/admin authorization gate)', () => {
       unlockService: { requestUnlock },
     });
     const gate = await ma.gate('default', 'test-user');
-    expect(gate).toEqual({ ok: false, status: 500, body: { error: 'auth-failed' } });
+    expect(gate).toEqual({ kind: 'authorization_failed' });
   });
 
   it("gallery includes every admin's prints so an admin can authorize managing another user", async () => {

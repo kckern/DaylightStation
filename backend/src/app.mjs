@@ -10,15 +10,14 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
-import { existsSync, readdirSync } from 'fs';
-import { execSync } from 'child_process';
 import path, { join } from 'path';
-import { renderMachineScanResultPng } from '#rendering/school/documents/SessionResultRenderer.mjs';
+import { renderSessionResultPng } from '#rendering/school/documents/SessionResultRenderer.mjs';
 import { YamlSessionResultArtifactStore } from '#adapters/persistence/yaml/YamlSessionResultArtifactStore.mjs';
 
 // Infrastructure imports
-import { ConfigValidationError, configService, dataService, userDataService, userService } from './0_system/config/index.mjs';
-import { UserResolver } from './0_system/users/UserResolver.mjs';
+import { ConfigValidationError, configService } from './0_system/config/index.mjs';
+import { dataService, userService } from '#composition/runtimePersistence.mjs';
+import { ConfigUserResolver as UserResolver } from '#adapters/identity/ConfigUserResolver.mjs';
 import { UserIdentityService } from './2_domains/messaging/services/UserIdentityService.mjs';
 import { TelegramIdentityAdapter } from './1_adapters/messaging/TelegramIdentityAdapter.mjs';
 import { HttpClient } from './0_system/services/HttpClient.mjs';
@@ -26,9 +25,8 @@ import { HttpClient } from './0_system/services/HttpClient.mjs';
 // Logging system
 import { getDispatcher } from './0_system/logging/dispatcher.mjs';
 import { createLogger } from './0_system/logging/logger.mjs';
-import { ingestFrontendLogs } from './0_system/logging/ingestion.mjs';
-import { shouldRelayBtTopic } from './0_system/eventbus/btRelay.mjs';
-import { shouldRelayKioskLaunchTopic } from './0_system/eventbus/kioskLaunchRelay.mjs';
+import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
+import { shouldRelayBtTopic, shouldRelayKioskLaunchTopic } from '#apps/eventbus/ClientRelayPolicy.mjs';
 import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config.mjs';
 
 // Bootstrap functions
@@ -135,7 +133,9 @@ import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHan
 import { SessionControlService } from '#apps/devices/services/SessionControlService.mjs';
 
 // HTTP middleware
-import { createDevProxy, errorHandlerMiddleware, requestLoggerMiddleware } from './0_system/http/middleware/index.mjs';
+import { errorHandlerMiddleware, requestLoggerMiddleware } from './0_system/http/middleware/index.mjs';
+import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
+import { DevRequestForwarder } from '#adapters/http/DevRequestForwarder.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 // Admin app-services (constructed HERE at the composition root and injected into
@@ -154,9 +154,11 @@ import { createPrinterRouter } from './4_api/v1/routers/printer.mjs';
 import { setCallLeaseAuthority } from '#apps/homeline/CallStateService.mjs';
 import { CallLeaseService } from '#apps/homeline/CallLeaseService.mjs';
 import { createHomelineRouter } from '#api/v1/routers/homeline.mjs';
+import { SecureHomelineIdentityIssuer } from '#adapters/homeline/SecureHomelineIdentityIssuer.mjs';
+import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 
 // Pose frame logging
-import { createPoseLogHandler } from '#apps/fitness/services/PoseLogService.mjs';
+import { createPoseLogHandler } from '#adapters/fitness/PoseLogHandler.mjs';
 
 // Fitness application services (shared between fitness router and agents router)
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
@@ -166,14 +168,14 @@ import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
-import { createOmrReaderLiveness } from '#apps/hardware/omrReaderLiveness.mjs';
+import { createOmrReaderLiveness } from '#adapters/hardware/omrReaderLiveness.mjs';
 import { createPressureMatRelay } from '#apps/hardware/pressureMatRelay.mjs';
 import { PressureMatAdapter } from '#adapters/hardware/pressure-mat/index.mjs';
 import { createPressureMatRouter } from '#api/v1/routers/pressureMat.mjs';
 import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
 import { createAutomotiveApi } from '#composition/modules/automotiveApi.mjs';
 import { createQuizScanRecorder } from '#apps/quizzes/quizScanRecorder.mjs';
-import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
+import { createScaleNutribotBridge } from '#adapters/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
 import { validateScanConfig } from '#apps/nutribot/lib/validateScanConfig.mjs';
@@ -254,7 +256,6 @@ import { createWeeklyReviewRouter } from './4_api/v1/routers/weekly-review.mjs';
 import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile, loadYaml as loadYamlStatic, loadYamlFromPath } from './0_system/utils/FileIO.mjs';
 // API versioning
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createArtRouter } from './4_api/v1/routers/art.mjs';
@@ -283,7 +284,7 @@ import { PianoLearningService } from './3_applications/piano/PianoLearningServic
 import { YamlGamingExperienceManifestStore } from '#adapters/persistence/yaml/gaming/YamlGamingExperienceManifestStore.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { createChessRouter } from './4_api/v1/routers/chess.mjs';
-import { buildChessArchiveFilename, buildGameRecordFilename } from './4_api/v1/routers/lib/chessGameFilename.mjs';
+import { buildChessArchiveFilename, buildGameRecordFilename } from '#adapters/persistence/chess/ChessRecordNames.mjs';
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
 import { createStockfishAnalyst } from './1_adapters/chess/StockfishAnalysisAdapter.mjs';
 import { chessArchiveDayDir } from '#shared/gaming/rulesets/chess/archivePaths.mjs';
@@ -329,7 +330,7 @@ import {
   YamlLearningEvidenceRepository,
   YamlSchoolAttemptEvidenceSource,
 } from './1_adapters/school/progress/index.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 import { PresenceStore } from './1_adapters/devices/PresenceStore.mjs';
 import { resolveGate, ROLE_SEVERITY } from './2_domains/school/accessGate.mjs';
 import { GetMaterialCatalog } from './3_applications/school/GetMaterialCatalog.mjs';
@@ -358,9 +359,27 @@ import { createConfigRouter } from './4_api/v1/routers/config.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
 import { createEmulatorRouter } from './4_api/v1/routers/emulator.mjs';
 import { loadEmulatorConfig } from './3_applications/emulator/loadEmulatorConfig.mjs';
-import * as emuFs from './4_api/v1/routers/lib/emulatorFs.mjs';
 import { createAmbientLightService } from './3_applications/home-automation/AmbientLightService.mjs';
-import { normalizeAmbientZones, startAmbientZones } from './3_applications/home-automation/ambientZones.mjs';
+import { startAmbientZones } from './3_applications/home-automation/ambientZones.mjs';
+import { projectAmbientZones } from '#adapters/home-automation/ConfiguredAmbientZones.mjs';
+import { BuildMetadataSource } from '#adapters/runtime/BuildMetadataSource.mjs';
+import { ReadalongRuntimePaths } from '#adapters/content/ReadalongRuntimePaths.mjs';
+import { ContentPrefixConfigSource } from '#adapters/content/ContentPrefixConfigSource.mjs';
+import { YamlFeedQueryRepository } from '#adapters/feed/YamlFeedQueryRepository.mjs';
+import { HarvesterImageStore } from '#adapters/harvester/HarvesterImageStore.mjs';
+import { YamlSchoolScreenConfigSource } from '#adapters/school/YamlSchoolScreenConfigSource.mjs';
+import { FilesystemAssetProbe } from '#adapters/runtime/FilesystemAssetProbe.mjs';
+import { FilesystemWorksheetPdfReader } from '#adapters/school/documents/FilesystemWorksheetPdfReader.mjs';
+import { HouseholdYamlDocumentStore } from '#adapters/persistence/yaml/HouseholdYamlDocumentStore.mjs';
+import { FilesystemYamlDirectoryCatalog } from '#adapters/persistence/files/FilesystemYamlDirectoryCatalog.mjs';
+import { FilesystemEmulatorAssetRepository } from '#adapters/emulator/FilesystemEmulatorAssetRepository.mjs';
+import { FilesystemEmulatorConfigRepository } from '#adapters/emulator/FilesystemEmulatorConfigRepository.mjs';
+import { FilesystemEmulatorSaveRepository } from '#adapters/emulator/FilesystemEmulatorSaveRepository.mjs';
+import { EmulatorResourceService } from '#apps/emulator/EmulatorResourceService.mjs';
+import { EmulatorLibraryService } from '#apps/emulator/EmulatorLibraryService.mjs';
+import { buildCatalog, resolveGameRules } from '#apps/emulator/EmulatorCatalog.mjs';
+import { GamingMediaService } from '#apps/gaming/GamingMediaService.mjs';
+import { FilesystemGamingMediaRepository } from '#adapters/gaming/FilesystemGamingMediaRepository.mjs';
 import { ReolinkClient, makeSource, parseTriggerBits } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
 import { createHaDetectionSource } from '#adapters/camera/HaDetectionSource.mjs';
 import { ArchiveEncoder } from '#adapters/camera/ArchiveEncoder.mjs';
@@ -387,7 +406,11 @@ const __dirname = path.dirname(new URL(import.meta.url).pathname);
  * @returns {Promise<express.Application>} Configured Express app
  */
 export async function createApp({ server, logger, configPaths, configExists, enableScheduler = true, enableMqtt = true }) {
-  const isDocker = existsSync('/.dockerenv');
+  const assetProbe = new FilesystemAssetProbe();
+  const isDocker = assetProbe.exists('/.dockerenv');
+  // Transitional legacy consumers still expect this narrow persistence object.
+  // Its concrete adapter remains owned by the composition root.
+  const userDataService = dataService.user;
 
   // ==========================================================================
   // Express App Setup
@@ -433,14 +456,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // working tree's HEAD instead.
   app.get('/build.txt', (req, res) => {
     res.type('text/plain');
-    if (existsSync('/build.txt')) {
-      return res.sendFile('/build.txt');
-    }
-    let sha = 'unknown';
-    try {
-      sha = execSync('git rev-parse HEAD', { cwd: __dirname }).toString().trim();
-    } catch { /* not a git checkout */ }
-    res.send(`Build Time: dev (not built)\nCommit: https://github.com/kckern/DaylightStation/commit/${sha}\n`);
+    const metadata = new BuildMetadataSource({ checkoutDirectory: __dirname }).read();
+    return metadata.kind === 'file' ? res.sendFile(metadata.path) : res.send(metadata.value);
   });
 
   if (!configExists) {
@@ -974,21 +991,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataPath: path.join(contentPath, 'singalong'),  // hymn, primary
     mediaPath: path.join(mediaBasePath, 'audio', 'singalong')
   };
-  const canonicalReadalongDataPath = path.join(contentPath, 'readalong');
-  const canonicalReadalongAudioPath = path.join(mediaBasePath, 'audio', 'readalong');
-  const canonicalReadalongVideoPath = path.join(mediaBasePath, 'video', 'readalong');
-  const readalongConfig = {
-    dataPath: existsSync(canonicalReadalongDataPath) ? canonicalReadalongDataPath : contentPath,
-    mediaPath: existsSync(canonicalReadalongAudioPath) ? canonicalReadalongAudioPath : path.join(mediaBasePath, 'audio'),
-    mediaPathMap: {
-      talks: existsSync(canonicalReadalongVideoPath) ? canonicalReadalongVideoPath : path.join(mediaBasePath, 'video')
-    }
-  };
+  const readalongConfig = new ReadalongRuntimePaths({ contentPath, mediaPath: mediaBasePath }).read();
 
   // Load content prefix config early — needed by both createContentRegistry and createApiRouters
   // Colocated under media/ (task-13 — media owns content addressing; was config/content-prefixes)
   const contentPrefixesPath = configService.getHouseholdPath('media/content-prefixes');
-  const contentPrefixes = loadYamlStatic(contentPrefixesPath) || {};
+  const contentPrefixes = new ContentPrefixConfigSource({ filePath: contentPrefixesPath }).read();
   const prefixAliases = contentPrefixes.aliases || {};
   const storagePaths = contentPrefixes.storagePaths || {};
 
@@ -1025,9 +1033,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Import FileIO functions for content domain (replaces legacy io.mjs)
   // Content routers use household-scoped paths
-  const { loadYaml, saveYaml } = await import('./0_system/utils/FileIO.mjs');
-  const contentLoadFile = (relativePath) => loadYaml(path.join(householdDir, relativePath));
-  const contentSaveFile = (relativePath, data) => saveYaml(path.join(householdDir, relativePath), data);
+  const contentDocuments = new HouseholdYamlDocumentStore({ householdDirectory: householdDir });
+  const contentLoadFile = contentDocuments.load;
+  const contentSaveFile = contentDocuments.save;
 
   // Create compose presentation use case for multi-track content composition
   const composePresentationUseCase = new ComposePresentationUseCase({
@@ -1438,36 +1446,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     // Load query configs at bootstrap time (moves fs access out of application layer)
     // content/lists is a top-level tree, sibling to household/ — NOT household-scoped.
-    const { readdirSync, existsSync } = await import('fs');
-    const queriesPath = dataService.content.resolveDir('lists/queries');
-    let queryConfigs = [];
-    if (queriesPath) {
-      try {
-        const files = readdirSync(queriesPath).filter(f => f.endsWith('.yml'));
-        queryConfigs = files.map(file => {
-          const key = file.replace('.yml', '');
-          const data = dataService.content.read(`lists/queries/${key}`);
-          return data ? { ...data, _filename: file } : null;
-        }).filter(Boolean);
-      } catch (err) {
-        rootLogger.warn('feed.queries.load.error', { error: err.message });
-      }
-    }
-
-    // Load user-scoped query configs on demand (personal subreddits, Plex, etc.)
-    const loadUserQueries = (username) => {
-      const dataDir = configService.getDataDir();
-      const userQueriesPath = path.join(dataDir, 'users', username, 'config', 'queries');
-      try {
-        if (!existsSync(userQueriesPath)) return [];
-        const files = readdirSync(userQueriesPath).filter(f => f.endsWith('.yml'));
-        return files.map(file => {
-          const key = file.replace('.yml', '');
-          const data = dataService.user.read(`config/queries/${key}`, username);
-          return data ? { ...data, _filename: file } : null;
-        }).filter(Boolean);
-      } catch { return []; }
-    };
+    const feedQueries = new YamlFeedQueryRepository({ dataService, configService, logger: rootLogger });
+    const queryConfigs = feedQueries.loadHouseholdQueries();
+    const loadUserQueries = (username) => feedQueries.loadUserQueries(username);
 
     // Feed source adapters (extracted from FeedAssemblyService)
     // Shared system HttpClient for all raw-HTTP feed adapters (P1.9).
@@ -1718,7 +1699,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Image saving for Infinity harvester (mirrors legacy io.saveImage behavior)
   // Images are saved to media/img/{folder}/{uid}.jpg with 24-hour caching
   const imgBasePath = configService.getPath('img') || `${mediaBasePath}/img`;
-  const saveImage = (url, folder, uid) => saveImageToFile(url, imgBasePath, folder, uid);
+  const saveImage = new HarvesterImageStore({ imageDirectory: imgBasePath }).save;
 
   // Household-level file saving for Infinity harvester state
   const householdSaveFile = (relativePath, data) => {
@@ -1897,8 +1878,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   const gamingRouter = createGamingRouter({
     gamingApplication: gamingModule.gamingApplication,
-    assetCatalog: gamingAssetCatalog,
-    mediaPartyGamesDir: join(mediaBasePath, 'games', 'party-games'),
+    gamingMediaService: new GamingMediaService({ repository: new FilesystemGamingMediaRepository({
+      assetCatalog: gamingAssetCatalog,
+      partyMediaRoot: join(mediaBasePath, 'games', 'party-games'),
+    }) }),
     broadcastEvent,
     logger: rootLogger.child({ module: 'gaming-api' }),
   });
@@ -2038,25 +2021,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const emulationDir = path.join(configService.getMediaDir(), 'emulation');
     const engineDir = path.join(emulationDir, '_engine');
     const emuLogger = rootLogger.child({ module: 'emulator-api' });
+    const configRepository = new FilesystemEmulatorConfigRepository({ emulationDir });
+    const loadConfig = () => loadEmulatorConfig({ emulationDir, configRepository, logger: emuLogger });
+    const emulatorResources = new EmulatorResourceService({
+      assetRepository: new FilesystemEmulatorAssetRepository({ emulationDir, engineDir, loadCatalog: loadConfig }),
+      saveRepository: new FilesystemEmulatorSaveRepository({ emulationDir }),
+      loadConfig,
+      resolveGameRules,
+    });
+    const emulatorLibrary = new EmulatorLibraryService({ loadConfig, buildCatalog, resolveGameRules, logger: emuLogger });
     v1Routers.emulator = createEmulatorRouter({
       logger: emuLogger,
-      loadConfig: () => loadEmulatorConfig({
-        emulationDir,
-        readManifests: () => emuFs.readManifests(emulationDir),
-        readInputConfig: emuFs.makeReadInputConfig(emulationDir),
-        readConsoles: emuFs.makeReadConsolesConfig(emulationDir),
-        readSettings: emuFs.makeReadSettingsConfig(emulationDir),
-        logger: emuLogger,
-      }),
-      readBinary: emuFs.readBinary,
-      writeBinary: emuFs.writeBinary,
-      deleteBinary: emuFs.deleteBinary,
-      readEngineFile: emuFs.makeReadEngineFile(engineDir),
-      resolveRomPath: (cfg, system, gameId) => emuFs.resolveRomPath(emulationDir, cfg, system, gameId),
-      resolveArtPath: (cfg, system, gameId, kind) => emuFs.resolveArtPath(emulationDir, cfg, system, gameId, kind),
-      resolveSavePath: (system, gameId, user) => emuFs.resolveSavePath(emulationDir, system, gameId, user),
-      resolveStatePath: (system, gameId, slot, user) => emuFs.resolveStatePath(emulationDir, system, gameId, slot, user),
-      listSaveUsers: (system, gameId) => emuFs.listSaveUsers(emulationDir, system, gameId),
+      emulatorResources,
+      emulatorLibrary,
       // Broadcasts the bt.pair.request bus topic the garage fitness bridge
       // listens for (puts the box into controller-pairing mode without SSH).
       // eventBus is already constructed (above) and in scope here.
@@ -2646,6 +2623,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     pianoChallengeProfileService,
     schoolPianoChallengeCompletionService,
     eventBus,
+    idFactory: shortId,
+    producerRecords: await import('#apps/piano/producerRecords.mjs'),
     pianoChallengePolicy: exerciseBank.available()
       ? new BankChallengePolicy({ exerciseBank, attemptStore: pianoAttemptStore })
       : new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
@@ -2852,11 +2831,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `loadYamlFromPath` returns null on a missing/unparsable file rather than
   // throwing, which is exactly the "no config" case the resolver treats as a
   // 404 (fail closed, never a synthesized default).
-  const getSchoolScreenConfig = (screenId) => (
-    /^[a-zA-Z0-9_-]+$/.test(screenId)
-      ? loadYamlFromPath(path.join(householdDir, 'screens', `${screenId}.yml`))
-      : null
-  );
+  const getSchoolScreenConfig = new YamlSchoolScreenConfigSource({ householdDirectory: householdDir }).get;
   // Optional calculator-native School product. The composition module is the
   // only place that joins calculator-family adapters, SchoolCalc application
   // use cases, persistence, relay credentials, and the thin HTTP router.
@@ -3234,7 +3209,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Each zone (room) broadcasts its lux on its own topic; the screen config picks the
   // topic + curve for that room. See ambientZones.mjs.
   const ambientConfig = configService.getHouseholdAppConfig(null, 'ambient') || {};
-  const ambientZones = normalizeAmbientZones(ambientConfig);
+  const ambientZones = projectAmbientZones(ambientConfig);
   startAmbientZones({
     zones: ambientZones,
     haGateway: homeAutomationAdapters.haGateway,
@@ -3243,22 +3218,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Import FileIO functions for state persistence (replaces legacy io.mjs)
-  const { loadYaml: haLoadYaml, saveYaml: haSaveYaml } = await import('./0_system/utils/FileIO.mjs');
   // Reuse householdDir from earlier (line 157)
-  const loadFile = (relativePath) => haLoadYaml(path.join(householdDir, relativePath));
-  const saveFile = (relativePath, data) => haSaveYaml(path.join(householdDir, relativePath), data);
+  const householdYamlDocuments = new HouseholdYamlDocumentStore({ householdDirectory: householdDir });
+  const loadFile = householdYamlDocuments.load;
+  const saveFile = householdYamlDocuments.save;
   // Directory listing for config that is split into grouped files (NFC tag
   // bindings: books.yml, cards.yml, …). Returns [] when the directory is absent
   // so a household still on the single-file layout loads unchanged.
-  const listDir = (relativePath) => {
-    try {
-      return readdirSync(path.join(householdDir, relativePath))
-        .filter((f) => /\.ya?ml$/i.test(f))
-        .sort();
-    } catch {
-      return [];
-    }
-  };
+  const yamlDirectoryCatalog = new FilesystemYamlDirectoryCatalog({ root: householdDir });
+  const listDir = (relativePath) => yamlDirectoryCatalog.list(relativePath);
 
   const { EventAggregationService } = await import('./3_applications/home/EventAggregationService.mjs');
   const eventAggregationService = new EventAggregationService({
@@ -3404,6 +3372,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     deviceService: deviceServices.deviceService,
     wakeAndLoadService,
     logger: rootLogger.child({ module: 'homeline-lease' }),
+    clock: { now: () => Date.now() },
+    scheduler: new NodeApplicationScheduler(),
+    identityIssuer: new SecureHomelineIdentityIssuer(),
   });
   setCallLeaseAuthority(callLeaseService);
 
@@ -3589,7 +3560,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     try {
       const { createSchoolPrintScanConsumer } = await import('#composition/modules/schoolPrintScanConsumer.mjs');
       const { ResolveCardScan } = await import('#apps/school/documents/ResolveCardScan.mjs');
-      const { createYamlBankReader } = await import('#apps/school/documents/RenderPrintDocument.mjs');
+      const { createYamlBankReader } = await import('#adapters/school/documents/YamlBankReader.mjs');
       const resolveCardScan = new ResolveCardScan({
         allocationStore: schoolLifecycle.stores.allocationStore,
         repository: schoolLifecycle.stores.printDocuments,
@@ -3617,7 +3588,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         sessions: schoolLifecycle.stores.sessions ?? null,
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
         resultArtifacts: schoolSessionResultArtifacts,
-        renderMachineResult: renderMachineScanResultPng,
+        renderMachineResult: renderSessionResultPng,
         logger: rootLogger.child({ module: 'school-print-scan-record' }),
       });
       // Grading hook (Task 4, spec §grading-hook): fires one HA script per
@@ -3804,16 +3775,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       worksheetRenderer: { renderBankWorksheet },
       // getBank throws on miss; PrintService wants null-on-miss.
       bankReader: { getBank: (id) => { try { return schoolService.getBank(id); } catch { return null; } } },
-      pdfReader: {
-        read: (file) => {
-          const p = path.join(configService.getDataDir(), 'household', 'content', 'worksheets', path.basename(String(file)));
-          if (!fs.existsSync(p)) return null;
-          const pdf = fs.readFileSync(p);
-          // Cheap page count: number of "/Type /Page" occurrences (not /Pages).
-          const pageCount = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length || 1;
-          return { pdf, pageCount };
-        }
-      },
+      pdfReader: new FilesystemWorksheetPdfReader({ rootDir: path.join(configService.getDataDir(), 'household', 'content', 'worksheets') }),
       userService,
       paperCertifyBank,
       teacherGate: schoolLifecycle.teacherGate ?? null,
@@ -5712,7 +5674,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // get the React app, not the API JSON response.
   if (isDocker) {
     const frontendPath = join(__dirname, '..', '..', 'frontend', 'dist');
-    const frontendExists = existsSync(frontendPath);
+    const frontendExists = assetProbe.exists(frontendPath);
 
     if (frontendExists) {
       // Serve static assets (JS, CSS, images) — hashed filenames are immutable

@@ -8,6 +8,10 @@ describe('SchoolFlashcardAssetRepository', () => {
     const repo = new SchoolFlashcardAssetRepository({ rootDir: root });
     expect(repo.get('../package.json')).toBeNull();
     expect(repo.get('missing.mp3')).toBeNull();
-    expect(repo.get('audio/test.mp3')).toMatchObject({ contentType: 'audio/mpeg' });
+    const asset = repo.get('audio/test.mp3');
+    expect(asset).toMatchObject({ contentType: 'audio/mpeg' });
+    expect(asset).not.toHaveProperty('file');
+    expect(asset.resource).not.toHaveProperty('path');
+    expect(asset.resource).not.toHaveProperty('filePath');
   });
 });

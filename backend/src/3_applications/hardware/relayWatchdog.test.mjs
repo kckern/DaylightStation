@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createRelayWatchdog } from './relayWatchdog.mjs';
+import { RelayWatchdogFirmwareGateway } from '#adapters/hardware/firmware/EventBusFirmwareRelayGateways.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 const HOUR = 3600_000;
@@ -33,7 +34,7 @@ describe('createRelayWatchdog', () => {
 
   function build(overrides = {}) {
     return createRelayWatchdog({
-      eventBus: bus,
+      relayGateway: new RelayWatchdogFirmwareGateway({ eventBus: bus }),
       sources: { 'kitchen-relay': { label: 'Kitchen relay', thresholdMs: 3 * HOUR } },
       clock,
       onStale: (evt) => { alerts.push(evt); },

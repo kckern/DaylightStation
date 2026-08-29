@@ -29,8 +29,8 @@ describe('YamlMediaProgressMemory completedAt round-trip', () => {
       watchTime: 735,
       completedAt: '2026-04-20 06:07:44'
     });
-    await memory.set(state, 'plex/14_fitness');
-    const loaded = await memory.get('plex:674498', 'plex/14_fitness');
+    await memory.saveProgress(state, 'plex/14_fitness');
+    const loaded = await memory.findProgress('plex:674498', 'plex/14_fitness');
     expect(loaded).not.toBeNull();
     expect(loaded.completedAt).toBe('2026-04-20 06:07:44');
   });
@@ -43,8 +43,8 @@ describe('YamlMediaProgressMemory completedAt round-trip', () => {
       playCount: 1,
       lastPlayed: '2026-04-20 06:07:44'
     });
-    await memory.set(state, 'plex/14_fitness');
-    const loaded = await memory.get('plex:100', 'plex/14_fitness');
+    await memory.saveProgress(state, 'plex/14_fitness');
+    const loaded = await memory.findProgress('plex:100', 'plex/14_fitness');
     expect(loaded.completedAt).toBeNull();
   });
 });

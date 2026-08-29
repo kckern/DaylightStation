@@ -1,5 +1,6 @@
 import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
+import { curriculumPosterRef, schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 /** Read models for the teacher history and session inspector surfaces. */
 export class GetTeacherSession {
@@ -33,16 +34,16 @@ export class GetTeacherSession {
       Promise.all(state.issuedArtifacts.map(async (artifactId) => {
         const artifact = await this.#artifacts?.get?.(artifactId);
         return artifact ? { ...artifact.manifest, availability: 'exact', exactBytesRetained: true,
-          originalPdfUrl: `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/original.pdf`,
+          originalPdfUrl: schoolArtifactRef(artifactId, 'original.pdf'),
           thumbnailUrl: (artifact.manifest.representation?.mediaType ?? 'application/pdf') === 'application/pdf'
-            ? `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/thumbnail.png` : null }
+            ? schoolArtifactRef(artifactId, 'thumbnail.png') : null }
           : { artifactId, availability: 'unavailable', exactBytesRetained: false };
       })),
       Promise.all((state.resultReceiptArtifacts ?? []).map(async (receipt) => {
         const artifact = await this.#artifacts?.get?.(receipt.artifactId);
         return artifact ? {
           ...artifact.manifest, role: 'result-receipt', availability: 'exact', exactBytesRetained: true,
-          originalUrl: `/api/v1/school/teacher/artifacts/${encodeURIComponent(receipt.artifactId)}/original`,
+          originalUrl: schoolArtifactRef(receipt.artifactId, 'original'),
           printed: receipt.printed, printReason: receipt.printReason, capturedAt: receipt.at,
         } : { ...receipt, role: 'result-receipt', availability: 'unavailable', exactBytesRetained: false };
       })),
@@ -90,7 +91,7 @@ export class GetTeacherSession {
         courseId, courseTitle: course?.title ?? 'Course title unavailable',
         moduleId: unit?.module ?? null, moduleTitle: module?.title ?? 'Unit title unavailable',
         lessonId: state.unitId, lessonTitle: unit?.title ?? 'Lesson title unavailable',
-        posterUrl: courseId ? `/api/v1/school/teacher/curriculum/${encodeURIComponent(courseId)}/poster.jpg` : null,
+        posterUrl: courseId ? curriculumPosterRef('teacher', courseId) : null,
       },
       scores: {
         machine: state.machineGrade,
@@ -197,8 +198,7 @@ export class GetLearnerTimeline {
           courseTitle: course?.title ?? null,
           subject: unit.subject ?? course?.subject ?? null,
           moduleTitle: module?.title ?? null,
-          posterUrl: unit.courseId
-            ? `/api/v1/school/teacher/curriculum/${encodeURIComponent(unit.courseId)}/poster.jpg` : null,
+          posterUrl: unit.courseId ? curriculumPosterRef('teacher', unit.courseId) : null,
         };
       }));
     } catch {

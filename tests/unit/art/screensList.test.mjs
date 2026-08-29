@@ -3,6 +3,8 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { createScreensRouter } from '../../../backend/src/4_api/v1/routers/screens.mjs';
+import { ScreensQueryService } from '#apps/screens/ScreensQueryService.mjs';
+import { FilesystemScreensRepository } from '#adapters/persistence/files/FilesystemScreensRepository.mjs';
 
 let dataPath;
 
@@ -28,7 +30,12 @@ const callList = async () => {
   const r = { statusCode: 200, body: null };
   r.status = (c) => { r.statusCode = c; return r; };
   r.json = (b) => { r.body = b; return r; };
-  const router = createScreensRouter({ householdDir: path.join(dataPath, 'household'), logger });
+  const screensRepository = new FilesystemScreensRepository({
+    householdDir: path.join(dataPath, 'household'),
+    logger,
+  });
+  const screensQueryService = new ScreensQueryService({ screensRepository, logger });
+  const router = createScreensRouter({ screensQueryService, logger });
   await getListHandler(router)({}, r, (e) => { if (e) throw e; });
   return r;
 };
@@ -51,6 +58,19 @@ describe('screens list endpoint', () => {
       { id: 'living-room', name: 'Living Room', resolution: { width: 960, height: 540 } },
       { id: 'office', name: 'office', resolution: { width: 1280, height: 720 } },
     ]));
+  });
+
+  it('lists a .yaml screen using its real filename', async () => {
+    await fs.writeFile(
+      path.join(dataPath, 'household', 'screens', 'portrait.yaml'),
+      'screen: portrait\nname: Portrait\nresolution:\n  width: 540\n  height: 960\n',
+    );
+
+    const r = await callList();
+
+    expect(r.body.screens).toEqual([
+      { id: 'portrait', name: 'Portrait', resolution: { width: 540, height: 960 } },
+    ]);
   });
 
   it('reports a null resolution for a screen that declares none', async () => {

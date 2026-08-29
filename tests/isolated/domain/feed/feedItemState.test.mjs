@@ -19,12 +19,31 @@ describe('normalized feed item identity and state', () => {
   });
 
   test('reader items retain legacy aliases while exposing the normalized contract', () => {
-    const item = normalizeFeedItem({ id: 'reader-1', title: 'Story', link: 'https://example.com/story', isRead: true }, { origin: 'reader' });
+    const item = normalizeFeedItem(
+      { id: 'reader-1', title: 'Story', link: 'https://example.com/story', isRead: true },
+      { origin: 'reader', nowMs: Date.parse('2026-08-24T00:00:00.000Z') },
+    );
     expect(item.source).toBe('freshrss');
     expect(item.sourceInfo.type).toBe('freshrss');
     expect(item.origins).toContain('reader');
     expect(item.state.isRead).toBe(true);
     expect(item.link).toBe('https://example.com/story');
+    expect(item.state.readAt).toBe('2026-08-24T00:00:00.000Z');
+  });
+
+  test('fallback IDs and read timestamps use the caller-supplied operation time', () => {
+    const nowMs = Date.parse('2026-08-24T00:00:00.123Z');
+    const item = normalizeFeedItem(
+      { isRead: true },
+      { nowMs },
+    );
+    expect(item.id).toBe(`feed:${nowMs}`);
+    expect(item.state.readAt).toBe('2026-08-24T00:00:00.123Z');
+  });
+
+  test('normalization and state changes reject an implicit clock', () => {
+    expect(() => normalizeFeedItem({ id: 'reader-1' })).toThrow('nowMs is required');
+    expect(() => applyFeedStateAction(null, 'read')).toThrow('now is required');
   });
 
   test('read, save, and archive remain independent and reversible', () => {

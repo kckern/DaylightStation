@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildSheetMetadata, buildSheetDescription } from './sheetMetadata.mjs';
+import { buildSheetMetadata, buildSheetDescription } from '#adapters/camera/sheetMetadata.mjs';
 
 const at = (h, m = 0, s = 0) => new Date(2026, 6, 17, h, m, s);
 const entry = { kind: 'event', start: at(18, 0), end: at(18, 1), labels: ['person'] };

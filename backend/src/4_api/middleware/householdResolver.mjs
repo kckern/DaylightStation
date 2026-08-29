@@ -4,7 +4,7 @@
  * Middleware that resolves household from request host.
  * Uses explicit domain mapping first, then pattern matching, then default.
  */
-export function householdResolver({ domainConfig, configService }) {
+export function householdResolver({ domainConfig, householdContext }) {
   const explicitMap = domainConfig.domain_mapping || {};
   const patterns = domainConfig.patterns || [];
 
@@ -21,7 +21,7 @@ export function householdResolver({ domainConfig, configService }) {
     }
 
     // 3. Validate household exists
-    if (!configService.householdExists(req.householdId)) {
+    if (!householdContext.exists(req.householdId)) {
       return res.status(404).json({
         error: 'Household not found',
         household: req.householdId,
@@ -29,7 +29,7 @@ export function householdResolver({ domainConfig, configService }) {
     }
 
     // 4. Attach household context
-    req.household = configService.getHousehold?.(req.householdId);
+    req.household = householdContext.household(req.householdId);
 
     next();
   };

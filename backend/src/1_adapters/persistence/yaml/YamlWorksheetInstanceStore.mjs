@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { promises as fs } from 'node:fs';
 import yaml from 'js-yaml';
+import {
+  ensureDirAsync, readDirectoryAsync, readTextFromPathAsync, writeTextFileAsync,
+} from '#system/utils/FileIO.mjs';
 
 /**
  * The one definition of a well-formed worksheet-instance id. Exported because
@@ -30,10 +32,10 @@ export class YamlWorksheetInstanceStore {
   async get(id) {
     if (typeof id !== 'string' || !SAFE_WORKSHEET_INSTANCE_ID.test(id) || id.includes('..')) throw new Error(`unsafe worksheet instance id: ${id}`);
     let entries;
-    try { entries = await fs.readdir(this.#root(), { withFileTypes: true }); } catch { return null; }
+    try { entries = await readDirectoryAsync(this.#root(), { withFileTypes: true }); } catch { return null; }
     for (const entry of entries.filter((candidate) => candidate.isFile() && /\.ya?ml$/i.test(candidate.name))) {
       try {
-        const value = yaml.load(await fs.readFile(path.join(this.#root(), entry.name), 'utf8')) ?? null;
+        const value = yaml.load(await readTextFromPathAsync(path.join(this.#root(), entry.name))) ?? null;
         if (value?.id === id) return value;
       } catch (err) {
         this.#logger.error?.('school.worksheet-instance.unreadable', { instanceId: id, file: entry.name, error: err?.message });
@@ -46,7 +48,7 @@ export class YamlWorksheetInstanceStore {
     // corrupt one silently answering "absent" turns into "this lesson was never
     // issued", so missing stays quiet and unreadable-but-present is reported.
     try {
-      return yaml.load(await fs.readFile(this.#fileForSession(sessionId), 'utf8')) ?? null;
+      return yaml.load(await readTextFromPathAsync(this.#fileForSession(sessionId))) ?? null;
     } catch (err) {
       if (err?.code !== 'ENOENT') {
         this.#logger.error?.('school.worksheet-instance.unreadable', { sessionId, error: err?.message });
@@ -64,8 +66,8 @@ export class YamlWorksheetInstanceStore {
       if (isDeepStrictEqual(existing, JSON.parse(JSON.stringify(instance)))) return existing;
       throw new Error(`worksheet session '${instance.sessionId}' already has an immutable instance`);
     }
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, dump(instance), { encoding: 'utf8', flag: 'wx' });
+    await ensureDirAsync(path.dirname(file));
+    await writeTextFileAsync(file, dump(instance), { flag: 'wx' });
     return instance;
   }
   async findBySession(sessionId) {

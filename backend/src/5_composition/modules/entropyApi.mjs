@@ -3,6 +3,7 @@
 
 import { createEntropyRouter } from '#api/v1/routers/entropy.mjs';
 import { createEntropyServices } from '../bootstrap.mjs';
+import { DefaultPrincipalResolver } from '#apps/common/context/DefaultPrincipalResolver.mjs';
 
 /**
  * Create entropy API router
@@ -21,7 +22,11 @@ export function createEntropyApiRouter(config) {
 
   return createEntropyRouter({
     entropyService: entropyServices.entropyService,
-    configService,
+    principalResolver: new DefaultPrincipalResolver({
+      headOfHousehold: () => configService?.getHeadOfHousehold?.(),
+      defaultUsername: () => configService?.getDefaultUsername?.(),
+      fallback: 'default',
+    }),
     logger
   });
 }

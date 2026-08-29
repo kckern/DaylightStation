@@ -139,10 +139,16 @@ export class SpreadSource {
   /**
    * Calculate months remaining from a given date
    *
-   * @param {Date} [asOf=new Date()] - Reference date
+   * @param {Date|string|number} asOf - Reference date
    * @returns {number} Number of months remaining (0 if past endsAt)
    */
-  getMonthsRemaining(asOf = new Date()) {
+  getMonthsRemaining(asOf) {
+    if (asOf === undefined || asOf === null) {
+      throw new ValidationError('asOf is required for getMonthsRemaining', {
+        code: 'MISSING_REFERENCE_DATE',
+        field: 'asOf'
+      });
+    }
     const reference = new Date(asOf);
 
     // If before start date, return full spread
@@ -166,20 +172,6 @@ export class SpreadSource {
   }
 
   /**
-   * Convert to JSON-serializable object
-   *
-   * @returns {Object}
-   */
-  toJSON() {
-    return {
-      name: this.#name,
-      originalAmount: this.#originalAmount.toJSON(),
-      spreadMonths: this.#spreadMonths,
-      startDate: this.#startDate.toISOString()
-    };
-  }
-
-  /**
    * Create a SpreadSource from a JSON object
    *
    * @param {Object} data - JSON object with spread source data
@@ -190,34 +182,6 @@ export class SpreadSource {
    * @returns {SpreadSource}
    * @throws {ValidationError} If data is invalid
    */
-  static fromJSON(data) {
-    if (!data || typeof data !== 'object' || !data.name) {
-      throw new ValidationError('Invalid SpreadSource JSON: name is required', {
-        code: 'INVALID_SPREAD_SOURCE_JSON',
-        value: data
-      });
-    }
-
-    // Handle originalAmount as Money JSON or number
-    let originalAmount;
-    if (typeof data.originalAmount === 'number') {
-      originalAmount = data.originalAmount;
-    } else if (data.originalAmount && typeof data.originalAmount === 'object') {
-      originalAmount = Money.fromJSON(data.originalAmount);
-    } else {
-      throw new ValidationError('Invalid SpreadSource JSON: originalAmount is required', {
-        code: 'INVALID_SPREAD_SOURCE_JSON',
-        value: data
-      });
-    }
-
-    return new SpreadSource({
-      name: data.name,
-      originalAmount,
-      spreadMonths: data.spreadMonths,
-      startDate: new Date(data.startDate)
-    });
-  }
 }
 
 export default SpreadSource;

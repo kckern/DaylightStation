@@ -9,15 +9,4 @@ export class AntiGoal {
     this.origin = data.origin || null;
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      nightmare: this.nightmare,
-      grounded_in_beliefs: this.grounded_in_beliefs,
-      motivates_goals: this.motivates_goals,
-      warning_signals: this.warning_signals,
-      proximity: this.proximity,
-      origin: this.origin,
-    };
-  }
 }

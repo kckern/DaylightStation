@@ -8,8 +8,9 @@ export function resolvePolicy(config, userId, action) {
 }
 
 // windows: ["HH:MM-HH:MM", ...]; overnight ranges (start > end) wrap midnight.
-export function inBlackout(windows, now = new Date()) {
+export function inBlackout(windows, now) {
   if (!Array.isArray(windows) || windows.length === 0) return false;
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new Error('inBlackout requires a valid reference time');
   const mins = now.getHours() * 60 + now.getMinutes();
   return windows.some((w) => {
     const m = /^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/.exec(String(w).trim());

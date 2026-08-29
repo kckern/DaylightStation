@@ -1,11 +1,17 @@
 // backend/src/1_adapters/content/canvas/filesystem/FilesystemCanvasAdapter.mjs
-import fs from 'fs';
 import path from 'path';
 import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { fileExists, getFileStats, readBinaryFromPath, readDirectory } from '#system/utils/FileIO.mjs';
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+const defaultFs = {
+  existsSync: fileExists,
+  statSync: getFileStats,
+  readdirSync: readDirectory,
+  readFileSync: readBinaryFromPath,
+};
 
 export class FilesystemCanvasAdapter {
   #basePath;
@@ -23,7 +29,7 @@ export class FilesystemCanvasAdapter {
 
     this.#basePath = config.basePath;
     this.#proxyPath = config.proxyPath || '/api/v1/canvas/image';
-    this.#fs = deps.fs || fs;
+    this.#fs = deps.fs || defaultFs;
     this.#exifReader = deps.exifReader || null;
   }
 

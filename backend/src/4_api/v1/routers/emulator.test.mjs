@@ -4,6 +4,8 @@ import express from 'express';
 import request from 'supertest';
 import { Readable } from 'node:stream';
 import { createEmulatorRouter } from './emulator.mjs';
+import { buildCatalog, resolveGameRules } from '#apps/emulator/EmulatorCatalog.mjs';
+import { EmulatorLibraryService } from '#apps/emulator/EmulatorLibraryService.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 
@@ -49,51 +51,73 @@ function enoent() {
   return e;
 }
 
+function resource(content, mimeType = 'application/octet-stream') {
+  const bytes = Buffer.from(content);
+  return {
+    size: bytes.length,
+    mimeType,
+    open(range) {
+      const start = range?.start ?? 0;
+      const end = range?.end ?? bytes.length - 1;
+      return Readable.from(bytes.subarray(start, end + 1));
+    },
+  };
+}
+
 function makeApp(overrides = {}) {
   // In-memory binary store for save/state round-trips.
   const store = new Map();
+  const { emulatorResources: resourceOverrides = {}, ...routerOverrides } = overrides;
+  const loadConfig = routerOverrides.loadConfig || (() => makeCfg());
+  const keyFor = (type, key) => `${type}:${key.system}:${key.gameId}:${key.user}:${key.slot ?? ''}`;
+
+  const emulatorResources = {
+    getEngineResource: vi.fn((relPath) => {
+      const engine = {
+        'loader.js': resource('LOADER', 'text/javascript'),
+        'cores/gambatte-wasm.data': resource('COREDATA'),
+      };
+      if (!engine[relPath]) throw enoent();
+      return engine[relPath];
+    }),
+    getRomResource: vi.fn(() => resource('ROMBYTES')),
+    getArtResource: vi.fn(() => resource('PNGDATA', 'image/png')),
+    getSaveResource: vi.fn((key) => {
+      const bytes = store.get(keyFor('save', key));
+      if (!bytes) throw enoent();
+      return resource(bytes);
+    }),
+    storeSaveArtifact: vi.fn(async (key, artifact) => {
+      const chunks = [];
+      for await (const chunk of artifact.chunks()) chunks.push(Buffer.from(chunk));
+      store.set(keyFor('save', key), Buffer.concat(chunks));
+    }),
+    deleteSave: vi.fn(async (key) => store.delete(keyFor('save', key))),
+    getStateResource: vi.fn((key) => {
+      const bytes = store.get(keyFor('state', key));
+      if (!bytes) throw enoent();
+      return resource(bytes);
+    }),
+    storeStateArtifact: vi.fn(async (key, artifact) => {
+      const chunks = [];
+      for await (const chunk of artifact.chunks()) chunks.push(Buffer.from(chunk));
+      store.set(keyFor('state', key), Buffer.concat(chunks));
+    }),
+    deleteState: vi.fn(async (key) => store.delete(keyFor('state', key))),
+    listSaveUsers: vi.fn(({ gameId }) => {
+      const rules = resolveGameRules(loadConfig(), gameId, null) ?? {};
+      return (rules.saveMode ?? 'none') === 'none'
+        ? []
+        : (gameId === 'example-quest' ? ['user_5', 'user_4'] : []);
+    }),
+    ...resourceOverrides,
+  };
 
   const deps = {
     logger: NOOP_LOGGER,
-    loadConfig: () => makeCfg(),
-    readBinary: vi.fn((absPath) => {
-      if (store.has(absPath)) {
-        const buf = store.get(absPath);
-        return { buffer: buf, size: buf.length, contentType: 'application/octet-stream' };
-      }
-      if (absPath.includes('ROM')) {
-        const buf = Buffer.from('ROMBYTES');
-        return { buffer: buf, size: buf.length, contentType: 'application/octet-stream' };
-      }
-      if (absPath.includes('ART')) {
-        const buf = Buffer.from('PNGDATA');
-        return { buffer: buf, size: buf.length, contentType: 'image/png' };
-      }
-      throw enoent();
-    }),
-    writeBinary: vi.fn((absPath, buffer) => {
-      store.set(absPath, Buffer.from(buffer));
-      return Promise.resolve();
-    }),
-    deleteBinary: vi.fn((absPath) => {
-      store.delete(absPath); // idempotent — no throw when absent
-      return Promise.resolve();
-    }),
-    resolveRomPath: vi.fn((cfg, system, gameId) => `/media/${system}/ROM/${gameId}`),
-    resolveArtPath: vi.fn((cfg, system, gameId, kind) => `/media/${system}/ART/${gameId}/${kind}`),
-    resolveSavePath: vi.fn((system, gameId, user) => `/media/${system}/saves/${user}/${gameId}.srm`),
-    resolveStatePath: vi.fn((system, gameId, slot, user) => `/media/${system}/states/${user}/${gameId}/${slot}.state`),
-    listSaveUsers: vi.fn((system, gameId) => (gameId === 'example-quest' ? ['user_5', 'user_4'] : [])),
-    readEngineFile: vi.fn((relPath) => {
-      const ENGINE = {
-        'loader.js': { buffer: Buffer.from('LOADER'), contentType: 'text/javascript' },
-        'cores/gambatte-wasm.data': { buffer: Buffer.from('COREDATA'), contentType: 'application/octet-stream' },
-      };
-      const entry = ENGINE[relPath];
-      if (!entry) throw enoent();
-      return { buffer: entry.buffer, size: entry.buffer.length, contentType: entry.contentType };
-    }),
-    ...overrides,
+    emulatorResources,
+    emulatorLibrary: new EmulatorLibraryService({ loadConfig, buildCatalog, resolveGameRules, logger: NOOP_LOGGER }),
+    ...routerOverrides,
   };
 
   const app = express();
@@ -229,7 +253,7 @@ describe('createEmulatorRouter', () => {
 
     it('404 on ENOENT', async () => {
       const { app } = makeApp({
-        resolveRomPath: () => '/media/gb/missing/x',
+        emulatorResources: { getRomResource: () => { throw enoent(); } },
       });
       const res = await request(app).get('/api/v1/emulator/rom/gb/example-quest');
       expect(res.status).toBe(404);
@@ -242,17 +266,7 @@ describe('createEmulatorRouter', () => {
     });
 
     it('honors Range → 206', async () => {
-      const { app } = makeApp({
-        readBinary: (absPath, opts) => {
-          const full = Buffer.from('ROMBYTES');
-          if (opts?.range) {
-            const { start, end } = opts.range;
-            const slice = full.subarray(start, end + 1);
-            return { stream: Readable.from(slice), size: full.length, contentType: 'application/octet-stream', range: { start, end } };
-          }
-          return { buffer: full, size: full.length, contentType: 'application/octet-stream' };
-        },
-      });
+      const { app } = makeApp();
       const res = await request(app).get('/api/v1/emulator/rom/gb/example-quest').set('Range', 'bytes=0-2');
       expect(res.status).toBe(206);
       expect(res.headers['content-range']).toBe('bytes 0-2/8');
@@ -407,7 +421,7 @@ describe('createEmulatorRouter', () => {
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toMatch(/application\/octet-stream/);
       expect(Buffer.from(res.body).toString()).toBe('COREDATA');
-      expect(deps.readEngineFile).toHaveBeenCalledWith('cores/gambatte-wasm.data');
+      expect(deps.emulatorResources.getEngineResource).toHaveBeenCalledWith('cores/gambatte-wasm.data');
     });
 
     it('400 on traversal segment', async () => {
@@ -440,7 +454,7 @@ describe('createEmulatorRouter', () => {
       const res = await request(app).get('/api/v1/emulator/saves/gb/tetris');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ users: [] });
-      expect(deps.listSaveUsers).not.toHaveBeenCalled();
+      expect(deps.emulatorResources.listSaveUsers).toHaveBeenCalledWith({ system: 'gb', gameId: 'tetris' });
     });
 
     it('400s on an unsafe segment', async () => {

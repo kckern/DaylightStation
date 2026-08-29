@@ -33,17 +33,22 @@ describe('TTSAssetResolver', () => {
   });
 
   describe('resolve file spec', () => {
-    it('passes through file specs unchanged', async () => {
-      const result = await resolver.resolve({ type: 'file', path: '/audio/track.mp3' });
-      expect(result.path).toBe('/audio/track.mp3');
+    it('resolves semantic file ids to opaque resources', async () => {
+      fs.mkdirSync(path.join(cacheDir, 'audio'), { recursive: true });
+      fs.writeFileSync(path.join(cacheDir, 'audio', 'track.mp3'), 'track');
+      const result = await resolver.resolve({ type: 'file', assetId: 'audio/track.mp3' });
+      expect(result.assetId).toBe('audio/track.mp3');
+      expect(result.resource).not.toHaveProperty('path');
+      expect(result.resource.size).toBe(5);
     });
   });
 
   describe('resolve TTS spec', () => {
-    it('generates audio and returns cached path', async () => {
+    it('generates audio and returns an opaque cached resource', async () => {
       const result = await resolver.resolve({ type: 'tts', text: 'Hello world', voice: 'nova' });
-      expect(result.path).toMatch(/\.mp3$/);
-      expect(fs.existsSync(result.path)).toBe(true);
+      expect(result.assetId).toMatch(/^tts:/);
+      expect(result.resource).not.toHaveProperty('path');
+      expect(result.resource.size).toBeGreaterThan(0);
       expect(mockTTSAdapter.generateSpeechBuffer).toHaveBeenCalledWith(
         'Hello world',
         expect.objectContaining({ voice: 'nova' })
@@ -72,12 +77,12 @@ describe('TTSAssetResolver', () => {
   describe('resolveAll', () => {
     it('resolves multiple specs in parallel', async () => {
       const results = await resolver.resolveAll([
-        { type: 'file', path: '/audio/a.mp3' },
+        { type: 'tts', text: 'A', voice: 'nova' },
         { type: 'tts', text: 'Test', voice: 'nova' },
       ]);
       expect(results).toHaveLength(2);
-      expect(results[0].path).toBe('/audio/a.mp3');
-      expect(results[1].path).toMatch(/\.mp3$/);
+      expect(results[0].assetId).toMatch(/^tts:/);
+      expect(results[1].assetId).toMatch(/^tts:/);
     });
   });
 

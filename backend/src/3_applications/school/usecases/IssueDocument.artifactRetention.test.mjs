@@ -2,6 +2,19 @@ import { describe, it, expect } from 'vitest';
 import { IssueDocument } from './IssueDocument.mjs';
 import { FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore, silentLogger } from '../../../../../tests/_lib/school/lifecycleFakes.mjs';
 
+function renderedPdf(content, pageCount = 1) {
+  const bytes = Buffer.from(content);
+  const artifact = (payload) => ({
+    printWith: (printer, options) => printer.printPdf(payload, options),
+    retainWith: async (store, metadata) => {
+      if (!store) return artifact(payload);
+      const retained = await store.put({ ...metadata, bytes: payload });
+      return artifact(retained.bytes);
+    },
+  });
+  return { artifact: artifact(bytes), pageCount };
+}
+
 describe('IssueDocument exact artifact retention', () => {
   it('archives before first print and reprints retained bytes instead of a new render', async () => {
     const sessions = new FakeSessionRepository();
@@ -16,7 +29,7 @@ describe('IssueDocument exact artifact retention', () => {
       },
     };
     let renders = 0;
-    const renderer = { render: async () => ({ pdf: Buffer.from(`render-${++renders}`), pageCount: 1 }) };
+    const renderer = { render: async () => renderedPdf(`render-${++renders}`) };
     const printer = { jobs: [], printPdf: async (bytes) => { printer.jobs.push(Buffer.from(bytes)); return { confirmed: false }; } };
     const issue = new IssueDocument({
       curriculum: {
@@ -54,7 +67,7 @@ describe('IssueDocument exact artifact retention', () => {
     let now = new Date('2026-08-24T10:00:00.000Z');
     const issue = new IssueDocument({
       curriculum: { getUnit: async () => ({ unitId: 'u1', document: 'doc1' }), getDocument: async () => ({ id: 'doc1', blocks: [] }) },
-      sessions, tokens: new FakeTokenRegistry(), renderer: { render: async () => ({ pdf: Buffer.from('new-render'), pageCount: 1 }) },
+      sessions, tokens: new FakeTokenRegistry(), renderer: { render: async () => renderedPdf('new-render') },
       printer, formMaps: new FakeFormMapStore(), issuedArtifacts,
       clock: () => now, logger: silentLogger,
     });

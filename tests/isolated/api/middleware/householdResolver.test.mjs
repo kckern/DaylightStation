@@ -3,15 +3,15 @@ import { vi } from 'vitest';
 import { householdResolver, matchPatterns } from '#backend/src/4_api/middleware/householdResolver.mjs';
 
 describe('householdResolver middleware', () => {
-  let mockConfigService;
+  let householdContext;
   let mockReq;
   let mockRes;
   let mockNext;
 
   beforeEach(() => {
-    mockConfigService = {
-      householdExists: vi.fn().mockReturnValue(true),
-      getHousehold: vi.fn().mockReturnValue({ name: 'Test Household' }),
+    householdContext = {
+      exists: vi.fn().mockReturnValue(true),
+      household: vi.fn().mockReturnValue({ name: 'Test Household' }),
     };
     mockReq = { headers: {} };
     mockRes = {
@@ -32,7 +32,7 @@ describe('householdResolver middleware', () => {
         patterns: [],
       };
 
-      const middleware = householdResolver({ domainConfig, configService: mockConfigService });
+      const middleware = householdResolver({ domainConfig, householdContext });
       mockReq.headers.host = 'daylight-jones.example.com';
 
       middleware(mockReq, mockRes, mockNext);
@@ -47,7 +47,7 @@ describe('householdResolver middleware', () => {
         patterns: [],
       };
 
-      const middleware = householdResolver({ domainConfig, configService: mockConfigService });
+      const middleware = householdResolver({ domainConfig, householdContext });
       mockReq.headers.host = 'localhost:3112';
 
       middleware(mockReq, mockRes, mockNext);
@@ -65,7 +65,7 @@ describe('householdResolver middleware', () => {
         ],
       };
 
-      const middleware = householdResolver({ domainConfig, configService: mockConfigService });
+      const middleware = householdResolver({ domainConfig, householdContext });
       mockReq.headers.host = 'daylight-smith.example.com';
 
       middleware(mockReq, mockRes, mockNext);
@@ -81,7 +81,7 @@ describe('householdResolver middleware', () => {
         ],
       };
 
-      const middleware = householdResolver({ domainConfig, configService: mockConfigService });
+      const middleware = householdResolver({ domainConfig, householdContext });
       mockReq.headers.host = 'jones.daylight.example.com';
 
       middleware(mockReq, mockRes, mockNext);
@@ -97,7 +97,7 @@ describe('householdResolver middleware', () => {
         patterns: [],
       };
 
-      const middleware = householdResolver({ domainConfig, configService: mockConfigService });
+      const middleware = householdResolver({ domainConfig, householdContext });
       mockReq.headers.host = 'unknown.domain.com';
 
       middleware(mockReq, mockRes, mockNext);
@@ -108,14 +108,14 @@ describe('householdResolver middleware', () => {
 
   describe('household validation', () => {
     test('returns 404 for non-existent household', () => {
-      mockConfigService.householdExists.mockReturnValue(false);
+      householdContext.exists.mockReturnValue(false);
 
       const domainConfig = {
         domain_mapping: { 'fake.example.com': 'nonexistent' },
         patterns: [],
       };
 
-      const middleware = householdResolver({ domainConfig, configService: mockConfigService });
+      const middleware = householdResolver({ domainConfig, householdContext });
       mockReq.headers.host = 'fake.example.com';
 
       middleware(mockReq, mockRes, mockNext);

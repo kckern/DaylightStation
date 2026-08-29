@@ -7,6 +7,7 @@
 
 import { MessageQueue } from '#domains/journalist/entities/MessageQueue.mjs';
 import { nowTs24 } from '#system/utils/time.mjs';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Send quiz question use case
@@ -72,6 +73,7 @@ export class SendQuizQuestion {
         if (remainingQuestions.length > 0) {
           const queueItems = remainingQuestions.slice(0, 4).map((q, index) =>
             MessageQueue.create({
+              uuid: uuidv4(),
               chatId,
               timestamp: nowTs24(),
               queuedMessage: q.question,

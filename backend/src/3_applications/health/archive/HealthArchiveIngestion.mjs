@@ -20,8 +20,6 @@
  *
  * @module domains/health/services
  */
-import path from 'node:path';
-import crypto from 'node:crypto';
 import { BUILT_IN_CATEGORIES } from '#domains/health/entities/HealthArchiveManifest.mjs';
 import {
   FLOOR_EXCLUSIONS,
@@ -29,7 +27,7 @@ import {
   matchesExclusion,
 } from '#domains/health/policies/PrivacyExclusions.mjs';
 import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
-import { ConfigurationError } from '#system/utils/errors/index.mjs';
+import { ConfigurationError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class HealthArchiveIngestion {
   /**
@@ -38,9 +36,9 @@ export class HealthArchiveIngestion {
    *   `stat`, `readFile`, `writeFile`, `mkdir`, `readdir` (all Promise-returning).
    * @param {Object} [deps.logger] - Optional logger; defaults to `console`.
    */
-  constructor({ fs, logger } = {}) {
-    if (!fs) throw new ConfigurationError('HealthArchiveIngestion requires fs adapter', { code: 'MISSING_FS_ADAPTER', key: 'fs' });
-    this.fs = fs;
+  constructor({ archiveMirror, logger } = {}) {
+    if (!archiveMirror) throw new ConfigurationError('HealthArchiveIngestion requires archive mirror', { code: 'MISSING_FS_ADAPTER', key: 'archiveMirror' });
+    this.archiveMirror = archiveMirror;
     this.logger = logger || console;
   }
 
@@ -102,17 +100,17 @@ export class HealthArchiveIngestion {
     this.logger.info?.('ingest.start', { userId, category, sourcePath, destPath, dryRun });
 
     const report = { copied: [], skipped: [], failed: [] };
-    const files = await this._listFiles(sourcePath);
+    const files = await this.archiveMirror.listFiles(sourcePath);
 
     for (const file of files) {
       try {
-        const action = await this._planFile({ file, sourcePath, destPath });
-        if (action === 'skip') {
+        const needsCopy = await this.archiveMirror.needsCopy({ sourceRoot: sourcePath, destinationRoot: destPath, relativeName: file });
+        if (!needsCopy) {
           report.skipped.push(file);
           continue;
         }
         if (!dryRun) {
-          await this._copyFile({ file, sourcePath, destPath });
+          await this.archiveMirror.copy({ sourceRoot: sourcePath, destinationRoot: destPath, relativeName: file });
         }
         report.copied.push(file);
       } catch (err) {
@@ -132,77 +130,6 @@ export class HealthArchiveIngestion {
     return report;
   }
 
-  /**
-   * Recursively list every file beneath `root`, returning paths relative to it.
-   * @private
-   */
-  async _listFiles(root) {
-    const out = [];
-    const walk = async (dir, rel) => {
-      const entries = await this.fs.readdir(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const abs = path.join(dir, entry.name);
-        const relPath = rel ? path.join(rel, entry.name) : entry.name;
-        if (entry.isDirectory()) {
-          await walk(abs, relPath);
-        } else if (entry.isFile()) {
-          out.push(relPath);
-        }
-      }
-    };
-    await walk(root, '');
-    return out;
-  }
-
-  /**
-   * Decide whether a file should be skipped (already up-to-date) or copied.
-   * Skip iff destination exists, dest mtime >= source mtime, AND content
-   * hashes match. Anything else (including missing dest) yields 'copy'.
-   * @private
-   */
-  async _planFile({ file, sourcePath, destPath }) {
-    const srcAbs = path.join(sourcePath, file);
-    const destAbs = path.join(destPath, file);
-
-    const srcStat = await this.fs.stat(srcAbs);
-    let destStat = null;
-    try {
-      destStat = await this.fs.stat(destAbs);
-    } catch (err) {
-      if (err && err.code === 'ENOENT') {
-        return 'copy';
-      }
-      throw err;
-    }
-
-    const srcMs = srcStat.mtimeMs ?? (srcStat.mtime ? srcStat.mtime.getTime() : 0);
-    const destMs = destStat.mtimeMs ?? (destStat.mtime ? destStat.mtime.getTime() : 0);
-    if (destMs < srcMs) return 'copy';
-
-    const [srcBuf, destBuf] = await Promise.all([
-      this.fs.readFile(srcAbs),
-      this.fs.readFile(destAbs),
-    ]);
-    if (this._hash(srcBuf) === this._hash(destBuf)) return 'skip';
-    return 'copy';
-  }
-
-  /**
-   * Byte-for-byte copy with recursive parent-directory creation.
-   * @private
-   */
-  async _copyFile({ file, sourcePath, destPath }) {
-    const srcAbs = path.join(sourcePath, file);
-    const destAbs = path.join(destPath, file);
-    const buf = await this.fs.readFile(srcAbs);
-    await this.fs.mkdir(path.dirname(destAbs), { recursive: true });
-    await this.fs.writeFile(destAbs, buf);
-  }
-
-  /** @private */
-  _hash(buf) {
-    return crypto.createHash('sha256').update(buf).digest('hex');
-  }
 }
 
 export default HealthArchiveIngestion;

@@ -7,19 +7,34 @@ import express from 'express';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
+function serializeJournalEntry(entry) {
+  return {
+    id: entry.id,
+    userId: entry.userId,
+    date: entry.date,
+    title: entry.title,
+    content: entry.content,
+    mood: entry.mood,
+    tags: entry.tags,
+    gratitudeItems: entry.gratitudeItems,
+    prompts: entry.prompts,
+    attachments: entry.attachments,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+    metadata: entry.metadata
+  };
+}
+
 /**
  * Create journaling API router
  * @param {Object} config
- * @param {Object} config.journalService - Pre-built JournalService instance
- * @param {Object} config.journalStore - Pre-built YamlJournalDatastore instance (for listDates/getAllTags)
+ * @param {Object} config.journalOperations - Cohesive journal queries and commands
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  *
- * Note: journalStore is passed separately because listDates/getAllTags are not yet
- * exposed through JournalService. This should be refactored to use service methods only.
  */
 export function createJournalingRouter(config) {
-  const { journalService, journalStore, logger = console } = config;
+  const { journalOperations, logger = console } = config;
 
   const router = express.Router();
 
@@ -33,8 +48,8 @@ export function createJournalingRouter(config) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const dates = await journalStore.listDates(hid);
-    const tags = await journalStore.getAllTags(hid);
+    const dates = await journalOperations.listDates(hid);
+    const tags = await journalOperations.listTags(hid);
 
     res.json({
       module: 'journaling',
@@ -55,7 +70,7 @@ export function createJournalingRouter(config) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const dates = await journalStore.listDates(hid);
+    const dates = await journalOperations.listDates(hid);
     res.json({ dates });
   }));
 
@@ -71,12 +86,12 @@ export function createJournalingRouter(config) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const entry = await journalService.getEntryByDate(hid, date);
+    const entry = await journalOperations.readByDate(hid, date);
     if (!entry) {
       return res.status(404).json({ error: 'Journal entry not found' });
     }
 
-    res.json(entry);
+    res.json(serializeJournalEntry(entry));
   }));
 
   /**
@@ -92,12 +107,12 @@ export function createJournalingRouter(config) {
     }
 
     const timestamp = nowTs24();
-    const entry = await journalService.createEntry({
+    const entry = await journalOperations.create({
       userId: hid,
       ...entryData
     }, timestamp);
 
-    res.status(201).json(entry);
+    res.status(201).json(serializeJournalEntry(entry));
   }));
 
   /**
@@ -110,8 +125,8 @@ export function createJournalingRouter(config) {
 
     try {
       const timestamp = nowTs24();
-      const entry = await journalService.updateEntry(id, updates, timestamp);
-      res.json(entry);
+      const entry = await journalOperations.update(id, updates, timestamp);
+      res.json(serializeJournalEntry(entry));
     } catch (error) {
       if (error.message.includes('not found')) {
         return res.status(404).json({ error: error.message });
@@ -127,7 +142,7 @@ export function createJournalingRouter(config) {
   router.delete('/entries/:id', asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    await journalService.deleteEntry(id);
+    await journalOperations.delete(id);
     res.json({ success: true });
   }));
 
@@ -145,8 +160,8 @@ export function createJournalingRouter(config) {
       return res.status(400).json({ error: 'Missing startDate or endDate' });
     }
 
-    const entries = await journalService.getEntriesInRange(hid, startDate, endDate);
-    res.json({ entries });
+    const entries = await journalOperations.readRange(hid, startDate, endDate);
+    res.json({ entries: entries.map(serializeJournalEntry) });
   }));
 
   /**
@@ -161,8 +176,8 @@ export function createJournalingRouter(config) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const entries = await journalService.getEntriesByTag(hid, tag);
-    res.json({ entries });
+    const entries = await journalOperations.readByTag(hid, tag);
+    res.json({ entries: entries.map(serializeJournalEntry) });
   }));
 
   /**
@@ -179,7 +194,7 @@ export function createJournalingRouter(config) {
       return res.status(400).json({ error: 'Missing startDate or endDate' });
     }
 
-    const summary = await journalService.getMoodSummary(hid, startDate, endDate);
+    const summary = await journalOperations.moodSummary(hid, startDate, endDate);
     res.json(summary);
   }));
 
@@ -194,7 +209,7 @@ export function createJournalingRouter(config) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const tags = await journalStore.getAllTags(hid);
+    const tags = await journalOperations.listTags(hid);
     res.json({ tags });
   }));
 

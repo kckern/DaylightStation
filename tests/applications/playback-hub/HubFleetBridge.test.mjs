@@ -1,16 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   HubFleetBridge,
-  HUB_STATUS_TOPIC,
   mapLaneToSnapshot,
 } from '../../../backend/src/3_applications/playback-hub/runtime/HubFleetBridge.mjs';
+import { EventBusHubFleetRealtimeAdapter } from '../../../backend/src/1_adapters/playback-hub/EventBusHubFleetRealtimeAdapter.mjs';
 import { SlotStatus } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotStatus.mjs';
+const statusFromFixture = value => new SlotStatus({ ...value, position: value.slot ?? value.position });
 import {
   validateDeviceStateBroadcast,
 } from '../../../shared/contracts/media/envelopes.mjs';
 import {
   validateSessionSnapshot,
 } from '../../../shared/contracts/media/shapes.mjs';
+
+const HUB_STATUS_TOPIC = 'playback-hub:status';
 
 /**
  * In-memory event bus: subscribe/broadcast recording. Mirrors the
@@ -57,7 +60,7 @@ class RecordingLogger {
   error(event, data) { this.records.push({ level: 'error', event, data }); }
 }
 
-const playingLane = (color = 'red', extra = {}) => SlotStatus.fromHubJson({
+const playingLane = (color = 'red', extra = {}) => statusFromFixture({
   slot: 1,
   color,
   bt_connected: true,
@@ -70,7 +73,7 @@ const playingLane = (color = 'red', extra = {}) => SlotStatus.fromHubJson({
   ...extra,
 });
 
-const pausedLane = (color = 'yellow') => SlotStatus.fromHubJson({
+const pausedLane = (color = 'yellow') => statusFromFixture({
   slot: 2,
   color,
   bt_connected: true,
@@ -82,7 +85,7 @@ const pausedLane = (color = 'yellow') => SlotStatus.fromHubJson({
   armed_source: null,
 });
 
-const idleLane = (color = 'white') => SlotStatus.fromHubJson({
+const idleLane = (color = 'white') => statusFromFixture({
   slot: 5,
   color,
   bt_connected: false,
@@ -161,12 +164,17 @@ describe('HubFleetBridge', () => {
     bus = new FakeEventBus();
     clock = new FakeClock();
     logger = new RecordingLogger();
-    bridge = new HubFleetBridge({ eventBus: bus, logger, clock, heartbeatMs: 10000 });
+    bridge = new HubFleetBridge({
+      realtimeGateway: new EventBusHubFleetRealtimeAdapter({ eventBus: bus }),
+      logger,
+      clock,
+      heartbeatMs: 10000,
+    });
   });
 
-  it('requires an eventBus with subscribe()', () => {
-    expect(() => new HubFleetBridge()).toThrow(/eventBus/);
-    expect(() => new HubFleetBridge({ eventBus: {} })).toThrow(/subscribe/);
+  it('requires a semantic realtime gateway', () => {
+    expect(() => new HubFleetBridge()).toThrow(/realtimeGateway/);
+    expect(() => new HubFleetBridge({ realtimeGateway: {} })).toThrow(/realtimeGateway/);
   });
 
   it('broadcasts a valid device-state envelope per lane on first snapshot', () => {
@@ -203,7 +211,7 @@ describe('HubFleetBridge', () => {
     bridge.start();
     bus.emitStatus([playingLane('red')]);
     clock.advance(3000);
-    bus.emitStatus([SlotStatus.fromHubJson({
+    bus.emitStatus([statusFromFixture({
       slot: 1, color: 'red', bt_connected: true, paused: true,
       now_playing: { queue: { source: 'plex', id: '675465' }, title: 'Clair de Lune' },
       volume: 42, playlist_pos: 3, playlist_count: 20, armed_source: null,

@@ -4,11 +4,15 @@
 import { createHomeAutomationRouter } from '#api/v1/routers/homeAutomation.mjs';
 import { HomeAutomationContainer } from '#apps/home-automation/HomeAutomationContainer.mjs';
 import { CallHomeAssistantService } from '#apps/home-automation/usecases/CallHomeAssistantService.mjs';
+import { HomeStateService } from '#apps/home-automation/HomeStateService.mjs';
+import { LegacyHomeAutomationService } from '#apps/home-automation/LegacyHomeAutomationService.mjs';
 import { createHomeAutomationAdapters } from '../bootstrap.mjs';
 import { YamlHomeDashboardConfigRepository } from '#adapters/persistence/yaml/YamlHomeDashboardConfigRepository.mjs';
 import { createHomeDashboardRouter } from '#api/v1/routers/home-dashboard.mjs';
-import { dataService } from '#system/config/index.mjs';
+import { dataService } from '../runtimePersistence.mjs';
 import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
+import { buildPhotoTitle, formatPhotoDate, orderPeopleByFace } from '#shared/content/immich/photoLabels.mjs';
+import { HouseholdHomeStateRepository } from '#adapters/home-automation/HouseholdHomeStateRepository.mjs';
 
 /**
  * Create home automation API router
@@ -45,24 +49,40 @@ export function createHomeAutomationApiRouter(config) {
     ? new CallHomeAssistantService({ haGateway: adapters.haGateway, logger })
     : null;
 
-  return createHomeAutomationRouter({
-    haGateway: adapters.haGateway,
-    // The router asks for current conditions; this store owns where they live.
-    weatherStore: dataService
+  const weatherRepository = dataService
       ? new YamlWeatherDatastore({ dataService, configService, householdId, logger })
-      : null,
-    tvAdapter: adapters.tvAdapter,
-    kioskAdapter: adapters.kioskAdapter,
-    taskerAdapter: adapters.taskerAdapter,
-    remoteExecAdapter: adapters.remoteExecAdapter,
-    loadFile,
-    saveFile,
+      : null;
+  const stateRepository = typeof loadFile === 'function'
+    ? new HouseholdHomeStateRepository({ load: loadFile, save: saveFile })
+    : null;
+  const homeStateService = stateRepository
+    ? new HomeStateService({
+      repository: stateRepository,
+      remoteExecGateway: adapters.remoteExecAdapter,
+      weatherRepository,
+    })
+    : null;
+  const homeAutomationService = new LegacyHomeAutomationService({
+    tvGateway: adapters.tvAdapter,
+    kioskGateway: adapters.kioskAdapter,
+    taskerGateway: adapters.taskerAdapter,
+    remoteExecGateway: adapters.remoteExecAdapter,
+    homeStateService,
+    gallerySource: immichAdapter,
+    artSource: artAdapter,
+    buildPhotoTitle,
+    formatPhotoDate,
+    orderPeopleByFace,
+    logger,
+  });
+
+  return createHomeAutomationRouter({
+    homeAutomationService,
     householdId,
-    entropyService,
-    configService,
+    getEntropyReport: entropyService
+      ? () => entropyService.getReport(configService.getHeadOfHousehold())
+      : null,
     eventAggregationService,
-    immichAdapter,
-    artAdapter,
     callHomeAssistantService,
     logger
   });
@@ -101,5 +121,14 @@ export function createHomeDashboardApiRouter(config) {
     logger,
   });
 
-  return createHomeDashboardRouter({ container, logger });
+  return createHomeDashboardRouter({
+    operations: {
+      getConfig: container.getDashboardConfig(),
+      getState: container.getDashboardState(),
+      getHistory: container.getDashboardHistory(),
+      toggleEntity: container.toggleDashboardEntity(),
+      activateScene: container.activateDashboardScene(),
+    },
+    logger,
+  });
 }

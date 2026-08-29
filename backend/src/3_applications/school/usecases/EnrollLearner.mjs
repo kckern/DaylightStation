@@ -17,6 +17,7 @@
 import { createCourseEnrollment } from '#domains/school/curriculum/enrollment.mjs';
 import { materializeTiming, studyDate } from '#domains/school/timing.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { StateConflictError } from '#apps/common/errors/SemanticErrors.mjs';
 import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class EnrollLearner {
@@ -49,7 +50,7 @@ export class EnrollLearner {
    * @param {boolean} [args.rematerialize] - re-run the materializer over an
    *   existing entry, re-shuffling any `shuffle_once` ordering
    * @param {string|null} [args.baseUpdatedAt] - the assignment `updatedAt` the
-   *   caller loaded; a mismatch is a 409 rather than a silent clobber
+   *   caller loaded; a mismatch is refused rather than silently clobbered
    * @returns {Promise<object>} the stored assignment record
    */
   async execute({ learnerId, syllabusId, timingAnchorId = null, enrolledBy = null, pin = null, rematerialize = false, baseUpdatedAt = undefined } = {}) {
@@ -82,13 +83,13 @@ export class EnrollLearner {
       const open = ((await this.#sessions.listOpenForLearner(learnerId)) ?? [])
         .filter((row) => row?.unitId && inCourse.has(row.unitId));
       if (open.length) {
-        const err = new ValidationError(
+        throw new StateConflictError(
           `${learnerId} has ${open.length} open session${open.length === 1 ? '' : 's'} on ${courseId} — close or abandon them before re-materializing`,
+          {
+            code: 'OPEN_SESSIONS',
+            details: { sessions: open.map((r) => ({ sessionId: r.sessionId, unitId: r.unitId, state: r.state })) },
+          },
         );
-        err.code = 'OPEN_SESSIONS';
-        err.status = 409;
-        err.details = { sessions: open.map((r) => ({ sessionId: r.sessionId, unitId: r.unitId, state: r.state })) };
-        throw err;
       }
     }
 

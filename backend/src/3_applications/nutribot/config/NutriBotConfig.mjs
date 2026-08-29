@@ -2,19 +2,15 @@
  * NutriBot Configuration Loader
  * @module nutribot/config/NutriBotConfig
  *
- * Loads and validates nutribot configuration, providing storage paths
- * and nutrition goals for users.
+ * Validates NutriBot policy and provides nutrition goals for users.
  *
  * NOTE: Identity resolution (conversation ID -> username) is now handled
  * by UserResolver in the infrastructure layer. This config only handles
- * bot-specific configuration like storage paths and nutrition goals.
+ * bot-specific policy such as nutrition goals and storage resource selection.
  */
 
 // Infrastructure imports
-import { ValidationError } from '#system/utils/errors/index.mjs';
-import { TestContext } from '#system/testing/TestContext.mjs';
-import { configService } from '#system/config/index.mjs';
-import { loadBotConfig } from '#system/config/BotConfigLoader.mjs';
+import { ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 
 // Single source of truth for default nutrition goals
 // calories_min/calories_max define the acceptable calorie range
@@ -46,20 +42,13 @@ function validateConfig(config) {
   if (!config.bot?.name) errors.push('bot.name is required');
   if (!config.bot?.displayName) errors.push('bot.displayName is required');
 
-  // Telegram validation
-  if (!config.telegram?.botId) errors.push('telegram.botId is required');
-  if (!config.telegram?.botToken) errors.push('telegram.botToken is required');
+  if (!config.messaging?.botId) errors.push('messaging.botId is required');
 
   // Users validation - still needed for legacy goals/settings lookup
   // Identity resolution is now handled by UserResolver
   if (config.users && !Array.isArray(config.users)) {
     errors.push('users must be an array if provided');
   }
-
-  // Storage validation
-  if (!config.storage?.basePath) errors.push('storage.basePath is required');
-  if (!config.storage?.paths?.nutrilog) errors.push('storage.paths.nutrilog is required');
-  if (!config.storage?.paths?.nutrilist) errors.push('storage.paths.nutrilist is required');
 
   return errors.length > 0 ? { valid: false, errors } : { valid: true };
 }
@@ -68,8 +57,8 @@ function validateConfig(config) {
  * NutriBot configuration manager
  *
  * Handles:
- * - Loading and validating config.yaml
- * - Storage paths for nutrilog, nutrilist, etc.
+ * - Validating bot policy
+ * - Delegating storage address projection
  * - User nutrition goals lookup
  *
  * NOTE: Identity resolution is NOT handled here. Use UserResolver for
@@ -82,6 +71,9 @@ export class NutriBotConfig {
   /** @type {Object} */
   #logger;
 
+  /** @type {Object|null} */
+  #readUserGoals;
+
   /** @type {Map<string, object>} User goals/settings by username */
   #userSettings = new Map();
 
@@ -89,6 +81,7 @@ export class NutriBotConfig {
    * @param {object} config - Validated configuration object
    * @param {Object} [options] - Options
    * @param {Object} [options.logger] - Logger instance
+   * @param {Function} [options.readUserGoals] - Semantic user-goal projection.
    */
   constructor(config, options = {}) {
     // Validate config
@@ -101,6 +94,7 @@ export class NutriBotConfig {
 
     this.#config = config;
     this.#logger = options.logger || console;
+    this.#readUserGoals = options.readUserGoals || (() => null);
     this.#buildUserSettings();
 
     Object.freeze(this);
@@ -146,7 +140,7 @@ export class NutriBotConfig {
    * Get messaging bot ID
    */
   get messagingBotId() {
-    return this.#config.telegram?.botId || this.#config.messaging?.botId;
+    return this.#config.messaging?.botId;
   }
 
   // ==================== User Settings ====================
@@ -168,11 +162,11 @@ export class NutriBotConfig {
   }
 
   /**
-   * Get default timezone from config (weather.timezone)
+   * Get the configured default timezone.
    * @returns {string}
    */
   getDefaultTimezone() {
-    return this.#config.weather?.timezone || 'America/Los_Angeles';
+    return this.#config.defaultTimezone || 'America/Los_Angeles';
   }
 
   // ==================== User Goals ====================
@@ -191,17 +185,10 @@ export class NutriBotConfig {
   getUserGoals(username) {
     let rawGoals = null;
 
-    // Prefer goals from user profile if available (via ConfigService)
     try {
-      if (configService?.isReady?.()) {
-        const profile = configService.getUserProfile(username);
-        const profileGoals = profile?.apps?.nutribot?.goals;
-        if (profileGoals) {
-          rawGoals = {
-            ...NutriBotConfig.#DEFAULT_GOALS,
-            ...profileGoals,
-          };
-        }
+      const projectedGoals = this.#readUserGoals(username);
+      if (projectedGoals) {
+        rawGoals = { ...NutriBotConfig.#DEFAULT_GOALS, ...projectedGoals };
       }
     } catch (e) {
       // Ignore and fall back to config mappings
@@ -279,102 +266,6 @@ export class NutriBotConfig {
     };
   }
 
-  // ==================== Storage Paths ====================
-
-  /**
-   * Get storage path for a specific path type
-   * @param {string} pathType - 'nutrilog', 'nutrilist', 'nutricursor', etc.
-   * @param {string} username - System username (NOT conversation ID)
-   * @returns {string}
-   */
-  getStoragePath(pathType, username) {
-    const template = this.#config.storage.paths[pathType];
-
-    if (!template) {
-      throw new Error(`Unknown storage path type: ${pathType}`);
-    }
-
-    const basePath = `${this.#config.storage.basePath}/${template.replace('{username}', username)}`;
-    return TestContext.transformPath(basePath);
-  }
-
-  /**
-   * Get the nutrilog path for a user
-   * Automatically applies test prefix if in test mode
-   * @param {string} username - System username (NOT conversation ID)
-   * @returns {string}
-   */
-  getNutrilogPath(username) {
-    return this.getStoragePath('nutrilog', username);
-  }
-
-  /**
-   * Get the nutrilist path for a user
-   * Automatically applies test prefix if in test mode
-   * @param {string} username - System username (NOT conversation ID)
-   * @returns {string}
-   */
-  getNutrilistPath(username) {
-    return this.getStoragePath('nutrilist', username);
-  }
-
-  /**
-   * Get the nutricursor path for a user
-   * @param {string} username - System username (NOT conversation ID)
-   * @returns {string}
-   */
-  getNutricursorPath(username) {
-    return this.getStoragePath('nutricursor', username);
-  }
-
-  /**
-   * Get the nutriday path for a user
-   * @param {string} username - System username (NOT conversation ID)
-   * @returns {string}
-   */
-  getNutridayPath(username) {
-    return this.getStoragePath('nutriday', username);
-  }
-
-  /**
-   * Get the report state path for a user
-   * @deprecated Use ConversationState instead
-   * @param {string} username - System username (NOT conversation ID)
-   * @returns {string}
-   */
-  getReportStatePath(username) {
-    return this.getStoragePath('report_state', username);
-  }
-
-  /**
-   * Get the legacy path for a messaging chat
-   * @param {Object} chatRef - { botId, chatId }
-   * @returns {string|null}
-   */
-  getLegacyPath(chatRef) {
-    if (!this.#config.storage.legacy?.enabled) {
-      return null;
-    }
-
-    const pattern = this.#config.storage.legacy.pattern;
-    return pattern.replace('{botId}', chatRef.botId).replace('{chatId}', chatRef.chatId);
-  }
-
-  // ==================== AI Configuration ====================
-
-  /**
-   * Get AI parser configuration
-   */
-  get aiParser() {
-    return (
-      this.#config.ai?.parser || {
-        model: 'gpt-4o-mini',
-        temperature: 0.3,
-        maxTokens: 2000,
-      }
-    );
-  }
-
   // ==================== Feature Flags ====================
 
   /**
@@ -399,24 +290,12 @@ export class NutriBotConfig {
   // ==================== Factory Methods ====================
 
   /**
-   * Load configuration from config directory
-   * @param {string} botName - Bot name (e.g., 'nutribot')
-   * @param {object} options - Options
-   * @param {string} options.configDir - Directory containing config files
-   * @returns {NutriBotConfig}
-   */
-  static load(botName, options = {}) {
-    const config = loadBotConfig(botName, options);
-    return new NutriBotConfig(config);
-  }
-
-  /**
    * Create from plain object
    * @param {object} config
    * @returns {NutriBotConfig}
    */
-  static from(config) {
-    return new NutriBotConfig(config);
+  static from(config, options = {}) {
+    return new NutriBotConfig(config, options);
   }
 }
 

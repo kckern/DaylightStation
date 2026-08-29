@@ -84,11 +84,13 @@ export function formatLocalTimestamp(date, timezone = 'America/Los_Angeles') {
 
 ---
 
-## Bootstrap & Wiring
+## Composition & Wiring
 
-The bootstrap module is the **composition root** - the single place where all layers connect. It lives in system layer but is the only system code that touches other layers.
+The composition root is `backend/src/5_composition/` — the single place where
+all layers connect. It is a separate outer layer. Bootstrap and wiring do not
+belong in `0_system/`, and system code has no exception to the dependency rule.
 
-### Bootstrap Responsibilities
+### Composition Responsibilities
 
 | Responsibility | Description |
 |----------------|-------------|
@@ -117,7 +119,7 @@ export function createFitnessServices(config) {
 }
 ```
 
-### Bootstrap Rules
+### Composition Rules
 
 | Rule | Rationale |
 |------|-----------|
@@ -146,16 +148,8 @@ export function createFitnessServices(config) {
 | `#adapters/*` | Adapters depend on system, not reverse | Inject adapters in bootstrap |
 | `#applications/*` | Applications depend on system | Inject via bootstrap |
 
-### Exception: Bootstrap
-
-Bootstrap is the **only** system code that imports from other layers. It's the composition root:
-
-```javascript
-// bootstrap.mjs - ONLY place this is allowed
-import { SessionService } from '../2_domains/fitness/services/SessionService.mjs';
-import { YamlSessionStore } from '../1_adapters/persistence/yaml/YamlSessionStore.mjs';
-import { createFitnessRouter } from '../4_api/routers/fitness.mjs';
-```
+There are no system-layer exceptions. Cross-layer construction belongs in
+`5_composition/`; `0_system/` must never import a higher-numbered layer.
 
 ### Import Aliases
 
@@ -234,8 +228,6 @@ if (intervalMs < 1000) {
 
 ```
 0_system/
-├── bootstrap.mjs           # Composition root - wires all layers
-│
 ├── config/                 # Configuration loading and access
 │   ├── ConfigService.mjs   # Pure config accessor
 │   ├── configLoader.mjs    # Loads config from files/env

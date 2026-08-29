@@ -19,7 +19,7 @@
  * is authoritative for on-screen work, not a heartbeat that can go dark.
  */
 export class PortalSurface {
-  #eventBus;
+  #schoolLauncher;
   #schoolActivity;
   #freshMs;
   #now;
@@ -27,16 +27,16 @@ export class PortalSurface {
 
   /**
    * @param {Object} config
-   * @param {{broadcast: Function}} [config.eventBus] - optional; absent means no target is listening
+   * @param {{launchSchool: Function}} [config.schoolLauncher] - optional; absent means no target is listening
    * @param {{activeSittings: Function}} [config.schoolActivity] - SchoolService-shaped; optional
    * @param {number} [config.freshMs=600000] - Freshness window (spec §5.1: 10 minutes)
    * @param {Function} [config.now] - `() => number` epoch ms, overridable for tests
    * @param {Object} [config.logger]
    */
   constructor({
-    eventBus = null, schoolActivity = null, freshMs = 10 * 60_000, now = () => Date.now(), logger = console,
+    schoolLauncher = null, schoolActivity = null, freshMs = 10 * 60_000, now = () => Date.now(), logger = console,
   } = {}) {
-    this.#eventBus = eventBus;
+    this.#schoolLauncher = schoolLauncher;
     this.#schoolActivity = schoolActivity;
     this.#freshMs = freshMs;
     this.#now = now;
@@ -90,12 +90,12 @@ export class PortalSurface {
 
   /** @returns {Promise<{dispatched: boolean}>} */
   async dispatch({ action, learnerId }) {
-    if (!this.#eventBus) {
+    if (!this.#schoolLauncher) {
       this.#logger.warn?.('donow.portal.no-bus', { learnerId, target: action?.target });
       return { dispatched: false };
     }
     try {
-      this.#eventBus.broadcast('school', { type: 'school.launch', learnerId, target: action.target });
+      this.#schoolLauncher.launchSchool({ learnerId, target: action.target });
     } catch (err) {
       this.#logger.warn?.('donow.portal.dispatch-failed', { learnerId, error: err?.message || String(err) });
       return { dispatched: false };

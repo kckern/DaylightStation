@@ -2,7 +2,7 @@ import { HttpSourceAdapter } from './HttpSourceAdapter.mjs';
 import { RssSourceAdapter } from './RssSourceAdapter.mjs';
 import { HarvesterSourceAdapter } from './HarvesterSourceAdapter.mjs';
 import { AgentSourceAdapter } from './AgentSourceAdapter.mjs';
-import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * Source registry (1_adapters) — type-keyed factory for ISource implementations.

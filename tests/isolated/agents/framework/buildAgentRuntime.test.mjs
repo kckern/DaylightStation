@@ -2,10 +2,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildAgentRuntime } from '../../../../backend/src/3_applications/agents/framework/buildAgentRuntime.mjs';
 import { MastraAdapter } from '../../../../backend/src/1_adapters/agents/index.mjs';
+import { AgentExecutionPolicy } from '#apps/agents/framework/AgentExecutionPolicy.mjs';
 
 // The runtime class is injected by the composition root (bootstrap); tests act
 // as a mini composition root and pass the real MastraAdapter.
-const baseDeps = { AgentRuntime: MastraAdapter };
+const baseDeps = { AgentRuntime: MastraAdapter, executionPolicy: new AgentExecutionPolicy() };
 
 describe('buildAgentRuntime', () => {
   it('builds a MastraAdapter with the supplied memory', () => {

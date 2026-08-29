@@ -12,7 +12,7 @@
  * - YamlFinanceStore: For reading categorization config
  */
 
-import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class TransactionCategorizationService {
   #aiGateway;
@@ -377,6 +377,7 @@ export class TransactionCategorizationService {
         originalDescription: description
       };
     } catch (error) {
+      this.#logger.warn?.('categorization.ai.failed', { transactionId: id, error: error.message });
       return {
         success: false,
         reason: `AI error: ${error.message}`,

@@ -16,7 +16,7 @@
 
 import moment from 'moment-timezone';
 import crypto from 'crypto';
-import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
+import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 import { FitnessSyncerAdapter } from './FitnessSyncerAdapter.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 

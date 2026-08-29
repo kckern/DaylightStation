@@ -4,6 +4,7 @@
 // the piano earn-hook (Task 8) needs the same EconomyService instance, so we expose it.
 
 import { YamlEconomyDatastore } from '#adapters/persistence/yaml/YamlEconomyDatastore.mjs';
+import { EconomyConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
 import { EconomyService } from '#apps/economy/EconomyService.mjs';
 import { createEconomyRouter } from '#api/v1/routers/economy.mjs';
 
@@ -17,7 +18,7 @@ import { createEconomyRouter } from '#api/v1/routers/economy.mjs';
 export function createEconomyApi({ configService, logger = console }) {
   const economyService = new EconomyService({
     datastore: new YamlEconomyDatastore({ configService }),
-    configService,
+    configProjection: new EconomyConfigProjection({ configService }),
     logger,
   });
   return { economyService, router: createEconomyRouter({ economyService, logger }) };

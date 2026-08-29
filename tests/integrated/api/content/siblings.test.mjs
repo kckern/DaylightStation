@@ -5,8 +5,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createSiblingsRouter } from '#backend/src/4_api/v1/routers/siblings.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
-import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
+import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesPath = path.resolve(__dirname, '../../_fixtures/media');
@@ -24,7 +25,20 @@ const mockBreadcrumbAdapter = {
       return {
         parent: { id: 'mock:season', title: 'Season 8', source: 'mock' },
         items: [
-          { id: 'mock:e1', title: 'Episode 1' },
+          {
+            id: 'mock:e1',
+            title: 'Episode 1',
+            imageUrl: '/legacy/e1.jpg',
+            metadata: {
+              type: 'episode',
+              parentTitle: 'Season 8',
+              grandparentTitle: 'The Prophets',
+              librarySectionTitle: 'Scripture',
+              leafCount: 12,
+              itemIndex: 1,
+              number: 8
+            }
+          },
           { id: 'mock:with-anc', title: 'Episode 2' }
         ],
         ancestors: [
@@ -49,7 +63,9 @@ describe('Siblings API Router', () => {
     registry.register(new FileAdapter({ mediaBasePath: fixturesPath }));
     registry.register(mockBreadcrumbAdapter);
 
-    const siblingsService = new SiblingsService({ registry });
+    const siblingsService = new SiblingsService({
+      contentCatalog: new RegistryContentCatalogGateway({ registry }),
+    });
 
     // Resolver stub: no aliasing — fall back to the parsed source/localId
     // (mirrors production wiring, which always passes a contentIdResolver).
@@ -84,6 +100,20 @@ describe('Siblings API Router', () => {
       { id: 'mock:show', title: 'The Prophets', source: 'mock', localId: 'show', type: 'show' },
       { id: 'mock:season', title: 'Season 8', source: 'mock', localId: 'season', type: 'season' }
     ]);
+    expect(res.body.items[0]).toEqual({
+      id: 'mock:e1',
+      title: 'Episode 1',
+      source: 'mock',
+      type: 'episode',
+      thumbnail: '/legacy/e1.jpg',
+      parentTitle: 'Season 8',
+      grandparentTitle: 'The Prophets',
+      libraryTitle: 'Scripture',
+      childCount: 12,
+      isContainer: false,
+      itemIndex: 1,
+      number: 8
+    });
   });
 
   test('omits ancestors when the adapter does not return a chain', async () => {

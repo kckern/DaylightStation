@@ -2,9 +2,7 @@
  * IHealthScanDatastore Port (F-006)
  *
  * Interface for persistence of body-composition scan records (DEXA / InBody /
- * consumer-BIA). Implementations live under
- * `backend/src/1_adapters/persistence/*` and read/write to
- * `users/{userId}/lifelog/archives/scans/{date}-{source}.yml`.
+ * consumer-BIA). Implementations own the physical layout and encoding.
  *
  * @module applications/health/ports
  */
@@ -32,7 +30,7 @@ export class IHealthScanDatastore {
   }
 
   /**
-   * Persist a scan to disk under `${date}-${source}.yml`.
+   * Persist a scan under its semantic user/date/source identity.
    * @param {string} userId
    * @param {import('#domains/health/entities/HealthScan.mjs').HealthScan} scan
    * @returns {Promise<void>}
@@ -42,7 +40,7 @@ export class IHealthScanDatastore {
   }
 
   /**
-   * Delete every scan file for the given date (matches `${date}-*.yml`).
+   * Delete every scan record for the given date.
    * Idempotent — no error if no files match.
    * @param {string} userId
    * @param {string} date YYYY-MM-DD

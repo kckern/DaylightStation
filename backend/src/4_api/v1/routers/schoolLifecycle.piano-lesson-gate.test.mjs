@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolLifecycleRouter } from './schoolLifecycle.mjs';
+import { createSchoolLifecycleTestRouter as createSchoolLifecycleRouter } from '../../../../../tests/_lib/school/schoolLifecycleRouterTestSupport.mjs';
 
 const GATED = {
   schema: 'school.piano-lesson-gate/v1',

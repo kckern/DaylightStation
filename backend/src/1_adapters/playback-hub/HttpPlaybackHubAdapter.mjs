@@ -4,7 +4,7 @@
  * Wire-format conventions (matches `_extensions/playback-hub/web.py`):
  *
  *   GET /api/status
- *     200 → JSON array of slot status objects (see SlotStatus.fromHubJson)
+ *     200 → JSON array of slot status objects
  *
  *   POST /api/play
  *     Request:
@@ -31,10 +31,30 @@ import { CommandResult } from '../../2_domains/playback-hub/value-objects/Comman
 import { SlotStatus } from '../../2_domains/playback-hub/value-objects/SlotStatus.mjs';
 import { InfrastructureError } from '../../0_system/utils/errors/InfrastructureError.mjs';
 import { HttpClient } from '../../0_system/services/HttpClient.mjs';
+import { IPlaybackHubGateway } from '#apps/playback-hub/ports/IPlaybackHubGateway.mjs';
 
 const VALID_REASONS = new Set(CommandResult.REASONS);
 
-export class HttpPlaybackHubAdapter {
+export function mapHubStatus(json) {
+  if (json === null || typeof json !== 'object' || Array.isArray(json)) {
+    throw new InfrastructureError('playback hub status entry must be an object', {
+      code: 'HUB_BAD_RESPONSE', body: typeof json
+    });
+  }
+  return new SlotStatus({
+    position: json.slot,
+    color: json.color,
+    bt_connected: json.bt_connected,
+    paused: json.paused,
+    now_playing: json.now_playing ?? null,
+    volume: json.volume ?? null,
+    playlist_pos: json.playlist_pos ?? null,
+    playlist_count: json.playlist_count ?? null,
+    armed_source: json.armed_source ?? null
+  });
+}
+
+export class HttpPlaybackHubAdapter extends IPlaybackHubGateway {
   /** @type {string} */ #baseUrl;
   /** @type {number} */ #timeoutMs;
   /** @type {object} */ #logger;
@@ -49,6 +69,7 @@ export class HttpPlaybackHubAdapter {
    * }} opts
    */
   constructor({ baseUrl, requestTimeoutSec = 2, logger, httpClient } = {}) {
+    super();
     if (typeof baseUrl !== 'string' || baseUrl.length === 0) {
       throw new InfrastructureError('HttpPlaybackHubAdapter requires baseUrl', {
         code: 'MISSING_CONFIG', field: 'baseUrl', value: baseUrl
@@ -82,7 +103,7 @@ export class HttpPlaybackHubAdapter {
         code: 'HUB_BAD_RESPONSE', body: typeof json
       });
     }
-    return json.map(entry => SlotStatus.fromHubJson(entry));
+    return json.map(mapHubStatus);
   }
 
   /**

@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { QueueFullError } from '#domains/media/errors.mjs';
 
 const MAX_QUEUE_SIZE = 500;
@@ -17,9 +16,12 @@ export const ADDED_FROM = Object.freeze({
 /**
  * MediaQueue Entity — the core domain model for a playback queue.
  *
- * Mutable fields, toJSON/fromJSON serialization, no I/O dependencies.
+ * Mutable fields with no I/O or serialization dependencies.
  */
 export class MediaQueue {
+  #newQueueId;
+  #random;
+
   constructor({
     position = 0,
     shuffle = false,
@@ -27,6 +29,8 @@ export class MediaQueue {
     volume = 1.0,
     items = [],
     shuffleOrder = [],
+    newQueueId = null,
+    random = null,
   } = {}) {
     this.position = position;
     this.shuffle = shuffle;
@@ -34,36 +38,14 @@ export class MediaQueue {
     this.volume = volume;
     this.items = items;
     this.shuffleOrder = shuffleOrder;
+    this.#newQueueId = newQueueId;
+    this.#random = random;
   }
 
   // ---- Static factories ----
 
-  static empty() {
-    return new MediaQueue();
-  }
-
-  static fromJSON(data) {
-    return new MediaQueue({
-      position: data.position,
-      shuffle: data.shuffle,
-      repeat: data.repeat,
-      volume: data.volume,
-      items: data.items ? [...data.items] : [],
-      shuffleOrder: data.shuffleOrder ? [...data.shuffleOrder] : [],
-    });
-  }
-
-  // ---- Serialization ----
-
-  toJSON() {
-    return {
-      position: this.position,
-      shuffle: this.shuffle,
-      repeat: this.repeat,
-      volume: this.volume,
-      items: this.items.map((item) => ({ ...item })),
-      shuffleOrder: [...this.shuffleOrder],
-    };
+  static empty(deps = {}) {
+    return new MediaQueue(deps);
   }
 
   // ---- Accessors ----
@@ -100,14 +82,16 @@ export class MediaQueue {
    * @returns {Array<Object>} The stamped items that were added.
    * @throws {QueueFullError} If adding would exceed MAX_QUEUE_SIZE.
    */
-  addItems(newItems, placement = 'end') {
+  addItems(newItems, placement = 'end', newQueueId) {
+    const createId = newQueueId || this.#newQueueId;
+    if (typeof createId !== 'function') throw new TypeError('newQueueId is required');
     if (this.items.length + newItems.length > MAX_QUEUE_SIZE) {
       throw new QueueFullError(this.items.length, MAX_QUEUE_SIZE);
     }
 
     const stamped = newItems.map((item) => ({
       ...item,
-      queueId: crypto.randomBytes(4).toString('hex'),
+      queueId: createId(),
     }));
 
     if (placement === 'next') {
@@ -210,8 +194,10 @@ export class MediaQueue {
    * Enabling: Fisher-Yates shuffle with the current item pinned at shuffleOrder[0], position resets to 0.
    * Disabling: restores the original index from shuffleOrder[position], clears shuffleOrder.
    */
-  setShuffle(enabled) {
+  setShuffle(enabled, random) {
     if (enabled) {
+      const draw = random || this.#random;
+      if (typeof draw !== 'function') throw new TypeError('random is required when enabling shuffle');
       this.shuffle = true;
 
       // Build an array of indices and Fisher-Yates shuffle it.
@@ -224,7 +210,7 @@ export class MediaQueue {
 
       // Fisher-Yates shuffle.
       for (let i = indices.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(draw() * (i + 1));
         [indices[i], indices[j]] = [indices[j], indices[i]];
       }
 

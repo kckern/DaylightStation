@@ -3,7 +3,7 @@
  * @module api/v1/routers/home-dashboard
  *
  * Thin Express router for the unified home-dashboard endpoints.
- * Delegates all behaviour to HomeAutomationContainer use cases.
+ * Delegates all behaviour to explicitly injected application use cases.
  */
 
 import { Router } from 'express';
@@ -21,22 +21,22 @@ import {
  * Create the home-dashboard Express router.
  *
  * @param {Object} deps
- * @param {Object} deps.container - HomeAutomationContainer instance
+ * @param {Object} deps.operations - Dashboard application use cases
  * @param {Object} [deps.logger] - Logger
  * @returns {import('express').Router}
  */
-export function createHomeDashboardRouter({ container, logger = console } = {}) {
-  if (!container) {
-    throw new Error('createHomeDashboardRouter: container required');
+export function createHomeDashboardRouter({ operations } = {}) {
+  if (!operations) {
+    throw new Error('createHomeDashboardRouter: operations required');
   }
 
   const router = Router();
 
-  router.get('/config', asyncHandler(homeDashboardConfigHandler({ container, logger })));
-  router.get('/state', asyncHandler(homeDashboardStateHandler({ container, logger })));
-  router.get('/history', asyncHandler(homeDashboardHistoryHandler({ container, logger })));
-  router.post('/toggle', asyncHandler(homeDashboardToggleHandler({ container, logger })));
-  router.post('/scene/:sceneId', asyncHandler(homeDashboardSceneHandler({ container, logger })));
+  router.get('/config', asyncHandler(homeDashboardConfigHandler({ operation: operations.getConfig })));
+  router.get('/state', asyncHandler(homeDashboardStateHandler({ operation: operations.getState })));
+  router.get('/history', asyncHandler(homeDashboardHistoryHandler({ operation: operations.getHistory })));
+  router.post('/toggle', asyncHandler(homeDashboardToggleHandler({ operation: operations.toggleEntity })));
+  router.post('/scene/:sceneId', asyncHandler(homeDashboardSceneHandler({ operation: operations.activateScene })));
 
   return router;
 }

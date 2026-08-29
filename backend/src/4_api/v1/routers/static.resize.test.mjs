@@ -5,13 +5,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { createCanvas, loadImage } from 'canvas';
-import { createStaticRouter } from './static.mjs';
+import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
 
 async function serve(imgBasePath) {
   const app = express();
-  app.use('/static', createStaticRouter({ imgBasePath, dataBasePath: imgBasePath, logger: silent }));
+  app.use('/static', createStaticApiRouter({ imgBasePath, dataBasePath: imgBasePath, logger: silent }));
   const srv = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
   return { srv, base: `http://127.0.0.1:${srv.address().port}` };
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GetMaterialCatalog } from '#apps/school/GetMaterialCatalog.mjs';
+import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs';
 
 let logger, errors, warns;
 
@@ -54,7 +55,7 @@ describe('GetMaterialCatalog.execute', () => {
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
     };
-    const catalog = new GetMaterialCatalog({ sources, config, logger, sourceTimeoutMs: 20 });
+    const catalog = new GetMaterialCatalog({ sources, config, logger, scheduler: new NodeAsyncScheduler(), sourceTimeoutMs: 20 });
 
     const result = await catalog.execute();
 

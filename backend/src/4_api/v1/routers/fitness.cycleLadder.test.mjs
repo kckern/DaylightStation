@@ -19,8 +19,12 @@ function buildApp({ ladder, pb } = {}) {
   };
   const router = createFitnessRouter({
     cycleRaceService,
+    cycleRaceApi: {
+      ladder: ({ week, householdId }) => cycleRaceService.getLadder({ cycleGameConfig: CFG.cycle_game, week, householdId }),
+      personalBest: ({ userId, courseId, householdId }) => cycleRaceService.getPersonalBest({ cycleGameConfig: CFG.cycle_game, userId, courseId, householdId }),
+    },
     configService: { getDefaultHouseholdId: () => 'household' },
-    fitnessConfigService: { loadRawConfig: () => CFG },
+    fitnessConfigService: { getCycleGameConfig: () => CFG.cycle_game },
     logger: silentLogger
   });
   const app = express();

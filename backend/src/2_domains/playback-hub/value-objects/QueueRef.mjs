@@ -59,11 +59,6 @@ export class QueueRef {
     return `${this.#source}:${this.#id}`;
   }
 
-  /** @returns {{source: string, id: string}} */
-  toJSON() {
-    return { source: this.#source, id: this.#id };
-  }
-
   /**
    * Value equality (source AND id).
    * @param {QueueRef} other

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { applyMove, applySequence, createCube, isSolved } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
-import { engineCubeToFacelets } from '#apps/school/rubiksCube/physicalCube.mjs';
+import { engineCubeToFacelets } from '#shared/gaming/rulesets/rubiks-cube/facelets.mjs';
 import { KociembaCubeRecoverySolver } from './KociembaCubeRecoverySolver.mjs';
 
 test('the bounded recovery worker returns moves independently verified by the cube engine', async () => {

@@ -35,18 +35,12 @@ describe('normalizeMetric', () => {
     for (const raw of cases) expect(normalizeMetric(raw)).not.toBeNull();
   });
 
-  it('DROPS an unknown kind and says which program emitted it', () => {
-    // Fail closed but loud: a kind with no renderer must never reach one.
-    const log = logger();
-    expect(normalizeMetric({ kind: 'vibes', value: 1 }, { logger: log, program: 'language' })).toBeNull();
-    expect(log.warn).toHaveBeenCalledWith('school.report.metric-kind-unknown',
-      expect.objectContaining({ program: 'language', kind: 'vibes' }));
+  it('drops an unknown kind', () => {
+    expect(normalizeMetric({ kind: 'vibes', value: 1 })).toBeNull();
   });
 
   it('drops a metric missing a required field', () => {
-    const log = logger();
-    expect(normalizeMetric({ kind: 'progress', value: 10 }, { logger: log })).toBeNull();
-    expect(log.warn).toHaveBeenCalledWith('school.report.metric-incomplete', expect.anything());
+    expect(normalizeMetric({ kind: 'progress', value: 10 })).toBeNull();
   });
 
   it('rejects a score outside 0..1 rather than rendering 7400%', () => {
@@ -116,15 +110,9 @@ describe('normalizeReport', () => {
 
   it('never lets a blocked step stay silent about the remedy', () => {
     // A lock that does not say what to do is the trap the materials framework
-    // exists to prevent, so it is surfaced AND logged rather than dropped.
-    const log = logger();
-    const out = normalizeReport(
-      { ...base, next: { label: 'Locked', blocked: true } },
-      { logger: log },
-    );
+    // exists to prevent, so it is surfaced rather than dropped.
+    const out = normalizeReport({ ...base, next: { label: 'Locked', blocked: true } });
     expect(out.next.blockedReason).toBeTruthy();
-    expect(log.warn).toHaveBeenCalledWith('school.report.blocked-without-reason',
-      expect.objectContaining({ program: 'language' }));
   });
 
   it('keeps the good metrics when one is malformed', () => {

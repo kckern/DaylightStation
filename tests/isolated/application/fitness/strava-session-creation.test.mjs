@@ -18,6 +18,7 @@ vi.mock('#system/config/index.mjs', () => ({
 }));
 
 import { FitnessActivityEnrichmentService } from '#apps/fitness/FitnessActivityEnrichmentService.mjs';
+import { YamlFitnessHistoryRepository } from '#adapters/fitness/YamlFitnessHistoryRepository.mjs';
 import { loadYamlSafe } from '#system/utils/FileIO.mjs';
 
 describe('FitnessActivityEnrichmentService — Strava-only session creation', () => {
@@ -89,12 +90,20 @@ describe('FitnessActivityEnrichmentService — Strava-only session creation', ()
 
     service = new FitnessActivityEnrichmentService({
       activityGateway: mockStravaClient,
+      scheduleRetry: vi.fn(),
       jobStore: mockJobStore,
-      authStore: mockAuthStore,
-      configService: mockConfigService,
+      userContext: {
+        timezone: () => mockConfigService.getTimezone(),
+        defaultUserId: () => mockConfigService.getHeadOfHousehold(),
+      },
+      ensureActivityAccess: async (username) => {
+        if (mockStravaClient.hasAccessToken()) return;
+        const auth = mockAuthStore.loadUserAuth('strava', username);
+        await mockStravaClient.refreshToken(auth.refresh);
+      },
       selectionConfig: {},
       resolveDisplayName: (userId) => userId === 'testuser' ? 'Test User' : userId,
-      fitnessHistoryDir: tmpDir,
+      historyRepository: new YamlFitnessHistoryRepository({ root: tmpDir }),
       logger: mockLogger,
     });
   });

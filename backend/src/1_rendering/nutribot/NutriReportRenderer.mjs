@@ -9,7 +9,6 @@
 import { createCanvas, registerFont, loadImage } from 'canvas';
 import path from 'path';
 import { nutriReportTheme as theme } from './nutriReportTheme.mjs';
-import { fileExists, ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
@@ -87,12 +86,6 @@ export class NutriReportRenderer {
     if (this.#fontsRegistered) return true;
 
     const fontPath = path.join(this.#fontDir, 'roboto-condensed', 'RobotoCondensed-Regular.ttf');
-
-    if (!fileExists(fontPath)) {
-      this.#fontRegistrationError = `Font file not found: ${fontPath}`;
-      this.#logger.warn?.('nutribot.renderer.font_not_found', { error: this.#fontRegistrationError });
-      return false;
-    }
 
     try {
       registerFont(fontPath, { family: 'Roboto Condensed' });
@@ -230,23 +223,6 @@ export class NutriReportRenderer {
 
     if (!food || food.length === 0) return listCanvas;
 
-    // Sort descending by calories
-    food = [...food].sort((a, b) => (b.calories || 0) - (a.calories || 0));
-
-    // Group by item name, summing calories and macros
-    const grouped = [];
-    for (const item of food) {
-      const existing = grouped.find((i) => i.name === item.name);
-      if (existing) {
-        ['calories', 'carbs', 'protein', 'fat', 'grams'].forEach(key => {
-          existing[key] = (existing[key] || 0) + (item[key] || 0);
-        });
-      } else {
-        grouped.push({ ...item });
-      }
-    }
-    food = grouped;
-
     ctx.font = theme.fonts.foodItem;
 
     const lineHeight = theme.layout.lineHeight;
@@ -268,14 +244,10 @@ export class NutriReportRenderer {
       if (foodItem.icon && !iconCache.has(foodItem.icon)) {
         const iconPath = path.join(this.#iconDir, foodItem.icon + '.png');
         try {
-          if (fileExists(iconPath)) {
-            iconCache.set(foodItem.icon, await loadImage(iconPath));
-            iconLoadResults.push({ icon: foodItem.icon, status: 'loaded' });
-          } else {
-            iconLoadResults.push({ icon: foodItem.icon, status: 'not_found', path: iconPath });
-          }
+          iconCache.set(foodItem.icon, await loadImage(iconPath));
+          iconLoadResults.push({ icon: foodItem.icon, status: 'loaded' });
         } catch (e) {
-          iconLoadResults.push({ icon: foodItem.icon, status: 'error', error: e.message });
+          iconLoadResults.push({ icon: foodItem.icon, status: 'not_found', path: iconPath, error: e.message });
         }
       }
     }
@@ -395,6 +367,7 @@ export class NutriReportRenderer {
     const goals = report.goals || {};
     const items = report.items || [];
     const history = report.history || [];
+    const { macroGrams = {}, microTotals = {}, chartDays = [] } = report;
 
     // Canvas dimensions from theme
     const width = theme.canvas.width;
@@ -409,21 +382,9 @@ export class NutriReportRenderer {
     ctx.fillStyle = theme.colors.background;
     ctx.fillRect(0, 0, width, newCanvasHeight);
 
-    // Calculate macro grams from items or use totals
-    let proteinGrams = 0;
-    let carbsGrams = 0;
-    let fatGrams = 0;
-
-    for (const item of items) {
-      proteinGrams += item.protein || 0;
-      carbsGrams += item.carbs || 0;
-      fatGrams += item.fat || 0;
-    }
-
-    // Use provided totals if available
-    if (totals.protein) proteinGrams = totals.protein;
-    if (totals.carbs) carbsGrams = totals.carbs;
-    if (totals.fat) fatGrams = totals.fat;
+    const proteinGrams = macroGrams.protein || 0;
+    const carbsGrams = macroGrams.carbs || 0;
+    const fatGrams = macroGrams.fat || 0;
 
     const foodListWidth = width * 0.6;
     const leftSideWidth = width - foodListWidth;
@@ -431,13 +392,7 @@ export class NutriReportRenderer {
     const midPoint = leftSideWidth / 2;
 
     // === TITLE ===
-    let totalCals = totals.calories || 0;
-    if (!totalCals) {
-      for (const item of items) {
-        totalCals += item.calories || 0;
-      }
-    }
-    totalCals = Math.round(totalCals);
+    const totalCals = report.totalCalories || 0;
 
     const dateFormatted = this._formatDate(date);
     const title = dateFormatted ;
@@ -481,23 +436,11 @@ export class NutriReportRenderer {
     }
 
     // === MICRO STATS ===
-    let sodiumTotal = 0;
-    let fiberTotal = 0;
-    let sugarTotal = 0;
-    let cholesterolTotal = 0;
-
-    for (const item of items) {
-      sodiumTotal += item.sodium || 0;
-      fiberTotal += item.fiber || 0;
-      sugarTotal += item.sugar || 0;
-      cholesterolTotal += item.cholesterol || 0;
-    }
-
     const stats = [
-      { label: 'Sodium', unit: 'mg', icon: 'salt', value: Math.round(sodiumTotal) },
-      { label: 'Fiber', unit: 'g', icon: 'kale', value: Math.round(fiberTotal) },
-      { label: 'Sugar', unit: 'g', icon: 'white_sugar', value: Math.round(sugarTotal) },
-      { label: 'Cholesterol', unit: 'mg', icon: 'butter', value: Math.round(cholesterolTotal) },
+      { label: 'Sodium', unit: 'mg', icon: 'salt', value: Math.round(microTotals.sodium || 0) },
+      { label: 'Fiber', unit: 'g', icon: 'kale', value: Math.round(microTotals.fiber || 0) },
+      { label: 'Sugar', unit: 'g', icon: 'white_sugar', value: Math.round(microTotals.sugar || 0) },
+      { label: 'Cholesterol', unit: 'mg', icon: 'butter', value: Math.round(microTotals.cholesterol || 0) },
     ];
 
     ctx.font = theme.fonts.subtitle;
@@ -517,10 +460,8 @@ export class NutriReportRenderer {
       // Draw icon in center
       try {
         const iconPath = path.join(this.#iconDir, stat.icon + '.png');
-        if (fileExists(iconPath)) {
-          const iconImg = await loadImage(iconPath);
-          ctx.drawImage(iconImg, midPoint - 12, rowY - 24, 24, 24);
-        }
+        const iconImg = await loadImage(iconPath);
+        ctx.drawImage(iconImg, midPoint - 12, rowY - 24, 24, 24);
       } catch (e) {
         // Icon not found
       }
@@ -610,7 +551,7 @@ export class NutriReportRenderer {
     }
     const barMaxVal = Math.max(goalCalories, minRecommended, totalCals, historyMax, theme.nutrition.defaultGoalCalories) * theme.chart.headroomMultiplier;
 
-    this._drawDailyChart(ctx, history, items, barChartWidth, barChartHeight, barChartX, barChartY, goalCalories, minRecommended, barMaxVal, date);
+    this._drawDailyChart(ctx, chartDays, barChartWidth, barChartHeight, barChartX, barChartY, goalCalories, minRecommended, barMaxVal);
 
     // Scale up per theme settings
     const scaledWidth = Math.round(width * theme.canvas.scale);
@@ -625,28 +566,10 @@ export class NutriReportRenderer {
   }
 
   /**
-   * Render daily nutrition report as PNG and save to temp file
-   * @param {Object} report
-   * @returns {Promise<string>} Path to temp PNG file
-   */
-  async renderDailyReportToFile(report) {
-    const buffer = await this.renderDailyReport(report);
-
-    const os = await import('os');
-    const tmpDir = path.join(os.default.tmpdir(), 'nutribot-reports');
-    ensureDir(tmpDir);
-    const pngPath = path.join(tmpDir, `report-${report.date}-${Date.now()}.png`);
-    writeBinary(pngPath, buffer);
-
-    this.#logger.debug?.('nutribot.renderer.file_saved', { path: pngPath });
-    return pngPath;
-  }
-
-  /**
    * Draw daily stacked bar chart
    * @private
    */
-  _drawDailyChart(ctx, history, todayItems, barChartWidth, barChartHeight, barChartX, barChartY, goalCalories, minRecommended, barMaxVal, todayDate) {
+  _drawDailyChart(ctx, days, barChartWidth, barChartHeight, barChartX, barChartY, goalCalories, minRecommended, barMaxVal) {
     // Background
     this._drawRect(ctx, barChartX, barChartY, barChartWidth, barChartHeight, theme.colors.chartBg);
 
@@ -671,54 +594,6 @@ export class NutriReportRenderer {
     const barCount = theme.chart.barCount;
     const barAreaWidth = barChartWidth / barCount;
     const barWidth = barAreaWidth * theme.layout.barWidthRatio;
-
-    // Build 7-day data
-    const days = [];
-    // Parse todayDate without timezone issues (YYYY-MM-DD string)
-    let baseDate;
-    if (todayDate && /^\d{4}-\d{2}-\d{2}$/.test(todayDate)) {
-      const [year, month, day] = todayDate.split('-').map(Number);
-      baseDate = new Date(year, month - 1, day);
-    } else {
-      baseDate = new Date();
-    }
-
-    for (let i = barCount - 1; i >= 0; i--) {
-      const d = new Date(baseDate);
-      d.setDate(d.getDate() - i);
-      // Format as YYYY-MM-DD using local date components
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-      // Check history first
-      let historyDay = null;
-      if (history) {
-        for (const h of history) {
-          if (h.date === dateStr) {
-            historyDay = h;
-            break;
-          }
-        }
-      }
-
-      if (historyDay) {
-        days.push({ calories: historyDay.calories, protein: historyDay.protein, carbs: historyDay.carbs, fat: historyDay.fat, date: dateStr });
-      } else if (i === 0 && todayItems && todayItems.length > 0) {
-        // Today's data from items
-        let todayCals = 0;
-        let todayProtein = 0;
-        let todayCarbs = 0;
-        let todayFat = 0;
-        for (const item of todayItems) {
-          todayCals += item.calories || 0;
-          todayProtein += item.protein || 0;
-          todayCarbs += item.carbs || 0;
-          todayFat += item.fat || 0;
-        }
-        days.push({ calories: todayCals, protein: todayProtein, carbs: todayCarbs, fat: todayFat, date: dateStr });
-      } else {
-        days.push({ calories: 0, protein: 0, carbs: 0, fat: 0, date: dateStr });
-      }
-    }
 
     // Draw each bar
     for (let index = 0; index < days.length; index++) {
@@ -847,13 +722,7 @@ export class NutriReportRenderer {
    */
   _formatDate(dateStr) {
     if (!dateStr) {
-      const now = new Date();
-      return now.toLocaleDateString('en-US', {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      });
+      return '—';
     }
     try {
       // Parse YYYY-MM-DD without timezone conversion issues

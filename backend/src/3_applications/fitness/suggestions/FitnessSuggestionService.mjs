@@ -10,8 +10,7 @@ export class FitnessSuggestionService {
   #sessionDatastore;
   #fitnessConfigService;
   #fitnessPlayableService;
-  #contentAdapter;
-  #contentQueryService;
+  #contentCatalog;
   #logger;
 
   // Cache for exclude_collections → showIds resolution. Collections change
@@ -25,8 +24,7 @@ export class FitnessSuggestionService {
     sessionDatastore,
     fitnessConfigService,
     fitnessPlayableService,
-    contentAdapter,
-    contentQueryService,
+    contentCatalog,
     logger = console,
   }) {
     this.#strategies = strategies;
@@ -34,8 +32,7 @@ export class FitnessSuggestionService {
     this.#sessionDatastore = sessionDatastore;
     this.#fitnessConfigService = fitnessConfigService;
     this.#fitnessPlayableService = fitnessPlayableService;
-    this.#contentAdapter = contentAdapter;
-    this.#contentQueryService = contentQueryService;
+    this.#contentCatalog = contentCatalog;
     this.#logger = logger;
   }
 
@@ -59,21 +56,11 @@ export class FitnessSuggestionService {
     }
     const ids = new Set();
     if (Array.isArray(excludeCollections) && excludeCollections.length
-        && this.#contentAdapter?.getList) {
+        && this.#contentCatalog?.collectionShowIds) {
       for (const cid of excludeCollections) {
         try {
-          const items = await this.#contentAdapter.getList(String(cid));
-          for (const item of items || []) {
-            // Episodes carry grandparentRatingKey/grandparentId on metadata.
-            // Shows (containers) have the show id in their own localId/id.
-            const raw = item?.metadata?.grandparentRatingKey
-              ?? item?.metadata?.grandparentId
-              ?? item?.localId
-              ?? (typeof item?.id === 'string' ? item.id : null);
-            if (raw == null) continue;
-            const sid = String(raw).replace(/^plex:/, '');
-            if (sid) ids.add(sid);
-          }
+          const showIds = await this.#contentCatalog.collectionShowIds(String(cid));
+          showIds.forEach((showId) => ids.add(showId));
         } catch (err) {
           this.#logger.warn?.('suggestions.exclude-collection-resolve-failed',
             { collectionId: cid, error: err?.message });
@@ -85,9 +72,9 @@ export class FitnessSuggestionService {
   }
 
   async getSuggestions({ gridSize, householdId } = {}) {
-    const fitnessConfig = this.#fitnessConfigService.loadRawConfig(householdId);
-    const slots = gridSize || fitnessConfig?.suggestions?.grid_size || 8;
-    const lookbackDays = fitnessConfig?.suggestions?.lookback_days ?? 10;
+    const suggestionPolicy = this.#fitnessConfigService.getSuggestionPolicy(householdId);
+    const slots = gridSize || suggestionPolicy.slots;
+    const lookbackDays = suggestionPolicy.lookbackDays;
 
     // Fetch recent sessions for context
     const endDate = new Date().toISOString().split('T')[0];
@@ -107,7 +94,7 @@ export class FitnessSuggestionService {
     // membership). Applies to NextUp + Discovery; Resume / Favorite / Memorable
     // honor their own explicit signals so they still surface these.
     const excludedShowIds = await this.#getExcludedShowIds(
-      fitnessConfig?.suggestions?.exclude_collections
+      suggestionPolicy.excludedCollectionIds
     );
 
     // Request-scoped memo for getPlayableEpisodes. The same show is resolved by
@@ -134,11 +121,10 @@ export class FitnessSuggestionService {
     // Build shared context
     const context = {
       recentSessions,
-      fitnessConfig,
+      suggestionPolicy,
       householdId: hid,
       fitnessPlayableService: memoizedPlayableService,
-      contentAdapter: this.#contentAdapter,
-      contentQueryService: this.#contentQueryService,
+      contentCatalog: this.#contentCatalog,
       sessionDatastore: this.#sessionDatastore,
       excludedShowIds,
     };

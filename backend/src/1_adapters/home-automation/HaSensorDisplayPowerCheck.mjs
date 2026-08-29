@@ -1,5 +1,7 @@
 // backend/src/1_adapters/home-automation/HaSensorDisplayPowerCheck.mjs
 
+import { IDisplayPowerCheck } from '#apps/home-automation/ports/IDisplayPowerCheck.mjs';
+
 /**
  * HaSensorDisplayPowerCheck — checks display power via HA state sensor.
  *
@@ -10,7 +12,7 @@
  * @module adapters/home-automation
  */
 
-export class HaSensorDisplayPowerCheck {
+export class HaSensorDisplayPowerCheck extends IDisplayPowerCheck {
   #gateway;
   #sensorMap; // deviceId -> sensorEntityId
   #logger;
@@ -23,6 +25,7 @@ export class HaSensorDisplayPowerCheck {
    * @param {Object} [deps.logger]
    */
   constructor(config, deps) {
+    super();
     this.#gateway = deps.gateway;
     this.#sensorMap = config.sensorMap || {};
     this.#logger = deps.logger || console;

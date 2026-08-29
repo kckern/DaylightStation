@@ -53,7 +53,7 @@ import { PlanProjection } from '../PlanProjection.mjs';
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { offeredActions, resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
 import { buildContextualLaunchCard } from '#domains/school/selfService/contextualLaunchCard.mjs';
-import { decodeLaunchPreviewLink } from '#domains/school/selfService/launchPreviewLink.mjs';
+import { decodeLaunchPreviewLink } from '#apps/school/services/launchPreviewLink.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { resolveTokenState } from '#domains/school/sessions/tokens.mjs';

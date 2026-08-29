@@ -19,20 +19,23 @@ export class Headline {
    * @param {string} data.title - Headline text
    * @param {string|null} [data.desc] - Short description (first sentence or 120 chars)
    * @param {string} data.link - URL to original article
-   * @param {Date|string} [data.timestamp] - Publication time
+   * @param {Date|string} data.timestamp - Publication time, supplied by the adapter
    */
   constructor(data) {
     if (!data.id) throw new Error('Headline requires id');
     if (!data.source) throw new Error('Headline requires source');
     if (!data.title) throw new Error('Headline requires title');
     if (!data.link) throw new Error('Headline requires link');
+    if (!data.timestamp || !Number.isFinite(new Date(data.timestamp).getTime())) {
+      throw new Error('Headline requires a valid timestamp');
+    }
 
     this.#id = data.id;
     this.#source = data.source;
     this.#title = data.title;
     this.#desc = data.desc || null;
     this.#link = data.link;
-    this.#timestamp = data.timestamp ? new Date(data.timestamp) : new Date();
+    this.#timestamp = new Date(data.timestamp);
 
     Object.freeze(this);
   }

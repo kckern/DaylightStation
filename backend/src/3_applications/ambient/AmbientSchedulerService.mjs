@@ -9,12 +9,13 @@ const DEFAULT_INTERVAL_MS = 60000;
 
 export class AmbientSchedulerService {
   #loadSchedule; #tracker; #wakeAndLoad; #deviceService; #stateStore;
-  #timeZone; #logger; #clock; #timer; #firstTick; #running;
+  #timeZone; #logger; #clock; #scheduler; #cancelTick; #firstTick; #running;
 
   constructor({
     loadSchedule, tracker, wakeAndLoadService, deviceService, stateStore,
-    timeZone = 'America/Los_Angeles', logger = console, clock = Date,
+    timeZone = 'America/Los_Angeles', logger = console, clock = Date, scheduler,
   }) {
+    if (!scheduler?.every) throw new Error('AmbientSchedulerService requires scheduler');
     this.#loadSchedule = loadSchedule;
     this.#tracker = tracker;
     this.#wakeAndLoad = wakeAndLoadService;
@@ -23,7 +24,8 @@ export class AmbientSchedulerService {
     this.#timeZone = timeZone;
     this.#logger = logger;
     this.#clock = clock;
-    this.#timer = null;
+    this.#scheduler = scheduler;
+    this.#cancelTick = null;
     this.#firstTick = true;
     this.#running = false;
   }
@@ -32,12 +34,11 @@ export class AmbientSchedulerService {
     const tick = () => this.runOnce().catch(
       (e) => this.#logger.error?.('ambient.tick.error', { error: String(e?.message ?? e) }));
     tick();
-    this.#timer = setInterval(tick, intervalMs);
-    this.#timer.unref?.();
+    this.#cancelTick = this.#scheduler.every(intervalMs, tick);
     this.#logger.info?.('ambient.started', { intervalMs });
   }
 
-  stop() { if (this.#timer) clearInterval(this.#timer); this.#timer = null; }
+  stop() { this.#cancelTick?.(); this.#cancelTick = null; }
 
   async runOnce(date = new Date(this.#clock.now())) {
     if (this.#running) {

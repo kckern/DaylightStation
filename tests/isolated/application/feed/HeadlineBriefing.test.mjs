@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
+import { DataServiceFeedConfigRepository } from '#adapters/feed/DataServiceFeedConfigRepository.mjs';
 
 describe('HeadlineService briefing', () => {
   test('clusters similar coverage and reports invalid zero-based placements', async () => {
@@ -24,7 +25,7 @@ describe('HeadlineService briefing', () => {
     const service = new HeadlineService({
       headlineStore: { loadAllSources: async () => cached },
       harvester: {},
-      dataService: { user: { read: () => config } },
+      configRepository: new DataServiceFeedConfigRepository({ dataService: { user: { read: () => config } } }),
       logger: { info() {}, warn() {}, error() {}, debug() {} },
     });
 

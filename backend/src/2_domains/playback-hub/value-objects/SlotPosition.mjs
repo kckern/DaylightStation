@@ -44,10 +44,6 @@ export class SlotPosition {
     return other instanceof SlotPosition && other.value === this.#value;
   }
 
-  /** @returns {number} */
-  toJSON() {
-    return this.#value;
-  }
 }
 
 export default SlotPosition;

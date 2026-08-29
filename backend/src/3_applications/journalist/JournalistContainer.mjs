@@ -36,7 +36,6 @@ import { HandleSourceSelection } from './usecases/HandleSourceSelection.mjs';
 import { InitiateDebriefInterview } from './usecases/InitiateDebriefInterview.mjs';
 
 // Application services
-import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
 
 /**
  * Journalist Container
@@ -45,6 +44,7 @@ export class JournalistContainer {
   #config;
   #options;
   #logger;
+  #pause;
 
   // Infrastructure
   #messagingGateway;
@@ -97,8 +97,7 @@ export class JournalistContainer {
   // Repositories
   #quizRepository;
 
-  // Data services
-  #userDataService;
+  // Application port for user-scoped lifelog reads.
 
   /**
    * @param {Object} config - Journalist configuration
@@ -110,15 +109,17 @@ export class JournalistContainer {
    * @param {Object} [options.conversationStateStore] - Conversation state store
    * @param {Object} [options.quizRepository] - Quiz repository
    * @param {Object} [options.userResolver] - UserResolver for multi-user support
-   * @param {Object} [options.userDataService] - UserDataService for loading user data files
+   * @param {Object} [options.lifelogAggregator] - Semantic lifelog aggregation service
    * @param {Object} [options.loggingAIGatewayFactory] - Factory to create logging AI gateway wrapper
    * @param {Object} [options.debriefRepository] - Debrief repository instance
    * @param {Object} [options.logger] - Logger instance
+   * @param {Function} [options.pause] - Semantic delay capability
    */
   constructor(config, options = {}) {
     this.#config = config;
     this.#options = options;
     this.#logger = options.logger || console;
+    this.#pause = options.pause || (async () => {});
 
     // Accept injected dependencies
     this.#messagingGateway = options.messagingGateway;
@@ -128,7 +129,7 @@ export class JournalistContainer {
     this.#conversationStateStore = options.conversationStateStore;
     this.#quizRepository = options.quizRepository;
     this.#userResolver = options.userResolver;
-    this.#userDataService = options.userDataService;
+    this.#lifelogAggregator = options.lifelogAggregator ?? null;
     this.#loggingAIGatewayFactory = options.loggingAIGatewayFactory;
     this.#debriefRepository = options.debriefRepository;
   }
@@ -212,6 +213,7 @@ export class JournalistContainer {
       this.#processVoiceEntry = new ProcessVoiceEntry({
         messagingGateway: this.getMessagingGateway(),
         processTextEntry: this.getProcessTextEntry(),
+        pause: this.#pause,
         logger: this.#logger,
       });
     }
@@ -376,17 +378,7 @@ export class JournalistContainer {
   // ==================== Morning Debrief Use Cases ====================
 
   getLifelogAggregator() {
-    if (!this.#lifelogAggregator) {
-      // Create userLoadFile function that wraps userDataService
-      const userLoadFile = this.#userDataService
-        ? (username, filename) => this.#userDataService.getLifelogData(username, filename)
-        : null;
-
-      this.#lifelogAggregator = new LifelogAggregator({
-        userLoadFile,
-        logger: this.#logger,
-      });
-    }
+    if (!this.#lifelogAggregator) throw new Error('lifelogAggregator not configured');
     return this.#lifelogAggregator;
   }
 

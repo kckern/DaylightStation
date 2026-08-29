@@ -1,6 +1,7 @@
 // backend/src/2_adapters/telegram/TelegramResponseContext.mjs
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { IResponseContext } from '#apps/nutribot/ports/IResponseContext.mjs';
 
 /**
  * TelegramResponseContext - Implements IResponseContext for Telegram
@@ -14,7 +15,7 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  * - Passed to use cases as IResponseContext (platform-agnostic interface)
  * - No conversationId string parsing needed at send-time
  */
-export class TelegramResponseContext {
+export class TelegramResponseContext extends IResponseContext {
   /** @type {import('./TelegramAdapter.mjs').TelegramAdapter} */
   #adapter;
 
@@ -29,6 +30,7 @@ export class TelegramResponseContext {
    * @param {import('./TelegramChatRef.mjs').TelegramChatRef} chatRef - The chat this context is bound to
    */
   constructor(adapter, chatRef) {
+    super();
     if (!adapter) {
       throw new InfrastructureError('TelegramResponseContext requires adapter', {
         code: 'MISSING_DEPENDENCY',

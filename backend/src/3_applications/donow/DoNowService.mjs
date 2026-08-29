@@ -24,7 +24,7 @@
  *   6. Act on the decision:
  *      - `dispatch` -> call `adapter.dispatch`; a throw or `{dispatched:
  *        false}` becomes `failed`. On real success, append ONE dispatch-log
- *        row and ONLY THEN emit `donow.dispatched` on the event bus (log
+ *        row and ONLY THEN publish `donow.dispatched` through the realtime gateway (log
  *        before broadcast, so nothing downstream can observe the event
  *        before the audit trail exists). The broadcast carries `approved:
  *        true` + `approvalId` ONLY when this dispatch came from
@@ -48,13 +48,13 @@
  *      - `denied` -> a message naming the busy surface by its label.
  */
 import { decideDispatch } from '#domains/donow/policy.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 
 export class DoNowService {
   #surfaces;
   #datastore;
   #notifier;
-  #eventBus;
+  #realtimeGateway;
   #clock;
   #timezone;
   #approvalTtlSeconds;
@@ -66,7 +66,7 @@ export class DoNowService {
    * @param {Map<string, Object>} config.surfaces - surface id -> IDoNowSurface adapter.
    * @param {Object} config.datastore - YamlDoNowDatastore-shaped store (findPending/putPending/appendDispatch).
    * @param {Object} [config.notifier] - `{ notify(record) }`; best-effort, failures are swallowed.
-   * @param {Object} [config.eventBus] - `{ broadcast(topic, payload) }`.
+   * @param {Object} [config.realtimeGateway] - DoNow completion publication capability.
    * @param {Function} [config.clock] - `() => Date`, overridable for tests.
    * @param {string} [config.timezone] - Household timezone, carried for future callers.
    * @param {number} [config.approvalTtlSeconds=120] - Pending-request TTL.
@@ -77,7 +77,7 @@ export class DoNowService {
     surfaces,
     datastore,
     notifier = null,
-    eventBus = null,
+    realtimeGateway = null,
     clock = () => new Date(),
     timezone = null,
     approvalTtlSeconds = 120,
@@ -93,7 +93,7 @@ export class DoNowService {
     this.#surfaces = surfaces;
     this.#datastore = datastore;
     this.#notifier = notifier;
-    this.#eventBus = eventBus;
+    this.#realtimeGateway = realtimeGateway;
     this.#clock = clock;
     this.#timezone = timezone;
     this.#approvalTtlSeconds = approvalTtlSeconds;
@@ -266,12 +266,7 @@ export class DoNowService {
     // out of band, from a pending approval, and nobody is waiting on this
     // exact call to find out" — a subscriber (`DoNowSchoolBridge`) that acted
     // on the immediate case too would double-fire, racing its own caller.
-    const payload = { type: 'donow.dispatched', ref, surface, requestedBy };
-    if (approvalId != null) {
-      payload.approved = true;
-      payload.approvalId = approvalId;
-    }
-    this.#eventBus?.broadcast('donow', payload);
+    this.#realtimeGateway?.publishDispatchCompleted({ ref, surface, requestedBy, approvalId });
 
     return { decision: 'dispatched', message: `Starting the ${label} now.` };
   }

@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createSheetsRouter } from './sheets.mjs';
+import { renderSheetPdf } from '#rendering/pdf/QRSheetRenderer.mjs';
+import { PrintableSheetOperations } from '#apps/sheets/PrintableSheetOperations.mjs';
 
 const okModel = {
   sheetId: 'ok',
@@ -24,8 +26,9 @@ const cellKinds = {
 function makeApp(build) {
   const app = express();
   app.use('/sheets', createSheetsRouter({
-    sheetService: { build },
-    cellKinds,
+    printableSheets: new PrintableSheetOperations({
+      sheets: { build }, cellKinds, renderPdf: renderSheetPdf, logger: { warn() {}, info() {} },
+    }),
     logger: { warn() {}, info() {} },
   }));
   return app;

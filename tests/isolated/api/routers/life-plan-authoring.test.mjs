@@ -1,8 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createLifeRouter from '#api/v1/routers/life.mjs';
+import createLifeRouterBase from '#api/v1/routers/life.mjs';
+import { LifeApiOperations } from '#apps/lifeplan/LifeApiOperations.mjs';
+
+const createLifeRouter = (config) => createLifeRouterBase({
+  ...config,
+  lifeApi: new LifeApiOperations({
+    aggregator: config.aggregator,
+    userDirectory: config.userService,
+    listHouseholdUsers: config.listHouseholdUsers,
+    defaultUsername: config.defaultUsername,
+    lifePlanOperations: config.lifePlanOperations,
+  }),
+});
 import { PlanAuthoringService } from '#apps/lifeplan/services/PlanAuthoringService.mjs';
+import { LifePlanOperations } from '#apps/lifeplan/LifePlanOperations.mjs';
+import { presentBelief, presentGoal, presentLifePlan } from '#apps/lifeplan/presenters/lifePlanPresenter.mjs';
 
 /**
  * Exercises the plan genesis + authoring REST routes against the REAL
@@ -20,6 +34,18 @@ describe('life router plan authoring', () => {
       save: (u, p) => { db.set(u, p); },
     };
     const planAuthoringService = new PlanAuthoringService({ lifePlanStore });
+    const lifePlanOperations = new LifePlanOperations({
+      plans: lifePlanStore,
+      goalStates: {},
+      beliefEvaluator: {},
+      cadence: { resolve: () => ({}) },
+      authoring: planAuthoringService,
+      drift: {},
+      serviceAvailability: {
+        alignmentService: true, driftService: true, ceremonyService: true,
+        feedbackService: true, retroService: true, aggregator: true,
+      },
+    });
 
     const userService = {
       getProfile: (username) => (username === 'test-user' ? { username: 'test-user' } : null),
@@ -28,18 +54,16 @@ describe('life router plan authoring', () => {
     app = express();
     app.use(express.json());
     app.use('/api/v1/life', createLifeRouter({
-      lifePlanStore,
-      planAuthoringService,
+      lifePlanOperations,
+      presentBelief,
+      presentGoal,
+      presentLifePlan,
       driftService: {},
       alignmentService: {},
       ceremonyService: {},
       feedbackService: {},
       retroService: {},
       aggregator: {},
-      goalStateService: {},
-      beliefEvaluator: {},
-      cadenceService: { resolve: () => ({}) },
-      ceremonyRecordStore: {},
       userService,
       defaultUsername: 'test-user',
     }));

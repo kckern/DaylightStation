@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createMediaRouter } from '#backend/src/4_api/v1/routers/media.mjs';
+import { MediaQueueEvents } from '#apps/events/RealtimePublications.mjs';
 
 /**
  * Isolated tests for the Media Queue Router.
@@ -18,19 +19,15 @@ describe('Media Queue Router', () => {
 
   /** A reusable queue-shaped object returned by mocked service methods. */
   const fakeQueue = {
-    toJSON() {
-      return {
-        position: 0,
-        shuffle: false,
-        repeat: 'off',
-        volume: 1.0,
-        items: [
-          { queueId: 'abc1', contentId: 'plex:100', title: 'Song A' },
-          { queueId: 'abc2', contentId: 'plex:200', title: 'Song B' },
-        ],
-        shuffleOrder: [],
-      };
-    },
+    position: 0,
+    shuffle: false,
+    repeat: 'off',
+    volume: 1.0,
+    items: [
+      { queueId: 'abc1', contentId: 'plex:100', title: 'Song A' },
+      { queueId: 'abc2', contentId: 'plex:200', title: 'Song B' },
+    ],
+    shuffleOrder: [],
   };
 
   beforeEach(() => {
@@ -62,8 +59,10 @@ describe('Media Queue Router', () => {
 
     const router = createMediaRouter({
       mediaQueueService: mockMediaQueueService,
+      mediaSurfaceConfig: { get: vi.fn(() => ({ browse: [], searchScopes: [] })) },
       contentIdResolver: mockContentIdResolver,
-      broadcastEvent: mockBroadcastEvent,
+      mediaQueueEvents: new MediaQueueEvents({ publish: mockBroadcastEvent }),
+      createMediaQueue: (props) => ({ ...fakeQueue, ...props, shuffleOrder: [] }),
       logger: mockLogger,
     });
 

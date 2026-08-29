@@ -3,28 +3,24 @@
 // 1) INGEST (already handled by PressureMatAdapter): the board publishes
 //    `presence` messages on the configured `pressure-mat` topic.
 //
-// 2) PERSIST (bus-side): this subscriber appends only transition events to
-//    {dataDir}/{persistence.dir}/{id}/{YYYY-MM-DD}.yml with keys matching
-//    OMR/scale history conventions:
+// 2) PERSIST: this subscriber appends normalized transition events through a
+//    semantic day-log repository with keys matching OMR/scale conventions:
 //      - pressed
 //      - stomped
 //      - released
 //
 // History is local-day bucketed by timestamp and uses append-only read-modify-write
 // arrays to keep one list per mat per day.
-import path from 'path';
-import { formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
+import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
-const RELAY_SOURCE = 'pressure-mat-relay';
 const VALID_EVENTS = new Set(['pressed', 'stomped', 'released']);
-const DEFAULT_TOPIC = 'pressure-mat';
 
 /**
  * @param {object}   deps
- * @param {object}   deps.eventBus   IEventBus (WebSocketEventBus)
- * @param {string}   deps.dataDir    resolved data dir (configService.getDataDir())
- * @param {object}   [deps.config]   parsed pressure-mats.yml — { pressure_mats:{<id>:{topic}}, persistence:{dir} }
+ * @param {object}   deps.pressureMatGateway semantic normalized-event gateway
+ * @param {boolean}  [deps.persistenceEnabled] whether transition history is retained
+ * @param {object}   deps.dayLog append-only semantic day-log repository
  * @param {string}   [deps.timezone] IANA tz for `ts` + day bucket (default household tz)
  * @param {object}   [deps.logger]
  * @returns {{ dispose: () => void, flush: () => Promise<void> }}
@@ -40,17 +36,14 @@ const DEFAULT_TOPIC = 'pressure-mat';
  * this file at all. The composition root resolves the location, including any
  * `persistence.dir` override, and hands down one directory.
  */
-export function createPressureMatRelay({ eventBus, dataDir, dayLog, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
-  if (!eventBus?.subscribe) {
-    throw new Error('createPressureMatRelay: eventBus with subscribe required');
+export function createPressureMatRelay({ pressureMatGateway, persistenceEnabled = true, dayLog, timezone = DEFAULT_TIMEZONE, logger = console }) {
+  if (!pressureMatGateway?.subscribePresence) {
+    throw new Error('createPressureMatRelay: pressureMatGateway with subscribePresence required');
   }
-  if (!dataDir) {
+  if (!persistenceEnabled) {
     logger.info?.('pressure_mat.relay.ready', { persist: false });
     return { dispose: () => {}, flush: () => Promise.resolve() };
   }
-
-  const matDefs = config?.pressure_mats || {};
-  const topics = new Set([DEFAULT_TOPIC, ...Object.values(matDefs).map((m) => m?.topic).filter(Boolean)]);
 
   let writeChain = Promise.resolve();
   const enqueueAppend = (id, record) => {
@@ -60,9 +53,6 @@ export function createPressureMatRelay({ eventBus, dataDir, dayLog, config = {},
   };
 
   const onPayload = (payload) => {
-    if (!payload || typeof payload !== 'object') return;
-    if (payload.source !== RELAY_SOURCE || payload.type !== 'presence') return;
-
     const event = payload.event;
     if (!VALID_EVENTS.has(event)) return;
     const id = payload.id || 'unknown';
@@ -82,20 +72,15 @@ export function createPressureMatRelay({ eventBus, dataDir, dayLog, config = {},
     enqueueAppend(id, record);
   };
 
-  const unsubs = [...topics].map((topic) => eventBus.subscribe(topic, onPayload));
-  logger.info?.('pressure_mat.relay.ready', { topics: [...topics] });
+  const unsubscribe = pressureMatGateway.subscribePresence(onPayload);
+  logger.info?.('pressure_mat.relay.ready', {});
 
   return {
     dispose: () => {
-      for (const unsubscribe of unsubs) {
-        try { unsubscribe?.(); } catch { /* noop */ }
-      }
+      try { unsubscribe?.(); } catch { /* noop */ }
     },
     flush: () => writeChain,
   };
 }
-
-
-const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
 
 export default createPressureMatRelay;

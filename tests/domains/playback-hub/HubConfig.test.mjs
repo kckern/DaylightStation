@@ -10,6 +10,7 @@ import { DayPattern } from '../../../backend/src/2_domains/playback-hub/value-ob
 import { QueueRef } from '../../../backend/src/2_domains/playback-hub/value-objects/QueueRef.mjs';
 import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 import { DomainInvariantError } from '../../../backend/src/2_domains/core/errors/DomainInvariantError.mjs';
+import { serializeHubConfig } from '../../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
 import { EntityNotFoundError } from '../../../backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
 
 const makeDevice = ({
@@ -207,7 +208,7 @@ describe('HubConfig', () => {
   describe('toYaml', () => {
     it('produces a minimal devices-only YAML object', () => {
       const cfg = new HubConfig({ devices: [makeDevice({ color: 'red' })] });
-      const y = cfg.toYaml();
+      const y = serializeHubConfig(cfg);
       expect(y.devices).toEqual([{
         slot: 1,
         color: 'red',
@@ -223,7 +224,7 @@ describe('HubConfig', () => {
         devices: [makeDevice({ color: 'red' })],
         scheduledFires: [makeFire({ id: 'morning', target: 'red', time: '07:00', days: new DayPattern('weekdays') })]
       });
-      const y = cfg.toYaml();
+      const y = serializeHubConfig(cfg);
       expect(Array.isArray(y.scheduled)).toBe(true);
       expect(y.scheduled[0]).toMatchObject({
         id: 'morning',
@@ -239,7 +240,7 @@ describe('HubConfig', () => {
         devices: [makeDevice()],
         daylightStation: { base_url: 'http://localhost' }
       });
-      expect(cfg.toYaml().daylight_station).toEqual({ base_url: 'http://localhost' });
+      expect(serializeHubConfig(cfg).daylight_station).toEqual({ base_url: 'http://localhost' });
     });
   });
 

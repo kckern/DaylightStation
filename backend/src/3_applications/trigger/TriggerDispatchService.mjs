@@ -21,7 +21,6 @@
  * @module applications/trigger/TriggerDispatchService
  */
 
-import { randomUUID } from 'node:crypto';
 import { ResolverRegistry, UnknownModalityError } from '#domains/trigger/services/ResolverRegistry.mjs';
 import { dispatchResponse, UnknownResponseKindError } from './responseHandlers.mjs';
 import { mapIntentToResponse, UnknownActionError } from './mapIntentToResponse.mjs';
@@ -31,6 +30,18 @@ import { gatekeeperStrategies } from './guards/gatekeeperStrategies.mjs';
 import { createDebounce } from './guards/debounce.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
+import { assertTriggerActuationGateway } from './ports/ITriggerActuationGateway.mjs';
+
+const unavailableActuationGateway = Object.freeze({
+  clearDevice() { throw new Error('Trigger actuation unavailable'); },
+  openDevice() { throw new Error('Trigger actuation unavailable'); },
+  activateScene() { throw new Error('Trigger actuation unavailable'); },
+  invokeHomeAction() { throw new Error('Trigger actuation unavailable'); },
+  sendTransport() { return { handled: false }; },
+  sendNotification() { return undefined; },
+  disableAutomation() { return undefined; },
+  enableAutomation() { return undefined; },
+});
 
 export class TriggerDispatchService {
   #config;
@@ -43,6 +54,8 @@ export class TriggerDispatchService {
   #debounce;
   #debounceWindowMs;
   #clock;
+  #createDispatchId;
+  #scheduler;
 
   // Per-(intent.target) HA automation guard suppression. When a trigger
   // fires for one of these targets, we disable the named automation for
@@ -61,8 +74,7 @@ export class TriggerDispatchService {
     config,
     contentIdResolver,
     wakeAndLoadService,
-    haGateway,
-    deviceService,
+    actuationGateway,
     tagWriter = null,           // NEW
     contentDispatcher = null,
     // First refusal on a content dispatch, plus the D8 end-behaviour
@@ -71,8 +83,6 @@ export class TriggerDispatchService {
     // interceptor handed to composition can both be right while nothing
     // connects them, and the book simply plays.
     contentInterceptors = [],
-    screenBroadcast = null,
-    commandResolver = null,
     endpointGateway = null,
     learnerActions = null,
     // D9 — told about every NFC tap that resolved to nothing, alongside the
@@ -85,12 +95,16 @@ export class TriggerDispatchService {
     logger = console,
     debounceWindowMs = 30000,
     clock = () => Date.now(),
+    createDispatchId,
+    scheduler,
   }) {
+    if (typeof createDispatchId !== 'function') throw new Error('TriggerDispatchService requires createDispatchId');
+    if (!scheduler?.after) throw new Error('TriggerDispatchService requires scheduler');
     this.#config = config || {};
     this.#contentIdResolver = contentIdResolver;
     // #deps is an explicit whitelist, not a spread of the constructor args —
     // a dep that is not named here never reaches responseHandlers.
-    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, contentInterceptors, screenBroadcast, commandResolver, endpointGateway, learnerActions, logger };
+    this.#deps = { wakeAndLoadService, actuationGateway: assertTriggerActuationGateway(actuationGateway || unavailableActuationGateway), contentDispatcher, contentInterceptors, endpointGateway, learnerActions, createDispatchId, logger };
     this.#tagWriter = tagWriter;
     this.#onUnknownTag = onUnknownTag;
     this.#broadcast = broadcast || (() => {});
@@ -98,6 +112,8 @@ export class TriggerDispatchService {
     this.#debounceWindowMs = debounceWindowMs;
     this.#debounce = createDebounce({ windowMs: this.#debounceWindowMs });
     this.#clock = clock;
+    this.#createDispatchId = createDispatchId;
+    this.#scheduler = scheduler;
   }
 
   #lookupAuthToken(modality, location) {
@@ -106,24 +122,18 @@ export class TriggerDispatchService {
 
   // Fire-and-forget HA automation suppression. Disable the guard for the
   // configured target now, schedule re-enable in GUARD_SUPPRESS_DURATION_MS.
-  // No-op if no haGateway, no mapping, or the target isn't covered.
+  // No-op if no mapping or the target isn't covered.
   #suppressGuardForTarget(target, dispatchId) {
     const guardEntity = TriggerDispatchService.#GUARD_AUTOMATIONS_BY_TARGET[target];
     if (!guardEntity) return;
-    const haGateway = this.#deps.haGateway;
-    if (!haGateway?.callService) return;
+    const actuationGateway = this.#deps.actuationGateway;
     const durationMs = TriggerDispatchService.#GUARD_SUPPRESS_DURATION_MS;
     this.#logger.info?.('trigger.guard.suppressed', { target, guardEntity, durationMs, dispatchId });
-    Promise.resolve(haGateway.callService('automation', 'turn_off', {
-      entity_id: guardEntity,
-      stop_actions: true,
-    })).catch((err) => {
+    Promise.resolve(actuationGateway.disableAutomation?.(guardEntity)).catch((err) => {
       this.#logger.warn?.('trigger.guard.disable.failed', { target, guardEntity, error: err?.message, dispatchId });
     });
-    setTimeout(() => {
-      Promise.resolve(haGateway.callService('automation', 'turn_on', {
-        entity_id: guardEntity,
-      })).catch((err) => {
+    this.#scheduler.after(durationMs, () => {
+      Promise.resolve(actuationGateway.enableAutomation?.(guardEntity)).catch((err) => {
         this.#logger.warn?.('trigger.guard.enable.failed', { target, guardEntity, error: err?.message, dispatchId });
       });
     }, durationMs);
@@ -134,7 +144,7 @@ export class TriggerDispatchService {
     const modality = event.source;
     const value = event.value;
     const startedAt = this.#clock();
-    const dispatchId = randomUUID();
+    const dispatchId = this.#createDispatchId();
     // NFC uids canonicalize (case AND separators); everything else only folds
     // case. This is deliberately modality-aware: a barcode may legitimately
     // contain `-` or `_` as part of its value, so stripping separators from one
@@ -430,7 +440,7 @@ export class TriggerDispatchService {
       },
     };
     try {
-      await this.#deps.haGateway.callService('notify', notifyService, payload);
+      await this.#deps.actuationGateway.sendNotification(notifyService, payload);
     } catch (err) {
       this.#logger.error?.('trigger.notify.failed', { location, uid, service: notifyService, error: err.message });
     }

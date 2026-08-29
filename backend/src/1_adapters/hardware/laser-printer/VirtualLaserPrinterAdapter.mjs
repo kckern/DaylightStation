@@ -19,9 +19,9 @@
  *
  * @module adapters/hardware/laser-printer
  */
-import { promises as fs } from 'fs';
 import path from 'path';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { ensureDirAsync, readBinaryFromPathAsync, writeBinaryAsync, writeTextFileAsync } from '#system/utils/FileIO.mjs';
 
 const FAULTS = Object.freeze(['offline', 'jam']);
 
@@ -133,9 +133,9 @@ export class VirtualLaserPrinterAdapter {
       binding,
     };
 
-    await fs.mkdir(this.#captureDir, { recursive: true });
-    await fs.writeFile(path.join(this.#captureDir, `${jobId}.pdf`), pdf);
-    await fs.writeFile(path.join(this.#captureDir, `${jobId}.json`), `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+    await ensureDirAsync(this.#captureDir);
+    await writeBinaryAsync(path.join(this.#captureDir, `${jobId}.pdf`), pdf);
+    await writeTextFileAsync(path.join(this.#captureDir, `${jobId}.json`), `${JSON.stringify(sidecar, null, 2)}\n`);
     this.#jobs.push(sidecar);
 
     this.#logger.info?.('virtual-laser.job-captured', { jobId, jobName, user, copies: nCopies, duplex, bytes });
@@ -190,7 +190,7 @@ export class VirtualLaserPrinterAdapter {
   async readJob(jobId) {
     const sidecar = this.#jobs.find((j) => j.jobId === jobId);
     if (!sidecar) return null;
-    const pdf = await fs.readFile(path.join(this.#captureDir, `${jobId}.pdf`));
+    const pdf = await readBinaryFromPathAsync(path.join(this.#captureDir, `${jobId}.pdf`));
     return { ...sidecar, pdf };
   }
 

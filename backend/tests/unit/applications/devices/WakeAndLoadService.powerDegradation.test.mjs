@@ -38,7 +38,7 @@ function makeService({ device, readyResult = { ready: true }, logger }) {
   return new WakeAndLoadService({
     deviceService: { get: () => device },
     readinessPolicy: { isReady: async () => readyResult },
-    broadcast: () => {},
+    screenGateway: { screenSubscriberCount: () => 0, publishProgress() {} },
     logger,
   });
 }

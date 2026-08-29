@@ -67,14 +67,14 @@ describe('PlanAuthoringService', () => {
     expect(g2.id).toBe('ship-it-2');
   });
 
-  it('seeded fields survive a real toJSON -> new LifePlan save/load cycle', () => {
-    // A store that serializes on save (toJSON) and rehydrates on load
-    // (new LifePlan) — mirrors the YAML store. Guards against a future
-    // toJSON regression silently dropping seeded goal/belief fields.
+  it('seeded fields survive a real record -> new LifePlan save/load cycle', () => {
+    // A store that serializes a record on save and rehydrates it on load —
+    // mirrors the YAML store. Guards against persistence mappers dropping
+    // seeded goal/belief fields.
     let raw = null;
     const serializingStore = {
       load: () => (raw ? new LifePlan(raw) : null),
-      save: (_u, plan) => { raw = JSON.parse(JSON.stringify(plan.toJSON())); },
+      save: (_u, plan) => { raw = JSON.parse(JSON.stringify(plan)); },
     };
     const svc2 = new PlanAuthoringService({ lifePlanStore: serializingStore });
 

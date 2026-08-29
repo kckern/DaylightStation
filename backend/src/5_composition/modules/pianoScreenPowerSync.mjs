@@ -12,6 +12,7 @@
 
 import { PianoScreenAuthorityService } from '#apps/devices/services/PianoScreenAuthorityService.mjs';
 import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
+import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 
 /** @type {PianoScreenAuthorityService | null} */
 let instance = null;
@@ -69,6 +70,7 @@ export function createPianoScreenPowerSync({
     deviceService,
     logger,
     clock,
+    scheduler: new NodeApplicationScheduler(),
     deviceId,
     pianoPowerEntity,
     pollIntervalMs: cfg.poll_interval_ms ?? cfg.pollIntervalMs,

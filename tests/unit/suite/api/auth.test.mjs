@@ -18,8 +18,7 @@ describe('Auth Router', () => {
       authService: mockAuthService,
       jwtSecret: 'test-secret',
       jwtConfig: { issuer: 'daylight-station', expiry: '10y', algorithm: 'HS256' },
-      configService: { getDefaultHouseholdId: jest.fn() },
-      dataService: { household: { read: jest.fn() } },
+      authPublicContext: { get: jest.fn() },
       logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() }
     });
 

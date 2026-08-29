@@ -1,7 +1,7 @@
 // tests/isolated/agents/health-coach/integration/playbook_recipes.test.mjs
 import { describe, it, expect } from 'vitest';
 import { HealthQueryService } from '../../../../../backend/src/3_applications/agents/health-coach/services/HealthQueryService.mjs';
-import { ComputeSandbox } from '../../../../../backend/src/3_applications/agents/health-coach/services/ComputeSandbox.mjs';
+import { ComputeSandboxAdapter as ComputeSandbox } from '../../../../../backend/src/1_adapters/agents/health-coach/ComputeSandboxAdapter.mjs';
 import { PersonalConstantsService } from '../../../../../backend/src/3_applications/agents/health-coach/services/PersonalConstantsService.mjs';
 
 function makeFixtureServices() {
@@ -44,7 +44,10 @@ describe('integration: under-reporting-calories playbook recipe', () => {
     const fix = makeFixtureServices();
     const queryService     = new HealthQueryService({ healthStore: fix.healthStore, healthService: fix.healthService, now: fix.now });
     const sandbox          = new ComputeSandbox();
-    const constantsService = new PersonalConstantsService({ dataService: fix.dataService, healthStore: fix.healthStore });
+    const constantsService = new PersonalConstantsService({
+      workspaceRepository: { getHealthProfile: (userId) => fix.dataService.user.read('profile/health', userId) },
+      healthStore: fix.healthStore,
+    });
 
     const slopeResult = await queryService.query({
       metric: 'weight_lbs', period: { rolling: 'last_30d' }, aggregate: 'regression', userId: 'kc',

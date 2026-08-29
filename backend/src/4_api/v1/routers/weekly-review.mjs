@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 
 export function createWeeklyReviewRouter(config) {
@@ -21,7 +22,7 @@ export function createWeeklyReviewRouter(config) {
       res.json(data);
     } catch (err) {
       logger.error?.('weekly-review.api.bootstrap.error', { error: err.message, durationMs: Date.now() - startMs });
-      res.status(500).json({ ok: false, error: err.message });
+      sendInternalError(res, { ok: false, error: err.message });
     }
   });
 
@@ -69,7 +70,7 @@ export function createWeeklyReviewRouter(config) {
       res.json(result);
     } catch (err) {
       logger.error?.('weekly-review.api.recording.error', { error: err.message, durationMs: Date.now() - startMs });
-      res.status(500).json({ ok: false, error: err.message });
+      sendInternalError(res, { ok: false, error: err.message });
     }
   });
 
@@ -83,10 +84,9 @@ export function createWeeklyReviewRouter(config) {
       if (!sessionId || !week || typeof seq !== 'number') {
         return res.status(400).json({ ok: false, error: 'sessionId, seq, week required' });
       }
-      const buffer = Buffer.from(chunkBase64, 'base64');
-      const result = await weeklyReviewService.appendChunk({ sessionId, seq, week, buffer });
+      const { result, byteLength } = await weeklyReviewService.appendEncodedChunk({ sessionId, seq, week, chunkBase64 });
       logger.info?.('weekly-review.api.chunk.response', {
-        sessionId, seq, week, bytes: buffer.length, totalBytes: result.totalBytes, duplicate: !!result.duplicate, durationMs: Date.now() - startMs,
+        sessionId, seq, week, bytes: byteLength, totalBytes: result.totalBytes, duplicate: !!result.duplicate, durationMs: Date.now() - startMs,
       });
       res.json(result);
     } catch (err) {
@@ -105,7 +105,7 @@ export function createWeeklyReviewRouter(config) {
       res.json({ ok: true, drafts });
     } catch (err) {
       logger.error?.('weekly-review.api.drafts-list.error', { error: err.message });
-      res.status(500).json({ ok: false, error: err.message });
+      sendInternalError(res, { ok: false, error: err.message });
     }
   });
 
@@ -135,7 +135,7 @@ export function createWeeklyReviewRouter(config) {
       res.json(result);
     } catch (err) {
       logger.error?.('weekly-review.api.discard.error', { error: err.message });
-      res.status(500).json({ ok: false, error: err.message });
+      sendInternalError(res, { ok: false, error: err.message });
     }
   });
 

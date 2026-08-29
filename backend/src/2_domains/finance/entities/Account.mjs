@@ -72,22 +72,6 @@ export class Account {
     return Math.abs(this.balance);
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      name: this.name,
-      type: this.type,
-      balance: this.balance,
-      currency: this.currency,
-      institution: this.institution,
-      lastUpdated: this.lastUpdated,
-      metadata: this.metadata
-    };
-  }
-
-  static fromJSON(data) {
-    return new Account(data);
-  }
 }
 
 export default Account;

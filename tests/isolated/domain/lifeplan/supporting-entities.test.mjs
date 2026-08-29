@@ -34,9 +34,9 @@ describe('Dependency', () => {
     expect(dep.isSatisfied()).toBe(true);
   });
 
-  it('round-trips via toJSON', () => {
+  it('reconstitutes a stored record', () => {
     const dep = new Dependency({ type: 'resource', blocked_goal: 'g1', resource: 'savings', threshold: 50000, current: 32000 });
-    const restored = new Dependency(dep.toJSON());
+    const restored = new Dependency(JSON.parse(JSON.stringify(dep)));
     expect(restored.resource).toBe('savings');
     expect(restored.threshold).toBe(50000);
   });
@@ -234,9 +234,9 @@ describe('LifePlan (aggregate root)', () => {
     expect(plan.getBeliefById('b99')).toBeNull();
   });
 
-  it('toJSON produces valid round-trip', () => {
+  it('reconstitutes a stored plan record', () => {
     const plan = new LifePlan(planData);
-    const json = plan.toJSON();
+    const json = JSON.parse(JSON.stringify(plan));
     const restored = new LifePlan(json);
     expect(restored.purpose.statement).toBe('Maximize joy');
     expect(restored.goals).toHaveLength(3);

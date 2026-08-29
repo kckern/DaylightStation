@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * /api/v1/school/sentence-ladder — thin HTTP shell over the Sentence Ladder
  * service. `/language` remains a compatibility mount during migration.
@@ -5,14 +6,8 @@
  * parses query shapes. Follows school.mjs exactly.
  */
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 const AUDIO_CACHE = 'public, max-age=31536000, immutable';
-const EXT_CONTENT_TYPE = {
-  mp3: 'audio/mpeg', webm: 'audio/webm', ogg: 'audio/ogg', wav: 'audio/wav', m4a: 'audio/mp4',
-};
 
 /**
  * Capabilities describe the LEARNER'S DEVICE, so they arrive from the client
@@ -34,23 +29,24 @@ function readCapabilities(query = {}) {
   };
 }
 
-function sendAudioFile(res, filePath, { cache = AUDIO_CACHE } = {}) {
-  if (!filePath || !fs.existsSync(filePath)) {
-    res.status(404).json({ error: 'audio not found' });
-    return;
-  }
-  const ext = path.extname(filePath).slice(1).toLowerCase();
-  const stat = fs.statSync(filePath);
+function sendAudioResource(res, resource, { cache = AUDIO_CACHE } = {}) {
   res.writeHead(200, {
-    'Content-Type': EXT_CONTENT_TYPE[ext] || 'application/octet-stream',
-    'Content-Length': String(stat.size),
+    'Content-Type': resource.contentType || 'application/octet-stream',
+    'Content-Length': String(resource.size),
     'Accept-Ranges': 'bytes',
     'Cache-Control': cache,
   });
-  fs.createReadStream(filePath).pipe(res);
+  resource.open().pipe(res);
 }
 
-export function createLanguageRouter({ languageStudyService, studyGrants = null, schoolErrors = {}, logger = console }) {
+export function createLanguageRouter({
+  languageStudyService,
+  languageAudioResource,
+  studyGrants = null,
+  schoolErrors = {},
+  coreErrors = {},
+  logger = console,
+}) {
   // School error CLASSES arrive via the factory. A router may not import
   // 2_domains (api-layer-guidelines.md), but it does own the mapping from a
   // domain failure to an HTTP status, so it needs the types to match on.
@@ -58,6 +54,10 @@ export function createLanguageRouter({ languageStudyService, studyGrants = null,
   // throw a TypeError mid-request, which reads as a hang rather than a
   // wiring mistake. Composition always supplies these.
   const { GuestForbiddenError, GateClosedError } = schoolErrors;
+  const { ValidationError, EntityNotFoundError } = coreErrors;
+  if (!languageAudioResource) {
+    throw new Error('createLanguageRouter requires languageAudioResource');
+  }
   const router = express.Router();
 
   router.use((req, res, next) => {
@@ -99,10 +99,10 @@ export function createLanguageRouter({ languageStudyService, studyGrants = null,
           });
         }
         if (GuestForbiddenError && err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
-        if (err instanceof EntityNotFoundError) return res.status(404).json({ error: err.message });
-        if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
+        if (EntityNotFoundError && err instanceof EntityNotFoundError) return res.status(404).json({ error: err.message });
+        if (ValidationError && err instanceof ValidationError) return res.status(400).json({ error: err.message });
         logger.error?.('school.language.router.error', { path: req.path, error: err.message });
-        return res.status(500).json({ error: 'internal' });
+        return sendInternalError(res, { error: 'internal' });
       });
   };
 
@@ -178,27 +178,31 @@ export function createLanguageRouter({ languageStudyService, studyGrants = null,
     }));
   }));
 
-  // Media is addressed by (corpus, seq, language) slug and resolved to a real
-  // path server-side — a caller never supplies a filename, so nothing can
-  // traverse out of the media tree.
-  router.get('/audio/:corpusId/:seq/:lang', wrap((req, res) => {
+  // Media is addressed by (corpus, seq, language) and returned as an opaque
+  // resource. The HTTP layer never receives a storage locator.
+  router.get('/audio/:corpusId/:seq/:lang', wrap(async (req, res) => {
     const { corpusId, seq, lang } = req.params;
-    sendAudioFile(res, languageStudyService.resolveAudioPath(corpusId, seq, lang));
+    const result = await languageAudioResource.getPromptAudio({
+      corpusId,
+      seq,
+      language: lang,
+    });
+    if (result.kind !== 'found') {
+      return res.status(404).json({ error: 'audio not found' });
+    }
+    sendAudioResource(res, result.resource);
   }));
 
-  router.get('/recordings/:userId/:corpusId/:seq', wrap((req, res) => {
+  router.get('/recordings/:userId/:corpusId/:seq', wrap(async (req, res) => {
     const { userId, corpusId, seq } = req.params;
     if (!authorized(req, res, corpusId)) return;
+    const result = await languageAudioResource.getRecordingAudio({ corpusId, userId, seq });
+    if (result.kind !== 'found') {
+      return res.status(404).json({ error: 'recording not found' });
+    }
     // A learner's own voice is not content-addressed and CAN be re-recorded
     // under the same URL, so it must not be cached immutably.
-    for (const ext of ['webm', 'mp3', 'ogg', 'm4a', 'wav']) {
-      const candidate = languageStudyService.resolveRecordingPath(corpusId, userId, seq, ext);
-      if (candidate && fs.existsSync(candidate)) {
-        sendAudioFile(res, candidate, { cache: 'private, max-age=60' });
-        return;
-      }
-    }
-    res.status(404).json({ error: 'recording not found' });
+    sendAudioResource(res, result.resource, { cache: 'private, max-age=60' });
   }));
 
   return router;

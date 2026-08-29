@@ -110,11 +110,6 @@ describe('SimilarPeriodFinder', () => {
       periods: [],
     });
     expect(matches).toEqual([]);
-    // No-periods warn for non-empty signature
-    expect(logger.warn).toHaveBeenCalledWith(
-      'similar_period.no_periods',
-      expect.any(Object),
-    );
   });
 
   it('tied scores break by period name (stable sort)', () => {

@@ -4,6 +4,7 @@ import { EventAdapter } from '../EventAdapter.mjs';
 import {
   computeHrStats, pickPrimaryHrSeries, normalizeKind, resolvePeriod, toIso,
 } from '../EventQueryService.mjs';
+import { serializeSession } from '#apps/fitness/sessionRecords.mjs';
 
 export class FitnessEventAdapter extends EventAdapter {
   #sessionService;
@@ -71,7 +72,7 @@ export class FitnessEventAdapter extends EventAdapter {
       ...baseEvent,
       scalars: { ...baseEvent.scalars, hr_stats },
       // Pass-through full domain object
-      session_full: typeof session.toJSON === 'function' ? session.toJSON() : session,
+      session_full: serializeSession(session),
       timeline: session.timeline ?? null,
       strava: session.strava ?? null,
       strava_notes: session.strava_notes ?? null,

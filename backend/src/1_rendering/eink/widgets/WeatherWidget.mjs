@@ -155,10 +155,10 @@ export function draw(ctx, box, data, theme) {
   // ═══════════════════════════════════════════════════════
   // BOTTOM SECTION: Hourly forecast chart (full width)
   // ═══════════════════════════════════════════════════════
-  const hourly = weather.hourly || [];
-  const nowUnix = Math.floor(Date.now() / 1000);
-  const upcoming = hourly.filter(h => h.unix >= nowUnix).slice(0, 12);
-  const hours = upcoming.length > 0 ? upcoming : hourly.slice(0, 12);
+  // Application services normally provide `forecastHours`; the raw-hourly
+  // fallback keeps the generic renderer usable with already-ordered models.
+  // Slicing here is a fixed layout capacity, not a time/business selection.
+  const hours = (weather.forecastHours || weather.hourly || []).slice(0, 12);
 
   if (hours.length === 0) {
     ctx.restore();

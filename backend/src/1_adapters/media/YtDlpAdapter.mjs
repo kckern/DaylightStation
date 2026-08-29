@@ -16,8 +16,9 @@
 import child_process from 'child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'util';
-import fs from 'fs';
 import path from 'path';
+import { deleteFile, ensureDir, fileExists, getFileStats, readDirectory } from '#system/utils/FileIO.mjs';
+import { IVideoSourceGateway } from '#apps/media/ports/IVideoSourceGateway.mjs';
 
 const exec = promisify(child_process.exec);
 const execFileAsync = promisify(execFile);
@@ -87,15 +88,24 @@ export function buildProbeArgs(url, opts = {}) {
 /**
  * yt-dlp adapter for video source downloads
  */
-export class YtDlpAdapter {
+export class YtDlpAdapter extends IVideoSourceGateway {
   #logger;
+  #downloadRoot;
 
   /**
    * @param {Object} [deps] - Dependencies
    * @param {Object} [deps.logger] - Logger instance
    */
   constructor(deps = {}) {
+    super();
     this.#logger = deps.logger || console;
+    this.#downloadRoot = deps.downloadRoot ? path.resolve(deps.downloadRoot) : null;
+  }
+
+  #providerDirectory(provider) {
+    if (!this.#downloadRoot) throw new Error('YtDlpAdapter downloadRoot is not configured');
+    if (!/^[a-z0-9_-]+$/i.test(provider || '')) throw new Error('Invalid video provider id');
+    return path.join(this.#downloadRoot, provider);
   }
 
   /**
@@ -107,7 +117,7 @@ export class YtDlpAdapter {
    * @returns {string} Full URL
    */
   #buildUrl(source) {
-    const { src, type, id } = source;
+    const { platform: src, collectionType: type, locator: id } = source.sourceRef || source;
 
     if (src === 'youtube') {
       if (type === 'channel') {
@@ -133,7 +143,8 @@ export class YtDlpAdapter {
    * @returns {string} Extractor args string
    */
   #buildExtractorArgs(source, lang) {
-    if (source.src === 'youtube') {
+    const platform = source.sourceRef?.platform || source.src;
+    if (platform === 'youtube') {
       return `--extractor-args "youtube:lang=${lang}"`;
     }
     return '';
@@ -184,14 +195,14 @@ export class YtDlpAdapter {
    * @returns {string|null} File path or null if not found
    */
   #findDownloadedFile(dir) {
-    if (!fs.existsSync(dir)) return null;
+    if (!fileExists(dir)) return null;
 
-    const files = fs.readdirSync(dir)
+    const files = readDirectory(dir)
       .filter(f => f.endsWith('.mp4'))
       .map(f => ({
         name: f,
         path: path.join(dir, f),
-        mtime: fs.statSync(path.join(dir, f)).mtimeMs
+        mtime: getFileStats(path.join(dir, f)).mtimeMs
       }))
       .sort((a, b) => b.mtime - a.mtime);
 
@@ -233,13 +244,13 @@ export class YtDlpAdapter {
   #cleanupInvalidFiles(dirPath) {
     const validPattern = /^\d{8}\.mp4$/;
 
-    if (!fs.existsSync(dirPath)) return;
+    if (!fileExists(dirPath)) return;
 
-    for (const file of fs.readdirSync(dirPath)) {
+    for (const file of readDirectory(dirPath)) {
       const filePath = path.join(dirPath, file);
       try {
-        if (fs.statSync(filePath).isFile() && !validPattern.test(file)) {
-          fs.unlinkSync(filePath);
+        if (getFileStats(filePath).isFile() && !validPattern.test(file)) {
+          deleteFile(filePath);
           this.#logger.debug?.('ytdlp.removedInvalid', { path: filePath });
         }
       } catch (_) {}
@@ -371,11 +382,13 @@ export class YtDlpAdapter {
   /**
    * Download a thumbnail image
    * @param {string} url - Thumbnail URL
-   * @param {string} outputPath - Path to save the image (e.g., /path/to/show.jpg)
+   * @param {string} provider - Semantic provider identifier
    * @returns {Promise<boolean>} Success status
    */
-  async downloadThumbnail(url, outputPath) {
+  async downloadThumbnail(url, provider) {
     if (!url) return false;
+    const outputPath = path.join(this.#providerDirectory(provider), 'show.jpg');
+    ensureDir(path.dirname(outputPath));
 
     try {
       // Use curl or wget to download the image
@@ -383,7 +396,7 @@ export class YtDlpAdapter {
       await this.#execWithTimeout(cmd, 30000);
 
       // Verify file was created
-      return fs.existsSync(outputPath);
+      return fileExists(outputPath);
     } catch (e) {
       this.#logger.warn?.('ytdlp.thumbnailError', {
         url,
@@ -402,28 +415,25 @@ export class YtDlpAdapter {
    * @param {string} source.type - Source type (channel, playlist)
    * @param {string} source.id - Platform-specific identifier
    * @param {Object} options - Download options
-   * @param {string} options.outputDir - Directory to save video
    * @param {number} [options.maxHeight=720] - Maximum video height
    * @param {string} [options.preferredLang='en'] - Preferred audio language
    * @param {number} [options.timeoutMs=300000] - Download timeout
-   * @returns {Promise<{success: boolean, filePath?: string, uploadDate?: string, error?: string}>}
+   * @returns {Promise<{kind: 'downloaded'|'failed', assetId?: string, uploadDate?: string, error?: string}>}
    */
   async downloadLatest(source, options) {
     const {
-      outputDir,
       maxHeight = 720,
       preferredLang = 'en',
       timeoutMs = 300000
     } = options;
 
+    const outputDir = this.#providerDirectory(source.provider);
     const url = this.#buildUrl(source);
     const extractorArgs = this.#buildExtractorArgs(source, preferredLang);
     const outputTemplate = `${outputDir}/%(upload_date)s.%(ext)s`;
 
     // Ensure output directory exists
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
+    ensureDir(outputDir);
 
     // Codec preference order: HEVC -> AVC -> any
     const codecAttempts = ['hevc', 'avc', 'any'];
@@ -468,7 +478,7 @@ export class YtDlpAdapter {
         const validCodec = await this.#verifyCodec(filePath);
         if (!validCodec) {
           this.#logger.warn?.('ytdlp.invalidCodec', { provider: source.provider, filePath });
-          try { fs.unlinkSync(filePath); } catch (_) {}
+          deleteFile(filePath);
           continue;
         }
 
@@ -481,8 +491,8 @@ export class YtDlpAdapter {
         });
 
         return {
-          success: true,
-          filePath,
+          kind: 'downloaded',
+          assetId: `${source.provider}:${uploadDate || 'latest'}`,
           uploadDate
         };
 
@@ -508,7 +518,7 @@ export class YtDlpAdapter {
     });
 
     return {
-      success: false,
+      kind: 'failed',
       error: `Failed to download after ${codecAttempts.length} attempts`
     };
   }

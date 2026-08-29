@@ -19,4 +19,5 @@ export {
   isHomeAutomationGateway,
   assertHomeAutomationGateway,
   createNoOpGateway
-} from '#domains/home-automation/index.mjs';
+} from '#apps/home-automation/ports/index.mjs';
+export { HomeAssistantAmbientSensorGateway } from './HomeAssistantAmbientSensorGateway.mjs';

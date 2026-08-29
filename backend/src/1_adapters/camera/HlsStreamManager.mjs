@@ -1,7 +1,13 @@
 import { spawn as defaultSpawn } from 'child_process';
-import { mkdir, rm, access } from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import {
+  deleteDirAsync,
+  ensureDirAsync,
+  fileExistsAsync,
+  readBinaryFromPathAsync,
+  readTextFromPathAsync,
+} from '#system/utils/FileIO.mjs';
 
 const INACTIVITY_TIMEOUT_MS = 30_000;
 const PLAYLIST_POLL_MS = 500;
@@ -68,7 +74,7 @@ export class HlsStreamManager {
     this.#resetTimer(streamId);
 
     try {
-      await mkdir(dir, { recursive: true });
+      await ensureDirAsync(dir);
 
       const proc = this.#spawn('ffmpeg', [
         '-rtsp_transport', 'tcp',
@@ -102,6 +108,19 @@ export class HlsStreamManager {
     }
 
     return dir;
+  }
+
+  async readPlaylist(streamId, rtspUrl) {
+    const dir = await this.ensureStream(streamId, rtspUrl);
+    return readTextFromPathAsync(path.join(dir, 'stream.m3u8'));
+  }
+
+  async readSegment(streamId, rtspUrl, segment) {
+    if (!/^[^/\\]+\.ts$/.test(segment) || segment.includes('..')) return null;
+    const dir = await this.ensureStream(streamId, rtspUrl);
+    const segmentPath = path.join(dir, segment);
+    if (!await fileExistsAsync(segmentPath)) return null;
+    return readBinaryFromPathAsync(segmentPath);
   }
 
   /**
@@ -180,8 +199,7 @@ export class HlsStreamManager {
 
     while (Date.now() < deadline) {
       try {
-        await access(filePath);
-        return;
+        if (await fileExistsAsync(filePath)) return;
       } catch {
         // File doesn't exist yet — wait and retry
       }
@@ -209,6 +227,6 @@ export class HlsStreamManager {
    * @param {string} dir
    */
   #cleanupFiles(dir) {
-    rm(dir, { recursive: true, force: true }).catch(() => {});
+    deleteDirAsync(dir, { force: true }).catch(() => {});
   }
 }

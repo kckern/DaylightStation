@@ -8,11 +8,13 @@ import { TelegramChatRef } from '../telegram/TelegramChatRef.mjs';
 import { ConversationId } from '#domains/messaging/value-objects/ConversationId.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { retryTransient } from '#system/utils/retryTransient.mjs';
+import { IMessagingGateway } from '#apps/common/ports/IMessagingGateway.mjs';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org/bot';
 
-export class TelegramAdapter {
+export class TelegramAdapter extends IMessagingGateway {
   constructor({ token, httpClient, transcriptionService, logger }) {
+    super();
     if (!token) {
       throw new InfrastructureError('Telegram bot token is required', {
         code: 'MISSING_CONFIG',

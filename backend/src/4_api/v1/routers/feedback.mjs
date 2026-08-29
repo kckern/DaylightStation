@@ -1,4 +1,6 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
+import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 
 /**
  * Feedback API — app-wide voice-feedback capture + inbox (mounted at
@@ -12,7 +14,7 @@ import express from 'express';
  *   PATCH  /:app/:id          → triage  (body: { status?, notes? })
  *   DELETE /:app/:id          → remove item + audio
  */
-export function createFeedbackRouter({ feedbackService, logger = console }) {
+export function createFeedbackRouter({ feedbackService, logger = console, sendFileResource = sendLocalFileResource }) {
   const router = express.Router();
 
   router.post('/', async (req, res) => {
@@ -27,7 +29,7 @@ export function createFeedbackRouter({ feedbackService, logger = console }) {
       });
     } catch (err) {
       logger.error?.('feedback.create.error', { error: err.message });
-      res.status(500).json({ error: err.message });
+      sendInternalError(res, { error: err.message });
     }
   });
 
@@ -36,7 +38,7 @@ export function createFeedbackRouter({ feedbackService, logger = console }) {
       res.json({ items: feedbackService.list({ app: req.query.app || null }) });
     } catch (err) {
       logger.error?.('feedback.list.error', { error: err.message });
-      res.status(500).json({ error: err.message });
+      sendInternalError(res, { error: err.message });
     }
   });
 
@@ -47,9 +49,9 @@ export function createFeedbackRouter({ feedbackService, logger = console }) {
   });
 
   router.get('/:app/:id/audio', (req, res) => {
-    const filePath = feedbackService.audioFilePath(req.params.app, req.params.id);
-    if (!filePath) return res.status(404).json({ error: 'audio not found' });
-    res.sendFile(filePath);
+    const resource = feedbackService.audioResource(req.params.app, req.params.id);
+    if (!resource) return res.status(404).json({ error: 'audio not found' });
+    return sendFileResource(req, res, resource);
   });
 
   router.patch('/:app/:id', (req, res) => {

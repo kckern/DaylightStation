@@ -9,18 +9,25 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createHealthRouter } from '#api/v1/routers/health.mjs';
+import { HealthOperations } from '#apps/health/HealthOperations.mjs';
 
 function buildApp({ personalContextLoader, configService } = {}) {
   const app = express();
+  const healthData = {
+    loadWeightData: async () => ({}),
+    loadActivityData: async () => ({}),
+    loadFitnessData: async () => ({}),
+    loadNutritionData: async () => ({}),
+    loadCoachingData: async () => ({}),
+  };
   const router = createHealthRouter({
     healthService: { execute: () => ({}) },
-    healthStore: {
-      loadWeightData: async () => ({}),
-      loadActivityData: async () => ({}),
-      loadFitnessData: async () => ({}),
-      loadNutritionData: async () => ({}),
-      loadCoachingData: async () => ({}),
-    },
+    healthOperations: new HealthOperations({
+      healthData,
+      personalContext: personalContextLoader,
+      resolveDefaultUsername: () => configService?.getHeadOfHousehold?.() || 'default',
+      resolveCoachingUsername: () => configService?.getHeadOfHousehold?.() || null,
+    }),
     longitudinalService: { aggregate: async () => ({}) },
     configService,
     personalContextLoader,

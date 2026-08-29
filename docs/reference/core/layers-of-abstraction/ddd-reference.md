@@ -37,14 +37,19 @@
 └─────────────────────────────────────────────────┘
 ```
 
-| Layer | Can Import From | Cannot Import From |
-|-------|-----------------|-------------------|
-| `4_api` | 3_applications, 2_domains, 1_adapters, 1_rendering, 0_system | - |
-| `3_applications` | 2_domains, 1_adapters, 1_rendering, 0_system | 4_api |
-| `2_domains` | 2_domains (lower level), 0_system/utils | Everything else |
-| `1_adapters` | 2_domains, 3_applications (ports only), 0_system | 4_api, 1_rendering |
-| `1_rendering` | 2_domains, 0_system | 4_api, 3_applications, 1_adapters |
-| `0_system` | External packages only | All src layers |
+| Layer | May import at runtime | Must not import at runtime |
+|-------|-----------------------|--------------------------------|
+| `5_composition` | Any layer, solely to wire dependencies | Business logic or HTTP behavior |
+| `4_api` | API/shared HTTP utilities and injected dependencies | Applications, domains, adapters, rendering, configuration internals, Node I/O |
+| `3_applications` | Domains, application-owned ports, pure system utilities | Adapters, API, rendering, configuration internals, Node I/O |
+| `2_domains` | Lower domain levels and the documented pure shared-kernel utilities | Everything else, including clocks and persistence |
+| `1_adapters` | Domains, application-owned port contracts, system utilities | API, rendering, peer adapters, configuration singletons |
+| `1_rendering` | Domains and pure system utilities | API, applications, adapters |
+| `0_system` | External packages and other system code | All higher numbered layers (except the documented domain shared-kernel utility exception) |
+
+`5_composition` is the only sanctioned cross-layer zone. A route receives an
+already-wired use case or port; it does not import or construct it. These rules
+are authoritative where older examples in this reference use broader imports.
 
 **The inner layers are stable; the outer layers are volatile.**
 
@@ -100,7 +105,7 @@ The table below assigns **every** domain folder in `2_domains/` a level (Decisio
 |-------|----------------|
 | **0 — Foundation** | `core` |
 | **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy` |
-| **2 — Features** | `ambient`, `art`, `automotive`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gaming`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `school`, `trigger` |
+| **2 — Features** | `ambient`, `art`, `automotive`, `barcode`, `camera`, `concierge`, `cost`, `donow`, `economy`, `exercise`, `feed`, `finance`, `fitness`, `gaming`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `measures`, `media`, `midi`, `nutrition`, `piano`, `pianoaudio`, `playback-hub`, `scan`, `school`, `shutdown`, `trigger` |
 | **3 — Aggregators** | `health`, `journalist`, `lifelog`, `weekly-review` |
 
 ---
@@ -394,14 +399,18 @@ export class TelegramMessagingAdapter extends IMessagingGateway {
 | `3_applications/*/ports/` | Port interfaces (what the app needs) |
 | `1_adapters/*/` | Adapter implementations (how it's done) |
 
-### Optional Adapter Capabilities
+### Optional Provider Capabilities
 
-Some behaviour only makes sense for a subset of adapters. Rather than widening a
-port every adapter must implement, declare an **optional method**: callers probe
-for it with `typeof adapter.method === 'function'` and skip adapters that don't
-have it. Adapters that can't participate cost nothing.
+Some behaviour only makes sense for a subset of providers. Capability probing
+stays inside an infrastructure anti-corruption adapter; application services
+call a semantic port and never receive the concrete provider object. For the
+content system, `RegistryContentCatalogGateway` owns optional source-method
+checks and exposes operations such as `resolvePlayables`, `progressNamespace`,
+and `findAlternates`. Unsupported operations return the port's documented null
+or result variant.
 
-Content-source adapters currently use:
+Content-source implementations currently expose these optional hooks to that
+gateway:
 
 | Method | Implemented by | Purpose |
 |--------|----------------|---------|
@@ -412,9 +421,9 @@ Content-source adapters currently use:
 The last two exist because filesystem-backed sources are rooted at overlapping
 directories — the canvas root defaults to `<media>/img/art`, inside the `files`
 root — so the same file carries different ids and different capabilities.
-`ContentAlternatesService` pairs them up so the admin can offer a working id when
-a list row's action and its source's capabilities disagree. Plex, YouTube, and
-app sources implement neither and are skipped.
+The gateway pairs them up so the admin can offer a working id when a list row's
+action and its source's capabilities disagree. Remote and app sources implement
+neither and are skipped. Absolute paths never cross the adapter boundary.
 
 Both path methods must reject paths outside their own root, and must compare with
 the separator appended (`base + path.sep`) so a sibling directory sharing the

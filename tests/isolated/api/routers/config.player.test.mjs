@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createConfigRouter } from '../../../../backend/src/4_api/v1/routers/config.mjs';
+import { ConfigQueryService } from '../../../../backend/src/3_applications/config/ConfigQueryService.mjs';
+import { loadYaml } from '../../../../backend/src/0_system/utils/FileIO.mjs';
+import path from 'node:path';
 
 function makeLogger() {
   return {
@@ -12,13 +15,21 @@ function makeLogger() {
   };
 }
 
+function routerFor(householdDir, logger = makeLogger()) {
+  return createConfigRouter({
+    configQueryService: new ConfigQueryService({
+      loadContentPrefixes: () => loadYaml(path.join(householdDir, 'media', 'content-prefixes')),
+      loadPlayerConfig: () => loadYaml(path.join(householdDir, 'player', 'config')),
+      logger,
+    }),
+    logger,
+  });
+}
+
 describe('GET /api/v1/config/player', () => {
   it('returns on_deck config from player.yml', async () => {
     const app = express();
-    app.use('/api/v1/config', createConfigRouter({
-      householdDir: '/opt/Code/DaylightStation-on-deck/data/household',
-      logger: makeLogger(),
-    }));
+    app.use('/api/v1/config', routerFor('/opt/Code/DaylightStation-on-deck/data/household'));
     const res = await request(app).get('/api/v1/config/player');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ on_deck: { preempt_seconds: 15, displace_to_queue: false } });
@@ -26,10 +37,7 @@ describe('GET /api/v1/config/player', () => {
 
   it('returns defaults when config file is missing', async () => {
     const app = express();
-    app.use('/api/v1/config', createConfigRouter({
-      householdDir: `/tmp/nonexistent-data-${Date.now()}/household`,
-      logger: makeLogger(),
-    }));
+    app.use('/api/v1/config', routerFor(`/tmp/nonexistent-data-${Date.now()}/household`));
     const res = await request(app).get('/api/v1/config/player');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ on_deck: { preempt_seconds: 15, displace_to_queue: false } });
@@ -45,10 +53,7 @@ describe('GET /api/v1/config/player', () => {
     );
 
     const app = express();
-    app.use('/api/v1/config', createConfigRouter({
-      householdDir: `${tmpDir}/household`,
-      logger: makeLogger(),
-    }));
+    app.use('/api/v1/config', routerFor(`${tmpDir}/household`));
     const res = await request(app).get('/api/v1/config/player');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ on_deck: { preempt_seconds: 600, displace_to_queue: true } });
@@ -66,10 +71,7 @@ describe('GET /api/v1/config/player', () => {
     );
 
     const app = express();
-    app.use('/api/v1/config', createConfigRouter({
-      householdDir: `${tmpDir}/household`,
-      logger: makeLogger(),
-    }));
+    app.use('/api/v1/config', routerFor(`${tmpDir}/household`));
     const res = await request(app).get('/api/v1/config/player');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ on_deck: { preempt_seconds: 0, displace_to_queue: false } });
@@ -87,10 +89,7 @@ describe('GET /api/v1/config/player', () => {
     );
 
     const app = express();
-    app.use('/api/v1/config', createConfigRouter({
-      householdDir: `${tmpDir}/household`,
-      logger: makeLogger(),
-    }));
+    app.use('/api/v1/config', routerFor(`${tmpDir}/household`));
     const res = await request(app).get('/api/v1/config/player');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ on_deck: { preempt_seconds: 15, displace_to_queue: false } });
@@ -108,10 +107,7 @@ describe('GET /api/v1/config/player', () => {
     );
 
     const app = express();
-    app.use('/api/v1/config', createConfigRouter({
-      householdDir: `${tmpDir}/household`,
-      logger: makeLogger(),
-    }));
+    app.use('/api/v1/config', routerFor(`${tmpDir}/household`));
     const res = await request(app).get('/api/v1/config/player');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ on_deck: { preempt_seconds: 10, displace_to_queue: false } });
@@ -129,10 +125,7 @@ describe('GET /api/v1/config/player', () => {
     );
 
     const app = express();
-    app.use('/api/v1/config', createConfigRouter({
-      householdDir: `${tmpDir}/household`,
-      logger: makeLogger(),
-    }));
+    app.use('/api/v1/config', routerFor(`${tmpDir}/household`));
     const res = await request(app).get('/api/v1/config/player');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ on_deck: { preempt_seconds: 15, displace_to_queue: false } });
@@ -149,10 +142,7 @@ describe('GET /api/v1/config/player', () => {
     await fs.mkdir(`${tmpDir}/household/player/config.yml`, { recursive: true });
 
     const app = express();
-    app.use('/api/v1/config', createConfigRouter({
-      householdDir: `${tmpDir}/household`,
-      logger,
-    }));
+    app.use('/api/v1/config', routerFor(`${tmpDir}/household`, logger));
     const res = await request(app).get('/api/v1/config/player');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ on_deck: { preempt_seconds: 15, displace_to_queue: false } });

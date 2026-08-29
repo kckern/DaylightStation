@@ -77,34 +77,6 @@ export class HealthMetric {
     return this.workouts.length > 0;
   }
 
-  /**
-   * Convert to plain object for storage
-   * @returns {Object}
-   */
-  toJSON() {
-    const summary = this.getWorkoutSummary();
-    return {
-      date: this.date,
-      weight: this.weight,
-      nutrition: this.nutrition,
-      steps: this.steps,
-      workouts: this.workouts,
-      summary: {
-        total_workout_calories: summary.totalCalories,
-        total_workout_duration: summary.totalDuration
-      },
-      coaching: this.coaching
-    };
-  }
-
-  /**
-   * Create from stored data
-   * @param {Object} data
-   * @returns {HealthMetric}
-   */
-  static fromJSON(data) {
-    return new HealthMetric(data);
-  }
 }
 
 export default HealthMetric;

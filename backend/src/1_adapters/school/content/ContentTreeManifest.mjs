@@ -1,7 +1,7 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import yaml from 'js-yaml';
+import { fileExists, readBinaryFromPath, readDirectory, readTextFromPath, writeFile } from '#system/utils/FileIO.mjs';
 
 /**
  * ContentTreeManifest — drift gets a diff (admin advocacy #20). The authored
@@ -27,8 +27,8 @@ export class ContentTreeManifest {
   }
 
   #walk(dir, base = dir, out = []) {
-    if (!fs.existsSync(dir)) return out;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!fileExists(dir)) return out;
+    for (const entry of readDirectory(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) this.#walk(full, base, out);
       else if (/\.(ya?ml|md)$/.test(entry.name)) out.push(path.relative(base, full));
@@ -40,7 +40,7 @@ export class ContentTreeManifest {
     const files = {};
     for (const rel of this.#walk(this.#contentDir).sort()) {
       try {
-        const bytes = fs.readFileSync(path.join(this.#contentDir, rel));
+        const bytes = readBinaryFromPath(path.join(this.#contentDir, rel));
         files[rel] = crypto.createHash('sha1').update(bytes).digest('hex').slice(0, 12);
       } catch { /* a file deleted mid-walk is tomorrow's diff, not today's crash */ }
     }
@@ -52,7 +52,7 @@ export class ContentTreeManifest {
     const files = this.buildManifest();
     let previous = null;
     try {
-      const raw = yaml.load(fs.readFileSync(this.#manifestFile, 'utf8'));
+      const raw = yaml.load(readTextFromPath(this.#manifestFile));
       if (raw && typeof raw === 'object' && raw.files) previous = raw.files;
     } catch { /* first run, or unreadable — diff against nothing */ }
 
@@ -67,8 +67,7 @@ export class ContentTreeManifest {
       for (const rel of Object.keys(previous)) if (!(rel in files)) removed.push(rel);
     }
 
-    fs.mkdirSync(path.dirname(this.#manifestFile), { recursive: true });
-    fs.writeFileSync(this.#manifestFile, yaml.dump({
+    writeFile(this.#manifestFile, yaml.dump({
       generatedAt: now().toISOString(),
       fileCount: Object.keys(files).length,
       files,

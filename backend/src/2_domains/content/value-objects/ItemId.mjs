@@ -70,14 +70,6 @@ export class ItemId {
   }
 
   /**
-   * Convert to JSON-serializable value (returns string format)
-   * @returns {string}
-   */
-  toJSON() {
-    return this.toString();
-  }
-
-  /**
    * Check equality with another ItemId or string
    * @param {ItemId|string} other
    * @returns {boolean}

@@ -69,17 +69,6 @@ export class ConversationId {
   }
 
   /**
-   * Convert to JSON-serializable object
-   * @returns {object}
-   */
-  toJSON() {
-    return {
-      channel: this.#channel,
-      identifier: this.#identifier,
-    };
-  }
-
-  /**
    * Check equality with another ConversationId
    * @param {ConversationId} other
    * @returns {boolean}

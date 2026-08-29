@@ -6,18 +6,17 @@ export class IRecapSnapshotStore {
   /**
    * @param {string} _sessionId
    * @param {string} [_householdId]
-   * @returns {Promise<Array<{index:number, filename:string, timestamp:number, absolutePath:string}>>}
+   * @returns {Promise<Array<{index:number, filename:string, timestamp:number, captureId:object}>>}
    */
   async listCaptures(_sessionId, _householdId) {
     throw new Error('IRecapSnapshotStore.listCaptures must be implemented');
   }
 
   /**
-   * @param {string} _absolutePath
-   * @param {string} [_householdId]
-   * @returns {Promise<Buffer>}
+   * @param {object} _captureId - Opaque capture identifier returned by listCaptures
+   * @returns {Promise<unknown>} Opaque image artifact for the configured renderer
    */
-  async readCapture(_absolutePath, _householdId) {
+  async readCapture(_captureId) {
     throw new Error('IRecapSnapshotStore.readCapture must be implemented');
   }
 

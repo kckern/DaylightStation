@@ -1,6 +1,5 @@
-import os from 'node:os';
-import path from 'node:path';
 import { Session } from '#domains/fitness/entities/Session.mjs';
+import { reconstituteSession } from '../sessionRecords.mjs';
 import { evaluateRecapReadiness, SESSION_RESUME_MERGE_WINDOW_MS } from '../sessionConsolidationPolicy.mjs';
 import { buildSlug, buildPlexMeta, participantSlug, durationMinutes } from '#domains/fitness/services/recapNaming.mjs';
 
@@ -28,9 +27,9 @@ export class GenerateSessionTimelapse {
   async execute({ sessionId, householdId, force = false }) {
     const {
       sessionDatastore, snapshotStore, frameMapper, frameRenderer,
-      videoEncoder, posterProvider, avatarProvider, equipmentProvider,
+      posterProvider, avatarProvider, equipmentProvider,
       resolveName, resolveColor, resolveGroupLabel, cadenceDevices, cadenceColors,
-      mediaDir, config, fileIO, logger
+      artifactStore, config, logger
     } = this.#d;
 
     const startedAt = Date.now();
@@ -46,7 +45,7 @@ export class GenerateSessionTimelapse {
       return { status: 'disabled' };
     }
 
-    const session = Session.fromJSON(data);
+    const session = reconstituteSession(data);
 
     // Idempotency guard (critical for the recap-sweep + multi-instance safety).
     // A `ready` recap has already deleted its raw frames (cleanup), so a re-run
@@ -116,7 +115,7 @@ export class GenerateSessionTimelapse {
     });
 
     let stage = 'init';
-    const tmpDir = fileIO.mkdtempSync(path.join(os.tmpdir(), `tl-${sessionId}-`));
+    const workspace = await artifactStore.createWorkspace(sessionId);
     try {
       stage = 'gather-captures';
       const captures = await snapshotStore.listCaptures(sessionId, householdId);
@@ -127,7 +126,7 @@ export class GenerateSessionTimelapse {
       const avatarBuffers = avatarProvider ? (await avatarProvider(uniqueParticipantIds(descriptors)) || {}) : {};
       const equipmentBuffers = equipmentProvider ? (await equipmentProvider(uniqueEquipment(descriptors)) || {}) : {};
       const posterCache = new Map();
-      const bufCache = new Map(); // absolutePath -> Buffer (many output frames reuse one capture)
+      const captureCache = new Map(); // captureId -> opaque image artifact
 
       stage = 'render';
       let written = 0;
@@ -137,19 +136,18 @@ export class GenerateSessionTimelapse {
       for (const d of descriptors) {
         const cam = pickCapture(cameraCaps, d.cameraTimestamp);
         if (!cam) { cameraMissing++; continue; }
-        const cameraBuffer = await readCached(bufCache, snapshotStore, cam.absolutePath, householdId);
+        const cameraBuffer = await readCached(captureCache, snapshotStore, cam.captureId);
         // Player frame: a realtime UI capture stored just like the camera (role:player).
         let playerBuffer = null;
         const pcap = d.playerTimestamp != null ? playerByTs.get(d.playerTimestamp) : null;
         if (pcap) {
-          try { playerBuffer = await readCached(bufCache, snapshotStore, pcap.absolutePath, householdId); playerFramesUsed++; }
+          try { playerBuffer = await readCached(captureCache, snapshotStore, pcap.captureId); playerFramesUsed++; }
           catch (err) { logger.warn?.('fitness.timelapse.player_frame_read_failed', { sessionId, error: err.message }); }
         }
         const posterBuffer = await resolvePoster(d, posterCache, posterProvider, logger);
         if (posterBuffer) posterUsed = true;
         const frameBuffer = await frameRenderer.renderFrame({ cameraBuffer, playerBuffer, posterBuffer, avatarBuffers, equipmentBuffers, descriptor: d });
-        const name = `frame_${String(written).padStart(5, '0')}.jpg`;
-        fileIO.writeFileSync(path.join(tmpDir, name), frameBuffer);
+        await artifactStore.writeFrame(workspace, { index: written, bytes: frameBuffer });
         written++;
       }
       if (!written) throw new Error('no-frames-rendered');
@@ -162,12 +160,9 @@ export class GenerateSessionTimelapse {
       stage = 'encode';
       const slug = buildSlug(data);
       const plexMeta = buildPlexMeta(data, { resolveName: resolveName || null });
-      const outDir = path.join(mediaDir, 'video', 'fitness');
-      fileIO.mkdirSync(outDir, { recursive: true });
-      const outputPath = path.join(outDir, `${slug}.mp4`);
       const encodeStart = Date.now();
-      await videoEncoder.encodeSequence({
-        framesDir: tmpDir, pattern: 'frame_%05d.jpg', fps, outputPath,
+      const encoded = await artifactStore.encode(workspace, {
+        slug, fps,
         crf: config.crf ?? 26,
         ...(config.preset ? { preset: config.preset } : {}),
         metadata: plexMeta.tags
@@ -176,15 +171,13 @@ export class GenerateSessionTimelapse {
 
       stage = 'persist';
       const durationSeconds = Math.round(written / fps);
-      const relPath = path.relative(mediaDir, outputPath);
-      let sizeBytes = null;
-      try { sizeBytes = fileIO.statSync(outputPath)?.size ?? null; } catch { /* best-effort */ }
+      const { artifact, videoPath, sizeBytes } = encoded;
       // Confirm the MP4 actually landed BEFORE we touch the source frames. If the
       // encode silently produced nothing, fail here — the catch leaves the captures
       // untouched (it only removes the temp dir), so a re-run can retry instead of
       // destroying the only copy of the screenshots.
       if (!(Number(sizeBytes) > 0)) throw new Error('mp4-not-written');
-      session.attachTimelapse({ videoPath: `media/${relPath}`, durationSeconds, fps, frameCount: written, now: Date.now() });
+      session.attachTimelapse({ videoPath, durationSeconds, fps, frameCount: written, now: Date.now() });
       await sessionDatastore.save(session, householdId);
 
       // Plex-library copy: a TV-convention hardlink (`Family Fitness - SxxExx - …`)
@@ -193,7 +186,7 @@ export class GenerateSessionTimelapse {
       // a link failure must never fail the recap (the slug MP4 already landed).
       stage = 'plex-link';
       try {
-        const plexPath = linkPlexCopy(fileIO, outDir, outputPath, plexMeta.plexFileBase, logger);
+        const plexPath = await artifactStore.publishPlexCopy(artifact, { plexFileBase: plexMeta.plexFileBase });
         logger.info?.('fitness.timelapse.plex_linked', { sessionId, plexPath });
       } catch (err) {
         logger.warn?.('fitness.timelapse.plex_link_failed', { sessionId, error: err.message });
@@ -205,7 +198,7 @@ export class GenerateSessionTimelapse {
       // hard-delete (saves disk, but the recap can never be re-rendered).
       const archiveFrames = config.archive_frames !== false;
       await snapshotStore.cleanup(sessionId, householdId, { archive: archiveFrames });
-      safeRm(fileIO, tmpDir);
+      await artifactStore.discardWorkspace(workspace);
       logger.info?.('fitness.timelapse.ready', {
         sessionId, videoPath: session.timelapse.videoPath, frames: written,
         durationSeconds, fps, sizeBytes, encodeMs, totalMs: Date.now() - startedAt,
@@ -213,7 +206,7 @@ export class GenerateSessionTimelapse {
       });
       return { status: 'ready', ...session.timelapse };
     } catch (err) {
-      safeRm(fileIO, tmpDir);
+      await artifactStore.discardWorkspace(workspace);
       session.markTimelapseFailed(err, Date.now());
       await sessionDatastore.save(session, householdId);
       logger.error?.('fitness.timelapse.failed', {
@@ -224,9 +217,9 @@ export class GenerateSessionTimelapse {
   }
 }
 
-async function readCached(cache, store, absolutePath, householdId) {
-  if (!cache.has(absolutePath)) cache.set(absolutePath, await store.readCapture(absolutePath, householdId));
-  return cache.get(absolutePath);
+async function readCached(cache, store, captureId) {
+  if (!cache.has(captureId)) cache.set(captureId, await store.readCapture(captureId));
+  return cache.get(captureId);
 }
 
 async function resolvePoster(d, cache, provider, logger) {
@@ -260,24 +253,4 @@ function pickCapture(sorted, ts) {
     if (d < bestD) { best = c; bestD = d; }
   }
   return best;
-}
-function safeRm(fileIO, dir) {
-  try { fileIO.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
-}
-
-// Materialise a Plex-named copy of `srcPath` in `<outDir>/plex/`. Prefer a hardlink
-// (no extra bytes, tags stay in sync); fall back to a real copy across filesystems.
-// Returns the absolute plex path. Throws only if neither link nor copy works.
-function linkPlexCopy(fileIO, outDir, srcPath, plexFileBase, logger) {
-  const plexDir = path.join(outDir, 'plex');
-  fileIO.mkdirSync(plexDir, { recursive: true });
-  const plexPath = path.join(plexDir, `${plexFileBase}.mp4`);
-  try { if (fileIO.existsSync(plexPath)) fileIO.rmSync(plexPath, { force: true }); } catch { /* ignore */ }
-  try {
-    fileIO.linkSync(srcPath, plexPath);
-  } catch (err) {
-    logger?.debug?.('fitness.timelapse.plex_hardlink_fallback', { error: err.message });
-    fileIO.copyFileSync(srcPath, plexPath);
-  }
-  return plexPath;
 }

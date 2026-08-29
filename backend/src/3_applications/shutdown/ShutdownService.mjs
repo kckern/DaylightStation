@@ -2,17 +2,23 @@ import { ShutdownState } from '#domains/shutdown/ShutdownState.mjs';
 
 /** Owns activation plus periodic disk→websocket→Portal reconciliation. */
 export class ShutdownService {
-  #repo; #eventBus; #config; #ha; #portal; #logger; #timer = null; #signature = null; #portalSignature = null;
-  constructor({ repo, eventBus, getConfig, haGateway = null, portal = null, logger = console } = {}) {
-    if (!repo || !eventBus || !getConfig) throw new Error('ShutdownService: repo, eventBus, getConfig required');
-    this.#repo = repo; this.#eventBus = eventBus; this.#config = getConfig; this.#ha = haGateway; this.#portal = portal; this.#logger = logger;
+  #repo; #notifier; #policy; #cue; #portal; #logger; #scheduleEvery; #cancelSchedule = null; #signature = null; #portalSignature = null;
+  constructor({ repo, notifier, getPolicy, cue = null, portal = null, scheduleEvery = null, logger = console } = {}) {
+    if (!repo || !notifier?.publishState || !getPolicy) throw new Error('ShutdownService: repo, notifier, getPolicy required');
+    this.#repo = repo; this.#notifier = notifier; this.#policy = getPolicy; this.#cue = cue; this.#portal = portal;
+    this.#scheduleEvery = scheduleEvery; this.#logger = logger;
   }
-  #targets(cfg) { return [...(cfg.targets?.school_screen_ids || []).map((id) => `school:${id}`), ...(cfg.targets?.piano_device_ids || []).map((id) => `piano:${id}`)]; }
   async activate({ readerId, tagUid, now = Date.now() }) {
-    const cfg = this.#config() || {}; const state = ShutdownState.create({ durationSeconds: Number(cfg.duration_seconds) || 1800, targets: this.#targets(cfg), source: { reader_id: readerId ?? null, tag_uid: tagUid } , now });
+    const policy = this.#policy() || {};
+    const durationSeconds = Number(policy.durationSeconds) || 1800;
+    const state = new ShutdownState({
+      locked_at: new Date(now).toISOString(),
+      locked_until: new Date(now + durationSeconds * 1000).toISOString(),
+      targets: policy.targets || [],
+      source: { reader_id: readerId ?? null, tag_uid: tagUid },
+    });
     await this.#repo.save(state); await this.#publish(state, 'locked');
-    const script = cfg.home_assistant?.script;
-    if (script && this.#ha?.callService) Promise.resolve(this.#ha.callService('script', 'turn_on', { entity_id: script, variables: { locked_until: state.lockedUntil, source: 'nfc-shutdown' } })).catch((error) => this.#logger.warn?.('shutdown.ha_failed', { error: error.message }));
+    if (this.#cue?.announce) Promise.resolve(this.#cue.announce({ lockedUntil: state.lockedUntil, source: 'nfc-shutdown' })).catch((error) => this.#logger.warn?.('shutdown.cue_failed', { error: error.message }));
     return state;
   }
   async status(target, now = Date.now()) { const { state, invalid } = await this.#repo.read(); return { locked: invalid || (!!state && state.isActive(now) && state.includes(target)), lockedUntil: state?.lockedUntil ?? null, invalid }; }
@@ -21,9 +27,9 @@ export class ShutdownService {
       type,
       locked: invalid || !!state,
       lockedUntil: state?.lockedUntil ?? null,
-      targets: state?.targets ?? (invalid ? this.#targets(this.#config() || {}) : []),
+      targets: state?.targets ?? (invalid ? (this.#policy()?.targets || []) : []),
     };
-    this.#eventBus.broadcast('shutdown.state', payload);
+    this.#notifier.publishState(payload);
     await this.#syncPortal(state, invalid);
   }
   async #syncPortal(state, invalid = false) {
@@ -39,8 +45,8 @@ export class ShutdownService {
       this.#logger.warn?.('shutdown.portal_sync_failed', { error: error.message });
     }
   }
-  async reconcile() {
-    const { state, invalid } = await this.#repo.read(); const active = state?.isActive() ? state : null;
+  async reconcile(now = Date.now()) {
+    const { state, invalid } = await this.#repo.read(); const active = state?.isActive(now) ? state : null;
     const signature = invalid ? 'invalid' : active ? `${active.lockedUntil}:${active.targets.join(',')}` : 'clear';
     if (signature !== this.#signature) {
       this.#signature = signature;
@@ -50,11 +56,12 @@ export class ShutdownService {
     }
   }
   start() {
-    if (this.#timer) return;
-    const seconds = Number(this.#config()?.reconcile_seconds);
+    if (this.#cancelSchedule) return;
+    if (typeof this.#scheduleEvery !== 'function') return;
+    const seconds = Number(this.#policy()?.reconcileSeconds);
     const intervalMs = (Number.isFinite(seconds) && seconds >= 1 && seconds <= 60 ? seconds : 5) * 1000;
     void this.reconcile().catch((error) => this.#logger.warn?.('shutdown.reconcile_failed', { error: error.message }));
-    this.#timer = setInterval(() => this.reconcile().catch((error) => this.#logger.warn?.('shutdown.reconcile_failed', { error: error.message })), intervalMs);
+    this.#cancelSchedule = this.#scheduleEvery(intervalMs, () => this.reconcile().catch((error) => this.#logger.warn?.('shutdown.reconcile_failed', { error: error.message })));
   }
-  dispose() { if (this.#timer) clearInterval(this.#timer); this.#timer = null; }
+  dispose() { this.#cancelSchedule?.(); this.#cancelSchedule = null; }
 }

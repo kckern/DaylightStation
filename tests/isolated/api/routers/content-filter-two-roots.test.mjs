@@ -6,6 +6,8 @@ import { tmpdir } from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
 import { createContentFilterRouter } from '#backend/src/4_api/v1/routers/contentFilter.mjs';
+import { GetContentFilter } from '#apps/content-filter/usecases/GetContentFilter.mjs';
+import { FilesystemContentFilterRepository } from '#adapters/persistence/files/FilesystemContentFilterRepository.mjs';
 
 /**
  * Proves the content-filter router resolves TWO roots (task 9 of the
@@ -44,10 +46,16 @@ describe('content-filter router — two-root resolution', () => {
       yaml.dump({ source: 'manual', addCues: [{ id: 'manual1' }] })
     );
 
-    const router = createContentFilterRouter({
+    const logger = { info: () => {}, warn: () => {} };
+    const contentFilterRepository = new FilesystemContentFilterRepository({
       householdDir,
       mediaDir,
-      logger: { info: () => {}, warn: () => {} },
+      logger,
+    });
+    const getContentFilter = new GetContentFilter({ contentFilterRepository });
+    const router = createContentFilterRouter({
+      getContentFilter,
+      logger,
     });
     app = express();
     app.use('/api/v1/content-filter', router);
@@ -60,13 +68,22 @@ describe('content-filter router — two-root resolution', () => {
   test('merges EDL from mediaDir with profile+override from householdDir', async () => {
     const res = await request(app).get('/api/v1/content-filter/349222?profile=family');
     expect(res.status).toBe(200);
-    expect(res.body.edl.cues).toHaveLength(1);
-    expect(res.body.profile.name).toBe('family');
-    expect(res.body.override.addCues[0].id).toBe('manual1');
+    expect(res.body).toEqual({
+      edl: { cues: [{ id: 'c1', in: 1, out: 2, effect: 'mute' }] },
+      profile: { name: 'family' },
+      override: { source: 'manual', addCues: [{ id: 'manual1' }] },
+    });
   });
 
   test('404s when the EDL is missing from mediaDir even if householdDir has data', async () => {
     const res = await request(app).get('/api/v1/content-filter/999999?profile=family');
     expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'no filter data', ratingKey: '999999' });
+  });
+
+  test('preserves the invalid-ratingKey response contract', async () => {
+    const res = await request(app).get('/api/v1/content-filter/not-a-rating-key');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid ratingKey' });
   });
 });

@@ -9,10 +9,11 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   ensureDir: vi.fn(),
   writeBinary: vi.fn((p, buf) => { written.push({ path: p, bytes: buf.length, buf }); }),
 }));
-vi.mock('#system/config/UserService.mjs', () => ({ userService: { hydrateUsers: () => [] } }));
-vi.mock('#domains/core/utils/id.mjs', () => ({ shortId: () => 'x' }));
+vi.mock('#adapters/identity/ConfigUserDirectory.mjs', () => ({ userService: { hydrateUsers: () => [] } }));
+vi.mock('#system/utils/id.mjs', () => ({ shortId: () => 'x' }));
 
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 
 const configService = {
   getDefaultHouseholdId: () => 'default',
@@ -26,7 +27,7 @@ const configService = {
 function app() {
   const a = express();
   a.use(express.json());
-  a.use('/api/v1/piano', createPianoRouter({ configService, logger: { info() {}, error() {} } }));
+  a.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({ configService, logger: { info() {}, error() {} } })));
   return a;
 }
 

@@ -1,117 +1,74 @@
 import express from 'express';
-import path from 'path';
-import { promises as fs } from 'fs';
-import yaml from 'js-yaml';
-import { createArtSource } from '#adapters/content/art/sources/artSource.mjs';
-import { mergeWorkMetadata, filterWorks } from '#adapters/content/art/workMetadata.mjs';
-import { matchesCollection } from '#adapters/content/art/collections.mjs';
-import { loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 
+function sendKnownError(res, error) {
+  if (error?.code === 'ART_ADMIN_INVALID_SOURCE') {
+    res.status(400).json({ error: 'Invalid source' });
+    return true;
+  }
+  if (error?.code === 'ART_ADMIN_INVALID_WORK_ID') {
+    res.status(400).json({ error: 'Invalid work id' });
+    return true;
+  }
+  if (error?.code === 'ART_ADMIN_INVALID_PATCH') {
+    res.status(400).json({ error: error.message });
+    return true;
+  }
+  if (error?.code === 'ART_ADMIN_WORK_NOT_FOUND') {
+    res.status(404).json({ error: 'Work not found' });
+    return true;
+  }
+  return false;
+}
+
 /**
- * Admin Art router — curate the classic file-based art library.
- *   GET  /works         list works (filter: source, tag, hidden, flagged, q, page, pageSize)
- *   PATCH /works/*       merge a metadata patch into one work's metadata.yaml
+ * Admin Art HTTP translation.
  *
- * The `tag` filter doubles as a collection filter: if it names a known collection
- * (from art.yml), works are matched by rule OR hand-tag (so rule-based members are
- * curatable, not just hand-tagged ones); otherwise it matches the raw hand-tag.
- *
- * @param {Object} config
- * @param {string} config.mediaPath - base media dir; images live under <mediaPath>/img/art/<scope>/
- * @param {string} [config.householdDir] - resolved household base dir; collection defs come from <householdDir>/config/art.yml
- * @param {Function} [config.getCollections] - test seam: async () => collectionsMap (overrides householdDir load)
- * @param {Object} [config.logger=console]
+ * The injected application service owns collection filtering, validation,
+ * pagination, and persistence orchestration. This router only translates
+ * query/body values and maps application error codes to the established HTTP
+ * contract.
  */
-export function createAdminArtRouter({ mediaPath, householdDir, getCollections, logger = console }) {
+export function createAdminArtRouter({ artService, logger = console } = {}) {
+  if (!artService
+    || typeof artService.listWorks !== 'function'
+    || typeof artService.patchWork !== 'function') {
+    throw new Error('createAdminArtRouter requires artService');
+  }
   const router = express.Router();
-  const imgBasePath = path.join(mediaPath, 'img');
-  const artSource = createArtSource({ imgBasePath, logger });
-
-  // Collection defs (art.yml) drive the collection-aware tag filter. Loaded once
-  // and cached; falls back to {} so an unknown/absent art.yml just means the tag
-  // filter behaves as a plain hand-tag match.
-  let _collections = null;
-  const loadCollections = getCollections || (async () => {
-    if (_collections) return _collections;
-    try {
-      _collections = householdDir ? await loadArtCollections(householdDir, logger) : {};
-    } catch (err) {
-      logger.warn?.('admin.art.collections.load_failed', { error: err.message });
-      _collections = {};
-    }
-    return _collections;
-  });
-
-  // The art tree is the hard security boundary. `source` (a scope name) comes from
-  // the client, so resolve it and reject anything that escapes <imgBasePath>/art —
-  // otherwise a `source` of `../../etc` would relocate the whole scope before the
-  // per-work id guard below ever runs.
-  const artRoot = path.resolve(imgBasePath, 'art');
-  const safeScopeDir = (source) => {
-    const dir = path.resolve(imgBasePath, source ? `art/${source}` : 'art/classic');
-    return (dir === artRoot || dir.startsWith(artRoot + path.sep)) ? dir : null;
-  };
 
   router.get('/works', async (req, res) => {
     try {
       const { source, tag, hidden, flagged, q } = req.query;
-      if (!safeScopeDir(source)) return res.status(400).json({ error: 'Invalid source' });
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const pageSize = Math.min(2000, Math.max(1, parseInt(req.query.pageSize, 10) || 60));
-      let all = await artSource.listWorks({ folder: source && source !== 'classic' ? source : undefined });
-      // Collection-aware tag filter: a known collection name matches by rule OR tag
-      // (hidden/flagged still listed, so they can be curated); any other tag is a
-      // plain hand-tag match. q/hidden/flagged narrow further via filterWorks.
-      if (tag) {
-        const cols = await loadCollections();
-        all = Object.prototype.hasOwnProperty.call(cols, tag)
-          ? all.filter((w) => matchesCollection(tag, cols[tag] || {}, { folder: w.id, meta: w.meta }))
-          : all.filter((w) => Array.isArray(w.meta.tags) && w.meta.tags.includes(tag));
-      }
-      const filtered = filterWorks(all, {
-        q: q || undefined, hidden: hidden === 'true', flagged: flagged === 'true',
+      const result = await artService.listWorks({
+        source,
+        tag,
+        hidden: hidden === 'true',
+        flagged: flagged === 'true',
+        q: q || undefined,
+        page,
+        pageSize,
       });
-      const start = (page - 1) * pageSize;
-      res.json({ total: filtered.length, page, pageSize, works: filtered.slice(start, start + pageSize) });
-    } catch (err) {
-      // Rethrow, don't hand-roll a 500. Express 5 forwards a rejected handler
-      // to errorHandlerMiddleware, which owns status mapping and the response
-      // shape; a local 500 bypasses it and loses the correlation id.
-      logger.error?.('admin.art.list.failed', { error: err.message });
-      throw err;
+      res.json(result);
+    } catch (error) {
+      if (sendKnownError(res, error)) return;
+      logger.error?.('admin.art.list.failed', { error: error.message });
+      throw error;
     }
   });
 
-  // PATCH /works/<folder> — folder may contain slashes (sectioned scopes), so use a wildcard.
-  // The backend resolves the root-level express@5 (backend/ has no node_modules of its own,
-  // despite backend/package.json pinning ^4.18.2), so this uses the Express 5 named-wildcard
-  // form `/works/*splat`; splatPath() joins the segment array back into a path string.
   router.patch('/works/*splat', async (req, res) => {
-    const scopeDir = safeScopeDir(req.body?.source);
-    if (!scopeDir) return res.status(400).json({ error: 'Invalid source' });
-    const rawId = splatPath(req);
-    const workDir = path.resolve(scopeDir, rawId);
-    // Per-work traversal guard: the resolved work dir must stay inside the (already
-    // art-root-bounded) scope, and must name an actual work (not the scope itself).
-    if (workDir === scopeDir || !workDir.startsWith(scopeDir + path.sep)) {
-      return res.status(400).json({ error: 'Invalid work id' });
-    }
-    const file = path.join(workDir, 'metadata.yaml');
+    const { source, ...patch } = req.body || {};
+    const id = splatPath(req);
     try {
-      const patch = { ...req.body }; delete patch.source;
-      const raw = await fs.readFile(file, 'utf-8');
-      const merged = mergeWorkMetadata(raw, patch);   // throws "Invalid ..." on bad anchor/crop
-      await fs.writeFile(file, merged, 'utf-8');
-      logger.info?.('admin.art.patched', { id: rawId, fields: Object.keys(patch) });
-      res.json({ ok: true, id: rawId, meta: yaml.load(merged) });
-    } catch (err) {
-      // mergeWorkMetadata throws "Invalid crop_anchor:…" / "Invalid crop:…" on bad
-      // client input → 400, not 500.
-      if (/^Invalid /.test(err.message)) return res.status(400).json({ error: err.message });
-      if (err.code === 'ENOENT') return res.status(404).json({ error: 'Work not found' });
-      logger.error?.('admin.art.patch.failed', { id: rawId, error: err.message });
-      throw err;
+      const result = await artService.patchWork({ source, id, patch });
+      res.json(result);
+    } catch (error) {
+      if (sendKnownError(res, error)) return;
+      logger.error?.('admin.art.patch.failed', { id, error: error.message });
+      throw error;
     }
   });
 

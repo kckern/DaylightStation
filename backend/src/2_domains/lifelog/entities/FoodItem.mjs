@@ -1,5 +1,5 @@
 // backend/src/1_domains/lifelog/entities/FoodItem.mjs
-import { v4 as uuidv4 } from 'uuid';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * @typedef {Object} FoodItemProps
@@ -46,8 +46,9 @@ export class FoodItem {
    * @param {FoodItemProps} props
    */
   constructor(props) {
-    this.#id = props.id || this.#generateShortId();
-    this.#uuid = props.uuid || uuidv4();
+    if (!props.id || !props.uuid) throw new ValidationError('FoodItem id and uuid are required');
+    this.#id = props.id;
+    this.#uuid = props.uuid;
     this.#label = props.label;
     this.#icon = props.icon || '';
     this.#grams = props.grams || 0;
@@ -64,10 +65,6 @@ export class FoodItem {
     this.#cholesterol = props.cholesterol || 0;
 
     Object.freeze(this);
-  }
-
-  #generateShortId() {
-    return Math.random().toString(36).substring(2, 8);
   }
 
   // Getters
@@ -101,17 +98,6 @@ export class FoodItem {
    */
   with(updates) {
     return new FoodItem({
-      ...this.toJSON(),
-      ...updates
-    });
-  }
-
-  /**
-   * Serialize to plain object
-   * @returns {Object}
-   */
-  toJSON() {
-    return {
       id: this.#id,
       uuid: this.#uuid,
       label: this.#label,
@@ -127,17 +113,9 @@ export class FoodItem {
       fiber: this.#fiber,
       sugar: this.#sugar,
       sodium: this.#sodium,
-      cholesterol: this.#cholesterol
-    };
-  }
-
-  /**
-   * Create FoodItem from plain object
-   * @param {Object} obj
-   * @returns {FoodItem}
-   */
-  static fromJSON(obj) {
-    return new FoodItem(obj);
+      cholesterol: this.#cholesterol,
+      ...updates
+    });
   }
 
   /**
@@ -146,11 +124,7 @@ export class FoodItem {
    * @returns {FoodItem}
    */
   static create(props) {
-    return new FoodItem({
-      ...props,
-      id: undefined,
-      uuid: undefined
-    });
+    return new FoodItem(props);
   }
 
   /**

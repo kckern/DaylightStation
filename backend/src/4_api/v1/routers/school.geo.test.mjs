@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import express from 'express';
-import { createSchoolRouter } from './school.mjs';
+import { createSchoolTestRouter as createSchoolRouter } from '../../../../../tests/_lib/school/schoolRouterTestSupport.mjs';
 
 function appWith(schoolService) {
   const app = express();

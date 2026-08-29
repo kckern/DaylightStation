@@ -10,7 +10,9 @@
  * @module adapters/hardware/thermal-printer
  */
 
-export class ThermalPrinterRegistry {
+import { IPrinterFleet } from '#apps/printer/ports/IPrinterFleet.mjs';
+
+export class ThermalPrinterRegistry extends IPrinterFleet {
   #printers = new Map();
   #defaultName = null;
 

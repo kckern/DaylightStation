@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Text } from '#system/utils/sha256.mjs';
 
 /** Canonical JSON for application-level digests and idempotency keys. */
 export function stableRecordText(value) {
@@ -6,7 +6,7 @@ export function stableRecordText(value) {
 }
 
 export function stableRecordDigest(value) {
-  return createHash('sha256').update(stableRecordText(value)).digest('hex');
+  return sha256Text(stableRecordText(value));
 }
 
 function canonicalize(value) {

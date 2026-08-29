@@ -3,6 +3,7 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
+import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 
 export function toQueueItem(item) {
   const qi = {
@@ -58,6 +59,8 @@ export function toQueueItem(item) {
   if (item.slideshow) qi.slideshow = item.slideshow;
   if (item.titlecard) qi.titlecard = item.titlecard;
   if (item.segment) qi.segment = item.segment;
+  if (item.surround) qi.surround = item.surround;
+  if (item.surroundPart !== undefined) qi.surroundPart = item.surroundPart;
 
   // Rich metadata for image rendering (people/faces, dimensions)
   if (item.metadata) {
@@ -78,23 +81,8 @@ export function createQueueRouter(config) {
   // (api-layer-guidelines.md: "API has no domain knowledge"); it receives the
   // parser and calls fromQuery on it.
   const { contentExpression } = config;
-  const { contentIdResolver, queueService, logger = console } = config;
-  // Optional surround sidecar lookup (ISurroundStore port). Absent → the queue
-  // projection is exactly what it always was.
-  //
-  // `surroundPlanner` is INJECTED for the same reason `contentExpression` is: a
-  // router may not import 3_applications (api-layer-guidelines.md, FORBIDDEN
-  // imports: "Containers are injected | Receive via factory params"). It decides
-  // container expansion and authored order; this router only asks and projects.
-  //
-  // `surroundEnforceOrder` is config `surround.enforceOrder`, resolved in
-  // composition and defaulting to true here as well, so a router built without
-  // it still imposes a container's authored order rather than silently opting
-  // every programme out.
-  const { surroundStore = null, surroundPlanner = null, surroundEnforceOrder = true } = config;
-  // Surround keeps its own subsystem identity so its events stay queryable
-  // apart from the generic queue stream.
-  const surroundLogger = logger?.child?.({ app: 'surround', module: 'queue-router' }) ?? logger;
+  const { contentAccessService, logger = console } = config;
+  const { queuePresentationService } = config;
   const router = express.Router();
 
   const handleQueueRequest = asyncHandler(async (req, res) => {
@@ -112,31 +100,15 @@ export function createQueueRouter(config) {
     const limitParsed = Number.parseInt(limitRaw, 10);
     const limit = Number.isFinite(limitParsed) && limitParsed > 0 ? limitParsed : null;
 
-    // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
-    let resolved = contentIdResolver.resolve(compoundId);
+    const outcome = await contentAccessService.queue({ compoundId, parsedSource, localId, shuffle });
+    const resolvedSource = outcome.source;
 
-    // Fallback: if resolution failed and there's no localId, the source segment
-    // might be a bare content reference (e.g., "music-queue", "fhe").
-    // Try resolving the raw source name directly through ContentIdResolver.
-    if (!resolved?.adapter && !localId && parsedSource) {
-      resolved = contentIdResolver.resolve(parsedSource);
-    }
-
-    // Fallback: try as a saved query name (query:name) for bare names
-    if (!resolved?.adapter && !localId && parsedSource) {
-      resolved = contentIdResolver.resolve(`query:${parsedSource}`);
-    }
-
-    let adapter = resolved?.adapter;
-    let finalId = resolved ? `${resolved.source}:${resolved.localId}` : compoundId;
-    const resolvedSource = resolved?.source ?? parsedSource;
-
-    if (!adapter) {
+    if (outcome.kind === 'unknown_source') {
       logger.warn?.('queue.source.unknown', { compoundId, source: resolvedSource, ip: req.ip });
       return res.status(404).json({ error: `Unknown source: ${resolvedSource}` });
     }
 
-    if (!adapter.resolvePlayables) {
+    if (outcome.kind === 'unsupported') {
       logger.warn?.('queue.source.no_playables', { compoundId, source: resolvedSource, ip: req.ip });
       return res.status(400).json({
         error: 'Source does not support queue resolution',
@@ -144,31 +116,13 @@ export function createQueueRouter(config) {
       });
     }
 
-    const playables = await adapter.resolvePlayables(finalId);
-    const audioConfig = playables.audio || null;
-
-    let items = await queueService.resolveQueue(playables, resolvedSource, { shuffle });
-
-    // THIS is where a media item learns it is a part rather than a whole work:
-    // the queue request names the container, the play request does not, and
-    // that difference — not the id — is what decides which frame it gets. It
-    // runs before `limit` on purpose, so a truncated queue keeps the
-    // programme's FIRST parts rather than the first parts of whatever order
-    // the adapter happened to return.
-    const surroundPlan = surroundPlanner?.({
-      surroundStore,
+    const finalId = outcome.finalId;
+    const audioConfig = outcome.audio;
+    const { items, totalDuration } = queuePresentationService.prepare({
       containerId: finalId,
-      items,
-      enforceOrder: surroundEnforceOrder,
-      logger: surroundLogger
-    }) ?? null;
-    if (surroundPlan) items = surroundPlan.items;
-
-    if (limit) {
-      items = items.slice(0, limit);
-    }
-
-    const totalDuration = items.reduce((sum, item) => sum + (item.duration || 0), 0);
+      items: outcome.items,
+      limit,
+    });
 
     logger.info?.('queue.resolve', {
       source: resolvedSource,
@@ -177,52 +131,7 @@ export function createQueueRouter(config) {
       totalDuration
     });
 
-    const queueItems = items.map(toQueueItem);
-
-    // Enrichment lives here, not in toQueueItem: that mapper stays pure and
-    // storage-unaware. Per item, so one bad sidecar can never cost the queue.
-    for (const qi of queueItems) {
-      try {
-        // A container's rail outranks an item's claim on itself, so the plan is
-        // asked first. It becomes the ONLY source exactly when it REFUSED —
-        // falling through to the per-item lookup there would hand each episode
-        // its own standalone frame, which is the rail-that-lies the refusal
-        // exists to prevent. An item merely absent from a successful plan was
-        // refused nothing, and keeps the sidecar it has always had: a container
-        // naming three of a collection's ten items leaves the other seven be.
-        const part = surroundPlan?.surroundFor.get(qi.contentId) ?? null;
-        const surround = part?.payload
-          ?? (surroundPlan?.refused ? null : surroundStore?.lookup(qi.contentId, qi.title));
-        if (surround) {
-          qi.surround = surround;
-          if (part) {
-            qi.surroundPart = part.part;
-            // A PROGRAMME STARTS AT THE TOP OF EACH WORK. Every part is its own
-            // media item with its own saved playhead, so a season played end to
-            // end dropped into the middle of part two — wherever that episode
-            // was last abandoned — while the rail, which is right, drew the
-            // playhead a third of the way along a work that had just started.
-            // Resume is a fact about watching ONE thing; `parts:` is the
-            // statement that these seven are one thing, and it outranks it.
-            //
-            // The SUPPRESSION is all that happens here: `watchProgress` still
-            // reports what the file has seen, and playing that episode on its
-            // own resumes exactly as it always did — this is the container's
-            // reading of it, not a rewrite of the watch state.
-            qi.resumePosition = null;
-            qi.resume = false;
-          }
-          surroundLogger?.debug?.('surround.attach', {
-            contentId: qi.contentId,
-            surroundId: surround.id,
-            path: 'queue',
-            ...(part ? { containerId: finalId, part: part.part } : {})
-          });
-        }
-      } catch (err) {
-        surroundLogger?.warn?.('surround.attach.failed', { contentId: qi.contentId, error: err?.message });
-      }
-    }
+    const queueItems = presentPublicResources(items.map(toQueueItem));
 
     res.json({
       source: resolvedSource,

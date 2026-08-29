@@ -3,6 +3,8 @@ import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createListRouter, toListItem } from '#backend/src/4_api/v1/routers/list.mjs';
+import { ListBrowseService } from '#apps/content/services/ListBrowseService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 describe('List API Router', () => {
   let app;
@@ -73,8 +75,7 @@ describe('List API Router', () => {
 
     app = express();
     app.use('/api/list', createListRouter({
-      registry: mockRegistry,
-      contentIdResolver: mockContentIdResolver,
+      listBrowse: new ListBrowseService({ contentCatalog: new RegistryContentCatalogGateway({ registry: mockRegistry }), contentIdResolver: mockContentIdResolver }),
     }));
   });
 

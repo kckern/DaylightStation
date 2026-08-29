@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   formatPeopleList, getTimeOfDayLabel, formatDayPeriod, buildPhotoTitle, formatPhotoDate,
   orderPeopleByFace,
-} from '../../../backend/src/1_adapters/content/gallery/immich/photoLabels.mjs';
+} from '#shared/content/immich/photoLabels.mjs';
 
 // Shared Immich label helpers (used by ImmichFeedAdapter + art/immichSource).
 const ISO = '2025-06-15T17:30:00Z';

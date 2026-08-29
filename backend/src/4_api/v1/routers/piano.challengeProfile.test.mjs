@@ -3,16 +3,17 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 
 function appWith({ roles = ['kiosk'], user = null, knownUser = true, service = null } = {}) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => { req.roles = roles; req.user = user; next(); });
-  app.use('/api/v1/piano', createPianoRouter({
+  app.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({
     pianoContainer: { studioDatastore: { isKnownUser: () => knownUser }, composerSongStore: {} },
     pianoChallengeProfileService: service,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  }));
+  })));
   return app;
 }
 

@@ -8,6 +8,7 @@ import { createQueueRouter } from './queue.mjs';
 // reason: the router may not import 3_applications, so the tests exercise the
 // real wiring rather than a shape the router happens to accept.
 import { planSurroundQueue } from '#apps/content/services/surroundQueuePlan.mjs';
+import { QueuePresentationService } from '#apps/content/QueuePresentationService.mjs';
 
 const PAYLOAD = {
   id: 'concert-hall',
@@ -35,15 +36,20 @@ const makeLogger = () => {
 
 const makeApp = ({ items, surroundStore, logger = makeLogger(), localId = 'eroica', ...rest }) => {
   const app = express();
-  const adapter = { resolvePlayables: vi.fn().mockResolvedValue({ items }) };
   app.use('/api/v1/queue', createQueueRouter({
     contentExpression: { fromQuery: () => ({ options: {} }) },
-    contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId }) },
-    queueService: { resolveQueue: vi.fn().mockResolvedValue(items) },
-    surroundStore,
-    surroundPlanner: planSurroundQueue,
+    contentAccessService: {
+      queue: vi.fn().mockResolvedValue({
+        kind: 'found', source: 'plex', finalId: `plex:${localId}`, audio: null, items,
+      }),
+    },
+    queuePresentationService: new QueuePresentationService({
+      surroundStore,
+      surroundPlanner: planSurroundQueue,
+      enforceOrder: rest.surroundEnforceOrder ?? true,
+      logger,
+    }),
     logger,
-    ...rest
   }));
   return app;
 };
@@ -211,13 +217,18 @@ describe('queue router container expansion', () => {
 
   it('orders before truncating, so a limited queue keeps the programme\'s first parts', async () => {
     const app = express();
-    const adapter = { resolvePlayables: vi.fn().mockResolvedValue({ items: shuffledEpisodes }) };
     app.use('/api/v1/queue', createQueueRouter({
       contentExpression: { fromQuery: () => ({ options: { limit: '2' } }) },
-      contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId: '696233' }) },
-      queueService: { resolveQueue: vi.fn().mockResolvedValue(shuffledEpisodes) },
-      surroundStore: seasonStore(),
-      surroundPlanner: planSurroundQueue,
+      contentAccessService: {
+        queue: vi.fn().mockResolvedValue({
+          kind: 'found', source: 'plex', finalId: 'plex:696233', audio: null, items: shuffledEpisodes,
+        }),
+      },
+      queuePresentationService: new QueuePresentationService({
+        surroundStore: seasonStore(),
+        surroundPlanner: planSurroundQueue,
+        logger: makeLogger(),
+      }),
       logger: makeLogger()
     }));
     const res = await request(app).get('/api/v1/queue/plex:696233');

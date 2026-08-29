@@ -10,6 +10,7 @@
  */
 
 import { PianoMidiWakeService } from '#apps/devices/services/PianoMidiWakeService.mjs';
+import { PianoMidiBridgeAdapter } from '#adapters/devices/PianoMidiBridgeAdapter.mjs';
 import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
 
 /** @type {PianoMidiWakeService | null} */
@@ -25,6 +26,7 @@ let instance = null;
  */
 export function createPianoMidiWake({
   deviceService, configService, householdId = null, logger = console,
+  bridgeFactory = (options) => new PianoMidiBridgeAdapter(options),
 } = {}) {
   if (instance) {
     logger.warn?.('piano-midi-wake.already_created');
@@ -61,7 +63,7 @@ export function createPianoMidiWake({
     deviceService,
     logger,
     deviceId,
-    bridgeUrl,
+    bridge: bridgeFactory({ bridgeUrl, logger }),
     cooldownMs: cfg.cooldown_ms ?? cfg.cooldownMs,
     screenOverride: getScreenOverrideService(),
   });

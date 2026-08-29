@@ -26,6 +26,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transformSync } from 'esbuild';
+import { listIndexFiles, readIndexFiles } from './index-snapshot.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -55,6 +56,7 @@ const MARKER_EXT = new Set([...PARSE_EXT, '.json', '.yml', '.yaml', '.scss', '.c
 const MARKER = /^(?:<{7} |>{7} |\|{7} )/m;
 
 const LOADER = { '.jsx': 'jsx', '.tsx': 'tsx', '.ts': 'ts' };
+const STAGED = process.argv.includes('--staged');
 
 function* walk(dir) {
   let entries;
@@ -78,14 +80,23 @@ const failures = [];
 let parsed = 0;
 let scanned = 0;
 
-for (const file of walk(ROOT)) {
+const stagedFiles = STAGED
+  ? listIndexFiles().filter((file) => !file.split('/').some((part) => SKIP_DIRS.has(part)))
+  : null;
+const stagedSnapshot = STAGED
+  ? readIndexFiles(stagedFiles.filter((file) => MARKER_EXT.has(extname(file))), ROOT)
+  : null;
+const candidateFiles = STAGED ? stagedFiles.map((file) => join(ROOT, file)) : walk(ROOT);
+
+for (const file of candidateFiles) {
   const ext = extname(file);
   if (!MARKER_EXT.has(ext)) continue;
 
   let source;
   try {
-    if (statSync(file).size > 4 * 1024 * 1024) continue; // minified/vendored blob
-    source = readFileSync(file, 'utf8');
+    if (!STAGED && statSync(file).size > 4 * 1024 * 1024) continue; // minified/vendored blob
+    source = STAGED ? stagedSnapshot.get(relative(ROOT, file)) : readFileSync(file, 'utf8');
+    if (Buffer.byteLength(source) > 4 * 1024 * 1024) continue;
   } catch {
     continue;
   }
@@ -130,4 +141,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`Parse gate OK — ${parsed} parsed, ${scanned} scanned for conflict markers.`);
+console.log(`Parse gate OK — ${parsed} parsed, ${scanned} ${STAGED ? 'staged ' : ''}files scanned for conflict markers.`);

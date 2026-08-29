@@ -1,12 +1,12 @@
 // backend/src/1_adapters/content/surround/YamlSurroundStore.mjs
 import path from 'path';
-import { realpathSync } from 'node:fs';
 import {
   dirExists,
   getStats,
   listDirs,
   listYamlFiles,
-  loadYamlFromPath
+  loadYamlFromPath,
+  resolveRealPath,
 } from '#system/utils/FileIO.mjs';
 import { deepMerge } from '#system/utils/deepMerge.mjs';
 import { ISurroundStore } from '#apps/content/ports/ISurroundStore.mjs';
@@ -409,8 +409,7 @@ export class YamlSurroundStore extends ISurroundStore {
     // of the files is the same as not watching at all.
     const seen = new Set();
     const descend = (dir) => {
-      let real;
-      try { real = realpathSync(dir); } catch { real = dir; }
+      const real = resolveRealPath(dir) ?? dir;
       if (seen.has(real)) return;
       seen.add(real);
 
@@ -682,8 +681,7 @@ export class YamlSurroundStore extends ISurroundStore {
   #loadLibraryDir(dir, rel, composers, works, seen) {
     // An unreadable or vanished directory is not a cycle — fall back to the
     // joined path so the walk still terminates on it rather than throwing.
-    let real;
-    try { real = realpathSync(dir); } catch { real = dir; }
+    const real = resolveRealPath(dir) ?? dir;
     if (seen.has(real)) return;
     seen.add(real);
 

@@ -7,7 +7,10 @@ const adapter = (transcript, { sessionId, ply }) => transcript?.valid && ply ===
 
 function make({ chat = null, enabled = true, config = {}, rivalry = null, ladder = null } = {}) {
   return new OpponentDialogueService({
-    aiGateway: chat ? { chat } : null,
+    dialogueGenerator: chat ? { available: true, generate: ({ instruction, prompt }) => chat([
+      { role: 'system', content: instruction },
+      { role: 'user', content: prompt },
+    ]) } : null,
     adapters: { test: adapter },
     readConfig: async () => ({ personality: { enabled, ...config } }),
     resolveOpponent: async () => ({ level: 1, position: 1, total: 7, rosterPack: 'test', opponent: { name: 'Pip' } }),

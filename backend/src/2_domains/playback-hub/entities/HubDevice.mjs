@@ -52,10 +52,7 @@ export class HubDevice {
    * }} args
    *
    * `extras` is an optional plain object of arbitrary YAML keys not modeled
-   * by the domain (e.g. `queue` — the per-device default queue, a hub-side
-   * convenience field). The datastore preserves these so round-trip
-   * read→write is non-destructive. Keys that collide with modeled fields
-   * are silently overridden by the modeled values on toYaml emission.
+   * by the domain. The datastore preserves these during persistence mapping.
    */
   constructor({
     position,
@@ -185,51 +182,6 @@ export class HubDevice {
     });
   }
 
-  /**
-   * Sparse-preserving YAML serialization. Only emits fields the user would
-   * have written: required fields always, optional fields only when set.
-   * @returns {object}
-   */
-  toYaml() {
-    const out = {
-      slot: this.#position.value,
-      color: this.#color.value,
-      mac: this.#mac,
-      class: this.#class.value
-    };
-    if (this.#haEntityId !== null) {
-      out.ha_entity_id = this.#haEntityId;
-    }
-    if (this.#haTurnOffOnStop) {
-      out.ha_turn_off_on_stop = true;
-    }
-    const volumeYaml = this.#volumeBounds.toYaml();
-    if (Object.keys(volumeYaml).length > 0) {
-      out.volume = volumeYaml;
-    }
-    if (this.#continuousSchedules.length > 0) {
-      out.schedules = this.#continuousSchedules.map(s => {
-        const entry = {
-          start: s.start,
-          end: s.end,
-          queue: s.queue.toString()
-        };
-        if (s.shuffle) entry.shuffle = true;
-        return entry;
-      });
-    }
-    // Merge in any pass-through YAML keys not modeled by the domain
-    // (e.g. `queue` — the hub-side default-queue convenience field).
-    // Modeled keys always win on collision.
-    if (this.#extras !== null) {
-      for (const k of Object.keys(this.#extras)) {
-        if (!(k in out)) {
-          out[k] = this.#extras[k];
-        }
-      }
-    }
-    return out;
-  }
 }
 
 export default HubDevice;

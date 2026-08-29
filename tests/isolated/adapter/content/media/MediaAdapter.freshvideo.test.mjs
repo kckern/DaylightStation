@@ -111,7 +111,7 @@ function makeMediaAdapter({ watchedKeys = [] } = {}) {
 
   // Stub mediaProgressMemory
   adapter.mediaProgressMemory = {
-    get(key) {
+    findProgress(key) {
       const cleanKey = key.replace(/^(files|media):/, '');
       const percent = watchedKeys.includes(cleanKey) ? 95 : 0;
       return { percent };

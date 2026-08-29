@@ -1,8 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { createCameraLedgerJobHandler } from './cameraLedgerJobHandler.mjs';
 
 /**
@@ -18,35 +15,40 @@ import { createCameraLedgerJobHandler } from './cameraLedgerJobHandler.mjs';
 
 const noopLogger = { info() {}, warn() {}, error() {} };
 
-function makeCameraAdapters() {
+function makeRuntimeGateway({ devices, cameras }) {
+  const plan = { cameras, filenameBitsByCamera: {}, dayOffset: -1 };
   return {
-    ReolinkClient: class ReolinkClient {
-      constructor(opts) { this.opts = opts; }
+    loadLedgerPlan: () => plan,
+    loadArchivePlan: () => ({ cameras: [] }),
+    createArchiveRuntime: () => ({}),
+    createLedgerRuntime: () => {
+      if (!devices['camera-nvr']?.host) {
+        const error = new Error("camera device 'camera-nvr' has no host");
+        error.code = 'CAMERA_AUTH_UNAVAILABLE';
+        throw error;
+      }
+      return {
+        detectionSource: null,
+        decodeTriggerBits: () => ({ labels: [] }),
+        createSources(camera) {
+          if (!devices[camera.id]?.host) throw new Error(`camera device '${camera.id}' has no host`);
+          return {
+            camera: { search: async () => [] },
+            nvr: { search: async () => [] },
+          };
+        },
+      };
     },
-    makeSource: () => ({ search: async () => [] }),
-    createHaDetectionSource: () => ({ fetchDay: async () => [] }),
-    parseTriggerBits: () => ({ labels: [] }),
   };
 }
 
-function makeConfigService({ devices, cameras }) {
-  const ledgerDir = mkdtempSync(path.join(tmpdir(), 'camera-ledger-test-'));
-  return {
-    ledgerDir,
-    getHouseholdAppConfig: () => ({
-      cameras,
-      storage: { ledgerPaths: [ledgerDir] },
-      sources: { streamType: 'sub' },
-      classification: { sensorsByCamera: {}, filenameBits: {} },
-      ledger: { dayOffset: -1 },
-    }),
-    getDeviceConfig: (id) => devices[id] ?? null,
-    getHouseholdAuth: (ref) => (ref === 'reolink' ? { username: 'u', password: 'p' } : null),
-  };
-}
+const ledgerStore = {
+  write: async () => ({ copies: 2 }),
+  read: async () => [],
+};
 
 test('happy path: resolves host + auth from devices.yml and does the per-camera work', async () => {
-  const configService = makeConfigService({
+  const runtimeGateway = makeRuntimeGateway({
     devices: {
       'cam-a': { host: '10.0.0.56', auth_ref: 'reolink' },
       'camera-nvr': { host: '10.0.0.70', auth_ref: 'reolink' },
@@ -54,8 +56,8 @@ test('happy path: resolves host + auth from devices.yml and does the per-camera 
     cameras: [{ id: 'cam-a', nvrChannel: 1 }],
   });
   const handler = createCameraLedgerJobHandler({
-    configService,
-    cameraAdapters: makeCameraAdapters(),
+    runtimeGateway,
+    ledgerStore,
     logger: noopLogger,
   });
 
@@ -65,11 +67,10 @@ test('happy path: resolves host + auth from devices.yml and does the per-camera 
   assert.equal(result.results.length, 1);
   assert.equal(result.results[0].camera, 'cam-a');
   assert.equal(result.results[0].error, undefined);
-  rmSync(configService.ledgerDir, { recursive: true, force: true });
 });
 
 test('camera-nvr missing from devices.yml: graceful no-auth skip, does not throw', async () => {
-  const configService = makeConfigService({
+  const runtimeGateway = makeRuntimeGateway({
     devices: {
       'cam-a': { host: '10.0.0.56', auth_ref: 'reolink' },
       // camera-nvr intentionally absent
@@ -77,8 +78,8 @@ test('camera-nvr missing from devices.yml: graceful no-auth skip, does not throw
     cameras: [{ id: 'cam-a', nvrChannel: 1 }],
   });
   const handler = createCameraLedgerJobHandler({
-    configService,
-    cameraAdapters: makeCameraAdapters(),
+    runtimeGateway,
+    ledgerStore,
     logger: noopLogger,
   });
 
@@ -86,11 +87,10 @@ test('camera-nvr missing from devices.yml: graceful no-auth skip, does not throw
   const result = await handler(noopLogger, 'exec-no-nvr-2');
 
   assert.deepEqual(result, { skipped: true, reason: 'no-auth' });
-  rmSync(configService.ledgerDir, { recursive: true, force: true });
 });
 
 test('one camera failing (bad devices.yml entry) does not abort the other', async () => {
-  const configService = makeConfigService({
+  const runtimeGateway = makeRuntimeGateway({
     devices: {
       'cam-a': { host: '10.0.0.56', auth_ref: 'reolink' },
       // cam-b has no host in devices.yml -> resolveCameraEndpoint throws,
@@ -101,8 +101,8 @@ test('one camera failing (bad devices.yml entry) does not abort the other', asyn
     cameras: [{ id: 'cam-a', nvrChannel: 1 }, { id: 'cam-b', nvrChannel: 0 }],
   });
   const handler = createCameraLedgerJobHandler({
-    configService,
-    cameraAdapters: makeCameraAdapters(),
+    runtimeGateway,
+    ledgerStore,
     logger: noopLogger,
   });
 
@@ -113,5 +113,4 @@ test('one camera failing (bad devices.yml entry) does not abort the other', asyn
   const camB = result.results.find((r) => r.camera === 'cam-b');
   assert.equal(camA.error, undefined);
   assert.match(camB.error, /cam-b/);
-  rmSync(configService.ledgerDir, { recursive: true, force: true });
 });

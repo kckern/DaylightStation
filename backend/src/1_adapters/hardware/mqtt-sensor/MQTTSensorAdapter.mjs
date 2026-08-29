@@ -13,8 +13,8 @@
  */
 
 import mqtt from 'mqtt';
-import fs from 'fs';
 import path from 'path';
+import { createAppendWriteStream } from '#system/utils/FileIO.mjs';
 
 /**
  * @typedef {Object} MQTTConfig
@@ -288,10 +288,8 @@ export class MQTTSensorAdapter {
     if (this.#logStreams.has(equipmentId)) return this.#logStreams.get(equipmentId);
 
     const dir = path.join(this.#logsPath, 'vibration');
-    fs.mkdirSync(dir, { recursive: true });
-
     const filePath = path.join(dir, `${equipmentId}.jsonl`);
-    const stream = fs.createWriteStream(filePath, { flags: 'a' });
+    const stream = createAppendWriteStream(filePath);
     stream.on('error', (err) => {
       this.#logger.error?.('mqtt.log.writeError', { equipment: equipmentId, error: err.message });
     });

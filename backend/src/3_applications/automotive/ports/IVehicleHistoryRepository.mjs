@@ -31,10 +31,10 @@ export class IVehicleHistoryRepository {
   /**
    * One full trip recording, samples included.
    * @param {string} vehicleId
-   * @param {string} relPath  path relative to the vehicle's trips/ dir
+   * @param {string} tripRef  opaque trip reference returned by this repository
    * @returns {Promise<object|null>}
    */
-  async readTrip(vehicleId, relPath) {
+  async readTrip(vehicleId, tripRef) {
     throw new Error('IVehicleHistoryRepository.readTrip must be implemented');
   }
 

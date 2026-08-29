@@ -18,6 +18,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
+import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
 import { FakeSessionRepository, fakeClock, silentLogger } from '#testlib/school/lifecycleFakes.mjs';
 
 class FakeEventBus {
@@ -53,7 +54,7 @@ const build = () => {
   sessions = new FakeSessionRepository();
   eventBus = new FakeEventBus();
   close = { execute: vi.fn(async ({ sessionId }) => ({ status: 'settled', sessionId, result: 'passed' })) };
-  bridge = new DoNowSchoolBridge({ eventBus, sessions, closeSessionOutcome: close, clock: clock.now, logger: silentLogger });
+  bridge = new DoNowSchoolBridge({ realtime: new EventBusSchoolRealtimeAdapter({ eventBus }), sessions, closeSessionOutcome: close, clock: clock.now, logger: silentLogger });
 };
 
 /** The shape DoNowService actually broadcasts for an approved dispatch. */
@@ -67,8 +68,9 @@ beforeEach(() => build());
 describe('construction', () => {
   it('requires eventBus, sessions and closeSessionOutcome', () => {
     expect(() => new DoNowSchoolBridge({})).toThrow();
-    expect(() => new DoNowSchoolBridge({ eventBus, sessions })).toThrow();
-    expect(() => new DoNowSchoolBridge({ eventBus, closeSessionOutcome: close })).toThrow();
+    const realtime = new EventBusSchoolRealtimeAdapter({ eventBus });
+    expect(() => new DoNowSchoolBridge({ realtime, sessions })).toThrow();
+    expect(() => new DoNowSchoolBridge({ realtime, closeSessionOutcome: close })).toThrow();
   });
 });
 
@@ -206,7 +208,7 @@ describe('the ownership filter (spec §6)', () => {
   it('a session-read failure is swallowed, never thrown out of the handler', async () => {
     const throwingSessions = { readEvents: async () => { throw new Error('disk unavailable'); } };
     bridge = new DoNowSchoolBridge({
-      eventBus, sessions: throwingSessions, closeSessionOutcome: close, clock: clock.now, logger: silentLogger,
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus }), sessions: throwingSessions, closeSessionOutcome: close, clock: clock.now, logger: silentLogger,
     });
     bridge.start();
     await expect(eventBus.emit('donow', approvedPayload({ ref: 'ses_1' }))).resolves.not.toThrow();

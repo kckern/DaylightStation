@@ -4,6 +4,7 @@
 
 import { densityForLevel, buildConfirmButtons } from '../lib/scaleNutribotConfig.mjs';
 import { ApplicationError } from '#apps/common/errors/index.mjs';
+import { serializeFoodItem } from '../nutriLogRecords.mjs';
 
 export class SelectScaleDensity {
   #messagingGateway; #foodLogStore; #conversationStateStore; #scaleConfig; #logger; #encodeCallback;
@@ -34,7 +35,7 @@ export class SelectScaleDensity {
     if (!nutriLog || !nutriLog.items?.length) throw scaleError('log not found', 'LOG_NOT_FOUND', { logUuid });
     if (nutriLog.status !== 'pending') throw scaleError('already processed', 'ALREADY_PROCESSED', { logUuid });
 
-    const item0 = typeof nutriLog.items[0].toJSON === 'function' ? nutriLog.items[0].toJSON() : { ...nutriLog.items[0] };
+    const item0 = serializeFoodItem(nutriLog.items[0]);
     const grams = Math.round(Number(item0.grams));
     const calories = Math.round(grams * lvl.kcal_per_g);
 

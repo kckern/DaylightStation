@@ -154,8 +154,9 @@ export class OpenAICostSource extends ICostSource {
       ? 'ai/openai/whisper/transcription'
       : `ai/openai/${model}/chat`;
 
+    const idTimestamp = new Date();
     const entry = new CostEntry({
-      id: CostEntry.generateId(),
+      id: CostEntry.generateId(idTimestamp, Math.random),
       occurredAt: new Date(),
       amount: new Money(totalCost),
       category: CostCategory.fromString(categoryPath),

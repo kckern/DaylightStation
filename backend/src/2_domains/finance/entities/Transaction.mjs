@@ -76,23 +76,6 @@ export class Transaction {
     this.tags = this.tags.filter(t => t !== tag);
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      date: this.date,
-      amount: this.amount,
-      description: this.description,
-      category: this.category,
-      accountId: this.accountId,
-      type: this.type,
-      tags: this.tags,
-      metadata: this.metadata
-    };
-  }
-
-  static fromJSON(data) {
-    return new Transaction(data);
-  }
 }
 
 export default Transaction;

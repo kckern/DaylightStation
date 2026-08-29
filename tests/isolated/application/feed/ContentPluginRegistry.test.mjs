@@ -1,6 +1,6 @@
 // tests/isolated/application/feed/ContentPluginRegistry.test.mjs
 import { vi } from 'vitest';
-import { IContentPlugin } from '#apps/feed/plugins/IContentPlugin.mjs';
+import { IContentPlugin } from '#apps/feed/ports/IContentPlugin.mjs';
 import { ContentPluginRegistry } from '#apps/feed/services/ContentPluginRegistry.mjs';
 
 describe('IContentPlugin', () => {

@@ -15,10 +15,10 @@
  * all, were renamed.
  */
 import path from 'path';
-import fs from 'fs';
 import yaml from 'js-yaml';
 import {
-  loadYaml, loadYamlSafe, saveYamlToPathAtomic, ensureDir, listYamlFiles, resolveYamlPath,
+  deleteFileStrict, fileExists, loadYaml, loadYamlSafe, saveYamlToPathAtomic, ensureDir, listYamlFiles,
+  readDirectory, readTextFromPathAsync, resolveYamlPath,
 } from '#system/utils/FileIO.mjs';
 import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -131,7 +131,7 @@ export class YamlSchoolDatastore {
 
   #works(subject) {
     try {
-      return fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
+      return readDirectory(path.join(this.#schoolDir(), subject), { withFileTypes: true })
         .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
         .map((e) => e.name);
     } catch { return []; /* empty shelf */ }
@@ -246,7 +246,7 @@ export class YamlSchoolDatastore {
         try {
           const file = this.#bankFile(id);
           if (!file) return { id, raw: null };
-          const text = await fs.promises.readFile(`${file}.yml`, 'utf8');
+          const text = await readTextFromPathAsync(`${file}.yml`);
           return { id, raw: yaml.load(text) };
         } catch {
           return { id, raw: null };
@@ -351,8 +351,8 @@ export class YamlSchoolDatastore {
   /** Day stamps (YYYY-MM-DD) that have recorded attempts, newest first. */
   listAttemptDays(userId) {
     const dir = this.#attemptsDir(userId);
-    if (!dir || !fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir)
+    if (!dir || !fileExists(dir)) return [];
+    return readDirectory(dir)
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
       .map((f) => f.replace(/\.yml$/, ''))
       .sort()
@@ -377,8 +377,8 @@ export class YamlSchoolDatastore {
 
   readAllAttempts(userId) {
     const dir = this.#attemptsDir(userId);
-    if (!dir || !fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir)
+    if (!dir || !fileExists(dir)) return [];
+    return readDirectory(dir)
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
       .sort()
       .flatMap((f) => this.#readAttemptDayFile(dir, f));
@@ -393,11 +393,11 @@ export class YamlSchoolDatastore {
    */
   readAttemptsInRange(userId, fromDay, toDay) {
     const dir = this.#attemptsDir(userId);
-    if (!dir || !fs.existsSync(dir)) return [];
+    if (!dir || !fileExists(dir)) return [];
     const from = String(fromDay);
     const to = String(toDay);
     if (!DAY_RE.test(from) || !DAY_RE.test(to)) return [];
-    return fs.readdirSync(dir)
+    return readDirectory(dir)
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
       .filter((f) => {
         const day = f.slice(0, 10);
@@ -456,7 +456,7 @@ export class YamlSchoolDatastore {
       });
     }
     const file = path.join(dir, `${periodId}.yml`);
-    if (fs.existsSync(file)) {
+    if (fileExists(file)) {
       throw new DomainInvariantError(`Report card for period '${periodId}' is already closed`, {
         code: 'REPORT_CARD_ALREADY_CLOSED', details: { userId, periodId },
       });
@@ -483,7 +483,7 @@ export class YamlSchoolDatastore {
     if (!dir || !isSafePeriodId(periodId)) return [];
     const out = [];
     let n = 1;
-    while (fs.existsSync(path.join(dir, `${periodId}.v${n}.yml`))) {
+    while (fileExists(path.join(dir, `${periodId}.v${n}.yml`))) {
       const record = loadYamlSafe(path.join(dir, `${periodId}.v${n}.yml`));
       if (record) out.push({ version: n, record });
       n += 1;
@@ -495,12 +495,12 @@ export class YamlSchoolDatastore {
     const dir = this.#reportCardsDir(userId);
     if (!dir || !isSafePeriodId(periodId)) return 0;
     const file = path.join(dir, `${periodId}.yml`);
-    if (!fs.existsSync(file)) return 0;
+    if (!fileExists(file)) return 0;
     const current = loadYamlSafe(file);
     let n = 1;
-    while (fs.existsSync(path.join(dir, `${periodId}.v${n}.yml`))) n += 1;
+    while (fileExists(path.join(dir, `${periodId}.v${n}.yml`))) n += 1;
     saveYamlToPathAtomic(withYamlExt(path.join(dir, `${periodId}.v${n}`)), current, { noRefs: true });
-    fs.unlinkSync(file);
+    deleteFileStrict(file);
     return n;
   }
 }

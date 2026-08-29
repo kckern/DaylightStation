@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import HealthScanDefault, { HealthScan } from '../../../../backend/src/2_domains/health/entities/HealthScan.mjs';
+import { serializeHealthScan } from '../../../../backend/src/1_adapters/persistence/yaml/YamlHealthScanDatastore.mjs';
 
 const validRequired = () => ({
   date: '2024-01-15',
@@ -105,7 +106,7 @@ describe('HealthScan', () => {
       raw_pdf_path: '/p/x.pdf',
       raw_image_path: '/p/x.jpg',
     });
-    const ser = scan.serialize();
+    const ser = serializeHealthScan(scan);
     expect(ser.bone_mineral_content_lbs).toBe(6.5);
     expect(ser.bmr_kcal).toBe(1700);
     expect(ser.bmr_method).toBe('katch_mcardle');
@@ -117,7 +118,7 @@ describe('HealthScan', () => {
 
     // Bare scan: optional fields omitted
     const bare = new HealthScan(validRequired());
-    const bareSer = bare.serialize();
+    const bareSer = serializeHealthScan(bare);
     expect('bone_mineral_content_lbs' in bareSer).toBe(false);
     expect('bmr_kcal' in bareSer).toBe(false);
     expect('bmr_method' in bareSer).toBe(false);
@@ -131,7 +132,7 @@ describe('HealthScan', () => {
 
     // Empty strings treated as undefined
     const emptyStrings = new HealthScan({ ...validRequired(), notes: '', raw_pdf_path: '', raw_image_path: '' });
-    const empSer = emptyStrings.serialize();
+    const empSer = serializeHealthScan(emptyStrings);
     expect('notes' in empSer).toBe(false);
     expect('raw_pdf_path' in empSer).toBe(false);
     expect('raw_image_path' in empSer).toBe(false);
@@ -145,7 +146,7 @@ describe('HealthScan', () => {
     });
     expect(scan.asymmetry).toEqual({ left_arm_lean_lbs: 7.2, right_arm_lean_lbs: 7.4 });
     expect(scan.regional).toEqual({ trunk_fat_percent: 21.0, legs_fat_percent: 19.0 });
-    const ser = scan.serialize();
+    const ser = serializeHealthScan(scan);
     expect(ser.asymmetry).toEqual({ left_arm_lean_lbs: 7.2, right_arm_lean_lbs: 7.4 });
     expect(ser.regional).toEqual({ trunk_fat_percent: 21.0, legs_fat_percent: 19.0 });
 
@@ -175,7 +176,7 @@ describe('HealthScan', () => {
       raw_image_path: '/placeholder/2024-01-15-dexa.jpg',
     };
     const scan = new HealthScan(raw);
-    expect(scan.serialize()).toEqual(raw);
+    expect(serializeHealthScan(scan)).toEqual(raw);
   });
 
   it('default export present', () => {

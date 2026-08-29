@@ -15,6 +15,7 @@ const DEFAULT_RECONCILE_MS = 60000;
 export class ScreenPresenceService {
   #ha; #logger; #clock; #devices; #clientDevice;
   #watchdog; #reconcile; #watchdogMs; #reconcileMs;
+  #presenceGateway; #scheduler;
 
   /**
    * @param {Object} opts
@@ -25,12 +26,16 @@ export class ScreenPresenceService {
    * @param {number} [opts.watchdogIntervalMs]
    * @param {number} [opts.reconcileIntervalMs]
    */
-  constructor({ haGateway, presenceByDevice, logger = console, clock = Date,
+  constructor({ haGateway, presenceGateway, scheduler, presenceByDevice, logger = console, clock = Date,
     watchdogIntervalMs = DEFAULT_WATCHDOG_MS, reconcileIntervalMs = DEFAULT_RECONCILE_MS } = {}) {
     if (!haGateway) throw new Error('ScreenPresenceService requires haGateway');
+    if (!presenceGateway?.subscribeScreenPresence || !presenceGateway?.subscribeScreenDisconnections) throw new Error('ScreenPresenceService requires presenceGateway');
+    if (!scheduler?.every) throw new Error('ScreenPresenceService requires scheduler');
     this.#ha = haGateway;
     this.#logger = logger;
     this.#clock = clock;
+    this.#presenceGateway = presenceGateway;
+    this.#scheduler = scheduler;
     this.#watchdogMs = watchdogIntervalMs;
     this.#reconcileMs = reconcileIntervalMs;
     this.#devices = new Map();
@@ -52,34 +57,27 @@ export class ScreenPresenceService {
     this.#reconcile = null;
   }
 
-  /** @param {{onClientMessage:Function, onClientDisconnection:Function}} eventBus */
-  start(eventBus) {
+  start() {
     // Layer 3: startup assert OFF — clears a stale true left by a prior run/crash.
     for (const deviceId of this.#devices.keys()) this.#assert(deviceId, false, 'startup');
 
-    if (typeof eventBus?.onClientMessage === 'function') {
-      eventBus.onClientMessage((clientId, message) => this.#onMessage(clientId, message));
-    }
-    if (typeof eventBus?.onClientDisconnection === 'function') {
-      eventBus.onClientDisconnection((clientId) => this.#onDisconnect(clientId));
-    }
+    this.#presenceGateway.subscribeScreenPresence((message) => this.#onMessage(message.clientId, message));
+    this.#presenceGateway.subscribeScreenDisconnections((clientId) => this.#onDisconnect(clientId));
 
-    this.#watchdog = setInterval(() => this.#tickWatchdog(), this.#watchdogMs);
-    this.#reconcile = setInterval(() => this.#tickReconcile(), this.#reconcileMs);
-    this.#watchdog.unref?.();
-    this.#reconcile.unref?.();
+    this.#watchdog = this.#scheduler.every(this.#watchdogMs, () => this.#tickWatchdog());
+    this.#reconcile = this.#scheduler.every(this.#reconcileMs, () => this.#tickReconcile());
     this.#logger.info?.('screen-presence.started', { devices: [...this.#devices.keys()] });
   }
 
   stop() {
-    if (this.#watchdog) clearInterval(this.#watchdog);
-    if (this.#reconcile) clearInterval(this.#reconcile);
+    this.#watchdog?.();
+    this.#reconcile?.();
     this.#watchdog = null;
     this.#reconcile = null;
   }
 
   #onMessage(clientId, message) {
-    if (!message || message.type !== 'screen.presence') return;
+    if (!message?.deviceId) return;
     const device = this.#devices.get(message.deviceId);
     if (!device) return; // device not configured for presence
     this.#clientDevice.set(clientId, message.deviceId);

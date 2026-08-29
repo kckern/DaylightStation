@@ -6,19 +6,20 @@
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { resolvePreset } from '#adapters/content/art/presetResolver.mjs';
-import { loadArtmodeConfig, loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
 
 /**
  * Create Art API router
  *
  * @param {Object} config
- * @param {Object} config.artAdapter - Adapter with selectFeatured()
+ * @param {Object} config.artService - Semantic artwork and preset queries
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createArtRouter(config = {}) {
-  const { artAdapter, householdDir, logger = console } = config;
+  const {
+    artService,
+    logger = console,
+  } = config;
   const router = express.Router();
 
   /**
@@ -29,7 +30,7 @@ export function createArtRouter(config = {}) {
     '/featured',
     asyncHandler(async (req, res) => {
       try {
-        const result = await artAdapter.selectFeatured({ collection: req.query.collection });
+        const result = await artService.selectFeatured({ collection: req.query.collection });
         logger.debug?.('art.featured.served', { title: result?.meta?.title ?? null });
         res.json(result);
       } catch (err) {
@@ -50,15 +51,12 @@ export function createArtRouter(config = {}) {
     '/preset/:key',
     asyncHandler(async (req, res) => {
       const { key } = req.params;
-      const { presets, defaults, frames } = await loadArtmodeConfig(householdDir, logger);
-      const collections = await loadArtCollections(householdDir, logger);
-      const known = Object.prototype.hasOwnProperty.call(presets, key)
-        || Object.prototype.hasOwnProperty.call(collections, key);
-      if (!known) {
+      const outcome = await artService.getPreset(key);
+      if (outcome.kind === 'not_found') {
         logger.debug?.('art.preset.unknown', { key });
         return res.status(404).json({ error: 'Unknown preset', key });
       }
-      res.json(resolvePreset(presets, key, {}, { defaults, frames, collections }));
+      return res.json(outcome.value);
     })
   );
 

@@ -21,6 +21,12 @@ describe('GoalStateService', () => {
       expect(() => service.transition(goal, 'committed', 'Skip', clock))
         .toThrow(/cannot transition/i);
     });
+
+    it('requires a reference time for a valid transition', () => {
+      const goal = new Goal({ id: 'g1', name: 'Test', state: 'dream' });
+      expect(() => service.transition(goal, 'considered', 'Exploring'))
+        .toThrow('timestamp is required');
+    });
   });
 
   describe('checkDependencies()', () => {

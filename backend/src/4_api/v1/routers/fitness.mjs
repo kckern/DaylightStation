@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * Fitness API Router
  *
@@ -46,45 +47,115 @@
  * - GET  /api/fitness/exercises/:slug - One full exercise, 404 if unknown
  */
 import express from 'express';
-import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
-import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
-import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
-import { ManageAccess } from '#apps/fitness/usecases/ManageAccess.mjs';
-import { getUnlockService } from '#apps/fitness/unlockService.mjs';
-import { getManageService } from '#apps/fitness/manageService.mjs';
-import { shouldSendExerciseReaction } from '#apps/fitness/webhookCoachingPolicy.mjs';
+import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 
-// Commit (locking down) is the safe direction, so the admin-press pending may be
-// consumed within a generous window that covers the on-screen ceremony. Un-locking
-// (/abort, /release) keeps the tight default TTL.
-const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
+const EXERCISE_FACETS = Object.freeze(['group', 'muscle', 'equipment', 'q']);
+function parseExerciseFacets(query = {}) {
+  const filter = {};
+  for (const key of EXERCISE_FACETS) if (Object.hasOwn(query, key)) filter[key] = query[key];
+  return filter;
+}
+function parseSessionQuery(query = {}) {
+  const parsedLimit = parseInt(query.limit, 10);
+  return {
+    date: query.date,
+    since: query.since,
+    household: query.household,
+    group: query.group,
+    limit: Number.isNaN(parsedLimit) ? undefined : parsedLimit,
+  };
+}
+
+function serializeSession(session) {
+  const hasV3Session = !!session.session;
+  const hasV3Participants = Object.keys(session.participants).length > 0;
+  const result = { version: session.version, sessionId: session.sessionId.toString() };
+  if (hasV3Session) result.session = session.session;
+  if (session.timezone) result.timezone = session.timezone;
+  if (hasV3Participants) result.participants = session.participants;
+  if (!hasV3Session) Object.assign(result, { startTime: session.startTime, endTime: session.endTime, durationMs: session.durationMs });
+  if (!hasV3Participants) result.roster = session.roster;
+  result.timeline = session.timeline;
+  if (session.events.length > 0 && !(session.timeline?.events?.length > 0)) result.events = session.events;
+  if (session.treasureBox) result.treasureBox = session.treasureBox;
+  if (session.summary) result.summary = session.summary;
+  if (session.strava) result.strava = session.strava;
+  if (session.strava_notes) result.strava_notes = session.strava_notes;
+  if (session.finalized) result.finalized = session.finalized;
+  if (session.provisional) result.provisional = session.provisional;
+  if (session.entities.length > 0) result.entities = session.entities;
+  const hasSnapshots = session.snapshots && ((Array.isArray(session.snapshots.captures) && session.snapshots.captures.length > 0) || session.snapshots.updatedAt != null);
+  if (hasSnapshots) result.snapshots = session.snapshots;
+  if (session.metadata && Object.keys(session.metadata).length > 0) result.metadata = session.metadata;
+  if (session.timelapse) result.timelapse = session.timelapse;
+  if (session.strength?.runs?.length > 0) result.strength = session.strength;
+  return result;
+}
+
+/** Map semantic fingerprint-management outcomes to the legacy HTTP contract. */
+function sendFingerprintOutcome(res, outcome) {
+  switch (outcome?.kind) {
+    case 'enrolled':
+      return res.status(200).json({ success: true, finger: outcome.finger });
+    case 'removed':
+      return res.status(200).json({ success: true });
+    case 'unknown_user':
+      return res.status(400).json({ error: 'unknown-user' });
+    case 'not_eligible':
+      return res.status(403).json({ error: 'not-eligible' });
+    case 'missing_finger':
+      return res.status(400).json({ error: 'missing-finger' });
+    case 'finger_taken':
+      return res.status(409).json({ error: 'finger-taken' });
+    case 'unknown_fingerprint':
+      return res.status(400).json({ error: 'unknown-fingerprint' });
+    case 'ambiguous_finger':
+      return res.status(409).json({ error: 'ambiguous-finger' });
+    case 'unlock_unavailable':
+      return res.status(503).json({ error: 'unlock-service-unavailable' });
+    case 'authorization_failed':
+      return sendInternalError(res, { error: 'auth-failed' });
+    case 'denied':
+      return res.status(403).json({ error: 'auth-denied' });
+    case 'manage_unavailable':
+      return res.status(503).json({ error: 'manage-service-unavailable' });
+    case 'duplicate_finger':
+      return res.status(409).json({ error: 'duplicate-finger', registeredTo: outcome.registeredTo });
+    case 'enrollment_failed':
+      return sendInternalError(res, { error: 'enroll-failed', ...(outcome.reason !== undefined && { reason: outcome.reason }) });
+    case 'deletion_failed':
+      return sendInternalError(res, { error: 'delete-failed', ...(outcome.reason !== undefined && { reason: outcome.reason }) });
+    default:
+      throw new Error(`Unknown fingerprint management outcome: ${outcome?.kind}`);
+  }
+}
 
 /**
  * Create fitness API router
  *
  * @param {Object} config
  * @param {Object} config.sessionService - SessionService instance
- * @param {Object} config.zoneLedController - AmbientLedAdapter instance
- * @param {Object} [config.danceLightingController] - DanceLightingController instance
- * @param {Object} config.userService - UserService for hydrating config
- * @param {Object} config.configService - ConfigService
- * @param {Object} config.contentRegistry - Content source registry (for show endpoint)
+ * @param {string|null} [config.defaultHouseholdId] - Default household selected at composition
+ * @param {Object} config.fitnessContentService - Semantic content/config facade
+ * @param {Object} config.fitnessHardwareService - Semantic room-hardware facade
+ * @param {Object} config.fitnessWebhookService - Semantic provider-event facade
  * @param {Object} [config.fitnessConfigService] - FitnessConfigService for config + playlist enrichment
  * @param {Object} [config.fitnessPlayableService] - FitnessPlayableService for show/playable orchestration
  * @param {Object} [config.fitnessSchoolCourseService] - School-requested Fitness attempt authority
- * @param {Object} [config.fitnessContentAdapter] - Pre-resolved content adapter for fitness (default: plex)
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
  * @param {Object} [config.screenshotService] - ScreenshotService for saving session screenshots
- * @param {Function} [config.createReceiptCanvas] - async (sessionId, upsidedown) => { canvas, width, height }
- * @param {Object} [config.providerWebhookAdapters] - Map of provider webhook adapters (e.g. { strava: StravaWebhookAdapter })
+ * @param {Object} config.fitnessSessionOperations - Cohesive session query/workflow facade
+ * @param {Object} [config.printFitnessReceipt] - Semantic receipt-printing use case
+ * @param {Object} [config.saveDebugVoiceMemo] - Semantic debug-capture use case
+ * @param {Object} [config.getFitnessMenuMusic] - Semantic menu-music query
+ * @param {Object} [config.emergencyAccessService] - Emergency identity authorization facade
  * @param {Object} [config.enrichmentService] - StravaEnrichmentService instance
- * @param {Object} [config.agentOrchestrator] - AgentOrchestrator for triggering agent assignments (optional)
  * @param {Object} [config.sessionLockService] - SessionLockService (constructed at composition root)
  * @param {Object} [config.simulationService] - FitnessSimulationService (constructed at composition root)
  * @param {Object} [config.querySessions] - QuerySessions use case (defaults to one wired from sessionService)
- * @param {Object} [config.workoutRepository] - YamlWorkoutRepository for the /workouts routes
+ * @param {Object} [config.workoutCatalog] - Semantic workout catalog service
  * @param {Object} [config.saveWorkout] - SaveWorkout use case (validates slugs before persisting)
  * @param {Object} [config.logStrengthRun] - LogStrengthRun use case (writes the session's strength block)
  * @param {Object} [config.browseExerciseLibrary] - BrowseExerciseLibrary use case (the /exercises routes)
@@ -95,49 +166,35 @@ const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
 export function createFitnessRouter(config) {
   const {
     sessionService,
-    zoneLedController,
-    danceLightingController,
-    equipmentFanController,
-    userService,
-    configService,
-    contentRegistry,
+    fitnessSessionOperations,
+    defaultHouseholdId = null,
+    fitnessContentService,
+    fitnessHardwareService,
+    fitnessWebhookService,
     fitnessConfigService,
     fitnessPlayableService,
     fitnessSchoolCourseService,
-    fitnessContentAdapter,
-    transcriptionService,
+    voiceMemoOperations = null,
     screenshotService,
-    createReceiptCanvas,
-    printerRegistry,
-    providerWebhookAdapters = {},
-    enrichmentService = null,
-    agentOrchestrator = null,
+    printFitnessReceipt,
     fitnessSuggestionService = null,
     cycleRaceService = null,
-    sessionGroupingService = null,
+    cycleRaceApi = null,
     // Session lock + simulation supervision are constructed at the composition
     // root and injected here — they must NOT be module-scope in this router
     // (shared-state-across-requests bug).
     sessionLockService = null,
     simulationService = null,
     querySessions = null,
-    // Test seam: defaults to the process-level unlock service singleton.
-    // Tests inject a fake so the endpoint can be exercised without a live eventbus.
-    resolveUnlockService = getUnlockService,
-    triggerEmergencyLockdown = null,
-    releaseEmergencyLockdown = null,
-    getLockdownState = null,
-    identityRelay = null,
+    manageAccess = null,
+    isScreenshotValidationError = (error) => error?.name === 'ScreenshotValidationError',
+    emergencyOperations = null,
     generateSessionTimelapse = null,
-    fingerprintProfileWriter = null,
-    resolveManageService = getManageService,
-    // Direct-FS operations are moved behind injected providers (wired at the
-    // composition root) so this router keeps no filesystem access of its own.
-    menuMusicProvider = null,
-    voiceMemoDebugStore = null,
+    getFitnessMenuMusic = null,
+    saveDebugVoiceMemo = null,
     // Workout persistence (Build/Run). Both are constructed at the composition root;
     // absent, the /workouts routes report 503 rather than half-working.
-    workoutRepository = null,
+    workoutCatalog = null,
     saveWorkout = null,
     // Logging a finished run into the session record. Constructed at the composition
     // root (this layer may not reach into 3_applications to build one); absent, the
@@ -147,7 +204,7 @@ export function createFitnessRouter(config) {
     // composition root loaded; absent, the /exercises routes report 503.
     browseExerciseLibrary = null,
     // Build -> Run: expands an authored workout into the runner's flat step list and
-    // joins it against the corpus. Needs BOTH the workout repository and the library, so
+    // joins it against the corpus. Needs BOTH the workout catalog and the library, so
     // it is constructed at the composition root; absent, the run routes report 503.
     prepareWorkoutRun = null,
     logger = console
@@ -156,60 +213,18 @@ export function createFitnessRouter(config) {
   const router = express.Router();
 
   // Resolve the default household id ONCE — handlers read `req.query.household ||
-  // defaultHouseholdId` rather than each re-calling configService.
-  const defaultHouseholdId = configService?.getDefaultHouseholdId?.() ?? null;
-
-  // QuerySessions use case: prefer the injected instance (composition root);
-  // otherwise wire it here from the already-injected session services so the
-  // router is self-sufficient for direct-construction tests.
-  const sessionsUseCase = querySessions
-    || (sessionService ? new QuerySessions({ sessionService, sessionGroupingService, logger }) : null);
-
-  // ManageAccess use case: the fingerprint / manage-access AUTHORIZATION policy.
-  // Constructed from already-injected deps so security decisions live in the
-  // application layer, not in the request handlers below.
-  const manageAccess = new ManageAccess({
-    userService,
-    fitnessConfigService,
-    identityRelay,
-    resolveUnlockService,
-    resolveManageService,
-    fingerprintProfileWriter,
-    logger,
-  });
+  // defaultHouseholdId` rather than reloading configuration in the API layer.
+  const sessionsUseCase = querySessions;
 
   /**
    * GET /api/fitness - Get fitness config (hydrated with user profiles)
    */
   router.get('/', asyncHandler(async (req, res) => {
     const householdId = req.query.household || defaultHouseholdId;
-    const fitnessData = fitnessConfigService?.loadRawConfig(householdId);
-
-    if (!fitnessData) {
+    const hydratedData = await fitnessContentService.getConfig(householdId);
+    if (!hydratedData) {
       return res.status(404).json({ error: 'Fitness configuration not found' });
     }
-
-    // Hydrate users from profile files
-    const hydratedData = userService.hydrateFitnessConfig(fitnessData, householdId);
-    hydratedData._household = householdId;
-
-    // Enrich music playlists with thumbnails from content source
-    // Use a timeout so the config endpoint still returns when the content source is unreachable
-    const playlists = hydratedData?.plex?.music_playlists;
-    if (Array.isArray(playlists) && playlists.length > 0 && contentRegistry) {
-      const contentSource = hydratedData?.content_source || 'plex';
-      const adapter = contentRegistry.get(contentSource);
-      const ENRICH_TIMEOUT_MS = 1500;
-      try {
-        hydratedData.plex.music_playlists = await Promise.race([
-          fitnessConfigService.enrichPlaylistThumbnails(playlists, adapter),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('thumbnail enrichment timeout')), ENRICH_TIMEOUT_MS))
-        ]);
-      } catch (err) {
-        logger.warn?.('fitness.config.thumbnail-enrichment-failed', { error: err.message });
-      }
-    }
-
     res.json(hydratedData);
   }));
 
@@ -219,51 +234,19 @@ export function createFitnessRouter(config) {
    * Used by tests to dynamically find content for governance testing.
    */
   router.get('/governed-content', asyncHandler(async (req, res) => {
-    if (!contentRegistry) {
+    const householdId = req.query.household || defaultHouseholdId;
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const result = await fitnessContentService.getGovernedContent(householdId, limit);
+    if (result.kind === 'registry_unconfigured') {
       return res.status(503).json({ error: 'Content registry not configured' });
     }
-
-    const householdId = req.query.household || defaultHouseholdId;
-
-    // Use FitnessConfigService for normalized config access (encapsulates Plex-specific structure)
-    const normalizedConfig = fitnessConfigService?.getNormalizedConfig(householdId);
-
-    if (!normalizedConfig) {
+    if (result.kind === 'config_not_found') {
       return res.status(404).json({ error: 'Fitness configuration not found' });
     }
-
-    // Extract governed labels and types from normalized config
-    const { governedLabels, governedTypes } = normalizedConfig;
-
-    if (!governedLabels || governedLabels.length === 0) {
-      return res.json({
-        items: [],
-        governanceConfig: { labels: [], types: governedTypes },
-        message: 'No governed labels configured'
-      });
-    }
-
-    // Use pre-resolved fitness content adapter
-    const adapter = fitnessContentAdapter;
-    if (!adapter) {
+    if (result.kind === 'adapter_unconfigured') {
       return res.status(503).json({ error: 'Fitness content adapter not configured' });
     }
-
-    // Query for items with matching labels
-    const limit = parseInt(req.query.limit, 10) || 50;
-    const items = await adapter.getItemsByLabel(governedLabels, {
-      types: governedTypes,
-      limit
-    });
-
-    res.json({
-      items,
-      governanceConfig: {
-        labels: governedLabels,
-        types: governedTypes
-      },
-      total: items.length
-    });
+    res.json(result.body);
   }));
 
   // =============================================================================
@@ -284,7 +267,7 @@ export function createFitnessRouter(config) {
 
     const result = await fitnessPlayableService.getPlayableEpisodes(id, householdId);
 
-    res.json({
+    res.json(presentPublicResources({
       id: result.compoundId,
       plex: id,
       title: result.containerItem?.title || id,
@@ -293,7 +276,7 @@ export function createFitnessRouter(config) {
       info: result.info,
       parents: result.parents,
       items: result.items.map(toListItem)
-    });
+    }));
   }));
 
   // ── School-owned Fitness courses ─────────────────────────────────────────
@@ -338,27 +321,16 @@ export function createFitnessRouter(config) {
    * Assumes plex source - no need to specify source in URL
    */
   router.get('/show/:id', asyncHandler(async (req, res) => {
-    if (!contentRegistry) {
+    const { id } = req.params;
+    const result = await fitnessContentService.getShow(id);
+    if (result.kind === 'registry_unconfigured') {
       return res.status(503).json({ error: 'Content registry not configured' });
     }
-
-    const { id } = req.params;
-    const adapter = fitnessContentAdapter;
-    if (!adapter) {
+    if (result.kind === 'adapter_unconfigured') {
       return res.status(503).json({ error: 'Fitness content adapter not configured' });
     }
-
-    const compoundId = id.includes(':') ? id : `plex:${id}`;
-    const item = adapter.getItem ? await adapter.getItem(compoundId) : null;
-
-      if (!item) {
-        return res.status(404).json({ error: 'Show not found' });
-      }
-
-      let info = null;
-      if (adapter.getContainerInfo) {
-        info = await adapter.getContainerInfo(compoundId);
-      }
+    if (result.kind === 'not_found') return res.status(404).json({ error: 'Show not found' });
+    const { compoundId, item, info } = result;
 
     res.json({
       id: compoundId,
@@ -377,11 +349,7 @@ export function createFitnessRouter(config) {
    */
   router.get('/sessions/dates', asyncHandler(async (req, res) => {
     const { household } = req.query;
-    const dates = await sessionService.listDates(household);
-    return res.json({
-      dates,
-      household: sessionService.resolveHouseholdId(household)
-    });
+    return res.json(await fitnessSessionOperations.dates(household));
   }));
 
   /**
@@ -392,8 +360,7 @@ export function createFitnessRouter(config) {
    * - limit: number (max sessions to return when using since, default: 20)
    */
   router.get('/sessions', asyncHandler(async (req, res) => {
-    const { date, since, limit, household, group } = req.query;
-    const body = await sessionsUseCase.execute({ date, since, limit, household, group });
+    const body = await sessionsUseCase.execute(parseSessionQuery(req.query));
     // Null = neither date nor since provided.
     if (!body) {
       return res.status(400).json({ error: 'Either date or since query param required (YYYY-MM-DD)' });
@@ -410,31 +377,11 @@ export function createFitnessRouter(config) {
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
-    if (sessionId.startsWith('group:') && sessionGroupingService) {
-      const group = await sessionGroupingService.getGroupDetail(sessionId, household);
-      if (!group) return res.status(404).json({ error: 'Session not found' });
-      return res.json({ session: group });
-    }
-    const session = await sessionService.getSession(sessionId, household, {
-      decodeTimeline: true
-    });
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
-    const json = session.toJSON();
-    // Enrich a standalone session with overlapping game activities (e.g. cycle
-    // races) so the detail header/timeline match the session list, which runs the
-    // same enrichment. Best-effort: a failure here must not break session detail.
-    // KEEP this catch — degraded-response product fallback (return the session
-    // without activities rather than failing the whole detail request).
-    if (sessionGroupingService) {
-      try {
-        const activities = await sessionGroupingService.enrichSession(sessionId, household);
-        if (Array.isArray(activities) && activities.length) json.activities = activities;
-      } catch (err) {
-        logger.warn?.('fitness.sessions.detail.enrich.error', { sessionId, error: err?.message });
-      }
-    }
+    const result = await fitnessSessionOperations.detail(sessionId, household);
+    if (result.kind === 'not_found') return res.status(404).json({ error: 'Session not found' });
+    if (result.kind === 'group') return res.json({ session: result.session });
+    const json = serializeSession(result.session);
+    if (Array.isArray(result.activities) && result.activities.length) json.activities = result.activities;
     return res.json({ session: json });
   }));
 
@@ -459,9 +406,8 @@ export function createFitnessRouter(config) {
   router.get('/cycle-races/ladder', asyncHandler(async (req, res) => {
     if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
     const householdId = req.query.household || defaultHouseholdId;
-    const cycleGameConfig = fitnessConfigService?.loadRawConfig(householdId)?.cycle_game || {};
     try {
-      const ladder = await cycleRaceService.getLadder({ cycleGameConfig, week: req.query.week ?? null, householdId });
+      const ladder = await cycleRaceApi.ladder({ week: req.query.week ?? null, householdId });
       if (!ladder) return res.status(404).json({ error: 'no featured courses configured' });
       return res.json(ladder);
     } catch (err) {
@@ -477,8 +423,7 @@ export function createFitnessRouter(config) {
     const { userId, courseId } = req.query;
     if (!userId || !courseId) return res.status(400).json({ error: 'userId and courseId required' });
     const householdId = req.query.household || defaultHouseholdId;
-    const cycleGameConfig = fitnessConfigService?.loadRawConfig(householdId)?.cycle_game || {};
-    return res.json(await cycleRaceService.getPersonalBest({ cycleGameConfig, userId, courseId, householdId }));
+    return res.json(await cycleRaceApi.personalBest({ userId, courseId, householdId }));
   }));
 
   router.get('/cycle-races/:raceId', asyncHandler(async (req, res) => {
@@ -513,12 +458,8 @@ export function createFitnessRouter(config) {
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
-    const session = await sessionService.getSession(sessionId, household);
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
-    await sessionService.deleteSession(sessionId, household);
-    logger.info?.('fitness.sessions.deleted', { sessionId });
+    const result = await fitnessSessionOperations.delete(sessionId, household);
+    if (result.kind === 'not_found') return res.status(404).json({ error: 'Session not found' });
     return res.json({ deleted: true, sessionId });
   }));
 
@@ -535,7 +476,7 @@ export function createFitnessRouter(config) {
       returned: Array.isArray(result?.suggestions) ? result.suggestions.length : null,
       totalMs: Date.now() - t0
     });
-    return res.json(result);
+    return res.json(presentPublicResources(result));
   }));
 
   /**
@@ -552,18 +493,7 @@ export function createFitnessRouter(config) {
     const { household } = req.body || {};
     const endTime = Number.isFinite(req.body?.endTime) ? req.body.endTime : Date.now();
     // EntityNotFoundError → 404 is mapped by name in the error middleware.
-    const session = await sessionService.endSession(sessionId, household, endTime);
-    logger.info?.('fitness.sessions.finalized', {
-      sessionId,
-      endTime,
-      durationMs: session.durationMs
-    });
-    // Fire-and-forget the time-lapse recap render (background; never blocks the end response).
-    if (generateSessionTimelapse) {
-      Promise.resolve(generateSessionTimelapse.execute({ sessionId: session.sessionId?.toString() || sessionId, householdId: household }))
-        .then((r) => logger.info?.('fitness.timelapse.trigger_done', { sessionId, status: r?.status }))
-        .catch((err) => logger.error?.('fitness.timelapse.trigger_failed', { sessionId, error: err?.message }));
-    }
+    const session = await fitnessSessionOperations.end(sessionId, household, endTime);
     return res.json({
       finalized: true,
       sessionId: session.sessionId?.toString(),
@@ -632,7 +562,7 @@ export function createFitnessRouter(config) {
    * GET /api/fitness/receipt/:sessionId - Get fitness receipt as PNG
    */
   router.get('/receipt/:sessionId', asyncHandler(async (req, res) => {
-    if (!createReceiptCanvas) {
+    if (!fitnessSessionOperations.receiptAvailable) {
       return res.status(501).json({ error: 'Receipt renderer not configured' });
     }
     const { sessionId } = req.params;
@@ -640,11 +570,11 @@ export function createFitnessRouter(config) {
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
-    const result = await createReceiptCanvas(sessionId, upsidedown);
-    if (!result) {
+    const result = await fitnessSessionOperations.receipt(sessionId, upsidedown);
+    if (result.kind === 'not_found') {
       return res.status(404).json({ error: 'Session not found' });
     }
-    const buffer = result.canvas.toBuffer('image/png');
+    const buffer = result.bytes;
     res.set('Content-Type', 'image/png');
     res.set('Content-Length', buffer.length);
     return res.send(buffer);
@@ -656,41 +586,23 @@ export function createFitnessRouter(config) {
    *   - upsidedown: 'true'/'false' (default: true for print)
    */
   router.get('/receipt/:sessionId/print{/:location}', asyncHandler(async (req, res) => {
-    if (!createReceiptCanvas) {
+    if (!printFitnessReceipt) {
       return res.status(501).json({ error: 'Receipt renderer not configured' });
-    }
-    let printerAdapter;
-    try {
-      // Expected-error mapping product fallback: an unknown printer location is a
-      // 404, not a 500. Other failures below propagate to the error middleware.
-      printerAdapter = printerRegistry.resolve(req.params.location);
-    } catch (err) {
-      return res.status(404).json({ error: err.message });
     }
     const { sessionId } = req.params;
     const upsidedown = req.query.upsidedown !== 'false'; // default true for print
-    const result = await createReceiptCanvas(sessionId, upsidedown);
-    if (!result) {
+    const result = await printFitnessReceipt.execute({
+      sessionId,
+      location: req.params.location,
+      upsidedown,
+    });
+    if (result.kind === 'printer_not_found') return res.status(404).json({ error: result.error });
+    if (result.kind === 'session_not_found') {
       return res.status(404).json({ error: 'Session not found' });
     }
-    const buffer = result.canvas.toBuffer('image/png');
-    const tempPath = `/tmp/fitness_receipt_${sessionId}_${Date.now()}.png`;
-    writeBinary(tempPath, buffer);
-
-    const printJob = printerAdapter.createImagePrint(tempPath, {
-      width: result.width,
-      height: result.height,
-      align: 'left',
-      threshold: 128
-    });
-    const outcome = await printerAdapter.print(printJob);
-    const success = outcome === true || outcome?.verified === true;
-
-    try { deleteFile(tempPath); } catch {}
-
     return res.json({
-      success,
-      message: success ? 'Fitness receipt printed' : 'Print failed',
+      success: result.success,
+      message: result.success ? 'Fitness receipt printed' : 'Print failed',
       sessionId
     });
   }));
@@ -740,30 +652,16 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ error: 'Session data is required' });
     }
 
-    // Check session write whitelist
-    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(household);
-    const whitelist = fitnessConfig?.session_write_whitelist;
-    if (Array.isArray(whitelist) && whitelist.length > 0) {
-      const ua = req.headers['user-agent'] || '';
-      const allowed = whitelist.some(pattern => ua.includes(pattern));
-      if (!allowed) {
-        logger.warn?.('fitness.sessions.save.blocked', {
-          reason: 'client not in session_write_whitelist',
-          userAgent: ua,
-          sessionId: sessionData?.sessionId,
-        });
-        return res.status(403).json({ error: 'Client not authorized to write sessions' });
-      }
-    }
-
+    const userAgent = req.headers['user-agent'] || '';
     try {
-      const session = await sessionService.saveSession(sessionData, household);
-      const paths = sessionService.getStoragePaths(session.sessionId, household);
+      const result = await fitnessSessionOperations.save({ sessionData, householdId: household, userAgent });
+      if (result.kind === 'forbidden') return res.status(403).json({ error: 'Client not authorized to write sessions' });
+      const { session, filename } = result;
 
       res.json({
         message: 'Session data saved successfully',
-        filename: paths?.sessionFilePath,
-        sessionData: session.toJSON()
+        filename,
+        sessionData: serializeSession(session)
       });
     } catch (err) {
       logger.error?.('fitness.sessions.save.error', { error: err?.message });
@@ -835,20 +733,33 @@ export function createFitnessRouter(config) {
     try {
       const result = await screenshotService.saveScreenshot({
         sessionId,
-        imageBase64,
-        mimeType,
+        image: imageBase64,
+        mediaType: mimeType,
         index,
         timestamp,
         householdId: household,
         role
       });
 
-      return res.json({ ok: true, ...result });
+      const capture = result.capture;
+      return res.json({
+        ok: true,
+        sessionId: result.sessionRef,
+        index: capture.order,
+        filename: capture.resourceName,
+        path: capture.resourceRef,
+        timestamp: capture.capturedAt,
+        size: capture.byteLength,
+        role: capture.role,
+        mimeType: capture.mediaType,
+      });
     } catch (error) {
       // Expected-error mapping product fallback: a validation failure is a 400.
       // Everything else propagates to the error middleware.
-      if (error instanceof ScreenshotValidationError) {
-        return res.status(400).json({ ok: false, error: error.message });
+      if (isScreenshotValidationError(error)) {
+        const message = error.reason === 'decode_failed' ? 'Failed to decode image data'
+          : (error.reason === 'empty' ? 'Invalid base64 payload' : error.message);
+        return res.status(400).json({ ok: false, error: message });
       }
       throw error;
     }
@@ -858,7 +769,7 @@ export function createFitnessRouter(config) {
    * POST /api/fitness/voice_memo - Transcribe voice memo
    */
   router.post('/voice_memo', asyncHandler(async (req, res) => {
-    if (!transcriptionService) {
+    if (!voiceMemoOperations?.available) {
       return res.status(503).json({ ok: false, error: 'Transcription service not configured' });
     }
 
@@ -867,91 +778,22 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ ok: false, error: 'audioBase64 required' });
     }
 
-    const householdId = sessionContext.householdId || defaultHouseholdId;
-
-      // Get household member names for transcription hints (via FitnessConfigService)
-      const householdMembers = fitnessConfigService?.getHouseholdMemberNames(householdId) || [];
-
-      const memo = await transcriptionService.transcribeVoiceMemo({
+      const result = await voiceMemoOperations.transcribe({
         audioBase64,
         mimeType,
         sessionId,
         startedAt,
         endedAt,
-        context: {
-          ...sessionContext,
-          householdMembers
-        }
-      });
-
-      // Retroactive persistence: when the memo targets a session that has
-      // already ended, write it into the session YAML so it shows up in the
-      // session-list API. For active sessions we SKIP this — the frontend's
-      // voiceMemoManager persists on the next tick save and a backend write
-      // here would race / double up.
-      if (sessionId && memo?.transcriptClean && memo.transcriptClean !== '[No Memo]' && sessionService?.appendVoiceMemo) {
-        try {
-          const existing = await sessionService.getSession(sessionId, householdId, { decodeTimeline: false });
-          const endMs = existing?.endTime
-            || (existing?.session?.end ? Date.parse(existing.session.end) : null);
-          const isEnded = Boolean(endMs) && endMs < Date.now();
-          if (isEnded) {
-            const appended = await sessionService.appendVoiceMemo(sessionId, householdId, {
-              transcriptClean: memo.transcriptClean,
-              transcriptRaw: memo.transcriptRaw,
-              durationSeconds: memo.durationSeconds,
-              createdAt: memo.createdAt,
-              memoId: memo.memoId,
-            });
-            logger.info?.('fitness.voice_memo.retroactive_persisted', {
-              sessionId,
-              householdId,
-              success: Boolean(appended),
-            });
-            // Persist was attempted but the memo was not written (e.g. session
-            // record not found). Do NOT report success to the client — return
-            // an error so the UI can surface/retry instead of silently losing
-            // the transcribed memo.
-            if (!appended) {
-              logger.error?.('fitness.voice_memo.retroactive_persist_dropped', {
-                sessionId,
-                householdId,
-              });
-              return res.status(500).json({
-                ok: false,
-                error: 'Voice memo transcribed but could not be saved to the session',
-                memo,
-              });
-            }
-          }
-        } catch (persistErr) {
-          // Degraded-response product fallback: transcription succeeded but the
-          // retroactive persist failed — return the transcribed `memo` payload
-          // (500) so the UI can surface/retry without losing the transcription,
-          // rather than letting a generic middleware 500 drop it.
-          logger.warn?.('fitness.voice_memo.retroactive_persist_failed', {
-            sessionId,
-            error: persistErr?.message,
-          });
-          return res.status(500).json({
-            ok: false,
-            error: 'Voice memo transcribed but could not be saved to the session',
-            memo,
-          });
-        }
-      }
-
-      // Fire-and-forget: backfill Strava description with the new voice memo
-      if (sessionId && memo?.transcriptClean && memo.transcriptClean !== '[No Memo]' && enrichmentService) {
-        enrichmentService.reEnrichDescription(sessionId, memo).catch(err => {
-          logger.warn?.('strava.voice_memo_backfill.failed', {
-            sessionId,
-            error: err?.message,
-          });
+        context: sessionContext,
+      }, defaultHouseholdId);
+      if (result.kind === 'persist_failed') {
+        return sendInternalError(res, {
+          ok: false,
+          error: 'Voice memo transcribed but could not be saved to the session',
+          memo: result.memo,
         });
       }
-
-      return res.json({ ok: true, memo });
+      return res.json({ ok: true, memo: result.memo });
   }));
 
   /**
@@ -963,7 +805,7 @@ export function createFitnessRouter(config) {
    * NO Strava enrichment, NO session context capture.
    */
   router.post('/debug/voice-memo', asyncHandler(async (req, res) => {
-    if (!voiceMemoDebugStore) {
+    if (!saveDebugVoiceMemo) {
       return res.status(503).json({ ok: false, error: 'Debug voice-memo store not configured' });
     }
     const { audioBase64 } = req.body || {};
@@ -977,10 +819,7 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ ok: false, error: 'Failed to decode audio data' });
     }
 
-    // Filesystem write lives behind the injected store (composition root).
-    const saved = await voiceMemoDebugStore.save(buffer);
-
-    logger.debug?.('fitness.debug_voice_memo.saved', { filename: saved.filename, size: saved.size });
+    const saved = await saveDebugVoiceMemo.execute(buffer);
 
     return res.json({ ok: true, ...saved });
   }));
@@ -993,11 +832,12 @@ export function createFitnessRouter(config) {
    * POST /api/fitness/zone_led - Sync ambient LED with zone state
    */
   router.post('/zone_led', asyncHandler(async (req, res) => {
-    if (!zoneLedController) {
+    const { zones = [], sessionEnded = false, householdId } = req.body;
+    const operation = await fitnessHardwareService.syncZone({ zones, sessionEnded, householdId });
+    if (operation.kind === 'unconfigured') {
       return res.status(503).json({ ok: false, error: 'Zone LED controller not configured (Home Assistant required)' });
     }
-    const { zones = [], sessionEnded = false, householdId } = req.body;
-    const result = await zoneLedController.syncZone({ zones, sessionEnded, householdId });
+    const result = operation.body;
 
     // Degraded-response product fallback: the controller reports a HANDLED sync
     // failure as { ok:false, ... } with diagnostics (failureCount) the LED state
@@ -1006,38 +846,40 @@ export function createFitnessRouter(config) {
     if (result.ok) {
       return res.json(result);
     }
-    return res.status(500).json(result);
+    return sendInternalError(res, result);
   }));
 
   /**
    * GET /api/fitness/zone_led/status - Get LED controller status
    */
   router.get('/zone_led/status', (req, res) => {
-    if (!zoneLedController) {
+    const result = fitnessHardwareService.zoneStatus(req.query.householdId);
+    if (result.kind === 'unconfigured') {
       return res.status(503).json({ ok: false, error: 'Zone LED controller not configured' });
     }
-    const { householdId } = req.query;
-    res.json(zoneLedController.getStatus(householdId));
+    res.json(result.body);
   });
 
   /**
    * GET /api/fitness/zone_led/metrics - Get LED controller metrics
    */
   router.get('/zone_led/metrics', (req, res) => {
-    if (!zoneLedController) {
+    const result = fitnessHardwareService.zoneMetrics();
+    if (result.kind === 'unconfigured') {
       return res.status(503).json({ ok: false, error: 'Zone LED controller not configured' });
     }
-    res.json(zoneLedController.getMetrics());
+    res.json(result.body);
   });
 
   /**
    * POST /api/fitness/zone_led/reset - Reset LED controller state
    */
   router.post('/zone_led/reset', (req, res) => {
-    if (!zoneLedController) {
+    const operation = fitnessHardwareService.zoneReset();
+    if (operation.kind === 'unconfigured') {
       return res.status(503).json({ ok: false, error: 'Zone LED controller not configured' });
     }
-    const result = zoneLedController.reset();
+    const result = operation.body;
     result.resetBy = req.ip || 'unknown';
     res.json(result);
   });
@@ -1051,11 +893,8 @@ export function createFitnessRouter(config) {
    * Gracefully no-ops when no controller is wired (HA disabled / not configured).
    */
   const danceAction = (action) => asyncHandler(async (req, res) => {
-    if (!danceLightingController || typeof danceLightingController[action] !== 'function') {
-      return res.json({ ok: true, skipped: true, reason: 'dance_lighting_unavailable' });
-    }
     const householdId = req.query.householdId || req.body?.householdId;
-    const result = await danceLightingController[action](householdId);
+    const result = await fitnessHardwareService.dance(action, householdId);
     return res.json(result);
   });
   router.post('/dance/start', danceAction('start'));
@@ -1067,11 +906,8 @@ export function createFitnessRouter(config) {
    * input_number (controller clamps + rate-caps; see DanceLightingController.setBpm).
    */
   router.post('/dance/bpm', asyncHandler(async (req, res) => {
-    if (!danceLightingController || typeof danceLightingController.setBpm !== 'function') {
-      return res.json({ ok: true, skipped: true, reason: 'dance_lighting_unavailable' });
-    }
     const householdId = req.query.householdId || req.body?.householdId;
-    const result = await danceLightingController.setBpm(householdId, req.body?.bpm);
+    const result = await fitnessHardwareService.dance('bpm', householdId, req.body?.bpm);
     return res.json(result);
   }));
 
@@ -1083,32 +919,34 @@ export function createFitnessRouter(config) {
    * POST /api/fitness/equipment_fan - Evaluate fan trigger conditions and fire
    */
   router.post('/equipment_fan', asyncHandler(async (req, res) => {
-    if (!equipmentFanController) {
+    const { rpm = {}, zones = [], sessionEnded = false, householdId } = req.body;
+    const operation = await fitnessHardwareService.evaluateFan({ rpm, zones, sessionEnded, householdId });
+    if (operation.kind === 'unconfigured') {
       return res.status(503).json({ ok: false, error: 'Equipment fan controller not configured (Home Assistant required)' });
     }
-    const { rpm = {}, zones = [], sessionEnded = false, householdId } = req.body;
-    const result = await equipmentFanController.evaluate({ rpm, zones, sessionEnded, householdId });
-    return res.json(result);
+    return res.json(operation.body);
   }));
 
   /**
    * GET /api/fitness/equipment_fan/status
    */
   router.get('/equipment_fan/status', (req, res) => {
-    if (!equipmentFanController) {
+    const result = fitnessHardwareService.fanStatus(req.query.householdId);
+    if (result.kind === 'unconfigured') {
       return res.status(503).json({ ok: false, error: 'Equipment fan controller not configured' });
     }
-    res.json(equipmentFanController.getStatus(req.query.householdId));
+    res.json(result.body);
   });
 
   /**
    * POST /api/fitness/equipment_fan/reset
    */
   router.post('/equipment_fan/reset', (req, res) => {
-    if (!equipmentFanController) {
+    const result = fitnessHardwareService.fanReset();
+    if (result.kind === 'unconfigured') {
       return res.status(503).json({ ok: false, error: 'Equipment fan controller not configured' });
     }
-    res.json(equipmentFanController.reset());
+    res.json(result.body);
   });
 
   // =============================================================================
@@ -1147,18 +985,12 @@ export function createFitnessRouter(config) {
   router.get('/provider/webhook', (req, res) => {
     logger.info?.('fitness.provider.webhook.challenge_request', {
       query: req.query,
-      adapterCount: Object.keys(providerWebhookAdapters).length,
+      adapterCount: fitnessWebhookService.adapterCount(),
     });
-
-    for (const adapter of Object.values(providerWebhookAdapters)) {
-      const identified = adapter.identify?.(req);
-      if (identified === 'challenge') {
-        const result = adapter.handleChallenge(req.query);
-        if (result.ok) {
-          return res.status(200).json(result.response);
-        }
-        return res.status(result.status || 400).json({ error: result.reason });
-      }
+    const result = fitnessWebhookService.challenge({ query: req.query });
+    if (result.kind === 'accepted') return res.status(200).json(result.challenge);
+    if (result.kind === 'rejected') {
+      return res.status(result.category === 'authorization' ? 403 : 400).json({ error: result.reason });
     }
     return res.status(400).json({ error: 'unrecognized-provider' });
   });
@@ -1176,62 +1008,11 @@ export function createFitnessRouter(config) {
       objectId: req.body?.object_id,
     });
 
-    for (const [name, adapter] of Object.entries(providerWebhookAdapters)) {
-      if (adapter.identify?.(req) === 'event') {
-        const event = adapter.parseEvent(req.body);
-        if (!event) {
-          logger.warn?.('fitness.provider.webhook.parse_failed', { provider: name });
-          return res.status(200).json({ ok: true, skipped: true, reason: 'parse-failed' });
-        }
-
-        logger.info?.('fitness.provider.webhook.identified', {
-          provider: name,
-          objectType: event.objectType,
-          objectId: event.objectId,
-          aspectType: event.aspectType,
-        });
-
-        const shouldEnrich = adapter.shouldEnrich?.(event);
-        if (!shouldEnrich) {
-          logger.info?.('fitness.provider.webhook.skip_enrich', {
-            provider: name,
-            objectId: event.objectId,
-            reason: `${event.objectType}/${event.aspectType} not enrichable`,
-          });
-        } else if (!enrichmentService) {
-          logger.warn?.('fitness.provider.webhook.no_enrichment_service', {
-            provider: name,
-            objectId: event.objectId,
-          });
-        } else {
-          enrichmentService.handleEvent(event);
-        }
-
-        // Trigger coaching exercise reaction (fire-and-forget). The calorie
-        // threshold is a fitness domain rule (webhookCoachingPolicy).
-        if (shouldEnrich && shouldSendExerciseReaction(event)) {
-          const userId = event.ownerId;
-          const coachingOrchestrator = router.coachingOrchestrator;
-          const coachingConversationId = configService?.getNutribotConversationId?.() || null;
-          if (coachingOrchestrator && coachingConversationId) {
-            coachingOrchestrator.sendExerciseReaction({
-              userId,
-              conversationId: coachingConversationId,
-              activity: {
-                type: event.type || 'Workout',
-                durationMin: Math.round((event.duration || 0) / 60),
-                caloriesBurned: event.calories || 0,
-              },
-            }).catch(err => logger.warn?.('strava.exerciseReaction.error', { error: err.message }));
-          }
-        }
-
-        return res.status(200).json({ ok: true });
-      }
+    const result = fitnessWebhookService.event({ payload: req.body });
+    if (result.kind === 'parse_failed') {
+      return res.status(200).json({ ok: true, skipped: true, reason: 'parse-failed' });
     }
-
-    // Unknown provider — still return 200 to avoid retries
-    logger.warn?.('fitness.provider.webhook.unknown', { bodyKeys: Object.keys(req.body || {}) });
+    if (result.kind === 'accepted') return res.status(200).json({ ok: true });
     return res.status(200).json({ ok: true, skipped: true, reason: 'unknown-provider' });
   });
 
@@ -1242,15 +1023,12 @@ export function createFitnessRouter(config) {
    * Frontend passes them through DaylightMediaPath() to get full URLs.
    */
   router.get('/menu-music', asyncHandler(async (req, res) => {
-    // Directory listing lives behind the injected provider (composition root);
-    // it returns media-relative track paths and swallows a missing dir as [].
-    const tracks = menuMusicProvider ? menuMusicProvider() : [];
-
     const householdId = req.query.household || defaultHouseholdId;
-    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
-    const volume = fitnessConfig?.menu_music?.volume ?? 0.05;
-
-    res.json({ tracks, volume });
+    if (getFitnessMenuMusic) return res.json(await getFitnessMenuMusic.execute(householdId));
+    // Preserve the historical unconfigured response: music is optional and a
+    // missing catalog means an empty track list, not an unavailable endpoint.
+    const volume = fitnessConfigService?.getMenuMusicVolume?.(householdId) ?? 0.05;
+    res.json({ tracks: [], volume });
   }));
 
   // =============================================================================
@@ -1264,12 +1042,7 @@ export function createFitnessRouter(config) {
    * - 200 { locked:true, lockedUntil, lockedBy }
    */
   router.get('/emergency', asyncHandler(async (req, res) => {
-    const now = Math.floor(Date.now() / 1000);
-    const state = getLockdownState ? await getLockdownState.execute({ now }) : null;
-    logger?.debug?.('emergency.state_query', { locked: !!state, lockedUntil: state?.lockedUntil ?? null });
-    res.json(state
-      ? { locked: true, lockedUntil: state.lockedUntil, lockedBy: state.lockedBy }
-      : { locked: false });
+    res.json(emergencyOperations ? await emergencyOperations.current() : { locked: false });
   }));
 
   /**
@@ -1282,57 +1055,11 @@ export function createFitnessRouter(config) {
    * - 200 { locked:true, lockedUntil, lockedBy }
    */
   router.post('/emergency/commit', asyncHandler(async (req, res) => {
-    const now = Math.floor(Date.now() / 1000);
-    // Idempotent: if a lockdown is already active (e.g. the server-side abuse
-    // fallback already committed), return the current state instead of 409 — so a
-    // late browser commit never trips the client's failure path and unlocks.
-    const existing = getLockdownState ? await getLockdownState.execute({ now }) : null;
-    if (existing) {
-      logger?.info?.('emergency.commit_idempotent', { lockedBy: existing.lockedBy });
-      return res.json({ locked: true, lockedUntil: existing.lockedUntil, lockedBy: existing.lockedBy });
-    }
-    // Abuse trips arm a server-authoritative commit token; admin presses stamp a
-    // (generously-aged) pending detection. Either authorizes this commit.
-    const pending = identityRelay?.consumeArmedCommit?.(Date.now())
-      || identityRelay?.consumePendingDetection?.(Date.now(), COMMIT_PENDING_MAX_AGE_MS);
-    if (!pending) {
-      logger?.warn?.('emergency.commit_rejected', { reason: 'no-pending-detection' });
-      return res.status(409).json({ error: 'no-pending-detection' });
-    }
-    if (!triggerEmergencyLockdown) {
-      logger?.warn?.('emergency.commit_rejected', { reason: 'unavailable', lockedBy: pending.userId });
-      return res.status(503).json({ error: 'emergency-unavailable' });
-    }
-    logger?.info?.('emergency.commit_accepted', { lockedBy: pending.userId });
-    const state = await triggerEmergencyLockdown.execute({ lockedBy: pending.userId, now });
-    logger.info?.('emergency.committed', { lockedBy: pending.userId, lockedUntil: state.lockedUntil });
-
-    // An emergency lockdown is still a session end. The normal
-    // POST /sessions/:id/end path never runs during a lockdown (the kiosk is
-    // locked out), so without this an emergency-ended workout would capture
-    // camera + player frames yet never finalize the session or render its mp4.
-    // Finalize every active session and fire its recap — fire-and-forget so it
-    // never delays the lockdown response (screens must flip to LOCKED promptly).
-    if (sessionService) {
-      const householdId = req.query.household || defaultHouseholdId;
-      Promise.resolve()
-        .then(async () => {
-          const active = await sessionService.getActiveSessions(householdId);
-          for (const session of active) {
-            const sid = session.sessionId?.toString();
-            if (!sid) continue;
-            await sessionService.endSession(sid, householdId, Date.now());
-            logger?.info?.('emergency.session_finalized', { sessionId: sid, lockedBy: pending.userId });
-            if (generateSessionTimelapse) {
-              Promise.resolve(generateSessionTimelapse.execute({ sessionId: sid, householdId }))
-                .then((r) => logger?.info?.('fitness.timelapse.trigger_done', { sessionId: sid, status: r?.status, via: 'emergency' }))
-                .catch((err) => logger?.error?.('fitness.timelapse.trigger_failed', { sessionId: sid, error: err?.message, via: 'emergency' }));
-            }
-          }
-        })
-        .catch((err) => logger?.error?.('emergency.session_finalize_failed', { error: err?.message, lockedBy: pending.userId }));
-    }
-
+    if (!emergencyOperations) return res.status(409).json({ error: 'no-pending-detection' });
+    const result = await emergencyOperations.commit(req.query.household || defaultHouseholdId);
+    if (result.kind === 'no_pending') return res.status(409).json({ error: 'no-pending-detection' });
+    if (result.kind === 'unavailable') return res.status(503).json({ error: 'emergency-unavailable' });
+    const state = result.state;
     res.json({ locked: true, lockedUntil: state.lockedUntil, lockedBy: state.lockedBy });
   }));
 
@@ -1342,14 +1069,7 @@ export function createFitnessRouter(config) {
    * - 200 { confirmed:boolean }
    */
   router.post('/emergency/abort', asyncHandler(async (req, res) => {
-    const pending = identityRelay?.consumePendingDetection?.(Date.now());
-    if (pending) {
-      identityRelay?.disarmCommit?.(); // cancel any armed abuse server-commit
-      logger?.info?.('emergency.cancelled', { userId: pending.userId });
-    } else {
-      logger?.info?.('emergency.cancel_denied', { reason: 'no-pending-detection' });
-    }
-    res.json({ confirmed: !!pending });
+    res.json(emergencyOperations?.abort() || { confirmed: false });
   }));
 
   /**
@@ -1367,45 +1087,15 @@ export function createFitnessRouter(config) {
    * - 503 { error:'unlock-service-unavailable', released:false } — no reader wired
    */
   router.post('/emergency/release', asyncHandler(async (req, res) => {
-    const now = Math.floor(Date.now() / 1000);
-
-    // Fast path: an admin scan already left a fresh pending detection (e.g. the
-    // abuse detector's arm window was briefly open). Honor it without re-arming.
-    let pending = identityRelay?.consumePendingDetection?.(Date.now());
-
-    if (!pending) {
-      const unlockService = resolveUnlockService?.();
-      if (!unlockService) {
-        logger?.warn?.('emergency.release_denied', { reason: 'unlock-service-unavailable' });
-        return res.status(503).json({ error: 'unlock-service-unavailable', released: false });
-      }
-      const householdId = req.query.household || defaultHouseholdId;
-      const gallery = manageAccess.emergencyAdminGallery(householdId);
-      if (gallery.length === 0) {
-        logger?.warn?.('emergency.release_denied', { reason: 'no-admin-candidates' });
-        return res.json({ released: false });
-      }
-      logger?.info?.('emergency.release_scan_start', { candidates: gallery.length });
-      let verdict;
-      try {
-        verdict = await unlockService.requestUnlock('emergency:release', gallery);
-      } catch (err) {
-        // Degraded-response product fallback: a reader failure must return the
-        // explicit released:false contract (lockdown persists) with a stable code,
-        // not a generic 500 — the LOCKED screen depends on the released flag.
-        logger?.error?.('emergency.release_scan_error', { message: err?.message ?? null });
-        return res.status(500).json({ error: 'release-scan-failed', released: false });
-      }
-      if (!verdict?.matched) {
-        logger?.info?.('emergency.release_denied', { reason: verdict?.reason || 'no-match' });
-        return res.json({ released: false });
-      }
-      pending = { userId: verdict.userId, at: Date.now() };
+    const householdId = req.query.household || defaultHouseholdId;
+    const outcome = emergencyOperations ? await emergencyOperations.release(householdId) : { kind: 'unavailable' };
+    if (outcome.kind === 'unavailable') {
+      return res.status(503).json({ error: 'unlock-service-unavailable', released: false });
     }
-
-    if (releaseEmergencyLockdown) await releaseEmergencyLockdown.execute({ by: pending.userId, now });
-    logger?.info?.('emergency.released', { userId: pending.userId });
-    res.json({ released: true });
+    if (outcome.kind === 'scan_failed') {
+      return sendInternalError(res, { error: 'release-scan-failed', released: false });
+    }
+    res.json({ released: outcome.kind === 'released' });
   }));
 
   // ── Fingerprint / manage-access ─────────────────────────────
@@ -1420,6 +1110,7 @@ export function createFitnessRouter(config) {
    */
   router.get('/fingerprints', asyncHandler(async (req, res) => {
     const householdId = req.query.household || defaultHouseholdId;
+    if (!manageAccess) return res.status(503).json({ error: 'manage-access-unavailable' });
     res.json(manageAccess.listFingerprints(householdId));
   }));
 
@@ -1430,8 +1121,8 @@ export function createFitnessRouter(config) {
    */
   router.post('/fingerprints/enroll', asyncHandler(async (req, res) => {
     const householdId = req.query.household || defaultHouseholdId;
-    const { status, body } = await manageAccess.enroll(householdId, req.body || {});
-    return res.status(status).json(body);
+    if (!manageAccess) return res.status(503).json({ error: 'manage-access-unavailable' });
+    return sendFingerprintOutcome(res, await manageAccess.enroll(householdId, req.body || {}));
   }));
 
   /**
@@ -1441,8 +1132,8 @@ export function createFitnessRouter(config) {
    */
   router.delete('/fingerprints', asyncHandler(async (req, res) => {
     const householdId = req.query.household || defaultHouseholdId;
-    const { status, body } = await manageAccess.remove(householdId, req.body || {});
-    return res.status(status).json(body);
+    if (!manageAccess) return res.status(503).json({ error: 'manage-access-unavailable' });
+    return sendFingerprintOutcome(res, await manageAccess.remove(householdId, req.body || {}));
   }));
 
   // -------------------- Workouts (Build authors, Run performs) --------------------
@@ -1457,18 +1148,18 @@ export function createFitnessRouter(config) {
    * on the wire for one screen.
    */
   router.get('/workouts', asyncHandler(async (req, res) => {
-    if (!workoutRepository) return res.status(503).json({ error: 'workouts unavailable' });
+    if (!workoutCatalog) return res.status(503).json({ error: 'workouts unavailable' });
     const householdId = req.query.household || defaultHouseholdId;
-    return res.json({ workouts: workoutRepository.list(householdId) });
+    return res.json({ workouts: workoutCatalog.list(householdId) });
   }));
 
   /**
    * GET /api/fitness/workouts/:id - One full workout, for Build to edit and Run to walk.
    */
   router.get('/workouts/:id', asyncHandler(async (req, res) => {
-    if (!workoutRepository) return res.status(503).json({ error: 'workouts unavailable' });
+    if (!workoutCatalog) return res.status(503).json({ error: 'workouts unavailable' });
     const householdId = req.query.household || defaultHouseholdId;
-    const workout = workoutRepository.get(req.params.id, householdId);
+    const workout = workoutCatalog.get(req.params.id, householdId);
     if (!workout) return res.status(404).json({ error: 'not found' });
     return res.json({ workout });
   }));
@@ -1549,9 +1240,9 @@ export function createFitnessRouter(config) {
    * workout that was never there.
    */
   router.delete('/workouts/:id', asyncHandler(async (req, res) => {
-    if (!workoutRepository) return res.status(503).json({ error: 'workouts unavailable' });
+    if (!workoutCatalog) return res.status(503).json({ error: 'workouts unavailable' });
     const householdId = req.query.household || defaultHouseholdId;
-    if (!workoutRepository.delete(req.params.id, householdId)) {
+    if (!workoutCatalog.delete(req.params.id, householdId)) {
       return res.status(404).json({ error: 'not found' });
     }
     return res.json({ ok: true, id: req.params.id });
@@ -1578,7 +1269,7 @@ export function createFitnessRouter(config) {
   router.get('/exercises', asyncHandler(async (req, res) => {
     if (!browseExerciseLibrary) return res.status(503).json({ error: 'exercise library unavailable' });
     return res.json(browseExerciseLibrary.listExercises(
-      browseExerciseLibrary.filterFromQuery(req.query),
+      parseExerciseFacets(req.query),
     ));
   }));
 

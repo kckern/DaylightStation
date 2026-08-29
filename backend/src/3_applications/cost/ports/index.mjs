@@ -8,5 +8,3 @@
 
 export { ICostSource, default as ICostSourceDefault } from './ICostSource.mjs';
 export { ICostRepository, default as ICostRepositoryDefault } from './ICostRepository.mjs';
-export { ICostBudgetRepository, default as ICostBudgetRepositoryDefault } from './ICostBudgetRepository.mjs';
-export { ICostAlertGateway, default as ICostAlertGatewayDefault } from './ICostAlertGateway.mjs';

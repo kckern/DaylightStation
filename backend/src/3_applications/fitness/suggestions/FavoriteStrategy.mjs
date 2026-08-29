@@ -5,22 +5,22 @@
 export class FavoriteStrategy {
   async suggest(context, remainingSlots) {
     if (remainingSlots <= 0) return [];
-    const { fitnessConfig, fitnessPlayableService, contentAdapter } = context;
-    const favoriteIds = fitnessConfig?.suggestions?.favorites || [];
+    const { suggestionPolicy, fitnessPlayableService, contentCatalog } = context;
+    const favoriteIds = suggestionPolicy.favorites || [];
     if (favoriteIds.length === 0) return [];
 
     const results = [];
     for (const rawId of favoriteIds) {
       if (results.length >= remainingSlots) break;
 
-      const showId = String(rawId).includes(':') ? String(rawId) : `plex:${rawId}`;
-      const localId = showId.replace(/^plex:/, '');
+      const showRef = contentCatalog.canonicalize(rawId);
+      const showId = showRef.contentId;
 
       // Resolve show metadata for the title
       let showTitle = null;
-      if (contentAdapter) {
+      if (contentCatalog) {
         try {
-          const item = await contentAdapter.getItem(showId);
+          const item = await contentCatalog.describeItem(showId);
           showTitle = item?.title || null;
         } catch { /* proceed without title */ }
       }
@@ -28,7 +28,7 @@ export class FavoriteStrategy {
       // Resolve episodes
       let episodeData;
       try {
-        episodeData = await fitnessPlayableService.getPlayableEpisodes(localId);
+        episodeData = await fitnessPlayableService.getPlayableEpisodes(showId);
       } catch {
         continue;
       }
@@ -41,6 +41,7 @@ export class FavoriteStrategy {
       const ep = nextUnwatched || episodes[Math.floor(Math.random() * episodes.length)];
 
       const showLabels = episodeData.info?.labels || [];
+      const episodeRef = contentCatalog.canonicalize(ep.id ?? ep.localId);
       results.push({
         type: 'favorite',
         action: 'play',
@@ -49,8 +50,8 @@ export class FavoriteStrategy {
         title: ep.title,
         showTitle: showTitle || ep.metadata?.grandparentTitle || 'Favorite',
         description: ep.metadata?.summary || null,
-        thumbnail: ep.thumbnail || `/api/v1/display/plex/${ep.localId}`,
-        poster: `/api/v1/content/plex/image/${localId}`,
+        thumbnail: ep.thumbnail || displayImageRef(episodeRef.source, episodeRef.localId),
+        poster: contentImageRef(showRef.source, showRef.localId),
         durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,
         orientation: 'landscape',
         labels: showLabels,
@@ -60,3 +61,4 @@ export class FavoriteStrategy {
     return results;
   }
 }
+import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';

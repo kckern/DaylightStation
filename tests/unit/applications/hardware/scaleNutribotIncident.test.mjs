@@ -40,7 +40,7 @@
 // with the awaited AcceptFoodLog call.
 
 import { describe, it, expect, vi } from 'vitest';
-import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
+import { createScaleNutribotBridge } from '#adapters/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
 import { resolveScaleNet } from '#apps/nutribot/usecases/LogFoodFromScale.mjs';
@@ -53,6 +53,11 @@ import { computeNet, computeNutrition } from '#domains/nutrition/index.mjs';
 import { createScanDispatch } from '#composition/modules/scanDispatch.mjs';
 import { SelectScaleDensity } from '#apps/nutribot/usecases/SelectScaleDensity.mjs';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
+import {
+  createNutriLog,
+  serializeFoodItem,
+  serializeNutriLog,
+} from '#apps/nutribot/nutriLogRecords.mjs';
 
 const SCALE = 'kitchen-food-scale';
 const DEVICE = 'nutribot-upc';
@@ -144,13 +149,13 @@ function makeIncidentHarness() {
           return { success: true, logUuid: existingLogUuid, edited: false, touched: true };
         }
         await foodLogStore.save(existing.with({
-          items: [{ ...existing.items[0].toJSON(), grams: net }],
+          items: [{ ...serializeFoodItem(existing.items[0]), grams: net }],
           metadata: { ...existing.metadata, grossGrams: gross },
         }, new Date()));
         return { success: true, logUuid: existingLogUuid, messageId: 'm1', stage: 'density', edited: true };
       }
 
-      await foodLogStore.save(NutriLog.create({
+      await foodLogStore.save(createNutriLog({
         userId: 'kckern',
         conversationId: 'telegram:b1_c2',
         // NET, not gross: SelectScaleDensity multiplies THIS by kcal_per_g, which
@@ -221,8 +226,10 @@ function makeIncidentHarness() {
     applyScanToComposition,
     getScaleNutribotBridge: () => bridge,
     getLogFoodFromUPC: () => ({ execute: async () => ({ ok: true }) }),
-    configService: { getSystemConfig: () => ({}), getHeadOfHousehold: () => 'kckern' },
-    userIdentityService: { resolvePlatformId: () => null },
+    nutribotIdentity: {
+      defaultUserId: () => 'kckern',
+      conversationIdFor: () => 'telegram:b1_c2',
+    },
     screenNames: [],
     logger: noop,
     barcodeLogger: noop,
@@ -254,7 +261,7 @@ const settle = (h, grams) => h.publish({ id: SCALE, grams, unit: 'g', stable: tr
  */
 function persisted(h) {
   const log = h.logs.get(LOG_ID);
-  const json = log.toJSON();
+  const json = serializeNutriLog(log);
   return { item: json.items[0], metadata: json.metadata };
 }
 

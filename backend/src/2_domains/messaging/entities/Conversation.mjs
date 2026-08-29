@@ -76,18 +76,6 @@ export class Conversation {
     }
   }
 
-  // Transitional: retained for API response DTOs (4_api/v1/routers/messaging.mjs).
-  // Storage (de)hydration lives in YamlConversationDatastore, NOT here.
-  toJSON() {
-    return {
-      id: this.id,
-      participants: this.participants,
-      messages: this.messages.map(m => m.toJSON()),
-      startedAt: this.startedAt,
-      lastMessageAt: this.lastMessageAt,
-      metadata: this.metadata
-    };
-  }
 }
 
 export default Conversation;

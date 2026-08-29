@@ -11,8 +11,6 @@
  * date formatting) to SchedulerService in the domain layer.
  */
 
-import path from 'path';
-import { pathToFileURL } from 'url';
 import { JobState } from '#domains/scheduling/entities/JobState.mjs';
 import { JobExecution } from '#domains/scheduling/entities/JobExecution.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
@@ -20,18 +18,30 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 export class SchedulerOrchestrator {
   constructor({
     schedulerService,
+    timestampCodec,
+    newExecutionId,
+    scheduler,
     jobStore,
     stateStore,
-    moduleBasePath = null,
+    moduleLoader = null,
     harvesterExecutor = null,
     mediaExecutor = null,
     newsReporterExecutor = null,
     schoolExecutor = null
   }) {
     this.schedulerService = schedulerService;
+    if (!timestampCodec || typeof timestampCodec.format !== 'function') throw new Error('SchedulerOrchestrator requires timestampCodec');
+    if (typeof newExecutionId !== 'function') throw new Error('SchedulerOrchestrator requires newExecutionId');
+    if (!scheduler?.withDeadline) throw new Error('SchedulerOrchestrator requires scheduler');
+    this.timestampCodec = timestampCodec;
+    this.newExecutionId = newExecutionId;
+    this.scheduler = scheduler;
     this.jobStore = jobStore;
     this.stateStore = stateStore;
-    this.moduleBasePath = moduleBasePath;
+    this.moduleLoader = moduleLoader || {
+      resolve: (moduleRef) => moduleRef,
+      load: (moduleRef) => import(moduleRef),
+    };
     this.harvesterExecutor = harvesterExecutor;
     this.mediaExecutor = mediaExecutor;
     this.newsReporterExecutor = newsReporterExecutor;
@@ -40,23 +50,13 @@ export class SchedulerOrchestrator {
   }
 
   /**
-   * Resolve a module path from jobs.yml to an absolute path.
+   * Resolve a legacy module reference through the injected loader.
    * Only used for legacy jobs without executors (fitsync, archive-rotation, media-memory-validator).
-   * Module paths are relative to moduleBasePath (typically _legacy/routers/).
    * @param {string} modulePath - Path from job config (e.g., "../lib/fitsync.mjs")
    * @returns {string} Absolute path or file URL for dynamic import
    */
   resolveModulePath(modulePath) {
-    if (!this.moduleBasePath) {
-      // No base path configured - use as-is (will likely fail)
-      return modulePath;
-    }
-
-    // Resolve relative path against the configured base
-    const absolutePath = path.resolve(this.moduleBasePath, modulePath);
-
-    // Convert to file URL for cross-platform dynamic import compatibility
-    return pathToFileURL(absolutePath).href;
+    return this.moduleLoader.resolve(modulePath);
   }
 
   /**
@@ -85,7 +85,7 @@ export class SchedulerOrchestrator {
     for (const { job, state } of jobsWithState) {
       if (!state.nextRun) {
         const nextRun = this.schedulerService.computeNextRun(job, now);
-        state.nextRun = this.schedulerService.formatDate(nextRun);
+        state.nextRun = this.timestampCodec.format(nextRun);
         await this.stateStore.saveState(job.id, state);
       }
     }
@@ -148,21 +148,11 @@ export class SchedulerOrchestrator {
       // they fell through to the legacy dynamic-import branch they would throw
       // INVALID_MODULE.
       if (this.newsReporterExecutor?.canHandle(job.id)) {
-        await Promise.race([
-          this.newsReporterExecutor.execute(job.id, job.options || {}, { executionId }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
-          )
-        ]);
+        await this.#runWithinDeadline(this.newsReporterExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
         execution.succeed(timestamp);
       } else if (this.harvesterExecutor?.canHandle(job.id)) {
-        await Promise.race([
-          this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
-          )
-        ]);
+        await this.#runWithinDeadline(this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
         execution.succeed(timestamp);
       } else if (this.schoolExecutor?.canHandle(job.id)) {
@@ -170,28 +160,18 @@ export class SchedulerOrchestrator {
         // than a registration on `mediaExecutor`: that registry is generic
         // enough to have accepted it, and naming a school job "media" is the
         // kind of small lie that makes the next person hunt.
-        await Promise.race([
-          this.schoolExecutor.execute(job.id, job.options || {}, { executionId }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
-          )
-        ]);
+        await this.#runWithinDeadline(this.schoolExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
         execution.succeed(timestamp);
       } else if (this.mediaExecutor?.canHandle(job.id)) {
         // Check if media executor can handle this job (youtube, etc.)
-        await Promise.race([
-          this.mediaExecutor.execute(job.id, job.options || {}, { executionId }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
-          )
-        ]);
+        await this.#runWithinDeadline(this.mediaExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
         execution.succeed(timestamp);
       } else {
         // Fall back to dynamic module import (legacy)
         const resolvedPath = this.resolveModulePath(job.module);
-        const module = await import(resolvedPath);
+        const module = await this.moduleLoader.load(job.module);
         const handler = module.default;
 
         if (typeof handler !== 'function') {
@@ -207,12 +187,7 @@ export class SchedulerOrchestrator {
             ? handler(executionId)
             : handler(noopLogger, executionId);
 
-        await Promise.race([
-          promise,
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
-          )
-        ]);
+        await this.#runWithinDeadline(promise, job);
 
         execution.succeed(timestamp);
       }
@@ -229,6 +204,13 @@ export class SchedulerOrchestrator {
     return execution;
   }
 
+  #runWithinDeadline(work, job) {
+    return this.scheduler.withDeadline(work, {
+      milliseconds: job.timeout,
+      errorFactory: () => new Error(`Job timeout after ${job.timeout}ms`),
+    });
+  }
+
   /**
    * Run a single job and update its state
    * @param {import('#domains/scheduling/entities/Job.mjs').Job} job
@@ -241,8 +223,8 @@ export class SchedulerOrchestrator {
     if (!now) {
       throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
     }
-    const executionId = this.schedulerService.generateExecutionId();
-    const timestamp = this.schedulerService.formatDate(now);
+    const executionId = this.newExecutionId();
+    const timestamp = this.timestampCodec.format(now);
 
     const execution = await this.executeJob(job, executionId, manual, timestamp);
 
@@ -250,7 +232,7 @@ export class SchedulerOrchestrator {
     const nextRun = this.schedulerService.computeNextRun(job, now);
 
     // Update state
-    state.updateAfterExecution(execution, this.schedulerService.formatDate(nextRun));
+    state.updateAfterExecution(execution, this.timestampCodec.format(nextRun));
     await this.stateStore.saveState(job.id, state);
 
     return execution;
@@ -305,6 +287,38 @@ export class SchedulerOrchestrator {
     return { execution, executionId: execution.executionId };
   }
 
+  /** Allocate the acknowledgement id used by legacy bucket endpoints. */
+  createExecutionId() {
+    return this.newExecutionId();
+  }
+
+  /** Run every configured job assigned to a legacy scheduling bucket. */
+  async runBucket(bucketName) {
+    const jobs = await this.jobStore.loadJobs();
+    const bucketJobs = jobs.filter(job => job.bucket === bucketName);
+    const now = new Date();
+    const executions = [];
+    for (const job of bucketJobs) {
+      const states = await this.stateStore.loadStates();
+      // Preserve the legacy bucket endpoint's fallback exactly. runJob expects
+      // a JobState, so a missing stored state is surfaced and logged by the
+      // delivery adapter after its acknowledgement has already been sent.
+      const state = states.get(job.id) || { jobId: job.id };
+      executions.push(await this.runJob(job, state, true, now));
+    }
+    return executions;
+  }
+
+  /** List configured jobs without exposing the datastore to delivery code. */
+  listJobs() {
+    return this.jobStore.loadJobs();
+  }
+
+  /** Snapshot currently running job/execution pairs. */
+  listRunningJobs() {
+    return Array.from(this.runningJobs.entries()).map(([jobId, executionId]) => ({ jobId, executionId }));
+  }
+
   /**
    * Get status of all jobs
    * @param {Date} now - Current timestamp (required)
@@ -333,7 +347,7 @@ export class SchedulerOrchestrator {
 
     return {
       status: 'ok',
-      timestamp: this.schedulerService.formatDate(now),
+      timestamp: this.timestampCodec.format(now),
       runningCount: this.runningJobs.size,
       jobs
     };

@@ -2,7 +2,7 @@
 /**
  * StravaFeedAdapter
  *
- * Reads Strava activity data from UserDataService and normalizes to FeedItem shape.
+ * Reads Strava activity data through its lifelog reader and normalizes to FeedItem shape.
  *
  * @module adapters/feed/sources/StravaFeedAdapter
  */
@@ -24,13 +24,13 @@ function fnv1a(str) {
 }
 
 export class StravaFeedAdapter extends IFeedSourceAdapter {
-  #userDataService;
+  #loadLifelog;
   #logger;
 
-  constructor({ userDataService, logger = console }) {
+  constructor({ loadLifelog, logger = console }) {
     super();
-    if (!userDataService) throw new Error('StravaFeedAdapter requires userDataService');
-    this.#userDataService = userDataService;
+    if (typeof loadLifelog !== 'function') throw new Error('StravaFeedAdapter requires loadLifelog');
+    this.#loadLifelog = loadLifelog;
     this.#logger = logger;
   }
 
@@ -39,7 +39,7 @@ export class StravaFeedAdapter extends IFeedSourceAdapter {
 
   async fetchItems(query, username) {
     try {
-      const data = this.#userDataService.getLifelogData(username, 'strava');
+      const data = this.#loadLifelog(username, 'strava');
       if (!data) return [];
 
       const daysBack = query.params?.daysBack || 3;

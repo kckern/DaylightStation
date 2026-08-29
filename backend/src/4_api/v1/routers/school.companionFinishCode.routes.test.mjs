@@ -9,7 +9,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolRouter } from './school.mjs';
+import { createSchoolTestRouter as createSchoolRouter } from '../../../../../tests/_lib/school/schoolRouterTestSupport.mjs';
 
 // The router matches refusals against the class COMPOSITION injects, never one
 // it imports (a 4_api module may not reach into 2_domains). A local stand-in is

@@ -4,8 +4,11 @@ import { Response } from '#domains/trigger/Response.mjs';
 
 const deps = () => ({
   wakeAndLoadService: { execute: vi.fn().mockResolvedValue({ ok: true }) },
-  deviceService: { get: vi.fn(() => ({ loadContent: vi.fn().mockResolvedValue('loaded'), clearContent: vi.fn().mockResolvedValue('cleared') })) },
-  haGateway: { callService: vi.fn().mockResolvedValue('ha-ok') },
+  actuationGateway: {
+    openDevice: vi.fn().mockResolvedValue('loaded'),
+    clearDevice: vi.fn().mockResolvedValue('cleared'),
+    activateScene: vi.fn().mockResolvedValue('ha-ok'),
+  },
 });
 
 describe('dispatchResponse', () => {
@@ -34,18 +37,16 @@ describe('dispatchResponse', () => {
     expect(d.wakeAndLoadService.execute).toHaveBeenCalledWith('t', { play: 'plex:3' }, { dispatchId: 'd3' });
   });
 
-  it('device open → deviceService.get(target).loadContent(path, params)', async () => {
+  it('device open delegates to the semantic actuation gateway', async () => {
     const d = deps();
-    const dev = { loadContent: vi.fn().mockResolvedValue('ok'), clearContent: vi.fn() };
-    d.deviceService.get = vi.fn(() => dev);
     await dispatchResponse(Response.device({ target: 'office-tv', op: 'open', path: '/videocall', params: { room: 'x' } }), d);
-    expect(dev.loadContent).toHaveBeenCalledWith('/videocall', { room: 'x' });
+    expect(d.actuationGateway.openDevice).toHaveBeenCalledWith('office-tv', '/videocall', { room: 'x' });
   });
 
-  it('ha scene → haGateway.callService(scene, turn_on, {entity_id})', async () => {
+  it('ha scene delegates to the semantic actuation gateway', async () => {
     const d = deps();
     await dispatchResponse(Response.ha({ op: 'scene', scene: 'scene.movie' }), d);
-    expect(d.haGateway.callService).toHaveBeenCalledWith('scene', 'turn_on', { entity_id: 'scene.movie' });
+    expect(d.actuationGateway.activateScene).toHaveBeenCalledWith('scene.movie');
   });
 
   it('throws UnknownResponseKindError for an unregistered kind', async () => {

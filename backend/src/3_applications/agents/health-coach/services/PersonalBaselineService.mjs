@@ -2,8 +2,8 @@
  * PersonalBaselineService — T8 of the health-coach reflective architecture.
  *
  * Computes rolling baselines per domain (fitness / nutrition / weight) by
- * composing the domain adapters built in T4-T6.  Results are cached for 24h
- * at data/users/<userId>/profile/baselines.yml via dataService.user.
+ * composing the domain adapters built in T4-T6. Results are cached for 24h
+ * through the semantic workspace repository.
  */
 
 // ---------------------------------------------------------------------------
@@ -134,22 +134,22 @@ export function computeWeightBaseline({ points, period_days }) {
 
 export class PersonalBaselineService {
   #adapters;
-  #dataService;
+  #workspaceRepository;
   #cacheTtlMs;
   #now;
 
   /**
    * @param {object} opts
    * @param {object} opts.adapters         - Map of adapter instances: { workout, meal, weigh_in }
-   * @param {object} opts.dataService      - dataService with .user.read / .user.write
+   * @param {object} opts.workspaceRepository - Semantic health-coach workspace repository
    * @param {number} [opts.cacheTtlMs]     - Cache TTL in ms (default 24h)
    * @param {function} [opts.now]          - () => Date (injectable for testing)
    */
-  constructor({ adapters, dataService, cacheTtlMs = 24 * 60 * 60_000, now = () => new Date() }) {
+  constructor({ adapters, workspaceRepository, cacheTtlMs = 24 * 60 * 60_000, now = () => new Date() }) {
     if (!adapters)     throw new Error('PersonalBaselineService: adapters map required');
-    if (!dataService)  throw new Error('PersonalBaselineService: dataService required');
+    if (!workspaceRepository?.getBaselines || !workspaceRepository?.saveBaselines) throw new Error('PersonalBaselineService: workspaceRepository required');
     this.#adapters    = adapters;
-    this.#dataService = dataService;
+    this.#workspaceRepository = workspaceRepository;
     this.#cacheTtlMs  = cacheTtlMs;
     this.#now         = now;
   }
@@ -218,12 +218,12 @@ export class PersonalBaselineService {
   }
 
   async #readCache(userId) {
-    try { return await this.#dataService.user.read('profile/baselines', userId); }
+    try { return await this.#workspaceRepository.getBaselines(userId); }
     catch { return null; }
   }
 
   async #writeCache(userId, payload) {
-    try { await this.#dataService.user.write('profile/baselines', payload, userId); }
+    try { await this.#workspaceRepository.saveBaselines(userId, payload); }
     catch { /* non-fatal — cache miss on next call is acceptable */ }
   }
 }

@@ -19,14 +19,11 @@
  * @module applications/fitness/FitnessActivityEnrichmentService
  */
 
-import path from 'path';
 import moment from 'moment-timezone';
-import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
 import { evaluateActivitySessionMatch } from '#domains/fitness/services/activitySessionMatch.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
-import { encodeSingleSeries } from '../../2_domains/fitness/services/TimelineService.mjs';
 
 const MAX_RETRIES = 3;
 const MAX_TOTAL_ATTEMPTS = 10;            // hard cap before abandoning
@@ -39,13 +36,14 @@ const COOLDOWN_TTL_MS = 60 * 60 * 1000;  // 1 hour
 export class FitnessActivityEnrichmentService {
   #activityGateway;
   #jobStore;
-  #authStore;
-  #configService;
+  #userContext;
+  #ensureActivityAccess;
   #selectionConfig;
   #resolveDisplayName;
-  #fitnessHistoryDir;
   #reconciliationService;
   #logger;
+  #historyRepository;
+  #scheduleRetry;
 
   // Circuit breaker: in-memory cooldown of recently-enriched activity IDs
   #cooldown = new Map(); // activityId → expiry timestamp
@@ -54,22 +52,23 @@ export class FitnessActivityEnrichmentService {
    * @param {Object} config
    * @param {Object} config.activityGateway - IActivityGateway implementation (external activity provider)
    * @param {Object} config.jobStore - Webhook job store instance
-   * @param {Object} config.authStore - { loadUserAuth(provider, username) } for OAuth tokens
-   * @param {Object} config.configService - ConfigService
+   * @param {Object} config.userContext - Default athlete and timezone projection
+   * @param {Function} config.ensureActivityAccess - Ensure provider access is ready
    * @param {Object} config.selectionConfig - Primary-media selection config (from buildSelectionConfig)
    * @param {Function} [config.resolveDisplayName] - (userId) => display name; defaults to identity
    * @param {string} config.fitnessHistoryDir - Path to fitness history dir
    * @param {Object} [config.reconciliationService] - ActivityReconciliationService instance
    * @param {Object} [config.logger]
    */
-  constructor({ activityGateway, jobStore, authStore, configService, selectionConfig, resolveDisplayName, fitnessHistoryDir, reconciliationService, logger = console }) {
+  constructor({ activityGateway, jobStore, userContext, ensureActivityAccess, scheduleRetry, selectionConfig, resolveDisplayName, historyRepository, reconciliationService, logger = console }) {
     this.#activityGateway = activityGateway;
     this.#jobStore = jobStore;
-    this.#authStore = authStore;
-    this.#configService = configService;
+    this.#userContext = userContext || { defaultUserId: () => 'user_1', timezone: () => 'America/Los_Angeles' };
+    this.#ensureActivityAccess = ensureActivityAccess || (async () => {});
+    this.#scheduleRetry = scheduleRetry || (() => { throw new Error('FitnessActivityEnrichmentService requires scheduleRetry'); });
     this.#selectionConfig = selectionConfig;
     this.#resolveDisplayName = resolveDisplayName || ((userId) => userId);
-    this.#fitnessHistoryDir = fitnessHistoryDir;
+    this.#historyRepository = historyRepository;
     this.#reconciliationService = reconciliationService || null;
     this.#logger = logger;
   }
@@ -176,7 +175,7 @@ export class FitnessActivityEnrichmentService {
       if (!currentActivity?.start_date) {
         this.#logger.warn?.('strava.enrichment.activity_fetch_failed', { activityId });
         if (attempt < MAX_RETRIES) {
-          setTimeout(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
+          this.#scheduleRetry(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
         } else {
           this.#jobStore.update(activityId, { status: 'unmatched' });
         }
@@ -188,7 +187,7 @@ export class FitnessActivityEnrichmentService {
       if (!match) {
         if (attempt < MAX_RETRIES) {
           this.#logger.info?.('strava.enrichment.no_match', { activityId, attempt });
-          setTimeout(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
+          this.#scheduleRetry(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
           return;
         }
 
@@ -213,7 +212,7 @@ export class FitnessActivityEnrichmentService {
       const session = match.data;
 
       // Write provider data back to session YAML (if not already linked)
-      const username = this.#configService.getHeadOfHousehold?.() || 'user_1';
+      const username = this.#userContext.defaultUserId?.() || 'user_1';
       if (session.participants?.[username] && !session.participants[username]?.strava?.activityId) {
         session.participants[username].strava = {
           activityId: currentActivity.id,
@@ -225,13 +224,11 @@ export class FitnessActivityEnrichmentService {
           maxHeartrate: currentActivity.max_heartrate || null,
         };
 
-        const savePath = match.filePath.replace(/\.yml$/, '');
-        saveYaml(savePath, session);
+        this.#historyRepository.save(match.sessionId, session);
 
         this.#logger.info?.('strava.enrichment.session_writeback', {
           activityId,
-          sessionId: session.sessionId || session.session?.id,
-          filePath: match.filePath,
+          sessionId: match.sessionId,
         });
       }
 
@@ -268,7 +265,7 @@ export class FitnessActivityEnrichmentService {
         description: updatePayload.description ?? session.strava.pushed?.description ?? currentActivity.description ?? null,
         at: new Date().toISOString(),
       };
-      saveYaml(match.filePath.replace(/\.yml$/, ''), session);
+      this.#historyRepository.save(match.sessionId, session);
 
       // Mark complete + cooldown
       this.#jobStore.update(activityId, {
@@ -298,7 +295,7 @@ export class FitnessActivityEnrichmentService {
       });
 
       if (attempt < MAX_RETRIES) {
-        setTimeout(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
+        this.#scheduleRetry(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
       } else {
         this.#jobStore.update(activityId, { status: 'unmatched' });
       }
@@ -319,20 +316,19 @@ export class FitnessActivityEnrichmentService {
   _findMatchingSession(activity) {
     const activityId = String(activity.id);
 
-    if (!this.#fitnessHistoryDir || !dirExists(this.#fitnessHistoryDir)) {
+    if (!this.#historyRepository?.isAvailable()) {
       this.#logger.warn?.('strava.enrichment.session_scan.no_history_dir', {
         activityId,
-        dir: this.#fitnessHistoryDir,
       });
       return null;
     }
 
     const MIN_SESSION_SECONDS = 120;
 
-    const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
+    const tz = this.#userContext.timezone?.() || 'America/Los_Angeles';
     // The athlete whose activity this is — the guards need to know whose
     // presence in the session to measure.
-    const matchUsername = this.#configService?.getHeadOfHousehold?.() || 'user_1';
+    const matchUsername = this.#userContext.defaultUserId?.() || 'user_1';
 
     const actStart = moment(activity.start_date).tz(tz);
     const actEnd = actStart.clone().add(activity.elapsed_time || activity.moving_time || 0, 'seconds');
@@ -350,15 +346,10 @@ export class FitnessActivityEnrichmentService {
     let bestOverlap = 0;
 
     for (const date of dates) {
-      const dateDir = path.join(this.#fitnessHistoryDir, date);
-      if (!dirExists(dateDir)) continue;
+      const records = this.#historyRepository.list(date);
+      filesScanned += records.length;
 
-      const files = listYamlFiles(dateDir);
-      filesScanned += files.length;
-
-      for (const filename of files) {
-        const filePath = path.join(dateDir, `${filename}.yml`);
-        const data = loadYamlSafe(filePath);
+      for (const { id: filename, data } of records) {
         if (!data?.session?.start || !data?.participants) continue;
 
         const durationSec = data.session.duration_seconds || 0;
@@ -370,7 +361,7 @@ export class FitnessActivityEnrichmentService {
             this.#logger.info?.('strava.enrichment.session_scan.matched', {
               activityId, date, file: filename, matchType: 'activityId',
             });
-            return { data, filePath };
+            return { data, sessionId: filename };
           }
         }
 
@@ -400,7 +391,7 @@ export class FitnessActivityEnrichmentService {
 
         if (verdict.overlapMs > bestOverlap) {
           bestOverlap = verdict.overlapMs;
-          bestMatch = { data, filePath, date, filename };
+          bestMatch = { data, sessionId: filename, date, filename };
         }
       }
     }
@@ -413,7 +404,7 @@ export class FitnessActivityEnrichmentService {
         matchType: 'time-overlap',
         overlapMs: bestOverlap,
       });
-      return { data: bestMatch.data, filePath: bestMatch.filePath };
+      return { data: bestMatch.data, sessionId: bestMatch.sessionId };
     }
 
     this.#logger.info?.('strava.enrichment.session_scan.miss', {
@@ -457,20 +448,7 @@ export class FitnessActivityEnrichmentService {
    * Ensure the provider client has a valid access token.
    */
   async _ensureAuth() {
-    if (this.#activityGateway.hasAccessToken()) return;
-
-    // Load user auth — default to head of household
-    const username = this.#configService.getHeadOfHousehold?.() || 'user_1';
-    const auth = this.#authStore?.loadUserAuth?.('strava', username);
-
-    if (!auth?.refresh) {
-      this.#logger.error?.('strava.enrichment.auth.no_refresh_token', { username });
-      throw new Error(`No Strava refresh token for user: ${username}`);
-    }
-
-    this.#logger.info?.('strava.enrichment.auth.refreshing', { username });
-    await this.#activityGateway.refreshToken(auth.refresh);
-    this.#logger.info?.('strava.enrichment.auth.refreshed', { username });
+    await this.#ensureActivityAccess(this.#userContext.defaultUserId?.() || 'user_1');
   }
 
   /**
@@ -480,8 +458,8 @@ export class FitnessActivityEnrichmentService {
    * @returns {{ sessionId: string, filePath: string }}
    */
   async _createStravaOnlySession(activity, activityGateway = null) {
-    const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
-    const username = this.#configService.getHeadOfHousehold?.() || 'user_1';
+    const tz = this.#userContext.timezone?.() || 'America/Los_Angeles';
+    const username = this.#userContext.defaultUserId?.() || 'user_1';
     const startLocal = moment(activity.start_date).tz(tz);
     const sessionId = startLocal.format('YYYYMMDDHHmmss');
     const date = startLocal.format('YYYY-MM-DD');
@@ -501,10 +479,10 @@ export class FitnessActivityEnrichmentService {
     let participantSummary = {};
 
     if (timelineData) {
-      timelineSeries[`${username}:hr`] = encodeSingleSeries(timelineData.hrSamples);
-      timelineSeries[`${username}:zone`] = encodeSingleSeries(timelineData.zoneSeries);
-      timelineSeries[`${username}:rings`] = encodeSingleSeries(timelineData.ringsSeries);
-      timelineSeries['global:rings'] = encodeSingleSeries(timelineData.ringsSeries);
+      timelineSeries[`${username}:hr`] = timelineData.hrSamples;
+      timelineSeries[`${username}:zone`] = timelineData.zoneSeries;
+      timelineSeries[`${username}:rings`] = timelineData.ringsSeries;
+      timelineSeries['global:rings'] = timelineData.ringsSeries;
       totalRings = timelineData.totalRings;
       buckets = timelineData.buckets;
       participantSummary = {
@@ -584,13 +562,8 @@ export class FitnessActivityEnrichmentService {
     };
 
     // Write to fitness history
-    const sessionDir = path.join(this.#fitnessHistoryDir, date);
-    if (!dirExists(sessionDir)) {
-      const { mkdirSync } = await import('fs');
-      mkdirSync(sessionDir, { recursive: true });
-    }
-    const filePath = path.join(sessionDir, `${sessionId}.yml`);
-    saveYaml(filePath.replace(/\.yml$/, ''), sessionData);
+    const stored = this.#historyRepository.save(sessionId, sessionData);
+    const filePath = stored?.locator ?? null;
 
     this.#logger.info?.('strava.enrichment.strava_session_created', {
       sessionId,
@@ -604,10 +577,11 @@ export class FitnessActivityEnrichmentService {
     // that overlap the activity window. Strava is the source of truth for
     // the real workout; standalone HR slivers caught at home during cooldown
     // are redundant and would otherwise show up as phantom sessions.
-    absorbOverlappingSlivers(activity, sessionDir, {
+    absorbOverlappingSlivers(activity, this.#historyRepository.list(date), {
       justCreatedSessionId: sessionId,
       tz,
       logger: this.#logger,
+      removeSession: id => this.#historyRepository.remove(id),
     });
 
     return { sessionId, filePath };
@@ -681,12 +655,10 @@ export class FitnessActivityEnrichmentService {
     if (!sessionId || !newMemo?.transcriptClean) return;
 
     // Derive date directory from sessionId (first 8 chars = YYYYMMDD)
-    const dateStr = `${sessionId.slice(0, 4)}-${sessionId.slice(4, 6)}-${sessionId.slice(6, 8)}`;
-    const filePath = path.join(this.#fitnessHistoryDir, dateStr, `${sessionId}.yml`);
-    const session = loadYamlSafe(filePath);
+    const session = this.#historyRepository.find(sessionId)?.data;
 
     if (!session) {
-      this.#logger.debug?.('strava.voice_memo_backfill.no_session', { sessionId, filePath });
+      this.#logger.debug?.('strava.voice_memo_backfill.no_session', { sessionId });
       return;
     }
 
@@ -747,7 +719,7 @@ export class FitnessActivityEnrichmentService {
       description: enrichment.description,
       at: new Date().toISOString(),
     };
-    saveYaml(filePath.replace(/\.yml$/, ''), session);
+    this.#historyRepository.save(sessionId, session);
 
     this.#logger.info?.('strava.voice_memo_backfill.pushed', {
       sessionId,

@@ -45,23 +45,6 @@ export class Job {
   }
 
   /**
-   * Convert to plain object
-   */
-  toJSON() {
-    return {
-      id: this.id,
-      name: this.name,
-      module: this.module,
-      schedule: this.schedule,
-      window: this.window,
-      timeout: this.timeout,
-      dependencies: this.dependencies,
-      enabled: this.enabled,
-      bucket: this.bucket
-    };
-  }
-
-  /**
    * Create Job from plain object
    */
   static fromObject(obj) {

@@ -1062,7 +1062,7 @@ export class PlexAdapter {
     }
 
     try {
-      const states = await this.mediaProgressMemory.getAll(storagePath);
+      const states = await this.mediaProgressMemory.listProgress(storagePath);
       const history = {};
       for (const state of states) {
         // Use resolver to parse compound key, or strip prefix as fallback

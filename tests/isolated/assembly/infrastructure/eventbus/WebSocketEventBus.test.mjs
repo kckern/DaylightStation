@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/eventbus/WebSocketEventBus.test.mjs
 import { vi } from 'vitest';
-import { WebSocketEventBus } from '#backend/src/0_system/eventbus/WebSocketEventBus.mjs';
+import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
 
 describe('WebSocketEventBus', () => {
   let bus;

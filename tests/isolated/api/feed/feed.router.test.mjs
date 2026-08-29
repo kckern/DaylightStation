@@ -2,7 +2,7 @@
 import { vi, describe, test, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createFeedRouter } from '#api/v1/routers/feed.mjs';
+import { createFeedTestRouter as createFeedRouter } from '../../../_lib/feed/feedRouterTestSupport.mjs';
 
 describe('Feed Router', () => {
   let app;

@@ -24,10 +24,8 @@
 import { resolvePlaceholders } from '#apps/newsreporter/placeholders.mjs';
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
-const DEFAULT_TIMEZONE = 'America/Denver';
-
 export class NewsReporterService {
-  #configService;
+  #configProjection;
   #sourceRegistry;
   #consolidator;
   #sinkRegistry;
@@ -37,7 +35,7 @@ export class NewsReporterService {
 
   /**
    * @param {{
-   *   configService: { getHouseholdAppConfig: Function, getHouseholdTimezone?: Function, getTimezone?: Function },
+   *   configProjection: { reporter: Function, timezone: Function },
    *   sourceRegistry: { create: Function },
    *   consolidator: { consolidate: Function },
    *   sinkRegistry: { create: Function },
@@ -46,13 +44,13 @@ export class NewsReporterService {
    *   clock?: { now: () => Date },
    * }} deps
    */
-  constructor({ configService, sourceRegistry, consolidator, sinkRegistry, history, logger, clock } = {}) {
-    if (!configService) throw new Error('NewsReporterService requires a configService');
+  constructor({ configProjection, sourceRegistry, consolidator, sinkRegistry, history, logger, clock } = {}) {
+    if (!configProjection?.reporter || !configProjection?.timezone) throw new Error('NewsReporterService requires a configProjection');
     if (!sourceRegistry) throw new Error('NewsReporterService requires a sourceRegistry');
     if (!consolidator) throw new Error('NewsReporterService requires a consolidator');
     if (!sinkRegistry) throw new Error('NewsReporterService requires a sinkRegistry');
     if (!history) throw new Error('NewsReporterService requires a history store');
-    this.#configService = configService;
+    this.#configProjection = configProjection;
     this.#sourceRegistry = sourceRegistry;
     this.#consolidator = consolidator;
     this.#sinkRegistry = sinkRegistry;
@@ -70,8 +68,7 @@ export class NewsReporterService {
    */
   async run(reporterId, overrides = {}) {
     // 1. Load reporter config.
-    const reporters = this.#configService.getHouseholdAppConfig(null, 'newsreporter') || {};
-    const cfg = reporters[reporterId];
+    const cfg = this.#configProjection.reporter(reporterId);
     if (!cfg || cfg.enabled === false) {
       throw new EntityNotFoundError('newsreporter', reporterId);
     }
@@ -204,13 +201,9 @@ export class NewsReporterService {
     return counts;
   }
 
-  /** Household timezone via the canonical ConfigService accessor; hard fallback last. */
+  /** Household timezone from the semantic configuration projection. */
   #resolveTimezone() {
-    return (
-      this.#configService.getHouseholdTimezone?.()
-      ?? this.#configService.getTimezone?.()
-      ?? DEFAULT_TIMEZONE
-    );
+    return this.#configProjection.timezone();
   }
 }
 

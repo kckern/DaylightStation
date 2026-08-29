@@ -1,12 +1,22 @@
-import { DomainError } from '#system/utils/errors/index.mjs';
+import { SemanticApplicationError } from './SemanticErrors.mjs';
 
 /**
  * Base error class for application layer errors.
  *
  * @class ApplicationError
  */
-export class ApplicationError extends DomainError {
+export class ApplicationError extends SemanticApplicationError {
   static defaultCode = 'APPLICATION_ERROR';
+
+  constructor(message, context = {}) {
+    super(message, {
+      code: context.code || ApplicationError.defaultCode,
+      context,
+    });
+    // Preserve the legacy semantic category used by API-boundary error maps.
+    // The application layer does not own an HTTP status.
+    this.name = 'DomainError';
+  }
 }
 
 /**

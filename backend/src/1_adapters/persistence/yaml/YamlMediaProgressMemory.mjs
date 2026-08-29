@@ -13,6 +13,21 @@ import { IMediaProgressMemory } from '#apps/content/ports/IMediaProgressMemory.m
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { validateCanonicalSchema, LEGACY_TO_CANONICAL } from './mediaProgressSchema.mjs';
 
+function dehydrateMediaProgress(state) {
+  const record = {
+    contentId: state.contentId,
+    playhead: state.playhead,
+    duration: state.duration,
+    percent: state.percent,
+    playCount: state.playCount,
+    lastPlayed: state.lastPlayed,
+    watchTime: state.watchTime
+  };
+  if (state.completedAt) record.completedAt = state.completedAt;
+  if (state.bookmark) record.bookmark = state.bookmark;
+  return record;
+}
+
 /**
  * YAML-based media progress persistence
  */
@@ -112,7 +127,8 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       lastPlayed: data.lastPlayed ?? null,
       watchTime: data.watchTime ?? 0,
       completedAt: data.completedAt ?? null,
-      bookmark: data.bookmark ?? null
+      bookmark: data.bookmark ?? null,
+      now: Date.now(),
     });
   }
 
@@ -122,7 +138,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @param {string} storagePath
    * @returns {Promise<MediaProgress|null>}
    */
-  async get(contentId, storagePath) {
+  async findProgress(contentId, storagePath) {
     const data = this._readFile(storagePath);
     const stateData = data[contentId];
     if (!stateData) return null;
@@ -135,10 +151,10 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @param {string} storagePath
    * @returns {Promise<void>}
    */
-  async set(state, storagePath) {
+  async saveProgress(state, storagePath) {
     const data = this._readFile(storagePath);
-    // Use the entity's canonical serialization — preserves any legacy fields for validation visibility
-    const { contentId, ...rest } = state.toJSON();
+    // Keep YAML's canonical record mapping at its persistence boundary.
+    const { contentId, ...rest } = dehydrateMediaProgress(state);
 
     // Validate schema before writing — warn but still persist (non-blocking)
     const validation = validateCanonicalSchema(rest);
@@ -164,7 +180,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @param {string} storagePath
    * @returns {Promise<MediaProgress[]>}
    */
-  async getAll(storagePath) {
+  async listProgress(storagePath) {
     const data = this._readFile(storagePath);
     return Object.entries(data).map(([contentId, stateData]) =>
       this._toDomainEntity(contentId, stateData)
@@ -176,7 +192,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @param {string} storagePath
    * @returns {Promise<void>}
    */
-  async clear(storagePath) {
+  async clearProgress(storagePath) {
     // _getBasePath returns a path with .yml appended (idempotent with saveYaml/loadYamlSafe).
     // deleteYaml unconditionally appends .yml, so we strip the extension here to avoid
     // silently no-op'ing on a non-existent .yml.yml target.
@@ -193,7 +209,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @param {string} source - Source name (e.g., 'plex')
    * @returns {Promise<MediaProgress[]>}
    */
-  async getAllFromAllLibraries(source) {
+  async listSourceProgress(source) {
     const sourceDir = `${this.basePath}/${source}`;
 
     if (!dirExists(sourceDir)) {

@@ -55,7 +55,7 @@ import { studyDayWindow } from '#domains/school/studyDay.mjs';
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
   #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
-  #selfService; #eventBus; #planProjection;
+  #selfService; #realtime; #planProjection;
 
   /**
    * @param {object} deps
@@ -102,11 +102,9 @@ export class CloseSessionOutcome {
     // `{percentFor(unitId)}` — an override wins over the authored percent.
     passOverrides = null, worksheetInstances = null, timezone = 'UTC',
     selfService = null,
-    // Optional: `{publish(topic, payload)}`. When present, every settle
-    // publishes `school.session.outcome-recorded` for the completion
-    // state machine (design 2026-08-23) — absent, settling behaves exactly
-    // as it did before that feature existed.
-    eventBus = null,
+    // Optional semantic completion-fact gateway. Absent, settlement remains
+    // durable and only the live completion projection is unavailable.
+    realtime = null,
     // The shared assembler. This use case asks it for a DELIBERATELY narrower
     // projection than the agenda does — see `#projectPlan`.
     planProjection = null,
@@ -146,7 +144,7 @@ export class CloseSessionOutcome {
     // `enabled: true` behaves exactly as it did before self-service existed
     // for THIS use case (no code minted, no key on the record).
     this.#selfService = selfService?.enabled === true;
-    this.#eventBus = eventBus;
+    this.#realtime = realtime;
     this.#logger = logger;
   }
 
@@ -331,7 +329,7 @@ export class CloseSessionOutcome {
     // section's `obligation`, and a resettle republishing an unchanged fact
     // is harmless — `SchoolCompletionBridge` only acts on an actual state
     // transition (design 2026-08-23-student-completion-state-machine, §5).
-    this.#eventBus?.publish?.('school.session.outcome-recorded', {
+    this.#realtime?.sessionOutcomeRecorded?.({
       learnerId: state.learnerId, sessionId, unitId: state.unitId, result: outcome.result, at: nowIso,
     });
     const passed = outcome.result === 'passed';

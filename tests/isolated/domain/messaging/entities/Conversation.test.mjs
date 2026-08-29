@@ -112,17 +112,35 @@ describe('Conversation', () => {
     });
   });
 
-  describe('toJSON (transitional API DTO)', () => {
-    test('serializes messages to plain objects and round-trips via constructor', () => {
+  describe('constructor hydration', () => {
+    test('hydrates plain message records into entities', () => {
       conversation.addMessage(makeMessage({ id: 'msg-1', senderId: 'john', content: 'Test' }));
-      const json = conversation.toJSON();
+      const record = {
+        id: conversation.id,
+        participants: conversation.participants,
+        messages: conversation.messages.map((message) => ({
+          id: message.id,
+          conversationId: message.conversationId,
+          senderId: message.senderId,
+          recipientId: message.recipientId,
+          type: message.type,
+          direction: message.direction,
+          content: message.content,
+          attachments: message.attachments,
+          timestamp: message.timestamp,
+          metadata: message.metadata
+        })),
+        startedAt: conversation.startedAt,
+        lastMessageAt: conversation.lastMessageAt,
+        metadata: conversation.metadata
+      };
 
-      expect(json.messages[0]).not.toBeInstanceOf(Message);
-      expect(json.messages[0].content).toBe('Test');
+      expect(record.messages[0]).not.toBeInstanceOf(Message);
+      expect(record.messages[0].content).toBe('Test');
 
       // Datastores hydrate via the constructor; static fromJSON was removed
       // (serialization-ownership migration, phase 1)
-      const restored = new Conversation(json);
+      const restored = new Conversation(record);
       expect(restored.id).toBe(conversation.id);
       expect(restored.messages).toHaveLength(1);
       expect(restored.messages[0]).toBeInstanceOf(Message);

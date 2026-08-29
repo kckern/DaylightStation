@@ -3,7 +3,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { DataService } from '#system/config/DataService.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
 
 /**
  * Proves DataService.content resolves under {dataDir}/content/ directly —

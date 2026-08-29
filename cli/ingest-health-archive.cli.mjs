@@ -36,6 +36,7 @@ import fs from 'node:fs/promises';
 import yaml from 'js-yaml';
 
 import { HealthArchiveIngestion } from '#apps/health/archive/HealthArchiveIngestion.mjs';
+import { FilesystemHealthArchiveMirror } from '#adapters/health/FilesystemHealthArchiveMirror.mjs';
 import {
   HealthArchiveManifest,
   BUILT_IN_CATEGORIES,
@@ -361,7 +362,7 @@ async function writeManifest({ destPath, userId, category, sourcePath, report, d
   });
   await fs.mkdir(destPath, { recursive: true });
   const manifestPath = path.join(destPath, 'manifest.yml');
-  await fs.writeFile(manifestPath, yaml.dump(manifest.serialize()));
+  await fs.writeFile(manifestPath, yaml.dump(encodeHealthArchiveManifest(manifest)));
   return manifestPath;
 }
 
@@ -520,7 +521,10 @@ async function main() {
     }
   }
 
-  const ingestion = new HealthArchiveIngestion({ fs, logger: console });
+  const ingestion = new HealthArchiveIngestion({
+    archiveMirror: new FilesystemHealthArchiveMirror({ io: fs }),
+    logger: console,
+  });
   const results = [];
 
   for (const category of toRun) {
@@ -598,3 +602,4 @@ main()
     process.stderr.write(`Fatal: ${err.stack || err.message}\n`);
     process.exit(1);
   });
+import { encodeHealthArchiveManifest } from '../backend/src/1_adapters/health/HealthArchiveManifestCodec.mjs';

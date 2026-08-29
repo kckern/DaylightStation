@@ -6,7 +6,7 @@ const noopLogger = { debug: () => {}, warn: () => {}, error: () => {}, info: () 
 
 const makeApp = (artAdapter) => {
   const app = express();
-  app.use('/art', createArtRouter({ artAdapter, logger: noopLogger }));
+  app.use('/art', createArtRouter({ artService: { selectFeatured: artAdapter.selectFeatured.bind(artAdapter) }, logger: noopLogger }));
   return app;
 };
 

@@ -55,12 +55,12 @@ export async function run(argv, ctx) {
 
   console.log(`Backfilling Strava-home session matching for ${username}, ${daysBack} days back...`);
 
-  // Use the singleton userDataService (initialized by initConfigService)
-  const { default: userDataService } = await import('#system/config/UserDataService.mjs');
+  const { DataService } = await import('#adapters/persistence/files/DataService.mjs');
+  const dataService = new DataService({ configService });
 
   const io = {
-    userLoadFile: (u, service) => userDataService.getLifelogData(u, service),
-    userSaveFile: (u, service, data) => userDataService.saveLifelogData(u, service, data),
+    userLoadFile: (u, service) => dataService.user.read(`lifelog/${service}`, u),
+    userSaveFile: (u, service, data) => dataService.user.write(`lifelog/${service}`, data, u),
   };
 
   const lifelogStore = new YamlLifelogDatastore({ io });
@@ -79,8 +79,8 @@ export async function run(argv, ctx) {
     lifelogStore,
     getUserAuth: (service, user) => configService.getUserAuth(service, user),
     getUserDir: (user) => configService.getUserDir(user),
-    clientId: configService.getSecret('STRAVA_CLIENT_ID'),
-    redirectUri: configService.getSecret('STRAVA_URL'),
+    clientId: configService.getSystemAuth('strava', 'client_id'),
+    redirectUri: configService.getSystemAuth('strava', 'redirect_uri') || configService.getSecret('STRAVA_URL'),
     mediaDir: configService.getMediaDir?.(),
     fitnessHistoryDir,
   });

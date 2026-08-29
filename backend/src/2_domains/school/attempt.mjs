@@ -1,4 +1,3 @@
-import { shortId } from '#domains/core/utils/id.mjs';
 import { normalizeLearningContext } from './progress/learningProgress.mjs';
 
 /**
@@ -14,14 +13,15 @@ import { normalizeLearningContext } from './progress/learningProgress.mjs';
  * grading engine and produce the same attempt, so the only honest difference is
  * provenance. Nothing scores differently because of it.
  */
-export function createAttempt({ at, processedAt = null, studyDay = null, sessionId, bankId, itemId, itemType, mode, given, correct, attributedTo, transport = 'screen', provenance = null, learning = null, bankRev = null }) {
+export function createAttempt({ id, at, processedAt = null, studyDay = null, sessionId, bankId, itemId, itemType, mode, given, correct, attributedTo, transport = 'screen', provenance = null, learning = null, bankRev = null }) {
+  if (typeof id !== 'string' || !id) throw new TypeError('Attempt id is required');
   if (!isCanonicalTimestamp(at)) {
     throw new TypeError('Attempt at must be a canonical ISO-8601 timestamp');
   }
   const normalized = normalizeLearningContext(learning, { path: 'attempt.learning' });
   if (normalized.errors.length) throw new TypeError(normalized.errors.join('; '));
   return {
-    id: `att_${shortId(8)}`,
+    id,
     at,
     ...(processedAt ? { processedAt } : {}),
     ...(studyDay ? { studyDay } : {}),

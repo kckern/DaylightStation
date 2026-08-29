@@ -259,7 +259,7 @@ export class Composition {
    * @returns {Composition}
    * @throws {ValidationError}
    */
-  static fromData(data) {
+  static fromSnapshot(data) {
     return new Composition(data);
   }
 
@@ -357,12 +357,12 @@ export class Composition {
   }
 
   /**
-   * A fresh plain object, safe to persist. Mutating it cannot reach back into
+   * A fresh plain object snapshot. Mutating it cannot reach back into
    * this composition.
    *
    * @returns {{grams: number|null, unit: string|null, density: number|null, container: string|null}}
    */
-  toData() {
+  snapshot() {
     return {
       grams: this.#grams,
       unit: this.#unit,

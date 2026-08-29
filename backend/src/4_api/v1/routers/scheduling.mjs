@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * Scheduling Router - API endpoints for cron/task management
  *
@@ -14,17 +15,30 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 
+function serializeJob(job) {
+  return {
+    id: job.id,
+    name: job.name,
+    module: job.module,
+    schedule: job.schedule,
+    window: job.window,
+    timeout: job.timeout,
+    dependencies: job.dependencies,
+    enabled: job.enabled,
+    bucket: job.bucket
+  };
+}
+
 /**
  * Create scheduling router
  * @param {Object} config
  * @param {import('#apps/scheduling/SchedulerOrchestrator.mjs').SchedulerOrchestrator} config.schedulerOrchestrator
- * @param {import('#domains/scheduling/services/SchedulerService.mjs').SchedulerService} config.schedulerService
- * @param {import('../../0_system/scheduling/Scheduler.mjs').Scheduler} config.scheduler
+ * @param {Function} config.readSchedulerStatus Runtime-status capability
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
 export function createSchedulingRouter(config) {
-  const { schedulerOrchestrator, schedulerService, scheduler, logger = console } = config;
+  const { schedulerOrchestrator, readSchedulerStatus = () => ({ enabled: false }), logger = console } = config;
   const router = express.Router();
 
   /**
@@ -34,7 +48,7 @@ export function createSchedulingRouter(config) {
   router.get('/status', asyncHandler(async (req, res) => {
     const now = new Date();
     const status = await schedulerOrchestrator.getStatus(now);
-    status.scheduler = scheduler?.getStatus() || { enabled: false };
+    status.scheduler = readSchedulerStatus();
     res.json(status);
   }));
 
@@ -64,7 +78,7 @@ export function createSchedulingRouter(config) {
         return res.status(404).json({ error: err.message });
       }
       logger.error?.('scheduling.job.manual_failed', { jobId, error: err.message });
-      res.status(500).json({ error: err.message });
+      sendInternalError(res, { error: err.message });
     }
   });
 
@@ -75,7 +89,7 @@ export function createSchedulingRouter(config) {
   const createBucketEndpoint = (bucketName) => {
     return async (req, res) => {
       try {
-        const executionId = schedulerService.generateExecutionId();
+        const executionId = schedulerOrchestrator.createExecutionId();
         logger.info?.('scheduling.bucket.called', { bucket: bucketName, executionId });
 
         // Respond immediately
@@ -86,15 +100,7 @@ export function createSchedulingRouter(config) {
         });
 
         // Get all jobs in this bucket and run them
-        const jobs = await schedulerOrchestrator.jobStore.loadJobs();
-        const bucketJobs = jobs.filter(j => j.bucket === bucketName);
-        const now = new Date();
-
-        for (const job of bucketJobs) {
-          const states = await schedulerOrchestrator.stateStore.loadStates();
-          const state = states.get(job.id) || { jobId: job.id };
-          await schedulerOrchestrator.runJob(job, state, true, now);
-        }
+        await schedulerOrchestrator.runBucket(bucketName);
       } catch (err) {
         logger.error?.('scheduling.bucket.error', { bucket: bucketName, error: err.message });
         // Response already sent, just log
@@ -113,10 +119,10 @@ export function createSchedulingRouter(config) {
    * List all registered jobs
    */
   router.get('/jobs', asyncHandler(async (req, res) => {
-    const jobs = await schedulerOrchestrator.jobStore.loadJobs();
+    const jobs = await schedulerOrchestrator.listJobs();
     res.json({
       count: jobs.length,
-      jobs: jobs.map(j => j.toJSON())
+      jobs: jobs.map(serializeJob)
     });
   }));
 
@@ -125,9 +131,8 @@ export function createSchedulingRouter(config) {
    * Get currently running jobs
    */
   router.get('/running', (req, res) => {
-    const running = Array.from(schedulerOrchestrator.runningJobs.entries()).map(([jobId, executionId]) => ({
-      jobId,
-      executionId,
+    const running = schedulerOrchestrator.listRunningJobs().map(({ jobId, executionId }) => ({
+      jobId, executionId,
       startedAt: nowTs24() // Approximate
     }));
 

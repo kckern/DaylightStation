@@ -14,9 +14,13 @@ export class ProgramRunner {
   #inputConfig = null;
   #finished = false;
   #pendingThen = null;
+  #now;
+  #random;
 
-  constructor(program) {
+  constructor(program, { now, random } = {}) {
     this.#states = program.states;
+    this.#now = now;
+    this.#random = random;
     if (!this.#states[program.start]) {
       throw new Error(`Start state "${program.start}" not found in program`);
     }
@@ -99,7 +103,10 @@ export class ProgramRunner {
   }
 
   #evaluateCondition(condition) {
-    const now = new Date();
+    if (typeof this.#now !== 'function') {
+      throw new Error('ProgramRunner requires now() for time-based conditions');
+    }
+    const now = this.#now();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     if (condition.time_before && timeStr < condition.time_before) return this.#enterState(condition.then);
     if (condition.time_after && timeStr >= condition.time_after) return this.#enterState(condition.then);
@@ -107,8 +114,11 @@ export class ProgramRunner {
   }
 
   #evaluateRandomPick(picks) {
+    if (typeof this.#random !== 'function') {
+      throw new Error('ProgramRunner requires random() for random_pick transitions');
+    }
     const totalWeight = picks.reduce((sum, p) => sum + (p.weight || 1), 0);
-    let random = Math.random() * totalWeight;
+    let random = this.#random() * totalWeight;
     for (const pick of picks) {
       random -= (pick.weight || 1);
       if (random <= 0) return this.#enterState(pick.next);

@@ -13,7 +13,9 @@
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 
-export class FullyKioskContentAdapter {
+import { IContentControl } from '#apps/devices/ports/IContentControl.mjs';
+
+export class FullyKioskContentAdapter extends IContentControl {
   #host;
   #port;
   #password;
@@ -39,6 +41,7 @@ export class FullyKioskContentAdapter {
    * @param {Object} [deps.adbAdapter] - Optional AdbAdapter for force-restart
    */
   constructor(config, deps = {}) {
+    super();
     if (!deps.httpClient) {
       throw new InfrastructureError('FullyKioskContentAdapter requires httpClient', {
         code: 'MISSING_DEPENDENCY',

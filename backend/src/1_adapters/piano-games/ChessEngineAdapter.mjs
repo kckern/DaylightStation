@@ -1,6 +1,6 @@
 import { createGame, playMove } from '../../../../shared/gaming/rulesets/chess/engine.mjs';
 import { DEFAULT_LADDER_POLICY, rungForLevel } from '../../../../shared/gaming/rulesets/chess/ladder.mjs';
-import { createStockfishEngine } from '../chess/StockfishEngineAdapter.mjs';
+import { IGameOpponentGateway } from '#apps/piano-games/ports/IGameOpponentGateway.mjs';
 
 /**
  * Rebuilds the position a container-driven chess request is asking a move
@@ -51,22 +51,32 @@ function fenFromTranscript(transcript) {
  * without spinning up a real Stockfish worker; production wiring leaves it
  * to default to a real `createStockfishEngine`.
  */
-export function createChessEngine({
-  workerPath, logger = null, timeoutMarginMs, policy = DEFAULT_LADDER_POLICY,
-  engine = createStockfishEngine({ workerPath, logger, timeoutMarginMs }),
-} = {}) {
-  return {
-    async chooseMove({ transcript, gameSessionId, opponent }) {
-      const fen = fenFromTranscript(transcript);
-      if (!fen) return null;
-      const skill = Math.max(0, Number(opponent?.level || 1) - 1);
-      const rung = rungForLevel(skill, policy);
-      return engine.chooseMove({ fen, rung, gameId: gameSessionId });
-    },
-    dispose() {
-      engine.dispose?.();
-    },
-  };
+export function createChessEngine({ engine, policy = DEFAULT_LADDER_POLICY } = {}) {
+  if (!engine?.chooseMove) throw new Error('createChessEngine requires an engine');
+  return new ChessEngineAdapter({ engine, policy });
+}
+
+export class ChessEngineAdapter extends IGameOpponentGateway {
+  #engine;
+  #policy;
+
+  constructor({ engine, policy = DEFAULT_LADDER_POLICY }) {
+    super();
+    this.#engine = engine;
+    this.#policy = policy;
+  }
+
+  async chooseMove({ transcript, gameSessionId, opponent }) {
+    const fen = fenFromTranscript(transcript);
+    if (!fen) return null;
+    const skill = Math.max(0, Number(opponent?.level || 1) - 1);
+    const rung = rungForLevel(skill, this.#policy);
+    return this.#engine.chooseMove({ fen, rung, gameId: gameSessionId });
+  }
+
+  dispose() {
+    this.#engine.dispose?.();
+  }
 }
 
 export default { createChessEngine };

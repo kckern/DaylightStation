@@ -1,16 +1,6 @@
-import path from 'path';
-import fs from 'fs';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { WeeklyReviewAggregator } from '../../2_domains/weekly-review/WeeklyReviewAggregator.mjs';
-import { toFolderName } from '../../0_system/config/configLoader.mjs';
-
-const execFileAsync = promisify(execFile);
 
 export class WeeklyReviewService {
-  #dataPath;
-  #householdDir;
-  #mediaPath;
   #immichAdapter;
   #calendarData;
   #sessionService;
@@ -18,16 +8,11 @@ export class WeeklyReviewService {
   #householdId;
   #transcriptionService;
   #logger;
+  #reviewStore;
+  #runCommand;
+  #timezone;
 
   constructor(config = {}, deps = {}) {
-    this.#dataPath = config.dataPath;
-    // Household-scoped base dir. Production injects the resolved path via
-    // ConfigService.getHouseholdPath(''); when absent (tests), fall back to the
-    // default-household folder whose name comes from the SSOT resolver rather
-    // than a hardcoded literal.
-    this.#householdDir = config.householdDir || path.join(config.dataPath, toFolderName('default'));
-
-    this.#mediaPath = config.mediaPath;
     this.#householdId = config.householdId;
     this.#immichAdapter = deps.immichAdapter;
     this.#calendarData = deps.calendarData;
@@ -35,15 +20,13 @@ export class WeeklyReviewService {
     this.#weatherStore = deps.weatherStore;
     this.#transcriptionService = deps.transcriptionService;
     this.#logger = deps.logger || console;
+    if (!deps.reviewStore) throw new Error('WeeklyReviewService requires a reviewStore dependency');
+    if (typeof deps.runCommand !== 'function') throw new Error('WeeklyReviewService requires a runCommand dependency');
+    this.#reviewStore = deps.reviewStore;
+    this.#runCommand = deps.runCommand;
+    this.#timezone = config.timezone || 'UTC';
   }
 
-  /**
-   * Every path this service touches, in one place.
-   *
-   * These eight joins were spelled out independently at eight call sites, so
-   * relocating the tree meant an eight-line edit nobody could review as a
-   * single decision. Routed through here, the location is one string.
-   */
   /**
    * Draft chunks are raw in-progress audio — heavy, transient, never diffed.
    * They belong beside the FINAL recording in media, which saveRecording and
@@ -51,14 +34,6 @@ export class WeeklyReviewService {
    * finals went to media is the asymmetry that let a 26MB orphan hide in the
    * tree that is supposed to zip small.
    */
-  #draftDir(week) {
-    return path.join(this.#mediaPath, 'weekly-review', week, '.drafts');
-  }
-
-  #reviewPath(...segments) {
-    return path.join(this.#householdDir, 'weekly-review', 'log', ...segments);
-  }
-
   async bootstrap(weekStart) {
     this.sweepStaleDrafts().catch(err => this.#logger.warn?.('weekly-review.sweep.failed', { error: err.message }));
     const start = weekStart || this.#defaultWeekStart();
@@ -199,23 +174,17 @@ export class WeeklyReviewService {
     const ext = mimeType === 'audio/ogg' ? 'ogg' : 'webm';
     this.#logger.debug?.('weekly-review.recording.file', { week, bytes: buffer.length, ext });
     const now = new Date();
-    const localDate = now.toLocaleDateString('en-CA', { timeZone: process.env.TZ || 'UTC' });
-    const localTime = now.toLocaleTimeString('en-GB', { timeZone: process.env.TZ || 'UTC', hour12: false }).replace(/:/g, '-');
-    const audioDir = path.join(this.#mediaPath, 'weekly-review', localDate);
-    const audioPath = path.join(audioDir, `recording-${localDate}-${localTime}.${ext}`);
-
-    fs.mkdirSync(audioDir, { recursive: true });
-    fs.writeFileSync(audioPath, buffer);
-    this.#logger.info?.('weekly-review.recording.audio-saved', { week, path: audioPath, bytes: buffer.length });
+    const localDate = now.toLocaleDateString('en-CA', { timeZone: this.#timezone });
+    const localTime = now.toLocaleTimeString('en-GB', { timeZone: this.#timezone, hour12: false }).replace(/:/g, '-');
+    const audioArtifact = this.#reviewStore.saveRecordingAudio({ localDate, localTime, extension: ext, buffer });
+    this.#logger.info?.('weekly-review.recording.audio-saved', { week, bytes: buffer.length });
 
     // Convert to mp3
-    const mp3Path = audioPath.replace(/\.\w+$/, '.mp3');
     try {
       const convertStart = Date.now();
-      await execFileAsync('ffmpeg', ['-i', audioPath, '-y', '-codec:a', 'libmp3lame', '-q:a', '4', mp3Path]);
-      const mp3Size = fs.statSync(mp3Path).size;
+      const { size: mp3Size = 0 } = await this.#reviewStore.convertRecordingToMp3(audioArtifact, this.#runCommand);
       this.#logger.info?.('weekly-review.recording.mp3-converted', {
-        week, mp3Path, mp3SizeKb: Math.round(mp3Size / 1024), durationMs: Date.now() - convertStart,
+        week, mp3SizeKb: Math.round(mp3Size / 1024), durationMs: Date.now() - convertStart,
       });
     } catch (err) {
       this.#logger.error?.('weekly-review.recording.mp3-failed', { error: err.message });
@@ -242,20 +211,13 @@ export class WeeklyReviewService {
       transcriptRaw,
       transcriptClean,
     };
-    const transcriptDir = this.#reviewPath(week);
-    fs.mkdirSync(transcriptDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(transcriptDir, 'transcript.yml'),
-      JSON.stringify(transcriptData, null, 2)
+    this.#reviewStore.saveTranscript(
+      week,
+      transcriptData,
+      { week, generatedAt: new Date().toISOString(), duration },
     );
 
-    this.#logger.info?.('weekly-review.recording.transcript-saved', { week, path: path.join(transcriptDir, 'transcript.yml') });
-
-    // Save manifest
-    fs.writeFileSync(
-      path.join(transcriptDir, 'manifest.yml'),
-      JSON.stringify({ week, generatedAt: new Date().toISOString(), duration }, null, 2)
-    );
+    this.#logger.info?.('weekly-review.recording.transcript-saved', { week });
     this.#logger.info?.('weekly-review.recording.manifest-saved', { week });
 
     this.#logger.info?.('weekly-review.recording.saved', { week, duration, transcriptLength: transcriptClean?.length });
@@ -269,123 +231,51 @@ export class WeeklyReviewService {
     if (typeof seq !== 'number' || seq < 0 || !Number.isInteger(seq)) throw new Error(`invalid seq: ${seq}`);
     if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error('buffer required');
 
-    const draftDir = this.#draftDir(week);
-    const draftPath = path.join(draftDir, `${sessionId}.webm`);
-    const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
-    fs.mkdirSync(draftDir, { recursive: true });
-
-    let meta = { sessionId, week, seq: -1, totalBytes: 0, startedAt: new Date().toISOString() };
-    const metaExists = fs.existsSync(metaPath);
-    if (metaExists) {
-      try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch (err) {
-        this.#logger.error?.('weekly-review.chunk.meta-corrupt', { sessionId, metaPath, error: err.message });
-        if (fs.existsSync(draftPath) && fs.statSync(draftPath).size > 0) {
-          throw new Error('draft present but meta unreadable — refusing to proceed');
-        }
-      }
-    }
-
-    // C1: reconcile draft file size against meta.totalBytes — heals desync from prior partial writes
-    if (fs.existsSync(draftPath)) {
-      const actualSize = fs.statSync(draftPath).size;
-      if (actualSize !== meta.totalBytes) {
-        this.#logger.warn?.('weekly-review.chunk.desync-recovery', {
-          sessionId, seq, metaTotalBytes: meta.totalBytes, actualDraftBytes: actualSize,
-        });
-        fs.truncateSync(draftPath, meta.totalBytes);
-      }
-    }
-
-    if (seq === meta.seq) {
-      this.#logger.warn?.('weekly-review.chunk.duplicate', { sessionId, seq });
-      return { ok: true, duplicate: true, bytesWritten: 0, totalBytes: meta.totalBytes, nextSeq: meta.seq + 1 };
-    }
-    if (seq !== meta.seq + 1) {
-      throw new Error(`out-of-order chunk: expected ${meta.seq + 1}, got ${seq}`);
-    }
-
-    // I2: seq=0 with no prior meta — truncate any stale draft from a previous broken session
-    if (seq === 0 && !metaExists) {
-      fs.writeFileSync(draftPath, buffer);
-    } else {
-      fs.appendFileSync(draftPath, buffer);
-    }
-
-    meta.seq = seq;
-    meta.totalBytes += buffer.length;
-    meta.updatedAt = new Date().toISOString();
-
-    // C1: atomic meta update — write to .tmp then rename (POSIX rename is atomic)
-    const metaTmpPath = `${metaPath}.tmp`;
-    fs.writeFileSync(metaTmpPath, JSON.stringify(meta));
-    fs.renameSync(metaTmpPath, metaPath);
+    const result = this.#reviewStore.appendDraftChunk({
+      sessionId,
+      week,
+      seq,
+      buffer,
+      nowIso: new Date().toISOString(),
+    });
 
     this.#logger.info?.('weekly-review.chunk.appended', {
-      sessionId, seq, bytes: buffer.length, totalBytes: meta.totalBytes, week,
+      sessionId, seq, bytes: buffer.length, totalBytes: result.totalBytes, week,
     });
-    return { ok: true, bytesWritten: buffer.length, totalBytes: meta.totalBytes, nextSeq: seq + 1 };
+    return result;
+  }
+
+  async appendEncodedChunk({ sessionId, seq, week, chunkBase64 }) {
+    if (typeof chunkBase64 !== 'string' || chunkBase64.length === 0) throw new Error('chunkBase64 required');
+    const buffer = Buffer.from(chunkBase64, 'base64');
+    return { result: await this.appendChunk({ sessionId, seq, week, buffer }), byteLength: buffer.length };
   }
 
   async listDrafts(week) {
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
-    const draftDir = this.#draftDir(week);
-    if (!fs.existsSync(draftDir)) return [];
-
-    const entries = fs.readdirSync(draftDir);
-    const metaFiles = entries.filter(n => n.endsWith('.meta.json'));
-    const drafts = [];
-    for (const name of metaFiles) {
-      try {
-        const meta = JSON.parse(fs.readFileSync(path.join(draftDir, name), 'utf-8'));
-        drafts.push({
-          sessionId: meta.sessionId,
-          week: meta.week,
-          seq: meta.seq,
-          totalBytes: meta.totalBytes,
-          startedAt: meta.startedAt,
-          updatedAt: meta.updatedAt,
-        });
-      } catch (err) {
-        this.#logger.warn?.('weekly-review.listDrafts.meta-parse-failed', { name, error: err.message });
-      }
-    }
-    return drafts;
+    return this.#reviewStore.listDrafts(week);
   }
 
   async finalizeDraft({ sessionId, week, duration }) {
     if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
 
-    const draftDir = this.#draftDir(week);
-    const draftPath = path.join(draftDir, `${sessionId}.webm`);
-    const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
-    if (!fs.existsSync(draftPath)) throw new Error(`draft not found: ${sessionId}`);
+    const finalization = this.#reviewStore.beginFinalization(sessionId, week);
+    const { buffer } = finalization;
 
-    // Atomically rename so concurrent chunk-writes hit a fresh draft.
-    // This makes repeat-finalize calls within the same session safe — each call
-    // processes the bytes accumulated since the previous finalize.
-    const stamp = Date.now();
-    const processingPath = path.join(draftDir, `${sessionId}.processing-${stamp}.webm`);
-    fs.renameSync(draftPath, processingPath);
-
-    this.#logger.info?.('weekly-review.finalize.start', { sessionId, week, duration, processingPath });
-    const buffer = fs.readFileSync(processingPath);
+    this.#logger.info?.('weekly-review.finalize.start', { sessionId, week, duration });
 
     // Move audio to final media location
     const now = new Date();
-    const localDate = now.toLocaleDateString('en-CA', { timeZone: process.env.TZ || 'UTC' });
-    const localTime = now.toLocaleTimeString('en-GB', { timeZone: process.env.TZ || 'UTC', hour12: false }).replace(/:/g, '-');
-    const audioDir = path.join(this.#mediaPath, 'weekly-review', localDate);
-    const audioPath = path.join(audioDir, `recording-${localDate}-${localTime}.webm`);
-    fs.mkdirSync(audioDir, { recursive: true });
-    fs.writeFileSync(audioPath, buffer);
-    this.#logger.info?.('weekly-review.finalize.audio-saved', { sessionId, path: audioPath, bytes: buffer.length });
+    const localDate = now.toLocaleDateString('en-CA', { timeZone: this.#timezone });
+    const localTime = now.toLocaleTimeString('en-GB', { timeZone: this.#timezone, hour12: false }).replace(/:/g, '-');
+    const audioArtifact = this.#reviewStore.saveRecordingAudio({ localDate, localTime, extension: 'webm', buffer });
+    this.#logger.info?.('weekly-review.finalize.audio-saved', { sessionId, bytes: buffer.length });
 
     // Convert to mp3 (best-effort, matches saveRecording behavior)
-    const mp3Path = audioPath.replace(/\.\w+$/, '.mp3');
     try {
-      await execFileAsync('ffmpeg', ['-i', audioPath, '-y', '-codec:a', 'libmp3lame', '-q:a', '4', mp3Path]);
-      this.#logger.info?.('weekly-review.finalize.mp3-converted', { mp3Path });
+      await this.#reviewStore.convertRecordingToMp3(audioArtifact, this.#runCommand);
+      this.#logger.info?.('weekly-review.finalize.mp3-converted', { sessionId });
     } catch (err) {
       this.#logger.error?.('weekly-review.finalize.mp3-failed', { error: err.message });
     }
@@ -397,68 +287,23 @@ export class WeeklyReviewService {
     });
 
     // Save transcript + manifest (same format as saveRecording)
-    const transcriptDir = this.#reviewPath(week);
-    fs.mkdirSync(transcriptDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(transcriptDir, 'transcript.yml'),
-      JSON.stringify({ week, recordedAt: new Date().toISOString(), duration, transcriptRaw, transcriptClean }, null, 2)
-    );
-    fs.writeFileSync(
-      path.join(transcriptDir, 'manifest.yml'),
-      JSON.stringify({ week, generatedAt: new Date().toISOString(), duration }, null, 2)
+    this.#reviewStore.saveTranscript(
+      week,
+      { week, recordedAt: new Date().toISOString(), duration, transcriptRaw, transcriptClean },
+      { week, generatedAt: new Date().toISOString(), duration },
     );
 
     // Delete the processing snapshot. The metadata file may be re-created by
     // concurrent chunk writes — leave it alone; the next finalize will manage it.
-    fs.unlinkSync(processingPath);
-    if (fs.existsSync(metaPath) && !fs.existsSync(draftPath)) fs.unlinkSync(metaPath);
+    this.#reviewStore.completeFinalization(finalization);
 
     this.#logger.info?.('weekly-review.finalize.complete', { sessionId, week, duration });
     return { ok: true, transcript: { raw: transcriptRaw, clean: transcriptClean, duration } };
   }
 
   async sweepStaleDrafts({ maxAgeDays = 30 } = {}) {
-    const baseDir = path.join(this.#mediaPath, 'weekly-review');
-    if (!fs.existsSync(baseDir)) return { deleted: [] };
     const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
-    const deleted = [];
-    for (const week of fs.readdirSync(baseDir)) {
-      const draftDir = this.#draftDir(week);
-      if (!fs.existsSync(draftDir)) continue;
-      for (const name of fs.readdirSync(draftDir)) {
-        if (!name.endsWith('.meta.json')) continue;
-        const metaPath = path.join(draftDir, name);
-        try {
-          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-          const ts = Date.parse(meta.updatedAt || meta.startedAt);
-          if (Number.isFinite(ts) && ts < cutoff) {
-            const draftPath = path.join(draftDir, `${meta.sessionId}.webm`);
-            if (fs.existsSync(draftPath)) fs.unlinkSync(draftPath);
-            fs.unlinkSync(metaPath);
-            deleted.push(meta.sessionId);
-          }
-        } catch (err) {
-          this.#logger.warn?.('weekly-review.sweep.meta-parse-failed', { name, error: err.message });
-        }
-      }
-
-      // Second pass: `.processing-<stamp>.webm` files have no meta beside them —
-      // finalizeDraft removes the meta before transcribing, so a transcription
-      // failure orphans the renamed file where the meta-driven pass above can
-      // never reach it. Sweep those on mtime instead.
-      for (const name of fs.readdirSync(draftDir)) {
-        if (!name.includes('.processing-')) continue;
-        const orphanPath = path.join(draftDir, name);
-        try {
-          if (fs.statSync(orphanPath).mtimeMs < cutoff) {
-            fs.unlinkSync(orphanPath);
-            deleted.push(name);
-          }
-        } catch (err) {
-          this.#logger.warn?.('weekly-review.sweep.orphan-failed', { name, error: err.message });
-        }
-      }
-    }
+    const deleted = this.#reviewStore.sweepStaleDrafts(cutoff);
     if (deleted.length > 0) this.#logger.info?.('weekly-review.sweep.deleted', { count: deleted.length, sessionIds: deleted });
     return { deleted };
   }
@@ -466,12 +311,7 @@ export class WeeklyReviewService {
   async discardDraft({ sessionId, week }) {
     if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
-    const draftDir = this.#draftDir(week);
-    const draftPath = path.join(draftDir, `${sessionId}.webm`);
-    const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
-    let existed = false;
-    if (fs.existsSync(draftPath)) { fs.unlinkSync(draftPath); existed = true; }
-    if (fs.existsSync(metaPath)) { fs.unlinkSync(metaPath); existed = true; }
+    const existed = this.#reviewStore.discardDraft(sessionId, week);
     this.#logger.info?.('weekly-review.draft.discarded', { sessionId, week, existed });
     return { ok: true, existed };
   }
@@ -486,14 +326,10 @@ export class WeeklyReviewService {
 
   #getRecordingStatus(week) {
     try {
-      const transcriptPath = this.#reviewPath(week, 'transcript.yml');
-      if (fs.existsSync(transcriptPath)) {
-        const content = fs.readFileSync(transcriptPath, 'utf-8');
-        const data = JSON.parse(content);
-        this.#logger.debug?.('weekly-review.recording-status.found', { week, recordedAt: data.recordedAt, duration: data.duration });
-        return { exists: true, recordedAt: data.recordedAt, duration: data.duration };
-      }
-      this.#logger.debug?.('weekly-review.recording-status.none', { week });
+      const status = this.#reviewStore.getRecordingStatus(week);
+      if (status.exists) this.#logger.debug?.('weekly-review.recording-status.found', { week, recordedAt: status.recordedAt, duration: status.duration });
+      else this.#logger.debug?.('weekly-review.recording-status.none', { week });
+      return status;
     } catch (err) {
       this.#logger.warn?.('weekly-review.recording-status.error', { week, error: err.message });
     }
@@ -502,7 +338,7 @@ export class WeeklyReviewService {
 
   #defaultWeekStart() {
     // Past 8 days, excluding today. Window = [today-8, today-1].
-    const tz = process.env.TZ || 'UTC';
+    const tz = this.#timezone;
     const now = new Date();
     const start = new Date(now);
     start.setDate(now.getDate() - 8);

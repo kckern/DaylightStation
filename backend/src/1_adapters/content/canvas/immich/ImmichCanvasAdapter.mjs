@@ -1,7 +1,7 @@
 // backend/src/1_adapters/content/canvas/immich/ImmichCanvasAdapter.mjs
 import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { immichDimensions } from '#adapters/content/gallery/immich/immichDimensions.mjs';
+import { immichDimensions } from '../../immich/immichDimensions.mjs';
 
 export class ImmichCanvasAdapter {
   #client;

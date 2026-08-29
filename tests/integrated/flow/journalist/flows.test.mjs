@@ -16,6 +16,9 @@ import path from 'path';
 import os from 'os';
 import { JournalistContainer } from '#backend/src/3_applications/journalist/JournalistContainer.mjs';
 import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
+
+const CONVERSATION_ID = 'telegram:chat-123';
 
 describe('Journalist Flow Integration', () => {
   let tempDir;
@@ -33,9 +36,20 @@ describe('Journalist Flow Integration', () => {
     // Create a unique temp directory for each test
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'journalist-test-'));
 
-    // Initialize real YamlConversationStateDatastore with temp directory
+    // Initialize the real datastore with the same user-scoped persistence shape
+    // used in production: users/{username}/conversations/journalist/*.yml.
+    const dataService = new DataService({
+      configService: {
+        getDataDir: () => tempDir,
+        getHeadOfHousehold: () => 'testuser',
+      },
+    });
     conversationStateStore = new YamlConversationStateDatastore({
-      basePath: tempDir,
+      dataService,
+      botName: 'journalist',
+      userResolver: {
+        resolveUser: (platform, id) => platform === 'telegram' && id === 'chat-123' ? 'testuser' : null,
+      },
     });
 
     // Track sent messages
@@ -98,6 +112,20 @@ describe('Journalist Flow Integration', () => {
         conversationStateStore,
         journalEntryRepository: mockJournalEntryRepository,
         messageQueueRepository: mockMessageQueueRepository,
+        debriefRepository: {
+          getDebriefByDate: jest.fn().mockResolvedValue(null),
+          getRecentDebriefs: jest.fn().mockResolvedValue([]),
+          appendDebrief: jest.fn().mockResolvedValue(undefined),
+        },
+        lifelogAggregator: {
+          aggregate: jest.fn().mockResolvedValue({
+            _meta: { date: '2026-08-28', sources: [], hasEnoughData: false },
+            summaries: [],
+          }),
+        },
+        userResolver: {
+          resolveUser: () => 'testuser',
+        },
         logger: mockLogger,
       }
     );
@@ -128,7 +156,7 @@ describe('Journalist Flow Integration', () => {
 
       // Act
       const result = await processTextEntry.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         text: 'Today was a great day at work',
         messageId: 'user-msg-001',
         senderId: 'user-456',
@@ -157,7 +185,7 @@ describe('Journalist Flow Integration', () => {
         .mockResolvedValueOnce('["Well", "Poorly", "Mixed"]');
 
       await processTextEntry.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         text: 'Had a big meeting this morning',
         messageId: 'user-msg-001',
         senderId: 'user-456',
@@ -170,7 +198,7 @@ describe('Journalist Flow Integration', () => {
         .mockResolvedValueOnce('["The decision", "Team input", "Resolution"]');
 
       await processTextEntry.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         text: 'The meeting went really well',
         messageId: 'user-msg-002',
         senderId: 'user-456',
@@ -188,7 +216,7 @@ describe('Journalist Flow Integration', () => {
       const processTextEntry = container.getProcessTextEntry();
 
       // Set up debrief context in conversation state
-      await conversationStateStore.set('chat-123', {
+      await conversationStateStore.set(CONVERSATION_ID, {
         debrief: { summary: 'User had a busy morning with meetings' },
       });
 
@@ -197,7 +225,7 @@ describe('Journalist Flow Integration', () => {
         .mockResolvedValueOnce('["Well", "Poorly", "Mixed"]');
 
       await processTextEntry.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         text: 'Checking in after meetings',
         messageId: 'user-msg-001',
         senderId: 'user-456',
@@ -205,7 +233,7 @@ describe('Journalist Flow Integration', () => {
       });
 
       // Verify state was retrieved
-      const state = await conversationStateStore.get('chat-123');
+      const state = await conversationStateStore.get(CONVERSATION_ID);
       expect(state.debrief.summary).toBe('User had a busy morning with meetings');
     });
 
@@ -215,7 +243,7 @@ describe('Journalist Flow Integration', () => {
       const processTextEntry = container.getProcessTextEntry();
 
       const result = await processTextEntry.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         text: 'Some entry that confuses the AI',
         messageId: 'user-msg-001',
         senderId: 'user-456',
@@ -241,7 +269,7 @@ describe('Journalist Flow Integration', () => {
       const handleSlashCommand = container.getHandleSlashCommand();
 
       const result = await handleSlashCommand.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         command: '/prompt',
       });
 
@@ -260,7 +288,7 @@ describe('Journalist Flow Integration', () => {
       const handleSlashCommand = container.getHandleSlashCommand();
 
       const result = await handleSlashCommand.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         command: '/start',
       });
 
@@ -272,7 +300,7 @@ describe('Journalist Flow Integration', () => {
       const handleSlashCommand = container.getHandleSlashCommand();
 
       const result = await handleSlashCommand.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         command: '/unknown',
       });
 
@@ -292,7 +320,7 @@ describe('Journalist Flow Integration', () => {
       const handleSlashCommand = container.getHandleSlashCommand();
 
       const result = await handleSlashCommand.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         command: '/PROMPT',
       });
 
@@ -307,13 +335,13 @@ describe('Journalist Flow Integration', () => {
   describe('State Persistence', () => {
     it('should persist state across use case calls', async () => {
       // Set state
-      await conversationStateStore.set('chat-123', {
+      await conversationStateStore.set(CONVERSATION_ID, {
         activeFlow: 'debrief',
         flowState: { step: 1, category: 'work' },
       });
 
       // Verify state persists (simulating new use case call)
-      const state = await conversationStateStore.get('chat-123');
+      const state = await conversationStateStore.get(CONVERSATION_ID);
 
       expect(state.activeFlow).toBe('debrief');
       expect(state.flowState.step).toBe(1);
@@ -321,56 +349,58 @@ describe('Journalist Flow Integration', () => {
     });
 
     it('should persist state to YAML files in temp directory', async () => {
-      await conversationStateStore.set('chat-123', {
+      await conversationStateStore.set(CONVERSATION_ID, {
         activeFlow: 'journal',
         flowState: { topic: 'work' },
       });
 
       // Verify file was created
-      const files = await fs.readdir(tempDir);
+      const conversationDir = path.join(tempDir, 'users', 'testuser', 'conversations', 'journalist');
+      const files = await fs.readdir(conversationDir);
       expect(files.length).toBe(1);
-      expect(files[0]).toMatch(/chat-123\.yml/);
+      expect(files[0]).toBe('telegram_chat-123.yml');
 
       // Read file directly to verify YAML format
-      const content = await fs.readFile(path.join(tempDir, files[0]), 'utf8');
+      const content = await fs.readFile(path.join(conversationDir, files[0]), 'utf8');
       expect(content).toContain('activeFlow: journal');
     });
 
     it('should support message-keyed sessions', async () => {
       // Set root state
-      await conversationStateStore.set('chat-123', {
+      await conversationStateStore.set(CONVERSATION_ID, {
         activeFlow: 'debrief',
       });
 
       // Set session-specific state
-      await conversationStateStore.set('chat-123', {
+      await conversationStateStore.set(CONVERSATION_ID, {
         questionIndex: 0,
         category: 'health',
       }, 'menu-msg-456');
 
       // Get root state
-      const rootState = await conversationStateStore.get('chat-123');
+      const rootState = await conversationStateStore.get(CONVERSATION_ID);
       expect(rootState.activeFlow).toBe('debrief');
 
       // Get session state
-      const sessionState = await conversationStateStore.get('chat-123', 'menu-msg-456');
+      const sessionState = await conversationStateStore.get(CONVERSATION_ID, 'menu-msg-456');
       expect(sessionState.questionIndex).toBe(0);
       expect(sessionState.category).toBe('health');
     });
 
     it('should delete state when cleared', async () => {
-      await conversationStateStore.set('chat-123', {
+      await conversationStateStore.set(CONVERSATION_ID, {
         activeFlow: 'test',
       });
 
-      await conversationStateStore.clear('chat-123');
+      await conversationStateStore.clear(CONVERSATION_ID);
 
-      const state = await conversationStateStore.get('chat-123');
+      const state = await conversationStateStore.get(CONVERSATION_ID);
       expect(state).toBeNull();
 
       // Verify file was deleted
-      const files = await fs.readdir(tempDir);
-      expect(files.length).toBe(0);
+      const conversationDir = path.join(tempDir, 'users', 'testuser', 'conversations', 'journalist');
+      const files = await fs.readdir(conversationDir);
+      expect(files).toHaveLength(0);
     });
   });
 
@@ -386,7 +416,7 @@ describe('Journalist Flow Integration', () => {
 
       const handleSlashCommand = container.getHandleSlashCommand();
       await handleSlashCommand.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         command: '/prompt',
       });
 
@@ -401,7 +431,7 @@ describe('Journalist Flow Integration', () => {
 
       const processTextEntry = container.getProcessTextEntry();
       await processTextEntry.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         text: 'I want to talk about work',
         messageId: 'user-msg-001',
         senderId: 'user-456',
@@ -419,7 +449,7 @@ describe('Journalist Flow Integration', () => {
         .mockResolvedValueOnce('["Talked to manager", "Worked harder", "Took a break"]');
 
       await processTextEntry.execute({
-        chatId: 'chat-123',
+        chatId: CONVERSATION_ID,
         text: 'We had a challenging deadline today',
         messageId: 'user-msg-002',
         senderId: 'user-456',

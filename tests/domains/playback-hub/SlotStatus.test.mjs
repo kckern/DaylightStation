@@ -94,51 +94,6 @@ describe('SlotStatus', () => {
     });
   });
 
-  describe('fromHubJson (static factory)', () => {
-    it('maps the snapshot wire format (reads slot for position)', () => {
-      const wire = {
-        slot: 1,                 // hub emits slot, NOT position (which would be playback seconds)
-        color: 'red',
-        bt_connected: true,
-        paused: false,
-        now_playing: { queue: { source: 'plex', id: '670208' } },
-        volume: 45,
-        playlist_pos: 12,
-        playlist_count: 30,
-        armed_source: null
-      };
-      const s = SlotStatus.fromHubJson(wire);
-      expect(s.position).toBe(1);
-      expect(s.color).toBe('red');
-      expect(s.now_playing.queue.id).toBe('670208');
-    });
-
-    it('idle slot — nulls for volume/playlist_pos/playlist_count pass through', () => {
-      const wire = {
-        slot: 2,
-        color: 'yellow',
-        bt_connected: false,
-        paused: false,
-        now_playing: null,
-        volume: null,
-        playlist_pos: null,
-        playlist_count: null,
-        armed_source: null
-      };
-      const s = SlotStatus.fromHubJson(wire);
-      expect(s.position).toBe(2);
-      expect(s.volume).toBeNull();
-      expect(s.playlist_pos).toBeNull();
-      expect(s.playlist_count).toBeNull();
-      expect(s.now_playing).toBeNull();
-    });
-
-    it('rejects malformed wire JSON', () => {
-      expect(() => SlotStatus.fromHubJson(null)).toThrow(ValidationError);
-      expect(() => SlotStatus.fromHubJson('not-an-object')).toThrow(ValidationError);
-    });
-  });
-
   it('is frozen', () => {
     expect(Object.isFrozen(new SlotStatus(baseFields))).toBe(true);
   });

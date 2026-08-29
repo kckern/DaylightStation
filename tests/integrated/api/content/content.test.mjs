@@ -2,7 +2,9 @@
 import express from 'express';
 import request from 'supertest';
 import { createContentRouter } from '#backend/src/4_api/v1/routers/content.mjs';
-import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
+import { UpdateContentProgress } from '#apps/content/usecases/UpdateContentProgress.mjs';
+import { ContentDiscoveryService } from '#apps/content/services/ContentDiscoveryService.mjs';
+import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { YamlWatchStateDatastore } from '#adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
 import path from 'path';
@@ -24,7 +26,14 @@ describe('Content API Router', () => {
 
     app = express();
     app.use(express.json());
-    app.use('/api/content', createContentRouter(registry, watchStore));
+    app.use('/api/content', createContentRouter({
+      contentDiscovery: new ContentDiscoveryService({ registry }),
+      updateContentProgress: new UpdateContentProgress({
+        registry,
+        mediaProgressMemory: watchStore,
+        nowTimestamp: () => '2026-08-28 12:00:00',
+      }),
+    }));
   });
 
   test('GET /api/content/list/files/:path returns directory listing', async () => {

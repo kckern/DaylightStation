@@ -1,6 +1,7 @@
 // backend/src/2_adapters/homebot/ConfigHouseholdAdapter.mjs
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { IHouseholdRepository } from '#apps/homebot/ports/IHouseholdRepository.mjs';
 
 /**
  * ConfigHouseholdAdapter
@@ -13,7 +14,7 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  *
  * @module adapters/homebot/ConfigHouseholdAdapter
  */
-export class ConfigHouseholdAdapter {
+export class ConfigHouseholdAdapter extends IHouseholdRepository {
   #configService;
   #userResolver;
   #logger;
@@ -25,6 +26,7 @@ export class ConfigHouseholdAdapter {
    * @param {Object} [deps.logger]
    */
   constructor(deps) {
+    super();
     if (!deps.configService) {
       throw new InfrastructureError('ConfigHouseholdAdapter requires configService', {
         code: 'MISSING_DEPENDENCY',

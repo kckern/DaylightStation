@@ -1,7 +1,7 @@
 // tests/unit/suite/system/registries/IntegrationLoader.test.mjs
 import { vi } from 'vitest';
-import { IntegrationLoader } from '#backend/src/0_system/registries/IntegrationLoader.mjs';
-import { HouseholdAdapters } from '#backend/src/0_system/registries/HouseholdAdapters.mjs';
+import { IntegrationLoader } from '#composition/integrations/IntegrationLoader.mjs';
+import { HouseholdAdapters } from '#composition/integrations/HouseholdAdapters.mjs';
 
 /**
  * Create a mock ConfigService with integrations config and auth.

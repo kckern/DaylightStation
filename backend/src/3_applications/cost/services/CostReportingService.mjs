@@ -22,6 +22,34 @@
 
 import { CostAnalysisService } from '#domains/cost/index.mjs';
 
+function serializeCostEntry(entry) {
+  const attribution = { householdId: entry.attribution.householdId };
+  if (entry.attribution.userId !== null) attribution.userId = entry.attribution.userId;
+  if (entry.attribution.feature !== null) attribution.feature = entry.attribution.feature;
+  if (entry.attribution.resource !== null) attribution.resource = entry.attribution.resource;
+  if (entry.attribution.tags.size > 0) attribution.tags = Object.fromEntries(entry.attribution.tags);
+
+  return {
+    id: entry.id,
+    occurredAt: entry.occurredAt.toISOString(),
+    amount: { amount: entry.amount.amount, currency: entry.amount.currency },
+    category: entry.category.toString(),
+    entryType: entry.entryType,
+    attribution,
+    usage: entry.usage ? { quantity: entry.usage.quantity, unit: entry.usage.unit } : null,
+    description: entry.description,
+    metadata: entry.metadata,
+    spreadSource: entry.spreadSource ? {
+      name: entry.spreadSource.name,
+      originalAmount: { amount: entry.spreadSource.originalAmount.amount, currency: entry.spreadSource.originalAmount.currency },
+      spreadMonths: entry.spreadSource.spreadMonths,
+      startDate: entry.spreadSource.startDate.toISOString()
+    } : null,
+    reconcilesUsage: entry.reconcilesUsage,
+    variance: entry.variance ? { amount: entry.variance.amount, currency: entry.variance.currency } : null
+  };
+}
+
 /**
  * CostReportingService
  * Application service for cost dashboard and reporting
@@ -249,7 +277,7 @@ export class CostReportingService {
     const pageEntries = allEntries.slice(startIndex, endIndex);
 
     // Convert to JSON
-    const entries = pageEntries.map(entry => entry.toJSON());
+    const entries = pageEntries.map(serializeCostEntry);
 
     return {
       entries,

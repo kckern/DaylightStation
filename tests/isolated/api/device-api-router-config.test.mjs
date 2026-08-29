@@ -1,8 +1,10 @@
 // tests/isolated/api/device-api-router-config.test.mjs
 import { describe, test, expect, vi } from 'vitest';
-import { createDeviceRouter } from '../../../backend/src/4_api/v1/routers/device.mjs';
+import { createDeviceApiRouter } from '../../../backend/src/5_composition/modules/deviceApi.mjs';
 import express from 'express';
 import request from 'supertest';
+
+const logger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
 
 describe('createDeviceRouter - configService forwarding', () => {
   test('/config endpoint returns device config from configService', async () => {
@@ -30,10 +32,10 @@ describe('createDeviceRouter - configService forwarding', () => {
 
     // This mirrors what createDeviceApiRouter should pass through:
     // configService must be forwarded from the bootstrap layer to the router
-    const router = createDeviceRouter({
-      deviceService: mockDeviceService,
+    const router = createDeviceApiRouter({
+      deviceServices: { deviceService: mockDeviceService },
       configService: mockConfigService,
-      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} }
+      logger,
     });
 
     const app = express();
@@ -52,10 +54,10 @@ describe('createDeviceRouter - configService forwarding', () => {
     };
 
     // Simulate the bug: createDeviceApiRouter did NOT pass configService
-    const router = createDeviceRouter({
-      deviceService: mockDeviceService,
+    const router = createDeviceApiRouter({
+      deviceServices: { deviceService: mockDeviceService },
       // configService intentionally omitted to demonstrate the bug
-      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} }
+      logger,
     });
 
     const app = express();

@@ -6,7 +6,7 @@
  * @module domains/gratitude/entities
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * @typedef {Object} GratitudeItemData
@@ -22,7 +22,8 @@ export class GratitudeItem {
    * @param {GratitudeItemData} data
    */
   constructor(data) {
-    this.#id = data.id || uuidv4();
+    if (!data.id) throw new ValidationError('id is required');
+    this.#id = data.id;
     this.#text = data.text;
   }
 
@@ -44,18 +45,6 @@ export class GratitudeItem {
     this.#text = text;
   }
 
-  /**
-   * Convert to plain object.
-   * Transitional: retained for API response DTOs (4_api/v1/routers/gratitude.mjs).
-   * Storage (de)hydration lives in YamlGratitudeDatastore, NOT here.
-   * @returns {GratitudeItemData}
-   */
-  toJSON() {
-    return {
-      id: this.#id,
-      text: this.#text
-    };
-  }
 }
 
 export default GratitudeItem;

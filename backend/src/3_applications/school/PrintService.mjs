@@ -15,7 +15,7 @@
 import { evaluatePrintQuota, DEFAULT_PRINT_POLICY, isAdult } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 
 export class PrintService {
   #config; #ds; #printer; #worksheet; #bankReader; #pdfReader; #userService; #logger; #now; #paperCertifyBank; #teacherGate;

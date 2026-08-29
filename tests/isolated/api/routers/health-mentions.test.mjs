@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createHealthMentionsRouter } from '../../../../backend/src/4_api/v1/routers/health-mentions.mjs';
+import { HealthMentionSuggestions } from '#apps/health/HealthMentionSuggestions.mjs';
 
 function makeApp(deps = {}) {
   const fakeDeps = {
@@ -18,7 +19,13 @@ function makeApp(deps = {}) {
   };
   const app = express();
   app.use(express.json());
-  app.use('/api/v1/health/mentions', createHealthMentionsRouter(fakeDeps));
+  const mentionSuggestions = fakeDeps.mentionSuggestions || new HealthMentionSuggestions({
+    analytics: fakeDeps.healthAnalyticsService,
+    healthData: fakeDeps.healthStore,
+    aggregateHealth: fakeDeps.healthService,
+    now: fakeDeps.now,
+  });
+  app.use('/api/v1/health/mentions', createHealthMentionsRouter({ mentionSuggestions }));
   return { app, deps: fakeDeps };
 }
 

@@ -54,14 +54,6 @@ describe('HealthArchiveManifest', () => {
     expect(BUILT_IN_CATEGORIES.length).toBe(6);
   });
 
-  it('serialize() returns a YAML-shaped plain object', () => {
-    const m = new HealthArchiveManifest({ userId: 'test-user', category: 'scans' });
-    const out = m.serialize();
-    expect(out.manifest_version).toBe(1);
-    expect(out.user_id).toBe('test-user');
-    expect(out.category).toBe('scans');
-  });
-
   it('staleness returns days since lastSync', () => {
     const m = new HealthArchiveManifest({
       userId: 'test-user',

@@ -9,11 +9,11 @@
  * @module applications/feed/services
  */
 export class ContentPluginRegistry {
-  /** @type {Array<import('../plugins/IContentPlugin.mjs').IContentPlugin>} */
+  /** @type {Array<import('../ports/IContentPlugin.mjs').IContentPlugin>} */
   #plugins;
 
   /**
-   * @param {Array<import('../plugins/IContentPlugin.mjs').IContentPlugin>} plugins
+   * @param {Array<import('../ports/IContentPlugin.mjs').IContentPlugin>} plugins
    */
   constructor(plugins = []) {
     this.#plugins = plugins;

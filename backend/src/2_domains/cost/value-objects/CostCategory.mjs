@@ -139,16 +139,6 @@ export class CostCategory {
   }
 
   /**
-   * Convert to JSON-serializable value
-   * Returns string (same as toString)
-   *
-   * @returns {string}
-   */
-  toJSON() {
-    return this.toString();
-  }
-
-  /**
    * Create a CostCategory from a slash-separated string
    *
    * @param {string} str - Slash-separated path (e.g., "ai/openai/gpt-4o")
@@ -177,20 +167,6 @@ export class CostCategory {
    * @returns {CostCategory}
    * @throws {ValidationError} If data is invalid
    */
-  static fromJSON(data) {
-    if (typeof data === 'string') {
-      return CostCategory.fromString(data);
-    }
-
-    if (Array.isArray(data)) {
-      return new CostCategory(data);
-    }
-
-    throw new ValidationError('Invalid CostCategory JSON: must be string or array', {
-      code: 'INVALID_CATEGORY_JSON',
-      value: data
-    });
-  }
 }
 
 export default CostCategory;

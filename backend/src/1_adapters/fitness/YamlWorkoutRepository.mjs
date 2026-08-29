@@ -45,7 +45,7 @@ import {
   fileExists,
 } from '#system/utils/FileIO.mjs';
 import { makeWorkout, expandWorkout } from '#domains/fitness/workout/workout.mjs';
-import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /** Ids are filenames. Anything outside this shape cannot address a file here. */
 export const WORKOUT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;

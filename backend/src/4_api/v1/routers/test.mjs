@@ -21,12 +21,9 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  */
 export function createTestRouter(config = {}) {
   const router = express.Router();
-  const { plexShutoffControls, logger = console } = config;
+  const { plexShutoffControls, enabled = false, logger = console } = config;
 
-  // Only enable in dev/test
-  const isDev = process.env.NODE_ENV !== 'production';
-
-  if (!isDev) {
+  if (!enabled) {
     // {*splat} braces make the wildcard optional so the router root matches too
     router.all('/{*splat}', (req, res) => {
       res.status(403).json({ error: 'Test endpoints disabled in production' });

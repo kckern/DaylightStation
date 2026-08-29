@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { createLogger } from '#system/logging/logger.mjs';
 
 export default function createPlanRouter(config) {
-  const { lifePlanStore, goalStateService, beliefEvaluator, cadenceService, ceremonyService, feedbackService, retroService, planAuthoringService } = config;
+  const { lifePlanOperations, presentLifePlan, presentGoal, presentBelief } = config;
   const router = Router();
   const logger = createLogger({ source: 'backend', app: 'life', context: { router: 'plan' } });
 
@@ -13,18 +13,17 @@ export default function createPlanRouter(config) {
   // GET / — full plan
   router.get('/', async (req, res, next) => {
     try {
-      const plan = lifePlanStore.load(getUsername(req));
-      res.json(plan?.toJSON() || {});
+      const plan = lifePlanOperations.readPlan(getUsername(req));
+      res.json(plan ? presentLifePlan(plan) : {});
     } catch (error) { next(error); }
   });
 
   // POST / — plan genesis (409 if one already exists)
   router.post('/', (req, res, next) => {
     try {
-      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      if (!lifePlanOperations.authoringAvailable) return res.status(501).json({ error: 'Plan authoring service not configured' });
       const username = getUsername(req);
-      if (lifePlanStore.load(username)) return res.status(409).json({ error: 'Plan already exists' });
-      planAuthoringService.createPlan(username);
+      if (!lifePlanOperations.createPlan(username).created) return res.status(409).json({ error: 'Plan already exists' });
       logger.info('life.plan.created', { username });
       res.status(201).json({ ok: true });
     } catch (error) { next(error); }
@@ -33,11 +32,11 @@ export default function createPlanRouter(config) {
   // POST /goals — author a new goal (creates the plan if missing)
   router.post('/goals', (req, res, next) => {
     try {
-      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      if (!lifePlanOperations.authoringAvailable) return res.status(501).json({ error: 'Plan authoring service not configured' });
       const { name, why, milestone } = req.body || {};
       if (!name) return res.status(400).json({ error: 'name is required' });
       const username = getUsername(req);
-      const goal = planAuthoringService.addGoal(username, { name, why, milestone });
+      const goal = lifePlanOperations.addGoal(username, { name, why, milestone });
       logger.info('life.goal.created', { username, goalId: goal.id });
       res.status(201).json(goal);
     } catch (error) { next(error); }
@@ -46,11 +45,11 @@ export default function createPlanRouter(config) {
   // POST /values — author a new value (creates the plan if missing)
   router.post('/values', (req, res, next) => {
     try {
-      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      if (!lifePlanOperations.authoringAvailable) return res.status(501).json({ error: 'Plan authoring service not configured' });
       const { name, description } = req.body || {};
       if (!name) return res.status(400).json({ error: 'name is required' });
       const username = getUsername(req);
-      const value = planAuthoringService.addValue(username, { name, description });
+      const value = lifePlanOperations.addValue(username, { name, description });
       logger.info('life.value.created', { username, valueId: value.id });
       res.status(201).json(value);
     } catch (error) { next(error); }
@@ -59,11 +58,11 @@ export default function createPlanRouter(config) {
   // POST /purpose — set or replace the purpose statement (creates the plan if missing)
   router.post('/purpose', (req, res, next) => {
     try {
-      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      if (!lifePlanOperations.authoringAvailable) return res.status(501).json({ error: 'Plan authoring service not configured' });
       const { statement } = req.body || {};
       if (!statement) return res.status(400).json({ error: 'statement is required' });
       const username = getUsername(req);
-      const purpose = planAuthoringService.setPurpose(username, { statement });
+      const purpose = lifePlanOperations.setPurpose(username, { statement });
       logger.info('life.purpose.set', { username });
       res.status(201).json(purpose);
     } catch (error) { next(error); }
@@ -72,13 +71,13 @@ export default function createPlanRouter(config) {
   // POST /beliefs — author a new belief (creates the plan if missing)
   router.post('/beliefs', (req, res, next) => {
     try {
-      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      if (!lifePlanOperations.authoringAvailable) return res.status(501).json({ error: 'Plan authoring service not configured' });
       const { if_hypothesis, then_outcome } = req.body || {};
       if (!if_hypothesis || !then_outcome) {
         return res.status(400).json({ error: 'if_hypothesis and then_outcome are required' });
       }
       const username = getUsername(req);
-      const belief = planAuthoringService.addBelief(username, { if_hypothesis, then_outcome });
+      const belief = lifePlanOperations.addBelief(username, { if_hypothesis, then_outcome });
       logger.info('life.belief.created', { username, beliefId: belief.id });
       res.status(201).json(belief);
     } catch (error) { next(error); }
@@ -88,21 +87,11 @@ export default function createPlanRouter(config) {
   router.patch('/:section', async (req, res, next) => {
     try {
       const username = getUsername(req);
-      const plan = lifePlanStore.load(username);
-      if (!plan) return res.status(404).json({ error: 'Plan not found' });
-
       const section = req.params.section;
       const data = req.body;
-
-      if (plan[section] !== undefined) {
-        if (Array.isArray(plan[section])) {
-          plan[section] = data;
-        } else if (typeof plan[section] === 'object' && plan[section] !== null) {
-          Object.assign(plan[section], data);
-        } else {
-          plan[section] = data;
-        }
-        lifePlanStore.save(username, plan);
+      const result = lifePlanOperations.updateSection(username, section, data);
+      if (result.kind === 'missing-plan') return res.status(404).json({ error: 'Plan not found' });
+      if (result.kind === 'updated') {
         logger.info('life.plan.section-updated', { username, section });
         res.json({ ok: true });
       } else {
@@ -114,22 +103,18 @@ export default function createPlanRouter(config) {
   // GET /goals — all goals, optionally filtered by state
   router.get('/goals', async (req, res, next) => {
     try {
-      const plan = lifePlanStore.load(getUsername(req));
-      if (!plan) return res.json({ goals: [] });
-
       const { state } = req.query;
-      const goals = state ? plan.getGoalsByState(state) : plan.goals;
-      res.json({ goals: goals.map(g => g.toJSON()) });
+      const goals = lifePlanOperations.listGoals(getUsername(req), state);
+      res.json({ goals: goals.map(presentGoal) });
     } catch (error) { next(error); }
   });
 
   // GET /goals/:goalId — single goal
   router.get('/goals/:goalId', async (req, res, next) => {
     try {
-      const plan = lifePlanStore.load(getUsername(req));
-      const goal = plan?.getGoalById(req.params.goalId);
+      const goal = lifePlanOperations.findGoal(getUsername(req), req.params.goalId);
       if (!goal) return res.status(404).json({ error: 'Goal not found' });
-      res.json(goal.toJSON());
+      res.json(presentGoal(goal));
     } catch (error) { next(error); }
   });
 
@@ -137,16 +122,11 @@ export default function createPlanRouter(config) {
   router.post('/goals/:goalId/transition', async (req, res, next) => {
     try {
       const username = getUsername(req);
-      const plan = lifePlanStore.load(username);
-      const goal = plan?.getGoalById(req.params.goalId);
-      if (!goal) return res.status(404).json({ error: 'Goal not found' });
-
       const { state: newState, reason } = req.body;
-      const prevState = goal.state;
-      goalStateService.transition(goal, newState, reason);
-      lifePlanStore.save(username, plan);
-      logger.info('life.goal.transitioned', { username, goalId: req.params.goalId, from: prevState, to: newState, reason });
-      res.json(goal.toJSON());
+      const result = lifePlanOperations.transitionGoal(username, req.params.goalId, newState, reason);
+      if (!result) return res.status(404).json({ error: 'Goal not found' });
+      logger.info('life.goal.transitioned', { username, goalId: req.params.goalId, from: result.previousState, to: newState, reason });
+      res.json(presentGoal(result.goal));
     } catch (error) {
       if (error.message?.includes('cannot transition')) {
         return res.status(400).json({ error: error.message });
@@ -158,9 +138,7 @@ export default function createPlanRouter(config) {
   // GET /beliefs — all beliefs
   router.get('/beliefs', async (req, res, next) => {
     try {
-      const plan = lifePlanStore.load(getUsername(req));
-      if (!plan) return res.json({ beliefs: [] });
-      res.json({ beliefs: plan.beliefs.map(b => b.toJSON()) });
+      res.json({ beliefs: lifePlanOperations.listBeliefs(getUsername(req)).map(presentBelief) });
     } catch (error) { next(error); }
   });
 
@@ -168,24 +146,17 @@ export default function createPlanRouter(config) {
   router.post('/beliefs/:id/evidence', async (req, res, next) => {
     try {
       const username = getUsername(req);
-      const plan = lifePlanStore.load(username);
-      const belief = plan?.getBeliefById(req.params.id);
+      const belief = lifePlanOperations.addBeliefEvidence(username, req.params.id, req.body);
       if (!belief) return res.status(404).json({ error: 'Belief not found' });
-
-      beliefEvaluator.evaluateEvidence(belief, req.body);
-      lifePlanStore.save(username, plan);
       logger.info('life.belief.evidence-added', { username, beliefId: req.params.id });
-      res.json(belief.toJSON());
+      res.json(presentBelief(belief));
     } catch (error) { next(error); }
   });
 
   // GET /cadence — cadence config
   router.get('/cadence', async (req, res, next) => {
     try {
-      const plan = lifePlanStore.load(getUsername(req));
-      const cadenceConfig = plan?.cadence || {};
-      const resolved = cadenceService.resolve(cadenceConfig, new Date());
-      res.json({ config: cadenceConfig, current: resolved });
+      res.json(lifePlanOperations.readCadence(getUsername(req)));
     } catch (error) { next(error); }
   });
 
@@ -193,11 +164,7 @@ export default function createPlanRouter(config) {
   router.patch('/cadence', async (req, res, next) => {
     try {
       const username = getUsername(req);
-      const plan = lifePlanStore.load(username);
-      if (!plan) return res.status(404).json({ error: 'Plan not found' });
-
-      plan.cadence = { ...(plan.cadence || {}), ...req.body };
-      lifePlanStore.save(username, plan);
+      if (!lifePlanOperations.updateCadence(username, req.body)) return res.status(404).json({ error: 'Plan not found' });
       res.json({ ok: true });
     } catch (error) { next(error); }
   });
@@ -205,11 +172,12 @@ export default function createPlanRouter(config) {
   // GET /ceremony/:type — get ceremony content
   router.get('/ceremony/:type', async (req, res, next) => {
     try {
-      if (!ceremonyService) return res.status(501).json({ error: 'Ceremony service not configured' });
-      if (!lifePlanStore.load(getUsername(req))) {
+      if (!lifePlanOperations.ceremonyAvailable) return res.status(501).json({ error: 'Ceremony service not configured' });
+      const result = lifePlanOperations.readCeremony(getUsername(req), req.params.type);
+      if (!result.planExists) {
         return res.status(404).json({ error: 'No life plan exists for this user yet', code: 'NO_PLAN' });
       }
-      const content = ceremonyService.getCeremonyContent(req.params.type, getUsername(req));
+      const content = result.content;
       if (!content) return res.status(400).json({ error: `Unknown ceremony type: ${req.params.type}` });
       res.json(content);
     } catch (error) { next(error); }
@@ -218,12 +186,12 @@ export default function createPlanRouter(config) {
   // POST /ceremony/:type/complete — record ceremony completion
   router.post('/ceremony/:type/complete', async (req, res, next) => {
     try {
-      if (!ceremonyService) return res.status(501).json({ error: 'Ceremony service not configured' });
-      if (!lifePlanStore.load(getUsername(req))) {
+      if (!lifePlanOperations.ceremonyAvailable) return res.status(501).json({ error: 'Ceremony service not configured' });
+      const result = lifePlanOperations.completeCeremony(getUsername(req), req.params.type, req.body);
+      if (!result.planExists) {
         return res.status(404).json({ error: 'No life plan exists for this user yet', code: 'NO_PLAN' });
       }
-      const ok = ceremonyService.completeCeremony(req.params.type, getUsername(req), req.body);
-      if (!ok) return res.status(400).json({ error: `Unknown ceremony type: ${req.params.type}` });
+      if (!result.completed) return res.status(400).json({ error: `Unknown ceremony type: ${req.params.type}` });
       logger.info('life.ceremony.completed', { username: getUsername(req), type: req.params.type });
       res.json({ ok: true });
     } catch (error) { next(error); }
@@ -232,8 +200,8 @@ export default function createPlanRouter(config) {
   // POST /feedback — record observation
   router.post('/feedback', async (req, res, next) => {
     try {
-      if (!feedbackService) return res.status(501).json({ error: 'Feedback service not configured' });
-      feedbackService.recordObservation(getUsername(req), req.body);
+      if (!lifePlanOperations.feedbackAvailable) return res.status(501).json({ error: 'Feedback service not configured' });
+      lifePlanOperations.recordFeedback(getUsername(req), req.body);
       logger.info('life.feedback.recorded', { username: getUsername(req) });
       res.json({ ok: true });
     } catch (error) { next(error); }
@@ -242,11 +210,11 @@ export default function createPlanRouter(config) {
   // GET /feedback — get feedback entries
   router.get('/feedback', async (req, res, next) => {
     try {
-      if (!feedbackService) return res.status(501).json({ error: 'Feedback service not configured' });
+      if (!lifePlanOperations.feedbackAvailable) return res.status(501).json({ error: 'Feedback service not configured' });
       const period = req.query.start && req.query.end
         ? { start: req.query.start, end: req.query.end }
         : null;
-      const entries = feedbackService.getFeedback(getUsername(req), period);
+      const entries = lifePlanOperations.readFeedback(getUsername(req), period);
       res.json({ feedback: entries });
     } catch (error) { next(error); }
   });
@@ -254,11 +222,11 @@ export default function createPlanRouter(config) {
   // GET /retro — generate retrospective
   router.get('/retro', async (req, res, next) => {
     try {
-      if (!retroService) return res.status(501).json({ error: 'Retro service not configured' });
+      if (!lifePlanOperations.retrospectiveAvailable) return res.status(501).json({ error: 'Retro service not configured' });
       const period = req.query.start && req.query.end
         ? { start: req.query.start, end: req.query.end }
         : null;
-      const retro = retroService.generateRetro(getUsername(req), period);
+      const retro = lifePlanOperations.generateRetrospective(getUsername(req), period);
       res.json(retro);
     } catch (error) { next(error); }
   });

@@ -11,8 +11,8 @@
 //     trust-on-first-use, provider round-trip, profile.yml persistence).
 //
 // The router keeps ONLY request parsing + response shaping; every security
-// DECISION is made here. Methods return `{ status, body }` (or plain data for
-// the listing/gallery reads) so the router is a thin translator.
+// DECISION is made here. Mutations return semantic, discriminated outcomes;
+// the API adapter alone chooses status codes and response envelopes.
 
 import {
   resolveManageAccess,
@@ -33,7 +33,7 @@ export class ManageAccess {
   /**
    * @param {object} deps
    * @param {object} deps.userService - profile reads (getProfile / getAllProfiles)
-   * @param {object} deps.fitnessConfigService - loadRawConfig(householdId)
+   * @param {object} deps.fitnessConfigService - semantic fitness policy
    * @param {object} [deps.identityRelay] - admin-session gate (adminVerifiedWithin)
    * @param {Function} [deps.resolveUnlockService] - () => unlock service (or null)
    * @param {Function} [deps.resolveManageService] - () => enroll/delete broker (or null)
@@ -59,7 +59,7 @@ export class ManageAccess {
   }
 
   #config(householdId) {
-    return this.#fitnessConfigService?.loadRawConfig?.(householdId) || {};
+    return this.#fitnessConfigService?.getAccessPolicy?.(householdId) || {};
   }
 
   /** Ordered, deduped eligible usernames (admins first, then primary). */
@@ -132,8 +132,8 @@ export class ManageAccess {
 
   /**
    * Run the self/admin identify gate for managing `username`. Returns
-   * { ok:true } when allowed (TOFU, active admin session, or matched scan), else
-   * { ok:false, status, body }.
+   * `{ kind: 'authorized' }` when allowed (TOFU, active admin session, or a
+   * matched scan), otherwise a semantic refusal outcome.
    */
   async gate(householdId, username) {
     const logger = this.#logger;
@@ -141,7 +141,7 @@ export class ManageAccess {
     const { requiresAuth, gallery } = resolveManageAccess(profiles, username);
     if (!requiresAuth) {
       logger.info?.('fitness.fingerprint.access.tofu', { username });
-      return { ok: true };
+      return { kind: 'authorized' };
     }
     // The manager is admin-gated on entry; if an admin verified within the session
     // window, that scan authorizes manage ops (enroll-verify / delete) — no second
@@ -150,24 +150,24 @@ export class ManageAccess {
     const adminSession = this.#identityRelay?.adminVerifiedWithin?.();
     if (adminSession) {
       logger.info?.('fitness.fingerprint.access.admin-session', { username, by: adminSession.userId });
-      return { ok: true };
+      return { kind: 'authorized' };
     }
     const unlockService = this.#resolveUnlockService?.();
-    if (!unlockService) return { ok: false, status: 503, body: { error: 'unlock-service-unavailable' } };
+    if (!unlockService) return { kind: 'unlock_unavailable' };
     logger.info?.('fitness.fingerprint.access.requires-auth', { username, candidates: gallery.length });
     let verdict;
     try {
       verdict = await unlockService.requestUnlock(`manage:${username}`, gallery);
     } catch (err) {
       logger.error?.('fitness.fingerprint.access.error', { username, error: err?.message });
-      return { ok: false, status: 500, body: { error: 'auth-failed' } };
+      return { kind: 'authorization_failed' };
     }
     if (!verdict?.matched) {
       logger.info?.('fitness.fingerprint.access.denied', { username });
-      return { ok: false, status: 403, body: { error: 'auth-denied' } };
+      return { kind: 'denied' };
     }
     logger.info?.('fitness.fingerprint.access.granted', { username, by: verdict.userId });
-    return { ok: true };
+    return { kind: 'authorized' };
   }
 
   /**
@@ -176,30 +176,30 @@ export class ManageAccess {
    * then the self/admin gate (TOFU for an unenrolled user). On success the garage
    * box returns a uuid which we persist to the user's profile.yml.
    *
-   * @returns {Promise<{ status:number, body:object }>}
+   * @returns {Promise<object>} a semantic enrollment outcome
    */
   async enroll(householdId, { username, finger, clientToken } = {}) {
     const logger = this.#logger;
     const profile = username ? this.#userService?.getProfile?.(username) : null;
-    if (!profile) return { status: 400, body: { error: 'unknown-user' } };
+    if (!profile) return { kind: 'unknown_user' };
     if (!this.eligibleUsernames(householdId).includes(username)) {
       logger.info?.('fitness.fingerprint.enroll.not-eligible', { username });
-      return { status: 403, body: { error: 'not-eligible' } };
+      return { kind: 'not_eligible' };
     }
     if (!finger || typeof finger !== 'string') {
-      return { status: 400, body: { error: 'missing-finger' } };
+      return { kind: 'missing_finger' };
     }
     const taken = (profile.identities?.fingerprints || []).some((f) => f.finger === finger && !f.simulated);
     if (taken) {
       logger.info?.('fitness.fingerprint.enroll.finger-taken', { username, finger });
-      return { status: 409, body: { error: 'finger-taken' } };
+      return { kind: 'finger_taken' };
     }
 
     const gate = await this.gate(householdId, username);
-    if (!gate.ok) return { status: gate.status, body: gate.body };
+    if (gate.kind !== 'authorized') return gate;
 
     const manageService = this.#resolveManageService?.();
-    if (!manageService) return { status: 503, body: { error: 'manage-service-unavailable' } };
+    if (!manageService) return { kind: 'manage_unavailable' };
 
     let result;
     try {
@@ -209,7 +209,7 @@ export class ManageAccess {
       result = await manageService.requestEnroll({ finger, username, clientToken });
     } catch (err) {
       logger.error?.('fitness.fingerprint.enroll.error', { username, error: err?.message });
-      return { status: 500, body: { error: 'enroll-failed' } };
+      return { kind: 'enrollment_failed' };
     }
     // The finger already belongs to someone — refuse to file it under another
     // identity. Name the existing owner so the UI can say who.
@@ -217,17 +217,17 @@ export class ManageAccess {
       const owner = buildFingerprintIdentityIndex(this.#userService?.getAllProfiles?.() || {})[result.matchedUuid]?.userId || null;
       const registeredTo = (owner && this.#userService?.getProfile?.(owner)?.display_name) || owner || 'another user';
       logger.warn?.('fitness.fingerprint.enroll.duplicate', { username, finger, matchedUuid: result.matchedUuid, owner });
-      return { status: 409, body: { error: 'duplicate-finger', registeredTo } };
+      return { kind: 'duplicate_finger', registeredTo };
     }
     if (!result?.success || !result.uuid) {
       logger.warn?.('fitness.fingerprint.enroll.unsuccessful', { username, reason: result?.error });
-      return { status: 500, body: { error: 'enroll-failed', reason: result?.error } };
+      return { kind: 'enrollment_failed', reason: result?.error };
     }
 
     const enrolled = new Date().toISOString().slice(0, 10);
     await this.#fingerprintProfileWriter?.addFingerprint(username, { id: result.uuid, finger, enrolled });
     logger.info?.('fitness.fingerprint.enroll.saved', { username, finger });
-    return { status: 200, body: { success: true, finger } };
+    return { kind: 'enrolled', finger };
   }
 
   /**
@@ -235,27 +235,27 @@ export class ManageAccess {
    * Requires a self/admin scan, deletes the on-box template, then removes the
    * profile.yml entry (only after the box confirms, to avoid a dangling entry).
    *
-   * @returns {Promise<{ status:number, body:object }>}
+   * @returns {Promise<object>} a semantic removal outcome
    */
   async remove(householdId, { username, finger } = {}) {
     const logger = this.#logger;
     const profile = username ? this.#userService?.getProfile?.(username) : null;
-    if (!profile) return { status: 400, body: { error: 'unknown-user' } };
+    if (!profile) return { kind: 'unknown_user' };
     if (!this.eligibleUsernames(householdId).includes(username)) {
-      return { status: 403, body: { error: 'not-eligible' } };
+      return { kind: 'not_eligible' };
     }
     // Simulated fixtures have no on-box template and never collide with a real
     // finger of the same name, so they're excluded from delete matching.
     const matches = (profile.identities?.fingerprints || []).filter((f) => f.finger === finger && !f.simulated);
-    if (!finger || matches.length === 0) return { status: 400, body: { error: 'unknown-fingerprint' } };
-    if (matches.length > 1) return { status: 409, body: { error: 'ambiguous-finger' } };
+    if (!finger || matches.length === 0) return { kind: 'unknown_fingerprint' };
+    if (matches.length > 1) return { kind: 'ambiguous_finger' };
     const uuid = matches[0].id;
 
     const gate = await this.gate(householdId, username);
-    if (!gate.ok) return { status: gate.status, body: gate.body };
+    if (gate.kind !== 'authorized') return gate;
 
     const manageService = this.#resolveManageService?.();
-    if (!manageService) return { status: 503, body: { error: 'manage-service-unavailable' } };
+    if (!manageService) return { kind: 'manage_unavailable' };
 
     let result;
     try {
@@ -264,13 +264,13 @@ export class ManageAccess {
       result = await manageService.requestDelete({ uuid });
     } catch (err) {
       logger.error?.('fitness.fingerprint.delete.error', { username, error: err?.message });
-      return { status: 500, body: { error: 'delete-failed' } };
+      return { kind: 'deletion_failed' };
     }
-    if (!result?.success) return { status: 500, body: { error: 'delete-failed', reason: result?.error } };
+    if (!result?.success) return { kind: 'deletion_failed', reason: result?.error };
 
     await this.#fingerprintProfileWriter?.removeFingerprint(username, uuid);
     logger.info?.('fitness.fingerprint.delete.saved', { username, finger });
-    return { status: 200, body: { success: true } };
+    return { kind: 'removed' };
   }
 }
 

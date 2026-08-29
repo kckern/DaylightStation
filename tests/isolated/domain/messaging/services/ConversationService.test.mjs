@@ -1,6 +1,6 @@
 // tests/unit/domains/messaging/services/ConversationService.test.mjs
 import { vi } from 'vitest';
-import { ConversationService } from '#domains/messaging/services/ConversationService.mjs';
+import { ConversationService } from '#apps/messaging/services/ConversationService.mjs';
 import { Conversation } from '#domains/messaging/entities/Conversation.mjs';
 
 // The datastore port returns hydrated Conversation entities (serialization-

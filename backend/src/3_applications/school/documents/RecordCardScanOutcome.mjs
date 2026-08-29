@@ -66,6 +66,7 @@
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { createAttempt } from '#domains/school/attempt.mjs';
 import { GATE_SATISFIED } from '#domains/school/companionCode.mjs';
+import { shortId } from '#system/utils/id.mjs';
 
 /** Session states from which this bridge may advance toward `graded`. */
 const BRIDGEABLE = new Set(['issued', 'reprinted', 'submitted']);
@@ -122,7 +123,7 @@ const gateMarks = (gate) => (Array.isArray(gate?.given) ? [...gate.given].sort()
 const sameGateReading = (a, b) => a.status === b.status && gateMarks(a) === gateMarks(b);
 
 export class RecordCardScanOutcome {
-  #datastore; #sessions; #reviewQueue; #resultArtifacts; #renderMachineResult; #clock; #logger;
+  #datastore; #sessions; #reviewQueue; #resultArtifacts; #renderMachineResult; #clock; #logger; #newAttemptId;
 
   /**
    * @param {object} deps
@@ -148,7 +149,7 @@ export class RecordCardScanOutcome {
    */
   constructor({
     datastore, sessions = null, reviewQueue = null, resultArtifacts = null, renderMachineResult = null,
-    clock = () => new Date(), logger = console,
+    clock = () => new Date(), newAttemptId = () => `att_${shortId(8)}`, logger = console,
   } = {}) {
     if (!datastore?.appendAttempt) throw new Error('RecordCardScanOutcome requires datastore.appendAttempt');
     this.#datastore = datastore;
@@ -157,6 +158,7 @@ export class RecordCardScanOutcome {
     this.#resultArtifacts = resultArtifacts;
     this.#renderMachineResult = renderMachineResult;
     this.#clock = clock;
+    this.#newAttemptId = newAttemptId;
     this.#logger = logger;
   }
 
@@ -363,6 +365,7 @@ export class RecordCardScanOutcome {
         conceptIds: row.concepts ?? [],
       };
       const attempt = createAttempt({
+        id: this.#newAttemptId(),
         at,
         processedAt: at,
         studyDay: preReadState?.studyDay ?? (preReadState?.firstIssuedAt ?? preReadState?.createdAt ?? at).slice(0, 10),

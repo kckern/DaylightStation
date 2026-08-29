@@ -1,5 +1,5 @@
 // backend/src/4_api/v1/agents/wireFormats/openaiChatCompletions.mjs
-import crypto from 'node:crypto';
+import { uuid } from '#system/utils/id.mjs';
 
 /**
  * OpenAI Chat Completions wire format preset.
@@ -37,7 +37,7 @@ export async function respondStream(res, asyncIter, { model = 'daylight-house', 
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
-  const id = `chatcmpl-${crypto.randomUUID()}`;
+  const id = `chatcmpl-${uuid()}`;
   const created = Math.floor(Date.now() / 1000);
   const send = (chunk) => res.write(`data: ${JSON.stringify(chunk)}\n\n`);
 
@@ -114,7 +114,7 @@ function buildEnvelope(result, model) {
   const toolCalls = Array.isArray(result?.toolCalls) ? result.toolCalls : [];
   const usage = result?.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   return {
-    id: `chatcmpl-${crypto.randomUUID()}`,
+    id: `chatcmpl-${uuid()}`,
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
     model,

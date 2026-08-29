@@ -28,8 +28,8 @@ test('writer.addFingerprint reads → mutates → writes → reloads cache', asy
     readProfile: () => ({ identities: { fingerprints: [] } }),
     writeProfile: (u, c) => { written = { u, c }; },
   };
-  const configService = { reloadUserProfile: (u) => { reloaded = u; } };
-  const writer = createFingerprintProfileWriter({ datastore, configService });
+  const profileCache = { refresh: (u) => { reloaded = u; } };
+  const writer = createFingerprintProfileWriter({ datastore, profileCache });
   await writer.addFingerprint('test-user', { id: 'u9', finger: 'left-thumb', enrolled: '2026-06-17' });
 
   assert.equal(written.u, 'test-user');
@@ -43,8 +43,8 @@ test('writer.removeFingerprint reads → removes → writes → reloads cache', 
     readProfile: () => ({ identities: { fingerprints: [{ id: 'u1' }, { id: 'u2' }] } }),
     writeProfile: (_u, c) => { written = c; },
   };
-  const configService = { reloadUserProfile: (u) => { reloaded = u; } };
-  const writer = createFingerprintProfileWriter({ datastore, configService });
+  const profileCache = { refresh: (u) => { reloaded = u; } };
+  const writer = createFingerprintProfileWriter({ datastore, profileCache });
   await writer.removeFingerprint('test-user', 'u1');
   assert.deepEqual(written.identities.fingerprints, [{ id: 'u2' }]);
   assert.equal(reloaded, 'test-user');

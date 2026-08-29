@@ -14,7 +14,9 @@
  * the DoNow dispatch log — a language dispatch's `programId` on that log row
  * is audit trail, never the source of truth for `doneToday`.
  */
-export class SentenceLadderProgramLauncher {
+import { IProgramLauncher } from './ports/IProgramLauncher.mjs';
+
+export class SentenceLadderProgramLauncher extends IProgramLauncher {
   #languageStudyService; #donow; #logger; #studyGrants;
 
   /**
@@ -24,6 +26,7 @@ export class SentenceLadderProgramLauncher {
    * @param {object} [deps.logger]
    */
   constructor({ languageStudyService, donow, studyGrants = null, logger = console }) {
+    super();
     this.#languageStudyService = languageStudyService;
     this.#donow = donow;
     this.#studyGrants = studyGrants;

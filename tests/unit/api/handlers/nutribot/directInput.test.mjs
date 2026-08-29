@@ -4,8 +4,7 @@ import { directUPCHandler } from '../../../../../backend/src/4_api/v1/handlers/n
 
 describe('directUPCHandler', () => {
   let executeMock;
-  let container;
-  let identityAdapter;
+  let nutribotApi;
   let handler;
 
   function mockRes() {
@@ -17,13 +16,11 @@ describe('directUPCHandler', () => {
 
   beforeEach(() => {
     executeMock = jest.fn().mockResolvedValue({ success: true });
-    container = { getLogFoodFromUPC: () => ({ execute: executeMock }) };
-    identityAdapter = {
-      resolve: jest.fn().mockReturnValue({ username: 'user_1', conversationIdString: 'telegram:1_2' }),
+    nutribotApi = {
+      userContext: jest.fn().mockReturnValue({ userId: 'user_1', conversationId: 'telegram:1_2' }),
+      logUpc: executeMock,
     };
-    handler = directUPCHandler(container, {
-      identityAdapter,
-      defaultMember: 'user_1',
+    handler = directUPCHandler(nutribotApi, {
       logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
     });
   });

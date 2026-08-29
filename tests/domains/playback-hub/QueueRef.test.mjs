@@ -90,6 +90,6 @@ describe('QueueRef', () => {
 
   it('toJSON returns { source, id } shape', () => {
     const q = new QueueRef({ source: 'plex', id: '670208' });
-    expect(q.toJSON()).toEqual({ source: 'plex', id: '670208' });
+    expect({ source: q.source, id: q.id }).toEqual({ source: 'plex', id: '670208' });
   });
 });

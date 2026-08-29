@@ -29,14 +29,17 @@ export class Belief {
     this.origin = data.origin || null;
   }
 
-  addEvidence(evidence) {
+  addEvidence(evidence, fallbackDate) {
+    if (!evidence.date && !fallbackDate) {
+      throw new Error('evidence date or fallbackDate is required');
+    }
     const delta = EVIDENCE_DELTAS[evidence.type] ?? 0;
     this.confidence = Math.max(0, Math.min(1, this.confidence + delta));
 
     this.evidence_history.push({
       type: evidence.type,
       delta,
-      date: evidence.date || new Date().toISOString().slice(0, 10),
+      date: evidence.date || new Date(fallbackDate).toISOString().slice(0, 10),
       note: evidence.note || null,
     });
 
@@ -83,11 +86,13 @@ export class Belief {
       );
     }
 
+    if (!timestamp) throw new Error('timestamp is required for belief transition');
+
     this.state_history.push({
       from: this.state,
       to: newState,
       reason,
-      timestamp: timestamp || new Date().toISOString(),
+      timestamp,
     });
 
     this.state = newState;
@@ -97,20 +102,4 @@ export class Belief {
     return BeliefState.isTerminal(this.state);
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      if: this.if,
-      then: this.then,
-      state: this.state,
-      confidence: this.confidence,
-      foundational: this.foundational,
-      signals: this.signals,
-      evidence_history: this.evidence_history,
-      evidence_quality: this.evidence_quality,
-      depends_on: this.depends_on,
-      state_history: this.state_history,
-      origin: this.origin,
-    };
-  }
 }

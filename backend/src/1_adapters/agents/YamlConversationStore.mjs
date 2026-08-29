@@ -1,6 +1,6 @@
 import path from 'path';
-import fs from 'fs';
-import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
+import { deleteFile, fileExists, listFiles, loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
+import { IMemoryDatastore } from '#apps/agents/ports/IMemoryDatastore.mjs';
 
 /**
  * YAML-backed conversation history for agents.
@@ -8,10 +8,11 @@ import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
  *
  * Storage: {basePath}/{agentId}/conversations/{conversationId}.yml
  */
-export class YamlConversationStore {
+export class YamlConversationStore extends IMemoryDatastore {
   #basePath;
 
   constructor({ basePath }) {
+    super();
     this.#basePath = basePath;
   }
 
@@ -34,13 +35,12 @@ export class YamlConversationStore {
 
   async clearConversation(agentId, conversationId) {
     const filePath = this.#filePath(agentId, conversationId);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (fileExists(filePath)) deleteFile(filePath);
   }
 
   async listConversations(agentId) {
     const dir = path.join(this.#basePath, agentId, 'conversations');
-    if (!fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir)
+    return listFiles(dir)
       .filter(f => f.endsWith('.yml'))
       .map(f => f.replace('.yml', ''));
   }

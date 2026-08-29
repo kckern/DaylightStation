@@ -74,18 +74,6 @@ export class Usage {
   }
 
   /**
-   * Convert to JSON-serializable object
-   *
-   * @returns {{ quantity: number, unit: string }}
-   */
-  toJSON() {
-    return {
-      quantity: this.#quantity,
-      unit: this.#unit
-    };
-  }
-
-  /**
    * Create a Usage from a JSON object
    *
    * @param {Object} data - JSON object with quantity and unit
@@ -94,15 +82,6 @@ export class Usage {
    * @returns {Usage}
    * @throws {ValidationError} If data is invalid
    */
-  static fromJSON(data) {
-    if (!data || typeof data.quantity !== 'number') {
-      throw new ValidationError('Invalid Usage JSON: quantity is required', {
-        code: 'INVALID_USAGE_JSON',
-        value: data
-      });
-    }
-    return new Usage(data.quantity, data.unit);
-  }
 }
 
 export default Usage;

@@ -2,6 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 
 const TRIAD_SEED = {
   schema_version: 1,
@@ -37,11 +38,11 @@ const stubBank = (over = {}) => ({
 function app(exerciseBank) {
   const server = express();
   server.use(express.json());
-  server.use('/api/v1/piano', createPianoRouter({
+  server.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({
     pianoContainer: { studioDatastore: { isKnownUser: () => true }, composerSongStore: {} },
     exerciseBank,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  }));
+  })));
   return server;
 }
 

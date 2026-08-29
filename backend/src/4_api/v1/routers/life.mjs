@@ -9,10 +9,7 @@ import { createUsernameResolver } from './life/identity.mjs';
 export default function createLifeRouter(config) {
   const router = Router();
   const logger = createLogger({ source: 'backend', app: 'life' });
-  const users = createUsernameResolver({
-    userService: config.userService,
-    defaultUsername: config.defaultUsername,
-  });
+  const users = createUsernameResolver({ lifeApi: config.lifeApi });
 
   // Resolve + validate the requesting user before anything else
   router.use(users.middleware);
@@ -35,96 +32,29 @@ export default function createLifeRouter(config) {
   // GET /user — resolved identity for the requesting client
   router.get('/user', (req, res) => {
     const username = req.lifeUsername;
-    const profile = config.userService?.getProfile?.(username);
-    res.json({
-      username,
-      displayName: profile?.display_name || username,
-    });
+    res.json(config.lifeApi.user(username));
   });
 
   // GET /users — household roster for the client-side user switcher.
   // No username param, so the identity middleware resolves the default user
   // (always valid) and lets this through.
   router.get('/users', (req, res) => {
-    const usernames = config.listHouseholdUsers?.() || [];
-    res.json({
-      users: usernames.map((u) => ({
-        username: u,
-        displayName: config.userService?.getProfile?.(u)?.display_name || u,
-      })),
-    });
+    res.json({ users: config.lifeApi.roster() });
   });
 
   router.use('/plan', createPlanRouter(config));
   router.use('/now', createNowRouter(config));
-  router.use('/log', createLogRouter({ ...config, usernameResolver: users }));
+  router.use('/log', createLogRouter({ lifeApi: config.lifeApi, usernameResolver: users }));
   router.use('/schedule', createScheduleRouter(config));
 
   // GET /health — system health for lifeplan domain
   router.get('/health', (req, res) => {
     const username = req.lifeUsername;
-    const checks = {};
-
-    // Plan loaded
-    try {
-      const plan = config.lifePlanStore?.load?.(username);
-      checks.plan = {
-        loaded: !!plan,
-        goalCount: plan?.goals?.length || 0,
-        beliefCount: plan?.beliefs?.length || 0,
-        valueCount: plan?.values?.length || 0,
-      };
-    } catch {
-      checks.plan = { loaded: false, error: 'Failed to load plan' };
+    const result = config.lifeApi.health(username);
+    if (result.status === 'degraded') {
+      logger.warn('life.health.degraded', { checks: result.checks });
     }
-
-    // Latest metrics snapshot
-    try {
-      const latest = config.driftService?.getLatestSnapshot?.(username);
-      checks.metrics = {
-        hasSnapshot: !!latest,
-        lastTimestamp: latest?.timestamp || null,
-        ageMs: latest?.timestamp
-          ? Date.now() - new Date(latest.timestamp).getTime()
-          : null,
-      };
-    } catch {
-      checks.metrics = { hasSnapshot: false };
-    }
-
-    // Ceremony adherence
-    try {
-      const plan = config.lifePlanStore?.load?.(username);
-      const ceremonies = plan?.ceremonies || {};
-      const enabledTypes = Object.entries(ceremonies)
-        .filter(([, c]) => c?.enabled)
-        .map(([type]) => type);
-      checks.ceremonies = {
-        enabledCount: enabledTypes.length,
-        types: enabledTypes,
-      };
-    } catch {
-      checks.ceremonies = { enabledCount: 0 };
-    }
-
-    // Service availability
-    checks.services = {
-      alignmentService: !!config.alignmentService,
-      driftService: !!config.driftService,
-      ceremonyService: !!config.ceremonyService,
-      feedbackService: !!config.feedbackService,
-      retroService: !!config.retroService,
-      aggregator: !!config.aggregator,
-    };
-
-    const allOk = checks.plan?.loaded !== false
-      && Object.values(checks.services).every(Boolean);
-
-    const status = allOk ? 'ok' : 'degraded';
-    if (status === 'degraded') {
-      logger.warn('life.health.degraded', { checks });
-    }
-    res.json({ status, checks });
+    res.json(result);
   });
 
   return router;

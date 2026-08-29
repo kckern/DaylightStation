@@ -142,7 +142,7 @@ describe('ProgramRunner', () => {
 
   describe('random_pick', () => {
     it('picks a random state based on weights', () => {
-      runner = new ProgramRunner(randomProgram);
+      runner = new ProgramRunner(randomProgram, { random: () => 0.25 });
       const action = runner.start();
       expect(['option-a', 'option-b']).toContain(runner.currentState);
       expect(action.type).toBe('play');

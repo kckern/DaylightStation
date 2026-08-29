@@ -10,7 +10,9 @@
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-export class YamlMessageQueueRepository {
+import { IMessageQueueRepository } from '#apps/journalist/ports/IMessageQueueRepository.mjs';
+
+export class YamlMessageQueueRepository extends IMessageQueueRepository {
   #dataService;
   #userResolver;
   #logger;
@@ -22,6 +24,7 @@ export class YamlMessageQueueRepository {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
+    super();
     if (!config.dataService) {
       throw new InfrastructureError('YamlMessageQueueRepository requires dataService', {
         code: 'MISSING_DEPENDENCY',

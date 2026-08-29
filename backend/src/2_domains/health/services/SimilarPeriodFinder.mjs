@@ -5,9 +5,7 @@
  * named historical periods (each with their own aggregated stats), returns a
  * ranked list of periods ordered by similarity to the signature.
  *
- * Stateless. No I/O, no fs, no network. The class wrapper exists for
- * dependency-injection consistency with sibling services and to allow
- * injection of a logger for "no matches found" warnings.
+ * Stateless. No I/O, no fs, no network.
  *
  * Scoring algorithm (per dimension):
  *   score = 1 - min(1, abs(signature.x - period.stats.x) / SCALE[x])
@@ -33,14 +31,6 @@ const DIMENSIONS = Object.keys(SCALES);
 
 export class SimilarPeriodFinder {
   /**
-   * @param {object} [opts]
-   * @param {object} [opts.logger] structured logger; falls back to console
-   */
-  constructor({ logger } = {}) {
-    this.logger = logger || console;
-  }
-
-  /**
    * Rank periods by similarity to a signature.
    *
    * @param {object} args
@@ -59,18 +49,6 @@ export class SimilarPeriodFinder {
     }
 
     if (periods.length === 0) {
-      // Only warn when caller passed a signature with at least one usable
-      // dimension — empty signature + empty periods is an unremarkable no-op.
-      const hasUsableDim = DIMENSIONS.some(
-        (d) => typeof signature[d] === 'number' && Number.isFinite(signature[d]),
-      );
-      if (hasUsableDim && this.logger?.warn) {
-        this.logger.warn('similar_period.no_periods', {
-          dimensionsPresent: DIMENSIONS.filter(
-            (d) => typeof signature[d] === 'number' && Number.isFinite(signature[d]),
-          ),
-        });
-      }
       return [];
     }
 

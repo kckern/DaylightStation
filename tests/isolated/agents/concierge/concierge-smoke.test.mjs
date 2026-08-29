@@ -57,7 +57,7 @@ async function buildApp({ agentRuntime, policy = PassThroughPolicy, satellite })
   const { MemoryBundle } = await import('../../../../backend/src/3_applications/agents/concierge/skills/MemoryBundle.mjs');
   const { mountAgentHttp } = await import('../../../../backend/src/4_api/v1/agents/mountAgentHttp.mjs');
 
-  const orchestrator = new AgentOrchestrator({ agentRuntime, logger: makeLogger() });
+  const orchestrator = new AgentOrchestrator({ agentRuntime, createTurnId: () => 'test-turn', logger: makeLogger() });
   orchestrator.register(ConciergeAgent, {
     policy,
     toolBundles: [new MemoryBundle({})],

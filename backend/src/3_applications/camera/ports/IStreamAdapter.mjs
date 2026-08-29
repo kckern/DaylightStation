@@ -17,6 +17,8 @@ export function isStreamAdapter(obj) {
     obj !== null &&
     typeof obj === 'object' &&
     typeof obj.ensureStream === 'function' &&
+    typeof obj.readPlaylist === 'function' &&
+    typeof obj.readSegment === 'function' &&
     typeof obj.touch === 'function' &&
     typeof obj.stop === 'function' &&
     typeof obj.stopAll === 'function' &&
@@ -43,6 +45,8 @@ export function assertStreamAdapter(obj, context = 'StreamAdapter') {
 export function createNoOpStreamAdapter() {
   return {
     ensureStream: async () => null,
+    readPlaylist: async () => null,
+    readSegment: async () => null,
     touch: () => {},
     stop: () => {},
     stopAll: () => {},

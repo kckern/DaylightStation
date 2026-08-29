@@ -20,6 +20,9 @@ import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
 import { createAdminContentRouter } from '#api/v1/routers/admin/content.mjs';
+import { ListManagementService } from '#apps/content/services/ListManagementService.mjs';
+import { YamlListDatastore } from '#adapters/persistence/yaml/YamlListDatastore.mjs';
+import { ListConfigCodec } from '#adapters/content/list/ListConfigCodec.mjs';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -44,9 +47,10 @@ function buildApp(dataDir) {
     userDataService: {
       getDataDir: () => dataDir,
     },
-    configService: {
-      getDefaultHouseholdId: () => 'test-household',
-    },
+    householdContext: { resolve: () => 'test-household' },
+    listManagementService: new ListManagementService({
+      listStore: new YamlListDatastore({ dataDir, listConfigCodec: ListConfigCodec }),
+    }),
     logger: {
       info: () => {},
       warn: () => {},

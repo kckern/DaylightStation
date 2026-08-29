@@ -6,7 +6,8 @@ describe('Admin Content Router', () => {
   it('should create a router with required dependencies', () => {
     const mockConfig = {
       userDataService: { getHouseholdPath: jest.fn(() => '/data/household') },
-      configService: { getDefaultHouseholdId: jest.fn(() => 'default') },
+      householdContext: { resolve: jest.fn(() => 'default') },
+      listManagementService: {},
       logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn() }
     };
 
@@ -21,7 +22,8 @@ describe('Admin Content Router', () => {
   it('should create a router with default logger if not provided', () => {
     const mockConfig = {
       userDataService: { getHouseholdPath: jest.fn(() => '/data/household') },
-      configService: { getDefaultHouseholdId: jest.fn(() => 'default') }
+      householdContext: { resolve: jest.fn(() => 'default') },
+      listManagementService: {},
     };
 
     const router = createAdminContentRouter(mockConfig);

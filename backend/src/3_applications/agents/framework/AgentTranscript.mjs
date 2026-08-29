@@ -1,25 +1,6 @@
 // backend/src/3_applications/agents/framework/AgentTranscript.mjs
 
-import crypto from 'node:crypto';
-import { mkdir as fsMkdir, writeFile as fsWriteFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import { safeClone } from './utils/safeClone.mjs';
-
-/**
- * Default file-path strategy — produces the same path as the original flush() logic:
- *   {mediaDir}/logs/agents/{agentId}/{YYYY-MM-DD}/{userId}/{HHMMSS-mmm}-{turnIdShort}.json
- * @param {AgentTranscript} t
- * @returns {string}
- */
-function defaultFilePathStrategy(t) {
-  const day = t.startedAt.toISOString().slice(0, 10); // YYYY-MM-DD
-  const iso = t.startedAt.toISOString();
-  const time = iso.slice(11, 23).replace(/[:.]/g, '');      // 204215123
-  const filenameTs = `${time.slice(0, 6)}-${time.slice(6, 9)}`; // 204215-123
-  const turnIdShort = (t.turnId || '').slice(0, 8) || 'no-id';
-  const userDir = t.userId || 'anonymous';
-  return join(t.mediaDir, 'logs', 'agents', t.agentId, day, userDir, `${filenameTs}-${turnIdShort}.json`);
-}
 
 /**
  * Per-turn transcript collector for any agent run. Generalizes the
@@ -33,13 +14,14 @@ function defaultFilePathStrategy(t) {
  * Schema: see docs/superpowers/specs/2026-05-05-agent-transcripts-design.md
  */
 export class AgentTranscript {
-  constructor({ agentId, userId = null, turnId = null, input, mediaDir = null, logger = console, fs: injectedFs = null, filePathStrategy = null } = {}) {
+  constructor({ agentId, userId = null, turnId = null, input, logger = console, transcriptStore = null } = {}) {
     if (!agentId) throw new Error('AgentTranscript: agentId is required');
     if (!input || typeof input !== 'object') throw new Error('AgentTranscript: input is required');
 
     this.agentId = agentId;
     this.userId = userId;
-    this.turnId = turnId || crypto.randomUUID();
+    if (!turnId) throw new Error('AgentTranscript: turnId is required');
+    this.turnId = turnId;
 
     this.startedAt = new Date();
     this.completedAt = null;
@@ -60,13 +42,9 @@ export class AgentTranscript {
     this.requestBody = null;
     this.satellite = null;
 
-    this.mediaDir = mediaDir;
     this.logger = logger;
     this._flushed = false;
-
-    // Injectable fs (for testing) and file-path strategy
-    this._fs = injectedFs || { mkdir: fsMkdir, writeFile: fsWriteFile };
-    this.filePathStrategy = filePathStrategy ?? defaultFilePathStrategy;
+    this.transcriptStore = transcriptStore;
   }
 
   setSystemPrompt(text) {
@@ -154,21 +132,24 @@ export class AgentTranscript {
   }
 
   /**
-   * Write the transcript JSON to disk under
-   * {mediaDir}/logs/agents/{agentId}/{YYYY-MM-DD}/{userId}/{HHMMSS-mmm}-{turnIdShort}.json
+   * Persist this transcript through its supplied output port.
    *
    * Idempotent — calling twice is safe (subsequent calls are no-ops). Never
    * throws — failures are warned via the configured logger and swallowed
    * so the agent's user-facing response is unaffected.
    */
   async flush() {
-    if (!this.mediaDir) return;
+    if (!this.transcriptStore) return;
     if (this._flushed) return;
 
     try {
-      const file = this.filePathStrategy(this);
-      await this._fs.mkdir(dirname(file), { recursive: true });
-      await this._fs.writeFile(file, JSON.stringify(this.toJSON(), null, 2), 'utf8');
+      await this.transcriptStore.save({
+        agentId: this.agentId,
+        userId: this.userId,
+        turnId: this.turnId,
+        startedAt: this.startedAt,
+        transcript: this.toJSON(),
+      });
       this._flushed = true;
     } catch (err) {
       this.logger?.warn?.('agent.transcript.flush_failed', {

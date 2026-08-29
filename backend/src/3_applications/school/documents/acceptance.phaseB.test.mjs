@@ -34,6 +34,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { RenderPrintDocument } from './RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { PublishPrintDocument } from './PublishPrintDocument.mjs';
 import {
   DOCUMENT_SOURCE_SCHEMA, validateDocumentSource,
@@ -43,6 +44,10 @@ import { deriveShuffle, applyShuffle } from '#domains/school/documents/shuffle.m
 import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
 import { pdfText } from '../../../../../tests/_lib/school/pdfText.mjs';
 import { requirePdftoppm, rasterizePdfPages } from '../../../../../tests/_lib/school/rasterize.mjs';
+
+const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
+  rendering: createPrintDocumentRendering(), ...deps,
+});
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = path.join(HERE, '..', '..', '..', '..', '..', 'docs', '_wip', 'audits', '2026-08-04-print-design-phase-b-acceptance');
@@ -323,7 +328,7 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
       const stored = repository.store.get(`${id}@${rev}`);
       expect(stored.document.rev).toBe(rev);
 
-      const renderUseCase = new RenderPrintDocument({ repository, banks: kitchenSinkBanks });
+      const renderUseCase = createRenderPrintDocument({ repository, banks: kitchenSinkBanks });
       const result = await renderUseCase.execute({ document: stored.document, context: { teacher: true } });
       expect(isPdf(result.bytes)).toBe(true);
       const text = pdfText(result.bytes);
@@ -355,7 +360,7 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
 
     for (const variant of [0, 1, 2]) {
       it(`variant ${variant}: teacher key matches the student page's shuffles — every answerable item asserted correct`, async () => {
-        const useCase = new RenderPrintDocument({ banks: kitchenSinkBanks });
+        const useCase = createRenderPrintDocument({ banks: kitchenSinkBanks });
         const document = kitchenSinkSource({ variant });
         const [student, teacher] = await Promise.all([
           useCase.execute({ document }),
@@ -436,14 +441,14 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
     });
 
     it('cloze + wordbank + matching render together — extracted page text is snapshot-pinned', async () => {
-      const useCase = new RenderPrintDocument();
+      const useCase = createRenderPrintDocument();
       const result = await useCase.execute({ document: shuffleDoc() });
       const normalized = pdfText(result.bytes).replace(/\n{3,}/g, '\n\n');
       expect(normalized).toMatchSnapshot();
     });
 
     it('edit-stability: inserting an unrelated sibling rich_text block between wordbank and cloze leaves BOTH keyed blocks\' shuffle order unchanged', async () => {
-      const useCase = new RenderPrintDocument();
+      const useCase = createRenderPrintDocument();
       const a = await useCase.execute({ document: shuffleDoc() });
       const b = await useCase.execute({
         document: shuffleDoc([{ type: 'rich_text', md: 'An unrelated inserted paragraph — a pure sibling edit.' }]),
@@ -488,7 +493,7 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
     });
 
     it('quiz PRINTS "Score ____ / 5" (5 questions x defaultPoints 1); worksheet prints no score line at all — real rendered text, not a structural guess', async () => {
-      const useCase = new RenderPrintDocument();
+      const useCase = createRenderPrintDocument();
       const [quiz, worksheet] = await Promise.all([
         useCase.execute({ document: bodyDoc('quiz') }),
         useCase.execute({ document: bodyDoc('worksheet') }),
@@ -515,7 +520,7 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
 
     beforeAll(async () => {
       requirePdftoppm();
-      const useCase = new RenderPrintDocument({ banks: kitchenSinkBanks });
+      const useCase = createRenderPrintDocument({ banks: kitchenSinkBanks });
       const document = kitchenSinkSource({ variant: 0 });
       const context = { learnerName: 'Proof Learner', date: '2026-08-04' };
       studentResult = await useCase.execute({ document, context });

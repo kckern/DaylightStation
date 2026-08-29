@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
 import { StreamChannel } from '../../../backend/src/2_domains/livestream/StreamChannel.mjs';
+import { toChannelStatus } from '../../../backend/src/3_applications/livestream/ChannelManager.mjs';
 
 describe('StreamChannel', () => {
   let channel;
@@ -123,13 +124,13 @@ describe('StreamChannel', () => {
     });
   });
 
-  describe('toJSON', () => {
+  describe('channel status projection', () => {
     it('serializes channel state', () => {
       channel.enqueue('/audio/next.mp3');
       channel.setCurrentTrack('/audio/now.mp3');
       channel.setProgram('bedtime');
 
-      const json = channel.toJSON();
+      const json = toChannelStatus(channel);
       // 9e179d7c4 added `soundboard` (defaults to []) to toJSON's output.
       expect(json).toEqual({
         name: 'yoto',

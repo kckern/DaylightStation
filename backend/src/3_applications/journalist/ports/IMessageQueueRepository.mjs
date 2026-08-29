@@ -51,10 +51,10 @@
  * @returns {Promise<void>}
  */
 
-// Export interface documentation
-export const IMessageQueueRepository = {
-  name: 'IMessageQueueRepository',
-  methods: ['loadUnsentQueue', 'saveToQueue', 'markSent', 'clearQueue', 'deleteUnprocessed'],
-};
+export class IMessageQueueRepository {
+  async loadUnsentQueue() { throw new Error('IMessageQueueRepository.loadUnsentQueue not implemented'); }
+  async saveToQueue() { throw new Error('IMessageQueueRepository.saveToQueue not implemented'); }
+  async markSent() { throw new Error('IMessageQueueRepository.markSent not implemented'); }
+}
 
 export default IMessageQueueRepository;

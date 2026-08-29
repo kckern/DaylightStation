@@ -437,7 +437,7 @@ describe('PatternDetector', () => {
       expect(result[0].evidence.calorie_avg).toBeGreaterThan(2400);
     });
 
-    it('an unknown primitive in the detection block returns null + emits warn', () => {
+    it('an unknown primitive in the detection block returns no detection', () => {
       const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
       const detector = new PatternDetector({ logger });
       const result = detector.detect({
@@ -458,10 +458,6 @@ describe('PatternDetector', () => {
         userGoals: USER_GOALS,
       });
       expect(result).toEqual([]);
-      expect(logger.warn).toHaveBeenCalledWith(
-        'pattern_detector.unknown_primitive',
-        expect.objectContaining({ name: 'experimental', primitive: 'mood_score_lt' }),
-      );
     });
 
     it('metadata-only keys (window_runs, weight_delta_window_days) are not treated as primitives', () => {
@@ -511,14 +507,14 @@ describe('PatternDetector', () => {
       expect(result[0].memoryKey).toBe('pattern_whatever-the-user-named-it_last_flagged');
     });
 
-    it('emits info log when a pattern matches', () => {
+    it('returns a pattern when it matches', () => {
       const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
       const detector = new PatternDetector({ logger });
       const runs = makeRunWindow({
         paces: [330, 332, 331, 330, 329],
         hrs: [150, 151, 150, 150, 151],
       });
-      detector.detect({
+      const result = detector.detect({
         windows: { nutrition: [], weight: [], workouts: runs, compliance: {} },
         playbookPatterns: [{
           name: 'whatever',
@@ -527,10 +523,7 @@ describe('PatternDetector', () => {
         }],
         userGoals: USER_GOALS,
       });
-      expect(logger.info).toHaveBeenCalledWith(
-        'pattern_detector.match',
-        expect.objectContaining({ name: 'whatever' }),
-      );
+      expect(result[0].name).toBe('whatever');
     });
 
     it('evidence object reflects the primitives invoked', () => {

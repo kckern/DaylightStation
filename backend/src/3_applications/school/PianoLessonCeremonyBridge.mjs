@@ -44,16 +44,13 @@ import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
 const BOUNDARY_HOUR = 4;
 
-/** The topic the Portal's School app listens on for its ceremony banner. */
-export const CEREMONY_TOPIC = 'school';
-
 export class PianoLessonCeremonyBridge {
-  #eventBus; #assignments; #launcher; #evidence; #hook; #resolveStudent;
+  #realtime; #assignments; #launcher; #evidence; #hook; #resolveStudent;
   #timezone; #clock; #logger; #unsubscribe; #announced;
 
   /**
    * @param {object} config
-   * @param {{subscribe: Function, broadcast?: Function, publish?: Function}} config.eventBus
+   * @param {import('./ports/ISchoolRealtimeGateway.mjs').ISchoolRealtimeGateway} config.realtime
    * @param {{get: Function, list?: Function}} config.assignments - the learner assignment store
    * @param {{id: string, status: Function}} config.launcher - PianoCourseProgramLauncher
    * @param {{appendEvidence: Function}|null} [config.evidenceRepository] - School's
@@ -66,16 +63,16 @@ export class PianoLessonCeremonyBridge {
    * @param {object} [config.logger]
    */
   constructor({
-    eventBus, assignments, launcher, evidenceRepository = null, hook = null, resolveStudent = null,
+    realtime, assignments, launcher, evidenceRepository = null, hook = null, resolveStudent = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
-    if (!eventBus || typeof eventBus.subscribe !== 'function') {
-      throw new Error('PianoLessonCeremonyBridge requires an eventBus with subscribe()');
+    if (!realtime?.onPianoLessonCompleted || !realtime?.onPianoChallengeCompleted || !realtime?.schoolCeremony) {
+      throw new Error('PianoLessonCeremonyBridge requires realtime School events');
     }
     if (!assignments || !launcher) {
       throw new Error('PianoLessonCeremonyBridge requires assignments and launcher');
     }
-    this.#eventBus = eventBus;
+    this.#realtime = realtime;
     this.#assignments = assignments;
     this.#launcher = launcher;
     this.#evidence = evidenceRepository;
@@ -91,14 +88,14 @@ export class PianoLessonCeremonyBridge {
   /** Subscribe to Piano's video and PianoChallenge completion signals. Safe to call more than once. */
   start() {
     if (this.#unsubscribe) return;
-    const unsubscribeLesson = this.#eventBus.subscribe('piano.lesson.completed', (payload) => (
+    const unsubscribeLesson = this.#realtime.onPianoLessonCompleted((payload) => (
       this.#handle(payload).catch((err) => {
         this.#logger.warn?.('school.piano-ceremony.handler-threw', {
           error: err?.message ?? String(err),
         });
       })
     ));
-    const unsubscribeChallenge = this.#eventBus.subscribe('piano.school-challenge.completed', (payload) => (
+    const unsubscribeChallenge = this.#realtime.onPianoChallengeCompleted((payload) => (
       this.#handleChallenge(payload).catch((err) => {
         this.#logger.warn?.('school.piano-challenge-ceremony.handler-threw', {
           error: err?.message ?? String(err),
@@ -293,16 +290,12 @@ export class PianoLessonCeremonyBridge {
   }
 
   /**
-   * The Portal's on-screen half. `broadcast` is the same transport
-   * `useWebSocketSubscription` reads; a bus without one degrades to the HA
-   * limb alone rather than throwing.
+   * The Portal's on-screen half. A missing or failed realtime limb degrades to
+   * the household hook rather than invalidating the completion.
    */
   #broadcast({ learnerId, student, courseId, lesson, status, studyDate }) {
-    const send = this.#eventBus.broadcast ?? this.#eventBus.publish;
-    if (typeof send !== 'function') return;
     try {
-      send.call(this.#eventBus, CEREMONY_TOPIC, {
-        event: 'piano-lesson-complete',
+      this.#realtime.schoolCeremony({
         learnerId,
         student,
         courseId,

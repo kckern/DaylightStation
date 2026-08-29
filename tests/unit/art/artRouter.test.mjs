@@ -17,14 +17,14 @@ const logger = { debug() {}, info() {}, warn() {}, error() {} };
 describe('art router /featured', () => {
   it('passes ?collection= to selectFeatured', async () => {
     const selectFeatured = vi.fn(async () => ({ mode: 'single', matte: {}, panels: [] }));
-    const router = createArtRouter({ artAdapter: { selectFeatured }, logger });
+    const router = createArtRouter({ artService: { selectFeatured }, logger });
     await featuredHandler(router)({ query: { collection: 'baroque' } }, res(), () => {});
     expect(selectFeatured).toHaveBeenCalledWith({ collection: 'baroque' });
   });
 
   it('passes collection: undefined when absent', async () => {
     const selectFeatured = vi.fn(async () => ({ mode: 'single', matte: {}, panels: [] }));
-    const router = createArtRouter({ artAdapter: { selectFeatured }, logger });
+    const router = createArtRouter({ artService: { selectFeatured }, logger });
     await featuredHandler(router)({ query: {} }, res(), () => {});
     expect(selectFeatured).toHaveBeenCalledWith({ collection: undefined });
   });

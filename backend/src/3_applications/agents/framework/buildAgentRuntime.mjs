@@ -30,6 +30,8 @@ export function buildAgentRuntime(memory, sharedDeps = {}, processors = null) {
     memory,
     inputProcessors: processors?.inputProcessors || null,
     outputProcessors: processors?.outputProcessors || null,
+    maxToolCalls: sharedDeps.maxToolCalls,
+    executionPolicy: sharedDeps.executionPolicy,
   });
 }
 

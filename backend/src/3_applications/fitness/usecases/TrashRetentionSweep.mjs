@@ -1,5 +1,3 @@
-import path from 'node:path';
-
 /** Frames live in `_trash` for this long before they are hard-deleted (7 days). */
 export const SESSION_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -27,23 +25,22 @@ export class TrashRetentionSweep {
    * @param {number} [opts.maxAgeMs] - retention window (defaults to 7 days)
    */
   async run({ now = Date.now(), maxAgeMs = SESSION_TRASH_RETENTION_MS } = {}) {
-    const { trashDir, fileIO, logger } = this.#d;
+    const { trashStore, logger } = this.#d;
     const stats = { scanned: 0, deleted: 0, kept: 0, prunedDates: 0, errors: 0 };
 
-    if (!trashDir || !fileIO.existsSync(trashDir)) return stats;
-    logger?.info?.('fitness.trash_sweep.start', { trashDir, maxAgeMs });
+    const batches = await trashStore.listRetentionBatches();
+    if (batches == null) return stats;
+    logger?.info?.('fitness.trash_sweep.start', { maxAgeMs });
 
-    for (const date of subdirs(fileIO, trashDir)) {
-      const dateDir = path.join(trashDir, date);
-      for (const id of subdirs(fileIO, dateDir)) {
-        const entry = path.join(dateDir, id);
+    for (const { date, entries } of batches) {
+      for (const entry of entries) {
+        const { id } = entry;
         stats.scanned++;
-        // Hard guard: never act outside the trash root.
-        if (!entry.startsWith(trashDir + path.sep)) continue;
         try {
-          const ageMs = now - mtimeMs(fileIO, entry);
+          if (entry.error) throw entry.error;
+          const ageMs = now - entry.trashedAt;
           if (ageMs >= maxAgeMs) {
-            fileIO.rmSync(entry, { recursive: true, force: true });
+            await trashStore.permanentlyDelete({ date, id });
             stats.deleted++;
             logger?.info?.('fitness.trash_sweep.deleted', { date, id, ageMs });
           } else {
@@ -56,8 +53,7 @@ export class TrashRetentionSweep {
       }
       // Prune the date dir once empty.
       try {
-        if (subdirs(fileIO, dateDir).length === 0) {
-          fileIO.rmSync(dateDir, { recursive: true, force: true });
+        if (await trashStore.pruneBatchIfEmpty(date)) {
           stats.prunedDates++;
         }
       } catch (err) {
@@ -69,16 +65,4 @@ export class TrashRetentionSweep {
     logger?.info?.('fitness.trash_sweep.done', { ...stats });
     return stats;
   }
-}
-
-function subdirs(fileIO, dir) {
-  try {
-    return fileIO.readdirSync(dir, { withFileTypes: true })
-      .filter(e => e.isDirectory())
-      .map(e => e.name);
-  } catch { return []; }
-}
-
-function mtimeMs(fileIO, p) {
-  return fileIO.statSync(p).mtimeMs || 0;
 }

@@ -10,6 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { GetCourseProgress } from '../../../../backend/src/3_applications/piano/usecases/GetCourseProgress.mjs';
+import { PianoConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
 
 const noop = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
@@ -84,7 +85,7 @@ const userVideoProgressStore = {
 const makeUseCase = () => new GetCourseProgress({
   fitnessPlayableService,
   userVideoProgressStore,
-  configService,
+  configProjection: new PianoConfigProjection({ configService }),
   logger: noop,
 });
 

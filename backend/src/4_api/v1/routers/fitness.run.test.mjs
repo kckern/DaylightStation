@@ -15,6 +15,7 @@ import { createFitnessRouter } from './fitness.mjs';
 import { YamlWorkoutRepository } from '#adapters/fitness/YamlWorkoutRepository.mjs';
 import { SaveWorkout } from '#apps/fitness/usecases/SaveWorkout.mjs';
 import { PrepareWorkoutRun } from '#apps/fitness/usecases/PrepareWorkoutRun.mjs';
+import { WorkoutCatalogService } from '#apps/fitness/services/WorkoutCatalogService.mjs';
 
 const CORPUS = Object.assign(Object.create(null), {
   'back-squat': { slug: 'back-squat', name: 'Barbell Back Squat', image: 'media/library/exercise/assets/squat.gif' },
@@ -37,9 +38,9 @@ function buildApp({ withRun = true } = {}) {
   const exerciseLibrary = { getExercise: (slug) => CORPUS[slug] ?? null };
   const saveWorkout = new SaveWorkout({ workoutRepository: repository, exerciseLibrary, logger: silentLogger });
   const router = createFitnessRouter({
-    configService,
+    defaultHouseholdId: 'main',
     logger: silentLogger,
-    workoutRepository: repository,
+    workoutCatalog: new WorkoutCatalogService({ workoutRepository: repository }),
     saveWorkout,
     ...(withRun
       ? { prepareWorkoutRun: new PrepareWorkoutRun({ workoutRepository: repository, exerciseLibrary, logger: silentLogger }) }

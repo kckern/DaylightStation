@@ -1,12 +1,12 @@
 export class ReleaseEmergencyLockdown {
-  #repo; #eventBus; #logger;
-  constructor({ repo, eventBus, logger } = {}) {
-    if (!repo || !eventBus) throw new Error('ReleaseEmergencyLockdown: repo, eventBus required');
-    this.#repo = repo; this.#eventBus = eventBus; this.#logger = logger || console;
+  #repo; #publications; #logger;
+  constructor({ repo, publications, logger } = {}) {
+    if (!repo || !publications?.released) throw new Error('ReleaseEmergencyLockdown: repo, publications required');
+    this.#repo = repo; this.#publications = publications; this.#logger = logger || console;
   }
   async execute({ by, now } = {}) {
     await this.#repo.clear();
-    this.#eventBus.broadcast('fitness.emergency.released', { by, at: now });
+    this.#publications.released({ by, at: now });
     this.#logger.info?.('emergency.released', { by });
   }
 }

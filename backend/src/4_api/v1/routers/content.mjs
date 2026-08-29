@@ -1,14 +1,12 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 // backend/src/4_api/routers/content.mjs
 import express from 'express';
-import { nowTs24 } from '#system/utils/index.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSearchable.mjs';
 import { parseContentQuery, validateContentQuery } from '../parsers/contentQueryParser.mjs';
-import { checkSchedule } from '#apps/content/services/scheduleCheck.mjs';
-import { ContentAlternatesService } from '#apps/content/ContentAlternatesService.mjs';
 import { stripEmpty } from '#api/v1/utils/stripEmpty.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
+import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 
 /**
  * Create content API router
@@ -25,61 +23,28 @@ import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
  * Note: List endpoint moved to /api/v1/list/:source/* (list.mjs)
  * Note: Menu logging moved to /api/v1/item/menu-log (item.mjs)
  *
- * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
- * @param {import('#adapters/persistence/yaml/YamlMediaProgressMemory.mjs').YamlMediaProgressMemory} [mediaProgressMemory=null] - Optional media progress memory store
  * @param {Object} [options] - Additional options
+ * @param {Object} options.contentDiscovery - Semantic content discovery facade
+ * @param {import('#apps/content/usecases/UpdateContentProgress.mjs').UpdateContentProgress} [options.updateContentProgress]
  * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [options.composePresentationUseCase] - Use case for composing presentations
  * @param {import('#apps/content/ContentQueryService.mjs').ContentQueryService} [options.contentQueryService] - Content query service for unified search/list
  * @param {import('#apps/content/services/ContentQueryAliasResolver.mjs').ContentQueryAliasResolver} [options.aliasResolver] - Alias resolver for content queries
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
-export function createContentRouter(registry, mediaProgressMemory = null, options = {}) {
-  const { composePresentationUseCase, contentQueryService, aliasResolver, configService, logger = console } = options;
+export function createContentRouter(options = {}) {
+  const {
+    composePresentationUseCase,
+    contentQueryService,
+    contentAliasCatalog,
+    contentAccessPolicy,
+    contentDiscovery,
+    updateContentProgress = null,
+    findContentAlternates = null,
+    validateSearchQuery = () => {},
+    logger = console,
+  } = options;
   const router = express.Router();
-
-  /**
-   * Create media progress object with toJSON method for datastore compatibility
-   * @param {Object} props - Media progress properties
-   * @returns {Object}
-   */
-  function createMediaProgressDTO(props) {
-    const { contentId, playhead = 0, duration = 0, playCount = 0, lastPlayed = null, watchTime = 0 } = props;
-    const percent = duration > 0 ? Math.round((playhead / duration) * 100) : 0;
-    return {
-      contentId,
-      playhead,
-      duration,
-      percent,
-      playCount,
-      lastPlayed,
-      watchTime,
-      toJSON() {
-        return {
-          contentId: this.contentId,
-          playhead: this.playhead,
-          duration: this.duration,
-          percent: this.percent,
-          playCount: this.playCount,
-          lastPlayed: this.lastPlayed,
-          watchTime: this.watchTime
-        };
-      }
-    };
-  }
-
-  /**
-   * Check if media progress indicates the item is fully watched
-   * @param {Object} state - Plain media progress object
-   * @returns {boolean}
-   */
-  function isWatched(state) {
-    if (!state || !state.duration) return false;
-    const percent = state.percent ?? (state.playhead && state.duration > 0
-      ? Math.round((state.playhead / state.duration) * 100)
-      : 0);
-    return percent >= 90;
-  }
 
   /**
    * GET /api/content/item/:source/*
@@ -89,29 +54,14 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
     const { source } = req.params;
     const localId = splatPath(req);
 
-    // Try exact source match first, then prefix resolution
-    let adapter = registry.get(source);
-    let resolvedLocalId = localId;
-
-    if (!adapter) {
-      // Try prefix-based resolution (e.g., canvas:religious/nativity.jpg)
-      const resolved = registry.resolveFromPrefix(source, localId);
-      if (resolved) {
-        adapter = resolved.adapter;
-        resolvedLocalId = resolved.localId;
-      }
-    }
-
-    if (!adapter) {
+    const result = await contentDiscovery.getItem(source, localId);
+    if (result.kind === 'unknown_source') {
       return res.status(404).json({ error: `Unknown source: ${source}` });
     }
-
-    const item = await adapter.getItem(resolvedLocalId);
-    if (!item) {
-      return res.status(404).json({ error: 'Item not found', source, localId: resolvedLocalId });
+    if (result.kind === 'not_found') {
+      return res.status(404).json({ error: 'Item not found', source, localId: result.localId });
     }
-
-    res.json(item);
+    res.json(presentPublicResources(result.item));
   }));
 
   /**
@@ -136,7 +86,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * Update watch progress for an item
    */
   router.post('/progress/:source{/*splat}', asyncHandler(async (req, res) => {
-    if (!mediaProgressMemory) {
+    if (!updateContentProgress?.isConfigured?.()) {
       return res.status(501).json({ error: 'Media progress storage not configured' });
     }
 
@@ -148,47 +98,11 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       return res.status(400).json({ error: 'seconds and duration are required numbers' });
     }
 
-    // Try exact source match first, then prefix resolution
-    let adapter = registry.get(source);
-    let resolvedLocalId = localId;
-
-    if (!adapter) {
-      const resolved = registry.resolveFromPrefix(source, localId);
-      if (resolved) {
-        adapter = resolved.adapter;
-        resolvedLocalId = resolved.localId;
-      }
-    }
-
-    if (!adapter) {
+    const result = await updateContentProgress.execute({ source, localId, seconds, duration });
+    if (!result) {
       return res.status(404).json({ error: `Unknown source: ${source}` });
     }
-
-    const contentId = `${source}:${resolvedLocalId}`;
-    const storagePath = typeof adapter.getStoragePath === 'function'
-      ? await adapter.getStoragePath(resolvedLocalId)
-      : source;
-
-    // Get existing state or create new one
-    const existing = await mediaProgressMemory.get(contentId, storagePath);
-    const state = createMediaProgressDTO({
-      contentId,
-      playhead: seconds,
-      duration,
-      playCount: (existing?.playCount || 0) + (seconds === 0 ? 1 : 0),
-      lastPlayed: nowTs24(),
-      watchTime: (existing?.watchTime || 0) + Math.max(0, seconds - (existing?.playhead || 0))
-    });
-
-    await mediaProgressMemory.set(state, storagePath);
-
-    res.json({
-      contentId,
-      playhead: state.playhead,
-      duration: state.duration,
-      percent: state.percent,
-      watched: isWatched(state)
-    });
+    res.json(result);
   }));
 
   // ==========================================================================
@@ -201,10 +115,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * Used by slot machine and test fixtures to discover what content is available.
    */
   router.get('/sources', (req, res) => {
-    const sources = registry.list();
-    const categories = registry.getCategories();
-    const providers = registry.getProviders();
-    res.json({ sources, categories, providers });
+    res.json(contentDiscovery.getSources());
   });
 
   /**
@@ -225,8 +136,10 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
     const rawPath = splatPath(req);
     const { compoundId } = parseActionRouteId({ source, path: rawPath });
 
-    const service = new ContentAlternatesService({ registry, logger });
-    const alternates = await service.findAlternates(compoundId);
+    if (typeof findContentAlternates !== 'function') {
+      return res.status(501).json({ error: 'Content alternates not configured' });
+    }
+    const alternates = await findContentAlternates(compoundId);
 
     logger.info?.('content.alternates', {
       contentId: compoundId,
@@ -241,23 +154,14 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * Used by slot machine to generate valid test queries.
    */
   router.get('/aliases', (req, res) => {
-    if (!aliasResolver) {
+    if (!contentAliasCatalog?.available) {
       return res.status(501).json({
         error: 'Alias resolver not configured',
         code: 'ALIAS_RESOLVER_NOT_CONFIGURED'
       });
     }
 
-    const builtInAliases = aliasResolver.getBuiltInAliases();
-    const allAliases = aliasResolver.getAvailableAliases();
-    const userDefined = allAliases.filter(a => !Object.keys(builtInAliases).includes(a));
-    const categories = registry.getCategories();
-
-    res.json({
-      builtIn: Object.keys(builtInAliases),
-      userDefined,
-      categories,
-    });
+    res.json(contentAliasCatalog.catalog());
   });
 
   // ==========================================================================
@@ -345,7 +249,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       });
     } catch (error) {
       logger.error?.('content.query.search.error', { query, error: error.message });
-      res.status(500).json({ error: 'Search failed', message: error.message });
+      sendInternalError(res, { error: 'Search failed', message: error.message });
     }
   }));
 
@@ -481,7 +385,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       });
     } catch (error) {
       logger.error?.('content.query.list.error', { query, error: error.message });
-      res.status(500).json({ error: 'List failed', message: error.message });
+      sendInternalError(res, { error: 'List failed', message: error.message });
     }
   }));
 
@@ -536,55 +440,18 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       return res.status(400).json({ error: err.message, code: err.code });
     }
 
-    // Find all searchable adapters
-    const allSources = registry.list();
-    const searchableAdapters = [];
-
-    for (const sourceName of allSources) {
-      // If sources filter provided, skip non-matching
-      if (requestedSources && !requestedSources.includes(sourceName)) continue;
-
-      const adapter = registry.get(sourceName);
-      if (isMediaSearchable(adapter)) {
-        searchableAdapters.push({ name: sourceName, adapter });
-      }
-    }
-
-    if (searchableAdapters.length === 0) {
+    const result = await contentDiscovery.searchLegacy({ requestedSources, query });
+    if (result.kind === 'none') {
       const msg = requestedSources
         ? `No searchable adapters found for sources: ${requestedSources.join(', ')}`
         : 'No searchable adapters configured';
       return res.status(404).json({ error: msg });
     }
-
-    // Execute search on all adapters
-    const allItems = [];
-    let totalCount = 0;
-    const searchedSources = [];
-
-    for (const { name, adapter } of searchableAdapters) {
-      try {
-        const result = await adapter.search(query);
-        searchedSources.push(name);
-        totalCount += result.total || result.items?.length || 0;
-
-        // Add source attribution to items if not present
-        const items = (result.items || []).map(item => ({
-          ...item,
-          source: item.source || name
-        }));
-        allItems.push(...items);
-      } catch (err) {
-        logger.warn?.('content.search.adapter.error', { source: name, error: err.message });
-        // Continue with other adapters
-      }
-    }
-
     res.json({
       query,
-      sources: searchedSources,
-      total: totalCount,
-      items: allItems
+      sources: result.sources,
+      total: result.total,
+      items: result.items
     });
   }));
 
@@ -666,9 +533,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * Returns availability status, next window, and full schedule.
    */
   router.get('/schedule/:source', (req, res) => {
-    const config = configService?.reloadHouseholdAppConfig(null, 'games');
-    const { available, nextWindow } = checkSchedule(config?.schedule);
-    res.json({ available, nextWindow, schedule: config?.schedule || null });
+    res.json(contentAccessPolicy?.schedule?.() || { available: true, nextWindow: null, schedule: null });
   });
 
   /**
@@ -688,12 +553,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * credentials.
    */
   router.get('/launch-targets/:source', (req, res) => {
-    const config = configService?.reloadHouseholdAppConfig(null, req.params.source === 'retroarch' ? 'games' : req.params.source);
-    const raw = config?.launch?.device_targets || {};
-    const targets = Object.entries(raw).map(([deviceId, cfg]) => ({
-      deviceId,
-      allow: Array.isArray(cfg?.allow) ? cfg.allow.filter(Boolean) : []
-    }));
+    const targets = contentAccessPolicy?.launchTargets?.(req.params.source) || [];
     res.json({ targets });
   });
 

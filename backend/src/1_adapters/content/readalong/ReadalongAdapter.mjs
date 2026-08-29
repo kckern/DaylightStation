@@ -320,7 +320,7 @@ export class ReadalongAdapter {
   _resolveAmbientUrl() {
     const tracks = Array.from({ length: 115 }, (_, i) => ({ id: i + 1 }));
     const [selected] = ItemSelectionService.applyPick(
-      ItemSelectionService.applySort(tracks, 'random'),
+      ItemSelectionService.applySort(tracks, 'random', Math.random),
       'first'
     );
     const trackNum = String(selected.id).padStart(3, '0');
@@ -355,7 +355,7 @@ export class ReadalongAdapter {
 
     for (const version of versionPrefs) {
       const key = resolver.buildVersionedStorageKey(bareVerseId, volume, version);
-      const state = await this.mediaProgressMemory.get(key, namespace || 'scriptures');
+      const state = await this.mediaProgressMemory.findProgress(key, namespace || 'scriptures');
       if (state && (state.percent || 0) >= resolver.WATCHED_THRESHOLD) {
         watchedVersions.push(version);
       }
@@ -796,21 +796,21 @@ export class ReadalongAdapter {
       const readalongKey = `readalong:scripture/${volume}/${textVersion}/${verseId}`;
       const narratedKey = `narrated:scripture/${volume}/${textVersion}/${verseId}`;
 
-      const legacyProgress = await this.mediaProgressMemory.get(legacyKey, 'scriptures');
+      const legacyProgress = await this.mediaProgressMemory.findProgress(legacyKey, 'scriptures');
       if (legacyProgress?.percent) return legacyProgress.percent;
 
-      const readalongProgress = await this.mediaProgressMemory.get(readalongKey, 'scriptures');
+      const readalongProgress = await this.mediaProgressMemory.findProgress(readalongKey, 'scriptures');
       if (readalongProgress?.percent) return readalongProgress.percent;
 
-      const narratedProgress = await this.mediaProgressMemory.get(narratedKey, 'scriptures');
+      const narratedProgress = await this.mediaProgressMemory.findProgress(narratedKey, 'scriptures');
       if (narratedProgress?.percent) return narratedProgress.percent;
 
       // Fallback: check readalong.yml for old entries written there
-      const fallbackReadalong = await this.mediaProgressMemory.get(readalongKey, 'readalong');
+      const fallbackReadalong = await this.mediaProgressMemory.findProgress(readalongKey, 'readalong');
       if (fallbackReadalong?.percent) return fallbackReadalong.percent;
 
       // Fallback: check narrated.yml for old entries written there
-      const fallbackNarrated = await this.mediaProgressMemory.get(narratedKey, 'narrated');
+      const fallbackNarrated = await this.mediaProgressMemory.findProgress(narratedKey, 'narrated');
       return fallbackNarrated?.percent || 0;
     } catch {
       return 0;
@@ -833,7 +833,7 @@ export class ReadalongAdapter {
     const narratedPrefix = `narrated:scripture/${volume}/${textVersion}/`;
 
     // Primary: read from scriptures.yml
-    const allProgress = await this.mediaProgressMemory.getAll('scriptures');
+    const allProgress = await this.mediaProgressMemory.listProgress('scriptures');
 
     // Extract verse IDs from both key formats
     const seen = new Map(); // verseId → highest percent
@@ -857,7 +857,7 @@ export class ReadalongAdapter {
 
     // Fallback: if no matches in scriptures.yml, check readalong.yml
     if (seen.size === 0) {
-      const fallbackProgress = await this.mediaProgressMemory.getAll('readalong');
+      const fallbackProgress = await this.mediaProgressMemory.listProgress('readalong');
       for (const p of fallbackProgress) {
         if (p.contentId?.startsWith(readalongPrefix)) {
           const verseId = parseInt(p.contentId.split('/').pop(), 10);
@@ -874,7 +874,7 @@ export class ReadalongAdapter {
 
     // Fallback: if still empty, check narrated.yml
     if (seen.size === 0) {
-      const fallbackProgress = await this.mediaProgressMemory.getAll('narrated');
+      const fallbackProgress = await this.mediaProgressMemory.listProgress('narrated');
       for (const p of fallbackProgress) {
         if (p.contentId?.startsWith(narratedPrefix)) {
           const verseId = parseInt(p.contentId.split('/').pop(), 10);

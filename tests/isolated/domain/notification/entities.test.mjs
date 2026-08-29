@@ -51,17 +51,16 @@ describe('NotificationIntent', () => {
     })).toThrow(/urgency/i);
   });
 
-  it('serializes to JSON', () => {
+  it('retains intent fields', () => {
     const intent = new NotificationIntent({
       title: 'Test',
       body: 'Body',
       category: 'system',
       urgency: 'low',
     });
-    const json = intent.toJSON();
-    expect(json.title).toBe('Test');
-    expect(json.category).toBe('system');
-    expect(json.urgency).toBe('low');
+    expect(intent.title).toBe('Test');
+    expect(intent.category).toBe('system');
+    expect(intent.urgency).toBe('low');
   });
 
   it('defaults actions to empty array and metadata to empty object', () => {
@@ -123,9 +122,9 @@ describe('NotificationPreference', () => {
     expect(pref.getChannelsFor('ceremony', 'high')).toEqual(['app']);
   });
 
-  it('serializes to JSON round-trip', () => {
+  it('exposes configuration for boundary projection', () => {
     const pref = new NotificationPreference(prefConfig);
-    const json = pref.toJSON();
+    const json = pref.configuration;
     const restored = new NotificationPreference(json);
     expect(restored.getChannelsFor('ceremony', 'normal')).toEqual(['telegram']);
   });

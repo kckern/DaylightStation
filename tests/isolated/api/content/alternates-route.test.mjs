@@ -10,7 +10,10 @@ import { fileURLToPath } from 'url';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { FilesystemCanvasAdapter } from '#adapters/content/canvas/filesystem/FilesystemCanvasAdapter.mjs';
-import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
+import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
+import { ContentAlternatesService } from '#apps/content/ContentAlternatesService.mjs';
+import { ContentDiscoveryService } from '#apps/content/services/ContentDiscoveryService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mediaPath = path.resolve(__dirname, '../../../_fixtures/media');
@@ -24,9 +27,14 @@ describe('GET /api/v1/content/alternates', () => {
     registry.register(new FilesystemCanvasAdapter({
       basePath: path.join(mediaPath, 'docs'),
     }));
+    const contentCatalog = new RegistryContentCatalogGateway({ registry });
+    const alternatesService = new ContentAlternatesService({ contentCatalog });
 
     app = express();
-    app.use('/api/v1/content', createContentRouter(registry));
+    app.use('/api/v1/content', createContentRouter({
+      contentDiscovery: new ContentDiscoveryService({ contentCatalog }),
+      findContentAlternates: alternatesService.findAlternates.bind(alternatesService),
+    }));
   });
 
   it('returns the canvas id for a files image', async () => {

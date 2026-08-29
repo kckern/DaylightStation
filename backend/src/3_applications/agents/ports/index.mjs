@@ -3,3 +3,5 @@
 export { IAgentRuntime, isAgentRuntime } from './IAgentRuntime.mjs';
 export { ITool, isTool, createTool } from './ITool.mjs';
 export { IMemoryDatastore, isMemoryDatastore } from './IMemoryDatastore.mjs';
+export { IAgentMemoryFactory, isAgentMemoryFactory } from './IAgentMemoryFactory.mjs';
+export { IAgentMemoryProcessorFactory, isAgentMemoryProcessorFactory } from './IAgentMemoryProcessorFactory.mjs';

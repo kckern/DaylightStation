@@ -1,7 +1,16 @@
 import path from 'node:path';
-import nodeFs from 'node:fs';
 import { IRecapSnapshotStore } from '#apps/fitness/ports/IRecapSnapshotStore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import {
+  deleteDirAsync,
+  ensureDirAsync,
+  fileExists,
+  readBinaryFromPathAsync,
+  renameFileAsync,
+  setFileTimes,
+} from '#system/utils/FileIO.mjs';
+
+const captureLocations = new WeakMap();
 
 /**
  * Reads and cleans up the raw webcam capture frames recorded during a session.
@@ -10,16 +19,14 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  */
 export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
   #datastore;
-  #fs;
   #logger;
 
-  constructor({ sessionDatastore, fileIO = nodeFs, logger = console }) {
+  constructor({ sessionDatastore, logger = console }) {
     super();
     if (!sessionDatastore) {
       throw new InfrastructureError('YamlRecapSnapshotStore requires sessionDatastore', { code: 'MISSING_DEPENDENCY' });
     }
     this.#datastore = sessionDatastore;
-    this.#fs = fileIO;
     this.#logger = logger;
   }
 
@@ -29,14 +36,20 @@ export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
     const data = await this.#datastore.findById(sessionId, householdId);
     const captures = data?.snapshots?.captures || [];
     const resolved = captures
-      .map(c => ({
-        index: c.index,
-        filename: c.filename,
-        timestamp: c.timestamp,
-        role: c.role || 'camera',
-        absolutePath: this.#resolve(screenshotsDir, c)
-      }))
-      .filter(c => c.absolutePath)
+      .map(c => {
+        const absolutePath = this.#resolve(screenshotsDir, c);
+        if (!absolutePath) return null;
+        const captureId = Object.freeze({ kind: 'recap-capture' });
+        captureLocations.set(captureId, absolutePath);
+        return {
+          index: c.index,
+          filename: c.filename,
+          timestamp: c.timestamp,
+          role: c.role || 'camera',
+          captureId,
+        };
+      })
+      .filter(Boolean)
       .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
     const missing = captures.length - resolved.length;
     this.#logger.debug?.('recap.snapshots.listed', {
@@ -51,11 +64,10 @@ export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
     return resolved;
   }
 
-  async readCapture(absolutePath) {
-    if (!absolutePath) throw new InfrastructureError('readCapture requires a path', { code: 'MISSING_PATH' });
-    return this.#fs.promises
-      ? this.#fs.promises.readFile(absolutePath)
-      : this.#fs.readFileSync(absolutePath);
+  async readCapture(captureId) {
+    const absolutePath = captureLocations.get(captureId);
+    if (!absolutePath) throw new InfrastructureError('readCapture requires a valid capture id', { code: 'INVALID_CAPTURE_ID' });
+    return readBinaryFromPathAsync(absolutePath);
   }
 
   /**
@@ -72,19 +84,19 @@ export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
     const paths = this.#datastore.getStoragePaths(sessionId, householdId);
     const screenshotsDir = paths?.screenshotsDir;
     const trashDir = paths?.trashDir;
-    if (!screenshotsDir || !this.#fs.existsSync(screenshotsDir)) return null;
+    if (!screenshotsDir || !this.#exists(screenshotsDir)) return null;
     if (!trashDir) {
       throw new InfrastructureError('moveToTrash requires a trashDir from storage paths', { code: 'MISSING_TRASH_DIR' });
     }
     try {
       const dest = path.join(trashDir, 'screenshots');
       // Clear any stale trash entry for this session, then move the frames in.
-      this.#fs.rmSync(trashDir, { recursive: true, force: true });
-      this.#fs.mkdirSync(trashDir, { recursive: true });
-      this.#fs.renameSync(screenshotsDir, dest);
+      await this.#removeDir(trashDir);
+      await this.#ensureDir(trashDir);
+      await this.#rename(screenshotsDir, dest);
       // Stamp the trash entry so retention ages it from when it was trashed.
       const t = new Date(now);
-      try { this.#fs.utimesSync(trashDir, t, t); } catch { /* mtime stamp best-effort */ }
+      try { this.#setTimes(trashDir, t, t); } catch { /* mtime stamp best-effort */ }
       this.#logger.debug?.('recap.snapshots.trashed', { sessionId, dest });
       return dest;
     } catch (err) {
@@ -95,15 +107,15 @@ export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
   async cleanup(sessionId, householdId, { archive = false } = {}) {
     const paths = this.#datastore.getStoragePaths(sessionId, householdId);
     const screenshotsDir = paths?.screenshotsDir;
-    if (!screenshotsDir || !this.#fs.existsSync(screenshotsDir)) return;
+    if (!screenshotsDir || !this.#exists(screenshotsDir)) return;
     try {
       if (archive) {
         const dest = path.join(path.dirname(screenshotsDir), 'screenshots_archive');
-        this.#fs.rmSync(dest, { recursive: true, force: true });
-        this.#fs.renameSync(screenshotsDir, dest);
+        await this.#removeDir(dest);
+        await this.#rename(screenshotsDir, dest);
         this.#logger.debug?.('recap.snapshots.archived', { sessionId, dest });
       } else {
-        this.#fs.rmSync(screenshotsDir, { recursive: true, force: true });
+        await this.#removeDir(screenshotsDir);
         this.#logger.debug?.('recap.snapshots.deleted', { sessionId, screenshotsDir });
       }
     } catch (err) {
@@ -113,12 +125,18 @@ export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
 
   // Prefer the recorded absolute/relative path; fall back to dir + filename.
   #resolve(screenshotsDir, capture) {
-    if (capture.path && path.isAbsolute(capture.path) && this.#fs.existsSync(capture.path)) return capture.path;
+    if (capture.path && path.isAbsolute(capture.path) && this.#exists(capture.path)) return capture.path;
     if (screenshotsDir && capture.filename) {
       const p = path.join(screenshotsDir, capture.filename);
-      if (this.#fs.existsSync(p)) return p;
+      if (this.#exists(p)) return p;
     }
-    if (capture.path && this.#fs.existsSync(capture.path)) return capture.path;
+    if (capture.path && this.#exists(capture.path)) return capture.path;
     return null;
   }
+
+  #exists(filePath) { return fileExists(filePath); }
+  #removeDir(dirPath) { return deleteDirAsync(dirPath, { force: true }); }
+  #ensureDir(dirPath) { return ensureDirAsync(dirPath); }
+  #rename(sourcePath, destinationPath) { return renameFileAsync(sourcePath, destinationPath); }
+  #setTimes(filePath, atime, mtime) { return setFileTimes(filePath, atime, mtime); }
 }

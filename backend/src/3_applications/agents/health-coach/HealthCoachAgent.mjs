@@ -20,9 +20,8 @@ import { PersonalBaselineService } from './services/PersonalBaselineService.mjs'
 import { UserModelService }        from './services/UserModelService.mjs';
 import { loadAgentConfig } from '../framework/loadAgentConfig.mjs';
 import { healthCoachWorkingMemoryTemplate } from './memory/workingMemoryTemplate.mjs';
-import { buildObservationalMemory } from '../framework/buildObservationalMemory.mjs';
-import { buildTimeWindowProcessor } from '../framework/buildTimeWindowProcessor.mjs';
-import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
+import { FoodLogService } from '#apps/nutribot/services/FoodLogService.mjs';
+import { isHealthCoachWorkspaceRepository } from './ports/IHealthCoachWorkspaceRepository.mjs';
 
 export class HealthCoachAgent extends BaseAgent {
   static id = 'health-coach';
@@ -36,8 +35,8 @@ export class HealthCoachAgent extends BaseAgent {
    * Memory configuration for this agent.
    * @returns {{ lastMessages: number, workingMemory: object }}
    */
-  static getMemoryConfig({ configService } = {}) {
-    const yaml = loadAgentConfig({ configService, agentId: 'health-coach' });
+  static getMemoryConfig({ agentConfigProjection } = {}) {
+    const yaml = loadAgentConfig({ configProjection: agentConfigProjection, agentId: 'health-coach' });
     const m = yaml.memory;
     const anyFeatureOn = (m.last_messages !== false && m.last_messages > 0)
                       || m.working_memory?.enabled
@@ -89,9 +88,9 @@ export class HealthCoachAgent extends BaseAgent {
    * @param {{ adapters?, dataService? }} [deps]
    * @returns {PersonalBaselineService|null}
    */
-  static getBaselineService({ adapters, dataService } = {}) {
-    if (!dataService || !adapters) return null;
-    return new PersonalBaselineService({ adapters, dataService });
+  static getBaselineService({ adapters, workspaceRepository } = {}) {
+    if (!isHealthCoachWorkspaceRepository(workspaceRepository) || !adapters) return null;
+    return new PersonalBaselineService({ adapters, workspaceRepository });
   }
 
   /**
@@ -114,10 +113,7 @@ export class HealthCoachAgent extends BaseAgent {
    * and an output processor (persists new observations). The same instance
    * belongs in both arrays — Mastra is designed for this.
    *
-   * Storage note: ObservationalMemory requires the MemoryStorage domain store,
-   * accessed via `memory.storage.stores?.memory` on a built Memory instance.
-   *
-   * @param {{ configService?, memory? }} [deps]
+   * @param {{ defaultUserId?, memory? }} [deps]
    * @returns {{ inputProcessors: Array, outputProcessors: Array }}
    */
   static getMemoryProcessors() {
@@ -238,7 +234,7 @@ export class HealthCoachAgent extends BaseAgent {
     const periodResolver = this.deps.periodResolver
       ?? this.deps.healthAnalyticsService?.aggregator?.periodResolver
       ?? null;
-    const userId = this.#activeUserId ?? this.deps.configService?.getHeadOfHousehold?.() ?? null;
+    const userId = this.#activeUserId ?? this.deps.defaultUserId ?? null;
     const lines = [
       '## User Mentions',
       'The user\'s message refers to the following items. ' +
@@ -256,18 +252,19 @@ export class HealthCoachAgent extends BaseAgent {
       healthStore,
       healthService,
       fitnessPlayableService,
-      mediaProgressMemory,
-      dataService,
+      workspaceRepository,
       messagingGateway,
       conversationId,
       personalContextLoader,
-      archiveScopeFactory,
-      dataRoot,
+      notesArchive,
       healthAnalyticsService,
     } = this.deps;
 
-    this.addToolFactory(new FitnessContentToolFactory({ fitnessPlayableService, mediaProgressMemory, dataService }));
-    this.addToolFactory(new DashboardToolFactory({ dataService, healthStore }));
+    this.addToolFactory(new FitnessContentToolFactory({ fitnessPlayableService, workspaceRepository }));
+    this.addToolFactory(new DashboardToolFactory({
+      workspaceRepository,
+      healthStore,
+    }));
 
     // Messaging channel delivery (only if gateway available)
     if (messagingGateway && conversationId) {
@@ -281,8 +278,7 @@ export class HealthCoachAgent extends BaseAgent {
       healthStore,
       healthService,
       personalContextLoader,
-      archiveScopeFactory,
-      dataRoot,
+      notesArchive,
     }));
 
     // Period vocabulary: list_periods, deduce_period, remember_period,

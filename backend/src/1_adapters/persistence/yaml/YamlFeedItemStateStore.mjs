@@ -1,5 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { ensureDir, fileExists, renameFile } from '#system/utils/FileIO.mjs';
 
 const STATE_PATH = 'feed/item-state';
 
@@ -36,14 +36,14 @@ export class YamlFeedItemStateStore {
 
   #atomicWrite(username, value) {
     const target = this.#dataService.user.resolvePath(STATE_PATH, username);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
+    ensureDir(path.dirname(target));
     const yaml = this.#dataService.user.write;
     // Use DataService serialization into the temporary path, then atomically rename.
     const tmpRelative = `${STATE_PATH}.${process.pid}.tmp.yml`;
     const written = yaml.call(this.#dataService.user, tmpRelative, value, username);
     const generated = this.#dataService.user.resolvePath(tmpRelative, username);
-    if (!written || !fs.existsSync(generated)) throw new Error('Failed to persist feed item state');
-    fs.renameSync(generated, target);
+    if (!written || !fileExists(generated)) throw new Error('Failed to persist feed item state');
+    renameFile(generated, target);
     this.#logger.debug?.('feed.state.persisted', { username, count: Object.keys(value.items || {}).length });
   }
 }

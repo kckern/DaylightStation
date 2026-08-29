@@ -20,48 +20,33 @@
  * `testProvider` is an explicit, honest stub: health-check-per-provider is not
  * implemented, so it returns `status: 'untested'` rather than faking a result.
  */
-import path from 'path';
-import { NotFoundError } from '#system/utils/errors/index.mjs';
+import { NotFoundError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class IntegrationsQueryService {
-  #configFiles;
+  #configStore;
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.configService - ConfigService for data directory paths
+   * @param {Object} deps.configStore - Semantic admin configuration store
    * @param {string} [deps.environment='docker'] - Current environment name, resolved at the
    *   composition root (was `process.env.DAYLIGHT_ENV || 'docker'` inline in the router).
    * @param {Object} [deps.logger=console] - Logger instance
    */
-  constructor({ configService, configFiles, environment = 'docker', logger = console }) {
-    // D5: no fs in the application layer. This service still decides WHICH
-    // file and what its contents mean; the store does the four primitives.
-    this.#configFiles = configFiles;
-    if (!configService) {
-      throw new Error('IntegrationsQueryService requires a configService dependency');
-    }
-    this.configService = configService;
+  constructor({ configStore, environment = 'docker', logger = console }) {
+    if (!configStore) throw new Error('IntegrationsQueryService requires a configStore dependency');
+    this.#configStore = configStore;
     this.environment = environment || 'docker';
     this.logger = logger;
   }
 
-  /** Get the resolved data root directory */
-  #getDataRoot() {
-    return path.resolve(this.configService.getDataDir());
-  }
-
   /** Read household integrations config from household/integrations.yml */
   #readIntegrations() {
-    const absPath = path.join(this.#getDataRoot(), 'household/integrations.yml');
-    if (!this.#configFiles.exists(absPath)) return {};
-    return this.#configFiles.readYaml(absPath, {});
+    return this.#configStore.readIntegrations();
   }
 
   /** Read services config from system/config/services.yml */
   #readServices() {
-    const absPath = path.join(this.#getDataRoot(), 'system/config/services.yml');
-    if (!this.#configFiles.exists(absPath)) return {};
-    return this.#configFiles.readYaml(absPath, {});
+    return this.#configStore.readServices();
   }
 
   /**
@@ -79,9 +64,8 @@ export class IntegrationsQueryService {
    * Does NOT read file contents (masked).
    */
   #checkAuthExists(provider) {
-    const householdPath = path.join(this.#getDataRoot(), `household/auth/${provider}.yml`);
-    const systemPath = path.join(this.#getDataRoot(), `system/auth/${provider}.yml`);
-    return this.#configFiles.exists(householdPath) || this.#configFiles.exists(systemPath);
+    const locations = this.#configStore.getProviderAuthLocations(provider);
+    return locations.household || locations.system;
   }
 
   /**
@@ -175,15 +159,12 @@ export class IntegrationsQueryService {
       throw new NotFoundError(`Provider "${providerName}" not found`);
     }
 
-    const dataRoot = this.#getDataRoot();
+    const authLocations = this.#configStore.getProviderAuthLocations(providerName);
     const detail = {
       ...found,
       url: this.#getServiceUrl(services, providerName),
       hasAuth: this.#checkAuthExists(providerName),
-      authLocations: {
-        household: this.#configFiles.exists(path.join(dataRoot, `household/auth/${providerName}.yml`)),
-        system: this.#configFiles.exists(path.join(dataRoot, `system/auth/${providerName}.yml`)),
-      },
+      authLocations,
     };
 
     this.logger.info?.('admin.integrations.detail', { provider: providerName });

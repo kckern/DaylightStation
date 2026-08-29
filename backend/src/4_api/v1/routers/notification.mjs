@@ -16,13 +16,12 @@ import { Router } from 'express';
  * Create notification API router
  *
  * @param {Object} config
- * @param {Object} config.notificationService - NotificationService instance
- * @param {Object} config.preferenceStore - INotificationPreferenceStore implementation
+ * @param {Object} config.notificationOperations
  * @param {Object} [config.logger]
  * @returns {Router}
  */
 export default function createNotificationRouter(config) {
-  const { notificationService, preferenceStore, logger } = config;
+  const { notificationOperations } = config;
 
   const router = Router();
 
@@ -33,8 +32,7 @@ export default function createNotificationRouter(config) {
   router.get('/preferences', async (req, res, next) => {
     try {
       const username = req.query.username || 'default';
-      const prefs = await preferenceStore?.load(username);
-      res.json(prefs?.toJSON() || {});
+      res.json(await notificationOperations?.readPreferences?.(username) || {});
     } catch (error) {
       next(error);
     }
@@ -47,7 +45,7 @@ export default function createNotificationRouter(config) {
   router.patch('/preferences', async (req, res, next) => {
     try {
       const username = req.query.username || 'default';
-      await preferenceStore?.save(username, req.body);
+      await notificationOperations?.savePreferences?.(username, req.body);
       res.json({ ok: true });
     } catch (error) {
       next(error);
@@ -59,7 +57,7 @@ export default function createNotificationRouter(config) {
    * Get undelivered in-app notifications
    */
   router.get('/pending', (req, res) => {
-    const pending = notificationService?.getPending() || [];
+    const pending = notificationOperations?.pending?.() || [];
     res.json({ pending });
   });
 
@@ -69,7 +67,7 @@ export default function createNotificationRouter(config) {
    */
   router.post('/dismiss/:index', (req, res) => {
     const index = parseInt(req.params.index, 10);
-    const dismissed = notificationService?.dismiss(index) || false;
+    const dismissed = notificationOperations?.dismiss?.(index) || false;
     res.json({ dismissed });
   });
 

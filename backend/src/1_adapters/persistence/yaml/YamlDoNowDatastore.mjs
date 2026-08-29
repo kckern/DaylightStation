@@ -37,8 +37,8 @@
  * window), so it doesn't need a queue — this store's fs/promises calls do.
  */
 import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
+import { readTextFromPathAsync, writeTextFileAsync } from '#system/utils/FileIO.mjs';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PENDING_FILE = 'pending.yml';
@@ -105,7 +105,7 @@ export class YamlDoNowDatastore {
 
   async #readYaml(file) {
     try {
-      return yaml.load(await fs.readFile(file, 'utf8'));
+      return yaml.load(await readTextFromPathAsync(file));
     } catch {
       // Missing OR unparseable, deliberately the same answer: one corrupt
       // file must not take down dispatch for the whole household.
@@ -119,8 +119,7 @@ export class YamlDoNowDatastore {
   }
 
   async #writePendingRaw(rows) {
-    await fs.mkdir(this.#root(), { recursive: true });
-    await fs.writeFile(this.#pendingFile(), dumpYaml(rows), 'utf8');
+    await writeTextFileAsync(this.#pendingFile(), dumpYaml(rows));
   }
 
   /** Unexpired rows as of `nowIso` (expiresAt strictly after now survives). */
@@ -239,8 +238,7 @@ export class YamlDoNowDatastore {
       const rows = await this.#readYaml(file);
       const list = Array.isArray(rows) ? rows : [];
       list.push(stored);
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, dumpYaml(list), 'utf8');
+      await writeTextFileAsync(file, dumpYaml(list));
       this.#logger.debug?.('donow.dispatch.appended', { dayStamp, surface, decision, ref });
       return stored;
     });

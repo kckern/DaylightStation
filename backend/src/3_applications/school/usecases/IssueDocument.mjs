@@ -40,7 +40,7 @@ import { mintCode, formatCode } from '#domains/school/companionCode.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 import { walkBlocks } from '#domains/school/documents/documentValidation.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 import { createWorksheetInstance, worksheetInstanceDocument } from '#domains/school/questionBankV2.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/reprintContext.mjs';
@@ -566,13 +566,13 @@ export class IssueDocument {
       });
     }
 
-    rendered.pdf = await this.#retainIssuedPdf({
+    rendered.artifact = await this.#retainIssuedArtifact({
       artifactId, rendered, nowIso, sessionId, state,
       captureKind: replacementArtifactId ? 'replacement' : 'original',
     });
     let printResult;
     try {
-      printResult = await this.#printer.printPdf(rendered.pdf, {
+      printResult = await rendered.artifact.printWith(this.#printer, {
         jobName: `school-${state.unitId}-${artifactId}`,
         user: state.learnerId ?? 'daylight',
       });
@@ -868,6 +868,21 @@ export class IssueDocument {
         ? 'The original of that sheet was not saved, so a fresh copy is being printed.'
         : 'Printing your worksheet.',
     };
+  }
+
+  async #retainIssuedArtifact({ artifactId, rendered, nowIso, sessionId, state,
+    worksheetInstanceId = null, allocation = null, document = null, captureKind = 'original' }) {
+    return rendered.artifact.retainWith(this.#issuedArtifacts, {
+      artifactId, pageCount: rendered.pageCount ?? null,
+      issuedAt: nowIso, sessionId, learnerId: state.learnerId, unitId: state.unitId,
+      captureKind, worksheetInstanceId, allocation,
+      kind: 'worksheet', document,
+      renderContext: {
+        learnerId: state.learnerId ?? null, sessionId,
+        variant: state.variant ?? 0, passPercent: state.passingPercent ?? null,
+        duplex: rendered.duplex ?? null,
+      },
+    });
   }
 
   /**

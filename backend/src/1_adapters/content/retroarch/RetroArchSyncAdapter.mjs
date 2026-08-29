@@ -4,7 +4,9 @@
  * Syncs RetroArch game catalog from X-plore WiFi File Manager.
  * Implements ISyncSource.
  */
-export class RetroArchSyncAdapter {
+import { ISyncSource } from '#apps/content/ports/ISyncSource.mjs';
+
+export class RetroArchSyncAdapter extends ISyncSource {
   #xploreBaseUrl;
   #sourceConfig;
   #consoleConfig;
@@ -16,6 +18,7 @@ export class RetroArchSyncAdapter {
   #logger;
 
   constructor(options) {
+    super();
     this.#xploreBaseUrl = options.xploreBaseUrl;
     this.#sourceConfig = options.sourceConfig;
     this.#consoleConfig = options.consoleConfig;

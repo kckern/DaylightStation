@@ -3,20 +3,20 @@ import express from 'express';
 import request from 'supertest';
 
 import createScheduleRouter from '#api/v1/routers/life/schedule.mjs';
+import { LifePlanOperations } from '#apps/lifeplan/LifePlanOperations.mjs';
 
 describe('GET /api/v1/life/schedule/:format', () => {
   let app;
 
   beforeAll(() => {
     app = express();
-    app.use('/schedule', createScheduleRouter({
-      cadenceService: {
+    const cadence = {
         resolve: () => ({
           unit: { periodId: '2025-06-07', startDate: new Date('2025-06-07') },
           cycle: { periodId: '2025-W23', startDate: new Date('2025-06-02') },
         }),
-      },
-      lifePlanStore: {
+      };
+    const plans = {
         load: () => ({
           ceremonies: {
             unit_intention: { enabled: true },
@@ -25,7 +25,9 @@ describe('GET /api/v1/life/schedule/:format', () => {
           },
           cadence: { unit: 'day', cycle: 'week', phase: 'month' },
         }),
-      },
+      };
+    app.use('/schedule', createScheduleRouter({
+      lifePlanOperations: new LifePlanOperations({ plans, cadence }),
     }));
   });
 

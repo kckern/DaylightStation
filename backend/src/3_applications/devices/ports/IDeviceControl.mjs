@@ -50,6 +50,12 @@ export function assertDeviceControl(obj, context = 'DeviceControl') {
   }
 }
 
+export class IDeviceControl {
+  async powerOn() { throw new Error('IDeviceControl.powerOn not implemented'); }
+  async powerOff() { throw new Error('IDeviceControl.powerOff not implemented'); }
+  async getState() { throw new Error('IDeviceControl.getState not implemented'); }
+}
+
 /**
  * Create a no-op device control (for devices without this capability)
  * @returns {Object}

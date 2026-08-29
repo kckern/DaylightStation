@@ -5,10 +5,10 @@ import request from 'supertest';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createQueueRouter, toQueueItem } from '#backend/src/4_api/v1/routers/queue.mjs';
-import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
+import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
 import { ContentIdResolver } from '#apps/content/ContentIdResolver.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
-import { QueueService } from '#domains/content/services/QueueService.mjs';
+import { QueueService } from '#apps/content/services/QueueService.mjs';
 import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

@@ -4,7 +4,7 @@ import express from 'express';
 
 /**
  * Wikipedia router — thin proxy over the self-hosted Wikipedia service
- * (kiwix-backed, plain-text output) via WikipediaAdapter.
+ * (kiwix-backed, plain-text output) via an application capability.
  *
  * GET /search?q=&limit=   full-text search
  * GET /article/:title     article as plain text (fuzzy fallback upstream)
@@ -13,7 +13,7 @@ import express from 'express';
  *
  * @module api/v1/routers/wikipedia
  */
-export function createWikipediaRouter({ adapter, logger = console }) {
+export function createWikipediaRouter({ wikipediaService, logger = console }) {
   const router = express.Router();
 
   const handle = (fn) => async (req, res) => {
@@ -29,21 +29,21 @@ export function createWikipediaRouter({ adapter, logger = console }) {
     const q = req.query.q;
     if (!q) return res.status(400).json({ error: 'q query parameter is required' });
     const limit = Math.min(parseInt(req.query.limit, 10) || 10, 100);
-    res.json(await adapter.search(q, { limit }));
+    res.json(await wikipediaService.search(q, { limit }));
   }));
 
   router.get('/article/:title', handle(async (req, res) => {
-    const article = await adapter.getArticle(req.params.title);
+    const article = await wikipediaService.article(req.params.title);
     if (!article) return res.status(404).json({ error: 'article not found' });
     res.json(article);
   }));
 
   router.get('/random', handle(async (req, res) => {
-    res.json(await adapter.random());
+    res.json(await wikipediaService.random());
   }));
 
   router.get('/health', handle(async (req, res) => {
-    res.json(await adapter.health());
+    res.json(await wikipediaService.health());
   }));
 
   return router;

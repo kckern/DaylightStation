@@ -6,7 +6,7 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'node:url';
 import { initConfigService, configService } from '#system/config/index.mjs';
-import { DataService } from '#system/config/DataService.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
 import { GameRivalryMemoryService } from '#apps/piano-games/GameRivalryMemoryService.mjs';
 import { checkersNotableFacts } from '#shared/gaming/rulesets/checkers/commentary.mjs';
 import { connectFourNotableFacts } from '#shared/gaming/rulesets/connect-four/commentary.mjs';

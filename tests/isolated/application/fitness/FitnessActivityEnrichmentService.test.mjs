@@ -31,6 +31,12 @@ const { FitnessActivityEnrichmentService } = await import(
 );
 const { loadYamlSafe, listYamlFiles, dirExists } = await import('#system/utils/FileIO.mjs');
 
+const historyRepository = () => ({
+  isAvailable: () => dirExists(),
+  list: (date) => listYamlFiles(date).map(id => ({ id, data: loadYamlSafe(`${date}/${id}.yml`) })).filter(r => r.data),
+  find: vi.fn(), save: vi.fn(), remove: vi.fn(() => true),
+});
+
 const buildActivity = (overrides = {}) => ({
   id: 1,
   type: 'Run',
@@ -67,16 +73,15 @@ describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', ()
     logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     service = new FitnessActivityEnrichmentService({
       activityGateway: {},
+      scheduleRetry: vi.fn(),
       jobStore: { findById: () => null, update: () => {}, create: () => {}, findActionable: () => [] },
-      authStore: {},
-      configService: {
-        getTimezone: () => 'America/Los_Angeles',
-        getHeadOfHousehold: () => 'test-user',
-        getAppConfig: () => ({}),
+      userContext: {
+        timezone: () => 'America/Los_Angeles',
+        defaultUserId: () => 'test-user',
       },
       selectionConfig: {},
       resolveDisplayName: (userId) => userId,
-      fitnessHistoryDir: '/tmp/fake-history',
+      historyRepository: historyRepository(),
       logger,
     });
   });
@@ -239,7 +244,7 @@ describe('FitnessActivityEnrichmentService._findMatchingSession venue + presence
   let logger;
 
   /** RLE series: nulls, then a live block, padded out. */
-  const hrSeries = ({ total, atTick, ticks, hr }) => JSON.stringify([
+  const hrSeries = ({ total, atTick, ticks, hr }) => ([
     [null, atTick],
     [hr, ticks],
     [null, Math.max(0, total - atTick - ticks)],
@@ -251,16 +256,15 @@ describe('FitnessActivityEnrichmentService._findMatchingSession venue + presence
     logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     service = new FitnessActivityEnrichmentService({
       activityGateway: {},
+      scheduleRetry: vi.fn(),
       jobStore: { findById: () => null, update: () => {}, create: () => {}, findActionable: () => [] },
-      authStore: {},
-      configService: {
-        getTimezone: () => 'America/Los_Angeles',
-        getHeadOfHousehold: () => 'test-user',
-        getAppConfig: () => ({}),
+      userContext: {
+        timezone: () => 'America/Los_Angeles',
+        defaultUserId: () => 'test-user',
       },
       selectionConfig: {},
       resolveDisplayName: (userId) => userId,
-      fitnessHistoryDir: '/tmp/fake-history',
+      historyRepository: historyRepository(),
       logger,
     });
   });
@@ -413,16 +417,15 @@ describe('FitnessActivityEnrichmentService — terminal-failure aging', () => {
     stravaClientMock = { hasAccessToken: () => true, getActivity: vi.fn() };
     service = new FitnessActivityEnrichmentService({
       activityGateway: stravaClientMock,
+      scheduleRetry: vi.fn(),
       jobStore,
-      authStore: {},
-      configService: {
-        getTimezone: () => 'America/Los_Angeles',
-        getHeadOfHousehold: () => 'test-user',
-        getAppConfig: () => ({}),
+      userContext: {
+        timezone: () => 'America/Los_Angeles',
+        defaultUserId: () => 'test-user',
       },
       selectionConfig: {},
       resolveDisplayName: (userId) => userId,
-      fitnessHistoryDir: '/tmp/fake-history',
+      historyRepository: historyRepository(),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     });
   });
@@ -470,4 +473,3 @@ describe('FitnessActivityEnrichmentService — terminal-failure aging', () => {
     expect(abandonCalls).toHaveLength(0);
   });
 });
-

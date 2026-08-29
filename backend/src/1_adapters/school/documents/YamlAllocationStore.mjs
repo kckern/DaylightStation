@@ -55,9 +55,8 @@
  * Only then is the remaining live-record set checked for a row-range
  * collision (spec §5.4's "regardless of learner" rule).
  */
-import fs from 'node:fs';
 import path from 'node:path';
-import { loadYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import { loadYamlFromPath, readDirectory, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import {
   generateCardId, checkCollision, supersedes, rangesOverlap, ALLOCATION_STATUSES,
@@ -438,7 +437,7 @@ export class YamlAllocationStore {
 /** Card ids present in the cards dir; a missing dir is simply "no cards yet". */
 function listAllocationCardIds(dir) {
   try {
-    return fs.readdirSync(dir).filter((name) => name.endsWith('.yml')).map((name) => name.slice(0, -4));
+    return readDirectory(dir).filter((name) => name.endsWith('.yml')).map((name) => name.slice(0, -4));
   } catch (err) {
     if (err.code === 'ENOENT') return [];
     throw err;

@@ -3,13 +3,14 @@ import express from 'express';
 import request from 'supertest';
 import { createDoNowRouter } from '../../../../backend/src/4_api/v1/routers/donow.mjs';
 import { createApiRouter } from '../../../../backend/src/4_api/v1/routers/api.mjs';
+import { authenticate } from '#apps/trigger/guards/authenticate.mjs';
 
 const silentLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
 function buildApp({ expectedToken = null, service, approvals } = {}) {
   const app = express();
   app.use('/api/v1/donow', createDoNowRouter({
-    service, approvals, expectedToken, logger: silentLogger,
+    service, approvals, authenticateApproval: authenticate, expectedToken, logger: silentLogger,
   }));
   return app;
 }
@@ -156,7 +157,7 @@ describe('createApiRouter — /donow reaches the real mount path (regression gua
       listSurfaces: vi.fn(() => [{ id: 'garage-fitness', label: 'Garage Fitness' }]),
     };
     const approvals = { listPending: vi.fn(), approve: vi.fn(), deny: vi.fn() };
-    const donowRouter = createDoNowRouter({ service, approvals, logger: silentLogger });
+    const donowRouter = createDoNowRouter({ service, approvals, authenticateApproval: authenticate, logger: silentLogger });
 
     const apiRouter = createApiRouter({
       safeConfig: {},
@@ -176,6 +177,7 @@ describe('createApiRouter — /donow reaches the real mount path (regression gua
     const donowRouter = createDoNowRouter({
       service: { dispatch: vi.fn(), listSurfaces: vi.fn(() => []) },
       approvals: { listPending: vi.fn(), approve: vi.fn(), deny: vi.fn() },
+      authenticateApproval: authenticate,
       logger: silentLogger,
     });
     const apiRouter = createApiRouter({

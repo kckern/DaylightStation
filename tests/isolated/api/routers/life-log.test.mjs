@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import createLogRouter from '#api/v1/routers/life/log.mjs';
+import { LifeApiOperations } from '#apps/lifeplan/LifeApiOperations.mjs';
 
 describe('Life Log API Router', () => {
   let app;
@@ -36,7 +37,7 @@ describe('Life Log API Router', () => {
       getAvailableSources: vi.fn().mockReturnValue(['strava', 'calendar', 'weight', 'github']),
     };
 
-    const router = createLogRouter({ aggregator: mockAggregator });
+    const router = createLogRouter({ lifeApi: new LifeApiOperations({ aggregator: mockAggregator }) });
 
     app = express();
     app.use(express.json());

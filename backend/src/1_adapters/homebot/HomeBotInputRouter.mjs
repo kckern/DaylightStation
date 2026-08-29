@@ -20,7 +20,7 @@ export class HomeBotInputRouter {
   /**
    * @param {Object} container - HomeBotContainer
    * @param {Object} [options]
-   * @param {import('../../0_system/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
+   * @param {import('../identity/ConfigUserResolver.mjs').ConfigUserResolver} [options.userResolver] - For resolving platform users to system usernames
    * @param {import('../../2_domains/messaging/services/UserIdentityService.mjs').UserIdentityService} [options.userIdentityService] - Domain identity service (preferred)
    * @param {Object} [options.logger]
    */

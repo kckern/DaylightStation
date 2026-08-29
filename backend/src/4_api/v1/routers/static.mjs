@@ -1,265 +1,71 @@
-/**
- * Static Assets Router
- *
- * Serves static image assets from configured paths:
- * - GET /api/static/entropy/:icon - Entropy status icons (svg/png)
- * - GET /api/static/art/* - Art images
- * - GET /api/static/users/:id - User avatar images
- * - GET /api/static/equipment/:id - Fitness equipment images
- *
- * @module api/routers/static
- */
-
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { createCanvas, loadImage } from 'canvas';
 import { splatPath } from '#api/utils/wildcard.mjs';
 
-// Resized-variant cache: path|mtime|w|h → encoded buffer. Bounded FIFO —
-// avatars and small thumbs only, so a few hundred entries is plenty; the
-// mtime in the key makes edits invalidate naturally.
-const resizeCache = new Map();
-const RESIZE_CACHE_MAX = 300;
+const CACHE_CONTROL = 'public, max-age=86400';
 
-/**
- * Create static assets router
- *
- * @param {Object} config
- * @param {string} config.imgBasePath - Base path for images (process.env.path.img)
- * @param {string} config.dataBasePath - Base path for data files
- * @param {Object} [config.logger] - Logger instance
- * @returns {express.Router}
- */
-export function createStaticRouter(config) {
-  const { imgBasePath, dataBasePath, logger = console } = config;
+function sendImage(res, image) {
+  res.setHeader('Content-Type', image.contentType);
+  res.setHeader('Content-Length', image.size);
+  res.setHeader('Cache-Control', CACHE_CONTROL);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.end(image.buffer);
+}
+
+export function createStaticRouter({ staticAssetService, logger = console }) {
+  if (!staticAssetService) throw new TypeError('createStaticRouter requires staticAssetService');
   const router = express.Router();
 
-  /**
-   * Resolve file with extension fallback
-   * Tries exact path, then common image extensions
-   */
-  const resolveImagePath = (basePath, relativePath, extensions = ['svg', 'png', 'jpg', 'jpeg', 'gif', 'webp']) => {
-    // Security: prevent path traversal (same normalize + resolve + startsWith
-    // guard as local.mjs /stream). All routes resolve through here, so this
-    // covers wildcard paths and encoded ".." in single-segment params alike.
-    // An escaping path returns null, surfacing as the caller's 404.
-    const safePath = path.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, '');
-    const exactPath = path.join(basePath, safePath);
-    if (!path.resolve(exactPath).startsWith(path.resolve(basePath))) {
-      return null;
-    }
+  router.get('/entropy/:icon', async (req, res, next) => {
+    try {
+      const image = await staticAssetService.getImage({ kind: 'entropy', id: req.params.icon });
+      if (!image) return res.status(404).json({ error: 'Entropy icon not found', icon: req.params.icon });
+      logger.debug?.('static.entropy.served', { icon: req.params.icon });
+      sendImage(res, image);
+    } catch (error) { next(error); }
+  });
 
-    // Try exact path first
-    if (fs.existsSync(exactPath) && fs.statSync(exactPath).isFile()) {
-      return exactPath;
-    }
+  router.get('/art/*splat', async (req, res, next) => {
+    const id = splatPath(req);
+    try {
+      const image = await staticAssetService.getImage({ kind: 'art', id });
+      if (!image) return res.status(404).json({ error: 'Art image not found', path: id });
+      logger.debug?.('static.art.served', { path: id });
+      sendImage(res, image);
+    } catch (error) { next(error); }
+  });
 
-    // Try with extensions
-    for (const ext of extensions) {
-      const withExt = `${exactPath}.${ext}`;
-      if (fs.existsSync(withExt) && fs.statSync(withExt).isFile()) {
-        return withExt;
-      }
-    }
+  router.get('/users/:id', async (req, res, next) => {
+    try {
+      const image = await staticAssetService.getImage({ kind: 'user', id: req.params.id });
+      if (!image) return res.status(404).json({ error: 'User avatar not found', id: req.params.id });
+      logger.debug?.('static.users.served', { id: req.params.id });
+      sendImage(res, image);
+    } catch (error) { next(error); }
+  });
 
-    return null;
-  };
+  router.get('/equipment/:id', async (req, res, next) => {
+    try {
+      const image = await staticAssetService.getImage({ kind: 'equipment', id: req.params.id });
+      if (!image) return res.status(404).json({ error: 'Equipment image not found', id: req.params.id });
+      logger.debug?.('static.equipment.served', { id: req.params.id });
+      sendImage(res, image);
+    } catch (error) { next(error); }
+  });
 
-  /**
-   * Get MIME type from file extension
-   */
-  const getMimeType = (filePath) => {
-    const ext = path.extname(filePath).toLowerCase().slice(1);
-    const mimeTypes = {
-      svg: 'image/svg+xml',
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      webp: 'image/webp'
-    };
-    return mimeTypes[ext] || 'application/octet-stream';
-  };
-
-  /**
-   * Send image file with caching headers
-   */
-  const sendImage = (res, filePath) => {
-    const mimeType = getMimeType(filePath);
-    const stat = fs.statSync(filePath);
-
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Length', stat.size);
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day cache
-    res.setHeader('Access-Control-Allow-Origin', '*');
-
-    fs.createReadStream(filePath).pipe(res);
-  };
-
-  /**
-   * Server-side resize (`?w=` and/or `?h=`, raster png/jpeg only): fit within
-   * the requested box preserving aspect, high-quality smoothing, cached by
-   * file mtime. Lightens kiosk clients and kills the aliasing of browser-side
-   * downscales of full-resolution sources.
-   */
-  const sendResized = async (res, filePath, w, h) => {
-    const stat = fs.statSync(filePath);
-    const key = `${filePath}|${stat.mtimeMs}|${w || ''}|${h || ''}`;
-    const isPng = /\.png$/i.test(filePath);
-    let buf = resizeCache.get(key);
-    if (!buf) {
-      const img = await loadImage(filePath);
-      let boxW = w || Math.round(img.width * ((h || img.height) / img.height));
-      let boxH = h || Math.round(img.height * ((w || img.width) / img.width));
-      const scale = Math.min(boxW / img.width, boxH / img.height, 1); // never upscale
-      const dw = Math.max(1, Math.round(img.width * scale));
-      const dh = Math.max(1, Math.round(img.height * scale));
-      const cv = createCanvas(dw, dh);
-      const ctx = cv.getContext('2d');
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, 0, 0, dw, dh);
-      buf = isPng ? cv.toBuffer('image/png') : cv.toBuffer('image/jpeg', { quality: 0.85 });
-      resizeCache.set(key, buf);
-      if (resizeCache.size > RESIZE_CACHE_MAX) resizeCache.delete(resizeCache.keys().next().value);
-    }
-    res.setHeader('Content-Type', isPng ? 'image/png' : 'image/jpeg');
-    res.setHeader('Content-Length', buf.length);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.end(buf);
-  };
-
-  /** Route helper: serve resized when ?w/?h fit a resizable raster, else raw. */
-  const sendImageMaybeResized = (req, res, filePath) => {
-    const w = parseInt(req.query?.w, 10) || null;
-    const h = parseInt(req.query?.h, 10) || null;
-    if ((w > 0 || h > 0) && /\.(png|jpe?g)$/i.test(filePath)) {
-      sendResized(res, filePath, w > 0 ? w : null, h > 0 ? h : null).catch((err) => {
-        logger.warn?.('static.img.resize_failed', { filePath, error: err.message });
-        if (!res.headersSent) sendImage(res, filePath);
+  router.get('/img/*splat', async (req, res, next) => {
+    const id = splatPath(req);
+    const width = parseInt(req.query?.w, 10) || null;
+    const height = parseInt(req.query?.h, 10) || null;
+    try {
+      const image = await staticAssetService.getImage({
+        kind: 'image', id,
+        width: width > 0 ? width : null,
+        height: height > 0 ? height : null,
       });
-      return;
-    }
-    sendImage(res, filePath);
-  };
-
-  // ===========================================================================
-  // Entropy Icons
-  // ===========================================================================
-
-  /**
-   * GET /api/static/entropy/:icon
-   * Serve entropy status icons (e.g., healthy.svg, warning.png)
-   */
-  router.get('/entropy/:icon', (req, res) => {
-    const { icon } = req.params;
-    const entropyDir = path.join(imgBasePath, 'entropy');
-
-    const filePath = resolveImagePath(entropyDir, icon);
-    if (!filePath) {
-      return res.status(404).json({ error: 'Entropy icon not found', icon });
-    }
-
-    logger.debug?.('static.entropy.served', { icon, path: filePath });
-    sendImage(res, filePath);
-  });
-
-  // ===========================================================================
-  // Art Images
-  // ===========================================================================
-
-  /**
-   * GET /api/static/art/*
-   * Serve art images from the art directory
-   */
-  router.get('/art/*splat', (req, res) => {
-    const relativePath = splatPath(req);
-    const artDir = path.join(imgBasePath, 'art');
-
-    const filePath = resolveImagePath(artDir, relativePath);
-    if (!filePath) {
-      return res.status(404).json({ error: 'Art image not found', path: relativePath });
-    }
-
-    logger.debug?.('static.art.served', { path: relativePath });
-    sendImage(res, filePath);
-  });
-
-  // ===========================================================================
-  // User Avatars
-  // ===========================================================================
-
-  /**
-   * GET /api/static/users/:id
-   * Serve user avatar images
-   */
-  router.get('/users/:id', (req, res) => {
-    const { id } = req.params;
-    const usersDir = path.join(imgBasePath, 'users');
-
-    const filePath = resolveImagePath(usersDir, id);
-    if (!filePath) {
-      // Try default avatar
-      const defaultPath = resolveImagePath(usersDir, 'default');
-      if (defaultPath) {
-        logger.debug?.('static.users.default', { id });
-        return sendImage(res, defaultPath);
-      }
-      return res.status(404).json({ error: 'User avatar not found', id });
-    }
-
-    logger.debug?.('static.users.served', { id, path: filePath });
-    sendImage(res, filePath);
-  });
-
-  // ===========================================================================
-  // Fitness Equipment
-  // ===========================================================================
-
-  /**
-   * GET /api/static/equipment/:id
-   * Serve fitness equipment images
-   */
-  router.get('/equipment/:id', (req, res) => {
-    const { id } = req.params;
-    const equipmentDir = path.join(imgBasePath, 'equipment');
-
-    const filePath = resolveImagePath(equipmentDir, id);
-    if (!filePath) {
-      // Try in fitness subdirectory
-      const fitnessEquipDir = path.join(imgBasePath, 'fitness', 'equipment');
-      const altPath = resolveImagePath(fitnessEquipDir, id);
-      if (altPath) {
-        logger.debug?.('static.equipment.served', { id, path: altPath });
-        return sendImage(res, altPath);
-      }
-      return res.status(404).json({ error: 'Equipment image not found', id });
-    }
-
-    logger.debug?.('static.equipment.served', { id, path: filePath });
-    sendImage(res, filePath);
-  });
-
-  // ===========================================================================
-  // Generic Image Passthrough
-  // ===========================================================================
-
-  /**
-   * GET /api/static/img/*
-   * Generic image serving for backward compatibility
-   */
-  router.get('/img/*splat', (req, res) => {
-    const relativePath = splatPath(req);
-
-    const filePath = resolveImagePath(imgBasePath, relativePath);
-    if (!filePath) {
-      return res.status(404).json({ error: 'Image not found', path: relativePath });
-    }
-
-    logger.debug?.('static.img.served', { path: relativePath });
-    sendImageMaybeResized(req, res, filePath);
+      if (!image) return res.status(404).json({ error: 'Image not found', path: id });
+      logger.debug?.('static.img.served', { path: id });
+      sendImage(res, image);
+    } catch (error) { next(error); }
   });
 
   return router;

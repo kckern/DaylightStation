@@ -1,5 +1,18 @@
 import { NotificationIntent } from '#domains/notification/entities/NotificationIntent.mjs';
 
+function toNotificationRecord(intent) {
+  return {
+    title: intent.title,
+    body: intent.body,
+    category: intent.category,
+    urgency: intent.urgency,
+    actions: intent.actions,
+    metadata: intent.metadata,
+    dedupeKey: intent.dedupeKey,
+    createdAt: intent.createdAt,
+  };
+}
+
 /**
  * Notification orchestration service.
  * Resolves preferences, routes intents to appropriate channel adapters.
@@ -77,9 +90,14 @@ export class NotificationService {
 
     this.#logger?.debug?.('notification.default_recipient.applied', { username });
     return new NotificationIntent({
-      ...intent.toJSON(),
+      ...toNotificationRecord(intent),
       metadata: { ...intent.metadata, username },
     });
+  }
+
+  #nowIso() {
+    const now = this.#clock?.now?.() || new Date();
+    return (now instanceof Date ? now : new Date(now)).toISOString();
   }
 
   /**
@@ -93,7 +111,9 @@ export class NotificationService {
     // Resolve the addressee BEFORE governance so the dedupe ledger is keyed on
     // the recipient who actually gets the message rather than on a placeholder.
     const intent = this.#withResolvedRecipient(
-      rawIntent instanceof NotificationIntent ? rawIntent : new NotificationIntent(rawIntent),
+      rawIntent instanceof NotificationIntent ? rawIntent : new NotificationIntent({
+        ...rawIntent, createdAt: rawIntent?.createdAt ?? this.#nowIso(),
+      }),
     );
 
     // Governance (dedupe + quiet hours). Additive: only active when policy+ledger
@@ -169,7 +189,7 @@ export class NotificationService {
     // Track undelivered for in-app pending list
     const anyDelivered = results.some(r => r.delivered);
     if (!anyDelivered) {
-      this.#pending.push({ intent: intent.toJSON(), results, timestamp: new Date().toISOString() });
+      this.#pending.push({ intent: toNotificationRecord(intent), results, timestamp: new Date().toISOString() });
     }
 
     if (governed && gv) {

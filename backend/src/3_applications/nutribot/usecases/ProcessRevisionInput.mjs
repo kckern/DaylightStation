@@ -39,7 +39,7 @@ export class ProcessRevisionInput {
    * @private
    */
   #getTimezone() {
-    return this.#config?.getDefaultTimezone?.() || this.#config?.weather?.timezone || 'America/Los_Angeles';
+    return this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
   }
 
   #getMessaging(responseContext, conversationId) {

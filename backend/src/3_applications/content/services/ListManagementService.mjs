@@ -9,8 +9,8 @@ import {
   ValidationError,
   NotFoundError,
   ConflictError
-} from '#system/utils/errors/index.mjs';
-import { extractContentId, extractActionName } from '#domains/content/utils/listConfigNormalizer.mjs';
+} from '#apps/common/errors/SemanticErrors.mjs';
+import { extractContentId, extractActionName, normalizeListItem } from '#domains/content/utils/listItemInput.mjs';
 
 // Valid list types
 const LIST_TYPES = ['menus', 'watchlists', 'programs'];
@@ -78,7 +78,14 @@ export class ListManagementService {
 
     this.logger.info?.('admin.lists.overview', { household: householdId, total });
 
-    return { types: summary, total, household: householdId };
+    // `path` is a legacy admin API field, not a storage address. Keep that
+    // presentation concern out of the persistence port.
+    const types = summary.map(({ type, count }) => ({
+      type,
+      count,
+      path: `content/lists/${type}`,
+    }));
+    return { types, total, household: householdId };
   }
 
   /**
@@ -238,7 +245,7 @@ export class ListManagementService {
     }
 
     // Remove index/section fields if present (they're computed, not stored)
-    const cleanItems = items.map(({ index, sectionIndex: si, itemIndex, ...item }) => item);
+    const cleanItems = items.map(({ index, sectionIndex: si, itemIndex, ...item }) => normalizeListItem(item));
 
     const section = list.sections[sectionIndex];
     if (section) {

@@ -6,17 +6,16 @@
  */
 import { evaluateSchoolFitnessAttempt } from '#domains/fitness/schoolCourseAssessment.mjs';
 import { revisionFor } from '#domains/school/fitnessCourse.mjs';
-
-export const FITNESS_SCHOOL_ASSESSED_TOPIC = 'fitness.school-attempt.assessed';
-export const FITNESS_SCHOOL_ACCEPTED_TOPIC = 'fitness.school-attempt.accepted';
+import { serializeSession } from './sessionRecords.mjs';
 
 export class FitnessSchoolCourseService {
-  #store; #sessions; #eventBus; #clock; #logger;
-  constructor({ attemptStore, sessionService, eventBus = null, clock = () => new Date(), logger = console } = {}) {
+  #store; #sessions; #publications; #clock; #logger;
+  constructor({ attemptStore, sessionService, publications = null, clock, logger = console } = {}) {
     if (!attemptStore) throw new Error('FitnessSchoolCourseService requires attemptStore');
+    if (typeof clock !== 'function') throw new Error('FitnessSchoolCourseService requires clock');
     this.#store = attemptStore;
     this.#sessions = sessionService;
-    this.#eventBus = eventBus;
+    this.#publications = publications;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -46,7 +45,7 @@ export class FitnessSchoolCourseService {
     if (record.assessment) return record;
     const updated = { ...record, status: 'accepted', acceptedAt: record.acceptedAt ?? this.#now(), declinedAt: null };
     await this.#store.put(updated, householdId);
-    this.#eventBus?.publish?.(FITNESS_SCHOOL_ACCEPTED_TOPIC, {
+    this.#publications?.accepted?.({
       workSessionId, learnerId, unitId: record.unitId, provider: 'fitness',
       courseRevision: record.courseRevision, policyRevision: record.policyRevision,
       acceptedAt: updated.acceptedAt,
@@ -75,7 +74,7 @@ export class FitnessSchoolCourseService {
     for (const id of ids) {
       // eslint-disable-next-line no-await-in-loop
       const session = await this.#sessions?.getSession?.(id, householdId, { decodeTimeline: true });
-      if (session) sessions.push(session.toJSON());
+      if (session) sessions.push(serializeSession(session));
     }
     const trusted = deriveObservations({ record, learnerId, sessions });
     // Only media/segment observations may come from the coordinator. Sensor,
@@ -97,7 +96,7 @@ export class FitnessSchoolCourseService {
       assessmentId: assessment.assessmentId, assessedAt, result: assessment.result,
       criteria: assessment.criteria, observations: normalizedSchoolMeasures(observations),
     };
-    this.#eventBus?.publish?.(FITNESS_SCHOOL_ASSESSED_TOPIC, payload);
+    this.#publications?.assessed?.(payload);
     this.#logger.info?.('fitness.school-attempt.assessed', { workSessionId, learnerId, result: assessment.result, assessmentId: assessment.assessmentId });
     return updated;
   }

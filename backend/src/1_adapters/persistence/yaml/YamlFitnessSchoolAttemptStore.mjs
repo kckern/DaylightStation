@@ -1,11 +1,8 @@
 /** Durable Fitness-owned record of one School work-session attempt. */
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
-import yaml from 'js-yaml';
+import { readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 
 const SAFE_ID = /^[a-z0-9][a-z0-9_-]*$/i;
-const dump = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
-
 export class YamlFitnessSchoolAttemptStore {
   #config; #logger; #writeChain = Promise.resolve();
   constructor({ configService, logger = console } = {}) {
@@ -19,7 +16,7 @@ export class YamlFitnessSchoolAttemptStore {
   async get(workSessionId, householdId = null) {
     if (!SAFE_ID.test(workSessionId ?? '')) return null;
     try {
-      const record = yaml.load(await fs.readFile(this.#file(workSessionId, householdId), 'utf8'));
+      const record = readYamlFromPath(this.#file(workSessionId, householdId));
       return record?.schema === 'fitness.school-attempt/v1' ? record : null;
     } catch (error) {
       if (error?.code !== 'ENOENT') this.#logger.warn?.('fitness.school-attempt.read-failed', { workSessionId, error: error.message });
@@ -32,12 +29,7 @@ export class YamlFitnessSchoolAttemptStore {
     if (!SAFE_ID.test(id ?? '')) throw new Error(`unsafe School work-session id: ${id}`);
     const stored = structuredClone(record);
     const queued = this.#writeChain.then(async () => {
-      const root = this.#root(householdId);
-      await fs.mkdir(root, { recursive: true });
-      const file = this.#file(id, householdId);
-      const temp = `${file}.${process.pid}.tmp`;
-      await fs.writeFile(temp, dump(stored), { encoding: 'utf8', flag: 'wx' });
-      await fs.rename(temp, file);
+      saveYamlToPathAtomic(this.#file(id, householdId), stored, { indent: 2, lineWidth: -1, noRefs: true });
       return stored;
     });
     this.#writeChain = queued.catch(() => {});
@@ -46,4 +38,3 @@ export class YamlFitnessSchoolAttemptStore {
 }
 
 export default YamlFitnessSchoolAttemptStore;
-

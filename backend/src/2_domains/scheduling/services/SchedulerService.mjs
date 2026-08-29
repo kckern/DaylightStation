@@ -11,27 +11,20 @@
  * No I/O, no stores, no executors. All side-effect-free computations.
  */
 
-import crypto from 'crypto';
+import { createHash } from 'node:crypto';
 import { CronExpressionParser } from 'cron-parser';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class SchedulerService {
-  constructor({ timezone = 'America/Los_Angeles' }) {
+  constructor({ timezone = 'America/Los_Angeles' } = {}) {
     this.timezone = timezone;
-  }
-
-  /**
-   * Generate a short unique execution ID
-   */
-  generateExecutionId() {
-    return crypto.randomUUID().split('-').pop();
   }
 
   /**
    * Compute MD5 hash for window offset
    */
   md5(str) {
-    return crypto.createHash('md5').update(str).digest('hex');
+    return createHash('md5').update(str).digest('hex');
   }
 
   /**
@@ -70,32 +63,6 @@ export class SchedulerService {
     } catch (err) {
       throw err;
     }
-  }
-
-  /**
-   * Format date for persistence (YYYY-MM-DD HH:mm:ss in timezone)
-   * Uses hourCycle: 'h23' to prevent hour 24 bug with hour12: false
-   */
-  formatDate(date) {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: this.timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23'  // Use h23 (0-23) instead of hour12: false which can produce hour 24
-    }).format(date).replace(',', '');
-  }
-
-  /**
-   * Parse date string back to Date
-   */
-  parseDate(dateStr) {
-    if (!dateStr) return null;
-    // Handle ISO format or YYYY-MM-DD HH:mm:ss format
-    return new Date(dateStr);
   }
 
   /**

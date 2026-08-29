@@ -26,14 +26,14 @@ function fnv1a(str) {
 }
 
 export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
-  #userDataService;
+  #loadLifelog;
   #logger;
   #httpClient;
 
-  constructor({ userDataService, logger = console, httpClient } = {}) {
+  constructor({ loadLifelog, logger = console, httpClient } = {}) {
     super();
-    if (!userDataService) throw new Error('GoodreadsFeedAdapter requires userDataService');
-    this.#userDataService = userDataService;
+    if (typeof loadLifelog !== 'function') throw new Error('GoodreadsFeedAdapter requires loadLifelog');
+    this.#loadLifelog = loadLifelog;
     this.#logger = logger;
     this.#httpClient = httpClient || new HttpClient({ logger });
   }
@@ -54,7 +54,7 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
 
   async fetchItems(query, username) {
     try {
-      const books = this.#userDataService.getLifelogData(username, 'goodreads');
+      const books = this.#loadLifelog(username, 'goodreads');
       if (!Array.isArray(books) || books.length === 0) return [];
 
       const limit = query.limit || 2;

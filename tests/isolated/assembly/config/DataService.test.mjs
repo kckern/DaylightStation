@@ -9,7 +9,7 @@
  */
 
 import { createTestConfigService } from '#backend/src/0_system/config/index.mjs';
-import { DataService } from '#backend/src/0_system/config/DataService.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 // Mock config for unit tests (no I/O)

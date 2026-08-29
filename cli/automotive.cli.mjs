@@ -24,7 +24,7 @@ import dotenv from 'dotenv';
 import yaml from 'js-yaml';
 import { parseArgv } from './_argv.mjs';
 import { regroupByLocalDay, convertLegacyTrip, repairTelemetryDocument } from './automotive/lib.mjs';
-import { dumpTrip } from '#apps/hardware/automotiveRelay.mjs';
+import { encodeAutomotiveTrip } from '#adapters/hardware/automotive/YamlAutomotiveTripStore.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const DAY_FILE = /^\d{4}-\d{2}-\d{2}\.yml$/;
@@ -106,7 +106,7 @@ async function migrateVehicle(vehicleDir, timezone, { apply, keepLegacy }) {
     if (apply) {
       const target = path.join(tripsDir, relPath);
       await fs.mkdir(path.dirname(target), { recursive: true });
-      await fs.writeFile(target, dumpTrip(trip), 'utf8');
+      await fs.writeFile(target, encodeAutomotiveTrip(trip), 'utf8');
       if (!keepLegacy) await fs.rm(legacyFile, { force: true });
     }
   }

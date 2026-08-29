@@ -10,6 +10,8 @@ export class FoodCatalogService {
   #catalogStore;
   #nutriListStore;
   #logger;
+  #clock;
+  #createId;
 
   /**
    * @param {Object} config
@@ -19,9 +21,12 @@ export class FoodCatalogService {
    */
   constructor(config) {
     if (!config.catalogStore) throw new Error('FoodCatalogService requires catalogStore');
+    if (!config.clock?.now || typeof config.createId !== 'function') throw new Error('FoodCatalogService requires clock and createId');
     this.#catalogStore = config.catalogStore;
     this.#nutriListStore = config.nutriListStore || null;
     this.#logger = config.logger || console;
+    this.#clock = config.clock;
+    this.#createId = config.createId;
   }
 
   /**
@@ -39,7 +44,7 @@ export class FoodCatalogService {
     const existing = await this.#catalogStore.findByNormalizedName(foodItem.name, userId);
 
     if (existing) {
-      existing.recordUsage();
+      existing.recordUsage(new Date(this.#clock.now()).toISOString().slice(0, 10));
       // Update nutrients if the new data has them (latest wins)
       if (foodItem.calories != null) {
         existing.nutrients = {
@@ -53,6 +58,7 @@ export class FoodCatalogService {
       this.#logger.debug?.('health.catalog.usage_recorded', { name: foodItem.name, useCount: existing.useCount });
     } else {
       const entry = new FoodCatalogEntry({
+        id: this.#createId(),
         name: foodItem.name,
         nutrients: {
           calories: foodItem.calories || 0,
@@ -62,6 +68,8 @@ export class FoodCatalogService {
         },
         source: foodItem.source || 'nutritionix',
         barcodeUpc: foodItem.barcodeUpc || null,
+        lastUsed: new Date(this.#clock.now()).toISOString().slice(0, 10),
+        createdAt: new Date(this.#clock.now()).toISOString(),
       });
       await this.#catalogStore.save(entry, userId);
       this.#logger.debug?.('health.catalog.entry_created', { name: foodItem.name, id: entry.id });
@@ -80,10 +88,9 @@ export class FoodCatalogService {
 
     if (!this.#nutriListStore) throw new Error('NutriListStore not configured for quick-add');
 
-    const today = new Date().toISOString().split('T')[0];
-    const { randomUUID } = await import('crypto');
+    const today = new Date(this.#clock.now()).toISOString().split('T')[0];
     const item = {
-      uuid: randomUUID(),
+      uuid: this.#createId(),
       userId,
       item: entry.name,
       name: entry.name,
@@ -100,7 +107,7 @@ export class FoodCatalogService {
     };
 
     await this.#nutriListStore.saveMany([item]);
-    entry.recordUsage();
+    entry.recordUsage(today);
     await this.#catalogStore.save(entry, userId);
 
     this.#logger.info?.('health.catalog.quickadd', { name: entry.name, id: entry.id });
@@ -138,7 +145,7 @@ export class FoodCatalogService {
     if (!this.#nutriListStore) throw new Error('NutriListStore not configured for backfill');
 
     let processed = 0, created = 0, updated = 0;
-    const now = new Date();
+    const now = new Date(this.#clock.now());
 
     for (let i = 0; i < daysBack; i++) {
       const d = new Date(now);

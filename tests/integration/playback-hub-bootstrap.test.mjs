@@ -72,7 +72,7 @@ async function buildPlaybackHubServices({ configService, eventBus, logger }) {
     broadcasterOptions: { intervalMs: 3000, maxBackoffMs: 30000 },
   });
   await container.start();
-  const router = createPlaybackHubRouter({ container, logger });
+  const router = createPlaybackHubRouter({ operations: container, logger });
   return { container, router };
 }
 

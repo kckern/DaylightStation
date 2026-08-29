@@ -71,23 +71,6 @@ export class Notification {
     return ['high', 'urgent'].includes(this.priority);
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      recipient: this.recipient,
-      channel: this.channel,
-      title: this.title,
-      body: this.body,
-      priority: this.priority,
-      sentAt: this.sentAt,
-      readAt: this.readAt,
-      metadata: this.metadata
-    };
-  }
-
-  static fromJSON(data) {
-    return new Notification(data);
-  }
 }
 
 export default Notification;

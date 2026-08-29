@@ -5,6 +5,7 @@
 
 import { buildDensityKeyboard, densityPromptText, densityHelpText } from '../lib/scaleNutribotConfig.mjs';
 import { ApplicationError } from '#apps/common/errors/index.mjs';
+import { serializeFoodItem } from '../nutriLogRecords.mjs';
 
 export class ShowScaleDensityHelp {
   #messagingGateway; #foodLogStore; #scaleConfig; #logger; #encodeCallback;
@@ -30,7 +31,7 @@ export class ShowScaleDensityHelp {
 
     const log = await this.#foodLogStore.findByUuid(logUuid, userId);
     if (!log || !log.items?.length) throw scaleError('log not found', 'LOG_NOT_FOUND', { logUuid });
-    const item0 = typeof log.items[0].toJSON === 'function' ? log.items[0].toJSON() : { ...log.items[0] };
+    const item0 = serializeFoodItem(log.items[0]);
     const grams = Math.round(Number(item0.grams));
 
     const text = showHelp ? densityHelpText(this.#scaleConfig, grams) : densityPromptText(grams);

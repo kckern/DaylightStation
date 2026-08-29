@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import yaml from 'js-yaml';
 import { YamlGratitudeDatastore } from '#adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
-import { GratitudeService } from '#domains/gratitude/services/GratitudeService.mjs';
+import { GratitudeService } from '#apps/gratitude/services/GratitudeService.mjs';
 
 const noopLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const HH = 'default';

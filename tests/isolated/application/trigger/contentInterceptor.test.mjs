@@ -15,6 +15,7 @@ import { responseHandlers } from '#apps/trigger/responseHandlers.mjs';
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const RESPONSE = {
   kind: 'content',
+  dispatchId: 'test-dispatch',
   target: 'livingroom-tv',
   location: 'livingroom',
   expression: { action: 'play-next', contentId: 'plex:620681', options: {} },

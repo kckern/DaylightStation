@@ -34,7 +34,7 @@ import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { initConfigService, configService } from '#system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs } from '#system/logging/config.mjs';
-import { DataService } from '#system/config/DataService.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
 import { FreshRSSFeedAdapter } from '#adapters/feed/FreshRSSFeedAdapter.mjs';
 
 // ============================================================================

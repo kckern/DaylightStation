@@ -15,6 +15,16 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 const STATE_PATH = 'scheduling/cron-runtime';
 const BACKUP_PATH = 'scheduling/cron-runtime_bak';
 
+function dehydrateState(state) {
+  return {
+    last_run: state.lastRun,
+    nextRun: state.nextRun,
+    status: state.status,
+    duration_ms: state.durationMs,
+    error: state.error
+  };
+}
+
 export class YamlStateDatastore extends IStateDatastore {
   #dataService;
   #logger;
@@ -91,7 +101,7 @@ export class YamlStateDatastore extends IStateDatastore {
    */
   async saveState(jobId, state) {
     const rawState = this.loadRawState();
-    rawState[jobId] = state.toJSON();
+    rawState[jobId] = dehydrateState(state);
 
     const result = this.#dataService.system.write(STATE_PATH, rawState);
     if (!result) {
@@ -108,7 +118,7 @@ export class YamlStateDatastore extends IStateDatastore {
   async saveAllStates(states) {
     const rawState = {};
     for (const [jobId, state] of states) {
-      rawState[jobId] = state.toJSON();
+      rawState[jobId] = dehydrateState(state);
     }
 
     const result = this.#dataService.system.write(STATE_PATH, rawState);

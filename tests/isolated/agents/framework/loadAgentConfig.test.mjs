@@ -1,11 +1,14 @@
 // tests/isolated/agents/framework/loadAgentConfig.test.mjs
 import { describe, it, expect, vi } from 'vitest';
 import { loadAgentConfig } from '../../../../backend/src/3_applications/agents/framework/loadAgentConfig.mjs';
+import { AgentConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+
+const project = (configService) => new AgentConfigProjection({ configService });
 
 describe('loadAgentConfig', () => {
   it('returns default config when configService returns null/undefined', () => {
     const cfg = loadAgentConfig({
-      configService: { getAppConfig: vi.fn(() => null) },
+      configProjection: project({ getAppConfig: vi.fn(() => null) }),
       agentId: 'health-coach',
     });
     // Hardcoded defaults are the SAFE state — Mastra Memory disabled
@@ -21,7 +24,7 @@ describe('loadAgentConfig', () => {
       overrides: {},
     };
     const cfg = loadAgentConfig({
-      configService: { getAppConfig: vi.fn(() => yaml) },
+      configProjection: project({ getAppConfig: vi.fn(() => yaml) }),
       agentId: 'health-coach',
     });
     expect(cfg.memory.last_messages).toBe(50);
@@ -40,7 +43,7 @@ describe('loadAgentConfig', () => {
       },
     };
     const cfg = loadAgentConfig({
-      configService: { getAppConfig: vi.fn(() => yaml) },
+      configProjection: project({ getAppConfig: vi.fn(() => yaml) }),
       agentId: 'health-coach',
     });
     expect(cfg.memory.last_messages).toBe(200);                       // override wins
@@ -57,8 +60,8 @@ describe('loadAgentConfig', () => {
         'lifeplan-guide': { memory: { last_messages: 30 } },
       },
     };
-    const a = loadAgentConfig({ configService: { getAppConfig: vi.fn(() => yaml) }, agentId: 'health-coach' });
-    const b = loadAgentConfig({ configService: { getAppConfig: vi.fn(() => yaml) }, agentId: 'lifeplan-guide' });
+    const a = loadAgentConfig({ configProjection: project({ getAppConfig: vi.fn(() => yaml) }), agentId: 'health-coach' });
+    const b = loadAgentConfig({ configProjection: project({ getAppConfig: vi.fn(() => yaml) }), agentId: 'lifeplan-guide' });
     expect(a.memory.last_messages).toBe(100);
     expect(b.memory.last_messages).toBe(30);
   });
@@ -69,7 +72,7 @@ describe('loadAgentConfig', () => {
       overrides: {},
     };
     const cfg = loadAgentConfig({
-      configService: { getAppConfig: vi.fn(() => yaml) },
+      configProjection: project({ getAppConfig: vi.fn(() => yaml) }),
       agentId: 'health-coach',
     });
     // hardcoded fallback for working_memory.enabled = false (safe-state default)
@@ -78,13 +81,13 @@ describe('loadAgentConfig', () => {
   });
 
   it('handles configService missing entirely (no throw)', () => {
-    const cfg = loadAgentConfig({ configService: null, agentId: 'health-coach' });
+    const cfg = loadAgentConfig({ configProjection: null, agentId: 'health-coach' });
     expect(cfg.memory.last_messages).toBe(false);   // safe-state default
   });
 
   it('handles configService.getAppConfig throwing (no throw, returns defaults)', () => {
     const cfg = loadAgentConfig({
-      configService: { getAppConfig: vi.fn(() => { throw new Error('boom'); }) },
+      configProjection: project({ getAppConfig: vi.fn(() => { throw new Error('boom'); }) }),
       agentId: 'health-coach',
     });
     expect(cfg.memory.last_messages).toBe(false);   // safe-state default

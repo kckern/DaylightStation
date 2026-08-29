@@ -159,12 +159,8 @@ describe('planDailyAgenda blocked-work provenance', () => {
   });
 
   it('does not hang on a malformed curriculum whose blockers cycle', () => {
-    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
-    const section = scriptureIn([lockedBehind('a', 'b'), lockedBehind('b', 'a')], logger);
+    const section = scriptureIn([lockedBehind('a', 'b'), lockedBehind('b', 'a')]);
     expect(section.obligation).toEqual({ state: 'faulted', reason: 'blocked_unreachable' });
-    expect(logger.warn).toHaveBeenCalledWith('school.agenda.blocker-cycle', expect.objectContaining({
-      unitId: 'a',
-    }));
   });
 
   it('faults when the blocker is a dated entry whose module has no window at all', () => {

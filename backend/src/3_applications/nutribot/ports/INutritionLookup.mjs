@@ -4,10 +4,10 @@
  * Port interface for nutrition database lookups
  * @interface INutritionLookup
  */
-export const INutritionLookup = {
-  async lookupByName(foodName) {},
-  async lookupByUPC(barcode) {}
-};
+export class INutritionLookup {
+  async lookupByName(_foodName) { throw new Error('INutritionLookup.lookupByName not implemented'); }
+  async lookupByUPC(_barcode) { throw new Error('INutritionLookup.lookupByUPC not implemented'); }
+}
 
 export function isNutritionLookup(obj) {
   return (

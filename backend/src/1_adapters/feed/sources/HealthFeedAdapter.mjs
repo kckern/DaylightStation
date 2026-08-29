@@ -10,13 +10,13 @@
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class HealthFeedAdapter extends IFeedSourceAdapter {
-  #userDataService;
+  #loadLifelog;
   #logger;
 
-  constructor({ userDataService, logger = console }) {
+  constructor({ loadLifelog, logger = console }) {
     super();
-    if (!userDataService) throw new Error('HealthFeedAdapter requires userDataService');
-    this.#userDataService = userDataService;
+    if (typeof loadLifelog !== 'function') throw new Error('HealthFeedAdapter requires loadLifelog');
+    this.#loadLifelog = loadLifelog;
     this.#logger = logger;
   }
 
@@ -26,7 +26,7 @@ export class HealthFeedAdapter extends IFeedSourceAdapter {
   async fetchItems(query, username) {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const data = this.#userDataService.getLifelogData(username, 'health');
+      const data = this.#loadLifelog(username, 'health');
       if (!data) return [];
 
       const dayData = data[today] || Object.values(data).pop();

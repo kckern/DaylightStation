@@ -4,14 +4,15 @@ import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs
 
 function makeService({ items, classifyResult = 'in_progress' } = {}) {
   const fakeAdapter = {
+    canonicalize: (id) => ({ contentId: `plex:${String(id).replace(/^(?:plex:)+/, '')}`, localId: String(id).replace(/^(?:plex:)+/, '') }),
     resolvePlayables: vi.fn().mockResolvedValue(items),
+    enrichWatchState: vi.fn(async (value) => value),
     getContainerInfo: vi.fn().mockResolvedValue(null),
     getItem: vi.fn().mockResolvedValue(null),
   };
   return new FitnessPlayableService({
-    fitnessConfigService: { loadRawConfig: () => ({}) },
-    contentAdapter: fakeAdapter,
-    contentQueryService: null,
+    fitnessConfigService: { getProgressClassification: () => ({}) },
+    contentCatalog: fakeAdapter,
     createProgressClassifier: () => ({ classify: () => classifyResult }),
     logger: { info: vi.fn(), warn: vi.fn() }
   });

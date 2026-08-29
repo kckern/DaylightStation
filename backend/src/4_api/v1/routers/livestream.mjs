@@ -56,7 +56,8 @@ export function createLivestreamRouter(config) {
   router.get('/:channel/listen', (req, res) => {
     const { channel } = req.params;
     try {
-      const { stream, clientId } = channelManager.getClientStream(channel);
+      const listener = channelManager.openListener(channel);
+      const { clientId } = listener;
       res.writeHead(200, {
         'Content-Type': 'audio/aac',
         'Transfer-Encoding': 'chunked',
@@ -66,9 +67,9 @@ export function createLivestreamRouter(config) {
         'icy-pub': '0',
         'Access-Control-Allow-Origin': '*',
       });
-      stream.pipe(res);
+      listener.pipeTo(res);
       req.on('close', () => {
-        stream.destroy();
+        listener.close();
         logger.info?.('livestream.client.disconnected', { channel, clientId });
       });
       logger.info?.('livestream.client.connected', { channel, clientId });

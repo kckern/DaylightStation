@@ -14,7 +14,7 @@ const shuffle = (items, rng) => {
 
 export function createCourseEnrollment({
   enrollmentId = null, courseId, profile, units, modules = [], policy = {}, display = null,
-  schedule = null, today = null, rng = Math.random,
+  schedule = null, today = null, rng = null,
 } = {}) {
   if (typeof courseId !== 'string' || !courseId) throw new Error('courseId is required');
   if (enrollmentId !== null && (typeof enrollmentId !== 'string' || !enrollmentId)) {
@@ -25,6 +25,8 @@ export function createCourseEnrollment({
   const opening = policy.required_opening_module ?? null;
   const optionalModules = publishedModules.filter((id) => members.some((u) => u.module === id && u.moduleRole === 'optional'));
   const otherModules = publishedModules.filter((id) => id !== opening && !optionalModules.includes(id));
+  const requiresShuffle = policy.module_order === 'shuffle_once' || policy.lesson_order === 'shuffle_once';
+  if (requiresShuffle && typeof rng !== 'function') throw new Error('rng is required for shuffled course enrollment');
   // A dated course's calendar IS its order, so it never shuffles and never
   // takes an opening module. Windows are copied onto the enrollment for the
   // same reason lessonOrder is: later course edits must not move a plan a

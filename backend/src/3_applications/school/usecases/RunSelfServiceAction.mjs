@@ -52,7 +52,7 @@
  * program that was never on the Portal.
  */
 import { createEvent } from '#domains/school/sessions/sessionEvents.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 import { ensureSession } from './offerSession.mjs';
 import { SYNTHETIC_SESSION_ID } from './ResolveAccessCode.mjs';
 

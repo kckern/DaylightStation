@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
+import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 describe('WakeAndLoadService', () => {
   let mockLogger;
@@ -26,6 +27,10 @@ describe('WakeAndLoadService', () => {
     return { isReady: vi.fn(async () => ({ ready: true })) };
   }
 
+  function createScreenGateway(eventBus = { getTopicSubscriberCount: () => 0 }) {
+    return new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: mockBroadcast });
+  }
+
   beforeEach(() => {
     mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     mockBroadcast = vi.fn();
@@ -41,7 +46,7 @@ describe('WakeAndLoadService', () => {
     const service = new WakeAndLoadService({
       deviceService: createMockDeviceService(device),
       readinessPolicy: createMockReadinessPolicy(),
-      broadcast: mockBroadcast,
+      screenGateway: createScreenGateway(),
       logger: mockLogger,
     });
 
@@ -72,7 +77,7 @@ describe('WakeAndLoadService', () => {
     const service = new WakeAndLoadService({
       deviceService: createMockDeviceService(device),
       readinessPolicy: createMockReadinessPolicy(),
-      broadcast: mockBroadcast,
+      screenGateway: createScreenGateway(),
       logger: mockLogger,
     });
 
@@ -100,7 +105,7 @@ describe('WakeAndLoadService', () => {
     const service = new WakeAndLoadService({
       deviceService: createMockDeviceService(device),
       readinessPolicy: createMockReadinessPolicy(),
-      broadcast: mockBroadcast,
+      screenGateway: createScreenGateway(),
       logger: mockLogger,
     });
 
@@ -115,7 +120,7 @@ describe('WakeAndLoadService', () => {
     const service = new WakeAndLoadService({
       deviceService: { get: () => null },
       readinessPolicy: createMockReadinessPolicy(),
-      broadcast: mockBroadcast,
+      screenGateway: createScreenGateway(),
       logger: mockLogger,
     });
 
@@ -154,8 +159,7 @@ describe('WakeAndLoadService', () => {
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
-        eventBus: mockEventBus,
+        screenGateway: createScreenGateway(mockEventBus),
         logger: mockLogger,
       });
 
@@ -189,8 +193,7 @@ describe('WakeAndLoadService', () => {
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
-        eventBus: mockEventBus,
+        screenGateway: createScreenGateway(mockEventBus),
         logger: mockLogger,
       });
 
@@ -214,8 +217,7 @@ describe('WakeAndLoadService', () => {
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
-        eventBus: mockEventBus,
+        screenGateway: createScreenGateway(mockEventBus),
         logger: mockLogger,
       });
 
@@ -243,8 +245,7 @@ describe('WakeAndLoadService', () => {
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
-        eventBus: mockEventBus,
+        screenGateway: createScreenGateway(mockEventBus),
         logger: mockLogger,
       });
 
@@ -263,7 +264,7 @@ describe('WakeAndLoadService', () => {
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
+        screenGateway: createScreenGateway(),
         logger: mockLogger,
       });
 
@@ -280,7 +281,7 @@ describe('WakeAndLoadService', () => {
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
+        screenGateway: createScreenGateway(),
         logger: mockLogger,
       });
 
@@ -309,7 +310,7 @@ describe('WakeAndLoadService', () => {
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
+        screenGateway: createScreenGateway(),
         logger: mockLogger,
       });
 
@@ -336,7 +337,7 @@ describe('WakeAndLoadService', () => {
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
+        screenGateway: createScreenGateway(),
         logger: mockLogger,
       });
 
@@ -370,12 +371,12 @@ describe('WakeAndLoadService', () => {
         loadContent: vi.fn(async () => { throw new Error('must not be called on adopt'); }),
       });
       const sessionControlService = {
-        sendCommand: vi.fn(async () => ({ ok: true, commandId: 'disp-xyz', appliedAt: 'now' })),
+        adoptSnapshot: vi.fn(async () => ({ ok: true, commandId: 'disp-xyz', appliedAt: 'now' })),
       };
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
+        screenGateway: createScreenGateway(),
         sessionControlService,
         logger: mockLogger,
       });
@@ -391,15 +392,7 @@ describe('WakeAndLoadService', () => {
       expect(result.dispatchId).toBe('disp-xyz');
       expect(result.steps.load).toMatchObject({ ok: true, method: 'adopt-snapshot', commandId: 'disp-xyz' });
       expect(device.loadContent).not.toHaveBeenCalled();
-      expect(sessionControlService.sendCommand).toHaveBeenCalledTimes(1);
-      const envelope = sessionControlService.sendCommand.mock.calls[0][0];
-      expect(envelope).toMatchObject({
-        type: 'command',
-        command: 'adopt-snapshot',
-        targetDevice: 'living-room',
-        commandId: 'disp-xyz',
-        params: { snapshot, autoplay: true },
-      });
+      expect(sessionControlService.adoptSnapshot).toHaveBeenCalledWith('living-room', 'disp-xyz', snapshot);
 
       const loadProgress = mockBroadcast.mock.calls
         .map((args) => args[0])
@@ -412,7 +405,7 @@ describe('WakeAndLoadService', () => {
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
+        screenGateway: createScreenGateway(),
         logger: mockLogger,
         // no sessionControlService
       });
@@ -433,12 +426,12 @@ describe('WakeAndLoadService', () => {
         prepareForContent: vi.fn(async () => ({ ok: true, coldRestart: false })),
       });
       const sessionControlService = {
-        sendCommand: vi.fn(async () => ({ ok: false, code: 'DEVICE_REFUSED', error: 'refused' })),
+        adoptSnapshot: vi.fn(async () => ({ ok: false, code: 'DEVICE_REFUSED', error: 'refused' })),
       };
       const service = new WakeAndLoadService({
         deviceService: createMockDeviceService(device),
         readinessPolicy: createMockReadinessPolicy(),
-        broadcast: mockBroadcast,
+        screenGateway: createScreenGateway(),
         sessionControlService,
         logger: mockLogger,
       });

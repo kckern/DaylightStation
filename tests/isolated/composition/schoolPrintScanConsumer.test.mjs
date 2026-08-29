@@ -5,6 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createSchoolPrintScanConsumer } from '#composition/modules/schoolPrintScanConsumer.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { ResolveCardScan } from '#apps/school/documents/ResolveCardScan.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
@@ -436,7 +437,9 @@ describe('composed end-to-end: a bank-select document through a REAL ResolveCard
     const publisher = new PublishPrintDocument({ repository });
     const { id, rev } = await publisher.execute({ source });
     const published = await repository.getPublished(id, rev);
-    const renderer = new RenderPrintDocument({ repository, banks, allocationStore });
+    const renderer = new RenderPrintDocument({
+      repository, banks, allocationStore, rendering: createPrintDocumentRendering(),
+    });
     await renderer.execute({ document: published, context: { cardId: '0123456', startRow: 1 } });
     return { repository, allocationStore };
   }

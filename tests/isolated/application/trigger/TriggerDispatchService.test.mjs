@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach, test } from 'vitest';
 import { TriggerDispatchService } from '../../../../backend/src/3_applications/trigger/TriggerDispatchService.mjs';
+import { TriggerActuationGateway } from '../../../../backend/src/1_adapters/trigger/TriggerActuationGateway.mjs';
+
+const TEST_RUNTIME = {
+  createDispatchId: () => 'dispatch-test-id',
+  scheduler: { after: () => () => {} },
+};
+
+const actuationFor = ({ deviceService = null, haGateway = null, screenBroadcast = null, commandResolver = null } = {}) =>
+  new TriggerActuationGateway({ deviceService, homeGateway: haGateway, screenBroadcast, commandResolver });
 
 // New registry shape produced by buildTriggerRegistry:
 // { [modality]: { locations: { [location]: { target, action, auth_token, defaults } }, ...modality-specific } }
@@ -56,11 +65,11 @@ describe('TriggerDispatchService.handleTrigger', () => {
   function makeService(configOverrides = null) {
     const config = configOverrides !== null ? configOverrides : baseRegistry;
     return new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config,
       contentIdResolver: makeResolver(),
       wakeAndLoadService,
-      haGateway,
-      deviceService,
+      actuationGateway: actuationFor({ haGateway, deviceService }),
       broadcast,
       logger,
     });
@@ -244,6 +253,7 @@ describe('TriggerDispatchService — debounce', () => {
   test('first scan dispatches; second scan within window is debounced', async () => {
     const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const service = new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
@@ -265,6 +275,7 @@ describe('TriggerDispatchService — debounce', () => {
   test('different tag in same window is NOT debounced', async () => {
     const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const service = new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
@@ -281,6 +292,7 @@ describe('TriggerDispatchService — debounce', () => {
     const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     let now = 1_000_000;
     const service = new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
@@ -301,6 +313,7 @@ describe('TriggerDispatchService — debounce', () => {
   test('dryRun bypasses debounce', async () => {
     const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const service = new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
@@ -321,6 +334,7 @@ describe('TriggerDispatchService — debounce', () => {
         .mockResolvedValueOnce({ ok: true }),
     };
     const service = new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
@@ -380,11 +394,11 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
 
   function makeService(config) {
     return new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config,
       contentIdResolver: { resolve: () => null },
       wakeAndLoadService,
-      haGateway,
-      deviceService,
+      actuationGateway: actuationFor({ haGateway, deviceService }),
       tagWriter,
       broadcast,
       logger,
@@ -524,6 +538,7 @@ describe('TriggerDispatchService.setNote', () => {
 
   function makeService({ auth_token = null } = {}) {
     return new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: {
         nfc: {
           locations: {
@@ -640,6 +655,7 @@ describe('TriggerDispatchService (unified core)', () => {
   function make(registry, wake) {
     const wakeAndLoadService = { execute: wake || (async () => ({ ok: true })) };
     return new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: registry,
       contentIdResolver: { resolve: () => true },
       wakeAndLoadService,
@@ -674,6 +690,7 @@ describe('TriggerDispatchService authorize', () => {
   function make(registry, wake) {
     const wakeAndLoadService = { execute: wake || (async () => ({ ok: true })) };
     return new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: registry,
       contentIdResolver: { resolve: () => true },
       wakeAndLoadService,
@@ -698,6 +715,7 @@ describe('TriggerDispatchService authorize', () => {
   it('accepts contentDispatcher/screenBroadcast/commandResolver deps without changing nfc behavior', async () => {
     const wakeAndLoadService = { execute: async () => ({ ok: true }) };
     const svc = new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: registry,
       contentIdResolver: { resolve: () => true },
       wakeAndLoadService,
@@ -726,16 +744,22 @@ describe('TriggerDispatchService — barcode (frozen Response) through handleEve
     barcode: { locations: { ds2278: { target: 'living-room', default_action: 'queue', actions: ['queue', 'play', 'open'] } } },
   };
   function makeBarcode(extraDeps = {}) {
+    const { screenBroadcast = null, commandResolver = null, ...otherDeps } = extraDeps;
     return new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: barcodeRegistry,
       contentIdResolver: { resolve: () => true },
       wakeAndLoadService: { execute: async () => ({ ok: true }) },
-      haGateway: { callService: async () => 'ok' },
-      deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+      actuationGateway: actuationFor({
+        haGateway: { callService: async () => 'ok' },
+        deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+        screenBroadcast,
+        commandResolver,
+      }),
       broadcast: () => {},
       logger: { info() {}, warn() {}, error() {}, debug() {} },
       clock: () => 1000,
-      ...extraDeps,
+      ...otherDeps,
     });
   }
 
@@ -800,11 +824,11 @@ describe('TriggerDispatchService — an unmappable action degrades to the unknow
   });
 
   const makeService = (config) => new TriggerDispatchService({
+    ...TEST_RUNTIME,
     config,
     contentIdResolver: makeResolver(),
     wakeAndLoadService: { execute: vi.fn() },
-    haGateway,
-    deviceService: { get: vi.fn() },
+    actuationGateway: actuationFor({ haGateway, deviceService: { get: vi.fn() } }),
     tagWriter,
     broadcast,
     logger,
@@ -857,11 +881,14 @@ describe('TriggerDispatchService — zombie-wake-guard suppression is content-on
 
   function makeService(config, haGateway) {
     return new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config,
       contentIdResolver: makeResolver(),
       wakeAndLoadService: { execute: vi.fn().mockResolvedValue({ ok: true }) },
-      haGateway,
-      deviceService: { get: vi.fn().mockReturnValue({ loadContent: vi.fn().mockResolvedValue({ ok: true }), clearContent: vi.fn().mockResolvedValue({ ok: true }) }) },
+      actuationGateway: actuationFor({
+        haGateway,
+        deviceService: { get: vi.fn().mockReturnValue({ loadContent: vi.fn().mockResolvedValue({ ok: true }), clearContent: vi.fn().mockResolvedValue({ ok: true }) }) },
+      }),
       tagWriter: { recordObserved: vi.fn().mockResolvedValue({ created: true }) },
       broadcast: vi.fn(),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -908,6 +935,7 @@ describe('TriggerDispatchService — content interceptors reach the content hand
 
   function service({ contentInterceptors, wakeAndLoadService }) {
     return new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: registry,
       contentIdResolver: makeResolver(),
       wakeAndLoadService,
@@ -992,12 +1020,13 @@ describe('TriggerDispatchService — the unknown-tag observer', () => {
   };
 
   function service({ onUnknownTag, tagWriter, haGateway } = {}) {
+    const homeGateway = haGateway ?? { callService: vi.fn().mockResolvedValue({ ok: true }) };
     return new TriggerDispatchService({
+    ...TEST_RUNTIME,
       config: registry,
       contentIdResolver: makeResolver(),
       wakeAndLoadService: { execute: vi.fn() },
-      haGateway: haGateway ?? { callService: vi.fn().mockResolvedValue({ ok: true }) },
-      deviceService: { get: vi.fn() },
+      actuationGateway: actuationFor({ haGateway: homeGateway, deviceService: { get: vi.fn() } }),
       tagWriter: tagWriter ?? { recordObserved: vi.fn().mockResolvedValue({ created: true }) },
       onUnknownTag,
       broadcast: vi.fn(),

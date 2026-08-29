@@ -1,32 +1,46 @@
 // tests/integration/content-domain/fullSystem.test.mjs
+// This flow never reads audio metadata. Keep Jest's CommonJS resolver from
+// trying to require music-metadata's import-only package export while loading
+// the concrete local-content adapter.
+import { jest } from '@jest/globals';
+jest.unstable_mockModule('music-metadata', () => ({ parseFile: jest.fn() }));
+
 import express from 'express';
 import request from 'supertest';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import {
-  createContentRegistry,
-  createWatchStore,
-  createApiRouters
-} from '#composition/bootstrap.mjs';
+import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
+import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
+import { ScriptureResolver } from '#adapters/content/readalong/resolvers/scripture.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fixturesPath = path.resolve(__dirname, '../../_fixtures');
+const fixturesPath = path.resolve(process.cwd(), 'tests/_fixtures');
 
 describe('Content Domain Integration', () => {
   let app;
   let registry;
 
   beforeAll(async () => {
-    ({ registry } = createContentRegistry({
-      mediaBasePath: path.join(fixturesPath, 'media'),
-      dataPath: path.join(fixturesPath, 'local-content')
-    }));
-
-    const watchStore = createWatchStore({
-      watchStatePath: path.join(fixturesPath, 'watch-state')
+    const { createApiRouters } = await import('#composition/modules/contentApi.mjs');
+    const { LocalContentAdapter } = await import('#adapters/content/local-content/LocalContentAdapter.mjs');
+    const mediaProgressMemory = new YamlMediaProgressMemory({
+      basePath: path.join(fixturesPath, 'watch-state')
     });
+    registry = new ContentSourceRegistry();
+    registry.register(new LocalContentAdapter({
+      dataPath: path.join(fixturesPath, 'local-content'),
+      mediaPath: path.join(fixturesPath, 'media'),
+      mediaProgressMemory,
+      contentRegistry: registry,
+      scriptureResolver: ScriptureResolver,
+    }), { category: 'local', provider: 'local-content' });
 
-    const routers = createApiRouters({ registry, watchStore });
+    const { routers } = createApiRouters({
+      registry,
+      mediaProgressMemory,
+      menuMemoryRepository: { load: () => ({}), save: () => undefined },
+      dataPath: path.join(fixturesPath, 'local-content'),
+      mediaBasePath: path.join(fixturesPath, 'media'),
+      configService: { getAppConfig: () => ({}) },
+    });
 
     app = express();
     app.use(express.json());

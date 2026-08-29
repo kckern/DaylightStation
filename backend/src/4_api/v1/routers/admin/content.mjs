@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * Admin Content Router
  *
@@ -23,33 +24,29 @@
  * - DELETE /lists/:type/:name/items/:index   - Remove item at index
  */
 import express from 'express';
-import { YamlListDatastore } from '#adapters/persistence/yaml/YamlListDatastore.mjs';
-import { ListManagementService } from '#apps/content/services/ListManagementService.mjs';
 
 /**
  * Create Admin Content Router
  *
  * @param {Object} config
- * @param {Object} config.userDataService - UserDataService for household paths
- * @param {Object} config.configService - ConfigService for default household
- * @param {Object} [config.listManagementService] - Pre-built ListManagementService (for DI)
+ * @param {Object} config.householdContext - Default household policy
+ * @param {Object} config.listManagementService - Pre-built list-management use case.
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createAdminContentRouter(config) {
   const {
-    userDataService,
-    configService,
+    householdContext,
     logger = console
   } = config;
 
-  // Build service layer: allow pre-built injection or construct from dependencies
-  const listManagementService = config.listManagementService || new ListManagementService({
-    listStore: new YamlListDatastore({ userDataService, configService }),
-    logger
-  });
+  const { listManagementService } = config;
+  if (!listManagementService) {
+    throw new Error('createAdminContentRouter: listManagementService required');
+  }
 
   const router = express.Router();
+  const householdIdFrom = (req) => householdContext.resolve(req.query.household || null);
 
   // =============================================================================
   // Overview Endpoint
@@ -59,14 +56,14 @@ export function createAdminContentRouter(config) {
    * GET /lists - Overview of all list types with counts
    */
   router.get('/lists', (req, res) => {
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
 
     try {
       const result = listManagementService.getOverview(householdId);
       res.json(result);
     } catch (error) {
       logger.error?.('admin.lists.overview.failed', { error: error.message, household: householdId });
-      res.status(500).json({ error: 'Failed to get lists overview' });
+      sendInternalError(res, { error: 'Failed to get lists overview' });
     }
   });
 
@@ -79,7 +76,7 @@ export function createAdminContentRouter(config) {
    */
   router.get('/lists/:type', (req, res) => {
     const { type } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
 
     try {
       const result = listManagementService.listByType(type, householdId);
@@ -87,7 +84,7 @@ export function createAdminContentRouter(config) {
     } catch (error) {
       if (error.httpStatus) throw error;
       logger.error?.('admin.lists.type.list.failed', { type, error: error.message, household: householdId });
-      res.status(500).json({ error: `Failed to list ${type}` });
+      sendInternalError(res, { error: `Failed to list ${type}` });
     }
   });
 
@@ -96,7 +93,7 @@ export function createAdminContentRouter(config) {
    */
   router.post('/lists/:type', (req, res) => {
     const { type } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const { name } = req.body || {};
 
     const result = listManagementService.createList(type, name, householdId);
@@ -112,7 +109,7 @@ export function createAdminContentRouter(config) {
    */
   router.get('/lists/:type/:name', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
 
     const result = listManagementService.getList(type, listName, householdId);
     res.json(result);
@@ -123,7 +120,7 @@ export function createAdminContentRouter(config) {
    */
   router.put('/lists/:type/:name/settings', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const settings = req.body || {};
 
     const result = listManagementService.updateSettings(type, listName, householdId, settings);
@@ -135,7 +132,7 @@ export function createAdminContentRouter(config) {
    */
   router.put('/lists/:type/:name', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const sectionIndex = parseInt(req.query.section, 10) || 0;
     const { items } = req.body || {};
 
@@ -145,7 +142,7 @@ export function createAdminContentRouter(config) {
     } catch (error) {
       if (error.httpStatus) throw error;
       logger.error?.('admin.lists.reorder.failed', { type, list: listName, error: error.message });
-      res.status(500).json({ error: 'Failed to update list' });
+      sendInternalError(res, { error: 'Failed to update list' });
     }
   });
 
@@ -154,7 +151,7 @@ export function createAdminContentRouter(config) {
    */
   router.delete('/lists/:type/:name', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
 
     try {
       const result = listManagementService.deleteList(type, listName, householdId);
@@ -162,7 +159,7 @@ export function createAdminContentRouter(config) {
     } catch (error) {
       if (error.httpStatus) throw error;
       logger.error?.('admin.lists.delete.failed', { type, list: listName, error: error.message });
-      res.status(500).json({ error: 'Failed to delete list' });
+      sendInternalError(res, { error: 'Failed to delete list' });
     }
   });
 
@@ -175,7 +172,7 @@ export function createAdminContentRouter(config) {
    */
   router.post('/lists/:type/:name/items', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const sectionIndex = parseInt(req.query.section, 10) || 0;
     const itemData = req.body || {};
 
@@ -185,7 +182,7 @@ export function createAdminContentRouter(config) {
     } catch (error) {
       if (error.httpStatus) throw error;
       logger.error?.('admin.lists.item.add.failed', { type, list: listName, label: itemData.label, error: error.message });
-      res.status(500).json({ error: 'Failed to add item' });
+      sendInternalError(res, { error: 'Failed to add item' });
     }
   });
 
@@ -195,7 +192,7 @@ export function createAdminContentRouter(config) {
    */
   router.put('/lists/:type/:name/items/move', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const { from, to } = req.body || {};
 
     const result = listManagementService.moveItem(type, listName, householdId, from, to);
@@ -208,7 +205,7 @@ export function createAdminContentRouter(config) {
    */
   router.put('/lists/:type/:name/items/swap', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const { a, b } = req.body || {};
 
     try {
@@ -217,7 +214,7 @@ export function createAdminContentRouter(config) {
     } catch (error) {
       if (error.httpStatus) throw error;
       logger.error?.('admin.lists.items.swap.failed', { type, list: listName, a, b, error: error.message });
-      res.status(500).json({ error: 'Failed to swap items' });
+      sendInternalError(res, { error: 'Failed to swap items' });
     }
   });
 
@@ -226,7 +223,7 @@ export function createAdminContentRouter(config) {
    */
   router.put('/lists/:type/:name/items/:index', (req, res) => {
     const { type, name: listName, index: indexStr } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const sectionIndex = parseInt(req.query.section, 10) || 0;
     const updates = req.body || {};
 
@@ -238,7 +235,7 @@ export function createAdminContentRouter(config) {
     } catch (error) {
       if (error.httpStatus) throw error;
       logger.error?.('admin.lists.item.update.failed', { type, list: listName, index, error: error.message });
-      res.status(500).json({ error: 'Failed to update item' });
+      sendInternalError(res, { error: 'Failed to update item' });
     }
   });
 
@@ -247,7 +244,7 @@ export function createAdminContentRouter(config) {
    */
   router.delete('/lists/:type/:name/items/:index', (req, res) => {
     const { type, name: listName, index: indexStr } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const sectionIndex = parseInt(req.query.section, 10) || 0;
 
     const index = parseInt(indexStr, 10);
@@ -258,7 +255,7 @@ export function createAdminContentRouter(config) {
     } catch (error) {
       if (error.httpStatus) throw error;
       logger.error?.('admin.lists.item.delete.failed', { type, list: listName, index, error: error.message });
-      res.status(500).json({ error: 'Failed to delete item' });
+      sendInternalError(res, { error: 'Failed to delete item' });
     }
   });
 
@@ -271,7 +268,7 @@ export function createAdminContentRouter(config) {
    */
   router.post('/lists/:type/:name/sections', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const sectionData = req.body || {};
 
     const result = listManagementService.addSection(type, listName, householdId, sectionData);
@@ -284,7 +281,7 @@ export function createAdminContentRouter(config) {
    */
   router.post('/lists/:type/:name/sections/split', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const { sectionIndex = 0, afterItemIndex, title } = req.body || {};
 
     const result = listManagementService.splitSection(type, listName, householdId, sectionIndex, afterItemIndex, title);
@@ -297,7 +294,7 @@ export function createAdminContentRouter(config) {
    */
   router.put('/lists/:type/:name/sections/reorder', (req, res) => {
     const { type, name: listName } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const { order } = req.body || {};
 
     const result = listManagementService.reorderSections(type, listName, householdId, order);
@@ -309,7 +306,7 @@ export function createAdminContentRouter(config) {
    */
   router.put('/lists/:type/:name/sections/:sectionIndex', (req, res) => {
     const { type, name: listName, sectionIndex: siStr } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
     const updates = req.body || {};
 
     const si = parseInt(siStr, 10);
@@ -322,7 +319,7 @@ export function createAdminContentRouter(config) {
    */
   router.delete('/lists/:type/:name/sections/:sectionIndex', (req, res) => {
     const { type, name: listName, sectionIndex: siStr } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = householdIdFrom(req);
 
     const si = parseInt(siStr, 10);
     const result = listManagementService.deleteSection(type, listName, householdId, si);

@@ -15,35 +15,30 @@ import {
 } from '../handlers/journalist/index.mjs';
 
 // HTTP middleware
-import {
-  webhookValidationMiddleware,
-  idempotencyMiddleware,
-  asyncHandler,
-  errorHandlerMiddleware,
-} from '#system/http/middleware/index.mjs';
+import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
+import { webhookValidationMiddleware } from '../middleware/messagingWebhookValidation.mjs';
+import { idempotencyMiddleware } from '../middleware/messagingWebhookIdempotency.mjs';
 
 /**
  * Create Journalist Express Router
- * @param {import('../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
+ * @param {Object} journalistApi - Semantic Journalist service
  * @param {Object} [options]
  * @param {Function} [options.webhookHandler] - Pre-built Telegram webhook handler
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
- * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
- * @param {Object} [options.configService] - Config service for user resolution
  * @param {Object} [options.logger] - Logger instance
  * @returns {Router}
  */
-export function createJournalistRouter(container, options = {}) {
+export function createJournalistRouter(journalistApi, options = {}) {
   const router = Router();
-  const { webhookHandler, telegramIdentityAdapter, botId, secretToken, gateway, configService, logger = console } = options;
+  const { webhookHandler, botId, secretToken, gateway, idempotencyStore, logger = console } = options;
 
   // Webhook endpoint using pre-built handler
   if (webhookHandler) {
     router.post(
       '/webhook',
       webhookValidationMiddleware('journalist', { secretToken }),
-      idempotencyMiddleware({ ttlMs: 300000 }),
+      idempotencyMiddleware({ ttlMs: 300000, store: idempotencyStore }),
       webhookHandler,
     );
   } else {
@@ -51,15 +46,15 @@ export function createJournalistRouter(container, options = {}) {
   }
 
   // Journal export endpoint
-  router.get('/journal', asyncHandler(journalistJournalHandler(container)));
+  router.get('/journal', asyncHandler(journalistJournalHandler(journalistApi)));
 
   // Trigger endpoint
-  router.get('/trigger', asyncHandler(journalistTriggerHandler(container)));
+  router.get('/trigger', asyncHandler(journalistTriggerHandler(journalistApi)));
 
   // Morning debrief endpoint (triggered by cron or manual)
   router.get(
     '/morning',
-    asyncHandler(journalistMorningDebriefHandler(container, { configService, telegramIdentityAdapter, logger })),
+    asyncHandler(journalistMorningDebriefHandler(journalistApi, { logger })),
   );
 
   // Health check endpoint

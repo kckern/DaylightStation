@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { RenderPrintDocument } from './RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
@@ -18,6 +19,10 @@ import { contentBox } from '#rendering/school/documents/furniture.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import { pdfText, pdfTextItems } from '../../../../../tests/_lib/school/pdfText.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
+
+const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
+  rendering: createPrintDocumentRendering(), ...deps,
+});
 
 const isPdf = (bytes) => Buffer.isBuffer(bytes) && bytes.subarray(0, 5).toString('latin1') === '%PDF-';
 
@@ -67,7 +72,7 @@ const manyQuestions = (n) => Array.from({ length: n }, (_, i) => question(i + 1)
 
 describe('RenderPrintDocument — v2 basic render (a)', () => {
   it('renders a real v2 worksheet PDF; two runs are byte-identical', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'worksheet', blocks: manyQuestions(2) });
 
     const first = await useCase.execute({ document, context: { learnerName: 'Alex' } });
@@ -92,7 +97,7 @@ describe('RenderPrintDocument — fit policy one-page (b)', () => {
   });
 
   it('fits at normal density: density "normal", warns only about the missing card allocation (spec §5.3, Task 5)', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: oneShot(9) });
     expect(result.pageCount).toBe(1);
     expect(result.density).toBe('normal');
@@ -100,7 +105,7 @@ describe('RenderPrintDocument — fit policy one-page (b)', () => {
   });
 
   it('a padded fixture (overflows normal) falls back to compact density', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: oneShot(10) });
     expect(result.pageCount).toBe(1);
     expect(result.density).toBe('compact');
@@ -108,7 +113,7 @@ describe('RenderPrintDocument — fit policy one-page (b)', () => {
   });
 
   it('an overlong fixture (overflows both densities) rejects with structured FIT_OVERSET', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     await expect(useCase.execute({ document: oneShot(12) })).rejects.toMatchObject({
       name: 'ValidationError',
       code: 'FIT_OVERSET',
@@ -132,14 +137,14 @@ describe('RenderPrintDocument — fit policy prefer-one-page', () => {
   });
 
   it('outcome 1 — fits at normal density: density "normal", pageCount 1', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: preferOneShot(9) });
     expect(result.pageCount).toBe(1);
     expect(result.density).toBe('normal');
   });
 
   it('outcome 2 — fits only at compact density: falls back to compact, still one page', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: preferOneShot(10) });
     expect(result.pageCount).toBe(1);
     expect(result.density).toBe('compact');
@@ -149,7 +154,7 @@ describe('RenderPrintDocument — fit policy prefer-one-page', () => {
   });
 
   it('outcome 3 — fits at neither: SPILLS at compact density instead of throwing (the one-page/prefer-one-page divergence)', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: preferOneShot(12) });
     expect(result.pageCount).toBeGreaterThan(1);
     expect(result.density).toBe('compact');
@@ -192,7 +197,7 @@ describe('RenderPrintDocument — fit policy prefer-one-page', () => {
       title: 'OMR overflow fixture',
       blocks: Array.from({ length: 16 }, (_, i) => omrQuestion(i + 1)),
     };
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document });
 
     expect(result.pageCount).toBeGreaterThan(1); // confirms this fixture actually exercises the spill path
@@ -233,7 +238,7 @@ describe('RenderPrintDocument — fit policy fill bottoms out the last page (c)'
 
   it('threads growLastPage: true into the final render for fit.policy "fill"', async () => {
     const renderer = spyRendererFactory();
-    const useCase = new RenderPrintDocument({ renderer });
+    const useCase = createRenderPrintDocument({ renderer });
     const result = await useCase.execute({ document: growable });
 
     expect(result.pageCount).toBe(1);
@@ -268,7 +273,7 @@ describe('RenderPrintDocument — fit policy fill bottoms out the last page (c)'
 
   it('threads balance: true into the final render for fit.policy "fill"', async () => {
     const renderer = spyRendererFactory();
-    const useCase = new RenderPrintDocument({ renderer });
+    const useCase = createRenderPrintDocument({ renderer });
     await useCase.execute({ document: growable });
 
     expect(renderer.calls).toHaveLength(1);
@@ -277,7 +282,7 @@ describe('RenderPrintDocument — fit policy fill bottoms out the last page (c)'
 
   it('a non-fill policy threads balance: false', async () => {
     const renderer = spyRendererFactory();
-    const useCase = new RenderPrintDocument({ renderer });
+    const useCase = createRenderPrintDocument({ renderer });
     await useCase.execute({
       document: v2doc({ archetype: 'worksheet', fit: { policy: 'flow', typeScale: 'standard' } }),
     });
@@ -376,7 +381,7 @@ describe('RenderPrintDocument — short_answer keep-with-next at a page boundary
 
 describe('RenderPrintDocument — v1 legacy passthrough (d)', () => {
   it('is byte-identical to calling the legacy renderer directly', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const raw = v1doc();
 
     const { document: normalized } = validateDocument(raw);
@@ -392,7 +397,7 @@ describe('RenderPrintDocument — v1 legacy passthrough (d)', () => {
   });
 
   it('ignores context.date on the legacy path — that option does not exist before this use case', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const raw = v1doc();
     const withoutDate = await useCase.execute({ document: raw, context: { learnerName: 'Sam' } });
     const withDate = await useCase.execute({ document: raw, context: { learnerName: 'Sam', date: '2026-08-04' } });
@@ -400,7 +405,7 @@ describe('RenderPrintDocument — v1 legacy passthrough (d)', () => {
   });
 
   it('never opts into *italic* on the legacy path — a v1 document with the same markdown is byte-identical to calling the renderer directly (no italic option)', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const raw = v1doc({ blocks: [{ type: 'rich_text', md: 'Mix **bold** and *emphasis* words.' }] });
 
     const { document: normalized } = validateDocument(raw);
@@ -418,7 +423,7 @@ describe('RenderPrintDocument — v1 legacy passthrough (d)', () => {
 
 describe('RenderPrintDocument — *italic* grammar reaches v2 (spec §12.8)', () => {
   it('measurement and the final render agree: an italic run is actually embedded for a v2 document', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({
       archetype: 'worksheet',
       blocks: [{ type: 'rich_text', md: 'Mix **bold** and *emphasis* words.' }],
@@ -442,7 +447,7 @@ describe('RenderPrintDocument — *italic* grammar reaches v2 (spec §12.8)', ()
 
 describe('RenderPrintDocument — name/date prefill (e)', () => {
   it('changes the rendered bytes when learnerName/date are supplied (v2)', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'worksheet' });
 
     const blank = await useCase.execute({ document });
@@ -456,7 +461,7 @@ describe('RenderPrintDocument — name/date prefill (e)', () => {
 
 describe('RenderPrintDocument — v2 header fields wired (F3)', () => {
   it('infopage preset omits Name/Date from the printed header', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'infopage', blocks: [{ type: 'rich_text', md: 'Some teaching prose.' }] });
     const result = await useCase.execute({ document });
     const text = pdfText(result.bytes);
@@ -465,7 +470,7 @@ describe('RenderPrintDocument — v2 header fields wired (F3)', () => {
   });
 
   it('quiz/worksheet presets are unaffected — Name/Date still print', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'worksheet' });
     const result = await useCase.execute({ document });
     const text = pdfText(result.bytes);
@@ -474,7 +479,7 @@ describe('RenderPrintDocument — v2 header fields wired (F3)', () => {
   });
 
   it('header.instructions prints (under the title) when set', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'quiz', header: { instructions: 'Mark answers on your bubble card.' } });
     const result = await useCase.execute({ document });
     const text = pdfText(result.bytes);
@@ -482,7 +487,7 @@ describe('RenderPrintDocument — v2 header fields wired (F3)', () => {
   });
 
   it('header.instructions is absent by default (no archetype sets it)', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'quiz' });
     const result = await useCase.execute({ document });
     const text = pdfText(result.bytes);
@@ -490,7 +495,7 @@ describe('RenderPrintDocument — v2 header fields wired (F3)', () => {
   });
 
   it('explicit header.name/header.date:false override the archetype preset even on a quiz', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'quiz', header: { name: false, date: false } });
     const result = await useCase.execute({ document });
     const text = pdfText(result.bytes);
@@ -499,7 +504,7 @@ describe('RenderPrintDocument — v2 header fields wired (F3)', () => {
   });
 
   it('v1 legacy documents keep the unconditional Name/Date banner — no `.header` field exists on v1', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: v1doc() });
     const text = pdfText(result.bytes);
     expect(text).toMatch(/Name:/);
@@ -523,7 +528,7 @@ describe('RenderPrintDocument — gutter threads into body measurement AND drawi
   });
 
   it('body text\'s left edge equals furniture\'s content-box left edge, and flips under duplex', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document, context: { learnerName: 'Riley' } });
     expect(result.pageCount).toBe(2);
 
@@ -574,13 +579,13 @@ describe('RenderPrintDocument — gutter threads into body measurement AND drawi
   // document — and a fixed-gutter document printed double-sided puts facing
   // pages' punch margins on opposite edges of ONE sheet.
   it('reports duplex: true for a worksheet, whose gutter mirrors by page parity', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document, context: { learnerName: 'Riley' } });
     expect(result.duplex).toBe(true);
   });
 
   it('reports duplex: false for every archetype whose gutter is fixed to the left', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     for (const archetype of ['quiz', 'infopage']) {
       // eslint-disable-next-line no-await-in-loop
       const result = await useCase.execute({
@@ -600,7 +605,7 @@ describe('RenderPrintDocument — gutter threads into body measurement AND drawi
   });
 
   it('reports duplex: null on the v1 legacy path, which draws no gutter at all', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: v1doc() });
     // Null, not false: v1 has no decision to express, so the caller leaves the
     // printer on its configured default rather than inventing one.
@@ -608,7 +613,7 @@ describe('RenderPrintDocument — gutter threads into body measurement AND drawi
   });
 
   it('a non-card render keeps the plain "Page X of Y" footer — no card number, no separator', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document, context: { learnerName: 'Riley' } });
     const text = pdfText(result.bytes);
     expect(text).toContain('Page 1 of 2');
@@ -622,7 +627,7 @@ describe('RenderPrintDocument — gutter threads into body measurement AND drawi
       fit: { policy: 'flow', typeScale: 'standard' },
       blocks: document.blocks,
     });
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: quizDoc });
     expect(result.pageCount).toBe(2);
 
@@ -637,7 +642,7 @@ describe('RenderPrintDocument — gutter threads into body measurement AND drawi
   });
 
   it('context.gutter: 0 leaves body text at the plain page margin, matching furniture with gutter off', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document, context: { gutter: 0 } });
 
     const theme = createWorkbookTheme({ typeScale: 'standard', density: 'normal' });
@@ -654,28 +659,28 @@ describe('RenderPrintDocument — repository-based lookup', () => {
   it('resolves execute({id}) through the injected repository', async () => {
     const raw = v1doc({ id: 'looked-up' });
     const repository = { get: async (id) => (id === 'looked-up' ? raw : null) };
-    const useCase = new RenderPrintDocument({ repository });
+    const useCase = createRenderPrintDocument({ repository });
     const result = await useCase.execute({ id: 'looked-up' });
     expect(isPdf(result.bytes)).toBe(true);
   });
 
   it('rejects a missing id with a structured DOCUMENT_NOT_FOUND error', async () => {
     const repository = { get: async () => null };
-    const useCase = new RenderPrintDocument({ repository });
+    const useCase = createRenderPrintDocument({ repository });
     await expect(useCase.execute({ id: 'ghost' })).rejects.toMatchObject({
       name: 'ValidationError', code: 'DOCUMENT_NOT_FOUND',
     });
   });
 
   it('rejects execute({id}) with no repository configured', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     await expect(useCase.execute({ id: 'anything' })).rejects.toMatchObject({
       name: 'ValidationError', code: 'MISSING_REPOSITORY',
     });
   });
 
   it('rejects execute({}) — neither document nor id', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     await expect(useCase.execute({})).rejects.toMatchObject({
       name: 'ValidationError', code: 'MISSING_DOCUMENT',
     });
@@ -684,7 +689,7 @@ describe('RenderPrintDocument — repository-based lookup', () => {
 
 describe('RenderPrintDocument — v2 target receipt-only render warning (F6)', () => {
   it('warns that a receipt-only v2 document was rendered as a Letter PDF (v2 has no receipt path yet, Phase A)', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({
       target: ['receipt'],
       archetype: 'worksheet',
@@ -698,7 +703,7 @@ describe('RenderPrintDocument — v2 target receipt-only render warning (F6)', (
   });
 
   it('does not warn when target includes letter (even alongside receipt)', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({
       target: ['letter', 'receipt'],
       archetype: 'worksheet',
@@ -709,7 +714,7 @@ describe('RenderPrintDocument — v2 target receipt-only render warning (F6)', (
   });
 
   it('a letter-only v2 document (the common case) never carries this warning', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'worksheet' });
     const result = await useCase.execute({ document });
     expect(result.warnings).toEqual([]);
@@ -718,7 +723,7 @@ describe('RenderPrintDocument — v2 target receipt-only render warning (F6)', (
 
 describe('RenderPrintDocument — invalid documents', () => {
   it('rejects a structurally invalid document with a structured INVALID_DOCUMENT error', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     await expect(useCase.execute({ document: { schema: DOCUMENT_V2_SCHEMA } })).rejects.toMatchObject({
       name: 'ValidationError', code: 'INVALID_DOCUMENT',
     });
@@ -727,7 +732,7 @@ describe('RenderPrintDocument — invalid documents', () => {
 
 describe('RenderPrintDocument — gutter guard', () => {
   it('rejects a negative context.gutter at the use-case boundary', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'worksheet' });
     await expect(useCase.execute({ document, context: { gutter: -1 } })).rejects.toMatchObject({
       name: 'ValidationError', code: 'INVALID_GUTTER',
@@ -735,7 +740,7 @@ describe('RenderPrintDocument — gutter guard', () => {
   });
 
   it('accepts a non-negative numeric override', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'worksheet' });
     const result = await useCase.execute({ document, context: { gutter: 0 } });
     expect(isPdf(result.bytes)).toBe(true);
@@ -767,7 +772,7 @@ const sourceDoc = (over = {}) => ({
 
 describe('RenderPrintDocument — source-schema auto-publish in memory (spec §3)', () => {
   it('publishes a source document in memory and renders the answer-free page, choices resolved from the in-memory derived bank', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: sourceDoc() });
     expect(isPdf(result.bytes)).toBe(true);
     const text = pdfText(result.bytes);
@@ -780,13 +785,13 @@ describe('RenderPrintDocument — source-schema auto-publish in memory (spec §3
   it('nothing is persisted — the repository’s writePublished is never called for a proof render', async () => {
     const writePublished = () => { throw new Error('writePublished must not be called by RenderPrintDocument'); };
     const repository = { get: async () => null, writePublished, getDerivedBank: async () => null };
-    const useCase = new RenderPrintDocument({ repository });
+    const useCase = createRenderPrintDocument({ repository });
     const result = await useCase.execute({ document: sourceDoc() });
     expect(isPdf(result.bytes)).toBe(true);
   });
 
   it('is deterministic: publishing + rendering the identical source twice yields byte-identical PDFs', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const doc = sourceDoc();
     const first = await useCase.execute({ document: doc });
     const second = await useCase.execute({ document: doc });
@@ -794,7 +799,7 @@ describe('RenderPrintDocument — source-schema auto-publish in memory (spec §3
   });
 
   it('rejects an invalid source document with a structured INVALID_DOCUMENT error', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     await expect(useCase.execute({ document: sourceDoc({ id: 'BAD ID' }) })).rejects.toMatchObject({
       name: 'ValidationError', code: 'INVALID_DOCUMENT',
     });
@@ -832,7 +837,7 @@ describe('RenderPrintDocument — published documents resolve their derived bank
       get: async () => null,
       getDerivedBank: async (id, rev) => (id === 'published-fixture' && rev === 'deadbeef1' ? bank : null),
     };
-    const useCase = new RenderPrintDocument({ repository });
+    const useCase = createRenderPrintDocument({ repository });
     const result = await useCase.execute({ document: published() });
     const text = pdfText(result.bytes);
     expect(text).toContain('Red');
@@ -840,14 +845,14 @@ describe('RenderPrintDocument — published documents resolve their derived bank
   });
 
   it('a published document with no bank resolvable (no repository) throws MissingChoicesError rather than printing blank bubbles', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     await expect(useCase.execute({ document: published() })).rejects.toMatchObject({ name: 'MissingChoicesError' });
   });
 
   it('a hand-authored v2 document with NO rev never attempts a bank lookup — repository.getDerivedBank is not called', async () => {
     const getDerivedBank = () => { throw new Error('getDerivedBank must not be called without a rev'); };
     const repository = { get: async () => null, getDerivedBank };
-    const useCase = new RenderPrintDocument({ repository });
+    const useCase = createRenderPrintDocument({ repository });
     const document = v2doc({ archetype: 'worksheet' }); // no rev, no omr_response
     const result = await useCase.execute({ document });
     expect(isPdf(result.bytes)).toBe(true);
@@ -867,14 +872,14 @@ describe('RenderPrintDocument — wordbank/matching shuffle by key (spec §6.2)'
   };
 
   it('shuffles wordbank terms deterministically from (seed, variant, key) — matches deriveShuffle/applyShuffle directly', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: wordbankDoc() });
     const expected = applyShuffle(terms, deriveShuffle(555, 0, 'wb1', terms.length));
     expect(printedOrderOf(result.bytes, terms)).toEqual(expected);
   });
 
   it('edit-stability: an unrelated inserted sibling block does not change the wordbank’s shuffle', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const a = await useCase.execute({ document: wordbankDoc() });
     const b = await useCase.execute({
       document: wordbankDoc([{ type: 'rich_text', md: 'An unrelated inserted paragraph.' }]),
@@ -890,7 +895,7 @@ describe('RenderPrintDocument — wordbank/matching shuffle by key (spec §6.2)'
       seed: 777,
       blocks: [{ type: 'matching', key: 'm1', left, right }],
     });
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document });
 
     const expectedLeft = applyShuffle(left, deriveShuffle(777, 0, 'm1:left', left.length));
@@ -902,7 +907,7 @@ describe('RenderPrintDocument — wordbank/matching shuffle by key (spec §6.2)'
 
 describe('RenderPrintDocument — totalPoints threading to the score box (spec §13)', () => {
   it('sums question points ?? defaultPoints and prints "Score ____ / <N>"', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({
       archetype: 'quiz',
       defaultPoints: 2,
@@ -914,7 +919,7 @@ describe('RenderPrintDocument — totalPoints threading to the score box (spec �
   });
 
   it('prints no score line when header.scoreBox is false, even with scored questions', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'worksheet', blocks: [question(1)] }); // worksheet preset: scoreBox false
     const result = await useCase.execute({ document });
     const text = pdfText(result.bytes);
@@ -946,7 +951,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
 
   it('resolves via the injected banks.getBank, selecting applyShuffle(deriveShuffle(seed, variant, key, n)).slice(0, select)', async () => {
     const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const result = await useCase.execute({ document: bankSelectDoc() });
     const text = pdfText(result.bytes);
 
@@ -960,7 +965,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
 
   it('bank-selected items count toward totalPoints (points ?? defaultPoints)', async () => {
     const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const result = await useCase.execute({ document: bankSelectDoc({ defaultPoints: 3 }) });
     const text = pdfText(result.bytes);
     expect(text).toContain('Score ____ / 6'); // 2 selected items × defaultPoints 3
@@ -968,7 +973,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
 
   it('numbers bank-selected questions continuing after any hand-authored inline questions', async () => {
     const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const document = bankSelectDoc({
       blocks: [question(1), {
         type: 'question', bankId: 'geo-bank', select: 1, key: 'sel1',
@@ -987,7 +992,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
   // BEFORE one in the document.
   it('numbers strictly ascending in document order — a bank-select block BEFORE a hand-authored question prints "1." then "2.", not "2." then "1."', async () => {
     const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const document = bankSelectDoc({
       blocks: [{
         type: 'question', bankId: 'geo-bank', select: 1, key: 'sel1',
@@ -1005,7 +1010,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
     const bankA = { id: 'bank-a', items: [{ id: 'a1', type: 'multiple_choice', prompt: 'Prompt A', choices: ['X', 'Y'], answer: 'X' }] };
     const bankB = { id: 'bank-b', items: [{ id: 'b1', type: 'multiple_choice', prompt: 'Prompt B', choices: ['X', 'Y'], answer: 'X' }] };
     const banks = { getBank: (id) => ({ 'bank-a': bankA, 'bank-b': bankB })[id] ?? null };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const document = bankSelectDoc({
       blocks: [
         { type: 'rich_text', md: 'Section A' },
@@ -1027,7 +1032,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
   // Review finding 2: a supplied-but-unapplied option must warn, never fail silently.
   it('a supplied but unapplied bank-select filter surfaces a warning', async () => {
     const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const document = bankSelectDoc({
       blocks: [{
         type: 'question', bankId: 'geo-bank', select: 2, key: 'sel1', filter: { topics: ['geography'] },
@@ -1041,7 +1046,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
 
   it('no filter supplied -> no filter warning, and selection is unchanged either way', async () => {
     const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const withoutFilter = await useCase.execute({ document: bankSelectDoc() });
     // A no-card quiz render still warns (spec §5.3, Task 5) — this test's own
     // concern is the filter warning specifically, so it just needs that ONE
@@ -1063,7 +1068,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
 
   it('rejects an unknown bankId with a structured BANK_SELECT_BANK_NOT_FOUND error', async () => {
     const banks = { getBank: () => null };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     await expect(useCase.execute({ document: bankSelectDoc() })).rejects.toMatchObject({
       name: 'ValidationError', code: 'BANK_SELECT_BANK_NOT_FOUND',
     });
@@ -1071,7 +1076,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
 
   it('rejects select > bank.items.length with a structured BANK_SELECT_INSUFFICIENT_ITEMS error', async () => {
     const banks = { getBank: () => geoBank };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const document = bankSelectDoc({
       blocks: [{
         type: 'question', bankId: 'geo-bank', select: 10, key: 'sel1',
@@ -1090,7 +1095,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
       }],
     };
     const banks = { getBank: () => matchingBank };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const document = bankSelectDoc({
       blocks: [{
         type: 'question', bankId: 'match-bank', select: 1, key: 'sel1',
@@ -1103,7 +1108,7 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
 
   it('determinism: same (seed, variant, key) selects the same items across independent renders', async () => {
     const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
-    const useCase = new RenderPrintDocument({ banks });
+    const useCase = createRenderPrintDocument({ banks });
     const document = bankSelectDoc();
     const first = await useCase.execute({ document });
     const second = await useCase.execute({ document });
@@ -1164,7 +1169,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
   });
 
   it('renders the identical student pages a non-teacher render of the same document produces (same shuffles, same layout)', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'quiz', seed: 999, blocks: [question(1), question(2)] });
 
     const plain = await useCase.execute({ document });
@@ -1209,7 +1214,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
     };
     const snapshot = JSON.parse(JSON.stringify(document));
     const repository = { get: async () => null, getDerivedBank: async () => bank };
-    const useCase = new RenderPrintDocument({ repository });
+    const useCase = createRenderPrintDocument({ repository });
 
     const result = await useCase.execute({ document, context: { teacher: true } });
     expect(isPdf(result.bytes)).toBe(true);
@@ -1217,7 +1222,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
   });
 
   it('formats multiple_choice/multi_select/cloze/matching/short_answer answers and prints the "Answer key — <title> (variant N)" heading', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: teacherSourceDoc(), context: { teacher: true } });
     const text = pdfText(result.bytes);
 
@@ -1244,7 +1249,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
   // anywhere) gave a teacher nothing to correlate a key line against. The
   // fix labels it with the prompt text itself instead.
   it('labels a standalone short_answer key entry with its (truncated) prompt text, never the internal path-based item id', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document: teacherSourceDoc(), context: { teacher: true } });
     const text = pdfText(result.bytes);
 
@@ -1256,7 +1261,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
   });
 
   it('truncates a long standalone short_answer prompt rather than printing it in full', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const longPrompt = 'What is the exact founding year of the state capital building, to the nearest decade?';
     const document = teacherSourceDoc({
       blocks: [{ type: 'short_answer', prompt: longPrompt, answer: 'Olympia' }],
@@ -1306,7 +1311,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
       ],
     };
     const repository = { get: async () => null, getDerivedBank: async () => bank };
-    const useCase = new RenderPrintDocument({ repository });
+    const useCase = createRenderPrintDocument({ repository });
     const result = await useCase.execute({ document, context: { teacher: true } });
     const text = pdfText(result.bytes);
 
@@ -1318,7 +1323,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
   });
 
   it('formats a matching block as "<n>-<letter> …" against the SAME shuffled left/right order the student page prints', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = teacherSourceDoc();
     const result = await useCase.execute({ document, context: { teacher: true } });
     const text = pdfText(result.bytes);
@@ -1358,7 +1363,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
         },
       ],
     });
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const result = await useCase.execute({ document, context: { teacher: true } });
     const text = pdfText(result.bytes);
 
@@ -1368,7 +1373,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
   });
 
   it('a document with zero answerable items renders a bare heading and surfaces a warning, not a failure', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const document = v2doc({ archetype: 'infopage', blocks: [{ type: 'rich_text', md: 'Just some prose, nothing gradeable.' }] });
     const result = await useCase.execute({ document, context: { teacher: true } });
 
@@ -1408,7 +1413,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
       get: async () => null,
       getDerivedBank: async (id, rev) => (id === 'published-fixture' && rev === 'deadbeef1' ? bank : null),
     };
-    const useCase = new RenderPrintDocument({ repository });
+    const useCase = createRenderPrintDocument({ repository });
     const result = await useCase.execute({ document: published, context: { teacher: true } });
     const text = pdfText(result.bytes);
     // Answer 'Red' is index 0 of ['Red','Blue'] -> letter A.
@@ -1419,7 +1424,7 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
   });
 
   it('ignores context.teacher on the v1 legacy path — byte-identical to the same call without it', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     const raw = v1doc();
     const withoutTeacher = await useCase.execute({ document: raw });
     const withTeacher = await useCase.execute({ document: raw, context: { teacher: true } });
@@ -1467,7 +1472,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
   });
 
   it('rejects a card-attached render with no allocationStore configured (ALLOCATION_STORE_REQUIRED)', async () => {
-    const useCase = new RenderPrintDocument();
+    const useCase = createRenderPrintDocument();
     await expect(useCase.execute({
       document: omrSourceDoc(2), context: { freshCard: true },
     })).rejects.toMatchObject({ name: 'ValidationError', code: 'ALLOCATION_STORE_REQUIRED' });
@@ -1475,7 +1480,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('rejects a card-attached render of a document with no rev (hand-authored, unpublished v2)', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const document = v2doc({ archetype: 'worksheet' }); // no rev
     await expect(useCase.execute({
       document, context: { freshCard: true },
@@ -1484,7 +1489,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('a fresh-card render mints a card, writes a live allocation record, and returns {cardId, rowRange, recordId, status}', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({ document: omrSourceDoc(3), context: { freshCard: true } });
 
     expect(isPdf(result.bytes)).toBe(true);
@@ -1502,7 +1507,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('replays a frozen card mapping without calling the allocation store', async () => {
     const allocationStore = { allocate: () => { throw new Error('history reads must not allocate'); } };
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({
       document: omrSourceDoc(2),
       context: { cardId: '4071314', startRow: 19, historicalCard: true, learnerName: 'Learner-Three' },
@@ -1516,7 +1521,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('persists immutable section row ownership for a composed card', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({
       document: omrSourceDoc(3),
       context: {
@@ -1536,7 +1541,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('the page footer carries the card number on EVERY page, page 1 included (end-to-end, real extracted PDF text)', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     // Enough OMR questions to actually paginate — a page-1-only render could
     // not prove "every page".
     const result = await useCase.execute({
@@ -1558,7 +1563,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('prints the Student No. with offset numbering starting at startRow and no redundant instruction or range', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({
       document: omrSourceDoc(3), context: { freshCard: true, startRow: 18 },
     });
@@ -1576,7 +1581,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('a reprint (supplied cardId) prints the "use your card" reminder line, not the first-use instruction', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const first = await useCase.execute({ document: omrSourceDoc(2), context: { freshCard: true } });
     const { cardId } = first.allocation;
 
@@ -1595,7 +1600,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('teacher-mode key numbers match the offset student-sheet numbers (startRow 18, spec §5.4 parity)', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({
       document: omrSourceDoc(3),
       context: { freshCard: true, startRow: 18, teacher: true },
@@ -1621,7 +1626,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
   it('a failure AFTER the allocation write attaches the allocation snapshot to the thrown error, and the record really is durable', async () => {
     const allocationStore = fakeAllocationStore();
     const explodingRenderer = () => ({ render: async () => { throw new Error('renderer exploded'); } });
-    const useCase = new RenderPrintDocument({ allocationStore, renderer: explodingRenderer });
+    const useCase = createRenderPrintDocument({ allocationStore, renderer: explodingRenderer });
 
     const err = await useCase.execute({
       document: omrSourceDoc(2), context: { freshCard: true },
@@ -1643,7 +1648,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('a FIT_OVERSET rejection (a real, non-injected failure) also attaches the allocation snapshot', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     // 40 row-mappable questions with a padded prompt overflows both densities
     // (the same "overlong fixture" shape as the fit-policy describe block
     // above, just row-mappable so card allocation is legal for it).
@@ -1676,7 +1681,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     const allocationStore = fakeAllocationStore();
     // A hand-authored (unpublished, no `rev`) v2 document: `#allocateCard`
     // throws (ALLOCATION_REQUIRES_REV) before ever calling the store.
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const err = await useCase.execute({
       document: v2doc({ archetype: 'quiz', blocks: [question(1)] }),
       context: { freshCard: true },
@@ -1690,7 +1695,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     let allocateCalls = 0;
     const originalAllocate = allocationStore.allocate.bind(allocationStore);
     allocationStore.allocate = async (...args) => { allocateCalls += 1; return originalAllocate(...args); };
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     // question(1) fixture's itemId never resolves in any bank (no bank-select,
     // no omr_response) — planRows must fail to find it, not silently allocate.
     const document = v2doc({ archetype: 'quiz', rev: 'deadbeef1', blocks: [question(1)] });
@@ -1702,7 +1707,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('a collision with an existing live record on the same card+rows surfaces as a structured DomainInvariantError, and writes no second record', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const first = await useCase.execute({ document: omrSourceDoc(2), context: { freshCard: true } });
     const { cardId } = first.allocation;
 
@@ -1720,7 +1725,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('determinism: an identical re-render with the SAME context (fixed cardId, not fresh) is byte-identical (store idempotent-reprint path)', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const document = omrSourceDoc(3);
     // A fixed, EXPLICIT cardId in both calls — `freshCard` inherently mints a
     // NEW opaque card id each time (by design, spec §5.2), so it is the
@@ -1776,7 +1781,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('worksheet mixed mode: only omr:true questions consume rows — a write-on question between two OMR ones does not widen the rowRange (planRows integration)', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({ document: mixedWorksheetDoc('a'), context: { freshCard: true } });
     // Only 2 rows consumed (w1, w3) — NOT 3 — proving planRows skipped the
     // non-omr write-on question when computing the card's rowRange.
@@ -1785,7 +1790,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('mixed worksheet prints EXACT card row numbers for OMR questions and NO number for the write-on question (spec §5.3, fix round 1 finding 1 — printed numbers ARE card rows)', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({ document: mixedWorksheetDoc('b'), context: { freshCard: true } });
     expect(result.allocation.rowRange).toEqual({ start: 1, end: 2 });
 
@@ -1806,7 +1811,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('mixed worksheet at startRow 10: OMR questions print 10 and 11 (still skipping the write-on question), never 10/11/12', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({
       document: mixedWorksheetDoc('c'), context: { freshCard: true, startRow: 10 },
     });
@@ -1822,7 +1827,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('quiz archetype regression: with EVERY question row-consuming (no gaps), numbering is unchanged — 1, 2, 3 print in document order', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({ document: omrSourceDoc(3), context: { freshCard: true } });
     expect(result.allocation.rowRange).toEqual({ start: 1, end: 3 });
 
@@ -1834,7 +1839,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('teacher key: an unnumbered (non-row-consuming but still bank-answerable) question falls back to its prompt-clip label, never "undefined."', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     // w2 here IS bank-answerable (an omr_response-backed multiple_choice)
     // but explicitly opts OUT of row consumption (`omr: false`) — a
     // worksheet item a teacher grades by eye, never bubbled. It still gets a
@@ -1875,7 +1880,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('a quiz archetype rendered without any card context is legal but warns "rendered without card allocation" — even with a store configured, it does not allocate', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({ document: omrSourceDoc(2) });
     expect(isPdf(result.bytes)).toBe(true);
     expect(result.allocation).toBeNull();
@@ -1886,7 +1891,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('a worksheet rendered without card context never warns (the "no card" warning is quiz-only)', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const document = v2doc({ archetype: 'worksheet' });
     const result = await useCase.execute({ document });
     expect(result.warnings).toEqual([]);
@@ -1895,7 +1900,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('a v1 legacy document ignores card context entirely and returns allocation: null', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({ document: v1doc(), context: { freshCard: true } });
     expect(isPdf(result.bytes)).toBe(true);
     expect(result.allocation).toBeNull();
@@ -1903,14 +1908,14 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
   it('a non-card v2 render (no cardId/freshCard) returns allocation: null even with a store configured', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({ document: v2doc({ archetype: 'worksheet' }) });
     expect(result.allocation).toBeNull();
   });
 
   it('threads context.learnerId into the allocation record for supersede scoping', async () => {
     const allocationStore = fakeAllocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore });
+    const useCase = createRenderPrintDocument({ allocationStore });
     const result = await useCase.execute({
       document: omrSourceDoc(2), context: { freshCard: true, learnerId: 'kid-1' },
     });

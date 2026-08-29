@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { LogStrengthRun } from './LogStrengthRun.mjs';
 import { SessionService } from '../services/SessionService.mjs';
 import { expandWorkout } from '#domains/fitness/workout/workout.mjs';
+import { serializeSession } from '../sessionRecords.mjs';
 
 const HH = 'default';
 const SESSION_ID = '20260811092020';
@@ -27,7 +28,7 @@ function makeStore(sessionDoc) {
     saved,
     rosterBuilds: 0,
     async save(session, householdId) {
-      const data = typeof session.toJSON === 'function' ? session.toJSON() : session;
+      const data = serializeSession(session);
       saved.set(`${householdId}:${data.sessionId}`, data);
     },
     async findById(id, householdId) {

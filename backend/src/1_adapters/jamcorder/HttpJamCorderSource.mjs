@@ -62,8 +62,8 @@ export class HttpJamCorderSource extends IMidiRecordingSource {
     return out;
   }
 
-  async download(ref) {
-    return this.#binaryGet(`http://${this.#host}${ref.downloadPath}`);
+  async fetchRecording(recording) {
+    return this.#binaryGet(`http://${this.#host}/sdcard${recording.recordingId}`);
   }
 
   async #walk(dirPath, depth, out) {
@@ -76,7 +76,7 @@ export class HttpJamCorderSource extends IMidiRecordingSource {
       if (entry.isDirectory) {
         await this.#walk(childListPath, depth + 1, out);
       } else if (name.toLowerCase().endsWith('.mid')) {
-        out.push({ listPath: childListPath, downloadPath: `/sdcard${childListPath}` });
+        out.push({ recordingId: childListPath });
       }
     }
   }

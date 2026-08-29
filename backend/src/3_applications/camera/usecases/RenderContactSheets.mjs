@@ -14,11 +14,7 @@
  * @module 3_applications/camera/usecases/RenderContactSheets
  */
 
-import path from 'path';
-import { mkdir } from 'fs/promises';
-
 import { sampleRateFor, sheetName } from '#domains/camera/sheetPlan.mjs';
-import { buildSheetMetadata, buildSheetDescription } from '#domains/camera/sheetMetadata.mjs';
 
 /**
  * @param {Object} args
@@ -41,9 +37,11 @@ export async function renderContactSheets({
   detections = [],
   profile,
   provenance = {},
+  sheetArtifacts,
   logger = console,
 }) {
-  await mkdir(outDir, { recursive: true });
+  if (!sheetArtifacts) throw new Error('renderContactSheets requires sheetArtifacts');
+  await sheetArtifacts.prepare(outDir);
 
   const [cols, rows] = String(profile.grid ?? '6x6').split('x').map(Number);
   const frames = profile.frames ?? cols * rows;
@@ -70,12 +68,12 @@ export async function renderContactSheets({
     const seekSeconds = Math.max(0, (from - segment.start) / 1000);
     const durationSeconds = Math.max(1, (to - from) / 1000);
     const name = sheetName(entry);
-    const outPath = path.join(outDir, `${name}.jpg`);
+    const output = sheetArtifacts.target(outDir, name);
 
     try {
       const rendered = await encoder.encodeContactSheet({
         inputPath: segment.path,
-        outPath,
+        outPath: output.locator,
         fps: sampleRateFor(
           durationSeconds * 1000,
           frames,
@@ -95,10 +93,9 @@ export async function renderContactSheets({
       }
 
       await encoder.writeSheetMetadata({
-        filePath: outPath,
+        filePath: output.locator,
         dateTaken: from,
-        description: buildSheetDescription({ camera, entry, detections }),
-        yaml: buildSheetMetadata({
+        metadata: {
           camera,
           entry,
           detections,
@@ -109,10 +106,10 @@ export async function renderContactSheets({
             tileWidth: profile.tileWidth,
             spanSeconds: Math.round(durationSeconds),
           },
-        }),
+        },
       });
 
-      written.push(path.basename(outPath));
+      written.push(output.name);
     } catch (err) {
       // One bad span must not cost the day its remaining sheets.
       logger.warn?.('camera.sheet.failed', { camera, sheet: name, error: err.message });

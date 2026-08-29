@@ -5,11 +5,7 @@ import {
   decodeSingleSeries,
   encodeSingleSeries,
   encodeToRLE,
-  isAllNullSeries,
-  parseToUnixMs,
-  formatTimestamp,
-  prepareTimelineForApi,
-  prepareTimelineForStorage
+  isAllNullSeries
 } from '#domains/fitness/services/TimelineService.mjs';
 
 describe('TimelineService', () => {
@@ -67,35 +63,35 @@ describe('TimelineService', () => {
 
   describe('decodeSingleSeries', () => {
     test('decodes compact RLE with singles', () => {
-      const encoded = JSON.stringify([120, 125, 130]);
+      const encoded = [120, 125, 130];
       const result = decodeSingleSeries(encoded);
       expect(result).toEqual([120, 125, 130]);
     });
 
     test('decodes RLE runs', () => {
-      const encoded = JSON.stringify([[120, 3], 125]);
+      const encoded = [[120, 3], 125];
       const result = decodeSingleSeries(encoded);
       expect(result).toEqual([120, 120, 120, 125]);
     });
 
     test('decodes classic RLE format', () => {
-      const encoded = JSON.stringify([[120, 1], [125, 2], [130, 1]]);
+      const encoded = [[120, 1], [125, 2], [130, 1]];
       const result = decodeSingleSeries(encoded);
       expect(result).toEqual([120, 125, 125, 130]);
     });
 
     test('handles null runs', () => {
-      const encoded = JSON.stringify([[null, 3], 120]);
+      const encoded = [[null, 3], 120];
       const result = decodeSingleSeries(encoded);
       expect(result).toEqual([null, null, null, 120]);
     });
 
     test('returns null for all-null series', () => {
-      const encoded = JSON.stringify([[null, 10]]);
+      const encoded = [[null, 10]];
       expect(decodeSingleSeries(encoded)).toBeNull();
     });
 
-    test('returns null for invalid JSON', () => {
+    test('returns null for a non-array value', () => {
       expect(decodeSingleSeries('invalid')).toBeNull();
     });
 
@@ -105,17 +101,17 @@ describe('TimelineService', () => {
   });
 
   describe('encodeSingleSeries', () => {
-    test('encodes array to JSON RLE', () => {
+    test('encodes array to RLE entries', () => {
       const result = encodeSingleSeries([120, 120, 125]);
-      expect(JSON.parse(result)).toEqual([[120, 2], 125]);
+      expect(result).toEqual([[120, 2], 125]);
     });
   });
 
   describe('decodeSeries', () => {
     test('decodes object of series', () => {
       const series = {
-        John: JSON.stringify([[120, 3]]),
-        Jane: JSON.stringify([125, 130])
+        John: [[120, 3]],
+        Jane: [125, 130]
       };
       const result = decodeSeries(series);
       expect(result.John).toEqual([120, 120, 120]);
@@ -130,8 +126,8 @@ describe('TimelineService', () => {
 
     test('skips all-null series', () => {
       const series = {
-        John: JSON.stringify([[null, 10]]),
-        Jane: JSON.stringify([120, 125])
+        John: [[null, 10]],
+        Jane: [120, 125]
       };
       const result = decodeSeries(series);
       expect(result.John).toBeUndefined();
@@ -151,8 +147,8 @@ describe('TimelineService', () => {
         Jane: [130, 130, 130]
       };
       const result = encodeSeries(series);
-      expect(JSON.parse(result.John)).toEqual([[120, 2], 125]);
-      expect(JSON.parse(result.Jane)).toEqual([[130, 3]]);
+      expect(result.John).toEqual([[120, 2], 125]);
+      expect(result.Jane).toEqual([[130, 3]]);
     });
 
     test('skips all-null series', () => {
@@ -170,76 +166,4 @@ describe('TimelineService', () => {
     });
   });
 
-  describe('parseToUnixMs', () => {
-    test('passes through numbers', () => {
-      expect(parseToUnixMs(1736596800000)).toBe(1736596800000);
-    });
-
-    test('parses numeric strings', () => {
-      expect(parseToUnixMs('1736596800000')).toBe(1736596800000);
-    });
-
-    test('parses ISO date strings', () => {
-      const result = parseToUnixMs('2026-01-11T12:00:00.000Z');
-      expect(result).toBe(new Date('2026-01-11T12:00:00.000Z').getTime());
-    });
-
-    test('returns null for non-parseable input', () => {
-      expect(parseToUnixMs('invalid-date')).toBeNull();
-      expect(parseToUnixMs({})).toBeNull();
-    });
-
-    test('handles null/undefined as 0', () => {
-      // Number(null) = 0, Number(undefined) = NaN
-      expect(parseToUnixMs(null)).toBe(0);
-      expect(parseToUnixMs(undefined)).toBeNull();
-    });
-  });
-
-  describe('formatTimestamp', () => {
-    test('formats ms to ISO string', () => {
-      // Use a known timestamp
-      const ts = new Date('2026-01-11T12:00:00.000Z').getTime();
-      const result = formatTimestamp(ts);
-      expect(result).toBe('2026-01-11T12:00:00.000Z');
-    });
-
-    test('returns null for invalid input', () => {
-      expect(formatTimestamp(null)).toBeNull();
-      expect(formatTimestamp(NaN)).toBeNull();
-    });
-  });
-
-  describe('prepareTimelineForApi', () => {
-    test('decodes series and parses event timestamps', () => {
-      const timeline = {
-        series: { John: JSON.stringify([[120, 3]]) },
-        events: [{ timestamp: '2026-01-11T12:00:00.000Z', type: 'start' }]
-      };
-      const result = prepareTimelineForApi(timeline);
-      expect(result.series.John).toEqual([120, 120, 120]);
-      expect(result.events[0].timestamp).toBe(new Date('2026-01-11T12:00:00.000Z').getTime());
-    });
-
-    test('handles empty timeline', () => {
-      expect(prepareTimelineForApi(null)).toEqual({ series: {}, events: [] });
-      expect(prepareTimelineForApi({})).toEqual({ series: {}, events: [] });
-    });
-  });
-
-  describe('prepareTimelineForStorage', () => {
-    test('encodes series for storage', () => {
-      const timeline = {
-        series: { John: [120, 120, 125] },
-        events: [{ type: 'start' }]
-      };
-      const result = prepareTimelineForStorage(timeline);
-      expect(JSON.parse(result.series.John)).toEqual([[120, 2], 125]);
-      expect(result.events).toEqual([{ type: 'start' }]);
-    });
-
-    test('handles empty timeline', () => {
-      expect(prepareTimelineForStorage(null)).toEqual({ series: {}, events: [] });
-    });
-  });
 });

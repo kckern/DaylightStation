@@ -6,6 +6,8 @@
 // first-playable id is an accepted match candidate.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
+import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
+import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 
 function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -52,10 +54,12 @@ describe('WakeAndLoadService — playback watchdog on container dispatches', () 
       prewarm: vi.fn().mockResolvedValue({ status: 'ok', token: 't0k3n', contentId: 'plex:347695' }),
     };
     svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn() },
       broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
       prewarmService,
       logger: makeLogger(),
     });

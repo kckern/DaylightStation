@@ -1,6 +1,7 @@
 // backend/src/3_applications/feed/services/HeadlineService.mjs
 import stringSimilarity from 'string-similarity';
 import { canonicalizeFeedUrl } from '#domains/feed/feedItem.mjs';
+import { isFeedConfigRepository } from '../ports/IFeedConfigRepository.mjs';
 
 /**
  * HeadlineService
@@ -14,19 +15,18 @@ import { canonicalizeFeedUrl } from '#domains/feed/feedItem.mjs';
 export class HeadlineService {
   #headlineStore;
   #harvester;
-  #dataService;
-  #configPath;
+  #configRepository;
   #defaults;
   #webContentGateway;
   #blockedImageUrls;
   #blockedImagePatterns;
   #logger;
 
-  constructor({ headlineStore, harvester, dataService, config = {}, webContentGateway, logger = console }) {
+  constructor({ headlineStore, harvester, configRepository, config = {}, webContentGateway, logger = console }) {
+    if (!isFeedConfigRepository(configRepository)) throw new Error('HeadlineService requires configRepository');
     this.#headlineStore = headlineStore;
     this.#harvester = harvester;
-    this.#dataService = dataService;
-    this.#configPath = config.configPath || 'config/feed';
+    this.#configRepository = configRepository;
     this.#defaults = {
       retentionHours: 48,
       maxPerSource: 10,
@@ -49,7 +49,7 @@ export class HeadlineService {
    * @returns {Object}
    */
   #getUserConfig(username) {
-    return this.#dataService.user.read(this.#configPath, username) || {};
+    return this.#configRepository.getHeadlineConfig(username) || {};
   }
 
   /**

@@ -4,7 +4,7 @@
  * jobs.yml id. Layer: ADAPTER (1_adapters/harvester). Delegates all work.
  * @module adapters/harvester/other/PianoMp3Harvester
  */
-import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
+import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 
 export class PianoMp3Harvester extends IHarvester {
   #convertUseCase; #logger;

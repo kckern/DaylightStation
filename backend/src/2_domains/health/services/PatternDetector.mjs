@@ -202,14 +202,6 @@ const PRIMITIVES = {
 
 export class PatternDetector {
   /**
-   * @param {object} [opts]
-   * @param {object} [opts.logger] structured logger; falls back to console
-   */
-  constructor({ logger } = {}) {
-    this.logger = logger || console;
-  }
-
-  /**
    * Detect patterns from windows + playbook entries.
    *
    * @param {object} args
@@ -225,13 +217,7 @@ export class PatternDetector {
     const detections = [];
     for (const playbookEntry of playbookPatterns) {
       const detection = this.#evaluate(playbookEntry, windows);
-      if (detection) {
-        detections.push(detection);
-        this.logger.info?.('pattern_detector.match', {
-          name: detection.name,
-          confidence: detection.confidence,
-        });
-      }
+      if (detection) detections.push(detection);
     }
     return detections;
   }
@@ -255,10 +241,6 @@ export class PatternDetector {
       if (METADATA_KEYS.has(key)) continue;
       const fn = PRIMITIVES[key];
       if (!fn) {
-        this.logger.warn?.('pattern_detector.unknown_primitive', {
-          name: entry.name,
-          primitive: key,
-        });
         return null;
       }
       const result = fn(windows, threshold, entry);

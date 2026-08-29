@@ -9,15 +9,4 @@ export class FeedbackEntry {
     this.related_rules = data.related_rules || [];
   }
 
-  toJSON() {
-    return {
-      date: this.date,
-      cycle_id: this.cycle_id,
-      type: this.type,
-      content: this.content,
-      related_goals: this.related_goals,
-      related_beliefs: this.related_beliefs,
-      related_rules: this.related_rules,
-    };
-  }
 }

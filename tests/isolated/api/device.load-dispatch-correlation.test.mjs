@@ -9,6 +9,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
+import { DeviceContentDispatchService } from '#apps/devices/services/DeviceContentDispatchService.mjs';
 
 function findHandler(router, path, method = 'get') {
   const layer = router.stack.find(
@@ -35,9 +36,12 @@ describe('GET /device/:deviceId/load — dispatchId correlation', () => {
       execute: vi.fn().mockResolvedValue({ ok: true, deviceId: 'tv', totalElapsedMs: 5 }),
     };
     router = createDeviceRouter({
-      deviceService: { get: vi.fn(() => null), listDevices: vi.fn(() => []) },
-      wakeAndLoadService,
-      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+      dispatchService: new DeviceContentDispatchService({
+        wakeAndLoad: wakeAndLoadService,
+        idempotency: { runWithIdempotency: vi.fn() },
+        configuration: { device: () => null },
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+      }),
     });
     handler = findHandler(router, '/:deviceId/load', 'get');
   });

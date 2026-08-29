@@ -27,13 +27,18 @@ function makeSession(showId, date) {
 
 function makeContext(allShows, playablesByShow = {}, recentSessions = [], config = {}) {
   return {
+    contentCatalog: { canonicalize: (value) => {
+      const localId = String(value).replace(/^plex:/, '');
+      return { source: 'plex', localId, contentId: `plex:${localId}` };
+    } },
     recentSessions,
-    fitnessConfig: {
-      suggestions: {
-        discovery_lapsed_days: 30,
-        discovery_lapsed_weight: 0.7,
-        ...config,
-      },
+    suggestionPolicy: {
+      discoveryLapsedDays: config.discovery_lapsed_days ?? 30,
+      discoveryLapsedWeight: config.discovery_lapsed_weight ?? 0.7,
+      discoveryExcludedShowIds: config.discovery_exclude_shows || [],
+      discoveryExcludedLabels: config.discovery_exclude_labels || [],
+      governedLabels: [], warmupTitlePatterns: [], warmupDescriptionTags: [],
+      minimumDurationSeconds: config.discovery_min_duration_seconds ?? 600,
     },
     fitnessPlayableService: {
       listFitnessShows: async () => ({ shows: allShows }),

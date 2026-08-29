@@ -20,16 +20,22 @@ function fakes() {
   const haCalls = [];
   return {
     repo, saved, events, portalCalls, haCalls,
-    bus: { broadcast(topic, payload) { events.push({ topic, payload }); } },
+    notifier: { publishState(payload) { events.push({ topic: 'shutdown.state', payload }); } },
     portal: { async setLockdown(value) { portalCalls.push(value); } },
-    ha: { async callService(...args) { haCalls.push(args); } },
+    cue: { async announce(value) { haCalls.push(value); } },
     invalid() { result = { state: null, invalid: true }; },
   };
 }
 
+const policy = () => ({
+  durationSeconds: config.duration_seconds,
+  reconcileSeconds: config.reconcile_seconds,
+  targets: ['school:portal', 'piano:yellow-room-tablet'],
+});
+
 test('activation persists the configured targets, publishes first, and resets the duration on repeat scan', async () => {
   const f = fakes();
-  const service = new ShutdownService({ repo: f.repo, eventBus: f.bus, getConfig: () => config, haGateway: f.ha, portal: f.portal });
+  const service = new ShutdownService({ repo: f.repo, notifier: f.notifier, getPolicy: policy, cue: f.cue, portal: f.portal });
   const first = await service.activate({ readerId: 'study-omr', tagUid: '04aa660fcb2a81', now: 1_000 });
   const repeat = await service.activate({ readerId: 'study-omr', tagUid: '04aa660fcb2a81', now: 2_000 });
   assert.equal(first.lockedUntil, '1970-01-01T00:30:01.000Z');
@@ -45,7 +51,7 @@ test('activation persists the configured targets, publishes first, and resets th
 test('malformed runtime YAML fails closed and sends an indefinite Portal lock', async () => {
   const f = fakes();
   f.invalid();
-  const service = new ShutdownService({ repo: f.repo, eventBus: f.bus, getConfig: () => config, portal: f.portal });
+  const service = new ShutdownService({ repo: f.repo, notifier: f.notifier, getPolicy: policy, portal: f.portal });
   await service.reconcile();
   assert.equal((await service.status('school:portal')).locked, true);
   assert.equal(f.events[0].payload.locked, true);
@@ -57,7 +63,7 @@ test('failed Portal synchronization is retried without changing the persisted lo
   const f = fakes();
   let attempts = 0;
   const portal = { async setLockdown() { attempts += 1; if (attempts === 1) throw new Error('offline'); } };
-  const service = new ShutdownService({ repo: f.repo, eventBus: f.bus, getConfig: () => config, portal, logger: { warn() {} } });
+  const service = new ShutdownService({ repo: f.repo, notifier: f.notifier, getPolicy: policy, portal, logger: { warn() {} } });
   await service.activate({ readerId: 'study-omr', tagUid: '04aa660fcb2a81', now: Date.now() });
   await service.reconcile();
   assert.equal(attempts, 2);

@@ -3,7 +3,11 @@
 
 import { createGratitudeRouter } from '#api/v1/routers/gratitude.mjs';
 import { GratitudeHouseholdService } from '#apps/gratitude/services/GratitudeHouseholdService.mjs';
+import { GratitudeCardPrintService } from '#apps/gratitude/services/GratitudeCardPrintService.mjs';
 import { createGratitudeServices } from '../bootstrap.mjs';
+import { TemporaryImagePrintGateway } from '#adapters/hardware/thermal-printer/TemporaryImagePrintGateway.mjs';
+import { GratitudeEvents } from '#apps/events/RealtimePublications.mjs';
+import { nowTs } from '#system/utils/index.mjs';
 
 /**
  * Create gratitude API router
@@ -28,16 +32,24 @@ export function createGratitudeApiRouter(config) {
 
   // Application service for household-related helpers
   const gratitudeHouseholdService = new GratitudeHouseholdService({
-    configService,
+    householdDirectory: {
+      timezone: (id) => configService.getHouseholdTimezone?.(id),
+      defaultHouseholdId: () => configService.getDefaultHouseholdId(),
+      userIds: (id) => configService.getHouseholdUsers?.(id),
+      userProfile: (id) => configService.getUserProfile?.(id),
+    },
     gratitudeService: gratitudeServices.gratitudeService
+  });
+  const cardPrintService = new GratitudeCardPrintService({
+    printerRegistry,
+    imagePrintGateway: new TemporaryImagePrintGateway(),
   });
 
   return createGratitudeRouter({
     gratitudeService: gratitudeServices.gratitudeService,
-    configService,
     gratitudeHouseholdService,
-    broadcastToWebsockets,
-    printerRegistry,
+    gratitudeEvents: new GratitudeEvents({ publish: broadcastToWebsockets, timestamp: nowTs }),
+    cardPrintService,
     createGratitudeCardCanvas,
     logger
   });

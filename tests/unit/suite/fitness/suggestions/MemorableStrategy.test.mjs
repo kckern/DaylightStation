@@ -21,12 +21,17 @@ function makeSession(contentId, showId, showTitle, title, date, sufferScore) {
 
 function makeContext(sessions, config = {}) {
   return {
-    fitnessConfig: {
-      suggestions: {
-        memorable_lookback_days: 90,
-        memorable_max: 2,
-        ...config,
+    contentCatalog: {
+      canonicalize: (value) => {
+        const localId = String(value).replace(/^plex:/, '');
+        return { source: 'plex', localId, contentId: `plex:${localId}` };
       },
+      describeItem: async () => null,
+    },
+    suggestionPolicy: {
+      memorableLookbackDays: config.memorable_lookback_days ?? 90,
+      memorableMax: config.memorable_max ?? 2,
+      memorablePoolSize: config.memorable_pool_size ?? 10,
     },
     sessionDatastore: {
       findInRange: async () => sessions,

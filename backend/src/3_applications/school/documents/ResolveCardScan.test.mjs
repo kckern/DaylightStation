@@ -10,10 +10,15 @@
 import { describe, it, expect } from 'vitest';
 import { PublishPrintDocument } from './PublishPrintDocument.mjs';
 import { RenderPrintDocument } from './RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { ResolveCardScan } from './ResolveCardScan.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
 import { deriveShuffle, applyShuffle } from '#domains/school/documents/shuffle.mjs';
+
+const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
+  rendering: createPrintDocumentRendering(), ...deps,
+});
 
 const richText = (md) => ({ type: 'rich_text', md });
 
@@ -111,7 +116,7 @@ async function publishAndAllocate({
   const publisher = new PublishPrintDocument({ repository });
   const { id, rev } = await publisher.execute({ source });
   const published = await repository.getPublished(id, rev);
-  const renderer = new RenderPrintDocument({ repository, allocationStore });
+  const renderer = createRenderPrintDocument({ repository, allocationStore });
   const result = await renderer.execute({ document: published, context });
   return { allocation: result.allocation, published };
 }
@@ -445,7 +450,7 @@ describe('execute — row results carry concepts and renderedAt (R2)', () => {
     const publisher = new PublishPrintDocument({ repository });
     const { id, rev } = await publisher.execute({ source });
     const published = await repository.getPublished(id, rev);
-    const renderer = new RenderPrintDocument({ repository, allocationStore, banks });
+    const renderer = createRenderPrintDocument({ repository, allocationStore, banks });
     const { allocation } = await renderer.execute({ document: published, context: { freshCard: true } });
     const [record] = await allocationStore.findByCard(allocation.cardId);
 
@@ -847,7 +852,7 @@ describe('execute — variant pinned against the RECORD, not the published docum
     // carrying. The override lives only in this in-memory document, never
     // persisted back to the published artifact `repository.getPublished`
     // will keep returning at variant 0.
-    const renderer = new RenderPrintDocument({ repository, allocationStore, banks });
+    const renderer = createRenderPrintDocument({ repository, allocationStore, banks });
     const { allocation } = await renderer.execute({
       document: { ...published, variant: 1 },
       context: { freshCard: true },
@@ -895,7 +900,7 @@ describe('execute — row-mapping integrity vs mutable external banks (F4 review
     const publisher = new PublishPrintDocument({ repository });
     const { id, rev } = await publisher.execute({ source });
     const published = await repository.getPublished(id, rev);
-    const renderer = new RenderPrintDocument({ repository, allocationStore, banks });
+    const renderer = createRenderPrintDocument({ repository, allocationStore, banks });
     const { allocation } = await renderer.execute({ document: published, context: { freshCard: true } });
     const [record] = await allocationStore.findByCard(allocation.cardId);
     // Sanity: the fix (RenderPrintDocument#allocateCard) actually persisted

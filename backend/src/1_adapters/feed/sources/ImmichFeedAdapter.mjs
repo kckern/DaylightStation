@@ -8,7 +8,7 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
-import { buildPhotoTitle, formatPhotoDate } from '../../content/gallery/immich/photoLabels.mjs';
+import { buildPhotoTitle, formatPhotoDate } from '#shared/content/immich/photoLabels.mjs';
 
 export class ImmichFeedAdapter extends IFeedSourceAdapter {
   #contentQueryPort;

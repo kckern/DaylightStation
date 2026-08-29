@@ -56,10 +56,6 @@ export class SlotColor {
     return this.#value;
   }
 
-  /** @returns {string} */
-  toJSON() {
-    return this.#value;
-  }
 }
 
 export default SlotColor;

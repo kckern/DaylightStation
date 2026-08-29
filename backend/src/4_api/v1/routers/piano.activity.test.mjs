@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -20,7 +21,7 @@ function appWith({ isActivityConfigured, getRecentCourseActivity } = {}) {
 
   const app = express();
   app.use(express.json());
-  app.use('/api/v1/piano', createPianoRouter({ pianoContainer, logger: silentLogger }));
+  app.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({ pianoContainer, logger: silentLogger })));
   return { app };
 }
 

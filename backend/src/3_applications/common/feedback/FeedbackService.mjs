@@ -1,7 +1,5 @@
-import path from 'path';
-import fs from 'fs';
-import { loadYaml, saveYaml, listYamlFiles, deleteYaml } from '#system/utils/FileIO.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
+import { feedbackItemRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 /**
  * FeedbackService — app-wide voice-feedback capture.
@@ -44,35 +42,23 @@ const TRANSCRIBE_PROMPT = 'A short spoken software-feedback note: a bug report, 
  * @param {string} id - '{YYYYMMDDHHMMSS}_{rand}'
  * @returns {string}
  */
-export function feedbackItemPath(root, app, id) {
-  // id is '{YYYYMMDDHHMMSS}_{rand}' — 14 digits total; DD/HH/MM/SS after the
-  // captured YYYY/MM leaves 8 digits, not 10 (\d{10} would demand 16).
-  const m = /^(\d{4})(\d{2})\d{8}_/.exec(id);
-  if (!m) throw new Error(`unpartitionable feedback id: ${id}`);
-  return path.join(root, app, `${m[1]}-${m[2]}`, `${id}.yml`);
-}
-
 export class FeedbackService {
   /**
    * @param {Object} deps
-   * @param {Object} deps.configService
    * @param {Object} [deps.transcriptionService]
    * @param {Object} [deps.logger]
    * @param {Object} [deps.notificationService] - optional; when wired, each
    *   arriving item raises an alert (see #notifyArrival). Optional because
    *   capture must work whether or not anyone is listening.
    */
-  constructor({ configService, transcriptionService = null, logger = console, notificationService = null }) {
-    this.config = configService;
+  constructor({ feedbackRepository, transcriptionService = null, logger = console, notificationService = null, resourcePresenter = (ref) => ref }) {
+    if (!feedbackRepository) throw new Error('FeedbackService requires a feedbackRepository dependency');
+    this.repository = feedbackRepository;
     this.transcription = transcriptionService;
     this.logger = logger;
     this.notifications = notificationService;
-    this.audioRoot = path.join(configService.getMediaDir(), 'audio', 'feedback');
-    this.itemsRoot = configService.getHouseholdPath('feedback');
+    this.resourcePresenter = resourcePresenter;
   }
-
-  _itemsDir(app) { return safeApp(app) ? path.join(this.itemsRoot, app) : null; }
-  _audioDir(app) { return safeApp(app) ? path.join(this.audioRoot, app) : null; }
 
   /**
    * Create a feedback item: save audio, write the item, kick off background
@@ -80,7 +66,6 @@ export class FeedbackService {
    */
   async create({ app, audioBuffer = null, mimeType = 'audio/webm', durationMs = 0, context = {}, logs = null }) {
     if (!safeApp(app)) throw new Error('invalid app');
-    const audioDir = this._audioDir(app);
 
     const created = new Date();
     const stamp = created.toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDhhmmss
@@ -89,9 +74,7 @@ export class FeedbackService {
     const ext = EXT_BY_MIME[mimeType] || 'webm';
     let audioRel = null;
     if (hasAudio) {
-      fs.mkdirSync(audioDir, { recursive: true });
-      fs.writeFileSync(path.join(audioDir, `${id}.${ext}`), audioBuffer);
-      audioRel = path.posix.join('audio', 'feedback', app, `${id}.${ext}`); // relative to mediaDir
+      audioRel = this.repository.saveAudio({ app, id, extension: ext, bytes: audioBuffer });
     }
 
     const canTranscribe = hasAudio && !!this.transcription;
@@ -109,7 +92,7 @@ export class FeedbackService {
     };
     // saveYaml creates the month dir (and every parent) before writing —
     // see FileIO.mjs saveYaml's own fs.mkdirSync(dir, { recursive: true }).
-    saveYaml(feedbackItemPath(this.itemsRoot, app, id), item);
+    this.repository.save(item);
     this.logger.info?.('feedback.created', { app, id, durationMs: item.durationMs, hasAudio, willTranscribe: canTranscribe });
 
     this._notifyArrival(item);
@@ -149,7 +132,9 @@ export class FeedbackService {
         // endpoint, which is complete and returns the whole item — transcript,
         // context and the attached log ring. A JSON page beats a 404; point this
         // at the UI the day one exists.
-        actions: [{ label: 'Read the report', action: 'open', data: { url: `/api/v1/feedback/${item.app}/${item.id}` } }],
+        actions: [{ label: 'Read the report', action: 'open', data: {
+          url: this.resourcePresenter(feedbackItemRef(item.app, item.id)),
+        } }],
         metadata: { app: item.app, id: item.id, auto },
         // Machine reports of one reason collapse into the category cooldown; a
         // jank episode that recurs all evening is one nudge. Every human
@@ -168,27 +153,22 @@ export class FeedbackService {
       .then(() => this.transcription.transcribe(audioBuffer, { prompt: TRANSCRIBE_PROMPT }))
       .then((result) => {
         const text = (typeof result === 'string' ? result : result?.text || '').trim();
-        const file = feedbackItemPath(this.itemsRoot, app, id);
-        const item = loadYaml(file);
+        const item = this.repository.load(app, id);
         if (!item) return;
         item.transcript = text;
         item.transcriptStatus = 'done';
-        saveYaml(file, item);
+        this.repository.save(item);
         this.logger.info?.('feedback.transcribed', { app, id, chars: text.length });
       })
       .catch((err) => {
-        const file = feedbackItemPath(this.itemsRoot, app, id);
-        const item = loadYaml(file);
-        if (item) { item.transcriptStatus = 'failed'; item.transcriptError = err.message; saveYaml(file, item); }
+        const item = this.repository.load(app, id);
+        if (item) { item.transcriptStatus = 'failed'; item.transcriptError = err.message; this.repository.save(item); }
         this.logger.error?.('feedback.transcribe-failed', { app, id, error: err.message });
       });
   }
 
   _allApps() {
-    try {
-      return fs.readdirSync(this.itemsRoot, { withFileTypes: true })
-        .filter((e) => e.isDirectory()).map((e) => e.name);
-    } catch { return []; }
+    return this.repository.listApps();
   }
 
   /**
@@ -205,13 +185,10 @@ export class FeedbackService {
     const apps = app ? (safeApp(app) ? [app] : []) : this._allApps();
     const items = [];
     for (const a of apps) {
-      const dir = this._itemsDir(a);
-      if (!dir) continue;
-      for (const rel of listYamlFiles(dir, { recursive: true })) {
-        const d = loadYaml(path.join(dir, rel)) || {};
+      for (const d of this.repository.list(a)) {
         // The filename (or "{YYYY-MM}/{filename}" once partitioned) is not
         // the public id once nested — trust the id the item was saved with.
-        const id = d.id || path.posix.basename(rel);
+        const id = d.id;
         const t = d.transcript || null;
         items.push({
           id, app: a,
@@ -231,18 +208,7 @@ export class FeedbackService {
 
   get(app, id) {
     if (!safeApp(app) || !safeId(id)) return null;
-    let file;
-    try {
-      file = feedbackItemPath(this.itemsRoot, app, id);
-    } catch {
-      // Well-formed per safeId but no YYYYMM prefix to partition by — no
-      // such item could ever have been created, so this is a 404, not a 500.
-      // Only the path derivation is guarded here: a real I/O failure inside
-      // loadYaml (bad YAML, permission error) must still propagate, not get
-      // reinterpreted as "not found".
-      return null;
-    }
-    return loadYaml(file);
+    return this.repository.load(app, id);
   }
 
   update(app, id, patch = {}) {
@@ -250,37 +216,19 @@ export class FeedbackService {
     if (!item) return null;
     if (typeof patch.status === 'string') item.status = patch.status;
     if (typeof patch.notes === 'string') item.notes = patch.notes;
-    saveYaml(feedbackItemPath(this.itemsRoot, app, id), item);
+    this.repository.save(item);
     return item;
   }
 
   remove(app, id) {
     if (!safeApp(app) || !safeId(id)) return false;
     const item = this.get(app, id);
-    if (item?.audio) {
-      try { fs.unlinkSync(path.join(this.config.getMediaDir(), item.audio)); } catch { /* already gone */ }
-    }
-    let file;
-    try {
-      file = feedbackItemPath(this.itemsRoot, app, id);
-    } catch {
-      // Same reasoning as get(): only the path derivation is guarded. This
-      // never masks an I/O error — deleteYaml itself already swallows fs
-      // errors and returns false (see FileIO.mjs deleteFile), so there is
-      // nothing further for this try/catch to be hiding.
-      return false;
-    }
-    // deleteYaml (unlike loadYaml/saveYaml) always appends '.yml'/'.yaml'
-    // itself rather than checking for an existing extension first — pass it
-    // the bare path or it looks for a literal "*.yml.yml" and never deletes.
-    return deleteYaml(file.replace(/\.yml$/, ''));
+    return item ? this.repository.remove(item) : false;
   }
 
-  audioFilePath(app, id) {
-    const item = this.get(app, id);
-    if (!item?.audio) return null;
-    const p = path.join(this.config.getMediaDir(), item.audio);
-    return fs.existsSync(p) ? p : null;
+  audioResource(app, id) {
+    if (!safeApp(app) || !safeId(id)) return null;
+    return this.repository.findAudioResource(app, id);
   }
 }
 

@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 import { PianoContainer } from '#apps/piano/PianoContainer.mjs';
+import { PianoConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
 
 const MOCK_USER = 'test-user';
 const MOCK_SHOW = '12345';
@@ -67,16 +69,16 @@ const silentLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 const mount = ({ configService, fitnessPlayableService, userVideoProgressStore }) => {
   const app = express();
   app.use(express.json());
-  app.use('/api/v1/piano', createPianoRouter({
+  app.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({
     pianoContainer: new PianoContainer({
       studioDatastore: stubDatastore,
-      configService,
+      configProjection: new PianoConfigProjection({ configService }),
       fitnessPlayableService,
       userVideoProgressStore,
       logger: silentLogger,
     }),
     logger: silentLogger,
-  }));
+  })));
   return app;
 };
 

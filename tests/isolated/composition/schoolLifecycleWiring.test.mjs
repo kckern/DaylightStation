@@ -227,8 +227,9 @@ describe('branch order in the composition root', () => {
       applyScanToComposition: null,
       getScaleNutribotBridge: () => null,
       getLogFoodFromUPC: () => null,
+      nutribotIdentity: { defaultUserId: () => null, conversationIdFor: () => null },
       screenNames: [],
-      configService: {}, userIdentityService: {}, logger: silent, barcodeLogger: silent,
+      logger: silent, barcodeLogger: silent,
     });
     expect(namespaces).toEqual(
       expect.arrayContaining(['content', 'command', 'school', 'nutrition', 'product']),

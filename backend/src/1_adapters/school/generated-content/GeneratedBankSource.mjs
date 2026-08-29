@@ -1,7 +1,8 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { generateQuestionBank } from '#domains/school/generatedBanks/generateQuestionBank.mjs';
+import { fileExists, readTextFromPath } from '#system/utils/FileIO.mjs';
+import { IBankSource } from '#apps/school/ports/IBankSource.mjs';
 
 const DATASET_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -15,7 +16,7 @@ const DATASET_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
  * have one yet), a malformed file or invalid recipe is a LOUD empty/partial
  * source (error log), and only a mis-programmed dataDir still throws.
  */
-export class GeneratedBankSource {
+export class GeneratedBankSource extends IBankSource {
   #dataDir;
   #recipes;
   #byBankId;
@@ -24,6 +25,7 @@ export class GeneratedBankSource {
   #cache = new Map();
 
   constructor({ dataDir, recipesFile = 'recipes.yml', logger = console } = {}) {
+    super();
     if (typeof dataDir !== 'string' || !path.isAbsolute(dataDir)) {
       throw new Error('GeneratedBankSource requires an absolute dataDir from the content mount');
     }
@@ -32,13 +34,13 @@ export class GeneratedBankSource {
     this.#byBankId = new Map();
     const file = path.join(dataDir, recipesFile);
     let raw = null;
-    if (!fs.existsSync(file)) {
+    if (!fileExists(file)) {
       this.#logger.warn?.('school.generated-banks.recipes-missing', { file });
       this.#recipes = [];
       return;
     }
     try {
-      raw = yaml.load(fs.readFileSync(file, 'utf8'));
+      raw = yaml.load(readTextFromPath(file));
       if (!Array.isArray(raw)) throw new Error('recipes must be an array');
     } catch (err) {
       this.#logger.error?.('school.generated-banks.recipes-invalid', { file, error: err.message });
@@ -89,7 +91,7 @@ export class GeneratedBankSource {
   }
 
   #load(file) {
-    return yaml.load(fs.readFileSync(path.join(this.#dataDir, file), 'utf8'));
+    return yaml.load(readTextFromPath(path.join(this.#dataDir, file)));
   }
 }
 

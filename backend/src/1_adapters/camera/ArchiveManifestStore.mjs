@@ -9,8 +9,8 @@
  * @module 1_adapters/camera/ArchiveManifestStore
  */
 
-import { mkdir, writeFile, readFile } from 'fs/promises';
 import path from 'path';
+import { readTextFromPath, writeFile } from '#system/utils/FileIO.mjs';
 
 export const MANIFEST_VERSION = 1;
 
@@ -30,7 +30,7 @@ export class ArchiveManifestStore {
 
   async read(camera, day) {
     try {
-      return JSON.parse(await readFile(this.pathFor(camera, day), 'utf8'));
+      return JSON.parse(readTextFromPath(this.pathFor(camera, day)));
     } catch (err) {
       if (err.code === 'ENOENT') return null;
       // A corrupt manifest must not read as "already complete" — treat it as
@@ -42,8 +42,7 @@ export class ArchiveManifestStore {
 
   async write(camera, day, manifest) {
     const file = this.pathFor(camera, day);
-    await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, JSON.stringify(manifest, null, 2), 'utf8');
+    writeFile(file, JSON.stringify(manifest, null, 2));
     return file;
   }
 
@@ -83,7 +82,10 @@ export class ArchiveManifestStore {
       // re-select without re-downloading if the heuristics change.
       selection: config
         ? {
-            budgetMB: config.budget?.fullClipsMB ?? null,
+            // The application supplies a semantic archive policy. Continue
+            // accepting the legacy raw deployment shape so manifests written
+            // during rolling upgrades retain the exact same stored contract.
+            budgetMB: config.fullClipsBudgetMB ?? config.budget?.fullClipsMB ?? null,
             triggerWeights: config.scoring?.triggerWeights ?? null,
             densityFloorMBPerMin: config.scoring?.densityFloorMBPerMin ?? null,
             maxGapSeconds: config.sessionize?.maxGapSeconds ?? null,

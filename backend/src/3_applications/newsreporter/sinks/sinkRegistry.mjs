@@ -1,5 +1,5 @@
 import { PrinterSink } from '#apps/newsreporter/sinks/PrinterSink.mjs';
-import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 
 /**
  * Sink registry (3_applications) — type-keyed factory for ISink implementations.

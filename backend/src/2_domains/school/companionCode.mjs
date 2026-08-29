@@ -117,7 +117,12 @@ const normalise = (value) => {
  * @returns {string[]} a fresh array, alphabet-ordered
  * @throws {ValidationError} if rng() is not a finite number in [0, 1)
  */
-export function mintCode({ rng = Math.random } = {}) {
+export function mintCode({ rng } = {}) {
+  if (typeof rng !== 'function') {
+    throw new ValidationError('Companion finish-code rng is required', {
+      code: 'COMPANION_CODE_RNG_REQUIRED',
+    });
+  }
   const draw = rng();
   if (!Number.isFinite(draw) || draw < 0 || draw >= 1) {
     throw new ValidationError('Companion finish-code rng must return a number in [0, 1)', {

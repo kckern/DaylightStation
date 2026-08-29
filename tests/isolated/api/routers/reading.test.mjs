@@ -17,6 +17,7 @@ import express from 'express';
 import request from 'supertest';
 import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
 import { RecordStoryRead } from '#apps/school/usecases/RecordStoryRead.mjs';
+import { ReadingApiService } from '#apps/school/ReadingApiService.mjs';
 import { createReadingRouter } from '../../../../backend/src/4_api/v1/routers/reading.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
@@ -38,6 +39,9 @@ function memoryReadingLog(seed = {}) {
     async listForDay(learnerId, studyDay) {
       return days.get(`${learnerId} ${studyDay}`) ?? [];
     },
+    async findByPickId(learnerId, studyDay, pickId) {
+      return (days.get(`${learnerId} ${studyDay}`) ?? []).find(row => row.pickId === pickId) ?? null;
+    },
   };
 }
 
@@ -49,20 +53,22 @@ function build({
     status: async () => ({ error: false, enrolled: true, count: 1, target: 2, progressLabel: '1 of 2 stories' }),
   },
   resolveLearner = (id) => ({ id, name: 'Learner C' }),
+  observationStore = null,
 } = {}) {
   const broadcasts = [];
   const recordStoryRead = new RecordStoryRead({
     readingLog,
     studyDay: () => storyTime.studyDay(),
-    eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
+    realtime: { storyReadRecorded: (payload) => broadcasts.push({ topic: 'school', payload: { event: 'story-read', ...payload } }) },
     clock: () => new Date('2026-08-26T18:00:00.000Z'),
     logger: silent,
   });
   const app = express();
   app.use(express.json());
-  app.use('/api/v1/school/reading', createReadingRouter({
-    recordStoryRead, sessions, storyTime, readingLog, resolveLearner, logger: silent,
-  }));
+  const readingService = new ReadingApiService({
+    recordStoryRead, sessions, storyTime, readingLog, resolveLearner, observationStore, logger: silent,
+  });
+  app.use('/api/v1/school/reading', createReadingRouter({ readingService }));
   return { app, sessions, readingLog, broadcasts };
 }
 
@@ -78,6 +84,56 @@ describe('GET /events — live reading-session observability', () => {
     expect(res.body.ackAgeMs).toEqual(expect.any(Number));
     expect(res.body.events).toHaveLength(2);
     expect(res.body.events.at(-1)).toMatchObject({ type: 'acknowledged', sessionId: session.sessionId });
+  });
+
+  it('prefers the durable observation capability and preserves age/state fields', async () => {
+    const observationStore = {
+      list: async () => [{ type: 'opened', state: 'prompt', at: '2026-08-26T17:59:59.000Z' }],
+    };
+    const { app, sessions } = build({ observationStore });
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    const res = await request(app).get('/api/v1/school/reading/events?location=livingroom&limit=1');
+    expect(res.body).toMatchObject({ visibleState: 'prompt', displayedSince: '2026-08-26T17:59:59.000Z' });
+    expect(res.body).toHaveProperty('ageMs');
+    expect(res.body).toHaveProperty('ackAgeMs', null);
+    expect(res.body).toHaveProperty('progressAgeMs', null);
+  });
+});
+
+describe('session, acknowledgement, progress, and read-status routes', () => {
+  it('returns and acknowledges the authoritative location snapshot', async () => {
+    const { app, sessions } = build();
+    const opened = sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    const snapshot = await request(app).get('/api/v1/school/reading/session?location=livingroom');
+    expect(snapshot.body).toMatchObject({ location: 'livingroom', session: { sessionId: opened.sessionId } });
+    const ack = await request(app).post('/api/v1/school/reading/session/ack')
+      .send({ location: ' livingroom ', sessionId: ` ${opened.sessionId} ` });
+    expect(ack.body).toMatchObject({ ok: true, session: { sessionId: opened.sessionId } });
+  });
+
+  it('updates progress and preserves numeric coercion and timestamp fields', async () => {
+    const { app, sessions } = build();
+    const opened = sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.update('livingroom', { pick: { pickId: 'pick-1', learnerId: 'learner-c', contentId: 'plex:1' } });
+    const res = await request(app).post('/api/v1/school/reading/progress').send({
+      location: 'livingroom', sessionId: opened.sessionId, pickId: 'pick-1',
+      positionSec: '12.5', durationSec: '90', paused: true,
+    });
+    expect(res.body).toMatchObject({ ok: true, session: { progress: {
+      positionSec: 12.5, durationSec: 90, paused: true,
+    } } });
+    expect(res.body.session.progress.at).toEqual(expect.any(String));
+  });
+
+  it('returns the established conflict and read-status envelopes', async () => {
+    const readingLog = memoryReadingLog({
+      'learner-c 2026-08-26': [{ learnerId: 'learner-c', studyDay: '2026-08-26', pickId: 'pick-1' }],
+    });
+    const { app } = build({ readingLog });
+    expect((await request(app).post('/api/v1/school/reading/progress').send({})).body)
+      .toEqual({ ok: false, reason: 'session-or-pick-mismatch' });
+    expect((await request(app).get('/api/v1/school/reading/read-status?learnerId=learner-c&studyDay=2026-08-26&pickId=pick-1')).body)
+      .toEqual({ recorded: true, read: { learnerId: 'learner-c', studyDay: '2026-08-26', pickId: 'pick-1' } });
   });
 });
 

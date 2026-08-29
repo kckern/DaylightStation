@@ -25,7 +25,7 @@ export class FitnessAssetResolver {
    * @param {string} config.avatarsDir - Directory of user avatar images
    * @param {string} config.equipmentDir - Directory of equipment images
    */
-  constructor({ avatarsDir, equipmentDir } = {}) {
+  constructor({ imgDir, avatarsDir = imgDir && path.join(imgDir, 'users'), equipmentDir = imgDir && path.join(imgDir, 'equipment') } = {}) {
     this.#avatarsDir = avatarsDir;
     this.#equipmentDir = equipmentDir;
   }

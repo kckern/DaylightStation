@@ -21,9 +21,9 @@
  * first tap of the day because a stray byte broke a YAML parse.
  */
 import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { IAgendaCooldownStore } from '#apps/school/ports/IAgendaCooldownStore.mjs';
+import { readTextFromPath, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 const LEARNER_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const isSafeLearnerId = (id) => typeof id === 'string' && LEARNER_ID_RE.test(id);
@@ -57,7 +57,7 @@ export class YamlAgendaCooldownStore extends IAgendaCooldownStore {
     if (!isSafeLearnerId(learnerId)) return null;
     let text;
     try {
-      text = await fs.readFile(this.#fileFor(learnerId), 'utf8');
+      text = readTextFromPath(this.#fileFor(learnerId));
     } catch (err) {
       if (err?.code !== 'ENOENT') {
         this.#logger.warn?.('school.agenda-cooldown.read-failed', { learnerId, error: err.message });
@@ -91,8 +91,7 @@ export class YamlAgendaCooldownStore extends IAgendaCooldownStore {
     // learner tapping twice in a row must not interleave two writes to the
     // same file.
     const queued = this.#writeChain.then(async () => {
-      await fs.mkdir(this.#root(), { recursive: true });
-      await fs.writeFile(this.#fileFor(learnerId), dumpYaml(stored), 'utf8');
+      writeFileAtomic(this.#fileFor(learnerId), dumpYaml(stored));
       return stored;
     });
     this.#writeChain = queued.catch(() => {});

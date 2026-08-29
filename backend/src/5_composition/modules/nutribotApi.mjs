@@ -2,11 +2,15 @@
 // Composition wiring for Nutribot API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
 import { WebNutribotAdapter } from '#adapters/nutribot/WebNutribotAdapter.mjs';
-import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
+import { NutribotInputRouter } from '#apps/nutribot/services/NutribotInputRouter.mjs';
+import { LegacyNutribotInputRouter } from '#adapters/nutribot/LegacyNutribotInputRouter.mjs';
 import { TelegramWebhookParser } from '#adapters/telegram/TelegramWebhookParser.mjs';
 import { createBotWebhookHandler } from '#adapters/telegram/createBotWebhookHandler.mjs';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
 import { createNutribotServices } from '../bootstrap.mjs';
+import { DailyReportImage } from '#apps/nutribot/DailyReportImage.mjs';
+import { NutribotApiService } from '#apps/nutribot/NutribotApiService.mjs';
+import { InMemoryRequestDeduplicationStore } from '#adapters/http/InMemoryRequestDeduplicationStore.mjs';
 
 /**
  * Create nutribot API router
@@ -28,17 +32,19 @@ export function createNutribotApiRouter(config) {
     botId,
     secretToken,
     gateway,
-    logger = console
+    logger = console,
+    idempotencyStore = new InMemoryRequestDeduplicationStore({ logger })
   } = config;
 
   // Create webhook parser and input router
   const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
-  const inputRouter = new NutribotInputRouter(nutribotServices.nutribotContainer, {
+  const applicationInputRouter = new NutribotInputRouter(nutribotServices.nutribotContainer, {
     userResolver,
     userIdentityService,
     config: nutribotServices.nutribotContainer.getConfig?.(),
     logger,
   });
+  const inputRouter = new LegacyNutribotInputRouter({ inputRouter: applicationInputRouter, logger });
 
   // Build webhook handler (adapter layer concern, not API layer)
   const webhookHandler = (webhookParser && inputRouter)
@@ -55,13 +61,24 @@ export function createNutribotApiRouter(config) {
   // Web adapter — captures responses instead of sending via Telegram
   const webNutribotAdapter = new WebNutribotAdapter({ inputRouter, logger });
 
-  const router = createNutribotRouter(nutribotServices.nutribotContainer, {
-    webhookHandler,
-    telegramIdentityAdapter,
+  const nutribotApi = new NutribotApiService({
+    logFoodFromUpc: nutribotServices.nutribotContainer.getLogFoodFromUPC(),
+    logFoodFromImage: nutribotServices.nutribotContainer.getLogFoodFromImage(),
+    logFoodFromText: nutribotServices.nutribotContainer.getLogFoodFromText(),
+    getReport: nutribotServices.nutribotContainer.getGetReportAsJSON(),
+    resolveIdentity: (username) => telegramIdentityAdapter.resolve('nutribot', { username }),
     defaultMember: config.defaultMember,
+  });
+  const router = createNutribotRouter(nutribotApi, {
+    webhookHandler,
     botId,
     secretToken,
     gateway,
+    idempotencyStore,
+    dailyReportImage: new DailyReportImage({
+      reports: nutribotServices.nutribotContainer.getGetReportAsJSON(),
+      renderer: nutribotServices.nutribotContainer.getReportRenderer?.() || null,
+    }),
     logger
   });
 

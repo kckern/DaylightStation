@@ -20,8 +20,7 @@ import { ConfigService } from './ConfigService.mjs';
 import { ConfigurationError } from '#system/utils/errors/index.mjs';
 import { loadConfig, loadSystemConfig } from './configLoader.mjs';
 import { validateConfig, ConfigValidationError } from './configValidator.mjs';
-import { DataService } from './DataService.mjs';
-import { SecretsHandler, YamlSecretsProvider, EncryptedYamlSecretsProvider, VaultSecretsProvider } from '../secrets/index.mjs';
+import { SecretsHandler } from '../secrets/index.mjs';
 
 let instance = null;
 
@@ -33,25 +32,6 @@ let instance = null;
  * @param {object} systemConfig - Loaded system config
  * @returns {import('../secrets/ISecretsProvider.mjs').ISecretsProvider}
  */
-function createSecretsProvider(dataDir, systemConfig) {
-  const providerType = systemConfig.secrets?.provider ?? 'yaml';
-
-  switch (providerType) {
-    case 'yaml':
-      return new YamlSecretsProvider(dataDir);
-    case 'encrypted':
-      return new EncryptedYamlSecretsProvider(dataDir);
-    case 'vault':
-      return new VaultSecretsProvider(systemConfig.secrets?.vault);
-    default:
-      throw new ConfigurationError(`Unknown secrets provider: ${providerType}`, {
-        code: 'UNKNOWN_SECRETS_PROVIDER',
-        key: 'secrets.provider',
-        value: providerType,
-      });
-  }
-}
-
 /**
  * Create a ConfigService from files on disk.
  * Loads config, validates against schema, returns service instance.
@@ -60,12 +40,17 @@ function createSecretsProvider(dataDir, systemConfig) {
  * @returns {Promise<ConfigService>}
  * @throws {ConfigValidationError} If config is invalid
  */
-export async function createConfigService(dataDir) {
+export async function createConfigService(dataDir, { secretsProviderFactory } = {}) {
+  if (typeof secretsProviderFactory !== 'function') {
+    throw new ConfigurationError('ConfigService requires a secretsProviderFactory', {
+      code: 'MISSING_SECRETS_PROVIDER_FACTORY',
+    });
+  }
   // 1. Load system config first (determines secrets provider)
   const systemConfig = loadSystemConfig(dataDir);
 
   // 2. Initialize secrets handler
-  const secretsProvider = createSecretsProvider(dataDir, systemConfig);
+  const secretsProvider = secretsProviderFactory(dataDir, systemConfig);
   await secretsProvider.initialize();
   const secretsHandler = new SecretsHandler(secretsProvider);
 
@@ -95,13 +80,13 @@ function setEnvPaths(svc) {
  * @throws {Error} If already initialized
  * @throws {ConfigValidationError} If config is invalid
  */
-export async function initConfigService(dataDir) {
+export async function initConfigService(dataDir, options) {
   if (instance) {
     throw new ConfigurationError('ConfigService already initialized', {
       code: 'ALREADY_INITIALIZED',
     });
   }
-  instance = await createConfigService(dataDir);
+  instance = await createConfigService(dataDir, options);
   setEnvPaths(instance);
   return instance;
 }
@@ -174,54 +159,8 @@ export { ConfigValidationError } from './configValidator.mjs';
 export { configSchema } from './configSchema.mjs';
 export { loadConfig } from './configLoader.mjs';
 export { validateConfig } from './configValidator.mjs';
-export { userDataService, default as UserDataService } from './UserDataService.mjs';
-export { userService, UserService } from './UserService.mjs';
-
-// DataService singleton with lazy initialization
-let dataServiceInstance = null;
-
-/**
- * Get the DataService singleton instance.
- * Uses lazy initialization - creates instance on first call.
- *
- * @returns {DataService}
- */
-export function getDataService() {
-  if (!dataServiceInstance) {
-    dataServiceInstance = new DataService({ configService: getConfigService() });
-  }
-  return dataServiceInstance;
-}
-
-/**
- * Convenience proxy for direct import.
- *
- * Usage:
- *   import { dataService } from './config/index.mjs';
- *   const data = dataService.getData('household', 'apps/weather');
- */
-export const dataService = new Proxy({}, {
-  get(_, prop) {
-    const svc = getDataService();
-    const value = svc[prop];
-    if (typeof value === 'function') {
-      return value.bind(svc);
-    }
-    return value;
-  }
-});
-
-/**
- * Reset DataService singleton instance.
- * For testing only - allows re-initialization.
- */
-export function resetDataService() {
-  dataServiceInstance = null;
-}
-
-export { DataService } from './DataService.mjs';
 
 // Secrets module re-exports
-export { SecretsHandler, YamlSecretsProvider, ISecretsProvider } from '../secrets/index.mjs';
+export { SecretsHandler, ISecretsProvider } from '../secrets/index.mjs';
 
 export default configService;

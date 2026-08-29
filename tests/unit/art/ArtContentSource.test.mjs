@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createArtContentSource } from '../../../backend/src/1_adapters/content/art/ArtContentSource.mjs';
-import { validateAdapter } from '../../../backend/src/2_domains/content/services/validateContentSource.mjs';
+import { validateAdapter } from '#apps/content/ports/IContentSource.mjs';
 
 const fakeArtAdapter = (over = {}) => ({
   getThumbnailUrl: async (preset) => (preset === 'july-4th' ? '/media/img/art/americana/flag/flag.jpg' : null),

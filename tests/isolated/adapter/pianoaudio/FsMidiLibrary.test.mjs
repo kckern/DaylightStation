@@ -20,8 +20,8 @@ beforeEach(() => {
 });
 afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
-describe('FsMidiLibrary.listPending', () => {
-  it('returns only midis missing a mirror mp3, newest-first, with mirrored dest paths', async () => {
+describe('FsMidiLibrary.listPendingRecordings', () => {
+  it('returns semantic recording ids for missing mirror mp3s, newest-first', async () => {
     // older midi, no mp3 yet
     writeFile(path.join(sourceDir, 'kckern/2026-01-02/take1.mid'), 'MID', 1_000_000);
     // newer midi, no mp3 yet
@@ -34,23 +34,17 @@ describe('FsMidiLibrary.listPending', () => {
 
     // inject fixed short/dense stats so these fixtures aren't parsed as real SMF
     const lib = new FsMidiLibrary({ sourceDir, destDir, logger: silent, midiStats: () => ({ durationSeconds: 60, noteCount: 100 }) });
-    const pending = await lib.listPending();
+    const pending = await lib.listPendingRecordings();
 
     expect(pending).toEqual([
-      {
-        midiPath: path.join(sourceDir, 'jamcorder/2026/2026-01/s.mid'),
-        outputPath: path.join(destDir, 'jamcorder/2026/2026-01/s.mp3'),
-      },
-      {
-        midiPath: path.join(sourceDir, 'kckern/2026-01-02/take1.mid'),
-        outputPath: path.join(destDir, 'kckern/2026-01-02/take1.mp3'),
-      },
+      { recordingId: 'jamcorder/2026/2026-01/s.mid' },
+      { recordingId: 'kckern/2026-01-02/take1.mid' },
     ]);
   });
 
   it('returns an empty array when the source dir does not exist', async () => {
     const lib = new FsMidiLibrary({ sourceDir: path.join(root, 'nope'), destDir, logger: silent });
-    expect(await lib.listPending()).toEqual([]);
+    expect(await lib.listPendingRecordings()).toEqual([]);
   });
 
   it('skips junk (long-and-sparse stuck note; note-less) but keeps a real long dense session', async () => {
@@ -70,12 +64,12 @@ describe('FsMidiLibrary.listPending', () => {
       midiStats: (p) => stats[p],
     });
 
-    const pending = await lib.listPending();
+    const pending = await lib.listPendingRecordings();
 
     // newest-first by mtime: long-session (6M) then short (2M); junk excluded
     expect(pending).toEqual([
-      { midiPath: path.join(sourceDir, 'ok/long-session.mid'), outputPath: path.join(destDir, 'ok/long-session.mp3') },
-      { midiPath: path.join(sourceDir, 'ok/short.mid'), outputPath: path.join(destDir, 'ok/short.mp3') },
+      { recordingId: 'ok/long-session.mid' },
+      { recordingId: 'ok/short.mid' },
     ]);
   });
 
@@ -87,10 +81,10 @@ describe('FsMidiLibrary.listPending', () => {
       midiStats: () => { throw new Error('bad SMF'); },
     });
 
-    const pending = await lib.listPending();
+    const pending = await lib.listPendingRecordings();
 
     expect(pending).toEqual([
-      { midiPath: path.join(sourceDir, 'weird/unparseable.mid'), outputPath: path.join(destDir, 'weird/unparseable.mp3') },
+      { recordingId: 'weird/unparseable.mid' },
     ]);
   });
 });

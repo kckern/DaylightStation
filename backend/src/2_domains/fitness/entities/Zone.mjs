@@ -86,24 +86,6 @@ export class Zone {
     return this.getPriority() < otherZone.getPriority();
   }
 
-  /**
-   * Serialize to plain object
-   */
-  toJSON() {
-    return {
-      name: this.name,
-      minHr: this.minHr,
-      maxHr: this.maxHr,
-      color: this.color
-    };
-  }
-
-  /**
-   * Create from plain object
-   */
-  static fromJSON(data) {
-    return new Zone(data);
-  }
 }
 
 /**

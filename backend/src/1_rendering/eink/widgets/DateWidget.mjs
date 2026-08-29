@@ -14,7 +14,7 @@ import { DAYS, MONTHS } from './lib/calendar.mjs';
 
 export function draw(ctx, box, data, theme) {
   const { x, y, w, h } = box;
-  const now = new Date();
+  const now = data.renderReferenceTime;
 
   const cx = x + w / 2;
   const cy = y + h / 2;

@@ -271,14 +271,12 @@ function parseTextDimension(raw, dim) {
 
 export class DailyCoachingEntry {
   /**
-   * @param {Object} [raw] - Raw object as parsed from YAML / API body.
+   * @param {Object} [raw] - Coaching dimension values.
    * @param {Array<Object>|null} [dimensionsSchema] - Playbook's
    *   `coaching_dimensions` array. When omitted/empty, the entity runs in
    *   trust mode (accepts any plain-object shape after a basic check).
-   * @param {Object} [opts]
-   * @param {Object} [opts.logger] - Logger for trust-mode warning.
    */
-  constructor(raw = {}, dimensionsSchema = null, opts = {}) {
+  constructor(raw = {}, dimensionsSchema = null) {
     if (raw === null || raw === undefined) raw = {};
     if (typeof raw !== 'object' || Array.isArray(raw)) {
       throw new TypeError('DailyCoachingEntry expects an object');
@@ -290,12 +288,7 @@ export class DailyCoachingEntry {
     if (!this.schema.length) {
       // Trust mode — no schema available. Accept the input as-is so users
       // without a playbook can still persist coaching entries.
-      const logger = opts.logger || (typeof console !== 'undefined' ? console : null);
-      logger?.warn?.('daily_coaching_entry.trust_mode', {
-        reason: 'no_dimensions_schema',
-        keys: Object.keys(raw),
-      });
-      // Shallow clone to preserve the input shape under serialize().
+      // Shallow clone to preserve the accepted trust-mode input shape.
       for (const [key, value] of Object.entries(raw)) {
         this.dimensions[key] = (value === null || value === undefined)
           ? null
@@ -338,11 +331,10 @@ export class DailyCoachingEntry {
   }
 
   /**
-   * Convert to a YAML-shaped plain object for persistence.
-   * Only present (non-null, non-undefined) dimensions are included.
+   * Return a defensive snapshot of the validated, present dimensions.
    * @returns {Object}
    */
-  serialize() {
+  snapshot() {
     const out = {};
     for (const [key, value] of Object.entries(this.dimensions)) {
       if (value === null || value === undefined) continue;

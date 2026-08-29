@@ -4,11 +4,8 @@
  * Owns the jobs.yml read/write, runtime-state merge, id rules, and ordered job
  * construction that the admin scheduler router used to inline. The router becomes
  * a thin HTTP shell that extracts params, calls a method, and shapes the response.
- * Error cases throw typed errors that the router's P1.3 string error-middleware
- * maps to HTTP status:
- *   ValidationError → 400 (missing/invalid fields)
- *   NotFoundError   → 404 (job not found)
- *   ConflictError   → 409 (duplicate id)
+ * Error cases are expressed as transport-neutral semantic categories; the
+ * calling adapter decides how to present them.
  *
  * Data sources (relative to data root):
  * - system/config/jobs.yml          -- job definitions
@@ -16,74 +13,52 @@
  *
  * Manual "run now" is delegated to the injected SchedulerOrchestrator
  * (`triggerJob`) when available — the real scheduler execution path used by the
- * scheduling loop. When no orchestrator is wired, `runJob` throws a 501-mapped
- * error rather than faking a 202.
+ * scheduling loop. When no orchestrator is wired, `runJob` reports that the
+ * operation is unavailable rather than pretending it was accepted.
  */
-import path from 'path';
-import yaml from 'js-yaml';
 import {
-  ValidationError,
-  NotFoundError,
-  ConflictError
-} from '#system/utils/errors/index.mjs';
-
-const YAML_DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true };
+  InvalidInputError as ValidationError,
+  MissingResourceError as NotFoundError,
+  StateConflictError as ConflictError,
+  OperationUnavailableError,
+} from '#apps/common/errors/SemanticErrors.mjs';
 
 export class SchedulerAdminService {
-  #configFiles;
+  #configStore;
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.configService - ConfigService for data directory paths
+   * @param {Object} deps.configStore - Semantic admin configuration store
    * @param {Object} [deps.schedulerOrchestrator] - SchedulerOrchestrator for manual runs.
    *   When present, `runJob` calls its `triggerJob(jobId, now)`. When absent, `runJob`
    *   throws a NOT_IMPLEMENTED error (mapped to 501) instead of a fake 202.
    * @param {Object} [deps.logger=console] - Logger instance
    */
-  constructor({ configService, configFiles, schedulerOrchestrator = null, logger = console }) {
-    // D5: no fs in the application layer. This service still decides WHICH
-    // file and what its contents mean; the store does the four primitives.
-    this.#configFiles = configFiles;
-    if (!configService) {
-      throw new Error('SchedulerAdminService requires a configService dependency');
-    }
-    this.configService = configService;
+  constructor({ configStore, schedulerOrchestrator = null, logger = console }) {
+    if (!configStore) throw new Error('SchedulerAdminService requires a configStore dependency');
+    this.#configStore = configStore;
     this.schedulerOrchestrator = schedulerOrchestrator;
     this.logger = logger;
   }
 
-  /** Get the resolved data root directory */
-  #getDataRoot() {
-    return path.resolve(this.configService.getDataDir());
-  }
-
   /** Read the jobs array from system/config/jobs.yml */
   #readJobsFile() {
-    const absPath = path.join(this.#getDataRoot(), 'system/config/jobs.yml');
-    if (!this.#configFiles.exists(absPath)) return [];
-    const raw = this.#configFiles.readText(absPath);
-    return yaml.load(raw) || [];
+    return this.#configStore.readScheduledJobs();
   }
 
   /** Write the jobs array to system/config/jobs.yml */
   #writeJobsFile(jobs) {
-    const absPath = path.join(this.#getDataRoot(), 'system/config/jobs.yml');
-    const parentDir = path.dirname(absPath);
-    const content = yaml.dump(jobs, YAML_DUMP_OPTS);
-    this.#configFiles.writeText(absPath, content);
+    this.#configStore.writeScheduledJobs(jobs);
   }
 
   /** Read the runtime state map from system/state/cron-runtime.yml */
   #readRuntimeState() {
-    const absPath = path.join(this.#getDataRoot(), 'system/state/cron-runtime.yml');
-    if (!this.#configFiles.exists(absPath)) return {};
-    const raw = this.#configFiles.readText(absPath);
-    return yaml.load(raw) || {};
+    return this.#configStore.readSchedulerRuntime();
   }
 
   /**
    * List all jobs merged with their runtime state.
-   * @returns {{ jobs: Array<Object> }}
+   * @returns {Array<Object>}
    */
   listJobs() {
     const jobs = this.#readJobsFile();
@@ -93,13 +68,13 @@ export class SchedulerAdminService {
       runtime: runtime[job.id] || null,
     }));
     this.logger.info?.('admin.scheduler.jobs.listed', { count: merged.length });
-    return { jobs: merged };
+    return merged;
   }
 
   /**
    * Create a new job.
    * @param {Object} body
-   * @returns {{ job: Object }}
+   * @returns {Object}
    * @throws {ValidationError} missing/invalid id/name/schedule
    * @throws {ConflictError} duplicate id
    */
@@ -136,13 +111,13 @@ export class SchedulerAdminService {
     this.#writeJobsFile(jobs);
 
     this.logger.info?.('admin.scheduler.job.created', { id, name });
-    return { job: newJob };
+    return newJob;
   }
 
   /**
    * Get a single job merged with runtime state.
    * @param {string} jobId
-   * @returns {{ job: Object }}
+   * @returns {Object}
    * @throws {NotFoundError} job not found
    */
   getJob(jobId) {
@@ -160,14 +135,14 @@ export class SchedulerAdminService {
     };
 
     this.logger.info?.('admin.scheduler.job.read', { id: jobId });
-    return { job: merged };
+    return merged;
   }
 
   /**
    * Update job fields (id cannot change).
    * @param {string} jobId
    * @param {Object} body
-   * @returns {{ job: Object }}
+   * @returns {Object}
    * @throws {NotFoundError} job not found
    */
   updateJob(jobId, body = {}) {
@@ -189,13 +164,13 @@ export class SchedulerAdminService {
     this.#writeJobsFile(jobs);
 
     this.logger.info?.('admin.scheduler.job.updated', { id: jobId });
-    return { job: jobs[index] };
+    return jobs[index];
   }
 
   /**
    * Remove a job.
    * @param {string} jobId
-   * @returns {{ id: string }}
+   * @returns {string} removed job id
    * @throws {NotFoundError} job not found
    */
   deleteJob(jobId) {
@@ -210,7 +185,7 @@ export class SchedulerAdminService {
     this.#writeJobsFile(jobs);
 
     this.logger.info?.('admin.scheduler.job.deleted', { id: jobId });
-    return { id: jobId };
+    return jobId;
   }
 
   /**
@@ -218,7 +193,7 @@ export class SchedulerAdminService {
    * @param {string} jobId
    * @returns {Promise<{ id: string, executionId: string, execution: Object }>}
    * @throws {NotFoundError} job not defined in jobs.yml
-   * @throws {ValidationError} NOT_IMPLEMENTED (mapped to 501) when no orchestrator wired
+   * @throws {OperationUnavailableError} when no orchestrator is wired
    */
   async runJob(jobId) {
     // Confirm the job exists in the editor's own source of truth first, so a
@@ -229,14 +204,10 @@ export class SchedulerAdminService {
     }
 
     if (!this.schedulerOrchestrator?.triggerJob) {
-      // Honest signal: no runnable scheduler wired in this process (e.g. dev
-      // without the orchestrator). 501 Not Implemented, never a fake 202.
-      // The string error-middleware maps by explicit `statusCode`.
-      const err = new Error('Manual job execution is not available in this environment');
-      err.name = 'NotImplementedError';
-      err.statusCode = 501;
-      err.code = 'NOT_IMPLEMENTED';
-      throw err;
+      throw new OperationUnavailableError(
+        'Manual job execution is not available in this environment',
+        { code: 'NOT_IMPLEMENTED' },
+      );
     }
 
     this.logger.info?.('admin.scheduler.job.run.requested', { id: jobId });

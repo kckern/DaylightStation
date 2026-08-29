@@ -30,12 +30,13 @@ describe('staleSaveGuard', () => {
     }
   });
 
-  it('sets error status to 409', () => {
+  it('reports a semantic conflict without choosing a transport status', () => {
     const current = { updatedAt: '2026-09-02T00:00:00.000Z' };
     try {
       assertNotStale(current, '2026-09-01T00:00:00.000Z');
     } catch (err) {
-      expect(err.status).toBe(409);
+      expect(err).toMatchObject({ name: 'ConflictError', code: 'STALE_SAVE' });
+      expect(err).not.toHaveProperty('status');
     }
   });
 

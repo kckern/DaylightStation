@@ -4,15 +4,9 @@
  * (head of household at the composition root), and validates against known
  * profiles when a userService is provided.
  */
-export function createUsernameResolver({ userService, defaultUsername } = {}) {
-  const fallback = defaultUsername || 'default';
-
-  const resolve = (req) => req.query?.username || fallback;
-
-  const isKnown = (username) => {
-    if (!userService?.getProfile) return true; // no user directory available — accept as before
-    return !!userService.getProfile(username);
-  };
+export function createUsernameResolver({ lifeApi } = {}) {
+  const resolve = (req) => lifeApi.resolveUsername(req.query?.username);
+  const isKnown = (username) => lifeApi.isKnownUser(username);
 
   /**
    * Express middleware: resolves req.lifeUsername from the query (or default)

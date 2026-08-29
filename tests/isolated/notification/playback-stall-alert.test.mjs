@@ -63,7 +63,12 @@ describe('a wedged kiosk reaches a human', () => {
       const bus = makeBus();
       let now = 1_700_000_000_000;
       const detector = new PlaybackStallDetector({
-        eventBus: bus,
+        presenceGateway: {
+          subscribeDeviceStates: (listener) => bus.subscribePattern(
+            (topic) => topic.startsWith('device-state:'),
+            (payload) => listener(payload),
+          ),
+        },
         clock: { now: () => now },
         stallThresholdMs: 60_000,
         logger: { debug() {}, info() {}, warn() {}, error() {} },

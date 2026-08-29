@@ -24,7 +24,10 @@ test('save then load round-trips a LockdownState', async () => {
   // Persisted under the household path
   assert.equal(files.has('/data/household/fitness/log/emergency_lock.yml'), true);
   const loaded = await store.load();
-  assert.deepEqual(loaded.toData(), state.toData());
+  assert.deepEqual(
+    [loaded.lockedBy, loaded.lockedAt, loaded.lockedUntil],
+    [state.lockedBy, state.lockedAt, state.lockedUntil],
+  );
 });
 
 test('load returns null when file is absent', async () => {

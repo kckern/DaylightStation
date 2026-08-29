@@ -17,13 +17,14 @@
  * @param {number} now - Current time as epoch ms (caller-supplied)
  * @returns {Array} Selected items
  */
-export function selectItemsForPrint(items, count, now) {
+export function selectItemsForPrint(items, count, now, random) {
   if (!items || items.length === 0) return [];
   if (items.length <= count) return [...items];
 
   if (typeof now !== 'number' || !Number.isFinite(now)) {
     throw new Error('selectItemsForPrint(items, count, now): now (epoch ms) is required');
   }
+  if (typeof random !== 'function') throw new Error('selectItemsForPrint requires random');
   const DAY_MS = 24 * 60 * 60 * 1000;
 
   const bucketDefs = [
@@ -58,7 +59,7 @@ export function selectItemsForPrint(items, count, now) {
     if (bucket.length === 0) return null;
     const minPrintCount = bucket[0].printCount;
     const candidates = bucket.filter(i => i.printCount === minPrintCount);
-    const idx = Math.floor(Math.random() * candidates.length);
+    const idx = Math.floor(random() * candidates.length);
     const picked = candidates[idx];
     const bucketIdx = bucket.findIndex(i => i.id === picked.id);
     if (bucketIdx !== -1) bucket.splice(bucketIdx, 1);
@@ -91,11 +92,11 @@ export function selectItemsForPrint(items, count, now) {
     if (available.length === 0) return -1;
 
     const totalWeight = available.reduce((sum, b) => sum + b.weight, 0);
-    let random = Math.random() * totalWeight;
+    let draw = random() * totalWeight;
 
     for (const { bucketIndex, weight } of available) {
-      random -= weight;
-      if (random <= 0) return bucketIndex;
+      draw -= weight;
+      if (draw <= 0) return bucketIndex;
     }
 
     return available[available.length - 1].bucketIndex;

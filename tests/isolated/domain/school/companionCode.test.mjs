@@ -38,6 +38,10 @@ describe('the finish-code alphabet', () => {
 });
 
 describe('mintCode', () => {
+  it('requires caller-supplied entropy', () => {
+    expect(() => mintCode()).toThrow(/rng is required/);
+  });
+
   it('draws from the full set using the injected rng', () => {
     expect(mintCode({ rng: () => 0 })).toEqual(ALL_CODES[0]);
     expect(mintCode({ rng: () => 0.999999 })).toEqual(ALL_CODES[30]);

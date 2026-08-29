@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createSubjectIconResolver } from './assetResolver.mjs';
+import { createSubjectIconResolver } from '#adapters/school/documents/FilesystemSchoolAssetResolver.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from './PrintDocumentRendering.mjs';
+
+const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
+  rendering: createPrintDocumentRendering(), ...deps,
+});
 
 describe('createSubjectIconResolver', () => {
   it('loads the real School SVGs and converts browser-only sizing/colour conventions for PDF', () => {
@@ -24,7 +29,7 @@ describe('createSubjectIconResolver', () => {
   });
 
   it('is the default resolver in the production render use case', async () => {
-    const result = await new RenderPrintDocument().execute({
+    const result = await createRenderPrintDocument().execute({
       document: {
         schema: 'school.document-source/v1', id: 'science/atom-card', seed: 1,
         variant: 0, target: ['letter'], archetype: 'worksheet', title: 'Worksheet',

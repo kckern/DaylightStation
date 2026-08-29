@@ -13,6 +13,7 @@
  * Base path (via ConfigService.getHouseholdPath): household[-{id}]/finance/
  */
 import path from 'path';
+import { IFinanceStore } from '#apps/finance/ports/IFinanceStore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   ensureDir,
@@ -24,7 +25,7 @@ import {
   yamlExists
 } from '#system/utils/FileIO.mjs';
 
-export class YamlFinanceDatastore {
+export class YamlFinanceDatastore extends IFinanceStore {
   #configService;
 
   /**
@@ -32,6 +33,7 @@ export class YamlFinanceDatastore {
    * @param {Object} config.configService - ConfigService instance for path resolution
    */
   constructor(config) {
+    super();
     if (!config?.configService) {
       throw new InfrastructureError('YamlFinanceDatastore requires configService', {
         code: 'MISSING_DEPENDENCY',

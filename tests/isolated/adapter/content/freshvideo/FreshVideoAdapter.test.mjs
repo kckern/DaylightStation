@@ -24,7 +24,7 @@ function makeMockProgress(watchedKeys = []) {
   // not the bare localId. Match either form so callers can supply either.
   const keys = new Set(watchedKeys.flatMap(k => [k, `files:${k}`]));
   return {
-    get: vi.fn(async (key) => {
+    findProgress: vi.fn(async (key) => {
       const percent = keys.has(key) ? 95 : 0;
       return { percent };
     }),

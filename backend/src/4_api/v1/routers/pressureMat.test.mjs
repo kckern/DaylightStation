@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPressureMatRouter } from './pressureMat.mjs';
+import { PressureMatOperations } from '#apps/hardware/PressureMatOperations.mjs';
 
 function appWith(adapter) {
   const app = express();
   app.use(express.json());
-  app.use('/pressure-mats', createPressureMatRouter({ pressureMatAdapter: adapter, logger: { warn() {} } }));
+  app.use('/pressure-mats', createPressureMatRouter({ pressureMatOperations: new PressureMatOperations({ pressureMats: adapter }), logger: { warn() {} } }));
   return app;
 }
 

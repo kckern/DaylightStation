@@ -5,9 +5,9 @@
  * Volume policy: { default, min, max } with invariant 0 <= min <= default <= max <= 100.
  * Defaults: default=60, min=0, max=100.
  *
- * IMPORTANT: toYaml() is sparse-preserving — it returns ONLY the keys the user
- * explicitly supplied at construction. This is critical so saving the config
- * back to YAML doesn't synthesize default fields the user never wrote.
+ * The value also remembers which bounds were explicitly supplied so an outer
+ * persistence mapper can preserve sparse configuration without teaching the
+ * domain about YAML.
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
@@ -93,20 +93,8 @@ export class VolumeBounds {
     return v;
   }
 
-  /**
-   * Sparse-preserving YAML serialization. Returns ONLY the keys explicitly
-   * supplied at construction (never synthesizes defaults).
-   * @returns {{default?: number, min?: number, max?: number}}
-   */
-  toYaml() {
-    const out = {};
-    for (const k of KEYS) {
-      if (this.#userKeys.has(k)) {
-        out[k] = this[k];
-      }
-    }
-    return out;
-  }
+  /** Whether a bound was explicitly supplied rather than defaulted. */
+  hasExplicit(key) { return this.#userKeys.has(key); }
 
   /**
    * Value equality (all three resolved values).

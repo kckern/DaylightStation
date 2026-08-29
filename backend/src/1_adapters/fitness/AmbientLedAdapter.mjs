@@ -15,6 +15,7 @@
 import { ZONE_PRIORITY, ZONE_ORDER } from '#domains/fitness/entities/Zone.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { IZoneLedController } from '#apps/fitness/ports/IZoneLedController.mjs';
 
 const ZONE_LOSS_GRACE_PERIOD_MS = 30000; // 30 seconds grace before turning off
 
@@ -33,7 +34,7 @@ function formatDuration(ms) {
   return `${seconds}s`;
 }
 
-export class AmbientLedAdapter {
+export class AmbientLedAdapter extends IZoneLedController {
   #gateway;
   #loadFitnessConfig;
   #logger;
@@ -45,6 +46,7 @@ export class AmbientLedAdapter {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
+    super();
     if (!config?.gateway) {
       throw new InfrastructureError('AmbientLedAdapter requires gateway', {
         code: 'MISSING_DEPENDENCY',

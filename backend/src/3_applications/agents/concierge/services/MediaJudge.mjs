@@ -23,12 +23,18 @@ export class MediaJudge {
   #agentRuntime;
   #logger;
   #timeoutMs;
+  #deadline;
+  #clock;
 
-  constructor({ agentRuntime, logger = console, timeoutMs = 8000 }) {
+  constructor({ agentRuntime, deadline, clock, logger = console, timeoutMs = 8000 }) {
     if (!agentRuntime?.execute) throw new Error('MediaJudge: agentRuntime with execute() required');
+    if (!deadline?.run) throw new Error('MediaJudge: deadline.run() required');
+    if (!clock?.epoch) throw new Error('MediaJudge: clock.epoch() required');
     this.#agentRuntime = agentRuntime;
     this.#logger = logger;
     this.#timeoutMs = timeoutMs;
+    this.#deadline = deadline;
+    this.#clock = clock;
   }
 
   /**
@@ -41,7 +47,7 @@ export class MediaJudge {
     }
     if (candidates.length === 1) return { index: 0, reason: 'only_candidate', latencyMs: 0 };
 
-    const start = Date.now();
+    const start = this.#clock.epoch();
     const userPrompt = buildPrompt(query, candidates);
 
     const racer = (async () => {
@@ -54,28 +60,26 @@ export class MediaJudge {
       });
       return result?.output ?? '';
     })();
-    const timer = new Promise((_, rej) => setTimeout(() => rej(new Error('judge_timeout')), this.#timeoutMs));
-
     let raw;
     try {
-      raw = await Promise.race([racer, timer]);
+      raw = await this.#deadline.run(racer, { timeoutMs: this.#timeoutMs, message: 'judge_timeout' });
     } catch (err) {
       this.#logger.warn?.('concierge.media.judge.timeout_or_error', { error: err.message });
-      return { index: -1, reason: `judge_failed:${err.message}`, latencyMs: Date.now() - start };
+      return { index: -1, reason: `judge_failed:${err.message}`, latencyMs: this.#clock.epoch() - start };
     }
 
     const parsed = parseJudgeOutput(raw);
     if (!parsed || typeof parsed.index !== 'number') {
       this.#logger.warn?.('concierge.media.judge.parse_failed', { raw: String(raw).slice(0, 200) });
-      return { index: -1, reason: 'judge_parse_failed', latencyMs: Date.now() - start };
+      return { index: -1, reason: 'judge_parse_failed', latencyMs: this.#clock.epoch() - start };
     }
     if (parsed.index < -1 || parsed.index >= candidates.length) {
-      return { index: -1, reason: 'judge_out_of_range', latencyMs: Date.now() - start };
+      return { index: -1, reason: 'judge_out_of_range', latencyMs: this.#clock.epoch() - start };
     }
     return {
       index: parsed.index,
       reason: parsed.reason || 'judge_picked',
-      latencyMs: Date.now() - start,
+      latencyMs: this.#clock.epoch() - start,
     };
   }
 }

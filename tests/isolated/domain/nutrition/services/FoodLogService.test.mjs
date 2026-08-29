@@ -1,7 +1,8 @@
 // tests/unit/domains/nutrition/services/FoodLogService.test.mjs
 import { vi } from 'vitest';
-import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
+import { FoodLogService } from '#apps/nutribot/services/FoodLogService.mjs';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
+import { createNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
 
 describe('FoodLogService', () => {
   let service;
@@ -12,7 +13,7 @@ describe('FoodLogService', () => {
 
   // Helper to create test NutriLog
   const createTestLog = (overrides = {}) => {
-    return NutriLog.create({
+    return createNutriLog({
       userId: 'user-1',
       text: 'Test food',
       items: [

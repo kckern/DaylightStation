@@ -1,25 +1,11 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 import { safeSegment } from './lib/emulatorPaths.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
-import { buildCatalog, resolveGameRules } from '#apps/emulator/EmulatorCatalog.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const MODERATE_CACHE = 'public, max-age=3600';
-
-const ENGINE_CONTENT_TYPES = {
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.wasm': 'application/wasm',
-  '.data': 'application/octet-stream',
-};
-
-function engineContentTypeFor(relPath) {
-  const ext = relPath.slice(relPath.lastIndexOf('.')).toLowerCase();
-  return ENGINE_CONTENT_TYPES[ext] || 'application/octet-stream';
-}
 
 /**
  * Parse a single-range `Range: bytes=start-end` header against a known size.
@@ -45,12 +31,12 @@ function parseRange(header, size) {
 }
 
 /**
- * Send a binary result ({ buffer|stream, size, contentType }) honoring an
+ * Send an opaque binary resource ({ size, mimeType, open }) honoring an
  * optional already-resolved range. Sets long immutable cache for static media.
  */
-function sendBinary(res, result, { range, cache = true } = {}) {
+function sendBinary(res, resource, { range, cache = true } = {}) {
   const headers = {
-    'Content-Type': result.contentType || 'application/octet-stream',
+    'Content-Type': resource.mimeType || 'application/octet-stream',
     'Accept-Ranges': 'bytes',
   };
   // `cache: true` → immutable (ROMs are content-fixed by id). A string sets an
@@ -60,55 +46,38 @@ function sendBinary(res, result, { range, cache = true } = {}) {
   else if (cache) headers['Cache-Control'] = IMMUTABLE_CACHE;
 
   if (range) {
-    headers['Content-Range'] = `bytes ${range.start}-${range.end}/${result.size}`;
+    headers['Content-Range'] = `bytes ${range.start}-${range.end}/${resource.size}`;
     headers['Content-Length'] = String(range.end - range.start + 1);
     res.writeHead(206, headers);
   } else {
-    if (typeof result.size === 'number') headers['Content-Length'] = String(result.size);
+    if (typeof resource.size === 'number') headers['Content-Length'] = String(resource.size);
     res.writeHead(200, headers);
   }
 
-  if (result.stream) {
-    result.stream.pipe(res);
-  } else {
-    res.end(result.buffer);
-  }
+  resource.open(range).pipe(res);
 }
 
 /**
  * Emulator router. Addresses all media by safe (:system, :gameId) slugs and
- * resolves the real on-disk (messy) filenames server-side via injected
- * resolvers. All file I/O is injected so the router is unit-testable.
+ * resolves the real on-disk filenames behind application operations. The API
+ * receives opaque resources and never sees storage paths or filesystem APIs.
  *
  * @param {object} deps
  * @param {object}   [deps.logger]
- * @param {function} deps.loadConfig       () => normalized cfg.
- * @param {function} deps.readBinary       (absPath, { range }?) => { buffer|stream, size, contentType }; throws .code==='ENOENT'.
- * @param {function} deps.writeBinary      (absPath, buffer) => Promise<void> (atomic).
- * @param {function} [deps.readEngineFile] (relPath) => { buffer|stream, size, contentType }; throws .code==='ENOENT'. Serves the vendored EmulatorJS bundle.
- * @param {function} deps.resolveRomPath   (cfg, system, gameId) => absPath.
- * @param {function} deps.resolveArtPath   (cfg, system, gameId, kind) => absPath.
- * @param {function} deps.resolveSavePath  (system, gameId, user) => absPath.
- * @param {function} deps.resolveStatePath (system, gameId, slot, user) => absPath.
+ * @param {object} deps.emulatorResources  Endpoint-shaped application operations.
+ * @param {object} deps.emulatorLibrary    Semantic public-library service.
  * @param {function} [deps.publishBtPair]  ({ requestId, durationMs }) => void — broadcasts the bt.pair.request bus topic the garage bridge listens for. Default: warn no-op.
  * @param {function} [deps.makeRequestId]  () => string — injectable for deterministic tests. Default: incrementing counter.
  * @returns {express.Router}
  */
 export function createEmulatorRouter({
   logger = NOOP_LOGGER,
-  loadConfig,
-  readBinary,
-  writeBinary,
-  deleteBinary,
-  readEngineFile,
-  resolveRomPath,
-  resolveArtPath,
-  resolveSavePath,
-  resolveStatePath,
-  listSaveUsers,
+  emulatorResources,
+  emulatorLibrary,
   publishBtPair = () => { logger.warn('emulator.bt_pair.no_publisher', {}); },
   makeRequestId = (() => { let n = 0; return () => `btpair-${++n}`; })(),
 }) {
+  if (!emulatorLibrary?.getLibrary) throw new Error('createEmulatorRouter: library application service required');
   const router = express.Router();
   router.use(express.json());
 
@@ -138,49 +107,33 @@ export function createEmulatorRouter({
   // segment is validated (dot-allowed for filenames) so the wildcard can never
   // escape the engine dir.
   router.get('/engine/*splat', (req, res) => {
-    if (typeof readEngineFile !== 'function') {
+    if (typeof emulatorResources?.getEngineResource !== 'function') {
       return res.status(404).json({ error: 'not found' });
     }
     const wildcard = splatPath(req);
-    let relPath;
+    let assetId;
     try {
       const segments = wildcard.split('/').filter((s) => s !== '');
       if (segments.length === 0) throw new Error('unsafe path segment');
       for (const seg of segments) safeSegment(seg, { dot: true });
-      relPath = segments.join('/');
+      assetId = segments.join('/');
     } catch {
       return res.status(400).json({ error: 'bad request' });
     }
     try {
-      const result = readEngineFile(relPath);
+      const resource = emulatorResources.getEngineResource(assetId);
       const headers = {
-        // Engine files are typed by extension (the generic readBinary type would
-        // mislabel JS as octet-stream and break script execution / WASM streaming).
-        'Content-Type': engineContentTypeFor(relPath),
+        'Content-Type': resource.mimeType || 'application/octet-stream',
         'Cache-Control': MODERATE_CACHE,
       };
-      if (typeof result.size === 'number') headers['Content-Length'] = String(result.size);
+      if (typeof resource.size === 'number') headers['Content-Length'] = String(resource.size);
       res.writeHead(200, headers);
-      if (result.stream) result.stream.pipe(res);
-      else res.end(result.buffer);
+      resource.open().pipe(res);
     } catch (err) {
       if (err.code === 'ENOENT') {
-        // EmulatorJS requests localization/<locale>.json (e.g. en-US.json from the
-        // browser locale); our self-hosted bundle only ships en.json. Fall back so
-        // a missing locale doesn't 404 (which logs a console error and can stall UI).
-        if (/^localization\/[\w-]+\.json$/.test(relPath) && relPath !== 'localization/en.json') {
-          try {
-            const fb = readEngineFile('localization/en.json');
-            const headers = { 'Content-Type': engineContentTypeFor('localization/en.json'), 'Cache-Control': MODERATE_CACHE };
-            if (typeof fb.size === 'number') headers['Content-Length'] = String(fb.size);
-            res.writeHead(200, headers);
-            if (fb.stream) return fb.stream.pipe(res);
-            return res.end(fb.buffer);
-          } catch { /* fall through to 404 */ }
-        }
         return res.status(404).json({ error: 'not found' });
       }
-      logger.error('emulator.engine.error', { relPath, error: err.message });
+      logger.error('emulator.engine.error', { assetId, error: err.message });
       throw err;
     }
   });
@@ -188,36 +141,21 @@ export function createEmulatorRouter({
   // ---- GET /library --------------------------------------------------------
   router.get('/library', (req, res) => {
     try {
-      const cfg = loadConfig();
-      const { systems, consoles } = buildCatalog(cfg, logger);
       const user = req.query.user ? safeSegment(String(req.query.user)) : null;
-
-      const games = (cfg.games ?? [])
-        .filter((g) => g.system in systems)
-        .map((g) => {
-          const rules = resolveGameRules(cfg, g.id, user) ?? {};
+      const library = emulatorLibrary.getLibrary(user);
+      const games = library.games.map((game) => {
           return {
-            id: g.id,
-            system: g.system,
-            title: g.title,
-            saveMode: rules.saveMode ?? 'none',
-            core: rules.core ?? null,
-            governance: rules.governance ?? null,
-            shader: rules.shader ?? null,
-            chrome: rules.chrome ?? null,
-            native: rules.native ?? null,
-            presentation: rules.presentation ?? null,
-            romUrl: `/api/v1/emulator/rom/${g.system}/${g.id}`,
-            coverUrl: `/api/v1/emulator/art/${g.system}/${g.id}/cover`,
-            bezelUrl: `/api/v1/emulator/art/${g.system}/${g.id}/bezel`,
+            ...game,
+            romUrl: `/api/v1/emulator/rom/${game.system}/${game.id}`,
+            coverUrl: `/api/v1/emulator/art/${game.system}/${game.id}/cover`,
+            bezelUrl: `/api/v1/emulator/art/${game.system}/${game.id}/bezel`,
           };
         });
-
-      res.json({ systems, consoles, games, input: cfg.input ?? null, settings: cfg.settings ?? null });
+      res.json({ ...library, games });
     } catch (err) {
       if (/unsafe path segment/.test(err.message)) return res.status(400).json({ error: 'bad request' });
       logger.error('emulator.library.error', { error: err.message });
-      res.status(500).json({ error: 'internal error' });
+      sendInternalError(res, { error: 'internal error' });
     }
   });
 
@@ -231,16 +169,13 @@ export function createEmulatorRouter({
       return res.status(400).json({ error: 'bad request' });
     }
     try {
-      const cfg = loadConfig();
-      const absPath = resolveRomPath(cfg, system, gameId);
-      let result = readBinary(absPath);
-      const range = parseRange(req.headers.range, result.size);
-      if (range) result = readBinary(absPath, { range });
-      sendBinary(res, result, { range, cache: true });
+      const resource = emulatorResources.getRomResource({ system, gameId });
+      const range = parseRange(req.headers.range, resource.size);
+      sendBinary(res, resource, { range, cache: true });
     } catch (err) {
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
       logger.error('emulator.rom.error', { system, gameId, error: err.message });
-      res.status(500).json({ error: 'internal error' });
+      sendInternalError(res, { error: 'internal error' });
     }
   });
 
@@ -256,22 +191,20 @@ export function createEmulatorRouter({
     }
     if (kind !== 'cover' && kind !== 'bezel') return res.status(400).json({ error: 'bad kind' });
     try {
-      const cfg = loadConfig();
-      const absPath = resolveArtPath(cfg, system, gameId, kind);
-      const result = readBinary(absPath);
+      const resource = emulatorResources.getArtResource({ system, gameId, kind });
       // Moderate (not immutable): art may be swapped under the same URL.
-      sendBinary(res, result, { cache: MODERATE_CACHE });
+      sendBinary(res, resource, { cache: MODERATE_CACHE });
     } catch (err) {
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
       logger.error('emulator.art.error', { system, gameId, kind, error: err.message });
-      res.status(500).json({ error: 'internal error' });
+      sendInternalError(res, { error: 'internal error' });
     }
   });
 
   // ---- save / state read/write helpers ------------------------------------
   const rawBody = express.raw({ type: '*/*', limit: '8mb' });
 
-  function readUserBlob(req, res, resolvePath) {
+  function readUserBlob(req, res, getResource) {
     let system, gameId, slot, user;
     try {
       system = safeSegment(req.params.system);
@@ -282,17 +215,16 @@ export function createEmulatorRouter({
       return res.status(400).json({ error: 'bad request' });
     }
     try {
-      const absPath = resolvePath({ system, gameId, slot, user });
-      const result = readBinary(absPath);
-      sendBinary(res, result, { cache: false });
+      const resource = getResource({ system, gameId, slot, user });
+      sendBinary(res, resource, { cache: false });
     } catch (err) {
       if (err.code === 'ENOENT') return res.status(204).end();
       logger.error('emulator.blob.read_error', { system, gameId, slot, error: err.message });
-      res.status(500).json({ error: 'internal error' });
+      sendInternalError(res, { error: 'internal error' });
     }
   }
 
-  async function writeUserBlob(req, res, resolvePath) {
+  async function writeUserBlob(req, res, storeArtifact) {
     let system, gameId, slot, user;
     try {
       system = safeSegment(req.params.system);
@@ -307,16 +239,19 @@ export function createEmulatorRouter({
       return res.status(400).json({ error: 'empty body' });
     }
     try {
-      const absPath = resolvePath({ system, gameId, slot, user });
-      await writeBinary(absPath, body);
-      res.json({ ok: true, bytes: body.length });
+      const artifact = Object.freeze({
+        size: body.length,
+        async *chunks() { yield body; },
+      });
+      await storeArtifact({ system, gameId, slot, user }, artifact);
+      res.json({ ok: true, bytes: artifact.size });
     } catch (err) {
       logger.error('emulator.blob.write_error', { system, gameId, slot, error: err.message });
-      res.status(500).json({ error: 'internal error' });
+      sendInternalError(res, { error: 'internal error' });
     }
   }
 
-  async function deleteUserBlob(req, res, resolvePath) {
+  async function deleteUserBlob(req, res, deleteResource) {
     let system, gameId, slot, user;
     try {
       system = safeSegment(req.params.system);
@@ -326,39 +261,38 @@ export function createEmulatorRouter({
     } catch {
       return res.status(400).json({ error: 'bad request' });
     }
-    if (typeof deleteBinary !== 'function') {
-      return res.status(500).json({ error: 'delete unsupported' });
+    if (typeof deleteResource !== 'function') {
+      return sendInternalError(res, { error: 'delete unsupported' });
     }
     try {
-      const absPath = resolvePath({ system, gameId, slot, user });
-      await deleteBinary(absPath); // idempotent — missing file is a no-op
+      await deleteResource({ system, gameId, slot, user });
       res.json({ ok: true });
     } catch (err) {
       logger.error('emulator.blob.delete_error', { system, gameId, slot, error: err.message });
-      res.status(500).json({ error: 'internal error' });
+      sendInternalError(res, { error: 'internal error' });
     }
   }
 
   // ---- saves ---------------------------------------------------------------
   router.get('/save/:system/:gameId', (req, res) =>
-    readUserBlob(req, res, ({ system, gameId, user }) => resolveSavePath(system, gameId, user))
+    readUserBlob(req, res, (key) => emulatorResources.getSaveResource(key))
   );
   router.put('/save/:system/:gameId', rawBody, (req, res) =>
-    writeUserBlob(req, res, ({ system, gameId, user }) => resolveSavePath(system, gameId, user))
+    writeUserBlob(req, res, (key, artifact) => emulatorResources.storeSaveArtifact(key, artifact))
   );
   router.delete('/save/:system/:gameId', (req, res) =>
-    deleteUserBlob(req, res, ({ system, gameId, user }) => resolveSavePath(system, gameId, user))
+    deleteUserBlob(req, res, emulatorResources?.deleteSave?.bind(emulatorResources))
   );
 
   // ---- states --------------------------------------------------------------
   router.get('/state/:system/:gameId/:slot', (req, res) =>
-    readUserBlob(req, res, ({ system, gameId, slot, user }) => resolveStatePath(system, gameId, slot, user))
+    readUserBlob(req, res, (key) => emulatorResources.getStateResource(key))
   );
   router.put('/state/:system/:gameId/:slot', rawBody, (req, res) =>
-    writeUserBlob(req, res, ({ system, gameId, slot, user }) => resolveStatePath(system, gameId, slot, user))
+    writeUserBlob(req, res, (key, artifact) => emulatorResources.storeStateArtifact(key, artifact))
   );
   router.delete('/state/:system/:gameId/:slot', (req, res) =>
-    deleteUserBlob(req, res, ({ system, gameId, slot, user }) => resolveStatePath(system, gameId, slot, user))
+    deleteUserBlob(req, res, emulatorResources?.deleteState?.bind(emulatorResources))
   );
 
   // ---- GET /saves/:system/:gameId -----------------------------------------
@@ -372,16 +306,12 @@ export function createEmulatorRouter({
     } catch {
       return res.status(400).json({ error: 'bad request' });
     }
-    if (typeof listSaveUsers !== 'function') return res.json({ users: [] });
+    if (typeof emulatorResources?.listSaveUsers !== 'function') return res.json({ users: [] });
     try {
-      const cfg = loadConfig();
-      const rules = resolveGameRules(cfg, gameId, null) ?? {};
-      const saveMode = rules.saveMode ?? 'none';
-      if (saveMode === 'none') return res.json({ users: [] });
-      res.json({ users: listSaveUsers(system, gameId) });
+      res.json({ users: emulatorResources.listSaveUsers({ system, gameId }) });
     } catch (err) {
       logger.error('emulator.saves.error', { system, gameId, error: err.message });
-      res.status(500).json({ error: 'internal error' });
+      sendInternalError(res, { error: 'internal error' });
     }
   });
 

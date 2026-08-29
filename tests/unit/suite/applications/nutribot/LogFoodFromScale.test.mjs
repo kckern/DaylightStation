@@ -2,6 +2,7 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { LogFoodFromScale } from '#apps/nutribot/usecases/LogFoodFromScale.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+import { serializeNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
 
 const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
@@ -40,20 +41,20 @@ describe('LogFoodFromScale', () => {
     expect(stateStore.set).toHaveBeenCalledWith('telegram:b1_c2', expect.objectContaining({ activeFlow: 'scale_describe' }));
 
     // Assert initial log item shape and metadata
-    expect(saved[0].toJSON().items[0]).toMatchObject({
+    expect(serializeNutriLog(saved[0]).items[0]).toMatchObject({
       label: 'Unknown',
       grams: 90,
       calories: 0,
       amount: 1,
       color: 'yellow',
     });
-    expect(saved[0].toJSON().metadata).toMatchObject({
+    expect(serializeNutriLog(saved[0]).metadata).toMatchObject({
       source: 'scale',
     });
 
     // Assert messageId is persisted after send (saved twice: initial create, then with messageId)
     expect(saved.length).toBeGreaterThanOrEqual(1);
-    expect(saved[saved.length - 1].toJSON().metadata.messageId).toBe('900');
+    expect(serializeNutriLog(saved[saved.length - 1]).metadata.messageId).toBe('900');
   });
 
   it('posts the density keyboard for a heavy reading (density-first, container is a button)', async () => {

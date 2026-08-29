@@ -26,8 +26,8 @@
 
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import axios from '../backend/lib/http.mjs';
-import { createLogger } from '../backend/lib/logging/logger.js';
+import axios from 'axios';
+import { createLogger } from '#system/logging/logger.mjs';
 
 const logger = createLogger({
     source: 'cli',

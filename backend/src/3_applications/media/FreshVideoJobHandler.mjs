@@ -7,44 +7,31 @@
  */
 
 import { FreshVideoService } from './services/FreshVideoService.mjs';
-import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 
 /**
  * Create a scheduler-compatible handler for fresh video downloads
  *
  * @param {Object} config
  * @param {Object} config.videoSourceGateway - Gateway implementing IVideoSourceGateway
- * @param {Function} config.loadFile - Function to load YAML config files
- * @param {string} config.mediaPath - Path to media/video/news directory
+ * @param {Object} config.sourceCatalog - Semantic configured-source catalog
+ * @param {Object} config.mediaStore - Fresh-video persistence capability
  * @param {Object} [config.logger] - Logger instance
  * @returns {Function} Async handler (logger, executionId) => Promise<void>
  */
-export function createFreshVideoJobHandler({ videoSourceGateway, loadFile, mediaPath, logger }) {
-  // Validate required mediaPath to fail fast instead of at runtime
-  if (!mediaPath) {
-    throw new ValidationError('mediaPath is required for FreshVideoJobHandler', {
-      field: 'mediaPath',
-      received: mediaPath
+export function createFreshVideoJobHandler({ videoSourceGateway, sourceCatalog, mediaStore, lockOwnerId, logger }) {
+  if (!mediaStore) {
+    throw new ValidationError('mediaStore is required for FreshVideoJobHandler', {
+      field: 'mediaStore',
+      received: mediaStore,
     });
   }
 
   const service = new FreshVideoService({
     videoSourceGateway,
-    configLoader: async () => {
-      const raw = await loadFile('media/sources');
-      if (!Array.isArray(raw)) return [];
-      return raw.map(s => ({
-        provider: s.shortcode,
-        src: s.src || 'youtube',
-        type: (s.type || 'playlist').toLowerCase(),
-        id: s.playlist,
-        volume: s.volume,
-        rate: s.rate,
-        sort: s.sort,
-        folder: s.folder,
-      }));
-    },
-    mediaPath,
+    configLoader: () => sourceCatalog?.list?.(),
+    mediaStore,
+    lockOwnerId,
     logger,
   });
 
@@ -54,7 +41,8 @@ export function createFreshVideoJobHandler({ videoSourceGateway, loadFile, media
     log.info?.('freshvideo.job.start', { executionId });
 
     try {
-      const result = await service.run();
+      const semanticResult = await service.run();
+      const result = mediaStore.presentRunResult(semanticResult);
 
       if (result.skipped) {
         log.info?.('freshvideo.job.skipped', { executionId, reason: result.reason });

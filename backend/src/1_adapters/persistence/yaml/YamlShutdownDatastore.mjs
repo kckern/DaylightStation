@@ -15,8 +15,16 @@ export class YamlShutdownDatastore {
       // loader would turn malformed hand-edits into an unlocked kiosk.
       const raw = this.#load(this.path());
       if (!raw) return { state: null, invalid: false };
-      return { state: ShutdownState.fromData(raw), invalid: false };
+      return { state: new ShutdownState(raw), invalid: false };
     } catch (error) { return { state: null, invalid: true, error }; }
   }
-  async save(state) { this.#save(this.path(), state.toData()); }
+  async save(state) {
+    this.#save(this.path(), {
+      schema_version: 1,
+      locked_at: state.lockedAt,
+      locked_until: state.lockedUntil,
+      targets: state.targets,
+      source: state.source,
+    });
+  }
 }

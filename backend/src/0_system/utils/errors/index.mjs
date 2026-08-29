@@ -4,18 +4,6 @@
  */
 
 export {
-  DomainError,
-  ValidationError,
-  NotFoundError,
-  AuthorizationError,
-  ConflictError,
-  BusinessRuleError,
-  isDomainError,
-  isValidationError,
-  isNotFoundError,
-} from './DomainError.mjs';
-
-export {
   InfrastructureError,
   ExternalServiceError,
   RateLimitError,

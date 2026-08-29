@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * TTS Router
  *
@@ -14,13 +15,13 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 /**
  * Create TTS router
  * @param {Object} config
- * @param {import('#adapters/hardware/tts/OpenAITTSAdapter.mjs').OpenAITTSAdapter} config.ttsAdapter
+ * @param {Object} config.speechSynthesis
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
 export function createTTSRouter(config) {
   const router = express.Router();
-  const { ttsAdapter, logger = console } = config;
+  const { speechSynthesis, logger = console } = config;
 
   router.use(express.json({ strict: false }));
 
@@ -33,7 +34,7 @@ export function createTTSRouter(config) {
    * API info and status
    */
   router.get('/', (req, res) => {
-    const status = ttsAdapter.getStatus();
+    const status = speechSynthesis.status();
     res.json({
       message: 'Text-to-Speech API',
       status: 'success',
@@ -53,8 +54,8 @@ export function createTTSRouter(config) {
    */
   router.get('/voices', (req, res) => {
     res.json({
-      voices: ttsAdapter.getAvailableVoices(),
-      models: ttsAdapter.getAvailableModels()
+      voices: speechSynthesis.voices(),
+      models: speechSynthesis.models()
     });
   });
 
@@ -83,7 +84,7 @@ export function createTTSRouter(config) {
       return res.status(400).json({ error: 'Text is required (use "string" or "text" field)' });
     }
 
-    await generateAndStream(inputText, { voice, model, speed, responseFormat }, res, logger, ttsAdapter);
+    await generateAndStream(inputText, { voice, model, speed, responseFormat }, res, logger, speechSynthesis);
   });
 
   /**
@@ -102,7 +103,7 @@ export function createTTSRouter(config) {
 
     const inputText = string || text || 'Hello world! This is a test of the text-to-speech system.';
 
-    await generateAndStream(inputText, { voice, model, speed: parseFloat(speed) || undefined, responseFormat }, res, logger, ttsAdapter);
+    await generateAndStream(inputText, { voice, model, speed: parseFloat(speed) || undefined, responseFormat }, res, logger, speechSynthesis);
   });
 
   /**
@@ -121,7 +122,7 @@ export function createTTSRouter(config) {
     const voice = body.voice || query.voice;
     const model = body.model || query.model;
 
-    await generateAndStream(inputText, { voice, model }, res, logger, ttsAdapter);
+    await generateAndStream(inputText, { voice, model }, res, logger, speechSynthesis);
   });
 
   return router;
@@ -133,16 +134,16 @@ export function createTTSRouter(config) {
  * @param {Object} options
  * @param {express.Response} res
  * @param {Object} logger
- * @param {OpenAITTSAdapter} ttsAdapter
+ * @param {Object} speechSynthesis
  */
-async function generateAndStream(text, options, res, logger, ttsAdapter) {
+async function generateAndStream(text, options, res, logger, speechSynthesis) {
   logger.info?.('tts.generate.request', {
     textLength: text.length,
     voice: options.voice,
     model: options.model
   });
 
-  const audioStream = await ttsAdapter.generateSpeech(text, options);
+  const audioStream = await speechSynthesis.generate(text, options);
 
   if (audioStream && typeof audioStream.pipe === 'function') {
     res.setHeader('Content-Type', 'audio/mpeg');
@@ -152,13 +153,13 @@ async function generateAndStream(text, options, res, logger, ttsAdapter) {
     audioStream.on('error', (err) => {
       logger.error?.('tts.stream.error', { error: err.message });
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Error streaming audio' });
+        sendInternalError(res, { error: 'Error streaming audio' });
       }
     });
 
     audioStream.pipe(res);
   } else {
-    res.status(500).json({ error: 'Error generating speech' });
+    sendInternalError(res, { error: 'Error generating speech' });
   }
 }
 

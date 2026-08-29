@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initManageService, getManageService, _resetManageServiceForTests } from './manageService.mjs';
+import { EventBusBiometricGateway } from '#adapters/fitness/EventBusBiometricGateway.mjs';
 
 function fakeBus() {
   const broadcasts = [];
@@ -14,15 +15,15 @@ function fakeBus() {
   };
 }
 
-test('initManageService requires a bus with broadcast + onClientMessage', () => {
+test('initManageService requires a biometric gateway', () => {
   _resetManageServiceForTests();
-  assert.throws(() => initManageService({ eventBus: {} }), /broadcast/);
+  assert.throws(() => initManageService({ biometricGateway: {} }), /biometricGateway/);
 });
 
 test('requestEnroll broadcasts request, rebroadcasts progress with clientToken, resolves on result', async () => {
   _resetManageServiceForTests();
   const bus = fakeBus();
-  const svc = initManageService({ eventBus: bus });
+  const svc = initManageService({ biometricGateway: new EventBusBiometricGateway({ eventBus: bus }) });
 
   const promise = svc.requestEnroll({ finger: 'right-index', username: 'test-user', clientToken: 'tok-1' });
   const req = bus.broadcasts.find((b) => b.topic === 'fitness.enroll.request');
@@ -40,7 +41,7 @@ test('requestEnroll broadcasts request, rebroadcasts progress with clientToken, 
 test('requestDelete resolves on delete result', async () => {
   _resetManageServiceForTests();
   const bus = fakeBus();
-  const svc = initManageService({ eventBus: bus });
+  const svc = initManageService({ biometricGateway: new EventBusBiometricGateway({ eventBus: bus }) });
   const promise = svc.requestDelete({ uuid: 'u1' });
   const req = bus.broadcasts.find((b) => b.topic === 'fitness.fingerprint.delete.request');
   bus.deliver({ topic: 'fitness.fingerprint.delete.result', requestId: req.payload.requestId, success: true });

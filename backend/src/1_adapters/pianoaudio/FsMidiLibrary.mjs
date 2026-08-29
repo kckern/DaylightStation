@@ -14,19 +14,18 @@
  * Layer: ADAPTER (1_adapters/pianoaudio).
  * @module adapters/pianoaudio/FsMidiLibrary
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import { IMidiLibrary } from '#apps/pianoaudio/ports/IMidiLibrary.mjs';
 import { mirrorRelForMidiRel } from '#domains/pianoaudio/pianoAudioPaths.mjs';
 import { analyzeMidi, isLikelyJunkMidi } from '#domains/pianoaudio/midiDuration.mjs';
-import { fileExists } from '#system/utils/FileIO.mjs';
+import { fileExists, getStats, readBinaryFromPath, readDirectory } from '#system/utils/FileIO.mjs';
 
 const DEFAULT_JUNK_MIN_SECONDS = 1800; // 30 min — the "long" half of the long-AND-sparse junk test
 const DEFAULT_JUNK_MIN_NOTES = 200;    // the "sparse" half
 
 /** Read a .mid file and return its {durationSeconds, noteCount} (throws on unparseable input). */
 export function readMidiStats(absPath) {
-  return analyzeMidi(fs.readFileSync(absPath));
+  return analyzeMidi(readBinaryFromPath(absPath));
 }
 
 export class FsMidiLibrary extends IMidiLibrary {
@@ -53,7 +52,7 @@ export class FsMidiLibrary extends IMidiLibrary {
     this.#midiStats = midiStats;
   }
 
-  async listPending() {
+  async listPendingRecordings() {
     const midis = this.#walk(this.#sourceDir);
     const pending = [];
     for (const m of midis) {
@@ -79,10 +78,10 @@ export class FsMidiLibrary extends IMidiLibrary {
         continue;
       }
 
-      pending.push({ midiPath: m.abs, outputPath, mtimeMs: m.mtimeMs });
+      pending.push({ recordingId: rel.replace(/\\/g, '/'), mtimeMs: m.mtimeMs });
     }
     pending.sort((a, b) => b.mtimeMs - a.mtimeMs); // newest-first
-    return pending.map(({ midiPath, outputPath }) => ({ midiPath, outputPath }));
+    return pending.map(({ recordingId }) => ({ recordingId }));
   }
 
   /** @returns {Array<{abs:string, mtimeMs:number}>} */
@@ -90,7 +89,7 @@ export class FsMidiLibrary extends IMidiLibrary {
     const out = [];
     let entries;
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      entries = readDirectory(dir, { withFileTypes: true });
     } catch {
       return out; // missing/unreadable dir → nothing
     }
@@ -101,7 +100,7 @@ export class FsMidiLibrary extends IMidiLibrary {
         out.push(...this.#walk(abs));
       } else if (e.isFile() && /\.mid$/i.test(e.name)) {
         let mtimeMs = 0;
-        try { mtimeMs = fs.statSync(abs).mtimeMs; } catch { /* keep 0 */ }
+        try { mtimeMs = getStats(abs).mtimeMs; } catch { /* keep 0 */ }
         out.push({ abs, mtimeMs });
       }
     }

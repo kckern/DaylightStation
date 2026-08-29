@@ -13,8 +13,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { FilesystemCanvasAdapter } from '#adapters/content/canvas/filesystem/FilesystemCanvasAdapter.mjs';
-import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
+import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
 import { ContentAlternatesService } from '#apps/content/ContentAlternatesService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mediaPath = path.resolve(__dirname, '../../../_fixtures/media');
@@ -29,7 +30,9 @@ describe('ContentAlternatesService', () => {
     const registry = new ContentSourceRegistry();
     registry.register(new FileAdapter({ mediaBasePath: mediaPath }));
     registry.register(new FilesystemCanvasAdapter({ basePath: canvasPath }));
-    service = new ContentAlternatesService({ registry });
+    service = new ContentAlternatesService({
+      contentCatalog: new RegistryContentCatalogGateway({ registry }),
+    });
   });
 
   test('finds the canvas id addressing the same file as a files id', async () => {

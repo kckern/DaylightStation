@@ -8,10 +8,10 @@
  *
  * Discovery note (bounded, per Task 7 brief): `backend/src/0_system/logging/
  * ingestion.mjs` does NOT re-broadcast incoming frontend log events on the
- * eventBus, and does not expose any per-event hook/callback registry of its
+ * realtime transport, and does not expose any per-event hook/callback registry of its
  * own (`ingestFrontendLogs` -> `dispatcher.dispatch(normalized)`, which fans
  * out to registered *transports*, not topic subscribers). So this tracker
- * takes the brief's documented fallback: it has NO eventBus dependency at
+ * takes the brief's documented fallback: it has NO realtime-transport dependency at
  * all and instead exposes `observe(logEvent)`, fed a normalized log event
  * (the same shape `ingestFrontendLogs` builds: `{ event, data, ... }`).
  * Composition (Task 13) wires a one-line tap into `ingestFrontendLogs` —

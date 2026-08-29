@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createPresentationRouter } from './presentation.mjs';
+import { GetPublicPresentationCatalog } from '#apps/presentation/GetPublicPresentationCatalog.mjs';
 
 function invoke(router, routePath, params) {
   const layer = router.stack.find((entry) => entry.route?.path === routePath); const result = { status: 200, body: null };
@@ -15,7 +16,7 @@ describe('presentation API', () => {
       } })),
       getAsset: vi.fn(),
     };
-    const response = invoke(createPresentationRouter({ catalog }), '/catalogs/:packId', { packId: 'demo' });
+    const response = invoke(createPresentationRouter({ catalog, getPublicCatalog: new GetPublicPresentationCatalog({ catalog }) }), '/catalogs/:packId', { packId: 'demo' });
     expect(response.status).toBe(200); expect(response.body.kind).toBe('presentation-runtime-catalog');
     expect(response.body.materials).toEqual({ grass: {} });
     expect(response.body.assets.hero.source).toBeUndefined();
@@ -24,7 +25,8 @@ describe('presentation API', () => {
   });
 
   it('returns a neutral not-found response', async () => {
-    const response = invoke(createPresentationRouter({ catalog: { get: () => null } }), '/catalogs/:packId', { packId: 'missing' });
+    const catalog = { get: () => null };
+    const response = invoke(createPresentationRouter({ catalog, getPublicCatalog: new GetPublicPresentationCatalog({ catalog }) }), '/catalogs/:packId', { packId: 'missing' });
     expect(response.status).toBe(404); expect(response.body.error).toBe('presentation_catalog_not_found');
   });
 
@@ -35,7 +37,7 @@ describe('presentation API', () => {
       listScenes: vi.fn(() => ({ pack_id: 'demo', scenes: [{ id: 'oasis', theme: 'desert', manifest: 'scenes/oasis.yml' }] })),
       getScene: vi.fn(() => scene),
     };
-    const router = createPresentationRouter({ catalog });
+    const router = createPresentationRouter({ catalog, getPublicCatalog: new GetPublicPresentationCatalog({ catalog }) });
     const index = invoke(router, '/catalogs/:packId/scenes', { packId: 'demo' });
     expect(index.status).toBe(200); expect(index.body.scenes).toEqual([expect.objectContaining({ id: 'oasis', theme: 'desert' })]);
     const loaded = invoke(router, '/catalogs/:packId/scenes/:sceneId', { packId: 'demo', sceneId: 'oasis' });
@@ -44,7 +46,7 @@ describe('presentation API', () => {
 
   it('does not expose scenes outside a registered mounted scene index', () => {
     const catalog = { get: vi.fn(), listScenes: vi.fn(() => null), getScene: vi.fn(() => null) };
-    const router = createPresentationRouter({ catalog });
+    const router = createPresentationRouter({ catalog, getPublicCatalog: new GetPublicPresentationCatalog({ catalog }) });
     expect(invoke(router, '/catalogs/:packId/scenes', { packId: 'missing' }).body.error).toBe('presentation_scene_index_not_found');
     expect(invoke(router, '/catalogs/:packId/scenes/:sceneId', { packId: 'demo', sceneId: '../secret' }).body.error).toBe('presentation_scene_not_found');
   });

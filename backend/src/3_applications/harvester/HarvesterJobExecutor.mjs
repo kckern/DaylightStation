@@ -18,26 +18,18 @@ export class HarvesterJobExecutor {
   #harvesterService;
 
   /** @type {Object} */
-  #configService;
-
-  /** @type {Object} */
   #logger;
 
   /**
    * @param {Object} deps - Dependencies
    * @param {import('./HarvesterService.mjs').HarvesterService} deps.harvesterService - HarvesterService instance
-   * @param {Object} deps.configService - ConfigService for user resolution
    * @param {Object} [deps.logger] - Logger instance
    */
-  constructor({ harvesterService, configService, logger }) {
+  constructor({ harvesterService, logger }) {
     if (!harvesterService) {
       throw new Error('HarvesterJobExecutor requires harvesterService');
     }
-    if (!configService) {
-      throw new Error('HarvesterJobExecutor requires configService');
-    }
     this.#harvesterService = harvesterService;
-    this.#configService = configService;
     this.#logger = logger || console;
   }
 
@@ -59,8 +51,7 @@ export class HarvesterJobExecutor {
     const { logger: scopedLogger, executionId } = context;
     const log = scopedLogger || this.#logger;
 
-    // Resolve username: use provided, or head of household from config
-    const username = options.username || this.#configService?.getHeadOfHousehold?.();
+    const username = options.username;
 
     log.info?.('harvester.executor.start', {
       serviceId,

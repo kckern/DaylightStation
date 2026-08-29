@@ -1,7 +1,31 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createLifeRouter from '#api/v1/routers/life.mjs';
+import createLifeRouterBase from '#api/v1/routers/life.mjs';
+import { LifeApiOperations } from '#apps/lifeplan/LifeApiOperations.mjs';
+import { LifePlanOperations } from '#apps/lifeplan/LifePlanOperations.mjs';
+import { presentBelief, presentGoal, presentLifePlan } from '#apps/lifeplan/presenters/lifePlanPresenter.mjs';
+
+const createLifeRouter = (config) => {
+  const lifePlanOperations = config.lifePlanOperations || new LifePlanOperations({
+    plans: config.lifePlanStore, goalStates: config.goalStateService,
+    beliefEvaluator: config.beliefEvaluator, cadence: config.cadenceService,
+    ceremony: config.ceremonyService, feedback: config.feedbackService,
+    retrospective: config.retroService, authoring: config.planAuthoringService,
+    drift: config.driftService,
+    serviceAvailability: Object.fromEntries(['alignmentService', 'driftService', 'ceremonyService', 'feedbackService', 'retroService', 'aggregator'].map((key) => [key, !!config[key]])),
+  });
+  return createLifeRouterBase({
+    ...config, lifePlanOperations, presentBelief, presentGoal, presentLifePlan,
+    lifeApi: new LifeApiOperations({
+    aggregator: config.aggregator,
+    userDirectory: config.userService,
+    listHouseholdUsers: config.listHouseholdUsers,
+    defaultUsername: config.defaultUsername,
+    lifePlanOperations,
+  }),
+  });
+};
 
 const baseConfig = {
   lifePlanStore: { load: () => null },

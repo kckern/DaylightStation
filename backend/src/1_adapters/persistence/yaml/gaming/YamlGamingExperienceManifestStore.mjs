@@ -1,8 +1,8 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import crypto from 'node:crypto';
 import { canonicalStringify } from '#shared/gaming/kernel/canonical.mjs';
+import { ensureDir, readDirectory, readTextFromPath } from '#system/utils/FileIO.mjs';
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SETUP_KINDS = new Set(['none', 'individuals', 'teams', 'individuals-or-teams']);
@@ -40,13 +40,13 @@ export class YamlGamingExperienceManifestStore {
   constructor({ manifestsDir }) {
     if (!manifestsDir) throw new Error('manifestsDir is required');
     this.manifestsDir = manifestsDir;
-    fs.mkdirSync(manifestsDir, { recursive: true });
+    ensureDir(manifestsDir);
   }
 
   list() {
-    return fs.readdirSync(this.manifestsDir, { withFileTypes: true })
+    return readDirectory(this.manifestsDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /\.ya?ml$/i.test(entry.name))
-      .map((entry) => validate(YAML.parse(fs.readFileSync(path.join(this.manifestsDir, entry.name), 'utf8'), { uniqueKeys: true }), entry.name))
+      .map((entry) => validate(YAML.parse(readTextFromPath(path.join(this.manifestsDir, entry.name)), { uniqueKeys: true }), entry.name))
       .sort((a, b) => a.id.localeCompare(b.id));
   }
 

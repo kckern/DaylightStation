@@ -1,7 +1,6 @@
 import { Item } from '#domains/content/entities/Item.mjs';
 import { YouTubeVideoId } from '#domains/content/value-objects/YouTubeVideoId.mjs';
-import { encodeStreamUrl } from '#adapters/content/stream/streamUrlCodec.mjs';
-import { proxifyStreamUrl } from '#adapters/content/stream/streamProxyPath.mjs';
+import { encodeStreamUrl } from '../../stream/streamUrlCodec.mjs';
 
 /**
  * `youtube:<videoId>` content source — an anti-corruption layer that turns a
@@ -61,7 +60,7 @@ export class YouTubeContentSource {
 
     this.#logger.info?.('stream.resolve.selected', { source: 'youtube', strategy: 'piped', videoId: videoId.value });
     return this.#buildItem(videoId, {
-      mediaUrl: proxifyStreamUrl(info.url),
+      mediaUrl: { kind: 'stream-proxy', sourceUrl: info.url, profile: null },
       mediaType: 'video',
       contentFormat: 'video',
       title: info.title || null,

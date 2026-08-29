@@ -12,9 +12,7 @@
  * @module applications/fitness/ActivityReconciliationService
  */
 
-import path from 'path';
 import moment from 'moment-timezone';
-import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 
@@ -26,8 +24,9 @@ export class ActivityReconciliationService {
   #lookbackDays;
   #selectionConfig;
   #timezone;
-  #fitnessHistoryDir;
   #logger;
+  #historyRepository;
+  #pause;
 
   /**
    * @param {Object} config
@@ -38,13 +37,14 @@ export class ActivityReconciliationService {
    * @param {string} config.fitnessHistoryDir - Path to fitness history directory
    * @param {Object} [config.logger]
    */
-  constructor({ activityGateway, lookbackDays, selectionConfig, timezone, fitnessHistoryDir, logger = console }) {
+  constructor({ activityGateway, lookbackDays, selectionConfig, timezone, historyRepository, pause = async () => {}, logger = console }) {
     this.#activityGateway = activityGateway;
     this.#lookbackDays = lookbackDays;
     this.#selectionConfig = selectionConfig;
     this.#timezone = timezone;
-    this.#fitnessHistoryDir = fitnessHistoryDir;
+    this.#historyRepository = historyRepository;
     this.#logger = logger;
+    this.#pause = pause;
   }
 
   /**
@@ -64,14 +64,8 @@ export class ActivityReconciliationService {
     let sliversAbsorbed = 0;
 
     for (const date of dates) {
-      const dateDir = path.join(this.#fitnessHistoryDir, date);
-      if (!dirExists(dateDir)) continue;
-
-      const files = listYamlFiles(dateDir);
-      for (const filename of files) {
-        const filePath = path.join(dateDir, `${filename}.yml`);
-        const session = loadYamlSafe(filePath);
-        if (!session) continue;
+      const records = this.#historyRepository.list(date);
+      for (const { id: sessionId, data: session } of records) {
 
         // Find strava activityId from session or participants
         const activityId = this.#extractActivityId(session);
@@ -102,8 +96,7 @@ export class ActivityReconciliationService {
 
           // Save session if anything changed
           if (didEnrich || didPull || !lastReconciled) {
-            const savePath = filePath.replace(/\.yml$/, '');
-            saveYaml(savePath, session);
+            this.#historyRepository.save(sessionId, session);
           }
 
           // Pass 3: Sliver absorption (only for Strava-only sessions).
@@ -112,10 +105,11 @@ export class ActivityReconciliationService {
           // in the same date dir and delete them. Catches the cases where
           // the original webhook either failed to absorb or never fired.
           if (session.session?.source === 'strava') {
-            const result = absorbOverlappingSlivers(activity, dateDir, {
+            const result = absorbOverlappingSlivers(activity, records, {
               justCreatedSessionId: session.sessionId || session.session?.id,
               tz,
               logger: this.#logger,
+              removeSession: id => this.#historyRepository.remove(id),
             });
             sliversAbsorbed += result.absorbed.length;
           }
@@ -123,7 +117,7 @@ export class ActivityReconciliationService {
           sessionsProcessed++;
 
           // Rate limit: small delay between sessions
-          await this.#delay(INTER_SESSION_DELAY_MS);
+          await this.#pause(INTER_SESSION_DELAY_MS);
         } catch (err) {
           this.#logger.warn?.('strava.reconciliation.session_error', {
             activityId,
@@ -259,9 +253,6 @@ export class ActivityReconciliationService {
     return dates;
   }
 
-  #delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
 }
 
 export default ActivityReconciliationService;

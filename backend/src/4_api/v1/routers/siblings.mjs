@@ -46,13 +46,10 @@ export function createSiblingsRouter(config) {
 
     const result = await siblingsService.resolveSiblings(source, localId, opts);
 
-    // Handle error results
-    if (result.error) {
-      const status = result.status || 404;
-      return res.status(status).json({
-        error: result.error,
+    if (result.kind === 'source_unknown') {
+      return res.status(404).json({
+        error: `Unknown source: ${result.source}`,
         ...(result.source && { source: result.source }),
-        ...(result.localId && { localId: result.localId })
       });
     }
 

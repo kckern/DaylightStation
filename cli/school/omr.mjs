@@ -47,6 +47,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import path, { join } from 'path';
 import { readFileSync, existsSync } from 'fs';
+import { YamlDecodedQuizScanStore } from '../../backend/src/1_adapters/persistence/yaml/YamlDecodedQuizScanStore.mjs';
 import yaml from 'js-yaml';
 
 import { rebuildQuizDayFiles, decodeQuizSheet } from '#apps/quizzes/quizScanRecorder.mjs';
@@ -106,14 +107,15 @@ async function rebuild(argv) {
     : join(dataDir, 'household', fallback));
 
   const result = await rebuildQuizDayFiles({
-    historyRoot: resolveRoot(config?.persistence?.dir, 'hardware/omr/log'),
     // MUST match app.mjs's live default for the recorder (school/records/assessments/omr).
     // These are two composition roots writing the same tree, so a drift here
     // silently rebuilds history into a directory nothing reads — which is what
     // happened when `quizzes/` was folded under `school/` and only app.mjs was
     // updated.
-    outRoot: resolveRoot(config?.quizzes?.dir, 'school/records/assessments/omr'),
-    config,
+    decodedScanStore: new YamlDecodedQuizScanStore({
+      rawHistoryRoot: resolveRoot(config?.persistence?.dir, 'hardware/omr/log'),
+      decodedRoot: resolveRoot(config?.quizzes?.dir, 'school/records/assessments/omr'),
+    }),
     logger: console,
   });
   console.log(`Rebuilt ${result.days} day file(s), ${result.sheets} sheet(s), across ${result.readers} reader(s).`);

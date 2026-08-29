@@ -10,7 +10,7 @@
  * The guard is optional: a caller that sends nothing keeps the legacy
  * last-write-wins behavior.
  */
-import { ValidationError } from '#domains/core/errors/index.mjs';
+import { StateConflictError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export function assertNotStale(current, baseUpdatedAt) {
   // Concurrent-edit guard (advocacy B14): a caller that says what it LOADED
@@ -20,13 +20,10 @@ export function assertNotStale(current, baseUpdatedAt) {
   if (baseUpdatedAt !== undefined) {
     const currentAt = current?.updatedAt ?? null;
     if (currentAt !== baseUpdatedAt) {
-      const err = new ValidationError('Assignments changed since you loaded them — reload and try again.');
-      err.code = 'STALE_SAVE';
-      // A stale-base write is a conflict with someone else's edit, not a
-      // malformed request — 409, not this class's default 400 (the app
-      // error handler maps an explicit err.status first).
-      err.status = 409;
-      throw err;
+      throw new StateConflictError(
+        'Assignments changed since you loaded them — reload and try again.',
+        { code: 'STALE_SAVE' },
+      );
     }
   }
 }

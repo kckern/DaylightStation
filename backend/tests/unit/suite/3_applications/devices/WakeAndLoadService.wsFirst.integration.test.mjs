@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
+import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 /**
  * Cross-phase WS-first happy-path integration test.
@@ -66,8 +67,7 @@ describe('WakeAndLoadService — cross-phase WS-first integration', () => {
     const service = new WakeAndLoadService({
       deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn(async () => ({ ready: true })) },
-      broadcast: mockBroadcast,
-      eventBus: mockEventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus: mockEventBus, broadcastEvent: mockBroadcast }),
       logger: mockLogger,
     });
 

@@ -17,7 +17,6 @@ import {
   ensureDir,
   deleteYaml
 } from '#system/utils/FileIO.mjs';
-import { normalizeListConfig, serializeListConfig } from '#domains/content/utils/listConfigNormalizer.mjs';
 import { IListStore } from '#apps/content/ports/IListStore.mjs';
 
 // Valid list types
@@ -26,13 +25,14 @@ const LIST_TYPES = ['menus', 'watchlists', 'programs'];
 export class YamlListDatastore extends IListStore {
   /**
    * @param {Object} config
-   * @param {Object} config.userDataService - UserDataService for household paths
-   * @param {Object} config.configService - ConfigService for default household
+   * @param {string} config.dataDir - Root data directory
    */
   constructor(config) {
     super();
-    this.userDataService = config.userDataService;
-    this.configService = config.configService;
+    if (!config.dataDir) throw new Error('YamlListDatastore requires dataDir');
+    this.dataDir = config.dataDir;
+    if (!config.listConfigCodec) throw new Error('YamlListDatastore requires listConfigCodec');
+    this.listConfigCodec = config.listConfigCodec;
   }
 
   /**
@@ -41,8 +41,7 @@ export class YamlListDatastore extends IListStore {
    * call-site signature compatibility) but does not affect the path.
    */
   _getListsBaseDir(_householdId) {
-    const basePath = this.userDataService.getDataDir();
-    return path.join(basePath, 'content', 'lists');
+    return path.join(this.dataDir, 'content', 'lists');
   }
 
   /**
@@ -66,11 +65,7 @@ export class YamlListDatastore extends IListStore {
     return LIST_TYPES.map(type => {
       const typeDir = path.join(baseDir, type);
       const names = listYamlFiles(typeDir);
-      return {
-        type,
-        count: names.length,
-        path: `content/lists/${type}`
-      };
+      return { type, count: names.length };
     });
   }
 
@@ -81,7 +76,7 @@ export class YamlListDatastore extends IListStore {
 
     return listNames.map(name => {
       const content = loadYamlSafe(path.join(typeDir, name));
-      const list = normalizeListConfig(content, name);
+      const list = this.listConfigCodec.normalizeListConfig(content, name);
       const itemCount = list.sections.reduce((sum, s) => sum + s.items.length, 0);
       return {
         name,
@@ -100,13 +95,13 @@ export class YamlListDatastore extends IListStore {
 
     if (content === null) return null;
 
-    return normalizeListConfig(content, name);
+    return this.listConfigCodec.normalizeListConfig(content, name);
   }
 
   /** @inheritdoc */
   saveList(type, name, householdId, listConfig) {
     const listPath = this._getListPath(type, name, householdId);
-    saveYaml(listPath, serializeListConfig(listConfig));
+    saveYaml(listPath, this.listConfigCodec.serializeListConfig(listConfig));
   }
 
   /** @inheritdoc */

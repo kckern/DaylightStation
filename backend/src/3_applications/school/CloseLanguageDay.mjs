@@ -9,7 +9,7 @@ export class CloseLanguageDay {
   #assignments; #curriculum; #sessions; #close; #clock; #logger; #locks = new Map();
   #unsubscribe = null;
 
-  constructor({ assignments, curriculum, sessions, closeSessionOutcome, eventBus = null,
+  constructor({ assignments, curriculum, sessions, closeSessionOutcome, realtime = null,
     clock = () => new Date(), logger = console } = {}) {
     if (!assignments || !curriculum || !sessions || !closeSessionOutcome) {
       throw new Error('CloseLanguageDay requires assignments, curriculum, sessions and closeSessionOutcome');
@@ -20,7 +20,7 @@ export class CloseLanguageDay {
     this.#close = closeSessionOutcome;
     this.#clock = clock;
     this.#logger = logger;
-    if (eventBus?.subscribe) this.#unsubscribe = eventBus.subscribe('school.language.day-complete', (payload) => (
+    if (realtime?.onLanguageDayCompleted) this.#unsubscribe = realtime.onLanguageDayCompleted((payload) => (
       this.handle(payload).catch((error) => this.#logger.warn?.('school.language.close-failed', {
         error: error?.message ?? String(error),
       }))

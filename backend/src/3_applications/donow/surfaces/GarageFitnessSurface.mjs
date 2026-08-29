@@ -3,7 +3,7 @@
  * (spec §5, surface id `garage-fitness`).
  *
  * This surface has ZERO remote reachability today (spec §5) — dispatch
- * broadcasts a NEW `fitness.launch` message on the `fitness` eventBus topic,
+ * publishes the existing fitness-launch command through an injected gateway,
  * which a frontend `useFitnessLaunch` hook (mirror of the existing
  * `useSchoolLaunch`) is expected to pick up and navigate FitnessApp to
  * `/fitness/play/:episodeId`. That hook is out of scope for this adapter —
@@ -16,18 +16,18 @@
  * should involve a grown-up).
  */
 export class GarageFitnessSurface {
-  #eventBus;
+  #fitnessLauncher;
   #presence;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {{broadcast: Function}} [config.eventBus] - optional; absent means no target is listening
+   * @param {{launchFitness: Function}} [config.fitnessLauncher] - optional; absent means no target is listening
    * @param {{occupancy: Function}} [config.presence] - FitnessPresenceTracker-shaped; optional
    * @param {Object} [config.logger]
    */
-  constructor({ eventBus = null, presence = null, logger = console } = {}) {
-    this.#eventBus = eventBus;
+  constructor({ fitnessLauncher = null, presence = null, logger = console } = {}) {
+    this.#fitnessLauncher = fitnessLauncher;
     this.#presence = presence;
     this.#logger = logger;
   }
@@ -59,15 +59,12 @@ export class GarageFitnessSurface {
 
   /** @returns {Promise<{dispatched: boolean}>} */
   async dispatch({ action, learnerId }) {
-    if (!this.#eventBus) {
+    if (!this.#fitnessLauncher) {
       this.#logger.warn?.('donow.garage-fitness.no-bus', { learnerId, episodeId: action?.episodeId });
       return { dispatched: false };
     }
     try {
-      this.#eventBus.broadcast('fitness', {
-        type: 'fitness.launch', learnerId, episodeId: action.episodeId,
-        ...(action.schoolActivity ? { schoolActivity: action.schoolActivity } : {}),
-      });
+      this.#fitnessLauncher.launchFitness({ learnerId, episodeId: action.episodeId, schoolActivity: action.schoolActivity });
     } catch (err) {
       this.#logger.warn?.('donow.garage-fitness.dispatch-failed', { error: err?.message || String(err) });
       return { dispatched: false };

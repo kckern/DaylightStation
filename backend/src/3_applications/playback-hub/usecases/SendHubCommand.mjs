@@ -27,7 +27,6 @@
 import { PlayCommand } from '#domains/playback-hub/value-objects/PlayCommand.mjs';
 import { QueueRef } from '#domains/playback-hub/value-objects/QueueRef.mjs';
 import { CommandResult } from '#domains/playback-hub/value-objects/CommandResult.mjs';
-import { InfrastructureError } from '#system/utils/errors/InfrastructureError.mjs';
 
 const GROUP_TARGETS = new Set(['all', 'all-private', 'all-public']);
 
@@ -81,7 +80,7 @@ export class SendHubCommand {
         for (const color of result.applied) applied.push(color);
         for (const entry of result.skipped) skipped.push({ color: entry.color, reason: entry.reason });
       } catch (err) {
-        if (err instanceof InfrastructureError) {
+        if (err?.name === 'InfrastructureError') {
           this.#logger.warn?.('playback-hub.command.gateway_unreachable', {
             color: device.color.value, error: err.message
           });

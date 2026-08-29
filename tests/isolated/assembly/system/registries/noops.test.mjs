@@ -2,7 +2,7 @@ import {
   createNoOpMediaAdapter,
   createNoOpAIGateway,
   createNoOpHomeAutomationGateway,
-} from '#backend/src/0_system/registries/noops/index.mjs';
+} from '#adapters/integrations/noops.mjs';
 
 describe('NoOp Adapters', () => {
   describe('createNoOpMediaAdapter', () => {

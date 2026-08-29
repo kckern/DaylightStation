@@ -4,8 +4,8 @@
  * @module applications/pianoaudio/ports/IMidiLibrary
  */
 export class IMidiLibrary {
-  /** @returns {Promise<Array<{midiPath:string, outputPath:string}>>} absolute paths, missing-output only, newest-first */
-  async listPending() { throw new Error('IMidiLibrary.listPending not implemented'); }
+  /** @returns {Promise<Array<{recordingId:string}>>} missing-output only, newest-first */
+  async listPendingRecordings() { throw new Error('IMidiLibrary.listPendingRecordings not implemented'); }
 }
 
 export default IMidiLibrary;

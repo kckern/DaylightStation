@@ -2,6 +2,8 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createProxyRouter } from '#backend/src/4_api/v1/routers/proxy.mjs';
+import { RegistryPlaybackStreamGateway } from '#adapters/proxy/RegistryPlaybackStreamGateway.mjs';
+import { MintPlaybackStream } from '#apps/proxy/MintPlaybackStream.mjs';
 
 /**
  * Each call to this route mints a Plex transcode session, and the route logged
@@ -21,9 +23,11 @@ function harness({ mediaUrl = 'http://plex.example/video/:/transcode/x.mpd', rea
     getMediaUrl: vi.fn(async () => (mediaUrl ? { url: mediaUrl } : { url: null, reason })),
   };
   const registry = { get: (name) => (name === 'plex' ? adapter : null) };
+  const gateway = new RegistryPlaybackStreamGateway({ registry, logger });
+  const mintPlaybackStream = new MintPlaybackStream({ gateway });
 
   const app = express();
-  app.use('/proxy', createProxyRouter({ registry, logger }));
+  app.use('/proxy', createProxyRouter({ mintPlaybackStream, logger }));
   return { app, logger, adapter };
 }
 
@@ -81,7 +85,8 @@ describe('GET /proxy/plex/stream/:ratingKey — mint accounting', () => {
   test('a missing adapter is skipped, and says so', async () => {
     const app = express();
     const logger = { sampled: vi.fn(), warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() };
-    app.use('/proxy', createProxyRouter({ registry: { get: () => null }, logger }));
+    const gateway = new RegistryPlaybackStreamGateway({ registry: { get: () => null }, logger });
+    app.use('/proxy', createProxyRouter({ mintPlaybackStream: new MintPlaybackStream({ gateway }), logger }));
 
     const res = await request(app).get('/proxy/plex/stream/694719');
 

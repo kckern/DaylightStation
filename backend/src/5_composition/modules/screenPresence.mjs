@@ -6,6 +6,8 @@
  */
 
 import { ScreenPresenceService } from '#apps/devices/services/ScreenPresenceService.mjs';
+import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
+import { ConfigScreenPresenceProjection } from '#adapters/devices/ConfigScreenPresenceProjection.mjs';
 
 /** @type {ScreenPresenceService | null} */
 let instance = null;
@@ -19,19 +21,14 @@ let instance = null;
  * @param {{now:()=>number}} [config.clock]
  * @returns {{ presenceService: ScreenPresenceService|null }}
  */
-export function createScreenPresenceService({ eventBus, haGateway, devicesConfig, logger = console, clock } = {}) {
-  if (!eventBus) throw new Error('createScreenPresenceService requires eventBus');
+export function createScreenPresenceService({ presenceGateway, haGateway, devicesConfig, logger = console, clock } = {}) {
+  if (!presenceGateway) throw new Error('createScreenPresenceService requires presenceGateway');
   if (instance) {
     logger.warn?.('screen-presence.already_created');
     return { presenceService: instance };
   }
 
-  const presenceByDevice = {};
-  for (const [deviceId, cfg] of Object.entries(devicesConfig || {})) {
-    if (cfg?.presence?.entity) {
-      presenceByDevice[deviceId] = { entity: cfg.presence.entity, ttlMs: cfg.presence.ttlMs };
-    }
-  }
+  const presenceByDevice = new ConfigScreenPresenceProjection({ devicesConfig }).read();
 
   if (!haGateway) {
     logger.warn?.('screen-presence.skipped_no_ha_gateway');
@@ -42,8 +39,11 @@ export function createScreenPresenceService({ eventBus, haGateway, devicesConfig
     return { presenceService: null };
   }
 
-  const presenceService = new ScreenPresenceService({ haGateway, presenceByDevice, logger, clock });
-  presenceService.start(eventBus);
+  const presenceService = new ScreenPresenceService({
+    haGateway, presenceByDevice, presenceGateway,
+    scheduler: new NodeApplicationScheduler(), logger, clock,
+  });
+  presenceService.start();
   instance = presenceService;
   return { presenceService };
 }

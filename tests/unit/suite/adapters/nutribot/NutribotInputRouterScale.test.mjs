@@ -1,6 +1,6 @@
 // tests/unit/suite/adapters/nutribot/NutribotInputRouterScale.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { NutribotInputRouter } from '#adapters/nutribot/NutribotInputRouter.mjs';
+import { NutribotInputRouter } from '#apps/nutribot/services/NutribotInputRouter.mjs';
 
 function makeContainer(spies) {
   return {
@@ -43,18 +43,15 @@ describe('NutribotInputRouter scale routing', () => {
     expect(spies.density).toHaveBeenCalledWith(expect.objectContaining({ logUuid: 'log1', level: 4 }));
   });
 
-  it('translates an expected scale refusal at the adapter boundary', async () => {
+  it('returns a typed scale refusal without generic router error telemetry', async () => {
     const refusal = new Error('unknown level');
     refusal.code = 'NUTRIBOT_SCALE_UNKNOWN_LEVEL';
     spies.density.mockRejectedValue(refusal);
 
-    const result = await router.handleCallback(evt({
+    await expect(router.route(evt({
+      type: 'callback',
       payload: { callbackData: JSON.stringify({ cmd: 'sd', id: 'log1', l: 99 }) },
-    }), {});
-
-    expect(result).toEqual({
-      success: false, error: 'unknown level', code: 'NUTRIBOT_SCALE_UNKNOWN_LEVEL',
-    });
+    }), {})).resolves.toMatchObject({ message: 'unknown level', code: 'NUTRIBOT_SCALE_UNKNOWN_LEVEL' });
   });
 
   it('does not swallow unexpected scale failures', async () => {

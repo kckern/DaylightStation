@@ -16,18 +16,17 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { FeedbackService } from '#apps/common/feedback/FeedbackService.mjs';
+import { FilesystemFeedbackRepository } from '#adapters/feedback/FilesystemFeedbackRepository.mjs';
 
 let dir;
 let notificationService;
 let service;
 
 function makeService(extra = {}) {
-  const configService = {
-    getMediaDir: () => path.join(dir, 'media'),
-    getHouseholdPath: (rel) => path.join(dir, 'household', rel),
-  };
   return new FeedbackService({
-    configService,
+    feedbackRepository: new FilesystemFeedbackRepository({
+      itemsRoot: path.join(dir, 'household', 'feedback'), mediaDir: path.join(dir, 'media'),
+    }),
     transcriptionService: null,
     logger: { info() {}, warn() {}, error() {}, debug() {} },
     notificationService,

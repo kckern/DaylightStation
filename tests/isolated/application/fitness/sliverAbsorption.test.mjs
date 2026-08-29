@@ -6,13 +6,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   dirExists: vi.fn(),
 }));
 
-vi.mock('fs', async () => {
-  const actual = await vi.importActual('fs');
-  return { ...actual, unlinkSync: vi.fn() };
-});
-
-const { unlinkSync } = await import('fs');
-const { absorbOverlappingSlivers } = await import('#apps/fitness/sliverAbsorption.mjs');
+const { absorbOverlappingSlivers: rawAbsorbOverlappingSlivers } = await import('#apps/fitness/sliverAbsorption.mjs');
 const { loadYamlSafe, listYamlFiles, dirExists } = await import('#system/utils/FileIO.mjs');
 
 const buildActivity = (overrides = {}) => ({
@@ -40,12 +34,24 @@ const buildSliver = (overrides = {}) => ({
 
 describe('absorbOverlappingSlivers', () => {
   let logger;
+  let removeFile;
 
   beforeEach(() => {
     vi.resetAllMocks();
     dirExists.mockReturnValue(true);
     logger = { info: vi.fn(), warn: vi.fn() };
+    removeFile = vi.fn(() => true);
   });
+
+  const absorbOverlappingSlivers = (activity, sessionDir, options = {}) => {
+    const sessions = dirExists(sessionDir)
+      ? listYamlFiles(sessionDir).map(id => ({ id, data: loadYamlSafe(`${sessionDir}/${id}.yml`) })).filter(r => r.data)
+      : [];
+    return rawAbsorbOverlappingSlivers(activity, sessions, {
+      ...options,
+      removeSession: options.removeFile ? id => options.removeFile(`${sessionDir}/${id}.yml`) : null,
+    });
+  };
 
   test('absorbs short HR-only sliver inside activity window', () => {
     listYamlFiles.mockReturnValue(['sliver-1', 'just-created']);
@@ -69,10 +75,11 @@ describe('absorbOverlappingSlivers', () => {
       justCreatedSessionId: 'just-created',
       logger,
       tz: 'America/Los_Angeles',
+      removeFile,
     });
 
-    expect(unlinkSync).toHaveBeenCalledTimes(1);
-    expect(unlinkSync).toHaveBeenCalledWith(expect.stringContaining('sliver-1'));
+    expect(removeFile).toHaveBeenCalledTimes(1);
+    expect(removeFile).toHaveBeenCalledWith(expect.stringContaining('sliver-1'));
     expect(result.absorbed).toEqual(['sliver-1']);
     expect(result.scanned).toBe(2);
   });
@@ -83,8 +90,8 @@ describe('absorbOverlappingSlivers', () => {
       summary: { media: [{ contentId: 'plex:1', primary: true }] },
     }));
 
-    const result = absorbOverlappingSlivers(buildActivity(), '/tmp/dir', { logger });
-    expect(unlinkSync).not.toHaveBeenCalled();
+    const result = absorbOverlappingSlivers(buildActivity(), '/tmp/dir', { logger, removeFile });
+    expect(removeFile).not.toHaveBeenCalled();
     expect(result.absorbed).toEqual([]);
   });
 
@@ -129,15 +136,16 @@ describe('absorbOverlappingSlivers', () => {
     const result = absorbOverlappingSlivers(buildActivity(), '/tmp/dir', {
       justCreatedSessionId: 'just-created',
       logger,
+      removeFile,
     });
-    expect(unlinkSync).not.toHaveBeenCalled();
+    expect(removeFile).not.toHaveBeenCalled();
     expect(result.absorbed).toEqual([]);
   });
 
   test('returns absorbed/scanned counts and logs each absorption', () => {
     listYamlFiles.mockReturnValue(['s1', 's2']);
     loadYamlSafe.mockReturnValue(buildSliver());
-    const result = absorbOverlappingSlivers(buildActivity(), '/tmp/dir', { logger });
+    const result = absorbOverlappingSlivers(buildActivity(), '/tmp/dir', { logger, removeFile });
     expect(result.scanned).toBe(2);
     expect(result.absorbed).toHaveLength(2);
     expect(logger.info).toHaveBeenCalledTimes(2);
@@ -149,8 +157,8 @@ describe('absorbOverlappingSlivers', () => {
 
   test('returns gracefully when sessionDir does not exist', () => {
     dirExists.mockReturnValue(false);
-    const result = absorbOverlappingSlivers(buildActivity(), '/missing', { logger });
+    const result = absorbOverlappingSlivers(buildActivity(), '/missing', { logger, removeFile });
     expect(result).toEqual({ scanned: 0, absorbed: [] });
-    expect(unlinkSync).not.toHaveBeenCalled();
+    expect(removeFile).not.toHaveBeenCalled();
   });
 });

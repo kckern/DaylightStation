@@ -20,9 +20,9 @@
  * currently holds the data.
  */
 import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { IReviewQueue } from '#apps/school/ports/IReviewQueue.mjs';
+import { deleteFile, getStats, readDirectory, readTextFromPath, writeFile } from '#system/utils/FileIO.mjs';
 
 const SESSION_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const YAML_FILE_RE = /\.(yml|yaml)$/;
@@ -57,7 +57,7 @@ export class YamlReviewQueue extends IReviewQueue {
     // grown-up, so absent stays quiet and unreadable is reported.
     let text;
     try {
-      text = await fs.readFile(file, 'utf8');
+      text = readTextFromPath(file);
     } catch (err) {
       if (err?.code !== 'ENOENT') {
         this.#logger.error?.('school.review-queue.unreadable', { file, error: err?.message });
@@ -87,16 +87,11 @@ export class YamlReviewQueue extends IReviewQueue {
    * session's data never lives under both at once.
    */
   async #write(sessionId, items) {
-    await fs.mkdir(this.#root(), { recursive: true });
     const settled = items.length > 0 && items.every((i) => i.verdict);
     const target = settled ? this.#settledFile(sessionId) : this.#liveFile(sessionId);
     const stale = settled ? this.#liveFile(sessionId) : this.#settledFile(sessionId);
-    await fs.writeFile(target, dumpYaml(items), 'utf8');
-    try {
-      await fs.unlink(stale);
-    } catch {
-      // Nothing under the other name — the common case.
-    }
+    writeFile(target, dumpYaml(items));
+    deleteFile(stale); // Nothing under the other name — the common case.
     return items;
   }
 
@@ -196,7 +191,7 @@ export class YamlReviewQueue extends IReviewQueue {
     if (typeof learnerId !== 'string' || !learnerId.trim()) return [];
     let entries;
     try {
-      entries = await fs.readdir(this.#root(), { withFileTypes: true });
+      entries = readDirectory(this.#root(), { withFileTypes: true });
     } catch {
       return [];
     }
@@ -210,10 +205,9 @@ export class YamlReviewQueue extends IReviewQueue {
     const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
     const collected = [];
     await Promise.all([...sessionIds].map(async (sessionId) => {
-      const mtimes = (await Promise.all([
-        fs.stat(this.#liveFile(sessionId)).catch(() => null),
-        fs.stat(this.#settledFile(sessionId)).catch(() => null),
-      ])).filter(Boolean).map((s) => s.mtimeMs);
+      const mtimes = [
+        getStats(this.#liveFile(sessionId)), getStats(this.#settledFile(sessionId)),
+      ].filter(Boolean).map((s) => s.mtimeMs);
       // Neither name stat-able (raced with a delete) or genuinely stale:
       // nothing here can contribute a row within the window.
       if (mtimes.length && !mtimes.some((mtime) => mtime >= cutoffMs)) return;
@@ -236,7 +230,7 @@ export class YamlReviewQueue extends IReviewQueue {
   async listPending() {
     let names;
     try {
-      names = await fs.readdir(this.#root());
+      names = readDirectory(this.#root());
     } catch {
       return [];
     }

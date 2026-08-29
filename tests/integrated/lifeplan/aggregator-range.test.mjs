@@ -6,11 +6,14 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
+import { HarvestedLifelogSourceRegistry } from '#adapters/lifelog/HarvestedLifelogSourceRegistry.mjs';
 
 describe('LifelogAggregator — range aggregation (integrated)', () => {
   function buildAggregator(fileData = {}) {
     return new LifelogAggregator({
-      userLoadFile: (username, filename) => fileData[filename] || null,
+      sourceRegistry: new HarvestedLifelogSourceRegistry({
+        userLoadFile: (_username, filename) => fileData[filename] || null,
+      }),
     });
   }
 

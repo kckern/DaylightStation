@@ -1,3 +1,20 @@
+const serializeLifePlan = plan => ({
+  purpose: plan.purpose ? { ...plan.purpose } : null,
+  goals: (plan.goals || []).map(goal => ({ ...goal })),
+  beliefs: (plan.beliefs || []).map(belief => ({ ...belief })),
+  values: (plan.values || []).map(value => ({ ...value })),
+  qualities: (plan.qualities || []).map(quality => ({ ...quality })),
+  rules: (plan.rules || []).map(rule => ({ ...rule })),
+  dependencies: (plan.dependencies || []).map(dependency => ({ ...dependency })),
+  life_events: (plan.life_events || []).map(event => ({ ...event })),
+  anti_goals: (plan.anti_goals || []).map(antiGoal => ({ ...antiGoal })),
+  cycles: (plan.cycles || []).map(cycle => ({ ...cycle })),
+  ceremony_records: (plan.ceremony_records || []).map(record => ({ ...record })),
+  feedback: (plan.feedback || []).map(feedback => ({ ...feedback })),
+  cadence: plan.cadence,
+  ceremonies: plan.ceremonies,
+});
+
 export class AlignmentService {
   #lifePlanStore;
   #metricsStore;
@@ -46,9 +63,9 @@ export class AlignmentService {
     };
 
     const briefingContext = {
-      plan: plan.toJSON(),
+      plan: serializeLifePlan(plan),
       snapshot,
-      recentFeedback: (plan.feedback || []).slice(-5).map(f => f.toJSON()),
+      recentFeedback: (plan.feedback || []).slice(-5).map(feedback => ({ ...feedback })),
     };
 
     return {

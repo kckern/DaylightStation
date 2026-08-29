@@ -6,10 +6,9 @@
 export class DiscoveryStrategy {
   async suggest(context, remainingSlots) {
     if (remainingSlots <= 0) return [];
-    const { fitnessConfig, fitnessPlayableService, sessionDatastore, householdId, excludedShowIds } = context;
-    const cfg = fitnessConfig?.suggestions || {};
-    const lapsedDays = cfg.discovery_lapsed_days ?? 30;
-    const lapsedWeight = cfg.discovery_lapsed_weight ?? 0.7;
+    const { suggestionPolicy, fitnessPlayableService, sessionDatastore, householdId, excludedShowIds, contentCatalog } = context;
+    const lapsedDays = suggestionPolicy.discoveryLapsedDays;
+    const lapsedWeight = suggestionPolicy.discoveryLapsedWeight;
 
     // Get all shows in the fitness library
     let allShows;
@@ -51,7 +50,7 @@ export class DiscoveryStrategy {
     //   - excludedShowIds from FitnessSuggestionService, resolved from
     //     suggestions.exclude_collections (Plex collection/playlist membership)
     const excludeShowIds = new Set([
-      ...((cfg.discovery_exclude_shows || []).map(String)),
+      ...((suggestionPolicy.discoveryExcludedShowIds || []).map(String)),
       ...((excludedShowIds instanceof Set ? [...excludedShowIds] : []).map(String)),
     ]);
 
@@ -60,7 +59,7 @@ export class DiscoveryStrategy {
     const fresh = [];
     for (const show of allShows) {
       if (excludeShowIds.has(show.id)) continue;
-      const contentId = `plex:${show.id}`;
+      const contentId = contentCatalog.canonicalize(show.id).contentId;
       const lastDone = lastDoneMap.get(contentId);
       if (lastDone && lastDone < lapsedThresholdStr) {
         lapsed.push({ ...show, lastDone });
@@ -97,8 +96,8 @@ export class DiscoveryStrategy {
 
     // Labels to exclude (governed labels like KidsFun + explicit exclusions)
     const excludeLabels = new Set([
-      ...(fitnessConfig?.plex?.governed_labels || []),
-      ...(cfg.discovery_exclude_labels || []),
+      ...(suggestionPolicy.governedLabels || []),
+      ...(suggestionPolicy.discoveryExcludedLabels || []),
     ]);
 
     // Resolve one episode per selected show, filtering by labels
@@ -119,12 +118,12 @@ export class DiscoveryStrategy {
       if (showLabels.some(l => excludeLabels.has(l))) continue;
 
       // Filter out supplementary episodes (warmups, cooldowns, intros, filler)
-      const warmupPatterns = (fitnessConfig?.plex?.warmup_title_patterns || [])
+      const warmupPatterns = (suggestionPolicy.warmupTitlePatterns || [])
         .map(p => new RegExp(p, 'i'));
       const descTags = new Set(
-        (fitnessConfig?.plex?.warmup_description_tags || []).map(t => t.toLowerCase())
+        (suggestionPolicy.warmupDescriptionTags || []).map(t => t.toLowerCase())
       );
-      const minDuration = cfg.discovery_min_duration_seconds ?? 600; // 10 minutes
+      const minDuration = suggestionPolicy.minimumDurationSeconds;
 
       const substantive = episodes.filter(ep => {
         const title = (ep.title || '').toLowerCase();
@@ -159,16 +158,18 @@ export class DiscoveryStrategy {
         : null;
 
       const infoLabels = episodeData.info?.labels || showLabels;
+      const showRef = contentCatalog.canonicalize(show.id);
+      const episodeRef = contentCatalog.canonicalize(ep.id ?? ep.localId);
       results.push({
         type: 'discovery',
         action: 'play',
         contentId: ep.id,
-        showId: `plex:${show.id}`,
+        showId: showRef.contentId,
         title: ep.title,
         showTitle: show.title,
         description: ep.metadata?.summary || null,
-        thumbnail: ep.thumbnail || `/api/v1/display/plex/${ep.localId}`,
-        poster: `/api/v1/content/plex/image/${show.id}`,
+        thumbnail: ep.thumbnail || displayImageRef(episodeRef.source, episodeRef.localId),
+        poster: contentImageRef(showRef.source, showRef.localId),
         durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,
         orientation: 'landscape',
         labels: infoLabels,
@@ -179,3 +180,4 @@ export class DiscoveryStrategy {
     return results;
   }
 }
+import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';

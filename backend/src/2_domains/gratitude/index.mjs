@@ -11,4 +11,3 @@ export { GratitudeItem } from './entities/GratitudeItem.mjs';
 export { Selection } from './entities/Selection.mjs';
 
 // Services
-export { GratitudeService } from './services/GratitudeService.mjs';

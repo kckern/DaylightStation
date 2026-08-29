@@ -18,12 +18,6 @@
  * @module applications/devices/services
  */
 
-import {
-  DEVICE_STATE_TOPIC,
-  parseDeviceTopic,
-} from '#shared-contracts/media/topics.mjs';
-import { buildDeviceStateBroadcast } from '#shared-contracts/media/envelopes.mjs';
-
 const DEFAULT_OFFLINE_TIMEOUT_MS = 15000;
 
 /**
@@ -35,10 +29,11 @@ const DEFAULT_OFFLINE_TIMEOUT_MS = 15000;
  */
 
 export class DeviceLivenessService {
-  #eventBus;
+  #presenceGateway;
   #logger;
   #clock;
   #offlineTimeoutMs;
+  #scheduler;
 
   /** @type {Map<string, LivenessEntry>} */
   #entries = new Map();
@@ -47,18 +42,20 @@ export class DeviceLivenessService {
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.eventBus - Event bus (WebSocketEventBus)
+   * @param {Object} deps.presenceGateway - Semantic device presence gateway
    * @param {Object} [deps.logger]
    * @param {Object} [deps.clock] - { now(): number } (defaults to Date)
    * @param {number} [deps.offlineTimeoutMs=15000]
    */
   constructor(deps = {}) {
-    if (!deps.eventBus) {
-      throw new TypeError('DeviceLivenessService requires eventBus');
+    if (!deps.presenceGateway?.subscribeDeviceStates || !deps.presenceGateway?.publishDeviceState) {
+      throw new TypeError('DeviceLivenessService requires presenceGateway');
     }
-    this.#eventBus = deps.eventBus;
+    if (!deps.scheduler?.after) throw new TypeError('DeviceLivenessService requires scheduler');
+    this.#presenceGateway = deps.presenceGateway;
     this.#logger = deps.logger || console;
     this.#clock = deps.clock || Date;
+    this.#scheduler = deps.scheduler;
     this.#offlineTimeoutMs =
       typeof deps.offlineTimeoutMs === 'number' && deps.offlineTimeoutMs > 0
         ? deps.offlineTimeoutMs
@@ -76,20 +73,14 @@ export class DeviceLivenessService {
       offlineTimeoutMs: this.#offlineTimeoutMs,
     });
 
-    // Prefer subscribePattern (added in WebSocketEventBus) to observe every
-    // device-state:* publish. Fall back to a no-op subscription if the bus
-    // doesn't expose the seam.
-    if (typeof this.#eventBus.subscribePattern === 'function') {
-      this.#unsubscribe = this.#eventBus.subscribePattern(
-        (topic) => {
-          const parsed = parseDeviceTopic(topic);
-          return !!parsed && parsed.kind === 'device-state';
-        },
-        (payload, topic) => this.#handleDeviceState(topic, payload),
+    // Observe all semantic device-state changes through the presence gateway.
+    if (typeof this.#presenceGateway.subscribeDeviceStates === 'function') {
+      this.#unsubscribe = this.#presenceGateway.subscribeDeviceStates(
+        (state) => this.#handleDeviceState(state),
       );
     } else {
       this.#logger.warn?.('device-liveness.no_subscribe_pattern', {
-        note: 'event bus lacks subscribePattern — liveness inactive',
+        note: 'presence gateway subscription unavailable — liveness inactive',
       });
     }
   }
@@ -109,9 +100,9 @@ export class DeviceLivenessService {
     }
 
     for (const entry of this.#entries.values()) {
-      if (entry.timer) {
-        clearTimeout(entry.timer);
-        entry.timer = null;
+      if (entry.cancelOffline) {
+        entry.cancelOffline();
+        entry.cancelOffline = null;
       }
     }
 
@@ -166,22 +157,18 @@ export class DeviceLivenessService {
    * @param {Object} payload
    * @private
    */
-  #handleDeviceState(topic, payload) {
-    if (!payload || typeof payload !== 'object') return;
-
-    const deviceId = payload.deviceId;
+  #handleDeviceState(state) {
+    if (!state || typeof state !== 'object') return;
+    const { deviceId, reason, snapshot, topic } = state;
     if (!deviceId || typeof deviceId !== 'string') {
       this.#logger.debug?.('device-liveness.skip_no_device_id', { topic });
       return;
     }
 
-    const reason = payload.reason;
-
     // Synthesized offline broadcasts re-enter this handler (pattern
     // subscribers fire on every publish). Don't treat them as a heartbeat.
     if (reason === 'offline') return;
 
-    const snapshot = payload.snapshot;
     if (!snapshot || typeof snapshot !== 'object') {
       this.#logger.debug?.('device-liveness.skip_no_snapshot', { deviceId, reason });
       return;
@@ -191,15 +178,15 @@ export class DeviceLivenessService {
     const wasOffline = !!prevEntry && prevEntry.online === false;
 
     // Clear previous offline timer (if any) and arm a fresh one.
-    if (prevEntry?.timer) clearTimeout(prevEntry.timer);
+    prevEntry?.cancelOffline?.();
 
     const entry = {
       snapshot,
       lastSeenAt: this.#clock.now(),
       online: true,
-      timer: null,
+      cancelOffline: null,
     };
-    entry.timer = this.#armTimer(deviceId);
+    entry.cancelOffline = this.#armTimer(deviceId);
     this.#entries.set(deviceId, entry);
 
     // Synthesize a `reason: 'initial'` broadcast when returning from offline
@@ -207,15 +194,7 @@ export class DeviceLivenessService {
     if (wasOffline && reason === 'heartbeat') {
       this.#logger.info?.('device-liveness.online', { deviceId });
       const ts = new Date(this.#clock.now()).toISOString();
-      this.#safeBroadcast(
-        DEVICE_STATE_TOPIC(deviceId),
-        buildDeviceStateBroadcast({
-          deviceId,
-          snapshot,
-          reason: 'initial',
-          ts,
-        }),
-      );
+      this.#safePublish({ deviceId, snapshot, reason: 'initial', ts });
     }
   }
 
@@ -225,12 +204,12 @@ export class DeviceLivenessService {
    * @private
    */
   #armTimer(deviceId) {
-    return setTimeout(() => {
+    return this.#scheduler.after(this.#offlineTimeoutMs, () => {
       const entry = this.#entries.get(deviceId);
       if (!entry) return;
 
       entry.online = false;
-      entry.timer = null;
+      entry.cancelOffline = null;
 
       this.#logger.warn?.('device-liveness.offline', {
         deviceId,
@@ -238,16 +217,8 @@ export class DeviceLivenessService {
       });
 
       const ts = new Date(this.#clock.now()).toISOString();
-      this.#safeBroadcast(
-        DEVICE_STATE_TOPIC(deviceId),
-        buildDeviceStateBroadcast({
-          deviceId,
-          snapshot: entry.snapshot,
-          reason: 'offline',
-          ts,
-        }),
-      );
-    }, this.#offlineTimeoutMs);
+      this.#safePublish({ deviceId, snapshot: entry.snapshot, reason: 'offline', ts });
+    });
   }
 
   /**
@@ -255,16 +226,12 @@ export class DeviceLivenessService {
    * the service.
    * @private
    */
-  #safeBroadcast(topic, payload) {
+  #safePublish(state) {
     try {
-      if (typeof this.#eventBus.broadcast === 'function') {
-        this.#eventBus.broadcast(topic, payload);
-      } else if (typeof this.#eventBus.publish === 'function') {
-        this.#eventBus.publish(topic, payload);
-      }
+      this.#presenceGateway.publishDeviceState(state);
     } catch (err) {
       this.#logger.error?.('device-liveness.broadcast_error', {
-        topic,
+        deviceId: state.deviceId,
         error: err?.message,
       });
     }

@@ -8,6 +8,8 @@
  * service owns that narrow write and keeps it under one namespaced preference
  * key until the profile grows into a richer domain record.
  */
+import { InvalidInputError } from '#apps/common/errors/SemanticErrors.mjs';
+
 const START_LEVEL_MAX_LENGTH = 120;
 
 function normalizeStartLevel(value) {
@@ -36,11 +38,11 @@ export class PianoChallengeProfileService {
   setStartLevel({ learnerId, startLevel } = {}) {
     const normalized = normalizeStartLevel(startLevel);
     if (!normalized) {
-      throw Object.assign(new Error('startLevel must be a non-empty level id'), { status: 400, code: 'invalid_start_level' });
+      throw new InvalidInputError('startLevel must be a non-empty level id', { code: 'invalid_start_level' });
     }
     const current = this.#datastore.getPreferences(learnerId);
     if (current === null) {
-      throw Object.assign(new Error('Invalid user'), { status: 400, code: 'invalid_user' });
+      throw new InvalidInputError('Invalid user', { code: 'invalid_user' });
     }
     const next = {
       ...current,

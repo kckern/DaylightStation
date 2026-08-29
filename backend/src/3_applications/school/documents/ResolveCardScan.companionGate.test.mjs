@@ -23,10 +23,15 @@
 import { describe, it, expect } from 'vitest';
 import { PublishPrintDocument } from './PublishPrintDocument.mjs';
 import { RenderPrintDocument } from './RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { ResolveCardScan } from './ResolveCardScan.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
 import { COMPANION_GATE_ITEM_ID, CODE_LETTERS } from '#domains/school/companionCode.mjs';
+
+const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
+  rendering: createPrintDocumentRendering(), ...deps,
+});
 
 const richText = (md) => ({ type: 'rich_text', md });
 
@@ -120,7 +125,7 @@ async function scan(blocks, answers, { id = 'gated-sheet' } = {}) {
   const publisher = new PublishPrintDocument({ repository });
   const { id: documentId, rev } = await publisher.execute({ source: sourceDoc(id, blocks) });
   const published = await repository.getPublished(documentId, rev);
-  const renderer = new RenderPrintDocument({ repository, allocationStore });
+  const renderer = createRenderPrintDocument({ repository, allocationStore });
   const { allocation } = await renderer.execute({
     document: published, context: { freshCard: true, learnerId: 'kid1' },
   });

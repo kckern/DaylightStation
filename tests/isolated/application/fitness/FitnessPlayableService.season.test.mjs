@@ -12,10 +12,12 @@ describe('FitnessPlayableService - season label inheritance', () => {
   function buildDeps(overrides = {}) {
     return {
       fitnessConfigService: {
-        loadRawConfig: vi.fn().mockReturnValue({ progressClassification: {} })
+        getProgressClassification: vi.fn().mockReturnValue({})
       },
-      contentAdapter: {
+      contentCatalog: {
+        canonicalize: (id) => ({ contentId: `plex:${String(id).replace(/^(?:plex:)+/, '')}`, localId: String(id).replace(/^(?:plex:)+/, '') }),
         resolvePlayables: vi.fn().mockResolvedValue([]),
+        enrichWatchState: vi.fn(async (items) => items),
         getContainerInfo: vi.fn(),
         getItem: vi.fn().mockResolvedValue(null)
       },
@@ -28,14 +30,14 @@ describe('FitnessPlayableService - season label inheritance', () => {
 
   test('copies parent show labels onto season info', async () => {
     const deps = buildDeps();
-    deps.contentAdapter.getContainerInfo.mockImplementation(async (id) => {
+    deps.contentCatalog.getContainerInfo.mockImplementation(async (id) => {
       if (id === 'plex:603856') {
         return {
           key: '603856',
           title: 'LIIFT MORE Super Block',
           type: 'season',
           labels: [],                          // season has no labels of its own
-          parentRatingKey: '603855',
+          parentContentId: 'plex:603855',
           parentTitle: 'Super Blocks'
         };
       }
@@ -56,12 +58,12 @@ describe('FitnessPlayableService - season label inheritance', () => {
     expect(result.info.type).toBe('season');
     expect(result.info.labels).toEqual(['Strength', 'Sequential']);
     // Parent fetch should have happened
-    expect(deps.contentAdapter.getContainerInfo).toHaveBeenCalledWith('plex:603855');
+    expect(deps.contentCatalog.getContainerInfo).toHaveBeenCalledWith('plex:603855');
   });
 
   test('preserves the season own title and image (does not overwrite with show)', async () => {
     const deps = buildDeps();
-    deps.contentAdapter.getContainerInfo.mockImplementation(async (id) => {
+    deps.contentCatalog.getContainerInfo.mockImplementation(async (id) => {
       if (id === 'plex:603856') {
         return {
           key: '603856',
@@ -70,7 +72,7 @@ describe('FitnessPlayableService - season label inheritance', () => {
           summary: 'Curated lift season',
           type: 'season',
           labels: [],
-          parentRatingKey: '603855'
+          parentContentId: 'plex:603855'
         };
       }
       if (id === 'plex:603855') {
@@ -97,14 +99,14 @@ describe('FitnessPlayableService - season label inheritance', () => {
 
   test('falls back to empty labels when parent show fetch fails', async () => {
     const deps = buildDeps();
-    deps.contentAdapter.getContainerInfo.mockImplementation(async (id) => {
+    deps.contentCatalog.getContainerInfo.mockImplementation(async (id) => {
       if (id === 'plex:603856') {
         return {
           key: '603856',
           title: 'LIIFT MORE Super Block',
           type: 'season',
           labels: [],
-          parentRatingKey: '603855'
+          parentContentId: 'plex:603855'
         };
       }
       if (id === 'plex:603855') {
@@ -122,14 +124,14 @@ describe('FitnessPlayableService - season label inheritance', () => {
 
   test('falls back to empty labels when parent show resolves to null', async () => {
     const deps = buildDeps();
-    deps.contentAdapter.getContainerInfo.mockImplementation(async (id) => {
+    deps.contentCatalog.getContainerInfo.mockImplementation(async (id) => {
       if (id === 'plex:603856') {
         return {
           key: '603856',
           title: 'LIIFT MORE Super Block',
           type: 'season',
           labels: [],
-          parentRatingKey: '603855'  // points to a missing/unknown ID
+          parentContentId: 'plex:603855'  // points to a missing/unknown ID
         };
       }
       if (id === 'plex:603855') {
@@ -147,7 +149,7 @@ describe('FitnessPlayableService - season label inheritance', () => {
 
   test('does not run inheritance for non-season info (existing show flow unchanged)', async () => {
     const deps = buildDeps();
-    deps.contentAdapter.getContainerInfo.mockImplementation(async (id) => {
+    deps.contentCatalog.getContainerInfo.mockImplementation(async (id) => {
       if (id === 'plex:603855') {
         return {
           key: '603855',
@@ -163,20 +165,20 @@ describe('FitnessPlayableService - season label inheritance', () => {
     await svc.getPlayableEpisodes('603855');
 
     // Only one call — no parent lookup for shows
-    expect(deps.contentAdapter.getContainerInfo).toHaveBeenCalledTimes(1);
-    expect(deps.contentAdapter.getContainerInfo).toHaveBeenCalledWith('plex:603855');
+    expect(deps.contentCatalog.getContainerInfo).toHaveBeenCalledTimes(1);
+    expect(deps.contentCatalog.getContainerInfo).toHaveBeenCalledWith('plex:603855');
   });
 
   test('skips inheritance when season has its own labels (do not double up)', async () => {
     const deps = buildDeps();
-    deps.contentAdapter.getContainerInfo.mockImplementation(async (id) => {
+    deps.contentCatalog.getContainerInfo.mockImplementation(async (id) => {
       if (id === 'plex:603856') {
         return {
           key: '603856',
           title: 'LIIFT MORE Super Block',
           type: 'season',
           labels: ['Lift'],                  // explicit labels on the season
-          parentRatingKey: '603855'
+          parentContentId: 'plex:603855'
         };
       }
       return null;
@@ -187,6 +189,6 @@ describe('FitnessPlayableService - season label inheritance', () => {
 
     expect(result.info.labels).toEqual(['Lift']);
     // Parent fetch should NOT have happened
-    expect(deps.contentAdapter.getContainerInfo).toHaveBeenCalledTimes(1);
+    expect(deps.contentCatalog.getContainerInfo).toHaveBeenCalledTimes(1);
   });
 });

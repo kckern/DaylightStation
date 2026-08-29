@@ -1,17 +1,26 @@
 /** @module EventAggregationService */
 
+import { isEventFeedRepository } from './ports/IEventFeedRepository.mjs';
+import moment from 'moment';
+
+const MARKDOWN_LINK = /\[([^\]]*)\]\([^)]*\)/g;
+
+function truncate(value, length) {
+  const text = String(value ?? '').trim();
+  return text.length > length ? `${text.slice(0, length - 1).trimEnd()}…` : text;
+}
+
 /**
  * Aggregates upcoming events from calendar, todoist, and clickup
  * into a unified event list sorted by start date.
  */
 export class EventAggregationService {
-  #dataService;
-  #configService;
+  #eventRepository;
   #logger;
 
-  constructor({ dataService, configService, logger }) {
-    this.#dataService = dataService;
-    this.#configService = configService;
+  constructor({ eventRepository, logger }) {
+    if (!isEventFeedRepository(eventRepository)) throw new Error('EventAggregationService requires eventRepository');
+    this.#eventRepository = eventRepository;
     this.#logger = logger?.child?.({ component: 'EventAggregationService' }) ?? logger;
   }
 
@@ -21,17 +30,8 @@ export class EventAggregationService {
    * @returns {Array<Object>} Unified event list
    */
   getUpcomingEvents(username) {
-    const user = username ?? this.#configService.getHeadOfHousehold();
-
-    const calendarData = this.#dataService.user.read('current/calendar', user);
-    const todoistData = this.#dataService.user.read('current/todoist', user);
-    const clickupData = this.#dataService.user.read('current/clickup', user);
-
-    const calendarEvents = this.#mapCalendar(calendarData);
-    const todoistEvents = this.#mapTodoist(todoistData);
-    const clickupEvents = this.#mapClickup(clickupData);
-
-    const all = [...calendarEvents, ...todoistEvents, ...clickupEvents];
+    const user = username ?? this.#eventRepository.defaultUsername();
+    const all = this.#eventRepository.loadUpcomingEvents(user);
 
     return all.sort((a, b) => {
       if (a.start === null && b.start === null) return 0;
@@ -41,56 +41,30 @@ export class EventAggregationService {
     });
   }
 
-  #mapCalendar(data) {
-    if (!Array.isArray(data)) return [];
-    return data.map((e) => ({
-      id: e.id,
-      start: e.startDateTime ?? e.startDate ?? null,
-      end: e.endTime ?? null,
-      summary: e.summary,
-      description: e.description ?? null,
-      type: 'calendar',
-      domain: e.calendarName ?? null,
-      location: e.location ?? null,
-      url: null,
-      allday: Boolean(e.allday),
-      status: null,
-    }));
+  getCalendarAgenda({ limit = 8 } = {}) {
+    const now = moment();
+    const startOfToday = now.clone().startOf('day');
+    return this.getUpcomingEvents()
+      .filter((event) => event.type === 'calendar' && event.start)
+      .map((event) => ({ event, start: moment.parseZone(event.start) }))
+      .filter(({ start }) => start.isValid() && start.isSameOrAfter(startOfToday))
+      .sort((a, b) => a.start.valueOf() - b.start.valueOf())
+      .slice(0, Math.min(Number(limit) || 8, 20))
+      .map(({ event, start }) => ({
+        day: start.isSame(now, 'day') ? 'Today'
+          : (start.isSame(now.clone().add(1, 'day'), 'day') ? 'Tmrw' : start.format('ddd')),
+        time: event.allday ? '' : `${start.minutes() === 0 ? start.format('h') : start.format('h:mm')}${start.hours() < 12 ? 'a' : 'p'}`,
+        title: truncate(event.summary, 26),
+      }));
   }
 
-  #mapTodoist(data) {
-    const tasks = data?.tasks;
-    if (!Array.isArray(tasks)) return [];
-    return tasks.map((t) => ({
-      id: t.id,
-      start: t.dueDate ?? null,
-      end: null,
-      summary: t.content,
-      description: t.description || null,
-      type: 'todoist',
-      domain: 'app.todoist.com',
-      location: null,
-      url: t.url ?? `https://app.todoist.com/app/task/${t.id}`,
-      allday: false,
-      status: null,
-    }));
+  getTodoAgenda({ limit = 8 } = {}) {
+    return this.getUpcomingEvents()
+      .filter((event) => event.type === 'todoist')
+      .map((event) => truncate(String(event.summary ?? '').replace(MARKDOWN_LINK, '$1').replace(/\s+/g, ' ').trim(), 28))
+      .filter(Boolean)
+      .slice(0, Math.min(Number(limit) || 8, 20))
+      .map((text) => ({ text, done: false }));
   }
 
-  #mapClickup(data) {
-    const tasks = data?.tasks;
-    if (!Array.isArray(tasks)) return [];
-    return tasks.map((t) => ({
-      id: t.id,
-      start: null,
-      end: null,
-      summary: t.name,
-      description: null,
-      type: 'clickup',
-      domain: 'app.clickup.com',
-      location: null,
-      url: `https://app.clickup.com/t/${t.id}`,
-      allday: false,
-      status: t.status ?? null,
-    }));
-  }
 }

@@ -6,6 +6,7 @@
  */
 
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
+import { serializeFoodItem } from '../nutriLogRecords.mjs';
 
 /**
  * Select UPC portion use case (stateless - UUID in callback data)
@@ -16,6 +17,7 @@ export class SelectUPCPortion {
   #nutriListStore;
   #generateDailyReport;
   #logger;
+  #pause;
 
   /**
    * Format confirmation message for accepted food
@@ -56,6 +58,7 @@ export class SelectUPCPortion {
     this.#nutriListStore = deps.nutriListStore;
     this.#generateDailyReport = deps.generateDailyReport;
     this.#logger = deps.logger || console;
+    this.#pause = deps.pause || (async () => {});
   }
 
   /**
@@ -108,7 +111,7 @@ export class SelectUPCPortion {
 
       // Apply portion factor to items
       const scaledItems = nutriLog.items.map((item) => {
-        const itemData = typeof item.toJSON === 'function' ? item.toJSON() : item;
+        const itemData = serializeFoodItem(item);
         return {
           ...itemData,
           quantity: (itemData.quantity || 1) * portionFactor,
@@ -182,7 +185,7 @@ export class SelectUPCPortion {
           });
           if (pending.length === 0) {
             this.#logger.info?.('selectPortion.autoreport.triggering', { userId, conversationId });
-            await new Promise((resolve) => setTimeout(resolve, 300));
+            await this.#pause(300);
             await this.#generateDailyReport.execute({
               userId,
               conversationId,

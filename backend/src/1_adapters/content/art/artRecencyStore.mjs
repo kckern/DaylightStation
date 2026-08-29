@@ -10,9 +10,8 @@
  *
  * @module adapters/content/art/artRecencyStore
  */
-import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
+import { readTextFromPath, writeFile } from '#system/utils/FileIO.mjs';
 
 export function createArtRecencyStore({ filePath, logger = console, now = () => new Date().toISOString() }) {
   let map = null;      // id → lastShown (ISO string)
@@ -26,7 +25,7 @@ export function createArtRecencyStore({ filePath, logger = console, now = () => 
       const m = new Map();
       const c = new Map();
       try {
-        const raw = await fs.readFile(filePath, 'utf-8');
+        const raw = readTextFromPath(filePath);
         const doc = yaml.load(raw) || {};
         for (const [k, v] of Object.entries(doc)) {
           const id = k.startsWith('art:') ? k.slice(4) : k;
@@ -50,8 +49,7 @@ export function createArtRecencyStore({ filePath, logger = console, now = () => 
       doc[`art:${id}`] = { lastShown, showCount: counts.get(id) || 0 };
     }
     try {
-      await fs.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.writeFile(filePath, yaml.dump(doc), 'utf-8');
+      writeFile(filePath, yaml.dump(doc));
     } catch (err) {
       logger.warn?.('art.recency.write_failed', { error: err.message });
     }

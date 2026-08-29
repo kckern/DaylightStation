@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 // backend/src/4_api/v1/routers/api.mjs
 /**
  * API Router (v1)
@@ -12,7 +13,6 @@
  */
 
 import express from 'express';
-import { configService } from '#system/config/index.mjs';
 import { getDispatcher, isLoggingInitialized } from '#system/logging/dispatcher.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
 import { getSessionFileTransport } from '#system/logging/transports/sessionFile.mjs';
@@ -71,12 +71,13 @@ function loggingStatus() {
  * @param {express.Router} [config.routers.tts] - TTS router (optional)
  * @param {express.Router} [config.routers.device] - Device router (optional)
  * @param {Function} [config.plexProxyHandler] - Plex proxy handler function
+ * @param {Object} [config.configReloadService] - Injected household app-config reloader.
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createApiRouter(config) {
   const router = express.Router();
-  const { safeConfig, routers, plexProxyHandler, logger = console } = config;
+  const { safeConfig, routers, plexProxyHandler, configReloadService = null, logger = console } = config;
 
   // Route mapping: { mountPath: routerKey }
   // Change mountPath here to rename routes without touching frontend
@@ -227,13 +228,16 @@ export function createApiRouter(config) {
   // which silently stopped covering the 8 apps colocation moved OUT of that
   // directory, reporting ok:true with a shrunken list and no failure signal).
   router.post('/system/reload', (req, res) => {
+    if (!configReloadService) {
+      return res.status(503).json({ ok: false, error: 'config_reload_unavailable' });
+    }
     const requestedApp = req.query?.app || req.body?.app || null;
     const reloaded = [];
     const failed = [];
 
     const tryReload = (app) => {
       try {
-        const cfg = configService.reloadHouseholdAppConfig(null, app);
+        const cfg = configReloadService.reloadHouseholdAppConfig(null, app);
         if (cfg !== null && cfg !== undefined) reloaded.push(app);
         else failed.push({ app, reason: 'not_found' });
       } catch (err) {
@@ -246,9 +250,9 @@ export function createApiRouter(config) {
     } else {
       let apps = [];
       try {
-        apps = configService.getHouseholdAppNames(null);
+        apps = configReloadService.getHouseholdAppNames(null);
       } catch (err) {
-        return res.status(500).json({ ok: false, error: 'cannot_list_apps', message: err.message });
+        return sendInternalError(res, { ok: false, error: 'cannot_list_apps', message: err.message });
       }
       for (const app of apps) tryReload(app);
     }

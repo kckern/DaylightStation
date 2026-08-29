@@ -105,22 +105,6 @@ export class JobExecution {
   }
 
   /**
-   * Convert to plain object
-   */
-  toJSON() {
-    return {
-      jobId: this.jobId,
-      executionId: this.executionId,
-      startTime: this.startTime,
-      endTime: this.endTime,
-      status: this.status,
-      error: this.error,
-      durationMs: this.durationMs,
-      manual: this.manual
-    };
-  }
-
-  /**
    * Create a new execution for a job
    */
   static create(jobId, executionId, manual = false) {

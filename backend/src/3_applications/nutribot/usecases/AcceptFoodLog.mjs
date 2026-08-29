@@ -7,6 +7,7 @@
 
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
+import { serializeFoodItem, serializeNutriLog } from '../nutriLogRecords.mjs';
 
 /**
  * Accept food log use case
@@ -20,6 +21,7 @@ export class AcceptFoodLog {
   #agentOrchestrator;
   #config;
   #logger;
+  #pause;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -32,6 +34,7 @@ export class AcceptFoodLog {
     this.#agentOrchestrator = deps.agentOrchestrator || null;
     this.#config = deps.config || null;
     this.#logger = deps.logger || console;
+    this.#pause = deps.pause || (async () => {});
   }
 
   /**
@@ -92,14 +95,14 @@ export class AcceptFoodLog {
       if (this.#nutriListStore && nutriLog.items?.length > 0) {
         const timezone = this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
         const logDate = deriveLogDate(
-          typeof nutriLog.toJSON === 'function' ? nutriLog.toJSON() : nutriLog,
+          serializeNutriLog(nutriLog),
           timezone,
         );
 
         this.#logger.debug?.('acceptLog.savingToNutrilist', { logUuid, logDate });
 
         const listItems = nutriLog.items.map(item => ({
-          ...(typeof item.toJSON === 'function' ? item.toJSON() : item),
+          ...serializeFoodItem(item),
           userId,
           chatId: conversationId,
           logUuid: logUuid,
@@ -120,7 +123,7 @@ export class AcceptFoodLog {
           let logDate = null;
           try {
             logDate = deriveLogDate(
-              typeof nutriLog.toJSON === 'function' ? nutriLog.toJSON() : nutriLog,
+              serializeNutriLog(nutriLog),
               timezone,
             );
           } catch (e) {
@@ -155,12 +158,12 @@ export class AcceptFoodLog {
           const pending = await this.#foodLogStore.findPending(userId);
           this.#logger.debug?.('acceptLog.autoreport.pendingCheck', { userId, pendingCount: pending.length });
           if (pending.length === 0) {
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await this.#pause(300);
             const timezone = this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
             let reportDate;
             try {
               reportDate = deriveLogDate(
-                typeof nutriLog.toJSON === 'function' ? nutriLog.toJSON() : nutriLog,
+                serializeNutriLog(nutriLog),
                 timezone,
               );
             } catch {

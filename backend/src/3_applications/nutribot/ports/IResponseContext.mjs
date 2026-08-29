@@ -20,14 +20,14 @@
  * @property {function(string, Object?): Promise<string>} finish - Complete with final content, returns messageId
  * @property {function(): Promise<void>} cancel - Abort without final message (deletes status)
  */
-export const IResponseContext = {
+export class IResponseContext {
   /**
    * Send a text message to the bound conversation
    * @param {string} text - Message text
    * @param {Object} [options] - Options (parseMode, choices, inline, removeKeyboard)
    * @returns {Promise<{messageId: string, ok: boolean}>}
    */
-  async sendMessage(text, options = {}) {},
+  async sendMessage(_text, _options = {}) { throw new Error('IResponseContext.sendMessage not implemented'); }
 
   /**
    * Send a photo to the bound conversation
@@ -36,7 +36,7 @@ export const IResponseContext = {
    * @param {Object} [options] - Options (parseMode, choices, inline)
    * @returns {Promise<{messageId: string, ok: boolean}>}
    */
-  async sendPhoto(imageSource, caption = '', options = {}) {},
+  async sendPhoto(_imageSource, _caption = '', _options = {}) { throw new Error('IResponseContext.sendPhoto not implemented'); }
 
   /**
    * Update an existing message
@@ -44,7 +44,7 @@ export const IResponseContext = {
    * @param {Object} updates - Updates (text, caption, parseMode, choices)
    * @returns {Promise<void>}
    */
-  async updateMessage(messageId, updates) {},
+  async updateMessage(_messageId, _updates) { throw new Error('IResponseContext.updateMessage not implemented'); }
 
   /**
    * Update keyboard on an existing message
@@ -52,14 +52,14 @@ export const IResponseContext = {
    * @param {Array} choices - Button choices (null/empty to remove)
    * @returns {Promise<void>}
    */
-  async updateKeyboard(messageId, choices) {},
+  async updateKeyboard(_messageId, _choices) { throw new Error('IResponseContext.updateKeyboard not implemented'); }
 
   /**
    * Delete a message
    * @param {string} messageId - Message to delete
    * @returns {Promise<void>}
    */
-  async deleteMessage(messageId) {},
+  async deleteMessage(_messageId) { throw new Error('IResponseContext.deleteMessage not implemented'); }
 
   /**
    * Create a status indicator for a long-running operation.
@@ -88,7 +88,7 @@ export const IResponseContext = {
    * await status.cancel(); // Delete status, send different message type
    * const { messageId } = await ctx.sendPhoto(photo, caption);
    */
-  async createStatusIndicator(initialText, options = {}) {},
+  async createStatusIndicator(_initialText, _options = {}) { throw new Error('IResponseContext.createStatusIndicator not implemented'); }
 
   /**
    * Create a photo-based status indicator for a long-running operation.
@@ -101,8 +101,8 @@ export const IResponseContext = {
    * @param {number} [options.interval=2000] - Animation interval in ms
    * @returns {Promise<IStatusIndicator>}
    */
-  async createPhotoStatusIndicator(imageSource, initialCaption, options = {}) {},
-};
+  async createPhotoStatusIndicator(_imageSource, _initialCaption, _options = {}) { throw new Error('IResponseContext.createPhotoStatusIndicator not implemented'); }
+}
 
 /**
  * Check if an object implements IResponseContext

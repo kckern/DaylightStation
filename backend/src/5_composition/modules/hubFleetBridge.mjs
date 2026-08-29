@@ -19,6 +19,7 @@
  */
 
 import { HubFleetBridge } from '#apps/playback-hub/runtime/HubFleetBridge.mjs';
+import { EventBusHubFleetRealtimeAdapter } from '#adapters/playback-hub/EventBusHubFleetRealtimeAdapter.mjs';
 
 /** @type {HubFleetBridge | null} */
 let instance = null;
@@ -46,7 +47,7 @@ export function createHubFleetBridge(config) {
   }
 
   const hubFleetBridge = new HubFleetBridge({
-    eventBus,
+    realtime: new EventBusHubFleetRealtimeAdapter({ eventBus }),
     logger,
     heartbeatMs,
     clock,

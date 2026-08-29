@@ -3,6 +3,7 @@ import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createFinanceRouter } from '#backend/src/4_api/v1/routers/finance.mjs';
+import { FinanceApiService } from '#backend/src/3_applications/finance/FinanceApiService.mjs';
 
 describe('Finance API Router', () => {
   let app;
@@ -11,6 +12,7 @@ describe('Finance API Router', () => {
   let mockHarvestService;
   let mockCompilationService;
   let mockCategorizationService;
+  let mockPayrollService;
   let mockConfigService;
   let mockLogger;
 
@@ -86,7 +88,10 @@ describe('Finance API Router', () => {
       getTransactions: vi.fn().mockReturnValue(testTransactions),
       listBudgetPeriods: vi.fn().mockReturnValue(['2026-01-01']),
       getMemos: vi.fn().mockReturnValue({ '1': 'Test memo' }),
-      saveMemo: vi.fn()
+      saveMemo: vi.fn(),
+      getPairs: vi.fn().mockReturnValue([{ debit: 1, credit: 2, desc: 'transfer' }]),
+      addPair: vi.fn(),
+      removePair: vi.fn(),
     };
 
     mockHarvestService = {
@@ -108,6 +113,10 @@ describe('Finance API Router', () => {
       preview: vi.fn().mockResolvedValue({ suggestions: [], failed: [] })
     };
 
+    mockPayrollService = {
+      sync: vi.fn().mockResolvedValue({ status: 'success', uploaded: 2 }),
+    };
+
     mockConfigService = {
       getDefaultHouseholdId: vi.fn().mockReturnValue('default')
     };
@@ -119,15 +128,24 @@ describe('Finance API Router', () => {
       error: vi.fn()
     };
 
-    const router = createFinanceRouter({
-      buxferAdapter: mockBuxferAdapter,
-      financeStore: mockFinanceStore,
+    const financeService = new FinanceApiService({
+      provider: mockBuxferAdapter,
+      providerDescriptor: {
+        source: 'buxfer',
+        adapter: 'buxfer',
+        unavailableMessage: 'Buxfer adapter not initialized',
+      },
+      store: mockFinanceStore,
       harvestService: mockHarvestService,
       compilationService: mockCompilationService,
       categorizationService: mockCategorizationService,
-      configService: mockConfigService,
-      logger: mockLogger
+      payrollService: mockPayrollService,
+      defaultHouseholdId: () => mockConfigService.getDefaultHouseholdId(),
+      currentMonth: () => '2026-01',
+      timestamp: () => '2026-01-15 12:00:00',
+      logger: mockLogger,
     });
+    const router = createFinanceRouter({ financeService, logger: mockLogger });
 
     app = express();
     app.use(express.json());
@@ -375,12 +393,13 @@ describe('Finance API Router', () => {
     });
 
     test('returns 503 when harvest service not configured', async () => {
-      const routerWithoutHarvest = createFinanceRouter({
-        buxferAdapter: mockBuxferAdapter,
-        financeStore: mockFinanceStore,
-        configService: mockConfigService,
-        logger: mockLogger
+      const financeService = new FinanceApiService({
+        provider: mockBuxferAdapter,
+        store: mockFinanceStore,
+        defaultHouseholdId: () => mockConfigService.getDefaultHouseholdId(),
+        logger: mockLogger,
       });
+      const routerWithoutHarvest = createFinanceRouter({ financeService, logger: mockLogger });
 
       const appWithoutHarvest = express();
       appWithoutHarvest.use(express.json());
@@ -418,12 +437,13 @@ describe('Finance API Router', () => {
     });
 
     test('returns 503 when compilation service not configured', async () => {
-      const routerWithoutCompile = createFinanceRouter({
-        buxferAdapter: mockBuxferAdapter,
-        financeStore: mockFinanceStore,
-        configService: mockConfigService,
-        logger: mockLogger
+      const financeService = new FinanceApiService({
+        provider: mockBuxferAdapter,
+        store: mockFinanceStore,
+        defaultHouseholdId: () => mockConfigService.getDefaultHouseholdId(),
+        logger: mockLogger,
       });
+      const routerWithoutCompile = createFinanceRouter({ financeService, logger: mockLogger });
 
       const appWithoutCompile = express();
       appWithoutCompile.use(express.json());
@@ -489,6 +509,37 @@ describe('Finance API Router', () => {
     });
   });
 
+  describe('transaction pair routes', () => {
+    test('lists, creates, and removes pairs with the established payloads', async () => {
+      const listed = await request(app).get('/api/finance/pairs');
+      expect(listed.body).toEqual({
+        pairs: [{ debit: 1, credit: 2, desc: 'transfer' }],
+        household: 'default',
+      });
+
+      const created = await request(app).post('/api/finance/pairs')
+        .send({ debit: '10', credit: '20', desc: 'move' });
+      expect(created.body).toEqual({ ok: true, debit: '10', credit: '20', desc: 'move' });
+      expect(mockFinanceStore.addPair).toHaveBeenCalledWith(
+        { debit: 10, credit: 20, desc: 'move' },
+        'default',
+      );
+
+      const removed = await request(app).delete('/api/finance/pairs')
+        .send({ debit: '10', credit: '20' });
+      expect(removed.body).toEqual({ ok: true, debit: '10', credit: '20' });
+      expect(mockFinanceStore.removePair).toHaveBeenCalledWith(10, 20, 'default');
+    });
+  });
+
+  describe('POST /api/finance/payroll/sync', () => {
+    test('preserves payroll sync result and token forwarding', async () => {
+      const res = await request(app).post('/api/finance/payroll/sync').send({ token: 'pay-token' });
+      expect(res.body).toEqual({ status: 'success', uploaded: 2 });
+      expect(mockPayrollService.sync).toHaveBeenCalledWith({ token: 'pay-token' });
+    });
+  });
+
   describe('GET /api/finance/metrics', () => {
     test('returns adapter metrics', async () => {
       const res = await request(app).get('/api/finance/metrics');
@@ -500,12 +551,13 @@ describe('Finance API Router', () => {
     });
 
     test('handles missing adapter', async () => {
-      const routerWithoutAdapter = createFinanceRouter({
-        buxferAdapter: null,
-        financeStore: mockFinanceStore,
-        configService: mockConfigService,
-        logger: mockLogger
+      const financeService = new FinanceApiService({
+        provider: null,
+        store: mockFinanceStore,
+        defaultHouseholdId: () => mockConfigService.getDefaultHouseholdId(),
+        logger: mockLogger,
       });
+      const routerWithoutAdapter = createFinanceRouter({ financeService, logger: mockLogger });
 
       const appWithoutAdapter = express();
       appWithoutAdapter.use(express.json());

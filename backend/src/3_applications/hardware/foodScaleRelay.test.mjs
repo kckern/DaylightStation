@@ -5,6 +5,7 @@ import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
 import { createFoodScaleRelay } from './foodScaleRelay.mjs';
+import { FoodScaleFirmwareGateway } from '#adapters/hardware/firmware/EventBusFirmwareRelayGateways.mjs';
 import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
@@ -73,7 +74,7 @@ describe('createFoodScaleRelay persistence', () => {
   function wire(timezone = 'UTC') {
     const bus = makeBus();
     createFoodScaleRelay({
-      eventBus: bus,
+      relayGateway: new FoodScaleFirmwareGateway({ eventBus: bus, config: {}, timezone }),
       dataDir,
       // Resolved by the composition root in production; supplied directly here.
       dayLog: new YamlDayLogDatastore({ root: path.join(dataDir, 'nutrition'), timezone, eventPrefix: 'food_scale' }),
@@ -167,7 +168,7 @@ describe('createFoodScaleRelay ingest sources', () => {
     const bus = makeBus();
     const seen = [];
     createFoodScaleRelay({
-      eventBus: bus,
+      relayGateway: new FoodScaleFirmwareGateway({ eventBus: bus, config: {}, timezone: 'UTC' }),
       dataDir: os.tmpdir(),
       dayLog: new YamlDayLogDatastore({ root: path.join(os.tmpdir(), 'kitchen-relay-ingest-test'), timezone: 'UTC', eventPrefix: 'food_scale' }),
       config: {},

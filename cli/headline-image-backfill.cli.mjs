@@ -25,7 +25,7 @@ import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { initConfigService, configService } from '#system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs } from '#system/logging/config.mjs';
-import { DataService } from '#system/config/DataService.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
 import { WebContentAdapter } from '#adapters/feed/WebContentAdapter.mjs';
 import { YamlHeadlineCacheStore } from '#adapters/persistence/yaml/YamlHeadlineCacheStore.mjs';
 

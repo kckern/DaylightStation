@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import { YamlEconomyDatastore } from '#adapters/persistence/yaml/YamlEconomyDatastore.mjs';
 import { EconomyService } from './EconomyService.mjs';
+import { EconomyConfigProjection } from '../../1_adapters/config/ApplicationConfigProjections.mjs';
 
 const USER = 'test-user';
 const USER_DIR = '/tmp/econ-svc-test-user';
@@ -19,7 +20,7 @@ const configService = {
 const clean = () => { try { fs.rmSync(USER_DIR, { recursive: true, force: true }); } catch {} };
 const makeService = () => new EconomyService({
   datastore: new YamlEconomyDatastore({ configService }),
-  configService,
+  configProjection: new EconomyConfigProjection({ configService }),
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
 });
 
@@ -82,7 +83,7 @@ describe('EconomyService', () => {
   it('earn no-ops (does not throw) when the install has no economy config', async () => {
     const svc = new EconomyService({
       datastore: new YamlEconomyDatastore({ configService }),
-      configService: { ...configService, getHouseholdAppConfig: () => null }, // no economy.yml
+      configProjection: new EconomyConfigProjection({ configService: { ...configService, getHouseholdAppConfig: () => null } }), // no economy.yml
       logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
     });
     const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });

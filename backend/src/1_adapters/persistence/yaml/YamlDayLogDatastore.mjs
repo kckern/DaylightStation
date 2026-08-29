@@ -17,10 +17,10 @@
  * back to today in the household's zone. That rule was already duplicated
  * across all five relays and is preserved exactly.
  */
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { getDateInTimezone } from '#domains/core/utils/time.mjs';
+import { fileExistsAsync, readTextFromPathAsync, writeTextFileAsync } from '#system/utils/FileIO.mjs';
 
 const DAY_PREFIX_RE = /^\d{4}-\d{2}-\d{2}/;
 /** Device ids reach the filesystem, so keep them to a safe alphabet. */
@@ -63,11 +63,9 @@ export class YamlDayLogDatastore {
    */
   async append(deviceId, record) {
     const file = this.fileFor(deviceId, record);
-    await fs.mkdir(path.dirname(file), { recursive: true });
-
     let list = [];
     try {
-      const existing = yaml.load(await fs.readFile(file, 'utf8'));
+      const existing = yaml.load(await readTextFromPathAsync(file));
       if (Array.isArray(existing)) list = existing;
     } catch (err) {
       if (err.code !== 'ENOENT') {
@@ -76,7 +74,7 @@ export class YamlDayLogDatastore {
     }
 
     list.push(record);
-    await fs.writeFile(file, yaml.dump(list, { indent: 2, lineWidth: -1, noRefs: true }), 'utf8');
+    await writeTextFileAsync(file, yaml.dump(list, { indent: 2, lineWidth: -1, noRefs: true }));
     return file;
   }
 
@@ -90,11 +88,9 @@ export class YamlDayLogDatastore {
   async appendAt(deviceId, atEpoch, record, { omitKeys = [] } = {}) {
     const day = getDateInTimezone(new Date(atEpoch), this.#timezone);
     const file = path.join(this.#root, sanitize(deviceId), `${day}.yml`);
-    await fs.mkdir(path.dirname(file), { recursive: true });
-
     let list = [];
     try {
-      const existing = yaml.load(await fs.readFile(file, 'utf8'));
+      const existing = yaml.load(await readTextFromPathAsync(file));
       if (Array.isArray(existing)) list = existing;
     } catch (err) {
       if (err.code !== 'ENOENT') {
@@ -105,7 +101,7 @@ export class YamlDayLogDatastore {
     const row = { ...record };
     for (const k of omitKeys) delete row[k];
     list.push(row);
-    await fs.writeFile(file, yaml.dump(list, { noRefs: true, lineWidth: -1 }), 'utf8');
+    await writeTextFileAsync(file, yaml.dump(list, { noRefs: true, lineWidth: -1 }));
     return file;
   }
 
@@ -116,21 +112,14 @@ export class YamlDayLogDatastore {
    */
   async writeDocument(deviceId, relPath, contents) {
     const file = path.join(this.#root, sanitize(deviceId), relPath);
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, contents, 'utf8');
+    await writeTextFileAsync(file, contents);
     return relPath;
   }
 
   /** True when a durable document already exists (used for retry-safe ACKs). */
   async documentExists(deviceId, relPath) {
     const file = path.join(this.#root, sanitize(deviceId), relPath);
-    try {
-      await fs.access(file);
-      return true;
-    } catch (err) {
-      if (err.code === 'ENOENT') return false;
-      throw err;
-    }
+    return fileExistsAsync(file);
   }
 }
 

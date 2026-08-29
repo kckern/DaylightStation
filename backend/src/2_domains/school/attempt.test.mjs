@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createAttempt } from './attempt.mjs';
 
 const required = {
+  id: 'att_fixed',
   at: '2026-08-01T15:00:00.000Z',
   sessionId: 'session-1',
   bankId: 'bank-1',

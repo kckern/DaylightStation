@@ -74,7 +74,7 @@ describe('SessionService', () => {
         startTime: 1736596800000,
         roster: [],
         timeline: {
-          series: { John: '[[120,3]]' },
+          series: { John: [120, 120, 120] },
           events: []
         }
       });
@@ -120,7 +120,7 @@ describe('SessionService', () => {
   });
 
   describe('saveSession', () => {
-    test('saves session with encoded timeline', async () => {
+    test('sends a semantic timeline to the persistence port', async () => {
       mockStore.findById.mockResolvedValue(null);
 
       const session = await service.saveSession({
@@ -134,8 +134,7 @@ describe('SessionService', () => {
 
       expect(mockStore.save).toHaveBeenCalled();
       const savedSession = mockStore.save.mock.calls[0][0];
-      // Timeline should be encoded for storage
-      expect(typeof savedSession.timeline.series.John).toBe('string');
+      expect(savedSession.timeline.series.John).toEqual([120, 120, 125]);
     });
 
     test('throws for missing sessionId', async () => {

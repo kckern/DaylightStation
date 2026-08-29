@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
+import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 
 const RETRY_DELAY_MS = 45_000;
 
@@ -28,9 +29,11 @@ function makeDevice(overrides = {}) {
 
 function makeSvc({ device, readinessPolicy, haGateway } = {}) {
   return new WakeAndLoadService({
+    ...testApplicationRuntime(),
     deviceService: { get: vi.fn().mockReturnValue(device) },
     readinessPolicy,
-    broadcast: vi.fn(),
+    broadcast: () => {},
+    screenGateway: { publishProgress: vi.fn(), screenSubscriberCount: () => 0 },
     haGateway,
     logger: makeLogger(),
   });

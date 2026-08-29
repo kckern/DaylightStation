@@ -1,20 +1,30 @@
 // tests/isolated/adapters/agents/MastraAdapter.transcript.test.mjs
 import { describe, it, expect } from 'vitest';
 import { MastraAdapter } from '../../../../backend/src/1_adapters/agents/MastraAdapter.mjs';
+import { AgentExecutionPolicy } from '#apps/agents/framework/AgentExecutionPolicy.mjs';
+
+function createRuntime(deps = {}) {
+  return new MastraAdapter({
+    ...deps,
+    executionPolicy: new AgentExecutionPolicy({
+      maxToolCalls: deps.maxToolCalls,
+      logger: deps.logger,
+      transcriptStore: deps.transcriptStore,
+    }),
+  });
+}
+import { AgentTranscriptFileStore } from '../../../../backend/src/1_adapters/agents/AgentTranscriptFileStore.mjs';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-describe('MastraAdapter constructor — mediaDir wiring', () => {
-  it('accepts mediaDir without error', () => {
-    const adapter = new MastraAdapter({ model: 'openai/gpt-4o-mini', mediaDir: '/tmp' });
-    expect(adapter).toBeDefined();
+describe('MastraAdapter constructor — execution policy wiring', () => {
+  it('requires an explicit application execution policy', () => {
+    expect(() => new MastraAdapter({ model: 'openai/gpt-4o-mini' })).toThrow(/executionPolicy/);
   });
 
-  it('defaults mediaDir to null when absent', () => {
-    const adapter = new MastraAdapter({ model: 'openai/gpt-4o-mini' });
-    // Private — verified indirectly through transcript tests below
-    expect(adapter).toBeDefined();
+  it('accepts an explicit application execution policy', () => {
+    expect(createRuntime({ model: 'openai/gpt-4o-mini' })).toBeDefined();
   });
 });
 
@@ -25,9 +35,10 @@ describe('MastraAdapter.execute — transcript lifecycle', () => {
 
   it('writes a transcript with status=error when execute fails fast', async () => {
     const tmp = await makeTmp();
-    const adapter = new MastraAdapter({
+    const adapter = createRuntime({
       model: 'invalid-provider/no-such-model',
       mediaDir: tmp,
+      transcriptStore: new AgentTranscriptFileStore({ mediaDir: tmp }),
       timeoutMs: 5000,
     });
 
@@ -65,9 +76,10 @@ describe('MastraAdapter.execute — transcript lifecycle', () => {
 
   it('threads turnId from context if provided', async () => {
     const tmp = await makeTmp();
-    const adapter = new MastraAdapter({
+    const adapter = createRuntime({
       model: 'invalid-provider/no-such-model',
       mediaDir: tmp,
+      transcriptStore: new AgentTranscriptFileStore({ mediaDir: tmp }),
       timeoutMs: 5000,
     });
     const turnId = '99999999-aaaa-bbbb-cccc-dddddddddddd';
@@ -91,9 +103,10 @@ describe('MastraAdapter.execute — transcript lifecycle', () => {
 
   it('uses anonymous user dir when context.userId is null', async () => {
     const tmp = await makeTmp();
-    const adapter = new MastraAdapter({
+    const adapter = createRuntime({
       model: 'invalid-provider/no-such-model',
       mediaDir: tmp,
+      transcriptStore: new AgentTranscriptFileStore({ mediaDir: tmp }),
       timeoutMs: 5000,
     });
     try {
@@ -114,7 +127,7 @@ describe('MastraAdapter.execute — transcript lifecycle', () => {
   });
 
   it('skips disk write when mediaDir is null (still completes)', async () => {
-    const adapter = new MastraAdapter({
+    const adapter = createRuntime({
       model: 'invalid-provider/no-such-model',
       timeoutMs: 5000,
       // mediaDir omitted
@@ -140,9 +153,10 @@ describe('MastraAdapter.execute — transcript lifecycle', () => {
 describe('MastraAdapter tool wrapper records to transcript', () => {
   it('captures tool args + result + latency', async () => {
     const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'mastra-tool-record-'));
-    const adapter = new MastraAdapter({
+    const adapter = createRuntime({
       model: 'invalid-provider/no-such-model',
       mediaDir: tmp,
+      transcriptStore: new AgentTranscriptFileStore({ mediaDir: tmp }),
       timeoutMs: 5000,
     });
 
@@ -190,9 +204,10 @@ describe('MastraAdapter tool wrapper records to transcript', () => {
 describe('MastraAdapter — full schema population on error path', () => {
   it('records all required spec fields when execute fails', async () => {
     const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'transcript-smoke-'));
-    const adapter = new MastraAdapter({
+    const adapter = createRuntime({
       model: 'invalid/no-model',
       mediaDir: tmp,
+      transcriptStore: new AgentTranscriptFileStore({ mediaDir: tmp }),
       timeoutMs: 3000,
     });
     const turnId = '12345678-1234-1234-1234-123456789abc';
@@ -252,7 +267,7 @@ describe('MastraAdapter userId schema-strip + auto-inject', () => {
       execute: async (args) => { receivedArgs = args; return { ok: true }; },
     };
 
-    const adapter = new MastraAdapter({ model: 'invalid/no-model', timeoutMs: 3000 });
+    const adapter = createRuntime({ model: 'invalid/no-model', timeoutMs: 3000 });
 
     // No-op assertion — full integration test in Task 6 covers the path
     // end-to-end with a real fixture user.

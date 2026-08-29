@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
+import { HarvestedLifelogSourceRegistry } from '#adapters/lifelog/HarvestedLifelogSourceRegistry.mjs';
 
 describe('LifelogAggregator.aggregateRange', () => {
   let aggregator;
@@ -22,7 +23,9 @@ describe('LifelogAggregator.aggregateRange', () => {
   };
 
   beforeEach(() => {
-    aggregator = new LifelogAggregator({ userLoadFile: mockLoadFile });
+    aggregator = new LifelogAggregator({
+      sourceRegistry: new HarvestedLifelogSourceRegistry({ userLoadFile: mockLoadFile }),
+    });
   });
 
   it('returns data for each day in range', async () => {

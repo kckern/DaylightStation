@@ -5,7 +5,7 @@
  * Looks up product by UPC barcode and creates a pending log.
  */
 
-import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
+import { createNutriLog } from '../nutriLogRecords.mjs';
 
 /**
  * Log food from UPC use case
@@ -164,7 +164,7 @@ export class LogFoodFromUPC {
       // 6. Create NutriLog entity
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
       const now = new Date();
-      const nutriLog = NutriLog.create({
+      const nutriLog = createNutriLog({
         userId,
         conversationId,
         items: [foodItem],

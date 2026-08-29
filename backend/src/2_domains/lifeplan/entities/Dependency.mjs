@@ -17,18 +17,4 @@ export class Dependency {
     return this.status === 'satisfied';
   }
 
-  toJSON() {
-    return {
-      type: this.type,
-      blocked_goal: this.blocked_goal,
-      requires_goal: this.requires_goal,
-      awaits_event: this.awaits_event,
-      resource: this.resource,
-      threshold: this.threshold,
-      current: this.current,
-      status: this.status,
-      reason: this.reason,
-      overridden: this.overridden,
-    };
-  }
 }

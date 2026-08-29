@@ -13,16 +13,15 @@
  * name where an enrollment came from after the syllabus stops being offered.
  */
 import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
+import { readDirectory, readTextFromPath, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
 const YAML_FILE_RE = /\.(yml|yaml)$/;
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 const isSafeId = (id) => typeof id === 'string' && SLUG.test(id);
-const stagingPathFor = (filePath) => `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 export class YamlSyllabusStore {
   #configService;
@@ -45,7 +44,7 @@ export class YamlSyllabusStore {
   async #read(syllabusId) {
     let text;
     try {
-      text = await fs.readFile(this.#fileFor(syllabusId), 'utf8');
+      text = readTextFromPath(this.#fileFor(syllabusId));
     } catch (err) {
       if (err?.code === 'ENOENT') { this.#corrupt.delete(syllabusId); return null; }
       this.#markCorrupt(syllabusId);
@@ -69,15 +68,7 @@ export class YamlSyllabusStore {
   }
 
   async #writeYamlAtomic(filePath, content) {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    const staging = stagingPathFor(filePath);
-    try {
-      await fs.writeFile(staging, dumpYaml(content), 'utf8');
-      await fs.rename(staging, filePath);
-    } catch (err) {
-      await fs.unlink(staging).catch(() => {});
-      throw err;
-    }
+    writeFileAtomic(filePath, dumpYaml(content));
   }
 
   async get(syllabusId) {
@@ -88,7 +79,7 @@ export class YamlSyllabusStore {
   async list() {
     let names;
     try {
-      names = await fs.readdir(this.#root());
+      names = readDirectory(this.#root());
     } catch {
       return [];
     }

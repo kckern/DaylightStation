@@ -6,6 +6,7 @@ describe('PlanToolFactory', () => {
   let mockPlanStore, mockGoalStateService, mockBeliefEvaluator, mockFeedbackService;
 
   beforeEach(() => {
+    const fixedNow = new Date('2026-08-29T00:00:00.000Z');
     mockPlanStore = {
       load: () => ({
         goals: [{ id: 'g1', name: 'Run marathon', state: 'active' }],
@@ -37,6 +38,7 @@ describe('PlanToolFactory', () => {
       goalStateService: mockGoalStateService,
       beliefEvaluator: mockBeliefEvaluator,
       feedbackService: mockFeedbackService,
+      clock: { now: () => fixedNow },
     });
     tools = factory.createTools();
   });

@@ -18,7 +18,7 @@
  * judgment was the grade. Report cards are NOT re-frozen here — the report
  * names the affected sessions so the teacher can supersede deliberately.
  */
-import { createHash } from 'node:crypto';
+import { sha256Text } from '#system/utils/sha256.mjs';
 import { gradeAnswer, bankContentRev } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
@@ -173,8 +173,8 @@ export class RegradeBankAttempts {
           results.push({ sessionId, status: 'skipped_incomplete_worksheet_roster' });
           continue;
         }
-        const digest = createHash('sha256').update(JSON.stringify({ bankId, currentRev, sessionId,
-          attemptIds: state.machineGrade.attemptIds, correctCount, totalCount })).digest('hex').slice(0, 16);
+        const digest = sha256Text(JSON.stringify({ bankId, currentRev, sessionId,
+          attemptIds: state.machineGrade.attemptIds, correctCount, totalCount })).slice(0, 16);
         const adjustmentId = `regrade_${digest}`;
         const adjusted = await this.#sessionCorrection({ sessionId, adjustmentId,
           percent: Math.round((correctCount / totalCount) * 10000) / 100,

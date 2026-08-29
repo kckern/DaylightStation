@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GetPlayableUnits } from './GetPlayableUnits.mjs';
+import { PianoConfigProjection } from '../../../1_adapters/config/ApplicationConfigProjections.mjs';
 
 const COURSE = '12345';
 const COMPOUND = `plex:${COURSE}`;
@@ -59,7 +60,7 @@ const NOON = Date.parse('2026-08-25T19:00:00Z'); // 12:00 PDT, inside the 4am st
 const build = ({ watched, completedAt, programs = null, coProgress = true, logger } = {}) => new GetPlayableUnits({
   fitnessPlayableService: playableService(),
   userVideoProgressStore: progressStore(watched, completedAt),
-  configService: configService({ coProgress }),
+  configProjection: new PianoConfigProjection({ configService: configService({ coProgress }) }),
   schoolAssignments: programs ? assignmentStore(programs) : null,
   clock: () => new Date(NOON),
   logger: logger ?? { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -164,7 +165,7 @@ describe("GetPlayableUnits — today's assigned lesson overrides the co-progress
     const useCase = new GetPlayableUnits({
       fitnessPlayableService: playableService(),
       userVideoProgressStore: progressStore({ [AHEAD]: ['100'], [BEHIND]: [] }),
-      configService: configService(),
+      configProjection: new PianoConfigProjection({ configService: configService() }),
       schoolAssignments: assignments,
       clock: () => new Date(NOON),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -178,7 +179,7 @@ describe("GetPlayableUnits — today's assigned lesson overrides the co-progress
     const useCase = new GetPlayableUnits({
       fitnessPlayableService: playableService(),
       userVideoProgressStore: progressStore(AHEAD_BY_BUFFER),
-      configService: configService(),
+      configProjection: new PianoConfigProjection({ configService: configService() }),
       schoolAssignments: { get: vi.fn().mockRejectedValue(new Error('yaml is corrupt')) },
       clock: () => new Date(NOON),
       logger,

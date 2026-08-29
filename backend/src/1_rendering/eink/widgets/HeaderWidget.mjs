@@ -13,7 +13,7 @@ export function draw(ctx, box, data, theme) {
   ctx.fillStyle = theme.headerBg || theme.fg;
   ctx.fillRect(x, y, w, h);
 
-  const now = new Date();
+  const now = data.renderReferenceTime;
   const day = DAYS[now.getDay()];
   const month = MONTHS[now.getMonth()];
   const date = now.getDate();

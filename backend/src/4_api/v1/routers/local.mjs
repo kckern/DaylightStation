@@ -14,67 +14,46 @@
  */
 
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
-import { spawn } from 'child_process';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
-import { dirExists, fileExists } from '#system/utils/FileIO.mjs';
+import { streamMediaResourceWithRanges } from '#system/http/index.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 
-const MIME_TYPES = {
-  '.mp3': 'audio/mpeg',
-  '.m4a': 'audio/mp4',
-  '.wav': 'audio/wav',
-  '.flac': 'audio/flac',
-  '.ogg': 'audio/ogg',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.mkv': 'video/x-matroska',
-  '.avi': 'video/x-msvideo',
-  '.mov': 'video/quicktime',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp'
+const MEDIA_HEADERS = {
+  'Cache-Control': 'public, max-age=31536000',
+  'X-Content-Type-Options': 'nosniff',
+  'Access-Control-Allow-Origin': '*',
 };
-
-const VIDEO_EXTS = ['.mp4', '.webm', '.mkv', '.avi', '.mov'];
-const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 
 /**
  * Create Local Media API router
  *
  * @param {Object} config
- * @param {Object} config.localMediaAdapter - FileAdapter instance (handles local media browsing)
- * @param {string} config.mediaBasePath - Base path for media files
- * @param {string} config.cacheBasePath - Base path for cache (thumbnails)
+ * @param {Object} config.localMediaCatalog - Semantic local-media catalog service
+ * @param {Object} config.getLocalMediaResource - Application operation
+ * @param {Object} config.getLocalMediaThumbnail - Application operation
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createLocalRouter(config) {
-  const { localMediaAdapter, mediaBasePath, cacheBasePath, logger = console } = config;
+  const {
+    localMediaCatalog,
+    getLocalMediaResource,
+    getLocalMediaThumbnail,
+    logger = console,
+  } = config;
   const router = express.Router();
-
-  const thumbnailCacheDir = path.join(cacheBasePath, 'thumbnails');
-
-  // Ensure thumbnail cache directory exists
-  if (!dirExists(thumbnailCacheDir)) {
-    fs.mkdirSync(thumbnailCacheDir, { recursive: true });
-  }
 
   /**
    * GET /local/roots
    * Get configured media roots
    */
   router.get('/roots', asyncHandler(async (req, res) => {
-    if (!localMediaAdapter) {
+    const outcome = await localMediaCatalog.roots();
+    if (outcome.kind === 'unavailable') {
       return res.status(503).json({ error: 'Local media adapter not configured' });
     }
 
-    const roots = await localMediaAdapter.getRoots();
-    res.json({ roots });
+    res.json({ roots: outcome.value });
   }));
 
   /**
@@ -82,14 +61,15 @@ export function createLocalRouter(config) {
    * Browse folder contents
    */
   router.get('/browse{/*splat}', asyncHandler(async (req, res) => {
-    if (!localMediaAdapter) {
+    const relativePath = splatPath(req);
+    const outcome = await localMediaCatalog.browse(relativePath);
+    if (outcome.kind === 'unavailable') {
       return res.status(503).json({ error: 'Local media adapter not configured' });
     }
 
     // Params arrive pre-decoded (Express 4 did too — the old decodeURIComponent
     // here was double-decoding). See splatPath docstring.
-    const relativePath = splatPath(req);
-    const items = await localMediaAdapter.getList(relativePath);
+    const items = outcome.value;
 
     res.json({
       path: relativePath,
@@ -109,62 +89,22 @@ export function createLocalRouter(config) {
       return res.status(400).json({ error: 'No path specified' });
     }
 
-    // Security: validate path stays within mediaBasePath
-    const safePath = path.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, '');
-    const fullPath = path.join(mediaBasePath, safePath);
-    const resolvedBase = path.resolve(mediaBasePath);
-    const resolvedFull = path.resolve(fullPath);
-
-    if (!resolvedFull.startsWith(resolvedBase)) {
+    const result = await getLocalMediaResource.execute(relativePath);
+    if (result.kind === 'forbidden') {
       return res.status(403).json({ error: 'Path traversal not allowed' });
     }
-
-    if (!fileExists(fullPath)) {
+    if (result.kind === 'not_found') {
       return res.status(404).json({ error: 'File not found' });
     }
-
-    const stat = fs.statSync(fullPath);
-    if (!stat.isFile()) {
+    if (result.kind === 'not_file') {
       return res.status(400).json({ error: 'Path is not a file' });
     }
 
-    const ext = path.extname(fullPath).toLowerCase();
-    const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
-
-    const commonHeaders = {
-      'Cache-Control': 'public, max-age=31536000',
-      'X-Content-Type-Options': 'nosniff',
-      'Access-Control-Allow-Origin': '*'
-    };
-
-    // Handle range requests for seeking
-    const range = req.headers.range;
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-      const chunkSize = end - start + 1;
-
-      res.writeHead(206, {
-        ...commonHeaders,
-        'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunkSize,
-        'Content-Type': mimeType
-      });
-
-      fs.createReadStream(fullPath, { start, end }).pipe(res);
-    } else {
-      res.writeHead(200, {
-        ...commonHeaders,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': stat.size,
-        'Content-Type': mimeType
-      });
-      fs.createReadStream(fullPath).pipe(res);
-    }
-
-    logger.debug?.('local.stream.served', { path: relativePath, mimeType });
+    streamMediaResourceWithRanges(req, res, result.resource, MEDIA_HEADERS);
+    logger.debug?.('local.stream.served', {
+      path: relativePath,
+      mimeType: result.resource.mimeType,
+    });
   }));
 
   /**
@@ -179,62 +119,23 @@ export function createLocalRouter(config) {
       return res.status(400).json({ error: 'No path specified' });
     }
 
-    // Security: validate path
-    const safePath = path.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, '');
-    const fullPath = path.join(mediaBasePath, safePath);
-    const resolvedBase = path.resolve(mediaBasePath);
-    const resolvedFull = path.resolve(fullPath);
-
-    if (!resolvedFull.startsWith(resolvedBase)) {
+    const result = await getLocalMediaThumbnail.execute(relativePath);
+    if (result.kind === 'forbidden') {
       return res.status(403).json({ error: 'Path traversal not allowed' });
     }
-
-    if (!fileExists(fullPath)) {
+    if (result.kind === 'not_found') {
       return res.status(404).json({ error: 'File not found' });
     }
-
-    const stat = fs.statSync(fullPath);
-    const ext = path.extname(fullPath).toLowerCase();
-
-    // Generate cache key based on path + mtime
-    const cacheKey = crypto.createHash('md5').update(`${fullPath}:${stat.mtimeMs}`).digest('hex');
-    const thumbnailPath = path.join(thumbnailCacheDir, `${cacheKey}.jpg`);
-
-    // Check if thumbnail exists in cache
-    if (fileExists(thumbnailPath)) {
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=31536000');
-      return fs.createReadStream(thumbnailPath).pipe(res);
-    }
-
-    // For images, serve original or generate smaller version
-    if (IMAGE_EXTS.includes(ext)) {
-      // For now, serve original image as thumbnail
-      // TODO: Use sharp to resize if available
-      const mimeType = MIME_TYPES[ext] || 'image/jpeg';
-      res.setHeader('Content-Type', mimeType);
-      res.setHeader('Cache-Control', 'public, max-age=31536000');
-      return fs.createReadStream(fullPath).pipe(res);
-    }
-
-    // For videos, try to generate thumbnail with ffmpeg
-    if (VIDEO_EXTS.includes(ext)) {
-      try {
-        await generateVideoThumbnail(fullPath, thumbnailPath);
-        if (fileExists(thumbnailPath)) {
-          res.setHeader('Content-Type', 'image/jpeg');
-          res.setHeader('Cache-Control', 'public, max-age=31536000');
-          return fs.createReadStream(thumbnailPath).pipe(res);
-        }
-      } catch (err) {
-        logger.warn?.('local.thumbnail.ffmpeg.failed', { path: relativePath, error: err.message });
-      }
-
-      // Fallback: return placeholder
+    if (result.kind === 'generation_failed') {
       return res.status(404).json({ error: 'Thumbnail generation failed' });
     }
+    if (result.kind === 'unsupported') {
+      return res.status(400).json({ error: 'Unsupported media type for thumbnail' });
+    }
 
-    return res.status(400).json({ error: 'Unsupported media type for thumbnail' });
+    res.setHeader('Content-Type', result.resource.mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+    return result.resource.open().pipe(res);
   }));
 
   /**
@@ -242,26 +143,18 @@ export function createLocalRouter(config) {
    * Force metadata index rebuild
    */
   router.post('/reindex', asyncHandler(async (req, res) => {
-    if (!localMediaAdapter) {
+    const outcome = await localMediaCatalog.reindex();
+    if (outcome.kind === 'unavailable') {
       return res.status(503).json({ error: 'Local media adapter not configured' });
     }
 
-    localMediaAdapter.clearCache();
+    const totalFiles = outcome.files;
 
-    // Trigger a scan by calling getRoots and getList for each root
-    const roots = await localMediaAdapter.getRoots();
-    let totalFiles = 0;
-
-    for (const root of roots) {
-      const items = await localMediaAdapter.getList(root.path);
-      totalFiles += Array.isArray(items) ? items.length : (items?.children?.length || 0);
-    }
-
-    logger.info?.('local.reindex.complete', { roots: roots.length, files: totalFiles });
+    logger.info?.('local.reindex.complete', { roots: outcome.roots, files: totalFiles });
 
     res.json({
       message: 'Reindex complete',
-      roots: roots.length,
+      roots: outcome.roots,
       files: totalFiles
     });
   }));
@@ -271,7 +164,7 @@ export function createLocalRouter(config) {
    * Search local media files
    */
   router.get('/search', asyncHandler(async (req, res) => {
-    if (!localMediaAdapter) {
+    if (!localMediaCatalog || localMediaCatalog.available === false) {
       return res.status(503).json({ error: 'Local media adapter not configured' });
     }
 
@@ -282,7 +175,9 @@ export function createLocalRouter(config) {
       return res.status(400).json({ error: 'Search text must be at least 2 characters' });
     }
 
-    const results = await localMediaAdapter.search({ text: searchText });
+    const outcome = await localMediaCatalog.search(searchText);
+    if (outcome.kind === 'unavailable') return res.status(503).json({ error: 'Local media adapter not configured' });
+    const results = outcome.value;
 
     res.json({
       query: searchText,
@@ -295,55 +190,6 @@ export function createLocalRouter(config) {
   router.use(errorHandlerMiddleware({ shape: 'string' }));
 
   return router;
-}
-
-/**
- * Generate video thumbnail using ffmpeg
- * Extracts a frame at 10% of duration
- *
- * @param {string} videoPath - Full path to video file
- * @param {string} outputPath - Full path for output thumbnail
- * @returns {Promise<void>}
- */
-function generateVideoThumbnail(videoPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    // Seek 3 seconds in to skip black intros, then use thumbnail filter
-    // to pick the most representative frame from the next 100 frames
-    const ffmpeg = spawn('ffmpeg', [
-      '-ss', '3',
-      '-i', videoPath,
-      '-vf', 'thumbnail=100,scale=300:-1',
-      '-frames:v', '1',
-      '-update', '1',
-      '-y',
-      outputPath
-    ], {
-      stdio: ['ignore', 'ignore', 'pipe']
-    });
-
-    let stderr = '';
-    ffmpeg.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    ffmpeg.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-200)}`));
-      }
-    });
-
-    ffmpeg.on('error', (err) => {
-      reject(err);
-    });
-
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      ffmpeg.kill();
-      reject(new Error('ffmpeg timeout'));
-    }, 30000);
-  });
 }
 
 export default createLocalRouter;

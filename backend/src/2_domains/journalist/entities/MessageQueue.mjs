@@ -5,7 +5,6 @@
  * Represents a queued message waiting to be sent.
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
@@ -37,7 +36,8 @@ export class MessageQueue {
     if (!props.queuedMessage) throw new ValidationError('queuedMessage is required');
     if (!props.timestamp) throw new ValidationError('timestamp is required');
 
-    this.#uuid = props.uuid || uuidv4();
+    if (!props.uuid) throw new ValidationError('uuid is required');
+    this.#uuid = props.uuid;
     this.#chatId = props.chatId;
     this.#timestamp = props.timestamp;
     this.#queuedMessage = props.queuedMessage;
@@ -103,7 +103,13 @@ export class MessageQueue {
    */
   withMessageId(messageId) {
     return new MessageQueue({
-      ...this.toJSON(),
+      uuid: this.#uuid,
+      chatId: this.#chatId,
+      timestamp: this.#timestamp,
+      queuedMessage: this.#queuedMessage,
+      choices: this.#choices,
+      inline: this.#inline,
+      foreignKey: this.#foreignKey,
       messageId,
     });
   }
@@ -115,8 +121,14 @@ export class MessageQueue {
    */
   withChoices(choices) {
     return new MessageQueue({
-      ...this.toJSON(),
+      uuid: this.#uuid,
+      chatId: this.#chatId,
+      timestamp: this.#timestamp,
+      queuedMessage: this.#queuedMessage,
       choices,
+      inline: this.#inline,
+      foreignKey: this.#foreignKey,
+      messageId: this.#messageId,
     });
   }
 
@@ -127,8 +139,14 @@ export class MessageQueue {
    */
   withForeignKey(foreignKey) {
     return new MessageQueue({
-      ...this.toJSON(),
+      uuid: this.#uuid,
+      chatId: this.#chatId,
+      timestamp: this.#timestamp,
+      queuedMessage: this.#queuedMessage,
+      choices: this.#choices,
+      inline: this.#inline,
       foreignKey: { ...this.#foreignKey, ...foreignKey },
+      messageId: this.#messageId,
     });
   }
 
@@ -141,25 +159,6 @@ export class MessageQueue {
    */
   static create(props) {
     return new MessageQueue(props);
-  }
-
-  // ==================== Serialization ====================
-
-  /**
-   * Convert to plain object
-   * @returns {object}
-   */
-  toJSON() {
-    return {
-      uuid: this.#uuid,
-      chatId: this.#chatId,
-      timestamp: this.#timestamp,
-      queuedMessage: this.#queuedMessage,
-      choices: this.#choices ? this.#choices.map((row) => [...row]) : null,
-      inline: this.#inline,
-      foreignKey: { ...this.#foreignKey },
-      messageId: this.#messageId,
-    };
   }
 
   /**

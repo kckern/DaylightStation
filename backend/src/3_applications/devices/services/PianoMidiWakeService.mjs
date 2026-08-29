@@ -26,71 +26,49 @@
  * @module 3_applications/devices/services/PianoMidiWakeService
  */
 
-import WebSocket from 'ws';
-
 const DEFAULT_COOLDOWN_MS = 8000;
-const DEFAULT_BACKOFF_BASE_MS = 1000;
-const DEFAULT_BACKOFF_MAX_MS = 30000;
 
 export class PianoMidiWakeService {
   #deviceService; #logger; #clock;
-  #deviceId; #bridgeUrl; #cooldownMs;
-  #WebSocketImpl; #backoffBaseMs; #backoffMaxMs;
-
-  #ws;
-  #stopped;
-  #backoff;
+  #deviceId; #cooldownMs; #bridge;
   #lastWakeAt;   // ms of the last wake fired, or null (never)
   #waking;       // in-flight guard so a burst can't stack setScreen calls
   #screenOverride; // shared ScreenOverrideService; note-ons are muted while its window is 'off'
-  #fetchImpl;    // injectable fetch for the APK /config relay (tests)
   #lastRelay;    // in-flight APK config relay promise (test seam)
 
   /**
    * @param {Object} opts
    * @param {{get:Function}} opts.deviceService
    * @param {string} opts.deviceId - FKB tablet device id (e.g. 'yellow-room-tablet')
-   * @param {string} opts.bridgeUrl - piano-bridge WS control plane (ws://host:8770)
+   * @param {IPianoMidiBridge} opts.bridge - piano-bridge transport capability
    * @param {Object} [opts.logger]
    * @param {{now:()=>number}} [opts.clock]
    * @param {number} [opts.cooldownMs] - min gap between wake pokes (debounce)
-   * @param {Function} [opts.WebSocketImpl] - injectable WS ctor for tests
-   * @param {number} [opts.backoffBaseMs]
-   * @param {number} [opts.backoffMaxMs]
    */
   constructor({
-    deviceService, deviceId, bridgeUrl,
+    deviceService, deviceId, bridge,
     logger = console, clock = Date,
     cooldownMs = DEFAULT_COOLDOWN_MS,
-    WebSocketImpl = WebSocket,
-    backoffBaseMs = DEFAULT_BACKOFF_BASE_MS,
-    backoffMaxMs = DEFAULT_BACKOFF_MAX_MS,
-    fetchImpl,
     screenOverride = null,
   } = {}) {
     if (!deviceService || typeof deviceService.get !== 'function') {
       throw new Error('PianoMidiWakeService requires deviceService with get');
     }
     if (!deviceId) throw new Error('PianoMidiWakeService requires deviceId');
-    if (!bridgeUrl) throw new Error('PianoMidiWakeService requires bridgeUrl');
+    if (!bridge || typeof bridge.start !== 'function' || typeof bridge.stop !== 'function' ||
+        typeof bridge.suppressWakeUntil !== 'function') {
+      throw new Error('PianoMidiWakeService requires bridge');
+    }
 
     this.#deviceService = deviceService;
     this.#deviceId = deviceId;
-    this.#bridgeUrl = bridgeUrl;
+    this.#bridge = bridge;
     this.#logger = logger;
     this.#clock = clock;
     this.#cooldownMs = cooldownMs;
-    this.#WebSocketImpl = WebSocketImpl;
-    this.#backoffBaseMs = backoffBaseMs;
-    this.#backoffMaxMs = backoffMaxMs;
-
-    this.#ws = null;
-    this.#stopped = false;
-    this.#backoff = backoffBaseMs;
     this.#lastWakeAt = null;
     this.#waking = false;
     this.#screenOverride = screenOverride;
-    this.#fetchImpl = fetchImpl ?? ((...a) => fetch(...a));
   }
 
   /**
@@ -114,37 +92,7 @@ export class PianoMidiWakeService {
     // merge our one key, POST the full set back. If the config can't be read, do
     // NOT write — a blind partial POST is the clobber, so failing safe (skipping
     // the on-device relay) keeps the MIDI link alive.
-    this.#lastRelay = this.#relaySuppressToApk(deadlineMs);
-  }
-
-  /** @private Read-merge-write the wake deadline into the APK's on-device config. */
-  async #relaySuppressToApk(deadlineMs) {
-    const httpBase = this.#bridgeUrl.replace(/^ws(s?):\/\//i, 'http$1://').replace(/\/+$/, '');
-    const url = `${httpBase}/config`;
-    try {
-      const res = await this.#fetchImpl(url, { method: 'GET' });
-      let values = null;
-      if (res?.ok) {
-        try { const body = await res.json(); values = body?.values ?? null; } catch { values = null; }
-      }
-      if (!values || typeof values !== 'object') {
-        this.#logger.warn?.('piano-midi-wake.suppress-relay-skipped', {
-          deviceId: this.#deviceId, reason: 'config-unreadable',
-        });
-        return;
-      }
-      const merged = { ...values, fkbWakeSuppressUntilEpochMs: String(deadlineMs) };
-      const yaml = Object.entries(merged).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n';
-      await this.#fetchImpl(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: yaml,
-      });
-    } catch (err) {
-      this.#logger.warn?.('piano-midi-wake.suppress-relay-failed', {
-        deviceId: this.#deviceId, error: String(err?.message ?? err),
-      });
-    }
+    this.#lastRelay = Promise.resolve(this.#bridge.suppressWakeUntil(deadlineMs));
   }
 
   /** Test seam: await the in-flight APK config relay. */
@@ -154,64 +102,14 @@ export class PianoMidiWakeService {
   _handleNoteOnForTest() { this.#onNoteOn(); }
 
   start() {
-    this.#stopped = false;
     this.#logger.info?.('piano-midi-wake.started', {
-      deviceId: this.#deviceId, bridgeUrl: this.#bridgeUrl, cooldownMs: this.#cooldownMs,
+      deviceId: this.#deviceId, cooldownMs: this.#cooldownMs,
     });
-    this.#connect();
+    this.#bridge.start(() => this.#onNoteOn());
   }
 
   stop() {
-    this.#stopped = true;
-    try { this.#ws?.close(); } catch { /* ignore */ }
-    this.#ws = null;
-  }
-
-  /** @private Open (or reopen) the WS to the bridge; reconnect with backoff. */
-  #connect() {
-    if (this.#stopped) return;
-    let ws;
-    try {
-      ws = new this.#WebSocketImpl(this.#bridgeUrl);
-    } catch (err) {
-      this.#logger.warn?.('piano-midi-wake.ws.error', { error: String(err?.message ?? err) });
-      this.#scheduleReconnect();
-      return;
-    }
-    this.#ws = ws;
-
-    ws.on('open', () => {
-      this.#backoff = this.#backoffBaseMs; // reset backoff on a good connection
-      this.#logger.info?.('piano-midi-wake.ws.open', { bridgeUrl: this.#bridgeUrl });
-    });
-    ws.on('message', (data) => this.#onMessage(data));
-    // A dead socket emits 'error' then 'close'; reconnect from 'close' only so we
-    // schedule exactly one retry per drop.
-    ws.on('error', (err) => {
-      this.#logger.warn?.('piano-midi-wake.ws.error', { error: String(err?.message ?? err) });
-    });
-    ws.on('close', () => {
-      this.#ws = null;
-      this.#scheduleReconnect();
-    });
-  }
-
-  /** @private */
-  #scheduleReconnect() {
-    if (this.#stopped) return;
-    const inMs = this.#backoff;
-    this.#logger.warn?.('piano-midi-wake.ws.reconnect', { inMs });
-    const t = setTimeout(() => this.#connect(), inMs);
-    t.unref?.();
-    this.#backoff = Math.min(this.#backoff * 2, this.#backoffMaxMs);
-  }
-
-  /** @private */
-  #onMessage(data) {
-    let msg;
-    try { msg = JSON.parse(data.toString()); } catch { return; }
-    if (msg?.type !== 'note.on') return;
-    this.#onNoteOn();
+    this.#bridge.stop();
   }
 
   /** @private Debounced wake: at most one setScreen(true) per cooldown window. */

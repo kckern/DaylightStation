@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTriggerRouter } from '../../../../backend/src/4_api/v1/routers/trigger.mjs';
+import { dispatchSideEffect, TriggerSideEffectExecutor, UnknownSideEffectError } from '#apps/trigger/sideEffectHandlers.mjs';
 
 describe('createTriggerRouter', () => {
   let triggerDispatchService;
@@ -13,6 +14,8 @@ describe('createTriggerRouter', () => {
     app.use(express.json());                    // enable JSON body parsing
     app.use('/api/v1/trigger', createTriggerRouter({
       triggerDispatchService,
+      sideEffectExecutor: new TriggerSideEffectExecutor({ dispatch: (request) => dispatchSideEffect(request, {}) }),
+      isUnknownSideEffectError: (error) => error instanceof UnknownSideEffectError,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     }));
   });

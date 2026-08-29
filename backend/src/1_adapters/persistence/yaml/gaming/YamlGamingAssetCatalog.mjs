@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { materializeAssetCatalog, resolveApprovedAsset, validateAssetCatalog } from '#shared/gaming/assets.mjs';
+import { fileExists, readBinaryFromPath, readTextFromPath } from '#system/utils/FileIO.mjs';
 
 const PACK_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const CATALOG_MAP_FIELDS = ['license_scopes', 'asset_templates', 'assets', 'prefabs'];
@@ -26,7 +26,7 @@ export class YamlGamingAssetCatalog {
   #catalogFile(packId) {
     if (!PACK_ID.test(String(packId))) return null;
     const flat = path.join(this.catalogsDir, `${packId}.yml`);
-    return fs.existsSync(flat) ? flat : path.join(this.catalogsDir, packId, 'catalog.yml');
+    return fileExists(flat) ? flat : path.join(this.catalogsDir, packId, 'catalog.yml');
   }
 
   #loadCatalogFile(file, stack = []) {
@@ -34,7 +34,7 @@ export class YamlGamingAssetCatalog {
     const catalogRoot = path.resolve(this.catalogsDir);
     if (!resolved.startsWith(`${catalogRoot}${path.sep}`)) throw new Error(`catalog import escapes catalog directory: ${file}`);
     if (stack.includes(resolved)) throw new Error(`catalog import cycle: ${[...stack, resolved].join(' -> ')}`);
-    const authored = YAML.parse(fs.readFileSync(resolved, 'utf8'), { uniqueKeys: true }) ?? {};
+    const authored = YAML.parse(readTextFromPath(resolved), { uniqueKeys: true }) ?? {};
     const imports = authored.imports ?? [];
     if (!Array.isArray(imports) || imports.some((entry) => typeof entry !== 'string' || !entry.trim() || path.isAbsolute(entry))) throw new Error(`${resolved}: imports must be relative catalog paths`);
     const merged = {};
@@ -49,7 +49,7 @@ export class YamlGamingAssetCatalog {
 
   get(packId) {
     const file = this.#catalogFile(packId);
-    if (!file || !fs.existsSync(file)) return null;
+    if (!file || !fileExists(file)) return null;
     const catalog = this.#loadCatalogFile(file);
     const validation = validateAssetCatalog(catalog);
     if (!validation.valid) throw Object.assign(new Error(`invalid gaming asset catalog: ${validation.errors.join('; ')}`), { status: 500, code: 'asset_catalog_invalid' });
@@ -62,10 +62,10 @@ export class YamlGamingAssetCatalog {
     const asset = resolveApprovedAsset(catalog, assetId);
     if (!asset) return null;
     const file = path.resolve(this.assetRoot, asset.source);
-    if (!file.startsWith(`${this.assetRoot}${path.sep}`) || !fs.existsSync(file)) {
+    if (!file.startsWith(`${this.assetRoot}${path.sep}`) || !fileExists(file)) {
       throw Object.assign(new Error(`approved asset source is unavailable: ${assetId}`), { status: 500, code: 'asset_source_unavailable' });
     }
-    const sha256 = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    const sha256 = crypto.createHash('sha256').update(readBinaryFromPath(file)).digest('hex');
     if (sha256 !== asset.source_sha256) throw Object.assign(new Error(`approved asset hash mismatch: ${assetId}`), { status: 500, code: 'asset_hash_mismatch' });
     return { ...asset, file };
   }

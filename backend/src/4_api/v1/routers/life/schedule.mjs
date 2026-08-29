@@ -1,19 +1,5 @@
 import { Router } from 'express';
 
-const CADENCE_MAP = {
-  unit_intention: 'unit', unit_capture: 'unit',
-  cycle_retro: 'cycle', phase_review: 'phase',
-  season_alignment: 'season', era_vision: 'era',
-};
-
-const RRULE_MAP = {
-  day: 'FREQ=DAILY',
-  week: 'FREQ=WEEKLY',
-  month: 'FREQ=MONTHLY',
-  quarter: 'FREQ=MONTHLY;INTERVAL=3',
-  year: 'FREQ=YEARLY',
-};
-
 const FORMATTERS = {
   json: (ceremonies, res) => {
     res.json({ ceremonies });
@@ -73,7 +59,7 @@ const FORMATTERS = {
 };
 
 export default function createScheduleRouter(config) {
-  const { lifePlanStore } = config;
+  const { lifePlanOperations } = config;
   const router = Router();
 
   router.get('/:format', (req, res) => {
@@ -84,20 +70,8 @@ export default function createScheduleRouter(config) {
     }
 
     const username = req.lifeUsername || req.query.username || 'default';
-    const plan = lifePlanStore.load(username);
-    if (!plan) return res.status(404).json({ error: 'No plan found' });
-
-    const cadenceConfig = plan.cadence || {};
-    const ceremonies = [];
-
-    for (const [type, conf] of Object.entries(plan.ceremonies || {})) {
-      if (!conf.enabled) continue;
-      const level = CADENCE_MAP[type];
-      const cadenceUnit = cadenceConfig[level] || level;
-      const rrule = RRULE_MAP[cadenceUnit] || null;
-
-      ceremonies.push({ type, level, cadenceUnit, rrule });
-    }
+    const ceremonies = lifePlanOperations.readCeremonySchedule(username);
+    if (!ceremonies) return res.status(404).json({ error: 'No plan found' });
 
     formatter(ceremonies, res);
   });

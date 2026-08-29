@@ -10,7 +10,7 @@ export {
   isUuid,
   IdUtils,
   IdUtils as ShortId,
-} from '#domains/core/utils/id.mjs';
+} from '#system/utils/id.mjs';
 
 export {
   formatLocalTimestamp,

@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { existsSync } from 'node:fs';
+import { fileExists } from '#system/utils/FileIO.mjs';
+import { createLocalFileResource } from '#system/http/streamFile.mjs';
 
 const MIME = Object.freeze({
   '.avif': 'image/avif', '.gif': 'image/gif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -19,9 +20,9 @@ export class SchoolFlashcardAssetRepository {
     if (typeof assetId !== 'string' || !assetId.trim() || assetId.includes('\0')) return null;
     const file = path.resolve(this.#root, assetId);
     if (file !== this.#root && !file.startsWith(`${this.#root}${path.sep}`)) return null;
-    if (!existsSync(file)) return null;
+    if (!fileExists(file)) return null;
     const contentType = MIME[path.extname(file).toLowerCase()];
-    return contentType ? { file, contentType } : null;
+    return contentType ? { resource: createLocalFileResource(file, { mimeType: contentType }), contentType } : null;
   }
 }
 export default SchoolFlashcardAssetRepository;

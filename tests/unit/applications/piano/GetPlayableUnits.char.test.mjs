@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { GetPlayableUnits } from '../../../../backend/src/3_applications/piano/usecases/GetPlayableUnits.mjs';
+import { PianoConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
 
 const noop = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
@@ -59,7 +60,7 @@ const makeStore = (watched) => ({
 const makeUseCase = (store, overrides = {}) => new GetPlayableUnits({
   fitnessPlayableService: overrides.fitnessPlayableService ?? fitnessPlayableService,
   userVideoProgressStore: store,
-  configService,
+  configProjection: new PianoConfigProjection({ configService }),
   learningService: overrides.learningService ?? null,
   logger: noop,
 });

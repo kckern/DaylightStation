@@ -87,7 +87,7 @@ describe('ManageProgramDayBypass.grant', () => {
     const broadcast = vi.fn();
     const uc = new ManageProgramDayBypass({
       store: fakeStore(), assignments: fakeAssignments(), teacherGate: fakeGate(),
-      eventBus: { broadcast }, clock: () => new Date('2026-08-27T20:00:00Z'),
+      realtime: { programDayBypassChanged: (payload) => broadcast('school', { event: 'program-day-bypass-changed', ...payload }) }, clock: () => new Date('2026-08-27T20:00:00Z'),
     });
     await uc.grant({ learnerId: 'kid1', reason: 'x', decidedBy: 'kckern' });
     expect(broadcast).toHaveBeenCalledWith('school', expect.objectContaining({
@@ -98,7 +98,7 @@ describe('ManageProgramDayBypass.grant', () => {
   it('a dead event bus does not fail the grant', async () => {
     const uc = new ManageProgramDayBypass({
       store: fakeStore(), assignments: fakeAssignments(), teacherGate: fakeGate(),
-      eventBus: { broadcast: () => { throw new Error('bus down'); } },
+      realtime: { programDayBypassChanged: () => { throw new Error('bus down'); } },
       logger: { warn() {} },
     });
     await expect(uc.grant({ learnerId: 'kid1', reason: 'x', decidedBy: 'kckern' })).resolves.toBeTruthy();
@@ -123,7 +123,7 @@ describe('ManageProgramDayBypass.retract', () => {
       schema: 'school.program-day-bypass/v1', operation: 'applied', bypassId: 'pdb_1',
       learnerId: 'kid1', programId: 'piano-course', studyDate: '2026-08-27',
     }]);
-    const uc = new ManageProgramDayBypass({ store, assignments: fakeAssignments(), teacherGate: fakeGate(), eventBus: { broadcast } });
+    const uc = new ManageProgramDayBypass({ store, assignments: fakeAssignments(), teacherGate: fakeGate(), realtime: { programDayBypassChanged: (payload) => broadcast('school', { event: 'program-day-bypass-changed', ...payload }) } });
     const record = await uc.retract({ bypassId: 'pdb_1', reason: 'wrong kid', retractedBy: 'kckern' });
     expect(record.operation).toBe('retracted');
     expect(await store.active()).toEqual([]);

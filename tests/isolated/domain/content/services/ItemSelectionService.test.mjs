@@ -222,7 +222,7 @@ describe('ItemSelectionService', () => {
 
     test('sorts by random (shuffles items)', () => {
       const items = [{ id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }, { id: '5' }];
-      const result = ItemSelectionService.applySort(items, 'random');
+      const result = ItemSelectionService.applySort(items, 'random', () => 0.5);
       expect(result.length).toBe(5);
       expect(new Set(result.map(i => i.id)).size).toBe(5); // all unique
     });
@@ -277,7 +277,7 @@ describe('ItemSelectionService', () => {
 
     test('picks random item', () => {
       const items = [{ id: '1' }, { id: '2' }, { id: '3' }];
-      const result = ItemSelectionService.applyPick(items, 'random');
+      const result = ItemSelectionService.applyPick(items, 'random', () => 0.5);
       expect(result.length).toBe(1);
       expect(items.some(i => i.id === result[0].id)).toBe(true);
     });

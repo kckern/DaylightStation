@@ -10,8 +10,8 @@
  * through a queue so concurrent calls cannot interleave partial lines.
  */
 
-import { promises as fs } from 'fs';
 import path from 'path';
+import { appendTextFile } from '#system/utils/FileIO.mjs';
 
 /**
  * @param {Object} config
@@ -23,13 +23,7 @@ import path from 'path';
  * @param {Object} [config.logger]
  */
 export function createAiUsageLedger({ dir, source = null, logger = null }) {
-  let dirReady = null;
   let tail = Promise.resolve();
-
-  async function ensureDir() {
-    if (!dirReady) dirReady = fs.mkdir(dir, { recursive: true });
-    return dirReady;
-  }
 
   return {
     /**
@@ -54,10 +48,8 @@ export function createAiUsageLedger({ dir, source = null, logger = null }) {
       const suffix = source ? `.${String(source).replace(/[^\w.-]+/g, '-')}` : '';
       const file = path.join(dir, `${ts.slice(0, 7)}${suffix}.jsonl`);
       tail = tail
-        .then(() => ensureDir())
-        .then(() => fs.appendFile(file, line, 'utf8'))
+        .then(() => appendTextFile(file, line))
         .catch((error) => {
-          dirReady = null; // re-attempt mkdir next time; the dir may have vanished
           logger?.warn?.('ai.usage.ledger-write-failed', { file, error: error.message });
         });
       return tail;

@@ -10,8 +10,6 @@
  * Layer: APPLICATION (3_applications/midi).
  * @module applications/midi/HarvestMidiRecordings
  */
-import { MidiRecordingStone } from '#domains/midi/MidiRecordingStone.mjs';
-
 export class HarvestMidiRecordings {
   #source; #archive; #logger;
 
@@ -33,18 +31,16 @@ export class HarvestMidiRecordings {
       return { count: 0, status: 'error', reason: err.message };
     }
 
-    const fresh = refs.filter((ref) => !this.#archive.has(ref));
+    const fresh = refs.filter((ref) => !this.#archive.hasRecording(ref.recordingId));
     let saved = 0;
     for (const ref of fresh) {
       try {
-        const buffer = await this.#source.download(ref);
-        const relPath = MidiRecordingStone.fromMidiBuffer(buffer).archiveRelPath();
-        await this.#archive.save(relPath, buffer);
-        await this.#archive.markProcessed(ref, relPath);
+        const artifact = await this.#source.fetchRecording(ref);
+        const { archiveId } = await this.#archive.archiveRecording(ref, artifact);
         saved += 1;
-        this.#logger.info?.('jamcorder.saved', { listPath: ref.listPath, relPath });
+        this.#logger.info?.('jamcorder.saved', { listPath: ref.recordingId, relPath: archiveId });
       } catch (err) {
-        this.#logger.warn?.('jamcorder.file.failed', { listPath: ref.listPath, error: err.message });
+        this.#logger.warn?.('jamcorder.file.failed', { listPath: ref.recordingId, error: err.message });
       }
     }
     this.#logger.info?.('jamcorder.harvest.done', { found: refs.length, fresh: fresh.length, saved });

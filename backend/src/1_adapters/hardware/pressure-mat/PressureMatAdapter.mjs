@@ -40,6 +40,25 @@ export class PressureMatAdapter {
     return this;
   }
 
+  /** Subscribe to normalized presence events without exposing bus topics/config. */
+  subscribePresence(listener) {
+    if (typeof listener !== 'function') {
+      throw new Error('PressureMatAdapter.subscribePresence requires listener');
+    }
+    const topics = new Set([
+      DEFAULT_TOPIC,
+      ...Object.values(this.#definitions).map((definition) => definition?.topic).filter(Boolean),
+    ]);
+    const unsubscribers = [...topics].map((topic) => this.#eventBus.subscribe(topic, (payload) => {
+      if (payload?.source === RELAY_SOURCE && payload?.type === 'presence') listener(payload);
+    }));
+    return () => {
+      for (const unsubscribe of unsubscribers) {
+        try { unsubscribe?.(); } catch { /* noop */ }
+      }
+    };
+  }
+
   ingest(clientId, message) {
     if (!message || message.source !== RELAY_SOURCE || !VALID_TYPES.has(message.type)) return false;
     const id = typeof message.id === 'string' && message.id.trim() ? message.id.trim() : null;

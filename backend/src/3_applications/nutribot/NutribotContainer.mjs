@@ -58,13 +58,15 @@ export class NutribotContainer {
   // NOTE: nutriCoachStore removed — coaching is now handled by HealthCoachAgent
   // via healthStore.loadCoachingData/saveCoachingData (YamlHealthDatastore)
   #conversationStateStore;
-  #reportRenderer;
+  #reportDelivery;
   #barcodeGenerator;
   #foodIconsString;
   #reconciliationReader;
   #healthStore;
   #catalogService;
   #scaleConfig;
+  #imageDownloader;
+  #pause;
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
@@ -108,7 +110,7 @@ export class NutribotContainer {
    * @param {Object} [options.nutriListStore] - Nutrient list store (INutriListStore)
    * @param {Object} [options.nutriCoachStore] - DEPRECATED: coaching now handled by HealthCoachAgent
    * @param {Object} [options.conversationStateStore] - Conversation state store
-   * @param {Object} [options.reportRenderer] - Report renderer
+   * @param {Object} [options.reportDelivery] - Prepared-report delivery capability
    * @param {Object} [options.logger] - Custom logger instance
    */
   constructor(config, options = {}) {
@@ -125,7 +127,7 @@ export class NutribotContainer {
     this.#nutriListStore = options.nutriListStore;
     // nutriCoachStore no longer used — HealthCoachAgent owns coaching persistence
     this.#conversationStateStore = options.conversationStateStore;
-    this.#reportRenderer = options.reportRenderer;
+    this.#reportDelivery = options.reportDelivery;
     this.#barcodeGenerator = options.barcodeGenerator;
     this.#foodIconsString = options.foodIconsString;
     this.#reconciliationReader = options.reconciliationReader || null;
@@ -133,6 +135,8 @@ export class NutribotContainer {
     this.#healthStore = options.healthStore || null;
     this.#catalogService = options.catalogService || null;
     this.#scaleConfig = options.scaleConfig || null;
+    this.#imageDownloader = options.imageDownloader;
+    this.#pause = options.pause || (async () => {});
   }
 
   // ==================== Config Getter ====================
@@ -196,8 +200,8 @@ export class NutribotContainer {
     return this.#healthStore; // Optional - used for /done command
   }
 
-  getReportRenderer() {
-    return this.#reportRenderer; // Optional - reports degrade to text-only
+  getReportDelivery() {
+    return this.#reportDelivery; // Optional - reports degrade to text-only
   }
 
   // ==================== Core Logging Use Cases ====================
@@ -212,8 +216,10 @@ export class NutribotContainer {
         config: this.#config,
         foodIconsString: this.#foodIconsString,
         logger: this.#logger,
+        pause: this.#pause,
         reconciliationReader: this.#reconciliationReader,
         catalogService: this.#catalogService,
+        imageDownloader: this.#imageDownloader,
       });
     }
     return this.#logFoodFromImage;
@@ -369,6 +375,7 @@ export class NutribotContainer {
         generateDailyReport: this.getGenerateDailyReport(),
         agentOrchestrator: this.#agentOrchestrator,
         logger: this.#logger,
+        pause: this.#pause,
       });
     }
     return this.#acceptFoodLog;
@@ -419,6 +426,7 @@ export class NutribotContainer {
         nutriListStore: this.#nutriListStore,
         generateDailyReport: this.getGenerateDailyReport(),
         logger: this.#logger,
+        pause: this.#pause,
       });
     }
     return this.#selectUPCPortion;
@@ -433,9 +441,10 @@ export class NutribotContainer {
         foodLogStore: this.#foodLogStore,
         nutriListStore: this.#nutriListStore,
         conversationStateStore: this.#conversationStateStore,
-        reportRenderer: this.#reportRenderer,
+        reportDelivery: this.#reportDelivery,
         config: this.#config,
         logger: this.#logger,
+        pause: this.#pause,
       });
     }
     return this.#generateDailyReport;

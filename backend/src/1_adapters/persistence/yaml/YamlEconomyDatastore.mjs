@@ -6,8 +6,7 @@
  * Dumb storage only: no balance math, no policy. See EconomyService.
  */
 import path from 'path';
-import fs from 'fs';
-import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
+import { dirExists, listEntries, loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlEconomyDatastore {
@@ -49,8 +48,8 @@ export class YamlEconomyDatastore {
     const dir = this.#economyDir(userId);
     if (!dir) return [];
     const ledgerDir = path.join(dir, 'ledger');
-    if (!fs.existsSync(ledgerDir)) return [];
-    return fs.readdirSync(ledgerDir)
+    if (!dirExists(ledgerDir)) return [];
+    return listEntries(ledgerDir)
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
       .sort()
       .flatMap((f) => loadYamlSafe(path.join(ledgerDir, f.replace(/\.yml$/, ''))) || []);

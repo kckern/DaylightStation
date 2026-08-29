@@ -49,8 +49,9 @@ export class LifeEventProcessor {
     return (plan.life_events || []).filter(e => e.state === 'anticipated');
   }
 
-  getRecentEvents(plan, daysSince = 30) {
-    const cutoff = new Date();
+  getRecentEvents(plan, daysSince = 30, now) {
+    if (now === undefined || now === null) throw new Error('now is required to get recent life events');
+    const cutoff = new Date(now);
     cutoff.setDate(cutoff.getDate() - daysSince);
 
     return (plan.life_events || []).filter(e => {

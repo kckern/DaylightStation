@@ -4,11 +4,11 @@
  * Port interface for AI food parsing
  * @interface IFoodParser
  */
-export const IFoodParser = {
-  async parseText(text, context = {}) {},
-  async parseImage(imageUrl, context = {}) {},
-  async parseVoice(audioBuffer, context = {}) {}
-};
+export class IFoodParser {
+  async parseText(_text, _context = {}) { throw new Error('IFoodParser.parseText not implemented'); }
+  async parseImage(_imageUrl, _context = {}) { throw new Error('IFoodParser.parseImage not implemented'); }
+  async parseVoice(_audioBuffer, _context = {}) { throw new Error('IFoodParser.parseVoice not implemented'); }
+}
 
 export function isFoodParser(obj) {
   return (

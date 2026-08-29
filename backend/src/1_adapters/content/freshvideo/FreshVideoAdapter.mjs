@@ -61,7 +61,7 @@ export class FreshVideoAdapter {
     if (this.#mediaProgressMemory) {
       for (const item of items) {
         const mediaKey = item.id || `files:${item.localId}`;
-        const state = await this.#mediaProgressMemory.get(mediaKey, 'files');
+        const state = await this.#mediaProgressMemory.findProgress(mediaKey, 'files');
         item.percent = state?.percent || 0;
         item.watched = item.percent >= WATCHED_THRESHOLD;
       }

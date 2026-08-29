@@ -30,8 +30,8 @@
  * @module applications/sheets/SheetService
  */
 
-import { createHash } from 'node:crypto';
-import { layout } from '#rendering/pdf/SheetLayout.mjs';
+import { sha256Text } from '#system/utils/sha256.mjs';
+import { isSheetLayout } from './ports/ISheetLayout.mjs';
 
 /**
  * The only page sizes this framework prints, in PDF points.
@@ -93,10 +93,14 @@ function toCellOpts(cell = {}) {
  *   Item providers keyed by the `source` string in config.
  * @param {Record<string, Function>} deps.cellKinds Renderers keyed by `cell.kind`.
  *   Only their PRESENCE is checked here; this service never calls one.
+ * @param {Function} deps.layoutSheet Semantic page-layout capability.
  * @param {{debug?: Function, warn?: Function}} [deps.logger]
  * @returns {{ build: (sheetId: string, params?: object) => Promise<object> }}
  */
-export function createSheetService({ getConfig, providers, cellKinds, logger = console }) {
+export function createSheetService({ getConfig, providers, cellKinds, layoutSheet, logger = console }) {
+  if (!isSheetLayout(layoutSheet)) {
+    throw new TypeError('createSheetService requires layoutSheet');
+  }
   /**
    * Resolve a sheet into `{ sheetId, title, page, blocks, placements, fingerprint }`.
    *
@@ -165,7 +169,7 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
       });
     }
 
-    const placements = layout({
+    const placements = layoutSheet({
       page,
       blocks: blocks.map((b) => ({
         id: b.id,
@@ -199,11 +203,9 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
     // and the old sheet is still correct, whereas a renamed container id orphans
     // every printed code on the page. Hashing the config file would cry wolf on
     // every cosmetic edit; hashing the labels would miss the failure that matters.
-    const fingerprint = createHash('sha256')
-      .update(blocks.flatMap((b) => b.items.map((it) => (
+    const fingerprint = sha256Text(blocks.flatMap((b) => b.items.map((it) => (
         typeof it.code === 'string' && it.code ? it.code : NO_CODE
       ))).join(' '))
-      .digest('hex')
       .slice(0, 6);
 
     // `?? ''` not `|| sheetId`: a sheet that omits `title:` wants NO heading, and

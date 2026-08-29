@@ -17,7 +17,7 @@ import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
 export class YamlSurfaceProfileRepository {
   #directory; #customCapabilities; #io;
 
-  constructor({ directory, customCapabilities = [], io = {} } = {}) {
+  constructor({ dataDir, directory = dataDir && path.join(dataDir, 'household', 'school', 'surfaces'), capabilitySource = null, customCapabilities = capabilitySource?.list?.().map((definition) => definition.capability) || [], io = {} } = {}) {
     if (typeof directory !== 'string' || directory.trim().length === 0) {
       throw new Error('YamlSurfaceProfileRepository requires a non-empty directory');
     }

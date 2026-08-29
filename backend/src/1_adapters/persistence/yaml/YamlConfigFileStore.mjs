@@ -16,10 +16,9 @@
  * move), so this does not second-guess where the file is. It is the I/O, not
  * the policy.
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import { writeFileAtomic } from '#system/utils/FileIO.mjs';
+import { fileExists, getStats, readDirectory, readTextFromPath, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 /** Matches the dump options the admin services already used. */
 const DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true, sortKeys: false };
@@ -33,20 +32,45 @@ export class YamlConfigFileStore {
 
   /** @returns {boolean} */
   exists(absPath) {
-    return fs.existsSync(absPath);
+    return fileExists(absPath);
   }
 
   /** `{ size, mtime }` for an existing file, or null. */
   stat(absPath) {
-    if (!fs.existsSync(absPath)) return null;
-    const s = fs.statSync(absPath);
+    const s = getStats(absPath);
+    if (!s) return null;
     return { size: s.size, mtime: s.mtime };
+  }
+
+  /** Walk a persistence root and return YAML file metadata. */
+  listYamlFiles(rootDir, dataRoot) {
+    const files = [];
+    const walk = (dir) => {
+      if (!fileExists(dir)) return;
+      for (const entry of readDirectory(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory() && !entry.isSymbolicLink()) {
+          walk(fullPath);
+        } else if (entry.isFile() && /\.ya?ml$/i.test(entry.name)) {
+          const stat = getStats(fullPath);
+          if (!stat) continue;
+          files.push({
+            path: path.relative(dataRoot, fullPath).replace(/\\/g, '/'),
+            name: entry.name,
+            size: stat.size,
+            modified: stat.mtime.toISOString(),
+          });
+        }
+      }
+    };
+    walk(rootDir);
+    return files;
   }
 
   /** Raw text, or null when absent. Callers that want YAML use readYaml. */
   readText(absPath) {
-    if (!fs.existsSync(absPath)) return null;
-    return fs.readFileSync(absPath, 'utf8');
+    if (!fileExists(absPath)) return null;
+    return readTextFromPath(absPath);
   }
 
   /**

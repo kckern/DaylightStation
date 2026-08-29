@@ -41,8 +41,8 @@ describe('Paradigm Shift: Foundational Belief Refutation', () => {
     }, '2025-01-01');
 
     // Refute the foundational belief (confirmed → testing → refuted)
-    sim.plan.beliefs[0].transition('testing', 'Re-evaluating after burnout');
-    sim.plan.beliefs[0].transition('refuted', 'Sustained evidence against it');
+    sim.plan.beliefs[0].transition('testing', 'Re-evaluating after burnout', '2025-01-01T00:00:00.000Z');
+    sim.plan.beliefs[0].transition('refuted', 'Sustained evidence against it', '2025-01-01T00:00:01.000Z');
 
     // Process cascade
     const cascade = sim.processCascade('b-foundation');

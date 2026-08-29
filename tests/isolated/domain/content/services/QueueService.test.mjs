@@ -1,6 +1,6 @@
 // tests/unit/content/services/QueueService.test.mjs
 import { describe, it, test, expect, beforeEach, vi } from 'vitest';
-import { QueueService } from '#domains/content/services/QueueService.mjs';
+import { QueueService } from '#apps/content/services/QueueService.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
@@ -40,10 +40,11 @@ describe('QueueService', () => {
 
   beforeEach(() => {
     mockMediaProgressMemory = {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined),
-      getAll: vi.fn().mockResolvedValue([]),
-      clear: vi.fn().mockResolvedValue(undefined)
+      findProgress: vi.fn().mockResolvedValue(null),
+      saveProgress: vi.fn().mockResolvedValue(undefined),
+      listProgress: vi.fn().mockResolvedValue([]),
+      listSourceProgress: vi.fn().mockResolvedValue([]),
+      clearProgress: vi.fn().mockResolvedValue(undefined)
     };
     service = new QueueService({ mediaProgressMemory: mockMediaProgressMemory });
   });
@@ -66,7 +67,7 @@ describe('QueueService', () => {
         createPlayable('2', 'Episode 2')
       ];
 
-      mockMediaProgressMemory.get.mockImplementation(async (id) => {
+      mockMediaProgressMemory.findProgress.mockImplementation(async (id) => {
         if (id === 'test:2') {
           return new WatchState({ contentId: 'test:2', playhead: 1800, duration: 3600 });
         }
@@ -83,7 +84,7 @@ describe('QueueService', () => {
         createPlayable('2', 'Episode 2')
       ];
 
-      mockMediaProgressMemory.get.mockImplementation(async (id) => {
+      mockMediaProgressMemory.findProgress.mockImplementation(async (id) => {
         if (id === 'test:1') {
           return new WatchState({ contentId: 'test:1', playhead: 3500, duration: 3600 }); // 97% watched
         }
@@ -97,7 +98,7 @@ describe('QueueService', () => {
     test('returns null when all items watched', async () => {
       const items = [createPlayable('1', 'Episode 1')];
 
-      mockMediaProgressMemory.get.mockResolvedValue(
+      mockMediaProgressMemory.findProgress.mockResolvedValue(
         new WatchState({ contentId: 'test:1', playhead: 3500, duration: 3600 })
       );
 
@@ -113,7 +114,7 @@ describe('QueueService', () => {
     test('includes resume position for in-progress items', async () => {
       const items = [createPlayable('1', 'Episode 1')];
 
-      mockMediaProgressMemory.get.mockResolvedValue(
+      mockMediaProgressMemory.findProgress.mockResolvedValue(
         new WatchState({ contentId: 'test:1', playhead: 1800, duration: 3600 })
       );
 
@@ -377,6 +378,22 @@ describe('QueueService', () => {
   });
 
   describe('resolveQueue', () => {
+    test('shuffles an all-watched queue with the injected random source', async () => {
+      const items = [createPlayable('1', 'Episode 1'), createPlayable('2', 'Episode 2')];
+      mockMediaProgressMemory.listSourceProgress.mockResolvedValue(items.map((item, index) => new MediaProgress({
+        contentId: item.id,
+        playhead: 100,
+        duration: 100,
+        playCount: 1,
+        lastPlayed: `2026-05-0${index + 1}T12:00:00Z`,
+      })));
+      service = new QueueService({ mediaProgressMemory: mockMediaProgressMemory, random: () => 0 });
+
+      const result = await service.resolveQueue(items, 'test', { shuffle: true });
+
+      expect(result.map((item) => item.id).sort()).toEqual(['test:1', 'test:2']);
+    });
+
     test('loads progress from storagePath when source directory has no progress', async () => {
       const items = [
         new PlayableItem({
@@ -402,9 +419,9 @@ describe('QueueService', () => {
       ];
 
       // Source-directory lookup returns nothing
-      mockMediaProgressMemory.getAllFromAllLibraries = vi.fn().mockResolvedValue([]);
+      mockMediaProgressMemory.listSourceProgress = vi.fn().mockResolvedValue([]);
       // storagePath lookup returns progress for chapter 1 at 99% (watched)
-      mockMediaProgressMemory.getAll = vi.fn().mockImplementation(async (sp) => {
+      mockMediaProgressMemory.listProgress = vi.fn().mockImplementation(async (sp) => {
         if (sp === 'scriptures') {
           return [
             new MediaProgress({
@@ -425,7 +442,7 @@ describe('QueueService', () => {
       expect(result[1].id).toBe('readalong:scripture-1');
 
       // Verify storagePath lookup was called
-      expect(mockMediaProgressMemory.getAll).toHaveBeenCalledWith('scriptures');
+      expect(mockMediaProgressMemory.listProgress).toHaveBeenCalledWith('scriptures');
     });
   });
 

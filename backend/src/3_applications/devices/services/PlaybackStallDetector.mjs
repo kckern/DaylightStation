@@ -41,7 +41,6 @@
  * @module applications/devices/services
  */
 
-import { parseDeviceTopic } from '#shared-contracts/media/topics.mjs';
 import {
   POSITION_EPSILON_SEC,
   STALL_THRESHOLD_MS,
@@ -64,7 +63,7 @@ import {
  */
 
 export class PlaybackStallDetector {
-  #eventBus;
+  #presenceGateway;
   #logger;
   #clock;
   #stallThresholdMs;
@@ -80,7 +79,7 @@ export class PlaybackStallDetector {
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.eventBus - Event bus exposing subscribePattern
+   * @param {Object} deps.presenceGateway - Semantic device-state subscription
    * @param {Object} [deps.logger]
    * @param {Object} [deps.clock] - { now(): number }; defaults to Date
    * @param {number} [deps.stallThresholdMs=60000]
@@ -91,10 +90,10 @@ export class PlaybackStallDetector {
    * @param {Function} [deps.onRecover] - ({ deviceId, stalledForMs, reason }) => void
    */
   constructor(deps = {}) {
-    if (!deps.eventBus) {
-      throw new TypeError('PlaybackStallDetector requires eventBus');
+    if (!deps.presenceGateway?.subscribeDeviceStates) {
+      throw new TypeError('PlaybackStallDetector requires presenceGateway');
     }
-    this.#eventBus = deps.eventBus;
+    this.#presenceGateway = deps.presenceGateway;
     this.#logger = deps.logger || console;
     this.#clock = deps.clock || Date;
     this.#stallThresholdMs =
@@ -123,19 +122,9 @@ export class PlaybackStallDetector {
       minSamples: this.#minSamples,
     });
 
-    if (typeof this.#eventBus.subscribePattern === 'function') {
-      this.#unsubscribe = this.#eventBus.subscribePattern(
-        (topic) => {
-          const parsed = parseDeviceTopic(topic);
-          return !!parsed && parsed.kind === 'device-state';
-        },
-        (payload, topic) => this.#handleDeviceState(topic, payload),
-      );
-    } else {
-      this.#logger.warn?.('playback-stall.no_subscribe_pattern', {
-        note: 'event bus lacks subscribePattern — stall detection inactive',
-      });
-    }
+    this.#unsubscribe = this.#presenceGateway.subscribeDeviceStates(
+      (state) => this.#handleDeviceState(state),
+    );
   }
 
   /** Stop observing the bus. Idempotent. */
@@ -193,7 +182,7 @@ export class PlaybackStallDetector {
    * Process one device-state broadcast.
    * @private
    */
-  #handleDeviceState(topic, payload) {
+  #handleDeviceState(payload) {
     if (!payload || typeof payload !== 'object') return;
 
     const deviceId = payload.deviceId;

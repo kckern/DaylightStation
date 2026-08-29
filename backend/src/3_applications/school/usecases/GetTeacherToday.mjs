@@ -9,6 +9,7 @@ import {
 } from '#domains/school/studyDay.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { curriculumPosterRef, schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 const DEFAULT_BOUNDARY_HOUR = 4;
 // A session has something reviewable only once it has been submitted; before
@@ -52,18 +53,17 @@ const latestAt = (events) => events.reduce((latest, event) => (
  * receipt states the standing result the family actually saw last.
  */
 function artifactRefs(state) {
-  const artifactUrl = (artifactId, suffix) => `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/${suffix}`;
   const worksheetId = state.issuedArtifacts?.[0] ?? null;
   const receipt = (state.resultReceiptArtifacts ?? []).at(-1) ?? null;
   return {
     worksheet: worksheetId ? {
       artifactId: worksheetId,
-      originalPdfUrl: artifactUrl(worksheetId, 'original.pdf'),
-      thumbnailUrl: artifactUrl(worksheetId, 'thumbnail.png'),
+      originalPdfUrl: schoolArtifactRef(worksheetId, 'original.pdf'),
+      thumbnailUrl: schoolArtifactRef(worksheetId, 'thumbnail.png'),
     } : null,
     receipt: receipt ? {
       artifactId: receipt.artifactId,
-      originalUrl: artifactUrl(receipt.artifactId, 'original'),
+      originalUrl: schoolArtifactRef(receipt.artifactId, 'original'),
     } : null,
   };
 }
@@ -162,7 +162,7 @@ export class GetTeacherToday {
           courseTitle: work?.title ?? 'Course title unavailable',
           moduleId: unit?.module ?? null,
           moduleTitle: module?.title ?? 'Unit title unavailable',
-          posterUrl: courseId ? `/api/v1/school/teacher/curriculum/${encodeURIComponent(courseId)}/poster.jpg` : null,
+          posterUrl: courseId ? curriculumPosterRef('teacher', courseId) : null,
           studyDay: originalStudyDay,
           createdAt,
           issuedAt: state.firstIssuedAt,

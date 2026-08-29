@@ -17,19 +17,19 @@
  */
 export class NextUpStrategy {
   async suggest(context, remainingSlots) {
-    const { recentSessions, fitnessConfig, fitnessPlayableService, excludedShowIds } = context;
+    const { recentSessions, suggestionPolicy, fitnessPlayableService, excludedShowIds, contentCatalog } = context;
     const max = remainingSlots;
     if (max <= 0) return [];
 
     // Build warmup/filler detection from config
-    const warmupPatterns = (fitnessConfig?.plex?.warmup_title_patterns || [])
+    const warmupPatterns = (suggestionPolicy.warmupTitlePatterns || [])
       .map(p => new RegExp(p, 'i'));
-    const minDuration = fitnessConfig?.suggestions?.discovery_min_duration_seconds ?? 600;
+    const minDuration = suggestionPolicy.minimumDurationSeconds;
 
     // Normalize deprioritized + resumable label sets once (lowercased)
-    const deprioritizedLowered = (fitnessConfig?.plex?.deprioritized_labels || [])
+    const deprioritizedLowered = (suggestionPolicy.deprioritizedLabels || [])
       .map(l => String(l).toLowerCase());
-    const resumableLowered = (fitnessConfig?.plex?.resumable_labels || ['Resumable'])
+    const resumableLowered = (suggestionPolicy.resumableLabels || ['Resumable'])
       .map(l => String(l).toLowerCase());
 
     // Shows excluded via suggestions.exclude_collections (collection/playlist
@@ -46,7 +46,7 @@ export class NextUpStrategy {
       if (!gid || showMap.has(gid)) continue;
 
       // Skip shows that are members of excluded collections/playlists
-      const bareGid = String(gid).replace(/^plex:/, '');
+      const bareGid = contentCatalog.canonicalize(gid).localId;
       if (excluded.has(bareGid)) continue;
 
       // Check if the played episode was supplementary
@@ -69,10 +69,10 @@ export class NextUpStrategy {
     for (const show of showMap.values()) {
       if (results.length >= max) break;
 
-      const localId = show.showId.replace(/^plex:/, '');
+      const showRef = contentCatalog.canonicalize(show.showId);
       let episodeData;
       try {
-        episodeData = await fitnessPlayableService.getPlayableEpisodes(localId);
+        episodeData = await fitnessPlayableService.getPlayableEpisodes(showRef.contentId);
       } catch {
         continue;
       }
@@ -91,6 +91,7 @@ export class NextUpStrategy {
       }
 
       const isShow = nextEp.metadata?.type === 'show';
+      const episodeRef = contentCatalog.canonicalize(nextEp.id ?? nextEp.localId);
       results.push({
         type: 'next_up',
         action: 'play',
@@ -99,8 +100,8 @@ export class NextUpStrategy {
         title: nextEp.title,
         showTitle: show.showTitle,
         description: nextEp.metadata?.summary || null,
-        thumbnail: nextEp.thumbnail || `/api/v1/display/plex/${nextEp.localId}`,
-        poster: `/api/v1/content/plex/image/${localId}`,
+        thumbnail: nextEp.thumbnail || displayImageRef(episodeRef.source, episodeRef.localId),
+        poster: contentImageRef(showRef.source, showRef.localId),
         durationMinutes: nextEp.duration ? Math.round(nextEp.duration / 60) : null,
         orientation: isShow ? 'portrait' : 'landscape',
         labels: showLabels,
@@ -111,3 +112,4 @@ export class NextUpStrategy {
     return results;
   }
 }
+import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';

@@ -1,7 +1,7 @@
 const DEFAULT_THRESHOLD_MS = 6 * 3600_000;
 
 export function createRelayWatchdog({
-  eventBus,
+  relayGateway,
   sources = {},
   onStale,
   onRecover,
@@ -9,27 +9,26 @@ export function createRelayWatchdog({
   clock = Date,
   logger = console,
 } = {}) {
-  if (!eventBus?.onClientMessage) {
-    throw new Error('createRelayWatchdog: eventBus with onClientMessage required');
+  if (!relayGateway?.subscribe) {
+    throw new Error('createRelayWatchdog: relayGateway required');
   }
 
   const seen = new Map();
 
-  eventBus.onClientMessage((clientId, message) => {
-    const source = message?.source;
-    if (!source || !sources[source]) return;
+  relayGateway.subscribe(sources, (signal) => {
+    const source = signal.relayId;
     const now = clock.now();
     const prev = seen.get(source);
     // Replacing the entry also clears `alerted`, which is what re-arms the
     // watchdog for the next outage. `bootCount` rides along so a repeating
     // heartbeat isn't mistaken for a fresh reboot.
-    const bootCount = Number.isFinite(message?.boot_count) ? message.boot_count : prev?.bootCount;
+    const bootCount = Number.isFinite(signal.bootCount) ? signal.bootCount : prev?.bootCount;
     seen.set(source, { lastSeenAt: now, bootCount });
 
     // A hello frame carries the board's post-mortem. Report it when the boot
     // counter MOVES — the frame itself repeats every 60s.
-    if (message?.type === 'hello' && bootCount !== prev?.bootCount) {
-      const boot = { source, label: sources[source]?.label || source, bootCount, lastReset: message.last_reset ?? null };
+    if (signal.kind === 'hello' && bootCount !== prev?.bootCount) {
+      const boot = { source, label: sources[source]?.label || source, bootCount, lastReset: signal.lastReset };
       logger.info?.('relay_watchdog.boot', boot);
       try {
         onBoot?.(boot);

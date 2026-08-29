@@ -1,56 +1,41 @@
 /**
  * AmbientLightService — subscribes to Home Assistant illuminance sensors over the
- * HA websocket and rebroadcasts max(lux) on the eventbus so the frontend (ArtMode)
- * can auto-dim to the room. Reconnects with backoff; seeds an initial value via REST.
+ * ambient sensor source and rebroadcasts max(lux) on the eventbus so the frontend
+ * (ArtMode) can auto-dim to the room.
  */
-import WebSocket from 'ws';
 import { AmbientLightTracker } from '../../2_domains/home-automation/AmbientLightTracker.mjs';
+import { isAmbientSensorGateway } from './ports/IAmbientSensorGateway.mjs';
 
 export function createAmbientLightService({
-  haGateway, eventBus, config, logger = console,
-  WebSocketImpl = WebSocket, now = () => Date.now(),
+  ambientGateway, publications, entities = [], logger = console, clock,
 }) {
-  const entities = config?.entities ?? [];
-  const topic = config?.topic ?? 'ambient';
+  if (!isAmbientSensorGateway(ambientGateway)) {
+    throw new TypeError('AmbientLightService requires ambientGateway');
+  }
+  if (!publications?.report) throw new TypeError('AmbientLightService requires publications');
+  if (!clock?.now) throw new TypeError('AmbientLightService requires clock');
   const tracker = new AmbientLightTracker({ threshold: 1 });
   const THROTTLE_MS = 2000;
   let lastBroadcast = 0;
-  let ws = null;
-  let backoff = 1000;
-  let stopped = false;
+  let unsubscribe = null;
 
   function publish(lux, force = false) {
-    const t = now();
+    const t = clock.now();
     if (!force && t - lastBroadcast < THROTTLE_MS) return;
     lastBroadcast = t;
-    eventBus.broadcast(topic, { topic, lux, sources: tracker.sources() });
+    publications.report({ lux, sources: tracker.sources() });
   }
 
-  // Handle one HA websocket frame. `send` serializes+sends a reply object.
-  function _onHaMessage(raw, send) {
-    let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
-    if (msg.type === 'auth_required') {
-      const { token } = haGateway.getConnection?.() ?? {};
-      send({ type: 'auth', access_token: token });
-      return;
-    }
-    if (msg.type === 'auth_ok') {
-      send({ id: 1, type: 'subscribe_events', event_type: 'state_changed' });
-      return;
-    }
-    if (msg.type === 'event' && msg.event?.event_type === 'state_changed') {
-      const entity = msg.event.data?.entity_id;
-      if (!entities.includes(entity)) return;
-      const isFirstReading = !(entity in tracker.sources());
-      const r = tracker.update(entity, msg.event.data?.new_state?.state);
-      if (r.changed) publish(r.lux, isFirstReading);
-    }
+  function onReading({ entity, state }) {
+    if (!entities.includes(entity)) return;
+    const isFirstReading = !(entity in tracker.sources());
+    const result = tracker.update(entity, state);
+    if (result.changed) publish(result.lux, isFirstReading);
   }
 
   async function seed() {
     try {
-      const states = await haGateway.getStates(entities);
+      const states = await ambientGateway.getCurrentStates(entities);
       for (const [entity, s] of states) tracker.update(entity, s.state);
       const m = tracker.max();
       if (m !== null) publish(m, true);
@@ -59,36 +44,18 @@ export function createAmbientLightService({
     }
   }
 
-  function connect() {
-    if (stopped) return;
-    const conn = haGateway.getConnection?.();
-    if (!conn?.baseUrl) { logger.warn?.('ambient.no_connection'); return; }
-    const url = conn.baseUrl.replace(/^http/i, 'ws') + '/api/websocket';
-    ws = new WebSocketImpl(url);
-    ws.on('open', () => { backoff = 1000; logger.info?.('ambient.ws.open'); });
-    ws.on('message', (data) => _onHaMessage(data.toString(), (m) => ws.send(JSON.stringify(m))));
-    const retry = () => {
-      if (stopped) return;
-      logger.warn?.('ambient.ws.reconnect', { inMs: backoff });
-      setTimeout(connect, backoff);
-      backoff = Math.min(backoff * 2, 30000);
-    };
-    ws.on('close', retry);
-    ws.on('error', (err) => { logger.warn?.('ambient.ws.error', { error: err.message }); });
-  }
-
   async function start() {
     if (!entities.length) { logger.info?.('ambient.disabled', { reason: 'no entities' }); return; }
     await seed();
-    connect();
+    unsubscribe = ambientGateway.subscribe(entities, onReading);
   }
 
   function stop() {
-    stopped = true;
-    try { ws?.close(); } catch { /* ignore */ }
+    unsubscribe?.();
+    unsubscribe = null;
   }
 
-  return { start, stop, _onHaMessage };
+  return { start, stop };
 }
 
 export default createAmbientLightService;

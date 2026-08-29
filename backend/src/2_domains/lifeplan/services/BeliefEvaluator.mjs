@@ -2,8 +2,8 @@ const DORMANCY_THRESHOLD_DAYS = 60;
 const DECAY_PER_MONTH = 0.02;
 
 export class BeliefEvaluator {
-  evaluateEvidence(belief, evidence) {
-    belief.addEvidence(evidence);
+  evaluateEvidence(belief, evidence, fallbackDate) {
+    belief.addEvidence(evidence, fallbackDate);
   }
 
   /** @param {number} now - Current time as epoch ms (caller-supplied). */

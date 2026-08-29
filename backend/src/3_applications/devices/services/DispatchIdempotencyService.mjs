@@ -93,7 +93,8 @@ export class DispatchIdempotencyService {
    * @param {Object} [deps.logger]
    */
   constructor(deps = {}) {
-    this.#clock = deps.clock || Date;
+    if (!deps.clock?.now) throw new Error('DispatchIdempotencyService requires clock');
+    this.#clock = deps.clock;
     this.#ttlMs = Number.isFinite(deps.ttlMs) && deps.ttlMs > 0
       ? deps.ttlMs
       : DEFAULT_TTL_MS;
@@ -172,9 +173,7 @@ export class DispatchIdempotencyService {
   // ---------------------------------------------------------------------------
 
   #now() {
-    return typeof this.#clock.now === 'function'
-      ? this.#clock.now()
-      : Date.now();
+    return this.#clock.now();
   }
 
   #evictExpired() {

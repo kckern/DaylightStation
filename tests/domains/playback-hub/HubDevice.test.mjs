@@ -8,6 +8,7 @@ import { ContinuousSchedule } from '../../../backend/src/2_domains/playback-hub/
 import { QueueRef } from '../../../backend/src/2_domains/playback-hub/value-objects/QueueRef.mjs';
 import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 import { DomainInvariantError } from '../../../backend/src/2_domains/core/errors/DomainInvariantError.mjs';
+import { serializeHubDevice } from '../../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
 
 const validArgs = (overrides = {}) => ({
   position: new SlotPosition(1),
@@ -137,7 +138,7 @@ describe('HubDevice', () => {
   describe('toYaml sparse-preserving', () => {
     it('minimal device → minimal YAML (no volume block, no schedules)', () => {
       const d = new HubDevice(validArgs());
-      expect(d.toYaml()).toEqual({
+      expect(serializeHubDevice(d)).toEqual({
         slot: 1,
         color: 'red',
         mac: '41:42:3A:E5:43:07',
@@ -151,26 +152,26 @@ describe('HubDevice', () => {
         class: new SlotClass('public'),
         haEntityId: 'media_player.living_room'
       }));
-      const y = d.toYaml();
+      const y = serializeHubDevice(d);
       expect(y.class).toBe('public');
       expect(y.ha_entity_id).toBe('media_player.living_room');
     });
 
     it('ha_turn_off_on_stop only emitted when true', () => {
       const d1 = new HubDevice(validArgs({ haTurnOffOnStop: false }));
-      expect(d1.toYaml().ha_turn_off_on_stop).toBeUndefined();
+      expect(serializeHubDevice(d1).ha_turn_off_on_stop).toBeUndefined();
       const d2 = new HubDevice(validArgs({ haTurnOffOnStop: true }));
-      expect(d2.toYaml().ha_turn_off_on_stop).toBe(true);
+      expect(serializeHubDevice(d2).ha_turn_off_on_stop).toBe(true);
     });
 
     it('volume block emitted only when user-supplied bounds present (sparse-preserving)', () => {
       // empty bounds → no volume in YAML
       const d1 = new HubDevice(validArgs({ volumeBounds: new VolumeBounds({}) }));
-      expect(d1.toYaml().volume).toBeUndefined();
+      expect(serializeHubDevice(d1).volume).toBeUndefined();
 
       // partial bounds → sparse volume
       const d2 = new HubDevice(validArgs({ volumeBounds: new VolumeBounds({ default: 40, max: 70 }) }));
-      expect(d2.toYaml().volume).toEqual({ default: 40, max: 70 });
+      expect(serializeHubDevice(d2).volume).toEqual({ default: 40, max: 70 });
     });
   });
 

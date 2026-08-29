@@ -8,39 +8,47 @@ export class IMediaProgressMemory {
   /**
    * Get media progress for an item
    * @param {string} contentId - Content identifier
-   * @param {string} storagePath - Storage path
+   * @param {string} namespaceId - Opaque progress partition identifier
    * @returns {Promise<import('#domains/content/entities/MediaProgress.mjs').MediaProgress|null>}
    */
-  async get(contentId, storagePath) {
-    throw new Error('IMediaProgressMemory.get must be implemented');
+  async findProgress(contentId, namespaceId) {
+    throw new Error('IMediaProgressMemory.findProgress must be implemented');
   }
 
   /**
    * Set media progress for an item
    * @param {import('#domains/content/entities/MediaProgress.mjs').MediaProgress} mediaProgress - Media progress to save
-   * @param {string} storagePath - Storage path
+   * @param {string} namespaceId - Opaque progress partition identifier
    * @returns {Promise<void>}
    */
-  async set(mediaProgress, storagePath) {
-    throw new Error('IMediaProgressMemory.set must be implemented');
+  async saveProgress(mediaProgress, namespaceId) {
+    throw new Error('IMediaProgressMemory.saveProgress must be implemented');
   }
 
   /**
-   * Get all media progress records for a storage path
-   * @param {string} storagePath - Storage path
+   * Get all media progress records in a logical partition
+   * @param {string} namespaceId - Opaque progress partition identifier
    * @returns {Promise<import('#domains/content/entities/MediaProgress.mjs').MediaProgress[]>}
    */
-  async getAll(storagePath) {
-    throw new Error('IMediaProgressMemory.getAll must be implemented');
+  async listProgress(namespaceId) {
+    throw new Error('IMediaProgressMemory.listProgress must be implemented');
   }
 
   /**
-   * Clear all media progress records for a storage path
-   * @param {string} storagePath - Storage path
+   * Clear all media progress records in a logical partition
+   * @param {string} namespaceId - Opaque progress partition identifier
    * @returns {Promise<void>}
    */
-  async clear(storagePath) {
-    throw new Error('IMediaProgressMemory.clear must be implemented');
+  async clearProgress(namespaceId) {
+    throw new Error('IMediaProgressMemory.clearProgress must be implemented');
+  }
+
+  /**
+   * List progress across every partition owned by a content source.
+   * @param {string} sourceId
+   */
+  async listSourceProgress(sourceId) {
+    throw new Error('IMediaProgressMemory.listSourceProgress must be implemented');
   }
 }
 
@@ -50,17 +58,20 @@ export class IMediaProgressMemory {
  * @throws {Error} If validation fails
  */
 export function validateMediaProgressMemory(store) {
-  if (typeof store.get !== 'function') {
-    throw new Error('MediaProgressMemory must implement get(contentId, storagePath): Promise<MediaProgress|null>');
+  if (typeof store.findProgress !== 'function') {
+    throw new Error('MediaProgressMemory must implement findProgress(contentId, namespaceId)');
   }
-  if (typeof store.set !== 'function') {
-    throw new Error('MediaProgressMemory must implement set(mediaProgress, storagePath): Promise<void>');
+  if (typeof store.saveProgress !== 'function') {
+    throw new Error('MediaProgressMemory must implement saveProgress(mediaProgress, namespaceId)');
   }
-  if (typeof store.getAll !== 'function') {
-    throw new Error('MediaProgressMemory must implement getAll(storagePath): Promise<MediaProgress[]>');
+  if (typeof store.listProgress !== 'function') {
+    throw new Error('MediaProgressMemory must implement listProgress(namespaceId)');
   }
-  if (typeof store.clear !== 'function') {
-    throw new Error('MediaProgressMemory must implement clear(storagePath): Promise<void>');
+  if (typeof store.clearProgress !== 'function') {
+    throw new Error('MediaProgressMemory must implement clearProgress(namespaceId)');
+  }
+  if (typeof store.listSourceProgress !== 'function') {
+    throw new Error('MediaProgressMemory must implement listSourceProgress(sourceId)');
   }
 }
 

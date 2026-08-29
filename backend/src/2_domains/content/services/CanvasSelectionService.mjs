@@ -56,7 +56,8 @@ export class CanvasSelectionService {
     }
 
     // Random selection
-    const randomIndex = Math.floor(Math.random() * candidates.length);
+    if (typeof options.random !== 'function') throw new TypeError('options.random is required for random selection');
+    const randomIndex = Math.floor(options.random() * candidates.length);
     return candidates[randomIndex];
   }
 

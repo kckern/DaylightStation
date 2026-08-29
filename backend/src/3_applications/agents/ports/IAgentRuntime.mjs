@@ -4,7 +4,7 @@
  * Port interface for agent execution runtime (framework-agnostic)
  * @interface IAgentRuntime
  */
-export const IAgentRuntime = {
+export class IAgentRuntime {
   /**
    * Execute an agent with given input
    * @param {Object} options
@@ -16,7 +16,7 @@ export const IAgentRuntime = {
    * @param {Object} [options.memory] - Conversation memory (optional)
    * @returns {Promise<{output: string, toolCalls: Array}>}
    */
-  async execute(options) {},
+  async execute(_options) { throw new Error('IAgentRuntime.execute not implemented'); }
 
   /**
    * Execute agent in background (fire-and-forget with callback)
@@ -24,7 +24,7 @@ export const IAgentRuntime = {
    * @param {Function} [onComplete] - Called when done with result or error
    * @returns {Promise<{taskId: string}>}
    */
-  async executeInBackground(options, onComplete) {},
+  async executeInBackground(_options, _onComplete) { throw new Error('IAgentRuntime.executeInBackground not implemented'); }
 
   /**
    * Execute an agent with streaming output.
@@ -32,8 +32,8 @@ export const IAgentRuntime = {
    * @param {Object} options - Same shape as execute
    * @returns {AsyncIterable<{type: 'text-delta'|'tool-start'|'tool-end'|'finish', text?: string, toolName?: string, args?: object, result?: any, reason?: string, usage?: object}>}
    */
-  async *streamExecute(options) {},
-};
+  async *streamExecute(_options) { throw new Error('IAgentRuntime.streamExecute not implemented'); }
+}
 
 /**
  * Type guard for IAgentRuntime

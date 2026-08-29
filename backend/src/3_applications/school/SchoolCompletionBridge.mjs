@@ -19,15 +19,15 @@
  * legitimately publish the same derived state again with `initial: true`.
  */
 export class SchoolCompletionBridge {
-  #eventBus; #getCompletion; #clock; #logger; #unsubscribe; #lastState; #learnerQueues;
+  #realtime; #getCompletion; #clock; #logger; #unsubscribe; #lastState; #learnerQueues;
 
   constructor({
-    eventBus, getLearnerDayCompletion, clock = () => new Date(), logger = console,
+    realtime, getLearnerDayCompletion, clock = () => new Date(), logger = console,
   } = {}) {
-    if (!eventBus || typeof eventBus.subscribe !== 'function' || !getLearnerDayCompletion) {
-      throw new Error('SchoolCompletionBridge requires eventBus and getLearnerDayCompletion');
+    if (!realtime?.onSessionOutcomeRecorded || !realtime?.completionStateObserved || !getLearnerDayCompletion) {
+      throw new Error('SchoolCompletionBridge requires realtime and getLearnerDayCompletion');
     }
-    this.#eventBus = eventBus;
+    this.#realtime = realtime;
     this.#getCompletion = getLearnerDayCompletion;
     this.#clock = clock;
     this.#logger = logger;
@@ -39,7 +39,7 @@ export class SchoolCompletionBridge {
   /** Subscribe to `school.session.outcome-recorded`. Safe to call more than once. */
   start() {
     if (this.#unsubscribe) return;
-    this.#unsubscribe = this.#eventBus.subscribe('school.session.outcome-recorded', (payload) => (
+    this.#unsubscribe = this.#realtime.onSessionOutcomeRecorded((payload) => (
       this.#enqueue(payload).catch((err) => {
         this.#logger.warn?.('school.completion-bridge.handler-threw', { error: err?.message ?? String(err) });
       })
@@ -74,7 +74,7 @@ export class SchoolCompletionBridge {
     const previousState = this.#lastState.get(learnerId);
     this.#lastState.set(learnerId, state);
     if (previousState === state) return;
-    this.#eventBus.publish('school.completion.state-observed', {
+    this.#realtime.completionStateObserved({
       learnerId, studyDate, state,
       previousState: previousState ?? null,
       initial: previousState === undefined,

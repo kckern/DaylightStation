@@ -156,11 +156,12 @@ const SORT_METHODS = {
     });
   },
 
-  random: (items) => {
+  random: (items, random) => {
+    if (typeof random !== 'function') throw new TypeError('random is required for random sort');
     // Fisher-Yates shuffle
     const result = [...items];
     for (let i = result.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(random() * (i + 1));
       [result[i], result[j]] = [result[j], result[i]];
     }
     return result;
@@ -241,12 +242,12 @@ export class ItemSelectionService {
    * @returns {Array} Sorted items (new array)
    * @throws {Error} If sort is unknown
    */
-  static applySort(items, sortName) {
+  static applySort(items, sortName, random) {
     const sortFn = SORT_METHODS[sortName];
     if (!sortFn) {
       throw new Error(`Unknown sort: ${sortName}`);
     }
-    return sortFn(items);
+    return sortFn(items, random);
   }
 
   /**
@@ -257,7 +258,7 @@ export class ItemSelectionService {
    * @returns {Array} Selected items
    * @throws {Error} If pick type is unknown or invalid format
    */
-  static applyPick(items, pickType) {
+  static applyPick(items, pickType, random) {
     if (items.length === 0) return [];
 
     if (pickType === 'first') {
@@ -269,7 +270,8 @@ export class ItemSelectionService {
     }
 
     if (pickType === 'random') {
-      const index = Math.floor(Math.random() * items.length);
+      if (typeof random !== 'function') throw new TypeError('random is required for random pick');
+      const index = Math.floor(random() * items.length);
       return [items[index]];
     }
 
@@ -371,10 +373,10 @@ export class ItemSelectionService {
     }
 
     // Sort
-    processed = this.applySort(processed, strategy.sort);
+    processed = this.applySort(processed, strategy.sort, overrides.random);
 
     // Pick
-    processed = this.applyPick(processed, strategy.pick);
+    processed = this.applyPick(processed, strategy.pick, overrides.random);
 
     return processed;
   }

@@ -9,10 +9,11 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   ensureDir: vi.fn(),
   writeBinary: vi.fn((p, buf) => { written.push({ path: p, bytes: buf.length }); }),
 }));
-vi.mock('#system/config/UserService.mjs', () => ({ userService: { hydrateUsers: () => [] } }));
-vi.mock('#domains/core/utils/id.mjs', () => ({ shortId: () => 'x' }));
+vi.mock('#adapters/identity/ConfigUserDirectory.mjs', () => ({ userService: { hydrateUsers: () => [] } }));
+vi.mock('#system/utils/id.mjs', () => ({ shortId: () => 'x' }));
 
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 import { YamlPianoStudioDatastore } from '#adapters/piano/YamlPianoStudioDatastore.mjs';
 
 const configService = {
@@ -39,7 +40,7 @@ function app() {
     isCourseServiceConfigured: () => false,
     isActivityConfigured: () => false,
   };
-  a.use('/api/v1/piano', createPianoRouter({ pianoContainer, configService, logger: silent }));
+  a.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({ pianoContainer, configService, logger: silent })));
   return a;
 }
 

@@ -15,6 +15,19 @@ import { describe, it, expect } from 'vitest';
 import { IssueDocument } from './IssueDocument.mjs';
 import { FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore, silentLogger } from '../../../../../tests/_lib/school/lifecycleFakes.mjs';
 
+function renderedPdf(content, pageCount = 1) {
+  const bytes = Buffer.from(content);
+  const artifact = (payload) => ({
+    printWith: (printer, options) => printer.printPdf(payload, options),
+    retainWith: async (store, metadata) => {
+      if (!store) return artifact(payload);
+      const retained = await store.put({ ...metadata, bytes: payload });
+      return artifact(retained.bytes);
+    },
+  });
+  return { artifact: artifact(bytes), pageCount };
+}
+
 /** Captures warn/info calls without printing anything, so a test can assert on them. */
 function spyLogger() {
   const calls = { warn: [], info: [] };
@@ -65,7 +78,7 @@ describe('IssueDocument — a missing artifact issues a replacement, not a dead 
       },
       sessions,
       tokens: new FakeTokenRegistry(),
-      renderer: { render: async () => ({ pdf: Buffer.from('regenerated'), pageCount: 1 }) },
+      renderer: { render: async () => renderedPdf('regenerated') },
       printer,
       formMaps: new FakeFormMapStore(),
       issuedArtifacts,
@@ -121,7 +134,7 @@ describe('IssueDocument — a missing artifact issues a replacement, not a dead 
       },
       sessions,
       tokens: new FakeTokenRegistry(),
-      renderer: { render: async () => { renders += 1; return { pdf: Buffer.from('should-never-render'), pageCount: 1 }; } },
+      renderer: { render: async () => { renders += 1; return renderedPdf('should-never-render'); } },
       printer,
       formMaps: new FakeFormMapStore(),
       issuedArtifacts,

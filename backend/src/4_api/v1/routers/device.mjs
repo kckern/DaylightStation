@@ -1,460 +1,123 @@
-/**
- * Device Router
- *
- * API endpoints for device control:
- * - GET /device - List all devices
- * - GET /device/:deviceId - Device info + capabilities
- * - GET /device/:deviceId/on - Power on
- * - GET /device/:deviceId/off - Power off
- * - GET /device/:deviceId/load - Load content
- * - GET /device/:deviceId/volume/:level - Set volume
- * - GET /device/:deviceId/audio/:device - Set audio output
- *
- * @module api/v1/routers
- */
-
+import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs';
-import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
-import {
-  TRANSPORT_ACTIONS,
-  QUEUE_OPS,
-  REPEAT_MODES,
-  isTransportAction,
-  isQueueOp,
-  isRepeatMode,
-} from '#shared-contracts/media/commands.mjs';
-import {
-  DispatchIdempotencyService,
-  IdempotencyConflictError,
-} from '#apps/devices/services/DispatchIdempotencyService.mjs';
+import { TRANSPORT_ACTIONS, QUEUE_OPS, REPEAT_MODES, isTransportAction, isQueueOp, isRepeatMode } from '#shared-contracts/media/commands.mjs';
 
-/**
- * Map a SessionControlService.sendCommand result to an HTTP response.
- *
- * - ok: true                         → 200 pass-through of the ack payload
- * - INVALID_ENVELOPE                 → 400
- * - DEVICE_NOT_FOUND                 → 404
- * - DEVICE_OFFLINE                   → 409 (includes lastKnown)
- * - IDEMPOTENCY_CONFLICT             → 409
- * - DEVICE_REFUSED                   → 502
- * - any other ok:false               → 502
- *
- * @param {Object} result - The sendCommand result envelope.
- * @param {import('express').Response} res
- */
-function mapSendCommandResult(result, res) {
-  if (result && result.ok === true) {
-    return res.status(200).json(result);
+const nonEmpty = value => typeof value === 'string' && value.length > 0;
+const parseLoadQuery = (query = {}) => {
+  const content = { ...query };
+  if (content.volume != null) {
+    const value = Number(content.volume);
+    content.volume = Number.isFinite(value) ? value : content.volume;
   }
+  // Keep the legacy `shuffle` query value intact for the receiving player,
+  // while translating its HTTP spelling into the application command needed
+  // by pre-warming.
+  if (content.shuffle !== undefined) content.prewarmShuffle = content.shuffle === '1' || content.shuffle === 'true';
+  return content;
+};
+const parseRequestedMinutes = value => Number(value) > 0 ? Number(value) : undefined;
+const notFound = res => res.status(404).json(buildErrorBody({ error: 'Device not found', code: ERROR_CODES.DEVICE_NOT_FOUND }));
+
+function mapCommand(result, res) {
+  if (result?.ok === true) return res.status(200).json(result);
   const code = result?.code;
   const error = result?.error || 'Command failed';
-
-  if (code === 'INVALID_ENVELOPE') {
-    return res.status(400).json(buildErrorBody({ error, code }));
-  }
-  if (code === ERROR_CODES.DEVICE_NOT_FOUND) {
-    return res.status(404).json(buildErrorBody({ error, code }));
-  }
+  if (code === 'INVALID_ENVELOPE') return res.status(400).json(buildErrorBody({ error, code }));
+  if (code === ERROR_CODES.DEVICE_NOT_FOUND) return res.status(404).json(buildErrorBody({ error, code }));
   if (code === ERROR_CODES.DEVICE_OFFLINE) {
     const body = buildErrorBody({ error, code });
     if (result.lastKnown !== undefined) body.lastKnown = result.lastKnown;
     return res.status(409).json(body);
   }
-  if (code === ERROR_CODES.IDEMPOTENCY_CONFLICT) {
-    return res.status(409).json(buildErrorBody({ error, code }));
-  }
-  if (code === ERROR_CODES.DEVICE_REFUSED) {
-    return res.status(502).json(buildErrorBody({ error, code }));
-  }
+  if (code === ERROR_CODES.IDEMPOTENCY_CONFLICT) return res.status(409).json(buildErrorBody({ error, code }));
   return res.status(502).json(buildErrorBody({ error, code }));
 }
 
-function requireSessionControl(sessionControlService, res) {
-  if (!sessionControlService) {
-    res.status(501).json(buildErrorBody({
-      error: 'Session control not configured',
-    }));
-    return false;
-  }
-  return true;
+function requireSessions(service, res) {
+  if (service.configured()) return true;
+  res.status(501).json(buildErrorBody({ error: 'Session control not configured' }));
+  return false;
 }
 
-function isNonEmptyString(v) {
-  return typeof v === 'string' && v.length > 0;
-}
-
-/**
- * Create device router
- * @param {Object} config
- * @param {import('#apps/devices/services/DeviceService.mjs').DeviceService} config.deviceService
- * @param {Object} [config.wakeAndLoadService]
- * @param {Object} [config.sessionControlService] - ISessionControl implementation
- * @param {import('#apps/devices/services/DispatchIdempotencyService.mjs').DispatchIdempotencyService} [config.dispatchIdempotencyService]
- *   - Dispatch-level idempotency cache. One is constructed per router instance
- *     if not injected (useful for tests; bootstrap should inject a shared one).
- * @param {import('#system/config/index.mjs').ConfigService} [config.configService]
- * @param {Object} [config.logger]
- * @returns {express.Router}
- */
-export function createDeviceRouter(config) {
-  // Application services arrive through the factory — a router may not import
-  // 3_applications (api-layer-guidelines.md: "Containers are injected").
-  const { hasActiveCall, forceEndCall, contentRequiresCamera } = config;
+export function createDeviceRouter({ fleetService, presenceService, sessionService, screenService,
+  dispatchService, recoveryService } = {}) {
   const router = express.Router();
-  const {
-    deviceService,
-    wakeAndLoadService,
-    sessionControlService,
-    dispatchIdempotencyService = new DispatchIdempotencyService({
-      logger: config?.logger || undefined,
-    }),
-    configService,
-    loadFile,
-    pianoMidiWakeService,
-    screenOverrideService,
-    presenceStore = null,
-    readGate = null,
-    logger = console,
-  } = config;
 
-  /**
-   * Pre-flight guard for `GET /:deviceId/load`.
-   *
-   * A device may declare `input: { keyboard_id, required: true }` to insist the
-   * corresponding keymap is non-empty before we dispatch content. If that
-   * guard is set and the keymap has zero entries, we refuse the load — the
-   * user would otherwise be served a video they have no way to stop (the
-   * frontend NumpadAdapter silently drops keystrokes when the keymap is
-   * empty). The check is cheap (one YAML read already cached by loadFile).
-   *
-   * Returns `{ ok: true }` when the load may proceed, or
-   * `{ ok: false, error, keyboardId }` when it must not.
-   */
-  function checkInputPrecondition(deviceId) {
-    if (!configService?.getDeviceConfig) return { ok: true };
-    const deviceConfig = configService.getDeviceConfig(deviceId);
-    const inputCfg = deviceConfig?.input;
-    if (!inputCfg?.required || !inputCfg?.keyboard_id) return { ok: true };
+  router.get('/config', (req, res) => res.json(fleetService.configuration(req.query.householdId)));
 
-    if (typeof loadFile !== 'function') {
-      return {
-        ok: false,
-        error: 'input precondition cannot be verified (loadFile not wired)',
-        keyboardId: inputCfg.keyboard_id,
-      };
-    }
-
-    // keyboard.yml is a uid'd bindings list (same shape as triggers/bindings/nfc/),
-    // not app config — it lives at triggers/bindings/keyboard.yml. The flat
-    // config/keyboard fallback was deleted in Phase E.
-    const keyboardData = loadFile('triggers/bindings/keyboard') || [];
-    const normalize = (s) => s?.replace(/\s+/g, '').toLowerCase();
-    const target = normalize(inputCfg.keyboard_id);
-    const entries = keyboardData.filter(k => normalize(k.folder) === target && k.key && k.function);
-    if (entries.length === 0) {
-      return {
-        ok: false,
-        error: `input device '${inputCfg.keyboard_id}' has no keymap entries`,
-        keyboardId: inputCfg.keyboard_id,
-      };
-    }
-    return { ok: true, keymapSize: entries.length };
-  }
-
-  // ===========================================================================
-  // Device Config
-  // ===========================================================================
-
-  /**
-   * GET /device/config
-   * Get raw devices config (for frontend module initialization)
-   */
-  router.get('/config', (req, res) => {
-    const { householdId } = req.query;
-    const config = configService.getHouseholdDevices(householdId);
-    res.json(config);
-  });
-
-  // ===========================================================================
-  // Device Listing
-  // ===========================================================================
-
-  /**
-   * GET /device
-   * List all devices
-   */
   router.get('/', (req, res) => {
-    const devices = deviceService.listDevices();
-    res.json({
-      ok: true,
-      count: devices.length,
-      devices
-    });
+    const devices = fleetService.list();
+    res.json({ ok: true, count: devices.length, devices });
   });
 
-  // ===========================================================================
-  // Audio Bridge Heal (collection route — MUST be registered before /:deviceId
-  // routes to avoid 'audio-bridge' being captured as a deviceId param).
-  // ===========================================================================
-
-  /**
-   * POST /device/audio-bridge/heal
-   * Relaunch companion audio-bridge apps from FKB's foreground context so their
-   * MICROPHONE foreground service regains mic access (Android-11 background-start
-   * denial recovery). WeeklyReview calls this proactively and reactively.
-   *
-   * Body:
-   *   - force?: boolean   — relaunch even when already foreground-healthy
-   *   - deviceId?: string — target a single device; otherwise heal all eligible
-   */
-  // ── Bluetooth presence (the physical parental gate) ─────────────────────
-  // The Portal APK reports which configured devices are connected. The value
-  // is DEBOUNCED by the APK — it owns the grace window because it is the only
-  // party that sees the raw ACL events. See
-  // docs/_wip/plans/2026-07-22-portal-presence-gate-design.md
   router.post('/:deviceId/presence', (req, res) => {
-    if (!presenceStore) return res.status(503).json({ error: 'presence not configured' });
+    if (!presenceService.configured()) return res.status(503).json({ error: 'presence not configured' });
     const body = req.body || {};
-    if (!Array.isArray(body.devices)) {
-      return res.status(400).json({ error: 'devices must be an array' });
-    }
-    // Forward the WHOLE report. Destructuring `{at, devices}` here silently
-    // dropped seq/uptimeMs/version/heartbeatMs, which disabled replay
-    // rejection entirely — the store never saw a sequence to compare.
-    const entry = presenceStore.record(req.params.deviceId, body);
-    if (!entry) return res.status(403).json({ error: 'device not allowed' });
-    return res.json({ ok: true, receivedAt: entry.receivedAt, seq: entry.seq, count: entry.devices.length });
+    if (!Array.isArray(body.devices)) return res.status(400).json({ error: 'devices must be an array' });
+    const result = presenceService.record(req.params.deviceId, body);
+    if (!result) return res.status(403).json({ error: 'device not allowed' });
+    return res.json(result);
   });
 
   router.get('/:deviceId/presence', (req, res) => {
-    if (!presenceStore) return res.status(503).json({ error: 'presence not configured' });
-    return res.json({
-      presence: presenceStore.get(req.params.deviceId) ?? { receivedAt: null, devices: [] },
-      // Recent transitions answer "why did it lock" after the fact, which a
-      // last-value-only store never could.
-      transitions: presenceStore.history(req.params.deviceId),
-      gate: readGate ? readGate() : null,
-    });
+    if (!presenceService.configured()) return res.status(503).json({ error: 'presence not configured' });
+    return res.json(presenceService.get(req.params.deviceId));
   });
 
   router.post('/audio-bridge/heal', asyncHandler(async (req, res) => {
-    const force = !!req.body?.force;
-    // Either a single explicit target or every device. We do NOT pre-filter
-    // via getCapabilities() — that returns contentControl as a boolean summary,
-    // not the live adapter, so it would match zero real devices. Instead we
-    // call Device.healAudioBridge() directly; it returns { supported: false }
-    // and no-ops when the underlying content adapter can't heal, which we use
-    // as the eligibility signal.
-    const ids = req.body?.deviceId ? [req.body.deviceId] : deviceService.listDeviceIds();
-
-    const healed = [];
-    for (const id of ids) {
-      const device = deviceService.get(id);
-      if (!device) continue;
-      const r = await device.healAudioBridge({ force });
-      if (r && r.supported === false) continue; // adapter can't heal — skip silently
-      healed.push({ deviceId: id, ...r });
-    }
-
-    const ok = healed.every((r) => r.ok !== false);
-    logger.info?.('device.router.heal-audio-bridge', { count: healed.length, force });
-    return res.status(200).json({
-      ok,
-      healed,
-      ...(healed.length ? {} : { reason: 'no-eligible-devices' }),
-    });
+    return res.status(200).json(await fleetService.healAudioBridge({
+      force: !!req.body?.force, deviceId: req.body?.deviceId,
+    }));
   }));
 
-  /**
-   * GET /device/:deviceId
-   * Get device info and capabilities
-   */
   router.get('/:deviceId', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    const device = deviceService.get(deviceId);
-
-    if (!device) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
-    }
-
-    const state = await device.getState();
-    res.json({
-      ok: true,
-      ...state
-    });
+    const result = await fleetService.state(req.params.deviceId);
+    if (result.kind === 'not_found') return notFound(res);
+    return res.json({ ok: true, ...result.state });
   }));
 
-  // ===========================================================================
-  // Session
-  // ===========================================================================
-
-  /**
-   * GET /device/:deviceId/session
-   * Return the current SessionSnapshot for a device.
-   *
-   *   - 200 with the SessionSnapshot when online + non-idle
-   *   - 204 (no content) when online + idle + empty queue
-   *   - 503 with { offline: true, lastKnown, lastSeenAt } when offline
-   *   - 404 when no record / unknown device
-   *   - 501 when sessionControlService isn't configured
-   */
   router.get('/:deviceId/session', asyncHandler(async (req, res) => {
-    if (!sessionControlService) {
-      return res.status(501).json(buildErrorBody({
-        error: 'Session control not configured',
-      }));
-    }
-
-    const { deviceId } = req.params;
-    const result = sessionControlService.getSnapshot(deviceId);
-
-    if (result === null || result === undefined) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
-    }
-
-    if (!result.online) {
-      return res.status(503).json({
-        offline: true,
-        lastKnown: result.snapshot,
-        lastSeenAt: result.lastSeenAt,
-      });
-    }
-
+    if (!requireSessions(sessionService, res)) return;
+    const result = sessionService.snapshot(req.params.deviceId);
+    if (result === null || result === undefined) return notFound(res);
+    if (!result.online) return res.status(503).json({ offline: true, lastKnown: result.snapshot, lastSeenAt: result.lastSeenAt });
     const snap = result.snapshot;
-    const isIdle = snap
-      && snap.state === 'idle'
-      && snap.currentItem === null
-      && Array.isArray(snap.queue?.items)
-      && snap.queue.items.length === 0;
-
-    if (isIdle) {
-      return res.status(204).end();
-    }
-
+    if (snap && snap.state === 'idle' && snap.currentItem === null
+      && Array.isArray(snap.queue?.items) && snap.queue.items.length === 0) return res.status(204).end();
     return res.status(200).json(snap);
   }));
 
-  /**
-   * POST /device/:deviceId/session/transport
-   * Drive transport on the remote session (§4.3).
-   *
-   *   Body: { action, value?, commandId }
-   */
   router.post('/:deviceId/session/transport', asyncHandler(async (req, res) => {
-    if (!requireSessionControl(sessionControlService, res)) return;
-
-    const { deviceId } = req.params;
-    const body = req.body || {};
-    const { action, value, commandId } = body;
-
-    if (!isNonEmptyString(commandId)) {
-      return res.status(400).json(buildErrorBody({
-        error: 'commandId required (non-empty string)',
-      }));
+    if (!requireSessions(sessionService, res)) return;
+    const { action, value, commandId } = req.body || {};
+    if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    if (!isTransportAction(action)) return res.status(400).json(buildErrorBody({ error: `action must be one of: ${TRANSPORT_ACTIONS.join(', ')}` }));
+    if ((action === 'seekAbs' || action === 'seekRel') && !(typeof value === 'number' && Number.isFinite(value))) {
+      return res.status(400).json(buildErrorBody({ error: `value must be a finite number for action "${action}"` }));
     }
-    if (!isTransportAction(action)) {
-      return res.status(400).json(buildErrorBody({
-        error: `action must be one of: ${TRANSPORT_ACTIONS.join(', ')}`,
-      }));
-    }
-    if ((action === 'seekAbs' || action === 'seekRel')
-        && !(typeof value === 'number' && Number.isFinite(value))) {
-      return res.status(400).json(buildErrorBody({
-        error: `value must be a finite number for action "${action}"`,
-      }));
-    }
-
-    const envelope = buildCommandEnvelope({
-      targetDevice: deviceId,
-      command: 'transport',
-      commandId,
-      params: { action, ...(value !== undefined ? { value } : {}) },
-    });
-
-    logger.info?.('device.router.session.transport', { deviceId, action, commandId });
-    const result = await sessionControlService.sendCommand(envelope);
-    return mapSendCommandResult(result, res);
+    return mapCommand(await sessionService.transport(req.params.deviceId, { action, value, commandId }), res);
   }));
 
-  /**
-   * POST /device/:deviceId/session/queue/:op
-   * Mutate the remote session's queue (§4.4).
-   *
-   *   :op ∈ QUEUE_OPS
-   *   Body varies per op — validated here, then the envelope validator
-   *   double-checks via SessionControlService.
-   */
   router.post('/:deviceId/session/queue/:op', asyncHandler(async (req, res) => {
-    if (!requireSessionControl(sessionControlService, res)) return;
-
+    if (!requireSessions(sessionService, res)) return;
     const { deviceId, op } = req.params;
-    const body = req.body || {};
-    const { contentId, queueItemId, from, to, items, clearRest, commandId } = body;
-
-    if (!isQueueOp(op)) {
-      return res.status(400).json(buildErrorBody({
-        error: `Unknown queue op "${op}"; must be one of: ${QUEUE_OPS.join(', ')}`,
-        code: 'VALIDATION',
-      }));
+    const { contentId, queueItemId, from, to, items, clearRest, commandId } = req.body || {};
+    if (!isQueueOp(op)) return res.status(400).json(buildErrorBody({ error: `Unknown queue op "${op}"; must be one of: ${QUEUE_OPS.join(', ')}`, code: 'VALIDATION' }));
+    if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    if (['play-now', 'play-next', 'add-up-next', 'add'].includes(op) && !nonEmpty(contentId)) {
+      return res.status(400).json(buildErrorBody({ error: `contentId required (non-empty string) for op "${op}"` }));
     }
-    if (!isNonEmptyString(commandId)) {
-      return res.status(400).json(buildErrorBody({
-        error: 'commandId required (non-empty string)',
-      }));
+    if (['remove', 'jump'].includes(op) && !nonEmpty(queueItemId)) {
+      return res.status(400).json(buildErrorBody({ error: `queueItemId required (non-empty string) for op "${op}"` }));
     }
-
-    switch (op) {
-      case 'play-now':
-      case 'play-next':
-      case 'add-up-next':
-      case 'add':
-        if (!isNonEmptyString(contentId)) {
-          return res.status(400).json(buildErrorBody({
-            error: `contentId required (non-empty string) for op "${op}"`,
-          }));
-        }
-        break;
-      case 'remove':
-      case 'jump':
-        if (!isNonEmptyString(queueItemId)) {
-          return res.status(400).json(buildErrorBody({
-            error: `queueItemId required (non-empty string) for op "${op}"`,
-          }));
-        }
-        break;
-      case 'reorder': {
-        const hasFromTo = isNonEmptyString(from) && isNonEmptyString(to);
-        const hasItems = Array.isArray(items) && items.length > 0
-          && items.every(isNonEmptyString);
-        if (!hasFromTo && !hasItems) {
-          return res.status(400).json(buildErrorBody({
-            error: 'reorder requires either (from + to) or a non-empty items array of strings',
-          }));
-        }
-        break;
-      }
-      case 'clear':
-        // No additional fields required.
-        break;
-      default:
-        // isQueueOp already gated this; guard-rail only.
-        return res.status(400).json(buildErrorBody({
-          error: `Unhandled queue op "${op}"`,
-        }));
+    if (op === 'reorder') {
+      const hasFromTo = nonEmpty(from) && nonEmpty(to);
+      const hasItems = Array.isArray(items) && items.length > 0 && items.every(nonEmpty);
+      if (!hasFromTo && !hasItems) return res.status(400).json(buildErrorBody({ error: 'reorder requires either (from + to) or a non-empty items array of strings' }));
     }
-
-    // Build params with only the fields relevant to this op. The envelope
-    // validator will ignore unknown fields, but keeping the envelope tight
-    // makes idempotency fingerprints stable + debuggable.
     const params = { op };
     if (contentId !== undefined) params.contentId = contentId;
     if (queueItemId !== undefined) params.queueItemId = queueItemId;
@@ -462,747 +125,176 @@ export function createDeviceRouter(config) {
     if (to !== undefined) params.to = to;
     if (items !== undefined) params.items = items;
     if (clearRest !== undefined) params.clearRest = clearRest;
-
-    const envelope = buildCommandEnvelope({
-      targetDevice: deviceId,
-      command: 'queue',
-      commandId,
-      params,
-    });
-
-    logger.info?.('device.router.session.queue', { deviceId, op, commandId });
-    const result = await sessionControlService.sendCommand(envelope);
-    return mapSendCommandResult(result, res);
+    return mapCommand(await sessionService.queue(deviceId, commandId, params), res);
   }));
 
-  /**
-   * PUT /device/:deviceId/session/shuffle
-   * Toggle shuffle mode on the remote session (§4.5).
-   *
-   *   Body: { enabled: bool, commandId }
-   */
   router.put('/:deviceId/session/shuffle', asyncHandler(async (req, res) => {
-    if (!requireSessionControl(sessionControlService, res)) return;
-
-    const { deviceId } = req.params;
+    if (!requireSessions(sessionService, res)) return;
     const { enabled, commandId } = req.body || {};
-
-    if (!isNonEmptyString(commandId)) {
-      return res.status(400).json(buildErrorBody({
-        error: 'commandId required (non-empty string)',
-      }));
-    }
-    if (typeof enabled !== 'boolean') {
-      return res.status(400).json(buildErrorBody({
-        error: 'enabled must be a boolean',
-      }));
-    }
-
-    const envelope = buildCommandEnvelope({
-      targetDevice: deviceId,
-      command: 'config',
-      commandId,
-      params: { setting: 'shuffle', value: enabled },
-    });
-
-    logger.info?.('device.router.session.shuffle', { deviceId, enabled, commandId });
-    const result = await sessionControlService.sendCommand(envelope);
-    return mapSendCommandResult(result, res);
+    if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    if (typeof enabled !== 'boolean') return res.status(400).json(buildErrorBody({ error: 'enabled must be a boolean' }));
+    return mapCommand(await sessionService.config(req.params.deviceId, { setting: 'shuffle', value: enabled, commandId }), res);
   }));
 
-  /**
-   * PUT /device/:deviceId/session/repeat
-   * Set repeat mode on the remote session (§4.5).
-   *
-   *   Body: { mode: "off" | "one" | "all", commandId }
-   */
   router.put('/:deviceId/session/repeat', asyncHandler(async (req, res) => {
-    if (!requireSessionControl(sessionControlService, res)) return;
-
-    const { deviceId } = req.params;
+    if (!requireSessions(sessionService, res)) return;
     const { mode, commandId } = req.body || {};
-
-    if (!isNonEmptyString(commandId)) {
-      return res.status(400).json(buildErrorBody({
-        error: 'commandId required (non-empty string)',
-      }));
-    }
-    if (!isRepeatMode(mode)) {
-      return res.status(400).json(buildErrorBody({
-        error: `mode must be one of: ${REPEAT_MODES.join(', ')}`,
-      }));
-    }
-
-    const envelope = buildCommandEnvelope({
-      targetDevice: deviceId,
-      command: 'config',
-      commandId,
-      params: { setting: 'repeat', value: mode },
-    });
-
-    logger.info?.('device.router.session.repeat', { deviceId, mode, commandId });
-    const result = await sessionControlService.sendCommand(envelope);
-    return mapSendCommandResult(result, res);
+    if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    if (!isRepeatMode(mode)) return res.status(400).json(buildErrorBody({ error: `mode must be one of: ${REPEAT_MODES.join(', ')}` }));
+    return mapCommand(await sessionService.config(req.params.deviceId, { setting: 'repeat', value: mode, commandId }), res);
   }));
 
-  /**
-   * PUT /device/:deviceId/session/shader
-   * Set the playback shader (§4.5).
-   *
-   *   Body: { shader: string | null, commandId }
-   */
   router.put('/:deviceId/session/shader', asyncHandler(async (req, res) => {
-    if (!requireSessionControl(sessionControlService, res)) return;
-
-    const { deviceId } = req.params;
-    const body = req.body || {};
-    const { commandId } = body;
-    // Distinguish null (clear) from missing. `hasOwnProperty` stays true
-    // for explicit nulls but false for omitted keys.
-    const hasShader = Object.prototype.hasOwnProperty.call(body, 'shader');
-    const shader = body.shader;
-
-    if (!isNonEmptyString(commandId)) {
-      return res.status(400).json(buildErrorBody({
-        error: 'commandId required (non-empty string)',
-      }));
-    }
-    if (!hasShader || (shader !== null && typeof shader !== 'string')) {
-      return res.status(400).json(buildErrorBody({
-        error: 'shader must be a string or null',
-      }));
-    }
-
-    const envelope = buildCommandEnvelope({
-      targetDevice: deviceId,
-      command: 'config',
-      commandId,
-      params: { setting: 'shader', value: shader },
-    });
-
-    logger.info?.('device.router.session.shader', { deviceId, shader, commandId });
-    const result = await sessionControlService.sendCommand(envelope);
-    return mapSendCommandResult(result, res);
+    if (!requireSessions(sessionService, res)) return;
+    const body = req.body || {}; const { commandId } = body;
+    const hasShader = Object.prototype.hasOwnProperty.call(body, 'shader'); const shader = body.shader;
+    if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    if (!hasShader || (shader !== null && typeof shader !== 'string')) return res.status(400).json(buildErrorBody({ error: 'shader must be a string or null' }));
+    return mapCommand(await sessionService.config(req.params.deviceId, { setting: 'shader', value: shader, commandId }), res);
   }));
 
-  /**
-   * POST /device/:deviceId/session/claim
-   * Atomic "Take Over" — stops the current session and captures the
-   * snapshot for later "Restore" (§4.6).
-   *
-   *   Body: { commandId }
-   *
-   *   200: { ok: true, commandId, snapshot, stoppedAt }
-   *   400: missing/invalid commandId
-   *   409: device offline (body has lastKnown)
-   *   502: device refused / ack timeout
-   *   501: session control not configured
-   */
   router.post('/:deviceId/session/claim', asyncHandler(async (req, res) => {
-    if (!requireSessionControl(sessionControlService, res)) return;
-
-    const { deviceId } = req.params;
+    if (!requireSessions(sessionService, res)) return;
     const { commandId } = req.body || {};
-
-    if (!isNonEmptyString(commandId)) {
-      return res.status(400).json(buildErrorBody({
-        error: 'commandId required (non-empty string)',
-        code: 'VALIDATION',
-      }));
-    }
-
-    logger.info?.('device.router.session.claim', { deviceId, commandId });
-    const result = await sessionControlService.claim(deviceId, { commandId });
-
-    if (result && result.ok === true) {
-      return res.status(200).json({
-        ok: true,
-        commandId: result.commandId ?? commandId,
-        snapshot: result.snapshot,
-        stoppedAt: result.stoppedAt,
-      });
-    }
-    return mapSendCommandResult(result, res);
+    if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)', code: 'VALIDATION' }));
+    const result = await sessionService.claim(req.params.deviceId, commandId);
+    if (result?.ok === true) return res.status(200).json({ ok: true, commandId: result.commandId ?? commandId,
+      snapshot: result.snapshot, stoppedAt: result.stoppedAt });
+    return mapCommand(result, res);
   }));
 
-  /**
-   * PUT /device/:deviceId/session/volume
-   * Set playback volume (§4.5).
-   *
-   *   Body: { level: int 0-100, commandId }
-   */
   router.put('/:deviceId/session/volume', asyncHandler(async (req, res) => {
-    if (!requireSessionControl(sessionControlService, res)) return;
-
-    const { deviceId } = req.params;
+    if (!requireSessions(sessionService, res)) return;
     const { level, commandId } = req.body || {};
-
-    if (!isNonEmptyString(commandId)) {
-      return res.status(400).json(buildErrorBody({
-        error: 'commandId required (non-empty string)',
-      }));
+    if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    if (typeof level !== 'number' || !Number.isInteger(level) || level < 0 || level > 100) {
+      return res.status(400).json(buildErrorBody({ error: 'level must be an integer between 0 and 100' }));
     }
-    if (typeof level !== 'number'
-        || !Number.isInteger(level)
-        || level < 0 || level > 100) {
-      return res.status(400).json(buildErrorBody({
-        error: 'level must be an integer between 0 and 100',
-      }));
-    }
-
-    const envelope = buildCommandEnvelope({
-      targetDevice: deviceId,
-      command: 'config',
-      commandId,
-      params: { setting: 'volume', value: level },
-    });
-
-    logger.info?.('device.router.session.volume', { deviceId, level, commandId });
-    const result = await sessionControlService.sendCommand(envelope);
-    return mapSendCommandResult(result, res);
+    return mapCommand(await sessionService.config(req.params.deviceId, { setting: 'volume', value: level, commandId }), res);
   }));
 
-  // ===========================================================================
-  // Power Control
-  // ===========================================================================
-
-  /**
-   * GET /device/:deviceId/on
-   * Power on device (all displays or specific via ?display=)
-   */
   router.get('/:deviceId/on', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    const { display } = req.query;
-    const device = deviceService.get(deviceId);
-
-    if (!device) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
-    }
-
-    logger.info?.('device.router.powerOn', { deviceId, display });
-    const result = await device.powerOn(display);
-    res.json(result);
+    const result = await fleetService.powerOn(req.params.deviceId, req.query.display);
+    return result.kind === 'not_found' ? notFound(res) : res.json(result.result);
   }));
 
-  /**
-   * GET /device/:deviceId/off
-   * Power off device (all displays or specific via ?display=)
-   */
   router.get('/:deviceId/off', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    const { display, force } = req.query;
-    const device = deviceService.get(deviceId);
-
-    if (!device) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
+    const result = await fleetService.powerOff(req.params.deviceId, {
+      display: req.query.display,
+      force: req.query.force === 'true',
+    });
+    if (result.kind === 'not_found') return notFound(res);
+    if (result.kind === 'busy') {
+      const body = buildErrorBody({ error: 'Active videocall in progress', code: ERROR_CODES.DEVICE_BUSY });
+      body.hint = 'Use ?force=true to override'; return res.status(409).json(body);
     }
-
-    // Guard: block power-off during active videocall unless ?force=true
-    if (hasActiveCall(deviceId) && force !== 'true') {
-      logger.info?.('device.router.powerOff.blocked', { deviceId, reason: 'active-videocall' });
-      const body = buildErrorBody({
-        error: 'Active videocall in progress',
-        code: ERROR_CODES.DEVICE_BUSY,
-      });
-      body.hint = 'Use ?force=true to override';
-      return res.status(409).json(body);
-    }
-
-    if (force === 'true' && hasActiveCall(deviceId)) {
-      logger.info?.('device.router.powerOff.forced', { deviceId });
-      if (forceEndCall(deviceId) === false) {
-        const body = buildErrorBody({
-          error: 'Active leased videocall in progress',
-          code: ERROR_CODES.DEVICE_BUSY,
-        });
-        body.hint = 'End the call through /api/v1/homeline before powering off';
-        return res.status(409).json(body);
-      }
-    }
-
-    logger.info?.('device.router.powerOff', { deviceId, display });
-    const result = await device.powerOff(display);
-    res.json(result);
+    return res.json(result.result);
   }));
 
-  /**
-   * GET /device/:deviceId/toggle
-   * Toggle device power
-   */
   router.get('/:deviceId/toggle', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    const { display } = req.query;
-    const device = deviceService.get(deviceId);
-
-    if (!device) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
-    }
-
-    logger.info?.('device.router.toggle', { deviceId, display });
-    const result = await device.toggle(display);
-    res.json(result);
+    const result = await fleetService.toggle(req.params.deviceId, req.query.display);
+    return result.kind === 'not_found' ? notFound(res) : res.json(result.result);
   }));
 
-  // --- Manual screen override (physical piano button + on-screen action) --------
-  // Hold windows: single-press-ON = onHoldMinutes; sticky-OFF inherits
-  // screensaver.offCooldownMinutes so the physical double-press can't drift from
-  // the on-screen "turn off screen" action. All three screen writers read the
-  // shared ScreenOverrideService, so a press outlives the 45s power reconcile.
-  //
-  // NOTE: these literal-path routes are declared BEFORE `screen/:state` so the
-  // `:state` param doesn't greedily capture 'toggle' / 'override'.
-  const pianoAppCfg = () => (configService?.getHouseholdAppConfig?.(null, 'piano')) || {};
-  const onHoldMinutes = () => Number(pianoAppCfg().button?.onHoldMinutes) || 10;
-  const offHoldMinutes = () => Number(pianoAppCfg().button?.offHoldMinutes)
-    || Number(pianoAppCfg().screensaver?.offCooldownMinutes) || 30;
-
-  /**
-   * GET /device/:deviceId/screen/toggle
-   * Flip the screen. ON → set an on-hold window (reconcile can't kill it).
-   * OFF → clear the window (soft: MIDI / piano-power / touch can re-light).
-   * getStatus() failure ⇒ assume OFF ⇒ turn ON (a press is never a no-op).
-   */
   router.get('/:deviceId/screen/toggle', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    const device = deviceService.get(deviceId);
-    if (!device) {
-      return res.status(404).json(buildErrorBody({ error: 'Device not found', code: ERROR_CODES.DEVICE_NOT_FOUND }));
-    }
-    let currentlyOn = false;
-    try { currentlyOn = (await device.getStatus())?.screenOn === true; } catch { currentlyOn = false; }
-    const next = !currentlyOn;
-    if (screenOverrideService) {
-      if (next) screenOverrideService.set(deviceId, 'on', onHoldMinutes());
-      else screenOverrideService.clear(deviceId);
-    }
-    logger.info?.('device.router.screen.toggle', { deviceId, next });
-    const result = await device.setScreen(next);
-    res.json({ screenOn: next, override: screenOverrideService?.get(deviceId) ?? null, result });
+    const result = await screenService.toggle(req.params.deviceId);
+    return result.kind === 'not_found' ? notFound(res) : res.json(result.body);
   }));
 
-  /**
-   * GET /device/:deviceId/screen/override — the live window (polled by the browser screensaver).
-   */
-  router.get('/:deviceId/screen/override', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    res.json({ override: screenOverrideService?.get(deviceId) ?? null });
-  }));
+  router.get('/:deviceId/screen/override', asyncHandler(async (req, res) => res.json(screenService.override(req.params.deviceId))));
 
-  /**
-   * POST /device/:deviceId/screen/override   body: { state:'on'|'off', minutes?:number }
-   * Set a held window and drive the screen to it. OFF also relays to the midi-wake
-   * suppress (which owns the APK relay + writes the shared 'off' window).
-   */
   router.post('/:deviceId/screen/override', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
     const state = req.body?.state;
-    if (state !== 'on' && state !== 'off') {
-      return res.status(400).json(buildErrorBody({ error: `Invalid override state '${state}' (expected 'on'|'off')` }));
-    }
-    const device = deviceService.get(deviceId);
-    if (!device) {
-      return res.status(404).json(buildErrorBody({ error: 'Device not found', code: ERROR_CODES.DEVICE_NOT_FOUND }));
-    }
-    const minutes = Number(req.body?.minutes) > 0
-      ? Number(req.body.minutes)
-      : (state === 'off' ? offHoldMinutes() : onHoldMinutes());
-    if (state === 'off') {
-      // suppressWakeUntil sets the shared 'off' window AND relays to the APK.
-      if (pianoMidiWakeService?.suppressWakeUntil) pianoMidiWakeService.suppressWakeUntil(Date.now() + minutes * 60_000);
-      else screenOverrideService?.set(deviceId, 'off', minutes);
-    } else {
-      screenOverrideService?.set(deviceId, 'on', minutes);
-    }
-    logger.info?.('device.router.screen.override', { deviceId, state, minutes });
-    const result = await device.setScreen(state === 'on');
-    res.json({ ok: true, override: screenOverrideService?.get(deviceId) ?? null, result });
+    if (state !== 'on' && state !== 'off') return res.status(400).json(buildErrorBody({ error: `Invalid override state '${state}' (expected 'on'|'off')` }));
+    const result = await screenService.setOverride(req.params.deviceId, state, parseRequestedMinutes(req.body?.minutes));
+    return result.kind === 'not_found' ? notFound(res) : res.json(result.body);
   }));
 
-  /**
-   * GET /device/:deviceId/screen/:state  (state = on | off)
-   * Display-only screen control via the content-control adapter (FKB
-   * screenOn/screenOff). Distinct from /on and /off, which drive display
-   * power. Used by the piano-kiosk screensaver.
-   */
   router.get('/:deviceId/screen/:state', asyncHandler(async (req, res) => {
     const { deviceId, state } = req.params;
-
-    if (state !== 'on' && state !== 'off') {
-      return res.status(400).json(buildErrorBody({
-        error: `Invalid screen state '${state}' (expected 'on' or 'off')`,
-      }));
-    }
-
-    const device = deviceService.get(deviceId);
-    if (!device) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
-    }
-
-    logger.info?.('device.router.setScreen', { deviceId, state });
-    const result = await device.setScreen(state === 'on');
-    res.json(result);
+    if (state !== 'on' && state !== 'off') return res.status(400).json(buildErrorBody({ error: `Invalid screen state '${state}' (expected 'on' or 'off')` }));
+    const result = await screenService.setScreen(deviceId, state);
+    return result.kind === 'not_found' ? notFound(res) : res.json(result.result);
   }));
 
-  /**
-   * POST /device/:deviceId/screen/suppress-wake   body: { minutes?: number }
-   * Mute MIDI-driven screen wakes for `minutes` (default 30). Used by the piano
-   * kiosk's "Turn off screen" action so playing the piano doesn't re-light the
-   * tablet until the player has been idle. Coordinates the backend midi-wake
-   * service + (via it) the on-device APK ScreenWaker. Best-effort: returns 200
-   * even when no midi-wake service is wired (the frontend still self-suppresses).
-   */
   router.post('/:deviceId/screen/suppress-wake', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    const minutes = Number(req.body?.minutes) > 0 ? Number(req.body.minutes) : 30;
-    const until = Date.now() + minutes * 60_000;
-    logger.info?.('device.router.suppressWake', { deviceId, minutes, until });
-    if (pianoMidiWakeService?.suppressWakeUntil) {
-      pianoMidiWakeService.suppressWakeUntil(until);
-      return res.json({ ok: true, until, relayed: true });
-    }
-    return res.json({ ok: true, until, relayed: false });
+    return res.json(screenService.suppressWake(req.params.deviceId, parseRequestedMinutes(req.body?.minutes)));
   }));
 
-  // ===========================================================================
-  // Content Loading
-  // ===========================================================================
-
-  /**
-   * GET /device/:deviceId/load
-   * Power on + verify display + load content
-   * Emits wake-progress events over WebSocket for real-time phone UI feedback.
-   */
   router.get('/:deviceId/load', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    const query = { ...req.query };
-
-    logger.info?.('device.router.load.start', { deviceId, query });
-
-    if (!wakeAndLoadService) {
-      return res.status(500).json(buildErrorBody({
-        error: 'WakeAndLoadService not configured',
-      }));
+    const { deviceId } = req.params; const query = parseLoadQuery(req.query);
+    dispatchService.logLoadStart(deviceId, query);
+    if (!dispatchService.configured()) return sendInternalError(res, buildErrorBody({ error: 'WakeAndLoadService not configured' }));
+    const input = dispatchService.checkInput(deviceId);
+    if (!input.ok) {
+      dispatchService.logInputFailure(deviceId, input);
+      return res.status(503).json({ ok: false, deviceId, failedStep: 'input', error: input.error, keyboardId: input.keyboardId });
     }
-
-    const inputCheck = checkInputPrecondition(deviceId);
-    if (!inputCheck.ok) {
-      logger.error?.('device.router.load.input-precondition-failed', {
-        deviceId, keyboardId: inputCheck.keyboardId, error: inputCheck.error,
-      });
-      return res.status(503).json({
-        ok: false,
-        deviceId,
-        failedStep: 'input',
-        error: inputCheck.error,
-        keyboardId: inputCheck.keyboardId,
-      });
+    const result = await dispatchService.load(deviceId, query);
+    let status = 200; let extra = null;
+    if (result.error === 'Device not found') status = 404;
+    else if (result.failedStep === 'prewarm' && result.permanent === true) {
+      status = 422; extra = { code: ERROR_CODES.CONTENT_NOT_FOUND };
     }
-
-    // dispatchId is a wake-progress correlator, not a content param: it must
-    // travel in execute()'s options arg or the service mints its own and
-    // every homeline step broadcast carries a foreign id the caller's UI
-    // can't associate with its dispatch row (2026-07-14 Bluey cast: the
-    // sender's progress tray showed nothing for the whole 18s wake).
-    const { dispatchId, ...contentQuery } = query;
-    const result = await wakeAndLoadService.execute(deviceId, contentQuery, { dispatchId });
-
-    let status = 200;
-    let extra = null;
-    if (result.error === 'Device not found') {
-      status = 404;
-    } else if (result.failedStep === 'prewarm' && result.permanent === true) {
-      status = 422;
-      // Tag with a code so callers can branch deterministically. The body
-      // already carries failedStep/permanent/error from the orchestrator.
-      extra = { code: ERROR_CODES.CONTENT_NOT_FOUND };
-    }
-
-    logger.info?.('device.router.load.complete', {
-      deviceId, ok: result.ok, failedStep: result.failedStep, totalElapsedMs: result.totalElapsedMs
-    });
-
-    res.status(status).json(extra ? { ...result, ...extra } : result);
+    return res.status(status).json(extra ? { ...result, ...extra } : result);
   }));
 
-  /**
-   * POST /device/:deviceId/load
-   *
-   * Accepts an adopt-snapshot Hand Off payload (§4.7):
-   *   Body: { mode: 'adopt', snapshot: SessionSnapshot, dispatchId: string }
-   *
-   *   200: { ...wakeResult, adopted: true, dispatchId }
-   *   400: missing/invalid dispatchId or snapshot
-   *   409: same dispatchId previously observed with a different body (conflict)
-   *   500: WakeAndLoadService not configured
-   *
-   * Idempotency: the same dispatchId with the same body within 60s returns
-   * the cached prior result without re-running the wake orchestration. A
-   * same-dispatchId, different-body request within the window is a
-   * conflict (IDEMPOTENCY_CONFLICT). Callers generate fresh dispatchIds
-   * per intent. Delegated to DispatchIdempotencyService.
-   */
   router.post('/:deviceId/load', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    const body = req.body || {};
-
-    if (body.mode !== 'adopt') {
-      return res.status(400).json(buildErrorBody({
-        error: 'POST /device/:id/load currently only supports mode: "adopt"',
-        code: 'VALIDATION',
-      }));
-    }
-
-    if (!wakeAndLoadService) {
-      return res.status(500).json(buildErrorBody({
-        error: 'WakeAndLoadService not configured',
-      }));
-    }
-
+    const { deviceId } = req.params; const body = req.body || {};
+    if (body.mode !== 'adopt') return res.status(400).json(buildErrorBody({
+      error: 'POST /device/:id/load currently only supports mode: "adopt"', code: 'VALIDATION' }));
+    if (!dispatchService.configured()) return sendInternalError(res, buildErrorBody({ error: 'WakeAndLoadService not configured' }));
     const { snapshot, dispatchId } = body;
-
-    if (!isNonEmptyString(dispatchId)) {
-      return res.status(400).json(buildErrorBody({
-        error: 'dispatchId required (non-empty string)',
-        code: 'VALIDATION',
-      }));
-    }
-
+    if (!nonEmpty(dispatchId)) return res.status(400).json(buildErrorBody({ error: 'dispatchId required (non-empty string)', code: 'VALIDATION' }));
     const validation = validateSessionSnapshot(snapshot);
-    if (!validation.valid) {
-      return res.status(400).json(buildErrorBody({
-        error: `Invalid snapshot: ${validation.errors[0]}`,
-        code: 'VALIDATION',
-        details: validation.errors,
-      }));
-    }
-
-    logger.info?.('device.router.load.adopt.start', { deviceId, dispatchId });
-
-    let cached;
+    if (!validation.valid) return res.status(400).json(buildErrorBody({ error: `Invalid snapshot: ${validation.errors[0]}`,
+      code: 'VALIDATION', details: validation.errors }));
     try {
-      cached = await dispatchIdempotencyService.runWithIdempotency(
-        dispatchId,
-        { snapshot, deviceId },
-        async () => {
-          const result = await wakeAndLoadService.execute(
-            deviceId,
-            {},
-            { dispatchId, adoptSnapshot: snapshot },
-          );
-
-          const statusCode = result.error === 'Device not found'
-            ? 404
-            : (result.ok ? 200 : 502);
-
-          const responseBody = {
-            ...result,
-            adopted: result.ok === true,
-            dispatchId,
-          };
-
-          logger.info?.('device.router.load.adopt.complete', {
-            deviceId, dispatchId, ok: result.ok, failedStep: result.failedStep,
-          });
-
-          return { statusCode, body: responseBody };
-        },
-      );
+      const cached = await dispatchService.adopt(deviceId, snapshot, dispatchId);
+      const status = cached.kind === 'device_not_found' ? 404 : (cached.kind === 'adopted' ? 200 : 502);
+      return res.status(status).json({
+        ...cached.result,
+        adopted: cached.result?.ok === true,
+        dispatchId: cached.dispatchId,
+      });
     } catch (err) {
-      if (err instanceof IdempotencyConflictError) {
-        logger.warn?.('device.router.load.adopt.conflict', { deviceId, dispatchId });
-        return res.status(409).json(buildErrorBody({
-          error: err.message,
-          code: ERROR_CODES.IDEMPOTENCY_CONFLICT,
-        }));
+      if (err?.code === ERROR_CODES.IDEMPOTENCY_CONFLICT) {
+        dispatchService.logConflict(deviceId, dispatchId);
+        return res.status(409).json(buildErrorBody({ error: err.message, code: ERROR_CODES.IDEMPOTENCY_CONFLICT }));
       }
       throw err;
     }
-
-    return res.status(cached.statusCode).json(cached.body);
   }));
 
-  /**
-   * POST /device/:deviceId/reboot
-   * Reboot the device via ADB. Fire-and-forget — device disconnects during reboot.
-   */
   router.post('/:deviceId/reboot', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-
-    logger.info?.('device.router.reboot.start', { deviceId });
-
-    const device = deviceService.get(deviceId);
-    if (!device) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
-    }
-
-    const result = await device.reboot();
-
-    logger.info?.('device.router.reboot.complete', { deviceId, ok: result.ok });
-
-    res.json(result);
+    const result = await fleetService.reboot(req.params.deviceId);
+    return result.kind === 'not_found' ? notFound(res) : res.json(result.result);
   }));
 
-  /**
-   * POST /device/:deviceId/recover
-   * Attempt to recover an unresponsive device (FKB restart, then power cycle).
-   * Called by CallApp when TV heartbeat doesn't arrive after load.
-   */
   router.post('/:deviceId/recover', asyncHandler(async (req, res) => {
-    const { deviceId } = req.params;
-    const { reloadQuery } = req.body || {};
-
-    logger.info?.('device.router.recover.start', { deviceId });
-
-    const device = deviceService.get(deviceId);
-    if (!device) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
+    const result = await recoveryService.recover(req.params.deviceId, (req.body || {}).reloadQuery);
+    if (result.kind === 'not_found') return notFound(res);
+    if (result.kind === 'failed') {
+      const body = buildErrorBody({ error: result.error }); body.method = result.method;
+      return res.status(502).json(body);
     }
-
-    // Step 1: Try FKB force-stop + restart via ADB
-    let adbOk = false;
-    try {
-      const rebootResult = await device.reboot();
-      adbOk = rebootResult.ok;
-      logger.info?.('device.router.recover.adb', { deviceId, ok: adbOk });
-    } catch (err) {
-      logger.warn?.('device.router.recover.adb.failed', { deviceId, error: err.message });
-    }
-
-    // Step 2: If ADB failed, power cycle via HA
-    if (!adbOk) {
-      logger.info?.('device.router.recover.power-cycle', { deviceId });
-      try {
-        await device.powerOff();
-        await new Promise(r => setTimeout(r, 10_000));
-        await device.powerOn();
-        // Wait for FKB to boot after power cycle
-        await new Promise(r => setTimeout(r, 60_000));
-      } catch (err) {
-        logger.error?.('device.router.recover.power-cycle.failed', { deviceId, error: err.message });
-        const body = buildErrorBody({
-          error: 'Recovery failed: ' + err.message,
-        });
-        body.method = 'power-cycle';
-        return res.status(502).json(body);
-      }
-    } else {
-      // Wait for FKB to restart after ADB reboot
-      await new Promise(r => setTimeout(r, 15_000));
-    }
-
-    // Step 3: Re-prepare and re-load content
-    try {
-      // Skip the ~4s FKB camera check unless the reload query actually needs
-      // the camera. If there's no reloadQuery (generic recovery), default to
-      // skipping — the cautious path is to leave the camera unprobed and let
-      // the next content request set up what it needs.
-      const skipCameraCheck = reloadQuery ? !contentRequiresCamera(reloadQuery) : true;
-      await device.prepareForContent({ skipCameraCheck });
-      if (reloadQuery) {
-        const screenPath = device.screenPath || '/screen/living-room';
-        await device.loadContent(screenPath, reloadQuery);
-      }
-    } catch (err) {
-      logger.warn?.('device.router.recover.reload.failed', { deviceId, error: err.message });
-    }
-
-    const method = adbOk ? 'adb-restart' : 'power-cycle';
-    logger.info?.('device.router.recover.complete', { deviceId, method });
-    res.json({ ok: true, method });
+    return res.json(result.body);
   }));
 
-  // ===========================================================================
-  // Volume Control
-  // ===========================================================================
-
-  /**
-   * GET /device/:deviceId/volume/:level
-   * Set volume (0-100, +, -, mute, unmute)
-   *
-   * @deprecated Use `PUT /api/v1/device/:id/session/volume` (§4.5) — this
-   * legacy endpoint bypasses the session control layer and cannot produce
-   * an ack or a structured session snapshot update. Kept for backward
-   * compatibility; emits `device.volume.deprecated` on every call.
-   */
   router.get('/:deviceId/volume/:level', asyncHandler(async (req, res) => {
-    const { deviceId, level } = req.params;
-    logger.warn?.('device.volume.deprecated', {
-      deviceId,
-      note: 'Use PUT /api/v1/device/:id/session/volume instead',
-    });
-    const device = deviceService.get(deviceId);
-
-    if (!device) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
-    }
-
-    if (!device.hasCapability('volume')) {
-      return res.status(400).json(buildErrorBody({
-        error: 'Device does not support volume control',
-      }));
-    }
-
-    logger.info?.('device.router.volume', { deviceId, level });
-
-    // Parse level
-    let volumeLevel = level;
-    if (!isNaN(parseInt(level))) {
-      volumeLevel = parseInt(level);
-    }
-
-    const result = await device.setVolume(volumeLevel);
-    res.json(result);
+    const parsedLevel = parseInt(req.params.level, 10);
+    const result = await fleetService.volume(req.params.deviceId,
+      Number.isNaN(parsedLevel) ? req.params.level : parsedLevel);
+    if (result.kind === 'not_found') return notFound(res);
+    if (result.kind === 'unsupported') return res.status(400).json(buildErrorBody({ error: 'Device does not support volume control' }));
+    return res.json(result.result);
   }));
 
-  // ===========================================================================
-  // Audio Device Control
-  // ===========================================================================
-
-  /**
-   * GET /device/:deviceId/audio/:audioDevice
-   * Set audio output device
-   */
   router.get('/:deviceId/audio/:audioDevice', asyncHandler(async (req, res) => {
-    const { deviceId, audioDevice } = req.params;
-    const device = deviceService.get(deviceId);
-
-    if (!device) {
-      return res.status(404).json(buildErrorBody({
-        error: 'Device not found',
-        code: ERROR_CODES.DEVICE_NOT_FOUND,
-      }));
-    }
-
-    if (!device.hasCapability('audioDevice')) {
-      return res.status(400).json(buildErrorBody({
-        error: 'Device does not support audio device control',
-      }));
-    }
-
-    logger.info?.('device.router.audio', { deviceId, audioDevice });
-    const result = await device.setAudioDevice(audioDevice);
-    res.json(result);
+    const result = await fleetService.audio(req.params.deviceId, req.params.audioDevice);
+    if (result.kind === 'not_found') return notFound(res);
+    if (result.kind === 'unsupported') return res.status(400).json(buildErrorBody({ error: 'Device does not support audio device control' }));
+    return res.json(result.result);
   }));
 
   return router;

@@ -16,6 +16,8 @@ import { execSync } from 'node:child_process';
 import { initConfigService, getConfigService as getInstance, resetConfigService } from '#system/config/index.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
 import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
+import { createSecretsProvider } from '#adapters/secrets/createSecretsProvider.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
 import { assertHomeAutomationGateway } from '#apps/home-automation/ports/IHomeAutomationGateway.mjs';
 import { createWriteAuditor } from './_writeAudit.mjs';
 
@@ -79,7 +81,7 @@ export async function getConfigService() {
     } catch {
       // Not initialized yet — do it now.
       const dataDir = resolveDataDir();
-      _configService = await initConfigService(dataDir);
+      _configService = await initConfigService(dataDir, { secretsProviderFactory: createSecretsProvider });
       return _configService;
     }
   })();
@@ -193,11 +195,11 @@ export async function getContentQuery() {
 /**
  * Build the household's concierge memory accessor.
  *
- * Returns the YamlConciergeMemoryAdapter (.get / .set / .merge over key strings)
+ * Returns the ConciergeMemoryService (.get / .set / .merge over key strings)
  * with `__workingMemory` exposed so the `list` action can dump all keys via
  * the underlying WorkingMemoryState.getAll().
  *
- * Hardcoded agentId/userId match the YamlConciergeMemoryAdapter's internals
+ * Hardcoded agentId/userId match the ConciergeMemoryService's identity
  * ('concierge' / 'household').
  */
 export async function getMemory() {
@@ -205,12 +207,14 @@ export async function getMemory() {
   if (_memoryInitPromise) return _memoryInitPromise;
 
   _memoryInitPromise = (async () => {
-    await getConfigService();
-    const { dataService } = await import('#system/config/index.mjs');
+    const cfg = await getConfigService();
+    const dataService = new DataService({ configService: cfg });
     const { YamlWorkingMemoryAdapter } = await import('#adapters/agents/YamlWorkingMemoryAdapter.mjs');
-    const { YamlConciergeMemoryAdapter } = await import('#adapters/persistence/yaml/YamlConciergeMemoryAdapter.mjs');
-    const workingMemory = new YamlWorkingMemoryAdapter({ dataService });
-    const memory = new YamlConciergeMemoryAdapter({ workingMemory });
+    const { WorkingMemoryRepository } = await import('#apps/agents/framework/WorkingMemoryRepository.mjs');
+    const { ConciergeMemoryService } = await import('#apps/agents/concierge/ConciergeMemoryService.mjs');
+    const recordStore = new YamlWorkingMemoryAdapter({ dataService });
+    const workingMemory = new WorkingMemoryRepository({ recordStore });
+    const memory = new ConciergeMemoryService({ workingMemory });
     // Stash the working memory so `dscli memory list` can dump all keys via
     // wm.load('concierge', 'household').then(state => state.getAll()).
     memory.__workingMemory = workingMemory;
@@ -374,7 +378,7 @@ export async function getHealthAnalytics() {
   _healthAnalyticsInitPromise = (async () => {
     const cfg = await getConfigService();
 
-    const { dataService }            = await import('#system/config/index.mjs');
+    const dataService                = new DataService({ configService: cfg });
     const { YamlHealthDatastore }    = await import('#adapters/persistence/yaml/YamlHealthDatastore.mjs');
     const { AggregateHealthUseCase } = await import('#apps/health/AggregateHealthUseCase.mjs');
     const { HealthAnalyticsService } = await import('#apps/health/analytics/HealthAnalyticsService.mjs');

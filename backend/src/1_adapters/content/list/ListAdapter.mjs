@@ -11,59 +11,18 @@ import {
   loadYaml,
   getStats
 } from '#system/utils/FileIO.mjs';
-import { normalizeListItem, extractContentId, normalizeListConfig } from '#domains/content/utils/listConfigNormalizer.mjs';
+import { normalizeListItem, extractContentId, normalizeListConfig } from './ListConfigCodec.mjs';
 import { getCurrentDate } from '#system/utils/time.mjs';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { ItemSelectionService } from '#domains/content/services/ItemSelectionService.mjs';
-
-// Threshold for considering an item "watched" (90%)
-const WATCHED_THRESHOLD = 90;
-// Minimum progress to count as "in progress"
-const MIN_PROGRESS_THRESHOLD = 1;
-
-/**
- * Day normalization for schedule filtering.
- * Accepts both string presets and array format.
- */
-const DAY_PRESETS = {
-  daily: ['M', 'T', 'W', 'Th', 'F', 'Saturday', 'Sunday'],
-  weekdays: ['M', 'T', 'W', 'Th', 'F'],
-  weekend: ['Saturday', 'Sunday'],
-  mwf: ['M', 'W', 'F'],
-  tth: ['T', 'Th']
-};
-
-// Map JavaScript day index (0=Sunday) to day abbreviation
-const JS_DAY_TO_ABBREV = ['Sunday', 'M', 'T', 'W', 'Th', 'F', 'Saturday'];
-
-/**
- * Compute cascade priority for version-rotation queue ordering.
- * Lower number = higher priority.
- *
- * 0 = unwatched, current week (within skip_after window)
- * 1 = unwatched, past weeks (skip_after passed — catchup)
- * 2 = partial (version-recycled), current week
- * 3 = partial (version-recycled), past weeks
- * 4 = complete (all versions done)
- *
- * Within priority 0: source order (ASC — first chapter first)
- * Within priority 1: reverse date order (DESC — most recent past week first)
- * Within priority 2-3: same as 0-1
- */
-function _getCascadePriority(meta, todayStr) {
-  // Compare date strings directly (YYYY-MM-DD) to avoid timezone pitfalls
-  // todayStr is the local date from config-driven timezone
-  const isCurrentWeek = !meta.skipAfter || meta.skipAfter >= todayStr;
-  const vs = meta.versionState;
-
-  if (!vs || vs === 'unwatched') {
-    return isCurrentWeek ? 0 : 1;
-  }
-  if (vs === 'partial') {
-    return isCurrentWeek ? 2 : 3;
-  }
-  return 4; // complete
-}
+import {
+  normalizeListDays,
+  listItemMatchesDay,
+  watchlistPriority,
+  shouldSkipListPlayback,
+  cascadePriority,
+  compareWatchlistItems,
+} from '#domains/content/services/ListPlaybackPolicy.mjs';
 
 /**
  * Format a kebab-case or camelCase name to human-readable title
@@ -343,27 +302,7 @@ export class ListAdapter {
    * @returns {string[]}
    */
   _normalizeDays(days) {
-    if (!days) return [];
-
-    // String preset
-    if (typeof days === 'string') {
-      const preset = days.toLowerCase();
-      if (DAY_PRESETS[preset]) return DAY_PRESETS[preset];
-
-      // Split on bullet separator (e.g., "M•W•F" or "T•Th")
-      if (days.includes('•')) {
-        return days.split('•').map(d => d.trim()).filter(Boolean);
-      }
-
-      return [days];
-    }
-
-    // Already an array
-    if (Array.isArray(days)) {
-      return days;
-    }
-
-    return [];
+    return normalizeListDays(days);
   }
 
   /**
@@ -372,23 +311,7 @@ export class ListAdapter {
    * @returns {boolean}
    */
   _matchesToday(item) {
-    if (!item.days) return true; // No schedule = always matches
-
-    const normalizedDays = this._normalizeDays(item.days);
-    if (normalizedDays.length === 0) return true;
-
-    const today = JS_DAY_TO_ABBREV[new Date().getDay()];
-    return normalizedDays.some(d => {
-      const normalized = d.toLowerCase();
-      return normalized === today.toLowerCase() ||
-             (normalized === 'm' && today === 'M') ||
-             (normalized === 't' && today === 'T') ||
-             (normalized === 'w' && today === 'W') ||
-             (normalized === 'th' && today === 'Th') ||
-             (normalized === 'f' && today === 'F') ||
-             (normalized === 'saturday' && today === 'Saturday') ||
-             (normalized === 'sunday' && today === 'Sunday');
-    });
+    return listItemMatchesDay(item, new Date().getDay());
   }
 
   /**
@@ -568,49 +491,13 @@ export class ListAdapter {
   // ─── Watch-state helpers (ported from FolderAdapter) ─────────────────
 
   /**
-   * Check if an item is considered "watched" (>90% or <60s remaining)
-   * @param {Object} watchState - { percent, playhead, duration }
-   * @returns {boolean}
-   */
-  _isWatched(watchState) {
-    if (!watchState) return false;
-    const percent = watchState.percent ?? 0;
-    const playhead = watchState.playhead ?? 0;
-    const duration = watchState.duration ?? 0;
-
-    if (percent >= WATCHED_THRESHOLD) return true;
-
-    if (duration > 0 && playhead > 0) {
-      const remaining = duration - playhead;
-      if (remaining < 60) return true;
-    }
-
-    return false;
-  }
-
-  /**
    * Calculate priority for an item based on watch state and scheduling
    * @param {Object} item - Watchlist item
    * @param {Object} watchState - Watch state for this item
    * @returns {string} Priority: 'in_progress', 'urgent', 'high', 'medium', 'low'
    */
   _calculatePriority(item, watchState) {
-    const percent = watchState?.percent || 0;
-
-    if (percent > MIN_PROGRESS_THRESHOLD) {
-      return 'in_progress';
-    }
-
-    if (item.skip_after) {
-      const skipDate = new Date(item.skip_after);
-      const eightDaysFromNow = new Date();
-      eightDaysFromNow.setDate(eightDaysFromNow.getDate() + 8);
-      if (skipDate <= eightDaysFromNow) {
-        return 'urgent';
-      }
-    }
-
-    return item.priority || 'medium';
+    return watchlistPriority(item, watchState, Date.now());
   }
 
   /**
@@ -620,49 +507,8 @@ export class ListAdapter {
    * @returns {boolean} True if item should be skipped for playback
    */
   _shouldSkipForPlayback(child) {
-    const meta = child.metadata || {};
-
-    if (meta.hold) return true;
-
-    // Version-rotation-aware watched check
-    if (meta.versionState) {
-      // Only skip if ALL versions are complete
-      if (meta.versionState === 'complete') return true;
-      // 'unwatched' and 'partial' items should play
-    } else {
-      // Standard watched check (no version rotation)
-      if (meta.percent >= WATCHED_THRESHOLD) return true;
-      if (meta.watched) return true;
-    }
-
-    // Don't filter out past skipAfter items — they're deprioritized by cascade sort
-    // But DO skip items whose waitUntil is still in the future
-    if (meta.skipAfter) {
-      // Keep skipAfter items in the queue (for catchup) — cascade sort deprioritizes them
-      // Only skip if there's no versionState (existing behavior for non-version lists)
-      if (!meta.versionState) {
-        const tz = this.configService?.getTimezone?.() || 'America/Los_Angeles';
-        const todayStr = getCurrentDate(tz);
-        if (meta.skipAfter < todayStr) return true;
-      }
-    }
-
-    if (meta.waitUntil) {
-      const tz = this.configService?.getTimezone?.() || 'America/Los_Angeles';
-      const todayStr = getCurrentDate(tz);
-      if (meta.versionState) {
-        // Version-rotation lists: strict wait_until enforcement
-        if (meta.waitUntil > todayStr) return true;
-      } else {
-        // Non-version lists: 2-day grace period (existing behavior)
-        const waitDate = new Date(meta.waitUntil);
-        const twoDaysFromNow = new Date();
-        twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
-        if (waitDate > twoDaysFromNow) return true;
-      }
-    }
-
-    return false;
+    const tz = this.configService?.getTimezone?.() || 'America/Los_Angeles';
+    return shouldSkipListPlayback(child.metadata, { today: getCurrentDate(tz), nowMs: Date.now() });
   }
 
   /**
@@ -743,7 +589,7 @@ export class ListAdapter {
     }
 
     // Bulk-load progress for this storage path (1 read instead of 2N sequential .get() calls)
-    const allProgress = await this.mediaProgressMemory.getAll(storagePath);
+    const allProgress = await this.mediaProgressMemory.listProgress(storagePath);
     const progressMap = new Map();
     for (const p of allProgress) {
       progressMap.set(p.contentId, p);
@@ -798,7 +644,7 @@ export class ListAdapter {
       const storagePath = (adapter.getStoragePath ? await adapter.getStoragePath(canonicalId) : null)
         || child.source
         || 'files';
-      const allProgress = await this.mediaProgressMemory.getAll(storagePath);
+      const allProgress = await this.mediaProgressMemory.listProgress(storagePath);
       const map = new Map(allProgress.map(p => [p.contentId, p]));
       enriched = allItems.map(it => ({ ...it, percent: map.get(it.id)?.percent || 0 }));
     }
@@ -806,7 +652,7 @@ export class ListAdapter {
     return ItemSelectionService.select(
       enriched,
       { now: new Date() },
-      { strategy: strategyName, allowFallback: true }
+      { strategy: strategyName, allowFallback: true, random: Math.random }
     );
   }
 
@@ -836,7 +682,7 @@ export class ListAdapter {
     const results = [];
 
     // Bulk-load progress once per namespace/category instead of one disk read
-    // per child. mediaProgressMemory.get() → _readFile() does an uncached
+    // per child. mediaProgressMemory.findProgress() → _readFile() does an uncached
     // fs.readFileSync + yaml.load on EVERY call, so the old per-item lookup
     // re-parsed the same YAML N times (a 447-child scripture watchlist re-read
     // scriptures.yml 447×, ~4.3s). Mirror the bulk-load in
@@ -846,7 +692,7 @@ export class ListAdapter {
       let map = progressByCategory.get(watchCategory);
       if (!map) {
         map = new Map();
-        const all = await this.mediaProgressMemory.getAll(watchCategory);
+        const all = await this.mediaProgressMemory.listProgress(watchCategory);
         for (const p of all) map.set(p.contentId, p);
         progressByCategory.set(watchCategory, map);
       }
@@ -1077,22 +923,7 @@ export class ListAdapter {
     if (isWatchlist) {
       const hasFixedOrder = results.some(item => item.metadata?.fixedOrder);
       if (!hasFixedOrder) {
-        const priorityOrder = ['in_progress', 'urgent', 'high', 'medium', 'low'];
-        results.sort((a, b) => {
-          const priorityA = priorityOrder.indexOf(a.metadata?.priority || 'medium');
-          const priorityB = priorityOrder.indexOf(b.metadata?.priority || 'medium');
-
-          if (priorityA !== priorityB) {
-            return priorityA - priorityB;
-          }
-
-          // For in_progress items, sort by higher percent first
-          if (a.metadata?.priority === 'in_progress' && b.metadata?.priority === 'in_progress') {
-            return (b.metadata?.percent || 0) - (a.metadata?.percent || 0);
-          }
-
-          return 0;
-        });
+        results.sort(compareWatchlistItems);
       }
     }
 
@@ -1163,8 +994,8 @@ export class ListAdapter {
         list.children.sort((a, b) => {
           const ma = a.metadata || {};
           const mb = b.metadata || {};
-          const cascadeA = _getCascadePriority(ma, todayStr);
-          const cascadeB = _getCascadePriority(mb, todayStr);
+          const cascadeA = cascadePriority(ma, todayStr);
+          const cascadeB = cascadePriority(mb, todayStr);
           if (cascadeA !== cascadeB) return cascadeA - cascadeB;
           // Current week (0, 2): preserve source order ASC
           if (cascadeA === 0 || cascadeA === 2) return 0;

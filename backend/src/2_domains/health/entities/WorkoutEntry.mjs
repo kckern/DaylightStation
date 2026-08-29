@@ -65,38 +65,6 @@ export class WorkoutEntry {
     return this.source.includes('+');
   }
 
-  /**
-   * Convert to plain object for storage
-   * @returns {Object}
-   */
-  toJSON() {
-    const result = {
-      source: this.source,
-      title: this.title,
-      type: this.type,
-      duration: this.duration,
-      calories: this.calories
-    };
-
-    if (this.avgHr) result.avgHr = this.avgHr;
-    if (this.maxHr) result.maxHr = this.maxHr;
-    if (this.distance) result.distance = this.distance;
-    if (this.startTime) result.startTime = this.startTime;
-    if (this.endTime) result.endTime = this.endTime;
-    if (this.strava) result.strava = this.strava;
-    if (this.fitness) result.fitness = this.fitness;
-
-    return result;
-  }
-
-  /**
-   * Create from stored data
-   * @param {Object} data
-   * @returns {WorkoutEntry}
-   */
-  static fromJSON(data) {
-    return new WorkoutEntry(data);
-  }
 }
 
 export default WorkoutEntry;

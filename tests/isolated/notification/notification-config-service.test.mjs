@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ConfigService } from '#system/config/ConfigService.mjs';
 import { NotificationConfigService } from '#apps/notification/NotificationConfigService.mjs';
 import { YamlConfigFileStore } from '#adapters/persistence/yaml/YamlConfigFileStore.mjs';
+import { YamlNotificationConfigRepository } from '#adapters/notification/YamlNotificationConfigRepository.mjs';
 
 // task-13 review, Critical 2: the previous version of this file built its
 // OWN hand-rolled configService mock with a hardcoded legacy `config/`
@@ -49,7 +50,10 @@ function make(fixture) {
   // Real store — the service writes through `configFiles.writeYaml`, and
   // these tests assert on the bytes/location that land on disk.
   const configFiles = new YamlConfigFileStore({ logger: { warn() {}, info() {} } });
-  const svc = new NotificationConfigService({ configFiles, configService, logger: { warn() {} } });
+  const svc = new NotificationConfigService({
+    repository: new YamlNotificationConfigRepository({ configFiles, configService }),
+    logger: { warn() {} },
+  });
   return { svc, dir, colocatedFile, legacyFile };
 }
 

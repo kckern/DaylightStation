@@ -2,18 +2,19 @@ import express from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 
 function app({ policy, known = true }) {
   const server = express();
   server.use(express.json());
-  server.use('/api/v1/piano', createPianoRouter({
+  server.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({
     pianoContainer: {
       studioDatastore: { isKnownUser: () => known },
       composerSongStore: {},
     },
     pianoChallengePolicy: policy,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  }));
+  })));
   return server;
 }
 

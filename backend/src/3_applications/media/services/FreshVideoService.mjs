@@ -17,9 +17,6 @@
  */
 
 import { nowTs24 } from '#system/utils/index.mjs';
-import { saveYaml, loadYamlSafe } from '#system/utils/FileIO.mjs';
-import fs from 'fs';
-import path from 'path';
 
 /**
  * Application service for fresh video downloads
@@ -27,15 +24,16 @@ import path from 'path';
 export class FreshVideoService {
   #videoSourceGateway;
   #configLoader;
-  #mediaPath;
   #logger;
   #options;
+  #mediaStore;
+  #lockOwnerId;
 
   /**
    * @param {Object} deps - Dependencies
    * @param {Object} deps.videoSourceGateway - Gateway implementing IVideoSourceGateway
    * @param {Function} deps.configLoader - Function returning array of source configs
-   * @param {string} deps.mediaPath - Base path for video storage
+   * @param {Object} deps.mediaStore - Fresh-video persistence capability
    * @param {Object} [deps.logger] - Logger instance
    * @param {Object} [deps.options] - Service options
    * @param {number} [deps.options.daysToKeep=10] - Days to retain videos
@@ -43,20 +41,20 @@ export class FreshVideoService {
    * @param {string} [deps.options.audioLang='en'] - Preferred audio language
    * @param {number} [deps.options.lockStaleMs=3600000] - Lock file stale threshold (1 hour)
    */
-  constructor({ videoSourceGateway, configLoader, mediaPath, logger, options = {} }) {
+  constructor({ videoSourceGateway, configLoader, mediaStore, lockOwnerId, logger, options = {} }) {
     if (!videoSourceGateway) {
       throw new Error('FreshVideoService requires videoSourceGateway');
     }
     if (!configLoader) {
       throw new Error('FreshVideoService requires configLoader');
     }
-    if (!mediaPath) {
-      throw new Error('FreshVideoService requires mediaPath');
-    }
+    if (!mediaStore) throw new Error('FreshVideoService requires mediaStore');
+    if (lockOwnerId === undefined || lockOwnerId === null) throw new Error('FreshVideoService requires lockOwnerId');
 
     this.#videoSourceGateway = videoSourceGateway;
     this.#configLoader = configLoader;
-    this.#mediaPath = mediaPath;
+    this.#mediaStore = mediaStore;
+    this.#lockOwnerId = lockOwnerId;
     this.#logger = logger || console;
     this.#options = {
       daysToKeep: 10,
@@ -66,18 +64,6 @@ export class FreshVideoService {
       ...options
     };
 
-    // Ensure media directory exists
-    this.#ensureDir(this.#mediaPath);
-  }
-
-  /**
-   * Ensure directory exists
-   * @param {string} dirPath - Directory path
-   */
-  #ensureDir(dirPath) {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
   }
 
   /**
@@ -107,41 +93,7 @@ export class FreshVideoService {
    * @returns {Function|null} Release function or null if lock held
    */
   #acquireLock() {
-    const lockFile = path.join(this.#mediaPath, 'freshvideo.lock');
-
-    try {
-      // Check for stale lock
-      if (fs.existsSync(lockFile)) {
-        const stat = fs.statSync(lockFile);
-        const ageMs = Date.now() - stat.mtimeMs;
-        if (ageMs > this.#options.lockStaleMs) {
-          this.#logger.warn?.('freshvideo.staleLock', {
-            ageMins: Math.round(ageMs / 60000)
-          });
-          fs.unlinkSync(lockFile);
-        }
-      }
-
-      // Atomic create using 'wx' flag
-      const fd = fs.openSync(lockFile, 'wx');
-      fs.writeFileSync(fd, JSON.stringify({
-        pid: process.pid,
-        ts: nowTs24()
-      }));
-      fs.closeSync(fd);
-
-      // Return release function
-      return () => {
-        try {
-          fs.unlinkSync(lockFile);
-        } catch (_) {
-          // Ignore errors during cleanup
-        }
-      };
-    } catch (e) {
-      // Lock already held or creation failed
-      return null;
-    }
+    return this.#mediaStore.acquireRunLock(this.#lockOwnerId, this.#options.lockStaleMs, nowTs24());
   }
 
   /**
@@ -149,96 +101,33 @@ export class FreshVideoService {
    * @returns {string[]} Paths of deleted files
    */
   #cleanupOldFiles() {
-    const deleted = [];
-    const cutoff = this.#getCutoffDate();
-
-    if (!fs.existsSync(this.#mediaPath)) return deleted;
-
-    for (const folder of fs.readdirSync(this.#mediaPath)) {
-      const folderPath = path.join(this.#mediaPath, folder);
-
-      // Skip non-directories
-      try {
-        if (!fs.statSync(folderPath).isDirectory()) continue;
-      } catch (_) {
-        continue;
-      }
-
-      for (const file of fs.readdirSync(folderPath)) {
-        const datePart = file.split('.')[0];
-
-        // Delete files with date prefix older than cutoff
-        if (datePart < cutoff) {
-          const filePath = path.join(folderPath, file);
-          try {
-            fs.unlinkSync(filePath);
-            deleted.push(filePath);
-            this.#logger.info?.('freshvideo.deletedOld', { path: filePath });
-          } catch (e) {
-            this.#logger.warn?.('freshvideo.deleteError', {
-              path: filePath,
-              error: e.message
-            });
-          }
-        }
-      }
-    }
-
-    return deleted;
+    return this.#mediaStore.cleanupOlderThan(this.#getCutoffDate());
   }
 
   /**
    * Remove files not matching valid pattern (partial downloads, temp files)
-   * @param {string} dirPath - Directory to clean
    * @returns {number} Count of removed files
    */
-  #cleanupInvalidFiles(dirPath) {
-    const validPattern = /^\d{8}\.mp4$/;
-    let count = 0;
-
-    if (!fs.existsSync(dirPath)) return 0;
-
-    for (const file of fs.readdirSync(dirPath)) {
-      const filePath = path.join(dirPath, file);
-      try {
-        if (fs.statSync(filePath).isFile() && !validPattern.test(file)) {
-          fs.unlinkSync(filePath);
-          count++;
-          this.#logger.debug?.('freshvideo.removedInvalid', { path: filePath });
-        }
-      } catch (_) {
-        // Ignore errors during cleanup
-      }
-    }
-
-    return count;
+  #cleanupInvalidFiles(provider = null) {
+    return this.#mediaStore.cleanupInvalid(provider);
   }
 
   /**
    * Check if today's file already exists for a source
-   * @param {string} providerDir - Directory for provider
-   * @returns {string|null} File path if exists, null otherwise
+   * @returns {unknown|null} Opaque media resource if it exists
    */
-  #getTodayFile(providerDir) {
-    const today = this.#formatDate();
-    const todayFile = `${today}.mp4`;
-    const filePath = path.join(providerDir, todayFile);
-
-    return fs.existsSync(filePath) ? filePath : null;
+  #getTodayFile(provider) {
+    return this.#mediaStore.findDatedVideo(provider, this.#formatDate());
   }
 
   /**
    * Ensure channel metadata exists (title, thumbnail)
-   * Fetches from source if metadata.yml doesn't exist
+   * Fetches from the source when provider metadata is absent.
    * @param {Object} source - Source configuration
-   * @param {string} providerDir - Directory for this provider
    */
-  async #ensureChannelMetadata(source, providerDir) {
-    const metadataPath = path.join(providerDir, 'metadata');
-    const thumbnailPath = path.join(providerDir, 'show.jpg');
-
+  async #ensureChannelMetadata(source) {
     // Check if metadata already exists
-    const existingMetadata = loadYamlSafe(metadataPath);
+    const existingMetadata = this.#mediaStore.loadProviderMetadata(source.provider);
     if (existingMetadata?.title) {
       this.#logger.debug?.('freshvideo.metadataExists', {
         provider: source.provider
@@ -260,8 +149,7 @@ export class FreshVideoService {
       return;
     }
 
-    // Save metadata.yml
-    saveYaml(metadataPath, {
+    this.#mediaStore.saveProviderMetadata(source.provider, {
       title: metadata.title,
       description: metadata.description,
       uploader: metadata.uploader,
@@ -277,12 +165,12 @@ export class FreshVideoService {
     if (metadata.thumbnailUrl && this.#videoSourceGateway.downloadThumbnail) {
       const downloaded = await this.#videoSourceGateway.downloadThumbnail(
         metadata.thumbnailUrl,
-        thumbnailPath
+        source.provider
       );
       if (downloaded) {
         this.#logger.info?.('freshvideo.thumbnailSaved', {
           provider: source.provider,
-          path: thumbnailPath
+          assetId: `${source.provider}:thumbnail`
         });
       }
     }
@@ -291,81 +179,58 @@ export class FreshVideoService {
   /**
    * Download latest video from a source
    * @param {Object} source - Source configuration
-   * @returns {Promise<{success: boolean, skipped?: boolean, filePath?: string, error?: string}>}
+   * @returns {Promise<{success: boolean, skipped?: boolean, resource?: unknown, error?: string}>}
    */
   async #downloadSource(source) {
-    const providerDir = path.join(this.#mediaPath, source.provider);
-    this.#ensureDir(providerDir);
+    this.#mediaStore.ensureProvider(source.provider);
 
     // Ensure channel metadata exists (title, thumbnail for admin UI)
-    await this.#ensureChannelMetadata(source, providerDir);
+    await this.#ensureChannelMetadata(source);
 
     // Check if already have today's file
-    const existingFile = this.#getTodayFile(providerDir);
-    if (existingFile) {
+    const existingResource = this.#getTodayFile(source.provider);
+    if (existingResource) {
       this.#logger.info?.('freshvideo.alreadyExists', {
         provider: source.provider,
-        path: existingFile
+        assetId: `${source.provider}:${this.#formatDate()}`,
       });
       return {
         success: true,
         skipped: true,
-        filePath: existingFile
+        resource: existingResource,
       };
     }
 
     // Delegate to gateway
-    const result = await this.#videoSourceGateway.downloadLatest(source, {
-      outputDir: providerDir,
+    const outcome = await this.#videoSourceGateway.downloadLatest(source, {
       timeoutMs: this.#options.processTimeout,
       preferredLang: this.#options.audioLang
     });
 
-    if (result.success) {
+    if (outcome.kind === 'downloaded') {
+      const uploadDate = outcome.uploadDate || this.#formatDate();
+      const resource = this.#mediaStore.findDatedVideo(source.provider, uploadDate);
       this.#logger.info?.('freshvideo.downloadSuccess', {
         provider: source.provider,
-        filePath: result.filePath
+        assetId: outcome.assetId,
       });
+      return { success: true, resource, uploadDate };
     } else {
       this.#logger.error?.('freshvideo.downloadFailed', {
         provider: source.provider,
-        error: result.error
+        error: outcome.error
       });
     }
 
-    return result;
+    return { success: false, error: outcome.error };
   }
 
   /**
    * Get list of all valid video files within retention period
-   * @returns {string[]} Array of file paths
+   * @returns {unknown[]} Opaque media resources
    */
   #getValidFiles() {
-    const files = [];
-    const cutoff = this.#getCutoffDate();
-
-    if (!fs.existsSync(this.#mediaPath)) return files;
-
-    for (const folder of fs.readdirSync(this.#mediaPath)) {
-      const folderPath = path.join(this.#mediaPath, folder);
-
-      try {
-        if (!fs.statSync(folderPath).isDirectory()) continue;
-      } catch (_) {
-        continue;
-      }
-
-      for (const file of fs.readdirSync(folderPath)) {
-        if (file.endsWith('.mp4')) {
-          const datePart = file.split('.')[0];
-          if (datePart >= cutoff) {
-            files.push(path.join(folderPath, file));
-          }
-        }
-      }
-    }
-
-    return files;
+    return this.#mediaStore.listVideosSince(this.#getCutoffDate());
   }
 
   /**
@@ -408,7 +273,7 @@ export class FreshVideoService {
       const deleted = this.#cleanupOldFiles();
 
       // Cleanup invalid files in base directory
-      this.#cleanupInvalidFiles(this.#mediaPath);
+      this.#cleanupInvalidFiles();
 
       // Download each source
       const providers = [];
@@ -423,8 +288,7 @@ export class FreshVideoService {
         });
 
         // Cleanup invalid files in provider directory after each download
-        const providerDir = path.join(this.#mediaPath, source.provider);
-        this.#cleanupInvalidFiles(providerDir);
+        this.#cleanupInvalidFiles(source.provider);
       }
 
       // Get final file list

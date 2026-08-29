@@ -29,12 +29,6 @@ export class LockdownState {
   /** @param {number} now epoch seconds */
   isActive(now) { return now < this.#lockedUntil; }
 
-  toData() {
-    return { lockedUntil: this.#lockedUntil, lockedBy: this.#lockedBy, lockedAt: this.#lockedAt };
-  }
-
-  static fromData(data) { return new LockdownState(data); }
-
   static create({ lockedBy, durationSec, now }) {
     if (!Number.isFinite(durationSec) || durationSec <= 0) {
       throw new Error('LockdownState.create: durationSec must be > 0');

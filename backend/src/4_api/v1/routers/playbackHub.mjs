@@ -3,7 +3,7 @@
  * @module api/v1/routers/playbackHub
  *
  * Thin Express router for /api/v1/playback-hub. Each route resolves a use case
- * from the PlaybackHubContainer, executes with the request body/params, and
+ * from the injected Playback Hub operations, executes with the request body/params, and
  * returns JSON. Domain/application/adapter errors are mapped to HTTP codes via
  * the local error-handler middleware mounted on this router.
  *
@@ -28,6 +28,25 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/InfrastructureError.mjs';
 
 const TERMINAL_SKIP_REASONS = new Set(['unreachable', 'not-found']);
+
+/** Translate the public HTTP patch vocabulary into an application command. */
+function mapDeviceConfigPatch(body = {}) {
+  const patch = {};
+  for (const key of ['position', 'color', 'mac', 'class']) {
+    if (key in body) patch[key] = body[key];
+  }
+  if ('volume' in body) patch.volumeBounds = body.volume;
+  // Retain the existing public alias while keeping HTTP vocabulary out of the
+  // application boundary.
+  if ('volumeBounds' in body) patch.volumeBounds = body.volumeBounds;
+  if ('schedules' in body) patch.continuousSchedules = body.schedules;
+  if ('continuousSchedules' in body) patch.continuousSchedules = body.continuousSchedules;
+  if ('ha_entity_id' in body) patch.haEntityId = body.ha_entity_id;
+  if ('haEntityId' in body) patch.haEntityId = body.haEntityId;
+  if ('ha_turn_off_on_stop' in body) patch.haTurnOffOnStop = body.ha_turn_off_on_stop;
+  if ('haTurnOffOnStop' in body) patch.haTurnOffOnStop = body.haTurnOffOnStop;
+  return patch;
+}
 
 /**
  * Serialize a CommandResult value object for the wire.
@@ -95,20 +114,20 @@ export function mapPlaybackHubErrors(err, req, res, _next) {
  * Create the playback-hub Express router.
  *
  * @param {Object} deps
- * @param {Object} deps.container - PlaybackHubContainer instance
+ * @param {Object} deps.operations - Playback Hub application use cases
  * @param {Object} [deps.logger] - Logger
  * @returns {import('express').Router}
  */
-export function createPlaybackHubRouter({ container, logger = console } = {}) {
-  if (!container) {
-    throw new Error('createPlaybackHubRouter: container required');
+export function createPlaybackHubRouter({ operations, logger = console } = {}) {
+  if (!operations) {
+    throw new Error('createPlaybackHubRouter: operations required');
   }
 
   const router = Router();
 
   // -- GET /status ----------------------------------------------------------
   router.get('/status', asyncHandler(async (_req, res) => {
-    const { slots, fetchedAt } = await container.getHubStatus.execute();
+    const { slots, fetchedAt } = await operations.getHubStatus.execute();
     res.json({
       ok: true,
       slots: (slots ?? []).map(serializeSlotStatus),
@@ -118,17 +137,17 @@ export function createPlaybackHubRouter({ container, logger = console } = {}) {
 
   // -- GET /config ----------------------------------------------------------
   router.get('/config', asyncHandler(async (_req, res) => {
-    const hubConfig = await container.getHubConfig.execute();
+    const hubConfig = await operations.getHubConfig.execute();
     res.json({
       ok: true,
-      config: hubConfig.toYaml(),
+      config: serializeHubConfig(hubConfig),
     });
   }));
 
   // -- POST /command --------------------------------------------------------
   router.post('/command', asyncHandler(async (req, res) => {
     const body = req.body ?? {};
-    const result = await container.sendHubCommand.execute({
+    const result = await operations.sendHubCommand.execute({
       action: body.action,
       target: body.target,
       contentId: body.contentId ?? null,
@@ -143,19 +162,19 @@ export function createPlaybackHubRouter({ container, logger = console } = {}) {
 
   // -- PATCH /devices/:color ------------------------------------------------
   router.patch('/devices/:color', asyncHandler(async (req, res) => {
-    const device = await container.updateDeviceConfig.execute({
+    const device = await operations.updateDeviceConfig.execute({
       color: req.params.color,
-      patch: req.body ?? {},
+      patch: mapDeviceConfigPatch(req.body ?? {}),
     });
     res.json({
       ok: true,
-      device: device.toYaml(),
+      device: serializeHubDevice(device),
     });
   }));
 
   // -- POST /scheduled (create) --------------------------------------------
   router.post('/scheduled', asyncHandler(async (req, res) => {
-    const fire = await container.saveScheduledFire.execute({
+    const fire = await operations.saveScheduledFire.execute({
       fire: req.body ?? {},
     });
     res.status(201).json({
@@ -166,7 +185,7 @@ export function createPlaybackHubRouter({ container, logger = console } = {}) {
 
   // -- PUT /scheduled/:id (upsert) -----------------------------------------
   router.put('/scheduled/:id', asyncHandler(async (req, res) => {
-    const fire = await container.saveScheduledFire.execute({
+    const fire = await operations.saveScheduledFire.execute({
       fire: { ...(req.body ?? {}), id: req.params.id },
     });
     res.status(200).json({
@@ -177,13 +196,13 @@ export function createPlaybackHubRouter({ container, logger = console } = {}) {
 
   // -- DELETE /scheduled/:id -----------------------------------------------
   router.delete('/scheduled/:id', asyncHandler(async (req, res) => {
-    await container.deleteScheduledFire.execute({ id: req.params.id });
+    await operations.deleteScheduledFire.execute({ id: req.params.id });
     res.status(204).end();
   }));
 
   // -- GET /verify/:color ---------------------------------------------------
   router.get('/verify/:color', asyncHandler(async (req, res) => {
-    const payload = await container.verifyAudioFlowing.execute({
+    const payload = await operations.verifyAudioFlowing.execute({
       color: req.params.color,
     });
     res.json(payload);
@@ -258,6 +277,49 @@ function serializeScheduledFire(fire) {
   if (fire.volumeOverride !== null && fire.volumeOverride !== undefined) {
     out.volume_override = fire.volumeOverride;
   }
+  return out;
+}
+
+function serializeVolumeBounds(bounds) {
+  const out = {};
+  for (const key of ['default', 'min', 'max']) {
+    if (bounds.hasExplicit(key)) out[key] = bounds[key];
+  }
+  return out;
+}
+
+function serializeHubDevice(device) {
+  const out = {
+    slot: device.position.value,
+    color: device.color.value,
+    mac: device.mac,
+    class: device.class.value,
+  };
+  if (device.haEntityId !== null) out.ha_entity_id = device.haEntityId;
+  if (device.haTurnOffOnStop) out.ha_turn_off_on_stop = true;
+  const volume = serializeVolumeBounds(device.volumeBounds);
+  if (Object.keys(volume).length > 0) out.volume = volume;
+  if (device.continuousSchedules.length > 0) {
+    out.schedules = device.continuousSchedules.map(schedule => {
+      const entry = { start: schedule.start, end: schedule.end, queue: schedule.queue.toString() };
+      if (schedule.shuffle) entry.shuffle = true;
+      return entry;
+    });
+  }
+  if (device.extras !== null) {
+    for (const key of Object.keys(device.extras)) {
+      if (!(key in out)) out[key] = device.extras[key];
+    }
+  }
+  return out;
+}
+
+function serializeHubConfig(config) {
+  const out = { devices: config.devices.map(serializeHubDevice) };
+  if (config.scheduledFires.length > 0) {
+    out.scheduled = config.scheduledFires.map(serializeScheduledFire);
+  }
+  if (config.daylightStation !== null) out.daylight_station = { ...config.daylightStation };
   return out;
 }
 

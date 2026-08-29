@@ -27,14 +27,14 @@ describe('PianoChallengeProfileService', () => {
 
   it('does not treat an unknown learner as a new preferences directory', () => {
     const { service, datastore } = subject();
-    expect(thrown(() => service.setStartLevel({ learnerId: 'unknown', startLevel: 'L1' }))).toMatchObject({ status: 400, code: 'invalid_user' });
+    expect(thrown(() => service.setStartLevel({ learnerId: 'unknown', startLevel: 'L1' }))).toMatchObject({ name: 'ValidationError', code: 'invalid_user' });
     expect(datastore.savePreferences).not.toHaveBeenCalled();
   });
 
   it('rejects a blank or oversized identifier rather than persisting an unusable level', () => {
     const { service, datastore } = subject({ kid: {} });
-    expect(thrown(() => service.setStartLevel({ learnerId: 'kid', startLevel: '  ' }))).toMatchObject({ status: 400, code: 'invalid_start_level' });
-    expect(thrown(() => service.setStartLevel({ learnerId: 'kid', startLevel: 'x'.repeat(121) }))).toMatchObject({ status: 400, code: 'invalid_start_level' });
+    expect(thrown(() => service.setStartLevel({ learnerId: 'kid', startLevel: '  ' }))).toMatchObject({ name: 'ValidationError', code: 'invalid_start_level' });
+    expect(thrown(() => service.setStartLevel({ learnerId: 'kid', startLevel: 'x'.repeat(121) }))).toMatchObject({ name: 'ValidationError', code: 'invalid_start_level' });
     expect(datastore.savePreferences).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,7 @@ export class PlanToolFactory extends ToolFactory {
   static domain = 'lifeplan';
 
   createTools() {
-    const { lifePlanStore, goalStateService, beliefEvaluator, feedbackService, planAuthoringService } = this.deps;
+    const { lifePlanStore, goalStateService, beliefEvaluator, feedbackService, planAuthoringService, clock } = this.deps;
 
     const CONFIRM_PREFIX = "Writes to the user's plan. Only call after the user has explicitly confirmed in conversation.";
 
@@ -52,7 +52,7 @@ export class PlanToolFactory extends ToolFactory {
             const goal = plan?.goals?.find(g => g.id === goalId);
             if (!goal) return { error: `Goal ${goalId} not found` };
 
-            goalStateService.transition(goal, state, reason);
+            goalStateService.transition(goal, state, reason, clock.now());
             lifePlanStore.save(userId, plan);
             return { updated: goal };
           } catch (e) {
@@ -80,7 +80,7 @@ export class PlanToolFactory extends ToolFactory {
             const belief = plan?.beliefs?.find(b => b.id === beliefId);
             if (!belief) return { error: `Belief ${beliefId} not found` };
 
-            beliefEvaluator.evaluateEvidence(belief, { type, note });
+            beliefEvaluator.evaluateEvidence(belief, { type, note }, clock.now());
             lifePlanStore.save(userId, plan);
             return { updated: belief };
           } catch (e) {
@@ -101,7 +101,7 @@ export class PlanToolFactory extends ToolFactory {
           required: ['userId', 'observation'],
         },
         execute: async ({ userId, observation }) => {
-          feedbackService.recordObservation(userId, { text: observation, date: new Date().toISOString() });
+          feedbackService.recordObservation(userId, { text: observation, date: clock.now().toISOString() });
           return { recorded: true };
         },
       }),

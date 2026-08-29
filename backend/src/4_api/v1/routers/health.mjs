@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * Health API Router
  *
@@ -8,23 +9,55 @@
  */
 
 import express from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { nowDate } from '#system/utils/time.mjs';
+import { presentFoodCatalogEntry } from '../presenters/FoodCatalogPresenter.mjs';
+
+function serializeWorkout(workout) {
+  const record = {
+    source: workout.source,
+    title: workout.title,
+    type: workout.type,
+    duration: workout.duration,
+    calories: workout.calories
+  };
+
+  if (workout.avgHr) record.avgHr = workout.avgHr;
+  if (workout.maxHr) record.maxHr = workout.maxHr;
+  if (workout.distance) record.distance = workout.distance;
+  if (workout.startTime) record.startTime = workout.startTime;
+  if (workout.endTime) record.endTime = workout.endTime;
+  if (workout.strava) record.strava = workout.strava;
+  if (workout.fitness) record.fitness = workout.fitness;
+  return record;
+}
+
+function serializeHealthMetric(metric) {
+  const summary = metric.getWorkoutSummary();
+  return {
+    date: metric.date,
+    weight: metric.weight,
+    nutrition: metric.nutrition,
+    steps: metric.steps,
+    workouts: metric.workouts.map(serializeWorkout),
+    summary: {
+      total_workout_calories: summary.totalCalories,
+      total_workout_duration: summary.totalDuration,
+    },
+    coaching: metric.coaching,
+  };
+}
 
 /**
  * Create Health API router
  *
  * @param {Object} config
  * @param {Object} config.healthService - AggregateHealthUseCase instance
- * @param {Object} config.healthStore - YamlHealthStore instance
- * @param {Object} config.configService - ConfigService for user lookup
- * @param {Object} [config.nutriListStore] - YamlNutriListStore for nutrilist operations
+ * @param {Object} config.healthOperations - Cohesive health data queries and commands
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, webNutribotAdapter, longitudinalService, setDailyCoachingUseCase, personalContextLoader, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -34,25 +67,14 @@ export function createHealthRouter(config) {
    * Get default username for requests
    */
   const getDefaultUsername = () => {
-    return configService?.getHeadOfHousehold?.() ||
-           configService?.getDefaultUsername?.() ||
-           'default';
-  };
-
-  /**
-   * Get default household ID for nutrilist operations
-   */
-  const getDefaultHouseholdId = () => {
-    return configService?.getDefaultHouseholdId?.() ||
-           process.env.household_id ||
-           'default';
+    return healthOperations.defaultUsername();
   };
 
   /**
    * Get today's date in YYYY-MM-DD format
    */
   const getToday = () => {
-    return nowDate();
+    return healthOperations.currentDate();
   };
 
   // ==========================================================================
@@ -79,7 +101,9 @@ export function createHealthRouter(config) {
 
     res.json({
       message: 'Daily health data retrieved successfully',
-      data: healthData
+      data: Object.fromEntries(
+        Object.entries(healthData).map(([date, metric]) => [date, serializeHealthMetric(metric)])
+      )
     });
   }));
 
@@ -113,7 +137,7 @@ export function createHealthRouter(config) {
 
     res.json({
       message: 'Health data retrieved successfully',
-      data: metric.toJSON()
+      data: serializeHealthMetric(metric)
     });
   }));
 
@@ -137,7 +161,9 @@ export function createHealthRouter(config) {
 
     res.json({
       message: 'Health data retrieved successfully',
-      data: metrics,
+      data: Object.fromEntries(
+        Object.entries(metrics).map(([date, metric]) => [date, serializeHealthMetric(metric)])
+      ),
       range: { start, end }
     });
   }));
@@ -152,7 +178,7 @@ export function createHealthRouter(config) {
    */
   router.get('/weight', asyncHandler(async (req, res) => {
     const username = getDefaultUsername();
-    const weightData = await healthStore.loadWeightData(username);
+    const weightData = await healthOperations.readWeight(username);
 
     // Return data directly to match legacy /data/lifelog/weight response
     res.json(weightData || {});
@@ -164,7 +190,7 @@ export function createHealthRouter(config) {
    */
   router.get('/workouts', asyncHandler(async (req, res) => {
     const username = getDefaultUsername();
-    const activityData = await healthStore.loadActivityData(username);
+    const activityData = await healthOperations.readActivity(username);
 
     res.json({
       message: 'Workout data retrieved successfully',
@@ -178,7 +204,7 @@ export function createHealthRouter(config) {
    */
   router.get('/fitness', asyncHandler(async (req, res) => {
     const username = getDefaultUsername();
-    const fitnessData = await healthStore.loadFitnessData(username);
+    const fitnessData = await healthOperations.readFitness(username);
 
     res.json({
       message: 'Fitness data retrieved successfully',
@@ -192,7 +218,7 @@ export function createHealthRouter(config) {
    */
   router.get('/nutrition', asyncHandler(async (req, res) => {
     const username = getDefaultUsername();
-    const nutritionData = await healthStore.loadNutritionData(username);
+    const nutritionData = await healthOperations.readNutrition(username);
 
     res.json({
       message: 'Nutrition data retrieved successfully',
@@ -206,7 +232,7 @@ export function createHealthRouter(config) {
    */
   router.get('/coaching', asyncHandler(async (req, res) => {
     const username = getDefaultUsername();
-    const coachingData = await healthStore.loadCoachingData(username);
+    const coachingData = await healthOperations.readCoaching(username);
 
     res.json({
       message: 'Health coaching data retrieved successfully',
@@ -223,19 +249,16 @@ export function createHealthRouter(config) {
    * the UI shows an empty-state message.
    */
   router.get('/coaching/schema', asyncHandler(async (req, res) => {
-    const username = req.query.username || configService?.getHeadOfHousehold?.();
+    const username = healthOperations.coachingUsername(req.query.username);
     if (!username) {
       return res.status(400).json({ error: 'username required' });
     }
-    if (!personalContextLoader || typeof personalContextLoader.loadPlaybook !== 'function') {
+    if (!healthOperations.coachingSchemaAvailable) {
       logger.warn?.('health.coaching.schema.loader_missing', { username });
       return res.json({ coaching_dimensions: [] });
     }
     try {
-      const playbook = await personalContextLoader.loadPlaybook(username);
-      const dims = Array.isArray(playbook?.coaching_dimensions)
-        ? playbook.coaching_dimensions
-        : [];
+      const dims = await healthOperations.readCoachingDimensions(username);
       logger.info?.('health.coaching.schema.loaded', {
         username,
         dimensionCount: dims.length,
@@ -246,7 +269,7 @@ export function createHealthRouter(config) {
         username,
         error: err.message,
       });
-      return res.status(500).json({ error: err.message });
+      return sendInternalError(res, { error: err.message });
     }
   }));
 
@@ -257,7 +280,7 @@ export function createHealthRouter(config) {
    * SetDailyCoachingUseCase, which handles validation.
    */
   router.post('/coaching/:date', asyncHandler(async (req, res) => {
-    const username = req.query.username || configService?.getHeadOfHousehold?.();
+    const username = healthOperations.coachingUsername(req.query.username);
     if (!username) {
       return res.status(400).json({ error: 'username required' });
     }
@@ -265,15 +288,11 @@ export function createHealthRouter(config) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ error: `invalid date: ${date}` });
     }
-    if (!setDailyCoachingUseCase) {
+    if (!healthOperations.dailyCoachingAvailable) {
       return res.status(503).json({ error: 'set-daily-coaching not wired' });
     }
     try {
-      await setDailyCoachingUseCase.execute({
-        userId: username,
-        date,
-        coaching: req.body,
-      });
+      await healthOperations.saveDailyCoaching(username, date, req.body);
       logger.info?.('health.coaching.saved', { username, date });
       return res.json({ message: 'coaching saved', date });
     } catch (err) {
@@ -335,7 +354,7 @@ export function createHealthRouter(config) {
   // NutriList Endpoints (Legacy Parity)
   // ==========================================================================
 
-  if (nutriListStore) {
+  if (healthOperations.nutritionItemsAvailable) {
     /**
      * GET /health/nutrilist
      * Get today's nutrilist items
@@ -346,7 +365,7 @@ export function createHealthRouter(config) {
 
       logger.debug?.('health.nutrilist.today', { userId, date: today });
 
-      const items = await nutriListStore.findByDate(userId, today);
+      const items = await healthOperations.findNutritionItemsByDate(userId, today);
 
       res.json({
         message: "Today's nutrilist items retrieved successfully",
@@ -366,7 +385,7 @@ export function createHealthRouter(config) {
 
       logger.debug?.('health.nutrilist.item', { userId, uuid });
 
-      const item = await nutriListStore.findByUuid(userId, uuid);
+      const item = await healthOperations.findNutritionItem(userId, uuid);
 
       if (!item) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
@@ -392,7 +411,7 @@ export function createHealthRouter(config) {
 
       logger.debug?.('health.nutrilist.byDate', { userId, date });
 
-      const items = await nutriListStore.findByDate(userId, date);
+      const items = await healthOperations.findNutritionItemsByDate(userId, date);
 
       res.json({
         message: 'Nutrilist items retrieved successfully',
@@ -414,31 +433,9 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'Item name is required' });
       }
 
-      const newItem = {
-        uuid: uuidv4(),
-        userId,
-        item: itemData.item || itemData.name,
-        name: itemData.name || itemData.item,
-        unit: itemData.unit || 'g',
-        amount: itemData.amount || itemData.grams || 0,
-        grams: itemData.grams || itemData.amount || 0,
-        noom_color: itemData.noom_color || itemData.color || 'yellow',
-        color: itemData.color || itemData.noom_color || 'yellow',
-        calories: itemData.calories || 0,
-        fat: itemData.fat || 0,
-        carbs: itemData.carbs || 0,
-        protein: itemData.protein || 0,
-        fiber: itemData.fiber || 0,
-        sugar: itemData.sugar || 0,
-        sodium: itemData.sodium || 0,
-        cholesterol: itemData.cholesterol || 0,
-        date: itemData.date || getToday(),
-        log_uuid: itemData.log_uuid || 'MANUAL'
-      };
+      const newItem = await healthOperations.createNutritionItem(userId, itemData);
 
       logger.debug?.('health.nutrilist.create', { userId, item: newItem.item });
-
-      await nutriListStore.saveMany([newItem]);
 
       res.status(201).json({
         message: 'Nutrilist item created successfully',
@@ -456,30 +453,16 @@ export function createHealthRouter(config) {
       const updateData = req.body;
 
       // Check if item exists
-      const existingItem = await nutriListStore.findByUuid(userId, uuid);
-      if (!existingItem) {
+      const update = await healthOperations.updateNutritionItem(userId, uuid, updateData);
+      if (!update) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }
 
-      // Filter allowed fields
-      const allowedFields = [
-        'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
-        'calories', 'fat', 'carbs', 'protein', 'fiber', 'sugar', 'sodium', 'cholesterol', 'date'
-      ];
-      const filteredUpdate = {};
-      Object.keys(updateData).forEach(key => {
-        if (allowedFields.includes(key)) {
-          filteredUpdate[key] = updateData[key];
-        }
-      });
-
-      logger.debug?.('health.nutrilist.update', { userId, uuid, fields: Object.keys(filteredUpdate) });
-
-      const updatedItem = await nutriListStore.update(userId, uuid, filteredUpdate);
+      logger.debug?.('health.nutrilist.update', { userId, uuid, fields: update.changedFields });
 
       res.json({
         message: 'Nutrilist item updated successfully',
-        data: updatedItem
+        data: update.item
       });
     }));
 
@@ -492,22 +475,20 @@ export function createHealthRouter(config) {
       const userId = getDefaultUsername();
 
       // Check if item exists
-      const existingItem = await nutriListStore.findByUuid(userId, uuid);
-      if (!existingItem) {
+      const result = await healthOperations.deleteNutritionItem(userId, uuid);
+      if (!result.found) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }
 
       logger.debug?.('health.nutrilist.delete', { userId, uuid });
 
-      const result = await nutriListStore.deleteById(userId, uuid);
-
-      if (result) {
+      if (result.deleted) {
         res.json({
           message: 'Nutrilist item deleted successfully',
           uuid
         });
       } else {
-        res.status(500).json({ error: 'Failed to delete nutrilist item' });
+        sendInternalError(res, { error: 'Failed to delete nutrilist item' });
       }
     }));
   }
@@ -529,7 +510,7 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'q query param required' });
       }
       const results = await catalogService.search(q, userId, parseInt(limit) || 10);
-      return res.json({ items: results.map(e => e.toJSON()), count: results.length });
+      return res.json({ items: results.map(presentFoodCatalogEntry), count: results.length });
     }));
 
     /**
@@ -540,7 +521,7 @@ export function createHealthRouter(config) {
       const userId = getDefaultUsername();
       const limit = parseInt(req.query.limit) || 10;
       const results = await catalogService.getRecent(userId, limit);
-      return res.json({ items: results.map(e => e.toJSON()), count: results.length });
+      return res.json({ items: results.map(presentFoodCatalogEntry), count: results.length });
     }));
 
     /**
@@ -579,7 +560,7 @@ export function createHealthRouter(config) {
   // Nutrition Input Endpoint (Web → Nutribot Pipeline)
   // ==========================================================================
 
-  if (webNutribotAdapter) {
+  if (healthOperations.nutritionInputAvailable) {
     /**
      * POST /health/nutrition/input
      * Submit a nutrition input from the web UI directly into the nutribot pipeline.
@@ -595,11 +576,11 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'type is required (text, voice, image, barcode)' });
       }
       try {
-        const result = await webNutribotAdapter.process({ type, content, userId });
+        const result = await healthOperations.processNutritionInput({ type, content, userId });
         return res.json(result);
       } catch (err) {
         logger.error?.('health.nutrition.input.error', { type, error: err.message });
-        return res.status(500).json({ error: err.message });
+        return sendInternalError(res, { error: err.message });
       }
     }));
 
@@ -614,11 +595,11 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'callbackData is required' });
       }
       try {
-        const result = await webNutribotAdapter.processCallback({ callbackData, userId, messageId });
+        const result = await healthOperations.processNutritionCallback({ callbackData, userId, messageId });
         return res.json(result);
       } catch (err) {
         logger.error?.('health.nutrition.callback.error', { error: err.message });
-        return res.status(500).json({ error: err.message });
+        return sendInternalError(res, { error: err.message });
       }
     }));
   }
@@ -634,7 +615,7 @@ export function createHealthRouter(config) {
       url: req.url,
       method: req.method
     });
-    res.status(500).json({ error: err.message });
+    sendInternalError(res, { error: err.message });
   });
 
   return router;

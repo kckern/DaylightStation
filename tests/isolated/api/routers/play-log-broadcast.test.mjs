@@ -3,6 +3,8 @@ import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
+import { RecordPlaybackProgress } from '#apps/content/usecases/RecordPlaybackProgress.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -22,19 +24,25 @@ describe('/play/log broadcasts playback.log event', () => {
       adapters: new Map()
     };
     const mockMediaProgress = {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined)
+      findProgress: vi.fn().mockResolvedValue(null),
+      saveProgress: vi.fn().mockResolvedValue(undefined)
     };
     const logger = makeLogger();
+    const recordPlaybackProgress = new RecordPlaybackProgress({
+      contentCatalog: new RegistryContentCatalogGateway({ registry: mockRegistry }),
+      mediaProgressMemory: mockMediaProgress,
+      playbackPublications: { progressRecorded: (payload) => mockEventBus.publish('playback.log', payload) },
+      nowTimestamp: () => '2026-08-28 12:00:00',
+      logger,
+    });
     const app = express();
     app.use(express.json());
     app.use(createPlayRouter({
       registry: mockRegistry,
-      mediaProgressMemory: mockMediaProgress,
+      recordPlaybackProgress,
       playResponseService: { toPlayResponse: () => ({}), getWatchState: () => null },
       contentIdResolver: { resolve: () => null },
       progressSyncSources: new Set(),
-      eventBus: mockEventBus,
       logger
     }));
 
@@ -59,11 +67,18 @@ describe('/play/log broadcasts playback.log event', () => {
   test('does not throw when eventBus is not provided', async () => {
     const mockAdapter = { getStoragePath: vi.fn().mockResolvedValue('plex') };
     const logger = makeLogger();
+    const registry = { get: () => mockAdapter, adapters: new Map() };
+    const recordPlaybackProgress = new RecordPlaybackProgress({
+      contentCatalog: new RegistryContentCatalogGateway({ registry }),
+      mediaProgressMemory: { findProgress: vi.fn().mockResolvedValue(null), saveProgress: vi.fn() },
+      nowTimestamp: () => '2026-08-28 12:00:00',
+      logger,
+    });
     const app = express();
     app.use(express.json());
     app.use(createPlayRouter({
-      registry: { get: () => mockAdapter, adapters: new Map() },
-      mediaProgressMemory: { get: vi.fn().mockResolvedValue(null), set: vi.fn() },
+      registry,
+      recordPlaybackProgress,
       playResponseService: { toPlayResponse: () => ({}), getWatchState: () => null },
       contentIdResolver: { resolve: () => null },
       progressSyncSources: new Set(),

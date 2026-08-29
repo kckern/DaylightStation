@@ -40,6 +40,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { RenderPrintDocument } from './RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import {
   validateAnyDocument, DOCUMENT_V2_SCHEMA, BLOCK_TARGET_SUPPORT,
 } from '#domains/school/documents/documentV2.mjs';
@@ -51,6 +52,10 @@ import { placeFragments } from '#rendering/school/documents/layout.mjs';
 import { contentBox } from '#rendering/school/documents/furniture.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import { requirePdftoppm, rasterizePdfPages } from '../../../../../tests/_lib/school/rasterize.mjs';
+
+const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
+  rendering: createPrintDocumentRendering(), ...deps,
+});
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = path.join(HERE, '..', '..', '..', '..', '..', 'docs', '_wip', 'audits', '2026-08-04-print-design-phase-a-acceptance');
@@ -126,7 +131,7 @@ async function pageDiffRatio(pngA, pngB) {
 describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
   describe('§12.1 determinism', () => {
     it('a v2 document renders byte-identically on a second run of the SAME use-case instance', async () => {
-      const useCase = new RenderPrintDocument();
+      const useCase = createRenderPrintDocument();
       const document = v2doc({ archetype: 'worksheet', blocks: manyQuestions(3) });
       const first = await useCase.execute({ document, context: { learnerName: 'Alex' } });
       const second = await useCase.execute({ document, context: { learnerName: 'Alex' } });
@@ -136,8 +141,8 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
 
     it('a v2 document renders byte-identically across two FRESH use-case instances — no shared mutable state', async () => {
       const document = v2doc({ archetype: 'worksheet', blocks: manyQuestions(3) });
-      const a = await new RenderPrintDocument().execute({ document, context: { learnerName: 'Alex' } });
-      const b = await new RenderPrintDocument().execute({ document, context: { learnerName: 'Alex' } });
+      const a = await createRenderPrintDocument().execute({ document, context: { learnerName: 'Alex' } });
+      const b = await createRenderPrintDocument().execute({ document, context: { learnerName: 'Alex' } });
       expect(a.bytes.equals(b.bytes)).toBe(true);
     });
 
@@ -145,8 +150,8 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
       const raw = {
         id: 'v1-determinism', seed: 4242, variant: 0, target: ['letter'], blocks: [{ type: 'rich_text', md: 'Determinism check.' }],
       };
-      const first = await new RenderPrintDocument().execute({ document: raw, context: { learnerName: 'Sam' } });
-      const second = await new RenderPrintDocument().execute({ document: raw, context: { learnerName: 'Sam' } });
+      const first = await createRenderPrintDocument().execute({ document: raw, context: { learnerName: 'Sam' } });
+      const second = await createRenderPrintDocument().execute({ document: raw, context: { learnerName: 'Sam' } });
       expect(first.bytes.equals(second.bytes)).toBe(true);
     });
   });
@@ -154,7 +159,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
   describe('§12.6 fit — the three-policy matrix (one file, three fixtures) + the receipt-target rejection', () => {
     describe('policy: one-page — overset at compact density fails with a structured, non-zero oversetPt', () => {
       it('rejects with FIT_OVERSET after trying both densities', async () => {
-        const useCase = new RenderPrintDocument();
+        const useCase = createRenderPrintDocument();
         // 12 fixed 30/30pt questions overflow BOTH densities — same empirical
         // fixture RenderPrintDocument.test.mjs establishes against the real pipeline.
         const document = v2doc({
@@ -175,7 +180,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
 
       beforeAll(async () => {
         requirePdftoppm();
-        const useCase = new RenderPrintDocument();
+        const useCase = createRenderPrintDocument();
         const document = v2doc({
           archetype: 'quiz', fit: { policy: 'flow', typeScale: 'standard' }, blocks: manyQuestions(10),
         });
@@ -265,7 +270,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
             },
           };
         };
-        const useCase = new RenderPrintDocument({ renderer: spyFactory });
+        const useCase = createRenderPrintDocument({ renderer: spyFactory });
         const result = await useCase.execute({ document: growable });
         expect(result.pageCount).toBe(1);
         expect(calls).toHaveLength(1);
@@ -290,7 +295,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
       });
 
       it('RenderPrintDocument.execute rejects with INVALID_DOCUMENT (validation, not a fit/render failure)', async () => {
-        const useCase = new RenderPrintDocument();
+        const useCase = createRenderPrintDocument();
         await expect(useCase.execute({ document: raw })).rejects.toMatchObject({
           name: 'ValidationError', code: 'INVALID_DOCUMENT',
         });
@@ -326,7 +331,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
     });
 
     it('RenderPrintDocument.execute rejects at validation — INVALID_DOCUMENT, never attempts to measure/render', async () => {
-      const useCase = new RenderPrintDocument();
+      const useCase = createRenderPrintDocument();
       const err = await useCase.execute({ document: raw }).catch((e) => e);
       expect(err).toMatchObject({ name: 'ValidationError', code: 'INVALID_DOCUMENT' });
       expect(err.message).toMatch(/does not support target 'receipt'/);
@@ -337,7 +342,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
     it('all four font styles (regular/bold/italic/boldItalic) are embedded in the rendered PDF bytes', async () => {
       const STUB_SVG = '<svg viewBox="0 0 200 100"><rect width="200" height="80"/></svg>';
       const resolveAsset = (ref) => (ref === 'school/proof/diagram' ? { svg: STUB_SVG, widthPt: 200, heightPt: 100 } : null);
-      const useCase = new RenderPrintDocument({ resolveAsset });
+      const useCase = createRenderPrintDocument({ resolveAsset });
       // boldItalic is reached specifically via a **bold** span inside an
       // already-italic base (figure captions/credits use baseFont: 'italic' —
       // see measure.mjs's inlineRuns) — a bare rich_text **bold**/*italic* pair
@@ -357,7 +362,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
 
     it('*italic* renders for v2 (font actually embedded) and is INERT for v1 (asterisks stay literal, no italic face)', async () => {
       const md = 'Mix **bold** and *emphasis* words.';
-      const v2Result = await new RenderPrintDocument().execute({
+      const v2Result = await createRenderPrintDocument().execute({
         document: v2doc({ archetype: 'worksheet', blocks: [{ type: 'rich_text', md }] }),
       });
       expect(v2Result.bytes.toString('latin1')).toContain('AtkinsonHyperlegible-Italic');
@@ -367,7 +372,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
       };
       const { document: normalized } = validateDocument(v1Raw);
       const direct = await createDocumentPdfRenderer({ texToSvg }).render(normalized, { studentName: null });
-      const viaUseCase = await new RenderPrintDocument().execute({ document: v1Raw });
+      const viaUseCase = await createRenderPrintDocument().execute({ document: v1Raw });
       expect(viaUseCase.bytes.equals(direct.pdf)).toBe(true);
       expect(viaUseCase.bytes.toString('latin1')).not.toContain('-Italic');
     });
@@ -419,10 +424,10 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
     });
 
     it('the SAME body renders to different bytes for quiz vs worksheet, purely from the archetype field (duplex threading)', async () => {
-      const quizResult = await new RenderPrintDocument().execute({
+      const quizResult = await createRenderPrintDocument().execute({
         document: v2doc({ archetype: 'quiz', fit: { policy: 'flow', typeScale: 'standard' }, blocks: sameBody() }),
       });
-      const worksheetResult = await new RenderPrintDocument().execute({
+      const worksheetResult = await createRenderPrintDocument().execute({
         document: v2doc({ archetype: 'worksheet', fit: { policy: 'flow', typeScale: 'standard' }, blocks: sameBody() }),
       });
       expect(quizResult.pageCount).toBeGreaterThanOrEqual(2);
@@ -478,7 +483,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
     ];
 
     async function renderProof(typeScale) {
-      const useCase = new RenderPrintDocument({ resolveAsset });
+      const useCase = createRenderPrintDocument({ resolveAsset });
       const document = {
         schema: DOCUMENT_V2_SCHEMA,
         id: 'phase-a-proof',

@@ -71,19 +71,6 @@ export class Thresholds {
   }
 
   /**
-   * Convert to JSON-serializable object
-   *
-   * @returns {{ warning: number, critical: number, pace: boolean }}
-   */
-  toJSON() {
-    return {
-      warning: this.#warning,
-      critical: this.#critical,
-      pace: this.#pace
-    };
-  }
-
-  /**
    * Create a Thresholds from a JSON object
    *
    * @param {Object|null} data - JSON object with threshold data
@@ -92,18 +79,6 @@ export class Thresholds {
    * @param {boolean} [data.pace] - Pace alerts enabled
    * @returns {Thresholds}
    */
-  static fromJSON(data) {
-    if (!data || typeof data !== 'object') {
-      return new Thresholds();
-    }
-
-    return new Thresholds({
-      warning: data.warning ?? 0.8,
-      critical: data.critical ?? 1.0,
-      pace: data.pace ?? true
-    });
-  }
-
   /**
    * Create a Thresholds with default values
    *

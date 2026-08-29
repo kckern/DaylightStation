@@ -9,5 +9,5 @@
 
 export { MediaKeyResolver } from './MediaKeyResolver.mjs';
 export { UnknownMediaSourceError, UnresolvableMediaKeyError, QueueFullError } from './errors.mjs';
-export { isMediaSearchable, validateSearchQuery, IMediaSearchable } from './IMediaSearchable.mjs';
+export { validateSearchQuery } from './validateMediaSearchQuery.mjs';
 export { MediaQueue, ADDED_FROM } from './entities/MediaQueue.mjs';

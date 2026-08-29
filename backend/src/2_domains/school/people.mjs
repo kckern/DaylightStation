@@ -41,7 +41,7 @@ export const ADULT_AGE = 18;
  * @returns {boolean} true only for a roster member with a known birthyear that
  *   puts them at {@link ADULT_AGE} or over
  */
-export function isAdult({ roster, userId, now = Date.now() } = {}) {
+export function isAdult({ roster, userId, now } = {}) {
   if (typeof userId !== 'string' || !userId) return false;
   if (!Array.isArray(roster)) return false;
 
@@ -51,6 +51,7 @@ export function isAdult({ roster, userId, now = Date.now() } = {}) {
   const birthyear = Number(member.birthyear);
   if (!Number.isFinite(birthyear) || birthyear <= 0) return false;
 
+  if (now === undefined || now === null) return false;
   const at = new Date(now);
   const year = at.getUTCFullYear();
   if (!Number.isFinite(year)) return false;

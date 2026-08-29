@@ -36,13 +36,14 @@ Use cases in `3_applications/` coordinate domain entities and call abstract gate
 ### ALLOWED imports in `3_applications/`
 
 - `2_domains/` - Entities, value objects, domain services
-- `1_rendering/` - Server-side renderers (inject as a port where practical) (Decision D2, 2026-07-06)
 - `0_system/utils/` - Pure utilities (time, formatting, uuid)
 - External packages for domain logic (moment-timezone, uuid)
 
 ### FORBIDDEN imports in `3_applications/`
 
 - `1_adapters/` - Never import adapters directly
+- `1_rendering/` - Inject a rendering port; applications do not import presentation implementations
+- `4_api/` - HTTP behavior belongs in the API layer
 - `0_system/config/` - Config internals (paths, loaders)
 - Vendor SDKs (telegraf, openai, @anthropic-ai/sdk, plex-api)
 - Node fs/path for data operations (use repositories)

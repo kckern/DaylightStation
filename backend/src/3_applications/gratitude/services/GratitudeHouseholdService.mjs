@@ -14,22 +14,22 @@
 import { nowTs24 } from '#system/utils/index.mjs';
 
 export class GratitudeHouseholdService {
-  #configService;
+  #householdDirectory;
   #gratitudeService;
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.configService - ConfigService for household data
+   * @param {Object} deps.householdDirectory - Household and user projection
    * @param {Object} deps.gratitudeService - GratitudeService for category validation
    */
-  constructor({ configService, gratitudeService }) {
-    if (!configService) {
-      throw new Error('GratitudeHouseholdService requires configService');
+  constructor({ householdDirectory, gratitudeService }) {
+    if (!householdDirectory) {
+      throw new Error('GratitudeHouseholdService requires householdDirectory');
     }
     if (!gratitudeService) {
       throw new Error('GratitudeHouseholdService requires gratitudeService');
     }
-    this.#configService = configService;
+    this.#householdDirectory = householdDirectory;
     this.#gratitudeService = gratitudeService;
   }
 
@@ -39,7 +39,11 @@ export class GratitudeHouseholdService {
    * @returns {string} Timezone string (defaults to 'UTC')
    */
   getTimezone(householdId) {
-    return this.#configService.getHouseholdTimezone?.(householdId) || 'UTC';
+    return this.#householdDirectory.timezone?.(householdId) || 'UTC';
+  }
+
+  getDefaultHouseholdId() {
+    return this.#householdDirectory.defaultHouseholdId();
   }
 
   /**
@@ -72,7 +76,7 @@ export class GratitudeHouseholdService {
    */
   resolveDisplayName(userId) {
     if (!userId) return 'Unknown';
-    const profile = this.#configService.getUserProfile?.(userId);
+    const profile = this.#householdDirectory.userProfile?.(userId);
     return profile?.group_label
       || profile?.display_name
       || profile?.name
@@ -85,9 +89,9 @@ export class GratitudeHouseholdService {
    * @returns {Array<{id: string, name: string, group_label: string|null}>}
    */
   getHouseholdUsers(householdId) {
-    const usernames = this.#configService.getHouseholdUsers?.(householdId) || [];
+    const usernames = this.#householdDirectory.userIds?.(householdId) || [];
     return usernames.map(username => {
-      const profile = this.#configService.getUserProfile?.(username);
+      const profile = this.#householdDirectory.userProfile?.(username);
       return {
         id: username,
         name: profile?.display_name || profile?.name ||

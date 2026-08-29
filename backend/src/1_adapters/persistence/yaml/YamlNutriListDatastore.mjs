@@ -20,11 +20,38 @@ import {
   saveYaml
 } from '#system/utils/FileIO.mjs';
 import { INutriListDatastore } from '#apps/nutribot/ports/INutriListDatastore.mjs';
-import { shortIdFromUuid } from '#domains/core/utils/id.mjs';
+import { shortIdFromUuid } from '#system/utils/id.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };
+
+function dehydrateNutriListItem(log, item) {
+  return {
+    id: item.id,
+    uuid: item.uuid,
+    label: item.label,
+    icon: item.icon,
+    grams: item.grams,
+    unit: item.unit,
+    amount: item.amount,
+    color: item.color,
+    calories: item.calories,
+    protein: item.protein,
+    carbs: item.carbs,
+    fat: item.fat,
+    fiber: item.fiber,
+    sugar: item.sugar,
+    sodium: item.sodium,
+    cholesterol: item.cholesterol,
+    logId: log.id,
+    log_uuid: log.id,
+    date: log.meal?.date,
+    status: log.status,
+    createdAt: log.createdAt,
+    acceptedAt: log.acceptedAt,
+  };
+}
 
 export class YamlNutriListDatastore extends INutriListDatastore {
   #dataService;
@@ -135,7 +162,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
 
     // Add new items if log is accepted
     if (nutriLog.isAccepted) {
-      const newItems = nutriLog.toNutriListItems().map((item) => ({
+      const newItems = nutriLog.items.map((foodItem) => dehydrateNutriListItem(nutriLog, foodItem)).map((item) => ({
         ...item,
         id: item.id || (item.uuid ? shortIdFromUuid(item.uuid) : shortIdFromUuid(logUuid)),
         uuid: item.uuid || item.id,

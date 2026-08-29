@@ -21,9 +21,8 @@
  *
  * @module adapters/school/YamlDocumentFileStore
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import yaml from 'js-yaml';
+import { fileExists, readBinaryFromPath, readDirectory, readTextFromPath, writeFile } from '#system/utils/FileIO.mjs';
 
 export class YamlDocumentFileStore {
   /**
@@ -31,29 +30,28 @@ export class YamlDocumentFileStore {
    * @param {*} [fallback] - returned when the file does not exist
    */
   read(file, fallback = null) {
-    if (!fs.existsSync(file)) return fallback;
-    return yaml.load(fs.readFileSync(file, 'utf8'));
+    if (!fileExists(file)) return fallback;
+    return yaml.load(readTextFromPath(file));
   }
 
   /** True when the path exists — for callers whose rule is "have they started?" */
   exists(file) {
-    return fs.existsSync(file);
+    return fileExists(file);
   }
 
   /** Raw bytes, for callers that hash a file to derive a revision. */
   readBytes(file) {
-    return fs.readFileSync(file);
+    return readBinaryFromPath(file);
   }
 
   /** Entry names directly under a directory; `[]` when it does not exist. */
   list(dir) {
-    return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    return fileExists(dir) ? readDirectory(dir) : [];
   }
 
   /** Write a document, creating its directory. */
   write(file, value) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, yaml.dump(value, { noRefs: true }));
+    writeFile(file, yaml.dump(value, { noRefs: true }));
     return value;
   }
 }

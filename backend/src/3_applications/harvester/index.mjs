@@ -6,3 +6,4 @@
 
 export { HarvesterService } from './HarvesterService.mjs';
 export { HarvesterJobExecutor } from './HarvesterJobExecutor.mjs';
+export { IHarvester, HarvesterCategory } from './ports/IHarvester.mjs';

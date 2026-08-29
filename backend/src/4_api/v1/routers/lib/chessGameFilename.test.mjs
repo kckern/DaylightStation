@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { buildChessArchiveFilename, buildGameRecordFilename } from './chessGameFilename.mjs';
+import { buildChessArchiveFilename, buildGameRecordFilename } from '../../../../1_adapters/persistence/chess/ChessRecordNames.mjs';
 
 describe('buildGameRecordFilename', () => {
   it('prefixes with the calendar day so the games directory still sorts by day', () => {

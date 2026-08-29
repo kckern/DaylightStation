@@ -2,34 +2,29 @@
  * Lifelog Aggregator - Extractor-Based Version
  * @module apps/lifelog/LifelogAggregator
  *
- * Aggregates data from all harvested sources for a specific date using
- * source-specific extractors that know how to parse each format.
- *
- * Lives in the application layer because it orchestrates I/O (file loading)
- * via the injected userLoadFile callback. Pure extractors remain in the domain.
+ * Aggregates semantic observations supplied by a source registry. Vendor record
+ * formats and harvested-file locators remain behind the adapter boundary.
  */
 
 import moment from 'moment-timezone';
-import { extractors } from '#domains/lifelog/extractors/index.mjs';
-
 /**
  * Lifelog aggregator using pluggable extractors
  */
 export class LifelogAggregator {
   #logger;
-  #userLoadFile;
-
-  // Store extractors reference for runtime access
-  extractors = extractors;
+  #sourceRegistry;
 
   /**
    * @param {Object} deps
    * @param {Object} deps.logger - Logger instance
-   * @param {Function} deps.userLoadFile - Function to load user files
+   * @param {import('./ports/ILifelogSourceRegistry.mjs').ILifelogSourceRegistry} deps.sourceRegistry
    */
   constructor(deps = {}) {
+    if (!deps.sourceRegistry?.readDay || !deps.sourceRegistry?.readRange) {
+      throw new TypeError('LifelogAggregator requires sourceRegistry');
+    }
     this.#logger = deps.logger;
-    this.#userLoadFile = deps.userLoadFile;
+    this.#sourceRegistry = deps.sourceRegistry;
   }
 
   /**
@@ -37,7 +32,7 @@ export class LifelogAggregator {
    * @returns {string[]} Array of source names
    */
   getAvailableSources() {
-    return this.extractors.map((e) => e.source);
+    return this.#sourceRegistry.availableSources();
   }
 
   /**
@@ -59,58 +54,35 @@ export class LifelogAggregator {
       categories: {}, // Data grouped by category
     };
 
-    // Run each extractor
-    for (const extractor of extractors) {
+    const entries = await this.#sourceRegistry.readDay(username, targetDate);
+    for (const entry of entries) {
       try {
-        // Load the source file
-        const data = this.#loadSource(username, extractor.filename);
-        if (!data) {
-          this.#logger?.debug('lifelog.source.empty', {
-            username,
-            source: extractor.source,
-          });
-          continue;
-        }
-
-        // Extract data for target date
-        const extracted = extractor.extractForDate(data, targetDate);
-        if (!extracted) {
-          this.#logger?.debug('lifelog.source.no-data-for-date', {
-            username,
-            source: extractor.source,
-            date: targetDate,
-          });
-          continue;
-        }
-
-        // Store raw extracted data
-        results.sources[extractor.source] = extracted;
+        results.sources[entry.source] = entry.data;
 
         // Group by category
-        if (!results.categories[extractor.category]) {
-          results.categories[extractor.category] = {};
+        if (!results.categories[entry.category]) {
+          results.categories[entry.category] = {};
         }
-        results.categories[extractor.category][extractor.source] = extracted;
+        results.categories[entry.category][entry.source] = entry.data;
 
         // Generate summary for AI
-        const summary = extractor.summarize(extracted);
-        if (summary) {
+        if (entry.summary) {
           results.summaries.push({
-            source: extractor.source,
-            category: extractor.category,
-            text: summary,
+            source: entry.source,
+            category: entry.category,
+            text: entry.summary,
           });
           this.#logger?.debug('lifelog.source.extracted', {
             username,
-            source: extractor.source,
-            category: extractor.category,
-            summaryLength: summary.length,
+            source: entry.source,
+            category: entry.category,
+            summaryLength: entry.summary.length,
           });
         }
       } catch (error) {
         this.#logger?.warn('lifelog.extractor.error', {
           username,
-          source: extractor.source,
+          source: entry.source,
           error: error.message,
         });
       }
@@ -152,22 +124,6 @@ export class LifelogAggregator {
   async aggregateRange(username, startDate, endDate) {
     this.#logger?.info('lifelog.aggregateRange.start', { username, startDate, endDate });
 
-    // Load all source files once (each file contains all dates)
-    const allSourceData = [];
-    for (const extractor of extractors) {
-      try {
-        const data = this.#loadSource(username, extractor.filename);
-        if (data) {
-          allSourceData.push({ extractor, data });
-        }
-      } catch (error) {
-        this.#logger?.warn('lifelog.aggregateRange.load-error', {
-          source: extractor.source,
-          error: error.message,
-        });
-      }
-    }
-
     // Generate inclusive date range
     const dates = [];
     let current = moment(startDate);
@@ -177,36 +133,32 @@ export class LifelogAggregator {
       current = current.clone().add(1, 'day');
     }
 
-    // Extract per-day from pre-loaded data
+    const projected = await this.#sourceRegistry.readRange(username, dates);
     const days = {};
     for (const date of dates) {
       const daySources = {};
       const dayCategories = {};
       const daySummaries = [];
 
-      for (const { extractor, data } of allSourceData) {
+      for (const entry of projected.days[date] || []) {
         try {
-          const extracted = extractor.extractForDate(data, date);
-          if (!extracted) continue;
+          daySources[entry.source] = entry.data;
 
-          daySources[extractor.source] = extracted;
-
-          if (!dayCategories[extractor.category]) {
-            dayCategories[extractor.category] = {};
+          if (!dayCategories[entry.category]) {
+            dayCategories[entry.category] = {};
           }
-          dayCategories[extractor.category][extractor.source] = extracted;
+          dayCategories[entry.category][entry.source] = entry.data;
 
-          const summary = extractor.summarize(extracted);
-          if (summary) {
+          if (entry.summary) {
             daySummaries.push({
-              source: extractor.source,
-              category: extractor.category,
-              text: summary,
+              source: entry.source,
+              category: entry.category,
+              text: entry.summary,
             });
           }
         } catch (error) {
           this.#logger?.warn('lifelog.aggregateRange.extract-error', {
-            source: extractor.source,
+            source: entry.source,
             date,
             error: error.message,
           });
@@ -223,7 +175,7 @@ export class LifelogAggregator {
       _meta: {
         username,
         dayCount: dates.length,
-        availableSources: allSourceData.map(s => s.extractor.source),
+        availableSources: projected.availableSources,
       },
     };
 
@@ -232,32 +184,10 @@ export class LifelogAggregator {
       startDate,
       endDate,
       dayCount: dates.length,
-      sourcesLoaded: allSourceData.length,
+      sourcesLoaded: projected.availableSources.length,
     });
 
     return result;
-  }
-
-  /**
-   * Load a harvested source file (with error handling)
-   * @private
-   */
-  #loadSource(username, filename) {
-    try {
-      if (!this.#userLoadFile) {
-        this.#logger?.warn('lifelog.source.no-loader', { username, filename });
-        return null;
-      }
-      const data = this.#userLoadFile(username, filename);
-      return data || null;
-    } catch (error) {
-      this.#logger?.debug('lifelog.source.load-error', {
-        username,
-        filename,
-        error: error.message,
-      });
-      return null;
-    }
   }
 
   /**
@@ -272,7 +202,7 @@ export class LifelogAggregator {
   /**
    * Get data for a specific source
    * @param {Object} aggregated - Result from aggregate()
-   * @param {string} source - Source name (e.g., 'strava', 'weight')
+   * @param {string} source - Semantic source name
    * @returns {Object|null} Extracted data or null
    */
   static getSourceData(aggregated, source) {

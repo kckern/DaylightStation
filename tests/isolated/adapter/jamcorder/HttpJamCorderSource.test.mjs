@@ -28,19 +28,19 @@ function fakeHttp() {
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
 describe('HttpJamCorderSource', () => {
-  it('recursively enumerates .mid files with list + download paths', async () => {
+  it('recursively enumerates .mid files as semantic recording ids', async () => {
     const src = new HttpJamCorderSource({ httpClient: fakeHttp(), host: '10.0.0.244', logger: silent });
     const refs = await src.listRecordings();
     expect(refs).toEqual([
-      { listPath: '/JAMC/2026/s1/A.mid', downloadPath: '/sdcard/JAMC/2026/s1/A.mid' },
-      { listPath: '/JAMC/2026/s1/B.mid', downloadPath: '/sdcard/JAMC/2026/s1/B.mid' },
+      { recordingId: '/JAMC/2026/s1/A.mid' },
+      { recordingId: '/JAMC/2026/s1/B.mid' },
     ]);
   });
 
   it('downloads via the /sdcard URL using the injected binaryGet (insecure-parser seam)', async () => {
     const binaryGet = vi.fn(async (url) => Buffer.from('MID:' + url));
     const src = new HttpJamCorderSource({ httpClient: fakeHttp(), host: '10.0.0.244', logger: silent, binaryGet });
-    const buf = await src.download({ listPath: '/JAMC/2026/s1/A.mid', downloadPath: '/sdcard/JAMC/2026/s1/A.mid' });
+    const buf = await src.fetchRecording({ recordingId: '/JAMC/2026/s1/A.mid' });
     expect(binaryGet).toHaveBeenCalledWith('http://10.0.0.244/sdcard/JAMC/2026/s1/A.mid');
     expect(buf.toString()).toBe('MID:http://10.0.0.244/sdcard/JAMC/2026/s1/A.mid');
   });

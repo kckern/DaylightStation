@@ -1,5 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { deleteFile, fileExists, getStats, listEntries } from '#system/utils/FileIO.mjs';
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -34,12 +34,13 @@ export class YamlFeedSessionStore {
     if (this.#prunedUsers.has(username)) return;
     this.#prunedUsers.add(username);
     const dir = this.#dataService.user.resolveDir('feed/sessions', username);
-    if (!fs.existsSync(dir)) return;
     const cutoff = Date.now() - SESSION_TTL_MS;
-    for (const filename of fs.readdirSync(dir)) {
+    if (!fileExists(dir)) return;
+    for (const filename of listEntries(dir)) {
       const target = path.join(dir, filename);
       try {
-        if (fs.statSync(target).isFile() && fs.statSync(target).mtimeMs < cutoff) fs.unlinkSync(target);
+        const stats = getStats(target);
+        if (stats?.isFile() && stats.mtimeMs < cutoff) deleteFile(target);
       } catch {
         // A concurrent cleanup may have already removed the file.
       }

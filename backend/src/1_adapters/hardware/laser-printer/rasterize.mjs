@@ -60,11 +60,10 @@
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { accessSync, constants as fsConstants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { createTempDir, deleteDirAsync, isExecutable, readBinaryFromPathAsync, writeBinaryAsync } from '#system/utils/FileIO.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -109,7 +108,7 @@ function ghostscriptBinaries(gsBin) {
     const candidate = path.join(dir, gsBin);
     if (seen.has(candidate)) continue;
     seen.add(candidate);
-    try { accessSync(candidate, fsConstants.X_OK); found.push(candidate); } catch { /* not here */ }
+    if (isExecutable(candidate)) found.push(candidate);
   }
   return found.length ? found : [gsBin];
 }
@@ -354,11 +353,11 @@ export async function rasterizePdf(pdf, {
     format, colorParams: { channels, bitsPerColor, cupsColorSpace }, gsBin,
   });
 
-  const dir = await mkdtemp(path.join(tmpdir(), 'laser-print-'));
+  const dir = await createTempDir(path.join(tmpdir(), 'laser-print-'));
   try {
     const inPath = path.join(dir, 'in.pdf');
     const outPath = path.join(dir, `out.${device}`);
-    await writeFile(inPath, pdf);
+    await writeBinaryAsync(inPath, pdf);
 
     try {
       // A ceiling on PAGES RENDERED, distinct from `maxPagesPerJob`, which
@@ -410,7 +409,7 @@ export async function rasterizePdf(pdf, {
       });
     }
 
-    const out = await readFile(outPath).catch(() => Buffer.alloc(0));
+    const out = await readBinaryFromPathAsync(outPath).catch(() => Buffer.alloc(0));
     if (out.length === 0) {
       throw new InfrastructureError('ghostscript produced empty output', {
         code: 'RASTERIZE_EMPTY_OUTPUT', format, device, dpi,
@@ -437,7 +436,7 @@ export async function rasterizePdf(pdf, {
     });
     return out;
   } finally {
-    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    await deleteDirAsync(dir, { force: true }).catch(() => {});
   }
 }
 

@@ -22,7 +22,7 @@ describe('selectItemsForPrint', () => {
 
   it('returns requested count', () => {
     const items = Array.from({ length: 10 }, (_, i) => makeItem(`item-${i}`, i + 1));
-    const result = selectItemsForPrint(items, 3, Date.now());
+    const result = selectItemsForPrint(items, 3, Date.now(), () => 0.5);
     expect(result).toHaveLength(3);
   });
 
@@ -34,7 +34,7 @@ describe('selectItemsForPrint', () => {
     ];
     const counts = { 'printed-5x': 0, 'printed-0x': 0, 'printed-3x': 0 };
     for (let i = 0; i < 100; i++) {
-      const result = selectItemsForPrint(items, 1, Date.now());
+      const result = selectItemsForPrint(items, 1, Date.now(), () => 0.5);
       counts[result[0].id]++;
     }
     expect(counts['printed-0x']).toBeGreaterThan(counts['printed-5x']);

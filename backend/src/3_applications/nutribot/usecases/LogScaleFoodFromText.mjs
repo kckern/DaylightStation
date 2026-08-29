@@ -4,6 +4,7 @@
 
 import { buildConfirmButtons } from '../lib/scaleNutribotConfig.mjs';
 import { ApplicationError } from '#apps/common/errors/index.mjs';
+import { serializeFoodItem } from '../nutriLogRecords.mjs';
 
 export class LogScaleFoodFromText {
   #messagingGateway; #aiGateway; #foodLogStore; #conversationStateStore; #logger; #encodeCallback;
@@ -64,7 +65,7 @@ export class LogScaleFoodFromText {
     if (!nutriLog || !nutriLog.items?.length) throw scaleError('log not found', 'LOG_NOT_FOUND', { logUuid });
     if (nutriLog.status !== 'pending') throw scaleError('already processed', 'ALREADY_PROCESSED', { logUuid });
 
-    const item0 = typeof nutriLog.items[0].toJSON === 'function' ? nutriLog.items[0].toJSON() : { ...nutriLog.items[0] };
+    const item0 = serializeFoodItem(nutriLog.items[0]);
     const grams = Math.round(Number(item0.grams));
 
     const response = await this.#aiGateway.chat(this.#buildPrompt(grams, text), { maxTokens: 300 });

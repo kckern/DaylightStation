@@ -5,9 +5,7 @@
  */
 
 export { createConsoleTransport } from './console.mjs';
-export { createLogglyTransport } from './loggly.mjs';
 export { createHttpLogSinkTransport } from './httpLogSink.mjs';
 export { createFileTransport } from './file.mjs';
 export { initSessionFileTransport, getSessionFileTransport } from './sessionFile.mjs';
 export { initSessionEventsFileTransport, getSessionEventsFileTransport } from './sessionEventsFile.mjs';
-export { createSchoolLedgerTransport } from './schoolLedger.mjs';

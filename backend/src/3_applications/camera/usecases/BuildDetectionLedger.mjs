@@ -12,8 +12,6 @@
  * all. Everything here is cheap on purpose — no downloads, no ffmpeg.
  */
 
-import { mkdir, writeFile, readFile } from 'fs/promises';
-import path from 'path';
 import { toClip } from '#domains/camera/selection.mjs';
 
 /**
@@ -88,44 +86,4 @@ export async function buildLedgerRecords({
 
 function round2(n) {
   return Math.round(n * 100) / 100;
-}
-
-/**
- * Write a day's ledger as JSONL to every configured destination.
- *
- * At ~300 KB/day the ledger is small enough to keep everywhere at once — hot,
- * NAS, and Dropbox — which correctly inverts the video's storage asymmetry:
- * the cheapest artifact gets the most redundancy, because it is the one that
- * cannot be regenerated.
- *
- * Records are never rewritten in place. A re-run writes a new version so the
- * attestation property survives.
- */
-export async function writeLedger({ records, camera, day, destinations, version = null }) {
-  const body = records.map((r) => JSON.stringify(r)).join('\n') + '\n';
-  const suffix = version ? `.${version}` : '';
-  const written = [];
-
-  for (const dest of destinations) {
-    const dir = path.join(dest, camera);
-    await mkdir(dir, { recursive: true });
-    const file = path.join(dir, `${day}${suffix}.jsonl`);
-    await writeFile(file, body, 'utf8');
-    written.push(file);
-  }
-  return written;
-}
-
-export async function readLedger(dest, camera, day) {
-  const file = path.join(dest, camera, `${day}.jsonl`);
-  try {
-    const body = await readFile(file, 'utf8');
-    return body
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
-  } catch (err) {
-    if (err.code === 'ENOENT') return [];
-    throw err;
-  }
 }

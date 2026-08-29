@@ -15,7 +15,12 @@ function app({ config = { quiet_hours: { enabled: true, start: '21:00', end: '07
   const notificationLedgerStore = { recentEvents: (n) => events.slice(0, n) };
   const a = express();
   a.use(express.json());
-  a.use('/api/v1/admin/notifications', createAdminNotificationsRouter({ notificationConfigService, notificationLedgerStore }));
+  const adminNotificationOperations = {
+    readConfiguration: () => notificationConfigService.getConfig(),
+    updateConfiguration: changes => notificationConfigService.updateConfig(changes),
+    recentEvents: limit => notificationLedgerStore.recentEvents(limit),
+  };
+  a.use('/api/v1/admin/notifications', createAdminNotificationsRouter({ adminNotificationOperations }));
   return a;
 }
 

@@ -21,10 +21,11 @@ const DATA_PATH = process.env.DAYLIGHT_DATA_PATH ||
   '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
 
 // Registry file path
-const REGISTRY_PATH = path.join(DATA_PATH, 'system/config/testdata');
+const REGISTRY_PATH = path.join(DATA_PATH, 'system/testdata');
 
 // Cache storage
 let registryCache = null;
+let registryOverride = null;
 const resultsCache = new Map();
 
 /**
@@ -43,6 +44,9 @@ function getSpecCacheKey(spec) {
  * @returns {Object|null} Registry object or null if not found
  */
 function loadRegistry() {
+  if (registryOverride !== null) {
+    return registryOverride;
+  }
   if (registryCache !== null) {
     return registryCache;
   }
@@ -255,4 +259,14 @@ export async function getTestSample(domain, options = {}) {
 export function clearCache() {
   registryCache = null;
   resultsCache.clear();
+}
+
+/**
+ * Supply a checked-in registry to an isolated/integrated test. This keeps the
+ * test-data selector deterministic without making it reach a live household
+ * data mount. Passing null restores the configured data-mount registry.
+ */
+export function useTestDataRegistry(registry = null) {
+  registryOverride = registry;
+  clearCache();
 }

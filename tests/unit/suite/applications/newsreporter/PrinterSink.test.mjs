@@ -21,7 +21,8 @@ const fakeRegistry = (printResult, capture = {}) => ({
 
 const captureLogger = () => {
   const events = [];
-  return { events, info: (e, d) => events.push({ e, d }), debug: () => {}, warn: () => {}, error: () => {} };
+  const capture = (e, d) => events.push({ e, d });
+  return { events, info: capture, debug: () => {}, warn: capture, error: capture };
 };
 
 const sections = [{ type: 'heading', text: 'X' }];

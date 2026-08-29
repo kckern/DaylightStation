@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { HouseholdAdapters } from '#backend/src/0_system/registries/HouseholdAdapters.mjs';
+import { HouseholdAdapters } from '#composition/integrations/HouseholdAdapters.mjs';
 
 describe('HouseholdAdapters', () => {
   describe('get()', () => {

@@ -19,17 +19,10 @@ const FIXTURE_PLAYBOOK_PATH = path.join(
  * We don't touch the real filesystem — instead we inject a mock dataService
  * that returns the parsed fixture YAML when the expected absolute path is read.
  */
-function buildFixtureDataService({ userId, archiveRoot, playbookContent }) {
-  const expectedAbsPath = path.join(
-    archiveRoot,
-    userId,
-    'lifelog/archives/playbook/playbook.yml',
-  );
-
+function buildFixtureDataService({ userId, playbookContent }) {
   return {
-    expectedAbsPath,
-    readYaml: vi.fn(async (absPath) => {
-      if (absPath === expectedAbsPath) return playbookContent;
+    load: vi.fn(async (requestedUserId) => {
+      if (requestedUserId === userId) return playbookContent;
       return null;
     }),
   };
@@ -52,11 +45,11 @@ describe('PersonalContextLoader', () => {
       playbookContent: parsedFixture,
     });
 
-    const loader = new PersonalContextLoader({ dataService, archiveRoot });
+    const loader = new PersonalContextLoader({ playbookStore: dataService });
     const bundle = await loader.load(userId);
 
-    expect(dataService.readYaml).toHaveBeenCalledOnce();
-    expect(dataService.readYaml).toHaveBeenCalledWith(dataService.expectedAbsPath);
+    expect(dataService.load).toHaveBeenCalledOnce();
+    expect(dataService.load).toHaveBeenCalledWith(userId);
     expect(typeof bundle).toBe('string');
     expect(bundle.length).toBeGreaterThan(0);
   });
@@ -70,7 +63,7 @@ describe('PersonalContextLoader', () => {
       playbookContent: parsedFixture,
     });
 
-    const loader = new PersonalContextLoader({ dataService, archiveRoot });
+    const loader = new PersonalContextLoader({ playbookStore: dataService });
     const bundle = await loader.load(userId);
 
     // Header
@@ -146,8 +139,7 @@ describe('PersonalContextLoader', () => {
     });
 
     const loader = new PersonalContextLoader({
-      dataService,
-      archiveRoot,
+      playbookStore: dataService,
       tokenBudget: 3000,
     });
     const bundle = await loader.load(userId);
@@ -164,21 +156,20 @@ describe('PersonalContextLoader', () => {
     const userId = 'test-user';
     const archiveRoot = '/fake/data/users';
     const dataService = {
-      readYaml: vi.fn(async () => null),
+      load: vi.fn(async () => null),
     };
 
-    const loader = new PersonalContextLoader({ dataService, archiveRoot });
+    const loader = new PersonalContextLoader({ playbookStore: dataService });
     const bundle = await loader.load(userId);
 
     expect(bundle).toBe('');
-    expect(dataService.readYaml).toHaveBeenCalledOnce();
+    expect(dataService.load).toHaveBeenCalledOnce();
   });
 
   it('blocks path traversal — userId with "../" is rejected before any I/O', async () => {
-    const dataService = { readYaml: vi.fn() };
+    const dataService = { load: vi.fn() };
     const loader = new PersonalContextLoader({
-      dataService,
-      archiveRoot: '/fake/data/users',
+      playbookStore: dataService,
     });
 
     await expect(loader.load('../etc')).rejects.toThrow(/userId/i);
@@ -186,6 +177,6 @@ describe('PersonalContextLoader', () => {
     await expect(loader.load('')).rejects.toThrow(/userId/i);
     await expect(loader.load('..')).rejects.toThrow(/userId/i);
 
-    expect(dataService.readYaml).not.toHaveBeenCalled();
+    expect(dataService.load).not.toHaveBeenCalled();
   });
 });

@@ -229,41 +229,6 @@ export class CostBudget {
     return percentDecimal >= this.#thresholds.critical;
   }
 
-  /**
-   * Convert to JSON-serializable object
-   *
-   * @returns {Object} JSON-serializable representation
-   */
-  toJSON() {
-    return {
-      id: this.#id,
-      name: this.#name,
-      category: this.#category ? this.#category.toJSON() : null,
-      period: this.#period.toJSON(),
-      amount: this.#amount.toJSON(),
-      thresholds: this.#thresholds.toJSON(),
-      householdId: this.#householdId
-    };
-  }
-
-  /**
-   * Create a CostBudget from a JSON object
-   *
-   * @param {Object} data - JSON data
-   * @returns {CostBudget}
-   * @throws {ValidationError} If data is invalid
-   */
-  static fromJSON(data) {
-    return new CostBudget({
-      id: data.id,
-      name: data.name,
-      category: data.category ? CostCategory.fromJSON(data.category) : null,
-      period: BudgetPeriod.fromJSON(data.period),
-      amount: Money.fromJSON(data.amount),
-      thresholds: data.thresholds ? Thresholds.fromJSON(data.thresholds) : undefined,
-      householdId: data.householdId
-    });
-  }
 }
 
 export default CostBudget;

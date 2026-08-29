@@ -7,6 +7,7 @@
  */
 import path from 'node:path';
 import { IMidiRecordingArchive } from '#apps/midi/ports/IMidiRecordingArchive.mjs';
+import { archiveRelPathForStone, parseMidiRecordingStone } from './MidiRecordingStoneCodec.mjs';
 import { writeBinary, fileExists, loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
 
 const REL_ROOT = path.join('midi', 'piano', 'log', 'jamcorder');
@@ -23,19 +24,17 @@ export class FsJamCorderArchive extends IMidiRecordingArchive {
     this.#index = (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) ? loaded : {};
   }
 
-  has(ref) {
-    return Object.prototype.hasOwnProperty.call(this.#index, ref.listPath);
+  hasRecording(recordingId) {
+    return Object.prototype.hasOwnProperty.call(this.#index, recordingId);
   }
 
-  async save(relPath, buffer) {
+  async archiveRecording(recording, artifact) {
+    const relPath = archiveRelPathForStone(parseMidiRecordingStone(artifact));
     const full = path.join(this.#baseDir(), relPath);
-    if (fileExists(full)) return; // idempotent
-    writeBinary(full, buffer);
-  }
-
-  async markProcessed(ref, relPath) {
-    this.#index[ref.listPath] = relPath;
+    if (!fileExists(full)) writeBinary(full, artifact);
+    this.#index[recording.recordingId] = relPath;
     saveYaml(this.#indexBase(), this.#index);
+    return { archiveId: relPath };
   }
 
   #baseDir() {

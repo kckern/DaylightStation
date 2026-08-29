@@ -12,8 +12,9 @@
 
 import { fileURLToPath } from 'url';
 import path from 'path';
-import fs from 'fs';
 import axios from 'axios';
+import { getConfigService } from './_bootstrap.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,16 +23,10 @@ const projectRoot = path.resolve(__dirname, '..');
 // Set up environment
 process.chdir(projectRoot);
 
-import { resolveConfigPaths } from '../backend/lib/config/pathResolver.mjs';
-import { hydrateProcessEnvFromConfigs } from '../backend/lib/logging/config.js';
-import { configService } from '../backend/lib/config/ConfigService.mjs';
-import { userLoadAuth, userSaveAuth } from '../backend/lib/io.mjs';
-
-// Initialize config
-const isDocker = fs.existsSync('/.dockerenv');
-const configPaths = resolveConfigPaths({ isDocker, codebaseDir: projectRoot });
-hydrateProcessEnvFromConfigs(configPaths.configDir);
-configService.init(projectRoot);
+const configService = await getConfigService();
+const dataService = new DataService({ configService });
+const userLoadAuth = (username, service) => dataService.user.read(`auth/${service}`, username);
+const userSaveAuth = (username, service, value) => dataService.user.write(`auth/${service}`, value, username);
 
 // Parse CLI args
 const args = process.argv.slice(2);

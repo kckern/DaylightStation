@@ -16,8 +16,7 @@
  * day queue is derived from.
  */
 import path from 'path';
-import fs from 'fs';
-import { loadYamlSafe, saveYaml, ensureDir, listYamlFiles } from '#system/utils/FileIO.mjs';
+import { dirExists, listEntries, loadYamlSafe, saveYaml, ensureDir, listYamlFiles, writeBinary } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -129,8 +128,8 @@ export class YamlLanguageStudyDatastore {
     const dir = this.#userDir(userId, corpusId);
     if (!dir) return [];
     const logDir = path.join(dir, 'log');
-    if (!fs.existsSync(logDir)) return [];
-    return fs.readdirSync(logDir)
+    if (!dirExists(logDir)) return [];
+    return listEntries(logDir)
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
       .sort()
       .flatMap((f) => loadYamlSafe(path.join(logDir, f.replace(/\.yml$/, ''))) || []);
@@ -169,7 +168,7 @@ export class YamlLanguageStudyDatastore {
     const target = this.resolveRecordingPath(corpusId, userId, seq, language, ext);
     if (!target) return null;
     ensureDir(path.dirname(target));
-    fs.writeFileSync(target, buffer);
+    writeBinary(target, buffer);
     return target;
   }
 
@@ -185,9 +184,9 @@ export class YamlLanguageStudyDatastore {
     const dir = this.#mediaDir(corpusId);
     if (!dir || !this.#configService.getUserProfile?.(userId)) return new Set();
     const userRecordings = path.join(dir, 'recordings', String(userId));
-    if (!fs.existsSync(userRecordings)) return new Set();
+    if (!dirExists(userRecordings)) return new Set();
     return new Set(
-      fs.readdirSync(userRecordings)
+      listEntries(userRecordings)
         .map((f) => f.replace(/\.[a-z0-9]+$/i, ''))
         .filter((k) => /^\d{4}-[A-Z]{2,8}$/.test(k))
         .map((k) => `${Number(k.slice(0, 4))}-${k.slice(5)}`),

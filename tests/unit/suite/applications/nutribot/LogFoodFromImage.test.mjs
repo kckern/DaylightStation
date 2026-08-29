@@ -53,6 +53,7 @@ describe('LogFoodFromImage', () => {
       aiGateway: mockAI,
       foodLogStore: mockFoodLogStore,
       conversationStateStore: mockConversationStateStore,
+      imageDownloader: { download: jest.fn().mockResolvedValue(Buffer.from('image')) },
       logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
     });
   });

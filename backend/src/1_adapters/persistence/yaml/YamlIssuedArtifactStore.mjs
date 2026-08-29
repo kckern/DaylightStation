@@ -1,8 +1,10 @@
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import yaml from 'js-yaml';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
+import {
+  ensureDir, readBinaryFromPath, readTextFromPath, renameFile, writeBinaryExclusive, writeFileExclusive,
+} from '#system/utils/FileIO.mjs';
 
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const validId = (id) => typeof id === 'string' && id.trim() && id.length <= 240
@@ -58,10 +60,10 @@ export class YamlIssuedArtifactStore {
    */
   async #readEither(newPath, legacyPath, encoding) {
     try {
-      return await fs.readFile(newPath, encoding);
+      return encoding ? readTextFromPath(newPath) : readBinaryFromPath(newPath);
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
-      return fs.readFile(legacyPath, encoding);
+      return encoding ? readTextFromPath(legacyPath) : readBinaryFromPath(legacyPath);
     }
   }
 
@@ -106,7 +108,7 @@ export class YamlIssuedArtifactStore {
       // The id is hierarchical now, so the leaf's own directory has to exist —
       // `mkdir(root)` alone was enough only while every artifact was one flat
       // percent-encoded filename.
-      await fs.mkdir(path.dirname(this.#manifest(artifactId)), { recursive: true });
+      ensureDir(path.dirname(this.#manifest(artifactId)));
       const linkedSessionIds = [...new Set([sessionId, ...(Array.isArray(sessionIds) ? sessionIds : [])].filter(Boolean))];
       const typedRepresentation = representation ? {
         mediaType: representation.mediaType ?? 'application/pdf',
@@ -150,10 +152,10 @@ export class YamlIssuedArtifactStore {
       const payload = this.#payload(artifactId, extension);
       const pdfTmp = `${payload}.${nonce}.tmp`;
       const manifestTmp = `${this.#manifest(artifactId)}.${nonce}.tmp`;
-      await fs.writeFile(pdfTmp, bytes, { flag: 'wx' });
-      await fs.writeFile(manifestTmp, yaml.dump(manifest, { lineWidth: -1, noRefs: true }), { flag: 'wx' });
-      await fs.rename(pdfTmp, payload);
-      await fs.rename(manifestTmp, this.#manifest(artifactId));
+      writeBinaryExclusive(pdfTmp, bytes);
+      writeFileExclusive(manifestTmp, yaml.dump(manifest, { lineWidth: -1, noRefs: true }));
+      renameFile(pdfTmp, payload);
+      renameFile(manifestTmp, this.#manifest(artifactId));
       return { manifest, bytes };
     };
     const queued = this.#writeChain.then(run);

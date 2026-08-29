@@ -3,13 +3,17 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createFitnessRouter } from './fitness.mjs';
+import { FitnessHardwareService } from '#apps/fitness/services/FitnessHardwareService.mjs';
 
 const silentLogger = { info(){}, warn(){}, error(){}, debug(){} };
 
 function appWith(danceLightingController) {
   const app = express();
   app.use(express.json());
-  app.use('/', createFitnessRouter({ danceLightingController, logger: silentLogger }));
+  app.use('/', createFitnessRouter({
+    fitnessHardwareService: new FitnessHardwareService({ danceLightingController }),
+    logger: silentLogger,
+  }));
   return app;
 }
 

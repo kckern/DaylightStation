@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { IVideoEncoder } from '#apps/fitness/ports/IVideoEncoder.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -35,16 +34,15 @@ export function buildEncodeArgs({ framesDir, pattern, fps, outputPath, crf = 26,
 }
 
 /**
- * ffmpeg-backed implementation of IVideoEncoder. Stitches a frame sequence into
+ * Internal ffmpeg encoder used by the filesystem timelapse artifact adapter.
  * a silent MP4. (Player frames are captured client-side in realtime, so no
  * source-frame extraction is needed here.) Assumes `ffmpeg` is on $PATH.
  */
-export class FfmpegVideoAdapter extends IVideoEncoder {
+export class FfmpegVideoAdapter {
   #logger;
   #timeoutMs;
 
   constructor({ logger = console, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-    super();
     this.#logger = logger;
     this.#timeoutMs = timeoutMs;
   }

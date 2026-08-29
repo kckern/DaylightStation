@@ -5,24 +5,26 @@ import path from 'node:path';
 import { MidiPngConverter } from '#adapters/pianoaudio/MidiPngConverter.mjs';
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
-let root, midiPath, pngPath;
+let root, sourceDir, destDir, midiPath, pngPath;
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'pianoaudio-png-'));
-  midiPath = path.join(root, 'src', 'jamcorder', '2026', '2026-07', '2026-07-09 07.22.03.mid');
-  pngPath = path.join(root, 'dst', 'jamcorder', '2026', '2026-07', '2026-07-09 07.22.03.png');
+  sourceDir = path.join(root, 'src');
+  destDir = path.join(root, 'dst');
+  midiPath = path.join(sourceDir, 'jamcorder', '2026', '2026-07', '2026-07-09 07.22.03.mid');
+  pngPath = path.join(destDir, 'jamcorder', '2026', '2026-07', '2026-07-09 07.22.03.png');
   fs.mkdirSync(path.dirname(midiPath), { recursive: true });
   fs.writeFileSync(midiPath, 'MID'); // parseNotes is injected in tests, so content is irrelevant
 });
 afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
-describe('MidiPngConverter.convert', () => {
+describe('MidiPngConverter.convertRecording', () => {
   it('parses notes, derives the timestamp title, renders, and writes the PNG atomically', async () => {
     const renderPng = vi.fn(async () => Buffer.from('PNGBYTES'));
     const parseNotes = vi.fn(() => ({ notes: [{ pitch: 60, startSec: 0, durSec: 1, velocity: 90 }], durationSeconds: 1 }));
-    const conv = new MidiPngConverter({ renderPng, parseNotes, logger: silent });
+    const conv = new MidiPngConverter({ sourceDir, destDir, renderPng, parseNotes, logger: silent });
 
-    await conv.convert(midiPath, pngPath);
+    await conv.convertRecording({ recordingId: 'jamcorder/2026/2026-07/2026-07-09 07.22.03.mid' });
 
     expect(parseNotes).toHaveBeenCalledTimes(1);
     // title derived from the path's embedded timestamp
@@ -38,9 +40,9 @@ describe('MidiPngConverter.convert', () => {
     fs.mkdirSync(path.dirname(pngPath), { recursive: true });
     fs.writeFileSync(pngPath, 'EXISTING');
     const renderPng = vi.fn();
-    const conv = new MidiPngConverter({ renderPng, parseNotes: vi.fn(), logger: silent });
+    const conv = new MidiPngConverter({ sourceDir, destDir, renderPng, parseNotes: vi.fn(), logger: silent });
 
-    await conv.convert(midiPath, pngPath);
+    await conv.convertRecording({ recordingId: 'jamcorder/2026/2026-07/2026-07-09 07.22.03.mid' });
 
     expect(renderPng).not.toHaveBeenCalled();
     expect(fs.readFileSync(pngPath).toString()).toBe('EXISTING');

@@ -195,18 +195,6 @@ export class BudgetPeriod {
   }
 
   /**
-   * Convert to JSON-serializable object
-   *
-   * @returns {{ type: string, anchor: string|null }}
-   */
-  toJSON() {
-    return {
-      type: this.#type,
-      anchor: this.#anchor ? this.#anchor.toISOString() : null
-    };
-  }
-
-  /**
    * Create a BudgetPeriod from a JSON object
    *
    * @param {Object} data - JSON object with period data
@@ -215,17 +203,6 @@ export class BudgetPeriod {
    * @returns {BudgetPeriod}
    * @throws {ValidationError} If data is invalid
    */
-  static fromJSON(data) {
-    if (!data || typeof data !== 'object' || !data.type) {
-      throw new ValidationError('Invalid BudgetPeriod JSON: type is required', {
-        code: 'INVALID_BUDGET_PERIOD_JSON',
-        value: data
-      });
-    }
-
-    const anchor = data.anchor ? new Date(data.anchor) : null;
-    return new BudgetPeriod(data.type, anchor);
-  }
 }
 
 export default BudgetPeriod;

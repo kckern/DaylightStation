@@ -1,35 +1,45 @@
 // backend/src/3_applications/devices/services/TranscodePrewarmService.mjs
 
 const TOKEN_TTL_MS = 60_000;
-// Keep in sync with the reason union returned by PlexAdapter.loadMediaUrl
-// (backend/src/1_adapters/content/media/plex/PlexAdapter.mjs). Reasons NOT
-// in this set fall through to permanent:false and trigger FKB URL fallback.
-const PERMANENT_REASONS = new Set(['metadata-missing', 'non-playable-type', 'audio-key-missing']);
-
 export class TranscodePrewarmService {
   #contentIdResolver;
+  #contentCatalog;
   #queueService;
   #httpClient;
   #logger;
+  #clock;
+  #createToken;
+  #scheduler;
   #cache = new Map();
 
-  constructor({ contentIdResolver, queueService, httpClient, logger = console }) {
+  constructor({ contentIdResolver, contentCatalog, queueService, httpClient, clock, createToken, scheduler, logger = console }) {
+    if (!clock?.now || typeof createToken !== 'function' || !scheduler?.after) {
+      throw new Error('TranscodePrewarmService requires clock, createToken, and scheduler');
+    }
     this.#contentIdResolver = contentIdResolver;
+    this.#contentCatalog = contentCatalog;
     this.#queueService = queueService;
     this.#httpClient = httpClient;
     this.#logger = logger;
+    this.#clock = clock;
+    this.#createToken = createToken;
+    this.#scheduler = scheduler;
   }
 
   async prewarm(contentRef, opts = {}) {
     try {
       const resolved = this.#contentIdResolver.resolve(contentRef);
-      if (!resolved?.adapter?.resolvePlayables) {
+      if (!resolved) {
         this.#logger.debug?.('prewarm.skip', { contentRef, reason: 'no adapter' });
         return { status: 'skipped', reason: 'no adapter' };
       }
 
       const finalId = `${resolved.source}:${resolved.localId}`;
-      const playables = await resolved.adapter.resolvePlayables(finalId);
+      const playables = await this.#contentCatalog.resolvePlayables(resolved, finalId);
+      if (playables === null) {
+        this.#logger.debug?.('prewarm.skip', { contentRef, reason: 'no adapter' });
+        return { status: 'skipped', reason: 'no adapter' };
+      }
       const items = await this.#queueService.resolveQueue(
         playables, resolved.source, { shuffle: !!opts.shuffle }
       );
@@ -40,30 +50,27 @@ export class TranscodePrewarmService {
       }
 
       const first = items[0];
-      const isPlex = first.source === 'plex' || first.id?.startsWith('plex:');
-      if (!isPlex || !resolved.adapter.loadMediaUrl) {
-        this.#logger.debug?.('prewarm.skip', { contentRef, reason: 'not plex', source: first.source });
-        return { status: 'skipped', reason: 'not plex' };
+      const startOffset = first.resumePosition || first.playhead || 0;
+      const prepared = await this.#contentCatalog.preparePlayback(resolved, first, { startOffset });
+      if (prepared.kind === 'unsupported') {
+        this.#logger.debug?.('prewarm.skip', { contentRef, reason: prepared.reason, source: first.source });
+        return { status: 'skipped', reason: prepared.reason };
       }
 
-      const startOffset = first.resumePosition || first.playhead || 0;
-      const mediaResult = await resolved.adapter.loadMediaUrl(first, { startOffset });
-      const dashUrl = mediaResult?.url ?? null;
-      const failureReason = mediaResult?.reason ?? null;
-      if (!dashUrl) {
-        const reason = failureReason || 'loadMediaUrl returned null';
-        const permanent = !!failureReason && PERMANENT_REASONS.has(failureReason);
+      if (prepared.kind === 'failed') {
+        const { reason, permanent } = prepared;
         this.#logger.warn?.('prewarm.failed', { contentRef, reason, permanent });
         return { status: 'failed', reason, permanent };
       }
+      const dashUrl = prepared.url;
 
       this.#fetchMpd(dashUrl).catch(err => {
         this.#logger.debug?.('prewarm.mpd-fetch-failed', { error: err.message });
       });
 
-      const token = this.#generateToken();
+      const token = this.#createToken();
       const contentId = first.id;
-      this.#cache.set(token, { url: dashUrl, contentId, expiresAt: Date.now() + TOKEN_TTL_MS });
+      this.#cache.set(token, { url: dashUrl, contentId, expiresAt: this.#clock.now() + TOKEN_TTL_MS });
       this.#scheduleCleanup(token);
 
       this.#logger.info?.('prewarm.success', { contentRef, contentId, token });
@@ -77,7 +84,7 @@ export class TranscodePrewarmService {
   redeem(token) {
     const entry = this.#cache.get(token);
     if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
+    if (this.#clock.now() > entry.expiresAt) {
       this.#cache.delete(token);
       return null;
     }
@@ -89,14 +96,8 @@ export class TranscodePrewarmService {
     await this.#httpClient.get(dashUrl);
   }
 
-  #generateToken() {
-    return Math.random().toString(36).substring(2, 10) +
-           Math.random().toString(36).substring(2, 10);
-  }
-
   #scheduleCleanup(token) {
-    const timer = setTimeout(() => this.#cache.delete(token), TOKEN_TTL_MS + 1000);
-    if (timer.unref) timer.unref();
+    this.#scheduler.after(TOKEN_TTL_MS + 1000, () => this.#cache.delete(token));
   }
 }
 

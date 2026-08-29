@@ -1,6 +1,5 @@
 import { Item } from '#domains/content/entities/Item.mjs';
 import { decodeStreamUrl } from './streamUrlCodec.mjs';
-import { proxifyStreamUrl } from './streamProxyPath.mjs';
 
 /**
  * Vendor-blind content source for arbitrary online URLs.
@@ -39,7 +38,7 @@ export class StreamAdapter {
 
     const mediaUrl = result.format === 'webview'
       ? result.mediaUrl
-      : this.#proxify(result.mediaUrl, profile?.name);
+      : { kind: 'stream-proxy', sourceUrl: result.mediaUrl, profile: profile?.name || null };
 
     const item = new Item({
       id: `stream:${token}`,
@@ -63,10 +62,6 @@ export class StreamAdapter {
       this.#logger.warn?.('stream.resolver.threw', { strategy, url, error: e.message });
       return null;
     }
-  }
-
-  #proxify(mediaUrl, profileName) {
-    return proxifyStreamUrl(mediaUrl, profileName);
   }
 
   async resolvePlayables(id) {

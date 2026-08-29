@@ -31,16 +31,14 @@ describe('PortalSurface', () => {
   });
 
   describe('dispatch', () => {
-    it('delegates to eventBus.broadcast with the exact school.launch envelope', async () => {
-      const broadcast = vi.fn();
-      const s = new PortalSurface({ eventBus: { broadcast }, logger: silentLogger });
+    it('delegates the school launch to its semantic gateway', async () => {
+      const launchSchool = vi.fn();
+      const s = new PortalSurface({ schoolLauncher: { launchSchool }, logger: silentLogger });
       const action = { target: { kind: 'program', program: 'pe-daily' } };
       const result = await s.dispatch({ action, learnerId: 'kid1' });
       expect(result).toEqual({ dispatched: true });
-      expect(broadcast).toHaveBeenCalledTimes(1);
-      expect(broadcast).toHaveBeenCalledWith('school', {
-        type: 'school.launch', learnerId: 'kid1', target: action.target,
-      });
+      expect(launchSchool).toHaveBeenCalledTimes(1);
+      expect(launchSchool).toHaveBeenCalledWith({ learnerId: 'kid1', target: action.target });
     });
     it('no eventBus -> dispatched:false, never throws', async () => {
       const s = new PortalSurface({ logger: silentLogger });
@@ -49,7 +47,7 @@ describe('PortalSurface', () => {
     });
     it('a throwing eventBus -> dispatched:false, never throws', async () => {
       const s = new PortalSurface({
-        eventBus: { broadcast: () => { throw new Error('bus down'); } }, logger: silentLogger,
+        schoolLauncher: { launchSchool: () => { throw new Error('bus down'); } }, logger: silentLogger,
       });
       await expect(s.dispatch({ action: { target: { kind: 'program', program: 'x' } }, learnerId: 'kid1' }))
         .resolves.toEqual({ dispatched: false });
@@ -431,14 +429,12 @@ describe('GarageFitnessSurface', () => {
     expect(s.validateAction({ episodeId: 'plex:12345' })).toEqual([]);
   });
 
-  it('dispatch delegates to eventBus.broadcast with the exact fitness.launch envelope', async () => {
-    const broadcast = vi.fn();
-    const s = new GarageFitnessSurface({ eventBus: { broadcast }, logger: silentLogger });
+  it('dispatch delegates to the semantic fitness launcher', async () => {
+    const launchFitness = vi.fn();
+    const s = new GarageFitnessSurface({ fitnessLauncher: { launchFitness }, logger: silentLogger });
     const result = await s.dispatch({ action: { episodeId: 'plex:12345' }, learnerId: 'kid1' });
     expect(result).toEqual({ dispatched: true });
-    expect(broadcast).toHaveBeenCalledWith('fitness', {
-      type: 'fitness.launch', learnerId: 'kid1', episodeId: 'plex:12345',
-    });
+    expect(launchFitness).toHaveBeenCalledWith({ learnerId: 'kid1', episodeId: 'plex:12345', schoolActivity: undefined });
   });
 
   it('no eventBus -> dispatched:false, never throws', async () => {
@@ -449,7 +445,7 @@ describe('GarageFitnessSurface', () => {
 
   it('a throwing eventBus -> dispatched:false, never throws', async () => {
     const s = new GarageFitnessSurface({
-      eventBus: { broadcast: () => { throw new Error('bus down'); } }, logger: silentLogger,
+      fitnessLauncher: { launchFitness: () => { throw new Error('bus down'); } }, logger: silentLogger,
     });
     await expect(s.dispatch({ action: { episodeId: 'plex:12345' }, learnerId: 'kid1' }))
       .resolves.toEqual({ dispatched: false });
@@ -486,14 +482,12 @@ describe('PianoKioskSurface', () => {
     expect(s.validateAction({ contentId: 'hymn:12' })).toEqual([]);
   });
 
-  it('dispatch delegates to eventBus.broadcast with the exact kiosk.launch envelope, addressed by kioskDeviceParam', async () => {
-    const broadcast = vi.fn();
-    const s = new PianoKioskSurface({ eventBus: { broadcast }, kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
+  it('dispatch delegates to the semantic piano launcher, addressed by kioskDeviceParam', async () => {
+    const launchPiano = vi.fn();
+    const s = new PianoKioskSurface({ pianoLauncher: { launchPiano }, kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
     const result = await s.dispatch({ action: { contentId: 'hymn:12' }, learnerId: 'kid1' });
     expect(result).toEqual({ dispatched: true });
-    expect(broadcast).toHaveBeenCalledWith('kiosk.launch', {
-      topic: 'kiosk.launch', deviceId: 'piano-tablet-1', contentId: 'hymn:12', type: 'piano.launch',
-    });
+    expect(launchPiano).toHaveBeenCalledWith({ deviceId: 'piano-tablet-1', contentId: 'hymn:12', play: undefined });
   });
 
   // Remote PLAY (2026-08-23): the bus can ask the kiosk to open a score AND
@@ -508,31 +502,30 @@ describe('PianoKioskSurface', () => {
   });
 
   it('dispatch carries the play hint, and omits the key entirely without one', async () => {
-    const broadcast = vi.fn();
-    const s = new PianoKioskSurface({ eventBus: { broadcast }, kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
+    const launchPiano = vi.fn();
+    const s = new PianoKioskSurface({ pianoLauncher: { launchPiano }, kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
 
     await s.dispatch({ action: { contentId: 'files:docs/x.mxl', play: 'listen' }, learnerId: 'kid1' });
-    expect(broadcast).toHaveBeenCalledWith('kiosk.launch', {
-      topic: 'kiosk.launch', deviceId: 'piano-tablet-1', contentId: 'files:docs/x.mxl',
-      type: 'piano.launch', play: 'listen',
+    expect(launchPiano).toHaveBeenCalledWith({
+      deviceId: 'piano-tablet-1', contentId: 'files:docs/x.mxl', play: 'listen',
     });
 
-    broadcast.mockClear();
+    launchPiano.mockClear();
     await s.dispatch({ action: { contentId: 'hymn:12' }, learnerId: 'kid1' });
-    expect(broadcast.mock.calls[0][1]).not.toHaveProperty('play');
+    expect(launchPiano).toHaveBeenCalledWith({ deviceId: 'piano-tablet-1', contentId: 'hymn:12', play: undefined });
   });
 
   it('validates and dispatches a structured course lesson with learner identity', async () => {
-    const broadcast = vi.fn();
-    const s = new PianoKioskSurface({ eventBus: { broadcast }, kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
+    const launchPianoCourseLesson = vi.fn();
+    const s = new PianoKioskSurface({ pianoLauncher: { launchPianoCourseLesson }, kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
     const action = {
       kind: 'course-lesson', learnerId: 'learner4', courseId: 'plex:675689', courseTitle: 'Hoffman Academy',
       unitId: 'season-4', unitTitle: 'Unit 4', lessonId: 'plex:9001', lessonTitle: 'Lesson 1',
     };
     expect(s.validateAction(action)).toEqual([]);
     await expect(s.dispatch({ action, learnerId: 'learner4' })).resolves.toEqual({ dispatched: true });
-    expect(broadcast).toHaveBeenCalledWith('kiosk.launch', expect.objectContaining({
-      type: 'piano.course-lesson.launch', deviceId: 'piano-tablet-1', learnerId: 'learner4',
+    expect(launchPianoCourseLesson).toHaveBeenCalledWith(expect.objectContaining({
+      deviceId: 'piano-tablet-1', learnerId: 'learner4',
       courseId: 'plex:675689', unitId: 'season-4', lessonId: 'plex:9001',
     }));
   });
@@ -545,7 +538,7 @@ describe('PianoKioskSurface', () => {
 
   it('a throwing eventBus -> dispatched:false, never throws', async () => {
     const s = new PianoKioskSurface({
-      eventBus: { broadcast: () => { throw new Error('bus down'); } },
+      pianoLauncher: { launchPiano: () => { throw new Error('bus down'); } },
       kioskDeviceParam: 'piano-tablet-1',
       logger: silentLogger,
     });

@@ -5,6 +5,8 @@ import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
 import { decodeQuizSheet, createQuizScanRecorder, rebuildQuizDayFiles } from './quizScanRecorder.mjs';
+import { YamlDecodedQuizScanStore } from '#adapters/persistence/yaml/YamlDecodedQuizScanStore.mjs';
+import { EventBusEventInputSource } from '#adapters/scan/EventBusEventInputSource.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 const READER_ID = 'study-omr';
@@ -148,8 +150,13 @@ describe('createQuizScanRecorder', () => {
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
-  function start(config = {}) {
-    recorder = createQuizScanRecorder({ eventBus: bus, dataDir, outRoot, config, logger: NOOP_LOGGER });
+  function start({ dedupWindowMs = 2000 } = {}) {
+    recorder = createQuizScanRecorder({
+      scanSource: new EventBusEventInputSource({ eventBus: bus, topics: ['omr'] }),
+      decodedScanStore: new YamlDecodedQuizScanStore({ decodedRoot: outRoot }),
+      dedupWindowMs,
+      logger: NOOP_LOGGER,
+    });
   }
 
   async function readDay(day = '2026-07-30', id = READER_ID) {
@@ -241,7 +248,8 @@ describe('rebuildQuizDayFiles', () => {
     ];
     await fs.writeFile(path.join(historyDir, '2026-07-30.yml'), yaml.dump(manifest), 'utf8');
 
-    const result = await rebuildQuizDayFiles({ historyRoot, outRoot, config: {}, logger: NOOP_LOGGER });
+    const decodedScanStore = new YamlDecodedQuizScanStore({ decodedRoot: outRoot, rawHistoryRoot: historyRoot });
+    const result = await rebuildQuizDayFiles({ decodedScanStore, logger: NOOP_LOGGER });
     expect(result.sheets).toBe(1);
 
     const out = path.join(outRoot, READER_ID, '2026-07-30.yml');
@@ -259,8 +267,9 @@ describe('rebuildQuizDayFiles', () => {
       yaml.dump([{ ts: '2026-07-30 21:16:43', event: 'sheet', columns: 32, markedColumns: 17, marks: CALIBRATION_MARKS }]),
       'utf8',
     );
-    await rebuildQuizDayFiles({ historyRoot, outRoot, config: {}, logger: NOOP_LOGGER });
-    await rebuildQuizDayFiles({ historyRoot, outRoot, config: {}, logger: NOOP_LOGGER });
+    const decodedScanStore = new YamlDecodedQuizScanStore({ decodedRoot: outRoot, rawHistoryRoot: historyRoot });
+    await rebuildQuizDayFiles({ decodedScanStore, logger: NOOP_LOGGER });
+    await rebuildQuizDayFiles({ decodedScanStore, logger: NOOP_LOGGER });
     const out = path.join(outRoot, READER_ID, '2026-07-30.yml');
     expect(yaml.load(await fs.readFile(out, 'utf8'))).toHaveLength(1);
   });

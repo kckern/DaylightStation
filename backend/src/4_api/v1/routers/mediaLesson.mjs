@@ -163,7 +163,7 @@ function statusFor(table, status, { route, logger }) {
  * @param {{execute: (input: object) => Promise<object>}} deps.readLessonSnapshot
  * @param {{execute: (input: object) => Promise<object>}} deps.recordCheckpointAnswer
  * @param {{execute: (input: object) => Promise<object>}} deps.recordMediaCompletion
- * @param {{broadcast: Function}} [deps.eventBus] - where the playhead is
+ * @param {Object} [deps.positionReporter] - reports the playhead
  *   reported. Absent means the heartbeat still answers and reports nothing:
  *   the lesson does not depend on it.
  * @param {string} [deps.topic] - the playback port's topic
@@ -174,7 +174,7 @@ function statusFor(table, status, { route, logger }) {
  */
 export function createMediaLessonRouter({
   readLessonSnapshot, recordCheckpointAnswer, recordMediaCompletion,
-  eventBus = null, topic = DEFAULT_TOPIC, resolveLearner = null, logger = console,
+  positionReporter = null, topic = DEFAULT_TOPIC, resolveLearner = null, logger = console,
 } = {}) {
   if (!readLessonSnapshot) throw new Error('createMediaLessonRouter requires readLessonSnapshot');
   if (!recordCheckpointAnswer) throw new Error('createMediaLessonRouter requires recordCheckpointAnswer');
@@ -263,23 +263,13 @@ export function createMediaLessonRouter({
       return res.json({ ok: true, reported: false, reason: 'no-position' });
     }
     try {
-      eventBus?.broadcast?.(topic, {
-        source: SOURCE,
-        type: 'progress',
-        sessionId,
-        seconds: position,
-        // The router does not know the media's duration and will not read the
-        // catalog at 15-second intervals to find out. An absent percent is
-        // honest; a computed-from-nothing one would not be.
-        percent: null,
-        ts: new Date().toISOString(),
-      });
+      positionReporter?.report(sessionId, position, { topic });
     } catch (err) {
       logger.warn?.('school.lesson.position.report-failed', { sessionId, topic, error: err?.message ?? String(err) });
       return res.json({ ok: true, reported: false, reason: 'bus-unavailable' });
     }
     logger.debug?.('school.lesson.position', { sessionId, seconds: position });
-    return res.json({ ok: true, reported: Boolean(eventBus?.broadcast) });
+    return res.json({ ok: true, reported: Boolean(positionReporter?.available) });
   }));
 
   /**

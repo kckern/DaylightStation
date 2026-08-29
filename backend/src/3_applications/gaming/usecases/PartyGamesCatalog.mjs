@@ -48,16 +48,16 @@ function catalogEntry(definitionId, loaded, manifest) {
 }
 
 export class PartyGamesCatalog {
-  constructor({ configProjection = null, configService = null, userService, definitionStore, manifestStore, resourcePresenter = null, logger = null }) {
+  constructor({ configProjection, userService, definitionStore, manifestStore, resourcePresenter, logger = null }) {
     if (!manifestStore) throw new Error('PartyGamesCatalog manifestStore is required');
-    if (!configProjection?.raw && !configService) throw new Error('PartyGamesCatalog configuration source is required');
+    if (!configProjection?.raw) throw new Error('PartyGamesCatalog configProjection is required');
+    if (!resourcePresenter) throw new Error('PartyGamesCatalog resourcePresenter is required');
     Object.assign(this, {
       configProjection,
-      configService,
       userService,
       definitionStore,
       manifestStore,
-      resourcePresenter: resourcePresenter || ((ref) => `/api/v1/static/users/${ref.userId}`),
+      resourcePresenter,
       logger,
     });
   }
@@ -75,9 +75,7 @@ export class PartyGamesCatalog {
   }
 
   getConfig({ semanticResources = false } = {}) {
-    const raw = this.configProjection?.raw?.()
-      ?? this.configService?.getHouseholdAppConfig(null, 'party-games')
-      ?? {};
+    const raw = this.configProjection.raw() || {};
     const settings = normalizePartyGamesSettings(raw);
     const presets = settings.presets.map((preset) => ({
       id: preset.id,

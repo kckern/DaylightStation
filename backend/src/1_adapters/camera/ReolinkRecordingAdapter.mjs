@@ -15,10 +15,9 @@
 
 import https from 'https';
 import path from 'path';
-import { createWriteStream } from 'fs';
 import { spawn } from 'child_process';
-import { rm, rename, writeFile } from 'fs/promises';
 import { pipeline } from 'stream/promises';
+import { createWriteStream, removeFileAsync, renameFileAsync, writeTextFileAsync } from '#system/utils/FileIO.mjs';
 
 /**
  * Normalize a search `name` into what cmd=Download accepts.
@@ -400,7 +399,7 @@ export async function fetchNvrRange({
       return;
     }
 
-    await rm(partPath, { force: true });
+    await removeFileAsync(partPath, { force: true });
     partIndex--;
     const mid = new Date(s.getTime() + (e - s) / 2);
     logger.debug?.('camera.nvr.chunk_split', {
@@ -419,7 +418,7 @@ export async function fetchNvrRange({
   }
 
   await concat(parts, destPath);
-  await Promise.all(parts.map((p) => rm(p, { force: true })));
+  await Promise.all(parts.map((p) => removeFileAsync(p, { force: true })));
 
   const totalExpected = (end - start) / 1000;
   const totalActual = await probe(destPath);
@@ -453,11 +452,11 @@ export function probeDuration(file) {
 /** Concatenate downloaded parts without re-encoding. */
 async function concatParts(parts, destPath) {
   if (parts.length === 1) {
-    await rename(parts[0], destPath);
+    await renameFileAsync(parts[0], destPath);
     return destPath;
   }
   const listPath = `${destPath}.parts.txt`;
-  await writeFile(listPath, parts.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n') + '\n');
+  await writeTextFileAsync(listPath, parts.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n') + '\n');
   await new Promise((resolve, reject) => {
     const proc = spawn('ffmpeg', [
       '-hide_banner', '-loglevel', 'error', '-y',
@@ -470,6 +469,6 @@ async function concatParts(parts, destPath) {
       code === 0 ? resolve() : reject(new Error(`concat failed (${code}): ${stderr.slice(-300)}`)),
     );
   });
-  await rm(listPath, { force: true });
+  await removeFileAsync(listPath, { force: true });
   return destPath;
 }

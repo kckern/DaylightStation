@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 
 // Minimal configService stub: getMediaDir points at a dir with no brick folders,
 // so getManifest returns []. We only assert the route contract + shape here.
@@ -15,7 +16,7 @@ function makeApp(mediaDir) {
     hydrateUsers: () => [],
   };
   const app = express();
-  app.use('/api/v1/piano', createPianoRouter({ configService, logger: { info() {}, error() {} } }));
+  app.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({ configService, logger: { info() {}, error() {} } })));
   return app;
 }
 

@@ -28,7 +28,7 @@ describe('RecordStoryRead', () => {
     const sent = [];
     const useCase = new RecordStoryRead({
       readingLog: { append: async (r) => r },
-      eventBus: { broadcast: (topic, payload) => sent.push({ topic, payload }) },
+      realtime: { storyReadRecorded: (payload) => sent.push({ topic: 'school', payload: { event: 'story-read', ...payload } }) },
       studyDay: () => '2026-08-26', clock: () => new Date('2026-08-26T18:00:00.000Z'), logger: silent,
     });
     await useCase.execute({ learnerId: 'learner-c', title: 'The Jungle Book' });
@@ -39,7 +39,7 @@ describe('RecordStoryRead', () => {
   it('still records the read when the broadcast throws', async () => {
     const useCase = new RecordStoryRead({
       readingLog: { append: async (r) => r },
-      eventBus: { broadcast: () => { throw new Error('bus down'); } },
+      realtime: { storyReadRecorded: () => { throw new Error('bus down'); } },
       studyDay: () => '2026-08-26', clock: () => new Date('2026-08-26T18:00:00.000Z'), logger: silent,
     });
     await expect(useCase.execute({ learnerId: 'learner-c', title: 'x' })).resolves.toMatchObject({ learnerId: 'learner-c' });

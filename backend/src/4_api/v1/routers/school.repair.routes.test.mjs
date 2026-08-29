@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolRouter } from './school.mjs';
+import { createSchoolTestRouter as createSchoolRouter } from '../../../../../tests/_lib/school/schoolRouterTestSupport.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 
 const silent = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };

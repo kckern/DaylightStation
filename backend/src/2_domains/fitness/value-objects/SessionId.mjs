@@ -51,14 +51,6 @@ export class SessionId {
   }
 
   /**
-   * Convert to JSON-serializable value
-   * @returns {string}
-   */
-  toJSON() {
-    return this.#value;
-  }
-
-  /**
    * Get session date in YYYY-MM-DD format
    * @returns {string}
    */

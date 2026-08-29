@@ -9,6 +9,7 @@ import express from 'express';
 import request from 'supertest';
 import { YamlUserVideoProgressStore as UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { createPlayRouter } from './play.mjs';
+import { RecordPlaybackProgress } from '#apps/content/usecases/RecordPlaybackProgress.mjs';
 
 const USER = 'test-user';
 const USER_DIR = '/tmp/piano-econhook-test-user';
@@ -27,11 +28,16 @@ const clean = () => { try { fs.rmSync(USER_DIR, { recursive: true, force: true }
 const makeApp = ({ economyService }) => {
   const userVideoProgressStore = new UserVideoProgressStore({ configService, logger: silentLogger });
   const registry = { get: () => null }; // no adapter → storagePath stays `type`, no metadata
-  const router = createPlayRouter({
+  const recordPlaybackProgress = new RecordPlaybackProgress({
     registry,
-    mediaProgressMemory: null,
     userVideoProgressStore,
     economyService,
+    nowTimestamp: () => '2026-08-28 12:00:00',
+    logger: silentLogger,
+  });
+  const router = createPlayRouter({
+    registry,
+    recordPlaybackProgress,
     logger: silentLogger,
   });
   const app = express();

@@ -106,16 +106,16 @@ export class ICostRepository {
   }
 
   /**
-   * Archive cost entries to a file
+   * Archive cost entries under a repository-owned destination identifier
    *
    * Exports entries to an archive file for long-term storage or backup.
    *
    * @param {CostEntry[]} entries - Entries to archive
-   * @param {string} path - Destination file path
+   * @param {string} archiveId - Semantic archive destination identifier
    * @returns {Promise<void>}
    * @throws {Error} Must be implemented by concrete class
    */
-  async archive(entries, path) {
+  async archive(entries, archiveId) {
     throw new Error('ICostRepository.archive must be implemented');
   }
 }

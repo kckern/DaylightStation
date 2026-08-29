@@ -1,4 +1,5 @@
 // backend/src/3_applications/fitness/FitnessPlayableService.mjs
+import { contentImageRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 /**
  * FitnessPlayableService - Orchestrates playable episode resolution for fitness shows.
@@ -14,8 +15,7 @@
  */
 export class FitnessPlayableService {
   #fitnessConfigService;
-  #contentAdapter;
-  #contentQueryService;
+  #contentCatalog;
   #createProgressClassifier;
   #logger;
   /**
@@ -46,18 +46,16 @@ export class FitnessPlayableService {
   /**
    * @param {Object} deps
    * @param {import('./FitnessConfigService.mjs').FitnessConfigService} deps.fitnessConfigService
-   * @param {Object} deps.contentAdapter - Pre-resolved content adapter for fitness (e.g., plex)
-   * @param {Object} [deps.contentQueryService] - ContentQueryService for watch state enrichment
+   * @param {Object} deps.contentCatalog - Provider-neutral fitness content capability
    * @param {Function} deps.createProgressClassifier - Factory: (config) => classifier with classify()
    * @param {Object} [deps.logger]
    */
   constructor({
-    fitnessConfigService, contentAdapter, contentQueryService, createProgressClassifier,
+    fitnessConfigService, contentCatalog, createProgressClassifier,
     logger = console, structureTtlMs = null, now = () => Date.now(),
   }) {
     this.#fitnessConfigService = fitnessConfigService;
-    this.#contentAdapter = contentAdapter;
-    this.#contentQueryService = contentQueryService;
+    this.#contentCatalog = contentCatalog;
     this.#createProgressClassifier = createProgressClassifier;
     this.#logger = logger;
     // Five minutes: a course gains an episode when someone adds one to Plex,
@@ -114,7 +112,7 @@ export class FitnessPlayableService {
    */
   invalidateStructure(showId = null) {
     if (showId === null) { this.#structureCache.clear(); return; }
-    const compoundId = `plex:${String(showId).replace(/^(?:plex:)+/, '')}`;
+    const compoundId = this.#contentCatalog.canonicalize(showId).contentId;
     for (const key of [...this.#structureCache.keys()]) {
       if (key.endsWith(`:${compoundId}`)) this.#structureCache.delete(key);
     }
@@ -131,10 +129,10 @@ export class FitnessPlayableService {
    * @throws {Error} If adapter is missing or doesn't support resolvePlayables
    */
   async getPlayableEpisodes(showId, householdId) {
-    if (!this.#contentAdapter) {
+    if (!this.#contentCatalog) {
       throw new Error('Fitness content adapter not configured');
     }
-    if (!this.#contentAdapter.resolvePlayables) {
+    if (!this.#contentCatalog.resolvePlayables) {
       throw new Error('Content adapter does not support playable resolution');
     }
 
@@ -149,12 +147,10 @@ export class FitnessPlayableService {
     // School launch card name a course the image proxy cannot resolve.
     // Normalising HERE, where the compound id is minted, is what lets every
     // caller keep passing the id shape that is natural to it.
-    const localId = String(showId ?? '').replace(/^(?:plex:)+/, '');
-    const compoundId = `plex:${localId}`;
+    const { localId, contentId: compoundId } = this.#contentCatalog.canonicalize(showId);
 
     // Load config for progress classification thresholds
-    const fitnessConfig = this.#fitnessConfigService.loadRawConfig(householdId);
-    const classifierConfig = fitnessConfig?.progressClassification || {};
+    const classifierConfig = this.#fitnessConfigService.getProgressClassification(householdId);
     const classifier = this.#createProgressClassifier
       ? this.#createProgressClassifier(classifierConfig)
       : { classify: () => 'unknown' };
@@ -162,13 +158,11 @@ export class FitnessPlayableService {
     // Resolve playable items from content adapter
     // Structure only — watch state is enriched fresh below, every call.
     let items = await this.#cachedStructure(
-      `playables:${compoundId}`, () => this.#contentAdapter.resolvePlayables(compoundId),
+      `playables:${compoundId}`, () => this.#contentCatalog.resolvePlayables(compoundId),
     );
 
     // Enrich with watch state via ContentQueryService (DDD-compliant)
-    if (this.#contentQueryService) {
-      items = await this.#contentQueryService.enrichWithWatchState(items, 'plex', compoundId);
-    }
+    items = await this.#contentCatalog.enrichWatchState(items, compoundId);
 
     // Apply fitness-specific classification and map to API contract
     items = items.map(item => this.#classifyItem(item, classifier));
@@ -178,11 +172,11 @@ export class FitnessPlayableService {
 
     // Get container info and item for show metadata
     const [info, containerItem] = await Promise.all([
-      this.#contentAdapter.getContainerInfo
-        ? this.#cachedStructure(`info:${compoundId}`, () => this.#contentAdapter.getContainerInfo(compoundId))
+      this.#contentCatalog.getContainerInfo
+        ? this.#cachedStructure(`info:${compoundId}`, () => this.#contentCatalog.getContainerInfo(compoundId))
         : null,
-      this.#contentAdapter.getItem
-        ? this.#cachedStructure(`item:${compoundId}`, () => this.#contentAdapter.getItem(compoundId))
+      this.#contentCatalog.getItem
+        ? this.#cachedStructure(`item:${compoundId}`, () => this.#contentCatalog.getItem(compoundId))
         : null
     ]);
 
@@ -193,16 +187,16 @@ export class FitnessPlayableService {
     // existing label-driven logic works unchanged.
     if (info?.type === 'season'
         && (!Array.isArray(info.labels) || info.labels.length === 0)
-        && info.parentRatingKey) {
+        && info.parentContentId) {
       try {
-        const parentInfo = await this.#contentAdapter.getContainerInfo(`plex:${info.parentRatingKey}`);
+        const parentInfo = await this.#contentCatalog.getContainerInfo(info.parentContentId);
         if (parentInfo && Array.isArray(parentInfo.labels) && parentInfo.labels.length > 0) {
           info.labels = parentInfo.labels;
         }
       } catch (err) {
         this.#logger.warn?.('fitness.playable.season_label_fetch_failed', {
           seasonId: compoundId,
-          parentRatingKey: info.parentRatingKey,
+          parentContentId: info.parentContentId,
           error: err.message
         });
         // Degraded: leave info.labels as-is (empty). User loses governance/
@@ -231,23 +225,11 @@ export class FitnessPlayableService {
    * @returns {Promise<{shows: Array, libraryId: string|number}>}
    */
   async listFitnessShows(householdId) {
-    if (!this.#contentAdapter) {
+    if (!this.#contentCatalog) {
       throw new Error('Fitness content adapter not configured');
     }
 
-    const fitnessConfig = this.#fitnessConfigService.loadRawConfig(householdId);
-    const libraryId = fitnessConfig?.plex?.library_id || 14;
-
-    const items = await this.#contentAdapter.getList(`library/sections/${libraryId}/all`);
-
-    const shows = items.map(item => ({
-      id: item.localId || item.id?.replace('plex:', ''),
-      title: item.title,
-      type: item.itemType || item.metadata?.type,
-      episodeCount: item.metadata?.leafCount || item.metadata?.childCount || null,
-    }));
-
-    return { shows, libraryId };
+    return this.#contentCatalog.listConfiguredShows();
   }
 
   /**
@@ -266,11 +248,11 @@ export class FitnessPlayableService {
     const percent = item.percent ?? 0;
     const duration = item.duration ?? 0;
 
-    // Ever-completed gate: either Plex scrobbled it (viewCount >= 1) or we
+    // Ever-completed gate: either the provider recorded a completed play or we
     // stamped completedAt locally when the watched threshold was first crossed.
     // This prevents the sequential-show lock gate from resetting when a user
     // replays an earlier episode (which resets playhead/percent).
-    const everCompleted = (item.metadata?.viewCount ?? 0) >= 1
+    const everCompleted = (item.metadata?.completedPlayCount ?? 0) >= 1
       || !!item.completedAt;
 
     return {
@@ -300,10 +282,11 @@ export class FitnessPlayableService {
     for (const item of items) {
       const pId = item.metadata?.parentId;
       if (pId && !parentsMap[pId]) {
+        const parentRef = this.#contentCatalog.canonicalize(pId);
         parentsMap[pId] = {
           index: item.metadata?.parentIndex,
           title: item.metadata?.parentTitle || 'Parent',
-          thumbnail: item.metadata?.parentThumb || `/api/v1/content/plex/image/${pId}`,
+          thumbnail: item.metadata?.parentThumb || contentImageRef(parentRef.source, parentRef.localId),
           type: item.metadata?.parentType
         };
       }

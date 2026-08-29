@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { VolumeBounds } from '../../../backend/src/2_domains/playback-hub/value-objects/VolumeBounds.mjs';
 import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 import { DomainInvariantError } from '../../../backend/src/2_domains/core/errors/DomainInvariantError.mjs';
+import { serializeVolumeBounds } from '../../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
 
 describe('VolumeBounds', () => {
   describe('defaults', () => {
@@ -81,21 +82,21 @@ describe('VolumeBounds', () => {
 
   describe('toYaml (sparse-preserving)', () => {
     it('empty input → empty toYaml output', () => {
-      expect(new VolumeBounds({}).toYaml()).toEqual({});
+      expect(serializeVolumeBounds(new VolumeBounds({}))).toEqual({});
     });
     it('partial input → only user-set keys in toYaml output', () => {
-      expect(new VolumeBounds({ default: 40, max: 70 }).toYaml())
+      expect(serializeVolumeBounds(new VolumeBounds({ default: 40, max: 70 })))
         .toEqual({ default: 40, max: 70 });
     });
     it('only-default input → only default in toYaml', () => {
-      expect(new VolumeBounds({ default: 40 }).toYaml()).toEqual({ default: 40 });
+      expect(serializeVolumeBounds(new VolumeBounds({ default: 40 }))).toEqual({ default: 40 });
     });
     it('all three keys provided → all three in toYaml', () => {
-      expect(new VolumeBounds({ default: 50, min: 10, max: 90 }).toYaml())
+      expect(serializeVolumeBounds(new VolumeBounds({ default: 50, min: 10, max: 90 })))
         .toEqual({ default: 50, min: 10, max: 90 });
     });
     it('ignores keys outside default/min/max', () => {
-      expect(new VolumeBounds({ default: 40, foo: 'bar' }).toYaml())
+      expect(serializeVolumeBounds(new VolumeBounds({ default: 40, foo: 'bar' })))
         .toEqual({ default: 40 });
     });
   });

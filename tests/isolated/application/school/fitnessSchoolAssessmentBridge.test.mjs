@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FitnessSchoolAssessmentBridge } from '#apps/school/FitnessSchoolAssessmentBridge.mjs';
+import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
 import {
   FITNESS_SCHOOL_ACCEPTED_TOPIC,
   FITNESS_SCHOOL_ASSESSED_TOPIC,
-} from '#apps/fitness/FitnessSchoolCourseService.mjs';
+} from '#adapters/eventbus/FitnessSchoolPublications.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 
 const SID = 'ses_school_1';
@@ -23,10 +24,11 @@ function build() {
   };
   const closeSessionOutcome = { execute: vi.fn(async () => ({ ok: true })) };
   const evidenceRepository = { appendEvidence: vi.fn(async () => {}) };
+  const eventBus = {
+    subscribe: vi.fn((topic, handler) => { handlers.set(topic, handler); return () => handlers.delete(topic); }),
+  };
   const bridge = new FitnessSchoolAssessmentBridge({
-    eventBus: {
-      subscribe: vi.fn((topic, handler) => { handlers.set(topic, handler); return () => handlers.delete(topic); }),
-    },
+    realtime: new EventBusSchoolRealtimeAdapter({ eventBus }),
     sessions,
     curriculum: { getUnit: vi.fn(async () => ({ unitId: 'bike.101', subject: 'skills', courseId: 'bike', module: 'one', activity })) },
     closeSessionOutcome,

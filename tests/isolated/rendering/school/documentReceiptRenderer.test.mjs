@@ -6,27 +6,20 @@
  * scanned) and that the human-readable token text reaches the paper.
  */
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'node:module';
+import { CanvasRenderingContext2D } from 'canvas';
 import { createDocumentReceiptRenderer } from '#rendering/school/documents/DocumentReceiptRenderer.mjs';
 import { documentReceiptTheme as theme } from '#rendering/school/documents/documentReceiptTheme.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
+import { createSubjectIconResolver } from '#adapters/school/documents/FilesystemSchoolAssetResolver.mjs';
 
-// The repo carries TWO installs of `canvas` — one at the root and one under
-// `backend/`. They are separate native modules with separate prototypes, and
-// the renderer (living under `backend/src/`) resolves the backend copy. A
-// plain `import 'canvas'` from this file gets the ROOT copy, so patching its
-// `CanvasRenderingContext2D.prototype` to spy on draw calls silently
-// intercepts nothing: the spy array stays empty and any `toEqual([])`
-// assertion built on it passes vacuously. Resolving `canvas` from the
-// renderer's own directory is what makes the spy real — the specs below
-// additionally assert their spy caught SOMETHING, so a future duplication
-// fails loudly instead of going quiet.
-const rendererRequire = createRequire(
-  new URL('../../../../backend/src/1_rendering/school/documents/DocumentReceiptRenderer.mjs', import.meta.url),
-);
-const { CanvasRenderingContext2D } = rendererRequire('canvas');
+// Vitest resolves every canvas import to its root copy so the all-repository
+// run never loads two native GIO modules. Import through that same resolver:
+// patching a second copy's prototype would leave these drawing spies empty.
+// Each spy below also asserts it caught a draw call, guarding against a future
+// resolver mismatch that would otherwise make negative assertions vacuous.
 
-const renderer = createDocumentReceiptRenderer({ theme, texToSvg });
+const resolveSubjectIcon = createSubjectIconResolver();
+const renderer = createDocumentReceiptRenderer({ theme, texToSvg, resolveSubjectIcon });
 
 // Untitled on purpose: a `title` now asks for the standard-header banner
 // (tested in its own describe below); these structural tests exercise the
@@ -61,7 +54,7 @@ describe('createDocumentReceiptRenderer', () => {
       widths.push(widthPx);
       return renderer.rasterizeSvg({ svgString, widthPx });
     };
-    const withSpy = createDocumentReceiptRenderer({ theme, texToSvg, rasterizeSvg: spy });
+    const withSpy = createDocumentReceiptRenderer({ theme, texToSvg, rasterizeSvg: spy, resolveSubjectIcon });
     const { drawnMath } = await withSpy.createCanvas(doc([
       { type: 'math', tex: '\\frac{2}{3} + \\frac{1}{4}', display: true },
     ]));
@@ -190,7 +183,7 @@ describe('subject icons on scan_action blocks', () => {
   it('reads the SAME svg files the School home grid uses, rasterized at 2x', async () => {
     const calls = [];
     const spy = (args) => { calls.push(args); return renderer.rasterizeSvg(args); };
-    const withSpy = createDocumentReceiptRenderer({ theme, texToSvg, rasterizeSvg: spy });
+    const withSpy = createDocumentReceiptRenderer({ theme, texToSvg, rasterizeSvg: spy, resolveSubjectIcon });
     await withSpy.createCanvas(iconDoc('math'), { tokens: {} });
     expect(calls).toHaveLength(1);
     expect(calls[0].widthPx).toBe(theme.action.iconPx * 2);

@@ -11,11 +11,7 @@ import { Agent } from '@mastra/core/agent';
 import { createTool as mastraCreateTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import crypto from 'node:crypto';
-import { AgentTranscript } from '#apps/agents/framework/AgentTranscript.mjs';
-import { applyDecorators } from '../../3_applications/agents/framework/decorators/applyDecorators.mjs';
-import { userIdInjector } from '../../3_applications/agents/framework/decorators/UserIdInjector.mjs';
-import { createCallLimiter, LIMIT_REACHED_MESSAGE_PREFIX } from '../../3_applications/agents/framework/decorators/CallLimiter.mjs';
-import { transcriptRecorder } from '../../3_applications/agents/framework/decorators/TranscriptRecorder.mjs';
+import { IAgentRuntime } from '#apps/agents/ports/IAgentRuntime.mjs';
 
 /**
  * Convert JSON Schema to Zod schema (simplified)
@@ -66,16 +62,16 @@ function jsonSchemaToZod(jsonSchema) {
   return z.object(shape);
 }
 
-export class MastraAdapter {
+export class MastraAdapter extends IAgentRuntime {
   #model;
   #logger;
   #maxToolCalls;
   #timeoutMs;
-  #mediaDir;
   #AgentClass;
   #memory;
   #inputProcessors;
   #outputProcessors;
+  #executionPolicy;
 
   /**
    * @param {Object} deps
@@ -83,22 +79,27 @@ export class MastraAdapter {
    * @param {Object} [deps.logger] - Logger instance
    * @param {number} [deps.maxToolCalls=50] - Maximum tool calls before aborting
    * @param {number} [deps.timeoutMs=120000] - Execution timeout in ms
-   * @param {string} [deps.mediaDir] - Base media directory; transcripts written under {mediaDir}/logs/agents/...
+   * @param {Object} deps.executionPolicy - Application-owned turn/tool policy
    * @param {Function} [deps.agentClass] - Agent class to instantiate (defaults to @mastra/core Agent; injectable for tests)
    * @param {import('@mastra/memory').Memory|null} [deps.memory] - Mastra Memory instance for cross-session persistence
    * @param {Array|null} [deps.inputProcessors] - Mastra input processors (e.g. ObservationalMemory)
    * @param {Array|null} [deps.outputProcessors] - Mastra output processors (e.g. ObservationalMemory)
    */
   constructor(deps = {}) {
+    super();
+    if (!deps.executionPolicy?.createTranscript || !deps.executionPolicy?.decorateTools
+      || !deps.executionPolicy?.isLimitReached) {
+      throw new Error('MastraAdapter requires executionPolicy');
+    }
     this.#model = deps.model || 'openai/gpt-4o';
     this.#logger = deps.logger || console;
     this.#maxToolCalls = deps.maxToolCalls || 50;
     this.#timeoutMs = deps.timeoutMs || 120000;
-    this.#mediaDir = deps.mediaDir || null;
     this.#AgentClass = deps.agentClass || Agent;
     this.#memory = deps.memory || null;
     this.#inputProcessors = deps.inputProcessors || null;
     this.#outputProcessors = deps.outputProcessors || null;
+    this.#executionPolicy = deps.executionPolicy;
   }
 
   /**
@@ -121,18 +122,8 @@ export class MastraAdapter {
    * @returns {Object} Mastra tools object
    */
   #translateTools(tools, context, callCounter, transcript = null, agent = null) {
-    const callLimiter = createCallLimiter({ maxToolCalls: this.#maxToolCalls });
     const decoratorContext = { ...context, transcript };
-
-    const agentExtraDecorators = (typeof agent?.buildToolDecorators === 'function')
-      ? agent.buildToolDecorators()
-      : [];
-
-    const decorated = applyDecorators(
-      tools,
-      [...agentExtraDecorators, userIdInjector, callLimiter, transcriptRecorder],
-      decoratorContext,
-    );
+    const decorated = this.#executionPolicy.decorateTools({ tools, context, transcript, agent });
 
     const mastraTools = {};
     for (let i = 0; i < decorated.length; i++) {
@@ -161,7 +152,7 @@ export class MastraAdapter {
 
           if (result && typeof result === 'object' && 'error' in result) {
             // Distinguish limit-reached from other errors for the warn log.
-            if (typeof result.error === 'string' && result.error.startsWith(LIMIT_REACHED_MESSAGE_PREFIX)) {
+            if (this.#executionPolicy.isLimitReached(result)) {
               this.#logger.warn?.('tool.execute.limit_reached', {
                 tool: originalTool.name,
                 turnId: transcript?.turnId,
@@ -199,16 +190,15 @@ export class MastraAdapter {
     const userId = context.userId ?? null;
     const threadId = context.threadId ?? null;
 
-    const transcript = new AgentTranscript({
+    const transcript = this.#executionPolicy.createTranscript({
       agentId: name,
       userId,
       turnId,
-      input: { text: input, context: { ...context, turnId } },
-      mediaDir: this.#mediaDir,
-      logger: this.#logger,
+      input,
+      context,
+      systemPrompt,
+      model: parseModelDescriptor(this.#model),
     });
-    transcript.setSystemPrompt(systemPrompt);
-    transcript.setModel(parseModelDescriptor(this.#model));
 
     const callCounter = { count: 0 };
     const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript, agent);
@@ -248,12 +238,12 @@ export class MastraAdapter {
         timeoutPromise,
       ]);
 
-      transcript.setOutput({
+      transcript?.setOutput({
         text: response.text || '',
         finishReason: response.finishReason || (response.toolCalls?.length ? 'tool_calls' : 'stop'),
         usage: response.usage || null,
       });
-      transcript.setStatus('ok');
+      transcript?.setStatus('ok');
 
       this.#logger.info?.('agent.execute.complete', {
         agentId: name,
@@ -268,8 +258,8 @@ export class MastraAdapter {
         turnId,
       };
     } catch (error) {
-      transcript.setError(error, { toolCallsBeforeError: callCounter.count });
-      transcript.setStatus(error?.name === 'AbortError' ? 'aborted' : 'error');
+      transcript?.setError(error, { toolCallsBeforeError: callCounter.count });
+      transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : 'error');
 
       this.#logger.error?.('agent.execute.error', {
         agentId: name,
@@ -279,7 +269,7 @@ export class MastraAdapter {
       });
       throw error;
     } finally {
-      try { await transcript.flush(); } catch { /* swallow */ }
+      try { await transcript?.flush(); } catch { /* swallow */ }
     }
   }
 
@@ -294,16 +284,15 @@ export class MastraAdapter {
     const userId = context.userId ?? null;
     const threadId = context.threadId ?? null;
 
-    const transcript = new AgentTranscript({
+    const transcript = this.#executionPolicy.createTranscript({
       agentId: name,
       userId,
       turnId,
-      input: { text: input, context: { ...context, turnId } },
-      mediaDir: this.#mediaDir,
-      logger: this.#logger,
+      input,
+      context,
+      systemPrompt,
+      model: parseModelDescriptor(this.#model),
     });
-    transcript.setSystemPrompt(systemPrompt);
-    transcript.setModel(parseModelDescriptor(this.#model));
 
     const callCounter = { count: 0 };
     const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript, agent);
@@ -375,8 +364,8 @@ export class MastraAdapter {
         }
       }
 
-      transcript.setOutput({ text: accumulatedText, finishReason, usage });
-      transcript.setStatus('ok');
+      transcript?.setOutput({ text: accumulatedText, finishReason, usage });
+      transcript?.setStatus('ok');
 
       this.#logger.info?.('agent.stream.complete', {
         agentId: name,
@@ -385,8 +374,8 @@ export class MastraAdapter {
         durationMs: Date.now() - startedAt,
       });
     } catch (error) {
-      transcript.setError(error, { toolCallsBeforeError: callCounter.count });
-      transcript.setStatus(error?.name === 'AbortError' ? 'aborted' : 'error');
+      transcript?.setError(error, { toolCallsBeforeError: callCounter.count });
+      transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : 'error');
 
       this.#logger.error?.('agent.stream.error', {
         agentId: name,
@@ -396,7 +385,7 @@ export class MastraAdapter {
       });
       throw error;
     } finally {
-      try { await transcript.flush(); } catch { /* swallow */ }
+      try { await transcript?.flush(); } catch { /* swallow */ }
     }
   }
 

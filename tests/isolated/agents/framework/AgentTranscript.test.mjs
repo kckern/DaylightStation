@@ -1,6 +1,11 @@
 // tests/isolated/agents/framework/AgentTranscript.test.mjs
 import { describe, it, expect } from 'vitest';
-import { AgentTranscript } from '../../../../backend/src/3_applications/agents/framework/AgentTranscript.mjs';
+import { AgentTranscript as BaseAgentTranscript } from '../../../../backend/src/3_applications/agents/framework/AgentTranscript.mjs';
+import { AgentTranscriptFileStore } from '../../../../backend/src/1_adapters/agents/AgentTranscriptFileStore.mjs';
+
+class AgentTranscript extends BaseAgentTranscript {
+  constructor(deps) { super({ turnId: 'test-turn', ...deps }); }
+}
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,10 +31,10 @@ describe('AgentTranscript constructor', () => {
     expect(t.status).toBe(null);
   });
 
-  it('defaults userId to null and turnId to a generated UUID when absent', () => {
-    const t = new AgentTranscript({ agentId: 'x', input: { text: 'q', context: {} } });
-    expect(t.userId).toBe(null);
-    expect(t.turnId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  it('requires the application boundary to supply turn identity', () => {
+    expect(() => new BaseAgentTranscript({
+      agentId: 'x', input: { text: 'q', context: {} },
+    })).toThrow(/turnId/);
   });
 
   it('throws when agentId missing', () => {
@@ -190,7 +195,7 @@ describe('AgentTranscript.flush', () => {
       userId: 'kc',
       turnId: '11111111-2222-3333-4444-555555555555',
       input: { text: 'q', context: {} },
-      mediaDir: tmp,
+      transcriptStore: new AgentTranscriptFileStore({ mediaDir: tmp }),
     });
     t.setSystemPrompt('SYS');
     t.setOutput({ text: 'ok', finishReason: 'stop', usage: null });
@@ -222,7 +227,7 @@ describe('AgentTranscript.flush', () => {
       userId: null,
       turnId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
       input: { text: 'q', context: {} },
-      mediaDir: tmp,
+      transcriptStore: new AgentTranscriptFileStore({ mediaDir: tmp }),
     });
     t.setStatus('ok');
     await t.flush();
@@ -240,7 +245,7 @@ describe('AgentTranscript.flush', () => {
       userId: 'kc',
       turnId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
       input: { text: 'q', context: {} },
-      mediaDir: tmp,
+      transcriptStore: new AgentTranscriptFileStore({ mediaDir: tmp }),
     });
     t.setStatus('ok');
     await t.flush();
@@ -268,7 +273,7 @@ describe('AgentTranscript.flush', () => {
       agentId: 'x',
       userId: 'kc',
       input: { text: 'q', context: {} },
-      mediaDir: '/root/forbidden-no-permission-path-99999',
+      transcriptStore: new AgentTranscriptFileStore({ mediaDir: '/root/forbidden-no-permission-path-99999' }),
       logger: { warn: (event, data) => warnings.push({ event, data }) },
     });
     t.setStatus('ok');
@@ -443,21 +448,19 @@ describe('AgentTranscript optional fields (Phase 1 Foundations)', () => {
     expect(json).not.toHaveProperty('satellite');
   });
 
-  it('filePathStrategy option overrides default path generation', async () => {
+  it('flushes through the injected transcript store', async () => {
     const writes = [];
-    const fakeFs = {
-      mkdir: async () => {},
-      writeFile: async (filePath, body) => { writes.push({ path: filePath, body }); },
+    const transcriptStore = {
+      save: async (entry) => { writes.push(entry); },
     };
     const t = new AgentTranscript({
       ...baseDeps,
-      mediaDir: '/does-not-matter',
-      fs: fakeFs,
-      filePathStrategy: (transcript) => `/custom/${transcript.agentId}/${transcript.turnId}.json`,
+      transcriptStore,
     });
     t.setStatus('ok');
     await t.flush();
     expect(writes).toHaveLength(1);
-    expect(writes[0].path).toBe(`/custom/${baseDeps.agentId}/${baseDeps.turnId}.json`);
+    expect(writes[0]).toMatchObject({ agentId: baseDeps.agentId, turnId: baseDeps.turnId });
+    expect(writes[0].transcript).toEqual(t.toJSON());
   });
 });

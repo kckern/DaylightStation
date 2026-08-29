@@ -1,6 +1,6 @@
 // tests/unit/suite/system/registries/AdapterRegistry.test.mjs
 import { vi } from 'vitest';
-import { AdapterRegistry } from '#backend/src/0_system/registries/AdapterRegistry.mjs';
+import { AdapterRegistry } from '#composition/integrations/AdapterRegistry.mjs';
 
 describe('AdapterRegistry', () => {
   describe('discover()', () => {

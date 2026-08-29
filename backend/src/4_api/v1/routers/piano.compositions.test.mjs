@@ -18,7 +18,9 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
 }));
 import { YamlComposerSongStore as ComposerSongStore } from '#adapters/persistence/yaml/YamlComposerSongStore.mjs';
 import { PianoContainer } from '#apps/piano/PianoContainer.mjs';
+import { PianoConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 
 const configService = {
   getUserDir: (id) => `/data/users/${id}`,
@@ -36,9 +38,9 @@ const EMPTY_VALID_XML = `<?xml version="1.0"?><score-partwise><part-list><score-
 function app() {
   const composerSongStore = new ComposerSongStore({ configService, logger: { info() {}, warn() {}, debug() {} } });
   const studioDatastore = { listStudioTakes: () => [], isKnownUser: () => true };
-  const pianoContainer = new PianoContainer({ studioDatastore, composerSongStore, configService });
+  const pianoContainer = new PianoContainer({ studioDatastore, composerSongStore, configProjection: new PianoConfigProjection({ configService }) });
   const a = express(); a.use(express.json());
-  a.use('/api/v1/piano', createPianoRouter({ pianoContainer, logger: { info() {}, error() {} } }));
+  a.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({ pianoContainer, logger: { info() {}, error() {} } })));
   return a;
 }
 beforeEach(() => { files = {}; blobs = {}; });

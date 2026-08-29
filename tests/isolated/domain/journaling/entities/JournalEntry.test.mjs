@@ -250,8 +250,8 @@ describe('JournalEntry', () => {
     });
   });
 
-  describe('toJSON/fromJSON', () => {
-    test('round-trips data correctly', () => {
+  describe('reconstitution', () => {
+    test('reconstitutes a stored record correctly', () => {
       const original = new JournalEntry({
         id: 'entry-123',
         userId: 'user-1',
@@ -265,8 +265,21 @@ describe('JournalEntry', () => {
         metadata: { weather: 'sunny' }
       });
 
-      const json = original.toJSON();
-      const restored = JournalEntry.fromJSON(json);
+      const restored = new JournalEntry({
+        id: original.id,
+        userId: original.userId,
+        date: original.date,
+        title: original.title,
+        content: original.content,
+        mood: original.mood,
+        tags: original.tags,
+        gratitudeItems: original.gratitudeItems,
+        prompts: original.prompts,
+        attachments: original.attachments,
+        createdAt: original.createdAt,
+        updatedAt: original.updatedAt,
+        metadata: original.metadata
+      });
 
       expect(restored.id).toBe(original.id);
       expect(restored.title).toBe(original.title);

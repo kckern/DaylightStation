@@ -15,6 +15,11 @@ const slug = (s) =>
     .replace(/^-|-$/g, '')
     .slice(0, 48);
 
+const serializeGoal = goal => ({ id: goal.id, name: goal.name, state: goal.state, quality: goal.quality, why: goal.why, sacrifice: goal.sacrifice, deadline: goal.deadline, metrics: goal.metrics, audacity: goal.audacity, milestones: goal.milestones, state_history: goal.state_history, dependencies: goal.dependencies, avoids_nightmare: goal.avoids_nightmare, nightmare_proximity: goal.nightmare_proximity, retrospective: goal.retrospective, achieved_date: goal.achieved_date, failed_date: goal.failed_date, abandoned_reason: goal.abandoned_reason, paused_reason: goal.paused_reason, resume_conditions: goal.resume_conditions });
+const serializeValue = value => ({ id: value.id, name: value.name, rank: value.rank, description: value.description, justified_by: value.justified_by, conflicts_with: value.conflicts_with, alignment: value.alignment, drift_history: value.drift_history });
+const serializeBelief = belief => ({ id: belief.id, if: belief.if, then: belief.then, state: belief.state, confidence: belief.confidence, foundational: belief.foundational, signals: belief.signals, evidence_history: belief.evidence_history, evidence_quality: belief.evidence_quality, depends_on: belief.depends_on, state_history: belief.state_history, origin: belief.origin });
+const serializePurpose = purpose => ({ statement: purpose.statement, adopted: purpose.adopted, last_reviewed: purpose.last_reviewed, review_cadence: purpose.review_cadence, notes: purpose.notes, grounded_in: purpose.grounded_in });
+
 /**
  * PlanAuthoringService — the single write path for creating a life plan and
  * appending its top-level entities (goals, values, beliefs, purpose).
@@ -65,7 +70,7 @@ export class PlanAuthoringService {
 
   /**
    * Append a goal (initial state = Goal default 'dream').
-   * @returns {object} the created goal's toJSON()
+   * @returns {object} the created goal record
    */
   addGoal(username, { name, why = '', milestone = null } = {}) {
     if (!name) throw new Error('Goal requires a name');
@@ -78,12 +83,12 @@ export class PlanAuthoringService {
     });
     plan.goals.push(goal);
     this.#lifePlanStore.save(username, plan);
-    return goal.toJSON();
+    return serializeGoal(goal);
   }
 
   /**
    * Append a value at the next rank (1-based).
-   * @returns {object} the created value's toJSON()
+   * @returns {object} the created value record
    */
   addValue(username, { name, description = '' } = {}) {
     if (!name) throw new Error('Value requires a name');
@@ -96,14 +101,14 @@ export class PlanAuthoringService {
     });
     plan.values.push(value);
     this.#lifePlanStore.save(username, plan);
-    return value.toJSON();
+    return serializeValue(value);
   }
 
   /**
    * Append a belief (initial state = Belief default 'hypothesized',
    * confidence default 0.5). Body uses if_hypothesis/then_outcome, mapped to
    * the domain's if/then fields.
-   * @returns {object} the created belief's toJSON()
+   * @returns {object} the created belief record
    */
   addBelief(username, { if_hypothesis, then_outcome } = {}) {
     if (!if_hypothesis || !then_outcome) {
@@ -117,21 +122,21 @@ export class PlanAuthoringService {
     });
     plan.beliefs.push(belief);
     this.#lifePlanStore.save(username, plan);
-    return belief.toJSON();
+    return serializeBelief(belief);
   }
 
   /**
    * Set or replace the plan's purpose statement.
-   * @returns {object} the purpose's toJSON()
+   * @returns {object} the purpose record
    */
   setPurpose(username, { statement } = {}) {
     if (!statement) throw new Error('Purpose requires a statement');
     const plan = this.#loadOrCreate(username);
     plan.purpose = new Purpose({
-      ...(plan.purpose?.toJSON() || {}),
+      ...(plan.purpose ? serializePurpose(plan.purpose) : {}),
       statement,
     });
     this.#lifePlanStore.save(username, plan);
-    return plan.purpose.toJSON();
+    return serializePurpose(plan.purpose);
   }
 }

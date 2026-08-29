@@ -193,7 +193,18 @@ describe('getStatus — mirrors the hub status shape', () => {
   });
 
   it('serializes to the hub wire shape', () => {
-    const json = playback.getStatus()[0].toJSON();
+    const slot = playback.getStatus()[0];
+    const json = {
+      position: slot.position,
+      color: slot.color,
+      bt_connected: slot.bt_connected,
+      paused: slot.paused,
+      now_playing: slot.now_playing,
+      volume: slot.volume,
+      playlist_pos: slot.playlist_pos,
+      playlist_count: slot.playlist_count,
+      armed_source: slot.armed_source,
+    };
     expect(Object.keys(json).sort()).toEqual([
       'armed_source', 'bt_connected', 'color', 'now_playing', 'paused',
       'playlist_count', 'playlist_pos', 'position', 'volume',

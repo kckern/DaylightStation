@@ -28,7 +28,7 @@ export class ConvertPendingPianoMidi {
     try {
       let pending;
       try {
-        pending = await this.#library.listPending();
+        pending = await this.#library.listPendingRecordings();
       } catch (err) {
         this.#logger.warn?.('pianoaudio.list.failed', { error: err.message });
         return { count: 0, status: 'error', reason: err.message };
@@ -46,11 +46,11 @@ export class ConvertPendingPianoMidi {
           if (i >= pending.length) return;
           const ref = pending[i];
           try {
-            await this.#converter.convert(ref.midiPath, ref.outputPath);
+            await this.#converter.convertRecording(ref);
             converted += 1;
-            this.#logger.info?.('pianoaudio.converted', { midiPath: ref.midiPath, outputPath: ref.outputPath });
+            this.#logger.info?.('pianoaudio.converted', { recordingId: ref.recordingId });
           } catch (err) {
-            this.#logger.warn?.('pianoaudio.convert.failed', { midiPath: ref.midiPath, error: err.message });
+            this.#logger.warn?.('pianoaudio.convert.failed', { recordingId: ref.recordingId, error: err.message });
           }
         }
       };

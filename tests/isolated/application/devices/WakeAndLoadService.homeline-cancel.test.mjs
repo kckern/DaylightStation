@@ -4,6 +4,16 @@ import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mj
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
 const broadcast = vi.fn();
 const eventBus = { getTopicSubscriberCount: () => 0, subscribe: vi.fn() };
+const runtimePorts = () => ({
+  clock: { now: () => Date.now() },
+  createDispatchId: () => 'generated-dispatch-id',
+  scheduler: {
+    wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+    after: (ms, callback) => setTimeout(callback, ms),
+    cancel: (handle) => clearTimeout(handle),
+    withDeadline: async (operation) => operation(),
+  },
+});
 
 describe('WakeAndLoadService Home Line cancellation', () => {
   it('stops after an in-flight power step when the lease is ended', async () => {
@@ -15,7 +25,7 @@ describe('WakeAndLoadService Home Line cancellation', () => {
       prepareForContent: vi.fn(async () => ({ ok: true })), loadContent: vi.fn(async () => ({ ok: true })),
     };
     const service = new WakeAndLoadService({ deviceService: { get: () => device },
-      readinessPolicy: { isReady: vi.fn() }, broadcast, eventBus, logger });
+      readinessPolicy: { isReady: vi.fn() }, broadcast, eventBus, logger, ...runtimePorts() });
     const result = await service.execute('tv', { open: 'videocall/tv' }, { isCancelled: () => cancelled });
     expect(result).toMatchObject({ ok: false, cancelled: true, failedStep: 'power' });
     expect(device.prepareForContent).not.toHaveBeenCalled();
@@ -31,7 +41,7 @@ describe('WakeAndLoadService Home Line cancellation', () => {
       prepareForContent: vi.fn(), loadContent: vi.fn(), notifyService: null,
     };
     const service = new WakeAndLoadService({ deviceService: { get: () => device },
-      readinessPolicy: { isReady: vi.fn(async () => ({ ready: false, reason: 'off' })) }, broadcast, eventBus, logger });
+      readinessPolicy: { isReady: vi.fn(async () => ({ ready: false, reason: 'off' })) }, broadcast, eventBus, logger, ...runtimePorts() });
     await service.execute('tv', { open: 'videocall/tv' }, { deferredRetry: false });
     await vi.advanceTimersByTimeAsync(46_000);
     expect(device.powerOn).toHaveBeenCalledTimes(1);
@@ -48,7 +58,7 @@ describe('WakeAndLoadService Home Line cancellation', () => {
       loadContent: vi.fn(async () => ({ ok: true })),
     };
     const service = new WakeAndLoadService({ deviceService: { get: () => device },
-      readinessPolicy: { isReady: vi.fn() }, broadcast, eventBus, logger });
+      readinessPolicy: { isReady: vi.fn() }, broadcast, eventBus, logger, ...runtimePorts() });
     await service.execute('tv', { open: 'videocall/tv' }, {
       dispatchId: 'dispatch-1', deferredRetry: false,
       correlation: { callId: 'call-1', attemptId: 'attempt-1', credential: 'must-not-leak' },

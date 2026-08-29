@@ -1,9 +1,13 @@
 /**
- * IAudioAssetResolver — domain interface for resolving audio specs to playable files.
+ * IAudioAssetResolver — application interface for resolving audio specs to
+ * opaque playable resources.
  *
  * Specs can be:
- * - { type: 'file', path: '/audio/track.mp3' } — pass-through
- * - { type: 'tts', text: 'Hello', voice: 'nova' } — generate speech, return cached path
+ * - { type: 'file', assetId: 'music/track.mp3' }
+ * - { type: 'tts', text: 'Hello', voice: 'nova' }
+ *
+ * Resolved assets expose `{ assetId, duration, resource }`; storage locations,
+ * cache names, and cleanup remain adapter concerns.
  */
 export class IAudioAssetResolver {
   async resolve(spec) {

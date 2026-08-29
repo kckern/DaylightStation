@@ -6,14 +6,18 @@
  * shared household events. Handles Google Calendar format and flat format.
  */
 export class WeeklyReviewCalendarAdapter {
-  #userDataService;
+  #loadLifelogCalendar;
+  #loadCurrentCalendar;
+  #loadSharedCalendar;
   #householdId;
   #defaultUser;
   #timezone;
   #logger;
 
   constructor(config = {}, deps = {}) {
-    this.#userDataService = deps.userDataService;
+    this.#loadLifelogCalendar = deps.loadLifelogCalendar;
+    this.#loadCurrentCalendar = deps.loadCurrentCalendar;
+    this.#loadSharedCalendar = deps.loadSharedCalendar;
     this.#householdId = config.householdId;
     this.#defaultUser = config.defaultUser || null;
     this.#timezone = config.timezone || 'America/Los_Angeles';
@@ -27,7 +31,7 @@ export class WeeklyReviewCalendarAdapter {
     // 1. User lifelog (past events, date-keyed format)
     if (this.#defaultUser) {
       try {
-        const lifelog = this.#userDataService.readUserLifelogData?.(this.#defaultUser, 'calendar');
+        const lifelog = this.#loadLifelogCalendar?.(this.#defaultUser);
         if (lifelog && typeof lifelog === 'object' && !Array.isArray(lifelog)) {
           const parsed = this.#parseDateKeyedEvents(lifelog, startDate, endDate);
           const count = parsed.reduce((s, d) => s + d.events.length, 0);
@@ -42,16 +46,12 @@ export class WeeklyReviewCalendarAdapter {
     // 2. User current (upcoming events, flat array)
     if (this.#defaultUser) {
       try {
-        const userPath = this.#userDataService.getUserDataPath?.(this.#defaultUser, 'current', 'calendar.yml');
-        if (userPath) {
-          const { loadYamlFromPath } = await import('#system/utils/FileIO.mjs');
-          const current = loadYamlFromPath(userPath);
-          if (Array.isArray(current)) {
-            const parsed = this.#parseArrayEvents(current, startDate, endDate);
-            const count = parsed.reduce((s, d) => s + d.events.length, 0);
-            sources.push({ source: 'current', count });
-            for (const day of parsed) allEvents.push(...day.events.map(e => ({ ...e, _date: day.date })));
-          }
+        const current = this.#loadCurrentCalendar?.(this.#defaultUser);
+        if (Array.isArray(current)) {
+          const parsed = this.#parseArrayEvents(current, startDate, endDate);
+          const count = parsed.reduce((s, d) => s + d.events.length, 0);
+          sources.push({ source: 'current', count });
+          for (const day of parsed) allEvents.push(...day.events.map(e => ({ ...e, _date: day.date })));
         }
       } catch (err) {
         this.#logger.debug?.('weekly-review.calendar.current-error', { error: err.message });
@@ -60,7 +60,7 @@ export class WeeklyReviewCalendarAdapter {
 
     // 3. Household shared (fallback, Google Calendar format)
     try {
-      const shared = this.#userDataService.readHouseholdSharedData?.(this.#householdId, 'calendar');
+      const shared = this.#loadSharedCalendar?.(this.#householdId);
       if (shared) {
         const parsed = Array.isArray(shared)
           ? this.#parseArrayEvents(shared, startDate, endDate)

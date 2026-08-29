@@ -2,20 +2,30 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPlayRouter } from './play.mjs';
+import { RecordPlaybackProgress } from '#apps/content/usecases/RecordPlaybackProgress.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 const makeRouter = (store) => {
   const app = express();
   app.use(express.json());
   // Minimal mocks for the play/log dependencies
-  const mediaProgressMemory = { get: vi.fn().mockResolvedValue(null), set: vi.fn().mockResolvedValue() };
+  const mediaProgressMemory = {
+    findProgress: vi.fn().mockResolvedValue(null),
+    saveProgress: vi.fn().mockResolvedValue(),
+  };
   const registry = { get: () => null, adapters: { get: () => null } };
+  const contentCatalog = new RegistryContentCatalogGateway({ registry });
+  const logger = { info: vi.fn(), warn: vi.fn() };
+  const recordPlaybackProgress = new RecordPlaybackProgress({
+    contentCatalog,
+    mediaProgressMemory,
+    userVideoProgressStore: store,
+    nowTimestamp: () => '2026-08-28 12:00:00',
+    logger,
+  });
   app.use('/api/v1/play', createPlayRouter({
-    registry, mediaProgressMemory,
-    playResponseService: { getWatchState: vi.fn(), toPlayResponse: vi.fn() },
-    contentQueryService: null, contentIdResolver: { resolve: () => null },
-    progressSyncSources: new Set(), progressSyncService: null,
-    eventBus: null, userVideoProgressStore: store,
-    logger: { info: vi.fn(), warn: vi.fn() },
+    recordPlaybackProgress,
+    logger,
   }));
   return app;
 };

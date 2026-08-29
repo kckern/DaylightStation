@@ -5,7 +5,6 @@
  * Represents an answer to a quiz question.
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
@@ -44,7 +43,8 @@ export class QuizAnswer {
 
     if (!props.answeredAt) throw new ValidationError('answeredAt is required');
 
-    this.#uuid = props.uuid || uuidv4();
+    if (!props.uuid) throw new ValidationError('uuid is required');
+    this.#uuid = props.uuid;
     this.#questionUuid = props.questionUuid;
     this.#chatId = props.chatId;
     this.#date = props.date;
@@ -113,36 +113,20 @@ export class QuizAnswer {
    * @param {string} answeredAt - When answered (ISO timestamp)
    * @returns {QuizAnswer}
    */
-  static fromChoice(question, chatId, date, choiceIndex, answeredAt) {
+  static fromChoice(question, chatId, date, choiceIndex, answeredAt, uuid) {
     const choices = question.choices;
     if (choiceIndex < 0 || choiceIndex >= choices.length) {
       throw new ValidationError(`Invalid choice index: ${choiceIndex}`);
     }
 
     return new QuizAnswer({
+      uuid,
       questionUuid: question.uuid,
       chatId,
       date,
       answer: choiceIndex,
       answeredAt,
     });
-  }
-
-  // ==================== Serialization ====================
-
-  /**
-   * Convert to plain object
-   * @returns {object}
-   */
-  toJSON() {
-    return {
-      uuid: this.#uuid,
-      questionUuid: this.#questionUuid,
-      chatId: this.#chatId,
-      date: this.#date,
-      answer: this.#answer,
-      answeredAt: this.#answeredAt,
-    };
   }
 
   /**

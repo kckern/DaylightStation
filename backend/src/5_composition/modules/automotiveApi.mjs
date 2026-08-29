@@ -10,7 +10,10 @@
 // reads an empty tree while the device writes happily into another one.
 
 import { AutomotiveContainer } from '#apps/automotive/AutomotiveContainer.mjs';
+import { AutomotiveQueryService } from '#apps/automotive/AutomotiveQueryService.mjs';
+import { AutomotiveCommandService } from '#apps/automotive/AutomotiveCommandService.mjs';
 import { createAutomotiveRouter } from '#api/v1/routers/automotive.mjs';
+import { summarizeFuel } from '#domains/automotive/services/FuelEconomyService.mjs';
 import path from 'node:path';
 import { YamlVehicleHistoryDatastore } from '#adapters/persistence/yaml/YamlVehicleHistoryDatastore.mjs';
 import { YamlVehicleRecordDatastore } from '#adapters/persistence/yaml/YamlVehicleRecordDatastore.mjs';
@@ -36,16 +39,17 @@ export function createAutomotiveApi({ configService, vehiclesConfig = {}, logger
   // Bootstrap constructs the concrete adapters (D1) and resolves where they
   // read from; the container receives ports, not classes.
   const automotiveContainer = new AutomotiveContainer({
-    configService,
     historyRepository: new YamlVehicleHistoryDatastore({ historyRoot, logger }),
     recordRepository: new YamlVehicleRecordDatastore({ recordsRoot, logger }),
     placeRepository: new YamlPlaceDatastore({ recordsRoot, logger }),
     vehiclesConfig,
     logger,
   });
+  const automotiveQuery = new AutomotiveQueryService({ container: automotiveContainer, summarizeFuel });
+  const automotiveCommands = new AutomotiveCommandService({ container: automotiveContainer });
   return {
     automotiveContainer,
-    router: createAutomotiveRouter({ automotiveContainer, logger }),
+    router: createAutomotiveRouter({ automotiveQuery, automotiveCommands, logger }),
   };
 }
 

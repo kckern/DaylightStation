@@ -5,19 +5,12 @@
  * override ?? the unit's authored `passing.percent`); authored curriculum
  * stays untouched — an override is data, reversible, and audited.
  */
-import fsSync from 'fs';
-import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
+import { readTextFromPath, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 
-async function atomicWrite(file, text) {
-  const tmp = `${file}.tmp-${process.pid}`;
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(tmp, text, 'utf8');
-  await fs.rename(tmp, file);
-}
+async function atomicWrite(file, text) { writeFileAtomic(file, text); }
 
 
 export class YamlPassOverrideStore {
@@ -33,7 +26,7 @@ export class YamlPassOverrideStore {
 
   #readState() {
     let text;
-    try { text = fsSync.readFileSync(this.#file(), 'utf8'); } catch { return { state: 'missing', overrides: {}, history: [] }; }
+    try { text = readTextFromPath(this.#file()); } catch { return { state: 'missing', overrides: {}, history: [] }; }
     try {
       const raw = yaml.load(text);
       if (raw && typeof raw === 'object') return { state: 'ok', overrides: raw.overrides ?? {}, history: raw.history ?? [] };

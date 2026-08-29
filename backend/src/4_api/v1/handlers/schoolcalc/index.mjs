@@ -1,8 +1,8 @@
-/** HTTP-only translators for the injected SchoolCalc application container. */
+/** HTTP-only translators for injected SchoolCalc application operations. */
 
-export function schoolCalcEnrollHandler({ container }) {
+export function schoolCalcEnrollHandler({ operations }) {
   return async (req, res) => {
-    const result = await container.enrollDevice.execute(req.body ?? {});
+    const result = await operations.enrollDevice.execute(req.body ?? {});
     res.status(201).set('Cache-Control', 'no-store').json({
       device: result.device,
       identity: encodedRecord(result.identityRecord),
@@ -11,16 +11,16 @@ export function schoolCalcEnrollHandler({ container }) {
   };
 }
 
-export function schoolCalcLearnerRosterHandler({ container }) {
+export function schoolCalcLearnerRosterHandler({ operations }) {
   return async (req, res) => {
-    const roster = await container.getLearnerRoster.execute({ deviceId: req.params.deviceId });
+    const roster = await operations.getLearnerRoster.execute({ deviceId: req.params.deviceId });
     res.set('Cache-Control', 'private, no-cache').json(serializeLearnerRoster(roster));
   };
 }
 
-export function schoolCalcProgressHandler({ container }) {
+export function schoolCalcProgressHandler({ operations }) {
   return async (req, res) => {
-    const progress = await container.getProgressProjection.execute({ deviceId: req.params.deviceId });
+    const progress = await operations.getProgressProjection.execute({ deviceId: req.params.deviceId });
     const etag = quoteEtag(progress.generation);
     res.set({
       ETag: etag,
@@ -33,14 +33,14 @@ export function schoolCalcProgressHandler({ container }) {
   };
 }
 
-export function schoolCalcFollowUpResolveHandler({ container }) {
+export function schoolCalcFollowUpResolveHandler({ operations }) {
   return async (req, res) => {
-    if (!container.resolveFollowUp || typeof container.resolveFollowUp.execute !== 'function') {
+    if (!operations.resolveFollowUp || typeof operations.resolveFollowUp.execute !== 'function') {
       const error = new Error('SchoolCalc follow-up resolution is unavailable');
       error.name = 'InfrastructureError';
       throw error;
     }
-    const outcome = await container.resolveFollowUp.execute({
+    const outcome = await operations.resolveFollowUp.execute({
       deviceId: req.params.deviceId,
       learnerKey: req.body?.learnerKey,
       actionKey: req.params.actionKey,
@@ -49,19 +49,19 @@ export function schoolCalcFollowUpResolveHandler({ container }) {
   };
 }
 
-export function schoolCalcIdentifyHandler({ container }) {
+export function schoolCalcIdentifyHandler({ operations }) {
   return async (req, res) => {
-    const identity = await container.identifyDevice.execute({
+    const identity = await operations.identifyDevice.execute({
       record: requiredBinaryBody(req.body, 'device identity'),
     });
     res.set('Cache-Control', 'no-store').json(identity);
   };
 }
 
-export function schoolCalcObserveHandler({ container, relayIdFromRequest }) {
+export function schoolCalcObserveHandler({ operations, relayIdFromRequest }) {
   return async (req, res) => {
     const relayId = requiredRelayId(req, relayIdFromRequest);
-    const device = await container.observeDevice.execute({
+    const device = await operations.observeDevice.execute({
       deviceId: req.params.deviceId,
       rawInfo: requiredBinaryBody(req.body, 'device info'),
       relayId,
@@ -70,9 +70,9 @@ export function schoolCalcObserveHandler({ container, relayIdFromRequest }) {
   };
 }
 
-export function schoolCalcCatalogHandler({ container }) {
+export function schoolCalcCatalogHandler({ operations }) {
   return async (req, res) => {
-    const catalog = await container.getCatalog.execute({ deviceId: req.params.deviceId });
+    const catalog = await operations.getCatalog.execute({ deviceId: req.params.deviceId });
     const etag = quoteEtag(catalog.generation);
     res.set({
       ETag: etag,
@@ -85,9 +85,9 @@ export function schoolCalcCatalogHandler({ container }) {
   };
 }
 
-export function schoolCalcDeliveryRequestsHandler({ container }) {
+export function schoolCalcDeliveryRequestsHandler({ operations }) {
   return async (req, res) => {
-    const result = await container.requestDelivery.execute({
+    const result = await operations.requestDelivery.execute({
       deviceId: req.params.deviceId,
       record: requiredBinaryBody(req.body, 'delivery request'),
     });
@@ -95,9 +95,9 @@ export function schoolCalcDeliveryRequestsHandler({ container }) {
   };
 }
 
-export function schoolCalcArtifactHandler({ container }) {
+export function schoolCalcArtifactHandler({ operations }) {
   return async (req, res) => {
-    const artifact = await container.getArtifact.execute({ artifactId: req.params.artifactId });
+    const artifact = await operations.getArtifact.execute({ artifactId: req.params.artifactId });
     res.set({
       'Content-Type': artifact.mediaType,
       'Content-Length': String(artifact.byteLength),
@@ -112,7 +112,7 @@ export function schoolCalcArtifactHandler({ container }) {
   };
 }
 
-export function schoolCalcResultImportHandler({ container }) {
+export function schoolCalcResultImportHandler({ operations }) {
   return async (req, res) => {
     const record = typeof req.body === 'string'
       ? req.body.trim()
@@ -120,16 +120,16 @@ export function schoolCalcResultImportHandler({ container }) {
     if (typeof record === 'string' && !record) throw requestError('SchoolCalc result body is empty');
     const requestedTransport = req.get('X-SchoolCalc-Transport');
     const transport = requestedTransport ?? (typeof record === 'string' ? 'qr' : 'relay');
-    const result = await container.importResult.execute({ record, transport });
+    const result = await operations.importResult.execute({ record, transport });
     res.status(result.status === 'conflict' ? 409 : 200).json(result);
   };
 }
 
-export function schoolCalcSyncHandler({ container, relayIdFromRequest }) {
+export function schoolCalcSyncHandler({ operations, relayIdFromRequest }) {
   return async (req, res) => {
     const relayId = requiredRelayId(req, relayIdFromRequest);
     const body = req.body ?? {};
-    const outcome = await container.syncDevice.execute({
+    const outcome = await operations.syncDevice.execute({
       deviceId: req.params.deviceId,
       relayId,
       rawInfo: optionalEncodedRecord(body.rawInfo, 'rawInfo'),
@@ -144,9 +144,9 @@ export function schoolCalcSyncHandler({ container, relayIdFromRequest }) {
   };
 }
 
-export function schoolCalcRemediationListHandler({ container }) {
+export function schoolCalcRemediationListHandler({ operations }) {
   return async (req, res) => {
-    const tutor = requiredRemediationTutor(container);
+    const tutor = requiredRemediationTutor(operations.remediationTutor);
     const available = await tutor.listAvailable({
       surface: 'schoolcalc', endpointId: req.params.deviceId,
     });
@@ -159,9 +159,9 @@ export function schoolCalcRemediationListHandler({ container }) {
   };
 }
 
-export function schoolCalcRemediationSessionHandler({ container }) {
+export function schoolCalcRemediationSessionHandler({ operations }) {
   return async (req, res) => {
-    const tutor = requiredRemediationTutor(container);
+    const tutor = requiredRemediationTutor(operations.remediationTutor);
     const session = await tutor.get({
       sessionId: req.params.sessionId,
       access: { surface: 'schoolcalc', endpointId: req.params.deviceId },
@@ -172,9 +172,9 @@ export function schoolCalcRemediationSessionHandler({ container }) {
   };
 }
 
-export function schoolCalcRemediationActionHandler({ container }) {
+export function schoolCalcRemediationActionHandler({ operations }) {
   return async (req, res) => {
-    const tutor = requiredRemediationTutor(container);
+    const tutor = requiredRemediationTutor(operations.remediationTutor);
     try {
       const outcome = await tutor.act({
         sessionId: req.params.sessionId,
@@ -282,13 +282,13 @@ function requiredRelayId(req, relayIdFromRequest) {
   return relayId;
 }
 
-function requiredRemediationTutor(container) {
-  if (!container?.remediationTutor) {
+function requiredRemediationTutor(tutor) {
+  if (!tutor) {
     const error = new Error('Adaptive remediation is unavailable');
     error.name = 'InfrastructureError';
     throw error;
   }
-  return container.remediationTutor;
+  return tutor;
 }
 
 function nonNegativeQueryInteger(value, field) {

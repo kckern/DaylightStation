@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Text } from '#system/utils/sha256.mjs';
 
 export const PRODUCER_SCHEMA_VERSION = 2;
 export const PRODUCER_FAMILIES = Object.freeze(['loops', 'crate', 'songs']);
@@ -19,7 +19,7 @@ function stable(value) {
 }
 
 export function sha256(value) {
-  return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
+  return sha256Text(JSON.stringify(stable(value)));
 }
 
 /** Identity/provenance and presentation fields do not change musical content. */

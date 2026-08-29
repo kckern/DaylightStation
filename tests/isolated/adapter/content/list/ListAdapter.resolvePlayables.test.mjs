@@ -44,11 +44,11 @@ function makeMockMemory(progressMap = {}) {
   // 'plex:ep1' for the bulk getAll() path.
   const normalize = (k) => (k.includes(':') ? k : `plex:${k}`);
   return {
-    get: vi.fn(async (mediaKey) => {
+    findProgress: vi.fn(async (mediaKey) => {
       const percent = progressMap[mediaKey] ?? progressMap[normalize(mediaKey)] ?? 0;
       return { percent };
     }),
-    getAll: vi.fn(async () => {
+    listProgress: vi.fn(async () => {
       return Object.entries(progressMap).map(([contentId, percent]) => ({
         contentId: normalize(contentId),
         percent,
@@ -255,7 +255,7 @@ describe('_getNextPlayableFromChild — Plex fast path', () => {
 describe('_getNextPlayableFromChild — generic fallback with bulk getAll', () => {
   const episodes = makeEpisodes(5);
 
-  it('uses getAll for bulk progress lookup (not individual .get())', async () => {
+  it('uses listProgress for bulk progress lookup (not individual lookups)', async () => {
     const registry = makeMockRegistry(episodes);
     const memory = makeMockMemory({ ep1: 0, ep2: 0, ep3: 50, ep4: 0, ep5: 0 });
     const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
@@ -268,8 +268,8 @@ describe('_getNextPlayableFromChild — generic fallback with bulk getAll', () =
 
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('plex:ep3'); // in-progress at 50%
-    expect(memory.getAll).toHaveBeenCalledWith('plex');
-    expect(memory.get).not.toHaveBeenCalled(); // should use bulk, not individual
+    expect(memory.listProgress).toHaveBeenCalledWith('plex');
+    expect(memory.findProgress).not.toHaveBeenCalled(); // should use bulk, not individual
   });
 });
 

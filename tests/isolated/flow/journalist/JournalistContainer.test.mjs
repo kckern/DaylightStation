@@ -12,6 +12,7 @@ describe('JournalistContainer', () => {
   let mockQuizRepository;
   let mockDebriefRepository;
   let mockUserResolver;
+  let mockLifelogAggregator;
   let mockLogger;
 
   beforeEach(() => {
@@ -53,6 +54,9 @@ describe('JournalistContainer', () => {
     };
     mockUserResolver = {
       resolve: vi.fn(),
+    };
+    mockLifelogAggregator = {
+      aggregate: vi.fn().mockResolvedValue({}),
     };
     mockLogger = {
       info: vi.fn(),
@@ -168,6 +172,7 @@ describe('JournalistContainer', () => {
           conversationStateStore: mockConversationStateStore,
           quizRepository: mockQuizRepository,
           userResolver: mockUserResolver,
+          lifelogAggregator: mockLifelogAggregator,
           logger: mockLogger,
         }
       );
@@ -209,6 +214,7 @@ describe('JournalistContainer', () => {
           quizRepository: mockQuizRepository,
           debriefRepository: mockDebriefRepository,
           userResolver: mockUserResolver,
+          lifelogAggregator: mockLifelogAggregator,
           logger: mockLogger,
         }
       );

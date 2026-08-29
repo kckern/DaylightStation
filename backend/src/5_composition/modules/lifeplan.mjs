@@ -17,7 +17,10 @@ import { DriftService } from '#apps/lifeplan/services/DriftService.mjs';
 import { AlignmentService } from '#apps/lifeplan/services/AlignmentService.mjs';
 import { CeremonyDueResolver } from '#domains/lifeplan/services/CeremonyDueResolver.mjs';
 import { CeremonyScheduler } from '#apps/lifeplan/services/CeremonyScheduler.mjs';
+import { LifePlanOperations } from '#apps/lifeplan/LifePlanOperations.mjs';
+import { LifeApiOperations } from '#apps/lifeplan/LifeApiOperations.mjs';
 import createLifeRouter from '#api/v1/routers/life.mjs';
+import { createNoOpNotificationService } from '#adapters/integrations/noops.mjs';
 
 /**
  * Bootstrap the lifeplan domain.
@@ -99,7 +102,7 @@ export function bootstrapLifeplan(deps) {
 
   // Ceremony scheduler
   const ceremonyScheduler = new CeremonyScheduler({
-    notificationService: notificationService || { send: () => [] },
+    notificationService: notificationService || createNoOpNotificationService(),
     lifePlanStore: container.getLifePlanStore(),
     ceremonyRecordStore: container.getCeremonyRecordStore(),
     cadenceService: container.getCadenceService(),
@@ -108,19 +111,46 @@ export function bootstrapLifeplan(deps) {
     logger,
   });
 
-  // Router config (extends container's base config)
-  const routerConfig = {
-    ...container.getRouterConfig(),
-    ceremonyService,
-    feedbackService,
-    planAuthoringService,
-    retroService,
-    alignmentService,
-    driftService,
+  const lifeplanDependencies = container.getRouterConfig();
+  const lifePlanOperations = new LifePlanOperations({
+    plans: lifeplanDependencies.lifePlanStore,
+    goalStates: lifeplanDependencies.goalStateService,
+    beliefEvaluator: lifeplanDependencies.beliefEvaluator,
+    cadence: lifeplanDependencies.cadenceService,
+    ceremony: ceremonyService,
+    feedback: feedbackService,
+    retrospective: retroService,
+    authoring: planAuthoringService,
+    drift: driftService,
+    clock: clock || { now: () => new Date() },
+    serviceAvailability: {
+      alignmentService: !!alignmentService,
+      driftService: !!driftService,
+      ceremonyService: !!ceremonyService,
+      feedbackService: !!feedbackService,
+      retroService: !!retroService,
+      aggregator: !!aggregator,
+    },
+  });
+
+  const lifeApi = new LifeApiOperations({
     aggregator,
-    userService,
+    userDirectory: userService,
     listHouseholdUsers,
     defaultUsername,
+    lifePlanOperations,
+  });
+
+  // Router config exposes application capabilities and presentation functions,
+  // never repositories or domain workflow services.
+  const routerConfig = {
+    lifePlanOperations,
+    lifeApi,
+    presentBelief: lifeplanDependencies.presentBelief,
+    presentGoal: lifeplanDependencies.presentGoal,
+    presentLifePlan: lifeplanDependencies.presentLifePlan,
+    alignmentService,
+    driftService,
   };
 
   const router = createLifeRouter(routerConfig);

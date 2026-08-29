@@ -19,7 +19,7 @@ import {
 // --- fixture helpers -------------------------------------------------------
 
 /** Build an RLE series string from [value, count] pairs / bare values. */
-const rle = (entries) => JSON.stringify(entries);
+const rle = (entries) => entries;
 
 /** Nulls, then `covered` live ticks at `atTick`, padded to `total`. */
 const hrSeries = ({ total, blocks }) => {

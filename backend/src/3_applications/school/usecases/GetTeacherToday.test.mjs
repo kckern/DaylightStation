@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GetTeacherToday } from './GetTeacherToday.mjs';
+import { schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 const events = [
   { type: 'created', at: '2026-08-23T15:00:00.000Z', sessionId: 'ses_learner4', seq: 1,
@@ -53,12 +54,12 @@ describe('GetTeacherToday v2', () => {
     expect(digest.learners[0].sessions[0].artifacts).toEqual({
       worksheet: {
         artifactId: 'art_1',
-        originalPdfUrl: '/api/v1/school/teacher/artifacts/art_1/original.pdf',
-        thumbnailUrl: '/api/v1/school/teacher/artifacts/art_1/thumbnail.png',
+        originalPdfUrl: schoolArtifactRef('art_1', 'original.pdf'),
+        thumbnailUrl: schoolArtifactRef('art_1', 'thumbnail.png'),
       },
       receipt: {
         artifactId: 'receipt_1',
-        originalUrl: '/api/v1/school/teacher/artifacts/receipt_1/original',
+        originalUrl: schoolArtifactRef('receipt_1', 'original'),
       },
     });
     // The carried-over lane keeps the same references — the dashboard shows

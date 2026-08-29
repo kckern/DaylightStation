@@ -4,8 +4,8 @@
  * @module applications/pianoaudio/ports/IMidiConverter
  */
 export class IMidiConverter {
-  /** @param {string} midiPath @param {string} mp3Path @returns {Promise<void>} */
-  async convert(midiPath, mp3Path) { throw new Error('IMidiConverter.convert not implemented'); }
+  /** @param {{recordingId:string}} recording @returns {Promise<void>} */
+  async convertRecording(recording) { throw new Error('IMidiConverter.convertRecording not implemented'); }
 }
 
 export default IMidiConverter;

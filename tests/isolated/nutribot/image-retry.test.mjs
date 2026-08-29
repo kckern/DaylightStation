@@ -229,6 +229,7 @@ function buildImageDeps(overrides = {}) {
     config: { getDefaultTimezone: () => 'America/Los_Angeles' },
     encodeCallback: (cmd, data) => JSON.stringify({ cmd, ...data }),
     foodIconsString: 'apple banana default',
+    imageDownloader: { download: vi.fn().mockResolvedValue(Buffer.from('image')) },
     ...overrides,
   };
 }

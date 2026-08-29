@@ -19,69 +19,24 @@ import { stripEmpty } from '#api/v1/utils/stripEmpty.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
- * Derive capabilities from item properties.
- * Delegates to adapter if it implements getCapabilities(), otherwise uses generic fallback.
- *
- * @param {Object} item - The item to analyze
- * @param {Object} adapter - The content adapter for the item
- * @returns {string[]} Array of capability strings
- */
-function deriveCapabilities(item, adapter) {
-  // Prefer adapter-provided capabilities (proper DDD: domain knowledge stays in adapter)
-  if (adapter?.getCapabilities && typeof adapter.getCapabilities === 'function') {
-    return adapter.getCapabilities(item);
-  }
-
-  // Fallback: generic capability detection for adapters that don't implement getCapabilities yet
-  const capabilities = [];
-
-  // playable: can be played as video/audio
-  if (item.mediaUrl) {
-    capabilities.push('playable');
-  }
-
-  // displayable: has visual representation
-  if (item.thumbnail || item.imageUrl) {
-    capabilities.push('displayable');
-  }
-
-  // listable: is a container with children
-  const isListable = item.items || item.itemType === 'container';
-  if (isListable) {
-    capabilities.push('listable');
-  }
-
-  // queueable: generic heuristic - containers with resolvePlayables capability
-  if (isListable && adapter?.resolvePlayables) {
-    capabilities.push('queueable');
-  }
-
-  // readable: has readable content (books, comics, documents)
-  if (item.contentUrl || item.format) {
-    capabilities.push('readable');
-  }
-
-  return capabilities;
-}
-
-/**
  * Transform item to standardized info response format.
  * Passes through playback-essential fields for PlayableItem instances.
  *
  * @param {Object} item - The raw item from adapter (PlayableItem or ListableItem)
  * @param {string} source - The resolved source name
- * @param {Object} adapter - The content adapter for the item
+ * @param {string} format - Resolved content format
+ * @param {string[]} capabilities - Resolved content capabilities
  * @returns {Object} Formatted response object
  */
-function transformToInfoResponse(item, source, adapter, resolveFormat) {
+function transformToInfoResponse(item, source, format, capabilities) {
   const response = {
     contentId: item.id,  // Compound ID (e.g., "plex:12345") — unified identifier
     id: item.id,
     source,
     type: item.metadata?.type || item.type || null,
     title: item.title,
-    format: resolveFormat(item, adapter),
-    capabilities: deriveCapabilities(item, adapter),
+    format,
+    capabilities,
     metadata: item.metadata || {}
   };
 
@@ -125,16 +80,12 @@ function transformToInfoResponse(item, source, adapter, resolveFormat) {
  * Create info router for item metadata retrieval.
  *
  * @param {Object} config - Router configuration
- * @param {Object} config.registry - Content source registry
- * @param {Object} [config.contentQueryService] - Optional content query service
+ * @param {Object} config.contentAccessService - Semantic content metadata query
  * @param {Object} [config.logger] - Logger instance (defaults to console)
  * @returns {express.Router} Express router instance
  */
 export function createInfoRouter(config) {
-  // `resolveFormat` is pure domain logic, so it arrives via the factory
-  // rather than being imported (api-layer-guidelines.md).
-  const { resolveFormat } = config;
-  const { registry, contentQueryService, contentIdResolver, logger = console } = config;
+  const { contentAccessService, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -158,24 +109,17 @@ export function createInfoRouter(config) {
 
     logger.info?.('info.request', { source, localId, compoundId, ip: req.ip });
 
-    // Resolve content ID through unified resolver (handles all layers:
-    // exact source, prefix resolution, system aliases, household aliases)
-    const resolved = contentIdResolver.resolve(compoundId);
+    const outcome = await contentAccessService.info(compoundId, resolvedSource || source);
 
-    if (!resolved?.adapter) {
+    if (outcome.kind === 'unknown_source') {
       logger.warn?.('info.unknown_source', { source: resolvedSource || source, compoundId });
       return res.status(404).json({
         error: `Unknown source: ${resolvedSource || source}`
       });
     }
 
-    const adapter = resolved.adapter;
-    const finalSource = resolved.source;
-    const finalLocalId = resolved.localId;
-
-    // Fetch item from adapter using resolved localId
-    const item = await adapter.getItem(finalLocalId);
-    if (!item) {
+    if (outcome.kind === 'not_found') {
+      const { source: finalSource, localId: finalLocalId } = outcome;
       logger.warn?.('info.not_found', { source: finalSource, localId: finalLocalId });
       return res.status(404).json({
         error: 'Item not found',
@@ -184,9 +128,11 @@ export function createInfoRouter(config) {
       });
     }
 
+    const { item, source: finalSource, localId: finalLocalId } = outcome;
+
     // Transform response with capability evaluation.
     // Use resolved source (not parser source) to get correct format from adapter.
-    const response = transformToInfoResponse(item, finalSource, adapter, resolveFormat);
+    const response = transformToInfoResponse(item, finalSource, outcome.format, outcome.capabilities);
 
     // For container items, prefer metadata childCount over expensive getList() call
     if (item.itemType === 'container') {

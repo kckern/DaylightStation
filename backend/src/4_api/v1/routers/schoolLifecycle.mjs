@@ -32,6 +32,7 @@
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 
 /**
  * Use-case outcome → HTTP status. Anything not listed is a success (200): the
@@ -104,15 +105,12 @@ function reply(res, result) {
 /**
  * @param {object} deps - each use case is optional and gates its own routes
  * @param {object} [deps.resolveScanAction]
- * @param {object} [deps.buildAgenda] - mints real sessions/tokens; gates
- *   `POST .../agenda` (the real print) together with `deps.receiptPngRenderer`.
- *   Not `GET` — a GET must never mint (readiness punch 5)
- * @param {object} [deps.previewAgenda] - dry-run twin of `buildAgenda` (Task 2);
- *   gates `GET .../agenda` and `GET .../agenda/preview`, both together with
- *   `deps.receiptPngRenderer`
- * @param {object} [deps.receiptPngRenderer] - `1_rendering`'s PNG receipt
- *   renderer (`createCanvas(document, {tokens})`); the other gate for all
- *   three agenda routes above
+ * @param {object} [deps.lifecycleAgendaResource] - agenda preview/issue and
+ *   PNG resource production, with exact partial-wiring availability
+ * @param {object} [deps.lifecycleReadService] - sessions, review, curriculum,
+ *   and assignment projections
+ * @param {object} [deps.lifecycleSyllabusService] - guarded syllabus queries
+ *   and commands
  * @param {object} [deps.getLearnerDayCompletion] - read-only learner-level
  *   completion projection; gates `GET .../completion`
  * @param {object} [deps.getPianoLessonGate] - read-only "does this learner owe
@@ -120,66 +118,45 @@ function reply(res, result) {
  *   read seam for the piano kiosk
  * @param {object} [deps.issueDocument]
  * @param {object} [deps.issueComposedWorksheet] - persistent multi-lesson worksheet issuer
- * @param {object} [deps.listPrintableWorksheetSessions] - teacher-safe current paper-session selector
  * @param {object} [deps.dispatchMedia]
  * @param {object} [deps.recordMediaCompletion]
  * @param {object} [deps.submitPaperWork]
  * @param {object} [deps.gradeSubmission]
  * @param {object} [deps.closeSessionOutcome]
  * @param {object} [deps.openRemediation]
- * @param {object} [deps.assignments] - IAssignmentStore, READS only
- * @param {object} [deps.reviewQueue] - IReviewQueue, READS only
  * @param {object} [deps.resolveReviewItem] - guarded sign-off; without it the
  *   sign-off route does not exist. The store is never written to directly.
  * @param {object} [deps.setAssignments] - guarded planning write; likewise
- * @param {object} [deps.syllabi] - `{get, list, save, archiveGuarded}`; save/
- *   archiveGuarded carry validation and the teacher gate themselves (composition),
- *   so this router only calls them, never the raw `YamlSyllabusStore`
  * @param {object} [deps.enrollLearner] - guarded materialize-syllabus-onto-learner write
  * @param {object} [deps.unenrollLearner] - guarded drop-course-from-learner write
- * @param {object} [deps.curriculum] - CurriculumAccess, READ-ONLY. Summaries
- *   only: a unit's `review` block holds the answer key, and this route is as
- *   reachable as any other.
- * @param {object} [deps.sessions] - IWorkSessionRepository, for session history
- * @param {object} [deps.roster] - `{displayName(id)}`, the same lookup
- *   `ResolvePersonalCard` uses; the agenda routes resolve the printed name
- *   through it so paper and preview agree without a `?name=` on every URL
  * @param {object} [deps.logger]
  * @returns {import('express').Router}
  */
 export function createSchoolLifecycleRouter({
   resolveScanAction = null,
-  buildAgenda = null,
-  previewAgenda = null,
+  lifecycleAgendaResource = null,
+  lifecycleReadService = null,
+  lifecycleSyllabusService = null,
   getLearnerDayCompletion = null,
   getPianoLessonGate = null,
-  receiptPngRenderer = null,
   issueDocument = null,
   issueComposedWorksheet = null,
-  listPrintableWorksheetSessions = null,
   dispatchMedia = null,
   recordMediaCompletion = null,
   submitPaperWork = null,
   gradeSubmission = null,
   closeSessionOutcome = null,
   openRemediation = null,
-  assignments = null,
-  reviewQueue = null,
   resolveReviewItem = null,
   setAssignments = null,
-  syllabi = null,
   enrollLearner = null,
   unenrollLearner = null,
   markSessionAbandoned = null,
   replaceLostAnswerSheet = null,
   createLostAnswerSheetTicket = null,
-  curriculum = null,
-  sessions = null,
   // Study-day-windowed sessions read (`?window=today`) — a use case, not an
   // inline filter, because the 4am window needs the clock+timezone this
   // router deliberately does not hold.
-  listLearnerSessions = null,
-  roster = null,
   // No clock: every timestamp this router used to stamp (a verdict's `gradedAt`,
   // an assignment's `updatedAt`) is now written by the use case that owns the
   // rule for it, from the one injected clock the lifecycle shares.
@@ -188,8 +165,14 @@ export function createSchoolLifecycleRouter({
   const router = express.Router();
 
   const wired = Object.entries({
-    resolveScanAction, buildAgenda, getLearnerDayCompletion, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
+    resolveScanAction,
+    agenda: Boolean(lifecycleAgendaResource && lifecycleAgendaResource.issueAvailability() !== 'absent'),
+    lifecycleReadService,
+    lifecycleSyllabusService,
+    getLearnerDayCompletion, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
+    resolveReviewItem, setAssignments, enrollLearner, unenrollLearner, markSessionAbandoned,
+    replaceLostAnswerSheet, createLostAnswerSheetTicket,
   }).filter(([, v]) => v).map(([k]) => k);
   if (!wired.length) {
     logger.warn?.('school.lifecycle.not-wired', {});
@@ -214,7 +197,7 @@ export function createSchoolLifecycleRouter({
   const learnerName = (req) => {
     const bodyName = typeof req.body?.name === 'string' && req.body.name ? req.body.name : null;
     const queryName = typeof req.query.name === 'string' && req.query.name ? req.query.name : null;
-    return bodyName || queryName || (roster?.displayName?.(req.params.learnerId) ?? null);
+    return lifecycleAgendaResource?.learnerName?.(req.params.learnerId, bodyName || queryName) ?? null;
   };
 
   // Shared PNG plumbing (readiness punch 5): `GET .../agenda` (dry run),
@@ -229,31 +212,30 @@ export function createSchoolLifecycleRouter({
   // router never needs its own `#domains` import (`api-no-domains`) just to
   // slug a filename.
   async function sendAgendaPng(res, result) {
-    const { canvas } = await receiptPngRenderer.createCanvas(result.document, { tokens: {} });
-    const buffer = canvas.toBuffer('image/png');
+    const buffer = await lifecycleAgendaResource.render(result.document);
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Content-Length', buffer.length);
     res.setHeader('Content-Disposition', `inline; filename="${result.document.id}.png"`);
     res.send(buffer);
   }
 
-  // GET is a DRY RUN (readiness punch 5): it used to execute `buildAgenda`,
+  // GET is a DRY RUN (readiness punch 5): it used to issue a live agenda,
   // which mints real sessions and tokens on every load — a GET with side
-  // effects. It now runs the exact same algorithm `previewAgenda` does for
+  // effects. It now uses the lifecycle agenda resource's preview operation for
   // the preview route below, never opening a session or minting a live
-  // ticket. Both `previewAgenda` and `receiptPngRenderer` are required;
+  // ticket. Both preview construction and PNG rendering are required;
   // either alone is a half-configured deployment (501, not 404 or a crash) —
   // same posture as the preview route.
-  if (previewAgenda && receiptPngRenderer) {
+  if (lifecycleAgendaResource?.previewAvailability?.() === 'ready') {
     router.get('/learners/:learnerId/agenda', asyncHandler(async (req, res) => {
-      const result = await previewAgenda.execute({
+      const result = await lifecycleAgendaResource.preview({
         learnerId: req.params.learnerId,
         learnerName: learnerName(req),
         studyDay: req.query.studyDay ?? null,
       });
       await sendAgendaPng(res, result);
     }));
-  } else if (previewAgenda || receiptPngRenderer) {
+  } else if (lifecycleAgendaResource?.previewAvailability?.() === 'partial') {
     router.get('/learners/:learnerId/agenda', asyncHandler(async (_req, res) => {
       res.status(501).json({ error: 'agenda not configured' });
     }));
@@ -262,48 +244,47 @@ export function createSchoolLifecycleRouter({
   // POST is the real mint, for any caller that truly needs it — no known HTTP
   // caller today (the NFC path calls `handleScan` in-process), but the route
   // exists so a future one does not have to reach for the dry-run GET. Same
-  // pairing rule as GET: `buildAgenda` and `receiptPngRenderer` both required.
-  if (buildAgenda && receiptPngRenderer) {
+  // pairing rule as GET: agenda issuing and PNG rendering are both required.
+  if (lifecycleAgendaResource?.issueAvailability?.() === 'ready') {
     router.post('/learners/:learnerId/agenda', asyncHandler(async (req, res) => {
-      const result = await buildAgenda.execute({
+      const result = await lifecycleAgendaResource.issue({
         learnerId: req.params.learnerId,
         learnerName: learnerName(req),
       });
       await sendAgendaPng(res, result);
     }));
-  } else if (buildAgenda || receiptPngRenderer) {
+  } else if (lifecycleAgendaResource?.issueAvailability?.() === 'partial') {
     router.post('/learners/:learnerId/agenda', asyncHandler(async (_req, res) => {
       res.status(501).json({ error: 'agenda not configured' });
     }));
   }
 
   // --- agenda preview (dry-run PNG, no working ticket) ----------------------
-  // A parent/planning surface, not the console: same document `buildAgenda`
+  // A parent/planning surface, not the console: the same document issuing
   // would print, rendered straight to a PNG rather than issued to paper. The
   // preview builder is configured without a ticket/code, so this image cannot
   // masquerade as a usable learner agenda. Both
-  // `previewAgenda` (composition's dry-run twin of `buildAgenda`, spec §3 —
-  // never opens a session, never mints a live ticket) and `receiptPngRenderer`
-  // (the `1_rendering` PNG renderer) are required; either alone is a
+  // preview operation (the dry-run twin of issuing, spec §3 — never opens a
+  // session or mints a live ticket) and PNG rendering are required; either alone is a
   // half-configured deployment, which answers 501 rather than 404 or a crash.
-  if (previewAgenda && receiptPngRenderer) {
+  if (lifecycleAgendaResource?.previewAvailability?.() === 'ready') {
     router.get('/learners/:learnerId/agenda/preview', asyncHandler(async (req, res) => {
-      const result = await previewAgenda.execute({
+      const result = await lifecycleAgendaResource.preview({
         learnerId: req.params.learnerId,
         learnerName: learnerName(req),
         studyDay: req.query.studyDay ?? null,
       });
       // The teacher console's morning drill-in (advocacy A3): the same
       // dry-run plan as DATA — subject sections with next/served — instead
-      // of the printed PNG. No side effects either way (previewAgenda never
+      // of the printed PNG. No side effects either way (preview never
       // opens a session or mints a live ticket).
       if (req.query.format === 'json') {
         return res.set('Cache-Control', 'private, no-store')
           .set('X-School-Preview', 'agenda-non-recording').json({
           learnerId: req.params.learnerId,
           studyDay: req.query.studyDay ?? null,
-          sections: result.sections ?? [],
-          entries: result.plan?.entries ?? [],
+          sections: presentPublicResources(result.sections ?? []),
+          entries: presentPublicResources(result.plan?.entries ?? []),
           // Planner refusals (admin advocacy A4): a dead course id used to
           // surface only as a warn log — now the console can render it.
           errors: result.plan?.errors ?? [],
@@ -312,7 +293,7 @@ export function createSchoolLifecycleRouter({
       res.set('Cache-Control', 'private, no-store').set('X-School-Preview', 'agenda-non-recording');
       await sendAgendaPng(res, result);
     }));
-  } else if (previewAgenda || receiptPngRenderer) {
+  } else if (lifecycleAgendaResource?.previewAvailability?.() === 'partial') {
     // Same not-configured posture as `gratitude.mjs`'s card endpoint: one half
     // of the pair present and the other missing is a deployment gap, not a
     // 404 — the route exists, it just cannot answer yet.
@@ -346,24 +327,22 @@ export function createSchoolLifecycleRouter({
   }
 
   // --- sessions -------------------------------------------------------------
-  if (sessions) {
+  if (lifecycleReadService?.hasSessions?.()) {
     router.get('/learners/:learnerId/sessions', asyncHandler(async (req, res) => {
       res.json({
-        sessions: listLearnerSessions
-          ? await listLearnerSessions.execute({ learnerId: req.params.learnerId, window: req.query.window ?? null })
-          : await sessions.listForLearner(req.params.learnerId),
+        sessions: await lifecycleReadService.learnerSessions(req.params.learnerId, req.query.window ?? null),
       });
     }));
 
     router.get('/sessions/:sessionId/events', asyncHandler(async (req, res) => {
-      res.json({ events: await sessions.readEvents(req.params.sessionId) });
+      res.json({ events: await lifecycleReadService.sessionEvents(req.params.sessionId) });
     }));
 
-    if (listPrintableWorksheetSessions) {
+    if (lifecycleReadService.hasPrintableSessions()) {
       router.get('/learners/:learnerId/printable-sessions', asyncHandler(async (req, res) => {
-        res.json({ sessions: await listPrintableWorksheetSessions.execute({
-          learnerId: req.params.learnerId, window: req.query.window ?? 'today',
-        }) });
+        res.json({ sessions: await lifecycleReadService.printableSessions(
+          req.params.learnerId, req.query.window ?? 'today',
+        ) });
       }));
     }
   }
@@ -474,9 +453,8 @@ export function createSchoolLifecycleRouter({
       const result = await createLostAnswerSheetTicket.execute({
         cardId: req.params.cardId, requestedBy, pin,
       });
-      if (req.query.format === 'png' && receiptPngRenderer) {
-        const { canvas } = await receiptPngRenderer.createCanvas(result.document, { tokens: {} });
-        const buffer = canvas.toBuffer('image/png');
+      if (req.query.format === 'png' && lifecycleAgendaResource?.canRender?.()) {
+        const buffer = await lifecycleAgendaResource.render(result.document);
         return res.type('image/png').send(buffer);
       }
       return reply(res, result);
@@ -484,20 +462,20 @@ export function createSchoolLifecycleRouter({
   }
 
   // --- the parent surface ----------------------------------------------------
-  if (reviewQueue) {
+  if (lifecycleReadService?.hasReview?.()) {
     router.get('/review', asyncHandler(async (_req, res) => {
-      res.json({ items: await reviewQueue.listPending() });
+      res.json({ items: await lifecycleReadService.pendingReview() });
     }));
 
     router.get('/sessions/:sessionId/review', asyncHandler(async (req, res) => {
-      res.json({ items: await reviewQueue.listForSession(req.params.sessionId) });
+      res.json({ items: await lifecycleReadService.sessionReview(req.params.sessionId) });
     }));
 
   }
 
   // Signing off is a PARENT-ONLY WRITE, so it goes through the use case that
-  // checks who is asking — never through `reviewQueue.resolve`, which writes
-  // whatever `gradedBy` it is handed. With the use case unwired this route does
+  // checks who is asking — never through the underlying review store, which
+  // writes whatever `gradedBy` it is handed. With the use case unwired this route does
   // not exist at all: a deployment missing the guard refuses the write rather
   // than performing it unguarded.
   if (resolveReviewItem) {
@@ -514,13 +492,13 @@ export function createSchoolLifecycleRouter({
   // offer a real list instead of a text box. There is no write here and there
   // is not meant to be: assignments are planner config, and the published
   // catalog is edited on disk (spec §7.2).
-  if (curriculum) {
+  if (lifecycleReadService?.hasCurriculum?.()) {
     router.get('/curriculum/units', asyncHandler(async (_req, res) => {
-      res.json({ units: await curriculum.listUnitSummaries() });
+      res.json({ units: await lifecycleReadService.units() });
     }));
 
     router.get('/curriculum/units/:unitId', asyncHandler(async (req, res) => {
-      const unit = await curriculum.getUnitSummary(req.params.unitId);
+      const unit = await lifecycleReadService.unit(req.params.unitId);
       if (!unit) {
         const err = new Error(`no published unit ${req.params.unitId}`);
         err.status = 404;
@@ -530,13 +508,13 @@ export function createSchoolLifecycleRouter({
     }));
   }
 
-  if (assignments) {
+  if (lifecycleReadService?.hasAssignments?.()) {
     router.get('/assignments', asyncHandler(async (_req, res) => {
-      res.json({ assignments: await assignments.list() });
+      res.json({ assignments: await lifecycleReadService.assignmentList() });
     }));
 
     router.get('/assignments/:learnerId', asyncHandler(async (req, res) => {
-      const record = await assignments.get(req.params.learnerId);
+      const record = await lifecycleReadService.assignment(req.params.learnerId);
       if (!record) {
         const err = new Error(`nothing assigned to ${req.params.learnerId}`);
         err.status = 404;
@@ -577,13 +555,13 @@ export function createSchoolLifecycleRouter({
   }
 
   // --- syllabi: the saved arguments a materialized enrollment is built from ---
-  if (syllabi) {
+  if (lifecycleSyllabusService?.isConfigured?.()) {
     router.get('/syllabi', asyncHandler(async (_req, res) => {
-      res.json({ syllabi: await syllabi.list() });
+      res.json({ syllabi: await lifecycleSyllabusService.list() });
     }));
 
     router.get('/syllabi/:syllabusId', asyncHandler(async (req, res) => {
-      const record = await syllabi.get(req.params.syllabusId);
+      const record = await lifecycleSyllabusService.get(req.params.syllabusId);
       if (!record) {
         const err = new Error(`no syllabus ${req.params.syllabusId}`);
         err.status = 404;
@@ -594,7 +572,7 @@ export function createSchoolLifecycleRouter({
 
     router.put('/syllabi/:syllabusId', guarded(async (req, res) => {
       const { editedBy = null, pin = null, ...body } = req.body || {};
-      res.json(await syllabi.save({
+      res.json(await lifecycleSyllabusService.save({
         raw: { ...body, syllabusId: req.params.syllabusId },
         editedBy,
         pin,
@@ -603,7 +581,7 @@ export function createSchoolLifecycleRouter({
 
     router.post('/syllabi/:syllabusId/archive', guarded(async (req, res) => {
       const { archivedBy = null, pin = null } = req.body || {};
-      const record = await syllabi.archiveGuarded({ syllabusId: req.params.syllabusId, archivedBy, pin });
+      const record = await lifecycleSyllabusService.archive({ syllabusId: req.params.syllabusId, archivedBy, pin });
       if (!record) {
         const err = new Error(`no syllabus ${req.params.syllabusId}`);
         err.status = 404;
@@ -642,6 +620,7 @@ export function createSchoolLifecycleRouter({
     GuestForbiddenError: 403,
     EntityNotFoundError: 404,
     ValidationError: 400,
+    ConflictError: 409,
     DomainInvariantError: 409,
   });
   // eslint-disable-next-line no-unused-vars

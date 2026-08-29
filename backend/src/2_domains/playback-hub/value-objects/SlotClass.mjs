@@ -61,10 +61,6 @@ export class SlotClass {
     return this.#value;
   }
 
-  /** @returns {string} */
-  toJSON() {
-    return this.#value;
-  }
 }
 
 export default SlotClass;

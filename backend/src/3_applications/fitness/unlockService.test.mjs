@@ -6,9 +6,14 @@ import {
   initUnlockService,
   getUnlockService,
   _resetUnlockServiceForTests,
-  UNLOCK_REQUEST_TOPIC,
-  UNLOCK_RESULT_TOPIC,
 } from './unlockService.mjs';
+import { EventBusBiometricGateway } from '#adapters/fitness/EventBusBiometricGateway.mjs';
+
+const UNLOCK_REQUEST_TOPIC = 'fitness.unlock.request';
+const UNLOCK_RESULT_TOPIC = 'fitness.unlock.result';
+const gateway = (eventBus, timeoutMs = 15000) => new EventBusBiometricGateway({
+  eventBus, unlockTimeoutMs: timeoutMs,
+});
 
 /**
  * Minimal fake of the WebSocketEventBus surface the service uses:
@@ -37,7 +42,7 @@ function makeFakeBus() {
 test('initUnlockService broadcasts the request topic on requestUnlock', async (t) => {
   t.after(_resetUnlockServiceForTests);
   const bus = makeFakeBus();
-  const svc = initUnlockService({ eventBus: bus, timeoutMs: 1000 });
+  const svc = initUnlockService({ biometricGateway: gateway(bus, 1000) });
 
   const candidates = [{ uuid: 'uuid-1', username: 'test-user' }];
   svc.requestUnlock('dance_party', candidates);
@@ -54,7 +59,7 @@ test('initUnlockService broadcasts the request topic on requestUnlock', async (t
 test('an inbound fitness.unlock.result resolves the matching pending request', async (t) => {
   t.after(_resetUnlockServiceForTests);
   const bus = makeFakeBus();
-  const svc = initUnlockService({ eventBus: bus, timeoutMs: 1000 });
+  const svc = initUnlockService({ biometricGateway: gateway(bus, 1000) });
 
   const promise = svc.requestUnlock('dance_party', [{ uuid: 'uuid-1', username: 'test-user' }]);
   const { requestId } = bus.broadcasts[0].payload;
@@ -74,7 +79,7 @@ test('an inbound fitness.unlock.result resolves the matching pending request', a
 test('a stub (not-implemented) result resolves as not matched', async (t) => {
   t.after(_resetUnlockServiceForTests);
   const bus = makeFakeBus();
-  const svc = initUnlockService({ eventBus: bus, timeoutMs: 1000 });
+  const svc = initUnlockService({ biometricGateway: gateway(bus, 1000) });
 
   const promise = svc.requestUnlock('dance_party', []);
   const { requestId } = bus.broadcasts[0].payload;
@@ -94,7 +99,7 @@ test('a stub (not-implemented) result resolves as not matched', async (t) => {
 test('inbound results for unknown topics or requestIds are ignored', async (t) => {
   t.after(_resetUnlockServiceForTests);
   const bus = makeFakeBus();
-  const svc = initUnlockService({ eventBus: bus, timeoutMs: 50 });
+  const svc = initUnlockService({ biometricGateway: gateway(bus, 50) });
 
   const promise = svc.requestUnlock('dance_party', []);
   const { requestId } = bus.broadcasts[0].payload;
@@ -112,28 +117,27 @@ test('inbound results for unknown topics or requestIds are ignored', async (t) =
 test('initUnlockService is a singleton and getUnlockService returns it', async (t) => {
   t.after(_resetUnlockServiceForTests);
   const bus = makeFakeBus();
-  const first = initUnlockService({ eventBus: bus, timeoutMs: 1000 });
-  const second = initUnlockService({ eventBus: makeFakeBus(), timeoutMs: 999 });
+  const first = initUnlockService({ biometricGateway: gateway(bus, 1000) });
+  const second = initUnlockService({ biometricGateway: gateway(makeFakeBus(), 999) });
   assert.equal(first, second, 'repeat init returns the same instance');
   assert.equal(getUnlockService(), first);
 });
 
-test('initUnlockService throws without a usable eventBus', async (t) => {
+test('initUnlockService throws without a usable biometric gateway', async (t) => {
   t.after(_resetUnlockServiceForTests);
-  assert.throws(() => initUnlockService({ eventBus: null }), /eventBus/);
+  assert.throws(() => initUnlockService({ biometricGateway: null }), /biometricGateway/);
 });
 
-test('initUnlockService throws when eventBus lacks onClientMessage', async (t) => {
+test('initUnlockService throws when the biometric gateway lacks requestUnlock', async (t) => {
   // Both broadcast() and onClientMessage() are mandatory: validating only the
   // former would let init succeed while every reply silently vanished.
   t.after(_resetUnlockServiceForTests);
-  const broadcastOnlyBus = { broadcast() {} };
-  assert.throws(() => initUnlockService({ eventBus: broadcastOnlyBus }), /onClientMessage/);
+  assert.throws(() => initUnlockService({ biometricGateway: {} }), /biometricGateway/);
 });
 
 test('per-call timeoutMs overrides the broker default', async (t) => {
   t.after(_resetUnlockServiceForTests);
-  const svc = initUnlockService({ eventBus: makeFakeBus(), timeoutMs: 10000 });
+  const svc = initUnlockService({ biometricGateway: gateway(makeFakeBus(), 10000) });
   const start = Date.now();
   // No reply ever arrives; a short per-call timeout should settle well before
   // the 10s broker default.

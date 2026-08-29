@@ -5,13 +5,15 @@ import path from 'node:path';
 import { FluidSynthMp3Converter } from '#adapters/pianoaudio/FluidSynthMp3Converter.mjs';
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
-let root, scratchDir, midiPath, mp3Path;
+let root, sourceDir, destDir, scratchDir, midiPath, mp3Path;
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'pianoaudio-conv-'));
+  sourceDir = path.join(root, 'src');
+  destDir = path.join(root, 'dst');
   scratchDir = path.join(root, 'scratch');
-  midiPath = path.join(root, 'src', 'take.mid');
-  mp3Path = path.join(root, 'dst', 'nested', 'take.mp3');
+  midiPath = path.join(sourceDir, 'nested', 'take.mid');
+  mp3Path = path.join(destDir, 'nested', 'take.mp3');
   fs.mkdirSync(path.dirname(midiPath), { recursive: true });
   fs.writeFileSync(midiPath, 'MID');
 });
@@ -32,14 +34,14 @@ function fakeExec() {
   });
 }
 
-describe('FluidSynthMp3Converter.convert', () => {
+describe('FluidSynthMp3Converter.convertRecording', () => {
   it('runs fluidsynth then ffmpeg with the exact argv and produces the mp3', async () => {
     const execFile = fakeExec();
     const conv = new FluidSynthMp3Converter({
-      soundfontPath: '/sf/TimGM6mb.sf2', scratchDir, logger: silent, execFile,
+      soundfontPath: '/sf/TimGM6mb.sf2', sourceDir, destDir, scratchDir, logger: silent, execFile,
     });
 
-    await conv.convert(midiPath, mp3Path);
+    await conv.convertRecording({ recordingId: 'nested/take.mid' });
 
     expect(execFile).toHaveBeenCalledTimes(2);
 
@@ -72,10 +74,10 @@ describe('FluidSynthMp3Converter.convert', () => {
     fs.writeFileSync(mp3Path, 'EXISTING');
     const execFile = fakeExec();
     const conv = new FluidSynthMp3Converter({
-      soundfontPath: '/sf/TimGM6mb.sf2', scratchDir, logger: silent, execFile,
+      soundfontPath: '/sf/TimGM6mb.sf2', sourceDir, destDir, scratchDir, logger: silent, execFile,
     });
 
-    await conv.convert(midiPath, mp3Path);
+    await conv.convertRecording({ recordingId: 'nested/take.mid' });
 
     expect(execFile).not.toHaveBeenCalled();
     expect(fs.readFileSync(mp3Path, 'utf8')).toBe('EXISTING');
@@ -92,10 +94,10 @@ describe('FluidSynthMp3Converter.convert', () => {
       throw new Error('ffmpeg exit 1');
     });
     const conv = new FluidSynthMp3Converter({
-      soundfontPath: '/sf/TimGM6mb.sf2', scratchDir, logger: silent, execFile,
+      soundfontPath: '/sf/TimGM6mb.sf2', sourceDir, destDir, scratchDir, logger: silent, execFile,
     });
 
-    await expect(conv.convert(midiPath, mp3Path)).rejects.toThrow('ffmpeg exit 1');
+    await expect(conv.convertRecording({ recordingId: 'nested/take.mid' })).rejects.toThrow('ffmpeg exit 1');
 
     expect(fs.existsSync(mp3Path)).toBe(false);
     expect(fs.existsSync(`${mp3Path}.tmp`)).toBe(false);

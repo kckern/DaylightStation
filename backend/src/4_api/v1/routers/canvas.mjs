@@ -11,9 +11,8 @@
  * @module api/v1/routers
  */
 import { Router } from 'express';
-import path from 'path';
-import fs from 'fs';
 import { splatPath } from '#api/utils/wildcard.mjs';
+import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 
 /**
  * Create canvas API router
@@ -21,7 +20,7 @@ import { splatPath } from '#api/utils/wildcard.mjs';
  * @param {Object} deps.canvasService - CanvasService instance
  * @returns {Router}
  */
-export function createCanvasRouter({ canvasService }) {
+export function createCanvasRouter({ canvasService, getCanvasImage = null, sendFileResource = sendLocalFileResource }) {
   const router = Router();
 
   /**
@@ -112,29 +111,22 @@ export function createCanvasRouter({ canvasService }) {
    */
   router.get('/image/*splat', async (req, res, next) => {
     try {
-      const imagePath = splatPath(req);
+      const imageId = splatPath(req);
 
-      // Get basePath from the adapter (injected at bootstrap)
-      const basePath = req.app.get('canvasBasePath');
-      if (!basePath) {
+      if (!getCanvasImage) {
         return res.status(503).json({ error: 'Canvas basePath not configured' });
       }
-
-      const fullPath = path.join(basePath, imagePath);
-
-      // Security: ensure path is within basePath (prevent traversal)
-      const resolvedPath = path.resolve(fullPath);
-      const resolvedBase = path.resolve(basePath);
-      if (!resolvedPath.startsWith(resolvedBase)) {
-        return res.status(403).json({ error: 'Access denied' });
+      let image;
+      try {
+        image = await getCanvasImage.execute(imageId);
+      } catch (error) {
+        if (error?.code === 'ACCESS_DENIED') return res.status(403).json({ error: 'Access denied' });
+        throw error;
       }
-
-      // Check file exists
-      if (!fs.existsSync(resolvedPath)) {
-        return res.status(404).json({ error: 'Image not found', path: imagePath });
+      if (!image) {
+        return res.status(404).json({ error: 'Image not found', path: imageId });
       }
-
-      res.sendFile(resolvedPath);
+      return sendFileResource(req, res, image);
     } catch (err) {
       next(err);
     }

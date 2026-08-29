@@ -2,7 +2,7 @@
 // Composition wiring for Cost API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
 import createCostRouter from '#api/v1/routers/cost.mjs';
-import { createCostServices } from '../bootstrap.mjs';
+import { CostApiService } from '#apps/cost/CostApiService.mjs';
 
 /**
  * Create cost API router
@@ -13,14 +13,13 @@ import { createCostServices } from '../bootstrap.mjs';
  * @returns {express.Router}
  */
 export function createCostApiRouter(config) {
-  const {
-    costServices,
-    logger = console
-  } = config;
+  const { costServices } = config;
 
   return createCostRouter({
-    reportingService: costServices.reportingService,
-    budgetService: costServices.budgetService,
-    logger
+    costApiService: new CostApiService({
+      reportingService: costServices.reportingService,
+      budgetService: costServices.budgetService,
+      referenceTime: () => new Date(),
+    }),
   });
 }

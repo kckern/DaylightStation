@@ -1,7 +1,7 @@
 // tests/unit/infrastructure/logging/ingestion.test.mjs
 import { vi, beforeEach, afterEach, describe, test, expect } from 'vitest';
 import { initializeLogging, resetLogging } from '#backend/src/0_system/logging/dispatcher.mjs';
-import { ingestFrontendLogs } from '#backend/src/0_system/logging/ingestion.mjs';
+import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
 
 describe('ingestFrontendLogs', () => {
   let dispatchedEvents;

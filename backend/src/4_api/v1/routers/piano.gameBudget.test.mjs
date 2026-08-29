@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 
 const KNOWN_USERS = new Set(['kid_a', 'kid_b']);
 
@@ -14,14 +15,14 @@ function appWith(service) {
   // with only what createPianoRouter dereferences at build time. isKnownUser
   // is real here (not just available:false) because the game-budget routes
   // now gate on it, same as their `challenges/prepare` neighbour.
-  app.use('/api/v1/piano', createPianoRouter({
+  app.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({
     pianoContainer: {
       available: () => false,
       studioDatastore: { isKnownUser: (id) => KNOWN_USERS.has(id) },
     },
     pianoGameBudgetService: service,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  }));
+  })));
   return app;
 }
 

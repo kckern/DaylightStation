@@ -1,72 +1,28 @@
 /**
- * DoNowSchoolBridge — the school lifecycle's subscription to `donow.dispatched`
- * (spec §6 "The approval gap").
- *
- * A `launch:` unit's scan can PEND rather than dispatch immediately (the
- * surface was occupied) — `ResolveScanAction#dispatchLaunch` handles the
- * synchronous `dispatched` case itself (append `launch_dispatched` + honor-
- * close, right there in the same round trip), but a pending request is
- * approved later, out of band, by a grown-up working the approvals queue —
- * nobody is scanning a card at that moment for `ResolveScanAction` to answer.
- * `DoNowService.dispatchApproved` fires the SAME `donow.dispatched` event
- * either way, so this bridge is what closes the loop for the pending path:
- * it subscribes to the `donow` topic and, on approval, does exactly what the
- * synchronous path already did.
- *
- * `donow.dispatched` FIRES FOR BOTH PATHS, AND THE BUS IS SYNCHRONOUS — a
- * naive "session is still at `created`" check is a RACE, not a filter: an
- * immediate dispatch (already handled inline by `ResolveScanAction
- * #dispatchLaunch`, in the SAME call that produced the broadcast) reaches
- * this subscriber before that inline code has appended its own
- * `launch_dispatched` event, so the session still reads `created` at the
- * moment this handler runs. Acting on it there would append a SECOND
- * `launch_dispatched` from a state that no longer permits it once the inline
- * append lands — a permanent illegal-transition error on the session. The
- * fix is deterministic, not timing-dependent: `DoNowService` sets `approved:
- * true` (+ `approvalId`) on the broadcast ONLY when the dispatch came from
- * `dispatchApproved` (the out-of-band path this bridge exists for); the
- * immediate path never sets it. This bridge checks `payload.approved ===
- * true` FIRST, before any I/O — the immediate case never even reaches the
- * repository lookup.
- *
- * OWNERSHIP FILTER, BY REPOSITORY LOOKUP — NEVER SHAPE MATCHING. `ref` on the
- * `donow` topic is per-caller (a schoolwork sessionId for `school-scan`, a
- * program id for `school-program`, anything an `api`/`trigger` caller chose).
- * This bridge only ever acts when ALL of:
- *   1. `payload.approved === true` — the out-of-band-approval discriminator
- *      above, checked first and cheaply, before any I/O.
- *   2. `requestedBy === 'school-scan'` — the provenance this bridge owns.
- *   3. `sessions.readEvents(ref)` resolves to a REAL session this store owns,
- *      sitting at `created` — no session event was written while pending
- *      (spec §6), so a session this bridge is entitled to close is still at
- *      `created` when the approval fires. Kept as belt-and-braces even with
- *      `approved` as the deterministic gate: a stale/unknown ref, a ref that
- *      collides with some OTHER caller's id, or a ref somehow already past
- *      `created` (a double-approval race, a replayed event) still reads back
- *      as "not mine" and is ignored — never a shape check on the payload.
- * Anything else is silently ignored — this bridge never throws on traffic
- * that isn't its own.
+ * Settles an out-of-band approved School launch. The realtime gateway supplies
+ * only approved School-owned dispatch facts; this workflow still verifies the
+ * referenced session exists and remains `created` before honor-closing it.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 
 export class DoNowSchoolBridge {
-  #eventBus; #sessions; #close; #clock; #logger; #unsubscribe;
+  #realtime; #sessions; #close; #clock; #logger; #unsubscribe;
 
   /**
    * @param {object} deps
-   * @param {{subscribe: Function}} deps.eventBus - `subscribe(topic, handler): unsubscribe`.
+   * @param {{onApprovedLaunchDispatched: Function}} deps.realtime
    * @param {import('./ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
    * @param {import('./usecases/CloseSessionOutcome.mjs').CloseSessionOutcome} deps.closeSessionOutcome
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
   constructor({
-    eventBus, sessions, closeSessionOutcome, clock = () => new Date(), logger = console,
+    realtime, sessions, closeSessionOutcome, clock = () => new Date(), logger = console,
   } = {}) {
-    if (!eventBus || typeof eventBus.subscribe !== 'function' || !sessions || !closeSessionOutcome) {
-      throw new Error('DoNowSchoolBridge requires eventBus, sessions and closeSessionOutcome');
+    if (!realtime?.onApprovedLaunchDispatched || !sessions || !closeSessionOutcome) {
+      throw new Error('DoNowSchoolBridge requires realtime, sessions and closeSessionOutcome');
     }
-    this.#eventBus = eventBus;
+    this.#realtime = realtime;
     this.#sessions = sessions;
     this.#close = closeSessionOutcome;
     this.#clock = clock;
@@ -74,14 +30,14 @@ export class DoNowSchoolBridge {
     this.#unsubscribe = null;
   }
 
-  /** Subscribe to the `donow` topic. Safe to call more than once — a second call no-ops. */
+  /** Observe approved launches. Safe to call more than once. */
   start() {
     if (this.#unsubscribe) return;
     // Implicit return (no braces): the handler hands its promise back to the
     // bus. A real fire-and-forget bus never awaits it — this is fine, since
     // nothing here needs to block a broadcast — but a test double CAN await
     // it to observe the async append+honor-close deterministically.
-    this.#unsubscribe = this.#eventBus.subscribe('donow', (payload) => this.#handle(payload).catch((err) => {
+    this.#unsubscribe = this.#realtime.onApprovedLaunchDispatched((payload) => this.#handle(payload).catch((err) => {
       this.#logger.warn?.('school.donow-bridge.handler-threw', { error: err?.message ?? String(err) });
     }));
   }
@@ -93,14 +49,7 @@ export class DoNowSchoolBridge {
   }
 
   async #handle(payload) {
-    if (!payload || payload.type !== 'donow.dispatched') return;
-    // Deterministic gate, checked FIRST and before any I/O: the immediate
-    // dispatch path (already handled inline by the scan) never sets
-    // `approved`, so it never reaches the repository lookup below — no race
-    // against that inline code's own `launch_dispatched` append.
-    if (payload.approved !== true) return;
-    if (payload.requestedBy !== 'school-scan') return;
-    const sessionId = payload.ref;
+    const sessionId = payload?.sessionId;
     if (!sessionId) return;
 
     let state;

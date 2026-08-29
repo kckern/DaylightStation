@@ -1,6 +1,5 @@
 // backend/src/3_applications/content/services/PlayResponseService.mjs
 
-import { resolveFormat } from '#domains/content/utils/resolveFormat.mjs';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
 /**
@@ -26,6 +25,7 @@ export class PlayResponseService {
   #progressSyncSources;
   #surroundStore;
   #surroundLogger;
+  #now;
 
   /**
    * @param {Object} deps
@@ -37,11 +37,12 @@ export class PlayResponseService {
    *   exactly as before. Depended on as the port, never as a concrete store.
    * @param {Object} [deps.logger] - Logger instance
    */
-  constructor({ mediaProgressMemory, progressSyncService, progressSyncSources, surroundStore, logger }) {
+  constructor({ mediaProgressMemory, progressSyncService, progressSyncSources, surroundStore, now = () => Date.now(), logger }) {
     this.#mediaProgressMemory = mediaProgressMemory;
     this.#progressSyncService = progressSyncService ?? null;
     this.#progressSyncSources = progressSyncSources ?? null;
     this.#surroundStore = surroundStore ?? null;
+    this.#now = now;
     // Surround gets its own subsystem identity so its events are queryable
     // apart from the generic content-api stream.
     this.#surroundLogger = logger?.child?.({ app: 'surround', module: 'play-response' }) ?? logger ?? null;
@@ -57,7 +58,7 @@ export class PlayResponseService {
    * @param {Object} item - Content item from adapter
    * @param {Object|null} watchState - Watch state (from getWatchState)
    * @param {Object} [options]
-   * @param {Object} [options.adapter] - Content adapter instance (for format resolution)
+   * @param {Object} [options.descriptor] - Provider-neutral presentation descriptor
    * @param {string|null} [options.session] - Opaque client session the caller
    *   put on the wire as `?session=`. Threaded into the returned Plex stream
    *   url so the media element carries it to the proxy route.
@@ -66,13 +67,13 @@ export class PlayResponseService {
    *   media item, which is what keeps a standalone étude a whole work.
    * @returns {Object} Play response DTO
    */
-  toPlayResponse(item, watchState = null, { adapter, resume, session = null, containerId = null } = {}) {
+  toPlayResponse(item, watchState = null, { descriptor = {}, resume, session = null, containerId = null } = {}) {
     const response = {
       id: item.id,
       assetId: item.id,
       mediaUrl: item.mediaUrl,
       mediaType: item.mediaType,
-      format: resolveFormat(item, adapter),
+      format: descriptor.format ?? item.format ?? null,
       title: item.title,
       duration: item.duration,
       resumable: item.resumable ?? false,
@@ -84,7 +85,7 @@ export class PlayResponseService {
     // Add resume position if in progress (use domain entity)
     // Skip if resume explicitly disabled (e.g., list items with resume: false)
     if (resume !== false && response.resumable && watchState?.playhead > 0 && watchState?.duration > 0) {
-      const progress = new MediaProgress(watchState);
+      const progress = new MediaProgress({ ...watchState, now: this.#now() });
       if (progress.isInProgress()) {
         response.resume_position = progress.playhead;
         response.resume_percent = progress.percent;
@@ -110,9 +111,7 @@ export class PlayResponseService {
       //   field missing  → this response is not a Plex stream at all
       //   field === null → it is, but the caller sent no `?session=`, so Plex
       //                    will see a fresh random client for every request
-      response.plexClientIdentifier = typeof adapter?.resolveClientIdentifier === 'function'
-        ? adapter.resolveClientIdentifier(session)
-        : null;
+      response.plexClientIdentifier = descriptor.clientIdentifier ?? null;
 
       if (session) {
         const sep = response.mediaUrl.includes('?') ? '&' : '?';
@@ -189,17 +188,19 @@ export class PlayResponseService {
    * service and falling back to local media progress memory.
    *
    * @param {Object} item - Content item (needs item.id)
-   * @param {string} storagePath - Storage path for media progress lookup
-   * @param {Object} [adapter] - Content adapter instance (checked for sync eligibility)
+   * @param {string} progressNamespace - Namespace for media progress lookup
+   * @param {string} [source] - Content source used for sync eligibility
    * @returns {Promise<Object|null>} Watch state or null
    */
-  async getWatchState(item, storagePath, adapter) {
-    if (this.#progressSyncService && this.#progressSyncSources?.has(adapter?.source)) {
+  async getWatchState(item, progressNamespace, source) {
+    if (this.#progressSyncService && this.#progressSyncSources?.has(source)) {
       const colonIdx = item.id.indexOf(':');
       const localId = colonIdx > 0 ? item.id.slice(colonIdx + 1) : item.id;
-      return this.#progressSyncService.reconcileOnPlay(item.id, storagePath, localId);
+      return this.#progressSyncService.reconcileOnPlay(item.id, progressNamespace, localId);
     }
-    return this.#mediaProgressMemory ? this.#mediaProgressMemory.get(item.id, storagePath) : null;
+    return this.#mediaProgressMemory
+      ? this.#mediaProgressMemory.findProgress(item.id, progressNamespace)
+      : null;
   }
 }
 

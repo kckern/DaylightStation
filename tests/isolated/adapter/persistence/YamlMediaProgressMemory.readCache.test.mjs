@@ -31,35 +31,35 @@ describe('YamlMediaProgressMemory read cache', () => {
 
   it('parses the file once across repeated reads when mtime is unchanged', async () => {
     const memory = makeMemory();
-    await memory.get('plex:1', 'plex');
-    await memory.get('plex:1', 'plex');
-    await memory.getAll('plex');
+    await memory.findProgress('plex:1', 'plex');
+    await memory.findProgress('plex:1', 'plex');
+    await memory.listProgress('plex');
     expect(FileIO.loadYamlSafe).toHaveBeenCalledTimes(1);
   });
 
   it('re-parses when the file mtime changes', async () => {
     const memory = makeMemory();
-    await memory.get('plex:1', 'plex'); // parse 1
+    await memory.findProgress('plex:1', 'plex'); // parse 1
     FileIO.getStats.mockReturnValue({ mtimeMs: 200 });
-    await memory.get('plex:1', 'plex'); // parse 2
+    await memory.findProgress('plex:1', 'plex'); // parse 2
     expect(FileIO.loadYamlSafe).toHaveBeenCalledTimes(2);
   });
 
   it('invalidates the cache on write so a writer never reads stale data', async () => {
     const memory = makeMemory();
-    await memory.get('plex:1', 'plex'); // parse 1, cache populated
-    await memory.set(
+    await memory.findProgress('plex:1', 'plex'); // parse 1, cache populated
+    await memory.saveProgress(
       new MediaProgress({ contentId: 'plex:1', playhead: 20, duration: 100 }),
       'plex'
     ); // invalidates
-    await memory.get('plex:1', 'plex'); // parse 2
+    await memory.findProgress('plex:1', 'plex'); // parse 2
     expect(FileIO.loadYamlSafe).toHaveBeenCalledTimes(2);
   });
 
   it('caches per storage path independently', async () => {
     const memory = makeMemory();
-    await memory.get('plex:1', 'plex');
-    await memory.get('plex:1', 'scripture');
+    await memory.findProgress('plex:1', 'plex');
+    await memory.findProgress('plex:1', 'scripture');
     expect(FileIO.loadYamlSafe).toHaveBeenCalledTimes(2);
   });
 });

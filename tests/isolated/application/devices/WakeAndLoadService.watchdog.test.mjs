@@ -1,5 +1,7 @@
 import { vi } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
+import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
+import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 
 function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -48,10 +50,12 @@ describe('WakeAndLoadService playback watchdog', () => {
     const eventBus = makeEventBus();
     const device = makeDevice();
     const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
       broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
       logger
     });
 
@@ -84,10 +88,12 @@ describe('WakeAndLoadService playback watchdog', () => {
     const eventBus = makeEventBus();
     const device = makeDevice();
     const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
       broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
       logger
     });
 
@@ -132,10 +138,12 @@ describe('WakeAndLoadService playback watchdog', () => {
       })
     };
     const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
       broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
       prewarmService,
       logger
     });
@@ -166,10 +174,12 @@ describe('WakeAndLoadService playback watchdog', () => {
     const eventBus = makeEventBus();
     const device = makeDevice();
     const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
       broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
       logger
     });
 
@@ -200,10 +210,12 @@ describe('WakeAndLoadService playback watchdog', () => {
     const subscribeSpy = vi.spyOn(eventBus, 'subscribe');
 
     const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
       broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
       logger
     });
 
@@ -223,10 +235,12 @@ describe('WakeAndLoadService playback watchdog', () => {
     const subscribeSpy = vi.spyOn(eventBus, 'subscribe');
     const device = makeDevice();
     const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
       broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
       logger,
     });
 
@@ -251,10 +265,12 @@ describe('WakeAndLoadService playback watchdog', () => {
     const eventBus = makeEventBus();
     const device = makeDevice();
     const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
       broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
       logger,
     });
 
@@ -274,12 +290,15 @@ describe('WakeAndLoadService playback watchdog', () => {
     vi.useFakeTimers();
     const logger = makeLogger();
     const eventBus = makeEventBus();
+    const broadcast = vi.fn();
     const device = makeDevice();
     const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
-      broadcast: vi.fn(),
+      broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: vi.fn() }),
       logger,
     });
 

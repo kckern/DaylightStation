@@ -9,6 +9,7 @@
  */
 
 import { DeviceLivenessService } from '#apps/devices/services/DeviceLivenessService.mjs';
+import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 
 /** @type {DeviceLivenessService | null} */
 let instance = null;
@@ -24,7 +25,7 @@ let instance = null;
  * @returns {{ livenessService: DeviceLivenessService }}
  */
 export function createDeviceLivenessService(config) {
-  const { eventBus, logger = console, clock, offlineTimeoutMs } = config || {};
+  const { eventBus, presenceGateway, logger = console, clock, offlineTimeoutMs } = config || {};
 
   if (!eventBus) {
     throw new Error('createDeviceLivenessService requires eventBus');
@@ -36,9 +37,10 @@ export function createDeviceLivenessService(config) {
   }
 
   const livenessService = new DeviceLivenessService({
-    eventBus,
+    presenceGateway,
     logger,
     clock,
+    scheduler: new NodeApplicationScheduler(),
     offlineTimeoutMs,
   });
 

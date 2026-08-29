@@ -23,7 +23,7 @@ const fakeNotifier = () => ({ notify: vi.fn().mockResolvedValue(undefined) });
 
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {} };
 
-const build = ({ surfaceId = 'garage-fitness', adapter, datastore, notifier, eventBus, ...opts } = {}) => {
+const build = ({ surfaceId = 'garage-fitness', adapter, datastore, notifier, realtimeGateway, ...opts } = {}) => {
   const surf = adapter || fakeAdapter({ id: surfaceId });
   const store = datastore || fakeDatastore();
   const surfaces = new Map([[surfaceId, surf]]);
@@ -31,7 +31,7 @@ const build = ({ surfaceId = 'garage-fitness', adapter, datastore, notifier, eve
     surfaces,
     datastore: store,
     notifier: notifier || null,
-    eventBus: eventBus || null,
+    realtimeGateway: realtimeGateway || null,
     clock: () => new Date(NOW_ISO),
     newId: () => 'dnr_test1',
     logger: silentLogger,
@@ -151,8 +151,8 @@ describe('DoNowService.dispatch', () => {
         occupancy: vi.fn().mockResolvedValue({ state: 'idle', occupantId: null }),
         dispatch: vi.fn().mockResolvedValue({ dispatched: true }),
       });
-      const eventBus = { broadcast: vi.fn() };
-      const { service, store } = build({ adapter, eventBus });
+      const realtimeGateway = { publishDispatchCompleted: vi.fn() };
+      const { service, store } = build({ adapter, realtimeGateway });
 
       const result = await service.dispatch({
         surface: 'garage-fitness', action: { episode: 'plex:1' }, learnerId: 'kid1',
@@ -172,14 +172,12 @@ describe('DoNowService.dispatch', () => {
       // The IMMEDIATE dispatch path never carries `approved`/`approvalId` —
       // that pair is `dispatchApproved`-only, and is the sole discriminator a
       // subscriber (DoNowSchoolBridge) has for telling the two paths apart.
-      expect(eventBus.broadcast).toHaveBeenCalledWith('donow', {
-        type: 'donow.dispatched', ref: 'ses_1', surface: 'garage-fitness', requestedBy: 'school-scan',
+      expect(realtimeGateway.publishDispatchCompleted).toHaveBeenCalledWith({
+        ref: 'ses_1', surface: 'garage-fitness', requestedBy: 'school-scan', approvalId: null,
       });
-      expect(eventBus.broadcast.mock.calls[0][1]).not.toHaveProperty('approved');
-      expect(eventBus.broadcast.mock.calls[0][1]).not.toHaveProperty('approvalId');
       // log append happens before the broadcast
       const appendOrder = store.appendDispatch.mock.invocationCallOrder[0];
-      const broadcastOrder = eventBus.broadcast.mock.invocationCallOrder[0];
+      const broadcastOrder = realtimeGateway.publishDispatchCompleted.mock.invocationCallOrder[0];
       expect(appendOrder).toBeLessThan(broadcastOrder);
     });
 
@@ -368,8 +366,8 @@ describe('DoNowService.dispatch', () => {
         occupancy: vi.fn().mockResolvedValue({ state: 'idle', occupantId: null }),
         dispatch: vi.fn().mockRejectedValue(new Error('device unreachable')),
       });
-      const eventBus = { broadcast: vi.fn() };
-      const { service, store } = build({ adapter, eventBus });
+      const realtimeGateway = { publishDispatchCompleted: vi.fn() };
+      const { service, store } = build({ adapter, realtimeGateway });
 
       const result = await service.dispatch({
         surface: 'garage-fitness', action: {}, learnerId: 'kid1', requestedBy: 'api', ref: 'ses_1',
@@ -377,7 +375,7 @@ describe('DoNowService.dispatch', () => {
 
       expect(result.decision).toBe('failed');
       expect(store.appendDispatch).not.toHaveBeenCalled();
-      expect(eventBus.broadcast).not.toHaveBeenCalled();
+      expect(realtimeGateway.publishDispatchCompleted).not.toHaveBeenCalled();
     });
 
     it('adapter.dispatch resolving { dispatched: false } -> failed, no log row', async () => {
@@ -402,8 +400,8 @@ describe('DoNowService.dispatchApproved', () => {
     const adapter = fakeAdapter({
       dispatch: vi.fn().mockResolvedValue({ dispatched: true }),
     });
-    const eventBus = { broadcast: vi.fn() };
-    const { service, store } = build({ adapter, eventBus });
+    const realtimeGateway = { publishDispatchCompleted: vi.fn() };
+    const { service, store } = build({ adapter, realtimeGateway });
 
     const record = {
       id: 'dnr_approved1',
@@ -430,9 +428,9 @@ describe('DoNowService.dispatchApproved', () => {
     // approved:true + approvalId are the ONLY discriminator a subscriber has
     // between this out-of-band approval and the immediate dispatch() path
     // (which never sets them) — see DoNowSchoolBridge's ownership filter.
-    expect(eventBus.broadcast).toHaveBeenCalledWith('donow', {
-      type: 'donow.dispatched', ref: 'ses_1', surface: 'garage-fitness', requestedBy: 'school-scan',
-      approved: true, approvalId: 'dnr_approved1',
+    expect(realtimeGateway.publishDispatchCompleted).toHaveBeenCalledWith({
+      ref: 'ses_1', surface: 'garage-fitness', requestedBy: 'school-scan',
+      approvalId: 'dnr_approved1',
     });
   });
 
@@ -453,8 +451,8 @@ describe('DoNowService.dispatchApproved', () => {
   });
 
   it('unregistered surface -> failed, no log row, no broadcast', async () => {
-    const eventBus = { broadcast: vi.fn() };
-    const { service, store } = build({ eventBus });
+    const realtimeGateway = { publishDispatchCompleted: vi.fn() };
+    const { service, store } = build({ realtimeGateway });
 
     const result = await service.dispatchApproved({
       id: 'dnr_x', surface: 'nonexistent', action: {}, learnerId: 'kid1', requestedBy: 'api', ref: 'r1',
@@ -462,7 +460,7 @@ describe('DoNowService.dispatchApproved', () => {
 
     expect(result).toEqual({ decision: 'failed', message: expect.stringMatching(/nonexistent/) });
     expect(store.appendDispatch).not.toHaveBeenCalled();
-    expect(eventBus.broadcast).not.toHaveBeenCalled();
+    expect(realtimeGateway.publishDispatchCompleted).not.toHaveBeenCalled();
   });
 
   it('adapter.dispatch declining -> failed, no log row', async () => {

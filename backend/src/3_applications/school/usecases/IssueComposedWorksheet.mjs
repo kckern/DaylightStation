@@ -10,7 +10,7 @@ import { createWorksheetInstance, worksheetInstanceDocument, composedWorksheetDo
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/reprintContext.mjs';
 import { slugify } from '#domains/school/documents/receipts.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { worksheetPresentation } from '#domains/school/curriculum/worksheetPresentation.mjs';
 

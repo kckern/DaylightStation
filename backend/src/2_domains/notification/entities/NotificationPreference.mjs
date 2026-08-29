@@ -20,7 +20,7 @@ export class NotificationPreference {
     return DEFAULT_CHANNELS;
   }
 
-  toJSON() {
+  get configuration() {
     return { ...this.#config };
   }
 }

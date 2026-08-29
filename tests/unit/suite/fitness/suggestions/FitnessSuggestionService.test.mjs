@@ -26,9 +26,7 @@ function makeService(strategies) {
     },
     sessionDatastore: { findInRange: async () => [] },
     fitnessConfigService: {
-      loadRawConfig: () => ({
-        suggestions: { lookback_days: 10, grid_size: 8 },
-      }),
+      getSuggestionPolicy: () => ({ lookbackDays: 10, slots: 8, excludedCollectionIds: [] }),
     },
     fitnessPlayableService: { listFitnessShows: async () => ({ shows: [] }) },
     contentAdapter: null,
@@ -145,7 +143,7 @@ describe('FitnessSuggestionService', () => {
       },
       sessionDatastore: { findInRange: async () => [] },
       fitnessConfigService: {
-        loadRawConfig: () => ({ suggestions: { lookback_days: 10, grid_size: 8 } }),
+        getSuggestionPolicy: () => ({ lookbackDays: 10, slots: 8, excludedCollectionIds: [] }),
       },
       fitnessPlayableService: {
         getPlayableEpisodes: async () => { underlyingCalls++; return { items: [], info: {} }; },

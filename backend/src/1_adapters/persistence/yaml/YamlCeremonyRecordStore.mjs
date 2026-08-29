@@ -1,10 +1,12 @@
 import path from 'path';
 import { loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
+import { ICeremonyRecordRepository } from '#apps/lifeplan/ports/ICeremonyRecordRepository.mjs';
 
-export class YamlCeremonyRecordStore {
+export class YamlCeremonyRecordStore extends ICeremonyRecordRepository {
   #basePath;
 
   constructor({ basePath }) {
+    super();
     this.#basePath = basePath;
   }
 
