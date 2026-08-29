@@ -32,7 +32,10 @@ describe('CallLeaseService', () => {
     const reserved = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
     await service.wake(reserved.body.callId, 'u1');
     expect(wake.execute).toHaveBeenCalledWith('tv', { open: 'videocall/tv' },
-      expect.objectContaining({ dispatchId: reserved.body.dispatchId, deferredRetry: false, isCancelled: expect.any(Function) }));
+      expect.objectContaining({ dispatchId: reserved.body.dispatchId, deferredRetry: false,
+        isCancelled: expect.any(Function), correlation: expect.objectContaining({
+          callId: reserved.body.callId, attemptId: 'a1', callerId: 'u1', phonePeerId: 'p1',
+        }) }));
     expect((await service.wake(reserved.body.callId, 'u1')).kind).toBe('wake_exhausted');
   });
 
@@ -99,6 +102,28 @@ describe('CallLeaseService', () => {
     expect(checked.message.payload).toEqual({ nested: { safe: true } });
   });
 
+  it('logs signaling milestones with correlation but never SDP or candidate bodies', async () => {
+    const info = vi.fn();
+    const dev = device();
+    const service = new CallLeaseService({ deviceService: { get: () => dev },
+      wakeAndLoadService: { execute: vi.fn() }, logger: { info, warn: vi.fn() }, sleep: vi.fn() });
+    const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
+    const joined = service.joinActive({ deviceId: 'tv', declaredDeviceId: 'tv', isLocal: true }).body;
+    service.authorize({ clientId: 'p', topic: body.topic, credential: body.phoneCredential, role: 'phone', peerId: 'p1' });
+    service.authorize({ clientId: 't', topic: body.topic, credential: joined.tvCredential, role: 'tv', peerId: joined.tvPeerId });
+    const signal = (clientId, role, peerId, type, sequence, payload = {}) => service.validateSignal(clientId, {
+      topic: body.topic, callId: body.callId, attemptId: 'a1', role, peerId, revision: 0, sequence, type, payload,
+    });
+    signal('t', 'tv', joined.tvPeerId, 'waiting', 0);
+    signal('p', 'phone', 'p1', 'offer', 0, { description: { sdp: 'secret-sdp' } });
+    signal('p', 'phone', 'p1', 'candidate', 1, { candidate: 'secret-candidate' });
+    expect(info).toHaveBeenCalledWith('homeline.signaling.offer', expect.objectContaining({
+      callId: body.callId, attemptId: 'a1', peerRevision: 0, outcome: 'accepted',
+    }));
+    expect(JSON.stringify(info.mock.calls)).not.toContain('secret-sdp');
+    expect(JSON.stringify(info.mock.calls)).not.toContain('secret-candidate');
+  });
+
   it('reports recovery preparation failure and caps hard recovery', async () => {
     const { service } = make(device({ prepareForContent: vi.fn(async () => ({ ok: false, error: 'camera locked' })) }));
     const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
@@ -106,6 +131,21 @@ describe('CallLeaseService', () => {
     const failed = await service.recover(body.callId, 'u1', 'hard', { confirmed: true });
     expect(failed).toMatchObject({ kind: 'failed', body: { ok: false } });
     expect((await service.recover(body.callId, 'u1', 'hard', { confirmed: true })).kind).toBe('exhausted');
+  });
+
+  it('never reports recovery or restoration success without an affirmative device result', async () => {
+    const dev = device({
+      getState: vi.fn(async () => ({ power: { state: 'on' }, content: { currentUrl: '/screen/home' } })),
+      prepareForContent: vi.fn(async () => undefined),
+      loadContent: vi.fn(async () => undefined),
+    });
+    const { service } = make(dev);
+    const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
+    expect(await service.recover(body.callId, 'u1', 'soft')).toMatchObject({
+      kind: 'failed', body: { ok: false, error: 'Preparation failed' },
+    });
+    const ended = await service.end(body.callId, 'u1');
+    expect(ended.body.restoration).toMatchObject({ outcome: 'partial', reason: 'content_restore_failed' });
   });
 
   it('extends the setup lease before a confirmed hard recovery waits on hardware', async () => {
@@ -126,7 +166,16 @@ describe('CallLeaseService', () => {
     expect(scheduled.at(-1).delay).toBe(180_000);
     expect(service.get(body.callId).expiresAt).toBe(now + 180_000);
     finishReboot({ ok: true });
-    expect((await recovery).kind).toBe('ok');
+    expect(await recovery).toMatchObject({ kind: 'ok', body: { coldWake: true } });
+  });
+
+  it('restores prior-off power after a confirmed hard recovery turns the TV on', async () => {
+    const { service, dev } = make();
+    const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
+    expect((await service.recover(body.callId, 'u1', 'hard', { confirmed: true })).kind).toBe('ok');
+    const ended = await service.end(body.callId, 'u1');
+    expect(ended.body.restoration).toMatchObject({ outcome: 'restored', action: 'power_off' });
+    expect(dev.powerOff).toHaveBeenCalledTimes(1);
   });
 
   it('caps soft recovery and rejects overlapping device operations', async () => {

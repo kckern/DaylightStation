@@ -56,6 +56,7 @@ export class WakeAndLoadService {
    */
   /** @type {Map<string, Promise<Object>>} In-flight wake-and-load per device */
   #inflight = new Map();
+  #dispatchCorrelation = new Map();
 
   constructor(deps) {
     this.#deviceService = deps.deviceService;
@@ -95,9 +96,13 @@ export class WakeAndLoadService {
       return this.#inflight.get(deviceId);
     }
 
-    const promise = this.#executeInner(deviceId, query, options).finally(() => {
-      this.#inflight.delete(deviceId);
-    });
+    let completedDispatchId = options.dispatchId;
+    const promise = this.#executeInner(deviceId, query, options)
+      .then(result => { completedDispatchId = result?.dispatchId || completedDispatchId; return result; })
+      .finally(() => {
+        this.#inflight.delete(deviceId);
+        if (completedDispatchId) this.#dispatchCorrelation.delete(completedDispatchId);
+      });
     this.#inflight.set(deviceId, promise);
     return promise;
   }
@@ -120,6 +125,12 @@ export class WakeAndLoadService {
     // instead of a code audit (2026-08-12 session review).
     const clientSuppliedDispatchId = typeof options.dispatchId === 'string' && options.dispatchId.length > 0;
     const dispatchId = clientSuppliedDispatchId ? options.dispatchId : randomUUID();
+    if (options.correlation && typeof options.correlation === 'object') {
+      const correlation = Object.fromEntries(Object.entries(options.correlation)
+        .filter(([key]) => ['callId', 'attemptId', 'callerId', 'phonePeerId', 'tvPeerId', 'state'].includes(key)));
+      this.#dispatchCorrelation.set(dispatchId, correlation);
+      this.#logger.info?.('wake-and-load.correlated', { deviceId, dispatchId, ...correlation });
+    }
     const adoptSnapshot = options.adoptSnapshot ?? null;
     const isAdopt = !!adoptSnapshot;
     const device = this.#deviceService.get(deviceId);
@@ -747,6 +758,7 @@ export class WakeAndLoadService {
       step,
       status,
       steps: STEPS,
+      ...(this.#dispatchCorrelation.get(dispatchId) || {}),
       ...extra
     });
   }

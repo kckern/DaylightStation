@@ -18,10 +18,17 @@ export const useWebRTCPeer = (localStream) => {
   const iceCandidateCallbackRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
   const revisionRef = useRef(0);
+  const correlationRef = useRef({});
+  const setCallContext = useCallback(context => { correlationRef.current = context || {}; }, []);
+  const log = useCallback((level, event, data = {}) => logger()[level]?.(event, {
+    ...correlationRef.current,
+    peerRevision: revisionRef.current,
+    ...data,
+  }), []);
 
   const createPC = useCallback(() => {
     if (pcRef.current) {
-      logger().debug('pc-closing-previous', { state: pcRef.current.connectionState });
+      log('debug', 'pc-closing-previous', { state: pcRef.current.connectionState });
       pcRef.current.close();
     }
 
@@ -33,9 +40,9 @@ export const useWebRTCPeer = (localStream) => {
       tracks.forEach(track => {
         pc.addTrack(track, localStream);
       });
-      logger().debug('pc-created', { tracks: tracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })) });
+      log('debug', 'pc-created', { tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
     } else {
-      logger().debug('pc-created', { tracks: [] });
+      log('debug', 'pc-created', { tracks: [] });
     }
 
     const remote = new MediaStream();
@@ -47,7 +54,7 @@ export const useWebRTCPeer = (localStream) => {
       // its camera started, so the SDP has no a=msid attribute).
       remote.addTrack(event.track);
       setRemoteStream(new MediaStream(remote.getTracks()));
-      logger().info('remote-track-added', {
+      log('info', 'remote-track-added', {
         kind: event.track.kind,
         enabled: event.track.enabled,
         muted: event.track.muted,
@@ -65,11 +72,11 @@ export const useWebRTCPeer = (localStream) => {
 
     pc.onconnectionstatechange = () => {
       setConnectionState(pc.connectionState);
-      logger().debug('connection-state', { state: pc.connectionState });
+      log('debug', 'connection-state', { state: pc.connectionState });
     };
 
     return pc;
-  }, [localStream]);
+  }, [localStream, log]);
 
   const createOffer = useCallback(async ({ revision = revisionRef.current, iceRestart = false } = {}) => {
     revisionRef.current = revision;
@@ -98,25 +105,25 @@ export const useWebRTCPeer = (localStream) => {
       }
     });
     if (upgraded.length > 0) {
-      logger().info('transceivers-upgraded-sendrecv', { kinds: upgraded });
+      log('info', 'transceivers-upgraded-sendrecv', { kinds: upgraded });
     }
 
     // Flush any ICE candidates that arrived before remote description was set
     const queued = pendingCandidatesRef.current.splice(0);
     if (queued.length > 0) {
-      logger().debug('ice-candidates-flushed', { count: queued.length });
+      log('debug', 'ice-candidates-flushed', { count: queued.length });
     }
     for (const { candidate: c } of queued) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(c));
       } catch (err) {
-        logger().warn('ice-candidate-flush-failed', { error: err.message });
+        log('warn', 'ice-candidate-flush-failed', { error: err.message });
       }
     }
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     return answer;
-  }, [createPC]);
+  }, [createPC, log]);
 
   const handleAnswer = useCallback(async (answer, { revision = revisionRef.current } = {}) => {
     if (revision !== revisionRef.current) return;
@@ -126,35 +133,35 @@ export const useWebRTCPeer = (localStream) => {
     // Flush any ICE candidates that arrived before remote description was set
     const queued = pendingCandidatesRef.current.splice(0);
     if (queued.length > 0) {
-      logger().debug('ice-candidates-flushed', { count: queued.length });
+      log('debug', 'ice-candidates-flushed', { count: queued.length });
     }
     for (const { candidate: c } of queued) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(c));
       } catch (err) {
-        logger().warn('ice-candidate-flush-failed', { error: err.message });
+        log('warn', 'ice-candidate-flush-failed', { error: err.message });
       }
     }
-  }, []);
+  }, [log]);
 
   const addIceCandidate = useCallback(async (candidate, revision = revisionRef.current) => {
     if (revision !== revisionRef.current) {
-      logger().debug('ice-candidate-stale', { revision, currentRevision: revisionRef.current });
+      log('debug', 'ice-candidate-stale', { revision, currentRevision: revisionRef.current });
       return;
     }
     const pc = pcRef.current;
     if (!pc || !pc.remoteDescription) {
       // PC not ready — queue for later flush
       pendingCandidatesRef.current.push({ revision, candidate });
-      logger().debug('ice-candidate-queued', { queueLength: pendingCandidatesRef.current.length });
+      log('debug', 'ice-candidate-queued', { queueLength: pendingCandidatesRef.current.length });
       return;
     }
     try {
       await pc.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (err) {
-      logger().warn('ice-candidate-failed', { error: err.message });
+      log('warn', 'ice-candidate-failed', { error: err.message });
     }
-  }, []);
+  }, [log]);
 
   const onIceCandidate = useCallback((callback) => {
     iceCandidateCallbackRef.current = callback;
@@ -215,18 +222,18 @@ export const useWebRTCPeer = (localStream) => {
 
       const reason = sender.track ? 'device-reselect' : 'late-bind';
       sender.replaceTrack(track)
-        .then(() => { logger().info('track-replaced', { kind: track.kind, reason }); })
-        .catch(err => logger().warn('track-replace-failed', { kind: track.kind, error: err.message }));
+        .then(() => { log('info', 'track-replaced', { kind: track.kind, reason }); })
+        .catch(err => log('warn', 'track-replace-failed', { kind: track.kind, error: err.message }));
     }
 
     if (tracks.length > 0) {
-      logger().info('sync-tracks-to-pc', {
+      log('info', 'sync-tracks-to-pc', {
         trackCount: tracks.length,
         senderCount: senders.length,
-        tracks: tracks.map(t => ({ kind: t.kind, label: t.label, id: t.id.slice(0, 8) })),
+        tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })),
       });
     }
-  }, [localStream]);
+  }, [localStream, log]);
 
   useEffect(() => {
     return () => {
@@ -250,5 +257,7 @@ export const useWebRTCPeer = (localStream) => {
     restartIce,
     rebuild,
     revisionRef,
-  }), [remoteStream, connectionState, createOffer, handleOffer, handleAnswer, addIceCandidate, onIceCandidate, reset, restartIce, rebuild]);
+    setCallContext,
+  }), [remoteStream, connectionState, createOffer, handleOffer, handleAnswer, addIceCandidate,
+    onIceCandidate, reset, restartIce, rebuild, setCallContext]);
 };

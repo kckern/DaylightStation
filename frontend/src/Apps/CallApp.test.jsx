@@ -33,6 +33,7 @@ describe('CallApp presentation', () => {
     mocks.api.mockResolvedValue({ devices: [{ id: 'tv', name: 'Living Room', capabilities: { contentControl: true } }] });
     render(<CallApp />);
     const button = await screen.findByRole('button', { name: 'Call Living Room' });
+    expect(screen.getByRole('button', { name: 'Exit call screen' })).toBeTruthy();
     expect(mocks.start).not.toHaveBeenCalled();
     fireEvent.click(button);
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'tv' }));
@@ -66,6 +67,19 @@ describe('CallApp presentation', () => {
     expect(screen.getByText(/Controls reconnecting/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Retry media' }));
     expect(mocks.retryMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['permission_denied', 'Microphone access was denied'],
+    ['hardware_missing', 'No usable microphone was found'],
+    ['device_busy', 'microphone is already in use'],
+    ['constraints_failed', 'Microphone settings are not supported'],
+  ])('shows distinct partial-media copy for %s', async (reason, copy) => {
+    mocks.media = { status: 'ready', stream: null, errors: { audio: reason }, retry: vi.fn() };
+    mocks.api.mockResolvedValue({ devices: [] });
+    render(<CallApp />);
+    expect(await screen.findByText(new RegExp(copy))).toBeTruthy();
+    expect(screen.getByText(/continue with video only/)).toBeTruthy();
   });
 
   it('requires the visible countdown before dispatching hard recovery', async () => {

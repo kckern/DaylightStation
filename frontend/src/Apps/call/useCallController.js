@@ -20,6 +20,7 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
   peerRef.current = peer;
   const previousStateRef = useRef(null);
   const previousHealthRef = useRef(null);
+  const attemptStartedAtRef = useRef(null);
 
   useEffect(() => {
     const previousState = previousStateRef.current;
@@ -29,6 +30,9 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
       deviceId: state.target?.id, state: state.value, previousState,
       phonePeerId: state.session?.peerId, peerRevision: state.peerRevision,
       recoveryRung: state.reason,
+      reason: state.reason,
+      elapsedMs: attemptStartedAtRef.current == null ? null : Date.now() - attemptStartedAtRef.current,
+      outcome: state.value === 'failed' ? 'failed' : state.value === 'ended' ? 'ended' : undefined,
     });
     previousStateRef.current = state.value;
   }, [state]);
@@ -53,11 +57,13 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
 
   const start = useCallback(target => {
     clearWork();
+    attemptStartedAtRef.current = Date.now();
     const attemptId = randomId('attempt');
     dispatch({ type: 'START', attemptId, target });
   }, [clearWork]);
   const resume = useCallback((target, callId) => {
     clearWork();
+    attemptStartedAtRef.current = Date.now();
     dispatch({ type: 'RESUME', attemptId: randomId('attempt'), target, callId });
   }, [clearWork]);
 
@@ -82,7 +88,11 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
         dispatch({ type: 'RESERVED', attemptId, session, deadlineAt: Date.now() + 2_000 });
       } catch (error) {
         if (controller.signal.aborted || !isAttemptActive(stateRef.current, attemptId)) return;
-        dispatch({ type: error.status === 409 ? 'BUSY' : 'FAIL', attemptId, error: error.message, reason: 'reservation_failed' });
+        if (error.status === 409) dispatch({ type: 'BUSY', attemptId });
+        else dispatch({ type: 'FAIL', attemptId,
+          error: error.status === 401 ? 'Sign in to place a Home Line call.'
+            : error.status === 403 ? 'Your account does not have permission to place Home Line calls.' : error.message,
+          reason: error.status === 401 ? 'auth_required' : error.status === 403 ? 'call_forbidden' : 'reservation_failed' });
       }
     };
     void run();
@@ -131,7 +141,10 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
           coldWake: result.coldWake, deadlineAt: Date.now() + (result.coldWake ? 75_000 : 45_000) });
       } catch (error) {
         if (!controller.signal.aborted && isAttemptActive(stateRef.current, attemptId)) {
-          dispatch({ type: 'FAIL', attemptId, error: error.message, reason: 'wake_failed' });
+          dispatch({ type: state.reason === 'soft_recovery' || state.reason === 'hard_recovery'
+            ? 'RECOVERY_EXHAUSTED' : 'WAKE_FAILED', attemptId, error: error.message,
+          reason: state.reason === 'soft_recovery' || state.reason === 'hard_recovery'
+            ? 'recovery_failed' : 'wake_failed' });
         }
       }
     };
@@ -181,7 +194,10 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
         const liveConnection = () => peerConnectionRef.current?.connectionState;
         const rebuildWithDeadline = async () => {
           iceRungRef.current = 2;
-          await signaling.rebuild();
+          const peerRevision = await signaling.rebuild();
+          if (Number.isInteger(peerRevision) && isAttemptActive(stateRef.current, attemptId)) {
+            dispatch({ type: 'PEER_REVISION', attemptId, peerRevision });
+          }
           later(() => {
             if (liveConnection() !== 'connected' && isAttemptActive(stateRef.current, attemptId)) {
               dispatch({ type: 'RECOVERY_EXHAUSTED', attemptId });
@@ -219,7 +235,10 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
       await retryLocalMedia?.();
       if (!isAttemptActive(stateRef.current, attemptId)) return;
       signaling.send('media-retry');
-      await signaling.rebuild();
+      const peerRevision = await signaling.rebuild();
+      if (Number.isInteger(peerRevision) && isAttemptActive(stateRef.current, attemptId)) {
+        dispatch({ type: 'PEER_REVISION', attemptId, peerRevision });
+      }
       later(() => {
         iceLadderRunningRef.current = false;
         if (peerConnectionRef.current?.connectionState !== 'connected'

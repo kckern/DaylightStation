@@ -75,6 +75,84 @@ describe('useCallController cancellation and budgets', () => {
     expect(localPeer.reset).toHaveBeenCalled();
   });
 
+  it('runs the single automatic soft recovery after the initial wake dispatch fails', async () => {
+    mocks.api.mockImplementation((path, body) => {
+      if (path.endsWith('/wake')) return Promise.reject(new Error('wake failed'));
+      if (path.endsWith('/recover') && body.level === 'soft') return Promise.resolve({ ok: true, coldWake: false });
+      if (path.endsWith('/end')) return Promise.resolve({ ok: true });
+      return Promise.resolve(reserveBody);
+    });
+    const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready',
+      retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await startToProbe(result);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); }); await flush(); await flush();
+    expect(result.current.state).toMatchObject({ value: 'waiting_tv', recoveryCount: 1 });
+    expect(mocks.api.mock.calls.filter(([path]) => path.endsWith('/wake'))).toHaveLength(1);
+    expect(mocks.api.mock.calls.filter(([path]) => path.endsWith('/recover'))).toHaveLength(1);
+  });
+
+  it('cancels an in-flight automatic soft recovery and ignores its late result', async () => {
+    const recovery = deferred();
+    mocks.api.mockImplementation((path, body, _method, options) => {
+      if (path.endsWith('/recover') && body.level === 'soft') { recovery.signal = options.signal; return recovery.promise; }
+      if (path.endsWith('/wake')) return Promise.resolve({ ok: true, coldWake: false });
+      if (path.endsWith('/end')) return Promise.resolve({ ok: true });
+      return Promise.resolve(reserveBody);
+    });
+    const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready',
+      retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await startToProbe(result);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); }); await flush();
+    expect(result.current.state.value).toBe('waiting_tv');
+    await act(async () => { await vi.advanceTimersByTimeAsync(45_000); }); await flush();
+    expect(result.current.state).toMatchObject({ value: 'waking', reason: 'soft_recovery' });
+    act(() => result.current.end('cancel_soft')); await flush();
+    expect(recovery.signal.aborted).toBe(true);
+    recovery.resolve({ ok: true, coldWake: false }); await flush();
+    expect(result.current.state.value).toBe('ended');
+  });
+
+  it('cancels a confirmed hard recovery and ignores its late result', async () => {
+    const hardRecovery = deferred();
+    mocks.api.mockImplementation((path, body, _method, options) => {
+      if (path.endsWith('/recover') && body.level === 'hard') { hardRecovery.signal = options.signal; return hardRecovery.promise; }
+      if (path.endsWith('/recover')) return Promise.resolve({ ok: true, coldWake: false });
+      if (path.endsWith('/wake')) return Promise.resolve({ ok: true, coldWake: false });
+      if (path.endsWith('/end')) return Promise.resolve({ ok: true });
+      return Promise.resolve(reserveBody);
+    });
+    const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready',
+      retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await startToProbe(result);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); }); await flush();
+    await act(async () => { await vi.advanceTimersByTimeAsync(45_000); }); await flush();
+    expect(result.current.state).toMatchObject({ value: 'waiting_tv', recoveryCount: 1 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(45_000); });
+    expect(result.current.state.value).toBe('recovery_prompt');
+    act(() => result.current.dispatch({ type: 'HARD_RECOVERY', attemptId: result.current.state.attemptId })); await flush();
+    expect(result.current.state).toMatchObject({ value: 'waking', reason: 'hard_recovery' });
+    act(() => result.current.end('cancel_hard')); await flush();
+    expect(hardRecovery.signal.aborted).toBe(true);
+    hardRecovery.resolve({ ok: true, coldWake: true }); await flush();
+    expect(result.current.state.value).toBe('ended');
+  });
+
+  it('keeps the lease in a user-controlled prompt when automatic soft recovery fails', async () => {
+    mocks.api.mockImplementation((path, body) => {
+      if (path.endsWith('/recover') && body.level === 'soft') return Promise.reject(new Error('reload failed'));
+      if (path.endsWith('/wake')) return Promise.resolve({ ok: true, coldWake: false });
+      if (path.endsWith('/end')) return Promise.resolve({ ok: true });
+      return Promise.resolve(reserveBody);
+    });
+    const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready',
+      retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await startToProbe(result);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); }); await flush();
+    await act(async () => { await vi.advanceTimersByTimeAsync(45_000); }); await flush();
+    expect(result.current.state).toMatchObject({ value: 'recovery_prompt', reason: 'recovery_exhausted' });
+    expect(mocks.api.mock.calls.some(([path]) => path.endsWith('/end'))).toBe(false);
+  });
+
   it('turns a busy lease into an occupied state with no automatic retry', async () => {
     mocks.api.mockRejectedValue(Object.assign(new Error('busy'), { status: 409 }));
     const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready', retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
@@ -83,6 +161,30 @@ describe('useCallController cancellation and budgets', () => {
     expect(result.current.state.value).toBe('occupied');
     await act(async () => { vi.advanceTimersByTime(180_000); });
     expect(mocks.api).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a reservation failure terminal until the user explicitly retries', async () => {
+    mocks.api.mockRejectedValue(Object.assign(new Error('backend unavailable'), { status: 503 }));
+    const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready',
+      retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await flush();
+    await act(async () => { result.current.start({ id: 'tv' }); }); await flush();
+    expect(result.current.state).toMatchObject({ value: 'failed', reason: 'reservation_failed' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(180_000); });
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [401, 'auth_required', 'Sign in to place a Home Line call.'],
+    [403, 'call_forbidden', 'does not have permission'],
+  ])('maps caller access failure %s to actionable copy', async (status, reason, copy) => {
+    mocks.api.mockRejectedValue(Object.assign(new Error('raw response'), { status }));
+    const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready',
+      retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await flush();
+    await act(async () => { result.current.start({ id: 'tv' }); }); await flush();
+    expect(result.current.state).toMatchObject({ value: 'failed', reason });
+    expect(result.current.state.error).toMatch(new RegExp(copy));
   });
 
   it('resumes the same call and stores only refresh identifiers', async () => {
@@ -133,6 +235,7 @@ describe('useCallController cancellation and budgets', () => {
     mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true } : reserveBody);
     const localPeer = peer(); localPeer.pcRef.current = { connectionState: 'disconnected' };
     const retryLocalMedia = vi.fn(async () => {});
+    mocks.signaling.rebuild.mockResolvedValueOnce(1);
     const { result } = renderHook(() => useCallController({ peer: localPeer, mediaStatus: 'ready',
       retryLocalMedia, remoteVideoRef: { current: null } }));
     await startToProbe(result);
@@ -147,6 +250,7 @@ describe('useCallController cancellation and budgets', () => {
     });
     expect(retryLocalMedia).toHaveBeenCalledTimes(1);
     expect(mocks.signaling.rebuild).toHaveBeenCalledTimes(1);
+    expect(result.current.state.peerRevision).toBe(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
     expect(result.current.state.value).toBe('recovery_prompt');
   });
