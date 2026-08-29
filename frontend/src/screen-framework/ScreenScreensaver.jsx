@@ -5,6 +5,7 @@ import { getWidgetRegistry } from './widgets/registry.js';
 import { useMenuNavigationContext } from '../context/useMenuNavigationContext.js';
 import getLogger from '../lib/logging/Logger.js';
 import { BROWSE_NAV_TYPES } from './screenActivity.js';
+import { hasInitialScreenAction } from './screenAppPath.js';
 
 let _logger;
 function logger() {
@@ -51,6 +52,13 @@ export function ScreenScreensaver({ config }) {
   const showOnLoad = config?.showOnLoad ?? false;
   const interactive = config?.interactive ?? false;
   const propsJson = JSON.stringify(config?.props ?? {});
+  // Capture this during render, before the sibling ScreenAutoplay effect
+  // intentionally cleans one-shot URLs. A boot deep link must get the sole
+  // fullscreen overlay slot before a showOnLoad screensaver does.
+  const suppressShowOnLoad = useRef(
+    typeof window !== 'undefined'
+      && hasInitialScreenAction(window.location.pathname, window.location.search),
+  ).current;
 
   // Read latest suppression signals without re-running the effect.
   const hasOverlayRef = useRef(hasOverlay);
@@ -138,7 +146,7 @@ export function ScreenScreensaver({ config }) {
     const onActivity = () => { if (!shown) schedule(); };
     ACTIVITY_EVENTS.forEach((evt) => window.addEventListener(evt, onActivity));
 
-    if (showOnLoad) show(); else schedule();
+    if (showOnLoad && !suppressShowOnLoad) show(); else schedule();
 
     return () => {
       if (timer) clearTimeout(timer);
@@ -147,7 +155,7 @@ export function ScreenScreensaver({ config }) {
       if (shown) dismissOverlay('fullscreen');
     };
      
-  }, [widgetKey, idleSeconds, showOnLoad, interactive, propsJson, showOverlay, dismissOverlay, reset]);
+  }, [widgetKey, idleSeconds, showOnLoad, interactive, propsJson, showOverlay, dismissOverlay, reset, suppressShowOnLoad]);
 
   return null;
 }
