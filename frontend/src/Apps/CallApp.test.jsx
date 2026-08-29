@@ -4,13 +4,16 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  api: vi.fn(), start: vi.fn(), resume: vi.fn(), end: vi.fn(), dispatch: vi.fn(), retryMedia: vi.fn(),
+  api: vi.fn(), start: vi.fn(), resume: vi.fn(), end: vi.fn(), dispatch: vi.fn(), retryMedia: vi.fn(), loggerConfigure: vi.fn(),
   state: { value: 'idle', media: { audio: false, video: false }, controlConnected: true },
   media: { status: 'ready', stream: null, errors: {}, retry: vi.fn() },
 }));
 vi.mock('../lib/api.mjs', () => ({ DaylightAPI: mocks.api }));
 vi.mock('../hooks/useDocumentTitle.js', () => ({ default: vi.fn() }));
-vi.mock('../lib/logging/Logger.js', () => ({ default: () => ({ child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }) }));
+vi.mock('../lib/logging/Logger.js', () => ({
+  default: () => ({ child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),
+  configure: mocks.loggerConfigure,
+}));
 vi.mock('../modules/Input/hooks/useIndependentMedia.js', () => ({ useIndependentMedia: () => mocks.media }));
 vi.mock('../modules/Input/hooks/useWebRTCPeer.js', () => ({ useWebRTCPeer: () => ({ remoteStream: null }) }));
 vi.mock('./call/useCallController.js', () => ({ useCallController: () => ({
@@ -22,7 +25,7 @@ import CallApp from './CallApp.jsx';
 
 describe('CallApp presentation', () => {
   beforeEach(() => {
-    mocks.api.mockReset(); mocks.start.mockReset(); mocks.end.mockReset(); mocks.dispatch.mockReset(); mocks.retryMedia.mockReset();
+    mocks.api.mockReset(); mocks.start.mockReset(); mocks.end.mockReset(); mocks.dispatch.mockReset(); mocks.retryMedia.mockReset(); mocks.loggerConfigure.mockReset();
     mocks.state = { value: 'idle', media: { audio: false, video: false }, controlConnected: true };
     mocks.media = { status: 'ready', stream: null, errors: {}, retry: vi.fn() };
     sessionStorage.clear();
@@ -32,6 +35,7 @@ describe('CallApp presentation', () => {
   it('shows one explicit Call action and never auto-starts it', async () => {
     mocks.api.mockResolvedValue({ devices: [{ id: 'tv', name: 'Living Room', capabilities: { contentControl: true } }] });
     render(<CallApp />);
+    expect(mocks.loggerConfigure).toHaveBeenCalledWith(expect.objectContaining({ context: expect.objectContaining({ app: 'homeline-phone', sessionLog: true }) }));
     const button = await screen.findByRole('button', { name: 'Call Living Room' });
     expect(screen.getByRole('button', { name: 'Exit call screen' })).toBeTruthy();
     expect(mocks.start).not.toHaveBeenCalled();

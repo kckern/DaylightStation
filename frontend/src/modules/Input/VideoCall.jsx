@@ -7,10 +7,13 @@ import { useNativeAudioBridge } from './hooks/useNativeAudioBridge';
 import { useWebRTCPeer } from './hooks/useWebRTCPeer';
 import { useCallSignaling } from './hooks/useCallSignaling.js';
 import { useMediaHealth } from './hooks/useMediaHealth.js';
-import getLogger from '../../lib/logging/Logger.js';
+import getLogger, { configure as configureLogger } from '../../lib/logging/Logger.js';
 import './VideoCall.scss';
 
 export default function VideoCall({ deviceId, clear }) {
+  // Configure before creating children: Input/WebRTC children snapshot this
+  // root context and need their own durable TV-side call trace.
+  useMemo(() => configureLogger({ level: 'info', context: { app: 'homeline-tv', sessionLog: true } }), []);
   const logger = useMemo(() => getLogger().child({ component: 'VideoCall', deviceId }), [deviceId]);
 
   // Fetch device-specific input config (preferred camera/mic, audio bridge)
@@ -117,6 +120,16 @@ export default function VideoCall({ deviceId, clear }) {
     && (mediaHealth.audio || mediaHealth.video);
   const status = peerConnected ? (mediaHealth.audio && mediaHealth.video ? 'connected' : 'degraded')
     : callSession ? 'connecting' : 'waiting';
+  const callLogFields = useMemo(() => ({
+    callId: callSession?.callId ?? null,
+    attemptId: callSession?.attemptId ?? null,
+    dispatchId: callSession?.dispatchId ?? null,
+    deviceId,
+    tvPeerId: callSession?.peerId ?? null,
+    state: status,
+    peerRevision: signaling.revisionRef.current,
+  }), [callSession, deviceId, signaling.revisionRef, status]);
+  useEffect(() => () => { configureLogger({ context: { sessionLog: false } }); }, []);
   useEffect(() => {
     if (!mediaHealth.verified || (!mediaHealth.audio && !mediaHealth.video)) return;
     signaling.send('media-verified', { audio: mediaHealth.audio, video: mediaHealth.video });
@@ -223,12 +236,12 @@ export default function VideoCall({ deviceId, clear }) {
     // onaudioprocess never fires and AEC never gets reference data.
     let resumeRetry = null;
     const resumeContext = (attempt = 0) => ctx.resume()
-      .then(() => logger.info('audio-context.resume.succeeded', { attempt }))
+      .then(() => logger.info('audio-context.resume.succeeded', { ...callLogFields, attempt, outcome: 'ok' }))
       .catch(error => {
         if (attempt < 1) {
-          logger.warn('audio-context.resume.retry', { reason: error.name });
+          logger.warn('audio-context.resume.retry', { ...callLogFields, attempt, reason: error.name, outcome: 'retrying' });
           resumeRetry = setTimeout(() => void resumeContext(1), 150);
-        } else logger.error('audio-context.resume.failed', { reason: error.name });
+        } else logger.error('audio-context.resume.failed', { ...callLogFields, attempt, reason: error.name, outcome: 'failed' });
       });
     void resumeContext();
     const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
@@ -253,7 +266,7 @@ export default function VideoCall({ deviceId, clear }) {
       bridge.feedReference(copy);
     };
 
-    logger.info('aec-ref-tap-started', { audioTracks: audioTracks.length });
+    logger.info('aec-ref-tap-started', { ...callLogFields, audioTracks: audioTracks.length });
     refTapRef.current = { ctx, source, processor, muteGain };
 
     return () => {
@@ -264,12 +277,12 @@ export default function VideoCall({ deviceId, clear }) {
       muteGain.disconnect();
       ctx.close().catch(() => {});
       refTapRef.current = null;
-      logger.info('aec-ref-tap-stopped');
+      logger.info('aec-ref-tap-stopped', callLogFields);
     };
     // narrowed to bridge.feedReference (the stable method), not the bridge object — this is a
     // live WebRTC echo-cancellation audio tap; real-time audio/hardware capture code.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [peer.remoteStream, bridgeActive, bridge.feedReference, logger]);
+  }, [peer.remoteStream, bridgeActive, bridge.feedReference, callLogFields, logger]);
 
   // Attach remote stream to video element
   useEffect(() => {
@@ -277,21 +290,21 @@ export default function VideoCall({ deviceId, clear }) {
     if (remoteVideoRef.current && peer.remoteStream) {
       const element = remoteVideoRef.current;
       const tracks = peer.remoteStream.getTracks();
-      logger.info('remote-stream-attached', { callId: callSession?.callId, attemptId: callSession?.attemptId,
-        dispatchId: callSession?.dispatchId, tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
+      logger.info('remote-stream-attached', { ...callLogFields,
+        tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
       element.srcObject = peer.remoteStream;
       const play = (attempt = 0) => element.play()
-        .then(() => logger.info('remote-playback.succeeded', { callId: callSession?.callId, attempt }))
+        .then(() => logger.info('remote-playback.succeeded', { ...callLogFields, attempt, outcome: 'ok' }))
         .catch(error => {
           if (attempt < 1) {
-            logger.warn('remote-playback.retry', { callId: callSession?.callId, reason: error.name });
+            logger.warn('remote-playback.retry', { ...callLogFields, attempt, reason: error.name, outcome: 'retrying' });
             retry = setTimeout(() => void play(1), 150);
-          } else logger.error('remote-playback.failed', { callId: callSession?.callId, reason: error.name });
+          } else logger.error('remote-playback.failed', { ...callLogFields, attempt, reason: error.name, outcome: 'failed' });
         });
       void play();
     }
     return () => clearTimeout(retry);
-  }, [logger, peer.remoteStream, callSession?.callId, callSession?.attemptId, callSession?.dispatchId]);
+  }, [callLogFields, logger, peer.remoteStream]);
 
   // Re-sync local camera stream to video element.
   // useWebcamStream sets srcObject on stream acquisition, but if the

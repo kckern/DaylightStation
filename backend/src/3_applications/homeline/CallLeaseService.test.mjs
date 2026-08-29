@@ -124,6 +124,24 @@ describe('CallLeaseService', () => {
     expect(JSON.stringify(info.mock.calls)).not.toContain('secret-candidate');
   });
 
+  it('logs rejected signaling with lease correlation but never its payload', async () => {
+    const info = vi.fn();
+    const dev = device();
+    const service = new CallLeaseService({ deviceService: { get: () => dev },
+      wakeAndLoadService: { execute: vi.fn() }, logger: { info, warn: vi.fn() }, sleep: vi.fn() });
+    const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
+    service.authorize({ clientId: 'p', topic: body.topic, credential: body.phoneCredential, role: 'phone', peerId: 'p1' });
+    const rejected = service.validateSignal('p', { topic: body.topic, callId: body.callId, attemptId: 'a1',
+      role: 'phone', peerId: 'p1', revision: 0, sequence: 0, type: 'candidate',
+      payload: { candidate: 'secret-candidate' } });
+    expect(rejected).toMatchObject({ ok: false, code: 'UNEXPECTED_PHASE' });
+    expect(info).toHaveBeenCalledWith('homeline.signaling.rejected', expect.objectContaining({
+      callId: body.callId, attemptId: 'a1', deviceId: 'tv', peerRevision: 0,
+      reason: 'UNEXPECTED_PHASE', outcome: 'rejected',
+    }));
+    expect(JSON.stringify(info.mock.calls)).not.toContain('secret-candidate');
+  });
+
   it('reports recovery preparation failure and caps hard recovery', async () => {
     const { service } = make(device({ prepareForContent: vi.fn(async () => ({ ok: false, error: 'camera locked' })) }));
     const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });

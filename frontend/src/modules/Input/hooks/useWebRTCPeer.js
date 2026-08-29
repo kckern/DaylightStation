@@ -72,7 +72,9 @@ export const useWebRTCPeer = (localStream) => {
 
     pc.onconnectionstatechange = () => {
       setConnectionState(pc.connectionState);
-      log('debug', 'connection-state', { state: pc.connectionState });
+      // A connection-state transition is a sparse recovery milestone; retain it
+      // at info so production triage sees the real ICE progression.
+      log('info', 'connection-state', { state: pc.connectionState });
     };
 
     return pc;
