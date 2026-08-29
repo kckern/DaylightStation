@@ -10,12 +10,12 @@ export class GameSessionCoordinator {
     if (!runtime || !snapshots || !journal || !definitions || !ids || !clock || !authorization) throw new Error('GameSessionCoordinator dependencies are required');
   }
 
-  async create({ ruleset, experience = null, definitionId, participants = [], seats = [], setup = {}, seed, viewer = {} }) {
+  async create({ ruleset, experience = null, launch = null, definitionId, participants = [], seats = [], setup = {}, seed, viewer = {} }) {
     const loaded = await this.definitions.getCurrent(definitionId);
     if (!loaded) throw new GamingKernelError('definition_not_found', `Definition ${definitionId} was not found`);
     const pinned = await this.definitions.pin(loaded);
     const header = createGameSessionHeader({
-      sessionId: this.ids.session(), ruleset: { ...ruleset, definition_hash: pinned.hash }, experience, artifacts: pinned.artifacts || {}, seed: seed ?? this.ids.seed(),
+      sessionId: this.ids.session(), ruleset: { ...ruleset, definition_hash: pinned.hash }, experience, launch, artifacts: pinned.artifacts || {}, seed: seed ?? this.ids.seed(),
       participants, seats, status: SESSION_STATUSES.ACTIVE,
     });
     const session = this.runtime.create({ header, definition: pinned.definition, setup });

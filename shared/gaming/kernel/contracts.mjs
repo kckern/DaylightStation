@@ -33,7 +33,8 @@ export function validateGameSessionHeader(header) {
   if (!Number.isInteger(header.seed) || header.seed < 0 || header.seed > 0xffffffff) errors.push('seed must be an unsigned 32-bit integer');
   if (!Array.isArray(header.participants)) errors.push('participants must be an array');
   if (!Array.isArray(header.seats)) errors.push('seats must be an array');
-  if (header.experience != null && (!ID.test(String(header.experience.id || '')) || !Number.isInteger(header.experience.version) || !ID.test(String(header.experience.native_surface_id || '')) || !HASH.test(String(header.experience.manifest_hash || '')))) errors.push('experience reference is invalid');
+  if (header.experience != null && (!ID.test(String(header.experience.id || '')) || !Number.isInteger(header.experience.version) || !HASH.test(String(header.experience.manifest_hash || '')))) errors.push('experience reference is invalid');
+  if (header.launch != null && (!ID.test(String(header.launch.surface_id || '')) || !Object.values(AUTHORITY_STRATEGIES).includes(header.launch.authority_mode))) errors.push('launch context is invalid');
   return { valid: errors.length === 0, errors };
 }
 
@@ -66,13 +67,14 @@ export function assertValid(validation, label = 'Gaming contract') {
   if (!validation.valid) throw Object.assign(new Error(`${label}: ${validation.errors.join('; ')}`), { code: 'invalid_contract', details: validation.errors });
 }
 
-export function createGameSessionHeader({ sessionId, ruleset, experience = null, artifacts = {}, seed, participants = [], seats = [], status = SESSION_STATUSES.ACTIVE }) {
+export function createGameSessionHeader({ sessionId, ruleset, experience = null, launch = null, artifacts = {}, seed, participants = [], seats = [], status = SESSION_STATUSES.ACTIVE }) {
   const header = {
     protocol_version: GAMING_PROTOCOL_VERSION,
     session_id: sessionId,
     status,
     ruleset: structuredClone(ruleset),
     ...(experience ? { experience: structuredClone(experience) } : {}),
+    ...(launch ? { launch: structuredClone(launch) } : {}),
     artifacts: structuredClone(artifacts),
     revision: 0,
     seed: Number(seed) >>> 0,

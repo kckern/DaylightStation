@@ -1,0 +1,23 @@
+.charades {
+  min-height: 100%;
+  padding: clamp(1.25rem, 3vw, 3rem);
+  color: #f7fbff;
+  background: radial-gradient(circle at 50% 5%, #202b34, #050809 62%);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 1.5rem;
+}
+.charades__header { display: flex; align-items: center; justify-content: space-between; text-transform: uppercase; letter-spacing: .1em; }
+.charades__header h1 { margin: 0; font-size: clamp(2rem, 5vw, 4.5rem); }
+.charades__center { display: grid; place-items: center; align-content: center; gap: clamp(1rem, 2.5vw, 2rem); text-align: center; }
+.charades__center button {
+  min-height: 3.5rem; padding: .8rem 1.5rem; border: 2px solid #39d9ef; border-radius: .75rem;
+  background: #101a20; color: #fff; font: inherit; font-weight: 900; text-transform: uppercase; letter-spacing: .06em;
+}
+.charades__eyebrow { margin: 0; color: #91a5b2; text-transform: uppercase; letter-spacing: .22em; }
+.charades__performing { position: relative; }
+.charades__timer { position: absolute; top: 0; right: 0; display: grid; place-items: center; z-index: 2; }
+.charades__timer > * { grid-area: 1 / 1; }
+.charades__timer strong { font-size: 1.2rem; }
+.charades__rule { margin: 0; color: #a9bac4; font-size: clamp(1rem, 2vw, 1.35rem); }
+.charades__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }

@@ -21,7 +21,7 @@ import AppContainer from './modules/AppContainer/AppContainer.jsx';
 // styles must not ride in the bundle every kiosk loads.
 const TeacherConsole = React.lazy(() => import('./modules/School/teacher/TeacherConsole.jsx'));
 const GamingApp = React.lazy(() => import('./Apps/GamingApp.jsx'));
-const GameDemoApp = React.lazy(() => import('./Apps/GameDemoApp.jsx'));
+const GamePresentationHarness = React.lazy(() => import('./dev/GamePresentationHarness/GamePresentationHarness.jsx'));
 const TeacherConsoleRoute = () => (
   <React.Suspense fallback={<div />}> <TeacherConsole /> </React.Suspense>
 );
@@ -30,8 +30,8 @@ import FilterPoc from './modules/Player/poc/FilterPoc.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
 import InviteAccept from './modules/Auth/InviteAccept.jsx';
 import { ScreenRenderer } from './screen-framework/index.js';
-import GroupPlayHost from './modules/Gaming/environments/group-play/surfaces/GroupPlayHost.jsx';
-import GroupPlayVerifier from './modules/Gaming/environments/group-play/surfaces/GroupPlayVerifier.jsx';
+import PartyGamesHost from './modules/Gaming/environments/party-games/surfaces/PartyGamesHost.jsx';
+import PartyGamesVerifier from './modules/Gaming/environments/party-games/surfaces/PartyGamesVerifier.jsx';
 import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js';
 import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
 import { setupGlobalErrorHandlers } from './lib/logging/errorHandlers.js';
@@ -204,15 +204,15 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/auto/*" element={<AutoApp />} />
         <Route path="/fitness/*" element={<FitnessApp />} />
         <Route path="/piano/*" element={<PianoApp />} />
-        <Route path="/gaming/*" element={<React.Suspense fallback={null}><GamingApp /></React.Suspense>} />
-        <Route path="/game/demo" element={<React.Suspense fallback={null}><GameDemoApp /></React.Suspense>} />
+        <Route path="/dev/gaming/*" element={<React.Suspense fallback={null}><GamingApp /></React.Suspense>} />
+        <Route path="/dev/game-presentation-harness" element={<React.Suspense fallback={null}><GamePresentationHarness /></React.Suspense>} />
         <Route path="/life/*" element={<LifeApp />} />
         <Route path="/admin/*" element={<AdminApp />} />
         {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
         {/* Host companion talks to the singleton wsService directly (auto-connects on
             first subscription) — no WebSocketProvider needed. Commands go out via HTTP. */}
-        <Route path="/group-play/host/:sessionId" element={<GroupPlayHost />} />
-        <Route path="/group-play/verify/:sessionId" element={<GroupPlayVerifier />} />
+        <Route path="/party-games/host/:sessionId" element={<PartyGamesHost />} />
+        <Route path="/party-games/verify/:sessionId" element={<PartyGamesVerifier />} />
         <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/'} />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
         <Route path="/filter-poc" element={<FilterPoc />} />

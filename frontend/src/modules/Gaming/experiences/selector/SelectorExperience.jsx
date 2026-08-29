@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
-import { fetchSession, sendRuleCommand } from '../../environments/group-play/app/sessionClient.js';
-import MemberAvatar from '../../environments/group-play/ui/MemberAvatar.jsx';
+import { fetchSession, sendRuleCommand } from '../../platform/api/sessionClient.js';
+import MemberAvatar from '../../platform/ui/MemberAvatar.jsx';
 import './SelectorExperience.scss';
 
 export default function SelectorExperience({ sessionId }) {

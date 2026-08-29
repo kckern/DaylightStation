@@ -4,38 +4,42 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import { currentRound } from '../../../../../../shared/gaming/rulesets/jeopardy/stateMachine.mjs';
 import { resolveJeopardyKey } from './keymap.js';
-import Scoreboard from '../../environments/group-play/presenters/Scoreboard.jsx';
-import { useBuzzers } from '../../environments/group-play/interaction/useBuzzers.js';
-import { AudioCueEngine } from '../../environments/group-play/effects/AudioCueEngine.js';
-import { fetchSession } from '../../environments/group-play/app/sessionClient.js';
+import Scoreboard from '../../platform/ui/Scoreboard.jsx';
+import { fetchSession } from '../../platform/api/sessionClient.js';
 import { sendJeopardyCommand } from './jeopardyClient.js';
-import TitleCard from '../../environments/group-play/ui/TitleCard.jsx';
-import WagerPanel from '../../environments/group-play/ui/WagerPanel.jsx';
+import TitleCard from '../../platform/ui/TitleCard.jsx';
+import WagerPanel from './ui/WagerPanel.jsx';
 import Board from './Board.jsx';
 import ClueScreen from './ClueScreen.jsx';
 import FinalRound from './FinalRound.jsx';
 
-export default function Jeopardy({ setId, teams, sessionId, buzzerBindings = null, config, onFinished }) {
+const SILENT_AUDIO = Object.freeze({ play() {} });
+const NO_BUZZERS = Object.freeze({
+  locked: null,
+  arm() {},
+  disarm() {},
+  subscribe() { return () => {}; },
+});
+
+export default function Jeopardy({ setId, teams, sessionId, config, gamingServices, onFinished }) {
   const teamIds = useMemo(() => teams.map((t) => t.id), [teams]);
   const [set, setSet] = useState(null);
   const [error, setError] = useState(null);
   const [state, setState] = useState(null);
   const scores = useMemo(() => state?.scores || {}, [state?.scores]);
-  const audio = useMemo(() => new AudioCueEngine({ pack: config?.sounds?.pack, mute: config?.defaults?.mute }), [config]);
+  const audio = gamingServices?.audio || SILENT_AUDIO;
+  const buzzers = gamingServices?.buzzers || NO_BUZZERS;
   const finishedRef = useRef(false);
   const stateRef = useRef(state);
   stateRef.current = state;
   const actionRef = useRef(() => {});
 
-  const { arbiter, locked, arm, disarm } = useBuzzers({
-    teams,
-    onLock: (teamId) => { audio.play('buzz'); actionRef.current({ type: 'BUZZ', teamId }); },
-  });
-
-  // Press-to-bind results from the environment bind phase override team defaults.
   useEffect(() => {
-    if (buzzerBindings) arbiter.restore({ slotToTeam: buzzerBindings });
-  }, [arbiter, buzzerBindings]);
+    return buzzers.subscribe((teamId) => {
+      audio.play('buzz');
+      actionRef.current({ type: 'BUZZ', teamId });
+    });
+  }, [audio, buzzers]);
 
   // Load the coordinator projection, which includes the pinned content pack.
   useEffect(() => {
@@ -67,9 +71,9 @@ export default function Jeopardy({ setId, teams, sessionId, buzzerBindings = nul
     if (!set || !state) return;
     const round = currentRound(state);
     const buzzable = state.phase === 'clue' && !state.isDailyDouble && round.mode !== 'turns' && !state.revealed;
-    if (buzzable) arm(teamIds.filter((id) => !state.attempted.includes(id)));
-    else disarm();
-  }, [state?.phase, state?.attempted, state?.revealed, state?.isDailyDouble, set, arm, disarm, teamIds, state]);
+    if (buzzable) buzzers.arm(teamIds.filter((id) => !state.attempted.includes(id)));
+    else buzzers.disarm();
+  }, [state?.phase, state?.attempted, state?.revealed, state?.isDailyDouble, set, buzzers, teamIds, state]);
 
   // Remote host commands (from the phone companion) → same funnel.
   useWebSocketSubscription('gaming', (msg) => {
@@ -98,12 +102,12 @@ export default function Jeopardy({ setId, teams, sessionId, buzzerBindings = nul
     return () => window.removeEventListener('keydown', onKey);
   }, [state?.phase, state?.revealed, state, applyAction]);
 
-  if (error) return <div className="group-play__error">{error}</div>;
+  if (error) return <div className="party-games__error">{error}</div>;
   if (!set || !state) return <TitleCard title="Loading…" />;
 
   const round = currentRound(state);
   const { phase } = state;
-  const lockedTeam = teams.find((t) => t.id === (state.answeringTeamId || locked)) || null;
+  const lockedTeam = teams.find((t) => t.id === (state.answeringTeamId || buzzers.locked)) || null;
   const timerSeconds = round?.timer_seconds ?? config?.defaults?.timer_seconds ?? 12;
 
   return (

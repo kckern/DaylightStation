@@ -10,10 +10,11 @@ async function invoke(router, method, routePath, req = {}) {
 }
 
 describe('gaming API router', () => {
-  it('exposes canonical definition, group-play content, session, and command seams', async () => {
+  it('exposes canonical definition, Party Games content, session, and command seams', async () => {
     const app = {
       getDefinition: vi.fn(async () => ({ hash: 'hash', definition: { id: 'x' } })), getEnvironmentProfile: vi.fn(() => ({ defaults: {} })),
-      getLaunchDescriptor: vi.fn(async () => ({ definition_id: 'x', presenter_id: 'presenter' })), listGroupPlayCatalog: vi.fn(() => [{ definition_id: 'quiz:night' }]),
+      getLaunchDescriptor: vi.fn(async () => ({ definition_id: 'x', presenter_id: 'presenter' })), listPartyGamesCatalog: vi.fn(() => [{ definition_id: 'quiz:night' }]),
+      listExperienceCatalog: vi.fn(() => []),
       listContent: vi.fn(() => [{ id: 'night' }]), getContent: vi.fn(() => ({ id: 'night', rounds: [] })),
       createSession: vi.fn(async () => ({ header: { session_id: 'game:1', revision: 0 } })), resumeSession: vi.fn(async () => ({ header: { session_id: 'game:1', revision: 0 } })),
       dispatch: vi.fn(async () => ({ header: { session_id: 'game:1', revision: 1 }, state: { phase: 'board', scores: {} } })), closeSession: vi.fn(async () => ({ header: { status: 'complete' } })),
@@ -21,7 +22,7 @@ describe('gaming API router', () => {
     const router = createGamingRouter({ gamingApplication: app });
     expect((await invoke(router, 'get', '/definitions/:definitionId', { roles: ['gaming-host'], params: { definitionId: 'x' } })).body.hash).toBe('hash');
     expect((await invoke(router, 'get', '/launch/:definitionId', { user: { sub: 'player' }, params: { definitionId: 'x' } })).body.presenter_id).toBe('presenter');
-    expect((await invoke(router, 'get', '/environments/group-play/catalog', { roles: ['gaming-host'] })).body.entries).toHaveLength(1);
+    expect((await invoke(router, 'get', '/environments/party-games/catalog', { roles: ['gaming-host'] })).body.entries).toHaveLength(1);
     expect((await invoke(router, 'get', '/experiences/:experienceId/content', { roles: ['gaming-host'], params: { experienceId: 'jeopardy' } })).body.content).toHaveLength(1);
     expect((await invoke(router, 'post', '/sessions', { roles: ['gaming-host'], body: { definition_id: 'jeopardy:night' } })).statusCode).toBe(201);
     expect(app.createSession).toHaveBeenCalledWith(expect.not.objectContaining({ ruleset: expect.anything(), experience: expect.anything() }));
