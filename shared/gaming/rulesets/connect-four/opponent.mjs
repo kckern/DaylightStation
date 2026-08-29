@@ -2,14 +2,23 @@ import { describeBoard, dropDisc, legalColumns } from './engine.mjs';
 
 // These are mechanics-only difficulty profiles. Environments may merge them
 // with names, artwork, and themes loaded from mounted configuration.
-export const CONNECT_FOUR_OPPONENTS = Object.freeze([
-  ...Array.from({ length: 7 }, (_, index) => Object.freeze({
-    id: `level-${index + 1}`,
-    name: `Level ${index + 1}`,
-    art: null,
-    depth: index + 1,
-  })),
-]);
+const CONNECT_FOUR_CHARACTERS = [
+  ['diglett', 'Diglett', '0050-diglett-gen1.svg'],
+  ['psyduck', 'Psyduck', '0054-psyduck-gen1.svg'],
+  ['magnemite', 'Magnemite', '0081-magnemite-gen1.svg'],
+  ['porygon', 'Porygon', '0137-porygon-gen1.svg'],
+  ['gengar', 'Gengar', '0094-gengar-gen1.svg'],
+  ['dragonite', 'Dragonite', '0149-dragonite-gen1.svg'],
+  ['mew', 'Mew', '0151-mew-gen1.svg'],
+];
+export const CONNECT_FOUR_OPPONENTS = Object.freeze(CONNECT_FOUR_CHARACTERS.map(([id, name, art], index) => Object.freeze({
+  id, name, art: `/api/v1/static/img/pokemon/${art}`, theme: null, depth: index + 1,
+  dialogue: Object.freeze({
+    persona: `${name} is a warm, competitive Connect Four opponent.`,
+    voice: 'React briefly to threats, blocks, and connected lines.',
+    lore: Object.freeze({ type: [], references: [], known_references: [], use: 'never' }),
+  }),
+})));
 
 const ORDER = [3, 2, 4, 1, 5, 0, 6];
 

@@ -1,17 +1,25 @@
 import { OpponentLadder } from '#domains/gaming/entities/OpponentLadder.mjs';
+import { normalizeOpponentRoster } from '#shared/gaming/opponents/profile.mjs';
 
 export class PianoGamesContainer {
   #games;
   #repository;
   #boardGameDayService;
   #logger;
+  #dialogue;
+  #rivalries;
 
-  constructor({ games, repository, boardGameDayService = null, logger = null }) {
+  constructor({
+    games, repository, boardGameDayService = null, logger = null,
+    dialogue = null, rivalries = null,
+  }) {
     if (!games || !repository) throw new Error('PianoGamesContainer: games and repository required');
     this.#games = games;
     this.#repository = repository;
     this.#boardGameDayService = boardGameDayService;
     this.#logger = logger;
+    this.#dialogue = dialogue;
+    this.#rivalries = rivalries;
   }
 
   game(gameId) {
@@ -20,20 +28,40 @@ export class PianoGamesContainer {
     return game;
   }
 
-  async ladder(gameId, userId) {
+  async ladderAggregate(gameId, userId) {
     const game = this.game(gameId);
     const progress = userId ? await this.#repository.readProgress(gameId, userId) : null;
-    return new OpponentLadder({ opponents: game.opponents, progress, ...game.promotion }).snapshot();
+    const config = await this.#repository.readConfig(gameId, userId);
+    const pack = config?.ladder?.roster_pack || gameId;
+    const authored = config?.ladder?.rosters?.[pack];
+    const roster = Array.isArray(authored) && authored.length === game.opponents.length
+      ? game.opponents.map((mechanics, index) => ({ ...mechanics, ...authored[index], dialogue: { ...mechanics.dialogue, ...authored[index]?.dialogue } }))
+      : game.opponents;
+    return { ladder: new OpponentLadder({ opponents: normalizeOpponentRoster(roster, pack), progress, ...game.promotion }), rosterPack: pack };
+  }
+
+  async ladder(gameId, userId) {
+    return (await this.ladderAggregate(gameId, userId)).ladder.snapshot();
+  }
+
+  async resolveOpponent(gameId, userId, level) {
+    const { ladder, rosterPack } = await this.ladderAggregate(gameId, userId);
+    const resolved = ladder.resolve(level);
+    return { ...resolved, position: resolved.level, rosterPack };
   }
 
   async chooseMove(gameId, request) {
     const game = this.game(gameId);
-    const progress = request.userId ? await this.#repository.readProgress(gameId, request.userId) : null;
-    const ladder = new OpponentLadder({ opponents: game.opponents, progress, ...game.promotion });
-    const resolved = ladder.resolve(request.level);
+    const resolved = await this.resolveOpponent(gameId, request.userId, request.level);
     const move = await game.opponentGateway.chooseMove({ ...request, level: resolved.level, opponent: resolved.opponent });
     this.#logger?.info?.('piano-game.opponent.move', { gameId, level: resolved.level, gameSessionId: request.gameSessionId });
     return { move, opponent: resolved };
+  }
+
+  async dialogue(gameId, request) {
+    this.game(gameId);
+    if (!this.#dialogue) throw Object.assign(new Error('dialogue_unavailable'), { code: 'dialogue_unavailable' });
+    return this.#dialogue.react(gameId, request);
   }
 
   async readConfig(gameId, userId) {
@@ -48,11 +76,10 @@ export class PianoGamesContainer {
   }
 
   async recordGame(gameId, userId, record) {
-    const game = this.game(gameId);
+    this.game(gameId);
     const saved = await this.#repository.saveRecord(gameId, userId, record);
     if (!saved) return { saved: false, ladder: null };
-    const progress = await this.#repository.readProgress(gameId, userId);
-    const current = new OpponentLadder({ opponents: game.opponents, progress, ...game.promotion });
+    const current = (await this.ladderAggregate(gameId, userId)).ladder;
     // The offline-fallback flag is decided before the ladder ever sees the
     // game: Connect Four/Checkers set ranked: false the moment Wi-Fi drops
     // the real opponent, and there is nothing worth persisting about a game
@@ -84,7 +111,9 @@ export class PianoGamesContainer {
 
   async archiveGame(gameId, userSegment, record) {
     this.game(gameId);
-    return this.#repository.saveArchive(gameId, userSegment, record);
+    const archived = await this.#repository.saveArchive(gameId, userSegment, record);
+    if (archived && record?.completed && record?.user_id) await this.#rivalries?.recordArchive?.(gameId, record);
+    return archived;
   }
 
   dispose() {

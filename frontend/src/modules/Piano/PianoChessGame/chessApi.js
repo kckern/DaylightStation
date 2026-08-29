@@ -94,8 +94,8 @@ export async function requestBestMove({ fen, userId = null }) {
  * input and opponent turns never wait for it.
  */
 export async function requestOpponentQuip({ gameId, ply, level, playerColor, game, dialogue = [], userId = null }) {
-  const request = DaylightAPI(withUser('api/v1/piano-games/chess/quip', userId), {
-    gameId, ply, level, playerColor, game, dialogue,
+  const request = DaylightAPI(withUser('api/v1/piano-games/chess/dialogue', userId), {
+    sessionId: gameId, ply, level, playerSide: playerColor, transcript: game, dialogue,
   }, 'POST').then((body) => (body?.quip ? body : { fallbackReason: 'invalid_output' })).catch((error) => {
     logger().warn('chess.quip.request-error', { error: error.message, gameId, ply });
     return { fallbackReason: 'client_error' };
@@ -113,6 +113,9 @@ export async function requestOpponentQuip({ gameId, ply, level, playerColor, gam
     clearTimeout(timer);
   }
 }
+
+/** Shared contract name; requestOpponentQuip remains a source compatibility alias. */
+export const requestDialogue = requestOpponentQuip;
 
 export async function fetchChessConfig(userId = null) {
   try {
@@ -197,6 +200,6 @@ export function beaconArchive(record) {
 }
 
 export default {
-  requestOpponentMove, requestOpponentQuip, requestBestMove, fetchChessConfig, saveChessConfig, saveGameRecord,
+  requestOpponentMove, requestOpponentQuip, requestDialogue, requestBestMove, fetchChessConfig, saveChessConfig, saveGameRecord,
   archiveGame, beaconArchive, fetchLadder,
 };

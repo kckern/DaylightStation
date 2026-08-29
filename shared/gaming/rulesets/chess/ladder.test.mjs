@@ -51,7 +51,7 @@ describe('the roster', () => {
       { name: 'Old voice', personality: 'A legacy personality.' },
     ], lore_reference_vocabulary: ['String Shot', 'Poison Sting'] } });
     expect(weedle.dialogue).toEqual({
-      persona: 'Earnest and stubborn.', chess_voice: 'Notices simple threats.',
+      persona: 'Earnest and stubborn.', voice: 'Notices simple threats.', chess_voice: 'Notices simple threats.',
       lore: { type: ['bug', 'poison'], references: ['String Shot'], known_references: ['String Shot', 'Poison Sting'], use: 'sparingly_as_playful_metaphor' },
     });
     expect(legacy.dialogue.persona).toBe('A legacy personality.');
