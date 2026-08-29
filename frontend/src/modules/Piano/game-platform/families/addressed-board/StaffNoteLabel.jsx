@@ -16,10 +16,11 @@ import './StaffNoteLabel.scss';
  * The card is the house treatment for notation on a dark screen: notation needs
  * paper under it, because staff lines and noteheads are drawn as ink.
  */
-export function StaffNoteLabel({ midi }) {
+export function StaffNoteLabel({ midi, midis = null }) {
+  const targetPitches = Array.isArray(midis) ? midis : (Array.isArray(midi) ? midi : [midi]);
   return (
     <div className="chess-staff-label action-staff">
-      <SvgStaffRenderer targetPitches={[midi]} />
+      <SvgStaffRenderer targetPitches={targetPitches} />
     </div>
   );
 }

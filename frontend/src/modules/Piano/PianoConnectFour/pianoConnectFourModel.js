@@ -3,7 +3,7 @@
 // Pure addressing/board logic for Connect Four, split out of
 // PianoConnectFour.jsx (which keeps the components) so Fast Refresh can
 // hot-reload the game screen without a full remount.
-import { noteName } from '../PianoChessGame/staffAddress.js';
+import { noteName, staffTokenNotes } from '../PianoChessGame/staffAddress.js';
 
 export const COLUMNS = 7;
 export const DEFAULT_CONFIG = {
@@ -67,7 +67,12 @@ export function addressedColumn(active, config, deal) {
     const index = ROOTS.findIndex((root) => pcs.length === 3 && [root, (root + 4) % 12, (root + 7) % 12].every((pc) => pcs.includes(pc)));
     return index < 0 ? null : deal[index];
   }
-  const index = config.column_notes.findIndex((note) => note === notes.at(-1) || note % 12 === notes.at(-1) % 12);
+  const shaped = Array.isArray(config.column_notes?.[0]);
+  const index = config.column_notes.findIndex((note) => {
+    if (!shaped) return note === notes.at(-1) || note % 12 === notes.at(-1) % 12;
+    const expected = staffTokenNotes(note).slice().sort((a, b) => a - b);
+    return expected.length === notes.length && expected.every((value, i) => value === notes[i]);
+  });
   return index < 0 ? null : deal[index];
 }
 

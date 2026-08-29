@@ -10,6 +10,13 @@ Related: [piano-games.md](./piano-games.md) for the engines, [exercise-bank.md](
 for the material the gate draws from, [performance-assessment.md](./performance-assessment.md)
 for how an attempt is graded.
 
+Completed Chess, Checkers, and Connect Four matches also write an idempotent
+study-day counter at `household/history/piano-board-game-days/{date}.yml`.
+Win, loss, and draw count equally; abandoned games do not. A rematch waits for
+the completion receipt, preventing the next PianoChallenge from reading a stale
+count. The current value is exposed at
+`GET /api/v1/piano/users/:userId/board-game-day`.
+
 ---
 
 ## The gate stack

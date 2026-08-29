@@ -12,6 +12,7 @@ import { resolveAddressedSelection } from '../game-platform/families/addressed-b
 import { useAddressedBoardGame } from '../game-platform/families/addressed-board/useAddressedBoardGame.js';
 import { useAddressing } from '../game-platform/addressing/useAddressing.js';
 import { useAddressingLadder } from '../game-platform/addressing/useAddressingLadder.js';
+import { managedAddressingAt } from '../game-platform/addressing/managedAddressing.js';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import {
   GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, LadderBadge, DealNotice, GameSheet,
@@ -97,7 +98,7 @@ function CheckersBoard({ game, selected, hint }) {
   );
 }
 
-export default function PianoCheckers({ activeNotes = new Map(), currentUser = null, onNoteOn, onNoteOff }) {
+export default function PianoCheckers({ activeNotes = new Map(), currentUser = null, addressingPolicy = null, onNoteOn, onNoteOff }) {
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState(null);
   const [hint, setHint] = useState(null);
@@ -130,8 +131,17 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   // layout, and the cadence decides when it moves — see
   // docs/reference/piano/grid-addressing.md.
   const overrides = useMemo(() => configuredAddressing(config), [config]);
+  const completedPlayerMoves = useMemo(() => moves.reduce((total, _move, index) => {
+    const replayed = replayGame({ moves: moves.slice(0, index + 1) });
+    return total + (replayed.lastMove?.player === 1 ? 1 : 0);
+  }, 0), [moves]);
+  const managed = useMemo(() => managedAddressingAt(addressingPolicy?.config, {
+    learnerId: addressingPolicy?.learnerId,
+    completedGames: addressingPolicy?.completedGames,
+    completedPlayerMoves,
+  }), [addressingPolicy, completedPlayerMoves]);
   const { x: fileNotes, y: rankNotes, addressing } = useAddressing({
-    config, axisSize: AXIS, seed, ply: moves.length, overrides,
+    config, axisSize: AXIS, seed, ply: moves.length, overrides, managed,
   });
   const notes = useMemo(
     () => ({ file_notes: fileNotes, rank_notes: rankNotes }),

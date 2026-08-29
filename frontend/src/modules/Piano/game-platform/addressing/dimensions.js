@@ -55,6 +55,7 @@ export const INVERSIONS = Object.freeze(['any', 'root', 'named']);
 
 /** When the map moves. `each_turn` is materially harder than `each_game`. */
 export const CADENCES = Object.freeze(['never', 'each_game', 'each_turn']);
+export const STAFF_TEXTURES = Object.freeze(['single', 'dyad', 'triad']);
 
 export const MIN_TIER = 0;
 export const MAX_TIER = 5;
@@ -171,6 +172,7 @@ export const ADDRESSING_DEFAULTS = Object.freeze({
   y: Object.freeze({ tier: 2, order: 'sequential' }),
   shuffle: 'never',
   inversions: 'any',
+  texture: 'single',
   scheme: null,
 });
 

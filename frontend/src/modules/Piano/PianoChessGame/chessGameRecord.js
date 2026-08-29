@@ -14,7 +14,7 @@
  * reader of one can read the other.
  */
 export function buildGameRecord({
-  game, rungId, level = null, opponent = null, hints, bestMoves, takebacks = 0, startedAt, endedAt,
+  game, gameId = null, rungId, level = null, opponent = null, hints, bestMoves, takebacks = 0, startedAt, endedAt,
 }) {
   if (!game?.status?.game_over) return null;
   const outcome = game.status.outcome;
@@ -22,6 +22,7 @@ export function buildGameRecord({
     ? (game.status.winner === game.playerColor ? 'win' : 'loss')
     : 'draw';
   return {
+    game_id: gameId,
     result,
     outcome,
     // Always true for a record that exists at all — the guard above refuses an

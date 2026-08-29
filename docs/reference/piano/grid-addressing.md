@@ -658,3 +658,17 @@ addressing:
 
 Nothing in this document is unimplemented, unwired, or unexercised. The rung control, the reading
 ladder, the re-deal notice and the settings sheet are the same on all three boards.
+
+## 12. Managed daily and in-game pressure
+
+`gameAddressing` fixes each learner's vocabulary across Chess, Checkers, and Connect Four while
+letting its difficulty rise on two independent axes: completed board games in the current study
+day and completed human moves in the current game. Opponent strength remains unrelated. The
+managed layer wins over legacy per-game vocabulary settings, so a staff learner never crosses into
+chords merely because an old ladder rung did.
+
+Staff pressure ends in dyad and triad address tokens. Each token is validated as one to three
+distinct MIDI notes within a perfect fifth, and the two board axes must occupy disjoint registers.
+Recognition requires the exact union of the file and rank shapes. This keeps every shape playable
+by one hand, correctly placed on its staff, and unambiguous about the selected square. Chess adopts
+a new map only at a safe human-turn boundary; the map cannot change underneath a held selection.

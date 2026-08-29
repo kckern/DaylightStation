@@ -263,6 +263,8 @@ import { PianoChallengeProfileService } from './3_applications/piano/PianoChalle
 import { SchoolPianoChallengeCompletionService } from './3_applications/piano/SchoolPianoChallengeCompletionService.mjs';
 import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioDatastore.mjs';
 import { YamlPianoGameBudgetStore } from '#adapters/persistence/yaml/YamlPianoGameBudgetStore.mjs';
+import { YamlPianoBoardGameDayStore } from '#adapters/persistence/yaml/YamlPianoBoardGameDayStore.mjs';
+import { PianoBoardGameDayService } from '#apps/piano-games/PianoBoardGameDayService.mjs';
 import { YamlComposerSongStore as ComposerSongStore } from '#adapters/persistence/yaml/YamlComposerSongStore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
@@ -1927,6 +1929,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     readConfig: (userId) => chessConfigService.read(userId),
     logger: rootLogger.child({ module: 'chess-commentary' }),
   });
+  const pianoBoardGameDayStore = new YamlPianoBoardGameDayStore({
+    historyRoot: configService.getHouseholdPath('history/piano-board-game-days', householdId),
+  });
+  const pianoBoardGameDayService = new PianoBoardGameDayService({
+    store: pianoBoardGameDayStore,
+    timezone: configService.getTimezone?.() || null,
+    logger: rootLogger.child({ component: 'piano-board-game-day' }),
+  });
   const pianoChessRouter = createChessRouter({
     engine: chessEngine,
     analyst: chessAnalyst,
@@ -1957,6 +1967,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     ladderService: chessLadderService,
     commentaryService: chessCommentaryService,
     rivalryMemory: chessRivalryMemory,
+    boardGameDayService: pianoBoardGameDayService,
     logger: rootLogger.child({ module: 'chess-api' }),
   });
 
@@ -1965,6 +1976,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     logger: rootLogger.child({ module: 'piano-games' }),
     nativeRouters: { chess: pianoChessRouter },
+    boardGameDayService: pianoBoardGameDayService,
   });
   server?.once?.('close', () => pianoGamesModule.container.dispose());
   v1Routers['piano-games'] = pianoGamesModule.router;
@@ -2605,6 +2617,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     pianoAttemptStore,
     pianoLearningService,
     pianoGameBudgetService,
+    pianoBoardGameDayService,
     pianoChallengeProfileService,
     schoolPianoChallengeCompletionService,
     eventBus,

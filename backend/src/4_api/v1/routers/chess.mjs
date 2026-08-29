@@ -16,7 +16,7 @@ import { safeSegment } from './lib/emulatorPaths.mjs';
  */
 export function createChessRouter({
   engine, configService, recordStore = null, archiveStore = null, ladderService = null,
-  commentaryService = null, rivalryMemory = null, analyst = null, logger = null,
+  commentaryService = null, rivalryMemory = null, analyst = null, boardGameDayService = null, logger = null,
 }) {
   const router = express.Router();
 
@@ -161,7 +161,14 @@ export function createChessRouter({
     // Promotion is decided here, on the server, not by the kiosk: a reloaded tab
     // mid-write would otherwise lose a rung the child had earned.
     const ladder = ladderService ? await ladderService.recordGame(userId, req.body || {}) : null;
-    return res.status(201).json({ saved: true, ladder });
+    const boardGameDay = boardGameDayService?.record({
+      learnerId: userId,
+      gameId: 'chess',
+      gameSessionId: req.body?.game_id,
+      completed: req.body?.completed,
+      result: req.body?.result,
+    }) ?? null;
+    return res.status(201).json({ saved: true, ladder, boardGameDay });
   }));
 
   /**

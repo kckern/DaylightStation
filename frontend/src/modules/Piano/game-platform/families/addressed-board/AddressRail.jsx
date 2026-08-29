@@ -50,7 +50,7 @@ export default function AddressRail({
           // scheme bug, not a rendering choice — but a shuffled deal can (rarely)
           // repeat within a render tick before state settles, so fall back to the
           // position rather than let React throw on a duplicate key.
-          key={address?.midi ?? `address-${index}`}
+          key={Array.isArray(address?.midi) ? address.midi.join('-') : (address?.midi ?? `address-${index}`)}
           role="listitem"
           className={`address-rail__card${active === index ? ' address-rail__card--active' : ''}`}
         >

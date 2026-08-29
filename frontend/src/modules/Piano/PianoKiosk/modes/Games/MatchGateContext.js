@@ -12,6 +12,7 @@
  * The value:
  *   `armed`          — is there a gate at this boundary right now?
  *   `requestRematch` — I am at a match boundary; take it from here.
+ *   `registerCompletion` — hold that boundary until its durable receipt lands.
  *
  * The game-side contract is three lines, and the `?.` is load-bearing:
  *

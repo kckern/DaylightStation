@@ -1,6 +1,6 @@
 import {
   ADDRESSING_DEFAULTS, CADENCES, CHORD_TIERS, CLEF_PAIRS, INVERSIONS, MAX_RUNG, MAX_TIER,
-  MIN_RUNG, MIN_TIER, ORDERS, STAFF_TIERS, VOCABULARIES, rungAt,
+  MIN_RUNG, MIN_TIER, ORDERS, STAFF_TIERS, STAFF_TEXTURES, VOCABULARIES, rungAt,
 } from './dimensions.js';
 
 /**
@@ -123,6 +123,10 @@ export function normalizeAddressing(input, notes = [], layer = 'config') {
   if (source.inversions !== undefined
     && enumValue('inversions', source.inversions, INVERSIONS, notes, layer)) {
     out.inversions = source.inversions;
+  }
+  if (source.texture !== undefined
+    && enumValue('texture', source.texture, STAFF_TEXTURES, notes, layer)) {
+    out.texture = source.texture;
   }
   for (const axis of ['x', 'y']) {
     const value = source[axis];

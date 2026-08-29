@@ -50,3 +50,58 @@ therefore a `keys` material with `root` and `quality`, plus
 Do not author a matcher name, client-side credit, or a School completion flag.
 The host sends a passed assessment identity; the server owns durable profile,
 budget, and School-completion effects.
+
+## Daily board-game pressure
+
+The durable repertoire rung remains the learner's long-term base. The Games
+host adds an orthogonal same-day offset from the number of completed Chess,
+Checkers, and Connect Four games in the current 4 a.m. study day. Both the
+offset curve and the game-seven capstone are configured under
+`gameGate.dailyEscalation`; a learner's `path` names and orders the repertoire
+levels that offset may traverse. The highest effective level served that day is
+persisted in the local gate state as a high-water floor, so failures can adjust
+the long-term base without making a later challenge easier that same day.
+
+An explicit free-time ask with `grading.judging: clean` includes cleanliness in
+its rubric. Setting `cleanliness: 1` is therefore an exact-score capstone;
+legacy free/completion asks remain completeness-only.
+
+The three values should be read separately:
+
+| Value | Meaning | Changes when |
+| --- | --- | --- |
+| Base rung | durable learning position | every judged PianoChallenge pass or failure |
+| Daily stage | completed-game pressure for this 4 a.m. study day | a Chess, Checkers, or Connect Four match finishes, win/loss/draw |
+| Effective rung | the ask served now | base + configured daily offset, bounded by today's high-water floor/capstone |
+
+This is deliberately separate from grid addressing. A board's file/rank
+vocabulary escalates after human moves and uses `gameAddressing`; the challenge
+between matches escalates after completed games and uses
+`gameGate.dailyEscalation`. They share a pressure signal, not an implementation.
+
+```yaml
+gameGate:
+  stateVersion: piano-challenge-sp4
+  dailyEscalation:
+    enabled: true
+    steps:
+      - { completedGames: 0, offset: 0 }
+      - { completedGames: 4, offset: 4 }
+      - { completedGames: 5, offset: 6 }
+      - { completedGames: 6, offset: 8 }
+    capstoneAfter: 7
+  users:
+    learner:
+      startLevel: current-study-material
+      path: [current-study-material, harder-scale, study-passage, capstone]
+      dailyEscalation:
+        enabled: true
+        capstoneAfter: 7
+        capstoneLevel: capstone
+```
+
+The completion counter is server-authoritative and retry-safe. Records require
+the learner, one of the three eligible game ids, a completed win/loss/draw, and
+the game's stable session id. The next rematch boundary waits for that receipt,
+so a rapidly repeated game cannot receive yesterday's—or the previous game's—
+difficulty.

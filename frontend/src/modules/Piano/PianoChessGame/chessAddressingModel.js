@@ -33,7 +33,7 @@ export const DEFAULT_FEEDBACK = Object.freeze({
  * most beginners, for years — and it is the same 64 squares, so nothing else in
  * the game changes.
  */
-export function chessAddressingFor(addressing, fallback = DEFAULT_CHORD_SCHEME, gameSeed = 0) {
+export function chessAddressingFor(addressing, fallback = DEFAULT_CHORD_SCHEME, gameSeed = 0, managed = null) {
   const stated = (addressing && typeof addressing === 'object') ? addressing : {};
   // The fallback carries what this game was already using, so a config that
   // says nothing about vocabulary keeps it rather than dropping to the house
@@ -42,6 +42,7 @@ export function chessAddressingFor(addressing, fallback = DEFAULT_CHORD_SCHEME, 
 
   const resolved = resolveAddressing({
     game,
+    user: managed,
     ladder: stated?.addressing?.ladder ?? null,
     axisSize: 8,
   });
@@ -71,4 +72,7 @@ export function schemeForAddressing(addressing, fallback = DEFAULT_CHORD_SCHEME)
 }
 
 /** A chord takes three notes to name a square; a staff address takes two. */
-export const minNotesFor = (scheme) => (isStaffScheme(scheme) ? 2 : 3);
+export const minNotesFor = (scheme) => (isStaffScheme(scheme)
+  ? (Array.isArray(scheme.roots?.[0]) ? scheme.roots[0].length : 1)
+    + (Array.isArray(scheme.qualities?.[0]) ? scheme.qualities[0].length : 1)
+  : 3);

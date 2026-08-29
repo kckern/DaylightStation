@@ -43,6 +43,10 @@ const BASS = Object.freeze([47, 48, 50, 52, 53, 55, 57, 59]);
  */
 export const SPLIT_MIDI = 60;
 
+export const staffTokenNotes = (token) => (Array.isArray(token) ? token : [token]).filter(Number.isFinite);
+const tokenKey = (token) => staffTokenNotes(token).slice().sort((a, b) => a - b).join(',');
+const scalarScheme = (scheme) => [...(scheme?.roots || []), ...(scheme?.qualities || [])].every(Number.isFinite);
+
 /**
  * Where THIS scheme's two axes part company.
  *
@@ -62,11 +66,13 @@ export function splitFor(scheme = DEFAULT_STAFF_SCHEME) {
   const x = scheme?.roots;
   const y = scheme?.qualities;
   if (!Array.isArray(x) || !Array.isArray(y) || !x.length || !y.length) return null;
-  if (!x.every(Number.isFinite) || !y.every(Number.isFinite)) return null;
-  const xLow = Math.min(...x);
-  const xHigh = Math.max(...x);
-  const yLow = Math.min(...y);
-  const yHigh = Math.max(...y);
+  const xNotes = x.flatMap(staffTokenNotes);
+  const yNotes = y.flatMap(staffTokenNotes);
+  if (!xNotes.length || !yNotes.length) return null;
+  const xLow = Math.min(...xNotes);
+  const xHigh = Math.max(...xNotes);
+  const yLow = Math.min(...yNotes);
+  const yHigh = Math.max(...yNotes);
   // Files above ranks — the grand-staff arrangement, and treble-only/bass-only.
   if (yHigh < xLow) return { boundary: Math.ceil((yHigh + xLow) / 2), filesAbove: true };
   // Ranks above files — `inverted`, where the left hand picks the file.
@@ -90,12 +96,14 @@ const LETTERS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'
 
 /** Letter name of a MIDI note, without its octave — what a badge has room for. */
 export function noteLetter(midi) {
+  if (Array.isArray(midi)) return midi.map(noteLetter).filter(Boolean).join('–');
   if (!Number.isFinite(midi)) return null;
   return LETTERS[((midi % 12) + 12) % 12];
 }
 
 /** Letter name with its octave number, for anywhere that has the room. */
 export function noteName(midi) {
+  if (Array.isArray(midi)) return midi.map(noteName).filter(Boolean).join('–');
   if (!Number.isFinite(midi)) return null;
   return `${noteLetter(midi)}${Math.floor(midi / 12) - 1}`;
 }
@@ -112,7 +120,9 @@ export function squareToStaffAddress(square, scheme = DEFAULT_STAFF_SCHEME) {
   if (!isSquare(square)) return null;
   const treble = scheme.roots[FILES.indexOf(square[0])];
   const bass = scheme.qualities[RANKS.indexOf(square[1])];
-  if (!Number.isFinite(treble) || !Number.isFinite(bass)) return null;
+  const trebleNotes = staffTokenNotes(treble);
+  const bassNotes = staffTokenNotes(bass);
+  if (!trebleNotes.length || !bassNotes.length) return null;
   return {
     square,
     kind: 'staff',
@@ -120,17 +130,17 @@ export function squareToStaffAddress(square, scheme = DEFAULT_STAFF_SCHEME) {
     quality: bass,
     treble,
     bass,
-    midis: [bass, treble],
+    midis: [...bassNotes, ...trebleNotes],
     name: `${noteName(treble)} over ${noteName(bass)}`,
     symbol: `${noteLetter(treble)}/${noteLetter(bass)}`,
-    pitch_classes: [...new Set([bass, treble].map((n) => ((n % 12) + 12) % 12))].sort((a, b) => a - b),
+    pitch_classes: [...new Set([...bassNotes, ...trebleNotes].map((n) => ((n % 12) + 12) % 12))].sort((a, b) => a - b),
   };
 }
 
 /** The two notes -> the square they address, or null when they address none. */
 export function staffToSquare(treble, bass, scheme = DEFAULT_STAFF_SCHEME) {
-  const file = scheme.roots.indexOf(treble);
-  const rank = scheme.qualities.indexOf(bass);
+  const file = scheme.roots.findIndex((token) => tokenKey(token) === tokenKey(treble));
+  const rank = scheme.qualities.findIndex((token) => tokenKey(token) === tokenKey(bass));
   if (file < 0 || rank < 0) return null;
   return `${FILES[file]}${RANKS[rank]}`;
 }
@@ -175,6 +185,20 @@ export function axisIndex(midi, axis) {
 export function identifyStaffAddress(midiNotes, scheme = DEFAULT_STAFF_SCHEME) {
   const notes = [...new Set((Array.isArray(midiNotes) ? midiNotes : []).filter(Number.isFinite))];
   const pitch_classes = [...new Set(notes.map((n) => ((n % 12) + 12) % 12))].sort((a, b) => a - b);
+  if (!scalarScheme(scheme)) {
+    const held = notes.slice().sort((a, b) => a - b).join(',');
+    for (let file = 0; file < scheme.roots.length; file += 1) {
+      for (let rank = 0; rank < scheme.qualities.length; rank += 1) {
+        const expected = [...new Set([
+          ...staffTokenNotes(scheme.roots[file]), ...staffTokenNotes(scheme.qualities[rank]),
+        ])].sort((a, b) => a - b);
+        if (expected.join(',') !== held) continue;
+        const square = `${FILES[file]}${RANKS[rank]}`;
+        return { square, candidates: [{ square, symbol: squareToStaffAddress(square, scheme).symbol, root_in_bass: true }], pitch_classes };
+      }
+    }
+    return { square: null, candidates: [], pitch_classes };
+  }
   if (notes.length !== 2) return { square: null, candidates: [], pitch_classes };
 
   const split = splitFor(scheme);
@@ -209,6 +233,16 @@ export function identifyStaffAddress(midiNotes, scheme = DEFAULT_STAFF_SCHEME) {
 export function staffCandidateSquares(heldNotes, scheme = DEFAULT_STAFF_SCHEME) {
   const notes = [...new Set((heldNotes || []).filter(Number.isFinite))];
   if (!notes.length) return [];
+  if (!scalarScheme(scheme)) {
+    const squares = [];
+    for (let file = 0; file < scheme.roots.length; file += 1) {
+      for (let rank = 0; rank < scheme.qualities.length; rank += 1) {
+        const expected = new Set([...staffTokenNotes(scheme.roots[file]), ...staffTokenNotes(scheme.qualities[rank])]);
+        if (notes.every((note) => expected.has(note))) squares.push(`${FILES[file]}${RANKS[rank]}`);
+      }
+    }
+    return squares.sort();
+  }
   const split = splitFor(scheme);
   if (!split) return [];
   const above = notes.filter((note) => note >= split.boundary);
@@ -238,14 +272,18 @@ export function validateStaffScheme(scheme) {
   if (!Array.isArray(treble) || treble.length !== 8) errors.push('a staff scheme needs 8 treble notes');
   if (!Array.isArray(bass) || bass.length !== 8) errors.push('a staff scheme needs 8 bass notes');
   if (errors.length) return { valid: false, errors };
-  if (!treble.every(Number.isFinite) || !bass.every(Number.isFinite)) errors.push('staff notes must be MIDI numbers');
-  if (new Set(treble).size !== 8) errors.push('the treble notes repeat');
-  if (new Set(bass).size !== 8) errors.push('the bass notes repeat');
-  const overlap = treble.filter((note) => bass.includes(note));
-  if (overlap.length) errors.push(`a note cannot be on both staves: ${overlap.map(noteName).join(', ')}`);
+  const tokens = [...treble, ...bass].map(staffTokenNotes);
+  if (tokens.some((notes) => notes.length < 1 || notes.length > 3)) errors.push('staff shapes need one to three MIDI notes');
+  if (tokens.some((notes) => new Set(notes).size !== notes.length)) errors.push('a staff shape repeats a note');
+  if (tokens.some((notes) => Math.max(...notes) - Math.min(...notes) > 7)) errors.push('a staff shape must fit within a perfect fifth');
+  if (new Set(treble.map(tokenKey)).size !== 8) errors.push('the treble shapes repeat');
+  if (new Set(bass.map(tokenKey)).size !== 8) errors.push('the bass shapes repeat');
+  const overlap = treble.filter((token) => bass.some((other) => tokenKey(token) === tokenKey(other)));
+  if (overlap.length) errors.push(`a shape cannot be on both staves: ${overlap.map(noteName).join(', ')}`);
+  if (!splitFor(scheme)) errors.push('staff axes must occupy disjoint registers');
   // The escape stays reachable only while some same-pitch-class octave pair is
   // NOT an address; two notes in one hand, both on the same staff, always is.
-  if (bass.some((low) => treble.includes(low + 12) || treble.includes(low + 24))) {
+  if (scalarScheme(scheme) && bass.some((low) => treble.includes(low + 12) || treble.includes(low + 24))) {
     // Allowed, and deliberately so — see identifyStaffAddress: a cross-staff
     // octave reads as its square, and the escape is played within one staff.
   }
@@ -254,5 +292,5 @@ export function validateStaffScheme(scheme) {
 
 export default {
   DEFAULT_STAFF_SCHEME, SPLIT_MIDI, splitFor, isStaffScheme, squareToStaffAddress, staffToSquare,
-  identifyStaffAddress, staffCandidateSquares, validateStaffScheme, axisIndex, noteLetter, noteName,
+  identifyStaffAddress, staffCandidateSquares, validateStaffScheme, axisIndex, noteLetter, noteName, staffTokenNotes,
 };

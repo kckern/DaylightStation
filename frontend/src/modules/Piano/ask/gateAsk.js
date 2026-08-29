@@ -34,9 +34,14 @@ export function requirementForLevel(level) {
     }
     : null;
   if (!cued) {
+    const exactFree = level?.presentation != null && grading.judging === 'clean';
     return {
       mode: 'free',
-      rubric: { criteria: { completeness: 1 } },
+      rubric: {
+        criteria: exactFree
+          ? { completeness: 1, cleanliness: grading.cleanliness ?? 1 }
+          : { completeness: 1 },
+      },
       passScore: null,
       ...(policy ? { policy } : {}),
     };

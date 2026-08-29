@@ -68,6 +68,20 @@ describe('requirementForLevel', () => {
       policy: { pitchClass: true, bassPitchClass: 0 },
     });
   });
+
+  it('an explicit free clean ask can require an exact capstone score', () => {
+    const level = {
+      id: 'capstone', tier: 3,
+      material: [{ kind: 'score', source: 'rachmaninoff.musicxml', measures: [1, 2] }],
+      presentation: { prompt: 'read', timing: 'free' },
+      grading: { judging: 'clean', cleanliness: 1 },
+    };
+    expect(requirementForLevel(level)).toEqual({
+      mode: 'free',
+      rubric: { criteria: { completeness: 1, cleanliness: 1 } },
+      passScore: null,
+    });
+  });
 });
 
 describe('askForMaterial', () => {

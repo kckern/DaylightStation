@@ -71,6 +71,9 @@ import {
   startLevelFor,
 } from './gateRepertoire.js';
 import { isConfigOnlyDecline, materialOrder } from './gateMaterial.js';
+import {
+  dailyChallengeLevel, resolveDailyEscalation, resolveLearnerPath,
+} from './gateDailyEscalation.js';
 import './GameGate.scss';
 
 /** The design's `gameGate` block. A household that sets none of it gets these. */
@@ -86,6 +89,9 @@ export const GATE_CONFIG_DEFAULTS = Object.freeze({
   // default here would be a second answer to the same question.
   repertoire: null,
   startLevel: null,
+  path: null,
+  dailyEscalation: null,
+  stateVersion: null,
 });
 
 /**
@@ -123,6 +129,9 @@ export function resolveGateConfig(raw) {
     // fall through to its own default anyway — normalize it here so a caller
     // reading the config sees the same answer the resolver will give.
     startLevel: typeof source.startLevel === 'string' ? source.startLevel : null,
+    path: Array.isArray(source.path) ? source.path.filter((id) => typeof id === 'string') : null,
+    dailyEscalation: resolveDailyEscalation(source.dailyEscalation),
+    stateVersion: typeof source.stateVersion === 'string' ? source.stateVersion : null,
   };
 }
 
@@ -156,16 +165,19 @@ export function readGateState(
   config,
   store = (typeof localStorage !== 'undefined' ? localStorage : null),
 ) {
+  const expectedVersion = typeof config?.stateVersion === 'string' ? config.stateVersion : null;
   const fresh = () => ({
     levelId: startLevelFor(levels, config).id,
     failuresAtLevel: 0,
     cleanPasses: 0,
     lastMaterialId: null,
     pickIndex: 0,
+    ...(expectedVersion ? { stateVersion: expectedVersion } : {}),
   });
   try {
     const parsed = JSON.parse(store?.getItem(gateStateKey(learnerId)));
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fresh();
+    if (expectedVersion && parsed.stateVersion !== expectedVersion) return fresh();
     if (typeof parsed.levelId !== 'string' || !levelById(levels, parsed.levelId)) return fresh();
     if (!isCount(parsed.failuresAtLevel) || !isCount(parsed.cleanPasses)) return fresh();
     return {
@@ -174,6 +186,9 @@ export function readGateState(
       cleanPasses: parsed.cleanPasses,
       lastMaterialId: typeof parsed.lastMaterialId === 'string' ? parsed.lastMaterialId : null,
       pickIndex: isCount(parsed.pickIndex) ? parsed.pickIndex : 0,
+      ...(typeof parsed.dailyStudyDate === 'string' ? { dailyStudyDate: parsed.dailyStudyDate } : {}),
+      ...(typeof parsed.dailyFloorLevelId === 'string' ? { dailyFloorLevelId: parsed.dailyFloorLevelId } : {}),
+      ...(expectedVersion ? { stateVersion: expectedVersion } : {}),
     };
   } catch {
     return fresh();
@@ -228,12 +243,16 @@ export function materialName(material) {
  * @param {()=>void} props.onLeave The child chose not to play.
  */
 export default function GameGate({
-  learnerId = null, deviceId, gateConfig = null, gameLabel = null, onPassed, onLeave,
+  learnerId = null, deviceId, gateConfig = null, gameLabel = null, completedGames = 0, studyDate = null,
+  onPassed, onLeave,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-game-gate' }), []);
   const sessionId = useMemo(() => makeId('gate'), []);
   const config = useMemo(() => resolveGateConfig(gateConfig), [gateConfig]);
-  const levels = useMemo(() => resolveRepertoire(config.repertoire), [config.repertoire]);
+  const levels = useMemo(
+    () => resolveLearnerPath(resolveRepertoire(config.repertoire), config.path),
+    [config.path, config.repertoire],
+  );
   const navigate = useNavigate();
   const basePath = usePianoKioskConfigOptional()?.basePath ?? '/piano';
   const kioskDeviceId = useMemo(() => deviceId ?? readKioskDeviceId(), [deviceId]);
@@ -293,7 +312,7 @@ export default function GameGate({
   //    parent re-render that passes a fresh literal, handing the session a NEW
   //    spec object and restarting the run under the child's hands.
   const latest = useRef(null);
-  latest.current = { config, levels, state, attempt, learnerId, onPassed, emit };
+  latest.current = { config, levels, state, attempt, learnerId, onPassed, emit, completedGames, studyDate };
 
   // The roster slug arrives ASYNCHRONOUSLY: `PianoUserContext` starts at null
   // and hydrates. On a reload straight onto a games route the gate would
@@ -331,8 +350,23 @@ export default function GameGate({
    */
   useEffect(() => {
     setPhase('resolving');
-    const { config: current, levels: repertoire, state: stored } = latest.current;
-    const level = levelById(repertoire, stored.levelId) ?? startLevelFor(repertoire, current);
+    const {
+      config: current, levels: repertoire, state: stored,
+      completedGames: gamesToday, studyDate: currentStudyDate,
+    } = latest.current;
+    const baseLevel = levelById(repertoire, stored.levelId) ?? startLevelFor(repertoire, current);
+    const sameDayFloor = stored.dailyStudyDate === currentStudyDate ? stored.dailyFloorLevelId : null;
+    const daily = dailyChallengeLevel({
+      levels: repertoire,
+      baseLevelId: baseLevel.id,
+      completedGames: gamesToday,
+      config: current.dailyEscalation,
+      floorLevelId: sameDayFloor,
+    });
+    const level = daily.level;
+    if (currentStudyDate && (stored.dailyStudyDate !== currentStudyDate || stored.dailyFloorLevelId !== level.id)) {
+      commitState({ ...stored, dailyStudyDate: currentStudyDate, dailyFloorLevelId: level.id });
+    }
     /**
      * "Try again" is a SECOND GO AT THE SAME THING, and re-picking here would
      * quietly make it something else.
@@ -383,6 +417,10 @@ export default function GameGate({
       material: null,
       requirement: null,
       retry: false,
+      baseLevelId: baseLevel.id,
+      effectiveLevelId: level.id,
+      dailyStage: daily.dailyStage,
+      completedGames: gamesToday,
     });
     setPhase('attempt');
   }, [round]);
@@ -428,6 +466,10 @@ export default function GameGate({
       tier: held.level.tier,
       mode: requirement?.mode ?? null,
       attemptId: held.attemptId,
+      baseRung: held.baseLevelId,
+      effectiveRung: held.effectiveLevelId,
+      completedGames: held.completedGames,
+      dailyStage: held.dailyStage,
     };
     presentOnce(context);
     latest.current.emit('gate.attempt', context);
@@ -522,6 +564,10 @@ export default function GameGate({
     tier: attempt.level.tier,
     mode: attempt.requirement?.mode ?? null,
     attemptId: attempt.attemptId,
+    baseRung: attempt.baseLevelId,
+    effectiveRung: attempt.effectiveLevelId,
+    completedGames: attempt.completedGames,
+    dailyStage: attempt.dailyStage,
   } : { rung: state.levelId, tier: levelById(levels, state.levelId)?.tier ?? null };
 
   /** Write and remember in one step, through the ref so the effect can use it too. */
