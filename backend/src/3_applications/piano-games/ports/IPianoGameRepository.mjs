@@ -6,4 +6,6 @@ export class IPianoGameRepository {
   writeProgress(_gameId, _userId, _progress) { throw new Error('writeProgress not implemented'); }
   saveRecord(_gameId, _userId, _record) { throw new Error('saveRecord not implemented'); }
   saveArchive(_gameId, _userSegment, _record) { throw new Error('saveArchive not implemented'); }
+  readRivalry(_gameId, _userId) { throw new Error('readRivalry not implemented'); }
+  writeRivalry(_gameId, _userId, _memory) { throw new Error('writeRivalry not implemented'); }
 }

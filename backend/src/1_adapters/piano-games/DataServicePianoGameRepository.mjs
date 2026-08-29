@@ -1,4 +1,5 @@
 import { deepMerge } from '../../0_system/utils/deepMerge.mjs';
+import { IPianoGameRepository } from '#apps/piano-games/ports/IPianoGameRepository.mjs';
 
 const DEFAULT_CONNECT_FOUR_CONFIG = Object.freeze({
   input_mode: 'notes',
@@ -19,8 +20,9 @@ function stamp(record, field) {
   return { ...record, [field]: new Date().toISOString() };
 }
 
-export class DataServicePianoGameRepository {
+export class DataServicePianoGameRepository extends IPianoGameRepository {
   constructor({ dataService, configService }) {
+    super();
     this.dataService = dataService;
     this.configService = configService;
   }
@@ -62,7 +64,11 @@ export class DataServicePianoGameRepository {
     if (!stored) return null;
     return {
       unlockedThrough: stored.unlocked_through ?? stored.unlockedThrough,
-      series: stored.series,
+      // Legacy ladders stored bare result strings. Normalize lazily so old
+      // progress remains readable by the richer counted-series aggregate.
+      series: Array.isArray(stored.series) ? stored.series.map((entry) => (
+        typeof entry === 'string' ? { result: entry, counted: true } : entry
+      )) : [],
     };
   }
 
@@ -85,6 +91,19 @@ export class DataServicePianoGameRepository {
     return this.dataService.household.write(
       `gaming/log/${gameId}/${day}/${userSegment}-${Date.now()}.yml`, stamp(record, 'archived_at'),
     );
+  }
+
+  readRivalry(gameId, userId) {
+    return this.dataService.user.read(`apps/${gameId}/rivalries`, userId);
+  }
+
+  writeRivalry(gameId, userId, memory) {
+    return this.dataService.user.write(`apps/${gameId}/rivalries`, memory, userId);
+  }
+
+  readLegacyChessRivalry(userId) {
+    return this.dataService.user.read('apps/chess/rivalry', userId)
+      || this.dataService.user.read('apps/chess/rivalries', userId);
   }
 }
 

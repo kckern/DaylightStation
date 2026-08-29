@@ -9,7 +9,8 @@ Piano remains the context owner for MIDI, instrument addressing, pedagogy, progr
 - `game-platform/host` owns the fullscreen container, one keyboard dock, overlay stacking, host lifecycle projection, and the crash boundary (`GameBoundary`).
 - `game-platform/input` owns normalized musical input events.
 - `game-platform/chrome` owns **the cabinet**: the token layer every game's furniture is built from, and the furniture itself. See "The chrome kit" below.
-- `game-platform/opponent` owns how long a board-game opponent appears to think before replying.
+- `game-platform/opponent` owns opponent identity presentation, roster browsing,
+  speech reveal/deadline behavior, and how long an opponent appears to think.
 - `game-platform/families` owns mechanics shared by a genuine family of games:
   - `addressed-board`: semantic left/right rails, single/dual board layouts, column-drop or source/destination interaction grammars, and `useAddressedBoardGame` — the ranked/laddered/archived session a board game keeps around its rules (config load and patch, ladder, seed, session id, local-practice flag, restart, save-on-result, archive-on-abandon, structured logging). The game keeps its own transcript and passes it in; the hook reads it and never writes it.
   - `bound-action`: note/chord bindings, fresh-press rules, and hold-to-repeat behavior used by Tetris and Side Scroller.
@@ -50,7 +51,9 @@ A game overrides **the board's colours and nothing else**. The board carries the
 | `LadderBadge` / `WinTally` | who you are playing, drawn as a ladder and a tally rather than spelled as "Level 3 of 7 · 1 / 3 wins". |
 | `CountdownOverlay` / `LifeMeter` / `ProgressMeter` | the HUD. These existed unstyled for a year — `.piano-game-life__notch` drew nothing at all. |
 
-Checkers and Connect Four expose seven neutral difficulty profiles. Display names, portraits, and themes come from mounted environment configuration; no rules engine owns or reuses a character roster. Rail copy is limited to labels, counts, and controls. A
+Checkers and Connect Four expose separate seven-character rosters; Chess exposes
+twenty-one. Household and user configuration may replace the selected roster
+pack without changing mechanics. Rail copy is limited to labels, counts, and controls. A
 sentence that explains a move, refusal, hint, or map change belongs in `GameStatusBar` or a toast,
 not in permanently mounted rail furniture.
 
@@ -105,7 +108,12 @@ treated as `no_work_today`; it is not sent to a per-learner School endpoint.
 
 The renderer remains game-specific. Chess therefore keeps its specialized piece and legality renderer; Connect Four owns its gravity board; a future Battleship game may provide two board renderers without changing the host.
 
-**Chess does not use `InstrumentBoardStage`.** It hand-rolls the identical three-column equal-rail grid in `.piano-chess__stage`, because it also needs `container-type: size` (its board sizes itself in `cq` units) and a rank-axis centring compensation the stage has no hook for. It does use the chrome kit, and its `--pc-rail` reads `--pg-rail-w`, so the two layouts cannot drift apart on the one measurement that matters. Migrating it onto the stage is worthwhile only if those two hooks land cleanly; until then this paragraph is the reason, not an oversight.
+`BoardGameFrame` is the composition contract above the stage. It accepts
+semantic board, rail, status, settings, opening, and result slots, injects the
+settings trigger into the selected rail, and keeps both rail tracks equal.
+All three games use the frame. Chess also now uses `InstrumentBoardStage`; its
+board measures the stage's primary size container, while the rank-axis
+compensation remains game-owned.
 
 ### Chess frontend boundaries
 
@@ -137,8 +145,8 @@ compact player/opponent rivalry ledger: completed-game results, notable factual 
 visible line—not raw transcripts. The prompt receives lifetime W/L/D, the seven most recent game
 summaries, and the current promotion-window status. `cli/chess-rivalry-backfill.cli.mjs` rebuilds
 that ledger idempotently from durable completed archives. Guests have no durable rivalry memory.
-Opponent character content is household data, not application code: the selected `ladder.rosters`
-entry carries a `dialogue` profile with `persona`, `chess_voice`, and an optional, data-authored
+Opponent character content can be replaced by household data: the selected `ladder.rosters`
+entry carries a `dialogue` profile with `persona`, `voice`, and an optional, data-authored
 `lore` allowlist. A child selects only `ladder.roster_pack`; the backend resolves the complete
 profile. The generic and Pokémon packs share this schema. Chess move notation remains private
 prompt context and the shared gaming dialogue policy rejects it, repeated visible phrasing, and
@@ -167,7 +175,13 @@ Pacing and presentation only — this module never touches rules or legality.
 
 ## Backend boundaries
 
-The unified HTTP surface is `/api/v1/piano-games/:gameId`. HTTP handlers receive `PianoGamesContainer` and translate transport only. The application container resolves ladder access and orchestrates ports. `OpponentLadder` owns the pure promotion invariants. Engine and persistence implementations live under `1_adapters`; production wiring lives under `5_composition`.
+The unified HTTP surface is `/api/v1/piano-games/:gameId`, including
+`POST /dialogue`. HTTP handlers receive `PianoGamesContainer` and translate
+transport only. The application container resolves ladder access and
+orchestrates ports. `OpponentLadder` owns the pure promotion invariants.
+`OpponentDialogueService` delegates replay/redaction to ruleset adapters and
+fails open to deterministic copy. Engine and persistence implementations live
+under `1_adapters`; production wiring lives under `5_composition`.
 
 Connect Four, Checkers, and Chess are complete vertical features on this surface. Their game-specific adapters retain ownership of transcript validation and deterministic fallback policy. Chess is reachable only at `/api/v1/piano-games/chess`.
 

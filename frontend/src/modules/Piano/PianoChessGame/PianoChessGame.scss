@@ -109,6 +109,7 @@
      above the keyboard. Safe as a size container: both axes are already
      definite (the 1fr row of .piano-chess, full canvas width). */
   container-type: size;
+  padding: 0;
 }
 
 .piano-chess__stage > * { min-width: 0; }
@@ -241,8 +242,11 @@
   /* The frame is the board PLUS its two rim strips, so both strips come out of
      the budget on their own axis. Named rather than folded into a constant
      because the reading vocabulary makes them much bigger. */
+  /* The nearest size container is now InstrumentBoardStage's PRIMARY slot,
+     so rail widths are already out of this budget. Only Chess's rank-axis
+     compensation remains game-owned. */
   --cb-size: min(
-    calc(100cqw - 2 * var(--pc-rail, 15.5rem) - 2rem - 2 * var(--pc-axis-w)),
+    calc(100cqw - 2 * var(--pc-axis-w)),
     calc(100cqh - var(--pc-axis))
   );
 
