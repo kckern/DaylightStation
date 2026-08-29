@@ -21,7 +21,7 @@ const allowed = {
   verifying_media: ['MEDIA_HEALTH', 'ICE_INTERRUPTED', 'FAIL', 'CANCEL'],
   connected: ['MEDIA_HEALTH', 'ICE_INTERRUPTED', 'CONTROL_STATUS', 'CANCEL'],
   degraded: ['MEDIA_HEALTH', 'ICE_INTERRUPTED', 'RETRY_MEDIA', 'CONTROL_STATUS', 'CANCEL'],
-  reconnecting: ['MEDIA_HEALTH', 'RECOVERY_EXHAUSTED', 'FAIL', 'CANCEL'],
+  reconnecting: ['MEDIA_HEALTH', 'PEER_REBUILT', 'RECOVERY_EXHAUSTED', 'FAIL', 'CANCEL'],
   recovery_prompt: ['SOFT_RECOVERY', 'HARD_RECOVERY', 'RETRY_CALL', 'CANCEL'],
   occupied: ['DISMISS', 'RETRY_CALL'], ending: ['ENDED'], ended: ['START'], failed: ['RETRY_CALL', 'DISMISS'],
 };
@@ -59,8 +59,16 @@ export function callReducer(state, event) {
     case 'HARD_RECOVERY': return { ...state, value: 'waking', hardRecoveryUsed: true,
       recoveryCount: state.recoveryCount + 1, reason: 'hard_recovery' };
     case 'RETRY_MEDIA': return { ...state, value: 'reconnecting', retryCount: state.retryCount + 1 };
+    case 'PEER_REBUILT': return { ...state, peerRevision: event.peerRevision };
     case 'RECOVERY_EXHAUSTED': return { ...state, value: 'recovery_prompt', reason: 'recovery_exhausted' };
-    case 'FAIL': return { ...state, value: 'failed', error: event.error, reason: event.reason || 'failed' };
+    case 'FAIL':
+      if (state.value === 'waking' && state.reason !== 'soft_recovery' && state.recoveryCount < 1) {
+        return { ...state, value: 'waking', recoveryCount: 1, reason: 'soft_recovery', error: null };
+      }
+      if (state.value === 'waking' && state.reason === 'soft_recovery') {
+        return { ...state, value: 'recovery_prompt', error: event.error, reason: 'recovery_exhausted' };
+      }
+      return { ...state, value: 'failed', error: event.error, reason: event.reason || 'failed' };
     case 'CANCEL': return { ...state, value: 'ending', reason: event.reason || 'cancelled' };
     case 'ENDED': return { ...initialCallState, value: 'ended', reason: state.reason };
     case 'DISMISS': return { ...initialCallState, value: 'idle' };

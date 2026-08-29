@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 export function useMediaHealth(peer, enabled, videoElementRef) {
   const [health, setHealth] = useState({ audio: false, video: false, verified: false });
   const previousRef = useRef({ audio: 0, video: 0, frames: 0 });
+  const connectionRef = useRef(null);
   const peerRef = useRef(peer);
   peerRef.current = peer;
 
@@ -14,6 +15,10 @@ export function useMediaHealth(peer, enabled, videoElementRef) {
       const currentPeer = peerRef.current;
       const pc = currentPeer.pcRef.current;
       if (!pc) return;
+      if (connectionRef.current !== pc) {
+        connectionRef.current = pc;
+        previousRef.current = { audio: 0, video: 0, frames: 0 };
+      }
       const totals = { audio: 0, video: 0 };
       const stats = await pc.getStats();
       stats.forEach(report => {
