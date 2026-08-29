@@ -37,4 +37,25 @@ describe('WakeAndLoadService Home Line cancellation', () => {
     expect(device.powerOn).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
+
+  it('adds safe call correlation to lease-owned wake progress without credentials', async () => {
+    broadcast.mockClear();
+    const device = {
+      defaultVolume: null, screenPath: '/screen/tv',
+      hasCapability: capability => capability === 'deviceControl',
+      powerOn: vi.fn(async () => ({ ok: true, verified: true })),
+      setVolume: vi.fn(), prepareForContent: vi.fn(async () => ({ ok: true, cameraAvailable: true })),
+      loadContent: vi.fn(async () => ({ ok: true })),
+    };
+    const service = new WakeAndLoadService({ deviceService: { get: () => device },
+      readinessPolicy: { isReady: vi.fn() }, broadcast, eventBus, logger });
+    await service.execute('tv', { open: 'videocall/tv' }, {
+      dispatchId: 'dispatch-1', deferredRetry: false,
+      correlation: { callId: 'call-1', attemptId: 'attempt-1', credential: 'must-not-leak' },
+    });
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
+      dispatchId: 'dispatch-1', callId: 'call-1', attemptId: 'attempt-1',
+    }));
+    expect(JSON.stringify(broadcast.mock.calls)).not.toContain('must-not-leak');
+  });
 });

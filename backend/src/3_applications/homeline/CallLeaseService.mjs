@@ -127,7 +127,9 @@ export class CallLeaseService {
     const result = await this.#wake.execute(
       lease.deviceId,
       { open: `videocall/${lease.deviceId}` },
-      { dispatchId: lease.dispatchId, deferredRetry: false, isCancelled: () => TERMINAL.has(lease.state) },
+      { dispatchId: lease.dispatchId, deferredRetry: false, isCancelled: () => TERMINAL.has(lease.state),
+        correlation: { callId: lease.callId, attemptId: lease.attemptId, callerId: lease.callerId,
+          phonePeerId: lease.phonePeerId, tvPeerId: lease.tvPeerId, state: lease.state } },
     );
     if (before === false && result?.steps?.power?.ok === true) lease.callTurnedDeviceOn = true;
     if (TERMINAL.has(lease.state)) {
@@ -205,24 +207,29 @@ export class CallLeaseService {
           if (TERMINAL.has(lease.state)) throw new Error('CALL_ENDED');
           const on = await device.powerOn();
           if (!on?.ok) throw new Error(on?.error || 'Power on failed');
+          if (isPoweredOn(lease.priorState?.power) === false) lease.callTurnedDeviceOn = true;
           await this.#sleep(60_000);
         } else {
           method = 'reboot';
+          if (isPoweredOn(lease.priorState?.power) === false) lease.callTurnedDeviceOn = true;
           await this.#sleep(15_000);
         }
         if (TERMINAL.has(lease.state)) throw new Error('CALL_ENDED');
       }
       const prepared = await device.prepareForContent({ skipCameraCheck: false });
       if (TERMINAL.has(lease.state)) throw new Error('CALL_ENDED');
-      if (prepared?.ok === false) throw new Error(prepared.error || 'Preparation failed');
+      if (prepared?.ok !== true) throw new Error(prepared?.error || 'Preparation failed');
       const loaded = await device.loadContent(device.screenPath || '/screen/living-room', {
         open: `videocall/${lease.deviceId}`,
       });
-      if (loaded?.ok === false) throw new Error(loaded.error || 'Reload failed');
+      if (loaded?.ok !== true) throw new Error(loaded?.error || 'Reload failed');
       if (TERMINAL.has(lease.state)) throw new Error('CALL_ENDED');
       lease.state = 'waiting_tv';
       this.#event('recovery.completed', lease, { recoveryRung: level, outcome: 'ok', method });
-      return { kind: 'ok', body: { ok: true, level, method, callId: lease.callId, dispatchId: lease.dispatchId } };
+      return { kind: 'ok', body: { ok: true, level, method,
+        coldWake: level === 'hard' || prepared.coldRestart === true,
+        cameraAvailable: prepared.cameraAvailable,
+        callId: lease.callId, dispatchId: lease.dispatchId } };
     } catch (error) {
       if (TERMINAL.has(lease.state)) {
         return { kind: 'failed', body: { ok: false, cancelled: true, level,
@@ -323,6 +330,13 @@ export class CallLeaseService {
         this.#clearTimer(lease.timer); this.#armParticipantStale(lease);
       }
     }
+    if (!['candidate', 'heartbeat'].includes(message.type)) {
+      this.#event(`signaling.${message.type}`, lease, {
+        role: message.role,
+        peerRevision: revision,
+        outcome: 'accepted',
+      });
+    }
     return { ok: true, message: stripSecrets(message) };
   }
 
@@ -349,8 +363,16 @@ export class CallLeaseService {
     this.#credentials.set(token, { callId: lease.callId, role, peerId, expiresAt: lease.expiresAt, revoked: false, clientId: null });
     return token;
   }
-  #revokeRole(lease, role) { for (const item of this.#credentials.values()) if (item.callId === lease.callId && item.role === role) item.revoked = true; }
-  #revokeLease(lease) { for (const item of this.#credentials.values()) if (item.callId === lease.callId) item.revoked = true; }
+  #revokeRole(lease, role) {
+    for (const [token, item] of this.#credentials) {
+      if (item.callId === lease.callId && item.role === role) this.#credentials.delete(token);
+    }
+  }
+  #revokeLease(lease) {
+    for (const [token, item] of this.#credentials) {
+      if (item.callId === lease.callId) this.#credentials.delete(token);
+    }
+  }
   #validatePhase(lease, message, revision) {
     const { type, role } = message;
     if (['heartbeat', 'hangup', 'mute-state', 'media-retry', 'ready', 'waiting'].includes(type)) return null;
@@ -425,14 +447,14 @@ export class CallLeaseService {
     try {
       if (lease.callTurnedDeviceOn && isPoweredOn(lease.priorState?.power) === false) {
         const off = await device.powerOff();
-        return off?.ok === false ? { outcome: 'partial', reason: 'power_off_failed' } : { outcome: 'restored', action: 'power_off' };
+        return off?.ok !== true ? { outcome: 'partial', reason: 'power_off_failed' } : { outcome: 'restored', action: 'power_off' };
       }
       const priorUrl = lease.priorState?.content?.currentUrl || lease.priorState?.content?.url;
       const target = parseRestorableContent(priorUrl);
       const actions = [];
       if (target) {
         const loaded = await device.loadContent(target.path, target.query);
-        if (loaded?.ok === false) return { outcome: 'partial', reason: 'content_restore_failed' };
+        if (loaded?.ok !== true) return { outcome: 'partial', reason: 'content_restore_failed' };
         actions.push('content');
       }
       if (lease.priorState?.content?.screenOn === false) {

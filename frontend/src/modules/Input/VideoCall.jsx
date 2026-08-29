@@ -154,8 +154,11 @@ export default function VideoCall({ deviceId, clear }) {
 
   // Log status transitions
   useEffect(() => {
-    logger.debug('status-change', { status, peerConnected, bridgeStatus: bridge.status });
-  }, [logger, status, peerConnected, bridge.status]);
+    logger.debug('status-change', { callId: callSession?.callId, attemptId: callSession?.attemptId,
+      dispatchId: callSession?.dispatchId, state: status, peerRevision: signaling.revisionRef.current,
+      peerConnected, bridgeStatus: bridge.status });
+  }, [logger, status, peerConnected, bridge.status, callSession?.callId,
+    callSession?.attemptId, callSession?.dispatchId, signaling.revisionRef]);
 
   // The phone owns the bounded ICE recovery ladder; the TV stays available for
   // its ICE-restart or full-peer-rebuild offer instead of tearing down early.
@@ -270,12 +273,25 @@ export default function VideoCall({ deviceId, clear }) {
 
   // Attach remote stream to video element
   useEffect(() => {
+    let retry = null;
     if (remoteVideoRef.current && peer.remoteStream) {
+      const element = remoteVideoRef.current;
       const tracks = peer.remoteStream.getTracks();
-      logger.info('remote-stream-attached', { tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
-      remoteVideoRef.current.srcObject = peer.remoteStream;
+      logger.info('remote-stream-attached', { callId: callSession?.callId, attemptId: callSession?.attemptId,
+        dispatchId: callSession?.dispatchId, tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
+      element.srcObject = peer.remoteStream;
+      const play = (attempt = 0) => element.play()
+        .then(() => logger.info('remote-playback.succeeded', { callId: callSession?.callId, attempt }))
+        .catch(error => {
+          if (attempt < 1) {
+            logger.warn('remote-playback.retry', { callId: callSession?.callId, reason: error.name });
+            retry = setTimeout(() => void play(1), 150);
+          } else logger.error('remote-playback.failed', { callId: callSession?.callId, reason: error.name });
+        });
+      void play();
     }
-  }, [logger, peer.remoteStream]);
+    return () => clearTimeout(retry);
+  }, [logger, peer.remoteStream, callSession?.callId, callSession?.attemptId, callSession?.dispatchId]);
 
   // Re-sync local camera stream to video element.
   // useWebcamStream sets srcObject on stream acquisition, but if the

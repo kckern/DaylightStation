@@ -26,7 +26,8 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     });
     if (type !== 'candidate' && type !== 'heartbeat') {
       loggerRef.current.info('signaling.sent', { callId: session.callId,
-        attemptId: session.attemptId, peerId: session.peerId, peerRevision: revisionRef.current,
+        attemptId: session.attemptId, dispatchId: session.dispatchId, deviceId: session.deviceId,
+        peerId: session.peerId, role, peerRevision: revisionRef.current,
         state: type, outcome: sent ? 'sent' : 'control_disconnected' });
     }
     return sent;
@@ -38,6 +39,14 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     // outage. The shared service's kiosk fallback reload would otherwise tear
     // down working media after three minutes without WebSocket traffic.
     wsService.setAutoReloadEnabled(false);
+    peerRef.current.setCallContext?.({
+      callId: session.callId,
+      attemptId: session.attemptId,
+      dispatchId: session.dispatchId,
+      deviceId: session.deviceId,
+      role,
+      peerId: session.peerId,
+    });
     activeSessionRef.current = session;
     revisionRef.current = session.peerRevision || 0;
     sequenceRef.current = 0;
@@ -50,7 +59,9 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
         if (message.ok === false) {
           const error = new Error(message.code || 'Signaling authorization failed');
           loggerRef.current.warn('signaling.authorization-failed', {
-            callId: session.callId, reason: error.message,
+            callId: session.callId, attemptId: session.attemptId, dispatchId: session.dispatchId,
+            deviceId: session.deviceId, peerId: session.peerId, role, reason: error.message,
+            peerRevision: revisionRef.current, outcome: 'failed',
           });
           onEventRef.current?.({ type: 'error', error });
         } else {
@@ -88,7 +99,9 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
         else if (message.type === 'mute-state') onEventRef.current?.({ type: 'mute-state', ...payload });
         else if (message.type === 'media-retry') onEventRef.current?.({ type: 'media-retry' });
       } catch (error) {
-        loggerRef.current.warn('signaling.failed', { callId: session.callId, reason: error.message, peerRevision: revisionRef.current });
+        loggerRef.current.warn('signaling.failed', { callId: session.callId, attemptId: session.attemptId,
+          dispatchId: session.dispatchId, deviceId: session.deviceId, peerId: session.peerId, role,
+          reason: error.message, peerRevision: revisionRef.current, outcome: 'failed' });
         onEventRef.current?.({ type: 'error', error });
       }
     });
@@ -104,6 +117,7 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     const heartbeat = setInterval(() => send('heartbeat'), 5_000);
     return () => {
       if (activeSessionRef.current === session) activeSessionRef.current = null;
+      peerRef.current.setCallContext?.(null);
       wsService.setAutoReloadEnabled(true);
       clearInterval(heartbeat); unsubscribe(); statusUnsub(); peerRef.current.onIceCandidate(null);
     };
@@ -119,6 +133,7 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     offeredRevisionRef.current = revisionRef.current;
     const offer = await peerRef.current.rebuild(revisionRef.current);
     send('offer', { description: offer, rebuild: true });
+    return revisionRef.current;
   }, [send]);
 
   return useMemo(() => ({ send, restartIce, rebuild, revisionRef }), [rebuild, restartIce, send]);

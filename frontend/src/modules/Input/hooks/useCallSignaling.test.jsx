@@ -71,4 +71,14 @@ describe('useCallSignaling reconnect behavior', () => {
     await act(async () => { await mocks.subscriber({ ...session, role: 'tv', type: 'waiting', revision: 0, payload: {} }); });
     expect(localPeer.createOffer).not.toHaveBeenCalled();
   });
+
+  it('returns the new peer revision after a full rebuild', async () => {
+    const localPeer = peer();
+    localPeer.rebuild.mockResolvedValue({ type: 'offer', sdp: 'not-logged' });
+    const { result } = renderHook(() => useCallSignaling({ role: 'phone', session, peer: localPeer, onEvent: vi.fn() }));
+    let revision;
+    await act(async () => { revision = await result.current.rebuild(); });
+    expect(revision).toBe(1);
+    expect(mocks.sent.at(-1)).toMatchObject({ type: 'offer', revision: 1, sequence: 0 });
+  });
 });

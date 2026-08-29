@@ -8,6 +8,14 @@ import { useCallController } from './call/useCallController.js';
 import './CallApp.scss';
 
 const BUSY_COPY = 'This TV is already in a call.';
+const mediaKindErrorCopy = (kind, reason) => {
+  const label = kind === 'audio' ? 'Microphone' : 'Camera';
+  if (reason === 'permission_denied') return `${label} access was denied. Allow access, then retry media.`;
+  if (reason === 'hardware_missing') return `No usable ${kind === 'audio' ? 'microphone' : 'camera'} was found.`;
+  if (reason === 'device_busy') return `The ${kind === 'audio' ? 'microphone' : 'camera'} is already in use by another app.`;
+  if (reason === 'constraints_failed') return `${label} settings are not supported by this device.`;
+  return `${label} could not be started.`;
+};
 const mediaErrorCopy = errors => {
   const reasons = Object.values(errors || {});
   if (reasons.includes('permission_denied')) return 'Camera or microphone access was denied. Allow access, then retry.';
@@ -111,13 +119,14 @@ export default function CallApp() {
       logger.warn('media.retry.failed', { reason: error.message });
     }
   };
+  const exitCallScreen = () => window.history.back();
 
   return (
     <main className={`call-app ${inCall ? 'call-app--connected' : active ? 'call-app--connecting' : 'call-app--preview'}`}>
       <section className={`call-app__local ${inCall ? 'call-app__local--pip' : 'call-app__local--inset'}`} aria-label="Your camera preview">
         <video ref={localVideoRef} autoPlay muted playsInline className="call-app__video call-app__video--tall" />
         {media.status === 'loading' && <p className="call-app__camera-loading">Starting camera and microphone…</p>}
-        {media.errors.video && <p className="call-app__camera-error">Camera unavailable: {media.errors.video.replaceAll('_', ' ')}</p>}
+        {media.errors.video && <p className="call-app__camera-error">{mediaKindErrorCopy('video', media.errors.video)}</p>}
       </section>
 
       <section className="call-app__remote" aria-label="TV camera">
@@ -165,7 +174,13 @@ export default function CallApp() {
                 {devices.items.length === 1 ? `Call ${device.name || device.id}` : device.name || device.id}
               </button>)}
               {media.status === 'failed' && <div role="alert"><p>{mediaErrorCopy(media.errors)}</p><button className="call-app__device-btn" onClick={retryMediaAccess}>Retry media</button></div>}
-              {media.status === 'ready' && (media.errors.audio || media.errors.video) && <p role="status">You can call with {media.errors.audio ? 'video only' : 'audio only'}.</p>}
+              {media.status === 'ready' && media.errors.audio && <p role="status">
+                {mediaKindErrorCopy('audio', media.errors.audio)} You can continue with video only.
+              </p>}
+              {media.status === 'ready' && media.errors.video && <p role="status">
+                {mediaKindErrorCopy('video', media.errors.video)} You can continue with audio only.
+              </p>}
+              <button className="call-app__device-btn" onClick={exitCallScreen}>Exit call screen</button>
             </div>
           )}
 

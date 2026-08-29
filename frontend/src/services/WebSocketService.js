@@ -8,7 +8,7 @@
  * @example
  * // Subscribe to specific topics
  * const unsubscribe = wsService.subscribe(['fitness', 'vibration'], (data) => {
- *   console.log('Received:', data);
+ *   handleMessage(data);
  * });
  * 
  * // Subscribe with a predicate function

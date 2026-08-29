@@ -5,8 +5,8 @@ export const CALL_STATES = Object.freeze([
 ]);
 export const CALL_EVENTS = Object.freeze([
   'BOOT_READY', 'BOOT_FAILED', 'START', 'RESUME', 'RESERVED', 'BUSY', 'PROBE_TIMEOUT',
-  'WAKE_OK', 'TV_READY', 'ANSWERED', 'MEDIA_HEALTH', 'ICE_INTERRUPTED', 'CONTROL_STATUS',
-  'WAIT_TIMEOUT', 'SOFT_RECOVERY', 'HARD_RECOVERY', 'RETRY_MEDIA', 'RECOVERY_EXHAUSTED',
+  'WAKE_OK', 'WAKE_FAILED', 'TV_READY', 'ANSWERED', 'MEDIA_HEALTH', 'ICE_INTERRUPTED', 'CONTROL_STATUS',
+  'PEER_REVISION', 'WAIT_TIMEOUT', 'SOFT_RECOVERY', 'HARD_RECOVERY', 'RETRY_MEDIA', 'RECOVERY_EXHAUSTED',
   'FAIL', 'CANCEL', 'ENDED', 'DISMISS', 'RETRY_CALL',
 ]);
 
@@ -23,12 +23,12 @@ export const initialCallState = Object.freeze({
 export const ALLOWED_CALL_EVENTS = Object.freeze({
   booting: ['BOOT_READY', 'BOOT_FAILED'], idle: ['START', 'RESUME'],
   reserving: ['RESERVED', 'BUSY', 'FAIL', 'CANCEL'], probing: ['TV_READY', 'PROBE_TIMEOUT', 'CANCEL'],
-  waking: ['WAKE_OK', 'FAIL', 'CANCEL'], waiting_tv: ['TV_READY', 'WAIT_TIMEOUT', 'FAIL', 'CANCEL'],
+  waking: ['WAKE_OK', 'WAKE_FAILED', 'RECOVERY_EXHAUSTED', 'FAIL', 'CANCEL'], waiting_tv: ['TV_READY', 'WAIT_TIMEOUT', 'FAIL', 'CANCEL'],
   negotiating: ['ANSWERED', 'ICE_INTERRUPTED', 'FAIL', 'CANCEL'],
   verifying_media: ['MEDIA_HEALTH', 'ICE_INTERRUPTED', 'FAIL', 'CANCEL'],
   connected: ['MEDIA_HEALTH', 'ICE_INTERRUPTED', 'CONTROL_STATUS', 'CANCEL'],
   degraded: ['MEDIA_HEALTH', 'ICE_INTERRUPTED', 'RETRY_MEDIA', 'CONTROL_STATUS', 'CANCEL'],
-  reconnecting: ['MEDIA_HEALTH', 'RECOVERY_EXHAUSTED', 'FAIL', 'CANCEL'],
+  reconnecting: ['MEDIA_HEALTH', 'PEER_REVISION', 'RECOVERY_EXHAUSTED', 'FAIL', 'CANCEL'],
   recovery_prompt: ['SOFT_RECOVERY', 'HARD_RECOVERY', 'RETRY_CALL', 'CANCEL'],
   occupied: ['DISMISS', 'RETRY_CALL'], ending: ['ENDED'], ended: ['START'], failed: ['RETRY_CALL', 'DISMISS'],
 });
@@ -51,6 +51,9 @@ export function callReducer(state, event) {
     case 'PROBE_TIMEOUT': return { ...state, value: 'waking', deadlineAt: null };
     case 'WAKE_OK': return { ...state, value: 'waiting_tv', coldWake: !!event.coldWake,
       deadlineAt: event.deadlineAt ?? null };
+    case 'WAKE_FAILED': return state.recoveryCount < 1
+      ? { ...state, value: 'waking', recoveryCount: 1, reason: 'soft_recovery', error: event.error, deadlineAt: null }
+      : { ...state, value: 'recovery_prompt', reason: 'tv_unavailable', error: event.error, deadlineAt: null };
     case 'TV_READY': return { ...state, value: 'negotiating', deadlineAt: state.session?.expiresAt ?? null };
     case 'ANSWERED': return { ...state, value: 'verifying_media', deadlineAt: event.deadlineAt ?? null };
     case 'MEDIA_HEALTH': {
@@ -63,6 +66,8 @@ export function callReducer(state, event) {
     case 'ICE_INTERRUPTED': return { ...state, value: 'reconnecting', reason: event.reason || 'ice_interrupted',
       deadlineAt: event.deadlineAt ?? null };
     case 'CONTROL_STATUS': return { ...state, controlConnected: !!event.connected };
+    case 'PEER_REVISION': return Number.isInteger(event.peerRevision) && event.peerRevision >= state.peerRevision
+      ? { ...state, peerRevision: event.peerRevision } : state;
     case 'WAIT_TIMEOUT': return state.recoveryCount < 1
       ? { ...state, value: 'waking', recoveryCount: 1, reason: 'soft_recovery', deadlineAt: null }
       : { ...state, value: 'recovery_prompt', reason: 'tv_unavailable', deadlineAt: null };
