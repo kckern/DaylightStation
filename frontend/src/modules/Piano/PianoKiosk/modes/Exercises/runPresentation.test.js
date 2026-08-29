@@ -92,9 +92,11 @@ describe('instanceKeySignature — re-joining the key the bank splits in two', (
   });
 
   it('covers every mode the live seed publishes', () => {
-    // `data/content/music/scales/modes.yml` expands over exactly these ten.
+    // `data/content/music/scales/modes.yml` expands over exactly these thirteen.
     // A mode missing from the table falls through to the root and spells as if
-    // it were major — which for a flat-side mode is the wrong letter.
+    // it were major. That fallback is intentional only for chromatic; harmonic
+    // and melodic minor use the natural-minor signature and write their raised
+    // sixth/seventh as local accidentals.
     const onG = {
       ionian: 'sharp', // G major, one sharp
       dorian: 'flat', // = F major, one flat
@@ -102,6 +104,9 @@ describe('instanceKeySignature — re-joining the key the bank splits in two', (
       lydian: 'sharp', // = D major, two sharps
       mixolydian: 'sharp', // = C major, none — nothing to flatten
       aeolian: 'flat', // = Bb major, two flats
+      'harmonic-minor': 'flat', // natural-minor signature + raised seventh
+      'melodic-minor': 'flat', // natural-minor signature + raised sixth/seventh
+      chromatic: 'sharp', // no signature; deterministic tonic-side spelling
       locrian: 'flat', // = Ab major, four flats
       'major-pentatonic': 'sharp',
       'minor-pentatonic': 'flat',

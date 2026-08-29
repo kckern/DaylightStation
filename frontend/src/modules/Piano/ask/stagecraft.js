@@ -56,6 +56,9 @@ export function accidentalForKey(key) {
  * bank publishes are here — `axes.mode` for `scales/modes` (all ten of its
  * values) and `axes.quality` for `chords/triads` and `chords/sevenths` — because
  * they answer the same question and a second table would drift from this one.
+ * The scale seed currently publishes thirteen modes: harmonic and melodic
+ * minor share Aeolian's signature (their raised degrees are written as local
+ * accidentals), while chromatic deliberately falls back to its tonic spelling.
  *
  * The chord entries are read the same way: a minor triad's flat third is the
  * relative major's, a dominant 7th's flat seventh is mixolydian's, and a

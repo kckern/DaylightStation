@@ -156,9 +156,31 @@ const scaleInstance = (midis) => Object.freeze({
 const SCALE = scaleInstance(SCALE_MIDIS);
 /** The SHORT ask: two notes, the aspect ratio at which the sizing cap bites. */
 const SHORT_ASK = scaleInstance(SCALE_MIDIS.slice(0, 2));
+/** A visibly rhythm-bearing free line for SP2's engraved presentation cell. */
+const ENGRAVED_LINE = Object.freeze({
+  ...scaleInstance([60, 62, 64, 65]),
+  id: 'scales/c-major@engraved-rhythm',
+  events: [
+    { id: 'n1', value: 'quarter', notes: [{ midi: 60, hand: 'right' }] },
+    { id: 'n2', value: 'half', notes: [{ midi: 62, hand: 'right' }] },
+    { id: 'n3', value: 'eighth', notes: [{ midi: 64, hand: 'right' }] },
+    { id: 'n4', value: 'eighth', notes: [{ midi: 65, hand: 'right' }] },
+  ],
+});
+
+const RECALL_TUPLE = Object.freeze({
+  prompt: 'recall', secondary: 'none', timing: 'free', hints: 'none', judging: 'completion',
+});
+const ENGRAVED_FREE_TUPLE = Object.freeze({
+  prompt: 'read', secondary: 'keyboard-strip', notationStyle: 'engraved', timing: 'free', hints: 'none', judging: 'completion',
+});
+const SINGLE_NOTE_TUPLE = Object.freeze({
+  prompt: 'read', secondary: 'staff', notationStyle: 'sequence', timing: 'free', hints: 'none', judging: 'completion',
+});
 
 /** A cued rung: the mode that makes tier 3, with a pace gate so the chip exists. */
 const CUED_REQUIREMENT = Object.freeze({ mode: 'cued', gates: { pace: { target_bpm: 90 } } });
+const FREE_REQUIREMENT = Object.freeze({ mode: 'free', rubric: { criteria: { completeness: 1 } }, passScore: null });
 
 /** The score material a gate level names, and the bars a grown-up wrote down. */
 const SCORE_MATERIAL = Object.freeze({
@@ -992,6 +1014,91 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     // And it does not eat the tap it is drawn over: `pointer-events: none`.
     expect(overlay.reachable, 'the count-in layer is swallowing taps meant for the run').toBe(false);
     expect(await probe.text()).toContain('Listen to the count-in.');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* SP2 presentation cells — each proven in the browser that paints the kiosk  */
+/* -------------------------------------------------------------------------- */
+
+describe('SP2 presentation cells in real Chromium', () => {
+  it('shows a named recall chord from memory without leaking the lit-key answer', async () => {
+    await run({
+      instance: { ...TREBLE_DYAD, title: 'C major chord', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] },
+      props: {
+        tier: 1, ask: 'Play a C major chord.', intent: 'challenge', askTuple: RECALL_TUPLE,
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+
+    const recall = await probe.one('[data-testid="piano-recall-stage"]');
+    const heading = await probe.one('.piano-exercise-run__head h1');
+    expect(heading.text).toBe('Play a C major chord.');
+    expect(recall.painted && onCanvas(recall), `the recall card is not visible: ${say(recall)}`).toBe(true);
+    expect(recall.text).toContain('From memory');
+    expect(await probe.count('.piano-key.target'), 'a recall ask exposed its answer at mount').toBe(0);
+    expect(await probe.count('.piano-keyboard'), 'a recall ask mounted a keyboard before its hint').toBe(0);
+  });
+
+  it('reveals the after-stall answer on screen before the free-attempt timeout', async () => {
+    await run({
+      instance: { ...TREBLE_DYAD, title: 'C major chord', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] },
+      props: {
+        tier: 1,
+        ask: 'Play a C major chord.',
+        intent: 'challenge',
+        askTuple: { ...RECALL_TUPLE, hints: 'after-stall' },
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+
+    expect(await probe.one('[data-testid="piano-recall-hint"]')).toBeNull();
+    await probe.press(60);
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="piano-recall-hint"]') !== null,
+      null,
+      { timeout: 15_000 },
+    );
+    const hint = await probe.one('[data-testid="piano-recall-hint"]');
+    expect(hint.painted && onCanvas(hint), `the revealed answer is not visible: ${say(hint)}`).toBe(true);
+    expect(await probe.count('.piano-key.target'), 'the hint did not light the chord it reveals').toBe(3);
+    expect(await probe.text(), 'the hint arrived only after the attempt had already timed out').not.toContain('Keep working');
+  }, 30_000);
+
+  it('engraves a duration-aware line while timing remains free', async () => {
+    await run({
+      instance: ENGRAVED_LINE,
+      props: {
+        tier: 2, ask: 'Read the line.', intent: 'challenge', askTuple: ENGRAVED_FREE_TUPLE,
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+    await page.waitForFunction(() => document.querySelectorAll('.abcjs-note').length === 4);
+
+    expect(await probe.one('.piano-exercise-run')).toMatchObject({ text: expect.stringContaining('Play the first note to begin.') });
+    expect(await probe.count('.abcjs-staff'), 'the free engraved line did not render one staff').toBe(1);
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const notation = await probe.one('.abc-renderer svg');
+    expect(notation.painted && inside(notation, stage), `the free engraving overflows its stage: ${say(notation)}`).toBe(true);
+    expect(await probe.count('.sequence-staff'), 'the engraved request fell back to the sequence renderer').toBe(0);
+    expect(await probe.count('.piano-score-passage'), 'bank material incorrectly entered the score resolver').toBe(0);
+  });
+
+  it('renders a one-note reading ask as one compact staff card', async () => {
+    await run({
+      instance: { ...ONE_KEY, title: 'Middle C', staff: 'treble' },
+      props: {
+        tier: 2, ask: 'Read this note.', intent: 'challenge', askTuple: SINGLE_NOTE_TUPLE,
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+
+    const runBox = await probe.one('.piano-exercise-run');
+    const card = await probe.one('.piano-exercise-run__single-note .sequence-staff');
+    expect(await probe.count('.action-staff__note'), 'the single-note card did not contain exactly one notehead').toBe(1);
+    expect(card.painted && onCanvas(card), `the single-note card is not visible: ${say(card)}`).toBe(true);
+    expect(card.width, 'the single-note card expanded into an oversized notation surface').toBeLessThan(runBox.width / 2);
+    expect(await probe.count('.piano-keyboard'), 'the reading card exposed a keyboard target').toBe(0);
   });
 });
 
