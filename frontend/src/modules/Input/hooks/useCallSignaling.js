@@ -33,12 +33,22 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     const unsubscribe = wsService.subscribeAuthorized({
       topic: session.topic, credential: session.credential, role, peerId: session.peerId,
     }, async message => {
+      if (message.type === 'homeline-authorize-ack' && message.ok) {
+        wsService.setAutoReloadEnabled?.(false);
+        // A reconnect receives a fresh authorization while media remains
+        // healthy. Permit one new offer for this revision only when needed.
+        offeredRevisionRef.current = null;
+        send(role === 'phone' ? 'ready' : 'waiting');
+        return;
+      }
       if (message.callId !== session.callId || message.role === role) return;
       try {
         const payload = message.payload || {};
         if (message.revision !== revisionRef.current && message.type === 'candidate') return;
         if (message.type === 'ready' && role === 'tv') send('waiting');
-        else if (message.type === 'waiting' && role === 'phone' && offeredRevisionRef.current !== revisionRef.current) {
+        else if (message.type === 'waiting' && role === 'phone'
+          && peerRef.current.connectionState !== 'connected'
+          && offeredRevisionRef.current !== revisionRef.current) {
           offeredRevisionRef.current = revisionRef.current;
           onEventRef.current?.({ type: 'tv-ready' });
           const offer = await peerRef.current.createOffer({ revision: revisionRef.current });
@@ -60,7 +70,6 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     });
     const statusUnsub = wsService.onStatusChange(status => onEventRef.current?.({ type: 'control-status', ...status }));
     const heartbeat = setInterval(() => send('heartbeat'), 5_000);
-    if (role === 'phone') send('ready'); else send('waiting');
     return () => { clearInterval(heartbeat); unsubscribe(); statusUnsub(); peerRef.current.onIceCandidate(null); };
   }, [role, send, session]);
 
@@ -74,6 +83,7 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     offeredRevisionRef.current = revisionRef.current;
     const offer = await peerRef.current.rebuild(revisionRef.current);
     send('offer', { description: offer, rebuild: true });
+    return revisionRef.current;
   }, [send]);
 
   return useMemo(() => ({ send, restartIce, rebuild, revisionRef }), [rebuild, restartIce, send]);

@@ -7,13 +7,14 @@ import { useMediaHealth } from '../../modules/Input/hooks/useMediaHealth.js';
 
 const randomId = prefix => `${prefix}-${crypto.randomUUID()}`;
 
-export function useCallController({ peer, mediaStatus, remoteVideoRef }) {
+export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVideoRef }) {
   const [state, dispatch] = useReducer(callReducer, initialCallState);
   const stateRef = useRef(state); stateRef.current = state;
   const abortRef = useRef(null);
   const timersRef = useRef(new Set());
   const loggerRef = useRef(getLogger().child({ component: 'CallController' }));
   const iceRungRef = useRef(0);
+  const retryMediaRef = useRef(null);
   const peerConnectionRef = peer.pcRef;
   const previousStateRef = useRef(null);
 
@@ -75,7 +76,10 @@ export function useCallController({ peer, mediaStatus, remoteVideoRef }) {
         dispatch({ type: 'RESERVED', attemptId, session });
       } catch (error) {
         if (controller.signal.aborted || !isAttemptActive(stateRef.current, attemptId)) return;
-        dispatch({ type: error.status === 409 ? 'BUSY' : 'FAIL', attemptId, error: error.message, reason: 'reservation_failed' });
+        if (error.status === 409) dispatch({ type: 'BUSY', attemptId });
+        else if (error.status === 401) dispatch({ type: 'FAIL', attemptId, reason: 'auth_required', error: 'Sign in to place a Home Line call.' });
+        else if (error.status === 403) dispatch({ type: 'FAIL', attemptId, reason: 'call_forbidden', error: 'This account does not have permission to place a Home Line call.' });
+        else dispatch({ type: 'FAIL', attemptId, error: error.message, reason: 'reservation_failed' });
       }
     };
     void run();
@@ -168,7 +172,25 @@ export function useCallController({ peer, mediaStatus, remoteVideoRef }) {
     return () => { clearTimeout(grace); timers.delete(grace); };
   }, [later, peer.connectionState, peerConnectionRef, signaling, state.attemptId, state.value]);
 
-  const end = useCallback(reason => dispatch({ type: 'CANCEL', attemptId: stateRef.current.attemptId, reason }), []);
+  const end = useCallback(reason => {
+    signaling.send('hangup', { reason });
+    dispatch({ type: 'CANCEL', attemptId: stateRef.current.attemptId, reason });
+  }, [signaling]);
+  const retryMedia = useCallback(async () => {
+    if (retryMediaRef.current) return retryMediaRef.current;
+    const attemptId = stateRef.current.attemptId;
+    const run = (async () => {
+      dispatch({ type: 'RETRY_MEDIA', attemptId });
+      await retryLocalMedia?.();
+      const peerRevision = await signaling.rebuild();
+      dispatch({ type: 'PEER_REBUILT', attemptId, peerRevision });
+      later(() => {
+        if (isAttemptActive(stateRef.current, attemptId)) dispatch({ type: 'RECOVERY_EXHAUSTED', attemptId });
+      }, 15_000);
+    })();
+    retryMediaRef.current = run;
+    try { await run; } finally { retryMediaRef.current = null; }
+  }, [later, retryLocalMedia, signaling]);
   useEffect(() => {
     if (state.value !== 'ending') return;
     const { callId, attemptId, reason } = state;
@@ -179,6 +201,6 @@ export function useCallController({ peer, mediaStatus, remoteVideoRef }) {
   }, [clearWork, state]);
   useEffect(() => () => clearWork(), [clearWork]);
 
-  return useMemo(() => ({ state, start, resume, end, dispatch, sendMuteState: payload => signaling.send('mute-state', payload) }),
-    [end, resume, signaling, start, state]);
+  return useMemo(() => ({ state, start, resume, end, retryMedia, dispatch, sendMuteState: payload => signaling.send('mute-state', payload) }),
+    [end, resume, retryMedia, signaling, start, state]);
 }
