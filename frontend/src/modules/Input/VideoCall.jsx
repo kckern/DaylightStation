@@ -6,14 +6,10 @@ import { useAudioProbe } from './hooks/useAudioProbe';
 import { useNativeAudioBridge } from './hooks/useNativeAudioBridge';
 import { useWebRTCPeer } from './hooks/useWebRTCPeer';
 import { useCallSignaling } from './hooks/useCallSignaling.js';
-import { useMediaHealth } from './hooks/useMediaHealth.js';
-import getLogger, { configure as configureLogger } from '../../lib/logging/Logger.js';
+import getLogger from '../../lib/logging/Logger.js';
 import './VideoCall.scss';
 
 export default function VideoCall({ deviceId, clear }) {
-  // Configure before creating children: Input/WebRTC children snapshot this
-  // root context and need their own durable TV-side call trace.
-  useMemo(() => configureLogger({ level: 'info', context: { app: 'homeline-tv', sessionLog: true } }), []);
   const logger = useMemo(() => getLogger().child({ component: 'VideoCall', deviceId }), [deviceId]);
 
   // Fetch device-specific input config (preferred camera/mic, audio bridge)
@@ -77,7 +73,7 @@ export default function VideoCall({ deviceId, clear }) {
   const bridgeActive = bridge.status === 'connected';
   const effectiveAudioDevice = bridgeActive ? null : (probe.workingDeviceId || selectedAudioDevice);
 
-  const { videoRef, stream, retry: retryMediaCapture } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice, {
+  const { videoRef, stream } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice, {
     videoResolution: inputConfig?.video_resolution,
     ready: configLoaded,
   });
@@ -105,38 +101,20 @@ export default function VideoCall({ deviceId, clear }) {
   const { connectionState } = peer;
   const [callSession, setCallSession] = useState(null);
   const [remoteMuteState, setRemoteMuteState] = useState({ audioMuted: false, videoMuted: false });
-  const remoteVideoRef = useRef(null);
-  const transportConnected = connectionState === 'connected';
-  const signaling = useCallSignaling({
+  const peerConnected = connectionState === 'connected';
+  const status = peerConnected ? 'connected' : callSession ? 'connecting' : 'waiting';
+  useCallSignaling({
     role: 'tv', session: callSession, peer,
     onEvent: event => {
       if (event.type === 'mute-state') setRemoteMuteState({ audioMuted: !!event.audioMuted, videoMuted: !!event.videoMuted });
-      if (event.type === 'media-retry') retryMediaCapture();
       if (event.type === 'hangup') { peer.reset(); setCallSession(null); clear?.(); }
     },
   });
-  const mediaHealth = useMediaHealth(peer, !!callSession, remoteVideoRef);
-  const peerConnected = transportConnected && mediaHealth.verified
-    && (mediaHealth.audio || mediaHealth.video);
-  const status = peerConnected ? (mediaHealth.audio && mediaHealth.video ? 'connected' : 'degraded')
-    : callSession ? 'connecting' : 'waiting';
-  const callLogFields = useMemo(() => ({
-    callId: callSession?.callId ?? null,
-    attemptId: callSession?.attemptId ?? null,
-    dispatchId: callSession?.dispatchId ?? null,
-    deviceId,
-    tvPeerId: callSession?.peerId ?? null,
-    state: status,
-    peerRevision: signaling.revisionRef.current,
-  }), [callSession, deviceId, signaling.revisionRef, status]);
-  useEffect(() => () => { configureLogger({ context: { sessionLog: false } }); }, []);
-  useEffect(() => {
-    if (!mediaHealth.verified || (!mediaHealth.audio && !mediaHealth.video)) return;
-    signaling.send('media-verified', { audio: mediaHealth.audio, video: mediaHealth.video });
-  }, [mediaHealth, signaling]);
   const [iceError, setIceError] = useState(null);
   const [, setStatusVisible] = useState(true);
   const [callDuration, setCallDuration] = useState(0);
+
+  const remoteVideoRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -167,22 +145,20 @@ export default function VideoCall({ deviceId, clear }) {
 
   // Log status transitions
   useEffect(() => {
-    logger.debug('status-change', { callId: callSession?.callId, attemptId: callSession?.attemptId,
-      dispatchId: callSession?.dispatchId, state: status, peerRevision: signaling.revisionRef.current,
-      peerConnected, bridgeStatus: bridge.status });
-  }, [logger, status, peerConnected, bridge.status, callSession?.callId,
-    callSession?.attemptId, callSession?.dispatchId, signaling.revisionRef]);
+    logger.debug('status-change', { status, peerConnected, bridgeStatus: bridge.status });
+  }, [logger, status, peerConnected, bridge.status]);
 
-  // The phone owns the bounded ICE recovery ladder; the TV stays available for
-  // its ICE-restart or full-peer-rebuild offer instead of tearing down early.
+  // React to ICE connection failures — auto-clear after 10s
   useEffect(() => {
     if (connectionState === 'failed') {
       logger.error('ice-connection-failed', { deviceId });
       setIceError('Connection lost');
+      const timer = setTimeout(() => clear(), 10000);
+      return () => clearTimeout(timer);
     } else if (connectionState === 'connected') {
       setIceError(null);
     }
-  }, [connectionState, deviceId, logger]);
+  }, [connectionState, clear, deviceId, logger]);
 
   // Auto-hide status overlay 3s after connecting
   useEffect(() => {
@@ -234,16 +210,7 @@ export default function VideoCall({ deviceId, clear }) {
     const ctx = new AudioContext({ sampleRate: 48000 });
     // Android WebView starts AudioContext suspended — resume or
     // onaudioprocess never fires and AEC never gets reference data.
-    let resumeRetry = null;
-    const resumeContext = (attempt = 0) => ctx.resume()
-      .then(() => logger.info('audio-context.resume.succeeded', { ...callLogFields, attempt, outcome: 'ok' }))
-      .catch(error => {
-        if (attempt < 1) {
-          logger.warn('audio-context.resume.retry', { ...callLogFields, attempt, reason: error.name, outcome: 'retrying' });
-          resumeRetry = setTimeout(() => void resumeContext(1), 150);
-        } else logger.error('audio-context.resume.failed', { ...callLogFields, attempt, reason: error.name, outcome: 'failed' });
-      });
-    void resumeContext();
+    ctx.resume().catch(() => {});
     const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
 
     // ScriptProcessor to extract frames. Deprecated but universally supported
@@ -266,45 +233,31 @@ export default function VideoCall({ deviceId, clear }) {
       bridge.feedReference(copy);
     };
 
-    logger.info('aec-ref-tap-started', { ...callLogFields, audioTracks: audioTracks.length });
+    logger.info('aec-ref-tap-started', { audioTracks: audioTracks.length });
     refTapRef.current = { ctx, source, processor, muteGain };
 
     return () => {
       processor.onaudioprocess = null;
-      clearTimeout(resumeRetry);
       source.disconnect();
       processor.disconnect();
       muteGain.disconnect();
       ctx.close().catch(() => {});
       refTapRef.current = null;
-      logger.info('aec-ref-tap-stopped', callLogFields);
+      logger.info('aec-ref-tap-stopped');
     };
     // narrowed to bridge.feedReference (the stable method), not the bridge object — this is a
     // live WebRTC echo-cancellation audio tap; real-time audio/hardware capture code.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [peer.remoteStream, bridgeActive, bridge.feedReference, callLogFields, logger]);
+  }, [peer.remoteStream, bridgeActive, bridge.feedReference, logger]);
 
   // Attach remote stream to video element
   useEffect(() => {
-    let retry = null;
     if (remoteVideoRef.current && peer.remoteStream) {
-      const element = remoteVideoRef.current;
       const tracks = peer.remoteStream.getTracks();
-      logger.info('remote-stream-attached', { ...callLogFields,
-        tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
-      element.srcObject = peer.remoteStream;
-      const play = (attempt = 0) => element.play()
-        .then(() => logger.info('remote-playback.succeeded', { ...callLogFields, attempt, outcome: 'ok' }))
-        .catch(error => {
-          if (attempt < 1) {
-            logger.warn('remote-playback.retry', { ...callLogFields, attempt, reason: error.name, outcome: 'retrying' });
-            retry = setTimeout(() => void play(1), 150);
-          } else logger.error('remote-playback.failed', { ...callLogFields, attempt, reason: error.name, outcome: 'failed' });
-        });
-      void play();
+      logger.info('remote-stream-attached', { tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
+      remoteVideoRef.current.srcObject = peer.remoteStream;
     }
-    return () => clearTimeout(retry);
-  }, [callLogFields, logger, peer.remoteStream]);
+  }, [logger, peer.remoteStream]);
 
   // Re-sync local camera stream to video element.
   // useWebcamStream sets srcObject on stream acquisition, but if the
@@ -319,13 +272,12 @@ export default function VideoCall({ deviceId, clear }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' || e.key === 'XF86Back') {
-        signaling.send('hangup', { reason: 'tv_exit' });
         clear?.();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [clear, signaling]);
+  }, [clear]);
 
   const formatDuration = (s) => {
     const m = Math.floor(s / 60);
@@ -369,7 +321,6 @@ export default function VideoCall({ deviceId, clear }) {
             {status === 'waiting' && 'Home Line \u2014 Waiting'}
             {status === 'connecting' && 'Connecting...'}
             {status === 'connected' && 'Connected'}
-            {status === 'degraded' && (mediaHealth.audio ? 'Audio-only call' : 'Video-only call')}
           </span>
         )}
         {peerConnected && (

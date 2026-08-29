@@ -204,12 +204,13 @@ describe('AgendaStatusBoard render', () => {
       ],
     } });
     render(<AgendaStatusBoard kids={KIDS} day="2026-08-24" />);
-    await waitFor(() => expect(screen.getByTestId('agenda-status-board')).toBeTruthy());
+    await waitFor(() => {
+      expect(screen.getByText('1 of 3')).toBeTruthy();
+      expect(screen.getByText('0 of 3')).toBeTruthy();
+    });
     // ONE readout per card, in the corner. The status WORD used to sit there
     // with the count repeated under the discs — two lines for one fact, and
     // the word said nothing the filled discs did not already show.
-    expect(screen.getByText('1 of 3')).toBeTruthy();      // Learner One: civilization passed
-    expect(screen.getByText('0 of 3')).toBeTruthy();      // Learner Two: nothing yet
     expect(screen.queryByText('In progress')).toBeNull();
     expect(screen.queryByText('Not started')).toBeNull();
     // Read-only: no buttons, no links.

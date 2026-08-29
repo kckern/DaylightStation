@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import { fetchSession, sendRuleCommand } from '../../platform/api/sessionClient.js';
-import ImageDecoderDisplay from '../../platform/ui/ImageDecoderDisplay.jsx';
 import Scoreboard from '../../platform/ui/Scoreboard.jsx';
 import SegmentedSecretText from '../../platform/ui/SegmentedSecretText.jsx';
 import TimerRing from '../../platform/ui/TimerRing.jsx';
@@ -13,20 +12,6 @@ function CharadesTimer({ deadline, durationMs, onExpire }) {
   const seconds = deadline ? Math.max(0, (deadline - Date.now()) / 1000) : durationMs / 1000;
   const countdown = useCountdown({ seconds, running: true, onExpire });
   return <div className="charades__timer"><TimerRing progress={countdown.progress} /><strong>{Math.ceil(countdown.remaining)}</strong></div>;
-}
-
-function SecretClue({ challenge }) {
-  const image = challenge?.decoder?.image;
-  if (image) {
-    return (
-      <ImageDecoderDisplay
-        src={image}
-        alt={`Charades image clue: ${challenge?.prompt || 'secret clue'}`}
-        seed={challenge?.id || challenge?.prompt || image}
-      />
-    );
-  }
-  return <SegmentedSecretText text={challenge?.prompt || ''} label="Charades clue" />;
 }
 
 export default function Charades({ teams, sessionId, onFinished }) {
@@ -59,6 +44,7 @@ export default function Charades({ teams, sessionId, onFinished }) {
     [teams, state?.performer_id],
   );
   const performerName = performer?.name || state?.performer_id || 'Performer';
+  const prompt = state?.challenge?.prompt || '';
 
   if (error) return <div className="party-games__error">{error}</div>;
   if (!state || !definition) return <TitleCard title="Charades" subtitle="Choosing a secret…" />;
@@ -81,7 +67,7 @@ export default function Charades({ teams, sessionId, onFinished }) {
       {state.phase === 'challenge-ready' && (
         <section className="charades__center">
           <p className="charades__eyebrow">Secret clue</p>
-          <SecretClue challenge={state.challenge} />
+          <SegmentedSecretText text={prompt} label="Charades clue" />
           <button type="button" autoFocus onClick={() => command({ type: 'challenge.start' })}>Start acting</button>
         </section>
       )}
@@ -89,7 +75,7 @@ export default function Charades({ teams, sessionId, onFinished }) {
       {state.phase === 'performing' && (
         <section className="charades__center charades__performing">
           <CharadesTimer deadline={state.deadline} durationMs={definition.timer_ms} onExpire={() => command({ type: 'timer.expire' })} />
-          <SecretClue challenge={state.challenge} />
+          <SegmentedSecretText text={prompt} label="Charades clue" />
           <p className="charades__rule">Act it out — no talking, spelling, or pointing at objects.</p>
           <button type="button" onClick={() => command({ type: 'challenge.finish' })}>Stop timer</button>
         </section>

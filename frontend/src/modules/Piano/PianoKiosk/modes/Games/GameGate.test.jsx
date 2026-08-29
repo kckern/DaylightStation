@@ -341,6 +341,18 @@ describe('GameGate — contract 1: the level persists per learner', () => {
     const config = { repertoire: REPERTOIRE, startLevel: BUILT_IN_FLOOR.id };
     expect(stateFor('miles', config).levelId).toBe(BUILT_IN_FLOOR.id);
   });
+
+  it('resets a saved rung when the household changes stateVersion', () => {
+    const config = { repertoire: REPERTOIRE, startLevel: 'L1', stateVersion: 'piano-challenge-sp4' };
+    seedGateState('milo', {
+      levelId: 'L3', failuresAtLevel: 2, cleanPasses: 1, lastMaterialId: null, pickIndex: 4,
+    });
+
+    expect(stateFor('milo', config)).toEqual({
+      levelId: 'L1', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
+      stateVersion: 'piano-challenge-sp4',
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,27 +3,17 @@ import { useEffect, useRef, useState } from 'react';
 export function useMediaHealth(peer, enabled, videoElementRef) {
   const [health, setHealth] = useState({ audio: false, video: false, verified: false });
   const previousRef = useRef({ audio: 0, video: 0, frames: 0 });
-  const measuredPeerRef = useRef(null);
   const peerRef = useRef(peer);
   peerRef.current = peer;
 
   useEffect(() => {
-    if (!enabled) {
-      previousRef.current = { audio: 0, video: 0, frames: 0 };
-      measuredPeerRef.current = null;
-      setHealth({ audio: false, video: false, verified: false });
-      return undefined;
-    }
+    if (!enabled) { setHealth({ audio: false, video: false, verified: false }); return undefined; }
     let cancelled = false;
     const startedAt = Date.now();
     const check = async () => {
       const currentPeer = peerRef.current;
       const pc = currentPeer.pcRef.current;
       if (!pc) return;
-      if (measuredPeerRef.current !== pc) {
-        measuredPeerRef.current = pc;
-        previousRef.current = { audio: 0, video: 0, frames: 0 };
-      }
       const totals = { audio: 0, video: 0 };
       const stats = await pc.getStats();
       stats.forEach(report => {

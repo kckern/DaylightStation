@@ -39,18 +39,16 @@ export function useIndependentMedia() {
       } catch (error) { videoError = error; }
     }
     if (videoError) { errors.video = classify(videoError); loggerRef.current.warn('media.video.failed', { reason: errors.video }); }
-    if (current !== generation.current) { tracks.forEach(track => track.stop()); return null; }
+    if (current !== generation.current) { tracks.forEach(track => track.stop()); return; }
     const stream = new MediaStream(tracks);
     streamRef.current = stream;
     setResult({ status: tracks.length ? 'ready' : 'failed', stream, errors });
     loggerRef.current.info('media.acquired', { audio: stream.getAudioTracks().length, video: stream.getVideoTracks().length });
-    if (!tracks.length) throw new Error('No camera or microphone could be acquired');
-    return stream;
   }, []);
 
   useEffect(() => {
     const generationRef = generation;
-    void acquire().catch(() => {});
+    acquire();
     return () => { generationRef.current++; streamRef.current?.getTracks().forEach(track => track.stop()); };
   }, [acquire]);
   return { ...result, retry: acquire };

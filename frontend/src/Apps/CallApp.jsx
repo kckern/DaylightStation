@@ -1,29 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DaylightAPI } from '../lib/api.mjs';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
-import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
+import getLogger from '../lib/logging/Logger.js';
 import { useWebRTCPeer } from '../modules/Input/hooks/useWebRTCPeer.js';
 import { useIndependentMedia } from '../modules/Input/hooks/useIndependentMedia.js';
 import { useCallController } from './call/useCallController.js';
 import './CallApp.scss';
 
 const BUSY_COPY = 'This TV is already in a call.';
-const mediaKindErrorCopy = (kind, reason) => {
-  const label = kind === 'audio' ? 'Microphone' : 'Camera';
-  if (reason === 'permission_denied') return `${label} access was denied. Allow access, then retry media.`;
-  if (reason === 'hardware_missing') return `No usable ${kind === 'audio' ? 'microphone' : 'camera'} was found.`;
-  if (reason === 'device_busy') return `The ${kind === 'audio' ? 'microphone' : 'camera'} is already in use by another app.`;
-  if (reason === 'constraints_failed') return `${label} settings are not supported by this device.`;
-  return `${label} could not be started.`;
-};
-const mediaErrorCopy = errors => {
-  const reasons = Object.values(errors || {});
-  if (reasons.includes('permission_denied')) return 'Camera or microphone access was denied. Allow access, then retry.';
-  if (reasons.includes('hardware_missing')) return 'No usable camera or microphone was found.';
-  if (reasons.includes('device_busy')) return 'The camera or microphone is already in use by another app.';
-  if (reasons.includes('constraints_failed')) return 'This device does not support the requested media settings.';
-  return 'Camera and microphone could not be started.';
-};
 const statusCopy = state => ({
   reserving: 'Reserving the TV…', probing: 'Checking the TV…', waking: state.reason === 'hard_recovery'
     ? 'Restarting the TV…' : state.reason === 'soft_recovery' ? 'Reloading the call app…' : 'Waking the TV…',
@@ -34,9 +18,6 @@ const statusCopy = state => ({
 
 export default function CallApp() {
   useDocumentTitle('Call');
-  // Logger children snapshot the root context. Configure this dedicated,
-  // durable phone session before creating any call children.
-  useMemo(() => configureLogger({ level: 'info', context: { app: 'homeline-phone', sessionLog: true } }), []);
   const logger = useMemo(() => getLogger().child({ component: 'CallApp' }), []);
   const media = useIndependentMedia();
   const peer = useWebRTCPeer(media.stream);
@@ -47,21 +28,8 @@ export default function CallApp() {
   const [hardConfirm, setHardConfirm] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const resumeCheckedRef = useRef(false);
-  const controller = useCallController({ peer, mediaStatus: media.status,
-    retryLocalMedia: media.retry, remoteVideoRef });
+  const controller = useCallController({ peer, mediaStatus: media.status, remoteVideoRef });
   const { state } = controller;
-  const callLogFields = useMemo(() => ({
-    callId: state.callId ?? null,
-    attemptId: state.attemptId ?? null,
-    dispatchId: state.dispatchId ?? null,
-    deviceId: state.target?.id ?? null,
-    phonePeerId: state.session?.peerId ?? null,
-    state: state.value,
-    reason: state.reason ?? null,
-    peerRevision: state.peerRevision ?? null,
-  }), [state]);
-
-  useEffect(() => () => { configureLogger({ context: { sessionLog: false } }); }, []);
 
   const loadDevices = useCallback(() => {
     setDevices({ status: 'loading', items: [], error: null });
@@ -95,16 +63,16 @@ export default function CallApp() {
     if (!element || !peer.remoteStream || peer.remoteStream.getTracks().length === 0) return undefined;
     element.srcObject = peer.remoteStream;
     let retry = null;
-    const play = (attempt = 0) => element.play().then(() => logger.info('media.playback.succeeded', { ...callLogFields, attempt, outcome: 'ok' }))
+    const play = (attempt = 0) => element.play().then(() => logger.info('media.playback.succeeded', { attempt }))
       .catch(error => {
         if (attempt < 1) {
-          logger.warn('media.playback.retry', { ...callLogFields, attempt, reason: error.name, outcome: 'retrying' });
+          logger.warn('media.playback.retry', { reason: error.name });
           retry = setTimeout(() => void play(1), 150);
-        } else logger.error('media.playback.failed', { ...callLogFields, attempt, reason: error.name, outcome: 'failed' });
+        } else logger.error('media.playback.failed', { reason: error.name });
       });
     void play();
     return () => clearTimeout(retry);
-  }, [callLogFields, logger, peer.remoteStream]);
+  }, [logger, peer.remoteStream]);
 
   useEffect(() => { primaryActionRef.current?.focus(); }, [state.value, hardConfirm]);
   useEffect(() => {
@@ -126,22 +94,13 @@ export default function CallApp() {
     controller.sendMuteState({ audioMuted: media.stream.getAudioTracks().every(item => !item.enabled),
       videoMuted: media.stream.getVideoTracks().every(item => !item.enabled) });
   };
-  const retryMediaAccess = async () => {
-    try {
-      await media.retry();
-      controller.dispatch({ type: 'DISMISS' });
-    } catch (error) {
-      logger.warn('media.retry.failed', { reason: error.message });
-    }
-  };
-  const exitCallScreen = () => window.history.back();
 
   return (
     <main className={`call-app ${inCall ? 'call-app--connected' : active ? 'call-app--connecting' : 'call-app--preview'}`}>
       <section className={`call-app__local ${inCall ? 'call-app__local--pip' : 'call-app__local--inset'}`} aria-label="Your camera preview">
         <video ref={localVideoRef} autoPlay muted playsInline className="call-app__video call-app__video--tall" />
         {media.status === 'loading' && <p className="call-app__camera-loading">Starting camera and microphone…</p>}
-        {media.errors.video && <p className="call-app__camera-error">{mediaKindErrorCopy('video', media.errors.video)}</p>}
+        {media.errors.video && <p className="call-app__camera-error">Camera unavailable: {media.errors.video.replaceAll('_', ' ')}</p>}
       </section>
 
       <section className="call-app__remote" aria-label="TV camera">
@@ -154,7 +113,7 @@ export default function CallApp() {
           {!state.controlConnected && <div className="call-app__status-text call-app__status-text--error" role="status">Controls reconnecting; media can continue.</div>}
           <button className="call-app__control-btn" onClick={() => toggleTrack('audio')} disabled={!media.stream?.getAudioTracks().length}>Microphone</button>
           <button className="call-app__control-btn" onClick={() => toggleTrack('video')} disabled={!media.stream?.getVideoTracks().length}>Camera</button>
-          {state.value === 'degraded' && <button className="call-app__device-btn" onClick={controller.retryMedia}>Retry media</button>}
+          {state.value === 'degraded' && <button className="call-app__device-btn" onClick={() => controller.dispatch({ type: 'RETRY_MEDIA', attemptId: state.attemptId })}>Retry media</button>}
           <button className="call-app__hangup" onClick={() => controller.end('user_hangup')}>End call</button>
         </section>
       ) : (
@@ -175,9 +134,8 @@ export default function CallApp() {
           )}
 
           {state.value === 'occupied' && <button ref={primaryActionRef} className="call-app__device-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button>}
-          {state.value === 'failed' && <div role="alert" className="call-app__device-list"><p>{state.reason === 'boot_failed' ? mediaErrorCopy(media.errors) : state.error}</p>
-            {state.reason === 'boot_failed' && <button ref={primaryActionRef} className="call-app__device-btn" onClick={retryMediaAccess}>Retry media</button>}
-            <button ref={state.reason === 'boot_failed' ? undefined : primaryActionRef} className="call-app__device-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button></div>}
+          {state.value === 'failed' && <div role="alert" className="call-app__device-list"><p>{state.error}</p>
+            <button ref={primaryActionRef} className="call-app__device-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button></div>}
 
           {['idle', 'ended'].includes(state.value) && (
             <div className="call-app__device-list">
@@ -188,14 +146,8 @@ export default function CallApp() {
                 className="call-app__device-btn" disabled={media.status !== 'ready'} onClick={() => controller.start(device)}>
                 {devices.items.length === 1 ? `Call ${device.name || device.id}` : device.name || device.id}
               </button>)}
-              {media.status === 'failed' && <div role="alert"><p>{mediaErrorCopy(media.errors)}</p><button className="call-app__device-btn" onClick={retryMediaAccess}>Retry media</button></div>}
-              {media.status === 'ready' && media.errors.audio && <p role="status">
-                {mediaKindErrorCopy('audio', media.errors.audio)} You can continue with video only.
-              </p>}
-              {media.status === 'ready' && media.errors.video && <p role="status">
-                {mediaKindErrorCopy('video', media.errors.video)} You can continue with audio only.
-              </p>}
-              <button className="call-app__device-btn" onClick={exitCallScreen}>Exit call screen</button>
+              {media.status === 'failed' && <div role="alert"><p>Camera and microphone permission is required to call.</p><button className="call-app__device-btn" onClick={media.retry}>Retry media</button></div>}
+              {media.status === 'ready' && (media.errors.audio || media.errors.video) && <p role="status">You can call with {media.errors.audio ? 'video only' : 'audio only'}.</p>}
             </div>
           )}
 

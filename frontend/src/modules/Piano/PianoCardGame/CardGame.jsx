@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import GamingRuntime from '../../Gaming/platform/runtime/GamingRuntime.jsx';
+import { GAMING_PRESENTERS } from '../../Gaming/experiences/presenterRegistry.js';
 import { createPianoChordProvider } from '../challenge/provider/createPianoChordProvider.jsx';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import { resolvePianoPlayerName } from '../game-platform/identity/playerName.js';
@@ -23,8 +24,10 @@ export function CardGame({ currentUser = null, playerName = null, onDeactivate =
   return (
     <GamingRuntime
       gameId="card-game"
+      surfaceId="piano"
       participants={participants}
       providers={providers}
+      presenters={GAMING_PRESENTERS}
       onClose={onDeactivate}
     />
   );
