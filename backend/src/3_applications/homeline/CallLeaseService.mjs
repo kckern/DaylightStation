@@ -290,21 +290,35 @@ export class CallLeaseService {
     const record = [...this.#credentials.values()].find(item => !item.revoked && item.clientId === clientId
       && item.callId === message.callId && item.role === message.role && item.peerId === message.peerId);
     const lease = record && this.#byCall.get(record.callId);
+    // Rejection details deliberately exclude the payload: SDP and ICE candidates
+    // are secrets, but the lease/revision/code are the evidence needed to
+    // diagnose a stale reconnect or an out-of-phase peer.
+    const reject = code => {
+      if (lease) {
+        this.#event('signaling.rejected', lease, {
+          role: message.role,
+          peerRevision: Number.isInteger(Number(message.revision)) ? Number(message.revision) : null,
+          reason: code,
+          outcome: 'rejected',
+        });
+      }
+      return { ok: false, code };
+    };
     if (!lease || lease.topic !== message.topic || TERMINAL.has(lease.state)
-      || message.attemptId !== lease.attemptId) return { ok: false, code: 'UNAUTHORIZED_SIGNAL' };
-    if (!SIGNAL_BY_ROLE[message.role]?.has(message.type)) return { ok: false, code: 'UNEXPECTED_SIGNAL' };
+      || message.attemptId !== lease.attemptId) return reject('UNAUTHORIZED_SIGNAL');
+    if (!SIGNAL_BY_ROLE[message.role]?.has(message.type)) return reject('UNEXPECTED_SIGNAL');
     const revision = Number(message.revision);
     const sequence = Number(message.sequence);
     if (!Number.isInteger(revision) || revision < 0 || !Number.isInteger(sequence) || sequence < 0) {
-      return { ok: false, code: 'INVALID_SIGNAL' };
+      return reject('INVALID_SIGNAL');
     }
     const key = `${message.role}:${revision}`;
     const last = lease.sequence.get(key) ?? -1;
-    if (sequence <= last) return { ok: false, code: 'STALE_SIGNAL' };
+    if (sequence <= last) return reject('STALE_SIGNAL');
     const currentRevision = lease.revision.get(message.role) ?? revision;
-    if (revision < currentRevision) return { ok: false, code: 'STALE_REVISION' };
+    if (revision < currentRevision) return reject('STALE_REVISION');
     const phaseError = this.#validatePhase(lease, message, revision);
-    if (phaseError) return { ok: false, code: phaseError };
+    if (phaseError) return reject(phaseError);
     lease.revision.set(message.role, revision);
     lease.sequence.set(key, sequence);
     lease.participants.set(message.role, { clientId, peerId: message.peerId, lastSeenAt: this.#clock() });

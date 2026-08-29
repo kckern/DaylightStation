@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DaylightAPI } from '../lib/api.mjs';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
-import getLogger from '../lib/logging/Logger.js';
+import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import { useWebRTCPeer } from '../modules/Input/hooks/useWebRTCPeer.js';
 import { useIndependentMedia } from '../modules/Input/hooks/useIndependentMedia.js';
 import { useCallController } from './call/useCallController.js';
@@ -34,6 +34,9 @@ const statusCopy = state => ({
 
 export default function CallApp() {
   useDocumentTitle('Call');
+  // Logger children snapshot the root context. Configure this dedicated,
+  // durable phone session before creating any call children.
+  useMemo(() => configureLogger({ level: 'info', context: { app: 'homeline-phone', sessionLog: true } }), []);
   const logger = useMemo(() => getLogger().child({ component: 'CallApp' }), []);
   const media = useIndependentMedia();
   const peer = useWebRTCPeer(media.stream);
@@ -47,6 +50,18 @@ export default function CallApp() {
   const controller = useCallController({ peer, mediaStatus: media.status,
     retryLocalMedia: media.retry, remoteVideoRef });
   const { state } = controller;
+  const callLogFields = useMemo(() => ({
+    callId: state.callId ?? null,
+    attemptId: state.attemptId ?? null,
+    dispatchId: state.dispatchId ?? null,
+    deviceId: state.target?.id ?? null,
+    phonePeerId: state.session?.peerId ?? null,
+    state: state.value,
+    reason: state.reason ?? null,
+    peerRevision: state.peerRevision ?? null,
+  }), [state]);
+
+  useEffect(() => () => { configureLogger({ context: { sessionLog: false } }); }, []);
 
   const loadDevices = useCallback(() => {
     setDevices({ status: 'loading', items: [], error: null });
@@ -80,16 +95,16 @@ export default function CallApp() {
     if (!element || !peer.remoteStream || peer.remoteStream.getTracks().length === 0) return undefined;
     element.srcObject = peer.remoteStream;
     let retry = null;
-    const play = (attempt = 0) => element.play().then(() => logger.info('media.playback.succeeded', { attempt }))
+    const play = (attempt = 0) => element.play().then(() => logger.info('media.playback.succeeded', { ...callLogFields, attempt, outcome: 'ok' }))
       .catch(error => {
         if (attempt < 1) {
-          logger.warn('media.playback.retry', { reason: error.name });
+          logger.warn('media.playback.retry', { ...callLogFields, attempt, reason: error.name, outcome: 'retrying' });
           retry = setTimeout(() => void play(1), 150);
-        } else logger.error('media.playback.failed', { reason: error.name });
+        } else logger.error('media.playback.failed', { ...callLogFields, attempt, reason: error.name, outcome: 'failed' });
       });
     void play();
     return () => clearTimeout(retry);
-  }, [logger, peer.remoteStream]);
+  }, [callLogFields, logger, peer.remoteStream]);
 
   useEffect(() => { primaryActionRef.current?.focus(); }, [state.value, hardConfirm]);
   useEffect(() => {
