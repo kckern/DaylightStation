@@ -21,8 +21,8 @@ import { validateStaffScheme } from '../../PianoChessGame/staffAddress.js';
 export function buildScheme(resolved, { size = 8, seed = 0 } = {}) {
   const vocabulary = resolved?.vocabulary ?? 'staff';
   const clefs = resolved?.clefs ?? 'grand';
-  const x = axisValues(vocabulary, 'x', resolved?.x, size, seed, clefs);
-  const y = axisValues(vocabulary, 'y', resolved?.y, size, (seed + 0x9E3779B9) >>> 0, clefs);
+  const x = axisValues(vocabulary, 'x', resolved?.x, size, seed, clefs, resolved?.texture);
+  const y = axisValues(vocabulary, 'y', resolved?.y, size, (seed + 0x9E3779B9) >>> 0, clefs, resolved?.texture);
 
   // Two independent draws, so the axes do not move together across turns —
   // shuffling both with one seed re-deals the board while keeping every
@@ -64,12 +64,22 @@ export function schemeFor(resolved, { size = 8, seed = 0, fallback = null } = {}
   return { ...buildScheme(resolved, { size, seed }), source: 'built' };
 }
 
-function axisValues(vocabulary, axis, config, size, seed, clefs) {
+export function ergonomicStaffShape(root, texture = 'single', upper = true) {
+  if (texture === 'single') return root;
+  const intervals = texture === 'triad' ? [0, 4, 7] : [0, 7];
+  return upper ? intervals.map((interval) => root + interval) : intervals.map((interval) => root - interval).sort((a, b) => a - b);
+}
+
+function axisValues(vocabulary, axis, config, size, seed, clefs, texture = 'single') {
   const pool = materialFor(vocabulary, axis, config?.tier ?? 2, clefs);
   // Take from the LOW end so a wider pool stays anchored where the narrower one
   // was: raising a tier should add material a player has not met, not move the
   // material they have.
-  const taken = pool.slice(0, size);
+  const other = vocabulary === 'staff' ? materialFor(vocabulary, axis === 'x' ? 'y' : 'x', config?.tier ?? 2, clefs) : [];
+  const upper = vocabulary !== 'staff' || Math.min(...pool) > Math.min(...other);
+  const taken = pool.slice(0, size).map((value) => (
+    vocabulary === 'staff' ? ergonomicStaffShape(value, texture, upper) : value
+  ));
   if (config?.order === 'shuffled') return shuffle(taken, seed).items;
   // Reverse is the same scale read downward — every interval still where it was,
   // so it is a real step up from sequential without throwing away the structure
@@ -84,6 +94,7 @@ function schemeId(resolved, seed) {
   const parts = [
     resolved?.vocabulary ?? 'staff',
     resolved?.vocabulary === 'chords' ? null : (resolved?.clefs ?? 'grand'),
+    resolved?.vocabulary === 'staff' && resolved?.texture !== 'single' ? resolved?.texture : null,
     `x${resolved?.x?.tier ?? 2}${orderMark(resolved?.x?.order)}`,
     `y${resolved?.y?.tier ?? 2}${orderMark(resolved?.y?.order)}`,
     resolved?.vocabulary === 'chords' && resolved?.inversions && resolved.inversions !== 'any'

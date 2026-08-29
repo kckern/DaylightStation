@@ -14,11 +14,11 @@ const CONFIG = {
 };
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
-function appWith({ engine, configService, recordStore, analyst, commentaryService, logger = silentLogger }) {
+function appWith({ engine, configService, recordStore, analyst, commentaryService, boardGameDayService, logger = silentLogger }) {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/piano-games/chess', createChessRouter({
-    engine, configService, recordStore, analyst, commentaryService, logger,
+    engine, configService, recordStore, analyst, commentaryService, boardGameDayService, logger,
   }));
   return app;
 }
@@ -192,12 +192,21 @@ describe('user id validation (path traversal)', () => {
 describe('POST /api/v1/piano-games/chess/games', () => {
   it('stores a record for a real user', async () => {
     const writes = [];
-    const app = appWith({ engine: {}, configService: stubConfig(), recordStore: { save: (u, r) => writes.push([u, r]) } });
+    const recordDay = vi.fn(() => ({ studyDate: '2026-08-28', completedGames: 3, counted: true }));
+    const app = appWith({
+      engine: {}, configService: stubConfig(),
+      recordStore: { save: (u, r) => writes.push([u, r]) },
+      boardGameDayService: { record: recordDay },
+    });
     const res = await request(app).post('/api/v1/piano-games/chess/games?user=learner4')
-      .send({ result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000 });
+      .send({ game_id: 'game-1', completed: true, result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000 });
     expect(res.status).toBe(201);
     expect(writes[0][0]).toBe('learner4');
     expect(writes[0][1]).toMatchObject({ result: 'win', moves: 24 });
+    expect(recordDay).toHaveBeenCalledWith(expect.objectContaining({
+      learnerId: 'learner4', gameId: 'chess', gameSessionId: 'game-1', completed: true, result: 'win',
+    }));
+    expect(res.body.boardGameDay).toMatchObject({ completedGames: 3, counted: true });
   });
 
   it('refuses without a user, so nothing is filed anonymously', async () => {

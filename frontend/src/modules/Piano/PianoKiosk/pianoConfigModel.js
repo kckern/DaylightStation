@@ -85,6 +85,9 @@ export const PIANO_CONFIG_DEFAULTS = {
   // this projection does not name is dropped in silence — a gate whose config
   // never arrives is a gate that is permanently off while the YAML says on.
   gameGate: { enabled: false },
+  // Managed board vocabulary and its daily/per-turn pressure. Independent of
+  // opponent strength and of the PianoChallenge ladder; off unless configured.
+  gameAddressing: { enabled: false },
 };
 
 /** Resolve screensaver config: per-piano values override shared, over defaults. */
@@ -185,5 +188,10 @@ export function resolvePianoConfig(raw, pianoId) {
     display: { ...PIANO_CONFIG_DEFAULTS.display, ...(shared.display || {}), ...(p.display || {}) },
     gameLimit: { ...PIANO_CONFIG_DEFAULTS.gameLimit, ...(shared.gameLimit || {}), ...(p.gameLimit || {}) },
     gameGate: { ...PIANO_CONFIG_DEFAULTS.gameGate, ...(shared.gameGate || {}), ...(p.gameGate || {}) },
+    gameAddressing: {
+      ...PIANO_CONFIG_DEFAULTS.gameAddressing,
+      ...(shared.gameAddressing || {}),
+      ...(p.gameAddressing || {}),
+    },
   };
 }

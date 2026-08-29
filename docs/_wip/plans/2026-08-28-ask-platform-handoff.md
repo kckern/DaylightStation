@@ -167,7 +167,7 @@ and dirty. Its current configuration is legacy tier-shaped and the bank lacks
 the requested chromatic/harmonic-minor/melodic-minor/warm-up content. Do not
 write those live files or deploy from that checkout before reconciling a clean,
 compatible source release. The schema-derived reference is now tracked at
-`docs/reference/piano/piano-challenge.md`; its generated section is pinned by
+`docs/reference/piano/challenge.md`; its generated section is pinned by
 `scripts/render-piano-challenge-grammar-doc.test.mjs` to prevent drift from
 `askSchema.js`.
 

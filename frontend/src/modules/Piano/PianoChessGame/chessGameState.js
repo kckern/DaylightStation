@@ -43,7 +43,7 @@ const PROMOTION_PIECE = 'q';
  * would restart from turn zero — persistence must carry `seed` and the ply count
  * with the position, not just the FEN.
  */
-function playerTurnOf(ply, playerColor) {
+export function playerTurnOf(ply, playerColor) {
   // White moves on even plies, so a White turn spans [2n, 2n+1]. Black moves on
   // odd plies, so a Black turn spans [2n+1, 2n+2] — and ply 0, where Black is
   // still waiting for the opening move, has to share the map of the turn it
@@ -52,7 +52,7 @@ function playerTurnOf(ply, playerColor) {
   return Math.max(0, Math.floor((ply - 1) / 2));
 }
 
-function schemeForPly(state, ply) {
+export function schemeForPly(state, ply) {
   if (!state.shuffleEachTurn) return state.baseScheme;
   return shuffleChordScheme(state.baseScheme, (state.seed + playerTurnOf(ply, state.playerColor)) >>> 0);
 }

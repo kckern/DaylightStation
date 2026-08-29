@@ -20,6 +20,7 @@ import MatchGateContext from './MatchGateContext.js';
 import { gameSubRouteTarget } from './gameSubRoute.js';
 import usePianoChallengeProfile from '../../../ask/usePianoChallengeProfile.js';
 import { creditPianoChallengeGameTime } from '../../../ask/pianoChallengeEarnedTime.js';
+import useBoardGameDay from './useBoardGameDay.js';
 
 /**
  * Games mode — picks a registered piano game and mounts it fullscreen, fed by the
@@ -158,6 +159,7 @@ function GameHost() {
   // per child under exactly this key.
   const learnerId = pianoUser?.currentUser ?? null;
   const challengeProfile = usePianoChallengeProfile(learnerId);
+  const boardGameDay = useBoardGameDay(learnerId, logger);
   // Which physical kiosk this browser IS, not which app it is running. A shared
   // literal ('piano-kiosk') cannot tell a wall tablet from a dev laptop, so two
   // clients stamp the same id: every per-device log query merges them, and the
@@ -185,6 +187,8 @@ function GameHost() {
   // once. Both dimensions are absent by default, which reads as "everyone,
   // everywhere", so an unscoped block behaves exactly as it always did.
   const gateEnabled = gateAppliesTo(config.gameGate, { learnerId, gameId });
+  const learnerGateConfig = gateConfigForLearner(config.gameGate, learnerId);
+  const dayProgressRequired = learnerGateConfig?.dailyEscalation?.enabled === true;
   const [gatePending, setGatePending] = useState(gateEnabled);
   // Bumped on every match boundary and used as the game's `key`, so a rematch
   // is a genuine REMOUNT — a game that kept its board across "play again"
@@ -228,14 +232,19 @@ function GameHost() {
    * restart behaviour exactly, expressed as a fresh match.
    */
   const requestRematch = useCallback(() => {
-    logger.info('piano.game-rematch', { game: gameId, gated: gateEnabled });
-    if (gateEnabled) { setGatePending(true); return; }
-    setMatchId((value) => value + 1);
-  }, [gameId, gateEnabled, logger]);
+    const proceed = () => {
+      logger.info('piano.game-rematch', { game: gameId, gated: gateEnabled });
+      if (gateEnabled) { setGatePending(true); return; }
+      setMatchId((value) => value + 1);
+    };
+    const pending = boardGameDay.waitForCompletion();
+    if (pending) pending.finally(proceed);
+    else proceed();
+  }, [boardGameDay, gameId, gateEnabled, logger]);
 
   const matchGate = useMemo(
-    () => ({ armed: gateEnabled, requestRematch }),
-    [gateEnabled, requestRematch],
+    () => ({ armed: gateEnabled, requestRematch, registerCompletion: boardGameDay.registerCompletion }),
+    [boardGameDay.registerCompletion, gateEnabled, requestRematch],
   );
 
   /**
@@ -293,7 +302,7 @@ function GameHost() {
   // game would have had — one route, one MIDI consumer, one box. Above gate 3
   // deliberately: the challenge is what a match is bought with, so it is asked
   // before the day's balance is read.
-  if (gatePending && challengeProfile.loading) return <SkeletonStage />;
+  if (gatePending && (challengeProfile.loading || (dayProgressRequired && boardGameDay.loading))) return <SkeletonStage />;
 
   if (gatePending) {
     return (
@@ -302,12 +311,14 @@ function GameHost() {
           learnerId={learnerId}
           deviceId={deviceId}
           gateConfig={{
-            ...gateConfigForLearner(config.gameGate, learnerId),
+            ...learnerGateConfig,
             ...(challengeProfile.startLevel ? { startLevel: challengeProfile.startLevel } : {}),
           }}
           // What the child calls this game, so the challenge can say what it is
           // for ("Play this to start Chess") instead of standing there unexplained.
           gameLabel={entry?.label ?? gameId}
+          completedGames={boardGameDay.completedGames}
+          studyDate={boardGameDay.studyDate}
           onPassed={openMatch}
           onLeave={exit}
         />
@@ -350,6 +361,11 @@ function GameHost() {
               activeNotes={activeNotes}
               noteHistory={noteHistory}
               gameConfig={config.games?.[gameId]}
+              addressingPolicy={{
+                config: config.gameAddressing,
+                learnerId,
+                completedGames: boardGameDay.completedGames,
+              }}
               subRoute={subRoute ?? null}
               onSubRoute={goSubRoute}
               currentUser={currentUser}

@@ -1,6 +1,6 @@
 import { coordToIndex } from '@shared-gaming/rulesets/checkers/engine.mjs';
 import { shuffle } from '@shared-gaming/mechanics/random.mjs';
-import { DEFAULT_STAFF_SCHEME, SPLIT_MIDI, axisIndex, noteLetter, noteName } from '../PianoChessGame/staffAddress.js';
+import { DEFAULT_STAFF_SCHEME, SPLIT_MIDI, axisIndex, noteLetter, noteName, staffTokenNotes } from '../PianoChessGame/staffAddress.js';
 
 /**
  * Checkers uses the same two-axis instrument vocabulary as chess: a square is
@@ -54,6 +54,18 @@ export function shuffleCheckersNotes(notes, seed) {
  */
 export function squareForAddress(heldNotes, notes) {
   const held = [...new Set((Array.isArray(heldNotes) ? heldNotes : []).filter(Number.isFinite))];
+  if (Array.isArray(notes.file_notes?.[0]) || Array.isArray(notes.rank_notes?.[0])) {
+    const signature = held.slice().sort((a, b) => a - b).join(',');
+    for (let file = 0; file < notes.file_notes.length; file += 1) {
+      for (let rank = 0; rank < notes.rank_notes.length; rank += 1) {
+        const expected = [...new Set([
+          ...staffTokenNotes(notes.file_notes[file]), ...staffTokenNotes(notes.rank_notes[rank]),
+        ])].sort((a, b) => a - b).join(',');
+        if (signature === expected) return coordToIndex(7 - rank, file);
+      }
+    }
+    return null;
+  }
   if (held.length !== 2) return null;
   const above = held.filter((note) => note >= SPLIT_MIDI);
   const below = held.filter((note) => note < SPLIT_MIDI);
@@ -86,6 +98,11 @@ export function rankRailAddresses(notes) {
 export function activeFileIndex(heldNotes, notes) {
   const held = [...new Set((Array.isArray(heldNotes) ? heldNotes : []).filter(Number.isFinite))]
     .filter((note) => note >= SPLIT_MIDI);
+  if (Array.isArray(notes.file_notes?.[0])) {
+    const all = new Set((heldNotes || []).filter(Number.isFinite));
+    const index = notes.file_notes.findIndex((token) => staffTokenNotes(token).every((note) => all.has(note)));
+    return index < 0 ? null : index;
+  }
   if (held.length !== 1) return null;
   const index = axisIndex(held[0], notes.file_notes);
   return index < 0 ? null : index;
@@ -98,6 +115,11 @@ export function activeFileIndex(heldNotes, notes) {
 export function activeRankDisplayIndex(heldNotes, notes) {
   const held = [...new Set((Array.isArray(heldNotes) ? heldNotes : []).filter(Number.isFinite))]
     .filter((note) => note < SPLIT_MIDI);
+  if (Array.isArray(notes.rank_notes?.[0])) {
+    const all = new Set((heldNotes || []).filter(Number.isFinite));
+    const index = notes.rank_notes.findIndex((token) => staffTokenNotes(token).every((note) => all.has(note)));
+    return index < 0 ? null : (AXIS_LENGTH - 1 - index);
+  }
   if (held.length !== 1) return null;
   const index = axisIndex(held[0], notes.rank_notes);
   return index < 0 ? null : (AXIS_LENGTH - 1 - index);

@@ -49,6 +49,9 @@ export function useAddressedBoardGame({
   const [localPractice, setLocalPractice] = useState(false);
   const [seed, setSeed] = useState(() => Date.now() >>> 0);
   const [gameSessionId, setGameSessionId] = useState(() => createLocalSessionId(gameId));
+  const matchGate = useContext(MatchGateContext);
+  const matchGateRef = useRef(matchGate);
+  matchGateRef.current = matchGate;
 
   const rankedRef = useRef(true);
   const savedRef = useRef(false);
@@ -87,14 +90,16 @@ export function useAddressedBoardGame({
     if (!result || savedRef.current) return;
     savedRef.current = true;
     const record = {
-      moves, result, level, ranked: rankedRef.current, completed: true,
+      game_id: gameSessionId, moves, result, level, ranked: rankedRef.current, completed: true,
       played_on: new Date().toISOString().slice(0, 10),
     };
     logger.info('game.over', {
       gameId, result, level, ranked: rankedRef.current, plies: moves.length,
     });
     if (userId) {
-      client.saveGame(userId, record).then((response) => {
+      const request = client.saveGame(userId, record);
+      matchGateRef.current?.registerCompletion?.(request);
+      request.then((response) => {
         if (!response?.ladder) return;
         setLadder(response.ladder);
         logger.info('game.ladder-advanced', {
@@ -139,10 +144,6 @@ export function useAddressedBoardGame({
   // through a ref so `restart` keeps its stable identity — it is passed to
   // `useAnyKeyToContinue`, and a callback that changes identity every render
   // there re-arms the key listener under a player's fingers.
-  const matchGate = useContext(MatchGateContext);
-  const matchGateRef = useRef(matchGate);
-  matchGateRef.current = matchGate;
-
   // The transcript belongs to the game, so clearing it does too — restart resets
   // everything ranked-ness depends on and hands back the new session id.
   //

@@ -10,6 +10,7 @@ import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contrac
 import { useAddressedBoardGame } from '../game-platform/families/addressed-board/useAddressedBoardGame.js';
 import { useAddressing } from '../game-platform/addressing/useAddressing.js';
 import { useAddressingLadder } from '../game-platform/addressing/useAddressingLadder.js';
+import { managedAddressingAt } from '../game-platform/addressing/managedAddressing.js';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import {
   GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, GameChoice, LadderBadge, DealNotice, GameSheet,
@@ -98,7 +99,7 @@ function Board({ game, hint, drop }) {
   );
 }
 
-export default function PianoConnectFour({ activeNotes = new Map(), currentUser = null, onNoteOn, onNoteOff }) {
+export default function PianoConnectFour({ activeNotes = new Map(), currentUser = null, addressingPolicy = null, onNoteOn, onNoteOff }) {
   const [hint, setHint] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const latchedRef = useRef(false);
@@ -127,8 +128,13 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   // Which key drops into which column, resolved from the layers rather than
   // from a constant in this file — see docs/reference/piano/grid-addressing.md.
   const overrides = useMemo(() => configuredAddressing(config), [config]);
+  const managed = useMemo(() => managedAddressingAt(addressingPolicy?.config, {
+    learnerId: addressingPolicy?.learnerId,
+    completedGames: addressingPolicy?.completedGames,
+    completedPlayerMoves: Math.ceil(moves.length / 2),
+  }), [addressingPolicy, moves.length]);
   const { x: columnNotes, addressing } = useAddressing({
-    config, axisSize: COLUMNS, seed, ply: moves.length, overrides,
+    config, axisSize: COLUMNS, seed, ply: moves.length, overrides, managed,
   });
 
   // The deal stays this game's own: `deal[address] = column`, so the ADDRESS

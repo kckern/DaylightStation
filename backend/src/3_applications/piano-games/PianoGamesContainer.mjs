@@ -3,12 +3,14 @@ import { OpponentLadder } from '#domains/gaming/entities/OpponentLadder.mjs';
 export class PianoGamesContainer {
   #games;
   #repository;
+  #boardGameDayService;
   #logger;
 
-  constructor({ games, repository, logger = null }) {
+  constructor({ games, repository, boardGameDayService = null, logger = null }) {
     if (!games || !repository) throw new Error('PianoGamesContainer: games and repository required');
     this.#games = games;
     this.#repository = repository;
+    this.#boardGameDayService = boardGameDayService;
     this.#logger = logger;
   }
 
@@ -59,13 +61,25 @@ export class PianoGamesContainer {
     // now (for callers, like a migrated Chess ladder, that want the game kept
     // in the series as a not-counted entry instead) — this caller just
     // doesn't need that history for an offline fallback.
-    if (record.ranked === false) return { saved: true, ladder: current.snapshot() };
+    const boardGameDay = this.#boardGameDayService?.record({
+      learnerId: userId,
+      gameId,
+      gameSessionId: record.game_id,
+      completed: record.completed,
+      result: record.result,
+    }) ?? null;
+    if (record.ranked === false) return { saved: true, ladder: current.snapshot(), boardGameDay };
     const ladder = current.record(record.result, record.level, { help: record.help });
     await this.#repository.writeProgress(gameId, userId, {
       unlockedThrough: ladder.unlockedThrough,
       series: ladder.series,
     });
-    return { saved: true, ladder: ladder.snapshot() };
+    return { saved: true, ladder: ladder.snapshot(), boardGameDay };
+  }
+
+  boardGameDay(userId) {
+    if (!this.#boardGameDayService) return null;
+    return this.#boardGameDayService.current(userId);
   }
 
   async archiveGame(gameId, userSegment, record) {

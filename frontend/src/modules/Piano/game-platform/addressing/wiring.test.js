@@ -219,6 +219,24 @@ describe('clef pairs are honoured, not assumed', () => {
   });
 });
 
+describe('staff dyad and triad guards', () => {
+  for (const texture of ['dyad', 'triad']) {
+    it(`${texture} shapes stay in one hand and identify an exact square`, () => {
+      const built = buildScheme(resolveAddressing({
+        game: { vocabulary: 'staff', texture, x: { tier: 5 }, y: { tier: 5 } },
+      }), { size: 8 });
+      expect(built.valid, built.errors.join('; ')).toBe(true);
+      for (const shape of [...built.scheme.roots, ...built.scheme.qualities]) {
+        expect(shape).toHaveLength(texture === 'dyad' ? 2 : 3);
+        expect(Math.max(...shape) - Math.min(...shape)).toBeLessThanOrEqual(7);
+      }
+      const held = [...built.scheme.roots[2], ...built.scheme.qualities[4]];
+      expect(identifyStaffAddress(held, built.scheme).square).toBe('c5');
+      expect(identifyStaffAddress(held.slice(0, -1), built.scheme).square).toBeNull();
+    });
+  }
+});
+
 describe('the `names` vocabulary is reachable and plays', () => {
   it('rung 1 selects it', () => {
     expect(resolveAddressing({ rung: 1 }).vocabulary).toBe('names');

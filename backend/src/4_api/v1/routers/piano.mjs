@@ -109,7 +109,7 @@ function attemptPolicyErrors(userId, body) {
  *   POST   /users/:userId/game-budget/session/:sessionId/close  → seal a session ({ok:true})
  *   POST   /users/:userId/game-budget/credits                   → idempotently mint earned time for a passed assessment
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, exerciseBank = null, eventBus = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
@@ -322,6 +322,15 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     }
     res.set('Cache-Control', 'no-store');
     res.json(await pianoGameBudgetService.balance({ learnerId: req.params.userId }));
+  }));
+
+  router.get('/users/:userId/board-game-day', asyncHandler(async (req, res) => {
+    if (!pianoBoardGameDayService) return res.status(503).json({ error: 'board_game_day_unavailable' });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+    res.set('Cache-Control', 'no-store');
+    return res.json(pianoBoardGameDayService.current(req.params.userId));
   }));
   router.post('/users/:userId/game-budget/session', asyncHandler(async (req, res) => {
     if (!pianoGameBudgetService) return res.status(404).json({ error: 'game budget not configured' });

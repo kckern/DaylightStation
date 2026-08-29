@@ -40,7 +40,9 @@ import { DOUBLE_WINDOW_MS } from './chordSelection.js';
 import {
   REJECTION_MESSAGES, applySquare, capturedPieces,
   createChessGameState, isPlayerTurn, projectChessAuthorityState, takeMoveBack,
+  playerTurnOf, schemeForPly,
 } from './chessGameState.js';
+import { managedAddressingAt } from '../game-platform/addressing/managedAddressing.js';
 import { useChessAuthority } from './useChessAuthority.js';
 import {
   checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
@@ -113,6 +115,7 @@ const CHESS_PERSISTENCE_GATEWAY = Object.freeze({ archiveGame, beaconArchive, sa
 
 export function PianoChessGame({
   gameConfig = null,
+  addressingPolicy = null,
   // Supplied by the game platform (PianoVisualizer). Absent only for kiosk
   // callers that rely on PianoMidiProvider being above them.
   activeNotes: activeNotesProp = null,
@@ -193,9 +196,15 @@ export function PianoChessGame({
   // Scheme and cadence resolve together, through the addressing layers, so the
   // board and its shuffle can never come from two different opinions of the
   // config.
+  const completedPlayerMoves = playerTurnOf(game.history.length, playerColor);
+  const managedAddressing = useMemo(() => managedAddressingAt(addressingPolicy?.config, {
+    learnerId: addressingPolicy?.learnerId,
+    completedGames: addressingPolicy?.completedGames,
+    completedPlayerMoves,
+  }), [addressingPolicy, completedPlayerMoves]);
   const loadedAddressing = useMemo(
-    () => (chessConfig ? chessAddressingFor(chessConfig, scheme, gameSeed) : null),
-    [chessConfig, scheme, gameSeed],
+    () => (chessConfig ? chessAddressingFor(chessConfig, scheme, gameSeed, managedAddressing) : null),
+    [chessConfig, scheme, gameSeed, managedAddressing],
   );
   const shuffleEachTurn = loadedAddressing ? loadedAddressing.shuffleEachTurn : shuffleEachTurnProp;
   const rung = chessConfig?.rungs?.find((entry) => entry.id === rungId);
@@ -288,14 +297,18 @@ export function PianoChessGame({
       // never rearrange the board under a player mid-move.
       const { scheme: loadedScheme, shuffleEachTurn: nextShuffle } = loadedAddressing;
       setGame((current) => {
-        const untouched = current.history.length === 0 && !current.origin;
-        if (!untouched) return current;
+        const canAdopt = !current.origin && (current.history.length === 0 || (managedAddressing && isPlayerTurn(current)));
+        if (!canAdopt) return current;
         if (current.shuffleEachTurn === nextShuffle && current.scheme?.id === loadedScheme.id) return current;
-        return createChessGameState({
-          fen: fen ?? undefined, playerColor, scheme: loadedScheme, seed: gameSeed, shuffleEachTurn: nextShuffle,
-        });
+        if (current.history.length === 0) {
+          return createChessGameState({
+            fen: fen ?? undefined, playerColor, scheme: loadedScheme, seed: gameSeed, shuffleEachTurn: nextShuffle,
+          });
+        }
+        const next = { ...current, baseScheme: loadedScheme, shuffleEachTurn: nextShuffle };
+        return { ...next, scheme: schemeForPly(next, current.history.length) };
       });
-  }, [loadedAddressing, fen, gameSeed, playerColor]);
+  }, [loadedAddressing, fen, gameSeed, managedAddressing, playerColor, game.history.length, game.status?.turn]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
 
@@ -547,7 +560,11 @@ export function PianoChessGame({
     // recomputes the callback, and with the NEW seed so an each_game cadence
     // actually re-deals.
     const loaded = chessConfigRef.current
-      ? chessAddressingFor(chessConfigRef.current, scheme, nextSession.seed)
+      ? chessAddressingFor(chessConfigRef.current, scheme, nextSession.seed, managedAddressingAt(addressingPolicy?.config, {
+        learnerId: addressingPolicy?.learnerId,
+        completedGames: addressingPolicy?.completedGames,
+        completedPlayerMoves: 0,
+      }))
       : null;
     const nativeInitial = createChessGameState({
       fen: fen ?? undefined,
@@ -572,7 +589,7 @@ export function PianoChessGame({
     lastTakebackAtRef.current = null;
     resetOpponent();
     logger().info('restarted');
-  }, [beginNextGame, fen, playerColor, projectAuthority, resetChessAuthority, resetHelp, resetOpponent, scheme, shuffleEachTurnProp]);
+  }, [addressingPolicy, beginNextGame, fen, playerColor, projectAuthority, resetChessAuthority, resetHelp, resetOpponent, scheme, shuffleEachTurnProp]);
 
   // "Play again" is a button, and the office screen has no finger for it. Any
   // fresh key restarts; the keys still down from the mating move do not count,
@@ -664,10 +681,10 @@ export function PianoChessGame({
   // they defeated its bail-out on identity alone, and all 64 squares reconciled
   // on every note event as a result.
   const fileLabels = useMemo(() => (reading
-    ? liveScheme.roots.map((midi) => <StaffNoteLabel key={midi} midi={midi} />)
+    ? liveScheme.roots.map((midi) => <StaffNoteLabel key={Array.isArray(midi) ? midi.join('-') : midi} midi={midi} />)
     : liveScheme.roots), [reading, liveScheme]);
   const rankLabels = useMemo(() => (reading
-    ? liveScheme.qualities.map((midi) => <StaffNoteLabel key={midi} midi={midi} />)
+    ? liveScheme.qualities.map((midi) => <StaffNoteLabel key={Array.isArray(midi) ? midi.join('-') : midi} midi={midi} />)
     : liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj')),
   [reading, liveScheme]);
 

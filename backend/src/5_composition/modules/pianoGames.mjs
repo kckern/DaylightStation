@@ -8,13 +8,14 @@ import { DataServicePianoGameRepository } from '#adapters/piano-games/DataServic
 import { PianoGamesContainer } from '#apps/piano-games/PianoGamesContainer.mjs';
 import { createPianoGamesRouter } from '#api/v1/routers/pianoGames.mjs';
 
-export function createPianoGamesModule({ dataService, configService, logger, nativeRouters = {} }) {
+export function createPianoGamesModule({ dataService, configService, logger, nativeRouters = {}, boardGameDayService = null }) {
   const connectFourGateway = createConnectFourEngine({ logger: logger?.child?.({ module: 'connect-four-engine' }) });
   const checkersGateway = createCheckersEngine({ logger: logger?.child?.({ module: 'checkers-engine' }) });
   const chessGateway = createChessEngine({ logger: logger?.child?.({ module: 'chess-engine' }) });
   const repository = new DataServicePianoGameRepository({ dataService, configService });
   const container = new PianoGamesContainer({
     repository,
+    boardGameDayService,
     logger,
     games: {
       'connect-four': {

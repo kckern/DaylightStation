@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { buildGameArchive } from './chessGameArchive.js';
 import { buildGameRecord } from './chessGameRecord.js';
+import MatchGateContext from '../PianoKiosk/modes/Games/MatchGateContext.js';
 
 function freshLifecycle(gameId) {
   return {
@@ -28,6 +29,9 @@ export function useChessPersistenceLifecycle({
   logger,
   gateway,
 }) {
+  const matchGate = useContext(MatchGateContext);
+  const matchGateRef = useRef(matchGate);
+  matchGateRef.current = matchGate;
   const lifecycleRef = useRef(null);
   if (!lifecycleRef.current || lifecycleRef.current.gameId !== gameId) {
     lifecycleRef.current = freshLifecycle(gameId);
@@ -101,7 +105,9 @@ export function useChessPersistenceLifecycle({
     const record = buildGameRecord({ ...inputs, endedAt });
     setFinishedState({ gameId, value: record });
     if (record && userId) {
-      Promise.resolve(gatewayRef.current.saveGameRecord(userId, record)).then((saved) => {
+      const request = Promise.resolve(gatewayRef.current.saveGameRecord(userId, record));
+      matchGateRef.current?.registerCompletion?.(request);
+      request.then((saved) => {
         if (!mountedRef.current || lifecycleRef.current.gameId !== gameId) return;
         if (saved?.ladder) setLadderState({ gameId, value: saved.ladder });
       }).catch((error) => {

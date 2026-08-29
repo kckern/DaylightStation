@@ -29,13 +29,14 @@ export function useAddressing({
   seed = 0,
   ply = 0,
   overrides = null,
+  managed = null,
 } = {}) {
   const resolved = useMemo(() => resolveAddressing({
     game: { ...(overrides || {}), ...(config || {}) },
-    user,
+    user: managed || user,
     ladder: config?.addressing?.ladder ?? null,
     axisSize,
-  }), [config, user, axisSize, overrides]);
+  }), [config, user, managed, axisSize, overrides]);
 
   const dealSeed = resolved.shuffle === 'each_turn'
     ? (((seed >>> 0) + ply) >>> 0)
