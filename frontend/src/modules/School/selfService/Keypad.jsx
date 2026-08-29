@@ -37,6 +37,7 @@
  * next) belongs to useSelfService.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DaylightAPI } from '../../../lib/api.mjs';
 import { screenOff } from '../../../lib/fkb.js';
 import useArmedAction from '../../../lib/identity/useArmedAction.js';
 import { schoolLog } from '../schoolLog.js';
@@ -156,6 +157,9 @@ function useTapFire() {
  * @param {number} [props.screenOffTimeoutSeconds] - Keypad-only display sleep.
  *   Zero/invalid disables automatic sleep. This is deliberately independent
  *   from the card-to-keypad idle timeout owned by useSelfService.
+ * @param {string|null} [props.screenId] - Physical screen/device identity used
+ *   for the REST fallback when this FKB build does not inject its control
+ *   bridge. `browser` and absent identities deliberately have no fallback.
  * @param {boolean} [props.screenOffSuppressed] - Ceremony/runner or another
  *   foreground obligation is using the panel; do not sleep it.
  * @param {() => void} [props.onActivity] - a finger or a key just landed
@@ -174,6 +178,7 @@ export default function Keypad({
   degraded = false,
   onRetry = null,
   onReload = null,
+  screenId = null,
   screenOffTimeoutSeconds = 0,
   screenOffSuppressed = false,
   onActivity = null,
@@ -188,18 +193,44 @@ export default function Keypad({
   const timersRef = useRef([]);
   const tap = useTapFire();
 
-  const turnScreenOff = useCallback((source) => {
+  const turnScreenOff = useCallback(async (source) => {
     schoolLog.selfService('screen-off.requested', { source });
     if (screenOff()) {
       setScreenOffFailure(null);
-      schoolLog.selfService('screen-off.succeeded', { source });
+      schoolLog.selfService('screen-off.succeeded', { source, lever: 'fkb' });
       return true;
     }
-    const sentence = "The screen can't turn off here. Tell a grown-up.";
+
+    // The Facebook Portal's FKB 1.60.1 exposes a print/blob helper to the page,
+    // but not the kiosk-control bridge (`fully.turnScreenOff`). Its REST API is
+    // still reliable, and the device registry already owns its address and
+    // credentials, so route the command through the backend instead.
+    const deviceId = screenId && screenId !== 'browser' ? screenId : null;
+    if (deviceId) {
+      schoolLog.selfService('screen-off.fallback', { source, lever: 'api', deviceId });
+      try {
+        const result = await DaylightAPI(`api/v1/device/${encodeURIComponent(deviceId)}/screen/off`);
+        if (result?.ok === true) {
+          setScreenOffFailure(null);
+          schoolLog.selfService('screen-off.succeeded', { source, lever: 'api', deviceId });
+          return true;
+        }
+        schoolLog.selfServiceError('screen-off.failed', {
+          source, reason: 'api_rejected', deviceId, error: result.error || 'rejected',
+        });
+      } catch (error) {
+        schoolLog.selfServiceError('screen-off.failed', {
+          source, reason: 'api_unreachable', deviceId, error: error?.message ?? String(error),
+        });
+      }
+    } else {
+      schoolLog.selfServiceError('screen-off.failed', { source, reason: 'no_screen_control' });
+    }
+
+    const sentence = "The screen couldn't turn off. Tell a grown-up.";
     setScreenOffFailure(sentence);
-    schoolLog.selfServiceError('screen-off.failed', { source, reason: 'fkb_unavailable' });
     return false;
-  }, []);
+  }, [screenId]);
   const { armed: screenOffArmed, trigger: triggerScreenOff } = useArmedAction(
     () => turnScreenOff('manual'),
     { armMs: 3000 },
