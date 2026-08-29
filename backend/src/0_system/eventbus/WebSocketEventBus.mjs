@@ -60,6 +60,8 @@ export class WebSocketEventBus {
   #disconnectionHandlers = [];
   #messageHandlers = [];
   #subscriptionHandlers = [];
+  #subscriptionAuthorizer = null;
+  #messageAuthorizer = null;
 
   // Metrics
   #metrics = {
@@ -366,6 +368,19 @@ export class WebSocketEventBus {
     };
     const msg = JSON.stringify(message);
 
+    // Call signaling is capability-protected and exact-topic only. Wildcard
+    // subscribers must never observe SDP/candidate/control envelopes.
+    if (typeof topic === 'string' && topic.startsWith('homeline-call:')) {
+      let sentCount = 0;
+      for (const [clientId, { ws, meta }] of this.#clients) {
+        if (ws.readyState !== ws.OPEN || !meta.subscriptions.has(topic)) continue;
+        if (this.#subscriptionAuthorizer && !this.#subscriptionAuthorizer(clientId, topic)) continue;
+        ws.send(msg); sentCount++;
+      }
+      this.#logger.debug?.('eventbus.broadcast.homeline-call', { topic, sentCount });
+      return sentCount;
+    }
+
     const parsed = parseDeviceTopic(topic);
 
     // Per-device topics: deliver to that device's topic subscribers only.
@@ -652,6 +667,14 @@ export class WebSocketEventBus {
     this.#subscriptionHandlers.push(callback);
   }
 
+  setClientSubscriptionAuthorizer(callback) {
+    this.#subscriptionAuthorizer = callback;
+  }
+
+  setClientMessageAuthorizer(callback) {
+    this.#messageAuthorizer = callback;
+  }
+
   // ===========================================================================
   // Metrics
   // ===========================================================================
@@ -811,6 +834,15 @@ export class WebSocketEventBus {
       return;
     }
 
+    if (this.#messageAuthorizer) {
+      const result = this.#messageAuthorizer(clientId, message);
+      if (result === false || result?.ok === false) {
+        this.#logger.warn?.('eventbus.message_unauthorized', { clientId, code: result?.code });
+        return;
+      }
+      if (result?.message) message = result.message;
+    }
+
     // Notify message handlers
     for (const handler of this.#messageHandlers) {
       try {
@@ -867,14 +899,19 @@ export class WebSocketEventBus {
 
     switch (action) {
       case 'subscribe':
-        this.subscribeClient(clientId, targetTopics);
-        this.#logger.info?.('eventbus.client_subscribed', { clientId, topics: targetTopics });
+        {
+          const allowedTopics = targetTopics.filter(topic => !this.#subscriptionAuthorizer
+            || this.#subscriptionAuthorizer(clientId, topic, message) !== false);
+          const rejectedTopics = targetTopics.filter(topic => !allowedTopics.includes(topic));
+          this.subscribeClient(clientId, allowedTopics);
+          this.#logger.info?.('eventbus.client_subscribed', { clientId, topics: allowedTopics, rejectedTopics });
         for (const handler of this.#subscriptionHandlers) {
           try {
-            handler(clientId, targetTopics);
+            handler(clientId, allowedTopics);
           } catch (err) {
             this.#logger.error?.('eventbus.subscription_handler_error', { error: err.message });
           }
+        }
         }
         break;
       case 'unsubscribe':

@@ -70,6 +70,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
         throw error;
     }
     
+    if (response.status === 204) return null;
     const response_data = await response.json();
  //   console.log("Response data:", response_data);
     return response_data;

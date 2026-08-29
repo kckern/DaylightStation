@@ -716,7 +716,14 @@ export function createDeviceRouter(config) {
 
     if (force === 'true' && hasActiveCall(deviceId)) {
       logger.info?.('device.router.powerOff.forced', { deviceId });
-      forceEndCall(deviceId);
+      if (forceEndCall(deviceId) === false) {
+        const body = buildErrorBody({
+          error: 'Active leased videocall in progress',
+          code: ERROR_CODES.DEVICE_BUSY,
+        });
+        body.hint = 'End the call through /api/v1/homeline before powering off';
+        return res.status(409).json(body);
+      }
     }
 
     logger.info?.('device.router.powerOff', { deviceId, display });
