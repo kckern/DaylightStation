@@ -10,9 +10,12 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
+import crypto from 'node:crypto';
 import path, { join } from 'path';
 import { renderSessionResultPng } from '#rendering/school/documents/SessionResultRenderer.mjs';
 import { YamlSessionResultArtifactStore } from '#adapters/persistence/yaml/YamlSessionResultArtifactStore.mjs';
+import { FitnessConfigProjection, PartyGamesConfigProjection, PianoConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
+import { publicResourceUrl } from '#api/v1/presenters/publicResourceRefs.mjs';
 
 // Infrastructure imports
 import { ConfigValidationError, configService } from './0_system/config/index.mjs';
@@ -131,6 +134,7 @@ import { LaserPrinterAdapter } from '#adapters/hardware/laser-printer/index.mjs'
 // Command-handler liveness (Task 8: gates WS-first warm-switch in WakeAndLoadService)
 import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHandlerLivenessService.mjs';
 import { SessionControlService } from '#apps/devices/services/SessionControlService.mjs';
+import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 // HTTP middleware
 import { errorHandlerMiddleware, requestLoggerMiddleware } from './0_system/http/middleware/index.mjs';
@@ -145,7 +149,20 @@ import { YamlConfigFileService } from '#apps/admin/YamlConfigFileService.mjs';
 import { AppsConfigService } from '#apps/admin/AppsConfigService.mjs';
 import { SchedulerAdminService } from '#apps/admin/SchedulerAdminService.mjs';
 import { IntegrationsQueryService } from '#apps/admin/IntegrationsQueryService.mjs';
+import { AdminArtService } from '#apps/admin/AdminArtService.mjs';
+import { AdminImageService } from '#apps/admin/AdminImageService.mjs';
+import { AdminNotificationOperations } from '#apps/admin/AdminNotificationOperations.mjs';
+import { ListManagementService } from '#apps/content/services/ListManagementService.mjs';
+import { HouseholdContextService } from '#apps/common/context/HouseholdContextService.mjs';
+import { YamlListDatastore } from '#adapters/persistence/yaml/YamlListDatastore.mjs';
+import { ListConfigCodec } from '#adapters/content/list/ListConfigCodec.mjs';
+import { FilesystemArtAdminRepository } from '#adapters/persistence/files/FilesystemArtAdminRepository.mjs';
+import { AdminImageFileStore } from '#adapters/admin/AdminImageFileStore.mjs';
+import { FetchAdminImageSource } from '#adapters/admin/FetchAdminImageSource.mjs';
 import { createMediaRouter } from './4_api/v1/routers/media.mjs';
+import { MediaSurfaceConfigService } from '#apps/media/MediaSurfaceConfigService.mjs';
+import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
+import { MediaQueueEvents } from '#apps/events/RealtimePublications.mjs';
 import { createLivestreamRouter } from './4_api/v1/routers/livestream.mjs';
 import { createCameraRouter } from './4_api/v1/routers/camera.mjs';
 import { createPrinterRouter } from './4_api/v1/routers/printer.mjs';
@@ -156,6 +173,7 @@ import { CallLeaseService } from '#apps/homeline/CallLeaseService.mjs';
 import { createHomelineRouter } from '#api/v1/routers/homeline.mjs';
 import { SecureHomelineIdentityIssuer } from '#adapters/homeline/SecureHomelineIdentityIssuer.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
+import { SchedulerTimestampCodec } from '#adapters/scheduling/SchedulerTimestampCodec.mjs';
 
 // Pose frame logging
 import { createPoseLogHandler } from '#adapters/fitness/PoseLogHandler.mjs';
@@ -166,15 +184,21 @@ import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProgressClassifier.mjs';
 import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
+import { EventBusBiometricGateway } from '#adapters/fitness/EventBusBiometricGateway.mjs';
+import { FitnessEmergencyPublications } from '#adapters/eventbus/FitnessEmergencyPublications.mjs';
+import { FitnessIdentityChannel } from '#adapters/eventbus/FitnessIdentityChannel.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
 import { createOmrReaderLiveness } from '#adapters/hardware/omrReaderLiveness.mjs';
 import { createPressureMatRelay } from '#apps/hardware/pressureMatRelay.mjs';
+import { PressureMatOperations } from '#apps/hardware/PressureMatOperations.mjs';
 import { PressureMatAdapter } from '#adapters/hardware/pressure-mat/index.mjs';
 import { createPressureMatRouter } from '#api/v1/routers/pressureMat.mjs';
 import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
 import { createAutomotiveApi } from '#composition/modules/automotiveApi.mjs';
 import { createQuizScanRecorder } from '#apps/quizzes/quizScanRecorder.mjs';
+import { EventBusEventInputSource } from '#adapters/scan/EventBusEventInputSource.mjs';
+import { YamlDecodedQuizScanStore } from '#adapters/persistence/yaml/YamlDecodedQuizScanStore.mjs';
 import { createScaleNutribotBridge } from '#adapters/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
@@ -182,8 +206,17 @@ import { validateScanConfig } from '#apps/nutribot/lib/validateScanConfig.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createRelayWatchdog } from '#apps/hardware/relayWatchdog.mjs';
+import {
+  AutomotiveFirmwareGateway,
+  BarcodeFirmwareGateway,
+  FoodScaleFirmwareGateway,
+  OmrFirmwareGateway,
+  RelayWatchdogFirmwareGateway,
+} from '#adapters/hardware/firmware/EventBusFirmwareRelayGateways.mjs';
+import { YamlAutomotiveTripStore } from '#adapters/hardware/automotive/YamlAutomotiveTripStore.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
+import { YamlMenuMemoryRepository } from '#adapters/persistence/yaml/YamlMenuMemoryRepository.mjs';
 import { YamlEmergencyLockDatastore } from '#adapters/persistence/yaml/YamlEmergencyLockDatastore.mjs';
 import { TriggerEmergencyLockdown } from '#apps/fitness/usecases/TriggerEmergencyLockdown.mjs';
 import { ReleaseEmergencyLockdown } from '#apps/fitness/usecases/ReleaseEmergencyLockdown.mjs';
@@ -216,10 +249,17 @@ import { createCanvasRouter } from './4_api/v1/routers/canvas.mjs';
 
 // Screens domain
 import { createScreensRouter } from './4_api/v1/routers/screens.mjs';
+import { ScreensQueryService } from '#apps/screens/ScreensQueryService.mjs';
+import { FilesystemScreensRepository } from '#adapters/persistence/files/FilesystemScreensRepository.mjs';
+import { FilesystemWeeklyReviewStore } from '#adapters/persistence/files/FilesystemWeeklyReviewStore.mjs';
+import { NodeCommandRunner } from '#adapters/process/NodeCommandRunner.mjs';
 
 // Auth system
 import { AuthService } from '#apps/auth/AuthService.mjs';
+import { AuthPublicContextService } from '#apps/auth/AuthPublicContextService.mjs';
 import { ContentAccessService } from '#apps/content/ContentAccessService.mjs';
+import { DataServiceAuthAccountRepository } from '#adapters/auth/DataServiceAuthAccountRepository.mjs';
+import { NodeAuthenticationPrimitives } from '#adapters/auth/NodeAuthenticationPrimitives.mjs';
 import { networkTrustResolver } from '#api/middleware/networkTrustResolver.mjs';
 import { tokenResolver } from '#api/middleware/tokenResolver.mjs';
 import { expandRolesToApps, permissionGate } from '#api/middleware/permissionGate.mjs';
@@ -244,7 +284,7 @@ import { ComposePresentationUseCase } from './3_applications/content/usecases/Co
 // Barcode scanner pipeline — ingress now routes through the unified trigger
 // pipeline (TriggerDispatchService); BarcodeScanService is retired from the
 // boot path here (kept in-tree for Plan 4 to delete) and no longer constructed.
-import { resolveCommand } from '#domains/barcode/BarcodeCommandMap.mjs';
+import { KNOWN_COMMANDS, resolveCommand } from '#domains/barcode/BarcodeCommandMap.mjs';
 import { ContentDispatcher } from '#apps/trigger/ContentDispatcher.mjs';
 
 // Weekly Review domain
@@ -307,12 +347,14 @@ import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacScho
 import { HmacSchoolReelGrantIssuer } from './1_adapters/school/actions/HmacSchoolReelGrantIssuer.mjs';
 import { HmacSchoolCubeGrantIssuer } from './1_adapters/school/actions/HmacSchoolCubeGrantIssuer.mjs';
 import { KociembaCubeRecoverySolver } from './1_adapters/school/rubiksCube/KociembaCubeRecoverySolver.mjs';
+import { FilesystemLanguageReelRepository } from './1_adapters/school/FilesystemLanguageReelRepository.mjs';
+import { FilesystemRubiksCubeProgressRepository } from './1_adapters/school/FilesystemRubiksCubeProgressRepository.mjs';
 import { LanguageReelService } from './3_applications/school/LanguageReelService.mjs';
 import { createLanguageReelsRouter } from './4_api/v1/routers/languageReels.mjs';
 import { RubiksCubeCourseService } from './3_applications/school/rubiksCube/RubiksCubeCourseService.mjs';
 import { RubiksPacketPlanner } from './3_applications/school/rubiksCube/RubiksPacketPlanner.mjs';
 import { YamlDocumentFileStore } from './1_adapters/school/YamlDocumentFileStore.mjs';
-import { RUBIKS_CUBE_REVISION } from './3_applications/school/rubiksCube/courseCatalog.mjs';
+import { RUBIKS_CUBE_COURSE_ID, RUBIKS_CUBE_REVISION } from './3_applications/school/rubiksCube/courseCatalog.mjs';
 import { createRubiksCubeRouter } from './4_api/v1/routers/rubiksCube.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
 import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
@@ -355,6 +397,7 @@ import { createArtifactPostviewRenderer, renderPdfFirstPagePng } from '#renderin
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { NotificationConfigService } from './3_applications/notification/NotificationConfigService.mjs';
+import { YamlNotificationConfigRepository } from '#adapters/notification/YamlNotificationConfigRepository.mjs';
 import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
 import { createConfigRouter } from './4_api/v1/routers/config.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
@@ -391,6 +434,7 @@ import { resolveFormat } from '#domains/content/utils/resolveFormat.mjs';
 import * as schoolErrors from '#domains/school/errors.mjs';
 import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
 import { YamlConfigFileStore } from '#adapters/persistence/yaml/YamlConfigFileStore.mjs';
+import { YamlAdminConfigStore } from '#adapters/persistence/yaml/YamlAdminConfigStore.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -486,7 +530,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Auth System
   // ==========================================================================
 
-  const authService = new AuthService({ dataService, configService, logger: rootLogger.child({ module: 'auth' }) });
+  const authService = new AuthService({
+    accounts: new DataServiceAuthAccountRepository({ dataService, configService }),
+    authentication: new NodeAuthenticationPrimitives(),
+    logger: rootLogger.child({ module: 'auth' }),
+  });
   const authConfig = dataService.system.read('config/auth') || {};
   const jwtSecret = authConfig?.jwt?.secret || '';
   const jwtConfig = authConfig?.jwt || { issuer: 'daylight-station', expiry: '10y', algorithm: 'HS256' };
@@ -508,7 +556,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // 1. householdResolver sets req.householdId from Host header
   const domainConfig = dataService.system.read('config/domains') || {};
-  app.use('/api/v1', householdResolver({ domainConfig, configService }));
+  const householdContext = new HouseholdContextService({
+    defaultHouseholdId: () => configService.getDefaultHouseholdId(),
+    householdExists: (id) => configService.householdExists(id),
+    getHousehold: (id) => ({
+      id,
+      users: configService.getHouseholdUsers(id),
+      timezone: configService.getHouseholdTimezone(id),
+    }),
+    getTimezone: (id) => configService.getHouseholdTimezone(id),
+  });
+  app.use('/api/v1', householdResolver({ domainConfig, householdContext }));
 
   // 2. networkTrustResolver assigns household roles for LAN requests
   app.use('/api/v1', networkTrustResolver({ householdRoles: authConfig?.household_roles || {} }));
@@ -600,7 +658,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // DevProxy for forwarding webhooks to local dev machine
   const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
   const dataDir = configService.getDataDir();
-  const devProxy = createDevProxy({ logger: rootLogger, dataDir, devHost });
+  const devProxy = createDevProxy({
+    logger: rootLogger,
+    forwarder: new DevRequestForwarder({ dataDir, devHost, logger: rootLogger.child({ module: 'dev-proxy' }) }),
+  });
 
   // UserResolver for platform identity -> system username mapping
   const userResolver = new UserResolver(configService, {
@@ -641,8 +702,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // DeviceLivenessService — caches last-known device-state snapshots and
   // synthesizes `offline` broadcasts when heartbeats stop. Also wires
   // itself into the event bus so new subscribers get a replayed snapshot.
+  const devicePresenceGateway = new EventBusDeviceTransportGateway({ eventBus });
   const { livenessService: deviceLivenessService } = createDeviceLivenessService({
     eventBus,
+    presenceGateway: devicePresenceGateway,
     logger: rootLogger.child({ module: 'device-liveness' })
   });
 
@@ -659,7 +722,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // queue / config control of screen devices (Fleet "Remote" in /media).
   // Without this every /device/:id/session/* endpoint 501s.
   const sessionControlService = new SessionControlService({
-    eventBus,
+    transportGateway: devicePresenceGateway,
     livenessService: deviceLivenessService,
     logger: rootLogger.child({ module: 'session-control' })
   });
@@ -809,11 +872,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     || configService.reloadHouseholdAppConfig?.(householdId, 'scales')
     || {};
   createFoodScaleRelay({
+    relayGateway: new FoodScaleFirmwareGateway({
+      eventBus,
+      config: scalesConfig,
+      timezone: configService.getHouseholdTimezone?.(householdId),
+    }),
     dayLog: relayDayLog(scalesConfig, 'nutrition/log', 'food_scale'),
-    eventBus,
-    dataDir,
-    config: scalesConfig,
-    timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'food-scale-relay' }),
   });
 
@@ -830,10 +894,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'pressure-mat-relay' }),
   }).start();
   createPressureMatRelay({
+    pressureMatGateway: pressureMatAdapter,
     dayLog: relayDayLog(pressureMatConfig, 'hardware/pressure-mats/log', 'pressure_mat'),
-    eventBus,
-    dataDir,
-    config: pressureMatConfig,
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'pressure-mat-relay' }),
   });
@@ -848,11 +910,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     || configService.reloadHouseholdAppConfig?.(householdId, 'omr-readers')
     || {};
   createOmrRelay({
+    relayGateway: new OmrFirmwareGateway({
+      eventBus,
+      config: omrReadersConfig,
+      timezone: configService.getHouseholdTimezone?.(householdId),
+    }),
     dayLog: relayDayLog(omrReadersConfig, 'hardware/omr/log', 'omr'),
-    eventBus,
-    dataDir,
-    config: omrReadersConfig,
-    timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'omr-relay' }),
   });
 
@@ -875,13 +938,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // to the same topic and double-processes each card: the relay keeps the raw
   // byte-faithful manifest, this writes the meaningful version (7-digit test ID
   // + answers for 50 questions) to household/apps/quizzes/<reader-id>/.
+  const decodedQuizRoot = omrReadersConfig?.quizzes?.dir
+    ? path.join(dataDir, ...String(omrReadersConfig.quizzes.dir).replace(/^\/+/, '').split('/'))
+    : configService.getHouseholdPath('school/records/assessments/omr', householdId);
   createQuizScanRecorder({
-    eventBus,
-    dataDir,
-    outRoot: omrReadersConfig?.quizzes?.dir
-      ? path.join(dataDir, ...String(omrReadersConfig.quizzes.dir).replace(/^\/+/, '').split('/'))
-      : configService.getHouseholdPath('school/records/assessments/omr', householdId),
-    config: omrReadersConfig,
+    scanSource: new EventBusEventInputSource({ eventBus, topics: ['omr'] }),
+    decodedScanStore: new YamlDecodedQuizScanStore({
+      decodedRoot: decodedQuizRoot,
+      rawHistoryRoot: relayHistoryRoot(omrReadersConfig, 'hardware/omr/log'),
+    }),
     logger: rootLogger.child({ module: 'quiz-scan' }),
   });
 
@@ -893,10 +958,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     || configService.reloadHouseholdAppConfig?.(householdId, 'vehicles')
     || {};
   createAutomotiveRelay({
+    relayGateway: new AutomotiveFirmwareGateway({
+      eventBus,
+      config: vehiclesRelayConfig,
+      timezone: configService.getHouseholdTimezone(householdId),
+    }),
+    tripStore: new YamlAutomotiveTripStore({
+      root: relayHistoryRoot(vehiclesRelayConfig, 'automotive/log'),
+    }),
     dayLog: relayDayLog(vehiclesRelayConfig, 'automotive/log', 'automotive'),
-    eventBus,
-    dataDir,
-    config: vehiclesRelayConfig,
     // Threaded, not read from a config singleton inside the relay — day keys and
     // trip filenames must follow the household's zone, not UTC or DEFAULT_TIMEZONE.
     timezone: configService.getHouseholdTimezone(householdId),
@@ -914,16 +984,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `fitness.unlock.request` broadcasts reach the garage client and inbound
   // `fitness.unlock.result` replies settle the pending request (Task 2.3).
   // Task 2.4's HTTP endpoint imports requestUnlock from this module.
+  const biometricGateway = new EventBusBiometricGateway({ eventBus });
   initUnlockService({
-    eventBus,
-    logger: rootLogger.child({ module: 'fitness-unlock' })
+    biometricGateway,
   });
 
   // Fingerprint manager — enroll/delete relay over the same garage WS, plus the
   // browser progress rebroadcast. Auth reuses the unlock service above.
   initManageService({
-    eventBus,
-    logger: rootLogger.child({ module: 'fitness-fingerprint-manage' })
+    biometricGateway,
   });
   // Persistence adapter (1_adapters) → application writer (3_applications): the
   // writer never touches the filesystem itself, satisfying the DDD layering.
@@ -977,12 +1046,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   if (audiobookshelfConfig) {
     const { AudiobookshelfClient } = await import('./1_adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs');
     const { ABSProgressAdapter } = await import('./1_adapters/content/readable/audiobookshelf/ABSProgressAdapter.mjs');
+    const { ProgressWriteRuntime } = await import('./1_adapters/content/ProgressWriteRuntime.mjs');
     const { ProgressSyncService } = await import('./3_applications/content/services/ProgressSyncService.mjs');
     const absClient = new AudiobookshelfClient(audiobookshelfConfig, { httpClient: axios });
     const remoteProgressProvider = new ABSProgressAdapter(absClient);
     progressSyncService = new ProgressSyncService({
       remoteProgressProvider,
       mediaProgressMemory,
+      progressWriteRuntime: new ProgressWriteRuntime(),
+      clock: { now: () => new Date(), epoch: () => Date.now() },
       logger: rootLogger.child({ module: 'progress-sync' })
     });
   }
@@ -1064,6 +1136,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
+    menuMemoryRepository: new YamlMenuMemoryRepository({
+      filePath: configService.getHouseholdPath('history/menu_memory', householdId),
+    }),
     mediaProgressMemory,
     progressSyncService,
     progressSyncSources,
@@ -1173,8 +1248,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Admin-facing config CRUD for household notification governance
   // (quiet hours, cooldowns). Kept separate from the runtime notificationStack.
   const notificationConfigService = new NotificationConfigService({
-    configFiles: new YamlConfigFileStore({ logger: rootLogger.child({ module: 'config-files' }) }),
-    configService,
+    repository: new YamlNotificationConfigRepository({
+      configService,
+      configFiles: new YamlConfigFileStore({ logger: rootLogger.child({ module: 'config-files' }) }),
+    }),
     logger: rootLogger.child({ module: 'notifications', submodule: 'config' }),
   });
 
@@ -1311,7 +1388,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const v1Routers = {
     'pressure-mats': createPressureMatRouter({
-      pressureMatAdapter,
+      pressureMatOperations: new PressureMatOperations({ pressureMats: pressureMatAdapter }),
       logger: rootLogger.child({ module: 'pressure-mat-api' }),
     }),
     // New unified item API
@@ -1333,6 +1410,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Info router (action-based metadata)
   const { createInfoRouter } = await import('./4_api/v1/routers/info.mjs');
+  // Both metadata and display routes need the same application service.  Passing
+  // only the old constructor inputs to info left contentAccessService undefined
+  // and made Plex enrichment fail before it could fetch metadata.
   const contentAccessService = new ContentAccessService({
     contentIdResolver: contentServices.contentIdResolver,
     contentCatalog: contentServices.contentCatalog,
@@ -1352,8 +1432,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Media queue management
   v1Routers.media = createMediaRouter({
     mediaQueueService: mediaServices.mediaQueueService,
-    configService,
-    broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
+    mediaSurfaceConfig: new MediaSurfaceConfigService({
+      loadAppConfig: (householdId, app) => configService.getHouseholdAppConfig(householdId, app),
+    }),
+    contentIdResolver: contentServices.contentIdResolver,
+    mediaQueueEvents: new MediaQueueEvents({ publish: (topic, payload) => eventBus.broadcast(topic, payload) }),
+    createMediaQueue: (props) => new MediaQueue(props),
     logger: rootLogger.child({ module: 'media-api' }),
   });
 
@@ -1361,13 +1445,25 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
   const { FFmpegStreamAdapter } = await import('./1_adapters/livestream/FFmpegStreamAdapter.mjs');
   const { SourceFeeder } = await import('./1_adapters/livestream/SourceFeeder.mjs');
+  const { StreamChannelRuntimeAdapter } = await import('./1_adapters/livestream/StreamChannelRuntimeAdapter.mjs');
   const programsBasePath = configService.getHouseholdPath('livestream/programs');
+  const livestreamConfigFiles = new YamlConfigFileStore({ logger: rootLogger.child({ module: 'livestream-config' }) });
   const channelManager = new ChannelManager({
-    mediaBasePath,
-    programsBasePath,
     broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
-    createStreamAdapter: (opts) => new FFmpegStreamAdapter(opts),
-    createSourceFeeder: (opts) => new SourceFeeder(opts),
+    createChannelRuntime: (opts) => new StreamChannelRuntimeAdapter({
+      ...opts,
+      createEncoder: (encoderOpts) => new FFmpegStreamAdapter(encoderOpts),
+      createFeeder: (feederOpts) => new SourceFeeder({
+        ...feederOpts,
+        resolveMediaAsset: (asset) => path.isAbsolute(asset) ? asset : path.join(mediaBasePath, asset),
+      }),
+    }),
+    loadProgram: (programPath) => livestreamConfigFiles.readYaml(
+      path.isAbsolute(programPath) ? programPath : path.join(programsBasePath, programPath),
+    ),
+    clock: () => Date.now(),
+    random: Math.random,
+    scheduler: new NodeApplicationScheduler(),
     logger: rootLogger.child({ module: 'livestream' }),
   });
 
@@ -1464,7 +1560,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'weather-feed' }),
     });
     const healthAdapter = new HealthFeedAdapter({
-      userDataService,
+      loadLifelog: userLoadFile,
       logger: rootLogger.child({ module: 'health-feed' }),
     });
     const gratitudeAdapter = new GratitudeFeedAdapter({
@@ -1473,11 +1569,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'gratitude-feed' }),
     });
     const stravaAdapter = new StravaFeedAdapter({
-      userDataService,
+      loadLifelog: userLoadFile,
       logger: rootLogger.child({ module: 'strava-feed' }),
     });
     const todoistAdapter = new TodoistFeedAdapter({
-      userDataService,
+      loadCurrentTasks: (username) => userLoadCurrent(username, 'todoist'),
       logger: rootLogger.child({ module: 'todoist-feed' }),
     });
     const immichConfig = configService.getAdapterConfig('immich');
@@ -1489,7 +1585,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'immich-feed' }),
     }) : null;
     const journalAdapter = new JournalFeedAdapter({
-      userDataService,
+      loadLifelog: userLoadFile,
       logger: rootLogger.child({ module: 'journal-feed' }),
     });
     const plexAdapter = new PlexFeedAdapter({
@@ -1538,7 +1634,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }) : null;
 
     const goodreadsFeedAdapter = new GoodreadsFeedAdapter({
-      userDataService,
+      loadLifelog: userLoadFile,
       httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'goodreads-feed' }),
     });
@@ -1560,16 +1656,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
 
     const { ScrollConfigLoader } = await import('./3_applications/feed/services/ScrollConfigLoader.mjs');
+    const { DataServiceFeedConfigRepository } = await import('./1_adapters/feed/DataServiceFeedConfigRepository.mjs');
     const { SpacingEnforcer } = await import('./3_applications/feed/services/SpacingEnforcer.mjs');
     const { TierAssemblyService } = await import('./3_applications/feed/services/TierAssemblyService.mjs');
     const { SourceResolver } = await import('./3_applications/feed/services/SourceResolver.mjs');
     const { FeedCacheService } = await import('./3_applications/feed/services/FeedCacheService.mjs');
+    const { YamlFeedCacheRepository } = await import('./1_adapters/feed/YamlFeedCacheRepository.mjs');
 
-    const scrollConfigLoader = new ScrollConfigLoader({ dataService });
+    const scrollConfigLoader = new ScrollConfigLoader({
+      configRepository: new DataServiceFeedConfigRepository({ dataService }),
+    });
     const spacingEnforcer = new SpacingEnforcer();
     const feedCacheService = new FeedCacheService({
-      dataService,
-      cachePath: 'current/feed/_cache',
+      cacheRepository: new YamlFeedCacheRepository({ dataService }),
+      scheduler: new NodeApplicationScheduler(),
       logger: rootLogger.child({ module: 'feed-cache' }),
     });
 
@@ -1627,6 +1727,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       queryConfigs,
       loadUserQueries,
       dismissedItemsStore,
+      scheduler: new NodeApplicationScheduler(),
       logger: rootLogger.child({ module: 'feed-pool' }),
     });
 
@@ -1668,6 +1769,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       historyStore: feedHistoryStore,
       sourceAdapters: feedSourceAdapters,
       legacyDismissedStore: dismissedItemsStore,
+      clock: { now: () => Date.now() },
+      createId: crypto.randomUUID,
+      scheduler: new NodeApplicationScheduler(),
       logger: rootLogger.child({ module: 'feed-state' }),
     });
     v1Routers.feed = createFeedRouter({
@@ -1741,9 +1845,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   // Create harvest router using HarvesterService
+  const { DefaultPrincipalResolver } = await import('./3_applications/common/context/DefaultPrincipalResolver.mjs');
+  const { NodePromiseDeadline } = await import('./1_adapters/scheduling/NodePromiseDeadline.mjs');
   v1Routers.harvest = createHarvestRouter({
     harvesterService: harvesterServices.harvesterService,
-    configService,
+    principalResolver: new DefaultPrincipalResolver({
+      headOfHousehold: () => configService.getHeadOfHousehold?.(),
+      defaultUsername: () => configService.getDefaultUsername?.(),
+      fallback: 'default',
+    }),
+    requestIds: { next: crypto.randomUUID },
+    deadline: new NodePromiseDeadline(),
+    timeoutPolicy: () => 120_000,
     logger: rootLogger.child({ module: 'harvest-api' })
   });
 
@@ -1757,7 +1870,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Lifelog domain router
   v1Routers.lifelog = createLifelogApiRouter({
     lifelogServices,
-    userDataService,
+    dataService,
     configService,
     logger: rootLogger.child({ module: 'lifelog-api' })
   });
@@ -1822,9 +1935,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // The notification service is what finally gives the inbox a reader: until now
   // arrival triggered nothing but a log line, so a recorded complaint sat in a
   // YAML file until somebody thought to go looking.
+  const { FilesystemFeedbackRepository } = await import('./1_adapters/feedback/FilesystemFeedbackRepository.mjs');
   v1Routers.feedback = createFeedbackRouter({
     feedbackService: new FeedbackService({
-      configService,
+      feedbackRepository: new FilesystemFeedbackRepository({
+        itemsRoot: configService.getHouseholdPath('feedback'),
+        mediaDir: mediaBasePath,
+      }),
       transcriptionService: sharedAiGateway || null,
       notificationService: notificationStack?.notificationService || null,
       logger: rootLogger.child({ module: 'feedback' }),
@@ -1841,7 +1958,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     manifestsDir: configService.getHouseholdPath('gaming/manifests'),
   });
   const partyGamesCatalog = new PartyGamesCatalog({
-    configService, userService, definitionStore: gamingDefinitionStore, manifestStore: gamingManifestStore, logger: rootLogger.child({ module: 'party-games' }),
+    configProjection: new PartyGamesConfigProjection({ configService }),
+    userService,
+    definitionStore: gamingDefinitionStore,
+    manifestStore: gamingManifestStore,
+    resourcePresenter: publicResourceUrl,
+    logger: rootLogger.child({ module: 'party-games' }),
   });
   const partyGamesProfile = partyGamesCatalog.getConfig();
   const partyGamesPrinterAdapter = partyGamesProfile.printing.host ? new LaserPrinterAdapter({
@@ -1887,8 +2009,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'gaming-api' }),
   });
   v1Routers.gaming = gamingRouter;
+  const { GetPublicPresentationCatalog } = await import('./3_applications/presentation/GetPublicPresentationCatalog.mjs');
   v1Routers.presentation = createPresentationRouter({
     catalog: presentationCatalog,
+    getPublicCatalog: new GetPublicPresentationCatalog({ catalog: presentationCatalog }),
     logger: rootLogger.child({ module: 'presentation-api' }),
   });
 
@@ -2009,9 +2133,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Content-filter cascade (EDL + profile + override) for the Player's
   // useContentFilter hook. Curated policy from data/household/content-filter/,
   // machine-fetched EDLs from media/content-filter/.
+  const { FilesystemContentFilterRepository } = await import('./1_adapters/persistence/files/FilesystemContentFilterRepository.mjs');
+  const { GetContentFilter } = await import('./3_applications/content-filter/usecases/GetContentFilter.mjs');
   v1Routers['content-filter'] = createContentFilterRouter({
-    householdDir: configService.getHouseholdPath(''),
-    mediaDir: configService.getMediaDir(),
+    getContentFilter: new GetContentFilter({
+      contentFilterRepository: new FilesystemContentFilterRepository({
+        householdDir: configService.getHouseholdPath(''),
+        mediaDir: configService.getMediaDir(),
+      }),
+    }),
     logger: rootLogger.child({ module: 'content-filter-api' }),
   });
 
@@ -2045,13 +2175,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Eink router — renders panels for hardware e-paper displays (Seeed reTerminal).
   const { EinkPanelService } = await import('./3_applications/eink/EinkPanelService.mjs');
   const { createEinkRouter } = await import('./4_api/v1/routers/eink.mjs');
+  const { DataServiceEinkPanelStore } = await import('./1_adapters/eink/DataServiceEinkPanelStore.mjs');
+  const { HttpEinkDataSourceGateway } = await import('./1_adapters/eink/HttpEinkDataSourceGateway.mjs');
+  const { Sha1ContentFingerprint } = await import('./1_adapters/eink/Sha1ContentFingerprint.mjs');
+  const { createEinkPanelRenderer } = await import('./1_rendering/eink/EinkPanelRenderer.mjs');
   // Self-fetch base for panel data sources comes from household config, never a
   // literal — same source the MediaBundle uses (see bootstrap.mjs). Internal
   // host (e.g. http://daylight-station:3111) so the round-trip stays on-LAN.
   const einkDevices = configService.getHouseholdDevices(householdId) || {};
   const einkPanelService = new EinkPanelService({
-    baseUrl: einkDevices.daylightHostInternal || einkDevices.daylightHost,
-    fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`,
+    panelStore: new DataServiceEinkPanelStore({ dataService }),
+    dataSourceGateway: new HttpEinkDataSourceGateway({
+      baseUrl: einkDevices.daylightHostInternal || einkDevices.daylightHost,
+    }),
+    panelRenderer: createEinkPanelRenderer({ fontDir: configService.getPath('font') || `${mediaBasePath}/fonts` }),
+    fingerprint: new Sha1ContentFingerprint(),
     logger: rootLogger.child({ module: 'eink' }),
   });
   v1Routers.eink = createEinkRouter({
@@ -2081,7 +2219,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Calendar domain router
   v1Routers.calendar = createCalendarApiRouter({
-    userDataService,
+    dataService,
     configService,
     logger: rootLogger.child({ module: 'calendar-api' })
   });
@@ -2379,28 +2517,55 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // QR Code renderer and router
   const { createQRCodeRenderer } = await import('#rendering/qrcode/QRCodeRenderer.mjs');
+  const { createGenerateQRCode } = await import('#apps/qrcode/GenerateQRCode.mjs');
+  const { QRCodeAssetAdapter } = await import('#adapters/qrcode/QRCodeAssetAdapter.mjs');
   const { createQRCodeRouter } = await import('./4_api/v1/routers/qrcode.mjs');
   const qrcodeRenderer = createQRCodeRenderer({ mediaPath: mediaBasePath });
   // Resolve default barcode target screen from devices config
-  const _qrDevices = (configService.getHouseholdDevices(householdId)?.devices) || {};
+  const _qrDeviceConfig = configService.getHouseholdDevices(householdId) || {};
+  const _qrDevices = _qrDeviceConfig.devices || {};
   const _qrDefaultScreen = Object.values(_qrDevices)
     .find(d => d.type === 'barcode-scanner')?.target_screen || null;
+  const qrcodeLogger = rootLogger.child({ module: 'qrcode' });
+  const qrcodeInternalBaseUrl = _qrDeviceConfig.daylightHostInternal
+    || _qrDeviceConfig.daylightHost
+    || `http://localhost:${process.env.PORT || 3111}`;
+  const generateQRCode = createGenerateQRCode({
+    renderer: qrcodeRenderer,
+    createContentExpression: (value) => new ContentExpression(value),
+    knownCommands: KNOWN_COMMANDS,
+    contentIdResolver: contentServices.contentIdResolver,
+    contentCatalog: contentServices.contentCatalog,
+    assetGateway: new QRCodeAssetAdapter({
+      mediaPath: mediaBasePath,
+      defaultLogoPath: `${mediaBasePath}/img/buttons/play.svg`,
+      internalBaseUrl: qrcodeInternalBaseUrl,
+      logger: qrcodeLogger,
+    }),
+    defaultScreen: _qrDefaultScreen,
+    logger: qrcodeLogger,
+  });
 
   v1Routers.qrcode = createQRCodeRouter({
+    generateQRCode,
     contentExpression: ContentExpression,
-    renderer: qrcodeRenderer,
-    contentIdResolver: contentServices.contentIdResolver,
-    mediaPath: mediaBasePath,
-    defaultLogoPath: `${mediaBasePath}/img/buttons/play.svg`,
-    defaultScreen: _qrDefaultScreen,
-    logger: rootLogger.child({ module: 'qrcode' }),
+    logger: qrcodeLogger,
   });
 
   // Catalog PDF router
+  const { createGenerateCatalog } = await import('#apps/catalog/GenerateCatalog.mjs');
+  const { HttpCatalogListSource } = await import('#adapters/catalog/HttpCatalogListSource.mjs');
+  const { renderCatalogPdf } = await import('#rendering/catalog/renderCatalogPdf.mjs');
   const { createCatalogRouter } = await import('./4_api/v1/routers/catalog.mjs');
   v1Routers.catalog = createCatalogRouter({
+    generateCatalog: createGenerateCatalog({
+      createContentExpression: (value) => new ContentExpression(value),
+      listSource: new HttpCatalogListSource({ baseUrl: qrcodeInternalBaseUrl }),
+      generateQRCode,
+      renderPdf: renderCatalogPdf,
+      logger: rootLogger.child({ module: 'catalog' }),
+    }),
     contentExpression: ContentExpression,
-    port: Number(process.env.PORT || 3111),
     logger: rootLogger.child({ module: 'catalog' }),
   });
 
@@ -2409,31 +2574,40 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // rather than imported by the service, which is what keeps the printed codes
   // and the parsing grammar from drifting: both come from ScanVocabularyService.
   const { createSheetService } = await import('#apps/sheets/SheetService.mjs');
+  const { PrintableSheetOperations } = await import('#apps/sheets/PrintableSheetOperations.mjs');
   const { createCellRenderers } = await import('#rendering/pdf/cellRenderers.mjs');
+  const { layout: layoutSheet } = await import('#rendering/pdf/SheetLayout.mjs');
+  const { renderSheetPdf } = await import('#rendering/pdf/QRSheetRenderer.mjs');
   const { createNutritionProviders } = await import('#composition/modules/sheetProviders.mjs');
   const { createIconLoader } = await import('#composition/modules/iconLoader.mjs');
   const { createSheetsRouter } = await import('./4_api/v1/routers/sheets.mjs');
 
   const sheetCellKinds = createCellRenderers();
   const sheetsLogger = rootLogger.child({ module: 'sheets' });
-  v1Routers.sheets = createSheetsRouter({
-    sheetService: createSheetService({
-      getConfig: () => configService.getHouseholdAppConfig(householdId, 'sheets') || {},
-      providers: createNutritionProviders({
-        // Read per build, not once: the sheet must reflect the scale config as it
-        // stands when someone asks for a printout.
-        getScaleConfig: () => normalizeScaleNutribotConfig(
-          configService.getHouseholdAppConfig(householdId, 'scales') || {},
-        ),
-        loadIcon: createIconLoader({
-          dir: configService.getHouseholdPath('nutrition/icons'),
-          logger: sheetsLogger,
-        }),
+  const sheetService = createSheetService({
+    getConfig: () => configService.getHouseholdAppConfig(householdId, 'sheets') || {},
+    providers: createNutritionProviders({
+      // Read per build, not once: the sheet must reflect the scale config as it
+      // stands when somebody asks for a printout.
+      getScaleConfig: () => normalizeScaleNutribotConfig(
+        configService.getHouseholdAppConfig(householdId, 'scales') || {},
+      ),
+      loadIcon: createIconLoader({
+        dir: configService.getHouseholdPath('nutrition/icons'),
+        logger: sheetsLogger,
       }),
-      cellKinds: sheetCellKinds,
-      logger: sheetsLogger,
     }),
     cellKinds: sheetCellKinds,
+    layoutSheet,
+    logger: sheetsLogger,
+  });
+  v1Routers.sheets = createSheetsRouter({
+    printableSheets: new PrintableSheetOperations({
+      sheets: sheetService,
+      cellKinds: sheetCellKinds,
+      renderPdf: renderSheetPdf,
+      logger: sheetsLogger,
+    }),
     logger: sheetsLogger,
   });
 
@@ -2470,8 +2644,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Create shared FitnessPlayableService (used by both fitness router and agents router)
   const fitnessConfigService = new FitnessConfigService({
-    userDataService,
-    configService,
+    configProjection: new FitnessConfigProjection({ configService }),
     logger: rootLogger.child({ module: 'fitness-config' })
   });
   const fitnessContentAdapter = contentRegistry?.get(loadFitnessConfig(householdId)?.content_source || 'plex');
@@ -2538,8 +2711,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // they use that console's one authorization predicate rather than inventing a
   // second grown-up/PIN interpretation in the piano bounded context.
   const { makeTeacherGate } = await import('#apps/school/TeacherGate.mjs');
+  const { SchoolTeacherConfigSource } = await import('#adapters/school/SchoolTeacherConfigSource.mjs');
+  const schoolTeacherConfig = new SchoolTeacherConfigSource({ configService });
   const schoolTeacherGate = makeTeacherGate({
-    configService, userService, householdId,
+    loadTeachers: schoolTeacherConfig.teachers,
+    loadTeacherPin: schoolTeacherConfig.pin,
+    userService,
+    householdId,
     logger: rootLogger.child({ module: 'school-teacher-gate' }),
   });
   const pianoAttemptStore = new YamlPianoAttemptStore({
@@ -2577,7 +2755,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,
     composerSongStore,
-    configService,
+    configProjection: new PianoConfigProjection({ configService }),
     plexClient: pianoPlexClient,
     learningService: pianoLearningService,
     logger: rootLogger.child({ module: 'piano-api' })
@@ -2774,6 +2952,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { TsFsrsFlashcardScheduler } = await import('#adapters/school/flashcards/TsFsrsFlashcardScheduler.mjs');
   const { FlashcardStudyService } = await import('#apps/school/FlashcardStudyService.mjs');
   const { FlashcardSchedulerPolicyResolver } = await import('#apps/school/FlashcardSchedulerPolicyResolver.mjs');
+  const { ConfigFlashcardSchedulerPolicySource } = await import('#adapters/school/flashcards/ConfigFlashcardSchedulerPolicySource.mjs');
   const flashcardAssignments = new YamlAssignmentStore({ configService, logger: rootLogger.child({ module: 'school-flashcard-assignments' }) });
   const flashcardStudy = schoolCatalog.content
     ? new FlashcardStudyService({
@@ -2782,9 +2961,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       assignments: flashcardAssignments,
       grader: schoolService,
       scheduler: new TsFsrsFlashcardScheduler(),
-      policyResolver: new FlashcardSchedulerPolicyResolver({ configService, assignments: flashcardAssignments, catalog: schoolCatalog.query }),
+      policyResolver: new FlashcardSchedulerPolicyResolver({
+        policySource: new ConfigFlashcardSchedulerPolicySource({ configService }),
+        assignments: flashcardAssignments,
+        catalog: schoolCatalog.query,
+      }),
       teacherGate: schoolTeacherGate,
       timezone: configService.getTimezone?.() || null,
+      now: Date.now,
+      id: shortId,
     })
     : null;
   const flashcardAssets = new SchoolFlashcardAssetRepository({
@@ -2987,9 +3172,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   try { schoolCubeGrants = new HmacSchoolCubeGrantIssuer({ key: jwtSecret }); } catch (error) {
     rootLogger.error('school.rubiks-cube.grants-unavailable', { error: error.message });
   }
-  const languageReelService = new LanguageReelService({ configService, store: new YamlDocumentFileStore() });
+  const schoolDocumentFileStore = new YamlDocumentFileStore();
+  const languageReelService = new LanguageReelService({
+    repository: new FilesystemLanguageReelRepository({
+      configService,
+      store: schoolDocumentFileStore,
+    }),
+    idFactory: crypto.randomUUID,
+  });
   const rubiksRecoverySolver = new KociembaCubeRecoverySolver();
-  const rubiksCubeService = new RubiksCubeCourseService({ configService, store: new YamlDocumentFileStore(), recoverySolver: rubiksRecoverySolver, packetPlanner: new RubiksPacketPlanner({ solver: rubiksRecoverySolver }) });
+  const rubiksCubeService = new RubiksCubeCourseService({
+    repository: new FilesystemRubiksCubeProgressRepository({
+      configService,
+      store: schoolDocumentFileStore,
+      courseId: RUBIKS_CUBE_COURSE_ID,
+    }),
+    recoverySolver: rubiksRecoverySolver,
+    packetPlanner: new RubiksPacketPlanner({
+      solver: rubiksRecoverySolver,
+      idFactory: crypto.randomUUID,
+    }),
+    idFactory: crypto.randomUUID,
+  });
   const languageStudyService = new SentenceLadderService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
@@ -3105,26 +3309,36 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const emergencyLogger = rootLogger.child({ module: 'fitness-emergency' });
   const emergencyHaGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
   const emergencyLockRepo = new YamlEmergencyLockDatastore({ configService });
+  const emergencyPublications = new FitnessEmergencyPublications({ eventBus });
   const emergencyConfig = loadFitnessConfig(householdId)?.emergency || {};
   const triggerEmergencyLockdown = emergencyHaGateway ? new TriggerEmergencyLockdown({
     repo: emergencyLockRepo,
     haGateway: emergencyHaGateway,
-    eventBus,
+    publications: emergencyPublications,
+    pause: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
     scriptId: emergencyConfig.ha_script || 'garage_deactivate',
     defaultDurationSec: Number(emergencyConfig.duration_sec) || 1800,
     logger: emergencyLogger
   }) : null;
-  const releaseEmergencyLockdown = new ReleaseEmergencyLockdown({ repo: emergencyLockRepo, eventBus, logger: emergencyLogger });
+  const releaseEmergencyLockdown = new ReleaseEmergencyLockdown({
+    repo: emergencyLockRepo,
+    publications: emergencyPublications,
+    logger: emergencyLogger,
+  });
   const getLockdownState = new GetLockdownState({ repo: emergencyLockRepo });
   // Passive identity relay: enriches the garage's dumb `biometric.scan` events into
   // `fitness.identity.detected` and stamps a short-lived pending-detection that the
   // /emergency/{commit,abort,release} endpoints consume. No reader loop, no contention.
   const identityRelay = createIdentityRelay({
-    eventBus,
+    identityChannel: new FitnessIdentityChannel({ eventBus }),
     userService,
     loadFitnessConfig: () => loadFitnessConfig(householdId) || {},
     getLockdownState,
     triggerEmergencyLockdown,
+    commitScheduler: {
+      schedule: (delayMs, task) => setTimeout(task, delayMs),
+      cancel: (handle) => clearTimeout(handle),
+    },
     serverCommitDelayMs: Number(emergencyConfig?.abuse?.server_commit_delay_ms) > 0
       ? Number(emergencyConfig.abuse.server_commit_delay_ms)
       : undefined,
@@ -3230,9 +3444,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const listDir = (relativePath) => yamlDirectoryCatalog.list(relativePath);
 
   const { EventAggregationService } = await import('./3_applications/home/EventAggregationService.mjs');
+  const { DataServiceEventFeedRepository } = await import('./1_adapters/home/DataServiceEventFeedRepository.mjs');
   const eventAggregationService = new EventAggregationService({
-    dataService,
-    configService,
+    eventRepository: new DataServiceEventFeedRepository({
+      dataService,
+      defaultUser: () => configService.getHeadOfHousehold?.(),
+    }),
     logger: rootLogger.child({ module: 'event-aggregation' }),
   });
 
@@ -3301,7 +3518,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `presence:` block on each device in devices.yml. No-op if no device declares
   // one or the HA gateway is absent.
   createScreenPresenceService({
-    eventBus,
+    presenceGateway: devicePresenceGateway,
     haGateway: homeAutomationAdapters.haGateway,
     devicesConfig: devicesConfig.devices || {},
     logger: rootLogger.child({ module: 'screen-presence' }),
@@ -3337,9 +3554,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Per-device "is a video playing" registry (excludes ArtMode scenes), fed by
   // the same `screen.presence` heartbeat. Read by the ambient scheduler.
   const screenContentTracker = new ScreenContentTracker({
+    presenceGateway: devicePresenceGateway,
     logger: rootLogger.child({ module: 'screen-content' }),
   });
-  screenContentTracker.start(eventBus);
+  screenContentTracker.start();
 
   // Transcode pre-warming for device loads
   const { prewarmService } = createTranscodePrewarmService({
@@ -3352,7 +3570,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Command-handler liveness tracker — gates WS-first warm-switch on positive
   // proof a frontend command handler (useCommandAckPublisher) is mounted.
   const commandHandlerLivenessService = new CommandHandlerLivenessService({
-    eventBus,
+    presenceGateway: devicePresenceGateway,
     logger: rootLogger.child({ module: 'command-handler-liveness' }),
   });
   commandHandlerLivenessService.start();
@@ -3540,7 +3758,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // rest of School (banks, materials, language) is untouched by its absence.
     schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
   }
-  const teacherCapabilitySessions = new TeacherCapabilitySessions({ teacherGate: schoolTeacherGate });
+  const teacherCapabilitySessions = new TeacherCapabilitySessions({
+    teacherGate: schoolTeacherGate,
+    tokenFactory: () => crypto.randomBytes(32).toString('base64url'),
+  });
   schoolTeacherGate.bindCapabilitySessions(teacherCapabilitySessions);
   if (typeof schoolLifecycle.teacherGate?.bindCapabilitySessions === 'function'
       && schoolLifecycle.teacherGate !== schoolTeacherGate) {
@@ -4055,8 +4276,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-api' })
   });
 
+  const { LanguageAudioResource } = await import('#apps/school/LanguageAudioResource.mjs');
+  const { FilesystemLanguageAudioRepository } = await import('#adapters/media/FilesystemLanguageAudioRepository.mjs');
+  const languageAudioResource = new LanguageAudioResource({
+    languageAudioRepository: new FilesystemLanguageAudioRepository({
+      mediaDir: mediaBasePath,
+      userExists: (userId) => Boolean(configService.getUserProfile(userId)),
+    }),
+    languageStudyService,
+  });
   const sentenceLadderRouter = createSentenceLadderRouter({ schoolErrors,
     languageStudyService,
+    languageAudioResource,
     studyGrants: schoolStudyGrants,
     logger: rootLogger.child({ module: 'school-language-api' })
   });
@@ -4181,6 +4412,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   if (schoolLifecycle.wired && schoolLifecycle.storyTimeLauncher) {
     const readingLogger = rootLogger.child({ module: 'school-reading' });
     const { ReadingSessionService } = await import('#apps/school/ReadingSessionService.mjs');
+    const { ReadingApiService } = await import('#apps/school/ReadingApiService.mjs');
     const { ReadingSessionInterceptor } = await import('#apps/school/readingSessionInterceptor.mjs');
     const { RecordStoryRead } = await import('#apps/school/usecases/RecordStoryRead.mjs');
     const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
@@ -4211,7 +4443,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: readingLogger,
     });
 
-    v1Routers.school.use('/reading', createReadingRouter({
+    const readingService = new ReadingApiService({
       recordStoryRead: new RecordStoryRead({
         readingLog: schoolLifecycle.stores.readingLog,
         // A FUNCTION, not a timezone, and deliberately so: this is the ONE
@@ -4230,7 +4462,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
       logger: readingLogger,
       observationStore: readingTimeline,
-    }));
+    });
+    v1Routers.school.use('/reading', createReadingRouter({ readingService }));
   } else {
     rootLogger.warn('school.reading.unwired', {
       reason: schoolLifecycle.wired ? 'no story-time launcher' : 'school lifecycle not wired',
@@ -4427,9 +4660,39 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     token: typeof portalAuth === 'string' ? portalAuth : portalAuth?.token,
     logger: rootLogger.child({ module: 'shutdown-portal' }),
   });
+  const getShutdownPolicy = () => {
+    const current = readShutdownConfig();
+    return {
+      durationSeconds: current.duration_seconds,
+      reconcileSeconds: current.reconcile_seconds,
+      targets: [
+        ...(current.targets?.school_screen_ids || []).map((id) => `school:${id}`),
+        ...(current.targets?.piano_device_ids || []).map((id) => `piano:${id}`),
+      ],
+    };
+  };
+  const shutdownCue = homeAutomationAdapters.haGateway?.callService ? {
+    announce: ({ lockedUntil, source }) => {
+      const script = readShutdownConfig().home_assistant?.script;
+      if (!script) return undefined;
+      return homeAutomationAdapters.haGateway.callService('script', 'turn_on', {
+        entity_id: script,
+        variables: { locked_until: lockedUntil, source },
+      });
+    },
+  } : null;
   const shutdownService = new ShutdownService({
-    repo: new YamlShutdownDatastore({ configService }), eventBus, getConfig: readShutdownConfig,
-    haGateway: homeAutomationAdapters.haGateway, portal, logger: rootLogger.child({ module: 'shutdown' }),
+    repo: new YamlShutdownDatastore({ configService }),
+    notifier: { publishState: (payload) => eventBus.broadcast('shutdown.state', payload) },
+    getPolicy: getShutdownPolicy,
+    cue: shutdownCue,
+    portal,
+    scheduleEvery: (intervalMs, task) => {
+      const timer = setInterval(task, intervalMs);
+      timer.unref?.();
+      return () => clearInterval(timer);
+    },
+    logger: rootLogger.child({ module: 'shutdown' }),
   });
   shutdownService.start();
   server?.once?.('close', () => shutdownService.dispose());
@@ -4511,6 +4774,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   //
   // Wired here (rather than in the earlier "Barcode ingress" block) because it
   // needs triggerDispatchService, which createTriggerApiRouter() just returned.
+  const { TelegramNutribotIdentity } = await import('#adapters/nutribot/TelegramNutribotIdentity.mjs');
   const scanDispatch = createScanDispatch({
     schoolLifecycle,
     schoolCalcResultImporter: schoolCalc.resultImporter,
@@ -4522,8 +4786,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // scan arrives but well after this line. Read at scan time, never captured.
     getScaleNutribotBridge: () => scaleNutribotBridge,
     getLogFoodFromUPC: () => nutribotServices.nutribotContainer.getLogFoodFromUPC(),
-    configService,
-    userIdentityService,
+    nutribotIdentity: new TelegramNutribotIdentity({ configService, userIdentityService }),
     screenNames: barcodeScreenNames,
     logger: rootLogger.child({ module: 'scan-dispatch' }),
     barcodeLogger,
@@ -4533,10 +4796,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // own device/gatekeeper config are untouched by everything above — only
   // where a scan goes has ever changed here.
   createBarcodeRelay({
-    eventBus,
-    dataDir,
+    relayGateway: new BarcodeFirmwareGateway({
+      eventBus,
+      timezone: configService.getHouseholdTimezone?.(householdId),
+    }),
     dayLog: relayDayLog({ persistence: { dir: barcodePersistDir } }, 'hardware/barcode/log', 'barcode_relay'),
-    timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'barcode-relay' }),
     onScan: (relay) => {
       // `dispatch` never rejects (see its invariant); the catch is the belt to
@@ -4750,6 +5014,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     botId: systemBots.nutribot?.telegram?.bot_id || '',
     secretToken: systemBots.nutribot?.telegram?.secret_token || '',
     gateway: nutribotTelegramAdapter,
+    aiGatewayAvailable: Boolean(nutribotAiGateway),
     logger: rootLogger.child({ module: 'nutribot-api' })
   });
   v1Routers.nutribot = nutribotApiResult.router;
@@ -4775,7 +5040,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   const journalistServices = createJournalistServices({
-    userDataService,
+    dataService,
     configService,
     telegramAdapter: journalistTelegramAdapter,
     aiGateway: journalistAiGateway,
@@ -4794,6 +5059,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     botId: systemBots.journalist?.telegram?.bot_id || '',
     secretToken: systemBots.journalist?.telegram?.secret_token || '',
     gateway: journalistTelegramAdapter,
+    aiGatewayAvailable: Boolean(journalistAiGateway),
     logger: rootLogger.child({ module: 'journalist-api' })
   });
 
@@ -4947,7 +5213,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // reset shows up.
   if (agentsServices.scheduler && notificationStack?.notificationService) {
     const relayWatchdog = createRelayWatchdog({
-      eventBus,
+      relayGateway: new RelayWatchdogFirmwareGateway({ eventBus }),
       sources: {
         // The unified kitchen board and the legacy per-board sources it may
         // still emit if an older firmware is flashed (see foodScaleRelay's
@@ -4997,7 +5263,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // tick is involved — the verdict lands on the heartbeat that proves it.
   if (notificationStack?.notificationService) {
     createPlaybackStallDetector({
-      eventBus,
+      presenceGateway: devicePresenceGateway,
       logger: rootLogger.child({ module: 'playback-stall' }),
       onStall: ({ deviceId, contentId, title, position, stalledForMs }) => {
         const minutes = Math.max(1, Math.round(stalledForMs / 60_000));
@@ -5128,9 +5394,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   // Memory CRUD router — mounted once for all agents (Phase 3 T4)
+  const { AgentMemoryAdministrationService } = await import('#apps/agents/AgentMemoryAdministrationService.mjs');
+  const { WorkingMemoryState } = await import('#apps/agents/framework/WorkingMemory.mjs');
   v1Routers.agentMemory = createAgentMemoryRouter({
-    orchestrator: agentsServices.orchestrator,
-    workingMemory: agentsServices.workingMemory,
+    memoryAdministration: new AgentMemoryAdministrationService({
+      orchestrator: agentsServices.orchestrator,
+      workingMemory: agentsServices.workingMemory,
+      createEmptyState: () => new WorkingMemoryState(),
+    }),
     logger: rootLogger.child({ module: 'agent-memory' }),
   });
   app.use('/api/v1/agents', v1Routers.agentMemory);
@@ -5257,21 +5528,41 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let mediaDownloadService = null;
   if (mediaBasePath) {
     const mediaPath = join(mediaBasePath, 'video', 'news');
+    const { NewsMediaStore } = await import('#adapters/content/media/NewsMediaStore.mjs');
+    const newsMediaStore = new NewsMediaStore({ mediaRoot: mediaBasePath });
 
     const videoSourceGateway = new YtDlpAdapter({
+      downloadRoot: mediaPath,
       logger: rootLogger.child({ module: 'ytdlp' })
     });
 
     mediaDownloadService = new MediaDownloadService({
       videoSourceGateway,
-      mediaPath: mediaBasePath,
+      newsMediaStore,
+      downloadThumbnail: (url, provider) => videoSourceGateway.downloadThumbnail(url, provider),
       logger: rootLogger.child({ module: 'media-download' })
     });
 
+    const { FilesystemFreshVideoMediaStore } = await import('#adapters/persistence/files/FilesystemFreshVideoMediaStore.mjs');
+    const freshVideoMediaStore = new FilesystemFreshVideoMediaStore({
+      mediaRoot: mediaPath,
+      logger: rootLogger.child({ module: 'freshvideo-store' }),
+    });
+    const freshVideoSourceCatalog = {
+      list: () => (loadFile('media/sources') || []).map((source) => ({
+        provider: source.shortcode,
+        sourceRef: {
+          platform: source.src || 'youtube',
+          collectionType: String(source.type || 'playlist').toLowerCase(),
+          locator: source.playlist,
+        },
+      })),
+    };
     mediaExecutor.register('freshvideo', createFreshVideoJobHandler({
       videoSourceGateway,
-      loadFile,
-      mediaPath,
+      sourceCatalog: freshVideoSourceCatalog,
+      mediaStore: freshVideoMediaStore,
+      lockOwnerId: process.pid,
       logger: rootLogger.child({ module: 'freshvideo' })
     }));
   } else {
@@ -5285,14 +5576,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // running even when the heavier media plumbing is unavailable. It is the
   // perishable half of the camera archive (see cameraLedgerJobHandler).
   // D1: bootstrap owns which concrete camera adapters are used; the handlers
-  // receive the factory set.
-  const cameraAdapters = {
-    ReolinkClient, makeSource, createHaDetectionSource, parseTriggerBits, ArchiveEncoder, ArchiveManifestStore,
-  };
-  mediaExecutor.register('camera-ledger', createCameraLedgerJobHandler({
+  // receive them through one semantic runtime gateway.
+  const { ConfiguredCameraJobRuntimeGateway } = await import('#composition/modules/ConfiguredCameraJobRuntimeGateway.mjs');
+  const { CameraLedgerStore } = await import('#adapters/camera/CameraLedgerStore.mjs');
+  const { FilesystemCameraArchiveArtifacts } = await import('#adapters/camera/FilesystemCameraArchiveArtifacts.mjs');
+  const { FilesystemContactSheetArtifacts } = await import('#adapters/camera/FilesystemContactSheetArtifacts.mjs');
+  const cameraRuntimeGateway = new ConfiguredCameraJobRuntimeGateway({
     configService,
-    cameraAdapters,
     haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
+    factories: {
+      createReolinkClient: (options) => new ReolinkClient(options),
+      makeSource,
+      createDetectionSource: (options) => createHaDetectionSource(options),
+      decodeTriggerBits: parseTriggerBits,
+      createEncoder: (options) => new ArchiveEncoder(options),
+      createManifestStore: (options) => new ArchiveManifestStore(options),
+      createArchiveArtifacts: (options) => new FilesystemCameraArchiveArtifacts(options),
+      createSheetArtifacts: () => new FilesystemContactSheetArtifacts(),
+    },
+  });
+  const cameraLedgerStore = new CameraLedgerStore({
+    resolveDestinations: () => configService
+      .getHouseholdAppConfig(householdId, 'camera-archive')?.storage?.ledgerPaths || [],
+  });
+  mediaExecutor.register('camera-ledger', createCameraLedgerJobHandler({
+    runtimeGateway: cameraRuntimeGateway,
+    ledgerStore: cameraLedgerStore,
+    householdId,
     logger: rootLogger.child({ module: 'camera-ledger' })
   }));
 
@@ -5301,8 +5611,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // detections exist to select against; without them selection degrades to
   // duration and bitrate density alone.
   mediaExecutor.register('camera-archive', createCameraArchiveJobHandler({
-    configService,
-    cameraAdapters,
+    runtimeGateway: cameraRuntimeGateway,
+    ledgerStore: cameraLedgerStore,
+    householdId,
     logger: rootLogger.child({ module: 'camera-archive' })
   }));
 
@@ -5345,6 +5656,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const schedulerOrchestrator = new SchedulerOrchestrator({
     schedulerService,
+    timestampCodec: new SchedulerTimestampCodec({ timezone: process.env.TZ }),
+    newExecutionId: () => crypto.randomUUID(),
+    scheduler: new NodeApplicationScheduler(),
     jobStore: compositeJobStore,
     stateStore: schedulingStateStore,
     harvesterExecutor: harvesterServices.jobExecutor,
@@ -5383,6 +5697,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       dataDir: ambientDataDir,
       logger: rootLogger.child({ module: 'ambient-state' }),
     }),
+    scheduler: new NodeApplicationScheduler(),
     timeZone: 'America/Los_Angeles',
     logger: rootLogger.child({ module: 'ambient-scheduler' }),
   });
@@ -5409,9 +5724,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Screens router for screen configurations
+  const screensLogger = rootLogger.child({ module: 'screens-api' });
   v1Routers.screens = createScreensRouter({
-    householdDir: configService.getHouseholdPath(''),
-    logger: rootLogger.child({ module: 'screens-api' })
+    screensQueryService: new ScreensQueryService({
+      screensRepository: new FilesystemScreensRepository({
+        householdDir: configService.getHouseholdPath(''),
+        logger: screensLogger,
+      }),
+      logger: screensLogger,
+    }),
+    logger: screensLogger,
   });
 
   // Auth router
@@ -5419,8 +5741,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     authService,
     jwtSecret,
     jwtConfig,
-    configService,
-    dataService,
+    authPublicContext: new AuthPublicContextService({
+      defaultHouseholdId: () => configService.getDefaultHouseholdId(),
+      readHousehold: () => dataService.household.read('household') || {},
+      listUserProfiles: () => configService.getAllUserProfiles(),
+    }),
     logger: rootLogger.child({ module: 'auth-api' })
   });
 
@@ -5429,44 +5754,64 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // in these services; the sub-routers are thin HTTP shells.
   const adminApiLogger = rootLogger.child({ module: 'admin-api' });
   // D5: the admin services decide WHICH config file; this store does the I/O.
-  const configFiles = new YamlConfigFileStore({ logger: rootLogger.child({ module: 'config-files' }) });
+  const adminConfigStore = new YamlAdminConfigStore({ dataRoot: configService.getDataDir() });
   const householdAdminService = new HouseholdAdminService({
-    configFiles,
-    configService,
+    configStore: adminConfigStore,
     logger: adminApiLogger.child?.({ submodule: 'household' }) || adminApiLogger
   });
   const yamlConfigFileService = new YamlConfigFileService({
-    configService,
+    configStore: adminConfigStore,
     logger: adminApiLogger.child?.({ submodule: 'config' }) || adminApiLogger
   });
   const appsConfigService = new AppsConfigService({
-    configFiles,
-    configService,
+    configStore: adminConfigStore,
     logger: adminApiLogger.child?.({ submodule: 'apps' }) || adminApiLogger
   });
   const schedulerAdminService = new SchedulerAdminService({
-    configFiles,
-    configService,
+    configStore: adminConfigStore,
     // Real manual-run path: the same orchestrator the scheduling loop uses.
     schedulerOrchestrator,
     logger: adminApiLogger.child?.({ submodule: 'scheduler' }) || adminApiLogger
   });
   const integrationsQueryService = new IntegrationsQueryService({
-    configFiles,
-    configService,
+    configStore: adminConfigStore,
     // Environment resolved at the composition root (was process.env in the router).
     environment: process.env.DAYLIGHT_ENV || 'docker',
     logger: adminApiLogger.child?.({ submodule: 'integrations' }) || adminApiLogger
   });
+  const listManagementService = new ListManagementService({
+    listStore: new YamlListDatastore({
+      dataDir: configService.getDataDir(),
+      listConfigCodec: ListConfigCodec,
+    }),
+    logger: adminApiLogger.child?.({ submodule: 'content' }) || adminApiLogger,
+  });
+  const adminArtService = new AdminArtService({
+    repository: new FilesystemArtAdminRepository({
+      mediaPath: mediaBasePath || imgBasePath,
+      householdDir: configService.getHouseholdPath(''),
+      logger: adminApiLogger,
+    }),
+    logger: adminApiLogger.child?.({ submodule: 'art' }) || adminApiLogger,
+  });
+  const adminImageService = new AdminImageService({
+    store: new AdminImageFileStore({ mediaPath: mediaBasePath || imgBasePath }),
+    source: new FetchAdminImageSource(),
+    createId: () => crypto.randomUUID(),
+    logger: adminApiLogger.child?.({ submodule: 'images' }) || adminApiLogger,
+  });
+  const adminNotificationOperations = new AdminNotificationOperations({
+    configuration: notificationConfigService,
+    ledger: notificationStack.ledgerStore,
+  });
 
   // Admin router - combined content, images, and eventbus management
   v1Routers.admin = createAdminRouter({
-    userDataService,
-    configService,
-    mediaPath: mediaBasePath || imgBasePath, // Use base media path for admin operations
-    loadFile,
-    mediaDownloadService,
-    eventBus,
+    householdContext,
+    listManagementService,
+    adminArtService,
+    adminImageService,
+    adminNotificationOperations,
     householdAdminService,
     yamlConfigFileService,
     appsConfigService,
@@ -5570,8 +5915,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'weekly-review-weather' }),
     });
 
+    const weeklyReviewHouseholdDir = configService.getHouseholdPath('', householdId);
+    const weeklyReviewCommandRunner = new NodeCommandRunner();
     const weeklyReviewService = new WeeklyReviewService(
-      { dataPath: dataBasePath, householdDir: configService.getHouseholdPath('', householdId), mediaPath: mediaBasePath, householdId },
+      {
+        dataPath: dataBasePath,
+        householdDir: weeklyReviewHouseholdDir,
+        mediaPath: mediaBasePath,
+        householdId,
+        timezone: configService.getTimezone?.() || 'UTC',
+      },
       {
         immichAdapter: weeklyReviewImmichAdapter,
         calendarData: weeklyReviewCalendarAdapter,
@@ -5594,6 +5947,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
             return { transcriptRaw: raw, transcriptClean: clean };
           },
         } : null,
+        reviewStore: new FilesystemWeeklyReviewStore({
+          householdDir: weeklyReviewHouseholdDir,
+          mediaPath: mediaBasePath,
+          logger: rootLogger.child({ module: 'weekly-review-store' }),
+        }),
+        runCommand: weeklyReviewCommandRunner.run,
         logger: rootLogger.child({ module: 'weekly-review' }),
       }
     );

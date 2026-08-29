@@ -32,6 +32,7 @@ export function createNutribotApiRouter(config) {
     botId,
     secretToken,
     gateway,
+    aiGatewayAvailable = true,
     logger = console,
     idempotencyStore = new InMemoryRequestDeduplicationStore({ logger })
   } = config;
@@ -61,10 +62,21 @@ export function createNutribotApiRouter(config) {
   // Web adapter — captures responses instead of sending via Telegram
   const webNutribotAdapter = new WebNutribotAdapter({ inputRouter, logger });
 
+  const unavailableAiOperation = {
+    execute() {
+      const error = new Error('NutriBot AI input is unavailable');
+      error.status = 503;
+      throw error;
+    },
+  };
   const nutribotApi = new NutribotApiService({
     logFoodFromUpc: nutribotServices.nutribotContainer.getLogFoodFromUPC(),
-    logFoodFromImage: nutribotServices.nutribotContainer.getLogFoodFromImage(),
-    logFoodFromText: nutribotServices.nutribotContainer.getLogFoodFromText(),
+    logFoodFromImage: aiGatewayAvailable
+      ? nutribotServices.nutribotContainer.getLogFoodFromImage()
+      : unavailableAiOperation,
+    logFoodFromText: aiGatewayAvailable
+      ? nutribotServices.nutribotContainer.getLogFoodFromText()
+      : unavailableAiOperation,
     getReport: nutribotServices.nutribotContainer.getGetReportAsJSON(),
     resolveIdentity: (username) => telegramIdentityAdapter.resolve('nutribot', { username }),
     defaultMember: config.defaultMember,

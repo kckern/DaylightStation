@@ -47,7 +47,7 @@ export function createHubFleetBridge(config) {
   }
 
   const hubFleetBridge = new HubFleetBridge({
-    realtime: new EventBusHubFleetRealtimeAdapter({ eventBus }),
+    realtimeGateway: new EventBusHubFleetRealtimeAdapter({ eventBus }),
     logger,
     heartbeatMs,
     clock,

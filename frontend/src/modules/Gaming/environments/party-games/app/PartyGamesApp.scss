@@ -13,6 +13,31 @@
   // direct-mounted title cards (loading / set-loading) fill the stage
   > .gp-titlecard { flex: 1; }
 
+  &__team-and-host {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+
+    > .gp-teamsetup {
+      flex: 1;
+      height: auto;
+      min-height: 0;
+    }
+  }
+
+  &__host-mode {
+    flex: 0 0 auto;
+    margin: 0.75rem 1.5rem 0;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+
+    legend { padding: 0 0.35rem; }
+    button { @include gp.gp-button; }
+  }
+
   &__error {
     color: var(--gp-danger);
     font-family: var(--gp-font-serif);
