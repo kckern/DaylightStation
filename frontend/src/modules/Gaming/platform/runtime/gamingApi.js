@@ -21,10 +21,15 @@ const projectSession = (view, gameId = null) => ({
 export function createGamingApi() {
   return {
     getAssetPack: (packId) => request(`/api/v1/gaming/assets/${encodeURIComponent(packId)}`),
-    getLaunchDescriptor: (gameId) => request(`/api/v1/gaming/launch/${encodeURIComponent(gameId)}`),
+    getLaunchDescriptor: (gameId, surfaceId, authorityMode = null) => {
+      const query = new URLSearchParams({ surface: surfaceId });
+      if (authorityMode) query.set('authority', authorityMode);
+      return request(`/api/v1/gaming/launch/${encodeURIComponent(gameId)}?${query}`);
+    },
     async createSession(input) {
       return projectSession(await request('/api/v1/gaming/sessions', { method: 'POST', body: JSON.stringify({
         definition_id: input.game_id,
+        surface_id: input.surface_id,
         participants: input.participants || [], setup: input.setup || {}, seed: input.seed,
       }) }), input.game_id);
     },

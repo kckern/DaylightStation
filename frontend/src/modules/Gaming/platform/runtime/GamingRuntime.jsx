@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { CardBattleView } from '../../experiences/card-battle/CardBattleView.jsx';
 import { createGamingApi } from './gamingApi.js';
 import { GamingController } from './GamingController.js';
 import { createProviderRegistry } from './providerRegistry.js';
 
-const SUPPORTED_PRESENTERS = Object.freeze({
-  'card-battle': CardBattleView,
-});
+const EMPTY_PRESENTERS = Object.freeze({});
 
-function SessionRuntime({ gameId, launchDescriptor, participants, providers, resumeSessionId = null, onClose }) {
+function SessionRuntime({ gameId, surfaceId, launchDescriptor, participants, providers, presenters, resumeSessionId = null, onClose }) {
   const viewerId = participants[0]?.user_id || participants[0]?.id || 'guest';
   const api = useMemo(() => createGamingApi(), []);
   const storageKey = `gaming:${gameId}:${viewerId}:active-session`;
@@ -22,11 +19,12 @@ function SessionRuntime({ gameId, launchDescriptor, participants, providers, res
     api,
     providerRegistry: createProviderRegistry(providers),
     gameId,
+    surfaceId,
     participants,
     viewerId,
     resumeSessionId: storedSessionId,
     logger,
-  }), [api, gameId, logger, participants, providers, storedSessionId, viewerId]);
+  }), [api, gameId, logger, participants, providers, storedSessionId, surfaceId, viewerId]);
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
 
   useEffect(() => {
@@ -45,7 +43,7 @@ function SessionRuntime({ gameId, launchDescriptor, participants, providers, res
   if (snapshot.phase === 'error' && !snapshot.session) {
     return <main className="gaming-shell gaming-error"><h1>Game unavailable</h1><p>{snapshot.error?.message}</p></main>;
   }
-  const Surface = SUPPORTED_PRESENTERS[launchDescriptor.presenter_id];
+  const Surface = presenters[launchDescriptor.presenter_id];
   if (!Surface) {
     return <main className="gaming-shell gaming-error"><h1>Unsupported game presenter</h1><p>{launchDescriptor.presenter_id}</p></main>;
   }
@@ -64,27 +62,29 @@ function SessionRuntime({ gameId, launchDescriptor, participants, providers, res
   );
 }
 
-export default function GamingRuntime({ gameId, participants = [], providers = [], onClose = null }) {
+export default function GamingRuntime({ gameId, surfaceId, authorityMode = null, participants = [], providers = [], presenters = EMPTY_PRESENTERS, onClose = null }) {
   const api = useMemo(() => createGamingApi(), []);
   const [bootstrap, setBootstrap] = useState({ phase: 'loading', launchDescriptor: null, error: null });
 
   useEffect(() => {
     let live = true;
-    api.getLaunchDescriptor(gameId)
+    if (!gameId || !surfaceId) return undefined;
+    api.getLaunchDescriptor(gameId, surfaceId, authorityMode)
       .then((descriptor) => {
-        if (!SUPPORTED_PRESENTERS[descriptor.presenter_id]) throw new Error(`Unsupported mounted presenter: ${descriptor.presenter_id || 'missing'}`);
+        if (!presenters[descriptor.presenter_id]) throw new Error(`Unsupported mounted presenter: ${descriptor.presenter_id || 'missing'}`);
         if (live) setBootstrap({ phase: 'ready', launchDescriptor: descriptor, error: null });
       })
       .catch((error) => {
         if (live) setBootstrap({ phase: 'error', launchDescriptor: null, error });
       });
     return () => { live = false; };
-  }, [api, gameId]);
+  }, [api, authorityMode, gameId, presenters, surfaceId]);
 
   if (!gameId) return <main className="gaming-shell gaming-error"><h1>Game unavailable</h1><p>No mounted game was selected.</p></main>;
+  if (!surfaceId) return <main className="gaming-shell gaming-error"><h1>Game unavailable</h1><p>No launch surface was selected.</p></main>;
   if (bootstrap.phase === 'loading') return <main className="gaming-shell gaming-loading">Opening game…</main>;
   if (bootstrap.phase === 'error') {
     return <main className="gaming-shell gaming-error"><h1>Game unavailable</h1><p>{bootstrap.error?.message}</p></main>;
   }
-  return <SessionRuntime gameId={gameId} launchDescriptor={bootstrap.launchDescriptor} participants={participants} providers={providers} onClose={onClose} />;
+  return <SessionRuntime gameId={gameId} surfaceId={surfaceId} launchDescriptor={bootstrap.launchDescriptor} participants={participants} providers={providers} presenters={presenters} onClose={onClose} />;
 }

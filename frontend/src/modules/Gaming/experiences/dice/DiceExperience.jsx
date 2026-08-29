@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
-import { fetchSession, sendRuleCommand } from '../../environments/group-play/app/sessionClient.js';
+import { fetchSession, sendRuleCommand } from '../../platform/api/sessionClient.js';
 import PolyhedralDice from './PolyhedralDice.jsx';
 import { OptionalRendererBoundary } from '../../platform/ui/OptionalRendererBoundary.jsx';
 import './DiceExperience.scss';

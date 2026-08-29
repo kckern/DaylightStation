@@ -291,8 +291,8 @@ import { createChessConfigService } from './3_applications/chess/ChessConfigServ
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
 import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
-import { GroupPlayCatalog } from './3_applications/gaming/usecases/GroupPlayCatalog.mjs';
-import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/gaming/effects/groupPlayBuzzerInput.mjs';
+import { PartyGamesCatalog } from './3_applications/gaming/usecases/PartyGamesCatalog.mjs';
+import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/gaming/effects/partyGamesBuzzerInput.mjs';
 import { createGamingApiModule } from './5_composition/modules/gamingApi.mjs';
 import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
 import { SchoolService } from './3_applications/school/SchoolService.mjs';
@@ -1858,17 +1858,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const gamingManifestStore = new YamlGamingExperienceManifestStore({
     manifestsDir: configService.getHouseholdPath('gaming/manifests'),
   });
-  const groupPlayCatalog = new GroupPlayCatalog({
-    configService, userService, definitionStore: gamingDefinitionStore, manifestStore: gamingManifestStore, logger: rootLogger.child({ module: 'group-play' }),
+  const partyGamesCatalog = new PartyGamesCatalog({
+    configService, userService, definitionStore: gamingDefinitionStore, manifestStore: gamingManifestStore, logger: rootLogger.child({ module: 'party-games' }),
   });
-  const groupPlayProfile = groupPlayCatalog.getConfig();
-  const groupPlayPrinterAdapter = groupPlayProfile.printing.host ? new LaserPrinterAdapter({
-    host: groupPlayProfile.printing.host,
-    port: groupPlayProfile.printing.port,
+  const partyGamesProfile = partyGamesCatalog.getConfig();
+  const partyGamesPrinterAdapter = partyGamesProfile.printing.host ? new LaserPrinterAdapter({
+    host: partyGamesProfile.printing.host,
+    port: partyGamesProfile.printing.port,
     logger: rootLogger.child({ module: 'gaming-print' }),
   }) : null;
-  const groupPlayPrinter = groupPlayPrinterAdapter ? {
-    print: (pdf, { sessionId }) => groupPlayPrinterAdapter.printPdf(pdf, { jobName: `Group Play host packet — ${sessionId}`, user: 'group-play', copies: 1 }),
+  const partyGamesPrinter = partyGamesPrinterAdapter ? {
+    print: (pdf, { sessionId }) => partyGamesPrinterAdapter.printPdf(pdf, { jobName: `Party Games host packet — ${sessionId}`, user: 'party-games', copies: 1 }),
   } : null;
 
   // One Gaming authority serves every experience.
@@ -1879,13 +1879,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     journalsDir: configService.getHouseholdPath('gaming/journals'),
     effectsDir: configService.getHouseholdPath('gaming/effects'),
     drawingCheckpointsDir: configService.getHouseholdPath('gaming/drawing-checkpoints'),
-    groupPlayCatalog,
-    aiGateway: groupPlayProfile.ai.commentary || groupPlayProfile.ai.advisory_judgment ? sharedAiGateway : null,
-    aiConfig: groupPlayProfile.ai,
-    printer: groupPlayPrinter,
+    partyGamesCatalog,
+    aiGateway: partyGamesProfile.ai.commentary || partyGamesProfile.ai.advisory_judgment ? sharedAiGateway : null,
+    aiConfig: partyGamesProfile.ai,
+    printer: partyGamesPrinter,
     broadcastEvent,
     logger: rootLogger.child({ module: 'gaming-runtime' }),
-    autoPrint: groupPlayProfile.printing.auto_print_once_per_session,
+    autoPrint: partyGamesProfile.printing.auto_print_once_per_session,
   });
   const gamingAssetCatalog = new YamlGamingAssetCatalog({
     catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
@@ -1898,7 +1898,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const gamingRouter = createGamingRouter({
     gamingApplication: gamingModule.gamingApplication,
     assetCatalog: gamingAssetCatalog,
-    mediaGroupPlayDir: join(mediaBasePath, 'games', 'group-play'),
+    mediaPartyGamesDir: join(mediaBasePath, 'games', 'party-games'),
     broadcastEvent,
     logger: rootLogger.child({ module: 'gaming-api' }),
   });
@@ -2158,8 +2158,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     hardwareLogger.warn('thermalPrinter.noneConfigured');
   }
 
-  // Group-play buzzers ride the same MQTT selector adapter as fitness selectors.
-  const handleGroupPlayBuzz = makeBuzzerSelectHandler(broadcastEvent, gamingModule.observability);
+  // Party Games buzzers ride the same MQTT selector adapter as fitness selectors.
+  const handlePartyGamesBuzz = makeBuzzerSelectHandler(broadcastEvent, gamingModule.observability);
 
   const hardwareAdapters = createHardwareAdapters({
     mqtt: {
@@ -2181,11 +2181,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     selectors: [
       ...((configService.getHouseholdAppConfig(householdId, 'fitness') || {}).selectors || []),
-      ...buzzersToSelectors((configService.getHouseholdAppConfig(householdId, 'group-play') || {}).buzzers),
+      ...buzzersToSelectors((configService.getHouseholdAppConfig(householdId, 'party-games') || {}).buzzers),
     ],
     onSelectorSelect: (selection) => {
-      if (selection?.equipmentId === 'group-play') {
-        handleGroupPlayBuzz(selection);
+      if (selection?.equipmentId === 'party-games') {
+        handlePartyGamesBuzz(selection);
         return;
       }
       // selection: { selectorId, equipmentId, userId, action }

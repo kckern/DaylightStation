@@ -6,7 +6,7 @@
 .activity-party__timer { position: absolute; right: 1rem; top: 1rem; display: grid; place-items: center; z-index: 2; }
 .activity-party__timer > * { grid-area: 1 / 1; }
 .activity-party__aid { display: flex; justify-content: center; gap: 1rem; font-size: 1.5rem; }
-.group-play-drawing canvas { display: block; width: min(100%, 1280px); aspect-ratio: 16 / 9; background: #fff; cursor: crosshair; touch-action: none; border-radius: .75rem; }
-.group-play-drawing nav { display: flex; gap: .75rem; justify-content: center; margin-top: .75rem; }
-.group-play-decoder-text { padding: .55rem 1rem; border-radius: .35rem; font-weight: 900; text-shadow: 0 1px #000; }
-.group-play-decoder-mask { max-height: 12rem; background: #fff; }
+.party-games-drawing canvas { display: block; width: min(100%, 1280px); aspect-ratio: 16 / 9; background: #fff; cursor: crosshair; touch-action: none; border-radius: .75rem; }
+.party-games-drawing nav { display: flex; gap: .75rem; justify-content: center; margin-top: .75rem; }
+.party-games-decoder-text { padding: .55rem 1rem; border-radius: .35rem; font-weight: 900; text-shadow: 0 1px #000; }
+.party-games-decoder-mask { max-height: 12rem; background: #fff; }
