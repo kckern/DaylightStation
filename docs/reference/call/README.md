@@ -115,6 +115,7 @@ Useful narrower queries:
 ```text
 _time:2h AND callId:"{callId}" AND _msg:"homeline.lease"
 _time:2h AND callId:"{callId}" AND _msg:"homeline.recovery"
+_time:2h AND callId:"{callId}" AND _msg:"homeline.signaling.rejected"
 _time:2h AND callId:"{callId}" AND (outcome:"failed" OR level:"error")
 _time:2h AND deviceId:"{deviceId}" AND _msg:"homeline.lease.conflict"
 ```
@@ -124,3 +125,9 @@ events. For a blank or partial call, compare `peerRevision`, signaling
 milestones, and media-health changes. For teardown, require a `homeline.lease.ended`
 or expiry event and inspect its restoration `outcome`; `left_on` is intentional
 when a destructive restoration cannot be proven safe.
+
+The phone and TV also each write a durable 14-day session trace under
+`media/logs/homeline-phone/` and `media/logs/homeline-tv/`. Use those traces
+when a browser disconnected before it could ship its final WebSocket log batch.
+Rejected signaling records only the safe lease fields, revision, and rejection
+code; it never records SDP, ICE candidate, or credential payloads.
