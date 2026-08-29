@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
-import { fetchDrawingCheckpoint, fetchSession, saveDrawingCheckpoint, sendRuleCommand } from '../../environments/group-play/app/sessionClient.js';
-import DrawingCanvas from '../../environments/group-play/surfaces/DrawingCanvas.jsx';
-import { DecoderText, HighContrastMask } from '../../environments/group-play/presenters/DecoderPresenter.jsx';
-import Scoreboard from '../../environments/group-play/presenters/Scoreboard.jsx';
-import TimerRing from '../../environments/group-play/ui/TimerRing.jsx';
-import TitleCard from '../../environments/group-play/ui/TitleCard.jsx';
-import { useCountdown } from '../../environments/group-play/ui/useCountdown.js';
+import { fetchDrawingCheckpoint, fetchSession, saveDrawingCheckpoint, sendRuleCommand } from '../../platform/api/sessionClient.js';
+import DrawingCanvas from './presentation/DrawingCanvas.jsx';
+import { DecoderText, HighContrastMask } from './presentation/DecoderPresenter.jsx';
+import Scoreboard from '../../platform/ui/Scoreboard.jsx';
+import TimerRing from '../../platform/ui/TimerRing.jsx';
+import TitleCard from '../../platform/ui/TitleCard.jsx';
+import { useCountdown } from '../../platform/ui/useCountdown.js';
 import './ActivityParty.scss';
 
 function ChallengeTimer({ running, onExpire, deadline, durationMs = 60_000 }) {
@@ -36,7 +36,7 @@ export default function ActivityParty({ teams, sessionId, onFinished }) {
     checkpointQueue.current.catch((cause) => setError(cause.message));
   }, [sessionId]);
   const performer = useMemo(() => teams.find((team) => team.id === state?.performer_id), [teams, state?.performer_id]);
-  if (error) return <div className="group-play__error">{error}</div>;
+  if (error) return <div className="party-games__error">{error}</div>;
   if (!state || !definition) return <TitleCard title="Activity Party" subtitle="Loading…" />;
   const challenge = state.challenge;
   return <div className="activity-party" data-phase={state.phase}>
@@ -58,7 +58,7 @@ export default function ActivityParty({ teams, sessionId, onFinished }) {
         : <div className="activity-party__charades"><h2>Act it out—no words.</h2><button type="button" onClick={() => command({ type: 'challenge.finish' })}>Finish</button></div>}
     </section>}
     {state.phase === 'adjudication' && <section className="activity-party__judge"><h2>How did they do?</h2><button onClick={() => command({ type: 'outcome.correct' })}>Correct</button><button onClick={() => command({ type: 'outcome.incorrect' })}>Incorrect</button><button onClick={() => command({ type: 'outcome.pass' })}>Pass</button><button onClick={() => command({ type: 'score.adjust', subject_id: state.performer_id, delta: 1 })}>+1 adjustment</button></section>}
-    {state.phase === 'verification' && <section className="activity-party__verify"><h2>Opponent confirmation required</h2><p>The configured verifier must confirm from their authenticated controller.</p><img src={`/api/v1/qrcode?data=${encodeURIComponent(`${window.location.origin}/group-play/verify/${sessionId}`)}&size=180`} width="180" height="180" alt="Open verifier controller" /></section>}
+    {state.phase === 'verification' && <section className="activity-party__verify"><h2>Opponent confirmation required</h2><p>The configured verifier must confirm from their authenticated controller.</p><img src={`/api/v1/qrcode?data=${encodeURIComponent(`${window.location.origin}/party-games/verify/${sessionId}`)}&size=180`} width="180" height="180" alt="Open verifier controller" /></section>}
     {state.phase === 'challenge-complete' && <section className="activity-party__complete"><h2>Challenge complete</h2><button autoFocus onClick={() => command({ type: 'challenge.next' })}>Next performer</button></section>}
     <Scoreboard teams={teams} scores={state.scores || {}} activeTeamId={state.performer_id} />
   </div>;

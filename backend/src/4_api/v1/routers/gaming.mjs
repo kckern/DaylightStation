@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { splatPath } from '#api/utils/wildcard.mjs';
 
-const STATUS = { definition_not_found: 404, experience_not_found: 404, session_not_found: 404, revision_conflict: 409, idempotency_conflict: 409, session_terminal: 409, authorization_denied: 403, journal_corrupt: 500, invalid_contract: 400, invalid_definition: 422, invalid_session_setup: 422, experience_manifest_invalid: 422, rule_rejected: 422, illegal_command: 422, invalid_wager: 422, invalid_dice_notation: 422, no_selection_candidates: 422, verifier_required: 422 };
+const STATUS = { definition_not_found: 404, experience_not_found: 404, session_not_found: 404, revision_conflict: 409, idempotency_conflict: 409, session_terminal: 409, authorization_denied: 403, journal_corrupt: 500, invalid_contract: 400, invalid_definition: 422, invalid_session_setup: 422, experience_manifest_invalid: 422, surface_required: 422, surface_incompatible: 422, authority_incompatible: 422, rule_rejected: 422, illegal_command: 422, invalid_wager: 422, invalid_dice_notation: 422, no_selection_candidates: 422, verifier_required: 422 };
 
 const HOST_ROLES = new Set(['sysadmin', 'parent', 'gaming-host']);
 
@@ -27,7 +27,7 @@ function requireHost(req) {
   return viewer;
 }
 
-export function createGamingRouter({ gamingApplication, assetCatalog = null, mediaGroupPlayDir = null, broadcastEvent = null, logger = null }) {
+export function createGamingRouter({ gamingApplication, assetCatalog = null, mediaPartyGamesDir = null, broadcastEvent = null, logger = null }) {
   if (!gamingApplication) throw new Error('createGamingRouter: gamingApplication required');
   const router = express.Router();
   const handle = (operation) => async (req, res) => {
@@ -40,11 +40,12 @@ export function createGamingRouter({ gamingApplication, assetCatalog = null, med
   };
 
   router.get('/definitions/:definitionId', handle(async (req, res) => { requireHost(req); return res.json(await gamingApplication.getDefinition(req.params.definitionId)); }));
-  router.get('/launch/:definitionId', handle(async (req, res) => { requireViewer(req); return res.json(await gamingApplication.getLaunchDescriptor(req.params.definitionId)); }));
+  router.get('/launch/:definitionId', handle(async (req, res) => { requireViewer(req); return res.json(await gamingApplication.getLaunchDescriptor(req.params.definitionId, { surfaceId: req.query.surface || null, authorityMode: req.query.authority || null })); }));
+  router.get('/catalog', handle((req, res) => { requireViewer(req); return res.json({ experiences: gamingApplication.listExperienceCatalog(req.query.surface || null) }); }));
   router.get('/experiences', handle((req, res) => { requireViewer(req); return res.json({ experiences: gamingApplication.listExperienceManifests() }); }));
   router.get('/experiences/:experienceId/manifest', handle((req, res) => { requireViewer(req); return res.json(gamingApplication.getExperienceManifest(req.params.experienceId)); }));
-  router.get('/environments/group-play/profile', handle((req, res) => { requireHost(req); return res.json(gamingApplication.getEnvironmentProfile()); }));
-  router.get('/environments/group-play/catalog', handle((req, res) => { requireHost(req); return res.json({ entries: gamingApplication.listGroupPlayCatalog() }); }));
+  router.get('/environments/party-games/profile', handle((req, res) => { requireHost(req); return res.json(gamingApplication.getEnvironmentProfile()); }));
+  router.get('/environments/party-games/catalog', handle((req, res) => { requireHost(req); return res.json({ entries: gamingApplication.listPartyGamesCatalog() }); }));
   router.get('/experiences/:experienceId/content', handle((req, res) => { requireHost(req); return res.json({ content: gamingApplication.listContent(req.params.experienceId) }); }));
   router.get('/experiences/:experienceId/content/:contentId', handle((req, res) => { requireHost(req); return res.json(gamingApplication.getContent(req.params.experienceId, req.params.contentId)); }));
 
@@ -59,7 +60,7 @@ export function createGamingRouter({ gamingApplication, assetCatalog = null, med
       throw Object.assign(new Error('Participants may create only an unseated session for themselves'), { code: 'authorization_denied', status: 403 });
     }
     res.status(201).json(await gamingApplication.createSession({
-      definitionId: body.definition_id, participants, seats: body.seats || [], setup: body.setup || {}, seed: body.seed, viewer,
+      definitionId: body.definition_id, surfaceId: body.surface_id, participants, seats: body.seats || [], setup: body.setup || {}, seed: body.seed, viewer,
     }));
   }));
   router.get('/sessions/:sessionId', handle(async (req, res) => res.json(await gamingApplication.resumeSession(req.params.sessionId, requireViewer(req)))));
@@ -78,8 +79,8 @@ export function createGamingRouter({ gamingApplication, assetCatalog = null, med
 
   router.get('/media/*splat', handle((req, res) => {
     requireViewer(req);
-    if (!mediaGroupPlayDir) return res.status(404).json({ error: 'media_not_configured' });
-    const root = path.resolve(mediaGroupPlayDir); const file = path.resolve(root, splatPath(req));
+    if (!mediaPartyGamesDir) return res.status(404).json({ error: 'media_not_configured' });
+    const root = path.resolve(mediaPartyGamesDir); const file = path.resolve(root, splatPath(req));
     if (!file.startsWith(`${root}${path.sep}`)) return res.status(404).json({ error: 'media_not_found' });
     return res.sendFile(file, (error) => { if (error && !res.headersSent) res.status(404).json({ error: 'media_not_found' }); });
   }));

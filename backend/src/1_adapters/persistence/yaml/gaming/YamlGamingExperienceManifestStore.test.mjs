@@ -11,9 +11,9 @@ afterEach(() => { for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: 
 describe('YamlGamingExperienceManifestStore', () => {
   it('loads only mounted manifests and validates their independent contract', () => {
     const dir = fixture();
-    fs.writeFileSync(path.join(dir, 'dice.yml'), 'id: dice\nversion: 1\nnative_surface_id: group-play\ntheme: { id: table }\npresenters: { primary: dice-table }\n');
+    fs.writeFileSync(path.join(dir, 'dice.yml'), 'schema_version: 2\nid: dice\nversion: 1\ntheme: { id: table }\nsurfaces:\n  - id: party-games\n    presenter: dice-table\n    authority_modes: [remote]\n    inputs: [keyboard, remote]\nresult_schema: gaming-result/v1\n');
     const store = new YamlGamingExperienceManifestStore({ manifestsDir: dir });
-    expect(store.list()).toEqual([{ id: 'dice', version: 1, native_surface_id: 'group-play', theme: { id: 'table' }, presenters: { primary: 'dice-table' }, hash: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
+    expect(store.list()).toEqual([{ schema_version: 2, id: 'dice', version: 1, theme: { id: 'table' }, surfaces: [{ id: 'party-games', presenter: 'dice-table', authority_modes: ['remote'], inputs: ['keyboard', 'remote'] }], result_schema: 'gaming-result/v1', hash: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
     expect(store.get('dice')).toMatchObject({ version: 1 });
     expect(store.get('../dice')).toBeNull();
   });
@@ -26,9 +26,9 @@ describe('YamlGamingExperienceManifestStore', () => {
 
   it('fails closed on malformed setup and optional renderer contracts', () => {
     const dir = fixture();
-    fs.writeFileSync(path.join(dir, 'bad.yml'), 'id: dice\nversion: 1\nnative_surface_id: group-play\npresenters: { primary: dice-table }\nsetup: { kind: maybe }\n');
+    fs.writeFileSync(path.join(dir, 'bad.yml'), 'schema_version: 2\nid: dice\nversion: 1\nsurfaces: [{ id: party-games, presenter: dice-table, authority_modes: [remote], inputs: [remote] }]\nresult_schema: gaming-result/v1\nsetup: { kind: maybe }\n');
     expect(() => new YamlGamingExperienceManifestStore({ manifestsDir: dir }).list()).toThrow('setup kind is invalid');
-    fs.writeFileSync(path.join(dir, 'bad.yml'), 'id: dice\nversion: 1\nnative_surface_id: group-play\npresenters: { primary: dice-table }\nrenderer_embeddings: [{ id: Bad, optional: yes }]\n');
+    fs.writeFileSync(path.join(dir, 'bad.yml'), 'schema_version: 2\nid: dice\nversion: 1\nsurfaces: [{ id: party-games, presenter: dice-table, authority_modes: [remote], inputs: [remote], renderer_embeddings: [{ id: Bad, optional: yes }] }]\nresult_schema: gaming-result/v1\n');
     expect(() => new YamlGamingExperienceManifestStore({ manifestsDir: dir }).list()).toThrow('renderer embeddings are invalid');
   });
 });

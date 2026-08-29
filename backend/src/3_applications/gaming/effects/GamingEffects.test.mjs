@@ -18,9 +18,9 @@ describe('Gaming effects', () => {
     expect((await policy.print({ sessionId: 's1', content: {} })).status).toBe('printed'); expect((await policy.print({ sessionId: 's1', content: {} })).duplicate).toBe(true); expect(printer.print).toHaveBeenCalledOnce();
   });
 
-  it('auto-prints a group-play host packet only when explicitly configured', async () => {
+  it('auto-prints a party-games host packet only when explicitly configured', async () => {
     const printPolicy = { print: vi.fn(async () => ({ status: 'printed' })) };
-    const session = { header: { session_id: 's1', ruleset: { id: 'activity-party' }, experience: { native_surface_id: 'group-play' } } };
+    const session = { header: { session_id: 's1', ruleset: { id: 'activity-party' }, launch: { surface_id: 'party-games' } } };
     await new GamingEffectService({ printPolicy, autoPrint: false }).afterCreate({ session, definition: { title: 'Party' } });
     expect(printPolicy.print).not.toHaveBeenCalled();
     await new GamingEffectService({ printPolicy, autoPrint: true }).afterCreate({ session, definition: { title: 'Party' } });

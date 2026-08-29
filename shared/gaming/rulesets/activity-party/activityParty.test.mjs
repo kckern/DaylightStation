@@ -4,6 +4,15 @@ import { activityPartyRuleModule } from './index.mjs';
 const definition = { activities: ['draw', 'charades'], rounds: 1, timer_ms: 30_000, correct_points: 2, challenges: [{ activity: 'draw', prompt: 'Tree' }, { activity: 'charades', prompt: 'Moon' }] };
 
 describe('Activity Party rules', () => {
+  it('selects from a word bank in deterministic seeded order when requested', () => {
+    const shuffled = { ...definition, challenge_selection: 'seeded' };
+    const first = activityPartyRuleModule.createInitialState(shuffled, { seed: 42, participants: [{ id: 'a' }] });
+    const replay = activityPartyRuleModule.createInitialState(shuffled, { seed: 42, participants: [{ id: 'a' }] });
+    expect(first.challenge_order).toEqual(replay.challenge_order);
+    expect(first.challenge).toEqual(replay.challenge);
+    expect(first.challenge_order).toHaveLength(definition.challenges.length);
+  });
+
   it('fails closed on invalid mounted challenge content', () => {
     expect(activityPartyRuleModule.validateDefinition({ ...definition, challenges: [{ activity: 'sing', prompt: '' }] })).toMatchObject({ valid: false });
   });

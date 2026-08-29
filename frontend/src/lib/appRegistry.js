@@ -22,9 +22,7 @@ export const APP_REGISTRY = {
   'glympse':         { label: 'Glympse',          icon: glympseIcon,        param: { name: 'id' }, component: () => import('../modules/AppContainer/Apps/Glympse/Glympse.jsx') },
   'websocket':       { label: 'WebSocket',        icon: websocketIcon,      param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
   'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import('../modules/WeeklyReview/WeeklyReview.jsx') },
-  'group-play':      { label: 'Group Play',       icon: null,               param: null, component: () => import('../modules/Gaming/environments/group-play/app/GroupPlayApp.jsx') },
-  'gaming':          { label: 'Scale Clash',      icon: null,               param: null, component: () => import('../Apps/GamingApp.jsx') },
-  'game-demo':       { label: 'Game Framework',   icon: null,               param: null, component: () => import('../Apps/GameDemoApp.jsx') },
+  'party-games':     { label: 'Party Games',      icon: null,               param: null, component: () => import('../modules/Gaming/environments/party-games/app/PartyGamesApp.jsx') },
   'school':          { label: 'School',           icon: null,               param: null, component: () => import('../modules/School/SchoolApp.jsx') },
 };
 
