@@ -1,0 +1,6 @@
+package net.kckern.portalkeys.payload;
+import org.json.JSONObject;import java.io.ByteArrayOutputStream;import java.io.InputStream;import java.nio.charset.StandardCharsets;import java.util.concurrent.TimeUnit;
+final class ShellExec{
+    static JSONObject run(String cmd,int timeout){JSONObject o=new JSONObject();long t=System.currentTimeMillis();try{Process p=new ProcessBuilder("sh","-c",cmd).start();Gobbler a=new Gobbler(p.getInputStream()),b=new Gobbler(p.getErrorStream());a.start();b.start();boolean done=p.waitFor(timeout,TimeUnit.MILLISECONDS);if(!done)p.destroyForcibly();a.join(1000);b.join(1000);o.put("ok",true).put("exit",done?p.exitValue():-1).put("stdout",a.text()).put("stderr",b.text()).put("timeout",!done);}catch(Exception e){try{o.put("ok",false).put("error",e.toString());}catch(Exception ignored){}}try{o.put("ms",System.currentTimeMillis()-t);}catch(Exception ignored){}return o;}
+    static class Gobbler extends Thread{InputStream in;ByteArrayOutputStream out=new ByteArrayOutputStream();Gobbler(InputStream i){in=i;setDaemon(true);}public void run(){try{byte[]b=new byte[4096];int n;while((n=in.read(b))>0&&out.size()<1000000)out.write(b,0,Math.min(n,1000000-out.size()));}catch(Exception ignored){}}String text(){return new String(out.toByteArray(),StandardCharsets.UTF_8);}}
+}

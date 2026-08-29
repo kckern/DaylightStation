@@ -1,0 +1,51 @@
+// Builds the swappable payload as a dex jar and bakes a recovery copy into the APK.
+ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVersion : 'p2-bluetooth-usb-hid'
+
+def sdkProps = new Properties()
+def localProps = new File(rootDir, 'local.properties')
+if (localProps.exists()) localProps.withInputStream { sdkProps.load(it) }
+def sdkDir = file(sdkProps.getProperty('sdk.dir') ?: System.getenv('ANDROID_SDK_ROOT') ?: System.getenv('ANDROID_HOME'))
+def buildTools = new File(sdkDir, 'build-tools').listFiles().findAll { it.isDirectory() }.sort { it.name }.last()
+
+project(':payload') {
+    afterEvaluate {
+        def classesDir = file("${buildDir}/intermediates/javac/debug/classes")
+        def outDir = file("${buildDir}/payload")
+        def jar = new File(outDir, "${rootProject.ext.payloadVersion}.jar")
+        task payloadDex(type: Exec, dependsOn: 'compileDebugJavaWithJavac') {
+            inputs.dir classesDir
+            outputs.file jar
+            doFirst {
+                outDir.mkdirs()
+                def classes = fileTree(classesDir).matching { include '**/*.class' }.files.collect { it.absolutePath }
+                if (classes.isEmpty()) throw new GradleException("no payload classes")
+                commandLine([new File(buildTools, 'd8').absolutePath, '--min-api', '26',
+                    '--lib', new File(sdkDir, 'platforms/android-33/android.jar').absolutePath,
+                    '--output', jar.absolutePath] + classes)
+            }
+        }
+        task payloadSha(dependsOn: payloadDex) {
+            inputs.file jar
+            outputs.file new File(jar.absolutePath + '.sha256')
+            doLast {
+                def md = java.security.MessageDigest.getInstance('SHA-256')
+                jar.withInputStream { input -> def b = new byte[65536]; int n; while ((n = input.read(b)) > 0) md.update(b, 0, n) }
+                new File(jar.absolutePath + '.sha256').text = md.digest().collect { String.format('%02x', it) }.join() + '\n'
+            }
+        }
+        task payload(dependsOn: payloadSha)
+    }
+}
+
+project(':app') {
+    afterEvaluate {
+        task bakePayload(dependsOn: ':payload:payload') {
+            def src = new File(project(':payload').buildDir, "payload/${rootProject.ext.payloadVersion}.jar")
+            def dst = project(':app').file('src/main/assets/payload-baked.jar')
+            inputs.file src
+            outputs.file dst
+            doLast { dst.parentFile.mkdirs(); dst.bytes = src.bytes }
+        }
+        tasks.matching { it.name.startsWith('merge') && it.name.endsWith('Assets') }.all { it.dependsOn bakePayload }
+    }
+}

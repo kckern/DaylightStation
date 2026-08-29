@@ -1,0 +1,18 @@
+plugins { id 'com.android.library' }
+
+android {
+    namespace 'net.kckern.portalkeys.payload'
+    compileSdk 33
+    defaultConfig { minSdk 26 }
+    buildFeatures { buildConfig false }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    compileOnly project(':shell-api')
+    compileOnly 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+    testImplementation 'junit:junit:4.13.2'
+}
