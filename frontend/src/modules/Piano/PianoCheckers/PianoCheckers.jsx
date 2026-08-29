@@ -17,7 +17,7 @@ import { useAddressingLadder } from '../game-platform/addressing/useAddressingLa
 import { managedAddressingAt } from '../game-platform/addressing/managedAddressing.js';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import {
-  GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, DealNotice, GameSheet,
+  GameRail, GameSlot, GameStatusBar, GameToggle, DealNotice, GameSheet,
 } from '../game-platform/chrome/index.js';
 import OpponentPanel from '../game-platform/opponent/OpponentPanel.jsx';
 import OpponentRosterSheet from '../game-platform/opponent/OpponentRosterSheet.jsx';
@@ -474,15 +474,12 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         status={(
           <GameStatusBar
             aside={game.status.gameOver ? 'Any key: play again' : localPractice ? 'Local practice' : null}
-            action={game.status.gameOver && (
-              <GameButton variant="primary" onClick={restart}>Play again</GameButton>
-            )}
           >
             {status}
           </GameStatusBar>
         )}
       settings={{
-        rail: 'right', open: settingsOpen,
+        rail: 'right', title: 'Settings', open: settingsOpen,
         onOpen: () => setSettingsOpen((open) => !open),
         content: <GameSheet title="Settings" onClose={() => setSettingsOpen(false)}><AddressingSettings config={config} axisSize={AXIS} onChange={updateConfig} /></GameSheet>,
       }}

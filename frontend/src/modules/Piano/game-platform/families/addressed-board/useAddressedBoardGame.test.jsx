@@ -76,6 +76,33 @@ describe('useAddressedBoardGame', () => {
     expect(seen.current.userId).toBe('ada');
   });
 
+  it('prepares terminal dialogue before both completion writes', async () => {
+    let seen; let rerender;
+    await act(async () => {
+      ({ seen, rerender } = harness({
+        gameId: 'checkers', client, currentUser: { id: 'ada' }, moves: [1, 2], result: null,
+      }));
+    });
+    const prepareTerminal = vi.fn(() => ({
+      dialogue: [{ ply: 2, quip: 'Well played.', source: 'fallback' }],
+    }));
+    seen.current.archiveContextRef.current = {
+      opponent: { id: 'checkers:level-1', name: 'Pip', level: 1 },
+      dialogue: [],
+      prepareTerminal,
+    };
+
+    await act(async () => { rerender({ result: 'win' }); });
+
+    expect(prepareTerminal).toHaveBeenCalledTimes(1);
+    const expected = expect.objectContaining({
+      opponent: { id: 'checkers:level-1', name: 'Pip', level: 1 },
+      dialogue: [{ ply: 2, quip: 'Well played.', source: 'fallback' }],
+    });
+    expect(client.saveGame.mock.calls[0][1]).toEqual(expected);
+    expect(client.archiveGame.mock.calls[0][0]).toEqual(expected);
+  });
+
   it('records a game answered by the local engine as unranked', async () => {
     let seen; let rerender;
     await act(async () => {

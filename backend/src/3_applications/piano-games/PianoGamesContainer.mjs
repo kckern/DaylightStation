@@ -31,11 +31,22 @@ export class PianoGamesContainer {
   async ladderAggregate(gameId, userId) {
     const game = this.game(gameId);
     const progress = userId ? await this.#repository.readProgress(gameId, userId) : null;
-    const config = await this.#repository.readConfig(gameId, userId);
+    // Older repository adapters (and lightweight domain-test doubles) predate
+    // authored roster configuration. Treat that capability as optional so the
+    // shared ladder remains backward compatible while DataService-backed
+    // installations still receive household overrides.
+    const config = this.#repository.readConfig
+      ? await this.#repository.readConfig(gameId, userId)
+      : null;
     const pack = config?.ladder?.roster_pack || gameId;
     const authored = config?.ladder?.rosters?.[pack];
-    const roster = Array.isArray(authored) && authored.length === game.opponents.length
-      ? game.opponents.map((mechanics, index) => ({ ...mechanics, ...authored[index], dialogue: { ...mechanics.dialogue, ...authored[index]?.dialogue } }))
+    const roster = Array.isArray(authored) && authored.length
+      ? game.opponents.map((mechanics, index) => {
+        const entry = authored[index];
+        if (typeof entry === 'string') return { ...mechanics, name: entry };
+        if (!entry || typeof entry !== 'object') return mechanics;
+        return { ...mechanics, ...entry, dialogue: { ...mechanics.dialogue, ...entry.dialogue } };
+      })
       : game.opponents;
     return { ladder: new OpponentLadder({ opponents: normalizeOpponentRoster(roster, pack), progress, ...game.promotion }), rosterPack: pack };
   }
@@ -45,9 +56,18 @@ export class PianoGamesContainer {
   }
 
   async resolveOpponent(gameId, userId, level) {
+    const game = this.game(gameId);
     const { ladder, rosterPack } = await this.ladderAggregate(gameId, userId);
-    const resolved = ladder.resolve(level);
-    return { ...resolved, position: resolved.level, rosterPack };
+    const requestedPosition = game.positionFromLevel?.(level) ?? level;
+    const resolved = ladder.resolve(requestedPosition);
+    const position = resolved.level;
+    return {
+      ...resolved,
+      level: game.levelFromPosition?.(position) ?? position,
+      position,
+      total: ladder.opponents.length,
+      rosterPack,
+    };
   }
 
   async chooseMove(gameId, request) {
@@ -62,6 +82,16 @@ export class PianoGamesContainer {
     this.game(gameId);
     if (!this.#dialogue) throw Object.assign(new Error('dialogue_unavailable'), { code: 'dialogue_unavailable' });
     return this.#dialogue.react(gameId, request);
+  }
+
+  async rivalry(gameId, userId, opponentId) {
+    this.game(gameId);
+    return this.#rivalries?.recall?.(gameId, userId, opponentId) || null;
+  }
+
+  async recordRivalry(gameId, record) {
+    this.game(gameId);
+    return this.#rivalries?.recordArchive?.(gameId, record) || false;
   }
 
   async readConfig(gameId, userId) {

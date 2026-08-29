@@ -70,8 +70,8 @@ describe('requestOpponentQuip', () => {
     });
     expect(result.quip).toBe('A bold first step.');
     expect(DaylightAPI).toHaveBeenCalledWith(
-      'api/v1/piano-games/chess/quip?user=learner4',
-      { gameId: 'g1', ply: 1, level: 0, playerColor: 'w', game, dialogue: [] },
+      'api/v1/piano-games/chess/dialogue?user=learner4',
+      { sessionId: 'g1', ply: 1, level: 0, playerSide: 'w', transcript: game, dialogue: [] },
       'POST',
     );
   });
@@ -81,7 +81,7 @@ describe('requestOpponentQuip', () => {
     const dialogue = [{ ply: 1, quip: 'A bold first step.' }];
     await requestOpponentQuip({ gameId: 'g1', ply: 2, level: 0, playerColor: 'w', game: { moves: ['e4', 'e5'] }, dialogue, userId: 'learner4' });
     expect(DaylightAPI).toHaveBeenCalledWith(
-      'api/v1/piano-games/chess/quip?user=learner4',
+      'api/v1/piano-games/chess/dialogue?user=learner4',
       expect.objectContaining({ dialogue }),
       'POST',
     );

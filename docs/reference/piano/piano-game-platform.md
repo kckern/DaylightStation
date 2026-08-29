@@ -143,7 +143,7 @@ The server service replays the submitted full current game, resolves the ladder 
 only the lines the player has already seen in that game, and calls `IAIGateway`. It also loads a
 compact player/opponent rivalry ledger: completed-game results, notable factual moves, and the final
 visible line—not raw transcripts. The prompt receives lifetime W/L/D, the seven most recent game
-summaries, and the current promotion-window status. `cli/chess-rivalry-backfill.cli.mjs` rebuilds
+summaries, and the current promotion-window status. `cli/piano-game-rivalry-backfill.cli.mjs` rebuilds
 that ledger idempotently from durable completed archives. Guests have no durable rivalry memory.
 Opponent character content can be replaced by household data: the selected `ladder.rosters`
 entry carries a `dialogue` profile with `persona`, `voice`, and an optional, data-authored

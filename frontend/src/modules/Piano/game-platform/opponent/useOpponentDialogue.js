@@ -10,14 +10,18 @@ export function useOpponentDialogue({ logger = null } = {}) {
     const token = Symbol('reaction');
     const pending = { token, fallback, event, settled: false, reaction: null };
     pendingRef.current = pending;
-    logger?.info?.('opponent.dialogue.planned', event);
-    Promise.resolve().then(request).then((reaction) => {
+    logger?.info?.('piano-game.dialogue.planned', { ...event, source: 'pending', fallbackReason: null });
+    pending.promise = Promise.resolve().then(request).then((reaction) => {
       pending.settled = true;
       pending.reaction = reaction?.quip ? reaction : null;
-      if (pendingRef.current !== pending && reaction?.quip) logger?.info?.('opponent.dialogue.late-discarded', event);
+      pending.fallbackReason = reaction?.fallbackReason || reaction?.fallback_reason || null;
+      if (pendingRef.current !== pending && reaction?.quip) logger?.info?.('piano-game.dialogue.late-discarded', {
+        ...event, source: reaction.source || 'ai', fallbackReason: 'late_result',
+      });
     }).catch((error) => {
       pending.settled = true;
-      logger?.warn?.('opponent.dialogue.generation-failed', { ...event, reason: error.message });
+      pending.fallbackReason = 'generation_error';
+      logger?.warn?.('piano-game.dialogue.fallback', { ...event, source: 'fallback', fallbackReason: 'generation_error', reason: error.message });
     });
     return pending;
   }, [logger]);
@@ -26,7 +30,7 @@ export function useOpponentDialogue({ logger = null } = {}) {
     const shown = { ...reaction, fallbackReason: reaction.fallbackReason || reason };
     setSpeech(shown);
     dialogueRef.current = [...dialogueRef.current, { ...event, ...shown, shownAt: new Date().toISOString() }];
-    logger?.info?.('opponent.dialogue.displayed', { ...event, source: shown.source, fallbackReason: shown.fallbackReason });
+    logger?.info?.('piano-game.dialogue.displayed', { ...event, source: shown.source, fallbackReason: shown.fallbackReason });
     return shown;
   }, [logger]);
 
@@ -34,7 +38,11 @@ export function useOpponentDialogue({ logger = null } = {}) {
     if (!pending || pendingRef.current !== pending) return null;
     pendingRef.current = null;
     const fallback = typeof pending.fallback === 'function' ? pending.fallback() : pending.fallback;
-    return display(pending.reaction || { ...fallback, source: 'fallback' }, pending.event, pending.settled ? 'generation_error' : 'timeout');
+    return display(
+      pending.reaction || { ...fallback, source: 'fallback' },
+      pending.event,
+      pending.fallbackReason || (pending.settled ? 'generation_error' : 'timeout'),
+    );
   }, [display]);
 
   const showTerminalReaction = useCallback(({ reaction, event }) => {

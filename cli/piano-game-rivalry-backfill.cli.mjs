@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { initConfigService, configService } from '#system/config/index.mjs';
 import { DataService } from '#system/config/DataService.mjs';
 import { GameRivalryMemoryService } from '#apps/piano-games/GameRivalryMemoryService.mjs';
+import { checkersNotableFacts } from '#shared/gaming/rulesets/checkers/commentary.mjs';
+import { connectFourNotableFacts } from '#shared/gaming/rulesets/connect-four/commentary.mjs';
+import { chessNotableFacts } from '#shared/gaming/rulesets/chess/dialogueAdapter.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(here, '..', '.env') });
@@ -35,6 +38,13 @@ const service = new GameRivalryMemoryService({
   writeMemory: (gameId, userId, memory) => {
     cache.set(`${gameId}:${userId}`, memory);
     return dryRun || dataService.user.write(`apps/${gameId}/rivalries`, memory, userId);
+  },
+  readLegacy: (userId) => dataService.user.read('apps/chess/rivalry', userId)
+    || dataService.user.read('apps/chess/rivalries', userId),
+  notableFacts: {
+    'connect-four': connectFourNotableFacts,
+    checkers: checkersNotableFacts,
+    chess: chessNotableFacts,
   },
 });
 

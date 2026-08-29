@@ -8,7 +8,7 @@ export function OpponentFace({ opponent, name }) {
   useEffect(() => setArtFailed(false), [opponent?.art]);
   if (opponent?.art && !artFailed) return <img className="pg-opponent__art" src={opponent.art} alt="" onError={() => setArtFailed(true)} />;
   return (
-    <svg className="pg-opponent__identicon" viewBox={`0 0 ${GRID_SIZE} ${GRID_SIZE}`} aria-hidden="true" data-identicon={name}>
+    <svg className="pg-opponent__identicon" style={opponent?.theme ? { fill: opponent.theme } : undefined} viewBox={`0 0 ${GRID_SIZE} ${GRID_SIZE}`} aria-hidden="true" data-identicon={name}>
       {cardIdenticonCells(name).flatMap((row, r) => row.map((on, c) => on
         ? <rect key={`${c}-${r}`} x={c + 0.08} y={r + 0.08} width="0.84" height="0.84" rx="0.16" /> : null))}
     </svg>

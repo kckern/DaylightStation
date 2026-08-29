@@ -12,6 +12,7 @@ export function normalizeOpponentProfile(opponent = {}, {
     art: opponent.art || null,
     theme: opponent.theme || null,
     level: Number.isFinite(level) ? level : position,
+    position,
     dialogue: {
       persona: String(rawDialogue.persona || opponent.personality || 'A friendly, competitive opponent.'),
       // chess_voice is a read alias during the roster migration.

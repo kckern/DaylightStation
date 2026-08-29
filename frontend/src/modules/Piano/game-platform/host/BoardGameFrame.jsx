@@ -7,9 +7,10 @@ import GearIcon from '../chrome/GearIcon.jsx';
 
 function injectSettings(rail, settings) {
   if (!rail && !settings) return null;
-  if (!settings) return rail?.content ?? rail;
+  if (!settings) return rail?.render ? rail.render({ settingsTrigger: null }) : rail?.content ?? rail;
+  const title = settings.title || 'Settings';
   const trigger = (
-    <GameButton variant="icon" onClick={settings.onOpen} aria-expanded={settings.open} aria-label="Settings" title="Settings">
+    <GameButton variant="icon" onClick={settings.onOpen} aria-expanded={settings.open} aria-label={title} title={title}>
       <GearIcon />
     </GameButton>
   );
@@ -22,17 +23,8 @@ export default function BoardGameFrame({
   gameId, className = '', style, phase = 'playing', instrument, instrumentClassName = '',
   layout = BOARD_LAYOUTS.SINGLE, primary, secondary = null, topRail = null,
   leftRail = null, rightRail = null, status = null, settings = null,
-  opening = null, result = null, children = null,
+  opening = null, result = null, children = null, stageClassName = '',
 }) {
-  // A game may already compose InstrumentBoardStage itself while migrating its
-  // dense semantic slots. The frame still owns the host and keyboard dock.
-  if (primary === undefined) {
-    return (
-      <PianoGameHost gameId={gameId} className={className} style={style} phase={phase} instrument={instrument} instrumentClassName={instrumentClassName}>
-        {children}
-      </PianoGameHost>
-    );
-  }
   const selectedRail = settings?.rail === 'left' ? 'left' : 'right';
   const left = injectSettings(leftRail, selectedRail === 'left' ? settings : null);
   const right = injectSettings(rightRail, selectedRail === 'right' ? settings : null);
@@ -41,7 +33,7 @@ export default function BoardGameFrame({
   ));
   return (
     <PianoGameHost gameId={gameId} className={className} style={style} phase={phase} instrument={instrument} instrumentClassName={instrumentClassName} overlay={opening || result || null}>
-      <InstrumentBoardStage layout={layout} primary={primary} secondary={secondary} topRail={topRail} leftRail={left} rightRail={right} status={statusNode} />
+      <InstrumentBoardStage className={stageClassName} layout={layout} primary={primary} secondary={secondary} topRail={topRail} leftRail={left} rightRail={right} status={statusNode} />
       {settings?.open && settings.content}
       {children}
     </PianoGameHost>

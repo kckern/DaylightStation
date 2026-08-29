@@ -1,14 +1,13 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { INITIAL_FEN, legalDestinations } from '@shared-gaming/rulesets/chess/engine.mjs';
+import { normalizeOpponentProfile, normalizeOpponentRoster } from '@shared-gaming/opponents/profile.mjs';
 import { fenToPosition } from '@shared-gaming/rulesets/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { pieceSource } from '../../Chess/pieceAssets.js';
 import BoardGameFrame from '../game-platform/host/BoardGameFrame.jsx';
 import BoardGameOpening from '../game-platform/host/BoardGameOpening.jsx';
-import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
-import { GameRail, GameSlot, GameButton, GameStatusBar, WinTally } from '../game-platform/chrome/index.js';
-import GearIcon from '../game-platform/chrome/GearIcon.jsx';
+import { GameRail, GameSlot, GameButton, GameStatusBar } from '../game-platform/chrome/index.js';
 import Icon from '../ui/icons/Icon.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import ChordNamePanel from '../components/ChordNamePanel.jsx';
@@ -27,9 +26,9 @@ import {
   archiveGame, beaconArchive, fetchChessConfig, fetchLadder, requestBestMove,
   requestOpponentMove, requestOpponentQuip, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
-import OpponentPortrait from '../game-platform/opponent/OpponentPanel.jsx';
+import OpponentPanel from '../game-platform/opponent/OpponentPanel.jsx';
 import GestureCards from './GestureCards.jsx';
-import OpponentRosterModal from '../game-platform/opponent/OpponentRosterSheet.jsx';
+import OpponentRosterSheet from '../game-platform/opponent/OpponentRosterSheet.jsx';
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
@@ -165,7 +164,7 @@ export function PianoChessGame({
     ladder,
     ladderReady,
     rungId,
-    opponent,
+    opponent: ladderOpponent,
     ladderLevel,
     updateSetting: applySetting,
   } = useChessSessionResources({
@@ -177,6 +176,11 @@ export function PianoChessGame({
     writeConfig: saveChessConfig,
     logger: logger(),
   });
+  const rosterPack = chessConfig?.ladder?.roster_pack || 'chess';
+  const opponentProfile = useMemo(() => normalizeOpponentProfile(ladderOpponent || {}, {
+    rosterPack, position: (ladderLevel ?? 0) + 1,
+  }), [ladderLevel, ladderOpponent, rosterPack]);
+  const opponentRoster = useMemo(() => normalizeOpponentRoster(ladder?.roster || [], rosterPack), [ladder?.roster, rosterPack]);
 
   usePlayerLock(!game.status?.game_over, 'Finish the game to switch players');
 
@@ -499,6 +503,7 @@ export function PianoChessGame({
     rungId,
     userId: lockedUser,
     localFallbackDifficulty,
+    opponent: opponentProfile,
     setGame,
     announce,
     logger: logger(),
@@ -764,7 +769,7 @@ export function PianoChessGame({
   } = buildChessRailViewModel({
     game,
     playerColor,
-    opponent,
+    opponent: opponentProfile,
     opponentThinking,
     finishedResult: finishedRecord?.result ?? null,
     cursor,
@@ -785,12 +790,8 @@ export function PianoChessGame({
       style={boardTheme ? { '--pc-dark': boardTheme } : undefined}
       instrumentClassName="piano-chess__instrument"
       instrument={{ activeNotes, startNote: 36, endNote: 84, showLabels: true }}
-    >
-      <InstrumentBoardStage className="piano-chess__stage">
-        {/* THE STATE RAIL — what the game is currently thinking. Every row here
-            holds its place whether or not it has something to say: a read-out
-            that resizes as fingers land drags the eye and, worse, moves the
-            board. Fixed rows, fixed rail width, board centred regardless. */}
+      stageClassName="piano-chess__stage"
+      leftRail={{ render: ({ settingsTrigger }) => (
         <GameRail
           label="Move controls"
           className="piano-chess__rail piano-chess__rail--state"
@@ -806,21 +807,14 @@ export function PianoChessGame({
                   Play again
                 </GameButton>
               )}
-              {chessConfig && (
-                <GameButton
-                  variant="icon"
-                  className="piano-chess__settings-btn"
-                  onClick={() => setSettingsOpen((open) => !open)}
-                  aria-expanded={settingsOpen}
-                  aria-label="Settings"
-                  title="Settings"
-                >
-                  <GearIcon />
-                </GameButton>
-              )}
+              {settingsTrigger}
             </>
           )}
         >
+          {/* THE STATE RAIL — what the game is currently thinking. Every row here
+              holds its place whether or not it has something to say: a read-out
+              that resizes as fingers land drags the eye and, worse, moves the
+              board. Fixed rows, fixed rail width, board centred regardless. */}
           {/* IN HAND. Not a fact table row — a socket, with the piece sitting in
               it or visibly waiting for one. The way to put it back lives in the
               same tile, because "Put it back" floating on its own asks "put
@@ -946,7 +940,7 @@ export function PianoChessGame({
                 note: takebackNote({
                   check: takebackCheck,
                   willCount: takebackWillCount,
-                  opponentName: opponent?.name ?? null,
+                  opponentName: ladderOpponent ? opponentProfile?.name ?? null : null,
                 }),
                 active: takebackArmed,
                 muted: !takebackCheck.allowed,
@@ -954,7 +948,9 @@ export function PianoChessGame({
             ]}
           />
         </GameRail>
+      ) }}
 
+      primary={(
         <ChessBoard
           fen={replay?.phase === 'rewind' ? replay.fen : game.game.fen}
           status={game.status}
@@ -987,11 +983,13 @@ export function PianoChessGame({
              paced, at half the normal tempo so a missed move can be followed. */
           moveDurationMs={replay ? (replay.phase === 'rewind' ? 1 : REPLAY_MOVE_MS) : moveDurationMs}
         />
+      )}
 
-        {/* THE CHORD RAIL — a mirror of the hands, in both vocabularies at once:
-            the name for the speller, the notation for the reader. It reports;
-            it does not teach theory, which is why there is no circle here. */}
+      rightRail={(
         <GameRail label="Your hands" className="piano-chess__rail piano-chess__rail--chords">
+          {/* THE CHORD RAIL — a mirror of the hands, in both vocabularies at once:
+              the name for the speller, the notation for the reader. It reports;
+              it does not teach theory, which is why there is no circle here. */}
           {/* Whose game this is, whose turn it is, and which colour you have.
               All three were already computed and none of them was ever drawn —
               the first questions anyone asks on sitting down, answered nowhere
@@ -1023,27 +1021,27 @@ export function PianoChessGame({
               strength is on the other side of the board, so it falls back to
               the rung the settings panel sets. */}
           <GameSlot label="Opponent" className="piano-chess__opponent">
-            {opponent ? (
-              <button
-                type="button"
-                className="piano-chess__opponent-btn"
-                onClick={() => setRosterOpen(true)}
-                aria-label={`${opponent.name} — see all opponents`}
-              >
-                <OpponentPortrait
-                  opponent={opponent}
-                  level={ladderLevel}
-                  status={opponentLine}
-                  size="lg"
-                  /* The pulse is driven by the REAL think time for this rung,
-                     not a boolean — a strong character visibly broods longer.
-                     The mood is layered on top of it. */
-                  thinkMs={thinkMs}
-                  mood={mood}
-                  speech={opponentSpeech}
-                  reactionKey={`mood-${mood}-${game.history.length}`}
-                />
-              </button>
+            {ladderOpponent ? (
+              <OpponentPanel
+                opponent={opponentProfile}
+                level={ladderLevel}
+                status={opponentLine}
+                size="lg"
+                /* The pulse is driven by the REAL think time for this rung,
+                   not a boolean — a strong character visibly broods longer.
+                   The mood is layered on top of it. */
+                thinkMs={thinkMs}
+                mood={mood}
+                speech={opponentSpeech}
+                reactionKey={`mood-${mood}-${game.history.length}`}
+                ladder={{
+                  position: (ladderLevel ?? 0) + 1,
+                  total: opponentRoster.length || 21,
+                  wins: ladder?.status?.wins ?? 0,
+                  needed: ladder?.status?.needed ?? 5,
+                }}
+                onOpenRoster={() => setRosterOpen(true)}
+              />
             ) : (
               <p className="piano-chess__opponent-rung">
                 <span className="piano-chess__opponent-rung-name">
@@ -1051,15 +1049,6 @@ export function PianoChessGame({
                 </span>
                 <span className="pg-opponent__status">{opponentLine}</span>
               </p>
-            )}
-            {ladder?.status && !ladder.status.at_top && ladder.persisted && (
-              /* Was an unstyled <p> in a class with no rules anywhere — the
-                 one place on this screen that still spelled a tally out. */
-              <WinTally
-                label={`to beat ${opponent?.name ?? 'them'}`}
-                wins={ladder.status.wins}
-                needed={ladder.status.needed}
-              />
             )}
           </GameSlot>
 
@@ -1104,9 +1093,9 @@ export function PianoChessGame({
             ))}
           </div>
         </GameRail>
-      </InstrumentBoardStage>
+      )}
 
-      <GameStatusBar
+      status={(<GameStatusBar
         className="piano-chess__status"
         aside={shuffleEachTurn
           ? (justDealt ? 'New chord map — read the edges' : 'Map changes every turn')
@@ -1118,55 +1107,57 @@ export function PianoChessGame({
         {opponentError && (
           <GameButton variant="ghost" onClick={retryOpponent}>Retry</GameButton>
         )}
-      </GameStatusBar>
+      </GameStatusBar>)}
 
-      {/* The start of the game, given a moment. Same placement as the result
-          card — over the board, so the position is never hidden from view. */}
-      {opening && !game.status?.game_over && (
+      settings={chessConfig ? {
+        rail: 'left',
+        title: 'Settings',
+        open: settingsOpen,
+        onOpen: () => setSettingsOpen((open) => !open),
+        content: (
+          <ChessSettingsPanel
+            config={chessConfig}
+            rungId={rungId}
+            onChange={applySetting}
+            onClose={() => setSettingsOpen(false)}
+          />
+        ),
+      } : null}
+      opening={opening && !game.status?.game_over ? (
         <BoardGameOpening
-          opponent={{ name: opponent?.name || rung?.label || 'the engine' }}
+          opponent={{ name: opponentProfile?.name || rung?.label || 'the engine' }}
           playerLabel={playerColor === 'w' ? 'White' : 'Black'}
           turnLabel={playerColor === 'w' ? 'Your move' : 'They open'}
           className="chess-opening"
           versusClassName="chess-opening__vs"
           turnClassName="chess-opening__lead"
         />
-      )}
+      ) : null}
 
-      {/* The end of the game, given a moment. Over the board rather than
-          instead of it — the position that produced the result is the first
-          thing anyone wants to look at. */}
-      {game.status?.game_over && finishedRecord && (
+      result={game.status?.game_over && finishedRecord ? (
         <ChessResult
           result={finishedRecord.result}
           outcome={game.status.outcome}
-          opponent={opponent}
+          opponent={opponentProfile}
           level={ladderLevel}
           record={finishedRecord}
           timing={endTiming}
           ladder={ladderOutcome}
+          speech={opponentSpeech}
           onPlayAgain={restart}
         />
-      )}
+      ) : null}
+    >
 
       {toast && (
         <output className="piano-chess__toast" key={toast.seq}>{toast.text}</output>
       )}
 
       {rosterOpen && ladder?.roster?.length > 0 && (
-        <OpponentRosterModal
-          roster={ladder.roster}
-          position={ladder.unlocked_through}
+        <OpponentRosterSheet
+          roster={opponentRoster}
+          position={(ladder.unlocked_through ?? 0) + 1}
           onClose={() => setRosterOpen(false)}
-        />
-      )}
-
-      {settingsOpen && chessConfig && (
-        <ChessSettingsPanel
-          config={chessConfig}
-          rungId={rungId}
-          onChange={applySetting}
-          onClose={() => setSettingsOpen(false)}
         />
       )}
 

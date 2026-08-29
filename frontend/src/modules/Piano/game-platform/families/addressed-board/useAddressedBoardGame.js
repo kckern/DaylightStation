@@ -97,7 +97,6 @@ export function useAddressedBoardGame({
     const record = {
       game_id: gameSessionId, moves, result, level, ranked: rankedRef.current, completed: true,
       played_on: new Date().toISOString().slice(0, 10),
-      game_id: gameSessionId,
       ...baseContext,
       ...preparedContext,
     };

@@ -56,7 +56,7 @@ function outcomeLine(outcome, result, opponentName) {
 }
 
 export function ChessResult({
-  result, outcome, opponent, level, record, timing = null, ladder = null, onPlayAgain,
+  result, outcome, opponent, level, record, timing = null, ladder = null, speech = null, onPlayAgain,
 }) {
   const name = opponent?.name || 'your opponent';
   const promoted = ladder?.promoted === true;
@@ -70,6 +70,7 @@ export function ChessResult({
     result={result}
     opponent={opponent}
     level={level}
+    speech={speech}
     message={outcomeLine(outcome, result, name)}
     promoted={promoted}
     metrics={metrics}
