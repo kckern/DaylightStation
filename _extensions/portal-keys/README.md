@@ -11,6 +11,10 @@ It also **auto-dismisses Portal's swipe-up Control Center** (volume/brightness/b
 
 Package `net.kckern.portalkeys`. Control plane on `:8771` (piano-bridge uses `:8770`).
 
+The final installed shell also owns a payload lifeline on `:8772`; its active,
+hot-swappable operations payload serves `:8773`. Normal APK replacement is not the
+routine upgrade path anymore. See [Persistent shell and zero-tap payloads](#persistent-shell-and-zero-tap-payloads).
+
 ---
 
 ## ⚠️ READ THIS FIRST — apply `keepawake` BEFORE enabling the sleep gesture
@@ -38,7 +42,7 @@ Two guardrails now enforce that order rather than relying on anyone reading this
 
 `preflight` exits non-zero when unsafe, including when FKB is unreachable, so it fails closed.
 
-### ⚠ UNBUILT CHANGE PENDING — `isPanelLit()` (2026-08-26)
+### Display-state fix installed — `isPanelLit()` (2026-08-29)
 
 `PortalKeysService` now reads the DISPLAY's own power state
 (`Display.getState() == STATE_ON`) instead of `PowerManager.isInteractive()`,
@@ -53,17 +57,15 @@ fell through to the double-press SLEEP instead. The device log caught it:
 11:56:21 screen-off ok=true                              ← it slept again
 ```
 
-**This source change has NOT been compiled or installed.** There is no Android
-SDK on the prod host; build and flash it from the Mac per "Building" below, and
-re-enable the gesture only after verifying a dark panel wakes on one press:
+This fix is compiled and installed in shell version 16. The sleep gesture remains
+disabled by policy until its wake-lock preflight is deliberately enabled:
 
 ```bash
 PK_HOST=<portal-ip>:8771 node _extensions/portal-keys/pkctl.mjs config set screenToggleEnabled true
 ```
 
-`screenToggleEnabled` was set to **false** on 2026-08-26 as the interim
-mitigation — with it off, nothing can sleep the panel by gesture, so nothing
-can strand it. Leave it off until the new APK is verified.
+`screenToggleEnabled` is **false** on the live Portal. With it off, nothing can
+sleep the panel by gesture, so a wake-lock regression cannot strand it.
 
 ### If the panel is dark and unreachable
 
@@ -199,6 +201,125 @@ cd _extensions/portal-keys/app && $GRADLE :app:assembleDebug --no-daemon
 
 APK → `app/app/build/outputs/apk/debug/app-debug.apk`. **Bump `versionCode` on every build** —
 `install -r` rejects a lower one.
+
+The same build creates the configured payload jar and `.sha256`, then bakes that
+jar into the APK as the recovery payload. Routine development currently builds
+`p2-bluetooth-usb-hid.jar`; shell version 16 retains `p1-remote-ops` as its baked
+recovery image.
+
+## Persistent shell and zero-tap payloads
+
+This follows the piano-bridge shell/payload design. Android will not silently install
+an APK on this non-rooted, non-device-owner Portal. The durable answer is one final
+USB-installed shell and executable dex payloads in app-private storage:
+
+- `PortalBridgeService` is a foreground `START_STICKY` service, restarted by
+  `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED`.
+- Shell lifeline `:8772` is independent of both Fully and the accessibility service.
+  It can fetch, SHA-256 verify, activate, restart, and roll back payload jars.
+- The operations payload serves authenticated diagnostics and repair on `:8773`:
+  app-UID `/exec`, `InputDevice`/USB inventory, Bluetooth scan/bond/HID-host
+  controls, logcat, secure-setting reads/writes, and accessibility self-repair.
+- Payload p2 claims allowlisted USB boot keyboards directly through `UsbManager`
+  and emits decoded events only on loopback WebSocket `127.0.0.1:8774`.
+- A broken operations payload cannot remove the lifeline; use `pkctl rollback`.
+- Both remote ports require a device-generated 256-bit admin token. The token is
+  captured once over USB with `pkctl bootstrap-token`; it is never returned over LAN.
+  The CLI stores it mode `0600` at `~/.config/daylight/portal-keys-token` (override
+  with `PK_TOKEN_FILE` or provide `PK_TOKEN`).
+
+### One final USB bootstrap
+
+Run this after installing version 16. These development grants persist across app
+updates and reboots; they are lost only by uninstalling the package.
+
+```bash
+adb -s <portal-serial> install -r _extensions/portal-keys/app/app/build/outputs/apk/debug/app-debug.apk
+adb -s <portal-serial> shell pm grant net.kckern.portalkeys android.permission.READ_LOGS
+adb -s <portal-serial> shell pm grant net.kckern.portalkeys android.permission.DUMP
+adb -s <portal-serial> shell pm grant net.kckern.portalkeys android.permission.WRITE_SECURE_SETTINGS
+adb -s <portal-serial> shell appops set net.kckern.portalkeys REQUEST_INSTALL_PACKAGES allow
+adb -s <portal-serial> shell am start -n net.kckern.portalkeys/.MainActivity
+node _extensions/portal-keys/pkctl.mjs bootstrap-token <portal-serial>
+```
+
+Keep the existing accessibility grant. Verify all three remote doors before removing
+USB for the last time:
+
+```bash
+node _extensions/portal-keys/pkctl.mjs status       # legacy key bridge :8771
+node _extensions/portal-keys/pkctl.mjs shell        # durable lifeline :8772
+node _extensions/portal-keys/pkctl.mjs input        # ops payload :8773
+node _extensions/portal-keys/pkctl.mjs hid status   # USB HID bridge + allowlist
+node _extensions/portal-keys/pkctl.mjs bt status    # Bluetooth state and bonds
+node _extensions/portal-keys/pkctl.mjs exec id
+node _extensions/portal-keys/pkctl.mjs enable-a11y  # idempotent self-repair test
+```
+
+### Zero-tap payload upgrade
+
+Build and serve the jar and its hash, then ask the shell—not Android's package
+installer—to activate it:
+
+```bash
+cd _extensions/portal-keys/app
+./gradlew :payload:payload -PpayloadVersion=p2-example
+node ../pkctl.mjs payload http://<host>:<port>/p2-example.jar <sha256>
+node ../pkctl.mjs shell
+```
+
+Payload swaps require no Android confirmation. Full APK replacement remains only for
+manifest/native/shell changes and may require a physical confirmation; put all routine
+logic in the payload.
+
+## Keyboard transports measured on this Portal
+
+### Bluetooth
+
+Classic Bluetooth discovery works and Android's HID Host service is loaded. A
+Bluetooth 3.0 BR/EDR keyboard is therefore the clean native path: Android delivers
+its keys normally to Fully and the SPA, including the configured Android input method.
+
+BLE discovery is broken in this vendor build, not merely hidden from Settings. The
+Portal omits `android.hardware.bluetooth_le`, reports zero controller scan filters,
+and every tested application path fails immediately:
+
+- `BluetoothLeScanner.startScan()` unfiltered: `SCAN_FAILED_INTERNAL_ERROR` (`3`)
+- deprecated `BluetoothAdapter.startLeScan()`: start refused
+- p2 scan filtered to the standard HOGP service UUID `0x1812`: error `3`
+- stack log: `bte_scan_filt_param_cfg_evt, 23`
+
+Do not turn that evidence into the broader claim that the radio can never connect to
+a BLE keyboard. P2 retains `bt bond <mac>` and `bt connect-hid <mac>` so a known stable
+address can bypass discovery. It does not auto-accept a pairing confirmation.
+
+```bash
+node _extensions/portal-keys/pkctl.mjs bt scan 15000
+node _extensions/portal-keys/pkctl.mjs bt bond AA:BB:CC:DD:EE:FF
+node _extensions/portal-keys/pkctl.mjs bt connect-hid AA:BB:CC:DD:EE:FF
+```
+
+### USB boot keyboard fallback
+
+The Sayo 6x4M enumerates in Android's USB framework as `8089:0008`, with interface 0
+declaring boot-keyboard HID. This kernel has no `usbhid` driver, so Android never
+creates `/dev/input/event*` or an `InputDevice`; a normal WebView cannot receive it.
+
+P2 works below that missing kernel path: it opens the exact allowlisted device with
+`UsbManager`, claims only interface 0, decodes eight-byte boot reports, and publishes
+browser-shaped key events to `ws://127.0.0.1:8774`. Interface 1 is untouched. USB
+permission approval is narrowly automated through the existing accessibility service
+only while Portal Keys has an exact permission request pending. Key values and raw
+reports are never written to logs.
+
+```bash
+node _extensions/portal-keys/pkctl.mjs hid status
+node _extensions/portal-keys/pkctl.mjs hid retry
+node _extensions/portal-keys/pkctl.mjs hid allow 0x8089 0x0008
+```
+
+The frontend opts into this bridge whenever `portalKeys.enabled` is true. Override
+with `hidEnabled: false` or `hidPort: 8774` in the screen config.
 
 Pure Java, no NDK/JNI (piano-bridge is Java too; matching it avoids the Kotlin plugin entirely).
 

@@ -423,9 +423,11 @@ export function enableGlobalKeyCapture() {
   _keyCaptureEnabled = true;
   const log = logger();
   window.addEventListener('keydown', (e) => {
+    const printable = typeof e.key === 'string' && e.key.length === 1;
     log.sampled('fkb.keyCapture', {
-      key: e.key,
-      code: e.code,
+      // Never persist typed characters (or their identifying KeyA/Digit1 code).
+      key: printable ? '[printable]' : e.key,
+      code: printable ? '[printable]' : e.code,
       keyCode: e.keyCode,
       which: e.which,
       repeat: e.repeat,

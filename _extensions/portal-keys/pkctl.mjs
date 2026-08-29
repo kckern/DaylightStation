@@ -16,17 +16,48 @@
 // `status` leads with serviceBound because the dominant failure mode is the Android
 // accessibility grant being dropped — the app CANNOT re-grant itself. See README.
 
-import { execSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { execSync, execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 const HOST = process.env.PK_HOST || '10.0.0.92:8771';
 const BASE = `http://${HOST}`;
+const DEVICE = HOST.split(':')[0];
+const SHELL_BASE = `http://${DEVICE}:8772`;
+const OPS_BASE = `http://${DEVICE}:8773`;
 const PW_CACHE = '/tmp/fkb_piano_pw';
+const TOKEN_CACHE = process.env.PK_TOKEN_FILE || join(homedir(), '.config', 'daylight', 'portal-keys-token');
+const LEGACY_TOKEN_CACHE = '/tmp/portal_keys_admin_token';
 
 async function req(path) {
   const res = await fetch(BASE + path, { signal: AbortSignal.timeout(15000) });
   const text = await res.text();
   try { return JSON.parse(text); } catch { return text; }
+}
+
+async function reqAt(base, path, init) {
+  const token = adminToken();
+  const res = await fetch(base + path, {
+    ...init,
+    headers: { ...init?.headers, 'X-Portal-Token': token },
+    signal: AbortSignal.timeout(30000),
+  });
+  const body = await res.text();
+  try { return JSON.parse(body); } catch { return body; }
+}
+
+function adminToken() {
+  if (process.env.PK_TOKEN) return process.env.PK_TOKEN.trim();
+  if (existsSync(TOKEN_CACHE)) {
+    const value = readFileSync(TOKEN_CACHE, 'utf8').trim();
+    if (value) return value;
+  }
+  if (existsSync(LEGACY_TOKEN_CACHE)) {
+    const value = readFileSync(LEGACY_TOKEN_CACHE, 'utf8').trim();
+    if (/^[A-Za-z0-9_-]{43}$/.test(value)) return value;
+  }
+  throw new Error(`admin token missing; run: node _extensions/portal-keys/pkctl.mjs bootstrap-token <adb-serial>`);
 }
 
 function pretty(o) { console.log(typeof o === 'string' ? o : JSON.stringify(o, null, 2)); }
@@ -97,6 +128,54 @@ function fkbPassword() {
 }
 
 const commands = {
+  async 'bootstrap-token'([serial]) {
+    if (!serial) { console.error('usage: bootstrap-token <adb-serial>'); process.exit(1); }
+    const token = execFileSync('adb', ['-s', serial, 'shell', 'run-as',
+      'net.kckern.portalkeys', 'cat', 'files/admin.token'], { encoding: 'utf8' }).trim();
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
+      throw new Error('device returned no valid admin token; start PortalBridgeService and confirm run-as access');
+    }
+    mkdirSync(dirname(TOKEN_CACHE), { recursive: true });
+    writeFileSync(TOKEN_CACHE, token + '\n', { mode: 0o600 });
+    console.log(`✓ admin token captured securely in ${TOKEN_CACHE}`);
+  },
+  async shell() { pretty(await reqAt(SHELL_BASE, '/status')); },
+  async input() { pretty(await reqAt(OPS_BASE, '/input')); },
+  async hid([sub, vid, pid]) {
+    if (!sub || sub === 'status') { pretty(await reqAt(OPS_BASE, '/usb-hid')); return; }
+    if (sub === 'retry') { pretty(await reqAt(OPS_BASE, '/usb-hid/retry', { method: 'POST' })); return; }
+    if (sub === 'allow' && vid && pid) {
+      pretty(await reqAt(OPS_BASE, `/usb-hid/config?vid=${encodeURIComponent(vid)}&pid=${encodeURIComponent(pid)}`, { method: 'POST' }));
+      return;
+    }
+    console.error('usage: hid [status|retry|allow <vid> <pid>]');
+    process.exit(1);
+  },
+  async bt([sub, address, ms]) {
+    if (!sub || sub === 'status') { pretty(await reqAt(OPS_BASE, '/bluetooth')); return; }
+    if (sub === 'scan') {
+      const duration = Number(address) || 15000;
+      pretty(await reqAt(OPS_BASE, `/bluetooth/scan?ms=${duration}`, { method: 'POST' }));
+      return;
+    }
+    if ((sub === 'bond' || sub === 'connect-hid') && address) {
+      pretty(await reqAt(OPS_BASE, `/bluetooth/${sub}?address=${encodeURIComponent(address)}`, { method: 'POST' }));
+      return;
+    }
+    console.error('usage: bt [status|scan [ms]|bond <mac>|connect-hid <mac>]');
+    process.exit(1);
+  },
+  async exec(parts) {
+    if (!parts.length) { console.error('usage: exec <command…>'); process.exit(1); }
+    pretty(await reqAt(OPS_BASE, '/exec', { method: 'POST', body: parts.join(' ') }));
+  },
+  async payload([url, sha256]) {
+    if (!url) { pretty(await reqAt(SHELL_BASE, '/payload')); return; }
+    if (!sha256) { console.error('usage: payload <jar-url> <sha256>'); process.exit(1); }
+    pretty(await reqAt(SHELL_BASE, `/payload?url=${encodeURIComponent(url)}&sha256=${encodeURIComponent(sha256)}`, { method: 'POST' }));
+  },
+  async rollback() { pretty(await reqAt(SHELL_BASE, '/payload/rollback', { method: 'POST' })); },
+  async 'enable-a11y'() { pretty(await reqAt(OPS_BASE, '/accessibility/enable')); },
   async status() {
     const s = await req('/status');
     if (typeof s === 'string') { console.log(s); return; }
@@ -227,6 +306,15 @@ const [, , name, ...args] = process.argv;
 if (!name || name === 'help' || !commands[name]) {
   console.log(`pkctl — Portal Keys control (${BASE})\n`);
   console.log('Commands:');
+  console.log('  bootstrap-token <serial> capture the shell token once over final USB');
+  console.log('  shell                  persistent shell + payload health (:8772)');
+  console.log('  input                  Android InputDevice + USB inventory (:8773)');
+  console.log('  hid [status|retry|allow <vid> <pid>]  USB HID bridge diagnostics');
+  console.log('  bt [status|scan [ms]|bond <mac>|connect-hid <mac>] Bluetooth controls');
+  console.log('  exec <command…>        app-UID remote shell (:8773)');
+  console.log('  payload [url sha256]   status or zero-tap verified payload swap');
+  console.log('  rollback               roll back to the previous payload');
+  console.log('  enable-a11y            self-repair the accessibility grant');
   console.log('  status                 serviceBound / keysSeen / display / config');
   console.log('  log                    recent key, screen-toggle and config events');
   console.log('  config                 show config (password redacted)');

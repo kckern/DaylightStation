@@ -42,6 +42,8 @@ public class PortalKeysService extends AccessibilityService
         implements ControlServer.StatusProvider {
 
     public static final String TAG = "PORTALKEYS";
+    private static volatile PortalKeysService INSTANCE;
+    public static PortalKeysService current() { return INSTANCE; }
 
     private PowerManager powerManager;
     private DisplayManager displayManager;
@@ -78,6 +80,8 @@ public class PortalKeysService extends AccessibilityService
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        INSTANCE = this;
+        startForegroundService(new android.content.Intent(this, PortalBridgeService.class));
 
         powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
@@ -121,6 +125,7 @@ public class PortalKeysService extends AccessibilityService
         Log.w(TAG, "service-destroyed: no longer receiving keys");
         if (server != null) server.stop();
         if (workerThread != null) workerThread.quitSafely();
+        INSTANCE = null;
         super.onDestroy();
     }
 
@@ -178,7 +183,15 @@ public class PortalKeysService extends AccessibilityService
         String name = KeyEvent.keyCodeToString(code);
 
         boolean isVolume = code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN;
-        if (!isVolume) return false; // everything else passes through untouched
+        if (!isVolume) {
+            // Observe ordinary HID delivery without consuming it. This is the remote
+            // replacement for `adb shell getevent`: /log proves Android dispatched a
+            // USB keyboard key to accessibility, while returning false preserves the
+            // normal Android -> Fully WebView path.
+            eventLog.add("hid-pass " + name + " " + (down ? "down" : "up")
+                    + " deviceId=" + event.getDeviceId() + " scanCode=" + event.getScanCode());
+            return false;
+        }
 
         keysSeen++;
         // Shutdown is enforced below the browser: it must also suppress the

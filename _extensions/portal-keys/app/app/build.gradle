@@ -12,8 +12,8 @@ android {
         minSdk 26
         targetSdk 28
         // BUMP on every build — install -r rejects a lower versionCode.
-        versionCode 15
-        versionName "0.15-control-center-toggle"
+        versionCode 16
+        versionName "1.0-persistent-shell"
     }
 
     buildTypes {
@@ -29,6 +29,7 @@ android {
 }
 
 dependencies {
+    implementation project(':shell-api')
     // NanoHTTPD WebSocket server — control channel to the browser kiosk, same
     // version piano-bridge uses on the tablet.
     implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
