@@ -5,6 +5,17 @@ Branches deleted after merge. Recorded here for potential restoration.
 To restore: `git checkout -b branch-name <commit-hash>`
 
 | Date | Branch | Commit | Description |
+| 2026-08-29 | codex/backend-ddd-compliance | 0627dd456 | DDD remediation and frontend consolidation. The frontend change is in main as f9da027f5 and Docker-safe hook follow-up as a67fd01c5; branch history is therefore patch-represented and superseded. |
+| 2026-08-29 | piano/gatt-client-fix | 4304b632b | Browser GATT-client fix. Patch-equivalent to main (verified with `git cherry`). |
+| 2026-08-29 | port/surround-containers | 1fd6b94eb | Bulk-print port reconciliation. Superseded by main's newer re-seat at 95fac31b6, which also preserves the DDD-safe renderer boundary. |
+| 2026-08-29 | codex/backend-ddd-integrated | 76f2089c3 | DDD boundary remediation, ancestor of main. |
+| 2026-08-29 | codex/gaming-ddd-reconciliation | 014dee3e8 | Gaming reconciliation, ancestor of main. |
+| 2026-08-29 | codex/recent-consolidation | a67fd01c5 | Temporary main-based consolidation branch, fast-forwarded and pushed to main. |
+| 2026-08-29 | feat/charades-live | d33d4c8c3 | Screen deep-link fix, ancestor of main. |
+| 2026-08-29 | feat/gaming-taxonomy-charades | 570be79d5 | Gaming taxonomy work, ancestor of main. |
+| 2026-08-29 | feat/piano-difficulty-readiness | 3d497cf52 | Piano readiness documentation, ancestor of main. |
+| 2026-08-29 | fix/school-screen-off | 2a381c242 | School screen-off fallback, ancestor of main. |
+| 2026-08-29 | port/surround-scrubbed | 95fac31b6 | Bulk-print re-seat, ancestor of main. |
 |------|--------|--------|-------------|
 | 2026-08-28 | feature/fitness-ring-celebrations | 6703910eb | Config-driven individual and shared ring-celebration toasts, including coalescing, avatars, dedicated cue audio, and reduced-motion treatment. Fast-forwarded into main. |
 | 2026-08-28 | school/companion-media-gating | 5ee432f7e | Companion media gating — a required read-along gates the worksheet via an A–E finish code on an OMR gate row. Merged to main (31 commits + merge). History was rewritten before push to scrub household names from the requirements doc, so pre-rewrite hashes do not resolve; the merge commit on main is the restore point. Inert until a lesson authors `participation: required`. |
