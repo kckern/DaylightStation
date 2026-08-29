@@ -55,7 +55,7 @@ function BuzzerBind({ teams, onDone }) {
   );
 }
 
-export default function PartyGamesApp({ dismiss, clear }) {
+export default function PartyGamesApp({ game, dismiss, clear }) {
   // Mounted as a screen widget (gets `dismiss`) or via /app/:appId (gets `clear`).
   const exit = dismiss || clear || (() => {});
   const [flow, dispatchFlow] = useReducer(flowReducer, initialFlowState);
@@ -72,11 +72,11 @@ export default function PartyGamesApp({ dismiss, clear }) {
     let cancelled = false;
     fetchBoot()
       .then(({ config, sets }) => {
-        if (!cancelled) dispatchFlow({ type: 'BOOT_LOADED', config, sets });
+        if (!cancelled) dispatchFlow({ type: 'BOOT_LOADED', config, sets, requestedGame: game });
       })
       .catch((err) => { if (!cancelled) dispatchFlow({ type: 'BOOT_FAILED', error: err.message }); });
     return () => { cancelled = true; };
-  }, []);
+  }, [game]);
 
   // Create the backend session when play starts without one (fresh game).
   useEffect(() => {

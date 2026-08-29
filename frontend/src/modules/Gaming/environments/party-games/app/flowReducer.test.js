@@ -17,6 +17,40 @@ describe('flowReducer', () => {
     expect(s.sets).toHaveLength(1);
   });
 
+  it('opens a valid requested game directly from a screen deep link', () => {
+    const charades = {
+      id: 'charades:family',
+      game: 'charades',
+      setId: 'family',
+      definitionId: 'charades:family',
+      presenter_id: 'charades-stage',
+      setup: 'individuals-or-teams',
+      setupProfile: { kind: 'individuals-or-teams' },
+      valid: true,
+    };
+    const state = flowReducer(initialFlowState, {
+      type: 'BOOT_LOADED',
+      config: CONFIG,
+      sets: [charades],
+      requestedGame: 'charades',
+    });
+
+    expect(state).toMatchObject({
+      phase: 'team-setup',
+      game: 'charades',
+      setId: 'family',
+      definitionId: 'charades:family',
+      presenterId: 'charades-stage',
+    });
+  });
+
+  it('falls back to the game picker for an unknown deep link', () => {
+    const state = flowReducer(initialFlowState, {
+      type: 'BOOT_LOADED', config: CONFIG, sets: SETS, requestedGame: 'misspelled-game',
+    });
+    expect(state.phase).toBe('set-picker');
+  });
+
   it('walks the happy path: set → teams → bind → session → playing → results → again', () => {
     let s = boot();
     s = flowReducer(s, { type: 'PICK_SET', setId: 's1' });

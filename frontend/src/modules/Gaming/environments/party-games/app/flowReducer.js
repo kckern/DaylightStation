@@ -18,16 +18,35 @@ export const initialFlowState = {
   error: null,
 };
 
+function selectSet(state, set) {
+  return {
+    ...state,
+    phase: set.setup === 'none' ? 'playing' : 'team-setup',
+    game: set.game,
+    setId: set.setId,
+    definitionId: set.definitionId,
+    presenterId: set.presenter_id,
+    setupProfile: set.setupProfile || { kind: set.setup || 'none' },
+  };
+}
+
 export function flowReducer(state, action) {
   switch (action.type) {
     case 'BOOT_LOADED': {
       const next = { ...state, config: action.config, sets: action.sets, error: null };
+      const requestedSet = action.requestedGame
+        ? action.sets.find((set) => set.valid && set.game === action.requestedGame)
+        : null;
+      if (requestedSet) return selectSet(next, requestedSet);
       return { ...next, phase: 'set-picker' };
     }
     case 'BOOT_FAILED':
       return { ...state, error: action.error };
     case 'PICK_SET':
-      return { ...state, phase: action.setup === 'none' ? 'playing' : 'team-setup', game: action.game, setId: action.setId, definitionId: action.definitionId, presenterId: action.presenterId, setupProfile: action.setupProfile || { kind: action.setup || 'none' } };
+      return selectSet(state, {
+        ...action,
+        presenter_id: action.presenterId,
+      });
     case 'TEAMS_CONFIRMED':
       return { ...state, phase: 'buzzer-bind', teams: action.teams };
     case 'SET_HOST_MODE':
