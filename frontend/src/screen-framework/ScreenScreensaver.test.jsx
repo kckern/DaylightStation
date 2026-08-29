@@ -31,6 +31,7 @@ const renderWithProviders = (config) =>
 describe('ScreenScreensaver', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    window.history.replaceState({}, '', '/');
     resetWidgetRegistry();
     getWidgetRegistry().register('art', DummyArt);
   });
@@ -49,6 +50,15 @@ describe('ScreenScreensaver', () => {
 
   it('shows immediately when showOnLoad is true', () => {
     const { queryByTestId } = renderWithProviders({ widget: 'art', idle: 99, showOnLoad: true });
+    expect(queryByTestId('dummy-art')).toBeTruthy();
+  });
+
+  it('defers showOnLoad when the initial screen URL launches deep-linked content', () => {
+    window.history.replaceState({}, '', '/screens/living-room/party-games/charades');
+    const { queryByTestId } = renderWithProviders({ widget: 'art', idle: 99, showOnLoad: true });
+
+    expect(queryByTestId('dummy-art')).toBeNull();
+    act(() => { vi.advanceTimersByTime(99000); });
     expect(queryByTestId('dummy-art')).toBeTruthy();
   });
 

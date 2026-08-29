@@ -22,3 +22,13 @@ export function resolveScreenAppPath(pathname, hasApp, routes = {}) {
     menuId: appPath ? `${appId}/${appPath}` : appId,
   };
 }
+
+/**
+ * A screen URL carrying a path suffix or query is trying to launch content.
+ * The boot screensaver must wait for the normal idle interval instead of
+ * occupying the only fullscreen overlay slot before that launch is handled.
+ */
+export function hasInitialScreenAction(pathname, search = '') {
+  const hasPathSuffix = /^\/screens?\/[^/]+\/.+/.test(String(pathname || ''));
+  return hasPathSuffix || String(search || '').replace(/^\?/, '').length > 0;
+}

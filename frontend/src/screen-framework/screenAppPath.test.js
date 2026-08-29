@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveScreenAppPath } from './screenAppPath.js';
+import { hasInitialScreenAction, resolveScreenAppPath } from './screenAppPath.js';
 
 const hasApp = (id) => id === 'party-games' || id === 'weekly-review';
 
@@ -42,5 +42,13 @@ describe('resolveScreenAppPath', () => {
 
   it('does not expose a nested app route on an unconfigured screen', () => {
     expect(resolveScreenAppPath('/screens/office/party-games/charades', hasApp)).toBeNull();
+  });
+});
+
+describe('hasInitialScreenAction', () => {
+  it('recognizes path deep links and query autoplay without claiming a bare screen', () => {
+    expect(hasInitialScreenAction('/screens/living-room/party-games/charades')).toBe(true);
+    expect(hasInitialScreenAction('/screens/living-room', '?queue=plex%3A1')).toBe(true);
+    expect(hasInitialScreenAction('/screens/living-room')).toBe(false);
   });
 });
