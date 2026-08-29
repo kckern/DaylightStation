@@ -3,6 +3,16 @@
 How the arcade keeps a gameplay session working, and why the boot sequence is
 shaped the way it is.
 
+## Launch resolution
+
+The menu passes a compound content ID such as `retroarch:n64/mario-kart-64` to
+the launch API. `LaunchService` resolves that ID through the application-facing
+content catalog and reads the item's `launchIntent`; Android kiosk clients then
+execute that intent directly through Fully Kiosk. The composition root must
+inject `contentServices.contentCatalog`, not the underlying content registry.
+`LaunchService` validates this contract during construction so a wiring error
+fails at boot instead of leaving the arcade on a permanent Loading screen.
+
 ## The settle barrier
 
 EmulatorJS is vendored (`media/emulation/_engine`, version in `version.json`) and

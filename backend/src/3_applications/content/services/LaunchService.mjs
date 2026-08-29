@@ -19,8 +19,16 @@ export class LaunchService {
    * @param {Function} [config.loadSchedule]
    * @param {Function} [config.findDeviceByConstraint]
    * @param {Object} [config.logger]
-   */
+  */
   constructor(config) {
+    if (typeof config?.contentCatalog?.resolve !== 'function'
+      || typeof config?.contentCatalog?.getItem !== 'function') {
+      throw new TypeError('LaunchService requires contentCatalog with resolve() and getItem()');
+    }
+    if (typeof config?.deviceLauncher?.canLaunch !== 'function'
+      || typeof config?.deviceLauncher?.launch !== 'function') {
+      throw new TypeError('LaunchService requires deviceLauncher with canLaunch() and launch()');
+    }
     this.#contentCatalog = config.contentCatalog;
     this.#deviceLauncher = config.deviceLauncher;
     this.#loadSchedule = config.loadSchedule || (() => null);

@@ -5508,9 +5508,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   const launchService = new LaunchService({
-    contentRegistry: contentRegistry,
+    contentCatalog: contentServices.contentCatalog,
     deviceLauncher: adbLauncher,
-    configService,
     logger: rootLogger.child({ module: 'launch-service' })
   });
 

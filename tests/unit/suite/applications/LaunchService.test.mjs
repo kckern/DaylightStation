@@ -61,6 +61,23 @@ describe('LaunchService', () => {
     }));
   });
 
+  it('resolves a direct-launch intent without invoking the device launcher', async () => {
+    await expect(service.resolveIntent('retroarch:n64/mario-kart-64')).resolves.toEqual({
+      target: 'com.retroarch/Activity',
+      params: { ROM: '/path/rom.n64' }
+    });
+
+    expect(mockCatalog.resolve).toHaveBeenCalledWith('retroarch:n64/mario-kart-64');
+    expect(mockLauncher.launch).not.toHaveBeenCalled();
+  });
+
+  it('fails at composition time when the content catalog contract is missing', () => {
+    expect(() => new LaunchService({
+      contentRegistry: mockCatalog,
+      deviceLauncher: mockLauncher,
+    })).toThrow('LaunchService requires contentCatalog with resolve() and getItem()');
+  });
+
   it('throws ValidationError when content has no launchIntent', async () => {
     mockAdapter.getItem.mockResolvedValue({ id: 'plex:123', title: 'Movie', launchIntent: null });
 
