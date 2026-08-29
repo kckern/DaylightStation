@@ -5,7 +5,7 @@ Branches deleted after merge. Recorded here for potential restoration.
 To restore: `git checkout -b branch-name <commit-hash>`
 
 | Date | Branch | Commit | Description |
-| 2026-08-29 | codex/backend-ddd-compliance | 0627dd456 | DDD remediation and frontend consolidation. The frontend change is in main as f9da027f5 and Docker-safe hook follow-up as a67fd01c5; branch history is therefore patch-represented and superseded. |
+| 2026-08-29 | codex/backend-ddd-compliance | 0627dd456 | DDD remediation and frontend consolidation. Tooling/docs commits are represented on main; two non-identical commits remain under reconciliation. Main recovered the call-lifecycle regressions in 3afc9df04 before this ref can be retired. |
 | 2026-08-29 | piano/gatt-client-fix | 4304b632b | Browser GATT-client fix. Patch-equivalent to main (verified with `git cherry`). |
 | 2026-08-29 | port/surround-containers | 1fd6b94eb | Bulk-print port reconciliation. Superseded by main's newer re-seat at 95fac31b6, which also preserves the DDD-safe renderer boundary. |
 | 2026-08-29 | codex/backend-ddd-integrated | 76f2089c3 | DDD boundary remediation, ancestor of main. |
