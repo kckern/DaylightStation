@@ -22,7 +22,7 @@ export const APP_REGISTRY = {
   'glympse':         { label: 'Glympse',          icon: glympseIcon,        param: { name: 'id' }, component: () => import('../modules/AppContainer/Apps/Glympse/Glympse.jsx') },
   'websocket':       { label: 'WebSocket',        icon: websocketIcon,      param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
   'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import('../modules/WeeklyReview/WeeklyReview.jsx') },
-  'party-games':     { label: 'Party Games',      icon: null,               param: { name: 'game' }, component: () => import('../modules/Gaming/environments/party-games/app/PartyGamesApp.jsx') },
+  'party-games':      { label: 'Party Games',       icon: null,               param: null, component: () => import('../modules/Gaming/environments/party-games/app/PartyGamesApp.jsx') },
   'school':          { label: 'School',           icon: null,               param: null, component: () => import('../modules/School/SchoolApp.jsx') },
 };
 

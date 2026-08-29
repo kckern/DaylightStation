@@ -52,7 +52,10 @@ import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 
 /** Neither a code problem nor the child's fault — say so, and offer a retry. */
-export const DEGRADED_SENTENCE = "The school computer isn't answering. Tell a grown-up.";
+// This has to fit in the keypad's one-line outage band above its retry
+// control. A wrapped warning reaches into the keys on the Portal, where it
+// reads as a broken button rather than an explanation.
+export const DEGRADED_SENTENCE = 'Computer unavailable. Ask a grown-up.';
 /** The whole failure path for a code (D1). */
 export const TRY_AGAIN_SENTENCE = 'Try again.';
 

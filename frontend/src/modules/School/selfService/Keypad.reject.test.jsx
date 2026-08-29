@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { fileURLToPath } from 'node:url';
+import * as sass from 'sass';
 import Keypad, { REJECT_WORD } from './Keypad.jsx';
 
 vi.mock('../../../lib/fkb.js', () => ({ screenOff: vi.fn() }));
@@ -10,6 +12,14 @@ vi.mock('../schoolLog.js', () => ({
 const PAST_SETTLE_MS = 500;
 
 const entryText = () => screen.getByTestId('selfservice-entry').textContent;
+
+const schoolStylesheet = sass.compile(
+  fileURLToPath(new URL('../School.scss', import.meta.url)),
+).css.replace(/\s+/g, ' ');
+
+const styleRule = (selector) => schoolStylesheet.match(
+  new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`),
+)?.[1] ?? '';
 
 const jab = (name) => {
   const key = screen.getByRole('button', { name });
@@ -73,5 +83,20 @@ describe('School keypad refusal animation (NONONO)', () => {
     typeCode('123456');
     await act(async () => { await vi.advanceTimersByTimeAsync(PAST_SETTLE_MS + 1200); });
     expect(screen.getByTestId('selfservice-entry')).toHaveAttribute('data-state', 'entry');
+  });
+});
+
+describe('School keypad outage layout', () => {
+  it('reserves the whole message-and-retry band above the keys', () => {
+    const status = styleRule('.school-selfservice__status');
+    const message = styleRule('.school-selfservice__message');
+    const retry = styleRule('.school-selfservice__retry');
+
+    // 52px retry + its 0.45rem gap + one text line needs more than the old
+    // 3.5rem band. Keeping it fixed prevents a failed request from painting a
+    // button on top of the first keypad row.
+    expect(status).toContain('height: clamp(7.25rem, 15vh, 8rem)');
+    expect(message).toContain('white-space: nowrap');
+    expect(retry).toContain('flex: 0 0 52px');
   });
 });

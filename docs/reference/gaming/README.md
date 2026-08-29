@@ -19,7 +19,7 @@ Canonical packages:
 
 `party-games` is the canonical shared-display environment and `/api/v1/gaming` is the Gaming API.
 
-The v2 cutover has no runtime compatibility aliases. `scripts/migrations/gaming-v2.mjs` migrates mounted manifests, durable snapshots, journals, and Party Games configuration with a recoverable backup; it is dry-run unless `--apply` is supplied. New themed definitions and assets enter through mounted authored artifacts; the authored-artifacts reference records the remaining legacy Piano opponent-roster exception.
+The v2 cutover has no runtime compatibility aliases. `scripts/migrations/gaming-v2.mjs` migrates mounted manifests, durable snapshots, journals, and Party Games configuration with a recoverable backup; it is dry-run unless `--apply` is supplied. Source packages contain no branded experience definition data: themed definitions and assets enter only through mounted authored artifacts.
 
 The dependency direction is `environment → experience → platform`. Experiences may consume environment capabilities (such as buzzers and audio cues) only through injected `gamingServices`; they never import an environment. `architecture.test.js` enforces these boundaries.
 

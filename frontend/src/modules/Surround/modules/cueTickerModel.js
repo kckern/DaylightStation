@@ -68,7 +68,7 @@ export function phaseDelay(sinceLastPieceSwap, periodMs = FACT_INTERVAL_MS) {
  * reserved-height law is the same law it has always been; this is what keeps it
  * true through a state the band did not use to have.
  */
-export const BLANK_LINE = ' ';
+export const BLANK_LINE = '\u00a0';
 
 export const EMPTY = Object.freeze({ key: 'empty', kind: null, at: null, text: '' });
 
