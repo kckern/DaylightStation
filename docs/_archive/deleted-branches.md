@@ -320,3 +320,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-08-27 | feature/piano-lesson-gate | b05582568 | Piano kiosk today's-lesson gate + Teacher Console parent day-bypass; merged to main and pushed, not yet run against a live stack |
 | 2026-08-27 | fix/piano-menu-activity-shape-race | c0b7577b3 | PianoMenuActivity shape assertion waited on paint not on the write |
 | 2026-08-27 | feature/media-lesson-checkpoints | d92133823 | Hard-gated media lessons: video/audio on the living-room TV pausing at curriculum-authored checkpoints for retry-until-correct comprehension questions. 19 tasks; merged to main. |
+| 2026-08-28 | feat/unified-board-game | 402458f0c | Shared Chess, Checkers, and Connect Four match frame, opponent roster/dialogue platform, generic fail-open commentary endpoint, and per-game rivalry memory. Fully merged into main; isolated worktree removed cleanly. |
