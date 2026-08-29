@@ -36,6 +36,10 @@ RUN npm install -g forever
 COPY package*.json ./
 COPY frontend/package*.json ./frontend/
 COPY backend/package*.json ./backend/
+# Root `npm ci` runs the developer-hook `prepare` script. The production
+# context deliberately excludes `.git`, but the script itself must exist while
+# dependencies install; it exits cleanly outside a checkout.
+COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
 
 # Layer 6: Install all npm dependencies in one layer
 #
