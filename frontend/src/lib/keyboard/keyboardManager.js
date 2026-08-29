@@ -245,7 +245,7 @@ export function useAdvancedKeyboardHandler(config = {}) {
       if (!actionName || !finalActionHandlers[actionName]) return;
 
       // Handle double-click detection for navigation keys
-      if (enableDoubleClick && event.isTrusted && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      if (enableDoubleClick && (event.isTrusted || event.portalHid === true) && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
         const now = Date.now();
         const isDoubleClick = now - lastKeypressTimeRef.current < doubleClickDelay;
         lastKeypressTimeRef.current = now;

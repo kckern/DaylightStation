@@ -1,4 +1,5 @@
 import { usePortalKeys } from './usePortalKeys.js';
+import { usePortalHidKeyboard } from './usePortalHidKeyboard.js';
 
 /**
  * Renderless bridge from the Portal panel's physical buttons to the screen's
@@ -11,9 +12,14 @@ import { usePortalKeys } from './usePortalKeys.js';
  * other kiosk retrying a WebSocket to a port nothing listens on.
  */
 export function PortalKeysBridge({ config }) {
+  const enabled = config?.enabled === true;
   usePortalKeys({
-    enabled: config?.enabled === true,
+    enabled,
     port: config?.port,
+  });
+  usePortalHidKeyboard({
+    enabled: enabled && config?.hidEnabled !== false,
+    port: config?.hidPort,
   });
   return null;
 }
