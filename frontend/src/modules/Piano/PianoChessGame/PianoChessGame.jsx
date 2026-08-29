@@ -4,7 +4,9 @@ import { fenToPosition } from '@shared-gaming/rulesets/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { pieceSource } from '../../Chess/pieceAssets.js';
-import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
+import BoardGameFrame from '../game-platform/host/BoardGameFrame.jsx';
+import BoardGameOpening from '../game-platform/host/BoardGameOpening.jsx';
+import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import { GameRail, GameSlot, GameButton, GameStatusBar, WinTally } from '../game-platform/chrome/index.js';
 import GearIcon from '../game-platform/chrome/GearIcon.jsx';
 import Icon from '../ui/icons/Icon.jsx';
@@ -25,9 +27,9 @@ import {
   archiveGame, beaconArchive, fetchChessConfig, fetchLadder, requestBestMove,
   requestOpponentMove, requestOpponentQuip, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
-import OpponentPortrait from './OpponentPortrait.jsx';
+import OpponentPortrait from '../game-platform/opponent/OpponentPanel.jsx';
 import GestureCards from './GestureCards.jsx';
-import { OpponentRosterModal } from './OpponentRoster.jsx';
+import OpponentRosterModal from '../game-platform/opponent/OpponentRosterSheet.jsx';
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
@@ -501,6 +503,7 @@ export function PianoChessGame({
     announce,
     logger: logger(),
     requestMove: requestOpponentMove,
+    // Compatibility symbol, shared /dialogue transport (see chessApi.js).
     requestQuip: requestOpponentQuip,
     commitAuthorityMove: async (candidate) => {
       const authoritativeSession = await commitChessMove(candidate);
@@ -773,7 +776,7 @@ export function PianoChessGame({
     takebackArmed,
   });
   return (
-    <PianoGameHost
+    <BoardGameFrame
       gameId="chess"
       phase={game.status?.game_over ? 'result' : (opening ? 'opening' : 'playing')}
       className={`piano-chess${reading ? ' piano-chess--reading' : ''}`}
@@ -783,7 +786,7 @@ export function PianoChessGame({
       instrumentClassName="piano-chess__instrument"
       instrument={{ activeNotes, startNote: 36, endNote: 84, showLabels: true }}
     >
-      <div className="piano-chess__stage">
+      <InstrumentBoardStage className="piano-chess__stage">
         {/* THE STATE RAIL — what the game is currently thinking. Every row here
             holds its place whether or not it has something to say: a read-out
             that resizes as fingers land drags the eye and, worse, moves the
@@ -1046,7 +1049,7 @@ export function PianoChessGame({
                 <span className="piano-chess__opponent-rung-name">
                   {rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))}
                 </span>
-                <span className="chess-opponent__status">{opponentLine}</span>
+                <span className="pg-opponent__status">{opponentLine}</span>
               </p>
             )}
             {ladder?.status && !ladder.status.at_top && ladder.persisted && (
@@ -1101,7 +1104,7 @@ export function PianoChessGame({
             ))}
           </div>
         </GameRail>
-      </div>
+      </InstrumentBoardStage>
 
       <GameStatusBar
         className="piano-chess__status"
@@ -1120,14 +1123,14 @@ export function PianoChessGame({
       {/* The start of the game, given a moment. Same placement as the result
           card — over the board, so the position is never hidden from view. */}
       {opening && !game.status?.game_over && (
-        <div className="chess-opening" role="status">
-          <p className="chess-opening__vs">
-            {playerColor === 'w' ? 'White' : 'Black'} versus {opponent?.name || rung?.label || 'the engine'}
-          </p>
-          <p className="chess-opening__lead">
-            {playerColor === 'w' ? 'Your move' : 'They open'}
-          </p>
-        </div>
+        <BoardGameOpening
+          opponent={{ name: opponent?.name || rung?.label || 'the engine' }}
+          playerLabel={playerColor === 'w' ? 'White' : 'Black'}
+          turnLabel={playerColor === 'w' ? 'Your move' : 'They open'}
+          className="chess-opening"
+          versusClassName="chess-opening__vs"
+          turnClassName="chess-opening__lead"
+        />
       )}
 
       {/* The end of the game, given a moment. Over the board rather than
@@ -1153,7 +1156,7 @@ export function PianoChessGame({
       {rosterOpen && ladder?.roster?.length > 0 && (
         <OpponentRosterModal
           roster={ladder.roster}
-          unlockedThrough={ladder.unlocked_through}
+          position={ladder.unlocked_through}
           onClose={() => setRosterOpen(false)}
         />
       )}
@@ -1167,7 +1170,7 @@ export function PianoChessGame({
         />
       )}
 
-    </PianoGameHost>
+    </BoardGameFrame>
   );
 }
 

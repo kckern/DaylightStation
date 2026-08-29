@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { chooseColumn, CONNECT_FOUR_OPPONENTS } from '@shared-gaming/rulesets/connect-four/opponent.mjs';
 import { playColumn, replayGame } from '@shared-gaming/rulesets/connect-four/engine.mjs';
-import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
+import { connectFourCommentary } from '@shared-gaming/rulesets/connect-four/commentary.mjs';
+import BoardGameFrame from '../game-platform/host/BoardGameFrame.jsx';
+import BoardGameResult from '../game-platform/host/BoardGameResult.jsx';
+import BoardGameOpening from '../game-platform/host/BoardGameOpening.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
-import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
 import { useAddressedBoardGame } from '../game-platform/families/addressed-board/useAddressedBoardGame.js';
@@ -13,10 +15,12 @@ import { useAddressingLadder } from '../game-platform/addressing/useAddressingLa
 import { managedAddressingAt } from '../game-platform/addressing/managedAddressing.js';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import {
-  GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, GameChoice, LadderBadge, DealNotice, GameSheet,
+  GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, GameChoice, DealNotice, GameSheet,
 } from '../game-platform/chrome/index.js';
+import OpponentPanel from '../game-platform/opponent/OpponentPanel.jsx';
+import OpponentRosterSheet from '../game-platform/opponent/OpponentRosterSheet.jsx';
+import { useOpponentDialogue } from '../game-platform/opponent/useOpponentDialogue.js';
 import AddressingSettings from '../game-platform/addressing/AddressingSettings.jsx';
-import GearIcon from '../game-platform/chrome/GearIcon.jsx';
 import Icon from '../ui/icons/Icon.jsx';
 import { materialFor } from '../game-platform/addressing/resolveAddressing.js';
 import connectFourClient from './connectFourApi.js';
@@ -102,7 +106,10 @@ function Board({ game, hint, drop }) {
 export default function PianoConnectFour({ activeNotes = new Map(), currentUser = null, addressingPolicy = null, onNoteOn, onNoteOff }) {
   const [hint, setHint] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [opening, setOpening] = useState(true);
   const latchedRef = useRef(false);
+  const terminalSpokenRef = useRef(null);
 
   // The checkpointed-local Gaming coordinator owns the transcript. Piano keeps
   // MIDI addressing, pedagogy, pacing, and presentation composition.
@@ -114,7 +121,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
 
   const {
     config, updateConfig, ladder, level, seed, gameSessionId, userId,
-    localPractice, noteLocalPractice, restart: resetSession, logger,
+    localPractice, noteLocalPractice, restart: resetSession, logger, archiveContextRef,
   } = useAddressedBoardGame({
     gameId: 'connect-four',
     client: connectFourClient,
@@ -176,20 +183,55 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   const thinkMs = thinkTimeFor({
     level, levels: LADDER_LEVELS, config, seed, ply: moves.length, pace: config.opponent?.pace ?? 1,
   }) ?? OPPONENT_THINK_FALLBACK_MS;
+  const dialogue = useOpponentDialogue({ logger });
   const { thinking } = useOpponentReply({
     enabled: opponentEnabled,
     thinkMs,
     resetKey: gameSessionId,
-    request: () => connectFourClient.requestMove({
-      transcript: { moves }, level, gameSessionId, userId,
-    }),
-    onReply: (answer) => {
-      if (!answer?.move) noteLocalPractice();
+    request: async () => {
+      const answer = await connectFourClient.requestMove({ transcript: { moves }, level, gameSessionId, userId });
       const column = answer?.move?.column ?? chooseColumn(game.board, { player: 2, level });
-      const next = playColumn({ moves }, column);
-      if (!next.error) commitColumn(column);
+      const projected = playColumn({ moves }, column);
+      const facts = !projected.error ? connectFourCommentary({ moves: projected.moves }, {
+        sessionId: gameSessionId, ply: projected.moves.length, playerSide: 1,
+      }) : null;
+      const reaction = facts ? dialogue.prepareReaction({
+        request: () => connectFourClient.requestDialogue?.({
+          sessionId: gameSessionId, ply: projected.moves.length, level, playerSide: 1,
+          transcript: { moves: projected.moves }, dialogue: dialogue.dialogueRef.current, userId,
+        }),
+        fallback: { eventId: facts.eventId, quip: facts.fallback, source: 'fallback' },
+        event: { gameId: 'connect-four', sessionId: gameSessionId, ply: projected.moves.length, opponentId: answer?.opponent?.opponent?.id || null },
+      }) : null;
+      return { answer, column, projected, reaction };
+    },
+    onReply: (plan) => {
+      const { answer, column, projected: next, reaction } = plan || {};
+      if (!answer?.move) noteLocalPractice();
+      if (!next?.error) {
+        commitColumn(column);
+        if (reaction) dialogue.commitReaction(reaction);
+      }
     },
   });
+
+  useEffect(() => {
+    setOpening(true);
+    const timer = setTimeout(() => setOpening(false), 1200);
+    return () => clearTimeout(timer);
+  }, [gameSessionId]);
+
+  useEffect(() => {
+    if (!game.status.gameOver || game.status.winner !== 1) return;
+    const key = `${gameSessionId}:${game.moves.length}`;
+    if (terminalSpokenRef.current === key) return;
+    terminalSpokenRef.current = key;
+    const facts = connectFourCommentary({ moves: game.moves }, { sessionId: gameSessionId, ply: game.moves.length, playerSide: 1 });
+    if (facts) dialogue.showTerminalReaction({
+      reaction: { eventId: facts.eventId, quip: facts.fallback },
+      event: { gameId: 'connect-four', sessionId: gameSessionId, ply: game.moves.length, opponentId: opponent.id },
+    });
+  }, [dialogue, game, gameSessionId]);
 
   // Time-to-address is measured from when it became the player's turn.
   useEffect(() => {
@@ -243,6 +285,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   const restart = useMatchRematch(() => {
     resetAuthority();
     setHint(null);
+    dialogue.reset();
     // A key already down when the game restarts must not immediately address a
     // column — the latch opens on the next release, not on this render.
     latchedRef.current = activeNotes.size > 0;
@@ -256,8 +299,23 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   useAnyKeyToContinue({ enabled: game.status.gameOver, activeNotes, onContinue: restart });
 
   const opponent = ladder?.current
-    ?? CONNECT_FOUR_OPPONENTS[Math.max(0, Math.min(CONNECT_FOUR_OPPONENTS.length - 1, level - 1))];
+    ?? { id: `connect-four:level-${level}`, name: `Level ${level}`, art: null };
   const opponentName = opponent.name;
+  archiveContextRef.current = {
+    opponent: { id: opponent.id || `connect-four:level-${level}`, name: opponentName, level },
+    dialogue: dialogue.dialogueRef.current,
+    prepareTerminal: () => {
+      if (game.status.winner === 1) {
+        const key = `${gameSessionId}:${game.moves.length}`;
+        if (terminalSpokenRef.current !== key) {
+          terminalSpokenRef.current = key;
+          const facts = connectFourCommentary({ moves: game.moves }, { sessionId: gameSessionId, ply: game.moves.length, playerSide: 1 });
+          if (facts) dialogue.showTerminalReaction({ reaction: { eventId: facts.eventId, quip: facts.fallback }, event: { gameId: 'connect-four', sessionId: gameSessionId, ply: game.moves.length, opponentId: opponent.id } });
+        }
+      }
+      return { dialogue: dialogue.dialogueRef.current };
+    },
+  };
   // Who won, in the terms the player can check against the board: a colour and
   // the four lit discs. "You connected four!" and a bare "Pebble wins" left the
   // player hunting for the line that ended the game.
@@ -278,13 +336,11 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   const hoveredColumn = addressedColumn(activeNotes, columns, deal);
 
   return (
-    <PianoGameHost
+    <BoardGameFrame
       gameId="connect-four"
       phase={game.status.gameOver ? 'result' : thinking ? 'paused' : 'playing'}
       className="piano-connect-four"
       instrument={{ activeNotes, startNote: 48, endNote: 84, showLabels: true, onNoteOn, onNoteOff }}
-    >
-      <InstrumentBoardStage
         layout={BOARD_LAYOUTS.SINGLE}
         topRail={(
           <AddressRail
@@ -298,31 +354,22 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
         leftRail={(
           <GameRail label="Opponent">
             <GameSlot>
-              <LadderBadge
-                name={opponentName}
+              <OpponentPanel
+                opponent={opponent}
                 level={level}
-                levels={LADDER_LEVELS}
-                wins={ladder?.wins ?? 0}
-                needed={ladder?.needed ?? 3}
-                portrait={opponent.art ? <img className="pg-ladder__portrait" src={opponent.art} alt="" /> : null}
+                status={thinking ? 'Thinking…' : game.status.gameOver ? 'Game over' : 'Ready'}
+                thinkMs={thinking ? thinkMs : null}
+                speech={dialogue.speech}
+                ladder={{ position: level, total: LADDER_LEVELS, wins: ladder?.wins ?? 0, needed: ladder?.wins_required ?? ladder?.needed ?? 3 }}
+                onOpenRoster={() => setRosterOpen(true)}
               />
             </GameSlot>
           </GameRail>
         )}
-        rightRail={(
+        rightRail={{ render: ({ settingsTrigger }) => (
           <GameRail
             label="Controls"
-            foot={(
-              <GameButton
-                variant="icon"
-                onClick={() => setSettingsOpen((open) => !open)}
-                aria-expanded={settingsOpen}
-                aria-label="Settings"
-                title="Settings"
-              >
-                <GearIcon />
-              </GameButton>
-            )}
+            foot={settingsTrigger}
           >
             <GameSlot label={<><Icon name="piano" /> Play with</>}>
               <GameChoice
@@ -352,7 +399,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
               </div>
             </GameSlot>
           </GameRail>
-        )}
+        ) }}
         status={(
           <GameStatusBar
             aside={game.status.gameOver ? 'Any key: play again' : localPractice ? 'Local practice' : null}
@@ -363,14 +410,17 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
             {status}
           </GameStatusBar>
         )}
-      />
-
-      {/* The same reading ladder chess offers, on the same control. */}
-      {settingsOpen && (
-        <GameSheet title="Settings" onClose={() => setSettingsOpen(false)}>
-          <AddressingSettings config={config} axisSize={COLUMNS} onChange={updateConfig} />
-        </GameSheet>
-      )}
-    </PianoGameHost>
+      settings={{
+        rail: 'right', open: settingsOpen,
+        onOpen: () => setSettingsOpen((open) => !open),
+        content: <GameSheet title="Settings" onClose={() => setSettingsOpen(false)}><AddressingSettings config={config} axisSize={COLUMNS} onChange={updateConfig} /></GameSheet>,
+      }}
+      opening={opening && !game.status.gameOver ? <BoardGameOpening opponent={opponent} turnLabel="Your move" /> : null}
+      result={game.status.gameOver ? (
+        <BoardGameResult result={result} opponent={opponent} level={level} speech={dialogue.speech} message={status} promoted={ladder?.promoted === true} onPlayAgain={restart} />
+      ) : null}
+    >
+      {rosterOpen && <OpponentRosterSheet roster={ladder?.opponents || CONNECT_FOUR_OPPONENTS} position={level} onClose={() => setRosterOpen(false)} />}
+    </BoardGameFrame>
   );
 }

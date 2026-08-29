@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { legalMoves, replayGame } from '@shared-gaming/rulesets/checkers/engine.mjs';
+import { applyMove, legalMoves, replayGame } from '@shared-gaming/rulesets/checkers/engine.mjs';
 import { chooseMove, CHECKERS_OPPONENTS } from '@shared-gaming/rulesets/checkers/opponent.mjs';
-import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
+import { checkersCommentary } from '@shared-gaming/rulesets/checkers/commentary.mjs';
+import BoardGameFrame from '../game-platform/host/BoardGameFrame.jsx';
+import BoardGameResult from '../game-platform/host/BoardGameResult.jsx';
+import BoardGameOpening from '../game-platform/host/BoardGameOpening.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import { slideOffsetCells, slideDurationMs } from './moveSlide.js';
-import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
 import { resolveAddressedSelection } from '../game-platform/families/addressed-board/interactionGrammars.js';
@@ -15,10 +17,12 @@ import { useAddressingLadder } from '../game-platform/addressing/useAddressingLa
 import { managedAddressingAt } from '../game-platform/addressing/managedAddressing.js';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import {
-  GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, LadderBadge, DealNotice, GameSheet,
+  GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, DealNotice, GameSheet,
 } from '../game-platform/chrome/index.js';
+import OpponentPanel from '../game-platform/opponent/OpponentPanel.jsx';
+import OpponentRosterSheet from '../game-platform/opponent/OpponentRosterSheet.jsx';
+import { useOpponentDialogue } from '../game-platform/opponent/useOpponentDialogue.js';
 import AddressingSettings from '../game-platform/addressing/AddressingSettings.jsx';
-import GearIcon from '../game-platform/chrome/GearIcon.jsx';
 import Icon from '../ui/icons/Icon.jsx';
 import {
   DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, activeFileIndex, activeRankDisplayIndex,
@@ -103,7 +107,10 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   const [message, setMessage] = useState(null);
   const [hint, setHint] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [opening, setOpening] = useState(true);
   const latchedRef = useRef(false);
+  const terminalSpokenRef = useRef(null);
 
   const authorityUserId = currentUser?.id || currentUser?.username || currentUser?.user_id || 'household';
   const { state: authorityState, moves, play: commitMove, reset: resetAuthority } = useCheckersAuthority({ userId: authorityUserId });
@@ -114,7 +121,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
 
   const {
     config, updateConfig, ladder, level, seed, gameSessionId, userId,
-    localPractice, noteLocalPractice, restart: resetSession, logger,
+    localPractice, noteLocalPractice, restart: resetSession, logger, archiveContextRef,
   } = useAddressedBoardGame({
     gameId: 'checkers',
     client: checkersClient,
@@ -160,6 +167,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   const thinkMs = thinkTimeFor({
     level, levels: LADDER_LEVELS, config, seed, ply: moves.length, pace: config.opponent?.pace ?? 1,
   }) ?? OPPONENT_THINK_FALLBACK_MS;
+  const dialogue = useOpponentDialogue({ logger });
   const { thinking } = useOpponentReply({
     enabled: opponentEnabled,
     thinkMs,
@@ -172,12 +180,30 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     // forever and every key the player pressed was discarded as
     // `not-your-turn`. Any opponent multi-jump hung the game.
     resetKey: `${gameSessionId}:${moves.length}:${game.forcedFrom ?? '-'}`,
-    request: () => checkersClient.requestMove({ transcript: { moves }, level, gameSessionId, userId }),
-    onReply: async (answer) => {
+    request: async () => {
+      const answer = await checkersClient.requestMove({ transcript: { moves }, level, gameSessionId, userId });
+      const move = answer?.move ?? chooseMove(game, { level: Math.min(2, level) });
+      const projected = move ? applyMove(game, move) : game;
+      const completedTurn = projected.status.gameOver || projected.turn === 1;
+      const facts = completedTurn ? checkersCommentary({ moves: projected.moves }, {
+        sessionId: gameSessionId, ply: projected.moves.length, playerSide: 1,
+      }) : null;
+      const reaction = facts ? dialogue.prepareReaction({
+        request: () => checkersClient.requestDialogue?.({
+          sessionId: gameSessionId, ply: projected.moves.length, level, playerSide: 1,
+          transcript: { moves: projected.moves }, dialogue: dialogue.dialogueRef.current, userId,
+        }),
+        fallback: { eventId: facts.eventId, quip: facts.fallback, source: 'fallback' },
+        event: { gameId: 'checkers', sessionId: gameSessionId, ply: projected.moves.length, opponentId: answer?.opponent?.opponent?.id || null },
+      }) : null;
+      return { answer, move, reaction };
+    },
+    onReply: async (plan) => {
+      const { answer, move, reaction } = plan || {};
       if (!answer?.move) noteLocalPractice();
       // Keep offline practice responsive on the kiosk's older WebView CPU.
-      const move = answer?.move ?? chooseMove(game, { level: Math.min(2, level) });
       const next = move ? await commitMove(move) : game;
+      if (reaction && (next.status.gameOver || next.turn === 1)) dialogue.commitReaction(reaction);
       // Only the PLAYER's moves were ever logged, so a transcript could never
       // be replayed from the log store — exactly half the game was missing,
       // and it is the opponent's reply that sets up the forced jump a player
@@ -192,6 +218,24 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       });
     },
   });
+
+  useEffect(() => {
+    setOpening(true);
+    const timer = setTimeout(() => setOpening(false), 1200);
+    return () => clearTimeout(timer);
+  }, [gameSessionId]);
+
+  useEffect(() => {
+    if (!game.status.gameOver || game.lastMove?.player !== 1) return;
+    const key = `${gameSessionId}:${game.moves.length}`;
+    if (terminalSpokenRef.current === key) return;
+    terminalSpokenRef.current = key;
+    const facts = checkersCommentary({ moves: game.moves }, { sessionId: gameSessionId, ply: game.moves.length, playerSide: 1 });
+    if (facts) dialogue.showTerminalReaction({
+      reaction: { eventId: facts.eventId, quip: facts.fallback },
+      event: { gameId: 'checkers', sessionId: gameSessionId, ply: game.moves.length, opponentId: opponent.id },
+    });
+  }, [dialogue, game, gameSessionId]);
 
   // Time-to-address is measured from when it became the player's turn.
   useEffect(() => {
@@ -294,6 +338,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     setSelected(null);
     setMessage(null);
     setHint(null);
+    dialogue.reset();
     // A key already down when the game restarts must not immediately address a
     // square — the latch opens on the next release, not on this render.
     latchedRef.current = activeNotes.size > 0;
@@ -308,8 +353,23 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   useAnyKeyToContinue({ enabled: game.status.gameOver, activeNotes, onContinue: restart });
 
   const opponent = ladder?.current
-    ?? CHECKERS_OPPONENTS[Math.max(0, Math.min(CHECKERS_OPPONENTS.length - 1, level - 1))];
+    ?? { id: `checkers:level-${level}`, name: `Level ${level}`, art: null };
   const opponentName = opponent.name;
+  archiveContextRef.current = {
+    opponent: { id: opponent.id || `checkers:level-${level}`, name: opponentName, level },
+    dialogue: dialogue.dialogueRef.current,
+    prepareTerminal: () => {
+      if (game.lastMove?.player === 1) {
+        const key = `${gameSessionId}:${game.moves.length}`;
+        if (terminalSpokenRef.current !== key) {
+          terminalSpokenRef.current = key;
+          const facts = checkersCommentary({ moves: game.moves }, { sessionId: gameSessionId, ply: game.moves.length, playerSide: 1 });
+          if (facts) dialogue.showTerminalReaction({ reaction: { eventId: facts.eventId, quip: facts.fallback }, event: { gameId: 'checkers', sessionId: gameSessionId, ply: game.moves.length, opponentId: opponent.id } });
+        }
+      }
+      return { dialogue: dialogue.dialogueRef.current };
+    },
+  };
   const status = game.status.gameOver
     ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You won the board!' : `${opponentName} wins`
     : thinking ? `${opponentName} is thinking…`
@@ -331,15 +391,13 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   const blue = game.board.filter((piece) => piece?.toLowerCase() === 'b').length;
 
   return (
-    <PianoGameHost
+    <BoardGameFrame
       gameId="checkers"
       phase={game.status.gameOver ? 'result' : thinking ? 'paused' : 'playing'}
       className="piano-checkers"
       // Same scheme as chess (DEFAULT_STAFF_SCHEME, 47-72), so the same keyboard
       // window shows every note either game addresses with.
       instrument={{ activeNotes, startNote: 36, endNote: 84, showLabels: true, onNoteOn, onNoteOff }}
-    >
-      <InstrumentBoardStage
         layout={BOARD_LAYOUTS.SINGLE}
         /* Both rim rails live INSIDE the board's own grid rather than in the
            stage's `topRail` slot. The file rail has to sit over the files it
@@ -367,13 +425,14 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         leftRail={(
           <GameRail label="Opponent">
             <GameSlot>
-              <LadderBadge
-                name={opponentName}
+              <OpponentPanel
+                opponent={opponent}
                 level={level}
-                levels={LADDER_LEVELS}
-                wins={ladder?.wins ?? 0}
-                needed={ladder?.needed ?? 3}
-                portrait={opponent.art ? <img className="pg-ladder__portrait" src={opponent.art} alt="" /> : null}
+                status={thinking ? 'Thinking…' : game.status.gameOver ? 'Game over' : 'Ready'}
+                thinkMs={thinking ? thinkMs : null}
+                speech={dialogue.speech}
+                ladder={{ position: level, total: LADDER_LEVELS, wins: ladder?.wins ?? 0, needed: ladder?.wins_required ?? ladder?.needed ?? 3 }}
+                onOpenRoster={() => setRosterOpen(true)}
               />
             </GameSlot>
             {/* A tally, so "am I ahead?" is answerable at a glance rather than by
@@ -390,20 +449,10 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
             </GameSlot>
           </GameRail>
         )}
-        rightRail={(
+        rightRail={{ render: ({ settingsTrigger }) => (
           <GameRail
             label="Controls"
-            foot={(
-              <GameButton
-                variant="icon"
-                onClick={() => setSettingsOpen((open) => !open)}
-                aria-expanded={settingsOpen}
-                aria-label="Settings"
-                title="Settings"
-              >
-                <GearIcon />
-              </GameButton>
-            )}
+            foot={settingsTrigger}
           >
             <GameSlot label={<><Icon name="shuffle" /> Board map</>}>
               <GameToggle
@@ -421,7 +470,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
               </div>
             </GameSlot>
           </GameRail>
-        )}
+        ) }}
         status={(
           <GameStatusBar
             aside={game.status.gameOver ? 'Any key: play again' : localPractice ? 'Local practice' : null}
@@ -432,15 +481,26 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
             {status}
           </GameStatusBar>
         )}
-      />
-
-      {/* The same reading ladder chess offers, on the same control — "how hard
-          is the reading" is the same question on every board. */}
-      {settingsOpen && (
-        <GameSheet title="Settings" onClose={() => setSettingsOpen(false)}>
-          <AddressingSettings config={config} axisSize={AXIS} onChange={updateConfig} />
-        </GameSheet>
-      )}
-    </PianoGameHost>
+      settings={{
+        rail: 'right', open: settingsOpen,
+        onOpen: () => setSettingsOpen((open) => !open),
+        content: <GameSheet title="Settings" onClose={() => setSettingsOpen(false)}><AddressingSettings config={config} axisSize={AXIS} onChange={updateConfig} /></GameSheet>,
+      }}
+      opening={opening && !game.status.gameOver ? <BoardGameOpening opponent={opponent} turnLabel="Your move" /> : null}
+      result={game.status.gameOver ? (
+        <BoardGameResult
+          result={result}
+          opponent={opponent}
+          level={level}
+          speech={dialogue.speech}
+          message={status}
+          promoted={ladder?.promoted === true}
+          metrics={[["Your pieces", red], [opponentName, blue]]}
+          onPlayAgain={restart}
+        />
+      ) : null}
+    >
+      {rosterOpen && <OpponentRosterSheet roster={ladder?.opponents || CHECKERS_OPPONENTS} position={level} onClose={() => setRosterOpen(false)} />}
+    </BoardGameFrame>
   );
 }
