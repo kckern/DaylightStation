@@ -219,6 +219,7 @@ import { createScreensRouter } from './4_api/v1/routers/screens.mjs';
 
 // Auth system
 import { AuthService } from '#apps/auth/AuthService.mjs';
+import { ContentAccessService } from '#apps/content/ContentAccessService.mjs';
 import { networkTrustResolver } from '#api/middleware/networkTrustResolver.mjs';
 import { tokenResolver } from '#api/middleware/tokenResolver.mjs';
 import { expandRolesToApps, permissionGate } from '#api/middleware/permissionGate.mjs';
@@ -1332,19 +1333,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Info router (action-based metadata)
   const { createInfoRouter } = await import('./4_api/v1/routers/info.mjs');
-  v1Routers.info = createInfoRouter({
-    resolveFormat,
-    registry: contentRegistry,
-    contentQueryService: contentServices.contentQueryService,
+  const contentAccessService = new ContentAccessService({
     contentIdResolver: contentServices.contentIdResolver,
+    contentCatalog: contentServices.contentCatalog,
+  });
+  v1Routers.info = createInfoRouter({
+    contentAccessService,
     logger: rootLogger.child({ module: 'info-api' })
   });
 
   // Display router (action-based images)
   const { createDisplayRouter } = await import('./4_api/v1/routers/display.mjs');
   v1Routers.display = createDisplayRouter({
-    registry: contentRegistry,
-    contentIdResolver: contentServices.contentIdResolver,
+    contentAccessService,
     logger: rootLogger.child({ module: 'display-api' })
   });
 

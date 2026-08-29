@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
 import { DEFAULT_TOAST_DURATION_MS } from './fitnessToastSlot.js';
 import { describeRingEntry, describeSameThresholdPeople } from './buildRingCelebrationToast.js';
+import RingIcon from '@/lib/icons/RingIcon.jsx';
 import './FitnessToast.scss';
 
 // Fade + collapse exit duration. Keep in sync with FitnessToast.scss transition.
@@ -56,6 +57,7 @@ RingContributorFaces.propTypes = {
 };
 
 function RingCelebrationToast({ celebration, refreshKey }) {
+  const [iconFailed, setIconFailed] = useState(false);
   const entries = Array.isArray(celebration?.entries) ? celebration.entries : [];
   const contributors = Array.isArray(celebration?.contributors) ? celebration.contributors : [];
   const groupEntries = entries.filter((entry) => entry.scope === 'group');
@@ -67,7 +69,17 @@ function RingCelebrationToast({ celebration, refreshKey }) {
   return (
     <>
       <div className="fitness-toast__ring-stage">
-        {celebration?.iconUrl ? <img key={refreshKey} className="fitness-toast__ring-icon" src={celebration.iconUrl} alt="" /> : null}
+        {celebration?.iconUrl && !iconFailed ? (
+          <img
+            key={refreshKey}
+            className="fitness-toast__ring-icon"
+            src={celebration.iconUrl}
+            alt=""
+            onError={() => setIconFailed(true)}
+          />
+        ) : (
+          <RingIcon className="fitness-toast__ring-icon" size="100%" spin label="Fitness ring" />
+        )}
       </div>
       {group ? (
         <>

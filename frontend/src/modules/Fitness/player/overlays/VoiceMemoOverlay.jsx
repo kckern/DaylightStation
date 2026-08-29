@@ -491,7 +491,10 @@ const VoiceMemoOverlay = ({
     }
 
     // Detect and reset stale state (e.g., stuck in 'processing' from previous session)
-    if (recorderState !== 'idle' && recorderState !== 'recording' && !isProcessing) {
+    // `requesting` is the normal async getUserMedia window. Treating it as
+    // stale resets autoStartRef and launches a second MediaRecorder (observed
+    // twice on every capture in the 2026-08-29 session).
+    if (recorderState !== 'idle' && recorderState !== 'requesting' && recorderState !== 'recording' && !isProcessing) {
       const now = Date.now();
       const cooldown = staleResetCooldownRef.current;
       const COOLDOWN_MS = 500;

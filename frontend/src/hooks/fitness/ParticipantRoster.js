@@ -701,7 +701,11 @@ export class ParticipantRoster {
       status,
       isActive, // SINGLE SOURCE OF TRUTH for avatar visibility
       inactiveSince: resolvedInactiveSince, // Null when any owned device is active; else latest inactiveSince across all owned devices
-      hrInactive: mappedUser?.currentData?.hrInactive ?? true,
+      // Ledger guests can survive a session boundary before UserManager has
+      // rebuilt their synthetic user record. Their device reading is still
+      // authoritative; do not turn a live guest into "no zone" merely because
+      // mappedUser is temporarily absent.
+      hrInactive: mappedUser?.currentData?.hrInactive ?? !(resolvedHeartRate > 0),
       weakSignal
     };
 

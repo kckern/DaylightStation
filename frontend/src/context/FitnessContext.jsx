@@ -2058,7 +2058,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (!entries.length) return;
     const toastOptions = {
       resolveUserName: (uid) => lookupUserName(configuredUsers, uid, { preferGroupLabels }),
-      iconUrl: DaylightMediaPath(`/media/${ringCelebrationsConfig.icon}`),
+      iconUrl: ringCelebrationsConfig.icon
+        ? DaylightMediaPath(`/media/${ringCelebrationsConfig.icon}`)
+        : null,
       durationMs: ringCelebrationsConfig.durationMs,
       maxVisibleContributors: ringCelebrationsConfig.maxVisibleContributors,
     };
@@ -2132,7 +2134,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     ? `${fitnessToast.id}:${fitnessToast.revision || 0}`
     : null;
   useEffect(() => {
-    if (!ringToastKey || !ringCelebrationsConfig.enabled) return;
+    if (!ringToastKey || !ringCelebrationsConfig.enabled || session?._liveSessionRole === 'mirror') return;
     playRingCelebrationCue({ sound: ringCelebrationsConfig.sound, volume: ringCelebrationsConfig.volume });
   }, [ringToastKey, ringCelebrationsConfig]);
 

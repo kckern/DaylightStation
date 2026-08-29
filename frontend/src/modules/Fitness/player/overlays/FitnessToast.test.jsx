@@ -77,6 +77,17 @@ describe('FitnessToast', () => {
     expect(screen.getByText('Milo has 500 rings!')).toBeTruthy();
   });
 
+  it('falls back to the code-owned spinning ring when the configured asset is broken', () => {
+    render(<FitnessToast toast={{
+      id: 15,
+      kind: 'ring-celebration',
+      ringCelebration: { iconUrl: '/missing-ring.svg', entries: [], contributors: [] },
+    }} onDone={() => {}} />);
+    const image = document.querySelector('img.fitness-toast__ring-icon');
+    act(() => { image.dispatchEvent(new Event('error')); });
+    expect(document.querySelector('svg.fitness-toast__ring-icon.ring-icon--spin')).toBeTruthy();
+  });
+
   it('cleanly shows a new toast after the previous one fully dismissed and unmounted', () => {
     const onDone = vi.fn();
     const { rerender } = render(<FitnessToast toast={{ id: 1, title: 'A', durationMs: 4000 }} onDone={onDone} />);

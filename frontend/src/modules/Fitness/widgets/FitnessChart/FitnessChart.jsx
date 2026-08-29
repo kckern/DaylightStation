@@ -22,7 +22,7 @@ import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
 import { resolveTieFan } from './layout/utils/tieFan.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
-import { computeScaleBasisValue } from './logScaleBasis.js';
+import { computeScaleBasisValue, isExemptEntry } from './logScaleBasis.js';
 import { useGovernanceExemptions } from '@/hooks/fitness/useGovernanceExemptions.js';
 import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers, withBadgeXs, snapChallengeEndsToZoneTicks } from '../FitnessSessionDetailWidget/timelineOverlay.js';
 import { resolveSessionStartMs, resolvePrimaryMediaKey } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
@@ -113,7 +113,7 @@ function cacheEntryEqual(a, b) {
  * @param {Array} [options.zoneConfig] - Zone configuration for ring rate lookup (fixes sawtooth)
  */
 const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
-	const { activityMonitor, zoneConfig } = options;
+	const { activityMonitor, zoneConfig, exemptions } = options;
 	
 	return useMemo(() => {
 		if (!Array.isArray(roster) || roster.length === 0 || typeof getSeries !== 'function') {
@@ -122,7 +122,10 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 
 		// Build chart entries from roster
 		const debugItems = roster.map((entry, idx) => {
-			let { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, { activityMonitor });
+			let { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, {
+				activityMonitor,
+				requireRingSeries: isExemptEntry(entry, exemptions),
+			});
 			
 			// Safety: Trim series to prevent unbounded memory growth
 			if (beats.length > MAX_SERIES_POINTS) {
@@ -272,7 +275,7 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 		const maxValue = Math.max(0, ...shaped.map((e) => e.maxVal));
 		const maxIndex = Math.max(0, ...shaped.map((e) => e.lastIndex));
 		return { entries: shaped, maxValue, maxIndex };
-	}, [roster, getSeries, timebase, activityMonitor, zoneConfig]);
+	}, [roster, getSeries, timebase, activityMonitor, zoneConfig, exemptions]);
 };
 
 // NOTE: Clean ChartDataBuilder interface is available via useFitnessApp().chartDataBuilder
@@ -306,8 +309,8 @@ const findFirstFiniteAfter = (arr = [], index) => {
  * @param {string} [options.sessionId] - Session ID to clear cache when session changes (memory leak fix)
  */
 const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = [], options = {}) => {
-	const { activityMonitor, zoneConfig, sessionId, resolveHistorical } = options;
-	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase, { activityMonitor, zoneConfig });
+	const { activityMonitor, zoneConfig, sessionId, resolveHistorical, exemptions } = options;
+	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase, { activityMonitor, zoneConfig, exemptions });
 	const [participantCache, setParticipantCache] = useState({});
 	// Track which historical IDs we've already processed to avoid re-processing on every render
 	const processedHistoricalRef = useRef(new Set());
@@ -343,7 +346,11 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				processedHistoricalRef.current.add(slug);
 				
 				// Build data for historical participant (pass activityMonitor for Phase 2)
-				const { beats, zones, active } = buildBeatsSeries({ profileId: slug, name: slug }, getSeries, timebase, { activityMonitor });
+				const historicalEntry = { profileId: slug, name: slug };
+				const { beats, zones, active } = buildBeatsSeries(historicalEntry, getSeries, timebase, {
+					activityMonitor,
+					requireRingSeries: isExemptEntry(historicalEntry, exemptions),
+				});
 				if (!beats.length) return;
 
 				// Pass zoneConfig and intervalMs for zone-based slope enforcement
@@ -946,7 +953,7 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 		chartGetSeries,
 		chartTimebase,
 		chartHistorical,
-		{ activityMonitor: chartActivityMonitor, zoneConfig: chartZoneConfig, sessionId: chartSessionId, resolveHistorical }
+		{ activityMonitor: chartActivityMonitor, zoneConfig: chartZoneConfig, sessionId: chartSessionId, resolveHistorical, exemptions }
 	);
 
 	const identityColors = useMemo(

@@ -25,6 +25,13 @@ describe('ring celebrations', () => {
     expect(normalized.enabled).toBe(false);
   });
 
+  it('uses the built-in icon when a household does not supply a media image', () => {
+    expect(normalizeRingCelebrationsConfig({ icon: null }).icon).toBeNull();
+    expect(normalizeRingCelebrationsConfig({ icon: 'none' }).icon).toBeNull();
+    expect(normalizeRingCelebrationsConfig({ icon: 'fitness/custom-ring.svg' }).icon)
+      .toBe('fitness/custom-ring.svg');
+  });
+
   it('fires individual thresholds once, including a multi-threshold jump', () => {
     const first = ringCelebrationsForAward(createRingCelebrationTracker(), {
       userId: 'milo', userTotal: 250, totalRings: 250,

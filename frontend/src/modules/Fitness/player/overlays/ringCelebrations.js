@@ -9,7 +9,9 @@
 const DEFAULTS = Object.freeze({
   enabled: false,
   sound: 'fitness/ux/ring.mp3',
-  icon: 'fitness/ux/spinning-ring.svg',
+  // The code-owned SVG fallback in FitnessToast is intentionally the default.
+  // Household media assets are optional and must never make a celebration blank.
+  icon: null,
   volume: 0.8,
   durationMs: 3500,
   coalesceWindowMs: 1500,
@@ -45,7 +47,11 @@ export function normalizeRingCelebrationsConfig(raw) {
     // create a new reward UI (or request media assets) in other households.
     enabled: value.enabled === true,
     sound: typeof value.sound === 'string' && value.sound.trim() ? value.sound.trim() : DEFAULTS.sound,
-    icon: typeof value.icon === 'string' && value.icon.trim() ? value.icon.trim() : DEFAULTS.icon,
+    // `null`, an empty string, and "none" explicitly select the reliable
+    // code-owned icon. A non-empty path remains available for customization.
+    icon: typeof value.icon === 'string' && value.icon.trim() && value.icon.trim().toLowerCase() !== 'none'
+      ? value.icon.trim()
+      : DEFAULTS.icon,
     volume: boundedNumber(value.volume, DEFAULTS.volume, { min: 0, max: 1 }),
     durationMs: Math.round(boundedNumber(value.duration_ms ?? value.durationMs, DEFAULTS.durationMs, { min: 1000, max: 15000 })),
     coalesceWindowMs: Math.round(boundedNumber(value.coalesce_window_ms ?? value.coalesceWindowMs, DEFAULTS.coalesceWindowMs, { min: 0, max: 10000 })),

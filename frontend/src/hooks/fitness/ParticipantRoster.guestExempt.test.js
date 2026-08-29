@@ -7,10 +7,12 @@ import { describe, it, expect } from 'vitest';
 import { ParticipantRoster } from './ParticipantRoster.js';
 import { DeviceManager } from './DeviceManager.js';
 import { UserManager } from './UserManager.js';
+import { DeviceAssignmentLedger } from './DeviceAssignmentLedger.js';
 
 const build = () => {
   const deviceManager = new DeviceManager();
   const userManager = new UserManager();
+  userManager.setAssignmentLedger(new DeviceAssignmentLedger());
   const roster = new ParticipantRoster();
   roster.configure({ deviceManager, userManager });
   return { roster, deviceManager, userManager };
@@ -31,5 +33,22 @@ describe('getActiveParticipantState — guests included + flagged', () => {
     const state = roster.getActiveParticipantState();
     expect(state.participants).toContain('guest_29425');
     expect(state.guestIds).toContain('guest_29425');
+  });
+
+  it('keeps a broadcasting ledger guest active while its synthetic user is rebuilding', () => {
+    const { roster, deviceManager, userManager } = build();
+    deviceManager.registerDevice({ id: '11521', type: 'heart_rate', heartRate: 142, lastSeen: Date.now() });
+    userManager.assignGuest('11521', 'Finn', { profileId: 'finn', occupantType: 'guest' });
+
+    // Reproduce the session-boundary window from the Mario session: the ledger
+    // remains authoritative, but resolveUserForDevice has not caught up yet.
+    userManager.resolveUserForDevice = () => null;
+
+    const [entry] = roster.getRoster();
+    expect(entry).toMatchObject({ id: 'finn', name: 'Finn', heartRate: 142, hrInactive: false });
+    expect(roster.getActiveParticipantState()).toMatchObject({
+      participants: ['finn'],
+      guestIds: ['finn'],
+    });
   });
 });

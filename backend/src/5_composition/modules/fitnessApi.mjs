@@ -23,6 +23,7 @@ import { FitnessSchoolCourseService } from '#apps/fitness/FitnessSchoolCourseSer
 import { FitnessSimulationService } from '#adapters/fitness/FitnessSimulationProcess.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
+import { FitnessLiveSessionAuthority } from '#apps/fitness/services/FitnessLiveSessionAuthority.mjs';
 import { getManageService } from '#apps/fitness/manageService.mjs';
 import { getUnlockService } from '#apps/fitness/unlockService.mjs';
 import { DiscoveryStrategy } from '#apps/fitness/suggestions/DiscoveryStrategy.mjs';
@@ -231,6 +232,7 @@ export function createFitnessApiRouter(config) {
   // constructed HERE (composition root) and injected — they must not be
   // module-scope shared state inside the router.
   const sessionLockService = new SessionLockService();
+  const liveSessionAuthority = new FitnessLiveSessionAuthority();
   const simulationService = new FitnessSimulationService({ logger });
   const querySessions = new QuerySessions({
     sessionService: fitnessServices.sessionService,
@@ -366,6 +368,7 @@ export function createFitnessApiRouter(config) {
     generateSessionTimelapse,
     sessionGroupingService: fitnessServices.sessionGroupingService,
     sessionLockService,
+    liveSessionAuthority,
     simulationService,
     querySessions,
     manageAccess,

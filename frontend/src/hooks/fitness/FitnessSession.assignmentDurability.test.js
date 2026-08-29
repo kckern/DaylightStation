@@ -76,4 +76,17 @@ describe('FitnessSession — guest assignment durability', () => {
     // cleanup timers (reset() stops both the autosave and tick intervals)
     session.reset();
   });
+
+  it('creates a fresh active entity for a guest assigned before the session starts', () => {
+    const session = makeSession();
+    session.userManager.assignGuest('10266', 'Finn', { profileId: 'finn', occupantType: 'guest' });
+
+    session.ensureStarted({ reason: 'test', force: true });
+
+    const assignment = session.userManager.assignmentLedger.get('10266');
+    expect(assignment?.entityId).toBeTruthy();
+    expect(session.entityRegistry.get(assignment.entityId)?.profileId).toBe('finn');
+    expect(session.treasureBox.getActiveEntity('10266')).toBe(assignment.entityId);
+    session.reset();
+  });
 });
