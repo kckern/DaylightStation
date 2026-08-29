@@ -57,6 +57,8 @@ function renderBridge({ config, step = vi.fn(), stepSize = 0.1 }) {
   return { ...utils, step };
 }
 
+const volumeSocket = () => sockets.find((socket) => socket.url.includes(':8771/') || socket.url.includes(':9999/'));
+
 describe('usePortalKeys / PortalKeysBridge', () => {
   beforeEach(() => {
     sockets = [];
@@ -79,20 +81,21 @@ describe('usePortalKeys / PortalKeysBridge', () => {
 
   it('connects to the configured port on localhost when enabled', () => {
     renderBridge({ config: { enabled: true, port: 9999 } });
-    expect(sockets).toHaveLength(1);
-    expect(sockets[0].url).toBe('ws://localhost:9999/');
+    expect(sockets).toHaveLength(2);
+    expect(volumeSocket().url).toBe('ws://localhost:9999/');
   });
 
   it('defaults to port 8771', () => {
     renderBridge({ config: { enabled: true } });
-    expect(sockets[0].url).toBe('ws://localhost:8771/');
+    expect(volumeSocket().url).toBe('ws://localhost:8771/');
+    expect(sockets.some((socket) => socket.url === 'ws://127.0.0.1:8774/')).toBe(true);
   });
 
   it('steps volume up by stepSize on VOLUME_UP', () => {
     const { step } = renderBridge({ config: { enabled: true }, stepSize: 0.1 });
     act(() => {
-      sockets[0].open();
-      sockets[0].emit({ type: 'key', key: 'KEYCODE_VOLUME_UP', action: 'down' });
+      volumeSocket().open();
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_UP', action: 'down' });
     });
     expect(step).toHaveBeenCalledWith(0.1);
   });
@@ -100,8 +103,8 @@ describe('usePortalKeys / PortalKeysBridge', () => {
   it('steps volume down by stepSize on VOLUME_DOWN', () => {
     const { step } = renderBridge({ config: { enabled: true }, stepSize: 0.05 });
     act(() => {
-      sockets[0].open();
-      sockets[0].emit({ type: 'key', key: 'KEYCODE_VOLUME_DOWN', action: 'down' });
+      volumeSocket().open();
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_DOWN', action: 'down' });
     });
     expect(step).toHaveBeenCalledWith(-0.05);
   });
@@ -111,9 +114,9 @@ describe('usePortalKeys / PortalKeysBridge', () => {
   it('does NOT touch volume on MUTE (screen toggle is native)', () => {
     const { step } = renderBridge({ config: { enabled: true } });
     act(() => {
-      sockets[0].open();
-      sockets[0].emit({ type: 'key', key: 'KEYCODE_MUTE', action: 'down' });
-      sockets[0].emit({ type: 'key', key: 'KEYCODE_VOLUME_MUTE', action: 'down' });
+      volumeSocket().open();
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_MUTE', action: 'down' });
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_MUTE', action: 'down' });
     });
     expect(step).not.toHaveBeenCalled();
   });
@@ -121,49 +124,51 @@ describe('usePortalKeys / PortalKeysBridge', () => {
   it('ignores non-key messages and malformed payloads', () => {
     const { step } = renderBridge({ config: { enabled: true } });
     act(() => {
-      sockets[0].open();
-      sockets[0].emit({ type: 'ready', port: 8771 });
-      sockets[0].emitRaw('not json at all');
+      volumeSocket().open();
+      volumeSocket().emit({ type: 'ready', port: 8771 });
+      volumeSocket().emitRaw('not json at all');
     });
     expect(step).not.toHaveBeenCalled();
   });
 
   it('reconnects after the socket closes', () => {
     renderBridge({ config: { enabled: true } });
-    expect(sockets).toHaveLength(1);
+    expect(sockets).toHaveLength(2);
 
-    act(() => { sockets[0].fireClose(); });
+    act(() => { volumeSocket().fireClose(); });
     act(() => { vi.advanceTimersByTime(1000); });
 
-    expect(sockets).toHaveLength(2);
+    expect(sockets).toHaveLength(3);
   });
 
   it('backs off exponentially so non-Portal screens stay cheap', () => {
     renderBridge({ config: { enabled: true } });
 
     // 1st retry at 1s
-    act(() => { sockets[0].fireClose(); });
-    act(() => { vi.advanceTimersByTime(1000); });
-    expect(sockets).toHaveLength(2);
-
-    // 2nd retry should NOT have fired at another 1s — backoff doubled to 2s.
-    act(() => { sockets[1].fireClose(); });
-    act(() => { vi.advanceTimersByTime(1000); });
-    expect(sockets).toHaveLength(2);
-
+    const firstVolume = volumeSocket();
+    act(() => { firstVolume.fireClose(); });
     act(() => { vi.advanceTimersByTime(1000); });
     expect(sockets).toHaveLength(3);
+
+    // 2nd retry should NOT have fired at another 1s — backoff doubled to 2s.
+    const secondVolume = sockets.filter((socket) => socket.url === 'ws://localhost:8771/')[1];
+    act(() => { secondVolume.fireClose(); });
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(sockets).toHaveLength(3);
+
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(sockets).toHaveLength(4);
   });
 
   it('stops reconnecting after unmount', () => {
     const { unmount } = renderBridge({ config: { enabled: true } });
-    const first = sockets[0];
+    const first = volumeSocket();
 
     unmount();
     act(() => { first.fireClose(); });
     act(() => { vi.advanceTimersByTime(60000); });
 
-    expect(sockets).toHaveLength(1);
+    expect(sockets).toHaveLength(2);
     expect(first.closed).toBe(true);
   });
 });
