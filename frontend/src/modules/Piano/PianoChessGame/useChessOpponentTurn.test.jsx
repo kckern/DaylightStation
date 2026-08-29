@@ -132,12 +132,12 @@ describe('useChessOpponentTurn', () => {
       dialogue: [],
     }));
     expect(result.current.speech).toBeNull();
-    await plan.reactionPromise;
+    await plan.reaction.promise;
     await act(async () => { await contract.onReply(plan); });
 
     expect(result.current.speech).toMatchObject({ quip: 'A steady answer.', source: 'ai' });
-    expect(props.logger.info).toHaveBeenCalledWith('chess.dialogue.displayed', expect.objectContaining({
-      eventId: 'g1:2:e5', quip: 'A steady answer.', source: 'ai',
+    expect(props.logger.info).toHaveBeenCalledWith('piano-game.dialogue.displayed', expect.objectContaining({
+      source: 'ai',
     }));
   });
 
@@ -155,10 +155,10 @@ describe('useChessOpponentTurn', () => {
     expect(result.current.speech).toMatchObject({ source: 'fallback' });
     const displayed = result.current.speech.quip;
 
-    await act(async () => { resolveQuip({ eventId: 'g1:2:e5', quip: 'Too late now.', source: 'ai' }); await plan.reactionPromise; });
+    await act(async () => { resolveQuip({ eventId: 'g1:2:e5', quip: 'Too late now.', source: 'ai' }); await plan.reaction.promise; });
     expect(result.current.speech.quip).toBe(displayed);
     expect(props.logger.info).toHaveBeenCalledWith(
-      'chess.dialogue.late-discarded', expect.objectContaining({ gameId: 'game-1', ply: 2 }),
+      'piano-game.dialogue.late-discarded', expect.objectContaining({ sessionId: 'game-1', ply: 2 }),
     );
   });
 

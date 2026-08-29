@@ -13,4 +13,10 @@ export function connectFourCommentary(transcript, { sessionId, ply, playerSide =
   return { event, eventId: `${sessionId}:${ply}:connect-four-turn`, fallback, notable: status.gameOver ? 'four-in-a-row' : null };
 }
 
+export function connectFourNotableFacts(record) {
+  const game = replayGame({ moves: Array.isArray(record?.moves) ? record.moves : [] });
+  if (!game.valid || !game.status.gameOver) return [];
+  return [game.status.draw ? 'full-board draw' : 'four-in-a-row'];
+}
+
 export default connectFourCommentary;

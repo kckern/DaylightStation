@@ -22,4 +22,14 @@ describe('BoardGameFrame', () => {
     fireEvent.click(getByLabelText('Settings'));
     expect(onOpen).toHaveBeenCalledOnce();
   });
+
+  it('owns the opening/result overlay layer and stage class without moving semantic slots', () => {
+    const { container, rerender } = render(
+      <BoardGameFrame gameId="test" stageClassName="game-stage" primary={<div>board</div>} opening={<div>opening</div>} />,
+    );
+    expect(container.querySelector('.instrument-board-stage.game-stage')).toBeTruthy();
+    expect(container.querySelector('.piano-game-host__overlays').textContent).toBe('opening');
+    rerender(<BoardGameFrame gameId="test" primary={<div>board</div>} result={<div>result</div>} />);
+    expect(container.querySelector('.piano-game-host__overlays').textContent).toBe('result');
+  });
 });

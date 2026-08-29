@@ -287,8 +287,6 @@ import { createStockfishAnalyst } from './1_adapters/chess/StockfishAnalysisAdap
 import { chessArchiveDayDir } from '#shared/gaming/rulesets/chess/archivePaths.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
-import { createChessOpponentCommentaryService } from './3_applications/chess/ChessOpponentCommentaryService.mjs';
-import { createChessRivalryMemoryService } from './3_applications/chess/ChessRivalryMemoryService.mjs';
 import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
 import { GroupPlayCatalog } from './3_applications/gaming/usecases/GroupPlayCatalog.mjs';
@@ -1917,18 +1915,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     writeProgress: (userId, progress) => dataService.user.write('apps/chess/ladder', progress, userId),
     logger: rootLogger.child({ module: 'chess-ladder' }),
   });
-  const chessRivalryMemory = createChessRivalryMemoryService({
-    readMemory: (userId) => dataService.user.read('apps/chess/rivalries', userId),
-    writeMemory: (userId, memory) => dataService.user.write('apps/chess/rivalries', memory, userId),
-    logger: rootLogger.child({ module: 'chess-rivalry' }),
-  });
-  const chessCommentaryService = createChessOpponentCommentaryService({
-    aiGateway: sharedAiGateway,
-    ladderService: chessLadderService,
-    rivalryMemory: chessRivalryMemory,
-    readConfig: (userId) => chessConfigService.read(userId),
-    logger: rootLogger.child({ module: 'chess-commentary' }),
-  });
   const pianoBoardGameDayStore = new YamlPianoBoardGameDayStore({
     historyRoot: configService.getHouseholdPath('history/piano-board-game-days', householdId),
   });
@@ -1937,6 +1923,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     timezone: configService.getTimezone?.() || null,
     logger: rootLogger.child({ component: 'piano-board-game-day' }),
   });
+  // The native Chess router retains its compatibility endpoints, but their
+  // dialogue and rivalry work is delegated to the shared board-game services
+  // created immediately below. The closures are invoked only after startup,
+  // when `pianoGamesModule` has been assigned.
+  let pianoGamesModule;
+  const sharedChessCommentary = {
+    react: ({ userId, gameId, ply, level, playerColor, game, dialogue }) => (
+      pianoGamesModule.container.dialogue('chess', {
+        userId, sessionId: gameId, ply, level, playerSide: playerColor,
+        transcript: game, dialogue,
+      })
+    ),
+  };
+  const sharedChessRivalry = {
+    recordArchive: (record) => pianoGamesModule.container.recordRivalry('chess', record),
+  };
   const pianoChessRouter = createChessRouter({
     engine: chessEngine,
     analyst: chessAnalyst,
@@ -1965,18 +1967,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       },
     },
     ladderService: chessLadderService,
-    commentaryService: chessCommentaryService,
-    rivalryMemory: chessRivalryMemory,
+    commentaryService: sharedChessCommentary,
+    rivalryMemory: sharedChessRivalry,
     boardGameDayService: pianoBoardGameDayService,
     logger: rootLogger.child({ module: 'chess-api' }),
   });
 
-  const pianoGamesModule = createPianoGamesModule({
+  pianoGamesModule = createPianoGamesModule({
     dataService,
     configService,
     logger: rootLogger.child({ module: 'piano-games' }),
     nativeRouters: { chess: pianoChessRouter },
     boardGameDayService: pianoBoardGameDayService,
+    aiGateway: sharedAiGateway,
   });
   server?.once?.('close', () => pianoGamesModule.container.dispose());
   v1Routers['piano-games'] = pianoGamesModule.router;

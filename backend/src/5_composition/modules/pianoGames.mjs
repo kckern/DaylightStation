@@ -8,9 +8,9 @@ import { DataServicePianoGameRepository } from '#adapters/piano-games/DataServic
 import { PianoGamesContainer } from '#apps/piano-games/PianoGamesContainer.mjs';
 import { createPianoGamesRouter } from '#api/v1/routers/pianoGames.mjs';
 import { OpponentDialogueService } from '#apps/piano-games/OpponentDialogueService.mjs';
-import { checkersCommentary } from '#shared/gaming/rulesets/checkers/commentary.mjs';
-import { connectFourCommentary } from '#shared/gaming/rulesets/connect-four/commentary.mjs';
-import { chessCommentary } from '#shared/gaming/rulesets/chess/dialogueAdapter.mjs';
+import { checkersCommentary, checkersNotableFacts } from '#shared/gaming/rulesets/checkers/commentary.mjs';
+import { connectFourCommentary, connectFourNotableFacts } from '#shared/gaming/rulesets/connect-four/commentary.mjs';
+import { chessCommentary, chessNotableFacts } from '#shared/gaming/rulesets/chess/dialogueAdapter.mjs';
 import { GameRivalryMemoryService } from '#apps/piano-games/GameRivalryMemoryService.mjs';
 
 export function createPianoGamesModule({
@@ -35,6 +35,10 @@ export function createPianoGamesModule({
       chess: {
         opponentGateway: chessGateway,
         opponents: CHESS_OPPONENTS,
+        // Chess rules/archives remain zero-based even though common chrome and
+        // OpponentLadder always present positions one-based.
+        positionFromLevel: (level) => (Number.isFinite(Number(level)) ? Number(level) + 1 : 1),
+        levelFromPosition: (position) => Math.max(0, Number(position) - 1),
         promotion: {
           winsRequired: 5,
           seriesLength: 7,
@@ -42,6 +46,17 @@ export function createPianoGamesModule({
         },
       },
   };
+  const rivalries = new GameRivalryMemoryService({
+    readMemory: (gameId, userId) => repository.readRivalry(gameId, userId),
+    writeMemory: (gameId, userId, memory) => repository.writeRivalry(gameId, userId, memory),
+    readLegacy: (userId) => repository.readLegacyChessRivalry(userId),
+    notableFacts: {
+      'connect-four': connectFourNotableFacts,
+      checkers: checkersNotableFacts,
+      chess: chessNotableFacts,
+    },
+    logger,
+  });
   let container;
   const dialogue = new OpponentDialogueService({
     aiGateway,
@@ -49,12 +64,8 @@ export function createPianoGamesModule({
     readConfig: (gameId, userId) => repository.readConfig(gameId, userId),
     adapters: { 'connect-four': connectFourCommentary, checkers: checkersCommentary, chess: chessCommentary },
     resolveOpponent: (gameId, userId, requestedLevel) => container.resolveOpponent(gameId, userId, requestedLevel),
-  });
-  const rivalries = new GameRivalryMemoryService({
-    readMemory: (gameId, userId) => repository.readRivalry(gameId, userId),
-    writeMemory: (gameId, userId, memory) => repository.writeRivalry(gameId, userId, memory),
-    readLegacy: (userId) => repository.readLegacyChessRivalry(userId),
-    logger,
+    recallRivalry: (gameId, userId, opponentId) => rivalries.recall(gameId, userId, opponentId),
+    readLadder: (gameId, userId) => container.ladder(gameId, userId),
   });
   container = new PianoGamesContainer({
     repository,

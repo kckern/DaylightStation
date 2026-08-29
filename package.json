@@ -132,6 +132,7 @@
     "piano:producer:certify": "node cli/piano-producer-catalog.cli.mjs",
     "chess:review": "node cli/chess-review.cli.mjs",
     "chess:calibrate": "node cli/chess-calibrate.cli.mjs",
+    "piano-games:rivalry-backfill": "node cli/piano-game-rivalry-backfill.cli.mjs",
     "piano:producer:test:runtime:readonly": "PRODUCER_E2E_READ_ONLY=1 playwright test tests/live/flow/piano/producer-happy-path.runtime.test.mjs --reporter=line --workers=1",
     "test:live": "node tests/_infrastructure/harnesses/live.harness.mjs",
     "test:live:api": "node tests/_infrastructure/harnesses/live.harness.mjs --only=api",

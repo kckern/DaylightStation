@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { chooseMove } from '@shared-gaming/rulesets/chess/opponent.mjs';
 import { LADDER_SIZE } from '@shared-gaming/rulesets/chess/ladder.mjs';
 import { fallbackCommentary } from '@shared-gaming/rulesets/chess/commentary.mjs';
 import { describeGame, legalMoves } from '@shared-gaming/rulesets/chess/engine.mjs';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
+import { useOpponentDialogue } from '../game-platform/opponent/useOpponentDialogue.js';
 import { commitMove } from './chessGameState.js';
 
 /** Request, pace, validate, and commit the opponent's turn. */
@@ -20,6 +21,7 @@ export function useChessOpponentTurn({
   rungId,
   userId,
   localFallbackDifficulty,
+  opponent = null,
   setGame,
   announce,
   logger,
@@ -30,11 +32,16 @@ export function useChessOpponentTurn({
 }) {
   const requestedFenRef = useRef(null);
   const effectiveOpponentRef = useRef(null);
+  if (opponent && effectiveOpponentRef.current?.id !== opponent.id) {
+    effectiveOpponentRef.current = { ...opponent };
+  }
   const ladderLevelRef = useRef(ladderLevel);
   const [replyNonce, setReplyNonce] = useState(0);
   const [opponentError, setOpponentError] = useState(null);
-  const [speech, setSpeech] = useState(null);
-  const dialogueRef = useRef([]);
+  const {
+    prepareReaction, commitReaction, showTerminalReaction,
+    speech, dialogueRef, reset: resetDialogue,
+  } = useOpponentDialogue({ logger });
   ladderLevelRef.current = ladderLevel;
 
   const enabled = ladderReady && !game.status?.game_over && game.status?.turn !== playerColor;
@@ -46,10 +53,6 @@ export function useChessOpponentTurn({
     ply: game.history.length,
     pace: chessConfig?.opponent?.pace ?? 1,
   }) ?? fallbackThinkMs;
-
-  useEffect(() => {
-    if (enabled) setSpeech(null);
-  }, [enabled, gameId]);
 
   const request = useCallback(async () => {
     setOpponentError(null);
@@ -64,7 +67,11 @@ export function useChessOpponentTurn({
     const fen = requestedFenRef.current;
     const current = gameRef.current;
     if (!fen || current.game.fen !== fen) return { stale: true, fen };
-    if (served?.opponent) effectiveOpponentRef.current = served.opponent;
+    if (served?.opponent || opponent) effectiveOpponentRef.current = {
+      ...(opponent || {}), ...(served?.opponent || {}),
+      id: opponent?.id || served?.opponent?.id || null,
+      name: opponent?.name || served?.opponent?.name || null,
+    };
 
     const local = chooseMove(fen, { difficulty: localFallbackDifficulty, seed: current.history.length });
     const deterministic = legalMoves(fen)[0] ?? null;
@@ -83,33 +90,32 @@ export function useChessOpponentTurn({
         });
         continue;
       }
-      const plan = { fen, served, candidate, committed, reaction: null, reactionOutcome: null, reactionSettled: false };
+      const move = committed.event.move;
+      const fallback = fallbackCommentary({ move, status: committed.state.status, playerColor });
+      const opponentId = opponent?.id || served?.opponent?.id || null;
+      const event = {
+        gameId: 'chess', sessionId: gameId, ply: committed.state.history.length, opponentId,
+      };
+      const plan = { fen, served, candidate, committed, reaction: null };
       if (requestQuip) {
-        const dialogue = dialogueRef.current.map(({ ply, quip }) => ({ ply, quip }));
-        plan.reactionPromise = Promise.resolve(requestQuip({
-          gameId,
-          ply: committed.state.history.length,
-          level: ladderLevelRef.current,
-          playerColor,
-          game: committed.state.game,
-          dialogue,
-          userId,
-        })).then((reaction) => {
-          plan.reactionOutcome = reaction || null;
-          plan.reaction = reaction?.quip ? reaction : null;
-          plan.reactionSettled = true;
-          return plan.reaction;
-        }).catch((error) => {
-          plan.reactionSettled = true;
-          logger.warn?.('chess.dialogue.request-error', { gameId, error: error.message });
-          return null;
+        plan.reaction = prepareReaction({
+          request: () => requestQuip({
+            gameId,
+            ply: committed.state.history.length,
+            level: ladderLevelRef.current,
+            playerColor,
+            game: committed.state.game,
+            dialogue: dialogueRef.current.map(({ ply, quip }) => ({ ply, quip })),
+            userId,
+          }),
+          fallback: { eventId: `${gameId}:${committed.state.history.length}:${move?.san || 'move'}`, quip: fallback },
+          event,
         });
       }
-      logger.info?.('chess.dialogue.planned', { gameId, ply: committed.state.history.length, thinkMs: scheduledThinkMs });
       return plan;
     }
     return { fen, unrecoverable: true };
-  }, [gameId, gameRef, localFallbackDifficulty, logger, playerColor, requestMove, requestQuip, rungId, scheduledThinkMs, userId]);
+  }, [dialogueRef, gameId, gameRef, localFallbackDifficulty, logger, opponent?.id, opponent?.name, playerColor, prepareReaction, requestMove, requestQuip, rungId, userId]);
 
   const onReply = useCallback(async (plan) => {
     const fen = plan?.fen || requestedFenRef.current;
@@ -123,53 +129,14 @@ export function useChessOpponentTurn({
       if (commitAuthorityMove) committedState = await commitAuthorityMove(plan.candidate);
       setOpponentError(null);
       const move = plan.committed.event.move;
-      const fallback = fallbackCommentary({ move, status: committedState.status, playerColor });
-      const displayed = plan.reaction || {
-        eventId: `${gameId}:${committedState.history.length}:${move?.san || 'move'}`,
-        quip: fallback,
-        source: 'fallback',
-        // The player-visible deadline is the opponent's think window. A reply
-        // still pending when that window closes is a timeout for this turn,
-        // even if the transport eventually returns and is logged as late.
-        fallbackReason: plan.reactionOutcome?.fallbackReason || 'timeout',
-      };
-      if (!plan.reaction && plan.reactionPromise) {
-        plan.reactionPromise.then((late) => {
-          if (late?.quip) logger.info?.('chess.dialogue.late-discarded', { gameId, ply: committedState.history.length });
-        });
-      }
-      const entry = {
-        ply: committedState.history.length,
-        eventId: displayed.eventId,
-        quip: displayed.quip,
-        source: displayed.source || 'fallback',
-        fallbackReason: displayed.fallbackReason || displayed.fallback_reason || null,
-        shownAt: new Date().toISOString(),
-      };
-      dialogueRef.current = [...dialogueRef.current, entry];
-      recordMoveTiming?.(entry.ply);
-      setSpeech(displayed);
+      if (plan.reaction) commitReaction(plan.reaction);
+      recordMoveTiming?.(committedState.history.length);
       setGame(committedState);
       announce(committedState);
       logger.info('opponent-replied', {
         san: move?.san ?? plan.candidate.san ?? null,
         engine: plan.candidate.source === 'server' ? (plan.served?.engine ?? 'server') : plan.candidate.source,
         opponent: plan.served?.opponent || null,
-      });
-      // This is the audit event for what reached the screen. Planned and
-      // generated events are diagnostic only; this exact payload is the one a
-      // post-game transcript must use.
-      logger.info?.('chess.dialogue.displayed', {
-        gameId,
-        ply: committedState.history.length,
-        eventId: displayed.eventId,
-        quip: entry.quip,
-        source: entry.source,
-        fallbackReason: entry.fallbackReason,
-        userId,
-        opponent: plan.served?.opponent?.name || effectiveOpponentRef.current?.name || null,
-        level: ladderLevelRef.current,
-        rosterPack: chessConfig?.ladder?.roster_pack || null,
       });
       return;
     }
@@ -181,7 +148,7 @@ export function useChessOpponentTurn({
     }
     setOpponentError('Opponent could not make a legal move.');
     logger.error?.('opponent-reply-unrecoverable', { gameId, fen });
-  }, [announce, chessConfig?.ladder?.roster_pack, commitAuthorityMove, gameId, gameRef, logger, playerColor, recordMoveTiming, setGame, userId]);
+  }, [announce, commitAuthorityMove, commitReaction, gameId, gameRef, logger, recordMoveTiming, setGame]);
 
   const { thinking } = useOpponentReply({
     enabled,
@@ -195,10 +162,9 @@ export function useChessOpponentTurn({
     requestedFenRef.current = null;
     effectiveOpponentRef.current = null;
     setOpponentError(null);
-    setSpeech(null);
-    dialogueRef.current = [];
+    resetDialogue();
     setReplyNonce(0);
-  }, []);
+  }, [resetDialogue]);
 
   const showTerminalSpeech = useCallback((state) => {
     if (!state?.status?.game_over) return;
@@ -209,25 +175,14 @@ export function useChessOpponentTurn({
       quip: fallbackCommentary({ move, status: state.status, playerColor }),
       source: 'fallback',
     };
-    const entry = {
-      ply: state.history.length,
-      eventId: displayed.eventId,
-      quip: displayed.quip,
-      source: displayed.source,
-      fallbackReason: 'terminal',
-      shownAt: new Date().toISOString(),
-    };
-    dialogueRef.current = [...dialogueRef.current, entry];
-    setSpeech(displayed);
-    logger.info?.('chess.dialogue.displayed', {
-      gameId,
-      ply: state.history.length,
-      eventId: displayed.eventId,
-      quip: entry.quip,
-      source: entry.source,
-      fallbackReason: entry.fallbackReason,
+    showTerminalReaction({
+      reaction: displayed,
+      event: {
+        gameId: 'chess', sessionId: gameId, ply: state.history.length,
+        opponentId: opponent?.id || effectiveOpponentRef.current?.id || null,
+      },
     });
-  }, [gameId, logger, playerColor]);
+  }, [gameId, opponent?.id, playerColor, showTerminalReaction]);
 
   const retryOpponent = useCallback(() => setReplyNonce((value) => value + 1), []);
 

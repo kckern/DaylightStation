@@ -19,4 +19,14 @@ export function checkersCommentary(transcript, { sessionId, ply, playerSide = 1 
   return { event, eventId: `${sessionId}:${ply}:checkers-turn`, fallback, notable: event.capture ? 'capture' : event.promoted ? 'promotion' : null };
 }
 
+export function checkersNotableFacts(record) {
+  const game = replayGame({ moves: Array.isArray(record?.moves) ? record.moves : [] });
+  if (!game.valid) return [];
+  const captures = game.moves.filter((move) => move.capture !== null).length;
+  const promotions = game.moves.filter((move) => move.promoted).length;
+  return [captures ? `${captures} capture${captures === 1 ? '' : 's'}` : null,
+    promotions ? `${promotions} promotion${promotions === 1 ? '' : 's'}` : null]
+    .filter(Boolean);
+}
+
 export default checkersCommentary;

@@ -62,6 +62,18 @@ export class DataServicePianoGameRepository extends IPianoGameRepository {
   readProgress(gameId, userId) {
     const stored = this.dataService.user.read(`apps/${gameId}/ladder`, userId);
     if (!stored) return null;
+    if (gameId === 'chess' && Array.isArray(stored.results)) {
+      const nativeLevel = Math.max(0, Number(stored.unlocked_through) || 0);
+      return {
+        // OpponentLadder presents positions one-based; Chess mechanics and its
+        // durable ladder remain zero-based.
+        unlockedThrough: nativeLevel + 1,
+        series: stored.results
+          .filter((entry) => Number(entry?.level) === nativeLevel)
+          .slice(-7)
+          .map((entry) => ({ result: entry.result, counted: entry.counted !== false })),
+      };
+    }
     return {
       unlockedThrough: stored.unlocked_through ?? stored.unlockedThrough,
       // Legacy ladders stored bare result strings. Normalize lazily so old
@@ -73,6 +85,15 @@ export class DataServicePianoGameRepository extends IPianoGameRepository {
   }
 
   writeProgress(gameId, userId, progress) {
+    if (gameId === 'chess') {
+      const level = Math.max(0, Number(progress.unlockedThrough || 1) - 1);
+      return this.dataService.user.write(`apps/${gameId}/ladder`, {
+        unlocked_through: level,
+        results: (progress.series || []).map((entry) => ({
+          level, result: entry.result, counted: entry.counted !== false, at: null,
+        })),
+      }, userId);
+    }
     return this.dataService.user.write(`apps/${gameId}/ladder`, {
       unlocked_through: progress.unlockedThrough,
       series: progress.series,

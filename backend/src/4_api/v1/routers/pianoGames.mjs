@@ -82,7 +82,7 @@ export function createPianoGamesRouter({ pianoGames, logger = null, nativeRouter
   router.get('/day/current', asyncHandler(async (req, res) => {
     const userId = userFrom(req);
     if (!userId) return res.status(400).json({ error: 'user_required' });
-    return res.json(container.boardGameDay(userId));
+    return res.json(pianoGames.boardGameDay(userId));
   }));
 
   router.post('/:gameId/history', asyncHandler(async (req, res) => {
