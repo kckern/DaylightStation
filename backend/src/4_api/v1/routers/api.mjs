@@ -129,6 +129,7 @@ export function createApiRouter(config) {
     // createAgentMemoryRouter / createAgentMetaRouter (Phase 3 HTTP unification).
     '/dev': 'dev',
     '/device': 'device',
+    '/homeline': 'homeline',
     '/trigger': 'trigger',
     '/canvas': 'canvas',
     '/auth': 'auth',

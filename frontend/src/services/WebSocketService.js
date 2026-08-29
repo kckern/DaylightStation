@@ -20,6 +20,7 @@
  * // Cleanup on unmount
  * useEffect(() => unsubscribe, []);
  */
+import getLogger from '../lib/logging/Logger.js';
 
 // Adaptive throttling: progressive delays that never give up
 // Tiers: 1s, 2s, 4s, 8s, 15s, 30s, 1min, 5min, 15min, 1hr (terminal)
@@ -41,6 +42,7 @@ const AUTO_RELOAD_DELAY = 180000; // 3 minutes in degraded mode → hard reload
 
 class WebSocketService {
   constructor() {
+    this.logger = getLogger().child({ component: 'WebSocketService' });
     this.ws = null;
     this.subscribers = new Map(); // key -> { filter, callbacks: Set }
     this.connected = false;
@@ -50,6 +52,7 @@ class WebSocketService {
     this.reconnectTimeout = null;
     this.messageQueue = []; // Buffer messages during disconnect
     this.statusListeners = new Set(); // Connection status observers
+    this.authorizedTopics = new Map(); // topic -> call authorization (memory only)
     this._subscriberIdCounter = 0;
   }
 
@@ -76,12 +79,12 @@ class WebSocketService {
     this._notifyStatusListeners();
 
     const wsUrl = this._getWsUrl();
-    console.log(`[WebSocketService] Connecting to ${wsUrl}`);
+    this.logger.info('websocket.connecting', { url: wsUrl });
 
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      console.log('[WebSocketService] Connected');
+      this.logger.info('websocket.connected');
       this.connected = true;
       this.connecting = false;
       this.reconnectTier = 0; // Reset tier on successful connection
@@ -90,6 +93,7 @@ class WebSocketService {
       this._clearAutoReloadTimer();
       this._startStaleCheck();
       this._notifyStatusListeners();
+      this._reauthorizeTopics();
       this._syncSubscriptions(); // Inform backend of our interests
       this._flushMessageQueue();
     };
@@ -105,7 +109,7 @@ class WebSocketService {
     };
 
     this.ws.onclose = (event) => {
-      console.log(`[WebSocketService] Disconnected (code: ${event.code})`);
+      this.logger.warn('websocket.disconnected', { code: event.code });
       this.connected = false;
       this.connecting = false;
       this.ws = null;
@@ -116,7 +120,7 @@ class WebSocketService {
     };
 
     this.ws.onerror = (error) => {
-      console.error('[WebSocketService] Error:', error);
+      this.logger.error('websocket.error', { reason: error?.message || 'socket_error' });
       this.connected = false;
       this.connecting = false;
       this._notifyStatusListeners();
@@ -155,7 +159,7 @@ class WebSocketService {
     
     // Notify subscribers when entering or exiting degraded mode
     if (this.degradedMode !== wasDegraded) {
-      console.log(`[WebSocketService] ${this.degradedMode ? 'Entering' : 'Exiting'} degraded mode (tier ${this.reconnectTier})`);
+      this.logger.warn('websocket.degraded-mode', { enabled: this.degradedMode, reconnectTier: this.reconnectTier });
       this._notifyStatusListeners();
 
       if (this.degradedMode) {
@@ -165,7 +169,7 @@ class WebSocketService {
     
     const tierLabel = this.reconnectTier < RECONNECT_DELAYS.length ? `tier ${this.reconnectTier}` : 'terminal';
     const delayLabel = delay >= 3600000 ? `${delay / 3600000}hr` : delay >= 60000 ? `${delay / 60000}min` : `${delay / 1000}s`;
-    console.log(`[WebSocketService] Reconnecting in ${delayLabel} (${tierLabel})`);
+    this.logger.info('websocket.reconnect-scheduled', { delayMs: delay, delayLabel, tierLabel });
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTier++;
@@ -182,7 +186,7 @@ class WebSocketService {
     this._stopStaleCheck();
     this._staleCheckInterval = setInterval(() => {
       if (this._lastMessageAt && Date.now() - this._lastMessageAt > 45000) {
-        console.warn('[WebSocketService] Connection stale (no data in 45s), forcing reconnect');
+        this.logger.warn('websocket.connection-stale', { staleMs: 45_000 });
         this.ws?.close();
       }
     }, 15000);
@@ -214,9 +218,9 @@ class WebSocketService {
   _startAutoReloadTimer() {
     if (this._autoReloadEnabled === false) return;
     this._clearAutoReloadTimer();
-    console.warn(`[WebSocketService] Will auto-reload page in ${AUTO_RELOAD_DELAY / 1000}s if connection not restored`);
+    this.logger.warn('websocket.auto-reload-scheduled', { delayMs: AUTO_RELOAD_DELAY });
     this._autoReloadTimeout = setTimeout(() => {
-      console.error('[WebSocketService] Degraded too long — reloading page');
+      this.logger.error('websocket.auto-reload', { delayMs: AUTO_RELOAD_DELAY });
       window.location.reload();
     }, AUTO_RELOAD_DELAY);
   }
@@ -288,7 +292,7 @@ class WebSocketService {
         action: 'subscribe',
         topics: topicArray
       });
-      console.log('[WebSocketService] Synced subscriptions:', topicArray);
+      this.logger.debug('websocket.subscriptions-synced', { topics: topicArray });
     }
   }
 
@@ -296,15 +300,36 @@ class WebSocketService {
    * Send data through the WebSocket
    * @param {object|string} data - Data to send (will be JSON stringified if object)
    */
-  send(data) {
+  send(data, { ephemeral = false } = {}) {
     const message = typeof data === 'string' ? data : JSON.stringify(data);
 
     if (this.connected && this.ws?.readyState === WebSocket.OPEN) {
-      this._sendRaw(message);
-    } else {
+      return this._sendRaw(message);
+    } else if (!ephemeral) {
       // Queue for later delivery
       this.messageQueue.push(message);
     }
+    return false;
+  }
+
+  sendEphemeral(data) {
+    return this.send(data, { ephemeral: true });
+  }
+
+  _reauthorizeTopics() {
+    for (const [topic, auth] of this.authorizedTopics) {
+      this.sendEphemeral({ type: 'homeline-authorize', topic, ...auth });
+    }
+  }
+
+  subscribeAuthorized({ topic, credential, role, peerId }, callback) {
+    this.authorizedTopics.set(topic, { credential, role, peerId });
+    if (this.connected) this.sendEphemeral({ type: 'homeline-authorize', topic, credential, role, peerId });
+    const unsubscribe = this.subscribe(topic, callback);
+    return () => {
+      unsubscribe();
+      this.authorizedTopics.delete(topic);
+    };
   }
 
   /**
@@ -351,7 +376,7 @@ class WebSocketService {
         try {
           matches = filter(data);
         } catch (e) {
-          console.error('[WebSocketService] Filter error:', e);
+          this.logger.error('websocket.filter-error', { reason: e.message });
           matches = false;
         }
       } else if (Array.isArray(filter)) {
@@ -369,7 +394,7 @@ class WebSocketService {
         try {
           callback(data);
         } catch (err) {
-          console.error('[WebSocketService] Subscriber callback error:', err);
+          this.logger.error('websocket.subscriber-error', { reason: err.message });
         }
       }
     }
@@ -405,7 +430,7 @@ class WebSocketService {
       try {
         listener(status);
       } catch (e) {
-        console.error('[WebSocketService] Status listener error:', e);
+        this.logger.error('websocket.status-listener-error', { reason: e.message });
       }
     }
   }

@@ -151,7 +151,9 @@ import { createCameraRouter } from './4_api/v1/routers/camera.mjs';
 import { createPrinterRouter } from './4_api/v1/routers/printer.mjs';
 
 // Homeline call state tracking
-import { handleSignalingMessage } from '#apps/homeline/CallStateService.mjs';
+import { setCallLeaseAuthority } from '#apps/homeline/CallStateService.mjs';
+import { CallLeaseService } from '#apps/homeline/CallLeaseService.mjs';
+import { createHomelineRouter } from '#api/v1/routers/homeline.mjs';
 
 // Pose frame logging
 import { createPoseLogHandler } from '#apps/fitness/services/PoseLogService.mjs';
@@ -217,7 +219,7 @@ import { createScreensRouter } from './4_api/v1/routers/screens.mjs';
 import { AuthService } from '#apps/auth/AuthService.mjs';
 import { networkTrustResolver } from '#api/middleware/networkTrustResolver.mjs';
 import { tokenResolver } from '#api/middleware/tokenResolver.mjs';
-import { permissionGate } from '#api/middleware/permissionGate.mjs';
+import { expandRolesToApps, permissionGate } from '#api/middleware/permissionGate.mjs';
 import { createAuthRouter } from '#api/v1/routers/auth.mjs';
 import { householdResolver } from '#api/middleware/householdResolver.mjs';
 import { deviceResolver } from '#api/middleware/deviceResolver.mjs';
@@ -608,6 +610,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `createDonow` resolves further down — the closure below reads the
   // current value at call time, never a snapshot from registration time.
   let donowModule = null;
+  let callLeaseService = null;
+
+  eventBus.setClientSubscriptionAuthorizer((clientId, topic) =>
+    !String(topic).startsWith('homeline-call:') || callLeaseService?.canSubscribe(clientId, topic) === true);
+  eventBus.setClientMessageAuthorizer((clientId, message) =>
+    message?.type !== 'homeline-authorize' && String(message?.topic).startsWith('homeline-call:')
+      ? (callLeaseService?.validateSignal(clientId, message) || { ok: false, code: 'LEASES_NOT_READY' })
+      : { ok: true, message });
+  eventBus.onClientDisconnection(clientId => callLeaseService?.disconnect(clientId));
 
   // DeviceLivenessService — caches last-known device-state snapshots and
   // synthesizes `offline` broadcasts when heartbeats stop. Also wires
@@ -638,6 +649,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Register message handlers for incoming client messages
   // These handlers rebroadcast messages to subscribed clients
   eventBus.onClientMessage((clientId, message) => {
+    if (message.type === 'homeline-authorize') {
+      const result = callLeaseService?.authorize({ ...message, clientId }) || { ok: false, code: 'LEASES_NOT_READY' };
+      eventBus.sendToClient(clientId, { type: 'homeline-authorize-ack', topic: message.topic, ...result });
+      return;
+    }
+
+    if (message.topic?.startsWith('homeline-call:')) {
+      eventBus.broadcast(message.topic, message);
+      return;
+    }
+
     // Fitness controller messages - rebroadcast to all fitness subscribers
     if (message.source === 'fitness' || message.source === 'fitness-simulator') {
       eventBus.broadcast('fitness', message);
@@ -661,9 +683,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       return;
     }
 
-    // Homeline video call signaling - relay to all subscribers of this device's topic
+    // The legacy homeline device topic remains wake/load progress only. Call
+    // signaling is accepted exclusively on authorized homeline-call topics.
     if (message.topic?.startsWith('homeline:')) {
-      handleSignalingMessage(message);
       eventBus.broadcast(message.topic, message);
       return;
     }
@@ -3378,6 +3400,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
 
+  callLeaseService = new CallLeaseService({
+    deviceService: deviceServices.deviceService,
+    wakeAndLoadService,
+    logger: rootLogger.child({ module: 'homeline-lease' }),
+  });
+  setCallLeaseAuthority(callLeaseService);
+
   // ==========================================================================
   // DoNow — the household "start this, there, now" dispatch facade
   // (docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md).
@@ -4116,6 +4145,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     loadFile,
     pianoMidiWakeService,
     logger: rootLogger.child({ module: 'device-api' })
+  });
+
+  v1Routers.homeline = createHomelineRouter({
+    leaseService: callLeaseService,
+    canCall: req => {
+      if (!req.user) return false;
+      const apps = expandRolesToApps(req.user.roles || [], authConfig?.roles || {});
+      return apps.includes('*') || apps.includes('call') || apps.includes('homeline');
+    },
   });
 
   const barcodeRelayConfig = configService.getHouseholdAppConfig(householdId, 'barcode-relay') || {};

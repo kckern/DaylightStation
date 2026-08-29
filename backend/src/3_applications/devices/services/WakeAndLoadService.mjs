@@ -147,6 +147,15 @@ export class WakeAndLoadService {
       coldWake: false,
       cameraAvailable: true
     };
+    const stopIfCancelled = (afterStep) => {
+      if (!options.isCancelled?.()) return false;
+      result.error = 'Dispatch cancelled';
+      result.cancelled = true;
+      result.failedStep = afterStep;
+      result.totalElapsedMs = Date.now() - startTime;
+      this.#logger.info?.('wake-and-load.cancelled', { deviceId, dispatchId, afterStep });
+      return true;
+    };
 
     // --- Step 1: Power On ---
     // Self-powered surfaces (touch panels, speakers) declare content_control but no
@@ -170,6 +179,7 @@ export class WakeAndLoadService {
       ? await device.powerOn()
       : { ok: true, skipped: 'no_device_control' };
     result.steps.power = powerResult;
+    if (stopIfCancelled('power')) return result;
 
     // Three outcomes to distinguish:
     //   1. ok:false, no verifyFailed -> script dispatch failed. Fatal.
@@ -228,13 +238,17 @@ export class WakeAndLoadService {
         result.error = 'Display did not turn on';
         result.allowOverride = true; // Phone can choose "Connect anyway"
         result.totalElapsedMs = Date.now() - startTime;
-        if (!options._isRetry) this.#scheduleRetry(deviceId, query, options);
+        if (!options._isRetry && options.deferredRetry !== false) {
+          this.#scheduleRetry(deviceId, query, options);
+        }
         return result;
       }
 
       this.#emitProgress(topic, dispatchId, 'verify', 'done');
       this.#logger.info?.('wake-and-load.verify.done', { deviceId, dispatchId });
     }
+
+    if (stopIfCancelled('verify')) return result;
 
     // --- Step 3: Set Volume ---
     const volumeLevel = query.volume != null ? Number(query.volume) : device.defaultVolume;
@@ -265,6 +279,8 @@ export class WakeAndLoadService {
       });
     }
 
+    if (stopIfCancelled('volume')) return result;
+
     // Remove volume from query so it's not passed to the frontend URL
     const contentQuery = { ...query };
     delete contentQuery.volume;
@@ -286,6 +302,7 @@ export class WakeAndLoadService {
 
     const prepResult = await device.prepareForContent({ skipCameraCheck });
     result.steps.prepare = prepResult;
+    if (stopIfCancelled('prepare')) return result;
 
     if (!prepResult.ok) {
       this.#emitProgress(topic, dispatchId, 'prepare', 'failed', { error: prepResult.error });
@@ -421,6 +438,7 @@ export class WakeAndLoadService {
     // Fallback for a device without an explicit screen_path. The legacy /tv app
     // is retired; default to the living-room screen-framework screen.
     const screenPath = device.screenPath || '/screen/living-room';
+    if (stopIfCancelled('prewarm')) return result;
 
     if (isAdopt) {
       this.#emitProgress(topic, dispatchId, 'load', 'running', { method: 'adopt-snapshot' });

@@ -17,6 +17,7 @@ export const useWebRTCPeer = (localStream) => {
   const [connectionState, setConnectionState] = useState('new');
   const iceCandidateCallbackRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
+  const revisionRef = useRef(0);
 
   const createPC = useCallback(() => {
     if (pcRef.current) {
@@ -70,14 +71,18 @@ export const useWebRTCPeer = (localStream) => {
     return pc;
   }, [localStream]);
 
-  const createOffer = useCallback(async () => {
+  const createOffer = useCallback(async ({ revision = revisionRef.current, iceRestart = false } = {}) => {
+    revisionRef.current = revision;
+    pendingCandidatesRef.current = pendingCandidatesRef.current.filter(item => item.revision === revision);
     const pc = createPC();
-    const offer = await pc.createOffer();
+    const offer = await pc.createOffer({ iceRestart });
     await pc.setLocalDescription(offer);
     return offer;
   }, [createPC]);
 
-  const handleOffer = useCallback(async (offer) => {
+  const handleOffer = useCallback(async (offer, { revision = revisionRef.current } = {}) => {
+    revisionRef.current = revision;
+    pendingCandidatesRef.current = pendingCandidatesRef.current.filter(item => item.revision === revision);
     const pc = createPC();
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
@@ -101,7 +106,7 @@ export const useWebRTCPeer = (localStream) => {
     if (queued.length > 0) {
       logger().debug('ice-candidates-flushed', { count: queued.length });
     }
-    for (const c of queued) {
+    for (const { candidate: c } of queued) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(c));
       } catch (err) {
@@ -113,7 +118,8 @@ export const useWebRTCPeer = (localStream) => {
     return answer;
   }, [createPC]);
 
-  const handleAnswer = useCallback(async (answer) => {
+  const handleAnswer = useCallback(async (answer, { revision = revisionRef.current } = {}) => {
+    if (revision !== revisionRef.current) return;
     const pc = pcRef.current;
     if (!pc) return;
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
@@ -122,7 +128,7 @@ export const useWebRTCPeer = (localStream) => {
     if (queued.length > 0) {
       logger().debug('ice-candidates-flushed', { count: queued.length });
     }
-    for (const c of queued) {
+    for (const { candidate: c } of queued) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(c));
       } catch (err) {
@@ -131,11 +137,15 @@ export const useWebRTCPeer = (localStream) => {
     }
   }, []);
 
-  const addIceCandidate = useCallback(async (candidate) => {
+  const addIceCandidate = useCallback(async (candidate, revision = revisionRef.current) => {
+    if (revision !== revisionRef.current) {
+      logger().debug('ice-candidate-stale', { revision, currentRevision: revisionRef.current });
+      return;
+    }
     const pc = pcRef.current;
     if (!pc || !pc.remoteDescription) {
       // PC not ready — queue for later flush
-      pendingCandidatesRef.current.push(candidate);
+      pendingCandidatesRef.current.push({ revision, candidate });
       logger().debug('ice-candidate-queued', { queueLength: pendingCandidatesRef.current.length });
       return;
     }
@@ -159,6 +169,22 @@ export const useWebRTCPeer = (localStream) => {
     setRemoteStream(null);
     setConnectionState('new');
   }, []);
+
+  const restartIce = useCallback(async (revision = revisionRef.current) => {
+    const pc = pcRef.current;
+    if (!pc) return createOffer({ revision, iceRestart: true });
+    revisionRef.current = revision;
+    pc.restartIce?.();
+    const offer = await pc.createOffer({ iceRestart: true });
+    await pc.setLocalDescription(offer);
+    return offer;
+  }, [createOffer]);
+
+  const rebuild = useCallback(async (revision = revisionRef.current + 1) => {
+    reset();
+    revisionRef.current = revision;
+    return createOffer({ revision });
+  }, [createOffer, reset]);
 
   // Sync local tracks to the peer connection whenever localStream changes.
   // Handles two cases:
@@ -221,5 +247,8 @@ export const useWebRTCPeer = (localStream) => {
     addIceCandidate,
     onIceCandidate,
     reset,
-  }), [remoteStream, connectionState, createOffer, handleOffer, handleAnswer, addIceCandidate, onIceCandidate, reset]);
+    restartIce,
+    rebuild,
+    revisionRef,
+  }), [remoteStream, connectionState, createOffer, handleOffer, handleAnswer, addIceCandidate, onIceCandidate, reset, restartIce, rebuild]);
 };

@@ -5,7 +5,8 @@ import { useWebcamStream } from './hooks/useWebcamStream';
 import { useAudioProbe } from './hooks/useAudioProbe';
 import { useNativeAudioBridge } from './hooks/useNativeAudioBridge';
 import { useWebRTCPeer } from './hooks/useWebRTCPeer';
-import { useHomeline } from './hooks/useHomeline';
+import { useCallSignaling } from './hooks/useCallSignaling.js';
+import { useMediaHealth } from './hooks/useMediaHealth.js';
 import getLogger from '../../lib/logging/Logger.js';
 import './VideoCall.scss';
 
@@ -73,7 +74,7 @@ export default function VideoCall({ deviceId, clear }) {
   const bridgeActive = bridge.status === 'connected';
   const effectiveAudioDevice = bridgeActive ? null : (probe.workingDeviceId || selectedAudioDevice);
 
-  const { videoRef, stream } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice, {
+  const { videoRef, stream, retry: retryMediaCapture } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice, {
     videoResolution: inputConfig?.video_resolution,
     ready: configLoaded,
   });
@@ -99,12 +100,51 @@ export default function VideoCall({ deviceId, clear }) {
 
   const peer = useWebRTCPeer(mergedStream);
   const { connectionState } = peer;
-  const { peerConnected, status, remoteMuteState } = useHomeline('tv', deviceId, peer);
+  const [callSession, setCallSession] = useState(null);
+  const [remoteMuteState, setRemoteMuteState] = useState({ audioMuted: false, videoMuted: false });
+  const remoteVideoRef = useRef(null);
+  const transportConnected = connectionState === 'connected';
+  const signaling = useCallSignaling({
+    role: 'tv', session: callSession, peer,
+    onEvent: event => {
+      if (event.type === 'mute-state') setRemoteMuteState({ audioMuted: !!event.audioMuted, videoMuted: !!event.videoMuted });
+      if (event.type === 'media-retry') retryMediaCapture();
+      if (event.type === 'hangup') { peer.reset(); setCallSession(null); clear?.(); }
+    },
+  });
+  const mediaHealth = useMediaHealth(peer, !!callSession, remoteVideoRef);
+  const peerConnected = transportConnected && mediaHealth.verified
+    && (mediaHealth.audio || mediaHealth.video);
+  const status = peerConnected ? (mediaHealth.audio && mediaHealth.video ? 'connected' : 'degraded')
+    : callSession ? 'connecting' : 'waiting';
+  useEffect(() => {
+    if (!mediaHealth.verified || (!mediaHealth.audio && !mediaHealth.video)) return;
+    signaling.send('media-verified', { audio: mediaHealth.audio, video: mediaHealth.video });
+  }, [mediaHealth, signaling]);
   const [iceError, setIceError] = useState(null);
   const [, setStatusVisible] = useState(true);
   const [callDuration, setCallDuration] = useState(0);
 
-  const remoteVideoRef = useRef(null);
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const join = async () => {
+      try {
+        const active = await DaylightAPI(`api/v1/homeline/devices/${deviceId}/join-active`, {}, 'POST');
+        if (cancelled) return;
+        if (active) {
+          setCallSession({ ...active, peerId: active.tvPeerId, credential: active.tvCredential, peerRevision: 0 });
+          logger.info('lease.joined', { callId: active.callId, attemptId: active.attemptId, dispatchId: active.dispatchId });
+          return;
+        }
+      } catch (error) {
+        if (!cancelled) logger.warn('lease.join.failed', { reason: error.message });
+      }
+      if (!cancelled) timer = setTimeout(join, 2_000);
+    };
+    void join();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [deviceId, logger]);
 
   // Log mount/unmount
   useEffect(() => {
@@ -117,17 +157,16 @@ export default function VideoCall({ deviceId, clear }) {
     logger.debug('status-change', { status, peerConnected, bridgeStatus: bridge.status });
   }, [logger, status, peerConnected, bridge.status]);
 
-  // React to ICE connection failures — auto-clear after 10s
+  // The phone owns the bounded ICE recovery ladder; the TV stays available for
+  // its ICE-restart or full-peer-rebuild offer instead of tearing down early.
   useEffect(() => {
     if (connectionState === 'failed') {
       logger.error('ice-connection-failed', { deviceId });
       setIceError('Connection lost');
-      const timer = setTimeout(() => clear(), 10000);
-      return () => clearTimeout(timer);
     } else if (connectionState === 'connected') {
       setIceError(null);
     }
-  }, [connectionState, clear, deviceId, logger]);
+  }, [connectionState, deviceId, logger]);
 
   // Auto-hide status overlay 3s after connecting
   useEffect(() => {
@@ -179,7 +218,16 @@ export default function VideoCall({ deviceId, clear }) {
     const ctx = new AudioContext({ sampleRate: 48000 });
     // Android WebView starts AudioContext suspended — resume or
     // onaudioprocess never fires and AEC never gets reference data.
-    ctx.resume().catch(() => {});
+    let resumeRetry = null;
+    const resumeContext = (attempt = 0) => ctx.resume()
+      .then(() => logger.info('audio-context.resume.succeeded', { attempt }))
+      .catch(error => {
+        if (attempt < 1) {
+          logger.warn('audio-context.resume.retry', { reason: error.name });
+          resumeRetry = setTimeout(() => void resumeContext(1), 150);
+        } else logger.error('audio-context.resume.failed', { reason: error.name });
+      });
+    void resumeContext();
     const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
 
     // ScriptProcessor to extract frames. Deprecated but universally supported
@@ -207,6 +255,7 @@ export default function VideoCall({ deviceId, clear }) {
 
     return () => {
       processor.onaudioprocess = null;
+      clearTimeout(resumeRetry);
       source.disconnect();
       processor.disconnect();
       muteGain.disconnect();
@@ -241,12 +290,13 @@ export default function VideoCall({ deviceId, clear }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' || e.key === 'XF86Back') {
+        signaling.send('hangup', { reason: 'tv_exit' });
         clear?.();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [clear]);
+  }, [clear, signaling]);
 
   const formatDuration = (s) => {
     const m = Math.floor(s / 60);
@@ -290,6 +340,7 @@ export default function VideoCall({ deviceId, clear }) {
             {status === 'waiting' && 'Home Line \u2014 Waiting'}
             {status === 'connecting' && 'Connecting...'}
             {status === 'connected' && 'Connected'}
+            {status === 'degraded' && (mediaHealth.audio ? 'Audio-only call' : 'Video-only call')}
           </span>
         )}
         {peerConnected && (

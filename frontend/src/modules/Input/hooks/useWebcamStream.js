@@ -38,6 +38,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
   const [error, setError] = useState(null);
+  const [retryGeneration, setRetryGeneration] = useState(0);
   const { videoResolution, ready = true } = options;
 
   // Track current tier index so FPS monitor can step down
@@ -127,9 +128,39 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
         tierIdxRef.current = RESOLUTION_TIERS.length; // past all tiers
         return s;
       } catch (fallbackErr) {
-        logger().error('webcam.access-error-final', { error: fallbackErr.message });
-        return null;
+        logger().warn('stream-combined-failed', { error: fallbackErr.message });
       }
+
+      // A failed microphone must not discard a usable camera (and vice versa).
+      // This is intentionally the final fallback so the preferred combined
+      // capture path and its resolution tiers remain unchanged.
+      const independentTracks = [];
+      if (audio !== false) {
+        try {
+          const audioOnly = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+          independentTracks.push(...audioOnly.getAudioTracks());
+        } catch (audioErr) {
+          logger().warn('stream-audio-independent-failed', { error: audioErr.name || audioErr.message });
+        }
+      }
+      try {
+        const videoOnly = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: selectedVideoDevice ? { deviceId: { exact: selectedVideoDevice } } : true,
+        });
+        independentTracks.push(...videoOnly.getVideoTracks());
+      } catch (videoErr) {
+        logger().warn('stream-video-independent-failed', { error: videoErr.name || videoErr.message });
+      }
+      if (independentTracks.length) {
+        logger().info('stream-acquired-independent', {
+          audio: independentTracks.filter(track => track.kind === 'audio').length,
+          video: independentTracks.filter(track => track.kind === 'video').length,
+        });
+        return new MediaStream(independentTracks);
+      }
+      logger().error('webcam.access-error-final', { outcome: 'no_media' });
+      return null;
     };
 
     // FPS monitor — checks actual framerate and steps down if consistently low
@@ -230,7 +261,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
         localStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [ready, selectedVideoDevice, selectedAudioDevice, videoResolution?.width, videoResolution?.height]);
+  }, [ready, retryGeneration, selectedVideoDevice, selectedAudioDevice, videoResolution?.width, videoResolution?.height]);
 
-  return { videoRef, stream, error };
+  return { videoRef, stream, error, retry: () => setRetryGeneration(value => value + 1) };
 };
