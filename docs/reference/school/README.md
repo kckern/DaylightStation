@@ -1455,11 +1455,14 @@ school:
 ```
 
 `idleTimeoutSeconds` and `screenOffTimeoutSeconds` are intentionally separate.
-The first returns an abandoned launch card to the keypad. The second uses the
-Fully Kiosk Browser bridge to turn off the display only while the keypad is
-idle; activity resets it, and cards, runners, scans, and in-flight requests
-suppress it. The keypad always provides a two-tap **Turn off screen** control.
-If the bridge is unavailable, the panel stays on and shows a visible failure.
+The first returns an abandoned launch card to the keypad. The second turns off
+the display only while the keypad is idle; activity resets it, and cards,
+runners, scans, and in-flight requests suppress it. The keypad always provides
+a two-tap **Turn off screen** control. Screen-off first uses Fully Kiosk's local
+JavaScript control bridge. When that bridge is absent (as on the Facebook
+Portal), it falls back to the registered screen device's backend FKB REST
+adapter. The panel stays on and shows a visible failure only when both paths
+fail; standalone browser School never sends a physical-device command.
 
 The locked resting screen is a stable two-pane wall: the keypad and a read-only
 per-learner `Today at school` board share the panel evenly. The board is

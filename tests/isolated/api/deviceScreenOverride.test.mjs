@@ -76,6 +76,16 @@ describe('device screen override routes', () => {
     expect(res.body.override?.state).toBe('off');
   });
 
+  it('direct screen off drives the registered device without creating an override', async () => {
+    const device = makeDevice(true);
+    const app = makeApp({ device, screenOverrideService: override });
+    const res = await request(app).get('/device/portal/screen/off');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(device._screenOn()).toBe(false);
+    expect(override.get('portal')).toBeNull();
+  });
+
   it('404 when the device is unknown', async () => {
     const app = express();
     app.use(express.json());
