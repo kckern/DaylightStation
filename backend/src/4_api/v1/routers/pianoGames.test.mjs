@@ -7,7 +7,7 @@ import { createPianoGamesRouter } from './pianoGames.mjs';
 function appFor(container, nativeRouters = {}) {
   const app = express();
   app.use(express.json());
-  app.use('/api/v1/piano-games', createPianoGamesRouter({ container, nativeRouters }));
+  app.use('/api/v1/piano-games', createPianoGamesRouter({ pianoGames: container, nativeRouters }));
   return app;
 }
 
@@ -35,4 +35,22 @@ test('mounts Piano-native family routers before the generic route', async () => 
   const response = await request(app).post('/api/v1/piano-games/chess/move').send({});
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, { from: 'e2', to: 'e4' });
+});
+
+test('translates the shared dialogue contract without renaming transcript fields', async () => {
+  let captured;
+  const app = appFor({
+    dialogue: async (gameId, value) => {
+      captured = { gameId, value };
+      return { eventId: 'match-1:2', quip: 'Your turn.', source: 'fallback', fallbackReason: 'disabled' };
+    },
+  });
+  const body = {
+    sessionId: 'match-1', ply: 2, level: 1, playerSide: 1,
+    transcript: { moves: [3, 2] }, dialogue: [{ ply: 1, quip: 'I see it.' }],
+  };
+  const response = await request(app).post('/api/v1/piano-games/connect-four/dialogue?user=kid').send(body);
+  assert.equal(response.status, 200);
+  assert.deepEqual(captured, { gameId: 'connect-four', value: { ...body, userId: 'kid' } });
+  assert.equal(response.body.quip, 'Your turn.');
 });

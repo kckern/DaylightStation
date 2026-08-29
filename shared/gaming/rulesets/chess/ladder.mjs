@@ -83,6 +83,8 @@ export function normalizeDialogueProfile(value, legacyPersonality = null, level 
   const references = profileList(lore.references);
   return Object.freeze({
     persona,
+    voice: chessVoice,
+    // Temporary read alias for archived/configured Chess profiles.
     chess_voice: chessVoice,
     lore: Object.freeze({
       type: Object.freeze(profileList(lore.type, 3, 24)),

@@ -1,0 +1,21 @@
+.pg-opponent { display:flex; align-items:center; gap:.6rem; margin:0; min-width:0; }
+.pg-opponent__button { appearance:none; border:0; padding:0; width:100%; color:inherit; background:none; text-align:left; cursor:pointer; }
+.pg-opponent__face { flex:none; display:grid; place-items:center; width:2.6rem; height:2.6rem; border:1px solid var(--piano-border,#34343f); border-radius:var(--r-md,12px); background:var(--piano-surface,#1f1f26); overflow:hidden; }
+.pg-opponent__identicon { width:68%; height:68%; fill:var(--piano-accent-text,#5fe39a); }
+.pg-opponent__art { width:100%; height:100%; object-fit:cover; }
+.pg-opponent__text { display:flex; flex:1; flex-direction:column; min-width:0; }
+.pg-opponent__name,.pg-opponent__status { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pg-opponent__status,.pg-opponent__ladder { min-height:1.2em; font-size:var(--t-cap,.85rem); color:var(--piano-muted,#9a9aa6); }
+.pg-opponent--lg .pg-opponent__face { width:3.6rem; height:3.6rem; }
+.pg-opponent--thinking .pg-opponent__face { animation:pg-opponent-think var(--pg-think-ms,3200ms) ease-in-out infinite; }
+.pg-opponent__speech { position:relative; display:-webkit-box; min-height:3.45em; margin-top:.35rem; padding:.35rem .48rem; border:1px solid var(--piano-accent-text,#5fe39a); border-radius:.45rem; background:var(--piano-surface,#1f1f26); color:var(--piano-accent-text,#5fe39a); font-size:var(--t-cap,.85rem); line-height:1.15; overflow:hidden; overflow-wrap:anywhere; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
+.pg-opponent__speech--empty { opacity:.35; }
+.pg-opponent__speech-live { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.pg-roster { display:grid; gap:.45rem; margin:0; padding:0; list-style:none; }
+.pg-roster__row { display:grid; grid-template-columns:2rem 2.4rem 1fr auto; align-items:center; gap:.65rem; padding:.55rem; border-radius:var(--r-md,12px); background:var(--piano-surface,#1f1f26); }
+.pg-roster__row--current { outline:2px solid var(--piano-accent-text,#5fe39a); }
+.pg-roster__face { display:grid; place-items:center; width:2.2rem; height:2.2rem; overflow:hidden; }
+.pg-roster__copy { display:flex; flex-direction:column; min-width:0; }
+.pg-roster__copy small,.pg-roster__state { color:var(--piano-muted,#9a9aa6); }
+@keyframes pg-opponent-think { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.05);opacity:.82} }
+@media (prefers-reduced-motion:reduce) { .pg-opponent--thinking .pg-opponent__face { animation:none; } }

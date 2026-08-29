@@ -1,3 +1,4 @@
+import { Children } from 'react';
 import { BOARD_LAYOUTS } from './contracts.js';
 import './InstrumentBoardStage.scss';
 
@@ -10,7 +11,15 @@ export default function InstrumentBoardStage({
   secondary = null,
   status = null,
   className = '',
+  children = null,
 }) {
+  // Compatibility composition for a dense board migrating from an equivalent
+  // hand-rolled three-column stage. Order is left rail, primary, right rail;
+  // new callers should prefer the named props above.
+  if (children) {
+    const slots = Children.toArray(children);
+    [leftRail, primary, rightRail] = slots;
+  }
   return (
     <section className={`instrument-board-stage instrument-board-stage--${layout} ${className}`.trim()}>
       <aside className="instrument-board-stage__rail instrument-board-stage__rail--left">{leftRail}</aside>

@@ -52,6 +52,7 @@ export function useAddressedBoardGame({
 
   const rankedRef = useRef(true);
   const savedRef = useRef(false);
+  const archiveContextRef = useRef({});
   const movesRef = useRef(moves);
   movesRef.current = moves;
   // The unmount archive fires from a cleanup that must NOT re-run when the
@@ -86,9 +87,16 @@ export function useAddressedBoardGame({
   useEffect(() => {
     if (!result || savedRef.current) return;
     savedRef.current = true;
+    const { prepareTerminal, ...baseContext } = archiveContextRef.current;
+    // This runs before persistence so the result card, archive, and rivalry
+    // memory all receive the same final displayed line.
+    const preparedContext = prepareTerminal?.() || {};
     const record = {
       moves, result, level, ranked: rankedRef.current, completed: true,
       played_on: new Date().toISOString().slice(0, 10),
+      game_id: gameSessionId,
+      ...baseContext,
+      ...preparedContext,
     };
     logger.info('game.over', {
       gameId, result, level, ranked: rankedRef.current, plies: moves.length,
@@ -103,7 +111,7 @@ export function useAddressedBoardGame({
       });
     }
     client.archiveGame({ ...record, user_id: userId });
-  }, [client, gameId, level, logger, moves, result, userId]);
+  }, [client, gameId, gameSessionId, level, logger, moves, result, userId]);
 
   // A game walked away from is still a game that happened. Mount-scoped so a
   // profile change cannot trip it — see userRef above.
@@ -183,6 +191,7 @@ export function useAddressedBoardGame({
     noteLocalPractice,
     restart,
     opponentName: ladder?.current?.name ?? null,
+    archiveContextRef,
   };
 }
 

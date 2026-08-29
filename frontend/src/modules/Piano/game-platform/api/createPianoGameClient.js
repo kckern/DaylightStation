@@ -28,6 +28,12 @@ export function createPianoGameClient(gameId, { logger = null, moveTimeoutMs = 4
       });
       try { return await Promise.race([request, deadline]); } finally { clearTimeout(timer); }
     },
+    requestDialogue: ({ sessionId, ply, level, playerSide, transcript, dialogue = [], userId }) => safe(
+      'dialogue',
+      DaylightAPI(withUser(`${base}/dialogue`, userId), {
+        sessionId, ply, level, playerSide, transcript, dialogue,
+      }, 'POST'),
+    ),
     saveGame: (userId, record) => safe('record', DaylightAPI(withUser(`${base}/games`, userId), record, 'POST')),
     archiveGame: (record) => safe('archive', DaylightAPI(`${base}/history`, record, 'POST')),
   };

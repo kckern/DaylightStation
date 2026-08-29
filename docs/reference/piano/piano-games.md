@@ -107,6 +107,36 @@ generic fixtures. Product themes, combatants, decks, and media remain mounted.
 
 The piano game system lets users play games using a MIDI keyboard. Players press specific notes (displayed as music notation on staves or as falling note bars) to trigger game actions. A shared activation layer detects combo keypresses to launch games, and a config-driven level system controls difficulty progression.
 
+### Board-game match platform
+
+Chess, Checkers, and Connect Four share the match furniture under
+`frontend/src/modules/Piano/game-platform/`: `BoardGameFrame` composes the
+instrument host, equal rail tracks, addressed-board stage, status bar, settings,
+and ceremony overlay. `OpponentPanel`, `OpponentRosterSheet`,
+`BoardGameOpening`, and `BoardGameResult` provide the common opponent and match
+presentation. Each game still owns its board geometry, rules, input grammar,
+turn authority, rail contents, and which side carries the opponent.
+
+Opponent profiles use stable `id`, `name`, optional `art` and `theme`, plus a
+`dialogue` block containing `persona`, `voice`, and bounded lore. Chess's
+historic `dialogue.chess_voice` remains readable as an alias. Missing artwork
+is rendered as a deterministic identicon; a missing identity resolves to the
+game roster pack's level identity.
+
+Cosmetic speech uses `POST /api/v1/piano-games/:gameId/dialogue`. A ruleset
+adapter replays the submitted transcript, rejects forged histories, and emits
+only redacted semantic facts. Generation starts with move planning but never
+gates authority. At the existing think deadline the UI displays either the
+settled generated line or the adapter's deterministic fallback and discards a
+late result. A Checkers forced multi-jump is one opponent turn and therefore
+one displayed line. The legacy Chess `/quip` route remains temporarily readable,
+but current clients use `/dialogue`.
+
+Completed archives carry the stable opponent and ordered displayed-dialogue
+ledger. Rivalry memory is isolated under `apps/{gameId}/rivalries`, keyed by
+opponent ID, with lifetime W/L/D and the latest seven games. Chess legacy
+memory is read and migrated lazily; archive ingestion is idempotent by game ID.
+
 ### Shared judgement and grading
 
 Musical assessment is not a game-engine responsibility. Games call the same
