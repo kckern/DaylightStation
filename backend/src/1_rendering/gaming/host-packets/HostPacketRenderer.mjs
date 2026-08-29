@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit';
 
 export class HostPacketRenderer {
-  async render({ title = 'Group Play Host Packet', definition = {}, session = {} }) {
+  async render({ title = 'Party Games Host Packet', definition = {}, session = {} }) {
     return new Promise((resolve, reject) => {
       const document = new PDFDocument({ size: 'LETTER', margin: 50, info: { Title: title } }); const chunks = [];
       document.on('data', (chunk) => chunks.push(chunk)); document.on('error', reject); document.on('end', () => resolve(Buffer.concat(chunks)));

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import RevealPanel from '../../environments/group-play/ui/RevealPanel.jsx';
-import MediaCluePlayer from '../../environments/group-play/ui/MediaCluePlayer.jsx';
-import ControlLegend from '../../environments/group-play/ui/ControlLegend.jsx';
-import TimerRing from '../../environments/group-play/ui/TimerRing.jsx';
-import { useCountdown } from '../../environments/group-play/ui/useCountdown.js';
-import { onColor } from '../../environments/group-play/setup/teamColors.js';
-import MemberAvatar from '../../environments/group-play/ui/MemberAvatar.jsx';
+import RevealPanel from '../../platform/ui/RevealPanel.jsx';
+import MediaCluePlayer from '../../platform/ui/MediaCluePlayer.jsx';
+import ControlLegend from '../../platform/ui/ControlLegend.jsx';
+import TimerRing from '../../platform/ui/TimerRing.jsx';
+import { useCountdown } from '../../platform/ui/useCountdown.js';
+import { onColor } from '../../platform/ui/teamColors.js';
+import MemberAvatar from '../../platform/ui/MemberAvatar.jsx';
 import './Jeopardy.scss';
 
 /**

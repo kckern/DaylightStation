@@ -13,10 +13,11 @@ const freshExperience = () => ({
 });
 
 export class GamingController {
-  constructor({ api, providerRegistry, gameId, participants, viewerId = null, resumeSessionId = null, setup = {}, logger, clock = () => Date.now() }) {
+  constructor({ api, providerRegistry, gameId, surfaceId, participants, viewerId = null, resumeSessionId = null, setup = {}, logger, clock = () => Date.now() }) {
     this.api = api;
     this.providerRegistry = providerRegistry;
     this.gameId = gameId;
+    this.surfaceId = surfaceId;
     this.participants = participants;
     this.viewerId = viewerId;
     this.resumeSessionId = resumeSessionId;
@@ -136,6 +137,7 @@ export class GamingController {
       }
       session ||= await this.api.createSession({
         game_id: this.gameId,
+        surface_id: this.surfaceId,
         participants: this.participants,
         ...(Object.keys(this.setup).length > 0 ? { setup: this.setup } : {}),
       });
@@ -195,6 +197,7 @@ export class GamingController {
       const setup = upgradeId ? { upgrade_id: upgradeId } : null;
       const session = await this.api.createSession({
         game_id: this.gameId,
+        surface_id: this.surfaceId,
         participants: this.participants,
         ...(setup ? { setup } : {}),
       });

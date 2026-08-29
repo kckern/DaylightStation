@@ -1,6 +1,7 @@
 import { defineRuleModule } from '../../kernel/index.mjs';
 import { adjustScore } from '../../mechanics/scoring.mjs';
 import { nextSeat } from '../../mechanics/turnOrder.mjs';
+import { orderSeeded } from '../../mechanics/selection.mjs';
 
 export function validateActivityPartyDefinition(definition) {
   const errors = [];
@@ -13,10 +14,12 @@ export function validateActivityPartyDefinition(definition) {
   }
   if (!Number.isInteger(definition?.rounds) || definition.rounds < 1) errors.push('rounds must be positive');
   if (!Number.isFinite(definition?.timer_ms) || definition.timer_ms <= 0) errors.push('timer_ms must be positive');
+  if (definition?.challenge_selection != null && !['authored', 'seeded'].includes(definition.challenge_selection)) errors.push('challenge_selection must be authored or seeded');
   return { valid: errors.length === 0, errors };
 }
 
-const challengeFor = (definition, index) => structuredClone(definition.challenges[index % definition.challenges.length]);
+const challengeFor = (definition, order, index) => structuredClone(definition.challenges[order[index % order.length]]);
+const authoredChallengeOrder = (definition) => definition.challenges.map((_, index) => index);
 
 const actorIsHost = (actorId) => actorId === 'host' || actorId === 'system';
 
@@ -31,11 +34,16 @@ const denied = (message) => ({ error: { code: 'authorization_denied', message } 
 
 export const activityPartyRuleModule = defineRuleModule({
   id: 'activity-party', version: 1, validateDefinition: validateActivityPartyDefinition,
-  createInitialState(definition, { participants = [], seats = [], setup = {} }) {
+  createInitialState(definition, { seed, participants = [], seats = [], setup = {} }) {
     const performers = seats.length ? seats : participants.map((participant) => ({ id: participant.id || participant.user_id, participant_id: participant.id || participant.user_id }));
+    const authoredOrder = authoredChallengeOrder(definition);
+    const challengeOrder = definition.challenge_selection === 'seeded'
+      ? orderSeeded(authoredOrder, seed).ordered
+      : authoredOrder;
     return {
       status: 'active', phase: 'performer-ready', round: 1, challenge_index: 0,
-      challenge: challengeFor(definition, 0), performers, performer_id: performers[0]?.id || null,
+      challenge: challengeFor(definition, challengeOrder, 0), challenge_order: challengeOrder,
+      performers, performer_id: performers[0]?.id || null,
       verifier_id: setup.verifier_id || null, pending_outcome: null, deadline: null,
       scores: Object.fromEntries(performers.map((performer) => [performer.team_id || performer.id, 0])),
       host: setup.host || { mode: 'human' }, revealed_hints: 0,
@@ -91,7 +99,7 @@ export const activityPartyRuleModule = defineRuleModule({
       const nextPerformer = nextSeat(state.performers, state.performer_id);
       next.challenge_index += 1; next.performer_id = nextPerformer?.id || null; next.deadline = null; next.revealed_hints = 0;
       if (next.challenge_index >= state.performers.length * definition.rounds) { next.status = 'complete'; next.phase = 'complete'; events.push({ type: 'game.completed' }); }
-      else { next.round = Math.floor(next.challenge_index / state.performers.length) + 1; next.challenge = challengeFor(definition, next.challenge_index); next.phase = 'performer-ready'; events.push({ type: 'challenge.selected', challenge_index: next.challenge_index }); }
+      else { next.round = Math.floor(next.challenge_index / state.performers.length) + 1; next.challenge = challengeFor(definition, next.challenge_order || authoredChallengeOrder(definition), next.challenge_index); next.phase = 'performer-ready'; events.push({ type: 'challenge.selected', challenge_index: next.challenge_index }); }
     } else return { error: { code: 'illegal_command', message: `${command.type} is not legal during ${state.phase}` } };
     return { state: next, status: next.status, events };
   },

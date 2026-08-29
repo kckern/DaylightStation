@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import TitleCard from '../../environments/group-play/ui/TitleCard.jsx';
-import RevealPanel from '../../environments/group-play/ui/RevealPanel.jsx';
-import MediaCluePlayer from '../../environments/group-play/ui/MediaCluePlayer.jsx';
-import WagerPanel from '../../environments/group-play/ui/WagerPanel.jsx';
-import ControlLegend from '../../environments/group-play/ui/ControlLegend.jsx';
+import TitleCard from '../../platform/ui/TitleCard.jsx';
+import RevealPanel from '../../platform/ui/RevealPanel.jsx';
+import MediaCluePlayer from '../../platform/ui/MediaCluePlayer.jsx';
+import WagerPanel from './ui/WagerPanel.jsx';
+import ControlLegend from '../../platform/ui/ControlLegend.jsx';
 import './Jeopardy.scss';
 
 function finalRoundMax(set) {

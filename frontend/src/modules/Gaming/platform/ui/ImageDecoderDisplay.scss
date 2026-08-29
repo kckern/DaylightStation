@@ -1,0 +1,50 @@
+.image-decoder-display {
+  position: relative;
+  width: min(72vmin, 42rem);
+  aspect-ratio: 1;
+  margin: 0;
+  overflow: hidden;
+  border: clamp(.2rem, .6vmin, .4rem) solid #192b31;
+  border-radius: clamp(1rem, 3vmin, 2rem);
+  background: #020708;
+  box-shadow: 0 0 3rem rgb(26 226 241 / 12%), inset 0 0 2rem rgb(0 0 0 / 85%);
+}
+
+.image-decoder-display__subject,
+.image-decoder-display__artifacts {
+  position: absolute;
+  inset: 5%;
+  width: 90%;
+  height: 90%;
+}
+
+.image-decoder-display__subject {
+  background: #22e4f2;
+  filter: drop-shadow(0 0 .35rem rgb(34 228 242 / 58%));
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.image-decoder-display__artifacts {
+  overflow: visible;
+}
+
+.image-decoder-display__artifact {
+  vector-effect: non-scaling-stroke;
+}
+
+.image-decoder-display__artifact.is-bubble {
+  fill: #f12639;
+  stroke: #ff5a66;
+  stroke-width: .45;
+}
+
+.image-decoder-display__artifact.is-ring {
+  fill: none;
+  stroke: #ff263b;
+  stroke-width: 2.2;
+}

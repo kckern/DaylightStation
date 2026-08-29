@@ -36,7 +36,10 @@ describe('Gaming import boundaries', () => {
       ['poke', 'dex'].join(''),
     ].join('|'), 'i');
     const roots = [
-      'shared/gaming',
+      'shared/gaming/kernel',
+      'shared/gaming/experience',
+      'shared/gaming/presentation',
+      'shared/gaming/mechanics',
       'backend/src/1_adapters/persistence/yaml/gaming',
       'backend/src/2_domains/gaming',
       'backend/src/3_applications/gaming',

@@ -1,4 +1,4 @@
-import { sendRuleCommand } from '../../environments/group-play/app/sessionClient.js';
+import { sendRuleCommand } from '../../platform/api/sessionClient.js';
 
 export function sendJeopardyCommand(sessionId, command, { actorId = 'host' } = {}) {
   const type = command.type.startsWith('jeopardy.')

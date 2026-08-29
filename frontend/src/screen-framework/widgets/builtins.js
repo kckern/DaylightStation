@@ -11,7 +11,7 @@ import MenuWidget from './MenuWidget.jsx';
 import ArtMode from './ArtMode.jsx';
 import WeeklyReview from '../../modules/WeeklyReview/WeeklyReview.jsx';
 import CameraOverlay from '../../modules/CameraFeed/CameraOverlay.jsx';
-import GroupPlayApp from '../../modules/Gaming/environments/group-play/app/GroupPlayApp.jsx';
+import PartyGamesApp from '../../modules/Gaming/environments/party-games/app/PartyGamesApp.jsx';
 import SchoolApp from '../../modules/School/SchoolApp.jsx';
 import ReadingSessionScreen from '../../modules/School/reading/ReadingSessionScreen.jsx';
 import MediaLessonScreen from '../../modules/School/lesson/MediaLessonScreen.jsx';
@@ -30,7 +30,7 @@ export function registerBuiltinWidgets() {
   registry.register('art', ArtMode);
   registry.register('weekly-review', WeeklyReview);
   registry.register('camera', CameraOverlay);
-  registry.register('group-play', GroupPlayApp);
+  registry.register('party-games', PartyGamesApp);
   // Mounted as a whole screen, not a panel among others: the Portal IS the
   // school device, the way living-room is the TV. Rendered without `clear`,
   // so its exit affordance is omitted (see SchoolApp.jsx).

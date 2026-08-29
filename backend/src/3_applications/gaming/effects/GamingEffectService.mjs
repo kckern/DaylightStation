@@ -19,7 +19,7 @@ export class GamingEffectService {
   }
   async afterCreate({ session, definition }) {
     this.observability?.increment('session.created', { ruleset: session.header.ruleset.id });
-    if (this.autoPrint && session.header.experience?.native_surface_id === 'group-play') {
+    if (this.autoPrint && session.header.launch?.surface_id === 'party-games') {
       await this.printHostPacket({ sessionId: session.header.session_id, session, definition, explicit: false });
     }
   }
@@ -58,7 +58,7 @@ export class GamingEffectService {
   async printHostPacket({ sessionId, session, definition, explicit = true }) {
     if (!this.printPolicy) return { status: 'printing-unavailable' };
     try {
-      const receipt = await this.printPolicy.print({ sessionId, content: { title: `${definition.title || definition.id || 'Group Play'} Host Packet`, session, definition }, explicit, autoPrint: this.autoPrint });
+      const receipt = await this.printPolicy.print({ sessionId, content: { title: `${definition.title || definition.id || 'Party Games'} Host Packet`, session, definition }, explicit, autoPrint: this.autoPrint });
       await this.observability?.audit(sessionId, { kind: 'print-decision', explicit, status: receipt.status, duplicate: Boolean(receipt.duplicate) }); return receipt;
     } catch (error) { this.observability?.operational('gaming.print.failed', { sessionId, error: error.message }); return { status: 'failed', message: 'Host packet printing failed' }; }
   }
