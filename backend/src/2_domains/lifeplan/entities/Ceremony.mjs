@@ -7,13 +7,4 @@ export class Ceremony {
     this.captures = data.captures || [];
   }
 
-  toJSON() {
-    return {
-      type: this.type,
-      cadence_level: this.cadence_level,
-      prompts: this.prompts,
-      inputs: this.inputs,
-      captures: this.captures,
-    };
-  }
 }

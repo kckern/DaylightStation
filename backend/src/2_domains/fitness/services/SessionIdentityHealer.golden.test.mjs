@@ -25,7 +25,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturePath = path.join(__dirname, '__fixtures__', 'session-20260627195941.yml');
 
 function loadFixture() {
-  return yaml.load(readFileSync(fixturePath, 'utf8'));
+  const fixture = yaml.load(readFileSync(fixturePath, 'utf8'));
+  fixture.timeline.series = Object.fromEntries(Object.entries(fixture.timeline.series)
+    .map(([key, value]) => [key, typeof value === 'string' ? JSON.parse(value) : value]));
+  return fixture;
 }
 
 describe('SessionIdentityHealer golden parity — session 20260627195941', () => {

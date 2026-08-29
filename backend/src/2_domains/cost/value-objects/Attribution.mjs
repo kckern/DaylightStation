@@ -131,37 +131,6 @@ export class Attribution {
   }
 
   /**
-   * Convert to JSON-serializable object
-   *
-   * Only includes non-null optional fields and non-empty tags.
-   *
-   * @returns {Object} JSON-serializable object
-   */
-  toJSON() {
-    const result = {
-      householdId: this.#householdId
-    };
-
-    if (this.#userId !== null) {
-      result.userId = this.#userId;
-    }
-
-    if (this.#feature !== null) {
-      result.feature = this.#feature;
-    }
-
-    if (this.#resource !== null) {
-      result.resource = this.#resource;
-    }
-
-    if (this.#tags.size > 0) {
-      result.tags = Object.fromEntries(this.#tags);
-    }
-
-    return result;
-  }
-
-  /**
    * Create an Attribution from a JSON object
    *
    * @param {Object} data - JSON object with attribution data
@@ -173,22 +142,6 @@ export class Attribution {
    * @returns {Attribution}
    * @throws {ValidationError} If data is invalid
    */
-  static fromJSON(data) {
-    if (!data || typeof data !== 'object') {
-      throw new ValidationError('Invalid Attribution JSON: data is required', {
-        code: 'INVALID_ATTRIBUTION_JSON',
-        value: data
-      });
-    }
-
-    return new Attribution({
-      householdId: data.householdId,
-      userId: data.userId ?? null,
-      feature: data.feature ?? null,
-      resource: data.resource ?? null,
-      tags: data.tags || {}
-    });
-  }
 }
 
 export default Attribution;

@@ -1,6 +1,7 @@
 // tests/isolated/agents/health-coach/adapters/nutrition_adapter.test.mjs
 import { describe, it, expect, vi } from 'vitest';
 import { NutritionEventAdapter } from '../../../../../backend/src/3_applications/agents/health-coach/services/adapters/NutritionEventAdapter.mjs';
+import { createNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
 
 const FROZEN_NOW = () => new Date('2026-05-07T12:00:00Z');
 
@@ -77,6 +78,35 @@ describe('NutritionEventAdapter', () => {
     expect(r.items_summary.count).toBe(3);
     expect(r.items_summary.top_kcal).toEqual(['Chicken thigh', 'Rice', 'Olive oil']);
     expect(r.log_full).toBeDefined();
+  });
+
+  it('details a real NutriLog using the established public record shape', async () => {
+    const log = createNutriLog({
+      userId: 'user_1',
+      conversationId: 'telegram:42',
+      text: 'apple',
+      items: [{
+        label: 'Apple',
+        calories: 95,
+        grams: 180,
+        unit: 'g',
+        amount: 180,
+        color: 'green',
+      }],
+      timestamp: new Date('2026-05-07T12:30:00Z'),
+    }, { newId: () => 'stableid01', newUuid: () => '11111111-1111-4111-8111-111111111111' });
+    const svc = new NutritionEventAdapter({
+      foodLogService: { getLogById: vi.fn(async () => log) },
+      userId: 'user_1', now: FROZEN_NOW,
+    });
+    const result = await svc.detail('stableid01');
+    expect(result.log_full).toMatchObject({
+      id: 'stableid01',
+      userId: 'user_1',
+      conversationId: 'telegram:42',
+      text: 'apple',
+      items: [expect.objectContaining({ id: 'stableid01', label: 'Apple', calories: 95 })],
+    });
   });
 
   it('detail returns error when log missing', async () => {

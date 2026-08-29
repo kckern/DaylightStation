@@ -35,27 +35,19 @@ const HARDCODED_DEFAULTS = Object.freeze({
  *
  * Order of precedence (last wins):
  *   1. HARDCODED_DEFAULTS (this file)
- *   2. yaml.default (data/household/config/agents.yml)
- *   3. yaml.overrides[agentId]
- *
- * Errors in configService are swallowed and treated as "no YAML present".
+ *   2. projected household defaults
+ *   3. projected agent override
  *
  * @param {object} args
- * @param {object|null} args.configService — exposes getAppConfig('agents')
+ * @param {object|null} args.configProjection — exposes settings(agentId)
  * @param {string} args.agentId
  * @returns {object} resolved per-agent config
  */
-export function loadAgentConfig({ configService, agentId }) {
-  let yaml = null;
-  try {
-    yaml = configService?.getAppConfig?.('agents') ?? null;
-  } catch {
-    yaml = null;
-  }
-
+export function loadAgentConfig({ configProjection, agentId }) {
+  const projected = configProjection?.settings?.(agentId) || {};
   let cfg = HARDCODED_DEFAULTS;
-  if (yaml?.default) cfg = deepMerge(cfg, yaml.default);
-  if (yaml?.overrides?.[agentId]) cfg = deepMerge(cfg, yaml.overrides[agentId]);
+  if (projected.defaults) cfg = deepMerge(cfg, projected.defaults);
+  if (projected.override) cfg = deepMerge(cfg, projected.override);
   return cfg;
 }
 

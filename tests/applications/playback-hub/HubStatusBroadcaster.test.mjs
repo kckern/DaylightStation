@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { HubStatusBroadcaster } from '../../../backend/src/3_applications/playback-hub/runtime/HubStatusBroadcaster.mjs';
 import { FakeHubGateway } from '../../../backend/src/3_applications/playback-hub/test/FakeHubGateway.mjs';
 import { SlotStatus } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotStatus.mjs';
+const statusFromFixture = value => new SlotStatus({ ...value, position: value.slot ?? value.position });
 
 /**
  * In-memory event publisher: captures every publish() call with topic/payload
@@ -49,7 +50,7 @@ function makeFakeSleepFn(maxCalls = 100) {
   return fn;
 }
 
-const makeStatus = (color = 'red') => SlotStatus.fromHubJson({
+const makeStatus = (color = 'red') => statusFromFixture({
   slot: 1, color, bt_connected: true, paused: false, now_playing: null,
   volume: 50, playlist_pos: 0, playlist_count: 0, armed_source: null
 });

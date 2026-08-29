@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTriggerRouter } from '../../../../backend/src/4_api/v1/routers/trigger.mjs';
+import { dispatchSideEffect, TriggerSideEffectExecutor, UnknownSideEffectError } from '#apps/trigger/sideEffectHandlers.mjs';
 
 describe('createTriggerRouter — POST /side-effect', () => {
   let triggerDispatchService;
@@ -16,8 +17,10 @@ describe('createTriggerRouter — POST /side-effect', () => {
     app = express();
     app.use('/api/v1/trigger', createTriggerRouter({
       triggerDispatchService,
-      tvControlAdapter,
-      deviceService,
+      sideEffectExecutor: new TriggerSideEffectExecutor({
+        dispatch: (request) => dispatchSideEffect(request, { tvControlAdapter, deviceService }),
+      }),
+      isUnknownSideEffectError: (error) => error instanceof UnknownSideEffectError,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     }));
   });

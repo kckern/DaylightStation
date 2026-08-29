@@ -5,6 +5,8 @@ import express from 'express';
 import request from 'supertest';
 import { createPlayRouter } from './play.mjs';
 import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
+import { PlaybackReadService } from '#apps/content/services/PlaybackReadService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 // The real service, not a spy: this file exists to prove the ROUTER hands the
 // container context down. Asserting on a mock's arguments would pass just as
@@ -56,18 +58,19 @@ const makeApp = () => {
       : episodeItem(`plex:${localId}`))),
     resolvePlayables: vi.fn(async () => [episodeItem('plex:696234'), episodeItem('plex:696235')])
   };
-  app.use('/api/v1/play', createPlayRouter({
-    registry: { get: () => adapter },
-    mediaProgressMemory: { get: () => null },
-    playResponseService: new PlayResponseService({
-      mediaProgressMemory: { get: () => null }, surroundStore, logger: makeLogger()
-    }),
-    contentIdResolver: {
+  const playResponseService = new PlayResponseService({
+      mediaProgressMemory: { findProgress: () => null }, surroundStore, logger: makeLogger()
+    });
+  const registry = { get: () => adapter };
+  const contentCatalog = new RegistryContentCatalogGateway({ registry });
+  const contentIdResolver = {
       resolve: (compoundId) => {
         const [source, localId] = String(compoundId).split(':');
         return { adapter, source, localId };
       }
-    },
+    };
+  app.use('/api/v1/play', createPlayRouter({
+    playbackReadService: new PlaybackReadService({ contentCatalog, playResponseService, contentIdResolver }),
     logger: makeLogger()
   }));
   return app;

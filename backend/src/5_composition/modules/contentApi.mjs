@@ -3,38 +3,83 @@
 
 import { ListAdapter } from '#adapters/content/list/ListAdapter.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
 import { YamlSurroundStore } from '#adapters/content/surround/YamlSurroundStore.mjs';
+import { SurroundConfigProjection } from '#adapters/content/surround/SurroundConfigProjection.mjs';
+import { ListNameCatalog } from '#adapters/content/list/ListNameCatalog.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { createListRouter } from '#api/v1/routers/list.mjs';
+import { ItemService } from '#apps/content/ItemService.mjs';
 import { createLocalRouter } from '#api/v1/routers/local.mjs';
 import { createLocalContentRouter } from '#api/v1/routers/localContent.mjs';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
-import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
+import { createProxyPassthroughHandlers, createProxyRouter } from '#api/v1/routers/proxy.mjs';
 import { createQueriesRouter } from '#api/v1/routers/queries.mjs';
 import { createQueueRouter } from '#api/v1/routers/queue.mjs';
 import { createSiblingsRouter } from '#api/v1/routers/siblings.mjs';
 import { createStreamRouter } from '#api/v1/routers/stream.mjs';
 import { ContentIdResolver } from '#apps/content/ContentIdResolver.mjs';
+import { ContentAccessService } from '#apps/content/ContentAccessService.mjs';
+import { QueuePresentationService } from '#apps/content/QueuePresentationService.mjs';
+import { ContentAlternatesService } from '#apps/content/ContentAlternatesService.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
+import { LegacyLocalContentService } from '#apps/content/LegacyLocalContentService.mjs';
 import { ContentQueryAliasResolver } from '#apps/content/services/ContentQueryAliasResolver.mjs';
+import { checkSchedule } from '#apps/content/services/scheduleCheck.mjs';
 import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
 import { planSurroundQueue } from '#apps/content/services/surroundQueuePlan.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
 import { YamlUserVideoProgressStore as UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
-import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
-import { QueueService } from '#domains/content/services/QueueService.mjs';
+import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
+import { QueueService } from '#apps/content/services/QueueService.mjs';
+import { validateSearchQuery } from '#domains/media/validateMediaSearchQuery.mjs';
+import { isMediaSearchable } from '#apps/content/services/isMediaSearchable.mjs';
 import { ProxyService } from '#system/proxy/ProxyService.mjs';
 import path from 'path';
 import { ContentExpression } from '#domains/content/ContentExpression.mjs';
+import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
+import { MenuMemoryService } from '#apps/content/services/MenuMemoryService.mjs';
+import { BrowseCatalogService } from '#apps/content/services/BrowseCatalogService.mjs';
+import { ContentAccessPolicyService } from '#apps/content/services/ContentAccessPolicyService.mjs';
+import { ContentDiscoveryService } from '#apps/content/services/ContentDiscoveryService.mjs';
+import { ContentAliasCatalogService } from '#apps/content/services/ContentAliasCatalogService.mjs';
+import { ListBrowseService } from '#apps/content/services/ListBrowseService.mjs';
+import { PlaybackReadService } from '#apps/content/services/PlaybackReadService.mjs';
+import { UpdateContentProgress } from '#apps/content/usecases/UpdateContentProgress.mjs';
+import { RecordPlaybackProgress } from '#apps/content/usecases/RecordPlaybackProgress.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
+import { generatePlaceholderImage } from '#rendering/placeholder/placeholderImage.mjs';
+import { FfmpegVideoThumbnailGenerator } from '#adapters/media/FfmpegVideoThumbnailGenerator.mjs';
+import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
+import { PlaybackPublications } from '#adapters/eventbus/PlaybackPublications.mjs';
+import { FilesystemLocalMediaRepository } from '#adapters/media/FilesystemLocalMediaRepository.mjs';
+import { FilesystemContentMediaRepository } from '#adapters/media/FilesystemContentMediaRepository.mjs';
+import { LegacyLocalContentRepository } from '#adapters/content/LegacyLocalContentRepository.mjs';
+import { GetLocalMediaResource } from '#apps/media/usecases/GetLocalMediaResource.mjs';
+import { GetLocalMediaThumbnail } from '#apps/media/usecases/GetLocalMediaThumbnail.mjs';
+import { LocalMediaCatalogService } from '#apps/media/LocalMediaCatalogService.mjs';
+import { GetContentMediaResource } from '#apps/media/usecases/GetContentMediaResource.mjs';
+import { ProxyMediaService } from '#apps/proxy/ProxyMediaService.mjs';
+import { CompositeHeroService } from '#apps/proxy/CompositeHeroService.mjs';
+import { RemoteThumbnailService } from '#apps/proxy/RemoteThumbnailService.mjs';
+import { DynamicStreamService } from '#apps/proxy/DynamicStreamService.mjs';
+import { MintPlaybackStream } from '#apps/proxy/MintPlaybackStream.mjs';
+import { FilesystemProxyMediaRepository } from '#adapters/proxy/FilesystemProxyMediaRepository.mjs';
+import { FilesystemProxyAssetCache } from '#adapters/proxy/FilesystemProxyAssetCache.mjs';
+import { KomgaCompositeImageSource } from '#adapters/proxy/KomgaCompositeImageSource.mjs';
+import { XploreThumbnailSource } from '#adapters/proxy/XploreThumbnailSource.mjs';
+import { HttpDynamicStreamGateway } from '#adapters/proxy/HttpDynamicStreamGateway.mjs';
+import { RegistryPlaybackStreamGateway } from '#adapters/proxy/RegistryPlaybackStreamGateway.mjs';
+import { compositeHeroImage } from '#rendering/canvas/compositeHero.mjs';
+import { buildBareContentNameMap, CONTENT_SEARCH_BUDGET, LEGACY_CONTENT_ALIASES } from '#apps/content/ContentRuntimePolicy.mjs';
 
 /**
  * Create API routers for the content domain
  * @param {Object} config
  * @param {ContentSourceRegistry} config.registry - Content source registry
  * @param {YamlMediaProgressMemory} config.mediaProgressMemory - Media progress memory
- * @param {Function} [config.loadFile] - Function to load YAML files
- * @param {Function} [config.saveFile] - Function to save YAML files
+ * @param {object} config.menuMemoryRepository - Household menu-memory persistence port
  * @param {string} [config.cacheBasePath] - Base path for image cache
  * @param {string} [config.dataPath] - Base data path for local content
  * @param {import('#system/proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Proxy service for external services
@@ -44,7 +89,7 @@ import { ContentExpression } from '#domains/content/ContentExpression.mjs';
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, logger = console } = config;
+  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, logger = console } = config;
 
   // Register prefix aliases (e.g., hymn → singalong:hymn) from config
   // This enables the content API to resolve aliased prefixes via registry.resolveFromPrefix()
@@ -55,37 +100,25 @@ export function createApiRouters(config) {
 
   // Scan list directories for bare name resolution (Layer 4a).
   // Priority: menu > program > watchlist (later iterations overwrite).
-  const bareNameMap = {};
-  const listAdapterForScan = registry.get('list');
-  if (listAdapterForScan?._getAllListNames) {
-    for (const [prefix, listType] of [['watchlist', 'watchlists'], ['program', 'programs'], ['menu', 'menus']]) {
-      for (const name of listAdapterForScan._getAllListNames(listType)) {
-        bareNameMap[name] = prefix;
-      }
-    }
-  }
+  const bareNameMap = buildBareContentNameMap(new ListNameCatalog({ listAdapter: registry.get('list') }));
 
   // Create ContentIdResolver for unified content ID resolution.
   // Prefix aliases (hymn, scripture, etc.) are already registered in the registry
   // via registerPrefixAliases() above — ContentIdResolver Layer 2 resolves them.
   // systemAliases is reserved for future aliases not backed by registry prefixes.
-  const contentIdResolver = new ContentIdResolver(registry, {
-    systemAliases: {
-      // Simple source renames (legacy names → canonical adapter names).
-      // Note: "media" is handled by FileAdapter's prefix list (Layer 2).
-      // "local" was removed from FileAdapter's prefix list since local:X should
-      // resolve to ListAdapter (watchlist) via this alias (Layer 3), not FileAdapter.
-      local: 'watchlist:',
-      singing: 'singalong:',
-      narrated: 'readalong:',
-      list: 'menu:',
-    },
+  const contentCatalog = new RegistryContentCatalogGateway({ registry, isSearchable: isMediaSearchable, prefixAliases, logger });
+  const contentIdResolver = new ContentIdResolver(contentCatalog, {
+    systemAliases: LEGACY_CONTENT_ALIASES,
     householdAliases: {},
     bareNameMap,
   });
 
   // Create ContentQueryAliasResolver for semantic query prefixes (music:, photos:, etc.)
-  const aliasResolver = new ContentQueryAliasResolver({ registry, configService, prefixAliases });
+  const aliasResolver = new ContentQueryAliasResolver({
+    contentCatalog,
+    loadUserAliases: () => configService.getAppConfig('content', 'aliases'),
+    prefixAliases,
+  });
 
   // Create ContentQueryService for unified query interface.
   // Per-adapter search budget: 3s default keeps streamed search snappy; the
@@ -94,31 +127,17 @@ export function createApiRouters(config) {
   // local-content ~0.7-4.0s, files ~1.6-3.9s) get explicit higher budgets so
   // their legitimate results aren't cut off.
   const contentQueryService = new ContentQueryService({
-    registry,
+    contentCatalog,
     mediaProgressMemory,
     prefixAliases,
     logger,
     aliasResolver,
-    adapterTimeoutMs: 3000,
-    sourceTimeoutsMs: {
-      // Plex is THE primary library AND its requests serialize app-wide
-      // (memory: plex-requests-serialize) — a search racing browse-thumbnail
-      // fetches queues behind them and blows a 3s cap even though the search
-      // itself is fast. A timed-out plex reads as "No results" for exactly
-      // the content people actually search for (2026-07-14: "bluey" found
-      // nothing because plex hit the 3s budget mid-browse). Progressive
-      // streaming means a generous budget costs nothing when plex is fast.
-      plex: 10000,
-      abs: 6000,
-      singalong: 8000,
-      readalong: 6000,
-      'local-content': 6000,
-      files: 5000,
-    },
+    deadline: new NodePromiseDeadline(),
+    ...CONTENT_SEARCH_BUDGET,
   });
 
   // Create SiblingsService for sibling resolution
-  const siblingsService = new SiblingsService({ registry, logger });
+  const siblingsService = new SiblingsService({ contentCatalog, logger });
 
   // Surround sidecars decorate playback; they are not a content source and so
   // never register with the registry. Composed here because this is the only
@@ -136,8 +155,7 @@ export function createApiRouters(config) {
   // over shuffle. The opt-out is `enforceOrder: false` under the household's
   // `surround` app config; an absent config is the default, so nothing has to be
   // authored to get the specified behaviour — only to leave it.
-  const surroundEnforceOrder =
-    configService?.getHouseholdAppConfig?.(null, 'surround')?.enforceOrder !== false;
+  const { enforceOrder: surroundEnforceOrder } = new SurroundConfigProjection({ configService }).read();
 
   // Create PlayResponseService for play response building and watch state reconciliation
   const playResponseService = new PlayResponseService({ mediaProgressMemory, progressSyncService, progressSyncSources, surroundStore, logger });
@@ -148,22 +166,167 @@ export function createApiRouters(config) {
 
   // Get FileAdapter from registry for local router (handles local media browsing)
   const localMediaAdapter = registry.get('files');
+  const thumbnailGenerator = new FfmpegVideoThumbnailGenerator();
+  const localMediaRepository = new FilesystemLocalMediaRepository({
+    mediaBasePath,
+    cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'),
+    thumbnailGenerator,
+    logger,
+  });
+  const getLocalMediaResource = new GetLocalMediaResource({ repository: localMediaRepository });
+  const getLocalMediaThumbnail = new GetLocalMediaThumbnail({ repository: localMediaRepository });
+  const contentMediaRepository = new FilesystemContentMediaRepository({
+    singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),
+    singalongDataPath: config.singalong?.dataPath,
+    readalongAudioPath: path.join(mediaBasePath, 'audio', 'readalong'),
+    readalongVideoPath: path.join(mediaBasePath, 'video', 'readalong'),
+  });
+  const getContentMediaResource = new GetContentMediaResource({ repository: contentMediaRepository });
+  const contentAlternatesService = new ContentAlternatesService({ contentCatalog });
+  const menuMemory = new MenuMemoryService({
+    load: menuMemoryRepository.load,
+    save: menuMemoryRepository.save,
+  });
+  const browseCatalog = new BrowseCatalogService({
+    loadMediaConfig: () => configService?.getHouseholdAppConfig?.(null, 'media') || {},
+  });
+  const contentAccessPolicy = new ContentAccessPolicyService({
+    loadSourceConfig: (name) => configService?.reloadHouseholdAppConfig?.(null, name) || {},
+    checkSchedule,
+  });
+  const updateContentProgress = new UpdateContentProgress({
+    contentCatalog,
+    mediaProgressMemory,
+    nowTimestamp: nowTs24,
+  });
+  const recordPlaybackProgress = new RecordPlaybackProgress({
+    contentCatalog,
+    mediaProgressMemory,
+    progressSyncSources,
+    progressSyncService,
+    playbackPublications: new PlaybackPublications({ eventBus }),
+    userVideoProgressStore,
+    economyService,
+    createMediaProgress: (props) => new MediaProgress(props),
+    nowTimestamp: nowTs24,
+    logger,
+  });
+  const contentDiscovery = new ContentDiscoveryService({ contentCatalog, logger });
+  const listBrowse = new ListBrowseService({
+    contentCatalog,
+    contentIdResolver,
+    contentQueryService,
+    menuMemory,
+    logger,
+  });
+  const itemService = new ItemService({
+    contentCatalog,
+    contentQueryService,
+    menuMemory,
+    logger,
+  });
+  const playbackReadService = new PlaybackReadService({
+    contentCatalog,
+    contentIdResolver,
+    contentQueryService,
+    playResponseService,
+    logger,
+  });
+
+  const proxyLogger = logger.child?.({ module: 'proxy-api' }) || logger;
+  const proxyAssetCache = new FilesystemProxyAssetCache({ mediaBasePath });
+  const proxyMediaService = new ProxyMediaService({
+    repository: new FilesystemProxyMediaRepository({ registry, mediaBasePath, logger: proxyLogger }),
+  });
+  const mintPlaybackStream = new MintPlaybackStream({
+    gateway: new RegistryPlaybackStreamGateway({ registry, logger: proxyLogger }),
+  });
+  const compositeHeroService = new CompositeHeroService({
+    cache: proxyAssetCache,
+    source: new KomgaCompositeImageSource({ adapter: proxyService?.getAdapter?.('komga') }),
+    render: compositeHeroImage,
+  });
+  const dynamicStreamService = new DynamicStreamService({
+    gateway: new HttpDynamicStreamGateway({
+      getProfiles: () => configService?.getStreamingProfiles?.() || [],
+    }),
+    logger: proxyLogger,
+  });
+  const remoteThumbnailService = retroarchProxy
+    ? new RemoteThumbnailService({
+      cache: proxyAssetCache,
+      source: new XploreThumbnailSource({
+        baseUrl: retroarchProxy.baseUrl,
+        thumbnailsPath: retroarchProxy.thumbnailsPath,
+      }),
+      delay: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+      retryDelayMs: 1500,
+      logger: proxyLogger,
+    })
+    : null;
+  const passthroughHandlers = createProxyPassthroughHandlers(proxyService);
+  const legacyLocalContentService = new LegacyLocalContentService({
+    repository: new LegacyLocalContentRepository({
+      registry,
+      dataPath,
+      mediaBasePath,
+      mediaProgressMemory,
+      generatePlaceholder: generatePlaceholderImage,
+      placeholderFontPath: mediaBasePath ? path.join(mediaBasePath, 'fonts/RobotoCondensed-Regular.ttf') : null,
+    }),
+    logger,
+  });
 
   return {
     routers: {
-      content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, configService, logger, aliasResolver }),
-      proxy: createProxyRouter({ registry, proxyService, configService, mediaBasePath, dataPath, retroarchProxy, logger }),
-      localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
-      play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, eventBus, userVideoProgressStore, economyService, logger }),
-      list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('media/menu-memory'), logger }),
+      content: createContentRouter({
+        cacheBasePath,
+        composePresentationUseCase,
+        contentQueryService,
+        contentAccessPolicy,
+        contentDiscovery,
+        updateContentProgress,
+        findContentAlternates: contentAlternatesService.findAlternates.bind(contentAlternatesService),
+        validateSearchQuery,
+        logger,
+        contentAliasCatalog: new ContentAliasCatalogService({ aliases: aliasResolver, discovery: contentDiscovery }),
+      }),
+      proxy: createProxyRouter({
+        proxyMediaService,
+        mintPlaybackStream,
+        compositeHeroService,
+        remoteThumbnailService,
+        dynamicStreamService,
+        passthroughHandlers,
+        logger: proxyLogger,
+      }),
+      localContent: createLocalContentRouter({ localContentService: legacyLocalContentService }),
+      play: createPlayRouter({ recordPlaybackProgress, playbackReadService, logger }),
+      list: createListRouter({ browseCatalog, listBrowse, recordMenuSelection: itemService.recordMenuSelection.bind(itemService), logger }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
-      queue: createQueueRouter({ contentExpression: ContentExpression, contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), surroundStore, surroundPlanner: planSurroundQueue, surroundEnforceOrder, logger }),
-      local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
+      queue: createQueueRouter({
+        contentExpression: ContentExpression,
+        contentAccessService: new ContentAccessService({
+          contentIdResolver,
+          contentCatalog,
+          queueService: new QueueService({ mediaProgressMemory, random: Math.random }),
+        }),
+        queuePresentationService: new QueuePresentationService({
+          surroundStore,
+          surroundPlanner: planSurroundQueue,
+          enforceOrder: surroundEnforceOrder,
+          logger,
+        }),
+        logger,
+      }),
+      local: createLocalRouter({
+        localMediaCatalog: new LocalMediaCatalogService({ source: localMediaAdapter }),
+        getLocalMediaResource,
+        getLocalMediaThumbnail,
+        logger,
+      }),
       stream: createStreamRouter({
-        singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),
-        singalongDataPath: config.singalong?.dataPath,
-        readalongAudioPath: path.join(mediaBasePath, 'audio', 'readalong'),
-        readalongVideoPath: path.join(mediaBasePath, 'video', 'readalong'),
+        getContentMediaResource,
         logger
       }),
       ...(savedQueryService ? { queries: createQueriesRouter({ savedQueryService }) } : {}),
@@ -172,6 +335,7 @@ export function createApiRouters(config) {
     services: {
       contentQueryService,
       contentIdResolver,
+      contentCatalog,
       savedQueryService,
       userVideoProgressStore,
     }

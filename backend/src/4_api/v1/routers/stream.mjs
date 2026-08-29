@@ -1,80 +1,19 @@
 // backend/src/4_api/v1/routers/stream.mjs
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { findMediaFileByPrefix, fileExists, loadContainedYaml } from '#system/utils/FileIO.mjs';
+import { streamMediaResourceWithRanges } from '#system/http/index.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 
-/**
- * MIME types for common media formats
- */
-const MIME_TYPES = {
-  '.mp3': 'audio/mpeg',
-  '.m4a': 'audio/mp4',
-  '.aac': 'audio/aac',
-  '.ogg': 'audio/ogg',
-  '.wav': 'audio/wav',
-  '.flac': 'audio/flac',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.mkv': 'video/x-matroska',
-  // Images — without these, `nosniff` + octet-stream makes browsers refuse to
-  // render media-folder images in <img> (e.g. fitness/ux/accessdenied.gif).
-  '.gif': 'image/gif',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml'
+const MEDIA_HEADERS = {
+  'Cache-Control': 'public, max-age=31536000',
+  'X-Content-Type-Options': 'nosniff',
+  'Access-Control-Allow-Origin': '*',
 };
 
-/**
- * Stream a media file with range request support
- * @param {string} fullPath - Full path to the media file
- * @param {express.Request} req - Express request
- * @param {express.Response} res - Express response
- * @param {Object} [logger] - Logger instance
- */
-function streamFile(fullPath, req, res, logger) {
-  const stat = fs.statSync(fullPath);
-  const ext = path.extname(fullPath).toLowerCase();
-  const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
-
-  const commonHeaders = {
-    'Cache-Control': 'public, max-age=31536000',
-    'X-Content-Type-Options': 'nosniff',
-    'Access-Control-Allow-Origin': '*'
-  };
-
-  // Handle range requests for seeking
-  const range = req.headers.range;
-  if (range) {
-    const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-    const chunkSize = end - start + 1;
-
-    res.writeHead(206, {
-      ...commonHeaders,
-      'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-      'Accept-Ranges': 'bytes',
-      'Content-Length': chunkSize,
-      'Content-Type': mimeType
-    });
-
-    fs.createReadStream(fullPath, { start, end }).pipe(res);
-  } else {
-    res.writeHead(200, {
-      ...commonHeaders,
-      'Accept-Ranges': 'bytes',
-      'Content-Length': stat.size,
-      'Content-Type': mimeType
-    });
-    fs.createReadStream(fullPath).pipe(res);
-  }
-
-  logger?.debug?.('stream.served', { path: fullPath, mimeType });
+function logNotFound(logger, event, payload) {
+  if (logger?.error) logger.error(event, payload);
+  else if (logger?.warn) logger.warn(event, payload);
+  else console.error(event, payload);
 }
 
 /**
@@ -85,15 +24,12 @@ function streamFile(fullPath, req, res, logger) {
  * - GET /stream/readalong/:collection/* - Stream readalong content (scripture, talks, poetry)
  *
  * @param {Object} config
- * @param {string} config.singalongMediaPath - Base path for singalong media files
- * @param {string} config.singalongDataPath - Base path for singalong data files (manifests)
- * @param {string} config.readalongAudioPath - Base path for readalong audio files
- * @param {string} config.readalongVideoPath - Base path for readalong video files
+ * @param {Object} config.getContentMediaResource - Application operation
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createStreamRouter(config) {
-  const { singalongMediaPath, singalongDataPath, readalongAudioPath, readalongVideoPath, logger = console } = config;
+  const { getContentMediaResource, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -106,42 +42,14 @@ export function createStreamRouter(config) {
    */
   router.get('/singalong/:collection/:id', asyncHandler(async (req, res) => {
     const { collection, id } = req.params;
-    const collectionMediaDir = path.join(singalongMediaPath, collection);
-
-    // Read manifest for media subdirectory preference
-    let manifest = null;
-    if (singalongDataPath) {
-      try { manifest = loadContainedYaml(path.resolve(singalongDataPath, collection), 'manifest'); } catch { /* no manifest */ }
-    }
-    const subdirs = manifest?.mediaPreference?.subdirs;
-
-    const searchDirs = (subdirs && Array.isArray(subdirs) && subdirs.length > 0)
-      ? subdirs.map(s => s ? path.join(collectionMediaDir, s) : collectionMediaDir)
-      : [collectionMediaDir];
-
-    // Find media file by prefix (handles 0002-the-spirit-of-god.mp3 format)
-    // findMediaFileByPrefix returns full path or null
-    let fullPath = null;
-    let searchDir = null;
-    for (const dir of searchDirs) {
-      searchDir = dir;
-      fullPath = findMediaFileByPrefix(dir, id);
-      if (fullPath) break;
-    }
-
-    if (!fullPath || !fileExists(fullPath)) {
-      const payload = { collection, id, searchDir };
-      if (logger?.error) {
-        logger.error('stream.singalong.not_found', payload);
-      } else if (logger?.warn) {
-        logger.warn('stream.singalong.not_found', payload);
-      } else {
-        console.error('stream.singalong.not_found', payload);
-      }
+    const result = await getContentMediaResource.execute({ type: 'singalong', collection, id });
+    if (result.kind === 'not_found') {
+      logNotFound(logger, 'stream.singalong.not_found', { collection, id });
       return res.status(404).json({ error: 'Media file not found', collection, id });
     }
 
-    streamFile(fullPath, req, res, logger);
+    streamMediaResourceWithRanges(req, res, result.resource, MEDIA_HEADERS);
+    logger?.debug?.('stream.served', { collection, id, mimeType: result.resource.mimeType });
   }));
 
   /**
@@ -156,43 +64,28 @@ export function createStreamRouter(config) {
     const { collection } = req.params;
     const rawItemPath = splatPath(req);
 
-    // Security: prevent path traversal (same pattern as local.mjs /stream)
-    const itemPath = path.normalize(rawItemPath).replace(/^(\.\.(\/|\\|$))+/, '');
-    if (!itemPath || itemPath === '.') {
+    const result = await getContentMediaResource.execute({
+      type: 'readalong',
+      collection,
+      itemPath: rawItemPath,
+    });
+    if (result.kind === 'invalid_path') {
       return res.status(400).json({ error: 'No item path specified' });
     }
-
-    const readalongBasePath = collection === 'talks'
-      ? readalongVideoPath
-      : readalongAudioPath;
-    const searchDir = path.join(readalongBasePath, collection);
-    const pathParts = itemPath.split('/');
-    const fileName = pathParts.pop();
-    const subDir = pathParts.join('/');
-
-    // Build full search path
-    const fullSearchDir = subDir ? path.join(searchDir, subDir) : searchDir;
-    if (!path.resolve(fullSearchDir).startsWith(path.resolve(readalongBasePath))) {
+    if (result.kind === 'forbidden') {
       return res.status(403).json({ error: 'Path traversal not allowed' });
     }
-
-    // Find media file by prefix
-    // findMediaFileByPrefix returns full path or null
-    const fullPath = findMediaFileByPrefix(fullSearchDir, fileName);
-
-    if (!fullPath || !fileExists(fullPath)) {
-      const payload = { collection, itemPath, fullSearchDir };
-      if (logger?.error) {
-        logger.error('stream.readalong.not_found', payload);
-      } else if (logger?.warn) {
-        logger.warn('stream.readalong.not_found', payload);
-      } else {
-        console.error('stream.readalong.not_found', payload);
-      }
-      return res.status(404).json({ error: 'Media file not found', collection, itemPath });
+    if (result.kind === 'not_found') {
+      logNotFound(logger, 'stream.readalong.not_found', { collection, itemPath: rawItemPath });
+      return res.status(404).json({ error: 'Media file not found', collection, itemPath: rawItemPath });
     }
 
-    streamFile(fullPath, req, res, logger);
+    streamMediaResourceWithRanges(req, res, result.resource, MEDIA_HEADERS);
+    logger?.debug?.('stream.served', {
+      collection,
+      itemPath: rawItemPath,
+      mimeType: result.resource.mimeType,
+    });
   }));
 
   /**
@@ -201,26 +94,14 @@ export function createStreamRouter(config) {
    */
   router.get('/ambient/:id', asyncHandler(async (req, res) => {
     const { id } = req.params;
-
-    // Ambient tracks are in a dedicated ambient directory
-    // Adjust path as needed based on actual location
-    const ambientDir = path.join(readalongAudioPath, '..', 'ambient');
-    // findMediaFileByPrefix returns full path or null
-    const fullPath = findMediaFileByPrefix(ambientDir, id);
-
-    if (!fullPath || !fileExists(fullPath)) {
-      const payload = { id, ambientDir };
-      if (logger?.error) {
-        logger.error('stream.ambient.not_found', payload);
-      } else if (logger?.warn) {
-        logger.warn('stream.ambient.not_found', payload);
-      } else {
-        console.error('stream.ambient.not_found', payload);
-      }
+    const result = await getContentMediaResource.execute({ type: 'ambient', id });
+    if (result.kind === 'not_found') {
+      logNotFound(logger, 'stream.ambient.not_found', { id });
       return res.status(404).json({ error: 'Ambient track not found', id });
     }
 
-    streamFile(fullPath, req, res, logger);
+    streamMediaResourceWithRanges(req, res, result.resource, MEDIA_HEADERS);
+    logger?.debug?.('stream.served', { id, mimeType: result.resource.mimeType });
   }));
 
   return router;

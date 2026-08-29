@@ -2,6 +2,7 @@
 import { FoodItem } from '#domains/lifelog/entities/FoodItem.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { estimateCostUsd } from './aiPricing.mjs';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * OpenAI-based food parser implementing IFoodParser
@@ -9,7 +10,15 @@ import { estimateCostUsd } from './aiPricing.mjs';
  * Uses GPT-4o-mini for parsing natural language food descriptions
  * into structured FoodItem entities with nutrition estimates.
  */
-export class OpenAIFoodParserAdapter {
+import { IFoodParser } from '#apps/nutribot/ports/IFoodParser.mjs';
+
+const createFoodItem = (props) => FoodItem.create({
+  ...props,
+  id: props.id || Math.random().toString(36).substring(2, 8),
+  uuid: props.uuid || uuidv4(),
+});
+
+export class OpenAIFoodParserAdapter extends IFoodParser {
   #apiKey;
   #model;
   #baseUrl;
@@ -27,6 +36,7 @@ export class OpenAIFoodParserAdapter {
    * @param {Object} [deps.logger=console]
    */
   constructor(config, deps = {}) {
+    super();
     if (!config.apiKey) {
       throw new InfrastructureError('OpenAIFoodParserAdapter requires apiKey', {
         code: 'MISSING_CONFIG',
@@ -179,7 +189,7 @@ Respond with JSON:
       });
 
       return {
-        items: (parsed.items || []).map(item => FoodItem.create(item)),
+        items: (parsed.items || []).map(createFoodItem),
         questions: parsed.questions || []
       };
     } catch (err) {
@@ -212,7 +222,7 @@ Respond with the same JSON format as text parsing.`
     const parsed = JSON.parse(response);
 
     return {
-      items: (parsed.items || []).map(item => FoodItem.create(item)),
+      items: (parsed.items || []).map(createFoodItem),
       questions: parsed.questions || []
     };
   }

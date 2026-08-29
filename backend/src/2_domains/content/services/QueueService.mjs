@@ -1,7 +1,4 @@
 // backend/src/2_domains/content/services/QueueService.mjs
-import { PlayableItem } from '../capabilities/Playable.mjs';
-import { DefaultMediaProgressClassifier } from './DefaultMediaProgressClassifier.mjs';
-import { orderWatchedByRecency } from '../utils/recencyOrder.mjs';
 
 /**
  * Day-of-week presets mapping strings to ISO weekday numbers.
@@ -323,9 +320,10 @@ export class QueueService {
    * @param {Array} items
    * @returns {Array} The same array, shuffled
    */
-  static shuffleArray(items) {
+  static shuffleArray(items, random) {
+    if (typeof random !== 'function') throw new TypeError('random is required for shuffle');
     for (let i = items.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(random() * (i + 1));
       [items[i], items[j]] = [items[j], items[i]];
     }
     return items;
@@ -365,176 +363,6 @@ export class QueueService {
     return { unwatched, watched };
   }
 
-  /**
-   * @param {Object} config
-   * @param {Object} config.mediaProgressMemory - IMediaProgressMemory instance for watch state
-   * @param {Object} [config.classifier] - IMediaProgressClassifier instance (defaults to DefaultMediaProgressClassifier)
-   */
-  constructor(config) {
-    this.mediaProgressMemory = config.mediaProgressMemory;
-    this.classifier = config.classifier || new DefaultMediaProgressClassifier();
-  }
-
-  /**
-   * Get the next playable item based on watch state.
-   * Priority: in-progress > unwatched > null (all watched)
-   *
-   * @param {PlayableItem[]} items
-   * @param {string} storagePath - Storage path for watch state
-   * @returns {Promise<PlayableItem|null>}
-   */
-  async getNextPlayable(items, storagePath) {
-    if (!items.length) return null;
-
-    // First pass: find any in-progress items
-    for (const item of items) {
-      const state = await this.mediaProgressMemory.get(item.id, storagePath);
-      if (state?.isInProgress()) {
-        return this._withResumePosition(item, state);
-      }
-    }
-
-    // Second pass: find first unwatched item
-    for (const item of items) {
-      const state = await this.mediaProgressMemory.get(item.id, storagePath);
-      if (!state || !state.isWatched()) {
-        return item;
-      }
-    }
-
-    // All items watched
-    return null;
-  }
-
-  /**
-   * Get all playable items in order (for queue loading).
-   *
-   * @param {PlayableItem[]} items
-   * @returns {Promise<PlayableItem[]>}
-   */
-  async getAllPlayables(items) {
-    return items;
-  }
-
-  /**
-   * Resolve a queue: enrich with media memory, partition by watch status, optionally shuffle.
-   *
-   * @param {PlayableItem[]} playables - Raw playable items from adapter
-   * @param {string} source - Source identifier (e.g. 'plex') for loading media memory
-   * @param {Object} [options]
-   * @param {boolean} [options.shuffle=false] - Shuffle within each partition
-   * @returns {Promise<PlayableItem[]>} Ordered items: unwatched/in-progress first, watched last
-   */
-  async resolveQueue(playables, source, { shuffle = false } = {}) {
-    // Programs are pre-ordered sequences — enrich with resume positions but skip reordering
-    if (playables.preserveOrder) {
-      if (!this.mediaProgressMemory) return [...playables];
-      const itemSources = new Set(playables.map(p => p.source).filter(Boolean));
-      if (!itemSources.size) itemSources.add(source);
-      const progressMap = new Map();
-      for (const src of itemSources) {
-        const progress = await this.mediaProgressMemory.getAllFromAllLibraries(src);
-        for (const p of progress) progressMap.set(p.contentId, p);
-      }
-      return playables.map(item => {
-        const progress = progressMap.get(item.id);
-        if (progress && item.resumable && progress.playhead) {
-          return this._withResumePosition(item, progress);
-        }
-        return item;
-      });
-    }
-
-    if (!this.mediaProgressMemory) {
-      return shuffle ? QueueService.shuffleArray([...playables]) : playables;
-    }
-
-    // Collect unique sources from items — a "list" or "menu" queue contains
-    // items from various actual sources (e.g., plex). Progress is stored under
-    // the item's source, not the parent container's source.
-    const itemSources = new Set(playables.map(p => p.source).filter(Boolean));
-    if (!itemSources.size) itemSources.add(source);
-
-    const progressMap = new Map();
-    for (const src of itemSources) {
-      const progress = await this.mediaProgressMemory.getAllFromAllLibraries(src);
-      for (const p of progress) {
-        progressMap.set(p.contentId, p);
-      }
-    }
-
-    // Load progress from explicit storagePaths (new behavior).
-    // Some adapters store progress under a different path than their source name
-    // (e.g., readalong adapter stores scripture progress under 'scriptures', not 'readalong').
-    const storagePaths = new Set(
-      playables.map(p => p.storagePath).filter(sp => sp && !itemSources.has(sp))
-    );
-    for (const sp of storagePaths) {
-      const progress = await this.mediaProgressMemory.getAll(sp);
-      for (const p of progress) {
-        if (!progressMap.has(p.contentId)) {
-          progressMap.set(p.contentId, p);
-        }
-      }
-    }
-
-    // Enrich items with resume positions from media memory
-    const enriched = playables.map(item => {
-      const progress = progressMap.get(item.id);
-      if (progress && item.resumable && progress.playhead) {
-        return this._withResumePosition(item, progress);
-      }
-      return item;
-    });
-
-    // Partition by watch status: unwatched/in-progress first, watched last
-    const { unwatched, watched } = QueueService.partitionByWatchStatus(
-      enriched, progressMap, this.classifier
-    );
-
-    // De-prioritize recently-played items within the watched pool by lastPlayed.
-    // Once a collection is fully watched (e.g. every Bluey episode), the pool is
-    // ALL watched — without this the queue restarts at the same early episodes
-    // (non-shuffle) or replays just-seen episodes (shuffle). Mirrors ArtMode's
-    // recency window. Unwatched items are untouched and still play first.
-    const recencyMap = new Map();
-    for (const [contentId, progress] of progressMap) {
-      recencyMap.set(contentId, progress.lastPlayed);
-    }
-    const watchedOrdered = orderWatchedByRecency(watched, recencyMap, {
-      shuffle,
-      shuffleFn: QueueService.shuffleArray
-    });
-
-    return [
-      ...(shuffle ? QueueService.shuffleArray([...unwatched]) : unwatched),
-      ...watchedOrdered
-    ];
-  }
-
-  /**
-   * Apply resume position to a playable item
-   * @private
-   */
-  _withResumePosition(item, state) {
-    // Create a new PlayableItem with the resume position
-    return new PlayableItem({
-      id: item.id,
-      source: item.source,
-      localId: item.localId,
-      title: item.title,
-      mediaType: item.mediaType,
-      mediaUrl: item.mediaUrl,
-      duration: item.duration,
-      resumable: item.resumable,
-      resumePosition: state.playhead,
-      playbackRate: item.playbackRate,
-      thumbnail: item.thumbnail,
-      description: item.description,
-      metadata: item.metadata,
-      storagePath: item.storagePath
-    });
-  }
 }
 
 export default QueueService;

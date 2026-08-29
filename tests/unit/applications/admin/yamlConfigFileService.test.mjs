@@ -10,7 +10,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlConfigFileService, ALLOWED_FILES } from '#apps/admin/YamlConfigFileService.mjs';
+import { YamlConfigFileService } from '#apps/admin/YamlConfigFileService.mjs';
+import { EDITABLE_CONFIG_FILES as ALLOWED_FILES } from '#adapters/persistence/yaml/YamlAdminConfigStore.mjs';
+import { YamlAdminConfigStore } from '#adapters/persistence/yaml/YamlAdminConfigStore.mjs';
 import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
 
 let tmpRoot;      // parent of the data root (used to plant an outside file)
@@ -45,8 +47,10 @@ beforeEach(() => {
   // A YAML file OUTSIDE the data root (traversal target)
   fs.writeFileSync(path.join(tmpRoot, 'outside-secret.yml'), outsideSecret, 'utf8');
 
-  const configService = { getDataDir: () => dataRoot };
-  service = new YamlConfigFileService({ configService, logger: { info() {}, warn() {}, error() {} } });
+  service = new YamlConfigFileService({
+    configStore: new YamlAdminConfigStore({ dataRoot }),
+    logger: { info() {}, warn() {}, error() {} },
+  });
 });
 
 afterEach(() => {

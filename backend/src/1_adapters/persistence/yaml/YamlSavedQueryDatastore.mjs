@@ -1,7 +1,7 @@
 // backend/src/1_adapters/persistence/yaml/YamlSavedQueryDatastore.mjs
 
 import path from 'path';
-import { loadYamlSafe, listYamlFiles, saveYaml, deleteYaml } from '#system/utils/FileIO.mjs';
+import { loadYamlSafe, listYamlFiles, listSubdirectories, saveYaml, deleteYaml } from '#system/utils/FileIO.mjs';
 
 /**
  * YamlSavedQueryDatastore — YAML-file persistence for saved query definitions
@@ -30,9 +30,14 @@ export class YamlSavedQueryDatastore {
    * @param {string} config.queriesDir - Household queries directory
    * @param {Array<{username: string, dir: string}>} [config.userQueryDirs] - Per-user query directories, in precedence order
    */
-  constructor({ queriesDir, userQueryDirs = [] } = {}) {
+  constructor({ dataPath, queriesDir = dataPath && path.join(dataPath, 'content', 'lists', 'queries'), userQueryDirs } = {}) {
     this.#queriesDir = queriesDir;
-    this.#userQueryDirs = userQueryDirs;
+    this.#userQueryDirs = userQueryDirs || (dataPath
+      ? listSubdirectories(path.join(dataPath, 'users')).map((username) => ({
+        username,
+        dir: path.join(dataPath, 'users', username, 'config', 'queries'),
+      }))
+      : []);
   }
 
   /**

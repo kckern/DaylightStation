@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  FITNESS_SCHOOL_ACCEPTED_TOPIC,
-  FITNESS_SCHOOL_ASSESSED_TOPIC,
   FitnessSchoolCourseService,
   deriveObservations,
 } from '#apps/fitness/FitnessSchoolCourseService.mjs';
@@ -27,7 +25,10 @@ const build = ({ session = null } = {}) => {
   const service = new FitnessSchoolCourseService({
     attemptStore: store,
     sessionService: { getSession: vi.fn(async () => session && ({ toJSON: () => structuredClone(session) })) },
-    eventBus: { publish },
+    publications: {
+      accepted: (payload) => publish('fitness.school-attempt.accepted', payload),
+      assessed: (payload) => publish('fitness.school-attempt.assessed', payload),
+    },
     clock: () => new Date('2026-08-25T12:00:00.000Z'),
     logger: { info: vi.fn(), warn: vi.fn() },
   });
@@ -46,7 +47,7 @@ describe('FitnessSchoolCourseService', () => {
 
     const accepted = await service.accept({ workSessionId: 'ses_1', learnerId: 'kid1' });
     expect(accepted.status).toBe('accepted');
-    expect(publish).toHaveBeenCalledWith(FITNESS_SCHOOL_ACCEPTED_TOPIC, expect.objectContaining({
+    expect(publish).toHaveBeenCalledWith('fitness.school-attempt.accepted', expect.objectContaining({
       workSessionId: 'ses_1', learnerId: 'kid1', unitId: 'bike.101',
     }));
   });
@@ -80,7 +81,7 @@ describe('FitnessSchoolCourseService', () => {
       status: 'assessed', fitnessSessionIds: ['abc'],
       assessment: { result: 'passed', observations: { heart_rate: { coverage_ratio: 0.8 } } },
     });
-    expect(publish).toHaveBeenLastCalledWith(FITNESS_SCHOOL_ASSESSED_TOPIC, expect.objectContaining({
+    expect(publish).toHaveBeenLastCalledWith('fitness.school-attempt.assessed', expect.objectContaining({
       result: 'passed', observations: { engagements: 1, completions: 1, durationMs: 90000 },
     }));
   });

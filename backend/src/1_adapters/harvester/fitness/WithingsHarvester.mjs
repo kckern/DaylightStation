@@ -14,10 +14,9 @@
  */
 
 import moment from 'moment-timezone';
-import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
+import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { WeightProcessor } from '#apps/health/analytics/WeightProcessor.mjs';
 
 /**
  * Withings measurement type codes
@@ -58,7 +57,7 @@ export class WithingsHarvester extends IHarvester {
    * @param {string} [config.clientId] - Withings OAuth client id (from secrets)
    * @param {string} [config.clientSecret] - Withings OAuth client secret (from secrets)
    * @param {string} [config.redirectUri] - Withings OAuth redirect URI (from secrets)
-   * @param {Object} [config.weightProcessor] - WeightProcessor for analytics (auto-created if not provided)
+   * @param {Object} config.weightProcessor - Application workflow invoked after persistence
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
    */
@@ -88,6 +87,12 @@ export class WithingsHarvester extends IHarvester {
         dependency: 'lifelogStore'
       });
     }
+    if (!weightProcessor?.process) {
+      throw new InfrastructureError('WithingsHarvester requires weightProcessor', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'weightProcessor'
+      });
+    }
 
     this.#httpClient = httpClient;
     this.#lifelogStore = lifelogStore;
@@ -99,12 +104,7 @@ export class WithingsHarvester extends IHarvester {
     this.#timezone = timezone;
     this.#logger = logger;
 
-    // Initialize or use provided weight processor
-    this.#weightProcessor = weightProcessor || new WeightProcessor({
-      lifelogStore,
-      timezone,
-      logger,
-    });
+    this.#weightProcessor = weightProcessor;
 
     this.#tokenCache = {
       token: null,

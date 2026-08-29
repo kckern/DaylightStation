@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { FitnessConfigService } from './FitnessConfigService.mjs';
 
 function makeService(raw) {
-  const configService = {
-    getDefaultHouseholdId: () => 'h',
-    getHouseholdAppConfig: () => raw
+  const configProjection = {
+    resolveHouseholdId: (hid) => hid || 'h',
+    publicConfig: () => raw,
+    raw: () => raw,
   };
-  return new FitnessConfigService({ configService, userDataService: {}, logger: { debug() {}, warn() {} } });
+  return new FitnessConfigService({ configProjection, logger: { debug() {}, warn() {} } });
 }
 
 test('timelapse defaults applied when block is absent', () => {

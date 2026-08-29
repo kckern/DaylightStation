@@ -9,11 +9,13 @@
  * same session facts.
  */
 import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { IWorkSessionRepository } from '#apps/school/ports/IWorkSessionRepository.mjs';
 import { reduceSession, transitionViolation } from '#domains/school/sessions/sessionEvents.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
+import {
+  ensureDirAsync, fileExistsAsync, readDirectoryAsync, readTextFromPathAsync, writeTextFileAsync,
+} from '#system/utils/FileIO.mjs';
 
 // Single flat segment, starting alphanumeric: "..", a leading "/", a hidden name
 // and a nested path all fail to match, which is what keeps traversal out (same
@@ -50,7 +52,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
   async #readYaml(file) {
     let text;
     try {
-      text = await fs.readFile(file, 'utf8');
+      text = await readTextFromPathAsync(file);
     } catch (err) {
       // Missing is the ordinary case (a month with no sessions, a probe for the
       // bucket a session lives in) and stays quiet. An unreadable-but-present
@@ -76,7 +78,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
   async #months() {
     let entries;
     try {
-      entries = await fs.readdir(this.#root(), { withFileTypes: true });
+      entries = await readDirectoryAsync(this.#root(), { withFileTypes: true });
     } catch {
       return [];
     }
@@ -98,7 +100,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     if (cached) return cached;
     for (const month of await this.#months()) {
       try {
-        await fs.access(path.join(this.#root(), month, `${sessionId}.yml`));
+        if (!(await fileExistsAsync(path.join(this.#root(), month, `${sessionId}.yml`)))) continue;
         this.#monthCache.set(sessionId, month);
         return month;
       } catch { /* not this month */ }
@@ -133,7 +135,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     const run = async () => {
       const month = await this.#resolveMonth(sessionId, event);
       const dir = path.join(this.#root(), month);
-      await fs.mkdir(dir, { recursive: true });
+      await ensureDirAsync(dir);
       const events = await this.#readEventsAt(month, sessionId);
       // seq is assigned HERE, inside the queue, and overrides whatever the
       // caller passed: two callers that each read nextSeq() before either wrote
@@ -169,10 +171,10 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       }
       const stored = { ...event, sessionId, seq: maxSeq + 1 };
       events.push(stored);
-      await fs.writeFile(path.join(dir, `${sessionId}.yml`), dumpYaml({
+      await writeTextFileAsync(path.join(dir, `${sessionId}.yml`), dumpYaml({
         schema: 'school.work-session/v1', sessionId,
         startedAt: events[0]?.at ?? null, events,
-      }), 'utf8');
+      }));
       return stored;
     };
     const queued = this.#writeChain.then(run);
@@ -202,7 +204,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     const out = [];
     for (const month of await this.#months()) {
       let entries;
-      try { entries = await fs.readdir(path.join(this.#root(), month), { withFileTypes: true }); } catch { continue; }
+      try { entries = await readDirectoryAsync(path.join(this.#root(), month), { withFileTypes: true }); } catch { continue; }
       for (const entry of entries.filter((candidate) => candidate.isFile() && candidate.name.endsWith('.yml'))) {
         const sessionId = entry.name.slice(0, -4);
         if (!isSafeSessionId(sessionId)) continue;

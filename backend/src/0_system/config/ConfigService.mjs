@@ -10,7 +10,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { loadYaml, loadYamlFromPath, listYamlFiles, resolveYamlPath } from '#system/utils/FileIO.mjs';
+import { loadYaml, loadYamlFromPath, resolveYamlPath } from '#system/utils/FileIO.mjs';
 import { ConfigurationError } from '#system/utils/errors/index.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 import { appConfigRelPath } from '#shared/contracts/householdConfig.mjs';
@@ -18,7 +18,6 @@ import { appConfigRelPath } from '#shared/contracts/householdConfig.mjs';
 export class ConfigService {
   #config;
   #secretsHandler;
-  #streamingProfilesCache = null;
 
   constructor(config, secretsHandler = null) {
     this.#config = Object.freeze(config);
@@ -28,8 +27,7 @@ export class ConfigService {
   // ─── Secrets ───────────────────────────────────────────────
 
   /**
-   * Get a secret by legacy key name.
-   * Maps old SCREAMING_CASE keys to new systemAuth structure.
+   * Get a direct secret by opaque key.
    * @deprecated Use getSystemAuth(platform, key) directly
    */
   getSecret(key) {
@@ -38,46 +36,6 @@ export class ConfigService {
       ? this.#secretsHandler.getSecret(key)
       : this.#config.secrets?.[key];
     if (direct) return direct;
-
-    // Map legacy SCREAMING_CASE keys to new systemAuth structure
-    const mapping = {
-      OPENAI_API_KEY: ['openai', 'api_key'],
-      ANTHROPIC_API_KEY: ['anthropic', 'api_key'],
-      GOOGLE_CLIENT_ID: ['google', 'client_id'],
-      GOOGLE_CLIENT_SECRET: ['google', 'client_secret'],
-      GOOGLE_REDIRECT_URI: ['google', 'redirect_uri'],
-      GOOGLE_API_KEY: ['google', 'api_key'],
-      GOOGLE_CSE_ID: ['google', 'cse_id'],
-      STRAVA_CLIENT_ID: ['strava', 'client_id'],
-      STRAVA_CLIENT_SECRET: ['strava', 'client_secret'],
-      LOGGLY_TOKEN: ['loggly', 'token'],
-      LOGGLY_SUBDOMAIN: ['loggly', 'subdomain'],
-      LOGGLY_API_TOKEN: ['loggly', 'api_token'],
-      CLICKUP_PK: ['clickup', 'pk'],
-      TODOIST_KEY: ['todoist', 'api_key'],
-      IFTTT_KEY: ['ifttt', 'key'],
-      OPEN_WEATHER_API_KEY: ['weather', 'openweather_api_key'],
-      LAST_FM_API_KEY: ['lastfm', 'api_key'],
-      PLEX_TOKEN: ['plex', 'token'],
-      IMMICH_API_KEY: ['immich', 'api_key'],
-      AUDIOBOOKSHELF_TOKEN: ['audiobookshelf', 'token'],
-      FRESHRSS_USERNAME: ['freshrss', 'username'],
-      FRESHRSS_PASSWORD: ['freshrss', 'password'],
-      FRESHRSS_API_KEY: ['freshrss', 'api_key'],
-      WITHINGS_CLIENT: ['withings', 'client_id'],
-      WITHINGS_SECRET: ['withings', 'client_secret'],
-      WITHINGS_REDIRECT: ['withings', 'redirect_uri'],
-      FITSYNC_CLIENT_ID: ['fitsync', 'client_id'],
-      FITSYNC_CLIENT_SECRET: ['fitsync', 'client_secret'],
-      ED_APP_ID: ['food', 'edamam_app_id'],
-      ED_APP_KEY: ['food', 'edamam_app_key'],
-      UPCITE: ['food', 'upcitemdb_key'],
-    };
-
-    const mapped = mapping[key];
-    if (mapped) {
-      return this.getSystemAuth(mapped[0], mapped[1]);
-    }
 
     return null;
   }
@@ -587,25 +545,6 @@ export class ConfigService {
       // Add other system configs here as needed
     };
     return configMap[name] ?? null;
-  }
-
-  /**
-   * Load raw streaming site profiles from <configDir>/streaming/*.yml.
-   * Returns plain objects (NOT StreamProfile instances — keep 0_system vendor/domain-free).
-   * Cached after first read.
-   * @returns {Array<Object>}
-   */
-  getStreamingProfiles() {
-    if (this.#streamingProfilesCache) return this.#streamingProfilesCache;
-    const dir = `${this.getConfigDir()}/streaming`;
-    const files = listYamlFiles(dir, { stripExtension: false });
-    const profiles = [];
-    for (const f of files) {
-      const parsed = loadYamlFromPath(`${dir}/${f}`);
-      if (parsed && typeof parsed === 'object') profiles.push(parsed);
-    }
-    this.#streamingProfilesCache = profiles;
-    return profiles;
   }
 
   /**

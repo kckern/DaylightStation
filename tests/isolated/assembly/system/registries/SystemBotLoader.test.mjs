@@ -1,6 +1,6 @@
 // tests/unit/suite/system/registries/SystemBotLoader.test.mjs
 import { vi } from 'vitest';
-import { SystemBotLoader } from '#backend/src/0_system/registries/SystemBotLoader.mjs';
+import { SystemBotLoader } from '#composition/integrations/SystemBotLoader.mjs';
 
 /**
  * Create a mock ConfigService for testing SystemBotLoader.

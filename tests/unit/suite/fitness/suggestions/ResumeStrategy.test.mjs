@@ -40,16 +40,19 @@ function makeEpisode(id, index, { isWatched = false, percent = 0, playhead = 0, 
 
 function makeContext(sessions, playablesByShow = {}, config = {}, showLabels = {}) {
   return {
+    contentCatalog: { canonicalize: (value) => {
+      const localId = String(value).replace(/^plex:/, '');
+      return { source: 'plex', localId, contentId: `plex:${localId}` };
+    } },
     recentSessions: sessions,
-    fitnessConfig: {
-      suggestions: config,
-      plex: { resumable_labels: ['Resumable'] },
-    },
+    suggestionPolicy: { ...config, resumableLabels: ['Resumable'] },
     fitnessPlayableService: {
       getPlayableEpisodes: async (showId) => ({
-        items: playablesByShow[showId] || [],
+        items: playablesByShow[String(showId).replace(/^plex:/, '')] || [],
         parents: null,
-        info: showLabels[showId] ? { labels: showLabels[showId] } : null,
+        info: showLabels[String(showId).replace(/^plex:/, '')]
+          ? { labels: showLabels[String(showId).replace(/^plex:/, '')] }
+          : null,
       }),
     },
   };

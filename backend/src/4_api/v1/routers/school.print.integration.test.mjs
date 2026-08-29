@@ -10,12 +10,17 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolRouter } from './school.mjs';
+import { createSchoolTestRouter as createSchoolRouter } from '../../../../../tests/_lib/school/schoolRouterTestSupport.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
+
+const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
+  rendering: createPrintDocumentRendering(), ...deps,
+});
 
 const richText = (md) => ({ type: 'rich_text', md });
 const mcQuestion = (itemId, number, { choices, answer }) => ({
@@ -81,7 +86,7 @@ describe('print route + real store + real renderer', () => {
     const repository = new YamlPrintDocumentRepository({ directory: '/docs', io });
     allocationStore = new YamlAllocationStore({ directory: '/docs', io: allocationIo(), now: () => new Date().toISOString() });
     await new PublishPrintDocument({ repository }).execute({ source: SOURCE });
-    const renderPrintDocument = new RenderPrintDocument({ repository, allocationStore });
+    const renderPrintDocument = createRenderPrintDocument({ repository, allocationStore });
     app = express();
     app.use(express.json());
     app.repositoryForTest = repository;

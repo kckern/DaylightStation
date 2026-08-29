@@ -22,21 +22,12 @@
  *
  * @module applications/school/usecases/ManageProgramDayBypass
  */
-import { createHash } from 'node:crypto';
+import { sha256Text } from '#system/utils/sha256.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
 /** The household study day rolls at 4am, same as the rest of the agenda. */
 const BOUNDARY_HOUR = 4;
-
-/**
- * The topic the kiosk's gate hook listens on. Deliberately the same string as
- * `CEREMONY_TOPIC` in `PianoLessonCeremonyBridge.mjs` — one School topic, two
- * event names — declared locally rather than imported so this use case does
- * not depend on the ceremony bridge just to name a channel (the same call
- * `RecordStoryRead` makes for its own topic).
- */
-const SCHOOL_TOPIC = 'school';
 
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
@@ -45,23 +36,23 @@ const text = (value) => (typeof value === 'string' && value.trim() ? value.trim(
  * always yields the same id, which is what makes `grant` idempotent without a
  * second read after the store settles.
  */
-const idFor = (seed) => `pdb_${createHash('sha256').update(JSON.stringify(seed)).digest('hex').slice(0, 16)}`;
+const idFor = (seed) => `pdb_${sha256Text(JSON.stringify(seed)).slice(0, 16)}`;
 
 export class ManageProgramDayBypass {
-  #store; #assignments; #teacherGate; #eventBus; #timezone; #clock; #logger;
+  #store; #assignments; #teacherGate; #realtime; #timezone; #clock; #logger;
 
   /**
    * @param {object} config
    * @param {{list: Function, append: Function, active: Function, activeFor: Function}} config.store
    * @param {{get: Function}} config.assignments - School's learner assignment store
    * @param {{assert: Function}} config.teacherGate - the console write predicate
-   * @param {{broadcast?: Function}|null} [config.eventBus] - null degrades to no live push
+   * @param {import('../ports/ISchoolRealtimeGateway.mjs').ISchoolRealtimeGateway|null} [config.realtime]
    * @param {string|null} [config.timezone]
    * @param {() => Date} [config.clock]
    * @param {object} [config.logger]
    */
   constructor({
-    store, assignments, teacherGate, eventBus = null,
+    store, assignments, teacherGate, realtime = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!store || !assignments || !teacherGate) {
@@ -70,7 +61,7 @@ export class ManageProgramDayBypass {
     this.#store = store;
     this.#assignments = assignments;
     this.#teacherGate = teacherGate;
-    this.#eventBus = eventBus;
+    this.#realtime = realtime;
     this.#timezone = timezone;
     this.#clock = clock;
     this.#logger = logger;
@@ -155,15 +146,13 @@ export class ManageProgramDayBypass {
   }
 
   /**
-   * Push the change to any kiosk showing this learner's gate. Best-effort by
+   * Announce the change to any kiosk showing this learner's gate. Best-effort by
    * design: a dead bus costs the instant clear (the kiosk's own poll still
    * catches up), never the write that already succeeded.
    */
   #broadcast(payload) {
     try {
-      this.#eventBus?.broadcast?.(SCHOOL_TOPIC, {
-        event: 'program-day-bypass-changed', ...payload, timestamp: this.#clock().getTime(),
-      });
+      this.#realtime?.programDayBypassChanged?.({ ...payload, timestamp: this.#clock().getTime() });
     } catch (err) {
       this.#logger.warn?.('school.program-day-bypass.broadcast-failed', {
         learnerId: payload.learnerId, error: err?.message ?? String(err),

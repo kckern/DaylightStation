@@ -46,7 +46,7 @@ export class YamlEmergencyLockDatastore extends IEmergencyLockRepository {
     const raw = this.#load(this.#path());
     if (!raw || typeof raw !== 'object') return null;
     try {
-      return LockdownState.fromData(raw);
+      return new LockdownState(raw);
     } catch {
       // Corrupt/partial record on disk → treat as unlocked rather than crash.
       return null;
@@ -55,7 +55,11 @@ export class YamlEmergencyLockDatastore extends IEmergencyLockRepository {
 
   /** @param {LockdownState} state */
   async save(state) {
-    this.#save(this.#path(), state.toData());
+    this.#save(this.#path(), {
+      lockedUntil: state.lockedUntil,
+      lockedBy: state.lockedBy,
+      lockedAt: state.lockedAt,
+    });
   }
 
   async clear() {

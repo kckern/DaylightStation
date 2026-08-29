@@ -3,12 +3,16 @@ import { describe, it, expect } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createWikipediaRouter } from './wikipedia.mjs';
+import { WikipediaService } from '#apps/reference/WikipediaService.mjs';
 
 const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
 const makeApp = (adapter) => {
   const app = express();
-  app.use('/api/v1/wikipedia', createWikipediaRouter({ adapter, logger: silentLogger }));
+  app.use('/api/v1/wikipedia', createWikipediaRouter({
+    wikipediaService: new WikipediaService({ encyclopedia: adapter }),
+    logger: silentLogger,
+  }));
   return app;
 };
 

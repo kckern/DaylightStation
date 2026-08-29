@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { feedbackItemPath } from './FeedbackService.mjs';
+import { feedbackItemPath } from '#adapters/feedback/FilesystemFeedbackRepository.mjs';
 
 test('partitions by the month embedded in the id', () => {
   assert.equal(

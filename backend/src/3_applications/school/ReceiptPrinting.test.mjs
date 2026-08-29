@@ -16,7 +16,7 @@ const quietLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug
 const DOCUMENT = { id: 'agenda-learner4', target: ['receipt'] };
 
 function wire(printOutcome, logger = quietLogger()) {
-  const renderer = { render: vi.fn(async () => ({ items: [] })) };
+  const renderer = { render: vi.fn(async () => ({ printWith: (printer) => printer.print({ items: [] }) })) };
   const printer = { print: vi.fn(async () => printOutcome) };
   return { receipts: new ReceiptPrinting({ renderer, printer, logger }), logger, renderer, printer };
 }
@@ -71,7 +71,7 @@ describe('ReceiptPrinting claim-tier mapping', () => {
 
   it('a printer that throws is a printer_error, never a thrown scan', async () => {
     const logger = quietLogger();
-    const renderer = { render: vi.fn(async () => ({ items: [] })) };
+    const renderer = { render: vi.fn(async () => ({ printWith: (target) => target.print({ items: [] }) })) };
     const printer = { print: vi.fn(async () => { throw new Error('ECONNRESET'); }) };
     const receipts = new ReceiptPrinting({ renderer, printer, logger });
 

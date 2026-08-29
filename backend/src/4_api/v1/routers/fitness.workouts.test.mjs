@@ -13,6 +13,7 @@ import path from 'node:path';
 import { createFitnessRouter } from './fitness.mjs';
 import { YamlWorkoutRepository } from '#adapters/fitness/YamlWorkoutRepository.mjs';
 import { SaveWorkout } from '#apps/fitness/usecases/SaveWorkout.mjs';
+import { WorkoutCatalogService } from '#apps/fitness/services/WorkoutCatalogService.mjs';
 
 const KNOWN = new Set(['back-squat', 'plank', 'barbell-row']);
 const silentLogger = { error() {}, warn() {}, info() {}, debug() {} };
@@ -32,9 +33,9 @@ function buildApp({ withWorkouts = true } = {}) {
     logger: silentLogger,
   });
   const router = createFitnessRouter({
-    configService,
+    defaultHouseholdId: 'main',
     logger: silentLogger,
-    ...(withWorkouts ? { workoutRepository, saveWorkout } : {}),
+    ...(withWorkouts ? { workoutCatalog: new WorkoutCatalogService({ workoutRepository }), saveWorkout } : {}),
   });
   const app = express();
   app.use(express.json());

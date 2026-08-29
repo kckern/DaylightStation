@@ -62,8 +62,12 @@ export function rollUpHistory(dailyEntries, options = {}) {
   const weeklyCutoff = options.weeklyCutoff ?? 180;
   const monthlyCutoff = options.monthlyCutoff ?? 730;
 
-  const now = new Date();
-  const today = now.toISOString().split('T')[0];
+  if (options.today === undefined || options.today === null) {
+    throw new Error('today is required to roll up health history');
+  }
+  const todayDate = options.today instanceof Date ? options.today : new Date(options.today);
+  if (Number.isNaN(todayDate.getTime())) throw new Error('today must be a valid date');
+  const today = todayDate.toISOString().split('T')[0];
 
   const daily = [];
   const weeklyBuckets = new Map();

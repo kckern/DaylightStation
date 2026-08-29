@@ -6,63 +6,54 @@
  * @module applications/finance/PayrollSyncService
  */
 
-import { ValidationError } from '#system/utils/errors/index.mjs';
+import { isPayrollGateway } from './ports/IPayrollGateway.mjs';
+import { isPayrollRepository } from './ports/IPayrollRepository.mjs';
 
 /**
  * Payroll sync service
  */
 export class PayrollSyncService {
-  #httpClient;
+  #payrollGateway;
+  #payrollRepository;
   #transactionGateway;
-  #financeStore;
-  #configService;
-  #payrollConfig;
+  #householdId;
+  #payrollAccountId;
+  #directDepositAccountId;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.httpClient - HTTP client for API requests
+   * @param {Object} config.payrollGateway - Semantic payroll source
+   * @param {Object} config.payrollRepository - Payroll persistence repository
    * @param {Object} config.transactionGateway - Gateway for transaction uploads
-   * @param {Object} config.financeStore - YamlFinanceStore for persistence
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {string} [config.householdId='default']
+   * @param {string} [config.payrollAccountId]
+   * @param {string} [config.directDepositAccountId]
    * @param {Object} [config.logger] - Logger instance
    */
-  constructor({ httpClient, transactionGateway, financeStore, configService, payrollConfig, logger = console }) {
-    if (!httpClient) throw new ValidationError('PayrollSyncService requires httpClient', { field: 'httpClient' });
-    if (!configService) throw new ValidationError('PayrollSyncService requires configService', { field: 'configService' });
-
-    this.#httpClient = httpClient;
-    this.#transactionGateway = transactionGateway;
-    this.#financeStore = financeStore;
-    this.#configService = configService;
-    this.#payrollConfig = payrollConfig; // Pre-resolved payroll configuration
-    this.#logger = logger;
-  }
-
-  /**
-   * Get payroll configuration
-   * @returns {Object} Payroll config
-   */
-  #getPayrollConfig() {
-    // Prefer injected config (no config structure knowledge)
-    if (this.#payrollConfig) {
-      return this.#payrollConfig;
+  constructor({
+    payrollGateway,
+    payrollRepository,
+    transactionGateway,
+    householdId = 'default',
+    payrollAccountId,
+    directDepositAccountId,
+    logger = console,
+  }) {
+    if (!isPayrollGateway(payrollGateway)) {
+      throw new TypeError('PayrollSyncService requires payrollGateway');
+    }
+    if (!isPayrollRepository(payrollRepository)) {
+      throw new TypeError('PayrollSyncService requires payrollRepository');
     }
 
-    // Fallback for backwards compatibility. Accept multiple field-name
-    // variants because `data/household/auth/payroll.yml` has historically
-    // used snake_case (`auth_key`, `auth_cookie`) while older code looked
-    // for `authkey`/`auth` — silently producing undefined cookie headers.
-    const auth = this.#configService.getUserAuth?.('payroll') || {};
-    return {
-      baseUrl: auth.base_url || auth.base,
-      authKey: auth.cookie_name || auth.authkey || auth.auth_key,
-      authCookie: auth.auth_cookie || auth.auth,
-      company: auth.company,
-      employeeId: auth.employee_id || auth.employee,
-      payrollAccountId: auth.payroll_account_id,
-      directDepositAccountId: auth.direct_deposit_account_id,
-    };
+    this.#payrollGateway = payrollGateway;
+    this.#payrollRepository = payrollRepository;
+    this.#transactionGateway = transactionGateway;
+    this.#householdId = householdId;
+    this.#payrollAccountId = payrollAccountId;
+    this.#directDepositAccountId = directDepositAccountId;
+    this.#logger = logger;
   }
 
   /**
@@ -72,129 +63,28 @@ export class PayrollSyncService {
    * @returns {Promise<Object>} Sync result
    */
   async sync({ token } = {}) {
-    const config = this.#getPayrollConfig();
-    const { baseUrl, authKey, authCookie, company, employeeId, payrollAccountId, directDepositAccountId } = config;
-
-    // Validate required config
-    if (!baseUrl || !company || !employeeId) {
-      throw new ValidationError('Payroll not configured: missing base_url, company, or employee_id', {
-        baseUrl,
-        company,
-        employeeId
-      });
-    }
-
-    const effectiveToken = token || authCookie;
-    if (!effectiveToken) {
-      throw new ValidationError('Payroll auth token required', { field: 'token' });
-    }
-
-    this.#logger.info?.('payroll.sync.start', { company, employeeId });
-
-    // Load existing paycheck data
-    const householdId = this.#configService.getDefaultHouseholdId?.() || 'default';
-    const existingData = this.#financeStore?.getPayrollData?.(householdId) || { paychecks: {} };
-    const existingDates = Object.keys(existingData.paychecks || {});
-
-    // Fetch paycheck list
-    const listUrl = `https://${baseUrl}/${company}/${employeeId}/paychecks`;
-    const headers = { cookie: `${authKey}=${effectiveToken}` };
-
-    let checksResponse;
-    try {
-      checksResponse = await this.#httpClient.get(listUrl, { headers });
-    } catch (error) {
-      if (error.response?.status === 401) {
-        throw new ValidationError('Payroll auth expired - please provide a new token', { authExpired: true });
-      }
-      throw error;
-    }
-
-    const checks = checksResponse.data?.data?.checkSummaries || [];
+    this.#logger.info?.('payroll.sync.start', { householdId: this.#householdId });
+    const checks = await this.#payrollGateway.listPaychecks({ token });
     this.#logger.info?.('payroll.sync.found', { count: checks.length });
-
-    // Build sets to detect already-fetched paychecks. We track by both
-    // TriNet check ID (modern) AND payEndDt (legacy entries stored before
-    // _checkId was added) — otherwise re-syncing legacy data produces
-    // duplicate `<date>-rsu` entries because the new id format never
-    // matches the old date-based key.
-    const existingCheckIds = new Set();
-    const existingPayEndDts = new Set();
-    for (const [key, data] of Object.entries(existingData.paychecks || {})) {
-      if (data._checkId) existingCheckIds.add(data._checkId);
-      // Legacy entries used payEndDt as the storage key directly.
-      const legacyDate = key.replace(/-rsu$/, '');
-      if (/^\d{4}-\d{2}-\d{2}$/.test(legacyDate)) existingPayEndDts.add(legacyDate);
-    }
-
-    // Fetch details for each new paycheck
-    const paychecks = { ...existingData.paychecks };
-    let newCount = 0;
-
-    for (const check of checks) {
-      const { id, checkKey } = check;
-      const payEndDt = checkKey?.payEndDt;
-
-      if (!payEndDt) continue;
-
-      // Skip if already retrieved by modern check ID, OR if a legacy entry
-      // exists for this payEndDt and there is no entry for this specific id.
-      // (A legitimate off-cycle RSU vest will have a different id but the
-      // same payEndDt — those still need to be fetched, but we shouldn't
-      // re-fetch the regular paycheck the legacy entry already represents.)
-      if (existingCheckIds.has(id)) {
-        this.#logger.debug?.('payroll.paycheck.skip', { payEndDt, id, reason: 'id-known' });
-        continue;
-      }
-      if (existingPayEndDts.has(payEndDt) && !paychecks[`${payEndDt}-rsu`]) {
-        // Legacy entry exists at this date and no -rsu slot is taken —
-        // assume this is the same paycheck and stamp it with its real id.
-        if (paychecks[payEndDt] && !paychecks[payEndDt]._checkId) {
-          paychecks[payEndDt]._checkId = id;
-          existingCheckIds.add(id);
-          this.#logger.info?.('payroll.paycheck.legacy_id_attached', { payEndDt, id });
-          continue;
-        }
-      }
-
-      // Fetch paycheck details
-      const detailUrl = `https://${baseUrl}/${company}/${employeeId}/paycheck-details/${id}`;
+    const syncSession = this.#payrollRepository.beginSync(this.#householdId, checks);
+    for (const check of syncSession.pendingChecks) {
       try {
-        const detailResponse = await this.#httpClient.get(detailUrl, { headers });
-        const data = detailResponse.data?.data;
-        const date = data?.header?.payEndDt;
-        if (date) {
-          // Use payEndDt as key; append '-rsu' suffix if key already taken (off-cycle RSU vests)
-          let storageKey = date;
-          if (paychecks[storageKey]) {
-            storageKey = `${date}-rsu`;
-          }
-          paychecks[storageKey] = { ...data, _checkId: id };
-          existingCheckIds.add(id);
-          newCount++;
-          this.#logger.info?.('payroll.paycheck.fetched', { date, storageKey, id });
-        }
+        const paycheck = await this.#payrollGateway.getPaycheck(check, { token });
+        if (paycheck) syncSession.record(paycheck);
       } catch (error) {
-        this.#logger.warn?.('payroll.paycheck.error', { id, error: error.message });
+        this.#logger.warn?.('payroll.paycheck.error', { id: check.id, error: error.message });
       }
-
-      // Rate limit delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
     }
-
-    // Save updated paycheck data
-    if (newCount > 0 && this.#financeStore?.savePayrollData) {
-      this.#financeStore.savePayrollData(householdId, { paychecks });
-      this.#logger.info?.('payroll.sync.saved', { newCount });
-    }
+    syncSession.commit();
+    const newCount = syncSession.getNewCount();
 
     // Upload transactions if gateway available
     let uploadResult = { uploadedCount: 0, failures: [] };
-    if (this.#transactionGateway && payrollAccountId) {
-      uploadResult = await this.#uploadTransactions(paychecks, {
-        payrollAccountId,
-        directDepositAccountId,
-        householdId,
+    if (this.#transactionGateway && this.#payrollAccountId) {
+      uploadResult = await this.#uploadTransactions({
+        payrollAccountId: this.#payrollAccountId,
+        directDepositAccountId: this.#directDepositAccountId,
+        householdId: this.#householdId,
       });
     }
 
@@ -211,30 +101,23 @@ export class PayrollSyncService {
    * Upload payroll transactions to transaction gateway
    * @private
    */
-  async #uploadTransactions(paychecks, { payrollAccountId, directDepositAccountId, householdId }) {
+  async #uploadTransactions({ payrollAccountId, directDepositAccountId, householdId }) {
     // Load transaction mapping
-    const mapping = this.#financeStore?.getPayrollMapping?.(householdId) || [];
+    const mapping = this.#payrollRepository.getMapping(householdId);
 
     const allTransactions = [];
 
-    for (const [date, data] of Object.entries(paychecks)) {
-      const { header, detail } = data;
-      if (!header?.checkDt || !detail) continue;
-
-      const checkDt = header.checkDt;
-      const { preTaxDedns = [], postTaxDedns = [], taxWithholdings = [], earns = [], totals } = detail;
-
-      // Map deductions
-      const debits = this.#mapTransactions([...preTaxDedns, ...postTaxDedns, ...taxWithholdings], mapping, checkDt);
-      const credits = this.#mapTransactions(earns, mapping, checkDt);
+    for (const entry of this.#payrollRepository.getTransactionEntries(householdId)) {
+      const debits = this.#mapTransactions(entry.deductions, mapping, entry.date);
+      const credits = this.#mapTransactions(entry.earnings, mapping, entry.date);
 
       // Net pay transfer
-      const netPay = parseFloat(totals?.curNetPay || 0);
+      const netPay = entry.netPay;
       if (netPay) {
         allTransactions.push({
           desc: 'Net Pay',
           amount: -netPay,
-          date: checkDt,
+          date: entry.date,
           category: 'Payroll',
           type: 'transfer',
           toAccountId: directDepositAccountId,
@@ -248,7 +131,7 @@ export class PayrollSyncService {
       );
     }
 
-    if (allTransactions.length === 0) return 0;
+    if (allTransactions.length === 0) return { uploadedCount: 0, failures: [] };
 
     // Sort by date
     allTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -323,8 +206,8 @@ export class PayrollSyncService {
   #mapTransactions(items, mapping, checkDt) {
     return items
       .map(item => ({
-        desc: item.desc || item.taxDesc || item.curEarnsDesc,
-        amount: parseFloat(item.curTaxes || item.curDedns || item.curEarnsEarn || 0),
+        desc: item.description,
+        amount: item.amount,
         date: checkDt,
       }))
       .filter(t => !!t.amount)

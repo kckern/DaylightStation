@@ -6,32 +6,19 @@
  * at the composition root and injected (Decision D1).
  */
 
-import path from 'path';
 import { NotificationContainer } from '#apps/notification/NotificationContainer.mjs';
 import { NotificationPreference } from '#domains/notification/entities/NotificationPreference.mjs';
 import { AppNotificationAdapter } from '#adapters/notification/AppNotificationAdapter.mjs';
 import { TelegramNotificationAdapter } from '#adapters/notification/TelegramNotificationAdapter.mjs';
 import { PushNotificationAdapter } from '#adapters/notification/PushNotificationAdapter.mjs';
 import { NotificationPolicy } from '#domains/notification/services/NotificationPolicy.mjs';
-import { QuietHours } from '#domains/notification/value-objects/QuietHours.mjs';
 import { YamlNotificationLedgerStore } from '#adapters/persistence/yaml/YamlNotificationLedgerStore.mjs';
+import { NotificationGovernanceConfigSource } from '#adapters/notification/NotificationGovernanceConfigSource.mjs';
+import { DEFAULT_NOTIFICATION_PREFERENCES } from '#apps/notification/DefaultNotificationPreferences.mjs';
 
 // Category -> channels routing when no explicit preferences are configured.
 // Ceremony and drift nudges reach the user directly; the rest stay in-app.
-export const DEFAULT_PREFERENCES = {
-  ceremony: { normal: ['telegram', 'push', 'app'], high: ['telegram', 'push', 'app'] },
-  drift_alert: { normal: ['telegram', 'app'] },
-  goal_update: { normal: ['app'] },
-  // Routine system chatter stays in-app. HIGH is reserved for "something the
-  // house depends on has stopped and nobody would otherwise notice" — a dead
-  // hardware relay is the motivating case, and an in-app card would have gone
-  // unread for the same 12 days the outage did.
-  system: { normal: ['app'], high: ['telegram', 'app'] },
-  // The teacher backlog nudge (teacher-console advocacy A1): its entire
-  // premise is reaching a parent who is NOT looking at a screen — app-only
-  // routing would defeat it.
-  school: { normal: ['telegram', 'app'], high: ['telegram', 'app'] },
-};
+export const DEFAULT_PREFERENCES = DEFAULT_NOTIFICATION_PREFERENCES;
 
 /**
  * Bootstrap the notification stack.
@@ -78,20 +65,9 @@ export function bootstrapNotifications(deps = {}) {
   // Governance (dedupe + quiet hours). The ledger persists under
   // <dataPath>/household/notifications; the config loader re-reads notifications.yml
   // on every send so household edits take effect without a restart.
-  const ledgerStore = new YamlNotificationLedgerStore({ basePath: path.join(dataPath, 'household', 'notifications') });
+  const ledgerStore = new YamlNotificationLedgerStore({ dataPath });
   const policy = new NotificationPolicy();
-  const configLoader = () => {
-    // reloadHouseholdAppConfig (not getHouseholdAppConfig) — it reads fresh from
-    // disk on every call. getHouseholdAppConfig only reads the in-memory cache,
-    // which is never updated by admin edits (ConfigService's #config is frozen
-    // at startup), so quiet-hours/cooldown changes would never take effect
-    // without this. Notifications are infrequent, so a disk read per send is fine.
-    const c = configService?.reloadHouseholdAppConfig?.(null, 'notifications') || {};
-    return {
-      quietHours: new QuietHours(c.quiet_hours || { enabled: false }),
-      cooldowns: c.cooldowns || { default: 60 },
-    };
-  };
+  const governanceConfig = new NotificationGovernanceConfigSource({ configService });
 
   const container = new NotificationContainer({
     adapters,
@@ -99,7 +75,7 @@ export function bootstrapNotifications(deps = {}) {
     resolveDefaultRecipient,
     policy,
     ledgerStore,
-    configLoader,
+    configLoader: () => governanceConfig.read(),
     clock,
     logger,
   });

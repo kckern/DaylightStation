@@ -20,10 +20,7 @@
  * @module applications/fitness/sliverAbsorption
  */
 
-import path from 'path';
-import { unlinkSync } from 'fs';
 import moment from 'moment-timezone';
-import { loadYamlSafe, listYamlFiles, dirExists } from '#system/utils/FileIO.mjs';
 
 export const SLIVER_MAX_DURATION_SEC = 15 * 60;
 export const SLIVER_OVERLAP_BUFFER_MS = 15 * 60 * 1000;
@@ -39,15 +36,16 @@ export const SLIVER_OVERLAP_BUFFER_MS = 15 * 60 * 1000;
  * @param {Object} [options.logger] - Logger with info/warn methods
  * @returns {{ scanned: number, absorbed: string[] }}
  */
-export function absorbOverlappingSlivers(activity, sessionDir, options = {}) {
+export function absorbOverlappingSlivers(activity, sessions, options = {}) {
   const {
     justCreatedSessionId = null,
     tz = 'America/Los_Angeles',
     logger = console,
+    removeSession = null,
   } = options;
 
-  if (!dirExists(sessionDir)) {
-    return { scanned: 0, absorbed: [] };
+  if (!Array.isArray(sessions)) {
+    throw new Error('absorbOverlappingSlivers requires storage dependencies');
   }
 
   const actStart = moment(activity.start_date).tz(tz);
@@ -58,14 +56,10 @@ export function absorbOverlappingSlivers(activity, sessionDir, options = {}) {
   const bufStart = actStart.clone().subtract(SLIVER_OVERLAP_BUFFER_MS, 'ms');
   const bufEnd = actEnd.clone().add(SLIVER_OVERLAP_BUFFER_MS, 'ms');
 
-  const files = listYamlFiles(sessionDir);
   const absorbed = [];
 
-  for (const filename of files) {
+  for (const { id: filename, data } of sessions) {
     if (filename === justCreatedSessionId) continue;
-
-    const filePath = path.join(sessionDir, `${filename}.yml`);
-    const data = loadYamlSafe(filePath);
     if (!data) continue;
     if (data.session?.source === 'strava') continue;
     if (Array.isArray(data.summary?.media) && data.summary.media.length > 0) continue;
@@ -82,8 +76,10 @@ export function absorbOverlappingSlivers(activity, sessionDir, options = {}) {
     if (sessEnd.isBefore(bufStart) || sessStart.isAfter(bufEnd)) continue;
 
     try {
-      unlinkSync(filePath);
-      absorbed.push(filename);
+      if (typeof removeSession !== 'function') {
+        throw new Error('absorbOverlappingSlivers requires a removeSession dependency');
+      }
+      if (removeSession(filename)) absorbed.push(filename);
       logger.info?.('strava.enrichment.sliver_absorbed', {
         activityId: activity.id,
         sliverFile: filename,
@@ -99,5 +95,5 @@ export function absorbOverlappingSlivers(activity, sessionDir, options = {}) {
     }
   }
 
-  return { scanned: files.length, absorbed };
+  return { scanned: sessions.length, absorbed };
 }

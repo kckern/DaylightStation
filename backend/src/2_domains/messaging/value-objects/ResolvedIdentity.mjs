@@ -34,9 +34,6 @@ export class ResolvedIdentity {
   get conversationId() { return this.#conversationId; }
   get conversationIdString() { return this.#conversationId.toString(); }
 
-  toJSON() {
-    return { username: this.#username, conversationId: this.#conversationId.toJSON() };
-  }
 }
 
 export default ResolvedIdentity;

@@ -12,13 +12,13 @@
 /**
  * Create home-dashboard history handler
  * @param {Object} deps
- * @param {Object} deps.container - HomeAutomationContainer
+ * @param {Object} deps.operation - GetDashboardHistory use case
  * @param {Object} [deps.logger]
  * @returns {Function} Express handler
  */
-export function homeDashboardHistoryHandler({ container, logger = console }) {
+export function homeDashboardHistoryHandler({ operation }) {
   return async (_req, res) => {
-    const result = await container.getDashboardHistory().execute();
+    const result = await operation.execute();
     res.json(result);
   };
 }

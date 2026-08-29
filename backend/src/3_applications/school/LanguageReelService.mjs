@@ -1,56 +1,28 @@
-import crypto from 'node:crypto';
-import path from 'node:path';
+import { sha256Bytes } from '#system/utils/sha256.mjs';
 import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
-
-const ID_RE = /^\d+$/;
 
 /**
  * Owns one reel's immutable session snapshot. The content loader intentionally
  * reads only approved reels; imported drafts stay safely author-visible only.
  */
 export class LanguageReelService {
-  #config; #clock; #store;
+  #clock; #idFactory; #repository;
   /**
-   * `store` is INJECTED (`apps-no-fs`): the rules here — which reels are
+   * `repository` is INJECTED (`apps-no-fs`): the rules here — which reels are
    * publishable, how a revision is derived, when a session is complete — stay
    * in this layer; reading and writing the bytes does not.
    */
-  constructor({ configService, store, clock = () => new Date() } = {}) {
-    if (!store) throw new Error('LanguageReelService requires a document store');
-    this.#config = configService; this.#store = store; this.#clock = clock;
-  }
-  #root() { return path.join(this.#config.getDataDir(), 'content', 'school', 'language', 'korean-language-reels'); }
-  #reelFile(reelId) {
-    if (!ID_RE.test(String(reelId))) return null;
-    const root = path.join(this.#root(), 'reels');
-    for (const category of this.#store.list(root)) {
-      const candidate = path.join(root, category, `${reelId}.reel.yml`);
-      if (this.#store.exists(candidate)) return candidate;
-    }
-    return null;
-  }
-  #sessionFile(userId, reelId) {
-    if (!this.#config.getUserProfile?.(userId) || !ID_RE.test(String(reelId))) return null;
-    return path.join(this.#config.getUserDir(userId), 'apps', 'school', 'language-reels', `${reelId}.yml`);
-  }
-  #dailyFile(userId) {
-    if (!this.#config.getUserProfile?.(userId)) return null;
-    return path.join(this.#config.getUserDir(userId), 'apps', 'school', 'language-reels', 'daily-selections.yml');
-  }
-  #mediaFile(reel) {
-    const parts = String(reel?.media?.assetId ?? '').replace(/^school:language\//, '').split('/');
-    if (parts.length !== 3 || parts[0] !== 'korean-language-reels') return null;
-    // asset form is course/category/id; reject anything that cannot be a file.
-    const [course, category, id] = parts;
-    if (course !== 'korean-language-reels' || !/^[a-z0-9-]+$/.test(category) || !ID_RE.test(id)) return null;
-    return path.join(this.#config.getMediaDir(), 'school', 'language', course, category, `${id}.mp4`);
+  constructor({ repository, idFactory, clock = () => new Date() } = {}) {
+    if (!repository) throw new Error('LanguageReelService requires a reel repository');
+    if (typeof idFactory !== 'function') throw new Error('LanguageReelService requires an idFactory');
+    this.#repository = repository; this.#idFactory = idFactory; this.#clock = clock;
   }
   getReel(reelId, { approvedOnly = true } = {}) {
-    const file = this.#reelFile(reelId); if (!file) throw new EntityNotFoundError('language reel', reelId);
-    const reel = this.#store.read(file);
+    const document = this.#repository.findReel(reelId); if (!document) throw new EntityNotFoundError('language reel', reelId);
+    const { reel, bytes } = document;
     if (approvedOnly && reel?.reviewState !== 'approved') throw new EntityNotFoundError('language reel', reelId);
     if (approvedOnly) this.#validatePublished(reel, reelId);
-    return { reel, revision: crypto.createHash('sha256').update(this.#store.readBytes(file)).digest('hex').slice(0, 16) };
+    return { reel, revision: sha256Bytes(bytes).slice(0, 16) };
   }
   #validatePublished(reel, reelId) {
     const cues = Array.isArray(reel?.transcript) ? reel.transcript : [];
@@ -71,17 +43,16 @@ export class LanguageReelService {
   }
   open({ userId, reelId }) {
     const { reel, revision } = this.getReel(reelId);
-    const file = this.#sessionFile(userId, reelId); if (!file) throw new ValidationError('identified learner is required');
-    const prior = this.#store.read(file);
+    const prior = this.#repository.readSession(userId, reelId); if (prior === undefined) throw new ValidationError('identified learner is required');
     if (prior?.revision === revision && !prior.completedAt) return { ...prior, reel };
-    const session = { schema: 'school.language-reel-session/v1', id: `lr_${crypto.randomUUID()}`,
+    const session = { schema: 'school.language-reel-session/v1', id: `lr_${this.#idFactory()}`,
       learnerId: userId, reelId: String(reelId), revision, openedAt: this.#clock().toISOString(), updatedAt: this.#clock().toISOString(),
       stages: { flashcards: !reel.vocabulary?.length, listen: false, cloze: false, watch: false, comprehension: false,
         speaking: !reel.authoring?.speaking?.enabled }, attempts: [], completedAt: null };
-    this.#store.write(file, session); return { ...session, reel };
+    this.#repository.writeSession(userId, reelId, session); return { ...session, reel };
   }
   status({ userId, reelId }) {
-    const file = this.#sessionFile(userId, reelId); const session = file ? this.#store.read(file) : null;
+    const session = this.#repository.readSession(userId, reelId) ?? null;
     const terminal = Boolean(session?.completedAt);
     return { doneToday: terminal && session.completedAt.slice(0, 10) === this.#clock().toISOString().slice(0, 10), terminal,
       progressLabel: terminal ? 'Reel complete' : session ? 'Reel in progress' : 'Not started', score: session?.score ?? null };
@@ -93,17 +64,15 @@ export class LanguageReelService {
    * simply because it has more files.
    */
   dailyEntry({ userId, dayKey, rng = Math.random } = {}) {
-    const file = this.#dailyFile(userId); if (!file || !dayKey) return null;
-    const selections = this.#store.read(file, {}) ?? {};
+    const selections = this.#repository.readDailySelections(userId); if (selections === undefined || !dayKey) return null;
     const held = selections[dayKey];
     if (held?.reelId) {
       try { const { reel } = this.getReel(held.reelId); return this.#dailyPlanEntry(held.reelId, held.category, dayKey, reel); } catch { delete selections[dayKey]; }
     }
-    const root = path.join(this.#root(), 'reels');
     const choices = [];
-    for (const category of this.#store.list(root)) {
-      const rows = this.#store.list(path.join(root, category)).filter((name) => name.endsWith('.reel.yml'))
-        .map((name) => name.replace(/\.reel\.yml$/, ''))
+    const available = this.#repository.listReels();
+    for (const category of [...new Set(available.map((row) => row.category))]) {
+      const rows = available.filter((row) => row.category === category).map((row) => row.reelId)
         .filter((id) => { try { return this.getReel(id).reel.reviewState === 'approved'; } catch { return false; } });
       if (rows.length) choices.push({ category, ids: rows });
     }
@@ -111,7 +80,7 @@ export class LanguageReelService {
     const group = choices[Math.min(choices.length - 1, Math.floor(rng() * choices.length))];
     const reelId = group.ids[Math.min(group.ids.length - 1, Math.floor(rng() * group.ids.length))];
     selections[dayKey] = { reelId, category: group.category, selectedAt: this.#clock().toISOString() };
-    this.#store.write(file, selections);
+    this.#repository.writeDailySelections(userId, selections);
     return this.#dailyPlanEntry(reelId, group.category, dayKey, this.getReel(reelId).reel);
   }
   #dailyPlanEntry(reelId, category, dayKey, reel) {
@@ -120,19 +89,19 @@ export class LanguageReelService {
       timingPriority: 3, timingRank: 0, reelCategory: category };
   }
   markStage({ userId, reelId, stage }) {
-    const file = this.#sessionFile(userId, reelId); if (!file || !this.#store.exists(file)) throw new ValidationError('open the reel first');
-    const session = this.#store.read(file); if (!(stage in session.stages)) throw new ValidationError('unknown reel stage');
+    if (!this.#repository.sessionExists(userId, reelId)) throw new ValidationError('open the reel first');
+    const session = this.#repository.readSession(userId, reelId); if (!(stage in session.stages)) throw new ValidationError('unknown reel stage');
     session.stages[stage] = true; session.updatedAt = this.#clock().toISOString();
     if (Object.values(session.stages).every(Boolean) && !session.completedAt) session.completedAt = session.updatedAt;
-    this.#store.write(file, session); return session;
+    this.#repository.writeSession(userId, reelId, session); return session;
   }
   recordAttempt({ userId, reelId, type, itemId, answer, correct }) {
-    const file = this.#sessionFile(userId, reelId); if (!file || !this.#store.exists(file)) throw new ValidationError('open the reel first');
+    if (!this.#repository.sessionExists(userId, reelId)) throw new ValidationError('open the reel first');
     if (!['cloze', 'comprehension'].includes(type) || !itemId || typeof correct !== 'boolean') throw new ValidationError('invalid reel attempt');
-    const session = this.#store.read(file);
+    const session = this.#repository.readSession(userId, reelId);
     session.attempts = [...(session.attempts ?? []), { type, itemId: String(itemId), answer: answer ?? null, correct, at: this.#clock().toISOString() }];
-    session.updatedAt = this.#clock().toISOString(); this.#store.write(file, session); return session;
+    session.updatedAt = this.#clock().toISOString(); this.#repository.writeSession(userId, reelId, session); return session;
   }
-  mediaPath(reelId) { const { reel } = this.getReel(reelId); const file = this.#mediaFile(reel); return file && this.#store.exists(file) ? file : null; }
+  mediaResource(reelId) { return this.#repository.resolveMediaResource(this.getReel(reelId).reel); }
 }
 export default LanguageReelService;

@@ -20,36 +20,46 @@
  */
 
 import moment from 'moment-timezone';
-import fs from 'fs';
-import yaml from 'js-yaml';
-import { userDataService } from '#system/config/index.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
-import { configService } from '#system/config/index.mjs';
 
-const archiveLogger = createLogger({
+let archiveLogger = createLogger({
   source: 'backend',
   app: 'archive'
 });
 
+let archiveRuntime = {
+  loadArchiveConfig: () => ({ services: {}, defaults: {} }),
+  userLoadFile: () => null,
+  userSaveFile: () => false,
+  listArchiveYears: () => [],
+};
+
+/** Configure persistence and config ports at the composition root. */
+export const configureArchiveService = (runtime = {}) => {
+  archiveRuntime = { ...archiveRuntime, ...runtime };
+  if (runtime.logger) archiveLogger = runtime.logger;
+  archiveConfig = null;
+};
+
 /**
- * Adapter: Load user lifelog file (wraps UserDataService)
+ * Port: load a user lifelog record.
  * @param {string} username
  * @param {string} service - e.g., 'fitness' or 'archives/lastfm/2024'
  * @returns {object|null}
  */
 const userLoadFile = (username, service) => {
-  return userDataService.readUserData(username, `lifelog/${service}`);
+  return archiveRuntime.userLoadFile(username, service);
 };
 
 /**
- * Adapter: Save user lifelog file (wraps UserDataService)
+ * Port: save a user lifelog record.
  * @param {string} username
  * @param {string} service
  * @param {object} data
  * @returns {boolean}
  */
 const userSaveFile = (username, service, data) => {
-  return userDataService.writeUserData(username, `lifelog/${service}`, data);
+  return archiveRuntime.userSaveFile(username, service, data);
 };
 
 // Cache config to avoid repeated file reads
@@ -63,24 +73,7 @@ const loadConfig = () => {
   if (archiveConfig) return archiveConfig;
 
   try {
-    // Archive is system-level config - look in config directory from ConfigService
-    const configDir = configService.getConfigDir();
-    if (!configDir) {
-      archiveLogger.warn('archive.config.noConfigDir', {
-        message: 'ConfigService.getConfigDir() returned null - archive features disabled'
-      });
-      archiveConfig = { services: {}, defaults: {} };
-      return archiveConfig;
-    }
-
-    const configPath = `${configDir}/archive.yml`;
-    if (fs.existsSync(configPath)) {
-      const fileData = fs.readFileSync(configPath, 'utf8');
-      archiveConfig = yaml.load(fileData) || { services: {}, defaults: {} };
-    } else {
-      archiveLogger.warn('archive.config.notFound', { configPath });
-      archiveConfig = { services: {}, defaults: {} };
-    }
+    archiveConfig = archiveRuntime.loadArchiveConfig() || { services: {}, defaults: {} };
   } catch (e) {
     archiveLogger.warn('archive.config.loadFailed', { error: e.message });
     archiveConfig = { services: {}, defaults: {} };
@@ -660,17 +653,7 @@ export const migrateToHotCold = (username, service, options = {}) => {
  * @returns {Array<number>} Years with archives
  */
 export const listArchiveYears = (username, service) => {
-  const archivePath = `${process.env.path.data}/users/${username}/lifelog/archives/${service}`;
-
-  if (!fs.existsSync(archivePath)) {
-    return [];
-  }
-
-  const files = fs.readdirSync(archivePath);
-  return files
-    .filter(f => /^\d{4}\.yml$/.test(f))
-    .map(f => parseInt(f.replace('.yml', '')))
-    .sort((a, b) => b - a); // Newest first
+  return archiveRuntime.listArchiveYears(username, service);
 };
 
 /**

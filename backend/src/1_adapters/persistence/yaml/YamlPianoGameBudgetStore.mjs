@@ -2,8 +2,8 @@
  * The game-budget day files: household/history/piano-games/{YYYY-MM-DD}.yml
  * (design layer 2 — durable, authoritative).
  *
- * THIS IS A BALANCE, NOT A LEDGER TAIL (D16). schoolLedger.mjs swallows write
- * failures by design; for a balance a swallowed write is a lost debit, and a
+ * THIS IS A BALANCE, NOT AN OBSERVABILITY LOG (D16). Logging transports swallow
+ * write failures by design; for a balance a swallowed write is a lost debit, and a
  * lost debit is free game time — the exact failure the feature exists to
  * prevent. So: writes are atomic and THROW on failure (the service surfaces
  * that as budget.settle-failed), and a corrupt or wrong-schema file on read

@@ -32,16 +32,9 @@
  */
 
 import {
-  buildDeviceStateBroadcast,
-} from '#shared-contracts/media/envelopes.mjs';
-import {
-  DEVICE_STATE_TOPIC,
-} from '#shared-contracts/media/topics.mjs';
-import {
   createEmptyQueueSnapshot,
 } from '#shared-contracts/media/shapes.mjs';
 
-export const HUB_STATUS_TOPIC = 'playback-hub:status';
 export const SPEAKER_DEVICE_ID_PREFIX = 'speaker-';
 
 const DEFAULT_HEARTBEAT_MS = 10000;
@@ -124,7 +117,7 @@ export function mapLaneToSnapshot(lane, nowIso) {
 }
 
 export class HubFleetBridge {
-  /** @type {{ subscribe: Function, broadcast?: Function, publish?: Function }} */ #eventBus;
+  /** @type {{ observeHubStatus: Function, publishDeviceState: Function }} */ #realtimeGateway;
   /** @type {object} */ #logger;
   /** @type {number} */ #heartbeatMs;
   /** @type {{ now: () => number }} */ #clock;
@@ -140,17 +133,17 @@ export class HubFleetBridge {
 
   /**
    * @param {{
-   *   eventBus: { subscribe: Function, broadcast?: Function, publish?: Function },
+   *   realtimeGateway: { observeHubStatus: Function, publishDeviceState: Function },
    *   logger?: object,
    *   heartbeatMs?: number,
    *   clock?: { now: () => number }
    * }} deps
    */
-  constructor({ eventBus, logger, heartbeatMs = DEFAULT_HEARTBEAT_MS, clock } = {}) {
-    if (!eventBus || typeof eventBus.subscribe !== 'function') {
-      throw new Error('HubFleetBridge: eventBus with subscribe() required');
+  constructor({ realtimeGateway, logger, heartbeatMs = DEFAULT_HEARTBEAT_MS, clock } = {}) {
+    if (!realtimeGateway?.observeHubStatus || !realtimeGateway?.publishDeviceState) {
+      throw new Error('HubFleetBridge: realtimeGateway required');
     }
-    this.#eventBus = eventBus;
+    this.#realtimeGateway = realtimeGateway;
     this.#logger = logger || console;
     this.#heartbeatMs = heartbeatMs;
     this.#clock = clock || Date;
@@ -162,10 +155,7 @@ export class HubFleetBridge {
   start() {
     if (this.#started) return;
     this.#started = true;
-    this.#unsubscribe = this.#eventBus.subscribe(
-      HUB_STATUS_TOPIC,
-      (payload) => this.#handleStatus(payload),
-    );
+    this.#unsubscribe = this.#realtimeGateway.observeHubStatus((status) => this.#handleStatus(status));
     this.#logger.info?.('playback-hub.fleet-bridge.start', {
       heartbeatMs: this.#heartbeatMs,
     });
@@ -191,12 +181,12 @@ export class HubFleetBridge {
 
   /**
    * Handle one `playback-hub:status` publish. Never throws.
-   * @param {object} payload - `{ type, data: { devices, fetchedAt } }`
+   * @param {object} status - `{ devices, fetchedAt }`
    * @private
    */
-  #handleStatus(payload) {
+  #handleStatus(status) {
     try {
-      const devices = payload?.data?.devices;
+      const devices = status?.devices;
       if (!Array.isArray(devices)) {
         this.#logger.debug?.('playback-hub.fleet-bridge.skip_malformed', {
           reason: 'devices not an array',
@@ -270,33 +260,26 @@ export class HubFleetBridge {
       lastPublishedAt: nowMs,
     });
 
-    this.#safeBroadcast(
-      DEVICE_STATE_TOPIC(deviceId),
-      buildDeviceStateBroadcast({ deviceId, snapshot, reason, ts: nowIso }),
-    );
+    this.#safePublish({ deviceId, snapshot, reason, ts: nowIso });
   }
 
   /**
    * Broadcast defensively — bridge must never take down the status loop.
-   * Prefers broadcast() (reaches WS clients + internal subscribers like
-   * DeviceLivenessService); falls back to publish().
+   * The injected gateway preserves the existing internal/external publication
+   * behavior while this workflow remains transport-agnostic.
    * @private
    */
-  #safeBroadcast(topic, payload) {
+  #safePublish(publication) {
     try {
-      if (typeof this.#eventBus.broadcast === 'function') {
-        this.#eventBus.broadcast(topic, payload);
-      } else if (typeof this.#eventBus.publish === 'function') {
-        this.#eventBus.publish(topic, payload);
-      }
+      this.#realtimeGateway.publishDeviceState(publication);
       this.#logger.debug?.('playback-hub.fleet-bridge.publish', {
-        topic,
-        reason: payload?.reason,
-        state: payload?.snapshot?.state,
+        deviceId: publication.deviceId,
+        reason: publication.reason,
+        state: publication.snapshot?.state,
       });
     } catch (err) {
       this.#logger.error?.('playback-hub.fleet-bridge.broadcast_error', {
-        topic,
+        deviceId: publication.deviceId,
         error: err?.message,
       });
     }

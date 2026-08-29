@@ -4,6 +4,7 @@ import { DEFAULT_ROSTER as CHESS_OPPONENTS } from '#shared/gaming/rulesets/chess
 import { createConnectFourEngine } from '#adapters/piano-games/ConnectFourEngineAdapter.mjs';
 import { createCheckersEngine } from '#adapters/piano-games/CheckersEngineAdapter.mjs';
 import { createChessEngine } from '#adapters/piano-games/ChessEngineAdapter.mjs';
+import { createStockfishEngine } from '#adapters/chess/StockfishEngineAdapter.mjs';
 import { DataServicePianoGameRepository } from '#adapters/piano-games/DataServicePianoGameRepository.mjs';
 import { PianoGamesContainer } from '#apps/piano-games/PianoGamesContainer.mjs';
 import { createPianoGamesRouter } from '#api/v1/routers/pianoGames.mjs';
@@ -12,6 +13,8 @@ import { checkersCommentary, checkersNotableFacts } from '#shared/gaming/ruleset
 import { connectFourCommentary, connectFourNotableFacts } from '#shared/gaming/rulesets/connect-four/commentary.mjs';
 import { chessCommentary, chessNotableFacts } from '#shared/gaming/rulesets/chess/dialogueAdapter.mjs';
 import { GameRivalryMemoryService } from '#apps/piano-games/GameRivalryMemoryService.mjs';
+import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
+import { OpponentDialogueGenerator } from '#adapters/ai/OpponentDialogueGenerator.mjs';
 
 export function createPianoGamesModule({
   dataService, configService, logger, nativeRouters = {},
@@ -19,7 +22,8 @@ export function createPianoGamesModule({
 }) {
   const connectFourGateway = createConnectFourEngine({ logger: logger?.child?.({ module: 'connect-four-engine' }) });
   const checkersGateway = createCheckersEngine({ logger: logger?.child?.({ module: 'checkers-engine' }) });
-  const chessGateway = createChessEngine({ logger: logger?.child?.({ module: 'chess-engine' }) });
+  const chessLogger = logger?.child?.({ module: 'chess-engine' });
+  const chessGateway = createChessEngine({ engine: createStockfishEngine({ logger: chessLogger }) });
   const repository = new DataServicePianoGameRepository({ dataService, configService });
   const games = {
       'connect-four': {
@@ -59,7 +63,10 @@ export function createPianoGamesModule({
   });
   let container;
   const dialogue = new OpponentDialogueService({
-    aiGateway,
+    dialogueGenerator: aiGateway ? new OpponentDialogueGenerator({
+      aiGateway,
+      deadline: new NodePromiseDeadline(),
+    }) : null,
     logger,
     readConfig: (gameId, userId) => repository.readConfig(gameId, userId),
     adapters: { 'connect-four': connectFourCommentary, checkers: checkersCommentary, chess: chessCommentary },

@@ -42,12 +42,14 @@
  * child's printed page has become a lie.
  */
 import path from 'path';
-import { promises as fs } from 'fs';
 import { isDeepStrictEqual } from 'node:util';
 import yaml from 'js-yaml';
 import { ITokenRegistry } from '#apps/school/ports/ITokenRegistry.mjs';
 import { TOKEN_PREFIX, isAccessCodeLive } from '#domains/school/sessions/tokens.mjs';
 import { normalizeAccessCode } from '#domains/school/sessions/accessCode.mjs';
+import {
+  deleteFileStrictAsync, ensureDirAsync, readDirectoryAsync, readTextFromPathAsync, writeTextFileAsync,
+} from '#system/utils/FileIO.mjs';
 
 // The mint charset is [A-Z0-9]; the bound is wide enough for a future format and
 // narrow enough that "..", ".", "a/b" and hidden names cannot match.
@@ -146,8 +148,8 @@ export class YamlTokenRegistry extends ITokenRegistry {
   }
 
   async #write(body, record) {
-    await fs.mkdir(this.#root(), { recursive: true });
-    await fs.writeFile(this.#fileFor(body), dumpYaml(record), 'utf8');
+    await ensureDirAsync(this.#root());
+    await writeTextFileAsync(this.#fileFor(body), dumpYaml(record));
     this.#index(body, record);
   }
 
@@ -263,7 +265,7 @@ export class YamlTokenRegistry extends ITokenRegistry {
     if (prune) this.#lastSweepMs = nowMs;
     let names;
     try {
-      names = await fs.readdir(this.#root());
+      names = await readDirectoryAsync(this.#root());
     } catch {
       return { removed: 0, kept: 0 }; // no directory yet: nothing ever minted
     }
@@ -275,7 +277,7 @@ export class YamlTokenRegistry extends ITokenRegistry {
       if (name.endsWith('.yml')) {
         try {
           // eslint-disable-next-line no-await-in-loop
-          const raw = yaml.load(await fs.readFile(path.join(this.#root(), name), 'utf8'));
+          const raw = yaml.load(await readTextFromPathAsync(path.join(this.#root(), name)));
           record = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
           const expiresMs = Date.parse(raw?.expiresAt ?? '');
           // Unparseable, corrupt, or unexpiring records are all KEPT: deletion
@@ -293,7 +295,7 @@ export class YamlTokenRegistry extends ITokenRegistry {
       }
       if (expired) {
         // eslint-disable-next-line no-await-in-loop
-        await fs.unlink(path.join(this.#root(), name)).catch(() => {});
+        await deleteFileStrictAsync(path.join(this.#root(), name)).catch(() => {});
         // The file it pointed at is gone, so the index entry goes with it.
         this.#forget(name.slice(0, -'.yml'.length), record);
         removed += 1;
@@ -352,7 +354,7 @@ export class YamlTokenRegistry extends ITokenRegistry {
     const body = bodyOf(token);
     if (!body) return null;
     try {
-      const raw = yaml.load(await fs.readFile(this.#fileFor(body), 'utf8'));
+      const raw = yaml.load(await readTextFromPathAsync(this.#fileFor(body)));
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
       return raw;
     } catch {

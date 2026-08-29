@@ -4,7 +4,7 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('LaunchService', () => {
   let service;
-  let mockRegistry;
+  let mockCatalog;
   let mockLauncher;
   let mockAdapter;
 
@@ -20,12 +20,12 @@ describe('LaunchService', () => {
       })
     };
 
-    mockRegistry = {
+    mockCatalog = {
       resolve: jest.fn().mockReturnValue({
-        adapter: mockAdapter,
         source: 'retroarch',
         localId: 'n64/mario-kart-64'
-      })
+      }),
+      getItem: (...args) => mockAdapter.getItem(...args),
     };
 
     mockLauncher = {
@@ -34,7 +34,7 @@ describe('LaunchService', () => {
     };
 
     service = new LaunchService({
-      contentRegistry: mockRegistry,
+      contentCatalog: mockCatalog,
       deviceLauncher: mockLauncher,
       logger: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() }
     });
@@ -46,8 +46,8 @@ describe('LaunchService', () => {
       targetDeviceId: 'shield-tv'
     });
 
-    expect(mockRegistry.resolve).toHaveBeenCalledWith('retroarch:n64/mario-kart-64');
-    expect(mockAdapter.getItem).toHaveBeenCalledWith('n64/mario-kart-64');
+    expect(mockCatalog.resolve).toHaveBeenCalledWith('retroarch:n64/mario-kart-64');
+    expect(mockAdapter.getItem).toHaveBeenCalledWith({ source: 'retroarch', localId: 'n64/mario-kart-64' });
     expect(mockLauncher.canLaunch).toHaveBeenCalledWith('shield-tv');
     expect(mockLauncher.launch).toHaveBeenCalledWith('shield-tv', {
       target: 'com.retroarch/Activity',

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EinkPanelService } from '#apps/eink/EinkPanelService.mjs';
+import { Sha1ContentFingerprint } from '#adapters/eink/Sha1ContentFingerprint.mjs';
 
 // A screen with two distinct, data-free views (so resolveData returns {} with no
 // network) — lets us exercise the fingerprint logic without a canvas render.
@@ -16,10 +17,15 @@ const SCREEN = {
     ],
   },
 };
+const PANEL_RENDERER = { version: 'test', render: async () => Buffer.from('png') };
+const panelStore = (screen) => ({ getPanel: () => screen, getTelemetry: () => ({}), saveTelemetry() {} });
+const fingerprint = new Sha1ContentFingerprint();
 
 const makeService = (screen = SCREEN) => new EinkPanelService({
-  baseUrl: 'http://test.local',
-  dataService: { household: { read: () => screen } },
+  panelStore: panelStore(screen),
+  dataSourceGateway: { resolve: async () => ({}) },
+  panelRenderer: PANEL_RENDERER,
+  fingerprint,
   logger: { info() {} },
 });
 
@@ -30,7 +36,7 @@ describe('EinkPanelService.stateSnapshot', () => {
     expect(snap.rotation).toBe(270);
     expect(snap.buttons).toEqual({ green: 'select', right: 'next', left: 'prev' });
     expect(snap.nextWakeSec).toBeGreaterThan(0);
-    expect(snap.image).toBe('/api/v1/eink/kitchen-eink/panel');
+    expect(snap).not.toHaveProperty('image');
     expect(snap.view).toBe('home');
     expect(snap.imageHash).toMatch(/^[0-9a-f]{40}$/); // sha1 hex
   });
@@ -81,33 +87,39 @@ describe('EinkPanelService.stateSnapshot', () => {
 
   it('scopes data-source URLs per panel (hold_key) so server holds are per-device', async () => {
     const calls = [];
-    const realFetch = global.fetch;
-    global.fetch = async (url) => { calls.push(String(url)); return { ok: true, json: async () => ({}) }; };
-    try {
-      const screen = {
-        ...SCREEN,
-        content: {
-          ...SCREEN.content,
-          views: [{
-            id: 'photo',
-            layout: { children: [{ widget: 'placeholder' }] },
-            data: { photo: { source: '/api/v1/home/photo?favorites=true', image: 'imageUrl' } },
-          }],
-        },
-      };
-      await makeService(screen).stateSnapshot('upstairs-eink');
-      const photoCall = calls.find((u) => u.includes('/home/photo'));
-      expect(photoCall).toContain('hold_key=upstairs-eink');
-    } finally {
-      global.fetch = realFetch;
-    }
+    const screen = {
+      ...SCREEN,
+      content: {
+        ...SCREEN.content,
+        views: [{
+          id: 'photo',
+          layout: { children: [{ widget: 'placeholder' }] },
+          data: { photo: { source: '/api/v1/home/photo?favorites=true', image: 'imageUrl' } },
+        }],
+      },
+    };
+    const svc = new EinkPanelService({
+      panelStore: panelStore(screen),
+      dataSourceGateway: { resolve: async (sources, options) => { calls.push(`${sources.photo.source}&hold_key=${options.scopeKey}`); return {}; } },
+      panelRenderer: PANEL_RENDERER,
+      fingerprint,
+      logger: { info() {} },
+    });
+    await svc.stateSnapshot('upstairs-eink');
+    const photoCall = calls.find((u) => u.includes('/home/photo'));
+    expect(photoCall).toContain('hold_key=upstairs-eink');
   });
 
   it('404s when the panel config is missing', async () => {
     const svc = new EinkPanelService({
-      dataService: { household: { read: () => null } },
+      panelStore: panelStore(null),
+      dataSourceGateway: { resolve: async () => ({}) },
+      panelRenderer: PANEL_RENDERER,
+      fingerprint,
       logger: { info() {} },
     });
-    await expect(svc.stateSnapshot('nope')).rejects.toMatchObject({ status: 404 });
+    await expect(svc.stateSnapshot('nope')).rejects.toMatchObject({
+      name: 'NotFoundError', code: 'EINK_PANEL_NOT_FOUND',
+    });
   });
 });

@@ -1,27 +1,35 @@
 // backend/src/5_composition/bootstrap.mjs
 
 import path from 'path';
-import fs from 'fs/promises';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Integration registry imports
-import { AdapterRegistry } from '#system/registries/AdapterRegistry.mjs';
-import { IntegrationLoader } from '#system/registries/IntegrationLoader.mjs';
-import { SystemBotLoader } from '#system/registries/SystemBotLoader.mjs';
+import { AdapterRegistry } from '#composition/integrations/AdapterRegistry.mjs';
+import { IntegrationLoader } from '#composition/integrations/IntegrationLoader.mjs';
+import { SystemBotLoader } from '#composition/integrations/SystemBotLoader.mjs';
 
 // EventBus imports
-import { WebSocketEventBus } from '#system/eventbus/WebSocketEventBus.mjs';
+import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
+import { PrewarmHttpStatusClient } from '#adapters/content/PrewarmHttpStatusClient.mjs';
+import { ReadOnlyConfigAuthStore } from '#adapters/auth/ReadOnlyConfigAuthStore.mjs';
+import { GoogleGmailClientFactory } from '#adapters/google/GoogleGmailClientFactory.mjs';
+import { InMemoryNotificationStore } from '#adapters/messaging/InMemoryNotificationStore.mjs';
+import { createNoOpNotificationService } from '#adapters/integrations/noops.mjs';
+import { RegistryMediaPolicyCatalog } from '#adapters/agents/RegistryMediaPolicyCatalog.mjs';
+import { createNutribotRuntimeConfig } from '#apps/nutribot/NutribotRuntimeConfig.mjs';
+import { isContainerRuntime } from '#system/runtime/runtimeEnvironment.mjs';
 
 // Content domain imports
-import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
+import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
 import { PlexPosterProvider } from '#adapters/content/media/plex/PlexPosterProvider.mjs';
 import { MediaKeyResolver } from '#domains/media/MediaKeyResolver.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
+import { ScriptureResolver } from '#adapters/content/readalong/resolvers/scripture.mjs';
 import { ListAdapter } from '#adapters/content/list/ListAdapter.mjs';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
@@ -70,7 +78,7 @@ import { createLocalContentRouter } from '#api/v1/routers/localContent.mjs';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
 import { createListRouter } from '#api/v1/routers/list.mjs';
 import { createQueueRouter } from '#api/v1/routers/queue.mjs';
-import { QueueService } from '#domains/content/services/QueueService.mjs';
+import { QueueService } from '#apps/content/services/QueueService.mjs';
 import { createSiblingsRouter } from '#api/v1/routers/siblings.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
 import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
@@ -94,10 +102,11 @@ import { GarageFanAdapter } from '#adapters/fitness/GarageFanAdapter.mjs';
 import { FitnessAssetResolver } from '#adapters/fitness/FitnessAssetResolver.mjs';
 import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
+import { AgentConfigProjection, EntropyConfigProjection, NewsReporterConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
-import { FitnessSimulationService } from '#apps/fitness/services/FitnessSimulationService.mjs';
+import { FitnessSimulationService } from '#adapters/fitness/FitnessSimulationProcess.mjs';
 import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
 import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
 import { makeDeviceColorResolver } from '#domains/fitness/strapColors.mjs';
@@ -107,7 +116,6 @@ import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMa
 import { createTimelapseFrameRenderer } from '#rendering/fitness/TimelapseFrameRenderer.mjs';
 import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
 import { YamlRecapSnapshotStore } from '#adapters/persistence/yaml/YamlRecapSnapshotStore.mjs';
-import nodeFs from 'node:fs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
 import { FitnessSuggestionService } from '#apps/fitness/suggestions/FitnessSuggestionService.mjs';
 import { NextUpStrategy } from '#apps/fitness/suggestions/NextUpStrategy.mjs';
@@ -124,7 +132,8 @@ import { RemoteExecAdapter } from '#adapters/home-automation/remote-exec/RemoteE
 import { createHomeAutomationRouter } from '#api/v1/routers/homeAutomation.mjs';
 import { CallHomeAssistantService } from '#apps/home-automation/usecases/CallHomeAssistantService.mjs';
 import { HaSensorDisplayPowerCheck } from '#adapters/home-automation/HaSensorDisplayPowerCheck.mjs';
-import { DisplayReadinessPolicy, createNoOpDisplayPowerCheck } from '#domains/home-automation/index.mjs';
+import { DisplayReadinessPolicy } from '#apps/devices/services/DisplayReadinessPolicy.mjs';
+import { createNoOpDisplayPowerCheck } from '#apps/home-automation/ports/IDisplayPowerCheck.mjs';
 import { HomeAutomationContainer } from '#apps/home-automation/HomeAutomationContainer.mjs';
 import { YamlHomeDashboardConfigRepository } from '#adapters/persistence/yaml/YamlHomeDashboardConfigRepository.mjs';
 import { createHomeDashboardRouter } from '#api/v1/routers/home-dashboard.mjs';
@@ -147,12 +156,14 @@ import {
 import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
 import { DeviceFactory } from '#apps/devices/services/DeviceFactory.mjs';
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
+import { ConfigDeviceBlueprintFactory } from '#composition/modules/ConfigDeviceBlueprintFactory.mjs';
 import { HomeAssistantDeviceAdapter } from '#adapters/devices/HomeAssistantDeviceAdapter.mjs';
 import { FullyKioskContentAdapter } from '#adapters/devices/FullyKioskContentAdapter.mjs';
 import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
 import { SshOsAdapter } from '#adapters/devices/SshOsAdapter.mjs';
 import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { ResilientContentAdapter } from '#adapters/devices/ResilientContentAdapter.mjs';
+import { ScreenAddressResolver } from '#adapters/devices/ScreenAddressResolver.mjs';
 
 // Camera imports
 import { CameraService } from '#apps/camera/CameraService.mjs';
@@ -189,6 +200,7 @@ import { GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS } from '#adapters/feed/sources/Googl
 import { WebContentAdapter } from '#adapters/feed/WebContentAdapter.mjs';
 import { YamlHeadlineCacheStore } from '#adapters/persistence/yaml/YamlHeadlineCacheStore.mjs';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
+import { DataServiceFeedConfigRepository } from '#adapters/feed/DataServiceFeedConfigRepository.mjs';
 
 // Finance domain imports
 import { YamlFinanceDatastore } from '#adapters/persistence/yaml/YamlFinanceDatastore.mjs';
@@ -196,6 +208,8 @@ import { BudgetCompilationService } from '#apps/finance/BudgetCompilationService
 import { FinanceHarvestService } from '#apps/finance/FinanceHarvestService.mjs';
 import { TransactionCategorizationService } from '#apps/finance/TransactionCategorizationService.mjs';
 import { PayrollSyncService } from '#apps/finance/PayrollSyncService.mjs';
+import { TriNetPayrollGateway } from '#adapters/finance/TriNetPayrollGateway.mjs';
+import { FinanceStorePayrollRepository } from '#adapters/finance/FinanceStorePayrollRepository.mjs';
 import { createFinanceRouter } from '#api/v1/routers/finance.mjs';
 
 // Cost domain imports
@@ -205,7 +219,7 @@ import { YamlCostDatastore } from '#adapters/cost/YamlCostDatastore.mjs';
 import createCostRouter from '#api/v1/routers/cost.mjs';
 
 // Gratitude domain imports
-import { GratitudeService } from '#domains/gratitude/services/GratitudeService.mjs';
+import { GratitudeService } from '#apps/gratitude/services/GratitudeService.mjs';
 import { YamlGratitudeDatastore } from '#adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
 import { GratitudeHouseholdService } from '#apps/gratitude/services/GratitudeHouseholdService.mjs';
 import { createGratitudeRouter } from '#api/v1/routers/gratitude.mjs';
@@ -214,8 +228,8 @@ import { createGratitudeRouter } from '#api/v1/routers/gratitude.mjs';
 import { YamlFoodLogDatastore } from '#adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
 
 // Messaging domain imports
-import { ConversationService } from '#domains/messaging/services/ConversationService.mjs';
-import { NotificationService } from '#domains/messaging/services/NotificationService.mjs';
+import { ConversationService } from '#apps/messaging/services/ConversationService.mjs';
+import { NotificationService } from '#apps/messaging/services/NotificationService.mjs';
 import { YamlConversationDatastore } from '#adapters/persistence/yaml/YamlConversationDatastore.mjs';
 import { TelegramAdapter } from '#adapters/messaging/TelegramAdapter.mjs';
 import { GmailAdapter } from '#adapters/messaging/GmailAdapter.mjs';
@@ -224,17 +238,26 @@ import { GmailAdapter } from '#adapters/messaging/GmailAdapter.mjs';
 import { JournalistContainer } from '#apps/journalist/JournalistContainer.mjs';
 import { YamlJournalEntryRepository } from '#adapters/persistence/yaml/YamlJournalEntryRepository.mjs';
 import { YamlMessageQueueRepository } from '#adapters/persistence/yaml/YamlMessageQueueRepository.mjs';
-import { DebriefRepository, LoggingAIGateway } from '#adapters/journalist/index.mjs';
-import { JournalistInputRouter } from '#adapters/journalist/JournalistInputRouter.mjs';
+import {
+  DebriefRepository,
+  LoggingAIGateway,
+  JournalistConfigProjection,
+  DataServiceJournalistInteractionLogStore,
+} from '#adapters/journalist/index.mjs';
+import { JournalistInputRouter } from '#apps/journalist/services/JournalistInputRouter.mjs';
 import { createJournalistRouter } from '#api/v1/routers/journalist.mjs';
 
 // Nutribot application imports
 import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
-import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
-import { dataService } from '#system/config/index.mjs';
+import { dataService } from './runtimePersistence.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
-import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
+import { FetchImageDownloader } from '#adapters/nutribot/FetchImageDownloader.mjs';
+import { FilesystemFoodIconCatalog } from '#adapters/nutribot/FilesystemFoodIconCatalog.mjs';
+import { LatestReconciliationReader } from '#apps/health/LatestReconciliationReader.mjs';
+import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
+import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
+import crypto from 'node:crypto';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
 
 // Telegram bot adapters (used by journalist, homebot, nutribot router factories)
@@ -247,9 +270,14 @@ import { ConfigHouseholdAdapter, HomeBotInputRouter } from '#adapters/homebot/in
 import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 
 // Agents application imports
-import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
+import { AgentOrchestrator, EchoAgent } from '#apps/agents/index.mjs';
+import { Scheduler } from '#adapters/scheduling/AgentAssignmentScheduler.mjs';
+import { agentSchedulerEnabled } from './policies/agentSchedulerEnabled.mjs';
 import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
 import { PersonalContextLoader } from '#apps/health/PersonalContextLoader.mjs';
+import { YamlPersonalPlaybookStore } from '#adapters/health/YamlPersonalPlaybookStore.mjs';
+import { ScopedHealthNotesArchive } from '#adapters/health/ScopedHealthNotesArchive.mjs';
+import { FilesystemHealthArchiveAddressPolicyFactory } from '#adapters/health/FilesystemHealthArchiveAddressPolicyFactory.mjs';
 import { HealthArchiveScopeFactory } from '#apps/health/archive/HealthArchiveScopeFactory.mjs';
 import { SimilarPeriodFinder } from '#domains/health/services/SimilarPeriodFinder.mjs';
 import { PatternDetector } from '#domains/health/services/PatternDetector.mjs';
@@ -259,16 +287,25 @@ import { PeriodResolver } from '#apps/health/analytics/PeriodResolver.mjs';
 import { YamlHealthScanDatastore } from '#adapters/persistence/yaml/YamlHealthScanDatastore.mjs';
 import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
 import { HealthQueryService }       from '#apps/agents/health-coach/services/HealthQueryService.mjs';
-import { ComputeSandbox }           from '#apps/agents/health-coach/services/ComputeSandbox.mjs';
+import { ComputeSandboxAdapter }    from '#adapters/agents/health-coach/ComputeSandboxAdapter.mjs';
 import { PersonalConstantsService } from '#apps/agents/health-coach/services/PersonalConstantsService.mjs';
+import { DataServiceHealthCoachWorkspaceRepository } from '#adapters/agents/health-coach/DataServiceHealthCoachWorkspaceRepository.mjs';
 import { buildAgentMemory }            from '#apps/agents/framework/buildAgentMemory.mjs';
 import { buildAgentEventQueryService } from '#apps/agents/framework/buildAgentEventQueryService.mjs';
 import { buildAgentRuntime }           from '#apps/agents/framework/buildAgentRuntime.mjs';
+import { WorkingMemoryRepository }      from '#apps/agents/framework/WorkingMemoryRepository.mjs';
+import { AgentExecutionPolicy }         from '#apps/agents/framework/AgentExecutionPolicy.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
 import { YamlTocCacheDatastore } from '#adapters/persistence/yaml/YamlTocCacheDatastore.mjs';
-import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
+import {
+  AgentTranscriptFileStore,
+  MastraAdapter,
+  MastraAgentMemoryFactory,
+  MastraMemoryProcessorFactory,
+  YamlWorkingMemoryAdapter,
+} from '#adapters/agents/index.mjs';
 
 // NewsReporter imports (adapters/renderer constructed here; container receives instances)
 import { NewsReporterContainer } from '#apps/newsreporter/NewsReporterContainer.mjs';
@@ -276,7 +313,6 @@ import { ReportReceiptRenderer } from '#rendering/newsreporter/ReportReceiptRend
 import { createSourceRegistry as createNewsSourceRegistry } from '#adapters/newsreporter/sources/sourceRegistry.mjs';
 import { NewsReporterJobDatastore } from '#adapters/newsreporter/NewsReporterJobDatastore.mjs';
 import { YamlReportRunDatastore } from '#adapters/persistence/yaml/YamlReportRunDatastore.mjs';
-import { buildMastraMemory } from '#system/memory/buildMastraMemory.mjs';
 import { LifeplanGuideAgent } from '#apps/agents/lifeplan-guide/LifeplanGuideAgent.mjs';
 import { YamlConversationStore } from '#adapters/agents/YamlConversationStore.mjs';
 // Health domain + application imports
@@ -290,7 +326,6 @@ import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatast
 import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
 import { WebNutribotAdapter } from '#adapters/nutribot/WebNutribotAdapter.mjs';
 import { createHealthRouter } from '#api/v1/routers/health.mjs';
-import { createHealthDashboardRouter } from '#api/v1/routers/health-dashboard.mjs';
 
 // Entropy application imports (uses config/logging)
 import { EntropyService } from '#apps/entropy/services/EntropyService.mjs';
@@ -299,6 +334,7 @@ import { createEntropyRouter } from '#api/v1/routers/entropy.mjs';
 
 // Lifelog application imports
 import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
+import { HarvestedLifelogSourceRegistry } from '#adapters/lifelog/HarvestedLifelogSourceRegistry.mjs';
 import { createLifelogRouter } from '#api/v1/routers/lifelog.mjs';
 
 // Static assets router
@@ -309,6 +345,7 @@ import { createCalendarRouter } from '#api/v1/routers/calendar.mjs';
 
 // Harvester application imports
 import { HarvesterService, HarvesterJobExecutor } from '#apps/harvester/index.mjs';
+import { WeightProcessor } from '#apps/health/analytics/WeightProcessor.mjs';
 
 // Harvester adapter imports
 import {
@@ -352,13 +389,9 @@ import { renderPianoRollPng } from '#rendering/pianoaudio/pianoRollImage.mjs';
 // RSS Parser for Goodreads/Letterboxd harvesters
 import RSSParser from 'rss-parser';
 
-// FileIO utilities for image saving
-import { saveImage as saveImageToFile, listSubdirectories, ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
-
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
 import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
-import { google } from 'googleapis';
 
 // =============================================================================
 // Integration Registry Bootstrap
@@ -545,7 +578,7 @@ export function createContentRegistry(config, deps = {}) {
         mediaProgressMemory,
         dataPath: config.dataPath || null,
         householdId: config.householdId || null,
-        cacheBasePath: config.cacheBasePath || (config.dataPath ? path.join(config.dataPath, 'system/cache') : null),
+        cacheBasePath: config.cacheBasePath || null,
         configService: deps.configService || null,
         // Optional override of the default search exclusions (video/fitness/)
         searchExcludePaths: config.mediaSearchExcludePaths || undefined
@@ -578,7 +611,8 @@ export function createContentRegistry(config, deps = {}) {
         mediaProgressMemory,
         householdId: config.householdId || null,
         householdsBasePath: config.householdsBasePath || null,
-        contentRegistry: registry
+        contentRegistry: registry,
+        scriptureResolver: ScriptureResolver,
       }),
       { category: 'local', provider: 'local-content' }
     );
@@ -613,15 +647,7 @@ export function createContentRegistry(config, deps = {}) {
   if (listDataPath) {
     // content/ is a top-level tree, sibling to household/ — NOT household-scoped,
     // so no default-household folder name resolution is needed here.
-    const queriesDir = path.join(listDataPath, 'content', 'lists', 'queries');
-
-    // Build list of user query directories from data path
-    // listDataPath is the root data dir (contains household/ and users/)
-    const usersBase = path.join(listDataPath, 'users');
-    const userQueryDirs = listSubdirectories(usersBase)
-      .map(username => ({ username, dir: path.join(usersBase, username, 'config', 'queries') }));
-
-    const savedQueryDatastore = new YamlSavedQueryDatastore({ queriesDir, userQueryDirs });
+    const savedQueryDatastore = new YamlSavedQueryDatastore({ dataPath: listDataPath });
     savedQueryService = new SavedQueryService({
       readQuery: savedQueryDatastore.readQuery.bind(savedQueryDatastore),
       listQueries: savedQueryDatastore.listQueries.bind(savedQueryDatastore),
@@ -1071,13 +1097,13 @@ export function createFeedServices(config) {
   const headlineStore = new YamlHeadlineCacheStore({ dataService, logger });
 
   const webContentGateway = new WebContentAdapter({ httpClient: new HttpClient({ logger }), logger });
+  const feedConfigRepository = new DataServiceFeedConfigRepository({ dataService });
 
   const headlineService = new HeadlineService({
     headlineStore,
     harvester,
-    dataService,
+    configRepository: feedConfigRepository,
     config: {
-      configPath: 'config/feed',
       defaults: { retentionHours: 48, maxPerSource: 10, dedupeWordCount: 8 },
       // Vendor placeholder-image lists injected as values (adapter-owned constants)
       blockedImageUrls: SOURCE_BLOCKED_IMAGE_URLS,
@@ -1094,7 +1120,7 @@ export function createFeedServices(config) {
   };
 
   // Note: feedRouter is created in app.mjs after FeedAssemblyService is wired
-  return { freshRSSAdapter, headlineService, headlineHarvestJob };
+  return { freshRSSAdapter, headlineService, headlineHarvestJob, feedConfigRepository };
 }
 
 /**
@@ -1165,11 +1191,23 @@ export function createFinanceServices(config) {
   // Payroll sync service (optional - requires httpClient and configService)
   let payrollService = null;
   if (httpClient && configService) {
+    const auth = configService.getUserAuth?.('payroll') || {};
+    const payrollConfig = {
+      baseUrl: auth.base_url || auth.base,
+      authKey: auth.cookie_name || auth.authkey || auth.auth_key,
+      authCookie: auth.auth_cookie || auth.auth,
+      company: auth.company,
+      employeeId: auth.employee_id || auth.employee,
+    };
+    const payrollGateway = new TriNetPayrollGateway({ httpClient, config: payrollConfig });
+    const payrollRepository = new FinanceStorePayrollRepository({ financeStore, logger });
     payrollService = new PayrollSyncService({
-      httpClient,
+      payrollGateway,
+      payrollRepository,
       transactionGateway: buxferAdapter,
-      financeStore,
-      configService,
+      householdId: defaultHouseholdId || configService.getDefaultHouseholdId?.() || 'default',
+      payrollAccountId: auth.payroll_account_id,
+      directDepositAccountId: auth.direct_deposit_account_id,
       logger
     });
   }
@@ -1509,11 +1547,25 @@ export async function createPlaybackHubServices(config) {
     configRepository,
     eventPublisher,
     logger,
-    broadcasterOptions: { intervalMs: 3000, maxBackoffMs: 30000 },
+    broadcasterOptions: {
+      intervalMs: 3000, maxBackoffMs: 30000,
+      scheduler: new NodeApplicationScheduler(),
+    },
   });
   await container.start();
 
-  const router = createPlaybackHubRouter({ container, logger });
+  const router = createPlaybackHubRouter({
+    operations: {
+      getHubStatus: container.getHubStatus,
+      getHubConfig: container.getHubConfig,
+      sendHubCommand: container.sendHubCommand,
+      updateDeviceConfig: container.updateDeviceConfig,
+      saveScheduledFire: container.saveScheduledFire,
+      deleteScheduledFire: container.deleteScheduledFire,
+      verifyAudioFlowing: container.verifyAudioFlowing,
+    },
+    logger,
+  });
 
   logger.info?.('playback-hub.bootstrap.complete', { baseUrl, requestTimeoutSec, yamlPath });
   return { container, router };
@@ -1580,27 +1632,27 @@ export async function createDeviceServices(config) {
     logger = console
   } = config;
 
-  // Concrete capability adapters are composed here; DeviceFactory only
-  // selects which one a device config calls for.
-  const adapterFactories = {
-    homeAssistantDevice: (cfg, deps) => new HomeAssistantDeviceAdapter(cfg, deps),
-    fullyKioskContent: (cfg, deps) => new FullyKioskContentAdapter(cfg, deps),
-    webSocketContent: (cfg, deps) => new WebSocketContentAdapter(cfg, deps),
-    sshOs: (cfg, deps) => new SshOsAdapter(cfg, deps),
-    adb: (cfg, deps) => new AdbAdapter(cfg, deps),
-    resilientContent: (cfg, deps) => new ResilientContentAdapter(cfg, deps),
-  };
-
-  // Create device factory with all capability adapters
-  const deviceFactory = new DeviceFactory({
+  const blueprintFactory = new ConfigDeviceBlueprintFactory({
     haGateway,
     httpClient,
     wsBus,
     remoteExec,
     daylightHost,
     configService,
-    adapterFactories,
-    logger
+    factories: {
+      deviceControl: (adapterConfig, deps) => new HomeAssistantDeviceAdapter(adapterConfig, deps),
+      sshOs: (adapterConfig, deps) => new SshOsAdapter(adapterConfig, deps),
+      adb: (adapterConfig, deps) => new AdbAdapter(adapterConfig, deps),
+      fullyKiosk: (adapterConfig, deps) => new FullyKioskContentAdapter(adapterConfig, deps),
+      resilient: (adapterConfig, deps) => new ResilientContentAdapter(adapterConfig, deps),
+      websocket: (adapterConfig, deps) => new WebSocketContentAdapter(adapterConfig, deps),
+    },
+    logger,
+  });
+
+  const deviceFactory = new DeviceFactory({
+    blueprintFactory,
+    logger,
   });
 
   // Create device service
@@ -1663,7 +1715,6 @@ export function createWakeAndLoadService(config) {
 
   // Domain policy
   const readinessPolicy = new DisplayReadinessPolicy({ powerCheck, logger });
-
   // Application service
   const wakeAndLoadService = new WakeAndLoadService({
     deviceService,
@@ -1674,6 +1725,9 @@ export function createWakeAndLoadService(config) {
     sessionControlService,
     haGateway: haGateway ?? null,
     commandHandlerLivenessService,
+    clock: { now: () => Date.now() },
+    createDispatchId: crypto.randomUUID,
+    scheduler: new NodeApplicationScheduler(),
     logger
   });
 
@@ -1693,6 +1747,7 @@ export function createWakeAndLoadService(config) {
 export function createDispatchIdempotencyService(config = {}) {
   const { ttlMs, logger } = config;
   const dispatchIdempotencyService = new DispatchIdempotencyService({
+    clock: { now: () => Date.now() },
     ttlMs,
     logger,
   });
@@ -1709,28 +1764,20 @@ export function createDispatchIdempotencyService(config = {}) {
  * @returns {{ prewarmService: TranscodePrewarmService }}
  */
 export function createTranscodePrewarmService(config) {
-  const { contentIdResolver, mediaProgressMemory, appBaseUrl, logger = console } = config;
+  const { contentIdResolver, contentCatalog, mediaProgressMemory, appBaseUrl, logger = console } = config;
 
-  const queueService = new QueueService({ mediaProgressMemory });
+  const queueService = new QueueService({ mediaProgressMemory, random: Math.random });
 
   // Thin status-only shim over the system HttpClient: prewarm pings care only
   // about the HTTP status; network/timeout failures map to status 0.
-  const prewarmHttpClient = new HttpClient({ logger, timeout: 10_000 });
-  const httpClient = {
-    async get(url) {
-      try {
-        const fullUrl = `${appBaseUrl}${url}`;
-        const resp = await prewarmHttpClient.requestRaw('GET', fullUrl, { responseType: 'text' });
-        return { status: resp.status };
-      } catch (err) {
-        logger.debug?.('prewarm.httpClient.error', { url, error: err.message });
-        return { status: 0 };
-      }
-    }
-  };
+  const httpClient = new PrewarmHttpStatusClient({ baseUrl: appBaseUrl, logger });
 
   const prewarmService = new TranscodePrewarmService({
-    contentIdResolver, queueService, httpClient, logger
+    contentIdResolver, contentCatalog, queueService, httpClient,
+    clock: { now: () => Date.now() },
+    createToken: () => crypto.randomUUID().replaceAll('-', '').slice(0, 16),
+    scheduler: new NodeApplicationScheduler(),
+    logger
   });
 
   return { prewarmService };
@@ -1914,12 +1961,15 @@ export function createMessagingServices(config) {
 
   // Conversation service
   const conversationService = new ConversationService({
-    conversationStore
+    conversationStore,
+    random: Math.random,
   });
 
   // Notification service
   const notificationService = new NotificationService({
-    logger
+    notificationStore: new InMemoryNotificationStore(),
+    logger,
+    random: Math.random,
   });
 
   // Telegram adapter (optional - requires token)
@@ -1940,8 +1990,7 @@ export function createMessagingServices(config) {
   let gmailAdapter = null;
   if (gmail?.credentials) {
     gmailAdapter = new GmailAdapter({
-      credentials: gmail.credentials,
-      token: gmail.token,
+      googleAuth: gmail.googleAuth,
       logger
     });
 
@@ -1954,7 +2003,7 @@ export function createMessagingServices(config) {
     conversationService,
     notificationService,
     telegramAdapter,
-    gmailAdapter
+    gmailAdapter,
   };
 }
 
@@ -1965,7 +2014,7 @@ export function createMessagingServices(config) {
 /**
  * Create journalist application services
  * @param {Object} config
- * @param {Object} config.userDataService - UserDataService for YAML I/O
+ * @param {Object} config.dataService - Hierarchical YAML persistence capability
  * @param {Object} config.configService - ConfigService for user/household lookup
  * @param {Object} config.telegramAdapter - TelegramAdapter for messaging
  * @param {Object} config.aiGateway - AI gateway for completions
@@ -1977,15 +2026,20 @@ export function createMessagingServices(config) {
  */
 export function createJournalistServices(config) {
   const {
-    userDataService,
+    dataService,
     configService,
     telegramAdapter,
     aiGateway,
     userResolver,
     conversationStateStore,
     quizRepository,
+    pause,
     logger = console
   } = config;
+  const lifelogAggregator = new LifelogAggregator({
+    sourceRegistry: new HarvestedLifelogSourceRegistry({ dataService, logger }),
+    logger,
+  });
 
   // Journal entry repository (YAML persistence)
   const journalEntryRepository = new YamlJournalEntryRepository({
@@ -2003,15 +2057,12 @@ export function createJournalistServices(config) {
   });
 
   // Get journalist config from config service
-  const journalistConfig = {
-    username: configService?.getHeadOfHousehold?.() || 'user_1',
-    dataDir: configService?.getDataDir?.() || './data',
-    getUserTimezone: (userId) => configService?.getHouseholdTimezone?.(configService?.getUserHouseholdId?.(userId)) || 'America/Los_Angeles'
-  };
+  const journalistConfig = new JournalistConfigProjection({ configService }).read();
 
   // Debrief repository (YAML persistence)
   const debriefRepository = new DebriefRepository({
-    dataPath: `${journalistConfig.dataDir}/users/${journalistConfig.username}/lifelog/journalist`,
+    dataDir: journalistConfig.dataDir,
+    username: journalistConfig.username,
     logger
   });
 
@@ -2024,17 +2075,13 @@ export function createJournalistServices(config) {
     conversationStateStore,
     quizRepository,
     userResolver,
-    userDataService,
+    lifelogAggregator,
     debriefRepository,
     loggingAIGatewayFactory: (deps) => new LoggingAIGateway({
       ...deps,
-      saveFile: (relativePath, data) => {
-        // Save relative to user's lifelog directory
-        // relativePath is "journalist/last_gpt.yml", we need "lifelog/journalist/last_gpt.yml"
-        const dataPath = `lifelog/${relativePath}`;
-        dataService.user.write(dataPath, data, deps.username);
-      }
+      interactionLogStore: new DataServiceJournalistInteractionLogStore({ dataService }),
     }),
+    pause,
     logger
   });
 
@@ -2109,7 +2156,7 @@ export function createHomebotServices(config) {
  * @param {Object} [config.upcGateway] - UPC lookup gateway
  * @param {Object} [config.googleImageGateway] - Google Image Search gateway
  * @param {Object} [config.conversationStateStore] - State store for conversation flow
- * @param {Object} [config.reportRenderer] - Report renderer
+ * @param {Object} [config.reportDelivery] - Prepared-report delivery capability
  * @param {Object} [config.nutribotConfig] - NutriBot configuration
  * @param {Object} [config.agentOrchestrator] - AgentOrchestrator for delegating to health-coach agent
  * @param {Object} [config.logger] - Logger instance
@@ -2124,26 +2171,20 @@ export async function createNutribotServices(config) {
     upcGateway,
     googleImageGateway,
     conversationStateStore,
-    reportRenderer,
+    reportDelivery,
     nutribotConfig: rawNutribotConfig = {},
     reconciliationReader,
     healthStore = null,
     catalogService = null,
     agentOrchestrator = null,
     scaleRawConfig = {},
+    pause,
     logger = console
   } = config;
 
   // Ensure nutribotConfig has required methods (getUserGoals, getUserTimezone)
   // If it's a plain object from configService, wrap with default method implementations
-  const defaultGoals = { calories: 2000, calories_min: 1600, calories_max: 2000, protein: 150, carbs: 200, fat: 65, fiber: 30, sodium: 2300 };
-  const nutribotConfig = {
-    ...rawNutribotConfig,
-    getUserGoals: rawNutribotConfig?.getUserGoals?.bind(rawNutribotConfig) || (() => defaultGoals),
-    getUserTimezone: rawNutribotConfig?.getUserTimezone?.bind(rawNutribotConfig) || (() => 'America/Los_Angeles'),
-    getDefaultTimezone: rawNutribotConfig?.getDefaultTimezone?.bind(rawNutribotConfig) || (() => 'America/Los_Angeles'),
-    getThresholds: rawNutribotConfig?.getThresholds?.bind(rawNutribotConfig) || (() => ({ daily: 2000 })),
-  };
+  const nutribotConfig = createNutribotRuntimeConfig(rawNutribotConfig);
 
   // Food log store (YAML persistence)
   const foodLogStore = new YamlFoodLogDatastore({
@@ -2166,13 +2207,10 @@ export async function createNutribotServices(config) {
 
   // Build food icon list from available icon files on disk
   const foodIconDir = configService.getPath('icons') + '/food';
+  const foodIconCatalog = new FilesystemFoodIconCatalog({ iconDir: foodIconDir });
   let foodIconsString = 'apple banana bread cheese chicken default';
   try {
-    const { readdirSync } = await import('fs');
-    const iconFiles = readdirSync(foodIconDir)
-      .filter(f => f.endsWith('.png'))
-      .map(f => f.replace('.png', ''))
-      .sort();
+    const iconFiles = foodIconCatalog.list();
     if (iconFiles.length > 0) {
       foodIconsString = iconFiles.join(' ');
       logger.info?.('nutribot.icons.loaded', { count: iconFiles.length, dir: foodIconDir });
@@ -2197,14 +2235,16 @@ export async function createNutribotServices(config) {
     foodLogStore,
     nutriListStore,
     conversationStateStore,
-    reportRenderer,
+    reportDelivery,
     barcodeGenerator,
     foodIconsString,
     reconciliationReader,
     healthStore,
     catalogService,
     scaleConfig,
+    pause,
     agentOrchestrator,
+    imageDownloader: new FetchImageDownloader(),
     logger
   });
 
@@ -2271,21 +2311,19 @@ export function createHealthServices(config) {
   });
 
   // Reconciliation reader closure for real-time prompt boost
-  const reconciliationReader = async () => {
-    try {
-      const data = await healthStore.loadReconciliationData(
-        configService.getHeadOfHousehold?.() || 'user_1'
-      );
-      const dates = Object.keys(data).sort();
-      return dates.length > 0 ? data[dates[dates.length - 1]] : null;
-    } catch { return null; }
-  };
+  const latestReconciliation = new LatestReconciliationReader({
+    store: healthStore,
+    defaultUserId: () => configService.getHeadOfHousehold?.() || 'user_1',
+  });
+  const reconciliationReader = () => latestReconciliation.read();
 
   // Food catalog persistence + service
   const catalogStore = new YamlFoodCatalogDatastore({ dataService, logger });
   const catalogService = new FoodCatalogService({
     catalogStore,
     nutriListStore,
+    clock: { now: () => Date.now() },
+    createId: crypto.randomUUID,
     logger,
   });
 
@@ -2329,7 +2367,7 @@ export function createEntropyServices(config) {
   // Entropy service
   const entropyService = new EntropyService({
     entropyReader,
-    configService,
+    configProjection: new EntropyConfigProjection({ configService }),
     logger
   });
 
@@ -2354,7 +2392,7 @@ export function createLifelogServices(config) {
   const { userLoadFile, logger = console } = config;
 
   const lifelogAggregator = new LifelogAggregator({
-    userLoadFile,
+    sourceRegistry: new HarvestedLifelogSourceRegistry({ userLoadFile, logger }),
     logger
   });
 
@@ -2408,9 +2446,11 @@ export async function createAgentsServices(config) {
     foodLogStore = null,
   } = config;
 
+  const agentConfigProjection = new AgentConfigProjection({ configService });
+
   // Mastra reads API keys from process.env — bridge from ConfigService
   if (configService) {
-    const openaiKey = configService.getSecret('OPENAI_API_KEY');
+    const openaiKey = configService.getSystemAuth('openai', 'api_key');
     if (openaiKey && !process.env.OPENAI_API_KEY) {
       process.env.OPENAI_API_KEY = openaiKey;
     }
@@ -2423,9 +2463,11 @@ export async function createAgentsServices(config) {
   // Build Mastra Memory for cross-session persistence. Uses LibSQL (SQLite) backed
   // by data/agents/memory.db. Factory creates parent dir if missing.
   const dataPath = configService?.getDataDir?.() ?? 'data';
+  const memoryFactory = new MastraAgentMemoryFactory();
+  const memoryProcessorFactory = new MastraMemoryProcessorFactory();
   let mastraMemory = null;
   try {
-    mastraMemory = buildMastraMemory({
+    mastraMemory = memoryFactory.createMemory({
       dbPath: `${dataPath}/agents/memory.db`,
       lastMessages: 20,
       // Working memory disabled pending JSONSchema fix. With @mastra/memory@1.17.5
@@ -2441,16 +2483,38 @@ export async function createAgentsServices(config) {
   }
 
   // Create Mastra adapter (IAgentRuntime implementation)
-  const agentRuntime = new MastraAdapter({ logger, mediaDir, memory: mastraMemory });
+  const transcriptStore = mediaDir ? new AgentTranscriptFileStore({ mediaDir }) : null;
+  const maxToolCalls = 50;
+  const agentRuntime = new MastraAdapter({
+    logger,
+    mediaDir,
+    memory: mastraMemory,
+    maxToolCalls,
+    executionPolicy: new AgentExecutionPolicy({ maxToolCalls, logger, transcriptStore }),
+  });
 
   // Create working memory adapter for agent state persistence
-  const workingMemory = new YamlWorkingMemoryAdapter({ dataService, logger });
+  const workingMemory = new WorkingMemoryRepository({
+    recordStore: new YamlWorkingMemoryAdapter({ dataService, logger }),
+  });
 
   // Create orchestrator
-  const agentOrchestrator = new AgentOrchestrator({ agentRuntime, configService, logger });
+  const agentOrchestrator = new AgentOrchestrator({
+    agentRuntime,
+    resolveDefaultUserId: () => configService.getHeadOfHousehold?.(),
+    createTurnId: crypto.randomUUID,
+    logger,
+  });
 
   // Create scheduler for cron-triggered assignments
-  const scheduler = new Scheduler({ logger });
+  const scheduler = new Scheduler({
+    logger,
+    enabled: agentSchedulerEnabled({
+      nodeEnv: process.env.NODE_ENV,
+      enableCron: process.env.ENABLE_CRON,
+      isContainer: isContainerRuntime(),
+    }),
+  });
 
   // Register available agents
   agentOrchestrator.register(EchoAgent, { workingMemory });
@@ -2472,24 +2536,8 @@ export async function createAgentsServices(config) {
     // bad playbook).
     const dataDir = configService?.getDataDir?.() || './data';
     const archiveRoot = path.resolve(dataDir, 'users');
-    const yamlReader = {
-      readYaml: async (absPath) => {
-        try {
-          const content = await fs.readFile(absPath, 'utf8');
-          return yaml.load(content) || null;
-        } catch (err) {
-          if (err.code === 'ENOENT') return null;
-          logger.warn?.('personal_context.read_failed', {
-            path: absPath,
-            error: err?.message || String(err),
-          });
-          return null;
-        }
-      },
-    };
     const personalContextLoader = new PersonalContextLoader({
-      dataService: yamlReader,
-      archiveRoot,
+      playbookStore: new YamlPersonalPlaybookStore({ usersRoot: archiveRoot, logger }),
       logger,
     });
 
@@ -2502,15 +2550,15 @@ export async function createAgentsServices(config) {
     const mediaDir = configService?.getMediaDir?.() || path.resolve(path.dirname(dataRoot), 'media');
     const mediaRoot = path.resolve(mediaDir);
     const archiveScopeFactory = new HealthArchiveScopeFactory({
-      dataRoot,
-      mediaRoot,
+      archiveAddressPolicy: new FilesystemHealthArchiveAddressPolicyFactory().create({ dataRoot, mediaRoot }),
       personalContextLoader,
       logger,
     });
-    const similarPeriodFinder = new SimilarPeriodFinder({ logger });
+    const notesArchive = new ScopedHealthNotesArchive({ dataRoot, archiveScopeFactory });
+    const similarPeriodFinder = new SimilarPeriodFinder();
     // F-004 PatternDetector — pure domain service consumed by MorningBrief.
     // Stateless, no I/O; instantiated once and shared across requests.
-    const patternDetector = new PatternDetector({ logger });
+    const patternDetector = new PatternDetector();
 
     // F-007 CalibrationConstants — body-comp calibration anchor service used
     // by MorningBrief to surface the DEXA staleness CTA. Instances hold
@@ -2543,8 +2591,13 @@ export async function createAgentsServices(config) {
     // Task 12: construct new analytical query services for HealthQueryToolFactory
     // + PlaybookToolFactory. Added additively — old tools remain registered.
     const healthQueryService       = new HealthQueryService({ healthStore, healthService });
-    const computeSandbox           = new ComputeSandbox();
-    const personalConstantsService = new PersonalConstantsService({ dataService, healthStore });
+    const computeSandbox           = new ComputeSandboxAdapter();
+    const workspaceRepository = new DataServiceHealthCoachWorkspaceRepository({
+      dataService,
+      profileService: configService,
+      mediaProgressMemory,
+    });
+    const personalConstantsService = new PersonalConstantsService({ workspaceRepository, healthStore });
 
     // ── Per-agent infrastructure loop ───────────────────────────────────────────
     // Each agent class declares its infrastructure needs via static methods.
@@ -2564,7 +2617,8 @@ export async function createAgentsServices(config) {
       healthService,
       healthStore,
       dataService,
-      configService,
+      agentConfigProjection,
+      workspaceRepository,
       personalConstantsService,
       // Coordinates
       householdId,
@@ -2575,6 +2629,10 @@ export async function createAgentsServices(config) {
       dataPath,
       // Runtime class injected so the app-layer factory holds no adapter import
       AgentRuntime: MastraAdapter,
+      maxToolCalls,
+      executionPolicy: new AgentExecutionPolicy({ maxToolCalls, logger, transcriptStore }),
+      memoryFactory,
+      memoryProcessorFactory,
     };
 
     const REFLECTIVE_AGENTS = [HealthCoachAgent];
@@ -2599,15 +2657,15 @@ export async function createAgentsServices(config) {
         sessionService,
         mediaProgressMemory,
         dataService,
-        configService,
+        defaultUserId,
+        workspaceRepository,
         messagingGateway,
         conversationId: conversationId ?? configService?.getNutribotConversationId?.() ?? null,
         personalContextLoader,
-        archiveScopeFactory,
+        notesArchive,
         similarPeriodFinder,
         patternDetector,
         calibrationConstants,
-        dataRoot,
         healthAnalyticsService,
         healthQueryService,
         computeSandbox,
@@ -2712,11 +2770,17 @@ export async function createAgentsServices(config) {
       mediaDir,
       agentId: 'lifeplan-guide',
       AgentRuntime: MastraAdapter,
+      maxToolCalls,
+      executionPolicy: new AgentExecutionPolicy({ maxToolCalls, logger, transcriptStore }),
+      memoryFactory,
+      memoryProcessorFactory,
     };
-    const lifeplanMemoryConfig = LifeplanGuideAgent.getMemoryConfig?.({ configService }) ?? null;
+    const lifeplanMemoryConfig = LifeplanGuideAgent.getMemoryConfig?.({ agentConfigProjection }) ?? null;
     const lifeplanMemory = buildAgentMemory(lifeplanMemoryConfig, lifeplanMemoryDeps);
     const lifeplanProcessors = LifeplanGuideAgent.getMemoryProcessors?.({
-      configService, memory: lifeplanMemory,
+      agentConfigProjection,
+      memory: lifeplanMemory,
+      memoryProcessorFactory,
     }) ?? null;
     const lifeplanRuntime = buildAgentRuntime(lifeplanMemory, lifeplanMemoryDeps, lifeplanProcessors);
 
@@ -2727,13 +2791,14 @@ export async function createAgentsServices(config) {
       beliefEvaluator: config.lifeplanServices.container.getBeliefEvaluator(),
       feedbackService: config.lifeplanServices.services.feedbackService,
       planAuthoringService: config.lifeplanServices.services.planAuthoringService,
+      clock: { now: () => new Date() },
       aggregator: config.lifeplanServices.aggregator,
       metricsStore: config.lifeplanServices.container.getMetricsStore(),
       driftService: config.lifeplanServices.services.driftService,
       ceremonyService: config.lifeplanServices.services.ceremonyService,
       ceremonyRecordStore: config.lifeplanServices.container.getCeremonyRecordStore(),
       cadenceService: config.lifeplanServices.container.getCadenceService(),
-      notificationService: config.notificationService || { send: () => [] },
+      notificationService: config.notificationService || createNoOpNotificationService(),
       conversationStore,
       agentRuntime: lifeplanRuntime,
     });
@@ -2820,9 +2885,11 @@ export async function createConciergeServices(config) {
 
   // Shared workingMemory from createAgentsServices (preferred). Fall back to a
   // new instance only when called without the orchestrator (e.g., unit tests).
-  const workingMemory = sharedWorkingMemory ?? new YamlWorkingMemoryAdapter({
-    dataService,
-    logger: logger.child({ component: 'working-memory' }),
+  const workingMemory = sharedWorkingMemory ?? new WorkingMemoryRepository({
+    recordStore: new YamlWorkingMemoryAdapter({
+      dataService,
+      logger: logger.child({ component: 'working-memory' }),
+    }),
   });
 
   const conciergeSatelliteRegistry = new YamlSatelliteRegistry({
@@ -2920,15 +2987,20 @@ export async function createConciergeServices(config) {
       let mediaJudge = null;
       const judgeModel = mediaConfig?.judge_model;
       if (judgeModel) {
+        const judgeLogger = logger.child({ component: 'judge-runtime' });
+        const judgeTranscriptStore = conciergeMediaDir ? new AgentTranscriptFileStore({ mediaDir: conciergeMediaDir }) : null;
         const judgeRuntime = new MastraAdapter({
           model: judgeModel,
-          logger: logger.child({ component: 'judge-runtime' }),
+          logger: judgeLogger,
           maxToolCalls: 1,
           timeoutMs: 8000,
           mediaDir: conciergeMediaDir,
+          executionPolicy: new AgentExecutionPolicy({ maxToolCalls: 1, logger: judgeLogger, transcriptStore: judgeTranscriptStore }),
         });
         mediaJudge = new MediaJudge({
           agentRuntime: judgeRuntime,
+          deadline: new NodePromiseDeadline(),
+          clock: { epoch: () => Date.now() },
           logger: logger.child({ skill: 'media', component: 'judge' }),
         });
       } else {
@@ -2946,33 +3018,19 @@ export async function createConciergeServices(config) {
       // single configured voice source to the right adapter. This is the
       // only place in the concierge wiring that names specific content sources.
       const { MediaPolicyGate } = await import('#apps/agents/concierge/services/MediaPolicyGate.mjs');
-      const labelLookup = async (item, _opts = {}) => {
-        const adapter = contentRegistry?.get?.(item?.source);
-        if (typeof adapter?.getAncestorLabels === 'function') {
-          return adapter.getAncestorLabels(item);
-        }
-        return [];
-      };
       // For playlist membership we need to know the source the playlist
       // lives in. Today voice playback pins to a single source via
       // mediaConfig.voice_sources; use that.
       const primaryVoiceSource = Array.isArray(mediaConfig?.voice_sources) && mediaConfig.voice_sources.length === 1
         ? mediaConfig.voice_sources[0]
         : null;
-      const playlistMembershipLookup = primaryVoiceSource
-        ? async (playlistId) => {
-            const adapter = contentRegistry?.get?.(primaryVoiceSource);
-            if (typeof adapter?.getPlaylistItemIds === 'function') {
-              return adapter.getPlaylistItemIds(playlistId);
-            }
-            return new Set();
-          }
-        : null;
+      const mediaPolicyCatalog = new RegistryMediaPolicyCatalog({ contentRegistry, primaryVoiceSource });
       const mediaPolicyGate = new MediaPolicyGate({
-        labelLookup,
-        playlistMembershipLookup,
+        labelLookup: mediaPolicyCatalog.ancestorLabels,
+        playlistMembershipLookup: mediaPolicyCatalog.playlistItemIds,
         logger: logger.child({ skill: 'media', component: 'policy-gate' }),
       });
+      const { MediaPlaybackUrlPresenter } = await import('#adapters/agents/MediaPlaybackUrlPresenter.mjs');
 
       toolBundles.push(new MediaBundle({
         contentQuery: contentQueryService,
@@ -2981,6 +3039,7 @@ export async function createConciergeServices(config) {
         config: { ...mediaConfig, ds_base_url: dsBaseUrl },
         judge: mediaJudge,
         policyGate: mediaPolicyGate,
+        resourcePresenter: new MediaPlaybackUrlPresenter({ baseUrl: dsBaseUrl }),
       }));
       logger.info?.('concierge.media.bundle.url', {
         ds_base_url: dsBaseUrl,
@@ -3096,7 +3155,13 @@ export function createNewsReporterServices(config) {
   const runtimeFor = (m) => {
     const key = m || defaultModel;
     if (!runtimeCache.has(key)) {
-      runtimeCache.set(key, new MastraAdapter({ model: key, logger, mediaDir }));
+      const runtimeTranscriptStore = mediaDir ? new AgentTranscriptFileStore({ mediaDir }) : null;
+      runtimeCache.set(key, new MastraAdapter({
+        model: key,
+        logger,
+        mediaDir,
+        executionPolicy: new AgentExecutionPolicy({ logger, transcriptStore: runtimeTranscriptStore }),
+      }));
     }
     return runtimeCache.get(key);
   };
@@ -3107,7 +3172,7 @@ export function createNewsReporterServices(config) {
   const history = new YamlReportRunDatastore({ dataService, logger });
 
   return NewsReporterContainer.build({
-    configService,
+    configProjection: new NewsReporterConfigProjection({ configService }),
     runtimeFor,
     defaultModel,
     renderer,
@@ -3161,15 +3226,9 @@ export function createHarvesterServices(config) {
 
   // Create or use provided authStore (for OAuth token persistence)
   // Use YamlAuthDatastore when io.userSaveAuth is available, otherwise fallback to stub
-  const authStore = authStoreParam || (io?.userSaveAuth ? new YamlAuthDatastore({ io, logger }) : {
-    async load(username, provider) {
-      return configService?.getUserAuth?.(provider, username) || null;
-    },
-    async save(username, provider, tokenData) {
-      // Auth store save is a no-op when userSaveAuth is not available
-      logger.warn?.('authStore.save.noop', { username, provider, reason: 'userSaveAuth not available' });
-    },
-  });
+  const authStore = authStoreParam || (io?.userSaveAuth
+    ? new YamlAuthDatastore({ io, logger })
+    : new ReadOnlyConfigAuthStore({ configService, logger }));
 
   // Create or use provided sharedStore (for weather data)
   // Note: YamlWeatherDatastore requires DataService (with .household.write), not UserDataService
@@ -3180,32 +3239,17 @@ export function createHarvesterServices(config) {
   }) : null);
 
   // Create Gmail client factory if not provided (for Shopping harvester)
-  const effectiveGmailClientFactory = gmailClientFactory || (async (username) => {
-    const GOOGLE_CLIENT_ID = configService.getSecret('GOOGLE_CLIENT_ID');
-    const GOOGLE_CLIENT_SECRET = configService.getSecret('GOOGLE_CLIENT_SECRET');
-    const GOOGLE_REDIRECT_URI = configService.getSecret('GOOGLE_REDIRECT_URI');
-    const auth = configService?.getUserAuth?.('google', username) || {};
-    const refreshToken = auth.refresh_token || configService.getSecret('GOOGLE_REFRESH_TOKEN');
-
-    if (!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
-      throw new Error('Google OAuth credentials not configured');
-    }
-
-    const oAuth2Client = new google.auth.OAuth2(
-      GOOGLE_CLIENT_ID,
-      GOOGLE_CLIENT_SECRET,
-      GOOGLE_REDIRECT_URI
-    );
-    oAuth2Client.setCredentials({ refresh_token: refreshToken });
-
-    return google.gmail({ version: 'v1', auth: oAuth2Client });
-  });
+  const effectiveGmailClientFactory = gmailClientFactory
+    || new GoogleGmailClientFactory({ configService }).create;
 
   // AI gateway (provided by composition root)
   const effectiveAiGateway = aiGateway ?? null;
 
   // Create harvester service
-  const harvesterService = new HarvesterService({ configService, logger });
+  const harvesterService = new HarvesterService({
+    resolveDefaultUserId: () => configService.getHeadOfHousehold?.(),
+    logger,
+  });
 
   // Helper to safely register a harvester
   const registerHarvester = (name, factory) => {
@@ -3459,6 +3503,11 @@ export function createHarvesterServices(config) {
       clientId: secret('WITHINGS_CLIENT_ID') || secret('WITHINGS_CLIENT'),
       clientSecret: secret('WITHINGS_CLIENT_SECRET') || secret('WITHINGS_SECRET'),
       redirectUri: secret('WITHINGS_REDIRECT'),
+      weightProcessor: new WeightProcessor({
+        lifelogStore,
+        timezone: harvesterTimezone,
+        logger,
+      }),
       timezone: harvesterTimezone,
       logger,
     }));
@@ -3547,7 +3596,7 @@ export function createHarvesterServices(config) {
     const junkMinNotes = pianoAudioCfg.junkMinNotes ?? 200;
     const concurrency = pianoAudioCfg.concurrency ?? 8; // parallel renders (host has 16 cores)
     const library = new FsMidiLibrary({ sourceDir, destDir, logger, junkMinSeconds, junkMinNotes });
-    const converter = new FluidSynthMp3Converter({ soundfontPath, scratchDir: '/tmp/pianoaudio', logger });
+    const converter = new FluidSynthMp3Converter({ soundfontPath, sourceDir, destDir, scratchDir: '/tmp/pianoaudio', logger });
     const convertUseCase = new ConvertPendingPianoMidi({ library, converter, logger, concurrency });
     return new PianoMp3Harvester({ convertUseCase, logger });
   });
@@ -3562,7 +3611,7 @@ export function createHarvesterServices(config) {
     const junkMinNotes = pianoAudioCfg.junkMinNotes ?? 200;
     const concurrency = pianoAudioCfg.pngConcurrency ?? 12; // canvas-only → cheap, more parallelism
     const library = new FsMidiLibrary({ sourceDir, destDir, outputExt: 'png', logger, junkMinSeconds, junkMinNotes });
-    const converter = new MidiPngConverter({ renderPng: renderPianoRollPng, logger });
+    const converter = new MidiPngConverter({ sourceDir, destDir, renderPng: renderPianoRollPng, logger });
     const renderUseCase = new ConvertPendingPianoMidi({ library, converter, logger, concurrency });
     return new PianoImageHarvester({ renderUseCase, logger });
   });
@@ -3570,7 +3619,6 @@ export function createHarvesterServices(config) {
   // Create job executor for scheduler integration
   const jobExecutor = new HarvesterJobExecutor({
     harvesterService,
-    configService,
     logger,
   });
 

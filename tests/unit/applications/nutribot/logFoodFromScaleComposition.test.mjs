@@ -142,6 +142,7 @@ describe('buildScalePromptText — transient notice', () => {
 import { LogFoodFromScale } from '#apps/nutribot/usecases/LogFoodFromScale.mjs';
 import { SelectScaleContainer } from '#apps/nutribot/usecases/SelectScaleContainer.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+import { serializeNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
 
 const MUG = { id: 'mug', label: 'Mug', emoji: '☕', grams: 350 };
 
@@ -166,7 +167,7 @@ function harness(containers = [MUG]) {
 }
 
 function itemsOf(log) {
-  return typeof log.toJSON === 'function' ? log.toJSON().items : log.items;
+  return serializeNutriLog(log).items;
 }
 
 describe('LogFoodFromScale.execute — persisted grams', () => {
@@ -179,7 +180,7 @@ describe('LogFoodFromScale.execute — persisted grams', () => {
     // 420 g gross - 350 g mug = 70 g net. Persisting 420 here yields 588 kcal at
     // 1.4 kcal/g ("Mixed") instead of 98 — a 6x overcount.
     expect(itemsOf(saved[0])[0].grams).toBe(70);
-    expect(saved[0].toJSON().metadata.grossGrams).toBe(420);
+    expect(serializeNutriLog(saved[0]).metadata.grossGrams).toBe(420);
   });
 
   it('prompt text and persisted grams cannot disagree', async () => {

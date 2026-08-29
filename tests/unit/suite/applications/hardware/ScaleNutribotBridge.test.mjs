@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
+import { createScaleNutribotBridge } from '#adapters/hardware/ScaleNutribotBridge.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };

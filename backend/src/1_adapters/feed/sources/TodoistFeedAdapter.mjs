@@ -2,7 +2,7 @@
 /**
  * TodoistFeedAdapter
  *
- * Reads Todoist task data from UserDataService and normalizes to FeedItem shape.
+ * Reads Todoist task data through its user-data reader and normalizes to FeedItem shape.
  *
  * @module adapters/feed/sources/TodoistFeedAdapter
  */
@@ -10,13 +10,13 @@
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class TodoistFeedAdapter extends IFeedSourceAdapter {
-  #userDataService;
+  #loadCurrentTasks;
   #logger;
 
-  constructor({ userDataService, logger = console }) {
+  constructor({ loadCurrentTasks, logger = console }) {
     super();
-    if (!userDataService) throw new Error('TodoistFeedAdapter requires userDataService');
-    this.#userDataService = userDataService;
+    if (typeof loadCurrentTasks !== 'function') throw new Error('TodoistFeedAdapter requires loadCurrentTasks');
+    this.#loadCurrentTasks = loadCurrentTasks;
     this.#logger = logger;
   }
 
@@ -25,7 +25,7 @@ export class TodoistFeedAdapter extends IFeedSourceAdapter {
 
   async fetchItems(query, username) {
     try {
-      const data = this.#userDataService.readUserData(username, 'current/todoist');
+      const data = this.#loadCurrentTasks(username);
       if (!data) return [];
 
       let tasks = Array.isArray(data?.tasks) ? data.tasks : [];

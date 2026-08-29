@@ -33,3 +33,5 @@ export {
   assertSessionControl,
   createNoOpSessionControl
 } from './ISessionControl.mjs';
+
+export { IDeviceTransportGateway, isDeviceTransportGateway } from './IDeviceTransportGateway.mjs';

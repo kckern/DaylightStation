@@ -10,7 +10,7 @@
  * Key responsibilities:
  * - Adapter resolution via ContentSourceRegistry (get + resolve fallback)
  * - Delegation to adapter.resolveSiblings()
- * - Response normalization (DTO mapping for uniform API shape)
+ * - Windowed pagination over normalized catalog results
  *
  * What this service does NOT own:
  * - Knowledge of specific content types (scripture volumes, list prefixes, etc.)
@@ -24,19 +24,19 @@
  * Application service for sibling resolution
  */
 export class SiblingsService {
-  #registry;
+  #contentCatalog;
   #logger;
 
   /**
    * @param {Object} deps - Dependencies
-   * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} deps.registry - Content source registry
+   * @param {Object} deps.contentCatalog - Semantic content catalog gateway
    * @param {Object} [deps.logger] - Logger instance
    */
-  constructor({ registry, logger = console }) {
-    if (!registry) {
-      throw new Error('SiblingsService requires registry');
+  constructor({ contentCatalog, logger = console }) {
+    if (!contentCatalog?.resolveSiblings) {
+      throw new Error('SiblingsService requires contentCatalog');
     }
-    this.#registry = registry;
+    this.#contentCatalog = contentCatalog;
     this.#logger = logger;
   }
 
@@ -47,7 +47,7 @@ export class SiblingsService {
    * 1. Resolve adapter from registry (exact match, then prefix fallback)
    * 2. Delegate to adapter.resolveSiblings(compoundId)
    * 3. Apply windowed pagination (adapter controls item ordering)
-   * 4. Normalize result to uniform DTO shape
+   * 4. Return the catalog's uniform sibling DTOs
    *
    * @param {string} source - Source identifier
    * @param {string} localId - Local ID within source
@@ -57,14 +57,12 @@ export class SiblingsService {
    * @returns {Promise<import('../ports/ISiblingsService.mjs').SiblingsResult|import('../ports/ISiblingsService.mjs').SiblingsError>}
    */
   async resolveSiblings(source, localId, opts = {}) {
-    const resolution = this.#resolveAdapter(source, localId);
-    if (!resolution.adapter) {
-      return { error: `Unknown source: ${source}`, status: 404, source };
-    }
+    const resolution = this.#resolveAddress(source, localId);
+    if (!resolution.address) return { kind: 'source_unknown', source };
 
-    const { adapter, compoundId } = resolution;
+    const { address, compoundId } = resolution;
 
-    const result = await adapter.resolveSiblings(compoundId);
+    const result = await this.#contentCatalog.resolveSiblings(address, compoundId);
     if (result === null) {
       return { parent: null, items: [] };
     }
@@ -72,14 +70,10 @@ export class SiblingsService {
     // Apply windowed pagination (adapter controls item ordering)
     const windowed = this.#applyWindow(result.items || [], compoundId, opts);
 
-    // Normalize windowed items
-    const normalized = windowed.items.map(item =>
-      this.#mapSiblingItem(item, { sourceOverride: result.sourceOverride })
-    );
-
     return {
+      kind: 'resolved',
       parent: result.parent || null,
-      items: normalized,
+      items: windowed.items,
       referenceIndex: windowed.referenceIndex,
       pagination: windowed.pagination,
       // Pass the adapter's root-first breadcrumb chain through when present.
@@ -97,27 +91,12 @@ export class SiblingsService {
    * Tries exact source match first, then prefix-based resolution.
    * @private
    */
-  #resolveAdapter(source, localId) {
-    let adapter = this.#registry.get(source);
-    let resolvedLocalId = localId;
-    let resolvedViaPrefix = false;
-
-    if (!adapter) {
-      const resolved = this.#registry.resolve(`${source}:${localId}`);
-      if (resolved) {
-        adapter = resolved.adapter;
-        resolvedLocalId = resolved.localId;
-        resolvedViaPrefix = true;
-      }
-    }
-
-    if (!adapter) {
-      return { adapter: null };
-    }
-
-    const compoundId = resolvedViaPrefix ? resolvedLocalId : `${source}:${resolvedLocalId}`;
-
-    return { adapter, compoundId };
+  #resolveAddress(source, localId) {
+    const exact = this.#contentCatalog.hasSource(source);
+    const address = this.#contentCatalog.resolveSource(source, localId);
+    if (!address) return { address: null };
+    const compoundId = exact ? `${source}:${address.localId}` : address.localId;
+    return { address, compoundId };
   }
 
   // ---------------------------------------------------------------------------
@@ -208,44 +187,6 @@ export class SiblingsService {
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Response normalization (DTO mapping)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Map adapter item to uniform sibling item DTO.
-   * This is presentation-layer normalization, not domain logic.
-   * @private
-   */
-  #mapSiblingItem(item, options = {}) {
-    const { sourceOverride } = options;
-    const source = sourceOverride || item.source || item.id?.split(':')[0] || null;
-    const type = item.metadata?.type || item.type || item.itemType || null;
-    const thumbnail = item.thumbnail || item.image || item.imageUrl || null;
-    const parentTitle = item.metadata?.parentTitle ?? item.parentTitle ?? null;
-    const grandparentTitle = item.metadata?.grandparentTitle ?? item.grandparentTitle ?? null;
-    const libraryTitle = item.metadata?.librarySectionTitle ?? item.librarySectionTitle ?? null;
-    const childCount = item.metadata?.childCount ?? item.metadata?.leafCount ?? item.childCount ?? null;
-    const isContainer = item.itemType === 'container' || item.isContainer || item.metadata?.type === 'container';
-    const itemIndex = item.metadata?.itemIndex ?? item.itemIndex ?? item.index ?? null;
-    const number = item.metadata?.number ?? null;
-
-    return {
-      id: item.id,
-      title: item.title,
-      source,
-      type,
-      thumbnail,
-      parentTitle,
-      grandparentTitle,
-      libraryTitle,
-      childCount,
-      isContainer,
-      ...(itemIndex != null && { itemIndex }),
-      ...(number != null && { number }),
-      ...(item.group && { group: item.group })
-    };
-  }
 }
 
 export default SiblingsService;

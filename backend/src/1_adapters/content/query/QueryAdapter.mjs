@@ -264,7 +264,7 @@ export class QueryAdapter {
     if (this.#mediaProgressMemory) {
       enrichedItems = await Promise.all(allItems.map(async (item) => {
         const mediaKey = item.localId || item.id?.replace(/^(files|media):/, '');
-        const state = await this.#mediaProgressMemory.get(mediaKey, 'files');
+        const state = await this.#mediaProgressMemory.findProgress(mediaKey, 'files');
         const percent = state?.percent || 0;
         return {
           ...item,

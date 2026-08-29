@@ -1,41 +1,40 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * /api/v1/school — thin HTTP shell over SchoolService (spec §5, §8).
  * All policy lives in the service; this file only maps errors to statuses.
  */
 import express from 'express';
-import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
-// Same slug the school receipts already use to keep an untrusted id out of a
-// filename/document-id — see receipts.mjs:30. Reused here (not replicated) so
-// the two Content-Disposition-adjacent id-sanitizing call sites can't drift.
-import { slugify } from '#domains/school/documents/receipts.mjs';
+import { sendLocalFileResource } from '#system/http/streamFile.mjs';
+import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 
 export function createSchoolRouter({
   schoolErrors = {},
+  coreErrors = {},
+  slugify,
   schoolService,
+  schoolApiSessions,
   flashcardStudy = null,
-  flashcardAssets = null,
+  schoolResourceService = null,
+  schoolPrintAccess = null,
+  schoolRecordsQuery = null,
+  schoolReportDocuments = null,
+  schoolCurriculumQuery = null,
+  schoolArtifactService = null,
+  sendFileResource = sendLocalFileResource,
   getMaterialCatalog = null,
   getMaterialUnits = null,
   getMaterialProgressSummary = null,
-  materialProgressStore = null,
   getSchoolReport = null,
   getLearningProgress = null,
   getInstructionalInsights = null,
-  learningCatalog = null,
-  openCatalogLearningSession = null,
   recordLearningReflection = null,
   recordLearningProbeInteraction = null,
   remediationTutor = null,
   offerCatalogQuizRemediation = null,
-  learnerDirectory = null,
   issueContinuationCode = null,
   printService = null,
   getLearnerRecord = null,
-  academicPeriodStore = null,
-  milestoneStore = null,
-  assignmentsStore = null,
-  schoolDatastore = null,
   regradeBankAttempts = null,
   getTeacherSession = null,
   getCompanionFinishCode = null,
@@ -43,24 +42,13 @@ export function createSchoolRouter({
   getLearnerTimeline = null,
   adjustSessionGrade = null,
   retractSessionGradeAdjustment = null,
-  issuedArtifactStore = null,
   teacherAgendaDispatch = null,
-  renderArtifactPostview = null,
-  renderWorksheetThumbnail = null,
-  reprintIssuedArtifact = null,
-  reprintResultReceiptArtifact = null,
   manageCurriculumException = null,
   teacherCapabilitySessions = null,
   teacherGate = null,
   openRemediation = null,
   schoolCalcRouter = null,
   surfaceCertification = null,
-  surfaceRegistry = null,
-  getScreenConfig = null,
-  renderPrintDocument = null,
-  printDocumentsRepo = null,
-  printAllocationStore = null,
-  getPrintTeacherPin = null,
   // Report cards, period close, teacher digest (Task 6, spec R5b).
   getReportCard = null,
   closeAcademicPeriod = null,
@@ -68,60 +56,29 @@ export function createSchoolRouter({
   // Teacher console picker (teacher-console spec §4.7.1) — the config-declared
   // teacher roster, `{configured, teachers: [{id, name}]}`.
   getTeachers = null,
-  // Raw frozen-record reader (`YamlSchoolDatastore`-shaped: `readReportCard`,
-  // `listReportCards`) — distinct from `getReportCard` above, which derives a
-  // LIVE report; this one only ever reads what `closeAcademicPeriod` already froze.
-  reportCardsStore = null,
-  // `(report, {learnerName}) => Promise<{pdf, pageCount, mode}>` (Task 7) — a
-  // plain function, not a `{execute}` use case; called directly whenever
-  // `?format=pdf` is on either report-card GET. Absent → 503 rather than a
-  // silent JSON fallback, since a caller explicitly asked for a PDF.
-  renderReportCardPdf = null,
-  // Feedback delivery + kid-visible standing (Task 9, spec R7 / adequacy
-  // SHOULD 9). `reviewQueue` is the SAME `IReviewQueue` `getReportCard`'s
-  // pending-count already reads (`stores.reviewQueue`); `academicPeriods`
-  // the SAME `IAcademicPeriodSource` `getReportCard` resolves periods
-  // through — both reused, not re-instantiated, so this router never
-  // disagrees with the report card about what "the current period" means.
-  reviewQueue = null,
-  academicPeriods = null,
+  // Feedback delivery + kid-visible standing (Task 9, spec R7 / adequacy).
   // Wave-3 planning domains (teacher-console W3-1..W3-4): all writes are
   // TeacherGate-checked inside their use cases; reads are open like the rest.
   setAcademicPeriods = null,
   getProgressReport = null,
-  renderProgressReportPdf = null,
-  renderCertificatePdf = null,
-  // `(nowMs) => minutes` — the household's UTC offset (certificate dating).
-  getHouseholdOffsetMinutes = null,
   // Wave-5 repair (spec D1/D2/D3) — writes gated inside their use cases.
-  attestationLog = null,
   recordAttestation = null,
   // Study-day program excusals (piano lesson gate) — same gated-inside rule.
   manageProgramDayBypass = null,
-  teacherNotesStore = null,
   recordTeacherNote = null,
   reassignEvidence = null,
   // The session-level twin of `reassignEvidence` (plan 4.1): re-credits work
   // that has no machine attempts to move. Mounted here rather than on the
-  // lifecycle router for two reasons — it shares the ONE `reassignmentLog`
-  // instance below (a second instance would race that log's append chain, and
-  // an audit trail that drops entries is worse than none), and `/sessions` on
-  // this router already means quiz sessions, not work sessions.
+  // lifecycle router because `/sessions` on this router already means quiz
+  // sessions, not work sessions.
   reassignSession = null,
   // Task 12 (debt M5) — the reassignment audit trail, merged into GET /audit.
-  reassignmentLog = null,
-  attemptsStore = null,
   // Advocacy wave 6.
   retractTeacherRecord = null,
   getTranscript = null,
-  renderTranscriptPdf = null,
-  renderSyllabusPdf = null,
-  curriculumForSyllabus = null,
-  passOverrideStore = null,
   setPassOverride = null,
   milestoneStatuses = null,
   setMilestones = null,
-  enrichmentLog = null,
   recordEnrichment = null,
   logger = console,
 }) {
@@ -132,6 +89,7 @@ export function createSchoolRouter({
   // throw a TypeError mid-request, which reads as a hang rather than a
   // wiring mistake. Composition always supplies these.
   const { GuestForbiddenError, SessionGoneError } = schoolErrors;
+  const { ValidationError, EntityNotFoundError, DomainInvariantError } = coreErrors;
   const router = express.Router();
   const cookieValue = (req, name) => {
     const raw = req.get('cookie') ?? '';
@@ -191,7 +149,7 @@ export function createSchoolRouter({
           return res.status(503).json({ error: err.message, code: err.code });
         }
         logger.error?.('school.router.error', { path: req.path, error: err.message });
-        return res.status(500).json({ error: 'internal' });
+        return sendInternalError(res, { error: 'internal' });
       });
   };
 
@@ -229,7 +187,7 @@ export function createSchoolRouter({
   }));
 
   router.get('/roster', wrap(async (req, res) => res.json(
-    learnerDirectory ? await learnerDirectory.listLearners() : schoolService.getRoster(),
+    (await schoolResourceService?.listLearners?.()) ?? schoolService.getRoster(),
   )));
   // The teacher console's picker roster: config-declared teacher ids resolved
   // against the live household roster per request. Unwired serves the honest
@@ -241,27 +199,26 @@ export function createSchoolRouter({
   // rather than empty — without ever blocking the event loop on the file scan.
   // Content health (admin advocacy #7): banks that failed to parse at warm.
   router.get('/banks/health', wrap(async (req, res) => {
-    await schoolService.warmBanks();
-    res.json(schoolService.bankHealth());
+    res.json(await schoolApiSessions.bankHealth());
   }));
   router.get('/banks', wrap(async (req, res) => {
-    await schoolService.warmBanks();
-    res.json(schoolService.listBanks({ audience: req.query.audience }));
+    res.json(await schoolApiSessions.listBanks({ audience: req.query.audience }));
   }));
   router.get('/banks/:bankId', wrap((req, res) => res.json(schoolService.getBank(req.params.bankId))));
   router.get('/catalogs', wrap(async (req, res) => {
-    if (!learningCatalog) return res.json({ schema: 'school.catalog-index/v1', catalogs: [] });
-    return res.set('Cache-Control', 'no-store').json(await learningCatalog.list({
-      learnerId: textQuery(req.query.learnerId),
-    }));
+    const catalogs = await schoolResourceService?.listCatalogs?.(textQuery(req.query.learnerId));
+    if (catalogs === null || catalogs === undefined) return res.json({ schema: 'school.catalog-index/v1', catalogs: [] });
+    return res.set('Cache-Control', 'no-store').json(catalogs);
   }));
   router.get('/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId', wrap(async (req, res) => {
-    if (!learningCatalog) throw new EntityNotFoundError('School Catalog', 'not configured');
+    if (!schoolResourceService) throw new EntityNotFoundError('School Catalog', 'not configured');
     const { catalogId, subjectId, courseId, unitId, lessonId } = req.params;
-    return res.set('Cache-Control', 'no-store').json(await learningCatalog.lesson({
+    const lesson = await schoolResourceService.getCatalogLesson({
       catalogId, subjectId, courseId, unitId, lessonId,
       learnerId: textQuery(req.query.learnerId),
-    }));
+    });
+    if (lesson === null) throw new EntityNotFoundError('School Catalog', 'not configured');
+    return res.set('Cache-Control', 'no-store').json(lesson);
   }));
   // A continuation code is a public convenience route, not a credential. The
   // application owns stable learner-slot policy and the reversible encoding;
@@ -295,14 +252,11 @@ export function createSchoolRouter({
     }
     let rows;
     try {
-      rows = address !== null
-        ? await surfaceCertification.lesson(address)
-        : await surfaceCertification.bank(bankId);
+      rows = await surfaceCertification.select({ address, bankId, surfaceId });
     } catch {
       throw new EntityNotFoundError('School surface certification target', address ?? bankId);
     }
-    const filtered = surfaceId !== null ? rows.filter((row) => row.surfaceId === surfaceId) : rows;
-    return res.set('Cache-Control', 'no-store').json(filtered);
+    return res.set('Cache-Control', 'no-store').json(rows);
   }));
 
   // Screen surface-profile resolution (spec §4.2 review finding 3): a
@@ -319,20 +273,11 @@ export function createSchoolRouter({
       logger.warn?.('school.surfaces.profile.unresolved', { screen: screenParam, reason });
       return res.status(404).json({ error: 'surface-profile-unresolved' });
     };
-    if (!surfaceRegistry) return unresolved('surface registry not configured');
-
-    let surfaceId = 'screen-browser';
-    if (screenParam !== null && screenParam !== 'browser') {
-      if (!getScreenConfig) return unresolved('screen config lookup not configured');
-      const config = await getScreenConfig(screenParam);
-      if (!config) return unresolved('screen config not found');
-      if (!config.surfaceProfile) return unresolved('screen config has no surfaceProfile key');
-      surfaceId = config.surfaceProfile;
-    }
-
-    const profile = surfaceRegistry.get(surfaceId);
-    if (!profile) return unresolved(`unknown surfaceId '${surfaceId}'`);
-    return res.set('Cache-Control', 'no-store').json(profile);
+    const result = schoolResourceService
+      ? await schoolResourceService.resolveSurfaceProfile(screenParam)
+      : { kind: 'unresolved', reason: 'surface registry not configured' };
+    if (result.kind === 'unresolved') return unresolved(result.reason);
+    return res.set('Cache-Control', 'no-store').json(result.profile);
   }));
 
   // On-demand print rendering — the "printout is an app screen" contract over
@@ -361,8 +306,6 @@ export function createSchoolRouter({
   // 400s if it sees any of those three query params, naming the POST route.
   // Both routes share the render body via the local `renderPrintResponse`
   // helper so the allocation semantics can't drift between them.
-  const PRINT_DOC_ID = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*){0,3}$/;
-  const PRINT_CARD_ID = /^[0-9]{7}$/;
   // The FIXED /print routes must register BEFORE the /print/*id splat below —
   // Express matches in registration order, and the splat would otherwise
   // swallow them as document ids (it did, in production, until 2026-08-06:
@@ -405,28 +348,13 @@ export function createSchoolRouter({
   // READ never mints and was never blocked here); a mutating render's pin
   // belongs in a body, never a URL.
   router.post('/print/render', wrap(async (req, res) => {
-    if (!renderPrintDocument) return res.status(503).json({ error: 'print-render-unavailable' });
-    const body = req.body || {};
-    return renderPrintResponse({
-      id: toParamString(body.id),
-      variety: toParamString(body.variety),
-      learnerName: toParamString(body.learnerName),
-      date: toParamString(body.date),
-      teacher: toParamString(body.teacher),
-      pin: toParamString(body.teacherPin),
-      rev: toParamString(body.rev),
-      variant: toParamString(body.variant),
-      freshCard: toParamString(body.freshCard),
-      card: toParamString(body.card),
-      learnerId: toParamString(body.learnerId),
-      retake: toParamString(body.retake),
-      startRow: toParamString(body.startRow),
-    }, res);
+    if (!schoolPrintAccess?.isRenderable?.()) return res.status(503).json({ error: 'print-render-unavailable' });
+    return renderPrintResponse(parsePrintRequest(req.body || {}, { jsonBody: true }), res);
   }));
   // Hierarchical taxonomy ids contain '/', so the id is a named wildcard
   // (Express 5 splat) rather than a single segment.
   router.get('/print/*id', wrap(async (req, res) => {
-    if (!renderPrintDocument) return res.status(503).json({ error: 'print-render-unavailable' });
+    if (!schoolPrintAccess?.isRenderable?.()) return res.status(503).json({ error: 'print-render-unavailable' });
     // card=/freshCard=/teacherPin= mint or spend a card, or carry a secret —
     // none belong in a GET query string. POST /print/render is the mutating
     // path now; a plain proof render (no card params) renders exactly as
@@ -437,278 +365,71 @@ export function createSchoolRouter({
     // `id` is explicitly LAST: the path segment is the id, always — a stray
     // `?id=` in the query string (there is no legitimate reason for one)
     // must never override it.
-    return renderPrintResponse({ ...req.query, id: splatPath(req, 'id') }, res);
+    return renderPrintResponse(parsePrintRequest(req.query, { id: splatPath(req, 'id') }), res);
   }));
 
   /**
    * Render a print document to a PDF response — the shared body of the
    * `/print/*id` proof-GET and `/print/render` card-minting POST (see the
    * comment block above `PRINT_DOC_ID`). `params` mirrors the query-string
-   * shape both callers pass (string values — exactly what `textQuery`/
-   * `boundedIntegerQuery` expect); the POST route coerces its JSON body into
-   * that shape via `toParamString` first.
+   * shape both callers expose. The API parser converts GET strings and POST
+   * JSON values to one typed semantic command before invoking the application.
    */
   async function renderPrintResponse(params, res) {
-    const rawId = params.id;
-    // omr is the default: card-backed sheets are the system's main mode, and
-    // the common ask is "print my sheet", not "choose a variety".
-    const variety = textQuery(params.variety) ?? 'omr';
-    if (variety !== 'omr' && variety !== 'hand') {
-      throw new ValidationError("variety must be 'omr' or 'hand'");
+    const result = await schoolPrintAccess.renderRequest(params);
+    if (result.kind === 'unconfigured') return res.status(503).json({ error: 'print-render-unavailable' });
+    if (result.kind === 'card_not_found') {
+      return res.status(404).json({
+        error: `no sheet found for card ${result.cardId}`,
+        ...(result.nearMissCardIds.length ? { nearMissCardIds: result.nearMissCardIds } : {}),
+      });
     }
-
-    // /print/<7 digits> is a CARD lookup, not a document id. Card ids are
-    // unique and unambiguous — documentValidation reserves bare 7-digit ids
-    // so no document can ever collide — and the card number is the one thing
-    // physically printed in large digits on the sheet in a child's hand. The
-    // card's newest usable allocation names the document; the request then
-    // flows exactly as `?card=<id>` on that document (adoption, teacher key,
-    // learner-mismatch checks all apply unchanged).
-    let id = rawId;
-    let cardFromPath = null;
-    if (PRINT_CARD_ID.test(rawId)) {
-      if (!printAllocationStore?.findByCard) {
-        return res.status(503).json({ error: 'print-render-unavailable' });
-      }
-      if (variety === 'hand') {
-        throw new ValidationError('a card-id path names an omr sheet; hand variety does not apply');
-      }
-      for (const param of ['card', 'freshCard', 'startRow', 'retake']) {
-        if (params[param] !== undefined) {
-          throw new ValidationError(`a card-id path already names the sheet; ${param} does not apply`);
-        }
-      }
-      const record = newestUsableRecord(await printAllocationStore.findByCard(rawId));
-      if (!record) {
-        // The same courtesy a mis-bubbled scan gets: a mistyped card number
-        // suggests the live cards one digit away instead of a bare 404.
-        const nearMissCardIds = await nearMissLiveCards(printAllocationStore, rawId);
-        return res.status(404).json({
-          error: `no sheet found for card ${rawId}`,
-          ...(nearMissCardIds.length ? { nearMissCardIds } : {}),
-        });
-      }
-      id = record.documentId;
-      cardFromPath = rawId;
-    } else if (!PRINT_DOC_ID.test(rawId)) {
-      throw new ValidationError('id must be a lowercase document id');
+    if (result.kind === 'teacher_disabled') {
+      return res.status(403).json({ error: 'teacher keys are disabled: set print.teacherPin in the school household config' });
     }
-
-    const context = {};
-    const learnerName = textQuery(params.learnerName);
-    if (learnerName) context.learnerName = learnerName;
-    const date = textQuery(params.date);
-    if (date) context.date = date;
-    if (params.teacher === '1' || params.teacher === 'true') {
-      // Answer keys are gated: this is a kid-facing app, and the population
-      // being kept from the key is exactly the population with URL-bar
-      // access. `getPrintTeacherPin` (composition-wired, reads the household
-      // school config's `print.teacherPin`) is the trust anchor: when wired,
-      // teacher renders DENY until a pin is configured and matched. A
-      // composition that does not wire the getter (embedded/test harnesses)
-      // has opted out of the gate entirely.
-      if (getPrintTeacherPin) {
-        const pin = await getPrintTeacherPin();
-        if (pin == null) {
-          return res.status(403).json({
-            error: 'teacher keys are disabled: set print.teacherPin in the school household config',
-          });
-        }
-        if (textQuery(params.pin) !== String(pin)) {
-          return res.status(403).json({ error: 'teacher key requires the correct pin=<value>' });
-        }
-      }
-      context.teacher = true;
+    if (result.kind === 'teacher_pin_required') {
+      return res.status(403).json({ error: 'teacher key requires the correct pin=<value>' });
     }
-
-    // Sheet identity: the render must be reproducible so the student sheet,
-    // its answer key, and the bank selections/order all agree across calls.
-    //   rev=<9 hex>   — pin the published revision (else latest/source).
-    //   variant=<n>   — per-kid shuffle variant (spread over the document,
-    //                   exactly as IssueDocument does; never in the artifact).
-    //   card=<7 digits> (omr, without startRow) — the card IS the sheet id:
-    //                   when an allocation record exists for this card and
-    //                   document, its rev/variant/startRow/learner are ADOPTED
-    //                   so the render (or its teacher key) reproduces the
-    //                   exact sheet the card was printed for. Explicit
-    //                   rev/variant params are rejected in that mode — the
-    //                   record is the identity, not the query string.
-    const revParam = textQuery(params.rev);
-    if (revParam !== null && !/^[0-9a-f]{9}$/.test(revParam)) {
-      throw new ValidationError('rev must be 9 lowercase hex characters');
-    }
-    let variant = params.variant === undefined
-      ? null
-      : boundedIntegerQuery(params.variant, 0, 0, 999, 'variant');
-    let rev = revParam;
-    let adoptedRecord = null;
-
-    // Memoized archetype probe: both the bare-lane gate and the card-adopt
-    // gate below need to know if this document is a quiz, and both may run
-    // in the same request — one repo read serves them both.
-    let quizProbe = null;
-    const isQuizDocument = async () => {
-      if (!printDocumentsRepo) return false;
-      if (quizProbe === null) {
-        const probe = (await printDocumentsRepo.getPublished(id)) ?? (await printDocumentsRepo.get(id));
-        quizProbe = probe?.archetype === 'quiz';
-      }
-      return quizProbe;
-    };
-
-    if (variety === 'omr') {
-      const freshCard = params.freshCard === '1' || params.freshCard === 'true';
-      const card = cardFromPath ?? textQuery(params.card);
-      const learnerId = textQuery(params.learnerId);
-      if (freshCard && card) throw new ValidationError('freshCard and card are mutually exclusive');
-
-      // Quiz sheets are PER-STUDENT: without a learner (or an explicit card,
-      // which pins identity to its allocation record), two siblings hitting
-      // the same URL would be handed the same sheet identity — same card
-      // number, same shuffle — and their scans would grade into one record.
-      // Teacher renders are reads, not takes, and stay exempt. Worksheets
-      // (lower stakes) may still render anonymously.
-      if (!card && !learnerId && !context.teacher && await isQuizDocument()) {
-        throw new ValidationError(
-          'quiz sheets are per-student: add learnerId=<id> (or card=<7 digits> to reproduce a printed sheet)',
-        );
-      }
-
-      const adopt = (record) => {
-        if (revParam !== null || variant !== null) {
-          throw new ValidationError(
-            'this render reproduces an existing sheet; rev/variant come from its allocation record',
-          );
-        }
-        if (learnerId && (record.learnerId ?? null) !== learnerId) {
-          // Same conflict code either way (the record can't be adopted under
-          // this learnerId), but "belongs to a different learner" is simply
-          // false when the record has no learnerId at all — it was rendered
-          // anonymously, not for someone else.
-          const message = record.learnerId
-            ? `card ${record.cardId} belongs to a different learner; omit learnerId to reproduce its sheet`
-            : `card ${record.cardId} carries an anonymous sheet; omit learnerId to reproduce it`;
-          throw new DomainInvariantError(message, {
-            code: 'CARD_LEARNER_MISMATCH', details: { cardId: record.cardId },
-          });
-        }
-        adoptedRecord = record;
-        rev = record.rev;
-        variant = record.variant;
-        context.cardId = record.cardId ?? context.cardId;
-        context.startRow = record.rowRange.start;
-        if (record.learnerId) context.learnerId = record.learnerId;
-      };
-      const newestUsable = newestUsableRecord;
-
-      // retake=1: a deliberate fresh attempt — new card, next unused shuffle
-      // variant for this learner's document, so the retake sheet is never
-      // the memorizable duplicate of the first (and never touches the
-      // original's record). Mutually exclusive with every explicit-identity
-      // param: a retake's identity is derived, not supplied.
-      const retake = params.retake === '1' || params.retake === 'true';
-      if (retake) {
-        if (freshCard || card || revParam !== null || variant !== null) {
-          throw new ValidationError('retake takes no card/freshCard/rev/variant parameters');
-        }
-        const prior = printAllocationStore?.findByDocument
-          ? (await printAllocationStore.findByDocument(id))
-            .filter((entry) => (learnerId ? entry.learnerId === learnerId : true))
-          : [];
-        variant = prior.reduce((max, entry) => Math.max(max, entry.variant ?? 0), -1) + 1;
-        context.freshCard = true;
-      } else if (freshCard) {
-        context.freshCard = true;
-      } else if (card) {
-        if (!PRINT_CARD_ID.test(card)) throw new ValidationError('card must be 7 digits');
-        context.cardId = card;
-        let usableRecordExists = false;
-        if (printAllocationStore) {
-          if (params.startRow === undefined) {
-            const record = newestUsable((await printAllocationStore.findByCard(card))
-              .filter((entry) => entry.documentId === id));
-            usableRecordExists = !!record;
-            if (record) adopt(record);
-          } else if (!learnerId && (await isQuizDocument())) {
-            // An explicit startRow skips ADOPTION (the record's rev/variant
-            // never override the query string here), but the quiz gate below
-            // still needs to know whether this card carries a real record
-            // for this document — otherwise startRow=<n> reopens the exact
-            // fabricated-card bypass the bare card= lane closes, just with
-            // one extra query param.
-            const record = newestUsable((await printAllocationStore.findByCard(card))
-              .filter((entry) => entry.documentId === id));
-            usableRecordExists = !!record;
-          }
-        }
-        if (!adoptedRecord && !learnerId && !usableRecordExists && (await isQuizDocument())) {
-          throw new ValidationError(
-            `card ${card} has no usable allocation for this quiz — add learnerId=<id> to attach it `
-            + '(or check the card number)',
-          );
-        }
-        if (!adoptedRecord) {
-          context.startRow = boundedIntegerQuery(params.startRow, 1, 1, 50, 'startRow');
-        }
-      } else {
-        // Automatic sheet identity: a bare omr render reuses this document's
-        // newest usable sheet (per learner when learnerId is given), and only
-        // mints a fresh card when none exists — so refreshing the URL never
-        // burns cards, and the same URL keeps producing the same sheet.
-        // KNOWN LIMIT: this find-then-allocate is not atomic — two truly
-        // simultaneous first prints can each mint a card, stranding one as
-        // an uncollected live record (recover: school-docs release-card).
-        // Accepted at household scale; the store itself serializes writes.
-        const record = printAllocationStore?.findByDocument
-          ? newestUsable((await printAllocationStore.findByDocument(id))
-            .filter((entry) => (learnerId ? entry.learnerId === learnerId : true)))
-          : null;
-        if (record) adopt(record);
-        // A teacher key with no existing sheet is a READ — minting a live
-        // allocation as a side effect would quietly become the class's sheet
-        // identity (the next student print adopts it). Render key-only; the
-        // "rendered without card allocation" warning stays on the response.
-        // An explicit freshCard=1&teacher=1 (deliberately minting the sheet
-        // and key in one go) still allocates via the branch above.
-        else if (!context.teacher) context.freshCard = true;
-      }
-      if (learnerId && !adoptedRecord) context.learnerId = learnerId;
-    } else if (params.card !== undefined || params.freshCard !== undefined
-        || params.startRow !== undefined) {
-      throw new ValidationError('hand variety takes no card parameters');
-    }
-
-    let target;
-    if (!printDocumentsRepo) {
-      // No repo wired (embedded/test harness): rev/variant pinning is impossible,
-      // and the renderer resolves the id itself.
-      if (rev !== null || variant !== null) return res.status(503).json({ error: 'print-render-unavailable' });
-      target = { id };
-    } else {
-      // Published-first on EVERY lane: a source render re-publishes in-memory and
-      // a drifted source hashes to a rev getPublished can never serve — the
-      // allocation record would pin a phantom rev and the card would die at scan
-      // time, taking innocent cardmates with it. The published artifact's rev is
-      // a FIELD, which variant overrides leave intact. Source is the fallback
-      // only for a document never published at all (proofing a draft).
-      const raw = rev !== null
-        ? await printDocumentsRepo.getPublished(id, rev)
-        : ((await printDocumentsRepo.getPublished(id)) ?? (await printDocumentsRepo.get(id)));
-      if (!raw) throw new EntityNotFoundError('print document', rev !== null ? `${id}@${rev}` : id);
-      target = { document: variant !== null ? { ...raw, variant } : raw };
-    }
-
-    const result = await renderPrintDocument.execute({ ...target, context });
-    const warnings = variety === 'hand'
-      ? (result.warnings ?? []).filter((warning) => !/without card allocation/.test(warning))
-      : (result.warnings ?? []);
-    if (warnings.length) res.set('X-School-Print-Warnings', JSON.stringify(warnings));
+    if (result.warnings.length) res.set('X-School-Print-Warnings', JSON.stringify(result.warnings));
     if (result.allocation) res.set('X-School-Print-Allocation', JSON.stringify(result.allocation));
     res.set('Cache-Control', 'no-store');
-    const slug = id.split('/').pop();
-    res.set('Content-Disposition', `inline; filename="${slug}${context.teacher ? '-key' : ''}.pdf"`);
+    const slug = result.id.split('/').pop();
+    res.set('Content-Disposition', `inline; filename="${slug}${result.teacher ? '-key' : ''}.pdf"`);
     return res.type('application/pdf').send(Buffer.from(result.bytes));
   }
+
+  function parsePrintRequest(raw, { jsonBody = false, id = undefined } = {}) {
+    const value = (key) => {
+      const input = key === 'id' && id !== undefined ? id : raw[key];
+      return jsonBody ? toParamString(input) : input;
+    };
+    const boolean = (key) => {
+      const input = textQuery(value(key));
+      return input === '1' || input === 'true';
+    };
+    const optionalBoolean = (key) => value(key) === undefined ? undefined : boolean(key);
+    const optionalInteger = (key, fallback, minimum, maximum) =>
+      value(key) === undefined ? undefined
+        : boundedIntegerQuery(value(key), fallback, minimum, maximum, key);
+    return {
+      id: textQuery(value('id')),
+      variety: textQuery(value('variety')) ?? 'omr',
+      learnerName: textQuery(value('learnerName')),
+      date: textQuery(value('date')),
+      teacher: boolean('teacher'),
+      pin: textQuery(jsonBody ? toParamString(raw.teacherPin) : raw.pin),
+      rev: textQuery(value('rev')),
+      variant: optionalInteger('variant', 0, 0, 999),
+      freshCard: optionalBoolean('freshCard'),
+      // Presence is semantic for card parameters: `undefined` means omitted,
+      // while an explicitly supplied empty value is still validated downstream.
+      card: value('card') === undefined ? undefined : textQuery(value('card')),
+      learnerId: textQuery(value('learnerId')),
+      retake: optionalBoolean('retake'),
+      startRow: optionalInteger('startRow', 1, 1, 50),
+    };
+  }
+
 
   router.get('/geography/decks', wrap((req, res) => {
     // Geography is an outer presentation here. The service/source expose only
@@ -717,25 +438,8 @@ export function createSchoolRouter({
       .map(({ summaryId, ...summary }) => ({ deckId: summaryId, ...summary }));
     res.json({ decks });
   }));
-  router.post('/sessions', wrap((req, res) => {
-    // `fresh` is the deliberate-restart flag (Task 17): it wipes any persisted
-    // sitting before opening, so "Try again" never resumes the run it replaces.
-    const { userId = null, bankId, mode, learning = null, purpose = null, testPlan = null, fresh = false } = req.body || {};
-    if (purpose === 'flashcard_assessment') {
-      if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
-      const { deckId } = req.body || {};
-      return Promise.resolve(flashcardStudy.assessment({ userId, deckId, testPlan, learning, open: true }))
-        .then((result) => res.json(result));
-    }
-    if (learning !== null) {
-      if (!openCatalogLearningSession) {
-        throw new EntityNotFoundError('School Catalog sessions', 'not configured');
-      }
-      return Promise.resolve(openCatalogLearningSession.execute({
-        learnerId: userId, bankId, mode, learning, purpose, testPlan, fresh: fresh === true,
-      })).then((result) => res.json(result));
-    }
-    return res.json(schoolService.openSession({ userId, bankId, mode, fresh: fresh === true }));
+  router.post('/sessions', wrap(async (req, res) => {
+    return res.json(await schoolApiSessions.open(req.body || {}));
   }));
   router.post('/sessions/:sessionId/answer', wrap((req, res) => {
     const {
@@ -788,10 +492,11 @@ export function createSchoolRouter({
     res.json({ decks: await flashcardStudy.listDecks() });
   }));
   router.get('/flashcards/assets/*assetId', wrap((req, res) => {
-    if (!flashcardAssets) throw new EntityNotFoundError('flashcard assets', 'not configured');
-    const asset = flashcardAssets.get(splatPath(req, 'assetId'));
+    if (!schoolResourceService) throw new EntityNotFoundError('flashcard assets', 'not configured');
+    const asset = schoolResourceService.getFlashcardAsset(splatPath(req, 'assetId'));
     if (!asset) throw new EntityNotFoundError('flashcard asset', splatPath(req, 'assetId'));
-    return res.type(asset.contentType).sendFile(asset.file);
+    res.type(asset.contentType);
+    return sendFileResource(req, res, asset.resource);
   }));
   router.get('/flashcards/report', wrap(async (req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
@@ -834,8 +539,7 @@ export function createSchoolRouter({
   }));
   router.get('/quiz-requests', wrap(async (req, res) => {
     // Warm first so the `fulfilled` annotation answers from a real bank scan.
-    await schoolService.warmBanks();
-    res.json(schoolService.listQuizRequests({ materialId: req.query.materialId || null }));
+    res.json(await schoolApiSessions.listQuizRequests({ materialId: req.query.materialId || null }));
   }));
   router.post('/quiz-requests/dismiss', wrap(async (req, res) => {
     const { unitId = null, bankId = null, kind = null, sessionId = null, userId, dismissedBy = null, pin = null, reason } = req.body || {};
@@ -1045,15 +749,10 @@ export function createSchoolRouter({
 
   router.put('/materials/:materialId/units/:unitId/progress', wrap((req, res) => {
     const { userId, percent, playhead, durationMs } = req.body || {};
-    if (!userId || !materialProgressStore) return res.json({ ok: true, recorded: false });
-    materialProgressStore.record({
-      userId,
-      plexId: req.params.unitId,
-      percent,
-      seconds: playhead,
-      duration: durationMs != null ? durationMs / 1000 : undefined,
-    });
-    return res.json({ ok: true });
+    const result = schoolResourceService?.recordMaterialProgress?.({
+      userId, unitId: req.params.unitId, percent, playhead, durationMs,
+    }) ?? { recorded: false };
+    return res.json(result.recorded ? { ok: true } : { ok: true, recorded: false });
   }));
 
   // --- report cards, period close, teacher digest (Task 6, spec R5b) --------
@@ -1064,24 +763,25 @@ export function createSchoolRouter({
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
     const periodId = requiredTextQuery(req.query.periodId, 'periodId');
     const report = await getReportCard.execute({ learnerId, periodId });
-    if (wantsPdf(req)) return sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, periodId, req, learnerDirectory });
+    if (wantsPdf(req)) return sendReportCardPdf(res, schoolReportDocuments, report, { learnerId, periodId, req });
     return res.set('Cache-Control', 'no-store').json(report);
   }));
 
   router.get('/report-card/frozen', wrap(async (req, res) => {
-    if (!reportCardsStore) return res.json(null);
+    if (!schoolReportDocuments?.hasFrozenReports?.()) return res.json(null);
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
     const periodId = textQuery(req.query.periodId);
     if (periodId) {
-      const record = reportCardsStore.readReportCard(learnerId, periodId);
+      const record = schoolReportDocuments.readFrozen(learnerId, periodId);
       if (!record) throw new EntityNotFoundError('Frozen report card', `${learnerId}/${periodId}`);
-      if (wantsPdf(req)) return sendReportCardPdf(res, renderReportCardPdf, record, { learnerId, periodId, req, learnerDirectory });
+      if (wantsPdf(req)) return sendReportCardPdf(res, schoolReportDocuments, record, { learnerId, periodId, req });
       return res.set('Cache-Control', 'no-store').json(record);
     }
     // The list variety returns every frozen record for the learner — `format=pdf`
     // names exactly one document, so it does not apply here; served as JSON
     // regardless of the query param.
-    return res.set('Cache-Control', 'no-store').json(reportCardsStore.listReportCards(learnerId));
+    const records = schoolReportDocuments.listFrozen(learnerId);
+    return res.set('Cache-Control', 'no-store').json(records ?? []);
   }));
 
   router.post('/report-card/close', wrap(async (req, res) => {
@@ -1110,10 +810,9 @@ export function createSchoolRouter({
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
     const transcript = await getTranscript.execute({ learnerId });
     if (wantsPdf(req)) {
-      if (!renderTranscriptPdf) return res.status(503).json({ error: 'transcript-render-unavailable' });
-      const roster = learnerDirectory ? await learnerDirectory.listLearners() : [];
-      const learnerName = roster.find((r) => r.id === learnerId)?.name ?? learnerId;
-      const { pdf } = await renderTranscriptPdf(transcript, { learnerName });
+      const rendered = await schoolReportDocuments?.transcriptPdf?.(transcript, learnerId);
+      if (!rendered) return res.status(503).json({ error: 'transcript-render-unavailable' });
+      const { pdf } = rendered;
       return res
         .set('Content-Type', 'application/pdf')
         .set('Content-Disposition', `inline; filename="transcript-${slugify(learnerId)}.pdf"`)
@@ -1122,32 +821,31 @@ export function createSchoolRouter({
     return res.set('Cache-Control', 'no-store').json(transcript);
   }));
   router.get('/syllabus', wrap(async (req, res) => {
-    if (!curriculumForSyllabus || !renderSyllabusPdf) return res.status(503).json({ error: 'syllabus-render-unavailable' });
+    if (!schoolReportDocuments?.canRenderSyllabus?.()) return res.status(503).json({ error: 'syllabus-render-unavailable' });
     const courseId = requiredTextQuery(req.query.courseId, 'courseId');
-    const units = (await curriculumForSyllabus.listUnitSummaries())
-      .filter((u) => u.courseId === courseId)
-      .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
-    if (!units.length) throw new EntityNotFoundError('course', courseId);
-    const { pdf } = await renderSyllabusPdf({ courseId, units });
+    const rendered = await schoolReportDocuments?.syllabusPdf?.(courseId) ?? { kind: 'unconfigured' };
+    if (rendered.kind === 'unconfigured') return res.status(503).json({ error: 'syllabus-render-unavailable' });
+    if (rendered.kind === 'not_found') throw new EntityNotFoundError('course', courseId);
+    const { pdf } = rendered;
     return res
       .set('Content-Type', 'application/pdf')
       .set('Content-Disposition', `inline; filename="syllabus-${slugify(courseId)}.pdf"`)
       .send(pdf);
   }));
   router.get('/attempt-days', wrap((req, res) => {
-    if (!attemptsStore?.listAttemptDays) return res.json({ days: [] });
+    if (!schoolRecordsQuery?.hasAttempts?.()) return res.json({ days: [] });
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
-    res.json({ days: attemptsStore.listAttemptDays(learnerId).slice(0, 14) });
+    res.json({ days: schoolRecordsQuery?.attemptDays?.(learnerId) ?? [] });
   }));
 
   // --- wave-5 repair ---------------------------------------------------------
   router.get('/attestations', wrap((req, res) => {
-    res.json({ entries: attestationLog ? attestationLog.list({
+    res.json({ entries: schoolRecordsQuery?.attestations?.({
       learnerId: textQuery(req.query.learnerId),
       // ?includeRetracted=1 (admin advocacy #13): withdrawn records visible,
       // annotated with retractedBy/retractedAt, instead of folded out.
       includeRetracted: req.query.includeRetracted === '1',
-    }) : [] });
+    }) ?? [] });
   }));
   router.post('/attestations', wrap(async (req, res) => {
     if (!recordAttestation) throw new EntityNotFoundError('attestations', 'not configured');
@@ -1177,12 +875,12 @@ export function createSchoolRouter({
     }));
   }));
   router.get('/teacher-notes', wrap((req, res) => {
-    res.json({ entries: teacherNotesStore ? teacherNotesStore.list({
+    res.json({ entries: schoolRecordsQuery?.teacherNotes?.({
       learnerId: textQuery(req.query.learnerId),
       // ?includeRetracted=1 (admin advocacy #13): withdrawn records visible,
       // annotated with retractedBy/retractedAt, instead of folded out.
       includeRetracted: req.query.includeRetracted === '1',
-    }) : [] });
+    }) ?? [] });
   }));
   router.post('/teacher-notes', wrap(async (req, res) => {
     if (!recordTeacherNote) throw new EntityNotFoundError('teacher notes', 'not configured');
@@ -1191,31 +889,10 @@ export function createSchoolRouter({
   }));
   // A day's attempts grouped by assessment — the reassignment picker's read.
   router.get('/attempts-summary', wrap((req, res) => {
-    if (!attemptsStore) return res.json({ assessments: [] });
+    if (!schoolRecordsQuery?.hasAttempts?.()) return res.json({ assessments: [] });
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
     const day = requiredTextQuery(req.query.day, 'day');
-    // Reassignment is an adult repair action, but the picker still needs a
-    // human name for the work.  An opaque bank ID is only useful to the write
-    // command and must not be promoted into the visible label.
-    const bankTitleById = new Map((schoolService?.listBanks?.() ?? [])
-      .filter((bank) => bank?.id && bank?.title)
-      .map((bank) => [bank.id, bank.title]));
-    const byAssessment = new Map();
-    for (const attempt of attemptsStore.readAttemptDay(learnerId, day)) {
-      const id = attempt.sessionId ?? attempt.provenance?.recordId ?? null;
-      if (!id) continue;
-      const entry = byAssessment.get(id) ?? {
-        assessmentId: id,
-        count: 0,
-        bankId: attempt.bankId ?? null,
-        title: attempt.title ?? attempt.unitTitle ?? bankTitleById.get(attempt.bankId) ?? null,
-        firstAt: attempt.at,
-      };
-      entry.count += 1;
-      if (attempt.at < entry.firstAt) entry.firstAt = attempt.at;
-      byAssessment.set(id, entry);
-    }
-    res.json({ assessments: [...byAssessment.values()] });
+    res.json({ assessments: schoolRecordsQuery?.attemptSummary?.(learnerId, day) ?? [] });
   }));
   router.post('/reassign', wrap(async (req, res) => {
     if (!reassignEvidence) throw new EntityNotFoundError('reassignment', 'not configured');
@@ -1234,20 +911,15 @@ export function createSchoolRouter({
   }));
 
   // --- wave-4 records --------------------------------------------------------
-  // The certificate's issue date in the HOUSEHOLD's calendar (6pm local must
-  // not date a certificate tomorrow) — same offset policy as the pacing reads.
-  const householdToday = () => {
-    const nowMs = Date.now();
-    return new Date(nowMs + (getHouseholdOffsetMinutes?.(nowMs) ?? 0) * 60_000).toISOString().slice(0, 10);
-  };
   router.get('/progress-report', wrap(async (req, res) => {
     if (!getProgressReport) return res.json(null);
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
     const periodId = requiredTextQuery(req.query.periodId, 'periodId');
     const report = await getProgressReport.execute({ learnerId, periodId });
     if (wantsPdf(req)) {
-      if (!renderProgressReportPdf) return res.status(503).json({ error: 'progress-report-render-unavailable' });
-      const { pdf } = await renderProgressReportPdf(report);
+      const rendered = await schoolReportDocuments?.progressReportPdf?.(report);
+      if (!rendered) return res.status(503).json({ error: 'progress-report-render-unavailable' });
+      const { pdf } = rendered;
       return res
         .set('Content-Type', 'application/pdf')
         .set('Content-Disposition', `inline; filename="progress-report-${slugify(learnerId)}-${slugify(periodId)}.pdf"`)
@@ -1256,26 +928,16 @@ export function createSchoolRouter({
     return res.set('Cache-Control', 'no-store').json(report);
   }));
   router.get('/certificate', wrap(async (req, res) => {
-    if (!getReportCard || !renderCertificatePdf) return res.status(503).json({ error: 'certificate-render-unavailable' });
+    if (!schoolReportDocuments?.canRenderCertificate?.()) return res.status(503).json({ error: 'certificate-render-unavailable' });
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
     const periodId = requiredTextQuery(req.query.periodId, 'periodId');
     const courseId = requiredTextQuery(req.query.courseId, 'courseId');
-    const card = await getReportCard.execute({ learnerId, periodId });
-    const course = (card?.courses ?? []).find((c) => c.courseId === courseId);
-    // No fabricated diplomas: a course with nothing graded has no percent.
-    if (!course || typeof course.coursePercent !== 'number') {
-      throw new EntityNotFoundError('completed course', `${learnerId}/${courseId}`);
-    }
-    const roster = learnerDirectory ? await learnerDirectory.listLearners() : [];
-    const learnerName = roster.find((r) => r.id === learnerId)?.name ?? learnerId;
-    const { pdf } = await renderCertificatePdf({
-      learnerName,
-      courseId,
-      percent: course.coursePercent,
-      periodLabel: card.period?.label ?? periodId,
-      issuedOn: householdToday(),
-      issuedBy: textQuery(req.query.issuedBy) ?? null,
+    const rendered = await schoolReportDocuments?.certificatePdf?.({
+      learnerId, periodId, courseId, issuedBy: textQuery(req.query.issuedBy) ?? null,
     });
+    if (!rendered || rendered.kind === 'unconfigured') return res.status(503).json({ error: 'certificate-render-unavailable' });
+    if (rendered.kind === 'not_found') throw new EntityNotFoundError('completed course', `${learnerId}/${courseId}`);
+    const { pdf } = rendered;
     return res
       .set('Content-Type', 'application/pdf')
       .set('Content-Disposition', `inline; filename="certificate-${slugify(learnerId)}-${slugify(courseId)}.pdf"`)
@@ -1289,10 +951,10 @@ export function createSchoolRouter({
     res.json(await setAcademicPeriods.execute({ periods, editedBy, pin, baseHistoryLength }));
   }));
   router.get('/periods-meta', wrap((req, res) => {
-    res.json({ historyLength: typeof academicPeriods?.historyLength === 'function' ? academicPeriods.historyLength() : 0 });
+    res.json({ historyLength: schoolRecordsQuery?.periodHistoryLength?.() ?? 0 });
   }));
   router.get('/pass-overrides', wrap((req, res) => {
-    res.json({ overrides: passOverrideStore ? passOverrideStore.all() : {} });
+    res.json({ overrides: schoolRecordsQuery?.passOverrides?.() ?? {} });
   }));
   router.put('/pass-overrides/:unitId', wrap(async (req, res) => {
     if (!setPassOverride) throw new EntityNotFoundError('pass overrides', 'not configured');
@@ -1309,12 +971,12 @@ export function createSchoolRouter({
     res.json(await setMilestones.execute({ learnerId, milestones, editedBy, pin, baseHistoryLength }));
   }));
   router.get('/enrichment', wrap((req, res) => {
-    res.json({ entries: enrichmentLog ? enrichmentLog.list({
+    res.json({ entries: schoolRecordsQuery?.enrichment?.({
       learnerId: textQuery(req.query.learnerId),
       // ?includeRetracted=1 (admin advocacy #13): withdrawn records visible,
       // annotated with retractedBy/retractedAt, instead of folded out.
       includeRetracted: req.query.includeRetracted === '1',
-    }) : [] });
+    }) ?? [] });
   }));
   router.post('/enrichment', wrap(async (req, res) => {
     if (!recordEnrichment) throw new EntityNotFoundError('enrichment log', 'not configured');
@@ -1324,20 +986,20 @@ export function createSchoolRouter({
 
   router.get('/teacher/today', wrap(async (req, res) => {
     if (!getTeacherToday) return res.json([]);
-    res.set('Cache-Control', 'no-store').json(await getTeacherToday.execute());
+    res.set('Cache-Control', 'no-store').json(presentPublicResources(await getTeacherToday.execute()));
   }));
   router.get('/teacher/day', wrap(async (req, res) => {
     if (!getTeacherToday) throw new EntityNotFoundError('teacher day', 'not configured');
-    res.set('Cache-Control', 'no-store').json(await getTeacherToday.execute({
+    res.set('Cache-Control', 'no-store').json(presentPublicResources(await getTeacherToday.execute({
       studyDay: req.query.studyDay == null ? null : requiredTextQuery(req.query.studyDay, 'studyDay'), version: 'v2',
-    }));
+    })));
   }));
   // A course with no published cover 404s. Every consumer here draws through
   // `SafeImg fallback=""`, so the absence renders as nothing — which is the
   // truth. It must never be papered over with generated artwork: the same
   // substitute used to reach the learner panel and be read as the real thing.
   router.get('/teacher/curriculum/:courseId/poster.jpg', wrap(async (req, res) => {
-    const bytes = await curriculumForSyllabus?.getCoursePoster?.(req.params.courseId);
+    const bytes = await schoolCurriculumQuery?.getCoursePoster?.(req.params.courseId);
     if (!bytes) throw new EntityNotFoundError('course poster', req.params.courseId);
     res.set('Cache-Control', 'private, max-age=3600').set('Content-Type', 'image/jpeg')
       .set('X-Content-Type-Options', 'nosniff').send(bytes);
@@ -1347,18 +1009,15 @@ export function createSchoolRouter({
     res.set('Cache-Control', 'no-store').json(await manageCurriculumException.list());
   }));
   router.get('/teacher/answer-sheets/:cardId', wrap(async (req, res) => {
-    if (!printAllocationStore?.describeCard) throw new EntityNotFoundError('answer sheet', 'not configured');
-    const card = await printAllocationStore.describeCard(req.params.cardId);
+    if (!schoolPrintAccess) throw new EntityNotFoundError('answer sheet', 'not configured');
+    const card = await schoolPrintAccess.describeCard(req.params.cardId);
+    if (!card) throw new EntityNotFoundError('answer sheet', 'not configured');
     if (!card.allocations.length) throw new EntityNotFoundError('answer sheet', req.params.cardId);
     res.set('Cache-Control', 'no-store').json(card);
   }));
   router.get('/teacher/learners/:learnerId/answer-sheets', wrap(async (req, res) => {
-    if (!printAllocationStore?.listCardIds || !printAllocationStore?.describeCard) {
-      throw new EntityNotFoundError('learner answer sheets', 'not configured');
-    }
-    const cardIds = await printAllocationStore.listCardIds();
-    const cards = (await Promise.all(cardIds.map((cardId) => printAllocationStore.describeCard(cardId,
-      { expectedLearnerId: req.params.learnerId })))).filter((card) => card.learnerIds.includes(req.params.learnerId));
+    const cards = await schoolPrintAccess?.listLearnerCards?.(req.params.learnerId);
+    if (!cards) throw new EntityNotFoundError('learner answer sheets', 'not configured');
     res.set('Cache-Control', 'no-store').json({ schema: 'school.answer-sheets/v1',
       learnerId: req.params.learnerId, cards });
   }));
@@ -1372,20 +1031,18 @@ export function createSchoolRouter({
     res.json(await manageCurriculumException.retract({ ...req.body, exceptionId: req.params.exceptionId }));
   }));
   router.get('/teacher/curriculum/:courseId', wrap(async (req, res) => {
-    if (!curriculumForSyllabus) throw new EntityNotFoundError('teacher curriculum', 'not configured');
-    const [works, units] = await Promise.all([
-      curriculumForSyllabus.listWorks(), curriculumForSyllabus.listUnitSummaries(),
-    ]);
-    const course = works.find((work) => work.work === req.params.courseId);
-    if (!course) throw new EntityNotFoundError('course', req.params.courseId);
+    const result = await schoolCurriculumQuery?.getCourse?.(req.params.courseId) ?? { kind: 'unconfigured' };
+    if (result.kind === 'unconfigured') throw new EntityNotFoundError('teacher curriculum', 'not configured');
+    if (result.kind === 'not_found') throw new EntityNotFoundError('course', req.params.courseId);
+    const { course, units } = result;
     res.set('Cache-Control', 'no-store').json({ schema: 'school.teacher-course/v1',
       course: { ...course, courseId: course.work, posterUrl: `/api/v1/school/teacher/curriculum/${encodeURIComponent(course.work)}/poster.jpg` },
-      units: units.filter((unit) => unit.courseId === course.work),
+      units,
     });
   }));
   router.get('/teacher/curriculum/:courseId/lessons/:lessonId', wrap(async (req, res) => {
-    const unit = await curriculumForSyllabus?.getUnitSummary?.(req.params.lessonId);
-    if (!unit || unit.courseId !== req.params.courseId) throw new EntityNotFoundError('course lesson', req.params.lessonId);
+    const unit = await schoolCurriculumQuery?.getLesson?.(req.params.courseId, req.params.lessonId);
+    if (!unit) throw new EntityNotFoundError('course lesson', req.params.lessonId);
     res.set('Cache-Control', 'no-store').json({ schema: 'school.teacher-lesson/v1',
       ...unit, lessonId: unit.unitId,
       posterUrl: `/api/v1/school/teacher/curriculum/${encodeURIComponent(req.params.courseId)}/poster.jpg`,
@@ -1405,27 +1062,14 @@ export function createSchoolRouter({
       .type('application/pdf').send(Buffer.from(preview.bytes));
   }));
   router.get('/teacher/learners/:learnerId/courses/:courseId', wrap(async (req, res) => {
-    if (!curriculumForSyllabus || !getLearnerTimeline) throw new EntityNotFoundError('learner course progress', 'not configured');
-    const [units, timeline, exceptionRead] = await Promise.all([
-      curriculumForSyllabus.listUnitSummaries(), getLearnerTimeline.execute({ learnerId: req.params.learnerId, limit: 200 }),
-      manageCurriculumException?.list?.() ?? { active: [] },
-    ]);
-    const courseUnits = units.filter((unit) => unit.courseId === req.params.courseId);
-    if (!courseUnits.length) throw new EntityNotFoundError('course', req.params.courseId);
-    const byUnit = new Map((timeline.items ?? []).map((item) => [item.unitId, item]));
-    const progress = courseUnits.map((unit) => ({ ...unit,
-      status: (() => {
-        const paused = exceptionRead.active.find((row) => row.kind === 'paused' && row.resolvedLessonIds?.includes(unit.unitId));
-        if (paused) return 'paused';
-        const learnerException = exceptionRead.active.find((row) => row.learnerId === req.params.learnerId
-          && row.resolvedLessonIds?.includes(unit.unitId));
-        return learnerException?.kind ?? (byUnit.get(unit.unitId)?.outcome?.result === 'passed' ? 'passed' : 'remaining');
-      })(),
-      sessionId: byUnit.get(unit.unitId)?.sessionId ?? null,
-    }));
+    const result = await schoolCurriculumQuery?.getLearnerCourse?.(req.params.learnerId, req.params.courseId)
+      ?? { kind: 'unconfigured' };
+    if (result.kind === 'unconfigured') throw new EntityNotFoundError('learner course progress', 'not configured');
+    if (result.kind === 'not_found') throw new EntityNotFoundError('course', req.params.courseId);
+    const progress = result.units;
     res.set('Cache-Control', 'no-store').json({ schema: 'school.teacher-learner-course/v1',
       learnerId: req.params.learnerId, courseId: req.params.courseId,
-      completed: progress.filter((unit) => ['mastered', 'passed', 'excused', 'replaced'].includes(unit.status)).length,
+      completed: result.completed,
       total: progress.length, units: progress,
       posterUrl: `/api/v1/school/teacher/curriculum/${encodeURIComponent(req.params.courseId)}/poster.jpg`,
     });
@@ -1435,31 +1079,31 @@ export function createSchoolRouter({
   // older lifecycle routes so rollout/cutback never changes student behavior.
   router.get('/teacher/learners/:learnerId/timeline', wrap(async (req, res) => {
     if (!getLearnerTimeline) throw new EntityNotFoundError('teacher timeline', 'not configured');
-    res.set('Cache-Control', 'no-store').json(await getLearnerTimeline.execute({
+    res.set('Cache-Control', 'no-store').json(presentPublicResources(await getLearnerTimeline.execute({
       learnerId: req.params.learnerId,
       limit: req.query.limit,
       before: textQuery(req.query.before),
       unitId: textQuery(req.query.unitId),
-    }));
+    })));
   }));
   router.post('/teacher/learners/:learnerId/agenda/dispatch/preview', wrap(async (req, res) => {
     if (!teacherAgendaDispatch) throw new EntityNotFoundError('teacher agenda dispatch', 'not configured');
-    res.set('Cache-Control', 'no-store').json(await teacherAgendaDispatch.preview({
+    res.set('Cache-Control', 'no-store').json(presentPublicResources(await teacherAgendaDispatch.preview({
       learnerId: req.params.learnerId, learnerName: req.body?.learnerName ?? null,
-    }));
+    })));
   }));
   router.post('/teacher/learners/:learnerId/agenda/dispatch', wrap(async (req, res) => {
     if (!teacherAgendaDispatch) throw new EntityNotFoundError('teacher agenda dispatch', 'not configured');
     const body = req.body || {};
-    res.status(201).json(await teacherAgendaDispatch.execute({
+    res.status(201).json(presentPublicResources(await teacherAgendaDispatch.execute({
       learnerId: req.params.learnerId, learnerName: body.learnerName ?? null,
       dispatchedBy: body.dispatchedBy ?? null, pin: body.pin ?? null,
       idempotencyKey: req.get('Idempotency-Key') ?? body.idempotencyKey,
-    }));
+    })));
   }));
   router.get('/teacher/sessions/:sessionId', wrap(async (req, res) => {
     if (!getTeacherSession) throw new EntityNotFoundError('teacher session inspector', 'not configured');
-    res.set('Cache-Control', 'no-store').json(await getTeacherSession.execute({ sessionId: req.params.sessionId }));
+    res.set('Cache-Control', 'no-store').json(presentPublicResources(await getTeacherSession.execute({ sessionId: req.params.sessionId })));
   }));
   /**
    * The finish code, read out to a grown-up when the media will not play.
@@ -1494,14 +1138,14 @@ export function createSchoolRouter({
     res.status(201).json(await openRemediation.execute({ sessionId: req.params.sessionId, openedBy: body.openedBy ?? null }));
   }));
   router.get('/teacher/artifacts/:artifactId', wrap(async (req, res) => {
-    if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
-    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!schoolArtifactService?.isConfigured?.()) throw new EntityNotFoundError('issued artifact store', 'not configured');
+    const artifact = await schoolArtifactService.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     res.set('Cache-Control', 'no-store').json(artifact.manifest);
   }));
   router.get('/teacher/artifacts/:artifactId/original.pdf', wrap(async (req, res) => {
-    if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
-    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!schoolArtifactService?.isConfigured?.()) throw new EntityNotFoundError('issued artifact store', 'not configured');
+    const artifact = await schoolArtifactService.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     const mediaType = artifact.manifest.representation?.mediaType ?? 'application/pdf';
     if (mediaType !== 'application/pdf') throw new ValidationError('artifact is not a PDF');
@@ -1514,28 +1158,18 @@ export function createSchoolRouter({
   // It gives the history card the visual affordance of paper without making a
   // historical reconstruction look like an original artifact.
   router.get('/teacher/artifacts/:artifactId/thumbnail.png', wrap(async (req, res) => {
-    if (!issuedArtifactStore || !renderWorksheetThumbnail) {
-      throw new EntityNotFoundError('artifact thumbnail', 'not configured');
-    }
-    const artifact = await issuedArtifactStore.get(req.params.artifactId);
-    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
-    const mediaType = artifact.manifest.representation?.mediaType ?? 'application/pdf';
-    if (mediaType !== 'application/pdf') throw new ValidationError('artifact is not a PDF');
-    // A corrupt retained PDF is a missing view, not a server fault — the card
-    // degrades to its no-thumbnail state instead of surfacing a 500.
-    let png;
-    try {
-      png = await renderWorksheetThumbnail(artifact.bytes);
-    } catch {
-      return res.status(404).json({ error: 'thumbnail-unrenderable' });
-    }
+    const result = await schoolArtifactService?.thumbnail?.(req.params.artifactId) ?? { kind: 'unconfigured' };
+    if (result.kind === 'unconfigured') throw new EntityNotFoundError('artifact thumbnail', 'not configured');
+    if (result.kind === 'not_found') throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    if (result.kind === 'wrong_media_type') throw new ValidationError('artifact is not a PDF');
+    if (result.kind === 'unrenderable') return res.status(404).json({ error: 'thumbnail-unrenderable' });
     res.set('Cache-Control', 'private, no-store')
       .set('X-School-Artifact', 'exact-thumbnail')
-      .type('image/png').send(png);
+      .type('image/png').send(result.bytes);
   }));
   router.get('/teacher/artifacts/:artifactId/original', wrap(async (req, res) => {
-    if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
-    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!schoolArtifactService?.isConfigured?.()) throw new EntityNotFoundError('issued artifact store', 'not configured');
+    const artifact = await schoolArtifactService.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     const representation = artifact.manifest.representation ?? { mediaType: 'application/pdf', extension: 'pdf' };
     res.set('Cache-Control', 'private, no-store')
@@ -1544,38 +1178,27 @@ export function createSchoolRouter({
       .send(artifact.bytes);
   }));
   router.post('/teacher/artifacts/:artifactId/reprint', wrap(async (req, res) => {
-    if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const body = req.body || {};
-    const artifact = await issuedArtifactStore.get(req.params.artifactId);
-    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
-    const reprint = ['result-receipt', 'result-correction'].includes(artifact.manifest.kind)
-      ? reprintResultReceiptArtifact : reprintIssuedArtifact;
-    if (!reprint) throw new EntityNotFoundError('artifact reprint', 'not configured');
-    const receipt = await reprint.execute({ artifactId: req.params.artifactId,
+    const result = await schoolArtifactService?.reprint?.({ artifactId: req.params.artifactId,
       reprintedBy: body.reprintedBy, pin: body.pin,
       idempotencyKey: req.get('Idempotency-Key') ?? body.idempotencyKey, apply: body.apply === true });
-    res.status(body.apply === true ? 201 : 200).json(receipt);
+    if (!result || result.kind === 'store_unconfigured') throw new EntityNotFoundError('issued artifact store', 'not configured');
+    if (result.kind === 'not_found') throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    if (result.kind === 'reprint_unconfigured') throw new EntityNotFoundError('artifact reprint', 'not configured');
+    res.status(body.apply === true ? 201 : 200).json(result.receipt);
   }));
   router.get('/teacher/artifacts/:artifactId/postview.pdf', wrap(async (req, res) => {
-    if (!issuedArtifactStore || !getTeacherSession || !renderArtifactPostview) {
-      return res.status(501).json({ error: 'artifact postview is not configured' });
-    }
-    const artifact = await issuedArtifactStore.get(req.params.artifactId);
-    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     const proof = capabilityProof(req);
-    const sessionStatus = teacherCapabilitySessions?.status(proof?.capabilityToken);
-    if (!sessionStatus?.active || !teacherCapabilitySessions.authorize({
-      ...proof, userId: sessionStatus.userId, action: 'artifact.postview',
-      context: { artifactId: req.params.artifactId },
-    })) {
+    const result = await schoolArtifactService?.postview?.(req.params.artifactId, proof) ?? { kind: 'unconfigured' };
+    if (result.kind === 'unconfigured') return res.status(501).json({ error: 'artifact postview is not configured' });
+    if (result.kind === 'not_found') throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    if (result.kind === 'forbidden') {
       return res.status(403).json({ error: 'A fresh teacher confirmation is required to view this postview.' });
     }
-    const session = await getTeacherSession.execute({ sessionId: artifact.manifest.sessionId });
-    const rendered = await renderArtifactPostview({ originalPdf: artifact.bytes, session });
     return res.set('Cache-Control', 'private, no-store')
       .set('Content-Type', 'application/pdf')
       .set('Content-Disposition', `inline; filename="postview-${slugify(req.params.artifactId)}.pdf"`)
-      .send(rendered.pdf);
+      .send(result.pdf);
   }));
   router.post('/teacher/sessions/:sessionId/grade-adjustments', wrap(async (req, res) => {
     if (!adjustSessionGrade) throw new EntityNotFoundError('grade adjustment', 'not configured');
@@ -1616,8 +1239,8 @@ export function createSchoolRouter({
   // `startsAt`/`endsAt` for every period, and the client picks the one that
   // contains "now".
   router.get('/periods', wrap(async (req, res) => {
-    if (!academicPeriods) return res.json([]);
-    res.set('Cache-Control', 'no-store').json(academicPeriods.listPeriods());
+    if (!schoolRecordsQuery?.hasPeriods?.()) return res.json([]);
+    res.set('Cache-Control', 'no-store').json(schoolRecordsQuery?.listPeriods?.() ?? []);
   }));
 
   // A learner's own RESOLVED review items, newest first — the feedback a
@@ -1637,7 +1260,7 @@ export function createSchoolRouter({
     const learnerId = textQuery(req.query.learnerId);
     const periodId = textQuery(req.query.periodId);
     if (!learnerId || !periodId) return res.status(400).json({ error: 'learnerId and periodId are required' });
-    res.json({ versions: schoolDatastore?.listReportCardVersions?.(learnerId, periodId) ?? [] });
+    res.json({ versions: schoolReportDocuments?.listFrozenVersions?.(learnerId, periodId) ?? [] });
   }));
 
   // The merged who-changed-what trail (admin advocacy #9): the four
@@ -1646,41 +1269,7 @@ export function createSchoolRouter({
   // week's changes meant YAML off the volume. Read-only, newest first.
   router.get('/audit', wrap(async (req, res) => {
     const since = textQuery(req.query.since); // ISO prefix compare; optional
-    const rows = [];
-    const push = (kind, at, payload) => {
-      if (!at || (since && at < since)) return;
-      rows.push({ kind, at, ...payload });
-    };
-    try {
-      (academicPeriodStore?.history?.() ?? []).forEach((h) => push('periods', h.at, { by: h.editedBy ?? null, count: h.count ?? null }));
-    } catch { /* one unreadable trail must not blank the rest */ }
-    try {
-      (passOverrideStore?.history?.() ?? []).forEach((h) => push('pass-override', h.at, { by: h.editedBy ?? null, unitId: h.unitId ?? null, percent: h.percent ?? null }));
-    } catch { /* ditto */ }
-    try {
-      (milestoneStore?.history?.() ?? []).forEach((h) => push('milestones', h.at, { by: h.editedBy ?? null, count: h.count ?? null }));
-    } catch { /* ditto */ }
-    try {
-      // Task 12 (debt M5): the reassignment audit trail joins the merge —
-      // same shape as the other trails, same per-trail try/catch posture.
-      (reassignmentLog?.list?.() ?? []).forEach((h) => push('reassignment', h.at, {
-        by: h.reassignedBy ?? null, learnerId: h.fromLearnerId ?? null, toLearnerId: h.toLearnerId ?? null, moved: h.moved ?? null,
-      }));
-    } catch { /* ditto */ }
-    if (assignmentsStore?.history && assignmentsStore?.list) {
-      try {
-        const records = await assignmentsStore.list();
-        for (const record of records) {
-          // eslint-disable-next-line no-await-in-loop
-          const trail = await assignmentsStore.history(record.learnerId);
-          trail.forEach((h) => push('assignments', h.recordedAt, {
-            by: h.assignedBy ?? null, learnerId: record.learnerId, courses: (h.courses ?? []).length,
-          }));
-        }
-      } catch { /* ditto */ }
-    }
-    rows.sort((a, b) => String(b.at).localeCompare(String(a.at)));
-    res.json({ entries: rows.slice(0, 500) });
+    res.json({ entries: await schoolRecordsQuery?.audit?.({ since, limit: 500 }) ?? [] });
   }));
 
   // One child's complete communications record (admin advocacy #14).
@@ -1694,122 +1283,63 @@ export function createSchoolRouter({
   }));
 
   router.get('/review/learner/:learnerId', wrap(async (req, res) => {
-    if (!reviewQueue) return res.json([]);
+    if (!schoolRecordsQuery?.hasReviewQueue?.()) return res.json([]);
     const learnerId = requiredTextQuery(req.params.learnerId, 'learnerId');
     const limit = boundedIntegerQuery(req.query.limit, 20, 1, 100, 'limit');
-    const items = await reviewQueue.listForLearner(learnerId, { limit });
-    // Titles are a catalog concern joined at read time; a failed lookup just
-    // leaves unitTitle null and the row still serves.
-    const titleOf = async (unitId) => {
-      if (!unitId) return null;
-      try { return (await curriculumForSyllabus?.getUnitSummary?.(unitId))?.title ?? null; } catch { return null; }
-    };
-    // Standalone teacher notes (spec D3) join the same child-visible feed,
-    // marked kind:'note' so a renderer can tell them from verdicts.
-    const standaloneNotes = (teacherNotesStore?.list?.({ learnerId }) ?? []).map((n) => ({
-      itemId: n.id, sessionId: null, unitId: null, unitTitle: null, verdict: null, kind: 'note',
-      note: n.note, gradedBy: n.from ?? null, gradedAt: n.at,
-    }));
-    res.set('Cache-Control', 'no-store').json([...await Promise.all(items.map(async (item) => ({
-      itemId: item.itemId,
-      sessionId: item.sessionId,
-      unitId: item.unitId ?? null,
-      unitTitle: await titleOf(item.unitId),
-      verdict: item.verdict,
-      note: item.note ?? null,
-      gradedBy: item.gradedBy ?? null,
-      gradedAt: item.gradedAt ?? null,
-      prompt: item.prompt ?? null,
-      questionNumber: item.questionNumber ?? null,
-    }))), ...standaloneNotes]
-      .sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? '')))
-      .slice(0, limit));
+    res.set('Cache-Control', 'no-store').json(await schoolRecordsQuery.learnerReview(learnerId, limit));
   }));
+
+  function textQuery(value) {
+    if (value === undefined || value === null || value === '') return null;
+    if (Array.isArray(value) || typeof value !== 'string') throw new ValidationError('query value must be text');
+    return value;
+  }
+
+  function requiredTextQuery(value, field) {
+    const text = textQuery(value);
+    if (text === null) throw new ValidationError(`${field} is required`);
+    return text;
+  }
+
+  function csvQuery(value) {
+    const text = textQuery(value);
+    if (text === null) return [];
+    const values = text.split(',').map((entry) => entry.trim()).filter(Boolean);
+    if (new Set(values).size !== values.length) throw new ValidationError('query list must not contain duplicates');
+    return values;
+  }
+
+  function boundedIntegerQuery(value, fallback, minimum, maximum, field) {
+    const text = textQuery(value);
+    if (text === null) return fallback;
+    if (!/^(0|[1-9][0-9]*)$/.test(text)) throw new ValidationError(`${field} must be an integer`);
+    const parsed = Number(text);
+    if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+      throw new ValidationError(`${field} must be from ${minimum} to ${maximum}`);
+    }
+    return parsed;
+  }
+
+  /** `?format=pdf` on either report-card GET; JSON stays the default either way. */
+  function wantsPdf(req) {
+    return textQuery(req.query.format) === 'pdf';
+  }
+
+  async function sendReportCardPdf(res, reports, report, { learnerId, periodId, req }) {
+    if (!reports) return res.status(503).json({ error: 'report-card-pdf-unavailable' });
+    const rendered = await reports.reportCardPdf(report, {
+      learnerId, learnerName: textQuery(req.query.learnerName),
+    });
+    if (!rendered) return res.status(503).json({ error: 'report-card-pdf-unavailable' });
+    res.set('Cache-Control', 'no-store');
+    const filename = `report-card-${slugify(learnerId, 'learner')}-${slugify(periodId, 'period')}.pdf`;
+    res.set('Content-Disposition', `inline; filename="${filename}"`);
+    return res.type('application/pdf').send(rendered.pdf);
+  }
 
   if (schoolCalcRouter) router.use('/calc', schoolCalcRouter);
 
   return router;
-}
-
-/**
- * Newest usable allocation record, live before satisfied, then most recently
- * rendered — the same precedence scan-back resolution uses for row ownership.
- * Shared by the print route's bare-omr reuse, card adoption, and the
- * card-id-path lookup.
- */
-function newestUsableRecord(records) {
-  return records
-    .filter((record) => record.status === 'live' || record.status === 'satisfied')
-    .sort((a, b) => {
-      const rank = (record) => (record.status === 'live' ? 1 : 0);
-      return (rank(b) - rank(a)) || String(b.renderedAt).localeCompare(String(a.renderedAt));
-    })[0] ?? null;
-}
-
-/**
- * Live cards exactly one digit off a card id nobody recognizes — the same
- * Hamming-1 courtesy the scan consumer extends to a mis-bubbled card, for a
- * mistyped URL. Household-scale linear scan; a store without `listCardIds`
- * yields no suggestions.
- */
-async function nearMissLiveCards(store, cardId) {
-  if (typeof store.listCardIds !== 'function') return [];
-  const out = [];
-  for (const candidate of await store.listCardIds()) {
-    if (candidate.length !== cardId.length) continue;
-    let distance = 0;
-    for (let i = 0; i < candidate.length && distance < 2; i += 1) {
-      if (candidate[i] !== cardId[i]) distance += 1;
-    }
-    if (distance !== 1) continue;
-    // eslint-disable-next-line no-await-in-loop
-    const records = await store.findByCard(candidate);
-    if (records.some((record) => record.status === 'live')) out.push(candidate);
-  }
-  return out.sort();
-}
-
-/** `?format=pdf` on either report-card GET; JSON stays the default either way. */
-function wantsPdf(req) {
-  return textQuery(req.query.format) === 'pdf';
-}
-
-/**
- * Render and send a report card as `application/pdf` — shared by the live
- * and frozen GET routes so the content-type/filename/cache-header contract
- * (and the "not wired" 503) stays identical between them.
- *
- * `learnerId`/`periodId` are query-string values, not path segments — a
- * caller can put anything in them (quotes, semicolons, CRLF). They are
- * slugged before landing in `Content-Disposition`, the same way `receipts.mjs`
- * sluggs a learner id before it becomes part of a document id: a hostile
- * `learnerId=kid1"; filename="evil.pdf` must not be able to inject a second
- * `filename=` parameter into the header.
- */
-async function sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, periodId, req, learnerDirectory = null }) {
-  if (!renderReportCardPdf) return res.status(503).json({ error: 'report-card-pdf-unavailable' });
-  // The child's NAME is the string this document exists to honor (design
-  // audit #3): query override wins, then the roster's display name — never
-  // the raw id unless nothing else resolves.
-  let learnerName = textQuery(req.query.learnerName);
-  if (!learnerName && learnerDirectory) {
-    try {
-      // listLearners may be sync on some directories — never assume a thenable.
-      const roster = await Promise.resolve(learnerDirectory.listLearners());
-      learnerName = roster.find((r) => r.id === learnerId)?.name ?? null;
-    } catch { /* name resolution is a courtesy, never a 500 */ }
-  }
-  const { pdf } = await renderReportCardPdf(report, { learnerName });
-  res.set('Cache-Control', 'no-store');
-  const slug = `report-card-${slugify(learnerId, 'learner')}-${slugify(periodId, 'period')}.pdf`;
-  res.set('Content-Disposition', `inline; filename="${slug}"`);
-  return res.type('application/pdf').send(pdf);
-}
-
-function textQuery(value) {
-  if (value === undefined || value === null || value === '') return null;
-  if (Array.isArray(value) || typeof value !== 'string') throw new ValidationError('query value must be text');
-  return value;
 }
 
 /**
@@ -1826,35 +1356,10 @@ function toParamString(value) {
   return value;
 }
 
-function requiredTextQuery(value, field) {
-  const text = textQuery(value);
-  if (text === null) throw new ValidationError(`${field} is required`);
-  return text;
-}
-
 /** Five non-empty, slash-separated segments: catalogId/subjectId/courseId/unitId/lessonId. */
 function isLessonAddress(address) {
   const segments = address.split('/');
   return segments.length === 5 && segments.every((segment) => segment.length > 0);
-}
-
-function csvQuery(value) {
-  const text = textQuery(value);
-  if (text === null) return [];
-  const values = text.split(',').map((entry) => entry.trim()).filter(Boolean);
-  if (new Set(values).size !== values.length) throw new ValidationError('query list must not contain duplicates');
-  return values;
-}
-
-function boundedIntegerQuery(value, fallback, minimum, maximum, field) {
-  const text = textQuery(value);
-  if (text === null) return fallback;
-  if (!/^(0|[1-9][0-9]*)$/.test(text)) throw new ValidationError(`${field} must be an integer`);
-  const parsed = Number(text);
-  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
-    throw new ValidationError(`${field} must be from ${minimum} to ${maximum}`);
-  }
-  return parsed;
 }
 
 export default createSchoolRouter;

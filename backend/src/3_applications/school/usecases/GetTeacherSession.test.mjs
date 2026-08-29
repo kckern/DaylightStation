@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GetTeacherSession, GetLearnerTimeline } from './GetTeacherSession.mjs';
+import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 const events = [
   { type: 'created', seq: 1, at: '2026-08-24T14:27:36.519Z', learnerId: 'learner3', unitId: 'atlas-us-p044-illinois' },
@@ -36,7 +37,7 @@ describe('GetTeacherSession artifact read-through', () => {
       schema: 'school.teacher-session/v4',
       taxonomy: {
         subject: 'Civilization', lessonTitle: 'Illinois', courseTitle: 'Young People’s Atlas of the United States',
-        moduleTitle: 'United States Regions and States', posterUrl: '/api/v1/school/teacher/curriculum/young-peoples-atlas-us/poster.jpg',
+        moduleTitle: 'United States Regions and States', posterUrl: curriculumPosterRef('teacher', 'young-peoples-atlas-us'),
       },
       assignment: { documentRevision: 'frozen-rev', questions: [{ prompt: 'Which state is Illinois?' }] },
       assessment: { items: [{ given: 'Illinois', verdict: 'correct' }] },
@@ -75,7 +76,7 @@ describe('GetLearnerTimeline catalog join', () => {
       courseTitle: 'United States Regions and States',
       subject: 'Civilization',
       moduleTitle: 'Midwest',
-      posterUrl: '/api/v1/school/teacher/curriculum/young-peoples-atlas-us/poster.jpg',
+      posterUrl: curriculumPosterRef('teacher', 'young-peoples-atlas-us'),
     });
   });
 

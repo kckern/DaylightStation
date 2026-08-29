@@ -1,5 +1,5 @@
 import { Headline } from '#domains/feed/entities/Headline.mjs';
-import { shortIdFromUuid } from '#domains/core/utils/id.mjs';
+import { shortIdFromUuid } from '#system/utils/id.mjs';
 
 describe('Headline', () => {
   const validData = {

@@ -6,12 +6,4 @@ export class BeliefOrigin {
     this.source_events = data.source_events || [];
   }
 
-  toJSON() {
-    return {
-      type: this.type,
-      description: this.description,
-      narrative: this.narrative,
-      source_events: this.source_events,
-    };
-  }
 }

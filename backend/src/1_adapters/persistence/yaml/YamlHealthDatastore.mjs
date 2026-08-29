@@ -15,6 +15,7 @@
  */
 
 import { IHealthDataDatastore } from '#apps/health/ports/IHealthDataDatastore.mjs';
+import { dehydrateHealthDataRecord } from './HealthMetricRecordCodec.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlHealthDatastore extends IHealthDataDatastore {
@@ -152,7 +153,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async saveHealthData(userId, healthData) {
     this.#logger.debug?.('health.store.saveHealth', { userId, dates: Object.keys(healthData).length });
-    this.#saveUserFile(userId, 'lifelog/health', healthData);
+    this.#saveUserFile(userId, 'lifelog/health', dehydrateHealthDataRecord(healthData));
   }
 
   /**

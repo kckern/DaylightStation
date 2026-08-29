@@ -6,7 +6,7 @@
  *
  * @module adapters/feed/plugins/youtube
  */
-import { IContentPlugin } from '#apps/feed/plugins/IContentPlugin.mjs';
+import { IContentPlugin } from '#apps/feed/ports/IContentPlugin.mjs';
 
 const YT_URL_PATTERN = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]+)/;
 const YT_SHORTS_PATTERN = /youtube\.com\/shorts\//;

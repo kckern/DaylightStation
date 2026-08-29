@@ -2,14 +2,40 @@
 /**
  * testDataService Integration Tests
  *
- * Validates that testDataService works with real API endpoints.
- * Loads test samples from the registry, calls actual APIs, and validates
- * responses using the expectation matchers.
+ * Validates that testDataService works with the real local-content API router.
+ * Checked-in content and registry fixtures keep this integrated test hermetic.
  */
 
-import { loadTestData, validateExpectations, clearCache } from '#testlib/testDataService.mjs';
+import { jest } from '@jest/globals';
+import express from 'express';
+import path from 'node:path';
+import request from 'supertest';
 
-const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3112';
+jest.unstable_mockModule('music-metadata', () => ({ parseFile: jest.fn() }));
+
+import {
+  loadTestData,
+  validateExpectations,
+  clearCache,
+  useTestDataRegistry,
+} from '#testlib/testDataService.mjs';
+const fixturesPath = path.resolve(process.cwd(), 'tests/_fixtures');
+const testRegistry = {
+  scripture: {
+    default_expect: { reference: '/1 Nephi 1/i', verses: 'array' },
+    preferred: [{ id: 'cfm/test-chapter' }],
+  },
+  hymn: {
+    default_expect: { title: "Our Savior's Love", number: '>=1' },
+    preferred: [{ id: '113' }],
+  },
+  plex: {
+    default_expect: { title: 'string', type: 'movie|episode|track' },
+    preferred: [{ id: 'fixture-plex-item' }],
+  },
+};
+
+let app;
 
 /**
  * Fetch JSON from an API endpoint
@@ -17,34 +43,51 @@ const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3112';
  * @returns {Promise<{status: number, body: Object|null}>}
  */
 async function fetchJSON(path) {
-  const response = await fetch(`${BASE_URL}${path}`);
+  const response = await request(app).get(path);
   return {
     status: response.status,
-    body: response.ok ? await response.json() : null
+    body: response.status >= 200 && response.status < 300 ? response.body : null,
   };
 }
 
-/**
- * Check if Plex adapter is available
- * @returns {Promise<boolean>}
- */
-async function isPlexAvailable() {
-  try {
-    const res = await fetch(`${BASE_URL}/api/v1/info/plex/1`, { method: 'HEAD' });
-    // 503 means adapter not configured, 404 means item not found (but adapter works)
-    return res.status !== 503;
-  } catch (e) {
-    return false;
-  }
-}
-
 describe('testDataService Integration', () => {
-  beforeAll(() => {
-    clearCache();
+  beforeAll(async () => {
+    useTestDataRegistry(testRegistry);
+
+    // Jest's VM-module linker cannot safely resolve this graph concurrently.
+    const { createApiRouters } = await import('#composition/modules/contentApi.mjs');
+    const { ContentSourceRegistry } = await import('#adapters/content/ContentSourceRegistry.mjs');
+    const { LocalContentAdapter } = await import('#adapters/content/local-content/LocalContentAdapter.mjs');
+    const { ScriptureResolver } = await import('#adapters/content/readalong/resolvers/scripture.mjs');
+    const { YamlMediaProgressMemory } = await import('#adapters/persistence/yaml/YamlMediaProgressMemory.mjs');
+
+    const mediaProgressMemory = new YamlMediaProgressMemory({
+      basePath: path.join(fixturesPath, 'watch-state'),
+    });
+    const contentRegistry = new ContentSourceRegistry();
+    contentRegistry.register(new LocalContentAdapter({
+      dataPath: path.join(fixturesPath, 'local-content'),
+      mediaPath: path.join(fixturesPath, 'media'),
+      mediaProgressMemory,
+      contentRegistry,
+      scriptureResolver: ScriptureResolver,
+    }), { category: 'local', provider: 'local-content' });
+
+    const { routers } = createApiRouters({
+      registry: contentRegistry,
+      mediaProgressMemory,
+      menuMemoryRepository: { load: () => ({}), save: () => undefined },
+      dataPath: path.join(fixturesPath, 'local-content'),
+      mediaBasePath: path.join(fixturesPath, 'media'),
+      configService: { getAppConfig: () => ({}) },
+    });
+
+    app = express();
+    app.use('/api/v1/local-content', routers.localContent);
   });
 
   afterAll(() => {
-    clearCache();
+    useTestDataRegistry(null);
   });
 
   // ===========================================================================
@@ -137,75 +180,26 @@ describe('testDataService Integration', () => {
     });
   });
 
-  // ===========================================================================
-  // PLEX
-  // ===========================================================================
-  describe('plex domain', () => {
-    let plexAvailable = false;
-
-    beforeAll(async () => {
-      plexAvailable = await isPlexAvailable();
-      if (!plexAvailable) {
-        console.log('Plex adapter not available, skipping Plex tests');
-      }
-    });
-
-    it('loads plex sample and validates API response', async () => {
-      if (!plexAvailable) {
-        console.log('Skipping: Plex not available');
-        return;
-      }
-
-      // Load test data from registry
+  // Plex itself is an external integration; adapter loading is covered by the
+  // adapter-discovery suite. Here we deterministically preserve the registry
+  // selection and matcher contract that previously depended on a live server.
+  describe('plex registry domain', () => {
+    it('loads a Plex sample and validates its response contract', async () => {
       const data = await loadTestData({ plex: 1 });
 
-      expect(data.plex).toBeDefined();
-      expect(data.plex.length).toBeGreaterThan(0);
-
-      const sample = data.plex[0];
-      expect(sample.id).toBeDefined();
-      expect(sample.expect).toBeDefined();
-
-      // Call the API with the sample ID
-      const apiPath = `/api/v1/info/plex/${sample.id}`;
-      const { status, body } = await fetchJSON(apiPath);
-
-      // Plex item might not exist (404) - that's acceptable
-      if (status === 404) {
-        console.log(`Plex item ${sample.id} not found, skipping validation`);
-        return;
-      }
-
-      expect(status).toBe(200);
-      expect(body).not.toBeNull();
-
-      // Validate response against expectations
-      const validation = validateExpectations(body, sample.expect);
-
-      if (!validation.valid) {
-        console.error('Plex validation errors:', validation.errors);
-      }
-
-      expect(validation.valid).toBe(true);
-      expect(validation.errors).toHaveLength(0);
+      expect(data.plex).toHaveLength(1);
+      expect(data.plex[0].id).toBe('fixture-plex-item');
+      const validation = validateExpectations(
+        { title: 'Fixture Movie', type: 'movie' },
+        data.plex[0].expect,
+      );
+      expect(validation).toEqual({ valid: true, errors: [] });
     });
 
-    it('plex sample has meaningful expectations', async () => {
-      if (!plexAvailable) {
-        console.log('Skipping: Plex not available');
-        return;
-      }
-
-      const data = await loadTestData({ plex: 1 });
-      const sample = data.plex[0];
-
-      // Sample should have expectations defined
-      expect(Object.keys(sample.expect).length).toBeGreaterThan(0);
-
-      // For preferred samples, should have specific expectations
-      expect(sample.expect.title).toBeDefined();
-      // Note: type expectation is now present only for items with complete metadata
-      expect(sample.expect.type).toBeDefined();
+    it('retains meaningful Plex expectations', async () => {
+      const [{ expect: sampleExpect }] = (await loadTestData({ plex: 1 })).plex;
+      expect(sampleExpect.title).toBeDefined();
+      expect(sampleExpect.type).toBeDefined();
     });
   });
 

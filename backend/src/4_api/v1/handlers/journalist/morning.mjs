@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * Morning Debrief Handler
  * @module api/handlers/journalist/morning
@@ -8,20 +9,16 @@
 /**
  * Create morning debrief handler
  *
- * @param {Object} container - Journalist container with dependencies
- * @param {Function} container.getGenerateMorningDebrief - Get GenerateMorningDebrief use case
- * @param {Function} container.getSendMorningDebrief - Get SendMorningDebrief use case
- * @param {Function} [container.getUserResolver] - Get UserResolver for username lookup
+ * @param {Object} journalistApi - Semantic Journalist operations
  * @param {Object} [options] - Additional options
- * @param {Object} [options.configService] - Config service for default user resolution
  * @param {Object} [options.logger] - Logger instance
  * @returns {Function} Express handler (req, res) => Promise<void>
  */
-export function journalistMorningDebriefHandler(container, options = {}) {
-  const { configService, telegramIdentityAdapter, logger = console } = options;
+export function journalistMorningDebriefHandler(journalistApi, options = {}) {
+  const { logger = console } = options;
 
   return async (req, res) => {
-    const username = req.query.user || configService?.getHeadOfHousehold?.() || 'user_1';
+    const username = journalistApi.resolveUsername(req.query.user || null);
     const date = req.query.date || null;
 
     if (!username) {
@@ -33,67 +30,30 @@ export function journalistMorningDebriefHandler(container, options = {}) {
 
     logger.info?.('morning.handler.start', { username, date });
 
-    // Step 1: Resolve conversation ID early so generation can use conversation context
-    const conversationId = resolveConversationId(telegramIdentityAdapter, username, logger);
-
-    // Step 2: Generate the debrief (with conversation context)
-    const generateMorningDebrief = container.getGenerateMorningDebrief();
-    const debrief = await generateMorningDebrief.execute({
-      username,
-      date,
-      conversationId,
-    });
-
-    if (!conversationId) {
+    const result = await journalistApi.morning({ requestedUsername: username, date });
+    if (result.kind === 'conversation_not_found') {
       logger.error?.('morning.handler.no-conversation-id', { username });
-      return res.status(500).json({
+      return sendInternalError(res, {
         success: false,
         error: 'Could not resolve conversation ID for user',
       });
     }
 
-    // Step 3: Send to Telegram
-    const sendMorningDebrief = container.getSendMorningDebrief();
-    const result = await sendMorningDebrief.execute({
-      conversationId,
-      debrief,
-    });
-
     logger.info?.('morning.handler.complete', {
       username,
-      date: debrief.date,
-      success: result.success,
-      fallback: result.fallback,
+      date: result.date,
+      success: result.delivery.success,
+      fallback: result.delivery.fallback,
     });
 
     return res.status(200).json({
       success: true,
       username,
-      date: debrief.date || date,
-      messageId: result.messageId,
-      fallback: result.fallback,
+      date: result.date,
+      messageId: result.delivery.messageId,
+      fallback: result.delivery.fallback,
     });
   };
-}
-
-/**
- * Resolve username to Telegram conversation ID using TelegramIdentityAdapter
- */
-function resolveConversationId(identityAdapter, username, logger) {
-  if (!username) {
-    logger.warn?.('journalist.morning.noUsername');
-    return null;
-  }
-
-  try {
-    const identity = identityAdapter.resolve('journalist', { username });
-    return identity.conversationIdString;
-  } catch (e) {
-    logger.warn?.('journalist.morning.identityResolutionFailed', {
-      username, error: e.message,
-    });
-    return null;
-  }
 }
 
 export default journalistMorningDebriefHandler;

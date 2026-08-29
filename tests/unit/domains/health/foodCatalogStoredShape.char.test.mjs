@@ -72,7 +72,10 @@ describe('food catalog stored YAML shape (characterization)', () => {
   });
 
   it('round-trips through the datastore back into an equivalent entity', async () => {
-    const entry = new FoodCatalogEntry({ id: 'fc-2', name: 'Oats', nutrients: { calories: 150, protein: 5, carbs: 27, fat: 3 } });
+    const entry = new FoodCatalogEntry({
+      id: 'fc-2', name: 'Oats', nutrients: { calories: 150, protein: 5, carbs: 27, fat: 3 },
+      lastUsed: '2026-07-08', createdAt: '2026-07-08T00:00:00.000Z',
+    });
     await store.save(entry, USER);
 
     const loaded = await store.getById('fc-2', USER);

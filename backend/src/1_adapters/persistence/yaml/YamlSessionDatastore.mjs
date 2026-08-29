@@ -24,6 +24,7 @@ import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { ItemId } from '#domains/content/value-objects/ItemId.mjs';
 import { selectPrimaryMedia, selectPrimaryMediaSummary, buildSelectionConfig } from '#domains/fitness/services/selectPrimaryMedia.mjs';
+import { hydrateTimeline, dehydrateTimeline } from './SessionTimelineCodec.mjs';
 
 // ── Session list index (derived read cache) ──────────────────────────────
 // The /sessions?since=Nd and /suggestions endpoints build per-session summaries
@@ -50,6 +51,33 @@ function deriveSessionDate(sessionId) {
   const digits = String(sessionId).replace(/\D/g, '');
   if (digits.length < 8) return null;
   return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
+
+export function dehydrateSessionRecord(session) {
+  if (typeof session?.getDurationMs !== 'function') return session;
+  const hasV3Session = !!session.session;
+  const hasV3Participants = Object.keys(session.participants).length > 0;
+  const result = { version: session.version, sessionId: session.sessionId.toString() };
+  if (hasV3Session) result.session = session.session;
+  if (session.timezone) result.timezone = session.timezone;
+  if (hasV3Participants) result.participants = session.participants;
+  if (!hasV3Session) Object.assign(result, { startTime: session.startTime, endTime: session.endTime, durationMs: session.durationMs });
+  if (!hasV3Participants) result.roster = session.roster;
+  result.timeline = dehydrateTimeline(session.timeline);
+  if (session.events.length > 0 && !(session.timeline?.events?.length > 0)) result.events = session.events;
+  if (session.treasureBox) result.treasureBox = session.treasureBox;
+  if (session.summary) result.summary = session.summary;
+  if (session.strava) result.strava = session.strava;
+  if (session.strava_notes) result.strava_notes = session.strava_notes;
+  if (session.finalized) result.finalized = session.finalized;
+  if (session.provisional) result.provisional = session.provisional;
+  if (session.entities.length > 0) result.entities = session.entities;
+  const hasSnapshots = session.snapshots && ((Array.isArray(session.snapshots.captures) && session.snapshots.captures.length > 0) || session.snapshots.updatedAt != null);
+  if (hasSnapshots) result.snapshots = session.snapshots;
+  if (session.metadata && Object.keys(session.metadata).length > 0) result.metadata = session.metadata;
+  if (session.timelapse) result.timelapse = session.timelapse;
+  if (session.strength?.runs?.length > 0) result.strength = session.strength;
+  return result;
 }
 
 /**
@@ -160,7 +188,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    * @returns {Promise<void>}
    */
   async save(session, householdId) {
-    const data = typeof session.toJSON === 'function' ? session.toJSON() : session;
+    const data = dehydrateSessionRecord(session);
     const paths = this.getStoragePaths(data.sessionId, householdId);
     if (!paths) throw new InfrastructureError('Invalid sessionId', {
         code: 'VALIDATION_ERROR'
@@ -269,6 +297,8 @@ export class YamlSessionDatastore extends ISessionDatastore {
       || parseToUnixMs(data.session?.end, tz);
     if (startMs != null) data.startTime = startMs;
     if (endMs != null) data.endTime = endMs;
+
+    data.timeline = hydrateTimeline(data.timeline);
 
     // Derive durationMs from session block if missing at root
     if (data.durationMs == null && data.session?.duration_seconds != null) {

@@ -18,6 +18,7 @@ import express from 'express';
 import request from 'supertest';
 
 import { createHomeAutomationRouter } from '../../../../backend/src/4_api/v1/routers/homeAutomation.mjs';
+import { LegacyHomeAutomationService } from '../../../../backend/src/3_applications/home-automation/LegacyHomeAutomationService.mjs';
 
 const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
@@ -30,7 +31,7 @@ function buildApp({ callHomeAssistantService, haGateway } = {}) {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/home', createHomeAutomationRouter({
-    haGateway: haGateway ?? { callService: vi.fn() }, // present so the !haGateway 503 branch doesn't short-circuit
+    homeAutomationService: new LegacyHomeAutomationService(),
     callHomeAssistantService,
     logger: silentLogger,
   }));
@@ -136,9 +137,7 @@ describe('GET /api/v1/home/photo (collection param routes through ArtMode resolv
   function buildPhotoApp({ immichAdapter, artAdapter } = {}) {
     const app = express();
     app.use('/api/v1/home', createHomeAutomationRouter({
-      haGateway: { callService: vi.fn() },
-      immichAdapter,
-      artAdapter,
+      homeAutomationService: new LegacyHomeAutomationService({ gallerySource: immichAdapter, artSource: artAdapter }),
       logger: silentLogger,
     }));
     return app;

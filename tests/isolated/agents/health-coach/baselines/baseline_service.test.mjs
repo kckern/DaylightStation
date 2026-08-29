@@ -2,11 +2,15 @@ import { describe, it, expect, vi } from 'vitest';
 import { PersonalBaselineService } from '../../../../../backend/src/3_applications/agents/health-coach/services/PersonalBaselineService.mjs';
 
 const FROZEN_NOW = () => new Date('2026-05-07T12:00:00Z');
+const workspace = (dataService) => ({
+  getBaselines: (userId) => dataService.user.read('profile/baselines', userId),
+  saveBaselines: (userId, payload) => dataService.user.write('profile/baselines', payload, userId),
+});
 
 function makeSvc({ workoutAdapter, mealAdapter, weighinAdapter, dataService, cacheTtlMs } = {}) {
   return new PersonalBaselineService({
     adapters: { workout: workoutAdapter, meal: mealAdapter, weigh_in: weighinAdapter },
-    dataService,
+    workspaceRepository: workspace(dataService),
     cacheTtlMs,
     now: FROZEN_NOW,
   });
@@ -69,7 +73,7 @@ describe('PersonalBaselineService.getBaselines', () => {
     };
     const svc = new PersonalBaselineService({
       adapters: {},  // no adapters
-      dataService,
+      workspaceRepository: workspace(dataService),
       now: FROZEN_NOW,
     });
     const r = await svc.getBaselines({ userId: 'user_1' });
@@ -80,7 +84,7 @@ describe('PersonalBaselineService.getBaselines', () => {
 
   it('throws when userId missing', async () => {
     const dataService = { user: { read: vi.fn(), write: vi.fn() } };
-    const svc = new PersonalBaselineService({ adapters: {}, dataService, now: FROZEN_NOW });
+    const svc = new PersonalBaselineService({ adapters: {}, workspaceRepository: workspace(dataService), now: FROZEN_NOW });
     await expect(svc.getBaselines({})).rejects.toThrow(/userId/);
   });
 });

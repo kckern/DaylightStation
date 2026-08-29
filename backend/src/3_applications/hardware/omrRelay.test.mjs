@@ -5,6 +5,7 @@ import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
 import { createOmrRelay } from './omrRelay.mjs';
+import { OmrFirmwareGateway } from '#adapters/hardware/firmware/EventBusFirmwareRelayGateways.mjs';
 import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
@@ -127,11 +128,11 @@ describe('createOmrRelay', () => {
   function wire({ timezone = 'UTC', config = {} } = {}) {
     const bus = makeBus();
     createOmrRelay({
-      eventBus: bus,
+      relayGateway: new OmrFirmwareGateway({ eventBus: bus, config, timezone }),
       dataDir,
       // Resolved by the composition root in production; supplied directly here.
       dayLog: new YamlDayLogDatastore({ root: path.join(dataDir, 'omr'), timezone, eventPrefix: 'omr' }),
-      config: { ...config },
+      dedupWindowMs: config?.persistence?.dedupWindowMs,
       timezone,
       logger: NOOP_LOGGER,
     });
@@ -500,14 +501,16 @@ describe('createOmrRelay', () => {
     expect(recs[0]).toMatchObject({ event: 'sheet', marks: [32] });
   });
 
-  it('requires an event bus with onClientMessage + subscribe', () => {
-    expect(() => createOmrRelay({ eventBus: {}, dataDir })).toThrow(/eventBus/);
+  it('requires a relay gateway', () => {
+    expect(() => createOmrRelay({ relayGateway: {}, dataDir })).toThrow(/relayGateway/);
   });
 
   it('stops persisting after dispose()', async () => {
     const bus = makeBus();
     const relay = createOmrRelay({
-      eventBus: bus, dataDir, config: { persistence: { dir: 'omr' } }, timezone: 'UTC', logger: NOOP_LOGGER,
+      relayGateway: new OmrFirmwareGateway({ eventBus: bus, config: {}, timezone: 'UTC' }),
+      dayLog: new YamlDayLogDatastore({ root: path.join(dataDir, 'omr'), timezone: 'UTC', eventPrefix: 'omr' }),
+      dataDir, timezone: 'UTC', logger: NOOP_LOGGER,
     });
     relay.dispose();
     bus.emit(sheetFrame([1]));

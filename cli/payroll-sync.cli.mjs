@@ -27,6 +27,8 @@ process.chdir(BACKEND);
 
 const { PayrollSyncService } = await import(path.join(BACKEND, 'src/3_applications/finance/PayrollSyncService.mjs'));
 const { BuxferAdapter } = await import(path.join(BACKEND, 'src/1_adapters/finance/BuxferAdapter.mjs'));
+const { TriNetPayrollGateway } = await import(path.join(BACKEND, 'src/1_adapters/finance/TriNetPayrollGateway.mjs'));
+const { FinanceStorePayrollRepository } = await import(path.join(BACKEND, 'src/1_adapters/finance/FinanceStorePayrollRepository.mjs'));
 
 const buxferCreds = yaml.load(fs.readFileSync(`${DATA}/household/auth/buxfer.yml`, 'utf-8'));
 const payrollAuth = yaml.load(fs.readFileSync(`${DATA}/household/auth/payroll.yml`, 'utf-8'));
@@ -97,17 +99,16 @@ const financeStore = {
   }
 };
 
-const configService = {
-  getDefaultHouseholdId: () => 'default',
-  getUserAuth: () => ({}) // unused — we provide payrollConfig
-};
+const payrollGateway = new TriNetPayrollGateway({ httpClient, config: payrollConfig });
+const payrollRepository = new FinanceStorePayrollRepository({ financeStore, logger: console });
 
 const service = new PayrollSyncService({
-  httpClient,
+  payrollGateway,
+  payrollRepository,
   transactionGateway: buxferAdapter,
-  financeStore,
-  configService,
-  payrollConfig,
+  householdId: 'default',
+  payrollAccountId: payrollConfig.payrollAccountId,
+  directDepositAccountId: payrollConfig.directDepositAccountId,
   logger: console,
 });
 

@@ -38,7 +38,7 @@ export class PianoScreenAuthorityService {
   #ha; #deviceService; #logger; #clock;
   #deviceId; #pianoPowerEntity;
   #pollMs; #offDebounceMs; #reconcileMs; #maxRetries; #backoffBaseMs;
-  #notifyService; #sleep; #override;
+  #notifyService; #scheduler; #override;
 
   #pollTimer; #reconcileTimer;
 
@@ -74,7 +74,7 @@ export class PianoScreenAuthorityService {
     maxRetries = DEFAULT_MAX_RETRIES,
     backoffBaseMs = DEFAULT_BACKOFF_BASE_MS,
     notifyService = null,
-    sleep,
+    scheduler,
     screenOverrideService = null,
   } = {}) {
     if (!haGateway || typeof haGateway.getState !== 'function') {
@@ -85,6 +85,7 @@ export class PianoScreenAuthorityService {
     }
     if (!deviceId) throw new Error('PianoScreenAuthorityService requires deviceId');
     if (!pianoPowerEntity) throw new Error('PianoScreenAuthorityService requires pianoPowerEntity');
+    if (!scheduler?.every || !scheduler?.wait) throw new Error('PianoScreenAuthorityService requires scheduler');
 
     this.#ha = haGateway;
     this.#deviceService = deviceService;
@@ -99,9 +100,7 @@ export class PianoScreenAuthorityService {
     this.#backoffBaseMs = backoffBaseMs;
     this.#notifyService = notifyService;
     this.#override = screenOverrideService;
-    this.#sleep = typeof sleep === 'function'
-      ? sleep
-      : (ms) => new Promise((r) => setTimeout(r, ms));
+    this.#scheduler = scheduler;
 
     this.#pollTimer = null;
     this.#reconcileTimer = null;
@@ -112,18 +111,16 @@ export class PianoScreenAuthorityService {
   start() {
     // A throw out of a timer tick would kill the interval — every tick is fully
     // wrapped, plus a belt-and-suspenders .catch on the async body.
-    this.#pollTimer = setInterval(() => {
+    this.#pollTimer = this.#scheduler.every(this.#pollMs, () => {
       this.#tickPoll().catch((err) => this.#logger.error?.('piano-screen-authority.poll.uncaught', {
         error: String(err?.message ?? err),
       }));
     }, this.#pollMs);
-    this.#reconcileTimer = setInterval(() => {
+    this.#reconcileTimer = this.#scheduler.every(this.#reconcileMs, () => {
       this.#tickReconcile().catch((err) => this.#logger.error?.('piano-screen-authority.reconcile.uncaught', {
         error: String(err?.message ?? err),
       }));
     }, this.#reconcileMs);
-    this.#pollTimer.unref?.();
-    this.#reconcileTimer.unref?.();
     this.#logger.info?.('piano-screen-authority.started', {
       deviceId: this.#deviceId,
       entity: this.#pianoPowerEntity,
@@ -134,8 +131,8 @@ export class PianoScreenAuthorityService {
   }
 
   stop() {
-    if (this.#pollTimer) clearInterval(this.#pollTimer);
-    if (this.#reconcileTimer) clearInterval(this.#reconcileTimer);
+    this.#pollTimer?.();
+    this.#reconcileTimer?.();
     this.#pollTimer = null;
     this.#reconcileTimer = null;
   }
@@ -280,7 +277,7 @@ export class PianoScreenAuthorityService {
     for (let attempt = 0; attempt <= this.#maxRetries; attempt++) {
       if (attempt > 0) {
         this.#logger.warn?.('piano-screen-authority.verify.retry', { deviceId: this.#deviceId, desiredOn, attempt, reason });
-        await this.#sleep(this.#backoffBaseMs * attempt);
+        await this.#scheduler.wait(this.#backoffBaseMs * attempt);
       }
       await device.setScreen(desiredOn);
       if (await this.#verify(device, desiredOn)) {

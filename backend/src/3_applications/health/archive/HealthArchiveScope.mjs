@@ -7,17 +7,10 @@
  * must call `archiveScope.assertReadable(absPath, userId)` BEFORE any
  * filesystem touch.
  *
- * Whitelist (verbatim from PRD F-106), anchored at the configured
- * `dataRoot` / `mediaRoot` (both absolute):
- *   - {dataRoot}/users/{userId}/lifelog/archives/weight.yaml
- *   - {dataRoot}/users/{userId}/lifelog/archives/<workout_source>/**
- *       (workout_source ∈ this scope's `workoutSources` list — see F4-A)
- *   - {dataRoot}/users/{userId}/lifelog/archives/nutrition-history/**
- *   - {dataRoot}/users/{userId}/lifelog/archives/scans/**
- *   - {dataRoot}/users/{userId}/lifelog/archives/notes/**
- *   - {dataRoot}/users/{userId}/lifelog/archives/playbook/**
- *   - {dataRoot}/users/{userId}/health.yml
- *   - {mediaRoot}/archives/<workout_source>/**   (cross-user, no userId scope)
+ * The semantic whitelist covers a user's weight history, configured workout
+ * sources, nutrition history, scans, notes, playbook, and health profile, plus
+ * shared workout archives. The filesystem adapter owns the concrete directory
+ * layout and root containment rules for those categories.
  *
  * F4-A: workout-source vocabulary used to live in code as the literal path
  * segments `strava` and `garmin`. It now flows through the constructor as
@@ -30,18 +23,17 @@
  *     checks and remain static — no roots required.
  *   - `isReadable` and `assertReadable` are instance methods because the
  *     whitelist must be anchored at known absolute prefixes and a known
- *     workout-source vocabulary. Construct via
- *     `new HealthArchiveScope({ dataRoot, mediaRoot, workoutSources? })`.
+ *     workout-source vocabulary. Concrete archive addressing is supplied by
+ *     the composition root via `archiveAddressPolicy`.
  *     Bootstrap instantiates a per-user instance via
  *     `HealthArchiveScopeFactory.forUser(userId)` and injects the factory
  *     downstream as `archiveScopeFactory`.
  *
  * Defenses:
  *   - userId format validated (`/^[a-zA-Z0-9_-]+$/`) before any matching
- *   - Input rejected if it contains a NUL byte (checked BEFORE
- *     `path.normalize` to avoid relying on Node preserving NULs through
- *     normalization across versions)
- *   - Input path normalized via `path.normalize` to collapse `..` segments
+ *   - Input rejected if it contains a NUL byte before normalization
+ *   - Input locations are normalized by the archive-addressing adapter to
+ *     collapse `..` segments
  *   - Path must be absolute — relative paths refused outright
  *   - Whitelist match REQUIRES `absPath` to start with the configured
  *     `dataRoot` or `mediaRoot`. A leading prefix anywhere in the path is
@@ -65,14 +57,13 @@
  *
  * @module apps/health/archive/HealthArchiveScope
  */
-import path from 'node:path';
 import {
   compileAdditions,
   matchesExclusion,
 } from '#domains/health/policies/PrivacyExclusions.mjs';
 import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
+import { assertValidHealthUserId } from '#domains/health/policies/HealthUserId.mjs';
 
-const USER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 // Workout-source segments must look like a path-safe identifier — no slashes,
 // no regex metacharacters, no traversal sequences.
 const WORKOUT_SOURCE_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -84,50 +75,6 @@ const WORKOUT_SOURCE_PATTERN = /^[a-zA-Z0-9_-]+$/;
  * sources per-playbook via `archive.workout_sources` instead.
  */
 export const DEFAULT_WORKOUT_SOURCES = Object.freeze(['strava', 'garmin']);
-
-/**
- * Build the per-user whitelist of tail patterns. Each pattern matches the
- * tail of the normalized absolute path (everything from `users/{id}/...`
- * onward). The caller is responsible for verifying the path STARTS with
- * the configured dataRoot prefix; these regexes only check the suffix.
- *
- * @param {string} userId
- * @param {string[]} workoutSources validated source identifiers
- * @returns {RegExp[]}
- */
-function buildUserWhitelistTails(userId, workoutSources) {
-  // Escape regex metachars in the userId — defense in depth even though the
-  // userId pattern already restricts to [A-Za-z0-9_-].
-  const u = userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const userBase = `users/${u}/lifelog/archives`;
-  const tails = [
-    // Single-file: weight.yaml
-    new RegExp(`(?:^|\\/)${userBase}\\/weight\\.yaml$`),
-    // Static directory globs (everything beneath the named subdir)
-    new RegExp(`(?:^|\\/)${userBase}\\/nutrition-history\\/.+`),
-    new RegExp(`(?:^|\\/)${userBase}\\/scans\\/.+`),
-    new RegExp(`(?:^|\\/)${userBase}\\/notes\\/.+`),
-    new RegExp(`(?:^|\\/)${userBase}\\/playbook\\/.+`),
-    // Single-file: health.yml (one level above lifelog/)
-    new RegExp(`(?:^|\\/)users\\/${u}\\/health\\.yml$`),
-  ];
-  // Dynamic workout-source globs. Sources are validated at construction so
-  // direct interpolation here is safe.
-  for (const src of workoutSources) {
-    tails.push(new RegExp(`(?:^|\\/)${userBase}\\/${src}\\/.+`));
-  }
-  return tails;
-}
-
-/**
- * Cross-user shared archive tail. One regex per workout source; matches any
- * path that lives under `archives/<source>/...` regardless of userId.
- */
-function buildSharedTails(workoutSources) {
-  return workoutSources.map(
-    (src) => new RegExp(`(?:^|\\/)archives\\/${src}\\/.+`),
-  );
-}
 
 /**
  * Validate and de-duplicate a workout-sources list. Throws on any element
@@ -160,18 +107,15 @@ function normalizeWorkoutSources(sources) {
 }
 
 export class HealthArchiveScope {
-  #dataRoot;
-  #mediaRoot;
+  #archiveAddressPolicy;
   #workoutSources;
   #additionalPrivacyExclusions;
   #compiledAdditions;
 
   /**
    * @param {object} opts
-   * @param {string} opts.dataRoot Absolute path to the data root (the parent
-   *   of `users/`). Required. e.g. `/srv/daylight/data`
-   * @param {string} opts.mediaRoot Absolute path to the media root (the
-   *   parent of `archives/`). Required. e.g. `/srv/daylight/media`
+   * @param {object} opts.archiveAddressPolicy Root-bound archive addressing
+   *   capability supplied by an adapter.
    * @param {string[]} [opts.workoutSources] Workout-source path segments to
    *   include in the whitelist. Defaults to `DEFAULT_WORKOUT_SOURCES`. The
    *   factory (`HealthArchiveScopeFactory`) merges these with the user's
@@ -183,21 +127,14 @@ export class HealthArchiveScope {
    *   compilation, matched case-insensitively. See
    *   `domains/health/policies/PrivacyExclusions.mjs` for floor + semantics.
    */
-  constructor({ dataRoot, mediaRoot, workoutSources, additionalPrivacyExclusions } = {}) {
-    if (!dataRoot || typeof dataRoot !== 'string' || !path.isAbsolute(dataRoot)) {
+  constructor({ archiveAddressPolicy, workoutSources, additionalPrivacyExclusions } = {}) {
+    if (!archiveAddressPolicy?.isReadableLocation) {
       throw new ValidationError(
-        `HealthArchiveScope: dataRoot must be an absolute path string (got: ${String(dataRoot)})`,
-        { code: 'INVALID_DATA_ROOT', field: 'dataRoot', value: dataRoot },
+        'HealthArchiveScope: archiveAddressPolicy is required',
+        { code: 'MISSING_ARCHIVE_ADDRESS_POLICY', field: 'archiveAddressPolicy', value: archiveAddressPolicy },
       );
     }
-    if (!mediaRoot || typeof mediaRoot !== 'string' || !path.isAbsolute(mediaRoot)) {
-      throw new ValidationError(
-        `HealthArchiveScope: mediaRoot must be an absolute path string (got: ${String(mediaRoot)})`,
-        { code: 'INVALID_MEDIA_ROOT', field: 'mediaRoot', value: mediaRoot },
-      );
-    }
-    this.#dataRoot = path.normalize(dataRoot);
-    this.#mediaRoot = path.normalize(mediaRoot);
+    this.#archiveAddressPolicy = archiveAddressPolicy;
     this.#workoutSources = normalizeWorkoutSources(
       workoutSources === undefined ? [...DEFAULT_WORKOUT_SOURCES] : workoutSources,
     );
@@ -210,12 +147,6 @@ export class HealthArchiveScope {
     );
     this.#compiledAdditions = compileAdditions(this.#additionalPrivacyExclusions);
   }
-
-  /** @returns {string} configured absolute dataRoot (normalized) */
-  get dataRoot() { return this.#dataRoot; }
-
-  /** @returns {string} configured absolute mediaRoot (normalized) */
-  get mediaRoot() { return this.#mediaRoot; }
 
   /** @returns {ReadonlyArray<string>} workout-source path segments in scope */
   get workoutSources() { return this.#workoutSources; }
@@ -239,20 +170,14 @@ export class HealthArchiveScope {
    *   /^[a-zA-Z0-9_-]+$/
    */
   static assertValidUserId(userId) {
-    if (!userId || typeof userId !== 'string' || !USER_ID_PATTERN.test(userId)) {
-      throw new ValidationError(
-        `HealthArchiveScope: invalid userId — must match ${USER_ID_PATTERN}: ${String(userId)}`,
-        { code: 'INVALID_USER_ID', field: 'userId', value: userId },
-      );
-    }
+    assertValidHealthUserId(userId);
   }
 
   /**
    * Validate a path segment intended for interpolation into a whitelisted
    * path (e.g. the `filename` argument of read_notes_file). Permits letters,
-   * digits, underscore, hyphen, dot, and slash — but `path.normalize` is
-   * applied first so any `..` traversal collapses to a leading `..` (which
-   * the regex then rejects).
+   * digits, underscore, hyphen, dot, and slash. Relative components are
+   * collapsed first so any surviving `..` traversal is rejected.
    *
    * Pure function. No instance state required.
    *
@@ -271,11 +196,12 @@ export class HealthArchiveScope {
     if (segment.includes('\0')) {
       throw new ValidationError(`HealthArchiveScope: unsafe path segment (NUL byte): ${JSON.stringify(segment)}`, { code: 'UNSAFE_PATH_SEGMENT_NUL', field: 'segment', value: segment });
     }
-    const normalized = path.normalize(segment);
+    const normalized = normalizeRelativeSegment(segment);
     // After normalization, any traversal yields a leading '..' or absolute
     // path. Reject both. Also reject anything outside the safe character
     // set (letters, digits, dot, underscore, hyphen, forward slash).
     if (
+      segment.startsWith('/') ||
       normalized.startsWith('..') ||
       normalized.startsWith('/') ||
       !/^[a-zA-Z0-9._/-]+$/.test(normalized)
@@ -307,37 +233,12 @@ export class HealthArchiveScope {
       return false;
     }
 
-    // NUL byte rejection BEFORE normalization. Node's path.normalize
-    // currently preserves NULs, but the ordering invariant matters for
-    // future Node versions — reject up front so the rest of the pipeline
-    // never has to consider NUL-bearing input.
-    if (absPath.includes('\0')) return false;
-
-    // Must be absolute — relative paths and bare names are refused.
-    if (!path.isAbsolute(absPath)) return false;
-
-    // Normalize so `..` segments collapse before whitelist matching.
-    const normalized = path.normalize(absPath);
-
-    // Privacy exclusion is checked AGAINST the normalized path. The floor
-    // (email/chat/finance/journal/search-history/calendar/social/banking) is
-    // unconditional. The user's playbook can ADD entries via
-    // `archive.additional_privacy_exclusions` — they are merged here.
-    if (matchesExclusion(normalized, this.#compiledAdditions)) return false;
-
-    // Cross-user shared archive: must live under the configured mediaRoot
-    // AND match one of the workout-source archive tails.
-    if (this.#startsWithRoot(normalized, this.#mediaRoot)
-        && buildSharedTails(this.#workoutSources).some((re) => re.test(normalized))) {
-      return true;
-    }
-
-    // Per-user whitelist: must live under the configured dataRoot AND match
-    // a per-user tail pattern.
-    if (!this.#startsWithRoot(normalized, this.#dataRoot)) return false;
-
-    const userTails = buildUserWhitelistTails(userId, this.#workoutSources);
-    return userTails.some((re) => re.test(normalized));
+    return this.#archiveAddressPolicy.isReadableLocation({
+      location: absPath,
+      userId,
+      workoutSources: this.#workoutSources,
+      isPrivacyExcluded: normalized => matchesExclusion(normalized, this.#compiledAdditions),
+    });
   }
 
   /**
@@ -363,21 +264,21 @@ export class HealthArchiveScope {
     }
   }
 
-  /**
-   * Returns true iff `absPath` starts with `root`, with the boundary aligned
-   * on a path separator. Guards against false positives like
-   * `/srv/daylight-evil/...` matching `root=/srv/daylight`.
-   *
-   * @param {string} absPath
-   * @param {string} root
-   * @returns {boolean}
-   */
-  #startsWithRoot(absPath, root) {
-    if (!absPath.startsWith(root)) return false;
-    // Either exact match or next char is a path separator.
-    if (absPath.length === root.length) return true;
-    return absPath[root.length] === '/' || absPath[root.length] === path.sep;
+}
+
+function normalizeRelativeSegment(segment) {
+  const parts = [];
+  for (const part of segment.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') {
+      if (parts.length && parts.at(-1) !== '..') parts.pop();
+      else parts.push(part);
+    } else {
+      parts.push(part);
+    }
   }
+  const normalized = parts.join('/') || '.';
+  return segment.endsWith('/') && normalized !== '.' ? `${normalized}/` : normalized;
 }
 
 export default HealthArchiveScope;

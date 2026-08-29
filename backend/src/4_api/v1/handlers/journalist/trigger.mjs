@@ -7,10 +7,10 @@
 
 /**
  * Create Journalist trigger handler
- * @param {import('../../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
+ * @param {Object} journalistApi
  * @returns {Function} Express handler
  */
-export function journalistTriggerHandler(container) {
+export function journalistTriggerHandler(journalistApi) {
   return async (req, res) => {
     // Extract chatId from query or body
     const chatId = req.query.chatId || req.body?.chatId;
@@ -22,11 +22,7 @@ export function journalistTriggerHandler(container) {
       });
     }
 
-    // Get use case
-    const useCase = container.getInitiateJournalPrompt();
-
-    // Execute
-    const result = await useCase.execute({ chatId });
+    const result = await journalistApi.trigger({ chatId });
 
     res.json({
       ok: true,

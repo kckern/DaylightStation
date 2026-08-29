@@ -2,35 +2,8 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
-import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 import { parseModifiers } from '../utils/modifierParser.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
-
-/**
- * Shuffle array in place (Fisher-Yates)
- * @param {Array} array - Array to shuffle
- * @returns {Array} Shuffled array
- */
-function shuffleArray(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
-}
-
-/**
- * Extract media key from item's action objects for menu_memory lookup
- * @param {Object} item - Item entity or list item
- * @returns {string|null} Media key for lookup
- */
-function getMenuMemoryKey(item) {
-  const action = item.actions?.play || item.actions?.queue || item.actions?.list || item.actions?.open ||
-                 item.play || item.queue || item.list || item.open;
-  if (!action) return null;
-  const values = Object.values(action);
-  return values.length > 0 ? values[0] : null;
-}
 
 /**
  * Create unified item API router
@@ -46,14 +19,12 @@ function getMenuMemoryKey(item) {
  * - ?select=watchlist - Use ItemSelectionService to pick item based on watch history
  *
  * @param {Object} options
- * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} options.registry
- * @param {import('#apps/content/ContentQueryService.mjs').ContentQueryService} [options.contentQueryService]
- * @param {string} options.menuMemoryPath - Absolute path to menu memory file
+ * @param {Object} options.itemService - Semantic item query and menu-memory operations
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createItemRouter(options = {}) {
-  const { registry, contentQueryService, menuMemoryPath, logger = console } = options;
+  const { itemService, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -66,192 +37,41 @@ export function createItemRouter(options = {}) {
       const { source } = req.params;
       const rawPath = splatPath(req);
       const { modifiers, localId } = parseModifiers(rawPath);
-      const hasModifiers = modifiers.playable || modifiers.shuffle || modifiers.recent_on_top;
+      const outcome = await itemService.get({ source, localId, modifiers, selectStrategy: req.query.select });
+      if (outcome.kind === 'unknown_source') return res.status(404).json({ error: `Unknown source: ${source}` });
+      if (outcome.kind === 'selection_empty') return res.status(404).json({
+        error: 'No items available after selection', source, localId, strategy: outcome.strategy,
+      });
+      if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Item not found', source, localId });
+      if (outcome.kind === 'playable_unsupported') return res.status(400).json({ error: 'Source does not support playable resolution' });
+      if (outcome.kind === 'selected') return res.json({
+        ...outcome.item,
+        _selection: { strategy: outcome.strategy, totalCandidates: outcome.totalCandidates },
+      });
+      if (outcome.kind === 'content_item') return res.json(outcome.item);
+      if (outcome.kind === 'item') return res.json(toListItem(outcome.item));
 
-      const adapter = registry.get(source);
-      if (!adapter) {
-        return res.status(404).json({ error: `Unknown source: ${source}` });
-      }
-
-      // watchlist: source is handled by ListAdapter
-      const compoundId = `${source}:${localId}`;
-
-      // Handle ?select=<strategy> for item selection from containers
-      // Uses ContentQueryService.resolve() with ItemSelectionService
-      const selectStrategy = req.query.select;
-      if (selectStrategy && contentQueryService) {
-        try {
-          const context = { now: new Date() };
-          const overrides = { strategy: selectStrategy, allowFallback: true };
-          const { items: selected, strategy } = await contentQueryService.resolve(
-            source,
-            localId,
-            context,
-            overrides
-          );
-
-          if (selected.length === 0) {
-            return res.status(404).json({
-              error: 'No items available after selection',
-              source,
-              localId,
-              strategy: strategy.name
-            });
-          }
-
-          // Load full item content for the selected item
-          // Selection returns lightweight items; need full content for playback
-          const selectedItem = selected[0];
-          let fullItem = selectedItem;
-
-          // If the item is lightweight (no content), load the full item
-          if (!selectedItem.content && selectedItem.id) {
-            const fullItemData = await adapter.getItem(selectedItem.id);
-            if (fullItemData) {
-              // Merge full item with watch state from enriched selection
-              fullItem = {
-                ...fullItemData,
-                percent: selectedItem.percent,
-                watched: selectedItem.watched,
-                playhead: selectedItem.playhead,
-                duration: selectedItem.duration ?? fullItemData.duration
-              };
-            }
-          }
-
-          // Return selected item with selection metadata
-          res.json({
-            ...fullItem,
-            _selection: {
-              strategy: strategy.name,
-              totalCandidates: selected.length
-            }
-          });
-          return;
-        } catch (error) {
-          logger.warn?.('item.select.error', { source, localId, strategy: selectStrategy, error: error.message });
-          // Fall through to normal item handling
-        }
-      }
-
-      // Get the item first
-      const item = await adapter.getItem(compoundId);
-      if (!item) {
-        return res.status(404).json({ error: 'Item not found', source, localId });
-      }
-
-      // If no modifiers and not a container, return single item
-      if (!hasModifiers && item.itemType !== 'container') {
-        // For content with playback data (singalong, readalong), return full item
-        // These have 'content' field needed by frontend scrollers
-        if (item.content || item.category === 'singalong' || item.category === 'readalong') {
-          res.json(item);
-          return;
-        }
-        res.json(toListItem(item));
-        return;
-      }
-
-      // Container handling with modifiers
-      let items;
-
-      if (modifiers.playable) {
-        // Resolve to playable items only
-        if (!adapter.resolvePlayables) {
-          return res.status(400).json({ error: 'Source does not support playable resolution' });
-        }
-        items = await adapter.resolvePlayables(compoundId);
-      } else {
-        // Get container contents
-        const result = await adapter.getList(compoundId);
-        if (Array.isArray(result)) {
-          items = result;
-        } else if (result?.children) {
-          items = result.children;
-        } else {
-          items = [];
-        }
-      }
-
-      // Enrich with watch state via ContentQueryService (DDD-compliant)
-      if (contentQueryService) {
-        const enriched = await contentQueryService.enrichWithWatchState(items, source, compoundId);
-        // Map domain fields to API contract field names
-        items = enriched.map(item => ({
-          ...item,
-          watchProgress: item.percent ?? null,
-          watchSeconds: item.playhead ?? null,
-          watchedDate: item.lastPlayed ?? null
-        }));
-      }
-
-      // Check if any item has fixed_order flag - maintain YAML order
-      const hasFixedOrder = items.some(childItem => childItem.metadata?.fixedOrder);
-
-      // Apply shuffle if requested (skip if fixed order)
-      if (modifiers.shuffle && !hasFixedOrder) {
-        items = shuffleArray([...items]);
-      }
-
-      // Apply recent_on_top sorting if requested (uses menu_memory)
-      if (modifiers.recent_on_top && !hasFixedOrder) {
-        const menuMemory = loadYaml(menuMemoryPath) || {};
-
-        items = [...items].sort((a, b) => {
-          const aKey = getMenuMemoryKey(a);
-          const bKey = getMenuMemoryKey(b);
-          const aTime = aKey ? (menuMemory[aKey] || 0) : 0;
-          const bTime = bKey ? (menuMemory[bKey] || 0) : 0;
-          return bTime - aTime; // Most recent first
-        });
-      }
-
-      // Build info object for FitnessShow compatibility (show-level metadata)
-      let info = null;
-      if (modifiers.playable && adapter.getContainerInfo) {
-        info = await adapter.getContainerInfo(compoundId);
-      }
-
-      // Build parents map from items' hierarchy metadata (canonical relative fields)
-      let parents = null;
-      if (modifiers.playable && items.length > 0) {
-        const parentsMap = {};
-        for (const childItem of items) {
-          const pId = childItem.metadata?.parentId;
-          if (pId && !parentsMap[pId]) {
-            parentsMap[pId] = {
-              index: childItem.metadata?.parentIndex,
-              title: childItem.metadata?.parentTitle || 'Parent',
-              // Use parent (season) thumbnail from metadata, or construct proxy URL for parent
-              thumbnail: childItem.metadata?.parentThumb || `/api/v1/display/plex/${pId}`,
-              type: childItem.metadata?.parentType
-            };
-          }
-        }
-        // Only include parents if we found any
-        if (Object.keys(parentsMap).length > 0) {
-          parents = parentsMap;
-        }
-      }
-
-      // Build response
+      const parents = Object.fromEntries(Object.entries(outcome.parents).map(([id, parent]) => [id, {
+        ...parent,
+        thumbnail: parent.thumbnail || `/api/v1/display/plex/${id}`,
+      }]));
       const response = {
-        id: item.id,
+        id: outcome.item.id,
         // Add plex field for plex source (matches legacy format)
         ...(source === 'plex' && { plex: localId }),
         source,
         path: localId,
-        title: item.title || localId,
-        label: item.title || localId,
+        title: outcome.item.title || localId,
+        label: outcome.item.title || localId,
         // Include Plex type at top level for PlexMenuRouter (show, season, episode, etc.)
-        type: item.metadata?.type,
-        itemType: item.itemType,
-        thumbnail: item.thumbnail,
-        image: item.thumbnail,
+        type: outcome.item.metadata?.type,
+        itemType: outcome.item.itemType,
+        thumbnail: outcome.item.thumbnail,
+        image: outcome.item.thumbnail,
         // Include info and parents for FitnessShow compatibility
-        ...(info && { info }),
-        ...(parents && { parents }),
-        items: items.map(toListItem)
+        ...(outcome.info && { info: outcome.info }),
+        ...(Object.keys(parents).length > 0 && { parents }),
+        items: outcome.items.map(toListItem)
       };
 
       res.json(response);
@@ -269,14 +89,10 @@ export function createItemRouter(options = {}) {
       return res.status(400).json({ error: 'assetId is required' });
     }
 
-    const menuLog = loadYaml(menuMemoryPath) || {};
-    const nowUnix = Math.floor(Date.now() / 1000);
-
-    menuLog[assetId] = nowUnix;
-    saveYaml(menuMemoryPath, menuLog);
+    const result = itemService.recordMenuSelection(assetId);
 
     logger.info?.('item.menu-log.updated', { assetId });
-    res.json({ [assetId]: nowUnix });
+    res.json(result);
   }));
 
   return router;

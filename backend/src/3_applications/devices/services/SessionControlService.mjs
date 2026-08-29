@@ -23,18 +23,9 @@
  * @module applications/devices/services
  */
 
-import {
-  buildCommandEnvelope, // re-exported for consumers that construct inline
-  validateCommandEnvelope,
-} from '#shared-contracts/media/envelopes.mjs';
-import {
-  SCREEN_COMMAND_TOPIC,
-  DEVICE_ACK_TOPIC,
-  DEVICE_STATE_TOPIC,
-} from '#shared-contracts/media/topics.mjs';
 import { ERROR_CODES } from '#shared-contracts/media/errors.mjs';
-
-export { buildCommandEnvelope };
+import { ISessionControl } from '../ports/ISessionControl.mjs';
+import { isDeviceTransportGateway } from '../ports/IDeviceTransportGateway.mjs';
 
 const DEFAULT_ACK_TIMEOUT_MS       = 5000;
 const DEFAULT_IDEMPOTENCY_TTL_MS   = 60000;
@@ -55,8 +46,8 @@ const DEFAULT_IDEMPOTENCY_TTL_MS   = 60000;
  * @property {AckResult} result    - The ack result to replay
  */
 
-export class SessionControlService {
-  #eventBus;
+export class SessionControlService extends ISessionControl {
+  #transport;
   #livenessService;
   #logger;
   #clock;
@@ -68,7 +59,7 @@ export class SessionControlService {
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.eventBus              - WebSocketEventBus-like (broadcast + subscribePattern)
+   * @param {Object} deps.transportGateway      - Semantic device transport
    * @param {Object} deps.livenessService       - DeviceLivenessService
    * @param {Object} [deps.logger]              - Logger (defaults to console)
    * @param {Object} [deps.clock=Date]          - { now(): number }
@@ -76,13 +67,14 @@ export class SessionControlService {
    * @param {number} [deps.idempotencyTtlMs=60000]
    */
   constructor(deps = {}) {
-    if (!deps.eventBus) {
-      throw new TypeError('SessionControlService requires eventBus');
+    super();
+    if (!isDeviceTransportGateway(deps.transportGateway)) {
+      throw new TypeError('SessionControlService requires transportGateway');
     }
     if (!deps.livenessService) {
       throw new TypeError('SessionControlService requires livenessService');
     }
-    this.#eventBus = deps.eventBus;
+    this.#transport = deps.transportGateway;
     this.#livenessService = deps.livenessService;
     this.#logger = deps.logger || console;
     this.#clock = deps.clock || Date;
@@ -103,7 +95,7 @@ export class SessionControlService {
    */
   async sendCommand(envelope) {
     // 1. Validate envelope shape.
-    const validation = validateCommandEnvelope(envelope);
+    const validation = this.#transport.validateCommand(envelope);
     if (!validation.valid) {
       const firstError = validation.errors[0] || 'Invalid envelope';
       this.#logger.warn?.('session-control.invalid_envelope', {
@@ -157,7 +149,7 @@ export class SessionControlService {
     }
 
     // 5. Arm ack subscription BEFORE publishing to avoid races.
-    const ackResult = await this.#publishAndAwaitAck(targetDevice, envelope);
+    const ackResult = await this.#transport.sendCommand(targetDevice, envelope, { timeoutMs: this.#ackTimeoutMs });
 
     // 6. Record in idempotency cache regardless of outcome.
     this.#recordIdempotency(commandId, envelope, ackResult);
@@ -176,6 +168,25 @@ export class SessionControlService {
       return null;
     }
     return this.#livenessService.getLastSnapshot(deviceId);
+  }
+
+  transport(deviceId, { action, value, commandId }) {
+    return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'transport', commandId,
+      params: { action, ...(value !== undefined ? { value } : {}) } }));
+  }
+
+  queue(deviceId, commandId, params) {
+    return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'queue', commandId, params }));
+  }
+
+  config(deviceId, { setting, value, commandId }) {
+    return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'config', commandId,
+      params: { setting, value } }));
+  }
+
+  adoptSnapshot(deviceId, commandId, snapshot) {
+    return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'adopt-snapshot', commandId,
+      params: { snapshot, autoplay: true } }));
   }
 
   /**
@@ -233,14 +244,8 @@ export class SessionControlService {
     }
 
     // 2. Dispatch transport/stop.
-    const envelope = {
-      type: 'command',
-      targetDevice: deviceId,
-      command: 'transport',
-      commandId,
-      params: { action: 'stop' },
-      ts: new Date(this.#clock.now()).toISOString(),
-    };
+    const envelope = this.#transport.buildCommand({ targetDevice: deviceId, command: 'transport', commandId,
+      params: { action: 'stop' }, ts: new Date(this.#clock.now()).toISOString() });
 
     const ack = await this.sendCommand(envelope);
     if (!ack || ack.ok !== true) {
@@ -290,171 +295,12 @@ export class SessionControlService {
     if (typeof predicate !== 'function') {
       return Promise.reject(new Error('predicate must be a function'));
     }
-    const topic = DEVICE_STATE_TOPIC(deviceId);
-
-    return new Promise((resolve, reject) => {
-      let unsubscribe = null;
-      let timer = null;
-
-      const cleanup = () => {
-        if (timer != null) { clearTimeout(timer); timer = null; }
-        if (typeof unsubscribe === 'function') {
-          try { unsubscribe(); } catch { /* noop */ }
-          unsubscribe = null;
-        }
-      };
-
-      const handler = (payload /* , incomingTopic */) => {
-        if (!payload || typeof payload !== 'object') return;
-        const snap = payload.snapshot;
-        if (!snap) return;
-        let matched = false;
-        try {
-          matched = !!predicate(snap);
-        } catch (err) {
-          this.#logger.warn?.('session-control.predicate_error', {
-            deviceId,
-            error: err?.message,
-          });
-          return;
-        }
-        if (!matched) return;
-        cleanup();
-        resolve(snap);
-      };
-
-      if (typeof this.#eventBus.subscribePattern !== 'function') {
-        reject(new Error('eventBus lacks subscribePattern'));
-        return;
-      }
-      unsubscribe = this.#eventBus.subscribePattern(
-        (t) => t === topic,
-        handler,
-      );
-
-      timer = setTimeout(() => {
-        cleanup();
-        const err = new Error(
-          `waitForStateChange timed out after ${timeoutMs}ms for ${deviceId}`,
-        );
-        err.code = 'STATE_WAIT_TIMEOUT';
-        reject(err);
-      }, timeoutMs);
-    });
+    return this.#transport.waitForStateChange(deviceId, predicate, timeoutMs);
   }
 
   // ---------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------
-
-  /**
-   * Arm an ack subscription, publish the command, await the ack.
-   * @private
-   */
-  #publishAndAwaitAck(targetDevice, envelope) {
-    const commandId = envelope.commandId;
-    const ackTopic = DEVICE_ACK_TOPIC(targetDevice);
-    const screenTopic = SCREEN_COMMAND_TOPIC(targetDevice);
-
-    return new Promise((resolve) => {
-      let unsubscribe = null;
-      let timer = null;
-      let settled = false;
-
-      const cleanup = () => {
-        if (settled) return;
-        settled = true;
-        if (timer != null) { clearTimeout(timer); timer = null; }
-        if (typeof unsubscribe === 'function') {
-          try { unsubscribe(); } catch { /* noop */ }
-          unsubscribe = null;
-        }
-      };
-
-      const handler = (payload /* , topic */) => {
-        if (settled) return;
-        if (!payload || typeof payload !== 'object') return;
-        if (payload.commandId !== commandId) return;
-
-        cleanup();
-        // Shape the ack result — prefer the ack's own fields, but always
-        // stamp commandId so callers can route replies.
-        const result = {
-          ok: payload.ok === true,
-          commandId,
-        };
-        if (payload.appliedAt !== undefined) result.appliedAt = payload.appliedAt;
-        if (payload.error !== undefined) result.error = payload.error;
-        if (payload.code !== undefined) result.code = payload.code;
-        resolve(result);
-      };
-
-      // Arm before publish.
-      if (typeof this.#eventBus.subscribePattern !== 'function') {
-        cleanup();
-        resolve({
-          ok: false,
-          code: 'BUS_MISCONFIGURED',
-          error: 'eventBus lacks subscribePattern',
-        });
-        return;
-      }
-      unsubscribe = this.#eventBus.subscribePattern(
-        (t) => t === ackTopic,
-        handler,
-      );
-
-      timer = setTimeout(() => {
-        cleanup();
-        this.#logger.warn?.('session-control.ack_timeout', {
-          targetDevice,
-          commandId,
-          timeoutMs: this.#ackTimeoutMs,
-        });
-        resolve({
-          ok: false,
-          code: ERROR_CODES.DEVICE_REFUSED,
-          error: 'Timeout waiting for ack',
-          commandId,
-        });
-      }, this.#ackTimeoutMs);
-
-      // Publish. Prefer broadcast (delivers both externally and via internal
-      // publish), fall back to publish if the bus only exposes that.
-      try {
-        if (typeof this.#eventBus.broadcast === 'function') {
-          this.#eventBus.broadcast(screenTopic, envelope);
-        } else if (typeof this.#eventBus.publish === 'function') {
-          this.#eventBus.publish(screenTopic, envelope);
-        } else {
-          cleanup();
-          resolve({
-            ok: false,
-            code: 'BUS_MISCONFIGURED',
-            error: 'eventBus has no broadcast/publish method',
-          });
-          return;
-        }
-        this.#logger.info?.('session-control.published', {
-          topic: screenTopic,
-          commandId,
-          command: envelope.command,
-        });
-      } catch (err) {
-        cleanup();
-        this.#logger.error?.('session-control.publish_error', {
-          topic: screenTopic,
-          commandId,
-          error: err?.message,
-        });
-        resolve({
-          ok: false,
-          code: 'BUS_PUBLISH_ERROR',
-          error: err?.message || 'publish failed',
-        });
-      }
-    });
-  }
 
   /**
    * Serialize the "relevant" portion of an envelope for idempotency

@@ -14,6 +14,10 @@ const TIMESTAMP = '2026-06-21T12:00:00.000Z';
 const schedulerService = {
   // executeJob only needs JobExecution helpers; no scheduler-service calls here.
 };
+const schedulerInfrastructure = {
+  timestampCodec: { format: value => value instanceof Date ? value.toISOString() : String(value) },
+  newExecutionId: () => 'fixed-execution-id',
+};
 
 /** A minimal reporter Job: enabled, generous timeout, NO module. */
 const reporterJob = (id = 'world-cup-reporter') => ({
@@ -37,7 +41,9 @@ describe('SchedulerOrchestrator newsreporter dispatch', () => {
     };
 
     const orchestrator = new SchedulerOrchestrator({
+      scheduler: { withDeadline: (work) => work },
       schedulerService,
+      ...schedulerInfrastructure,
       jobStore: { loadJobs: async () => [], getJob: async () => null },
       stateStore: { loadStates: async () => new Map() },
       harvesterExecutor,
@@ -64,7 +70,9 @@ describe('SchedulerOrchestrator newsreporter dispatch', () => {
     };
 
     const orchestrator = new SchedulerOrchestrator({
+      scheduler: { withDeadline: (work) => work },
       schedulerService,
+      ...schedulerInfrastructure,
       jobStore: { loadJobs: async () => [], getJob: async () => null },
       stateStore: { loadStates: async () => new Map() },
       harvesterExecutor,

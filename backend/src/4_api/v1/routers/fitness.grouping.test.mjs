@@ -3,6 +3,7 @@ import express from 'express';
 import request from 'supertest';
 import { createFitnessRouter } from './fitness.mjs';
 import { SessionGroupingService } from '#apps/fitness/services/SessionGroupingService.mjs';
+import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
 
 const H = (h, m) => Date.parse(`2026-06-05T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-07:00`);
 const sess = (id, start, durMin, riders, media = null, rings = 0) => ({
@@ -24,7 +25,8 @@ function buildApp() {
   };
   const registry = { enrich: async () => [{ type: 'cycle-game', count: 7, items: [] }] };
   const sessionGroupingService = new SessionGroupingService({ activityRegistry: registry });
-  const router = createFitnessRouter({ sessionService, sessionGroupingService, logger: silentLogger });
+  const querySessions = new QuerySessions({ sessionService, sessionGroupingService, logger: silentLogger });
+  const router = createFitnessRouter({ sessionService, sessionGroupingService, querySessions, logger: silentLogger });
   const app = express();
   app.use('/api/fitness', router);
   return app;

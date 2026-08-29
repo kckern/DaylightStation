@@ -5,13 +5,13 @@
 // missing-file handling live in exactly one place instead of being copy-pasted
 // per router. Missing files are non-fatal (an unconfigured install just gets
 // empty catalogs).
-import { promises as fs, existsSync } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { readTextFromPath } from '#system/utils/FileIO.mjs';
 
 async function readYamlDoc(filePath, logger, event) {
   try {
-    return yaml.load(await fs.readFile(filePath, 'utf-8')) || {};
+    return yaml.load(readTextFromPath(filePath)) || {};
   } catch (err) {
     if (err.code !== 'ENOENT') logger?.warn?.(event, { error: err.message });
     return {};

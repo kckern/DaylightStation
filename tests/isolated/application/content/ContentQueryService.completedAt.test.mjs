@@ -1,6 +1,7 @@
 // tests/isolated/application/content/ContentQueryService.completedAt.test.mjs
 import { describe, test, expect, vi } from 'vitest';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 describe('ContentQueryService.enrichWithWatchState propagates completedAt', () => {
   test('enriched item carries completedAt from stored progress', async () => {
@@ -14,7 +15,7 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
       resolveSource: vi.fn(() => [])
     };
     const mockMemory = {
-      getAll: vi.fn().mockResolvedValue([
+      listProgress: vi.fn().mockResolvedValue([
         {
           contentId: 'plex:674498',
           playhead: 40,
@@ -26,10 +27,10 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
           completedAt: '2026-04-20 06:07:44'
         }
       ]),
-      getAllFromAllLibraries: vi.fn().mockResolvedValue([])
+      listSourceProgress: vi.fn().mockResolvedValue([])
     };
     const service = new ContentQueryService({
-      registry: mockRegistry,
+      contentCatalog: new RegistryContentCatalogGateway({ registry: mockRegistry }),
       mediaProgressMemory: mockMemory
     });
 
@@ -50,7 +51,7 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
       resolveSource: vi.fn(() => [])
     };
     const mockMemory = {
-      getAll: vi.fn().mockResolvedValue([
+      listProgress: vi.fn().mockResolvedValue([
         {
           contentId: 'plex:100',
           playhead: 40,
@@ -62,10 +63,10 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
           completedAt: null
         }
       ]),
-      getAllFromAllLibraries: vi.fn().mockResolvedValue([])
+      listSourceProgress: vi.fn().mockResolvedValue([])
     };
     const service = new ContentQueryService({
-      registry: mockRegistry,
+      contentCatalog: new RegistryContentCatalogGateway({ registry: mockRegistry }),
       mediaProgressMemory: mockMemory
     });
 

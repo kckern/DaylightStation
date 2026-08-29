@@ -1,6 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
+import { fileExists, readTextFromPath, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 const ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const safe = (value) => typeof value === 'string' && ID_RE.test(value);
@@ -8,16 +8,13 @@ const safeContentId = (value) => typeof value === 'string' && value.length <= 25
   && !value.includes('/') && !value.includes('\\') && !value.includes('..');
 
 function readYaml(file, fallback) {
-  if (!fs.existsSync(file)) return structuredClone(fallback);
-  const parsed = YAML.parse(fs.readFileSync(file, 'utf8'), { uniqueKeys: true });
+  if (!fileExists(file)) return structuredClone(fallback);
+  const parsed = YAML.parse(readTextFromPath(file), { uniqueKeys: true });
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : structuredClone(fallback);
 }
 
 function writeAtomic(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const staging = `${file}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(staging, YAML.stringify(value));
-  fs.renameSync(staging, file);
+  writeFileAtomic(file, YAML.stringify(value));
 }
 
 /**

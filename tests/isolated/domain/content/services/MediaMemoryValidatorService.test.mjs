@@ -27,7 +27,7 @@ describe('MediaMemoryValidatorService', () => {
 
   describe('constructor', () => {
     it('should create service with injected dependencies', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -39,7 +39,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should use console as default logger when not provided', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -54,7 +54,7 @@ describe('MediaMemoryValidatorService', () => {
     const nowMs = Date.now();
 
     it('should abort if Plex server unreachable', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockPlexClient.checkConnectivity.mockResolvedValue(false);
 
@@ -71,7 +71,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should skip entries that still exist in Plex', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockWatchStateStore.getAllEntries.mockResolvedValue([
         { id: '12345', title: 'Test Movie', lastPlayed: new Date().toISOString() }
@@ -90,7 +90,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should find and backfill orphan IDs with high confidence match', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       // Use TV episode format with parent/grandparent to get >90% confidence
       // Title 50% + grandparent 30% + parent 20% = 100% for exact match
@@ -124,7 +124,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should NEVER delete orphan entries - only add to unresolvedList', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockWatchStateStore.getAllEntries.mockResolvedValue([
         { id: 'orphan-1', title: 'Unknown Movie', lastPlayed: new Date().toISOString() }
@@ -154,7 +154,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should log unresolved when confidence too low', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockWatchStateStore.getAllEntries.mockResolvedValue([
         { id: 'orphan-1', title: 'The Matrix', lastPlayed: new Date().toISOString() }
@@ -176,7 +176,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should respect dryRun option', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       // Use TV episode format to get >90% confidence
       mockWatchStateStore.getAllEntries.mockResolvedValue([
@@ -205,7 +205,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should handle errors gracefully', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockWatchStateStore.getAllEntries.mockResolvedValue([
         { id: 'orphan-1', title: 'Test Movie', lastPlayed: new Date().toISOString() }
@@ -223,7 +223,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should return complete results object with changes and unresolvedList', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockWatchStateStore.getAllEntries.mockResolvedValue([]);
 
@@ -246,7 +246,7 @@ describe('MediaMemoryValidatorService', () => {
 
   describe('selectEntriesToCheck', () => {
     it('should prioritize recent entries (last 30 days)', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -272,7 +272,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should sample 10% of older entries', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -299,7 +299,7 @@ describe('MediaMemoryValidatorService', () => {
 
   describe('findBestMatch', () => {
     it('should return null when no search results', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockPlexClient.hubSearch.mockResolvedValue([]);
 
@@ -314,7 +314,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should search with grandparent + title for TV episodes', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockPlexClient.hubSearch.mockResolvedValue([
         { id: '12345', title: 'Ozymandias', grandparent: 'Breaking Bad', parent: 'Season 5' }
@@ -340,7 +340,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should return match with highest confidence', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockPlexClient.hubSearch.mockResolvedValue([
         { id: '1', title: 'Breaking Bad', grandparent: '', parent: '' },
@@ -363,7 +363,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should include confidence in match result', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       // Use TV episode format for >90% confidence
       mockPlexClient.hubSearch.mockResolvedValue([
@@ -388,7 +388,7 @@ describe('MediaMemoryValidatorService', () => {
     it('should return match even below 90% threshold (caller filters)', async () => {
       // Note: findBestMatch returns best match regardless of threshold
       // The threshold filtering happens in validateMediaMemory
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       mockPlexClient.hubSearch.mockResolvedValue([
         { id: '1', title: 'The Matrix' }
@@ -409,7 +409,7 @@ describe('MediaMemoryValidatorService', () => {
 
   describe('calculateConfidence', () => {
     it('should weight: title 50%, grandparent 30%, parent 20%', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -426,7 +426,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should return high confidence for exact title match', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -442,7 +442,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should include parent/grandparent in confidence calculation', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -464,7 +464,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should be case-insensitive for all fields', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -479,7 +479,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should return 0 when no matching fields', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -494,7 +494,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should use Dice coefficient (bigram) similarity', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
@@ -518,7 +518,7 @@ describe('MediaMemoryValidatorService', () => {
     const nowMs = Date.now();
 
     it('should preserve old ID in oldPlexIds array when backfilling', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       // Use TV episode format for >90% confidence
       mockWatchStateStore.getAllEntries.mockResolvedValue([
@@ -551,7 +551,7 @@ describe('MediaMemoryValidatorService', () => {
     });
 
     it('should append to existing oldPlexIds array', async () => {
-      const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
+      const { MediaMemoryValidatorService } = await import('#apps/content/services/MediaMemoryValidatorService.mjs');
 
       // Use TV episode format for >90% confidence
       mockWatchStateStore.getAllEntries.mockResolvedValue([

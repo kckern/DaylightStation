@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'node:fs';
 import { WeeklyReviewService } from '../../../../backend/src/3_applications/weekly-review/WeeklyReviewService.mjs';
+import { FilesystemWeeklyReviewStore } from '../../../../backend/src/1_adapters/persistence/files/FilesystemWeeklyReviewStore.mjs';
 
 describe('WeeklyReviewService', () => {
   let service;
@@ -40,6 +42,12 @@ describe('WeeklyReviewService', () => {
       dataPath: '/tmp/test-data',
       mediaPath: '/tmp/test-media',
     }, {
+      reviewStore: new FilesystemWeeklyReviewStore({
+        householdDir: '/tmp/test-data/household',
+        mediaPath: '/tmp/test-media',
+        logger: mockLogger,
+      }),
+      runCommand: vi.fn(async () => ({})),
       immichAdapter: mockImmichAdapter,
       calendarData: mockCalendarData,
       transcriptionService: mockTranscriptionService,

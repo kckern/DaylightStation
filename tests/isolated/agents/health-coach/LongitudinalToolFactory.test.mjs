@@ -261,10 +261,12 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
     dataRoot = '/fake/data',
     archiveScopeOverride = null,
   } = {}) {
-    const fs = {
-      readFile: vi.fn(async (absPath /*, encoding */) => {
+    const notesArchive = {
+      read: vi.fn(async (userId, relativeName) => {
+        const absPath = `${dataRoot}/users/${userId}/lifelog/archives/${relativeName}`;
+        archiveScope.assertReadable(absPath, userId);
         if (absPath in fileContents) return fileContents[absPath];
-        const err = new Error(`ENOENT: no such file: ${absPath}`);
+        const err = new Error(`ENOENT: no such file: ${relativeName}`);
         err.code = 'ENOENT';
         throw err;
       }),
@@ -284,11 +286,9 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
     return {
       factory: new LongitudinalToolFactory({
         healthStore,
-        archiveScope,
-        fs,
-        dataRoot,
+        notesArchive,
       }),
-      fs,
+      notesArchive,
       archiveScope,
     };
   }
@@ -335,7 +335,7 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
 
   it('reads full markdown file from notes/', async () => {
     const absPath = '/fake/data/users/test-user/lifelog/archives/notes/strength-plateau.md';
-    const { factory, fs, archiveScope } = makeReadNotesFactory({
+    const { factory, notesArchive, archiveScope } = makeReadNotesFactory({
       fileContents: { [absPath]: SAMPLE_MD },
     });
     const tool = getReadNotesTool(factory);
@@ -349,12 +349,12 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
     expect(result.filename).toBe('notes/strength-plateau.md');
     expect(result.content).toBe(SAMPLE_MD);
     expect(archiveScope.assertReadable).toHaveBeenCalledWith(absPath, 'test-user');
-    expect(fs.readFile).toHaveBeenCalledWith(absPath, 'utf8');
+    expect(notesArchive.read).toHaveBeenCalledWith('test-user', 'notes/strength-plateau.md');
   });
 
   it('reads YAML file from scans/', async () => {
     const absPath = '/fake/data/users/test-user/lifelog/archives/scans/2024-01-15-dexa.yml';
-    const { factory, fs, archiveScope } = makeReadNotesFactory({
+    const { factory, notesArchive, archiveScope } = makeReadNotesFactory({
       fileContents: { [absPath]: SAMPLE_YAML },
     });
     const tool = getReadNotesTool(factory);
@@ -368,7 +368,7 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
     expect(result.filename).toBe('scans/2024-01-15-dexa.yml');
     expect(result.content).toBe(SAMPLE_YAML);
     expect(archiveScope.assertReadable).toHaveBeenCalledWith(absPath, 'test-user');
-    expect(fs.readFile).toHaveBeenCalledWith(absPath, 'utf8');
+    expect(notesArchive.read).toHaveBeenCalledWith('test-user', 'scans/2024-01-15-dexa.yml');
   });
 
   it('reads by markdown section anchor — returns content under heading until next heading at same or higher level', async () => {
@@ -441,19 +441,18 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
   it('uses archiveScopeFactory.forUser(userId) when provided (F4-A)', async () => {
     const absPath = '/fake/data/users/test-user/lifelog/archives/notes/file.md';
     const SAMPLE = '# hello\nbody';
-    const fs = {
-      readFile: vi.fn(async (p) => {
-        if (p === absPath) return SAMPLE;
-        const err = new Error(`ENOENT: ${p}`);
-        err.code = 'ENOENT';
-        throw err;
-      }),
-    };
     const perUserScope = {
       assertReadable: vi.fn(() => {}),
     };
     const archiveScopeFactory = {
       forUser: vi.fn(async () => perUserScope),
+    };
+    const notesArchive = {
+      read: vi.fn(async (userId, relativeName) => {
+        const scope = await archiveScopeFactory.forUser(userId);
+        scope.assertReadable(absPath, userId);
+        return relativeName === 'notes/file.md' ? SAMPLE : null;
+      }),
     };
     const healthStore = {
       loadWeightData: vi.fn(async () => ({})),
@@ -461,9 +460,7 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
     };
     const factory = new LongitudinalToolFactory({
       healthStore,
-      archiveScopeFactory,
-      fs,
-      dataRoot: '/fake/data',
+      notesArchive,
     });
     const tool = factory.createTools().find(t => t.name === 'read_notes_file');
 
@@ -481,8 +478,8 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
   it('caches the same filename across calls within a single createTools() call', async () => {
     const absPath = '/fake/data/users/test-user/lifelog/archives/notes/strength-plateau.md';
     const fileContents = { [absPath]: SAMPLE_MD };
-    const fs = {
-      readFile: vi.fn(async (p) => fileContents[p]),
+    const notesArchive = {
+      read: vi.fn(async (_userId, relativeName) => fileContents[`/fake/data/users/test-user/lifelog/archives/${relativeName}`]),
     };
     const archiveScope = {
       assertReadable: vi.fn(() => {}),
@@ -492,7 +489,7 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
       loadNutritionData: vi.fn(async () => ({})),
     };
     const factory = new LongitudinalToolFactory({
-      healthStore, archiveScope, fs, dataRoot: '/fake/data',
+      healthStore, notesArchive,
     });
     const tools = factory.createTools();
     const tool = tools.find(t => t.name === 'read_notes_file');
@@ -500,12 +497,12 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
     // First call — reads from disk.
     const r1 = await tool.execute({ userId: 'test-user', filename: 'notes/strength-plateau.md' });
     expect(r1.content).toBe(SAMPLE_MD);
-    expect(fs.readFile).toHaveBeenCalledTimes(1);
+    expect(notesArchive.read).toHaveBeenCalledTimes(1);
 
     // Second call — same filename, no section: cache hit.
     const r2 = await tool.execute({ userId: 'test-user', filename: 'notes/strength-plateau.md' });
     expect(r2.content).toBe(SAMPLE_MD);
-    expect(fs.readFile).toHaveBeenCalledTimes(1);
+    expect(notesArchive.read).toHaveBeenCalledTimes(1);
 
     // Different section — different cache key, but section extraction does NOT
     // need a new disk read if implementation caches the raw file too. The
@@ -515,12 +512,12 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
       userId: 'test-user', filename: 'notes/strength-plateau.md', section: 'Section A',
     });
     expect(r3.content.trim()).toBe('content A');
-    expect(fs.readFile).toHaveBeenCalledTimes(1);
+    expect(notesArchive.read).toHaveBeenCalledTimes(1);
 
     // A FRESH createTools() call gets a fresh cache.
     const tools2 = factory.createTools();
     const tool2 = tools2.find(t => t.name === 'read_notes_file');
     await tool2.execute({ userId: 'test-user', filename: 'notes/strength-plateau.md' });
-    expect(fs.readFile).toHaveBeenCalledTimes(2);
+    expect(notesArchive.read).toHaveBeenCalledTimes(2);
   });
 });

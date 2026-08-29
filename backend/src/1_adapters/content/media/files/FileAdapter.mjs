@@ -66,7 +66,9 @@ const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB
  * Implements IContentSource for accessing media files on the local filesystem.
  * Supports watch state integration via MediaProgressMemory for resume position tracking.
  */
-export class FileAdapter {
+import { IContentSource } from '#apps/content/ports/IContentSource.mjs';
+
+export class FileAdapter extends IContentSource {
   /**
    * @param {Object} config
    * @param {string} config.mediaBasePath - Base path for media files
@@ -77,6 +79,7 @@ export class FileAdapter {
    * @param {string} [config.cacheBasePath] - Path to cache directory (thumbnails)
    */
   constructor(config) {
+    super();
     if (!config.mediaBasePath) {
       throw new InfrastructureError('FileAdapter requires mediaBasePath', {
         code: 'MISSING_DEPENDENCY',
@@ -88,7 +91,7 @@ export class FileAdapter {
     this.configService = config.configService || null;
     this.dataPath = config.dataPath || null;
     this.householdId = config.householdId || null;
-    this.cacheBasePath = config.cacheBasePath || null;
+    this.cacheBasePath = config.cacheBasePath || (this.dataPath ? path.join(this.dataPath, 'system', 'cache') : null);
     // Search exclusion list (config-driven, defaults to private fitness footage)
     this.searchExcludePaths = Array.isArray(config.searchExcludePaths)
       ? config.searchExcludePaths
@@ -149,9 +152,9 @@ export class FileAdapter {
   _getMediaProgress(mediaKey) {
     if (!this.mediaProgressMemory) return null;
     // Try both with and without source prefix
-    const state = this.mediaProgressMemory.get(mediaKey) ||
-                  this.mediaProgressMemory.get(`files:${mediaKey}`) ||
-                  this.mediaProgressMemory.get(`media:${mediaKey}`);
+    const state = this.mediaProgressMemory.findProgress(mediaKey) ||
+                  this.mediaProgressMemory.findProgress(`files:${mediaKey}`) ||
+                  this.mediaProgressMemory.findProgress(`media:${mediaKey}`);
     return state || null;
   }
 
@@ -799,7 +802,7 @@ export class FileAdapter {
       let watched = false;
       if (this.mediaProgressMemory) {
         const mediaKey = item.localId || item.id?.replace(/^(files|media):/, '');
-        const state = await this.mediaProgressMemory.get(mediaKey, 'media');
+        const state = await this.mediaProgressMemory.findProgress(mediaKey, 'media');
         percent = state?.percent || 0;
         watched = percent >= 90;
       }

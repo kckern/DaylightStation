@@ -9,4 +9,7 @@
  * Subject values and namespaces are opaque data; callers never branch on them
  * to select a generator.
  */
-export const IBankSource = Symbol('IBankSource');
+export class IBankSource {
+  resolve(_bankId) { throw new Error('IBankSource.resolve not implemented'); }
+  listSummaries() { throw new Error('IBankSource.listSummaries not implemented'); }
+}

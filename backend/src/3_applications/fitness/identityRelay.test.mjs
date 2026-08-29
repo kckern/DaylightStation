@@ -19,9 +19,15 @@ function makeBus() {
     broadcasts: [],
     broadcast(topic, payload) { this.broadcasts.push({ topic, payload }); },
     onClientMessage(fn) { handler = fn; },
+    identityDetected(payload) { this.broadcast('fitness.identity.detected', payload); },
+    emergencyCeremony(payload) { this.broadcast('fitness.emergency.ceremony', payload); },
+    onScan(fn) { this.onClientMessage((_clientId, message) => {
+      if (message?.topic === 'biometric.scan') fn(message);
+    }); },
     deliver(message) { handler('client-1', message); },
   };
 }
+function makeBusDeps() { const bus = makeBus(); return { eventBus: bus, identityChannel: bus }; }
 
 // A deterministic scheduler: setTimeout records the callback; fire() runs all
 // non-cancelled callbacks so tests can simulate the server-commit delay elapsing.
@@ -29,8 +35,8 @@ function makeScheduler() {
   const timers = [];
   return {
     timers,
-    setTimeout(fn) { const h = { fn, cancelled: false }; timers.push(h); return h; },
-    clearTimeout(h) { if (h) h.cancelled = true; },
+    schedule(_delayMs, fn) { const h = { fn, cancelled: false }; timers.push(h); return h; },
+    cancel(h) { if (h) h.cancelled = true; },
     async fire() { for (const t of timers) { if (!t.cancelled) await t.fn(); } },
   };
 }
@@ -69,7 +75,7 @@ describe('buildAuthz', () => {
 
 describe('createIdentityRelay', () => {
   const deps = (now) => ({
-    eventBus: makeBus(),
+    ...makeBusDeps(),
     userService: { getAllProfiles: () => profiles() },
     loadFitnessConfig: () => fitnessConfig(),
     now,
@@ -91,7 +97,7 @@ describe('createIdentityRelay', () => {
   it('stamps an admin session on an admin scan (not a non-admin), and expires after the TTL', () => {
     let t = 1000;
     const d = {
-      eventBus: makeBus(),
+      ...makeBusDeps(),
       userService: { getAllProfiles: () => profiles() },
       loadFitnessConfig: () => ({ locks: {}, users: { admin: ['kc'] } }),
       now: () => t,
@@ -171,7 +177,7 @@ describe('createIdentityRelay', () => {
 describe('scanner-abuse auto-lockdown', () => {
   // kc = admin (holds ADMIN_LOCK); guest = holds dance_party. Both are "safe".
   const abuseDeps = (now, overrides = {}) => ({
-    eventBus: makeBus(),
+    ...makeBusDeps(),
     userService: { getAllProfiles: () => profiles() },
     loadFitnessConfig: () => ({
       locks: { dance_party: ['kc', 'guest'] },
@@ -225,7 +231,7 @@ describe('scanner-abuse auto-lockdown', () => {
   it('counts a recognized identity holding no locks as a failed scan', () => {
     let t = 0;
     const d = {
-      eventBus: makeBus(),
+      ...makeBusDeps(),
       userService: { getAllProfiles: () => profiles() },
       loadFitnessConfig: () => ({ locks: {}, users: { admin: ['kc'] }, emergency: { abuse: { threshold: 3, window_sec: 30 } } }),
       now: () => t,
@@ -293,7 +299,7 @@ describe('scanner-abuse auto-lockdown', () => {
     let t = 3000;
     const sched = makeScheduler();
     const trigger = { execute: vi.fn().mockResolvedValue({ lockedUntil: 9 }) };
-    const d = abuseDeps(() => t, { scheduler: sched, triggerEmergencyLockdown: trigger });
+    const d = abuseDeps(() => t, { commitScheduler: sched, triggerEmergencyLockdown: trigger });
     createIdentityRelay(d);
     t = 1000; fail(d.eventBus);
     t = 2000; fail(d.eventBus);
@@ -308,7 +314,7 @@ describe('scanner-abuse auto-lockdown', () => {
     let t = 3000;
     const sched = makeScheduler();
     const trigger = { execute: vi.fn().mockResolvedValue({ lockedUntil: 9 }) };
-    const d = abuseDeps(() => t, { scheduler: sched, triggerEmergencyLockdown: trigger });
+    const d = abuseDeps(() => t, { commitScheduler: sched, triggerEmergencyLockdown: trigger });
     const relay = createIdentityRelay(d);
     t = 1000; fail(d.eventBus);
     t = 2000; fail(d.eventBus);
@@ -324,7 +330,7 @@ describe('scanner-abuse auto-lockdown', () => {
     let t = 3000;
     const sched = makeScheduler();
     const trigger = { execute: vi.fn() };
-    const d = abuseDeps(() => t, { scheduler: sched, triggerEmergencyLockdown: trigger });
+    const d = abuseDeps(() => t, { commitScheduler: sched, triggerEmergencyLockdown: trigger });
     const relay = createIdentityRelay(d);
     t = 1000; fail(d.eventBus);
     t = 2000; fail(d.eventBus);
@@ -341,7 +347,7 @@ describe('scanner-abuse auto-lockdown', () => {
     const sched = makeScheduler();
     const trigger = { execute: vi.fn() };
     const d = abuseDeps(() => t, {
-      scheduler: sched,
+      commitScheduler: sched,
       triggerEmergencyLockdown: trigger,
       getLockdownState: { execute: async () => lockState },
     });

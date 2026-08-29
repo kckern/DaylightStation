@@ -20,14 +20,4 @@ export class Purpose {
     return beliefs.every(b => refutedBeliefIds.includes(b.id || b));
   }
 
-  toJSON() {
-    return {
-      statement: this.statement,
-      adopted: this.adopted,
-      last_reviewed: this.last_reviewed,
-      review_cadence: this.review_cadence,
-      notes: this.notes,
-      grounded_in: this.grounded_in,
-    };
-  }
 }

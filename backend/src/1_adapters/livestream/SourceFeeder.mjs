@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import path from 'node:path';
 
 /**
  * SourceFeeder — orchestrates what audio gets fed into the FFmpeg encoder.
@@ -18,17 +19,23 @@ export class SourceFeeder {
   #currentFile = null;
   #silenceInterval = null;
   #stopped = false;
+  #resolveMediaAsset;
 
-  constructor({ encoderStdin, onTrackEnd, onNeedTrack, logger = console }) {
+  constructor({ encoderStdin, onTrackEnd, onNeedTrack, resolveMediaAsset = null, logger = console }) {
     this.#encoderStdin = encoderStdin;
     this.#onTrackEnd = onTrackEnd;
     this.#onNeedTrack = onNeedTrack;
     this.#logger = logger;
+    this.#resolveMediaAsset = resolveMediaAsset || ((asset) => {
+      if (!asset || path.isAbsolute(asset)) return asset;
+      return path.resolve('..', asset);
+    });
   }
 
   get currentFile() { return this.#currentFile; }
 
   playFile(filePath) {
+    filePath = this.#resolveMediaAsset(filePath);
     this.#stopSilence();
     this.#killDecoder();
     this.#stopped = false;
@@ -67,6 +74,7 @@ export class SourceFeeder {
   }
 
   playAmbientLoop(filePath) {
+    filePath = this.#resolveMediaAsset(filePath);
     this.#stopSilence();
     this.#killDecoder();
 

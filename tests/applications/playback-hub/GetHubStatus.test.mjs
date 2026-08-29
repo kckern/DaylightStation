@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { GetHubStatus } from '../../../backend/src/3_applications/playback-hub/usecases/GetHubStatus.mjs';
 import { FakeHubGateway } from '../../../backend/src/3_applications/playback-hub/test/FakeHubGateway.mjs';
 import { SlotStatus } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotStatus.mjs';
+const statusFromFixture = value => new SlotStatus({ ...value, position: value.slot ?? value.position });
 
 describe('GetHubStatus', () => {
   let gateway;
@@ -10,7 +11,7 @@ describe('GetHubStatus', () => {
   });
 
   it('returns slot statuses from the gateway', async () => {
-    const status = SlotStatus.fromHubJson({
+    const status = statusFromFixture({
       position: 1, color: 'red', bt_connected: true, paused: false,
       now_playing: { queue: { source: 'plex', id: '670208' } },
       volume: 45, playlist_pos: 12, playlist_count: 30, armed_source: null

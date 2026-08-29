@@ -9,7 +9,9 @@
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-export class SshOsAdapter {
+import { IOsControl } from '#apps/devices/ports/IOsControl.mjs';
+
+export class SshOsAdapter extends IOsControl {
   #host;
   #user;
   #port;
@@ -33,6 +35,7 @@ export class SshOsAdapter {
    * @param {Object} [deps.logger]
    */
   constructor(config, deps = {}) {
+    super();
     if (!deps.remoteExec) {
       throw new InfrastructureError('SshOsAdapter requires remoteExec', {
         code: 'MISSING_DEPENDENCY',

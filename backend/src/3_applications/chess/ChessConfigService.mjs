@@ -25,6 +25,29 @@ export function mergeChessConfig(household, user) {
   return merged;
 }
 
+/** Legacy ladder reader: user ladder keys override household ladder keys. */
+export function mergeChessLadderConfig(household, user) {
+  const base = household || {};
+  const override = user || {};
+  return {
+    ...base,
+    ladder: { ...(base.ladder || {}), ...(override.ladder || {}) },
+  };
+}
+
+export class ChessLadderConfigReader {
+  constructor({ readHouseholdConfig, readUserConfig }) {
+    this.readHouseholdConfig = readHouseholdConfig;
+    this.readUserConfig = readUserConfig;
+  }
+
+  async read(userId) {
+    const household = await this.readHouseholdConfig() || {};
+    const user = userId ? await this.readUserConfig(userId) || {} : {};
+    return mergeChessLadderConfig(household, user);
+  }
+}
+
 /** A typo in YAML must not take the game down, so an unknown rung lands mid-ladder. */
 export function resolveRung(config, rungId, logger = null) {
   const rungs = Array.isArray(config?.rungs) ? config.rungs : [];
@@ -67,4 +90,4 @@ export function createChessConfigService({
   };
 }
 
-export default { createChessConfigService, mergeChessConfig, resolveRung };
+export default { createChessConfigService, mergeChessConfig, mergeChessLadderConfig, ChessLadderConfigReader, resolveRung };

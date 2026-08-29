@@ -5,7 +5,9 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 /**
  * Nutritionix API adapter implementing INutritionLookup
  */
-export class NutritionixAdapter {
+import { INutritionLookup } from '#apps/nutribot/ports/INutritionLookup.mjs';
+
+export class NutritionixAdapter extends INutritionLookup {
   #appId;
   #appKey;
   #baseUrl;
@@ -23,6 +25,7 @@ export class NutritionixAdapter {
    * @param {Object} [deps.logger] - Logger instance
    */
   constructor(config, deps = {}) {
+    super();
     if (!config.appId || !config.appKey) {
       throw new InfrastructureError('NutritionixAdapter requires appId and appKey', {
         code: 'MISSING_DEPENDENCY',

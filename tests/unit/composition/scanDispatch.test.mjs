@@ -63,11 +63,10 @@ function makeDeps(over = {}) {
     applyScanToComposition: { execute: vi.fn(() => ({ handled: false })) },
     getScaleNutribotBridge: () => ({ refreshPrompt, armCommitFor, commitNowFor }),
     getLogFoodFromUPC: () => ({ execute }),
-    configService: {
-      getSystemConfig: () => ({ nutribot: { telegram: { bot_id: '777' } } }),
-      getHeadOfHousehold: () => 'test-user',
+    nutribotIdentity: {
+      defaultUserId: () => 'test-user',
+      conversationIdFor: () => 'telegram:b777_c4242',
     },
-    userIdentityService: { resolvePlatformId: () => '4242' },
     screenNames: ['living-room', 'portal', 'office'],
     logger: dispatcherLogger,
     barcodeLogger,
@@ -212,7 +211,7 @@ describe('createScanDispatch — the composition seam', () => {
   const REQUIRED = [
     'schoolLifecycle', 'schoolCalcResultImporter', 'triggerDispatchService', 'relayInstances', 'relayConfig',
     'applyScanToComposition', 'getScaleNutribotBridge', 'getLogFoodFromUPC',
-    'configService', 'userIdentityService', 'screenNames', 'logger', 'barcodeLogger',
+    'nutribotIdentity', 'screenNames', 'logger', 'barcodeLogger',
   ];
 
   const depsWithout = (...keys) => {
@@ -766,8 +765,8 @@ describe('product — the UPC path', () => {
   const upcScan = () => relayScan({ device: 'nutribot-upc', route: 'nutribot', code: '041260010682' });
 
   it('logs a bare UPC through the nutribot use case', async () => {
-    const resolvePlatformId = vi.fn(() => '4242');
-    const h = harness({ userIdentityService: { resolvePlatformId } });
+    const conversationIdFor = vi.fn(() => 'telegram:b777_c4242');
+    const h = harness({ nutribotIdentity: { defaultUserId: () => 'test-user', conversationIdFor } });
     await h.scanDispatch.handleScan(upcScan());
     expect(h.execute).toHaveBeenCalledWith({
       userId: 'test-user',
@@ -779,7 +778,7 @@ describe('product — the UPC path', () => {
     // production outage — a conversation id that reached UPCGateway and then died
     // at delivery — and resolving the wrong platform's id rebuilds it exactly:
     // well-formed, wrong, and silent until Telegram rejects it.
-    expect(resolvePlatformId).toHaveBeenCalledWith('telegram', 'test-user');
+    expect(conversationIdFor).toHaveBeenCalledWith('test-user');
   });
 
   it('prefers the relay instance user over the relay-wide one over the household head', async () => {
@@ -809,7 +808,7 @@ describe('product — the UPC path', () => {
 
   it('refuses to dispatch without a user', async () => {
     const h = harness({
-      configService: { getSystemConfig: () => ({}), getHeadOfHousehold: () => null },
+      nutribotIdentity: { defaultUserId: () => null, conversationIdFor: () => null },
       relayInstances: { 'nutribot-upc': { route: 'nutribot' } },
     });
     await h.scanDispatch.handleScan(upcScan());
@@ -821,7 +820,7 @@ describe('product — the UPC path', () => {
     // The old fallback built `nutribot-upc:<userId>`, which reached UPCGateway and
     // then died at delivery with a 400. No address is better than a bad one.
     const h = harness({
-      configService: { getSystemConfig: () => ({}), getHeadOfHousehold: () => 'test-user' },
+      nutribotIdentity: { defaultUserId: () => 'test-user', conversationIdFor: () => null },
       relayInstances: { 'nutribot-upc': { route: 'nutribot' } },
     });
     await h.scanDispatch.handleScan(upcScan());

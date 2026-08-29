@@ -6,6 +6,8 @@ import { LifePlan } from '#domains/lifeplan/entities/LifePlan.mjs';
 import { GoalStateService } from '#domains/lifeplan/services/GoalStateService.mjs';
 import { BeliefEvaluator } from '#domains/lifeplan/services/BeliefEvaluator.mjs';
 import { CadenceService } from '#domains/lifeplan/services/CadenceService.mjs';
+import { presentBelief, presentGoal, presentLifePlan } from '#apps/lifeplan/presenters/lifePlanPresenter.mjs';
+import { LifePlanOperations } from '#apps/lifeplan/LifePlanOperations.mjs';
 
 describe('Life Plan API Router', () => {
   let app;
@@ -33,10 +35,16 @@ describe('Life Plan API Router', () => {
     };
 
     const router = createPlanRouter({
-      lifePlanStore: mockStore,
-      goalStateService: new GoalStateService(),
-      beliefEvaluator: new BeliefEvaluator(),
-      cadenceService: new CadenceService(),
+      lifePlanOperations: new LifePlanOperations({
+        plans: mockStore,
+        goalStates: new GoalStateService(),
+        beliefEvaluator: new BeliefEvaluator(),
+        cadence: new CadenceService(),
+        clock: { now: () => new Date('2026-08-28T12:34:56.000Z') },
+      }),
+      presentBelief,
+      presentGoal,
+      presentLifePlan,
     });
 
     app = express();
@@ -88,6 +96,7 @@ describe('Life Plan API Router', () => {
         .send({ state: 'ready', reason: 'Dependencies met' });
       expect(res.status).toBe(200);
       expect(res.body.state).toBe('ready');
+      expect(res.body.state_history.at(-1).timestamp).toBe('2026-08-28T12:34:56.000Z');
       expect(mockStore.save).toHaveBeenCalled();
     });
 
@@ -116,6 +125,14 @@ describe('Life Plan API Router', () => {
       expect(res.status).toBe(200);
       expect(res.body.confidence).toBeGreaterThan(0.6);
       expect(mockStore.save).toHaveBeenCalled();
+    });
+
+    it('uses the injected operation date when evidence omits its date', async () => {
+      const res = await request(app)
+        .post('/plan/beliefs/b1/evidence')
+        .send({ type: 'confirmation' });
+      expect(res.status).toBe(200);
+      expect(res.body.evidence_history.at(-1).date).toBe('2026-08-28');
     });
   });
 

@@ -77,11 +77,11 @@ describe('Transaction', () => {
     });
   });
 
-  describe('toJSON/fromJSON', () => {
-    test('round-trips transaction data', () => {
+  describe('reconstitution', () => {
+    test('reconstitutes a transaction record', () => {
       transaction.tags = ['test'];
-      const json = transaction.toJSON();
-      const restored = Transaction.fromJSON(json);
+      const json = { ...transaction };
+      const restored = new Transaction(json);
       expect(restored.id).toBe(transaction.id);
       expect(restored.tags).toEqual(['test']);
     });

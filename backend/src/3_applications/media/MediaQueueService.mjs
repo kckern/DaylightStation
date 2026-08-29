@@ -1,4 +1,5 @@
 import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
+import { hexId } from '#system/utils/id.mjs';
 
 /**
  * MediaQueueService - Application-layer orchestrator for media queue operations.
@@ -10,6 +11,8 @@ export class MediaQueueService {
   #queueStore;
   #defaultHouseholdId;
   #logger;
+  #newQueueId;
+  #random;
 
   /**
    * @param {Object} deps
@@ -17,13 +20,15 @@ export class MediaQueueService {
    * @param {string} deps.defaultHouseholdId
    * @param {Object} [deps.logger=console]
    */
-  constructor({ queueStore, defaultHouseholdId, logger = console }) {
+  constructor({ queueStore, defaultHouseholdId, logger = console, newQueueId = () => hexId(4), random = Math.random }) {
     if (!queueStore) {
       throw new Error('MediaQueueService requires queueStore');
     }
     this.#queueStore = queueStore;
     this.#defaultHouseholdId = defaultHouseholdId;
     this.#logger = logger;
+    this.#newQueueId = newQueueId;
+    this.#random = random;
   }
 
   /**
@@ -74,7 +79,7 @@ export class MediaQueueService {
   async addItems(items, placement = 'end', householdId) {
     const hid = this.#hid(householdId);
     const queue = await this.load(hid);
-    const added = queue.addItems(items, placement);
+    const added = queue.addItems(items, placement, this.#newQueueId);
     await this.#queueStore.save(queue, hid);
     this.#logger?.info?.('media-queue.items-added', { householdId: hid, count: added.length, placement });
     return added;
@@ -141,7 +146,7 @@ export class MediaQueueService {
     const queue = await this.load(hid);
 
     if ('shuffle' in state) {
-      queue.setShuffle(state.shuffle);
+      queue.setShuffle(state.shuffle, this.#random);
     }
     if ('repeat' in state) {
       queue.repeat = state.repeat;

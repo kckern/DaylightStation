@@ -8,6 +8,9 @@
 // elapsed-ms entry for both.
 import { describe, it, expect, vi } from 'vitest';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+
+const catalogFor = (registry) => new RegistryContentCatalogGateway({ registry });
 
 // Fake adapters shaped to satisfy #canHandle (getSearchCapabilities must
 // declare the 'text' query key) and #translateQuery (getQueryMappings is
@@ -35,7 +38,7 @@ describe('ContentQueryService.searchStream per-source timings', () => {
       get: (s) => [plex, files].find(a => a.source === s),
     };
 
-    const svc = new ContentQueryService({ registry, logger });
+    const svc = new ContentQueryService({ contentCatalog: catalogFor(registry), logger });
 
     // Drain the async generator.
     const events = [];
@@ -74,7 +77,7 @@ describe('ContentQueryService.searchStream per-source timings', () => {
       get: (s) => [plex, unsupported].find(a => a.source === s),
     };
 
-    const svc = new ContentQueryService({ registry, logger });
+    const svc = new ContentQueryService({ contentCatalog: catalogFor(registry), logger });
 
     for await (const _ev of svc.searchStream({ text: 'x' })) { /* drain */ }
 

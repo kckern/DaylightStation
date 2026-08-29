@@ -61,19 +61,6 @@ export class JobState {
   }
 
   /**
-   * Convert to plain object for persistence
-   */
-  toJSON() {
-    return {
-      last_run: this.lastRun,
-      nextRun: this.nextRun,
-      status: this.status,
-      duration_ms: this.durationMs,
-      error: this.error
-    };
-  }
-
-  /**
    * Create from persisted state
    */
   static fromObject(jobId, obj) {

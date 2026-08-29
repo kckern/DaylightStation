@@ -138,31 +138,14 @@ export class Message {
     return this.getAgeMinutes(nowMs) <= thresholdMinutes;
   }
 
-  // Transitional: retained for API response DTOs (4_api/v1/routers/messaging.mjs).
-  // Storage (de)hydration lives in YamlConversationDatastore, NOT here.
-  toJSON() {
-    return {
-      id: this.id,
-      conversationId: this.conversationId,
-      senderId: this.senderId,
-      recipientId: this.recipientId,
-      type: this.type,
-      direction: this.direction,
-      content: this.content,
-      attachments: this.attachments,
-      timestamp: this.timestamp,
-      metadata: this.metadata
-    };
-  }
-
   /**
    * Create a text message
    * @param {Object} params
    * @param {number} params.nowMs - Current time in milliseconds for ID generation (required)
    */
-  static createText({ conversationId, senderId, recipientId, text, timestamp, nowMs, direction = null, metadata = {} }) {
+  static createText({ id, conversationId, senderId, recipientId, text, timestamp, direction = null, metadata = {} }) {
     return new Message({
-      id: Message.generateId(nowMs),
+      id,
       conversationId,
       senderId,
       recipientId,
@@ -180,9 +163,9 @@ export class Message {
    * @param {Object} params
    * @param {number} params.nowMs - Current time in milliseconds for ID generation (required)
    */
-  static createVoice({ conversationId, senderId, recipientId, fileId, duration, timestamp, nowMs, direction = null, metadata = {} }) {
+  static createVoice({ id, conversationId, senderId, recipientId, fileId, duration, timestamp, direction = null, metadata = {} }) {
     return new Message({
-      id: Message.generateId(nowMs),
+      id,
       conversationId,
       senderId,
       recipientId,
@@ -200,9 +183,9 @@ export class Message {
    * @param {Object} params
    * @param {number} params.nowMs - Current time in milliseconds for ID generation (required)
    */
-  static createImage({ conversationId, senderId, recipientId, fileId, caption, timestamp, nowMs, direction = null, metadata = {} }) {
+  static createImage({ id, conversationId, senderId, recipientId, fileId, caption, timestamp, direction = null, metadata = {} }) {
     return new Message({
-      id: Message.generateId(nowMs),
+      id,
       conversationId,
       senderId,
       recipientId,
@@ -220,9 +203,9 @@ export class Message {
    * @param {Object} params
    * @param {number} params.nowMs - Current time in milliseconds for ID generation (required)
    */
-  static createCallback({ conversationId, senderId, recipientId, callbackData, timestamp, nowMs, direction = null, metadata = {} }) {
+  static createCallback({ id, conversationId, senderId, recipientId, callbackData, timestamp, direction = null, metadata = {} }) {
     return new Message({
-      id: Message.generateId(nowMs),
+      id,
       conversationId,
       senderId,
       recipientId,
@@ -235,17 +218,6 @@ export class Message {
     });
   }
 
-  /**
-   * Generate a unique message ID
-   * @param {number} nowMs - Current time in milliseconds (required)
-   * @returns {string}
-   */
-  static generateId(nowMs) {
-    if (typeof nowMs !== 'number') {
-      throw new ValidationError('nowMs timestamp required for generateId', { code: 'MISSING_TIMESTAMP', field: 'nowMs' });
-    }
-    return `msg-${nowMs}-${Math.random().toString(36).slice(2, 8)}`;
-  }
 }
 
 export default Message;

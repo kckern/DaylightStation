@@ -39,6 +39,7 @@ import { fileURLToPath } from 'node:url';
 import { dump } from 'js-yaml';
 
 import { RenderPrintDocument } from './RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { PublishPrintDocument } from './PublishPrintDocument.mjs';
 import { ResolveCardScan } from './ResolveCardScan.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
@@ -57,6 +58,10 @@ import {
 import { pdfText } from '../../../../../tests/_lib/school/pdfText.mjs';
 import { requirePdftoppm, rasterizePdfPages } from '../../../../../tests/_lib/school/rasterize.mjs';
 import { runSchoolDocs } from '../../../../../cli/school/docs.mjs';
+
+const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
+  rendering: createPrintDocumentRendering(), ...deps,
+});
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = path.join(HERE, '..', '..', '..', '..', '..', 'docs', '_wip', 'audits', '2026-08-04-print-design-phase-c-acceptance');
@@ -257,7 +262,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
         expect(errors).toEqual([]);
 
         const allocationStore = fakeAllocationStore();
-        const useCase = new RenderPrintDocument({ allocationStore });
+        const useCase = createRenderPrintDocument({ allocationStore });
         await expect(useCase.execute({
           document: source, context: { freshCard: true },
         })).rejects.toMatchObject({
@@ -270,7 +275,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
 
     it('>5 choices on a row-mapped multiple_choice item fails card allocation with a dotted block path (bank-dependent — >5 is legal at plain bank validation, only the CARD row limit rejects it)', async () => {
       const allocationStore = fakeAllocationStore();
-      const useCase = new RenderPrintDocument({ allocationStore });
+      const useCase = createRenderPrintDocument({ allocationStore });
       const choices = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6'];
       const source = {
         schema: DOCUMENT_SOURCE_SCHEMA,
@@ -292,7 +297,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
 
     it('startRow + count - 1 > 50 fails card allocation (a whole-range error, not block-scoped — there is no single offending block; contrast with the two block-scoped errors above)', async () => {
       const allocationStore = fakeAllocationStore();
-      const useCase = new RenderPrintDocument({ allocationStore });
+      const useCase = createRenderPrintDocument({ allocationStore });
       const source = quizSource('past-fifty', { rows: 5 });
       await expect(useCase.execute({
         document: source, context: { freshCard: true, startRow: 48 },
@@ -329,7 +334,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
         // the second mint collide with the first's own record (mirrors
         // `issueDocument.test.mjs`'s own "tracked quizzes" fixture comment).
         allocationStore = fakeAllocationStore({ rng: Math.random });
-        useCase = new RenderPrintDocument({ repository, allocationStore });
+        useCase = createRenderPrintDocument({ repository, allocationStore });
         const publisher = new PublishPrintDocument({ repository });
         ({ rev } = await publisher.execute({ source: boundaryWorksheetSource() }));
         published = await repository.getPublished('boundary-worksheet', rev);
@@ -425,7 +430,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
         const { id, rev } = await publisher.execute({ source });
         const published = await repository.getPublished(id, rev);
         const allocationStore = fakeAllocationStore({ rng: Math.random });
-        const useCase = new RenderPrintDocument({ repository, banks, allocationStore });
+        const useCase = createRenderPrintDocument({ repository, banks, allocationStore });
         const result = await useCase.execute({ document: published, context: { freshCard: true, learnerId } });
         const permutation = deriveShuffle(source.seed, source.variant, 'sel1', externalBank.items.length);
         const selectedItem = applyShuffle(externalBank.items, permutation)[0];
@@ -456,7 +461,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
   describe('§12.4 collision, supersede, and release-card (spec §5.4)', () => {
     it('a second render overlapping a LIVE range on the SAME card is rejected as a structured ALLOCATION_COLLISION error, regardless of learner', async () => {
       const allocationStore = fakeAllocationStore();
-      const useCase = new RenderPrintDocument({ allocationStore });
+      const useCase = createRenderPrintDocument({ allocationStore });
       const first = await useCase.execute({
         document: quizSource('collision-doc-a', { rows: 2 }), context: { freshCard: true, learnerId: 'kid-a' },
       });
@@ -475,7 +480,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
 
     it('a re-render of the same (document, learner) supersedes cleanly — the prior record becomes superseded, the new one live, teacher-key numbers match the NEW allocation', async () => {
       const allocationStore = fakeAllocationStore();
-      const useCase = new RenderPrintDocument({ allocationStore });
+      const useCase = createRenderPrintDocument({ allocationStore });
       const docV0 = quizSource('supersede-doc', { rows: 2, variant: 0 });
       const first = await useCase.execute({ document: docV0, context: { freshCard: true, learnerId: 'kid-c' } });
       const { cardId, recordId: firstRecordId } = first.allocation;
@@ -545,7 +550,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
       const repository = fakeRepository();
       const publisher = new PublishPrintDocument({ repository });
       const allocationStore = fakeAllocationStore();
-      const useCase = new RenderPrintDocument({ repository, allocationStore });
+      const useCase = createRenderPrintDocument({ repository, allocationStore });
 
       const { id, rev } = await publisher.execute({ source: quizSource('supersede-scan-doc', { rows: 2 }) });
       const published = await repository.getPublished(id, rev);
@@ -590,7 +595,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
       const repository = fakeRepository();
       const publisher = new PublishPrintDocument({ repository });
       const allocationStore = fakeAllocationStore({ rng: Math.random });
-      const useCase = new RenderPrintDocument({ repository, allocationStore });
+      const useCase = createRenderPrintDocument({ repository, allocationStore });
       const { id, rev } = await publisher.execute({ source: gradingSource() });
       const published = await repository.getPublished(id, rev);
       const result = await useCase.execute({
@@ -658,7 +663,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
 
       // ── Tracked leg: through IssueDocument — a real session, a real (fake) laser printer ──
       const allocationStore = fakeAllocationStore();
-      const renderPrintDocument = new RenderPrintDocument({ repository, allocationStore });
+      const renderPrintDocument = createRenderPrintDocument({ repository, allocationStore });
       const clock = fakeClock();
       const sessions = new FakeSessionRepository();
       const tokens = new FakeTokenRegistry();
@@ -696,7 +701,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
       expect(isPdf(trackedBytes)).toBe(true);
 
       // ── Loose leg: RenderPrintDocument, direct — no session, no card, no printer ──
-      const looseUseCase = new RenderPrintDocument({ repository });
+      const looseUseCase = createRenderPrintDocument({ repository });
       const loose = await looseUseCase.execute({ document: published, context: {} });
       expect(isPdf(loose.bytes)).toBe(true);
       expect(loose.allocation).toBeNull();
@@ -735,7 +740,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
       const repository = fakeRepository();
       const publisher = new PublishPrintDocument({ repository });
       const allocationStore = fakeAllocationStore();
-      const useCase = new RenderPrintDocument({ repository, allocationStore });
+      const useCase = createRenderPrintDocument({ repository, allocationStore });
 
       // Document 1: freshCard, startRow 1 — the FIRST-USE sheet.
       const doc1Source = {

@@ -30,7 +30,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { AppsConfigService } from '#apps/admin/AppsConfigService.mjs';
-import { YamlConfigFileStore } from '#adapters/persistence/yaml/YamlConfigFileStore.mjs';
+import { YamlAdminConfigStore } from '#adapters/persistence/yaml/YamlAdminConfigStore.mjs';
 
 let tmpRoot;
 let dataRoot;
@@ -47,9 +47,8 @@ beforeEach(() => {
   dataRoot = path.join(tmpRoot, 'data');
   fs.mkdirSync(dataRoot, { recursive: true });
 
-  const configService = { getDataDir: () => dataRoot };
-  const configFiles = new YamlConfigFileStore({ logger: { info() {}, warn() {}, error() {} } });
-  service = new AppsConfigService({ configFiles, configService, logger: { info() {}, warn() {}, error() {} } });
+  const configStore = new YamlAdminConfigStore({ dataRoot });
+  service = new AppsConfigService({ configStore, logger: { info() {}, warn() {}, error() {} } });
 });
 
 afterEach(() => {

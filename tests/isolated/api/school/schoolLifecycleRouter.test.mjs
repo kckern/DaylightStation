@@ -11,7 +11,7 @@
 // 404s rather than half-answering.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
-import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
+import { createSchoolLifecycleTestRouter as createSchoolLifecycleRouter } from '../../../_lib/school/schoolLifecycleRouterTestSupport.mjs';
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };

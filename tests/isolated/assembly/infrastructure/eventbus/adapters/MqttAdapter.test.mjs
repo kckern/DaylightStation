@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/eventbus/adapters/MqttAdapter.test.mjs
 import { vi } from 'vitest';
-import { MqttAdapter } from '#backend/src/0_system/eventbus/adapters/MqttAdapter.mjs';
+import { MqttAdapter } from '#adapters/eventbus/transports/MqttEventTransport.mjs';
 
 describe('MqttAdapter', () => {
   let adapter;

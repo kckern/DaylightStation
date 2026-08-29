@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rewriteHlsPlaylist, isBlockedStreamHost, safeStreamFetch } from './proxy.mjs';
+import {
+  rewriteHlsPlaylist,
+  isBlockedStreamHost,
+  safeStreamFetch,
+} from '#adapters/proxy/HttpDynamicStreamGateway.mjs';
 
 // Minimal fake Response factory for the injectable fetchFn.
 function fakeResponse({ status = 200, location, body = 'ok' } = {}) {

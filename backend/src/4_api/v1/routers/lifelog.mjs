@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * Lifelog API Router
  *
@@ -24,12 +25,11 @@ function isValidDate(dateStr) {
  *
  * @param {Object} config
  * @param {import('#apps/lifelog/LifelogAggregator.mjs').LifelogAggregator} config.aggregator
- * @param {Object} config.userDataService - UserDataService for reading user lifelog files
- * @param {Object} config.configService - ConfigService for user lookups
+ * @param {Object} config.weightService - Current-user weight projection
  * @returns {express.Router}
  */
 export function createLifelogRouter(config) {
-  const { aggregator, userDataService, configService } = config;
+  const { aggregator, weightService } = config;
   const router = express.Router();
 
   /**
@@ -51,7 +51,7 @@ export function createLifelogRouter(config) {
       res.json(result);
     } catch (err) {
       console.error('[lifelog] Aggregate error:', err);
-      res.status(500).json({ error: err.message });
+      sendInternalError(res, { error: err.message });
     }
   });
 
@@ -73,12 +73,9 @@ export function createLifelogRouter(config) {
   router.get('/weight', async (req, res) => {
     try {
       // Get current user from session or use default
-      const username = req.user?.username || configService?.getHeadOfHousehold?.() || 'user_1';
+      const { username, data: weightData } = weightService.read(req.user?.username || null);
       
       console.log('[lifelog] Weight request for user:', username);
-      
-      // Read weight data from user's lifelog directory
-      const weightData = userDataService?.readUserLifelogData?.(username, 'weight');
       
       console.log('[lifelog] Weight data loaded:', weightData ? Object.keys(weightData).length + ' entries' : 'null');
       
@@ -86,7 +83,7 @@ export function createLifelogRouter(config) {
       res.json(weightData || []);
     } catch (err) {
       console.error('[lifelog] Weight error:', err);
-      res.status(500).json({ error: err.message });
+      sendInternalError(res, { error: err.message });
     }
   });
 

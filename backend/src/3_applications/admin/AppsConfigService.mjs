@@ -1,231 +1,59 @@
-/**
- * AppsConfigService - Application service for the admin per-app config editor.
- *
- * Owns the friendly-app-ID → config-file-path registry plus the read / validate /
- * write YAML logic that the admin apps router used to inline. The router becomes a
- * thin HTTP shell: GET / → listApps(), GET /:appId/config → readAppConfig(),
- * PUT /:appId/config → writeAppConfig(). All error cases throw typed errors that
- * the router's P1.3 string error-middleware maps to HTTP status:
- *   ValidationError → 400 (unknown app, non-YAML body, invalid/undumpable YAML, empty body)
- *   NotFoundError   → 404 (config file missing for a known app)
- *
- * Path registry + behavior are preserved VERBATIM from the router.
- */
-import path from 'path';
-import yaml from 'js-yaml';
-import {
-  ValidationError,
-  NotFoundError
-} from '#system/utils/errors/index.mjs';
-import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
-
-/**
- * Admin-app-ID → config file path, derived from the household config registry
- * so it cannot drift from what the loader actually reads. Only the admin's
- * friendly IDs differ from app names:
- *   shopping → harvest      (the admin calls it Shopping)
- *   media    → media-app    (the admin edits the SURFACE: browse + searchScopes)
- *
- * `chatbots` and `keyboard` deliberately left this map: chatbots.yml is a dead
- * duplicate (the live identity mappings are built from users/<name>/profile.yml
- * by configLoader.buildIdentityMappings), and keyboard.yml is a uid'd binding
- * list, not app config — it moves to triggers/bindings/keyboard.yml and stays
- * editable through the admin YAML browser instead.
- */
-const ADMIN_ID_TO_APP = {
-  fitness: 'fitness',
-  finance: 'finance',
-  gratitude: 'gratitude',
-  shopping: 'harvest',
-  media: 'media-app',
-  entropy: 'entropy',
-  piano: 'piano',
-};
-
-export const APP_CONFIGS = Object.freeze(
-  Object.fromEntries(
-    Object.entries(ADMIN_ID_TO_APP)
-      .map(([adminId, appName]) => [adminId, `household/${HOUSEHOLD_APP_CONFIGS[appName]}.yml`])
-  )
-);
-
-const YAML_DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true };
+import { ValidationError, NotFoundError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class AppsConfigService {
-  #configFiles;
-
-  /**
-   * @param {Object} deps
-   * @param {Object} deps.configService - ConfigService for data directory paths
-   * @param {Object} [deps.logger=console] - Logger instance
-   */
-  constructor({ configService, configFiles, logger = console }) {
-    // D5: no fs in the application layer. This service still decides WHICH
-    // file and what its contents mean; the store does the four primitives.
-    this.#configFiles = configFiles;
-    if (!configService) {
-      throw new Error('AppsConfigService requires a configService dependency');
-    }
-    this.configService = configService;
+  #configStore;
+  constructor({ configStore, logger = console }) {
+    if (!configStore) throw new Error('AppsConfigService requires a configStore dependency');
+    this.#configStore = configStore;
     this.logger = logger;
   }
 
-  /** Get the resolved data root directory */
-  #getDataRoot() {
-    return path.resolve(this.configService.getDataDir());
-  }
-
-  /**
-   * Resolve the config path for a known app ID, throwing if unknown.
-   * @param {string} appId
-   * @returns {{ configPath: string, absPath: string }}
-   * @throws {ValidationError} unknown app
-   */
-  #resolveApp(appId) {
-    const configPath = APP_CONFIGS[appId];
-    if (!configPath) {
-      throw new ValidationError(`Unknown app "${appId}"`, { field: 'appId', code: 'UNKNOWN_APP' });
-    }
-    const absPath = path.join(this.#getDataRoot(), configPath);
-    return { configPath, absPath };
-  }
-
-  /**
-   * List all known apps with config-file existence + metadata.
-   * @returns {{ apps: Array<Object> }}
-   */
   listApps() {
-    const dataRoot = this.#getDataRoot();
-    const apps = Object.entries(APP_CONFIGS).map(([appId, configPath]) => {
-      const absPath = path.join(dataRoot, configPath);
-      const exists = this.#configFiles.exists(absPath);
-      let size = null, modified = null;
-      if (exists) {
-        const stat = this.#configFiles.stat(absPath);
-        size = stat.size;
-        modified = stat.mtime.toISOString();
-      }
-      return { appId, configPath, exists, size, modified };
-    });
-
+    const apps = this.#configStore.listManagedAppConfigs();
     this.logger.info?.('admin.apps.listed', { count: apps.length });
     return { apps };
   }
 
-  /**
-   * Read a known app's config file (raw + parsed).
-   * @param {string} appId
-   * @returns {{ appId, configPath, raw, parsed, size, modified }}
-   * @throws {ValidationError} unknown app
-   * @throws {NotFoundError} config file missing
-   */
   readAppConfig(appId) {
-    const { configPath, absPath } = this.#resolveApp(appId);
-
-    if (!this.#configFiles.exists(absPath)) {
+    const result = this.#configStore.readManagedAppConfig(appId);
+    if (result.kind === 'unknown_app') {
+      throw new ValidationError(`Unknown app "${appId}"`, { field: 'appId', code: 'UNKNOWN_APP' });
+    }
+    if (result.kind === 'missing') {
       throw new NotFoundError(`Config file not found for "${appId}"`, undefined, { appId, code: 'CONFIG_NOT_FOUND' });
     }
-
-    const raw = this.#configFiles.readText(absPath);
-    let parsed;
-    try {
-      parsed = yaml.load(raw);
-    } catch (e) {
-      parsed = null;
-    }
-
-    const stat = this.#configFiles.stat(absPath);
-
+    const { kind: _kind, ...record } = result;
     this.logger.info?.('admin.apps.config.read', { appId });
-    return {
-      appId,
-      configPath,
-      raw,
-      parsed,
-      size: stat.size,
-      modified: stat.mtime.toISOString()
-    };
+    return record;
   }
 
-  /**
-   * Write a known app's config file from either a raw YAML string or a parsed object.
-   * @param {string} appId
-   * @param {{ raw?: string, parsed?: Object }} content
-   * @returns {{ ok: true, appId, configPath, size, modified }}
-   * @throws {ValidationError} unknown app, empty body, invalid/undumpable YAML
-   */
   writeAppConfig(appId, content = {}) {
-    const { configPath, absPath } = this.#resolveApp(appId);
-
-    const { raw, parsed } = content || {};
-
-    if (raw === undefined && parsed === undefined) {
+    const result = this.#configStore.writeManagedAppConfig(appId, content);
+    if (result.kind === 'unknown_app') {
+      throw new ValidationError(`Unknown app "${appId}"`, { field: 'appId', code: 'UNKNOWN_APP' });
+    }
+    if (result.kind === 'empty') {
       throw new ValidationError('Must provide either "raw" or "parsed"', { code: 'EMPTY_BODY' });
     }
-
-    let fileContent;
-
-    if (raw !== undefined) {
-      // Validate that the raw string is valid YAML
-      try {
-        yaml.load(raw);
-      } catch (parseError) {
-        throw new ValidationError('Invalid YAML', {
-          code: 'INVALID_YAML',
-          details: { message: parseError.message, mark: parseError.mark }
-        });
-      }
-      fileContent = raw;
-    } else {
-      // Serializing an object can throw YAMLException (e.g. circular refs) -
-      // map that to a 400 (client-supplied data), not a 500.
-      try {
-        fileContent = yaml.dump(parsed, YAML_DUMP_OPTS);
-      } catch (dumpError) {
-        throw new ValidationError('Invalid YAML', {
-          code: 'YAML_DUMP_FAILED',
-          details: { message: dumpError.message, mark: dumpError.mark }
-        });
-      }
+    if (result.kind === 'invalid_yaml') {
+      throw new ValidationError('Invalid YAML', {
+        code: 'INVALID_YAML', details: { message: result.error.message, mark: result.error.mark },
+      });
     }
-
-    // I2 (final-review fix wave, 2026-08-16): APP_CONFIGS is a static map, not
-    // the shared colocated-first resolver (ConfigService#getHouseholdAppConfigPath)
-    // NotificationConfigService already routes writes through — see that
-    // class and getHouseholdAppConfigPath's own doc comment for the exact bug
-    // class this guards against. A blind swap to the shared resolver isn't a
-    // clean fit here: it resolves by appId under the household's OWN folder
-    // name (`<household>/<appId>/config.yml`), and at least two of the 9
-    // entries above don't follow that shape — 'shopping' maps to the
-    // 'harvest' domain folder, and 'media' collides with an unrelated
-    // household/media/config.yml that already exists for a different app.
-    // Routing "media" through the shared resolver would silently overwrite
-    // that other app's real config. So: guard instead of swap. If APP_CONFIGS
-    // ever drifts stale (a future config move not reflected here), the
-    // resolved directory won't exist and this throws NotFoundError instead
-    // of `writeText` silently `mkdir -p`-ing a new tree nothing reads back —
-    // the exact silent-vanishing-write bug NotificationConfigService hit.
-    const dir = path.dirname(absPath);
-    if (!this.#configFiles.exists(dir)) {
+    if (result.kind === 'dump_failed') {
+      throw new ValidationError('Invalid YAML', {
+        code: 'YAML_DUMP_FAILED', details: { message: result.error.message, mark: result.error.mark },
+      });
+    }
+    if (result.kind === 'directory_missing') {
       throw new NotFoundError(
         `Config directory does not exist for "${appId}" — refusing to write to a possibly-stale location`,
-        undefined,
-        { appId, configPath, code: 'CONFIG_DIR_NOT_FOUND' }
+        undefined, { appId, configPath: result.configPath, code: 'CONFIG_DIR_NOT_FOUND' },
       );
     }
-
-    this.#configFiles.writeText(absPath, fileContent);
-
-    const stat = this.#configFiles.stat(absPath);
-
+    const { kind: _kind, ...receipt } = result;
     this.logger.info?.('admin.apps.config.written', { appId });
-    return {
-      ok: true,
-      appId,
-      configPath,
-      size: stat.size,
-      modified: stat.mtime.toISOString()
-    };
+    return { ok: true, ...receipt };
   }
 }
 

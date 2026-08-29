@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { TeacherGate } from './TeacherGate.mjs';
 import { TeacherCapabilitySessions, requiresTeacherStepUp, teacherResource } from './TeacherCapabilitySessions.mjs';
 
@@ -7,7 +8,8 @@ function fixture() {
   const clock = () => new Date(now);
   const gate = new TeacherGate({ teachers: () => ['parent'], pin: () => '4321',
     roster: () => [{ id: 'parent', birthyear: 1984 }], clock, logger: { warn() {} } });
-  const sessions = new TeacherCapabilitySessions({ teacherGate: gate, clock });
+  const sessions = new TeacherCapabilitySessions({ teacherGate: gate,
+    tokenFactory: () => randomBytes(32).toString('base64url'), clock });
   gate.bindCapabilitySessions(sessions);
   return { gate, sessions, advance: (ms) => { now += ms; } };
 }

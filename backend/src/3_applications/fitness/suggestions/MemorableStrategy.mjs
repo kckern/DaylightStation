@@ -35,10 +35,9 @@ export class MemorableStrategy {
 
   async suggest(context, remainingSlots) {
     if (remainingSlots <= 0) return [];
-    const { fitnessConfig, sessionDatastore, householdId } = context;
-    const cfg = fitnessConfig?.suggestions || {};
-    const lookbackDays = cfg.memorable_lookback_days ?? 90;
-    const max = Math.min(cfg.memorable_max ?? 2, remainingSlots);
+    const { suggestionPolicy, sessionDatastore, householdId } = context;
+    const lookbackDays = suggestionPolicy.memorableLookbackDays;
+    const max = Math.min(suggestionPolicy.memorableMax, remainingSlots);
 
     const endDate = new Date().toISOString().split('T')[0];
     const startD = new Date();
@@ -58,7 +57,7 @@ export class MemorableStrategy {
     const ranked = this.#ranker.rank(sessions);
 
     // Take top N candidates, dedup by episode, then shuffle and pick
-    const poolSize = cfg.memorable_pool_size ?? 10;
+    const poolSize = suggestionPolicy.memorablePoolSize;
     const deduped = [];
     const seen = new Set();
     for (const session of ranked) {
@@ -75,31 +74,32 @@ export class MemorableStrategy {
       [deduped[i], deduped[j]] = [deduped[j], deduped[i]];
     }
 
-    const { contentAdapter } = context;
+    const { contentCatalog } = context;
     const results = [];
     for (const session of deduped) {
       if (results.length >= max) break;
       const cid = session.media.primary.contentId;
 
       const showId = session.media.primary.grandparentId;
-      const localShowId = showId?.replace(/^plex:/, '');
+      const showRef = showId ? contentCatalog.canonicalize(showId) : null;
 
       // Fetch episode metadata for description + show-level labels for governance
       let description = null;
       let showLabels = [];
-      if (contentAdapter) {
+      if (contentCatalog) {
         try {
-          const item = await contentAdapter.getItem(cid);
-          description = item?.metadata?.summary || null;
+          const item = await contentCatalog.describeItem(cid);
+          description = item?.description || null;
         } catch { /* proceed without description */ }
-        if (localShowId && contentAdapter.getContainerInfo) {
+        if (showRef) {
           try {
-            const info = await contentAdapter.getContainerInfo(showId);
+            const info = await contentCatalog.describeItem(showRef.contentId);
             showLabels = info?.labels || [];
           } catch { /* proceed without labels */ }
         }
       }
 
+      const contentRef = contentCatalog.canonicalize(cid);
       results.push({
         type: 'memorable',
         action: 'play',
@@ -108,8 +108,8 @@ export class MemorableStrategy {
         title: session.media.primary.title,
         showTitle: session.media.primary.showTitle,
         description,
-        thumbnail: `/api/v1/display/plex/${cid.replace(/^plex:/, '')}`,
-        poster: localShowId ? `/api/v1/content/plex/image/${localShowId}` : null,
+        thumbnail: displayImageRef(contentRef.source, contentRef.localId),
+        poster: showRef ? contentImageRef(showRef.source, showRef.localId) : null,
         durationMinutes: session.durationMs ? Math.round(session.durationMs / 60000) : null,
         orientation: 'landscape',
         labels: showLabels,
@@ -121,3 +121,4 @@ export class MemorableStrategy {
     return results;
   }
 }
+import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';

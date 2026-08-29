@@ -9,13 +9,13 @@
 /**
  * Create home-dashboard config handler
  * @param {Object} deps
- * @param {Object} deps.container - HomeAutomationContainer
+ * @param {Object} deps.operation - GetDashboardConfig use case
  * @param {Object} [deps.logger]
  * @returns {Function} Express handler
  */
-export function homeDashboardConfigHandler({ container, logger = console }) {
+export function homeDashboardConfigHandler({ operation }) {
   return async (_req, res) => {
-    const result = await container.getDashboardConfig().execute();
+    const result = await operation.execute();
     res.json(result);
   };
 }

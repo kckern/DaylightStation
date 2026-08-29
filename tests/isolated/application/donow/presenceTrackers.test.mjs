@@ -22,6 +22,16 @@ const fakeBus = () => {
       subscribers.get(topic).add(handler);
       return () => subscribers.get(topic)?.delete(handler);
     }),
+    observeMidiActivity: vi.fn((handler) => {
+      if (!subscribers.has('midi')) subscribers.set('midi', new Set());
+      subscribers.get('midi').add(handler);
+      return () => subscribers.get('midi')?.delete(handler);
+    }),
+    observePlaybackActivity: vi.fn((handler) => {
+      if (!subscribers.has('playback.log')) subscribers.set('playback.log', new Set());
+      subscribers.get('playback.log').add(handler);
+      return () => subscribers.get('playback.log')?.delete(handler);
+    }),
     emit(topic, payload) {
       for (const handler of subscribers.get(topic) || []) handler(payload);
     },
@@ -34,20 +44,20 @@ const fakeBus = () => {
 describe('MidiPresenceTracker', () => {
   it('subscribes to the "midi" topic on construction', () => {
     const bus = fakeBus();
-    new MidiPresenceTracker({ eventBus: bus, clock: fakeClock() });
-    expect(bus.subscribe).toHaveBeenCalledWith('midi', expect.any(Function));
+    new MidiPresenceTracker({ activitySource: bus, clock: fakeClock() });
+    expect(bus.observeMidiActivity).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('no activity yet -> idle (silence is idle, not unknown)', () => {
     const bus = fakeBus();
-    const tracker = new MidiPresenceTracker({ eventBus: bus, clock: fakeClock() });
+    const tracker = new MidiPresenceTracker({ activitySource: bus, clock: fakeClock() });
     expect(tracker.occupancy()).toEqual({ state: 'idle', occupantId: null });
   });
 
   it('session_start -> active immediately', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new MidiPresenceTracker({ eventBus: bus, clock });
+    const tracker = new MidiPresenceTracker({ activitySource: bus, clock });
     bus.emit('midi', { event: 'session_start' });
     expect(tracker.occupancy()).toEqual({ state: 'active', occupantId: null });
   });
@@ -55,7 +65,7 @@ describe('MidiPresenceTracker', () => {
   it('note_on refreshes lastSeen and keeps it active', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new MidiPresenceTracker({ eventBus: bus, clock });
+    const tracker = new MidiPresenceTracker({ activitySource: bus, clock });
     bus.emit('midi', { event: 'note_on' });
     clock.advance(4 * 60_000);
     expect(tracker.occupancy()).toEqual({ state: 'active', occupantId: null });
@@ -64,7 +74,7 @@ describe('MidiPresenceTracker', () => {
   it('silence beyond the 5 minute TTL -> idle', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new MidiPresenceTracker({ eventBus: bus, clock });
+    const tracker = new MidiPresenceTracker({ activitySource: bus, clock });
     bus.emit('midi', { event: 'note_on' });
     clock.advance(5 * 60_000 + 1);
     expect(tracker.occupancy()).toEqual({ state: 'idle', occupantId: null });
@@ -73,7 +83,7 @@ describe('MidiPresenceTracker', () => {
   it('BLE-flap case: session_start with a missed session_end self-heals to idle after the TTL', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new MidiPresenceTracker({ eventBus: bus, clock });
+    const tracker = new MidiPresenceTracker({ activitySource: bus, clock });
     bus.emit('midi', { event: 'session_start' });
     expect(tracker.occupancy().state).toBe('active');
     clock.advance(6 * 60_000); // no session_end ever arrives
@@ -83,7 +93,7 @@ describe('MidiPresenceTracker', () => {
   it('session_end also refreshes lastSeen (any midi activity counts)', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new MidiPresenceTracker({ eventBus: bus, clock });
+    const tracker = new MidiPresenceTracker({ activitySource: bus, clock });
     bus.emit('midi', { event: 'session_end' });
     expect(tracker.occupancy()).toEqual({ state: 'active', occupantId: null });
     clock.advance(4 * 60_000);
@@ -93,7 +103,7 @@ describe('MidiPresenceTracker', () => {
   it('respects a custom ttlMs', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new MidiPresenceTracker({ eventBus: bus, clock, ttlMs: 60_000 });
+    const tracker = new MidiPresenceTracker({ activitySource: bus, clock, ttlMs: 60_000 });
     bus.emit('midi', { event: 'note_on' });
     clock.advance(61_000);
     expect(tracker.occupancy().state).toBe('idle');
@@ -102,7 +112,7 @@ describe('MidiPresenceTracker', () => {
   it('stop() unsubscribes — further midi events no longer refresh presence', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new MidiPresenceTracker({ eventBus: bus, clock });
+    const tracker = new MidiPresenceTracker({ activitySource: bus, clock });
     tracker.stop();
     bus.emit('midi', { event: 'session_start' });
     expect(tracker.occupancy()).toEqual({ state: 'idle', occupantId: null });
@@ -176,20 +186,20 @@ describe('FitnessPresenceTracker', () => {
 describe('PlaybackPresenceTracker', () => {
   it('subscribes to the "playback.log" topic on construction', () => {
     const bus = fakeBus();
-    new PlaybackPresenceTracker({ eventBus: bus, clock: fakeClock() });
-    expect(bus.subscribe).toHaveBeenCalledWith('playback.log', expect.any(Function));
+    new PlaybackPresenceTracker({ activitySource: bus, clock: fakeClock() });
+    expect(bus.observePlaybackActivity).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('no playback.log event yet -> playingRecently() false', () => {
     const bus = fakeBus();
-    const tracker = new PlaybackPresenceTracker({ eventBus: bus, clock: fakeClock() });
+    const tracker = new PlaybackPresenceTracker({ activitySource: bus, clock: fakeClock() });
     expect(tracker.playingRecently()).toBe(false);
   });
 
   it('a playback.log event -> playingRecently() true within freshMs', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new PlaybackPresenceTracker({ eventBus: bus, clock });
+    const tracker = new PlaybackPresenceTracker({ activitySource: bus, clock });
     bus.emit('playback.log', { contentId: 'plex:1', percent: 42, timestamp: Date.now() });
     expect(tracker.playingRecently()).toBe(true);
   });
@@ -197,7 +207,7 @@ describe('PlaybackPresenceTracker', () => {
   it('silence beyond the 2 minute freshMs -> playingRecently() false', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new PlaybackPresenceTracker({ eventBus: bus, clock });
+    const tracker = new PlaybackPresenceTracker({ activitySource: bus, clock });
     bus.emit('playback.log', { contentId: 'plex:1' });
     clock.advance(2 * 60_000 + 1);
     expect(tracker.playingRecently()).toBe(false);
@@ -206,7 +216,7 @@ describe('PlaybackPresenceTracker', () => {
   it('respects a custom freshMs', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new PlaybackPresenceTracker({ eventBus: bus, clock, freshMs: 15_000 });
+    const tracker = new PlaybackPresenceTracker({ activitySource: bus, clock, freshMs: 15_000 });
     bus.emit('playback.log', { contentId: 'plex:1' });
     clock.advance(15_001);
     expect(tracker.playingRecently()).toBe(false);
@@ -219,7 +229,7 @@ describe('PlaybackPresenceTracker', () => {
     // carries no device/screen field (see task-7-report.md discovery). This
     // exercises the `match` plumbing itself, not a real composition config.
     const tracker = new PlaybackPresenceTracker({
-      eventBus: bus,
+      activitySource: bus,
       clock,
       match: (payload) => payload?.sourceHint === 'livingroom-tv',
     });
@@ -233,14 +243,14 @@ describe('PlaybackPresenceTracker', () => {
 
   it('does not expose occupancy() — the livingroom adapter (Task 8) combines this with TV power', () => {
     const bus = fakeBus();
-    const tracker = new PlaybackPresenceTracker({ eventBus: bus, clock: fakeClock() });
+    const tracker = new PlaybackPresenceTracker({ activitySource: bus, clock: fakeClock() });
     expect(tracker.occupancy).toBeUndefined();
   });
 
   it('stop() unsubscribes — further playback.log events no longer refresh presence', () => {
     const bus = fakeBus();
     const clock = fakeClock();
-    const tracker = new PlaybackPresenceTracker({ eventBus: bus, clock });
+    const tracker = new PlaybackPresenceTracker({ activitySource: bus, clock });
     tracker.stop();
     bus.emit('playback.log', { contentId: 'plex:1' });
     expect(tracker.playingRecently()).toBe(false);

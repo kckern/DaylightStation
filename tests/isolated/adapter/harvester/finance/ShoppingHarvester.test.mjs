@@ -67,7 +67,7 @@ describe('ShoppingHarvester', () => {
     const module = await import('#adapters/harvester/finance/ShoppingHarvester.mjs');
     ShoppingHarvester = module.ShoppingHarvester;
 
-    const portsModule = await import('#adapters/harvester/ports/IHarvester.mjs');
+    const portsModule = await import('#apps/harvester/ports/IHarvester.mjs');
     HarvesterCategory = portsModule.HarvesterCategory;
 
     mockGmail = {

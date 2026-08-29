@@ -3,7 +3,7 @@ import express from 'express';
 import { signToken } from '#system/auth/jwt.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
-export function createAuthRouter({ authService, jwtSecret, jwtConfig, configService, dataService, logger = console }) {
+export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublicContext, logger = console }) {
   const router = express.Router();
 
   function issueToken(user) {
@@ -92,30 +92,16 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, configServ
 
   // GET /auth/context — public household info for login screen
   router.get('/context', (req, res) => {
-    const householdId = req.householdId || configService.getDefaultHouseholdId();
-    const household = dataService.household.read('household');
-
     const needsSetup = authService.needsSetup();
-    const users = configService.getAllUserProfiles();
-
-    // Find the first sysadmin for autofill during claim flow
-    let setupAdmin = null;
-    if (needsSetup && users.size > 0) {
-      for (const [username, profile] of users) {
-        if ((profile.roles || []).includes('sysadmin')) {
-          setupAdmin = username;
-          break;
-        }
-      }
-    }
+    const context = authPublicContext.get({ householdId: req.householdId || null, needsSetup });
 
     res.json({
-      householdId,
-      householdName: household?.name || 'DaylightStation',
+      householdId: context.householdId,
+      householdName: context.householdName,
       authMethod: 'password',
       isLocal: req.isLocal || false,
       needsSetup,
-      setupAdmin
+      setupAdmin: context.setupAdmin
     });
   });
 

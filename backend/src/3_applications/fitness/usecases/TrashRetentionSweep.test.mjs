@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { TrashRetentionSweep, SESSION_TRASH_RETENTION_MS } from './TrashRetentionSweep.mjs';
+import { FilesystemSessionTrashStore } from '#adapters/fitness/FilesystemSessionTrashStore.mjs';
+import { ISessionTrashStore } from '../ports/ISessionTrashStore.mjs';
 
 const DAY = 24 * 60 * 60 * 1000;
 const silent = { info() {}, warn() {}, debug() {} };
@@ -22,12 +24,17 @@ function setup() {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'trash-'));
   const trashDir = path.join(media, 'apps', 'fitness', '_trash');
   fs.mkdirSync(trashDir, { recursive: true });
-  const sweep = new TrashRetentionSweep({ trashDir, fileIO: fs, logger: silent });
-  return { media, trashDir, sweep };
+  const trashStore = new FilesystemSessionTrashStore({ trashDir });
+  const sweep = new TrashRetentionSweep({
+    trashStore,
+    logger: silent,
+  });
+  return { media, trashDir, trashStore, sweep };
 }
 
 test('retention default is 7 days', () => {
   assert.equal(SESSION_TRASH_RETENTION_MS, 7 * DAY);
+  assert.ok(setup().trashStore instanceof ISessionTrashStore);
 });
 
 test('hard-deletes a trash entry older than 7 days', async () => {
@@ -74,7 +81,10 @@ test('only ever touches _trash — a sibling sessions tree is never reached', as
 
 test('missing trash dir is a clean no-op', async () => {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'trash-'));
-  const sweep = new TrashRetentionSweep({ trashDir: path.join(media, 'nope', '_trash'), fileIO: fs, logger: silent });
+  const sweep = new TrashRetentionSweep({
+    trashStore: new FilesystemSessionTrashStore({ trashDir: path.join(media, 'nope', '_trash') }),
+    logger: silent,
+  });
   const stats = await sweep.run({ now: Date.now() });
   assert.equal(stats.deleted, 0);
   assert.equal(stats.kept, 0);

@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PianoLessonCeremonyBridge } from '#apps/school/PianoLessonCeremonyBridge.mjs';
+import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
 import { validateLearningEvidence } from '#domains/school/progress/index.mjs';
 
 const COURSE = 'plex:675689';
@@ -48,7 +49,7 @@ function build({
   const evidence = [];
   const hook = { fire: async (o) => { fired.push(o); return hookResult; } };
   const bridge = new PianoLessonCeremonyBridge({
-    eventBus: bus,
+    realtime: new EventBusSchoolRealtimeAdapter({ eventBus: bus }),
     assignments: assignmentsWith(programs),
     launcher: { id: 'piano-course', status: async () => status },
     evidenceRepository: { appendEvidence: async (row) => { evidence.push(row); return { status: 'recorded', evidence: row }; } },
@@ -68,6 +69,27 @@ describe('PianoLessonCeremonyBridge', () => {
 
   it('subscribes to the piano completion topic', () => {
     expect(ctx.bus.subscribed).toContain('piano.lesson.completed');
+    expect(ctx.bus.subscribed).toContain('piano.school-challenge.completed');
+  });
+
+  it('re-derives and announces a configured PianoChallenge completion', async () => {
+    const c = build({ status: {
+      doneToday: true, challengeCompleted: true, progressLabel: 'Done today', score: 4,
+      servedWork: [{ unitId: 'plex:season:3', title: 'Unit 3 Lesson 7' }],
+    } });
+    await c.bus.emit('piano.school-challenge.completed', {
+      userId: 'learner4', descriptorId: 'unit-3-c-major', completedAt: '2026-08-25T18:00:00.000Z',
+    });
+    expect(c.bus.sent[0]).toMatchObject({
+      topic: 'school', payload: { event: 'piano-lesson-complete', learnerId: 'learner4', lesson: 'Unit 3 Lesson 7' },
+    });
+    expect(c.fired[0]).toMatchObject({ result: 'satisfied', learnerId: 'learner4', lesson: 'Unit 3 Lesson 7' });
+    expect(c.evidence[0]).toMatchObject({
+      evidenceId: 'piano-challenge:learner4:2026-08-25:unit-3-c-major',
+      activity: { kind: 'piano_challenge' },
+      source: { transport: 'piano-challenge' },
+    });
+    expect(validateLearningEvidence(c.evidence[0]).errors).toEqual([]);
   });
 
   it('announces on both limbs when an enrolled learner satisfies the day', async () => {
@@ -98,7 +120,7 @@ describe('PianoLessonCeremonyBridge', () => {
   it('reconciles historical Piano completions into idempotent School course/unit/lesson evidence', async () => {
     const rows = new Map();
     const bridge = new PianoLessonCeremonyBridge({
-      eventBus: fakeBus(),
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: fakeBus() }),
       assignments: {
         get: async () => null,
         list: async () => [{ learnerId: 'learner4', programs: ENROLLED }],
@@ -175,7 +197,7 @@ describe('PianoLessonCeremonyBridge', () => {
   it('still shows the Portal banner when the hook throws outright', async () => {
     const bus = fakeBus();
     const bridge = new PianoLessonCeremonyBridge({
-      eventBus: bus,
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: bus }),
       assignments: assignmentsWith(ENROLLED),
       launcher: { id: 'piano-course', status: async () => ({ doneToday: true, completedLessonsToday: [completion()] }) },
       hook: { fire: async () => { throw new Error('boom'); } },
@@ -190,7 +212,7 @@ describe('PianoLessonCeremonyBridge', () => {
   it('works with no Home Assistant wired at all', async () => {
     const bus = fakeBus();
     const bridge = new PianoLessonCeremonyBridge({
-      eventBus: bus,
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: bus }),
       assignments: assignmentsWith(ENROLLED),
       launcher: { id: 'piano-course', status: async () => ({ doneToday: true, completedLessonsToday: [completion()] }) },
       hook: null,
@@ -209,7 +231,7 @@ describe('PianoLessonCeremonyBridge', () => {
 
   it('stops cleanly, and stop() before start() is safe', () => {
     const bridge = new PianoLessonCeremonyBridge({
-      eventBus: fakeBus(),
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: fakeBus() }),
       assignments: assignmentsWith(ENROLLED),
       launcher: { id: 'piano-course', status: async () => ({}) },
     });

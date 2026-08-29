@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import { FeedPoolManager } from '#apps/feed/services/FeedPoolManager.mjs';
 
+const TEST_SCHEDULER = { withDeadline: (work) => work };
+
 describe('FeedPoolManager session snapshots', () => {
   test('restores independent seen state for a session', () => {
-    const manager = new FeedPoolManager({ logger: { info() {}, warn() {}, error() {} } });
+    const manager = new FeedPoolManager({ scheduler: TEST_SCHEDULER, logger: { info() {}, warn() {}, error() {} } });
     const snapshot = {
       pool: [{ id: 'one' }, { id: 'two' }],
       seenIds: ['one'],

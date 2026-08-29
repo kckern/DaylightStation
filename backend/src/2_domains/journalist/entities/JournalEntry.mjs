@@ -5,7 +5,6 @@
  * Represents a journal entry aggregated from conversation messages.
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import { EntrySource, isValidEntrySource } from '../value-objects/EntrySource.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
@@ -51,7 +50,8 @@ export class JournalEntry {
 
     if (!props.createdAt) throw new ValidationError('createdAt is required');
 
-    this.#uuid = props.uuid || uuidv4();
+    if (!props.uuid) throw new ValidationError('uuid is required');
+    this.#uuid = props.uuid;
     this.#chatId = props.chatId;
     this.#date = props.date;
     this.#period = period;
@@ -129,8 +129,15 @@ export class JournalEntry {
    */
   withAnalysis(analysis) {
     return new JournalEntry({
-      ...this.toJSON(),
+      uuid: this.#uuid,
+      chatId: this.#chatId,
+      date: this.#date,
+      period: this.#period,
+      text: this.#text,
+      source: this.#source,
+      transcription: this.#transcription,
       analysis,
+      createdAt: this.#createdAt,
     });
   }
 
@@ -141,8 +148,15 @@ export class JournalEntry {
    */
   withText(text) {
     return new JournalEntry({
-      ...this.toJSON(),
+      uuid: this.#uuid,
+      chatId: this.#chatId,
+      date: this.#date,
+      period: this.#period,
       text,
+      source: this.#source,
+      transcription: this.#transcription,
+      analysis: this.#analysis,
+      createdAt: this.#createdAt,
     });
   }
 
@@ -205,26 +219,6 @@ export class JournalEntry {
         createdAt: firstMsg.timestamp,
       });
     });
-  }
-
-  // ==================== Serialization ====================
-
-  /**
-   * Convert to plain object
-   * @returns {object}
-   */
-  toJSON() {
-    return {
-      uuid: this.#uuid,
-      chatId: this.#chatId,
-      date: this.#date,
-      period: this.#period,
-      text: this.#text,
-      source: this.#source,
-      transcription: this.#transcription,
-      analysis: this.#analysis ? { ...this.#analysis } : null,
-      createdAt: this.#createdAt,
-    };
   }
 
   /**

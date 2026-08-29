@@ -110,12 +110,17 @@ describe('scheduling integration', () => {
 
     // Create pure domain service
     schedulerService = new SchedulerService({
-      timezone: 'America/Los_Angeles'
+      timezone: 'America/Los_Angeles',
+      newExecutionId: () => 'fixed-execution-id',
+      scheduler: { withDeadline: (work) => work },
     });
 
     // Create orchestrator with mocked stores
     schedulerOrchestrator = new SchedulerOrchestrator({
       schedulerService,
+      timestampCodec: { format: value => value instanceof Date ? value.toISOString() : String(value) },
+      newExecutionId: () => 'fixed-execution-id',
+      scheduler: { withDeadline: (work) => work },
       jobStore: mockJobStore,
       stateStore: mockStateStore
     });
@@ -125,10 +130,11 @@ describe('scheduling integration', () => {
     app.use(express.json());
     app.use('/scheduling', createSchedulingRouter({
       schedulerOrchestrator,
-      schedulerService,
-      scheduler: mockScheduler,
+      readSchedulerStatus: () => mockScheduler.getStatus(),
       logger: mockLogger
     }));
+    // Production mounts the shared JSON error middleware after v1 routers.
+    app.use((err, req, res, next) => res.status(500).json({ error: err.message }));
   });
 
   beforeEach(() => {

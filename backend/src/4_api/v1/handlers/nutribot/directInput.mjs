@@ -9,36 +9,14 @@
 import { nowTs } from '#system/utils/index.mjs';
 
 /**
- * Resolve user identity for direct API calls using TelegramIdentityAdapter
- * @param {Object} options
- * @param {import('#adapters/messaging/TelegramIdentityAdapter.mjs').TelegramIdentityAdapter} options.identityAdapter
- * @param {Object} options.body - Request body
- * @param {Object} [options.query] - Request query params
- * @returns {{ userId: string, conversationId: string }}
- */
-function resolveUserContext({ identityAdapter, body, query = {}, defaultMember }) {
-  const user = body.user || query.user || defaultMember;
-  if (!user) throw new Error('Missing required parameter: user');
-
-  const identity = identityAdapter.resolve('nutribot', { username: user });
-
-  return {
-    userId: identity.username || user,
-    conversationId: identity.conversationIdString,
-  };
-}
-
-/**
  * Create direct UPC handler
- * @param {import('../../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
+ * @param {Object} nutribotApi
  * @param {Object} [options]
  * @param {Object} [options.logger]
  * @returns {Function} Express handler
  */
-export function directUPCHandler(container, options = {}) {
+export function directUPCHandler(nutribotApi, options = {}) {
   const logger = options.logger || console;
-  const identityAdapter = options.identityAdapter;
-  const defaultMember = options.defaultMember;
 
   return async (req, res) => {
     const traceId = req.traceId || 'direct-upc';
@@ -85,7 +63,7 @@ export function directUPCHandler(container, options = {}) {
       });
     }
 
-    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query, defaultMember });
+    const { userId, conversationId } = nutribotApi.userContext(req.body?.user || req.query?.user || null);
 
     logger.info?.('direct.upc.received', {
       traceId,
@@ -95,8 +73,7 @@ export function directUPCHandler(container, options = {}) {
     });
 
     // Call use case
-    const useCase = container.getLogFoodFromUPC();
-    const result = await useCase.execute({
+    const result = await nutribotApi.logUpc({
       userId,
       conversationId,
       upc: cleanUPC,
@@ -116,15 +93,13 @@ export function directUPCHandler(container, options = {}) {
 
 /**
  * Create direct image URL handler
- * @param {import('../../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
+ * @param {Object} nutribotApi
  * @param {Object} [options]
  * @param {Object} [options.logger]
  * @returns {Function} Express handler
  */
-export function directImageHandler(container, options = {}) {
+export function directImageHandler(nutribotApi, options = {}) {
   const logger = options.logger || console;
-  const identityAdapter = options.identityAdapter;
-  const defaultMember = options.defaultMember;
 
   return async (req, res) => {
     const traceId = req.traceId || 'direct-image';
@@ -162,7 +137,7 @@ export function directImageHandler(container, options = {}) {
       });
     }
 
-    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query, defaultMember });
+    const { userId, conversationId } = nutribotApi.userContext(req.body?.user || req.query?.user || null);
 
     logger.info?.('direct.image.received', {
       ...requestMetadata,
@@ -173,8 +148,7 @@ export function directImageHandler(container, options = {}) {
     });
 
     // Call use case
-    const useCase = container.getLogFoodFromImage();
-    const result = await useCase.execute({
+    const result = await nutribotApi.logImage({
       userId,
       conversationId,
       imageData: { url: imgUrl },
@@ -202,15 +176,13 @@ export function directImageHandler(container, options = {}) {
 
 /**
  * Create direct text handler
- * @param {import('../../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
+ * @param {Object} nutribotApi
  * @param {Object} [options]
  * @param {Object} [options.logger]
  * @returns {Function} Express handler
  */
-export function directTextHandler(container, options = {}) {
+export function directTextHandler(nutribotApi, options = {}) {
   const logger = options.logger || console;
-  const identityAdapter = options.identityAdapter;
-  const defaultMember = options.defaultMember;
 
   return async (req, res) => {
     const traceId = req.traceId || 'direct-text';
@@ -227,7 +199,7 @@ export function directTextHandler(container, options = {}) {
       });
     }
 
-    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query, defaultMember });
+    const { userId, conversationId } = nutribotApi.userContext(req.body?.user || req.query?.user || null);
 
     logger.info?.('direct.text.received', {
       traceId,
@@ -238,8 +210,7 @@ export function directTextHandler(container, options = {}) {
     });
 
     // Call use case
-    const useCase = container.getLogFoodFromText();
-    const result = await useCase.execute({
+    const result = await nutribotApi.logText({
       userId,
       conversationId,
       text,

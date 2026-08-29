@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AssignedLearningCatalogAccessPolicy } from './AssignedLearningCatalogAccessPolicy.mjs';
+import { AssignedLearningCatalogAccessPolicy } from '#apps/school/services/AssignedLearningCatalogAccessPolicy.mjs';
 
 const lessons = [
   lesson('main/math/fractions/u1/l1', 'fractions', 'u1'),

@@ -18,7 +18,7 @@ function createMockFileAdapter(videos = []) {
 // Mock progress memory
 function createMockProgress(watchedIds = []) {
   return {
-    get: vi.fn(async (key) => {
+    findProgress: vi.fn(async (key) => {
       if (watchedIds.includes(key)) return { percent: 95 };
       return { percent: 0 };
     }),

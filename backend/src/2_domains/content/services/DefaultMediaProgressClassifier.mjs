@@ -1,11 +1,11 @@
 // backend/src/1_domains/content/services/DefaultMediaProgressClassifier.mjs
 
-import { IMediaProgressClassifier } from './IMediaProgressClassifier.mjs';
+import { MediaProgressClassificationStrategy } from './MediaProgressClassificationStrategy.mjs';
 
 /**
  * Default implementation of media progress classification
  */
-export class DefaultMediaProgressClassifier extends IMediaProgressClassifier {
+export class DefaultMediaProgressClassifier extends MediaProgressClassificationStrategy {
   constructor(config = {}) {
     super();
     this.config = {

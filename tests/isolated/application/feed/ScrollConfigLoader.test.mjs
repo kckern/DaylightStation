@@ -1,6 +1,7 @@
 // tests/isolated/application/feed/ScrollConfigLoader.test.mjs
 import { vi } from 'vitest';
 import { ScrollConfigLoader } from '#apps/feed/services/ScrollConfigLoader.mjs';
+import { DataServiceFeedConfigRepository } from '#adapters/feed/DataServiceFeedConfigRepository.mjs';
 
 describe('ScrollConfigLoader', () => {
   let loader;
@@ -12,7 +13,7 @@ describe('ScrollConfigLoader', () => {
         read: vi.fn().mockReturnValue(null),
       },
     };
-    loader = new ScrollConfigLoader({ dataService: mockDataService });
+    loader = new ScrollConfigLoader({ configRepository: new DataServiceFeedConfigRepository({ dataService: mockDataService }) });
   });
 
   describe('load()', () => {

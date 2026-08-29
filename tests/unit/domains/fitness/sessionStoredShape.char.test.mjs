@@ -26,6 +26,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import yaml from 'js-yaml';
 import { SessionService } from '#apps/fitness/services/SessionService.mjs';
+import { dehydrateSessionRecord } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
 
 const HH = 'default';
 
@@ -35,7 +36,7 @@ function makeStore() {
   return {
     saved,
     async save(session, householdId) {
-      const data = typeof session.toJSON === 'function' ? session.toJSON() : session;
+      const data = dehydrateSessionRecord(session);
       saved.set(`${householdId}:${data.sessionId}`, data);
     },
     async findById(id, householdId) {

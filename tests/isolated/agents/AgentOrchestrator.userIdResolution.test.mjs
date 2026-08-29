@@ -9,9 +9,12 @@ class FakeAgent extends BaseAgent {
   getSystemPrompt() { return 'SYS'; }
 }
 
-function makeOrch(configService = null) {
+function makeOrch(defaultUserId = null) {
   const agentRuntime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
-  const orch = new AgentOrchestrator({ agentRuntime, configService });
+  const resolveDefaultUserId = defaultUserId
+    ? vi.fn(() => defaultUserId)
+    : vi.fn(() => null);
+  const orch = new AgentOrchestrator({ agentRuntime, resolveDefaultUserId, createTurnId: () => 'test-turn' });
   orch.register(FakeAgent, {
     agentRuntime,
     workingMemory: { load: vi.fn(async () => null), save: vi.fn() },
@@ -21,28 +24,24 @@ function makeOrch(configService = null) {
 
 describe('AgentOrchestrator userId resolution', () => {
   it('resolves userId="default" → getHeadOfHousehold()', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
-    const { orch, agentRuntime } = makeOrch(cfg);
+    const { orch, agentRuntime } = makeOrch('user_1');
     await orch.run('fake', 'hi', { userId: 'default' });
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
     expect(call.context.userId).toBe('user_1');
   });
 
   it('resolves missing userId → getHeadOfHousehold()', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
-    const { orch, agentRuntime } = makeOrch(cfg);
+    const { orch, agentRuntime } = makeOrch('user_1');
     await orch.run('fake', 'hi', {}); // no userId
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
     expect(call.context.userId).toBe('user_1');
   });
 
   it('passes through real userId untouched', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
-    const { orch, agentRuntime } = makeOrch(cfg);
+    const { orch, agentRuntime } = makeOrch('user_1');
     await orch.run('fake', 'hi', { userId: 'user_5' });
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
     expect(call.context.userId).toBe('user_5');
-    expect(cfg.getHeadOfHousehold).not.toHaveBeenCalled();
   });
 
   it('falls through gracefully when configService missing', async () => {
@@ -54,20 +53,19 @@ describe('AgentOrchestrator userId resolution', () => {
   });
 
   it('falls through gracefully when getHeadOfHousehold returns null', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => null) };
-    const { orch, agentRuntime } = makeOrch(cfg);
+    const { orch, agentRuntime } = makeOrch(null);
     await orch.run('fake', 'hi', { userId: 'default' });
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
     expect(call.context.userId).toBe('default');
   });
 
   it('logs the resolved userId in orchestrator.run', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const logEvents = [];
     const agentRuntime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
     const orch = new AgentOrchestrator({
       agentRuntime,
-      configService: cfg,
+      createTurnId: () => 'test-turn',
+      resolveDefaultUserId: () => 'user_1',
       logger: { info: (event, data) => logEvents.push({ event, data }) },
     });
     orch.register(FakeAgent, {

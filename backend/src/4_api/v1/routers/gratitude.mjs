@@ -21,19 +21,31 @@
  */
 
 import express from 'express';
-import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { nowTs } from '#system/utils/index.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+
+function serializeGratitudeItem(item) {
+  return { id: item.id, text: item.text };
+}
+
+function serializeSelection(selection) {
+  return {
+    id: selection.id,
+    userId: selection.userId,
+    item: serializeGratitudeItem(selection.item),
+    datetime: selection.datetime,
+    printed: selection.printed
+  };
+}
 
 /**
  * Create gratitude API router
  *
  * @param {Object} config
- * @param {import('#domains/gratitude/services/GratitudeService.mjs').GratitudeService} config.gratitudeService
- * @param {Object} config.configService - ConfigService for household data
+ * @param {import('#apps/gratitude/services/GratitudeService.mjs').GratitudeService} config.gratitudeService
  * @param {import('#apps/gratitude/services/GratitudeHouseholdService.mjs').GratitudeHouseholdService} config.gratitudeHouseholdService - Household helpers
- * @param {Function} config.broadcastToWebsockets - WebSocket broadcast function
- * @param {Object} config.printerRegistry - ThermalPrinterRegistry for resolving per-location printer adapters
+ * @param {Object} config.gratitudeEvents
+ * @param {Object} config.cardPrintService - Semantic gratitude-card print operation
  * @param {Function} [config.createGratitudeCardCanvas] - Function to create gratitude card canvas
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
@@ -41,10 +53,9 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 export function createGratitudeRouter(config) {
   const {
     gratitudeService,
-    configService,
     gratitudeHouseholdService,
-    broadcastToWebsockets,
-    printerRegistry,
+    gratitudeEvents,
+    cardPrintService,
     createGratitudeCardCanvas,
     logger = console
   } = config;
@@ -55,7 +66,7 @@ export function createGratitudeRouter(config) {
    * Get household ID from request (HTTP-specific, stays in router)
    */
   const getHouseholdId = (req) =>
-    req.query.household || configService.getDefaultHouseholdId();
+    req.query.household || gratitudeHouseholdService.getDefaultHouseholdId();
 
   // ===========================================================================
   // Bootstrap
@@ -104,8 +115,8 @@ export function createGratitudeRouter(config) {
 
     res.json({
       options: {
-        gratitude: options.gratitude.map(i => i.toJSON()),
-        hopes: options.hopes.map(i => i.toJSON())
+        gratitude: options.gratitude.map(serializeGratitudeItem),
+        hopes: options.hopes.map(serializeGratitudeItem)
       },
       _household: householdId
     });
@@ -124,7 +135,7 @@ export function createGratitudeRouter(config) {
     const items = await gratitudeService.getOptions(householdId, category);
 
     res.json({
-      items: items.map(i => i.toJSON()),
+      items: items.map(serializeGratitudeItem),
       _household: householdId
     });
   }));
@@ -147,7 +158,7 @@ export function createGratitudeRouter(config) {
     const item = await gratitudeService.addOption(householdId, category, text.trim());
 
     res.status(201).json({
-      item: item.toJSON(),
+      item: serializeGratitudeItem(item),
       _household: householdId
     });
   }));
@@ -169,7 +180,7 @@ export function createGratitudeRouter(config) {
     const selections = await gratitudeService.getSelections(householdId, category);
 
     res.json({
-      items: selections.map(s => s.toJSON()),
+      items: selections.map(serializeSelection),
       _household: householdId
     });
   }));
@@ -200,7 +211,7 @@ export function createGratitudeRouter(config) {
       );
 
       res.status(201).json({
-        selection: selection.toJSON(),
+        selection: serializeSelection(selection),
         _household: householdId
       });
     } catch (error) {
@@ -229,7 +240,7 @@ export function createGratitudeRouter(config) {
     }
 
     res.json({
-      removed: removed.toJSON(),
+      removed: serializeSelection(removed),
       _household: householdId
     });
   }));
@@ -251,7 +262,7 @@ export function createGratitudeRouter(config) {
     const items = await gratitudeService.getDiscarded(householdId, category);
 
     res.json({
-      items: items.map(i => i.toJSON()),
+      items: items.map(serializeGratitudeItem),
       _household: householdId
     });
   }));
@@ -274,7 +285,7 @@ export function createGratitudeRouter(config) {
     const discardedItem = await gratitudeService.discardItem(householdId, category, item);
 
     res.status(201).json({
-      item: discardedItem.toJSON(),
+      item: serializeGratitudeItem(discardedItem),
       _household: householdId
     });
   }));
@@ -347,20 +358,7 @@ export function createGratitudeRouter(config) {
       return res.status(400).json({ error: 'Missing required parameter: text' });
     }
 
-    const itemData = {
-      id: Date.now(),
-      text: text.trim()
-    };
-
-    const payload = {
-      topic: 'gratitude',
-      item: itemData,
-      timestamp: nowTs(),
-      type: 'gratitude_item',
-      isCustom: true
-    };
-
-    broadcastToWebsockets(payload);
+    const { item: itemData, payload } = gratitudeEvents.customItem(text);
 
     res.json({
       status: 'success',
@@ -465,11 +463,10 @@ export function createGratitudeRouter(config) {
       });
     }
 
-    let printerAdapter;
-    try {
-      printerAdapter = printerRegistry.resolve(req.params.location);
-    } catch (err) {
-      return res.status(404).json({ error: err.message, success: false });
+    if (!cardPrintService?.prepare) throw new TypeError('gratitude router requires cardPrintService');
+    const printOperation = cardPrintService.prepare(req.params.location);
+    if (printOperation.kind === 'printer_not_found') {
+      return res.status(404).json({ error: printOperation.message, success: false });
     }
 
     const householdId = getHouseholdId(req);
@@ -478,26 +475,9 @@ export function createGratitudeRouter(config) {
     // Generate canvas (function fetches selections internally and returns selectedIds)
     const { canvas, width, height, selectedIds } = await createGratitudeCardCanvas(upsidedown);
 
-    // Save to temp file
     const buffer = canvas.toBuffer('image/png');
-    const tempPath = `/tmp/gratitude_card_${Date.now()}.png`;
-    writeBinary(tempPath, buffer);
-
-    // Create and execute print job
-    const printJob = printerAdapter.createImagePrint(tempPath, {
-      width,
-      height,
-      align: 'left',
-      threshold: 128
-    });
-
-    // `verified` is the bar: the gratitude rows below are marked printed on
-    // this, and a row marked printed is never offered again.
-    const outcome = await printerAdapter.print(printJob);
-    const success = outcome === true || outcome?.verified === true;
-
-    // Clean up temp file
-    deleteFile(tempPath);
+    const outcome = await printOperation.print({ buffer, width, height });
+    const success = outcome.success;
 
     // Mark as printed only if print succeeded
     const printed = { gratitude: [], hopes: [] };

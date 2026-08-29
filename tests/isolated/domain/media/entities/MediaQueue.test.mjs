@@ -4,9 +4,14 @@ import { QueueFullError } from '#domains/media/errors.mjs';
 
 describe('MediaQueue', () => {
   let queue;
+  let idSequence;
 
   beforeEach(() => {
-    queue = MediaQueue.empty();
+    idSequence = 0;
+    queue = MediaQueue.empty({
+      newQueueId: () => (idSequence++).toString(16).padStart(8, '0'),
+      random: () => 0.5,
+    });
   });
 
   // ---------- 1. Construction ----------
@@ -38,32 +43,7 @@ describe('MediaQueue', () => {
     });
   });
 
-  // ---------- 2. Serialization ----------
-  describe('serialization', () => {
-    test('toJSON roundtrips through fromJSON', () => {
-      queue.addItems([{ mediaKey: 'plex:1' }, { mediaKey: 'plex:2' }]);
-      queue.position = 1;
-      queue.repeat = 'all';
-      queue.volume = 0.7;
-
-      const json = queue.toJSON();
-      const restored = MediaQueue.fromJSON(json);
-
-      expect(restored.position).toBe(1);
-      expect(restored.repeat).toBe('all');
-      expect(restored.volume).toBe(0.7);
-      expect(restored.items).toHaveLength(2);
-      expect(restored.items[0].queueId).toBe(queue.items[0].queueId);
-      expect(restored.items[1].mediaKey).toBe('plex:2');
-    });
-
-    test('toJSON produces plain object (no class instances)', () => {
-      const json = queue.toJSON();
-      expect(json.constructor).toBe(Object);
-    });
-  });
-
-  // ---------- 3. Accessors ----------
+  // ---------- 2. Accessors ----------
   describe('accessors', () => {
     test('currentItem is null when queue is empty', () => {
       expect(queue.currentItem).toBeNull();

@@ -14,12 +14,9 @@ export class ShutdownState {
     this.source = source;
     Object.freeze(this.targets); Object.freeze(this);
   }
-  isActive(now = Date.now()) { return now < Date.parse(this.lockedUntil); }
-  includes(target) { return this.targets.includes(target); }
-  toData() { return { schema_version: 1, locked_at: this.lockedAt, locked_until: this.lockedUntil, targets: this.targets, source: this.source }; }
-  static create({ durationSeconds, targets, source, now = Date.now() }) {
-    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) throw new Error('ShutdownState: durationSeconds must be positive');
-    return new ShutdownState({ locked_at: new Date(now).toISOString(), locked_until: new Date(now + durationSeconds * 1000).toISOString(), targets, source });
+  isActive(now) {
+    if (!Number.isFinite(now)) throw new Error('ShutdownState: now is required');
+    return now < Date.parse(this.lockedUntil);
   }
-  static fromData(data) { return new ShutdownState(data); }
+  includes(target) { return this.targets.includes(target); }
 }

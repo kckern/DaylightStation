@@ -74,103 +74,50 @@ function callDouble(fn) {
   }
 }
 
+async function callDoubleAsync(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    const mapped = STATUS_BY_CODE[err?.code];
+    if (mapped && err.status === undefined) err.status = mapped;
+    throw err;
+  }
+}
+
 /**
- * @param {Object} deps - the doubles; each is optional and each gates its own routes
- * @param {Object} [deps.laserPrinter] - VirtualLaserPrinterAdapter
- * @param {Object} [deps.thermalPrinter] - VirtualThermalPrinterAdapter
- * @param {Object} [deps.scanner] - VirtualScannerAdapter
- * @param {Object} [deps.playback] - VirtualPlaybackAdapter
- * @param {Object} [deps.omrReader] - VirtualOmrReader
- * @param {(formId: string) => (Object|Promise<Object>|null)} [deps.getFormMap] -
- *   resolves the stored `{ formVersion, marks }` map the PDF renderer emitted
- *   for a form. Without it the OMR routes have nothing to project, so they are
- *   not registered.
+ * @param {Object} deps
+ * @param {Object} [deps.consoleOperations] - Semantic virtual-device console
  * @param {Object} [deps.logger=console]
  * @returns {import('express').Router} empty when nothing is wired
  */
 export function createSchoolVirtualDevicesRouter({
-  laserPrinter = null,
-  thermalPrinter = null,
-  scanner = null,
-  playback = null,
-  omrReader = null,
-  getFormMap = null,
+  consoleOperations = null,
   logger = console,
 } = {}) {
   const router = express.Router();
 
-  const wired = { laserPrinter, thermalPrinter, scanner, playback, omrReader };
-  const present = Object.entries(wired).filter(([, v]) => v).map(([k]) => k);
-  if (present.length === 0) {
+  if (!consoleOperations?.available) {
     // Nothing to drive: register no routes. Every path under the mount 404s,
     // which is the only correct answer for a console that does not exist.
     logger.warn?.('school.virtual-devices.not-wired', {});
     return router;
   }
-  logger.info?.('school.virtual-devices.mounted', { devices: present });
+  logger.info?.('school.virtual-devices.mounted', {});
 
   // ---------------------------------------------------------------------------
   // Status — what exists right now, so the console can render fault toggles and
   // capture counts without probing each route.
   // ---------------------------------------------------------------------------
   router.get('/status', asyncHandler(async (_req, res) => {
-    res.json({
-      devices: {
-        laser: laserPrinter
-          ? { present: true, fault: laserPrinter.getFault(), jobs: laserPrinter.listJobs().length }
-          : { present: false },
-        thermal: thermalPrinter
-          ? { present: true, fault: thermalPrinter.getFault(), receipts: thermalPrinter.listReceipts().length }
-          : { present: false },
-        scanner: scanner
-          ? { present: true, scans: scanner.listScans().length, lastScan: scanner.lastScan() }
-          : { present: false },
-        playback: playback
-          ? { present: true, dispatches: playback.listDispatches().length }
-          : { present: false },
-        omr: omrReader
-          ? { present: true, sheets: omrReader.listSheets().length, forms: Boolean(getFormMap) }
-          : { present: false },
-      },
-    });
+    res.json(consoleOperations.status());
   }));
 
   // ---------------------------------------------------------------------------
   // Captures — everything the two printers "produced", newest first.
   // ---------------------------------------------------------------------------
-  if (laserPrinter || thermalPrinter) {
+  if (consoleOperations.capturesAvailable) {
     router.get('/captures', asyncHandler(async (_req, res) => {
-      const laserJobs = (laserPrinter?.listJobs() || []).map((job) => ({
-        kind: 'laser',
-        id: job.jobId,
-        at: job.at,
-        title: job.jobName,
-        requestedBy: job.requestedBy,
-        copies: job.copies,
-        pageCount: job.pageCount,
-        bytes: job.bytes,
-        contentType: 'application/pdf',
-      }));
-      const receipts = (thermalPrinter?.listReceipts() || []).map((receipt) => ({
-        kind: 'thermal',
-        id: receipt.receiptId,
-        at: receipt.at,
-        // A receipt has no job name; its first printed line is its header, which
-        // is what a human recognises it by in the capture list.
-        title: (receipt.transcript ?? '').split('\n').find((l) => l.trim()) || null,
-        itemCount: receipt.itemCount,
-        imageCount: receipt.images?.length ?? 0,
-        bytes: Buffer.byteLength(receipt.transcript ?? '', 'utf8'),
-        transcript: receipt.transcript ?? '',
-        contentType: 'application/json',
-      }));
-      // Newest first. `at` is an ISO instant from the adapter clock; ids are
-      // zero-padded and monotonic per device, so they break ties deterministically
-      // when two captures land inside the same millisecond.
-      const captures = [...laserJobs, ...receipts].sort(
-        (a, b) => (b.at || '').localeCompare(a.at || '') || b.id.localeCompare(a.id),
-      );
-      res.json({ captures });
+      res.json({ captures: consoleOperations.listCaptures() });
     }));
 
     // Raw bytes, never base64-in-JSON: a PDF is served as a PDF so the console
@@ -181,19 +128,18 @@ export function createSchoolVirtualDevicesRouter({
         throw httpError(400, `unknown capture kind ${kind} (expected ${CAPTURE_KINDS.join('|')})`, 'UNKNOWN_CAPTURE_KIND');
       }
 
-      if (kind === 'laser') {
-        if (!laserPrinter) throw httpError(404, 'virtual laser printer is not wired', 'DEVICE_NOT_WIRED');
-        const job = await laserPrinter.readJob(id);
-        if (!job) throw httpError(404, `unknown laser job ${id}`, 'UNKNOWN_CAPTURE');
+      const capture = await consoleOperations.capture(kind, id);
+      if (capture.kind === 'device_not_wired') throw httpError(404, `virtual ${capture.device} printer is not wired`, 'DEVICE_NOT_WIRED');
+      if (capture.kind === 'not_found') throw httpError(404, `unknown ${capture.capture} ${id}`, 'UNKNOWN_CAPTURE');
+      if (capture.kind === 'laser') {
+        const { job } = capture;
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Length', String(job.pdf.length));
         res.setHeader('Content-Disposition', `inline; filename="${job.jobId}.pdf"`);
         return res.end(job.pdf);
       }
 
-      if (!thermalPrinter) throw httpError(404, 'virtual thermal printer is not wired', 'DEVICE_NOT_WIRED');
-      const receipt = thermalPrinter.readReceipt(id);
-      if (!receipt) throw httpError(404, `unknown receipt ${id}`, 'UNKNOWN_CAPTURE');
+      const { receipt } = capture;
       // The thermal double captures a JSON item list plus a decoded text
       // transcript — it renders no PNG — so the capture is served as JSON, with
       // ?format=text for the paper's-eye view.
@@ -208,10 +154,10 @@ export function createSchoolVirtualDevicesRouter({
   // ---------------------------------------------------------------------------
   // Scanner
   // ---------------------------------------------------------------------------
-  if (scanner) {
+  if (consoleOperations.scannerAvailable) {
     router.post('/scan', asyncHandler(async (req, res) => {
       const { code, device, route } = req.body || {};
-      const payload = callDouble(() => scanner.scan(code, { device, route }));
+      const payload = callDouble(() => consoleOperations.scan(code, { device, route }));
       // The double drops an empty code rather than emitting a scan; a request
       // that produced no scan is a bad request, not a silent success.
       if (!payload) throw httpError(400, 'scan requires a non-empty code', 'INVALID_SCAN');
@@ -219,51 +165,44 @@ export function createSchoolVirtualDevicesRouter({
     }));
 
     router.get('/scan', asyncHandler(async (_req, res) => {
-      res.json({ scans: scanner.listScans(), cards: scanner.listCards() });
+      res.json(consoleOperations.scans());
     }));
   }
 
   // ---------------------------------------------------------------------------
   // Playback
   // ---------------------------------------------------------------------------
-  if (playback) {
+  if (consoleOperations.playbackAvailable) {
     router.get('/playback', asyncHandler(async (_req, res) => {
-      res.json({ dispatches: playback.listDispatches() });
+      res.json({ dispatches: consoleOperations.dispatches() });
     }));
 
     router.post('/playback/:dispatchId/complete', asyncHandler(async (req, res) => {
-      res.json(callDouble(() => playback.playToEnd(req.params.dispatchId)));
+      res.json(callDouble(() => consoleOperations.complete(req.params.dispatchId)));
     }));
 
     router.post('/playback/:dispatchId/interrupt', asyncHandler(async (req, res) => {
-      res.json(callDouble(() => playback.interrupt(req.params.dispatchId)));
+      res.json(callDouble(() => consoleOperations.interrupt(req.params.dispatchId)));
     }));
 
     router.post('/playback/:dispatchId/advance', asyncHandler(async (req, res) => {
       const { seconds } = req.body || {};
-      res.json(callDouble(() => playback.advance(req.params.dispatchId, seconds)));
+      res.json(callDouble(() => consoleOperations.advance(req.params.dispatchId, seconds)));
     }));
   }
 
   // ---------------------------------------------------------------------------
   // OMR — a bubble sheet filled in by hand instead of by pencil.
   // ---------------------------------------------------------------------------
-  if (omrReader && getFormMap) {
-    const resolveFormMap = async (formId) => {
-      if (typeof formId !== 'string' || !formId.trim()) {
-        throw httpError(400, 'formId is required', 'INVALID_FORM_ID');
-      }
-      const formMap = await getFormMap(formId);
-      if (!formMap) throw httpError(404, `unknown form ${formId}`, 'UNKNOWN_FORM');
-      return formMap;
-    };
-
+  if (consoleOperations.omrAvailable) {
     router.get('/omr/forms/:formId/layout', asyncHandler(async (req, res) => {
-      const formMap = await resolveFormMap(req.params.formId);
+      const result = await consoleOperations.formLayout(req.params.formId);
+      if (result.kind === 'invalid') throw httpError(400, 'formId is required', 'INVALID_FORM_ID');
+      if (result.kind === 'not_found') throw httpError(404, `unknown form ${req.params.formId}`, 'UNKNOWN_FORM');
       res.json({
         formId: req.params.formId,
-        formVersion: formMap.formVersion,
-        layout: callDouble(() => omrReader.formLayout(formMap)),
+        formVersion: result.formVersion,
+        layout: result.layout,
       });
     }));
 
@@ -275,30 +214,30 @@ export function createSchoolVirtualDevicesRouter({
       if (!Array.isArray(ambiguous) || !Array.isArray(blank)) {
         throw httpError(400, 'ambiguous and blank must be arrays of itemIds', 'INVALID_OMR_ANSWERS');
       }
-      const formMap = await resolveFormMap(formId);
-      const sheet = callDouble(() => omrReader.scanSheet({ formMap, chosen: answers, ambiguous, blank }));
-      res.json({ formId, formVersion: formMap.formVersion, sheet });
+      const result = await callDoubleAsync(() => consoleOperations.submitOmr({ formId, answers, ambiguous, blank }));
+      if (result.kind === 'invalid') throw httpError(400, 'formId is required', 'INVALID_FORM_ID');
+      if (result.kind === 'not_found') throw httpError(404, `unknown form ${formId}`, 'UNKNOWN_FORM');
+      res.json({ formId, formVersion: result.formVersion, sheet: result.sheet });
     }));
 
     router.get('/omr/sheets', asyncHandler(async (_req, res) => {
-      res.json({ sheets: omrReader.listSheets() });
+      res.json({ sheets: consoleOperations.sheets() });
     }));
   }
 
   // ---------------------------------------------------------------------------
   // Fault injection — the whole reason this surface is gated.
   // ---------------------------------------------------------------------------
-  if (laserPrinter || thermalPrinter) {
+  if (consoleOperations.faultsAvailable) {
     router.post('/fault', asyncHandler(async (req, res) => {
       const { device, fault = null } = req.body || {};
       if (!FAULT_DEVICES.includes(device)) {
         throw httpError(400, `unknown device ${device} (expected ${FAULT_DEVICES.join('|')})`, 'UNKNOWN_DEVICE');
       }
-      const target = device === 'laser' ? laserPrinter : thermalPrinter;
-      if (!target) throw httpError(404, `virtual ${device} printer is not wired`, 'DEVICE_NOT_WIRED');
-      callDouble(() => target.setFault(fault));
+      const result = callDouble(() => consoleOperations.setFault(device, fault));
+      if (result.kind === 'not_wired') throw httpError(404, `virtual ${device} printer is not wired`, 'DEVICE_NOT_WIRED');
       logger.info?.('school.virtual-devices.fault', { device, fault });
-      res.json({ device, fault: target.getFault() });
+      res.json({ device, fault: result.fault });
     }));
   }
 

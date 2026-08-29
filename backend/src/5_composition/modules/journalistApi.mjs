@@ -1,11 +1,14 @@
 // backend/src/5_composition/modules/journalistApi.mjs
 // Composition wiring for Journalist API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
-import { JournalistInputRouter } from '#adapters/journalist/JournalistInputRouter.mjs';
+import { JournalistInputRouter } from '#apps/journalist/services/JournalistInputRouter.mjs';
 import { TelegramWebhookParser } from '#adapters/telegram/TelegramWebhookParser.mjs';
 import { createBotWebhookHandler } from '#adapters/telegram/createBotWebhookHandler.mjs';
 import { createJournalistRouter } from '#api/v1/routers/journalist.mjs';
 import { createJournalistServices } from '../bootstrap.mjs';
+import { JournalistApiService } from '#apps/journalist/JournalistApiService.mjs';
+import { DefaultPrincipalResolver } from '#apps/common/context/DefaultPrincipalResolver.mjs';
+import { InMemoryRequestDeduplicationStore } from '#adapters/http/InMemoryRequestDeduplicationStore.mjs';
 
 /**
  * Create journalist API router
@@ -27,7 +30,8 @@ export function createJournalistApiRouter(config) {
     botId,
     secretToken,
     gateway,
-    logger = console
+    logger = console,
+    idempotencyStore = new InMemoryRequestDeduplicationStore({ logger })
   } = config;
 
   // Create webhook parser and input router
@@ -46,13 +50,24 @@ export function createJournalistApiRouter(config) {
       })
     : null;
 
-  return createJournalistRouter(journalistServices.journalistContainer, {
+  const journalistApi = new JournalistApiService({
+    exportJournal: journalistServices.journalistContainer.getExportJournalMarkdown?.() || null,
+    initiatePrompt: journalistServices.journalistContainer.getInitiateJournalPrompt(),
+    generateMorningDebrief: journalistServices.journalistContainer.getGenerateMorningDebrief(),
+    sendMorningDebrief: journalistServices.journalistContainer.getSendMorningDebrief(),
+    principalResolver: new DefaultPrincipalResolver({
+      headOfHousehold: () => configService?.getHeadOfHousehold?.(),
+      fallback: 'user_1',
+    }),
+    resolveConversationId: (username) => telegramIdentityAdapter.resolve('journalist', { username }).conversationIdString,
+    logger,
+  });
+  return createJournalistRouter(journalistApi, {
     webhookHandler,
-    telegramIdentityAdapter,
     botId,
     secretToken,
     gateway,
-    configService,
+    idempotencyStore,
     logger
   });
 }

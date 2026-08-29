@@ -27,7 +27,7 @@ describe.skip('UserDataService assembly', () => {
     resetConfigService(); // Ensure clean state
     configService = initConfigService(testDataPath);
 
-    const userDataMod = await import('#backend/src/0_system/config/UserDataService.mjs');
+    const userDataMod = await import('#adapters/persistence/files/UserDataService.mjs');
     userDataService = userDataMod.userDataService;
   });
 

@@ -21,13 +21,81 @@
  */
 
 import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'yaml';
 
 import { ICostRepository } from '#apps/cost/ports/ICostRepository.mjs';
 import { CostEntry } from '#domains/cost/entities/CostEntry.mjs';
 import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';
+import { Money } from '#domains/cost/value-objects/Money.mjs';
+import { Attribution } from '#domains/cost/value-objects/Attribution.mjs';
+import { Usage } from '#domains/cost/value-objects/Usage.mjs';
+import { SpreadSource } from '#domains/cost/value-objects/SpreadSource.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { ensureDir, readTextFromPath, writeFile } from '#system/utils/FileIO.mjs';
+
+const reconstituteMoney = data => new Money(data.amount, data.currency || 'USD');
+const reconstituteCategory = data => typeof data === 'string' ? CostCategory.fromString(data) : new CostCategory(data);
+const reconstituteAttribution = data => new Attribution({ householdId: data.householdId, userId: data.userId ?? null, feature: data.feature ?? null, resource: data.resource ?? null, tags: data.tags || {} });
+const reconstituteUsage = data => new Usage(data.quantity, data.unit);
+function reconstituteSpreadSource(data) {
+  return new SpreadSource({
+    name: data.name,
+    originalAmount: typeof data.originalAmount === 'number' ? data.originalAmount : reconstituteMoney(data.originalAmount),
+    spreadMonths: data.spreadMonths,
+    startDate: new Date(data.startDate)
+  });
+}
+function reconstituteCostEntry(data) {
+  return new CostEntry({
+    id: data.id,
+    occurredAt: new Date(data.occurredAt),
+    amount: reconstituteMoney(data.amount),
+    category: reconstituteCategory(data.category),
+    entryType: data.entryType,
+    attribution: reconstituteAttribution(data.attribution),
+    usage: data.usage ? reconstituteUsage(data.usage) : null,
+    description: data.description ?? null,
+    metadata: data.metadata || {},
+    spreadSource: data.spreadSource ? reconstituteSpreadSource(data.spreadSource) : null,
+    reconcilesUsage: data.reconcilesUsage ?? false,
+    variance: data.variance ? reconstituteMoney(data.variance) : null
+  });
+}
+
+function dehydrateCostEntry(entry) {
+  // The repository also accepts pre-shaped records from import/test callers.
+  // Keep that adapter-level compatibility without restoring serialization to
+  // the CostEntry domain entity.
+  if (!entry.attribution && typeof entry.toJSON === 'function') {
+    return entry.toJSON();
+  }
+
+  const attribution = { householdId: entry.attribution.householdId };
+  if (entry.attribution.userId !== null) attribution.userId = entry.attribution.userId;
+  if (entry.attribution.feature !== null) attribution.feature = entry.attribution.feature;
+  if (entry.attribution.resource !== null) attribution.resource = entry.attribution.resource;
+  if (entry.attribution.tags.size > 0) attribution.tags = Object.fromEntries(entry.attribution.tags);
+
+  return {
+    id: entry.id,
+    occurredAt: entry.occurredAt.toISOString(),
+    amount: { amount: entry.amount.amount, currency: entry.amount.currency },
+    category: entry.category.toString(),
+    entryType: entry.entryType,
+    attribution,
+    usage: entry.usage ? { quantity: entry.usage.quantity, unit: entry.usage.unit } : null,
+    description: entry.description,
+    metadata: entry.metadata,
+    spreadSource: entry.spreadSource ? {
+      name: entry.spreadSource.name,
+      originalAmount: { amount: entry.spreadSource.originalAmount.amount, currency: entry.spreadSource.originalAmount.currency },
+      spreadMonths: entry.spreadSource.spreadMonths,
+      startDate: entry.spreadSource.startDate.toISOString()
+    } : null,
+    reconcilesUsage: entry.reconcilesUsage,
+    variance: entry.variance ? { amount: entry.variance.amount, currency: entry.variance.currency } : null
+  };
+}
 
 /**
  * YAML-based cost entry datastore
@@ -98,7 +166,7 @@ export class YamlCostDatastore extends ICostRepository {
     const entries = existing || [];
 
     // Replace or add entry
-    const entryJson = entry.toJSON();
+    const entryJson = dehydrateCostEntry(entry);
     const existingIndex = entries.findIndex(e => e.id === entry.id);
 
     if (existingIndex >= 0) {
@@ -152,7 +220,7 @@ export class YamlCostDatastore extends ICostRepository {
 
       // Add or replace entries
       for (const entry of monthEntries) {
-        existingMap.set(entry.id, entry.toJSON());
+        existingMap.set(entry.id, dehydrateCostEntry(entry));
       }
 
       // Write back
@@ -208,7 +276,7 @@ export class YamlCostDatastore extends ICostRepository {
 
       // Category filter using matches()
       if (categoryFilter) {
-        const entryCategory = CostCategory.fromJSON(entryData.category);
+        const entryCategory = reconstituteCategory(entryData.category);
         if (!categoryFilter.matches(entryCategory)) {
           continue;
         }
@@ -225,7 +293,7 @@ export class YamlCostDatastore extends ICostRepository {
       }
 
       // Convert to CostEntry entity
-      results.push(CostEntry.fromJSON(entryData));
+      results.push(reconstituteCostEntry(entryData));
     }
 
     return results;
@@ -323,13 +391,13 @@ export class YamlCostDatastore extends ICostRepository {
    * - Support restoration of archived data
    *
    * @param {CostEntry[]} entries - Entries to archive
-   * @param {string} archivePath - Destination file path
+   * @param {string} archiveId - Semantic archive destination identifier
    * @returns {Promise<void>}
    *
    * @todo Implement archive logic in Phase 9
    * @see docs/plans/2026-01-30-cost-domain-design.md
    */
-  async archive(entries, archivePath) {
+  async archive(entries, archiveId) {
     // TODO(Phase 9): Implement archive - write to gzipped YAML
   }
 
@@ -410,7 +478,7 @@ export class YamlCostDatastore extends ICostRepository {
    */
   async #defaultRead(filePath) {
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = readTextFromPath(filePath);
       return yaml.parse(content);
     } catch (error) {
       if (error.code === 'ENOENT') {
@@ -434,7 +502,7 @@ export class YamlCostDatastore extends ICostRepository {
   async #defaultWrite(filePath, data) {
     try {
       const content = yaml.stringify(data, { indent: 2 });
-      await fs.writeFile(filePath, content, 'utf-8');
+      writeFile(filePath, content);
     } catch (error) {
       throw new InfrastructureError(`Failed to write file: ${filePath}`, {
         code: 'FILE_WRITE_ERROR',
@@ -452,7 +520,7 @@ export class YamlCostDatastore extends ICostRepository {
    */
   async #defaultEnsureDir(dirPath) {
     try {
-      await fs.mkdir(dirPath, { recursive: true });
+      ensureDir(dirPath);
     } catch (error) {
       throw new InfrastructureError(`Failed to create directory: ${dirPath}`, {
         code: 'DIR_CREATE_ERROR',

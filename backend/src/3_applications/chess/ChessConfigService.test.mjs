@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createChessConfigService, mergeChessConfig, resolveRung } from './ChessConfigService.mjs';
+import { ChessLadderConfigReader, createChessConfigService, mergeChessConfig, mergeChessLadderConfig, resolveRung } from './ChessConfigService.mjs';
 
 const HOUSE = {
   default_rung: 'learner',
@@ -104,5 +104,19 @@ describe('createChessConfigService', () => {
     });
     await expect(service.writeUserLayer(null, { default_rung: 'steady' })).rejects.toThrow();
     expect(writeUserConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe('ladder config projection', () => {
+  it('preserves the legacy shallow ladder overlay', async () => {
+    expect(mergeChessLadderConfig(
+      { board: 'blue', ladder: { start: 1, max: 8 } },
+      { board: 'ignored-here', ladder: { start: 3 } },
+    )).toEqual({ board: 'blue', ladder: { start: 3, max: 8 } });
+    const reader = new ChessLadderConfigReader({
+      readHouseholdConfig: () => ({ ladder: { start: 1, max: 8 } }),
+      readUserConfig: () => ({ ladder: { start: 3 } }),
+    });
+    await expect(reader.read('learner')).resolves.toEqual({ ladder: { start: 3, max: 8 } });
   });
 });

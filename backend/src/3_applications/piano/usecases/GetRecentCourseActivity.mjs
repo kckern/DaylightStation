@@ -3,12 +3,13 @@
  * kiosk menu activity strip (spec 2026-07-28-piano-menu-activity-strip): each
  * player's most recent courses (up to MAX_COURSES_PER_PLAYER), newest first.
  *
- * Scope: the FIRST group in piano.yml videos.collections (the Music Lessons
- * tab); legacy flat plexCollection when no groups exist. Results cached
+ * Scope: the first projected lesson group, with the projected fallback
+ * collection when no groups exist. Results cached
  * in-memory keyed on the roster's progress-file mtimes (+ 6h hard TTL for
  * Plex metadata drift) so menu loads never re-walk Plex when nothing changed.
  */
 import { excludeReferenceUnits } from '../courseProgress.mjs';
+import { recentActivitySettings } from '../PianoVideoPolicy.mjs';
 
 const HARD_TTL_MS = 6 * 60 * 60 * 1000;
 // Thumbnails per player card on the menu strip.
@@ -19,8 +20,8 @@ const MAX_COURSES_PER_PLAYER = 2;
 const unitOf = (it) => it?.parentId ?? it?.metadata?.parentId ?? null;
 
 /**
- * Card-content selectors — what fills a player's thumbnails, config-driven via
- * piano.yml `menu_activity.slots` (applied in order until the card is full,
+ * Card-content selectors — what fills a player's thumbnails, driven by the
+ * projected slot list (applied in order until the card is full,
  * deduped by course). Each builder gets the player's touched courses
  * (newest-first) and returns an ordered candidate list.
  *
@@ -47,13 +48,13 @@ const SLOT_BUILDERS = {
 const DEFAULT_SLOTS = ['top-incomplete-courses'];
 
 export class GetRecentCourseActivity {
-  #fitnessPlayableService; #userVideoProgressStore; #configService; #plexClient; #logger;
+  #fitnessPlayableService; #userVideoProgressStore; #configProjection; #plexClient; #logger;
   #cache = null; // { key, at, result }
 
-  constructor({ fitnessPlayableService, userVideoProgressStore, configService, plexClient, logger = console } = {}) {
+  constructor({ fitnessPlayableService, userVideoProgressStore, configProjection, plexClient, logger = console } = {}) {
     this.#fitnessPlayableService = fitnessPlayableService;
     this.#userVideoProgressStore = userVideoProgressStore;
-    this.#configService = configService;
+    this.#configProjection = configProjection;
     this.#plexClient = plexClient;
     this.#logger = logger;
   }
@@ -66,23 +67,23 @@ export class GetRecentCourseActivity {
    * collection at all).
    */
   #lessonScope() {
-    const videos = (this.#configService.getHouseholdAppConfig(null, 'piano') || {}).videos || {};
+    const settings = recentActivitySettings(this.#configProjection.raw());
     const strip = (id) => String(id).replace(/^plex:/, '');
     const toList = (v) => (Array.isArray(v) ? v : [v]).filter(Boolean);
-    if (Array.isArray(videos.collections) && videos.collections.length) {
-      const lessonGroups = videos.collections.filter((g, i) => (g?.label ? /lesson/i.test(String(g.label)) : i === 0));
-      const scoped = lessonGroups.length ? lessonGroups : [videos.collections[0]];
+    if (Array.isArray(settings.collections) && settings.collections.length) {
+      const lessonGroups = settings.collections.filter((g, i) => (g?.label ? /lesson/i.test(String(g.label)) : i === 0));
+      const scoped = lessonGroups.length ? lessonGroups : [settings.collections[0]];
       return {
-        collectionIds: [...new Set(scoped.flatMap((g) => toList(g?.plex ?? g?.collections)).map(strip))],
-        showIds: [...new Set(scoped.flatMap((g) => toList(g?.shows)).map(strip))],
+        collectionIds: [...new Set(scoped.flatMap((g) => toList(g?.collectionIds)).map(strip))],
+        showIds: [...new Set(scoped.flatMap((g) => toList(g?.showIds)).map(strip))],
       };
     }
-    const flat = toList(videos.plexCollection);
+    const flat = toList(settings.fallbackCollectionIds);
     return { collectionIds: flat.map(strip), showIds: [] };
   }
 
   async execute() {
-    const roster = (this.#configService.getHouseholdUsers?.() || []).map(String);
+    const roster = this.#configProjection.roster();
     const key = roster.map((id) => `${id}:${this.#userVideoProgressStore.progressFileMtime(id)}`).join('|');
     if (this.#cache && this.#cache.key === key && Date.now() - this.#cache.at < HARD_TTL_MS) {
       return this.#cache.result;
@@ -135,10 +136,9 @@ export class GetRecentCourseActivity {
       }
     }
 
-    const pianoCfg = this.#configService.getHouseholdAppConfig(null, 'piano') || {};
-    const menuCfg = pianoCfg.menu_activity || {};
-    const slots = Array.isArray(menuCfg.slots) && menuCfg.slots.length ? menuCfg.slots.map(String) : DEFAULT_SLOTS;
-    // How a course's displayed percent is computed (config `menu_activity.percent_mode`):
+    const settings = recentActivitySettings(this.#configProjection.raw());
+    const slots = Array.isArray(settings.slots) && settings.slots.length ? settings.slots.map(String) : DEFAULT_SLOTS;
+    // How a course's displayed percent is computed:
     //   season-weighted (default) — every season/unit is an equal slice of the
     //     bar (5 seasons → finishing season 1 = 20%), episode progress
     //     interpolates within each slice. Season count is the base, so one
@@ -146,8 +146,8 @@ export class GetRecentCourseActivity {
     //   current-module — progress through the most recently active incomplete
     //     unit only.
     //   course — plain completed/total over every lecture.
-    const percentMode = String(menuCfg.percent_mode || 'season-weighted');
-    const referenceUnits = pianoCfg.videos?.reference_units || [];
+    const percentMode = String(settings.percentMode);
+    const referenceUnits = settings.referenceUnits;
 
     const players = [];
     for (const userId of roster) {
@@ -276,7 +276,7 @@ export class GetRecentCourseActivity {
       }
 
       const newest = allCourses[0].lastPlayedAt;
-      const p = this.#configService.getUserProfile(userId);
+      const p = this.#configProjection.profile(userId);
       players.push({
         userId,
         name: p?.display_name || p?.username || userId,

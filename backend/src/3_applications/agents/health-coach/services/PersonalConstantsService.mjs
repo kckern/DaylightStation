@@ -1,19 +1,19 @@
 export class PersonalConstantsService {
-  #dataService;
+  #workspaceRepository;
   #healthStore;
-  constructor({ dataService, healthStore }) {
-    if (!dataService) throw new Error('PersonalConstantsService: dataService required');
+  constructor({ workspaceRepository, healthStore }) {
+    if (!workspaceRepository?.getHealthProfile) throw new Error('PersonalConstantsService: workspaceRepository required');
     if (!healthStore) throw new Error('PersonalConstantsService: healthStore required');
-    this.#dataService = dataService;
+    this.#workspaceRepository = workspaceRepository;
     this.#healthStore = healthStore;
   }
 
   async get(userId) {
     if (!userId) throw new Error('PersonalConstantsService: userId required');
 
-    const profile = await this.#dataService.user.read('profile/health', userId);
+    const profile = await this.#workspaceRepository.getHealthProfile(userId);
     if (!profile) {
-      throw new Error(`PersonalConstantsService: profile/health.yml not found for ${userId}`);
+      throw new Error(`PersonalConstantsService: health profile not found for ${userId}`);
     }
 
     const weight = (await this.#healthStore.loadWeightData(userId)) ?? {};

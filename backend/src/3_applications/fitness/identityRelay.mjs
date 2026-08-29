@@ -9,9 +9,6 @@
 // hand-maintained in the `locks` map, so adding an admin can't desync the gate.
 export const ADMIN_LOCK = 'admin';
 
-const SCAN_TOPIC = 'biometric.scan';
-const IDENTITY_TOPIC = 'fitness.identity.detected';
-const CEREMONY_TOPIC = 'fitness.emergency.ceremony';
 const DEFAULT_PENDING_TTL_MS = 30000;
 
 // Scanner-abuse auto-lockdown defaults (overridable via fitness.yml emergency.abuse).
@@ -71,20 +68,20 @@ export function buildAuthz(username, fitnessConfig) {
 const DEFAULT_ADMIN_SESSION_TTL_MS = 300000; // 5 min
 
 export function createIdentityRelay({
-  eventBus,
+  identityChannel,
   userService,
   loadFitnessConfig,
   getLockdownState = null,
   triggerEmergencyLockdown = null,
-  scheduler = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h) },
+  commitScheduler = { schedule: () => null, cancel: () => {} },
   serverCommitDelayMs = DEFAULT_SERVER_COMMIT_DELAY_MS,
   now = () => Date.now(),
   pendingTtlMs = DEFAULT_PENDING_TTL_MS,
   adminSessionTtlMs = DEFAULT_ADMIN_SESSION_TTL_MS,
   logger = console,
 }) {
-  if (!eventBus || typeof eventBus.broadcast !== 'function' || typeof eventBus.onClientMessage !== 'function') {
-    throw new Error('createIdentityRelay: eventBus with broadcast() and onClientMessage() is required');
+  if (!identityChannel?.identityDetected || !identityChannel?.emergencyCeremony || !identityChannel?.onScan) {
+    throw new Error('createIdentityRelay: identityChannel is required');
   }
 
   let pending = null;   // { userId, at } — emergency ceremony guard
@@ -95,7 +92,7 @@ export function createIdentityRelay({
   let armTimer = null;  // scheduler handle for the server-side fallback commit
 
   function emitUnrecognized(modality, at) {
-    eventBus.broadcast(IDENTITY_TOPIC, {
+    identityChannel.identityDetected({
       modality, matched: false, userId: null, finger: null,
       authz: { admin: false, locks: [] }, at,
     });
@@ -121,7 +118,7 @@ export function createIdentityRelay({
       }
     }
     armCommit(ABUSE_USER, at);
-    eventBus.broadcast(CEREMONY_TOPIC, {
+    identityChannel.emergencyCeremony({
       reason: 'abuse', count: threshold, windowSec: Math.round(windowMs / 1000), at,
     });
     logger.warn?.('identity.abuse_tripped', { count: threshold, windowSec: Math.round(windowMs / 1000) });
@@ -129,7 +126,7 @@ export function createIdentityRelay({
 
   function cancelArmTimer() {
     if (armTimer != null) {
-      try { scheduler.clearTimeout(armTimer); } catch { /* noop */ }
+      try { commitScheduler.cancel(armTimer); } catch { /* noop */ }
       armTimer = null;
     }
   }
@@ -160,7 +157,7 @@ export function createIdentityRelay({
     armed = { userId, at };
     cancelArmTimer();
     if (triggerEmergencyLockdown) {
-      armTimer = scheduler.setTimeout(() => { runServerCommit(); }, serverCommitDelayMs);
+      armTimer = commitScheduler.schedule(serverCommitDelayMs, () => { runServerCommit(); });
     }
   }
 
@@ -211,7 +208,7 @@ export function createIdentityRelay({
       logger.info?.('identity.pending_stamped', { userId: entry.userId });
       logger.info?.('identity.admin_verified', { userId: entry.userId });
     }
-    eventBus.broadcast(IDENTITY_TOPIC, {
+    identityChannel.identityDetected({
       modality, matched: true, userId: entry.userId, finger: entry.finger, authz, at,
     });
     logger.info?.('identity.detected', {
@@ -222,10 +219,7 @@ export function createIdentityRelay({
     recordScanOutcome(authz.locks.length === 0, at);
   }
 
-  eventBus.onClientMessage((_clientId, message) => {
-    if (!message || message.topic !== SCAN_TOPIC) return;
-    handleScan(message);
-  });
+  identityChannel.onScan(handleScan);
 
   return {
     consumePendingDetection(nowMs = now(), maxAgeMs = pendingTtlMs) {

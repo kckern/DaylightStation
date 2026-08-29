@@ -80,10 +80,6 @@ export class DayPattern {
     return this.#value.includes(dow);
   }
 
-  /** @returns {string|ReadonlyArray<string>} */
-  toJSON() {
-    return this.#value;
-  }
 }
 
 export default DayPattern;

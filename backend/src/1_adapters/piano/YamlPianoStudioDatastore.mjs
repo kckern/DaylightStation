@@ -8,13 +8,13 @@
  *   - Lesson drills (read-only)        <mediaDir>/docs/piano-lessons/{collection}/{index,id}.yml
  *   - Always-on MIDI history (.mid)    <mediaDir>/midi/piano/log/{userId}/{date}/{takeId}.mid
  *   - Effect-audit clips + manifest    <mediaDir>/logs/piano/effect-audit/{runId}/…
- *   - Loop-library manifest            <mediaDir>/midi (walked + baked by getManifest)
+ *   - Loop-library source records      <mediaDir>/midi
  *   - Roster                           household.yml users (household order, hydrated)
  *
  * Path building is done from an injected `configService` (getUserDir/getMediaDir/
  * getHouseholdPath/getUserProfile/getHouseholdAppConfig) — the service is passed in,
  * never imported (adapters must not import the config singleton). FileIO and the two
- * pure piano helpers (encodeMidiFile, getManifest) are imported directly.
+ * pure piano MIDI encoding helper is imported directly.
  *
  * The router owns HTTP-shaped input validation (safe segment / id regexes); this
  * datastore owns dir resolution + read/write. Methods that need a resolvable user
@@ -28,11 +28,14 @@ import {
   deleteYaml,
   ensureDir,
   writeBinary,
+  listFiles,
+  readFile,
+  getStats,
 } from '#system/utils/FileIO.mjs';
-import { encodeMidiFile } from '#apps/piano/midiFile.mjs';
-import { getManifest } from '#apps/piano/loopManifest.mjs';
+import { encodeMidiFile } from './MidiFileCodec.mjs';
+import { ILoopManifestSource } from '#apps/piano/ports/ILoopManifestSource.mjs';
 
-export class YamlPianoStudioDatastore {
+export class YamlPianoStudioDatastore extends ILoopManifestSource {
   #configService;
   #userService;
   #logger;
@@ -41,6 +44,7 @@ export class YamlPianoStudioDatastore {
    * @param {{ configService: object, userService?: object, logger?: object }} deps
    */
   constructor({ configService, userService = null, logger = console } = {}) {
+    super();
     if (!configService) throw new Error('YamlPianoStudioDatastore: configService required');
     this.#configService = configService;
     this.#userService = userService;
@@ -267,9 +271,28 @@ export class YamlPianoStudioDatastore {
   }
 
   // ── Loop-library manifest ────────────────────────────────────────────────────
-  getLoopManifest({ refresh = false } = {}) {
+  readLedger() {
     const midiDir = path.join(this.#configService.getMediaDir(), 'midi');
-    return getManifest(midiDir, { refresh });
+    return readFile(path.join(midiDir, '_workspace', '_ledger.jsonl'));
+  }
+
+  listBrickDocuments(types) {
+    const midiDir = path.join(this.#configService.getMediaDir(), 'midi');
+    return types.flatMap((type) => {
+      const directory = path.join(midiDir, type);
+      return listFiles(directory)
+        .filter((file) => file.endsWith('.musicxml'))
+        .map((file) => ({ type, relativePath: `${type}/${file}`, xml: readFile(path.join(directory, file)) }))
+        .filter((entry) => entry.xml != null);
+    });
+  }
+
+  signature(types) {
+    const midiDir = path.join(this.#configService.getMediaDir(), 'midi');
+    return types.map((type) => {
+      const stats = getStats(path.join(midiDir, type));
+      return `${type}:${stats ? stats.mtimeMs : 0}`;
+    }).join('|');
   }
 }
 

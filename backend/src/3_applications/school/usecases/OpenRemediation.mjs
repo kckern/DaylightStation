@@ -19,7 +19,7 @@
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 
 export class OpenRemediation {

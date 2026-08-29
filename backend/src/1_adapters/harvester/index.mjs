@@ -7,7 +7,6 @@
  */
 
 // Ports
-export { IHarvester, HarvesterCategory } from './ports/IHarvester.mjs';
 
 // Utilities
 export { CircuitBreaker, CircuitState } from './CircuitBreaker.mjs';

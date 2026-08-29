@@ -93,13 +93,10 @@ export class TeacherGate {
  * build their gate through this factory, so a school.yml key rename cannot
  * drift between them.
  */
-export function makeTeacherGate({ configService, userService, householdId = null, clock, logger }) {
+export function makeTeacherGate({ loadTeachers, loadTeacherPin, userService, householdId = null, clock, logger }) {
   return new TeacherGate({
-    teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers,
-    pin: () => {
-      const cfg = configService.getHouseholdAppConfig(null, 'school') || {};
-      return cfg.teacher?.pin != null ? String(cfg.teacher.pin) : null;
-    },
+    teachers: loadTeachers,
+    pin: loadTeacherPin,
     roster: () => userService?.getHouseholdRoster?.(householdId) ?? [],
     ...(clock ? { clock } : {}),
     logger,

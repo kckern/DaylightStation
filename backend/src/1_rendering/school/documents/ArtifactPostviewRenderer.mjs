@@ -34,7 +34,7 @@ for (const [name, value] of Object.entries({ DOMMatrix, ImageData, Path2D, DOMPo
  * fabricating photographed handwriting.
  */
 export function createArtifactPostviewRenderer() {
-  return async function renderArtifactPostview({ originalPdf, session }) {
+  return async function renderArtifactPostview({ originalPdf, evidence }) {
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const source = await pdfjs.getDocument({ data: new Uint8Array(originalPdf) }).promise;
     try {
@@ -48,7 +48,7 @@ export function createArtifactPostviewRenderer() {
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
         pages.push({ png: canvas.toBuffer('image/png'), width: viewport.width / 1.5, height: viewport.height / 1.5 });
       }
-      return await compose(pages, session);
+      return await compose(pages, evidence);
     } finally {
       await source.destroy();
     }
@@ -71,7 +71,7 @@ export async function renderPdfFirstPagePng(originalPdf, { width = 320 } = {}) {
   }
 }
 
-function compose(pages, session) {
+function compose(pages, evidence) {
   return new Promise((resolve, reject) => {
     const out = new PDFDocument({ autoFirstPage: false, margin: 0, info: { CreationDate: new Date('2000-01-01T00:00:00Z') } });
     const chunks = [];
@@ -81,24 +81,23 @@ function compose(pages, session) {
     pages.forEach((page, index) => {
       out.addPage({ size: [page.width, page.height], margin: 0 });
       out.image(page.png, 0, 0, { width: page.width, height: page.height });
-      if (index === 0) drawEvidenceOverlay(out, session?.state ?? session ?? {}, page.width);
+      if (index === 0) drawEvidenceOverlay(out, evidence ?? {}, page.width);
     });
     out.end();
   });
 }
 
-function drawEvidenceOverlay(doc, state, pageWidth) {
-  const machine = state.machineGrade;
-  const effective = state.gradedPercent;
-  const active = [...(state.gradeAdjustments ?? [])].reverse().find((row) => !row.retracted);
-  const missed = state.missedItemIds ?? [];
+function drawEvidenceOverlay(doc, evidence, pageWidth) {
+  const missed = evidence.missedItemIds ?? [];
   const lines = [
     'POSTVIEW · interpreted evidence',
-    `Machine grade: ${machine?.percent ?? '—'}%`,
-    `Effective grade: ${effective ?? '—'}%`,
-    `Outcome: ${state.outcome?.result ?? 'not recorded'}`,
+    `Machine grade: ${evidence.machinePercent ?? '—'}%`,
+    `Effective grade: ${evidence.effectivePercent ?? '—'}%`,
+    `Outcome: ${evidence.outcome ?? 'not recorded'}`,
     `Missed items: ${missed.length ? missed.join(', ') : 'none recorded'}`,
-    ...(active ? [`Correction: ${active.reason}`, `By ${active.adjustedBy} · ${String(active.at).slice(0, 10)}`] : []),
+    ...(evidence.correction
+      ? [`Correction: ${evidence.correction.reason}`, `By ${evidence.correction.adjustedBy} · ${evidence.correction.date}`]
+      : []),
   ];
   const width = Math.min(250, pageWidth - 36);
   const x = pageWidth - width - 18;

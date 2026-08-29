@@ -33,6 +33,7 @@ import {
 import { LanguageStudyService } from '#apps/school/LanguageStudyService.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
+import { SchoolLifecycleAgendaResource } from '#apps/school/services/SchoolLifecycleAgendaResource.mjs';
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 const LANGUAGE_UNIT = 'language-daily';
@@ -144,9 +145,11 @@ describe('GET /learners/:learnerId/agenda/preview — dry-run agenda preview', (
     // case), receiptPngRenderer absent — the exact gap the composition guards
     // against when the rendering-layer import fails.
     app2.use('/api/v1/school', createSchoolLifecycleRouter({
-      previewAgenda: h.useCases.previewAgenda,
-      receiptPngRenderer: null,
-      buildAgenda: h.useCases.buildAgenda,
+      lifecycleAgendaResource: new SchoolLifecycleAgendaResource({
+        previewAgenda: h.useCases.previewAgenda,
+        buildAgenda: h.useCases.buildAgenda,
+        pngRenderer: null,
+      }),
       logger: silent,
     }));
     app2.use(errorHandlerMiddleware({ logger: silent, shape: 'string' }));

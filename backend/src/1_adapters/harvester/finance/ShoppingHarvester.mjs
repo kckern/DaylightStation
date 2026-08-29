@@ -15,7 +15,7 @@
  */
 
 import moment from 'moment-timezone';
-import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
+import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 

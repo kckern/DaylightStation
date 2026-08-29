@@ -7,20 +7,22 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   saveYaml: vi.fn(),
 }));
 
-vi.mock('fs', async () => {
-  const actual = await vi.importActual('fs');
-  return { ...actual, unlinkSync: vi.fn() };
-});
-
-const { unlinkSync } = await import('fs');
 const { ActivityReconciliationService } = await import('#apps/fitness/ActivityReconciliationService.mjs');
 const { loadYamlSafe, listYamlFiles, dirExists, saveYaml } = await import('#system/utils/FileIO.mjs');
+
+const historyRepository = (remove = vi.fn(() => true)) => ({
+  isAvailable: () => true,
+  list: (date) => dirExists(date) ? listYamlFiles(date).map(id => ({ id, data: loadYamlSafe(`${date}/${id}.yml`) })).filter(r => r.data) : [],
+  save: saveYaml,
+  remove,
+});
 
 describe('ActivityReconciliationService — Pass 3: sliver absorption', () => {
   let service;
   let stravaClient;
   let configService;
   let logger;
+  let removeFile;
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -36,6 +38,7 @@ describe('ActivityReconciliationService — Pass 3: sliver absorption', () => {
       return date === firstDate;
     });
     logger = { info: vi.fn(), warn: vi.fn() };
+    removeFile = vi.fn(() => true);
     stravaClient = {
       getActivity: vi.fn().mockResolvedValue({
         id: 18390552794,
@@ -56,7 +59,7 @@ describe('ActivityReconciliationService — Pass 3: sliver absorption', () => {
       lookbackDays: 10,
       selectionConfig: {},
       timezone: 'America/Los_Angeles',
-      fitnessHistoryDir: '/tmp/fake-history',
+      historyRepository: historyRepository(removeFile),
       logger,
     });
   });
@@ -99,8 +102,8 @@ describe('ActivityReconciliationService — Pass 3: sliver absorption', () => {
 
     await service.reconcile();
 
-    expect(unlinkSync).toHaveBeenCalledWith(expect.stringContaining('phantom-sliver'));
-    expect(unlinkSync).not.toHaveBeenCalledWith(expect.stringContaining('strava-only-id'));
+    expect(removeFile).toHaveBeenCalledWith('phantom-sliver');
+    expect(removeFile).not.toHaveBeenCalledWith('strava-only-id');
   });
 
   test('reconcile summary log includes sliversAbsorbed count', async () => {
@@ -185,7 +188,7 @@ describe('ActivityReconciliationService — Pass 3: sliver absorption', () => {
 
     // Pass 3 only fires for Strava-only sessions. The enriched home session
     // is the matched session, so absorption is intentionally skipped here.
-    expect(unlinkSync).not.toHaveBeenCalled();
+    expect(removeFile).not.toHaveBeenCalled();
   });
 });
 
@@ -241,7 +244,7 @@ describe('ActivityReconciliationService — Pass 1: title/description correction
       lookbackDays: 10,
       selectionConfig: {},
       timezone: 'America/Los_Angeles',
-      fitnessHistoryDir: '/tmp/fake-history',
+      historyRepository: historyRepository(),
       logger,
     });
   });

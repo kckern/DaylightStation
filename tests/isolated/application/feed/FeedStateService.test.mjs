@@ -32,10 +32,25 @@ function createHistory() {
   };
 }
 
+let nextId = 0;
+function createService(options) {
+  return new FeedStateService({
+    clock: { now: () => Date.now() },
+    createId: () => `annotation-${++nextId}`,
+    scheduler: {
+      after: (delayMs, task) => {
+        const timer = setTimeout(task, delayMs);
+        return () => clearTimeout(timer);
+      },
+    },
+    ...options,
+  });
+}
+
 describe('FeedStateService', () => {
   test('enriches, persists, and returns state consistently', async () => {
     const history = createHistory();
-    const service = new FeedStateService({ store: createStore(), historyStore: history });
+    const service = createService({ store: createStore(), historyStore: history });
     const [item] = service.enrich('alice', [{ id: 'one', title: 'One', link: 'https://example.com/one' }], 'reader');
     await service.mutate('alice', [item.id], 'save');
     expect(history.setSaved).toHaveBeenCalledWith('alice', [expect.objectContaining({ id: 'one' })], true);
@@ -45,7 +60,7 @@ describe('FeedStateService', () => {
 
   test('keeps local state and reports pending when FreshRSS sync fails', async () => {
     const adapter = { sourceType: 'freshrss', markRead: vi.fn().mockRejectedValue(new Error('offline')) };
-    const service = new FeedStateService({ store: createStore(), historyStore: createHistory(), sourceAdapters: [adapter], logger: { warn: vi.fn() } });
+    const service = createService({ store: createStore(), historyStore: createHistory(), sourceAdapters: [adapter], logger: { warn: vi.fn() } });
     const [item] = service.enrich('alice', [{ id: 'tag:google.com,2005:reader/item/abc', title: 'One', link: 'https://example.com/one' }], 'reader');
     const [result] = await service.mutate('alice', [item.id], 'read');
     expect(result.state).toMatchObject({ isRead: true, syncStatus: 'pending' });
@@ -61,7 +76,7 @@ describe('FeedStateService', () => {
       }),
     };
     const history = createHistory();
-    const service = new FeedStateService({ store: createStore(), historyStore: history, sourceAdapters: [adapter] });
+    const service = createService({ store: createStore(), historyStore: history, sourceAdapters: [adapter] });
     const progress = service.ensureHistoryBackfill('alice');
     await progress.promise;
     expect(service.historyBackfillStatus('alice')).toMatchObject({ status: 'complete', indexed: 1 });
@@ -69,7 +84,7 @@ describe('FeedStateService', () => {
   });
 
   test('surfaces legacy dismissals as archived during lazy migration', () => {
-    const service = new FeedStateService({
+    const service = createService({
       store: createStore(),
       historyStore: createHistory(),
       legacyDismissedStore: { load: () => new Set(['legacy-id']) },
@@ -80,7 +95,7 @@ describe('FeedStateService', () => {
 
   test('persists failed source synchronization and clears it after retry', async () => {
     const adapter = { sourceType: 'freshrss', markRead: vi.fn().mockRejectedValueOnce(new Error('offline')) };
-    const service = new FeedStateService({ store: createStore(), historyStore: createHistory(), sourceAdapters: [adapter], logger: { warn() {}, info() {} } });
+    const service = createService({ store: createStore(), historyStore: createHistory(), sourceAdapters: [adapter], logger: { warn() {}, info() {} } });
     const [item] = service.enrich('alice', [{ id: 'tag:google.com,2005:reader/item/retry', title: 'Retry', link: 'https://example.com/retry' }], 'reader');
     await service.mutate('alice', [item.id], 'read');
     expect(service.summary('alice').pendingSync).toBe(1);
@@ -91,7 +106,7 @@ describe('FeedStateService', () => {
   });
 
   test('persists normalized reading preferences and per-mode checkpoints', async () => {
-    const service = new FeedStateService({ store: createStore(), historyStore: createHistory() });
+    const service = createService({ store: createStore(), historyStore: createHistory() });
     await service.updatePreferences('alice', { theme: 'sepia', fontScale: 99, measure: 57, unknown: 'ignored' });
     const checkpoint = await service.recordCheckpoint('alice', 'reader', { itemId: 'article-9', scrollOffset: 123.6 });
 
@@ -106,7 +121,7 @@ describe('FeedStateService', () => {
 
   test('creates, edits, lists, and deletes annotations without changing item identity', async () => {
     const history = createHistory();
-    const service = new FeedStateService({ store: createStore(), historyStore: history });
+    const service = createService({ store: createStore(), historyStore: history });
     const [item] = service.enrich('alice', [{ id: 'annotated', title: 'Article', link: 'https://example.com/a' }], 'reader');
     const locator = JSON.stringify({ type: 'TextQuoteSelector', exact: 'Key sentence', prefix: 'A ', suffix: ' here.' });
     const created = await service.createAnnotation('alice', { itemId: item.id, quote: 'Key sentence', note: 'Remember this', color: 'green', locator });
@@ -120,7 +135,7 @@ describe('FeedStateService', () => {
 
   test('preserves a client annotation id for ordered offline replay', async () => {
     const history = createHistory();
-    const service = new FeedStateService({ store: createStore(), historyStore: history });
+    const service = createService({ store: createStore(), historyStore: history });
     const [item] = service.enrich('alice', [{ id: 'offline-note', title: 'Article' }], 'reader');
     const created = await service.createAnnotation('alice', { id: 'client-note-1', itemId: item.id, note: 'Queued note' });
 
@@ -129,7 +144,7 @@ describe('FeedStateService', () => {
   });
 
   test('persists reversible per-source ranking preferences', async () => {
-    const service = new FeedStateService({ store: createStore(), historyStore: createHistory() });
+    const service = createService({ store: createStore(), historyStore: createHistory() });
     expect(await service.updateSourcePreference('alice', 'reddit', 'less')).toEqual({ reddit: 'less' });
     expect(await service.updateSourcePreference('alice', 'headlines', 'mute')).toEqual({ reddit: 'less', headlines: 'mute' });
     expect(service.getSourcePreferences('alice')).toEqual({ reddit: 'less', headlines: 'mute' });
@@ -138,7 +153,7 @@ describe('FeedStateService', () => {
   });
 
   test('round-trips portable state, checkpoints, annotations, and history safely', async () => {
-    const source = new FeedStateService({ store: createStore(), historyStore: createHistory() });
+    const source = createService({ store: createStore(), historyStore: createHistory() });
     const [item] = source.enrich('alice', [{ id: 'portable', title: 'Portable article', link: 'https://example.com/portable', summary: 'Useful summary' }], 'reader');
     await source.mutate('alice', [item.id], 'save');
     await source.recordCheckpoint('alice', 'reader', { itemId: item.id, scrollOffset: 80 });
@@ -146,7 +161,7 @@ describe('FeedStateService', () => {
     await source.updatePreferences('alice', { theme: 'light' });
 
     const payload = source.exportData('alice');
-    const target = new FeedStateService({ store: createStore(), historyStore: createHistory() });
+    const target = createService({ store: createStore(), historyStore: createHistory() });
     const imported = await target.importData('bob', payload);
 
     expect(imported).toEqual({ states: 1, annotations: 1, items: 1 });

@@ -39,11 +39,11 @@ describe('SchoolPianoChallengeCompletionService', () => {
     const { service } = subject({ alan: {} }, config);
     service.recordPassed({ learnerId: 'alan', descriptorId: 'school-c-major', assessmentId: 'attempt-1', score: 1 });
     expect(service.recordPassed({ learnerId: 'alan', descriptorId: 'school-c-major', assessmentId: 'attempt-1', score: 1 })).toMatchObject({ duplicate: true });
-    expect(thrown(() => service.recordPassed({ learnerId: 'alan', descriptorId: 'school-c-major', assessmentId: 'attempt-2', score: 1 }))).toMatchObject({ status: 409 });
+    expect(thrown(() => service.recordPassed({ learnerId: 'alan', descriptorId: 'school-c-major', assessmentId: 'attempt-2', score: 1 }))).toMatchObject({ name: 'ConflictError' });
   });
 
   it('refuses a descriptor that is no longer configured', () => {
     const { service } = subject({ alan: {} });
-    expect(thrown(() => service.recordPassed({ learnerId: 'alan', descriptorId: 'removed', assessmentId: 'attempt-1', score: 1 }))).toMatchObject({ status: 404 });
+    expect(thrown(() => service.recordPassed({ learnerId: 'alan', descriptorId: 'removed', assessmentId: 'attempt-1', score: 1 }))).toMatchObject({ name: 'NotFoundError' });
   });
 });

@@ -59,7 +59,10 @@ describe('lifelog integration', () => {
 
     app = express();
     app.use(express.json());
-    app.use('/lifelog', createLifelogRouter({ aggregator: mockAggregator }));
+    app.use('/lifelog', createLifelogRouter({
+      aggregator: mockAggregator,
+      weightService: { read: () => ({ username: 'user_1', data: null }) },
+    }));
   });
 
   // ===========================================================================
@@ -153,7 +156,10 @@ describe('lifelog integration', () => {
 
       const errorApp = express();
       errorApp.use(express.json());
-      errorApp.use('/lifelog', createLifelogRouter({ aggregator: failingAggregator }));
+      errorApp.use('/lifelog', createLifelogRouter({
+        aggregator: failingAggregator,
+        weightService: { read: () => ({ username: 'user_1', data: null }) },
+      }));
 
       const res = await request(errorApp).get('/lifelog/aggregate/testuser/2024-01-15');
 
@@ -171,7 +177,10 @@ describe('lifelog integration', () => {
 
       const minimalApp = express();
       minimalApp.use(express.json());
-      minimalApp.use('/lifelog', createLifelogRouter({ aggregator: minimalAggregator }));
+      minimalApp.use('/lifelog', createLifelogRouter({
+        aggregator: minimalAggregator,
+        weightService: { read: () => ({ username: 'user_1', data: null }) },
+      }));
 
       const res = await request(minimalApp).get('/lifelog/sources');
 

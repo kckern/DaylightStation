@@ -12,9 +12,8 @@
  * `now_playing` is null when nothing is playing; otherwise has the shape
  *   { queue: { source, id }, title? }
  *
- * `fromHubJson(json)` is the canonical mapper from the hub's `/api/status` JSON
- * (already in the post-broadcaster snapshot shape). The HTTP adapter handles
- * any earlier transformation from the raw mpv-introspection format.
+ * Transport mappers live in the playback-hub adapters; this value object only
+ * validates the semantic status snapshot.
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
@@ -191,59 +190,6 @@ export class SlotStatus {
   /** @returns {string|null} */
   get armed_source() { return this.#armed_source; }
 
-  /**
-   * Map a single hub-JSON snapshot entry into a SlotStatus.
-   *
-   * The hub's `/api/status` emits both a "slot" field (the slot position,
-   * 1..N) and a legacy "position" field (mpv playback time in seconds).
-   * The VO's `position` field carries the slot position — so we read it
-   * from `json.slot`, not `json.position`.
-   *
-   * `volume`, `playlist_pos`, `playlist_count` are null when mpv isn't
-   * running for that slot; passed through verbatim.
-   *
-   * @param {object} json
-   * @returns {SlotStatus}
-   */
-  static fromHubJson(json) {
-    if (!isPlainObject(json)) {
-      throw new ValidationError('SlotStatus.fromHubJson expects an object', {
-        code: 'INVALID_SLOT_STATUS',
-        value: json
-      });
-    }
-    return new SlotStatus({
-      position: json.slot,
-      color: json.color,
-      bt_connected: json.bt_connected,
-      paused: json.paused,
-      now_playing: json.now_playing ?? null,
-      volume: json.volume ?? null,
-      playlist_pos: json.playlist_pos ?? null,
-      playlist_count: json.playlist_count ?? null,
-      armed_source: json.armed_source ?? null
-    });
-  }
-
-  /**
-   * JSON-serialize as the wire shape consumed by the frontend useHubStatus
-   * hook. Private fields don't survive default JSON.stringify, so this is
-   * what gets sent over the WebSocket broadcast and the REST first-paint.
-   * @returns {object}
-   */
-  toJSON() {
-    return {
-      position: this.#position,
-      color: this.#color,
-      bt_connected: this.#bt_connected,
-      paused: this.#paused,
-      now_playing: this.#now_playing,
-      volume: this.#volume,
-      playlist_pos: this.#playlist_pos,
-      playlist_count: this.#playlist_count,
-      armed_source: this.#armed_source,
-    };
-  }
 }
 
 export default SlotStatus;

@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolRouter } from './school.mjs';
+import { createSchoolTestRouter as createSchoolRouter } from '../../../../../tests/_lib/school/schoolRouterTestSupport.mjs';
 
 const service = {
   getRoster: () => [], warmBanks: async () => {}, listBanks: () => [],
@@ -40,6 +40,10 @@ function fixture(overrides = {}) {
       return BANK_ROWS;
     }),
   };
+  surfaceCertification.select = vi.fn(async ({ address, bankId, surfaceId }) => {
+    const rows = address !== null ? await surfaceCertification.lesson(address) : await surfaceCertification.bank(bankId);
+    return surfaceId === null ? rows : rows.filter((row) => row.surfaceId === surfaceId);
+  });
   const registryProfiles = {
     'screen-office': SCREEN_PROFILE,
     'screen-browser': BROWSER_PROFILE,

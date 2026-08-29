@@ -1,5 +1,3 @@
-import crypto from 'node:crypto';
-import path from 'node:path';
 import { applyMove, applySequence, createCube, cubeFaces, goalReached, inverseMove, isSolved, scramble } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
 import { RUBIKS_CUBE_COURSE, RUBIKS_CUBE_COURSE_ID, RUBIKS_CUBE_REVISION, activities, activityById, publicActivity } from './courseCatalog.mjs';
 import { parsePhysicalCube } from './physicalCube.mjs';
@@ -8,25 +6,17 @@ const day = (now) => now.toISOString().slice(0, 10);
 
 /** Server authority for the learner's actual cube, progress, hints, and quiz score. */
 export class RubiksCubeCourseService {
-  #config; #clock; #packetPlanner; #store;
+  #clock; #idFactory; #packetPlanner; #repository;
   /**
-   * `store` is INJECTED (`apps-no-fs`): this service decides WHERE a learner's
-   * progress lives and what a valid record is; the adapter owns turning that
-   * path into bytes. Required — a silent no-op store would look like a learner
-   * whose progress never saves.
+   * `repository` is INJECTED (`apps-no-fs`): this service owns the progress
+   * contract and revision rules; the adapter owns storage layout and bytes.
+   * Required — a silent no-op store would look like progress never saves.
    */
-  constructor({ configService, store, recoverySolver = null, packetPlanner = null, clock = () => new Date() } = {}) {
-    if (!store) throw new Error('RubiksCubeCourseService requires a document store');
-    this.#config = configService; this.#store = store; this.recoverySolver = recoverySolver; this.#packetPlanner = packetPlanner; this.#clock = clock;
-  }
-  #file(userId) {
-    // No course.yml authored yet (RUBIKS_CUBE_COURSE_ID is null): fail with a
-    // clear message rather than `path.join(..., null, ...)`'s TypeError. The
-    // service is still constructed and mounted so the rest of school boots;
-    // this only surfaces when someone actually reaches this program.
-    if (!RUBIKS_CUBE_COURSE_ID) throw new Error('The Rubik’s Cube course is not installed.');
-    if (!this.#config.getUserProfile?.(userId)) return null;
-    return path.join(this.#config.getUserDir(userId), 'apps', 'school', 'rubiks-cube', RUBIKS_CUBE_COURSE_ID, 'progress.yml');
+  constructor({ repository, recoverySolver = null, packetPlanner = null, idFactory, clock = () => new Date() } = {}) {
+    if (!repository) throw new Error('RubiksCubeCourseService requires a progress repository');
+    if (typeof idFactory !== 'function') throw new Error('RubiksCubeCourseService requires an idFactory');
+    this.#repository = repository; this.recoverySolver = recoverySolver; this.#packetPlanner = packetPlanner;
+    this.#idFactory = idFactory; this.#clock = clock;
   }
   #fresh(userId) {
     return { schema: 'school.rubiks-cube-progress/v1', learnerId: userId, courseId: RUBIKS_CUBE_COURSE_ID, revision: RUBIKS_CUBE_REVISION,
@@ -34,15 +24,14 @@ export class RubiksCubeCourseService {
       physical: { draft: null, coach: null, verified: {} }, packets: {}, activePacketId: null, updatedAt: this.#clock().toISOString() };
   }
   #read(userId) {
-    const file = this.#file(userId); if (!file) throw new Error('identified learner is required');
-    const record = this.#store.read(file, this.#fresh(userId));
+    const record = this.#repository.read(userId, this.#fresh(userId));
     // Course content is version-pinned. A revision is a new course contract,
     // never a silent reinterpretation of a learner's saved sticker state.
     if (record?.schema !== 'school.rubiks-cube-progress/v1' || record.revision !== RUBIKS_CUBE_REVISION) return this.#fresh(userId);
     record.completed ||= {}; record.attempts ||= {}; record.challengeResults ||= {}; record.physical ||= { draft: null, coach: null, verified: {} }; record.physical.verified ||= {}; record.packets ||= {};
     return record;
   }
-  #write(userId, record) { const file = this.#file(userId); if (!file) throw new Error('identified learner is required'); record.updatedAt = this.#clock().toISOString(); this.#store.write(file, record); return record; }
+  #write(userId, record) { record.updatedAt = this.#clock().toISOString(); this.#repository.write(userId, record); return record; }
   #unlocked(record, lessonId) {
     const index = activities().findIndex((lesson) => lesson.id === lessonId);
     return index >= 0 && (index === 0 || Boolean(record.completed[activities()[index - 1].id]));
@@ -108,7 +97,7 @@ export class RubiksCubeCourseService {
     const response = Array.isArray(answers) ? answers : [];
     const correct = lesson.questions.filter((question, index) => Number(response[index]) === question.answer).length;
     const percent = Math.round(correct / lesson.questions.length * 100);
-    record.attempts[lessonId] = [...(record.attempts[lessonId] || []), { id: crypto.randomUUID(), correct, total: lesson.questions.length, percent, at: this.#clock().toISOString() }];
+    record.attempts[lessonId] = [...(record.attempts[lessonId] || []), { id: this.#idFactory(), correct, total: lesson.questions.length, percent, at: this.#clock().toISOString() }];
     if (percent >= 80) this.#complete(record, lesson, { assisted: false });
     this.#write(userId, record); return { ...this.#projection(record, lesson), quiz: { correct, total: lesson.questions.length, percent, passed: percent >= 80 } };
   }

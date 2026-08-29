@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Text } from '#system/utils/sha256.mjs';
 import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { createEvent, reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 
@@ -7,10 +7,8 @@ const lastSeq = (events) => events.reduce((max, event) => Math.max(max, Number(e
 
 function stableAdjustmentId({ sessionId, baseSeq, adjustedBy, reason, percent, correctCount, totalCount,
   missedItemIds, itemVerdicts }) {
-  const digest = createHash('sha256')
-    .update(JSON.stringify({ sessionId, baseSeq, adjustedBy, reason, percent, correctCount, totalCount,
-      missedItemIds, itemVerdicts }))
-    .digest('hex').slice(0, 16);
+  const digest = sha256Text(JSON.stringify({ sessionId, baseSeq, adjustedBy, reason, percent, correctCount, totalCount,
+    missedItemIds, itemVerdicts })).slice(0, 16);
   return `adj_${digest}`;
 }
 

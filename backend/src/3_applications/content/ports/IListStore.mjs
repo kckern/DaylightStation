@@ -9,7 +9,7 @@ export class IListStore {
   /**
    * Get overview of all list types with counts
    * @param {string} householdId
-   * @returns {{ type: string, count: number, path: string }[]}
+   * @returns {{ type: string, count: number }[]}
    */
   getOverview(householdId) {
     throw new Error('IListStore.getOverview must be implemented');

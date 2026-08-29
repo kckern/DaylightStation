@@ -22,7 +22,7 @@ import * as fs from 'node:fs';
 
 import yaml from 'js-yaml';
 
-import { YamlHubConfigDatastore } from '../../../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
+import { YamlHubConfigDatastore, serializeHubConfig } from '../../../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
 import { HubConfig } from '../../../../backend/src/2_domains/playback-hub/entities/HubConfig.mjs';
 import { HubDevice } from '../../../../backend/src/2_domains/playback-hub/entities/HubDevice.mjs';
 import { SlotPosition } from '../../../../backend/src/2_domains/playback-hub/value-objects/SlotPosition.mjs';
@@ -277,7 +277,7 @@ devices:
         const expected = JSON.parse(await readFile(expectedPath, 'utf8'));
         const store = new YamlHubConfigDatastore({ yamlPath });
         const cfg = await store.getConfig();
-        const actual = cfg.toYaml();
+        const actual = serializeHubConfig(cfg);
         expect(JSON.parse(JSON.stringify(actual)), `fixture ${fname} canonical form drift`).toEqual(expected);
       }
     });

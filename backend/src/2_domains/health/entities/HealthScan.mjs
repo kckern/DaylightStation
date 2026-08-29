@@ -5,7 +5,7 @@
  * device (DEXA, InBody, consumer BIA scale). Used as the canonical input to
  * downstream lean-mass / body-fat analytics and calibration.
  *
- * Shape (YAML on disk):
+ * Canonical measurement fields:
  *
  *   date: 2024-01-15
  *   source: bodyspec_dexa             # inbody | bodyspec_dexa | other
@@ -175,36 +175,6 @@ export class HealthScan {
     this.rawImagePath = this.#optionalNonEmptyString(raw.raw_image_path, 'raw_image_path');
     this.rawPdfPath = this.#optionalNonEmptyString(raw.raw_pdf_path, 'raw_pdf_path');
     this.notes = this.#optionalNonEmptyString(raw.notes, 'notes');
-  }
-
-  /**
-   * Convert to a YAML-shaped plain object for persistence.
-   * Optional fields that are null/undefined are omitted.
-   * @returns {Object}
-   */
-  serialize() {
-    const out = {
-      date: this.date,
-      source: this.source,
-      device_type: this.deviceType,
-      weight_lbs: this.weightLbs,
-      body_fat_percent: this.bodyFatPercent,
-      lean_tissue_lbs: this.leanTissueLbs,
-      fat_tissue_lbs: this.fatTissueLbs,
-    };
-    if (this.boneMineralContentLbs !== null) out.bone_mineral_content_lbs = this.boneMineralContentLbs;
-    if (this.bmrKcal !== null) {
-      out.bmr_kcal = this.bmrKcal;
-      out.bmr_method = this.bmrMethod;
-    }
-    if (this.visceralFatLbs !== null) out.visceral_fat_lbs = this.visceralFatLbs;
-    if (this.boneDensityZScore !== null) out.bone_density_z_score = this.boneDensityZScore;
-    if (this.asymmetry !== null) out.asymmetry = { ...this.asymmetry };
-    if (this.regional !== null) out.regional = { ...this.regional };
-    if (this.notes) out.notes = this.notes;
-    if (this.rawPdfPath) out.raw_pdf_path = this.rawPdfPath;
-    if (this.rawImagePath) out.raw_image_path = this.rawImagePath;
-    return out;
   }
 
   #optionalFiniteNumber(value, field) {

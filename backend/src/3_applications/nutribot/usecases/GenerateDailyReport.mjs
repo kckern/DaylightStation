@@ -7,6 +7,7 @@
  */
 
 import { NOOM_COLOR_EMOJI } from '#domains/nutrition/entities/formatters.mjs';
+import { prepareDailyReportPresentation } from '../DailyReportPresentation.mjs';
 
 /**
  * Decide which date a `/report` should render.
@@ -64,8 +65,9 @@ export class GenerateDailyReport {
   #config;
   #logger;
   #encodeCallback;
-  #reportRenderer;
+  #reportDelivery;
   #coachingOrchestrator;
+  #pause;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -80,8 +82,9 @@ export class GenerateDailyReport {
     this.#config = deps.config;
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
-    this.#reportRenderer = deps.reportRenderer; // Optional: for generating PNG reports
+    this.#reportDelivery = deps.reportDelivery; // Optional: reports degrade to text-only
     this.#coachingOrchestrator = deps.coachingOrchestrator || null;
+    this.#pause = deps.pause || (async () => {});
   }
 
   /**
@@ -145,7 +148,7 @@ export class GenerateDailyReport {
 
       if (!skipPendingCheck) {
         if (forceRegenerate) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await this.#pause(500);
         }
 
         const pendingLogs = await this.#foodLogStore.findPending(userId);
@@ -228,16 +231,16 @@ export class GenerateDailyReport {
       const history = await this.#buildHistory(userId, anchorDateForHistory);
 
       // 7. Generate PNG report if renderer available
-      let pngPath = null;
-      if (this.#reportRenderer?.renderDailyReportToFile) {
+      let preparedReport = null;
+      if (this.#reportDelivery?.prepare) {
         try {
-          pngPath = await this.#reportRenderer.renderDailyReportToFile({
+          preparedReport = await this.#reportDelivery.prepare(prepareDailyReportPresentation({
             date,
             totals,
             goals,
             items,
             history,
-          });
+          }));
         } catch (e) {
           this.#logger.error?.('report.png.failed', { error: e.message });
         }
@@ -282,8 +285,8 @@ export class GenerateDailyReport {
 
       // 11. Send report
       let messageId;
-      if (pngPath) {
-        const result = await messaging.sendPhoto(pngPath, caption, {
+      if (preparedReport) {
+        const result = await preparedReport.sendTo(messaging, caption, {
           choices: buttons,
           inline: true,
         });

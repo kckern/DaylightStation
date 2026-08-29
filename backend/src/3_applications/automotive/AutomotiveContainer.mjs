@@ -5,14 +5,9 @@
  * history tree and the app-owned records tree — and wires the use cases against
  * YAML adapters.
  *
- * The history root is taken from `config/vehicles.yml` (`persistence.dir`)
- * rather than hardcoded, because the relay reads the same key and the two must
- * never disagree about where trips live.
- *
  * @module automotive/AutomotiveContainer
  */
 
-import path from 'path';
 import { ListJourneys } from './usecases/ListJourneys.mjs';
 import { GetVehicleOverview } from './usecases/GetVehicleOverview.mjs';
 import { GetTripDetail } from './usecases/GetTripDetail.mjs';
@@ -33,8 +28,7 @@ export class AutomotiveContainer {
 
   /**
    * @param {object} deps
-   * @param {object} deps.configService
-   * @param {object} [deps.vehiclesConfig] parsed config/vehicles.yml
+   * @param {object} [deps.vehiclesConfig] resolved vehicle policy projection
    * @param {object} [deps.logger]
    */
 /**
@@ -48,10 +42,9 @@ export class AutomotiveContainer {
  * locations, and passes them in.
  */
   constructor({
-    configService, historyRepository, recordRepository, placeRepository,
+    historyRepository, recordRepository, placeRepository,
     vehiclesConfig = {}, logger = console,
   }) {
-    if (!configService) throw new Error('AutomotiveContainer requires configService');
     if (!historyRepository || !recordRepository || !placeRepository) {
       throw new Error('AutomotiveContainer requires historyRepository, recordRepository and placeRepository');
     }

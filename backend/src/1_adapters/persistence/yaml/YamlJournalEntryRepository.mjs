@@ -11,7 +11,9 @@ import path from 'path';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-export class YamlJournalEntryRepository {
+import { IJournalEntryRepository } from '#apps/journalist/ports/IJournalEntryRepository.mjs';
+
+export class YamlJournalEntryRepository extends IJournalEntryRepository {
   #dataService;
   #userResolver;
   #configService;
@@ -25,6 +27,7 @@ export class YamlJournalEntryRepository {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
+    super();
     if (!config.dataService) {
       throw new InfrastructureError('YamlJournalEntryRepository requires dataService', {
         code: 'MISSING_DEPENDENCY',

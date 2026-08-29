@@ -26,11 +26,12 @@ export class GetTripDetail {
   /**
    * @param {object} input
    * @param {string} input.vehicleId
-   * @param {string} input.file  path relative to the vehicle's trips/ dir
+   * @param {string} input.file  trip reference supplied by the history repository
    * @returns {Promise<object>}
    */
   async execute({ vehicleId, file }) {
-    const trip = await this.#historyRepository.readTrip(vehicleId, file);
+    const tripRef = file;
+    const trip = await this.#historyRepository.readTrip(vehicleId, tripRef);
     if (!trip) throw new EntityNotFoundError('Trip', file);
 
     const samples = Array.isArray(trip.samples) ? trip.samples : [];

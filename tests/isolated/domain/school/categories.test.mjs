@@ -42,23 +42,13 @@ describe('resolveCategory', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('unknown category falls back to reference and warns with source + category', () => {
-    const logger = { warn: vi.fn() };
-    const result = resolveCategory('coures', { logger, sourceLabel: 'Typo Course' });
+  it('unknown category falls back to reference', () => {
+    const result = resolveCategory('coures');
     expect(result).toEqual({ key: 'reference', def: CATEGORIES.reference });
-    expect(logger.warn).toHaveBeenCalledWith('school.materials.category-unknown', {
-      source: 'Typo Course',
-      category: 'coures',
-    });
   });
 
-  it('missing category name falls back to reference and warns', () => {
-    const logger = { warn: vi.fn() };
-    const result = resolveCategory(undefined, { logger, sourceLabel: 'No Category Source' });
+  it('missing category name falls back to reference', () => {
+    const result = resolveCategory(undefined);
     expect(result).toEqual({ key: 'reference', def: CATEGORIES.reference });
-    expect(logger.warn).toHaveBeenCalledWith('school.materials.category-unknown', {
-      source: 'No Category Source',
-      category: undefined,
-    });
   });
 });

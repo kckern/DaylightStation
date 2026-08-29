@@ -5,26 +5,26 @@
  * GET /piano/courses/progress. For each requested course id it returns
  * `{ isSequential, total, users:[{id,name,completed,total,lastPlayedAt}] }`.
  * Users are filtered to those with recent, sufficient progress (per
- * videos.progress_overlay) and only populated for sequential courses.
+ * the projected overlay settings) and only populated for sequential courses.
  *
  * Dependencies are constructor-injected at the composition root: the shared
  * Plex-backed `fitnessPlayableService`, the `userVideoProgressStore`, and a
- * `configService` (used for the piano app config + roster profiles — passed in,
- * never imported). The recency/exclusion/ranking rules come from the pure
+ * semantic `configProjection`. The recency/exclusion/ranking rules come from the pure
  * `courseProgress` helpers.
  */
 import { excludeReferenceUnits, isRecent, rankAndCapUsers } from '#apps/piano/courseProgress.mjs';
+import { courseProgressSettings } from '#apps/piano/PianoVideoPolicy.mjs';
 
 export class GetCourseProgress {
   #fitnessPlayableService;
   #userVideoProgressStore;
-  #configService;
+  #configProjection;
   #logger;
 
-  constructor({ fitnessPlayableService, userVideoProgressStore = null, configService, logger = console } = {}) {
+  constructor({ fitnessPlayableService, userVideoProgressStore = null, configProjection, logger = console } = {}) {
     this.#fitnessPlayableService = fitnessPlayableService;
     this.#userVideoProgressStore = userVideoProgressStore;
-    this.#configService = configService;
+    this.#configProjection = configProjection;
     this.#logger = logger;
   }
 
@@ -36,19 +36,14 @@ export class GetCourseProgress {
     const courses = {};
     if (ids.length === 0) return { courses };
 
-    const pianoConfig = this.#configService.getHouseholdAppConfig(null, 'piano') || {};
-    const videos = pianoConfig.videos || {};
-    const sequentialLabels = new Set((videos.sequential_labels || []).map((l) => String(l).toLowerCase()));
-    const overlay = videos.progress_overlay || {};
-    const recencyDays = overlay.recency_days ?? 7;
-    const minCompleted = overlay.min_completed ?? 1;
-    const maxAvatars = overlay.max_avatars ?? 4;
-    const referenceUnits = videos.reference_units || [];
+    const settings = courseProgressSettings(this.#configProjection.raw());
+    const sequentialLabels = new Set(settings.sequentialLabels.map((l) => String(l).toLowerCase()));
+    const { recencyDays, minCompleted, maxAvatars, referenceUnits } = settings;
 
     // Household order, from household.yml — not a restatement in piano.yml.
-    const roster = (this.#configService.getHouseholdUsers?.() || [])
+    const roster = this.#configProjection.roster()
       .map((id) => {
-        const p = this.#configService.getUserProfile(String(id));
+        const p = this.#configProjection.profile(String(id));
         // Profiles carry display_name/username, not `name` — same resolution
         // as the roster endpoint (a bare `p.name` shipped "undefined" labels).
         return p ? { id: String(id), name: p.display_name || p.username || String(id) } : null;

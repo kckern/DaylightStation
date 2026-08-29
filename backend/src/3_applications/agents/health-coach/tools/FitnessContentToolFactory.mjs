@@ -7,7 +7,7 @@ export class FitnessContentToolFactory extends ToolFactory {
   static domain = 'fitness-content';
 
   createTools() {
-    const { fitnessPlayableService, mediaProgressMemory, dataService } = this.deps;
+    const { fitnessPlayableService, workspaceRepository, logger = console } = this.deps;
 
     return [
       createTool({
@@ -75,7 +75,7 @@ export class FitnessContentToolFactory extends ToolFactory {
         },
         execute: async ({ userId }) => {
           try {
-            const state = dataService.user.read('agents/health-coach/program-state', userId);
+            const state = workspaceRepository.getProgramState(userId);
             return { program: state?.program || null };
           } catch (err) {
             return { error: err.message, program: null };
@@ -102,9 +102,10 @@ export class FitnessContentToolFactory extends ToolFactory {
         },
         execute: async ({ userId, state }) => {
           try {
-            dataService.user.write('agents/health-coach/program-state', state, userId);
+            await workspaceRepository.saveProgramState(userId, state);
             return { success: true };
           } catch (err) {
+            logger.warn?.('health-coach.tool.update-program-state.failed', { userId, error: err.message });
             return { error: err.message, success: false };
           }
         },
@@ -120,14 +121,10 @@ export class FitnessContentToolFactory extends ToolFactory {
           },
         },
         execute: async ({ days = 7 }) => {
-          if (!mediaProgressMemory) return { error: 'Media progress not available', items: [], total: 0 };
+          if (!workspaceRepository) return { error: 'Media progress not available', items: [], total: 0 };
           try {
-            const allProgress = await mediaProgressMemory.getAll('plex/14_fitness');
-            const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-
-            const recent = allProgress
-              .filter(p => p.lastPlayed && new Date(p.lastPlayed).getTime() >= cutoff)
-              .sort((a, b) => new Date(b.lastPlayed).getTime() - new Date(a.lastPlayed).getTime());
+            const recent = await workspaceRepository.listRecentFitnessProgress(days);
+            if (recent === null) return { error: 'Media progress not available', items: [], total: 0 };
 
             return {
               items: recent.map(p => ({

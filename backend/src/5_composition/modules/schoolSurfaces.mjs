@@ -23,7 +23,6 @@
  * consumer in v1). Runtime manifest consumption is explicitly deferred past
  * v1; per-request certification is cheap at household corpus scale.
  */
-import path from 'node:path';
 import { YamlSurfaceProfileRepository } from '#adapters/school/catalog/index.mjs';
 import { PaperCertification } from '#adapters/school/paper/PaperCertification.mjs';
 import { ScreenCertification } from '#adapters/school/screen/ScreenCertification.mjs';
@@ -31,8 +30,7 @@ import { Ti86SchoolCalcCodec } from '#adapters/schoolcalc/ti86/index.mjs';
 import {
   Ti86SurfaceCertification, ti86CodecBaselineProfile,
 } from '#adapters/schoolcalc/ti86/Ti86SurfaceCertification.mjs';
-import { GetSurfaceCertification } from '#apps/school/surfaces/GetSurfaceCertification.mjs';
-import { SurfaceRegistry } from '#apps/school/surfaces/SurfaceRegistry.mjs';
+import { BuildSchoolSurfaceCertification } from '#apps/school/surfaces/BuildSchoolSurfaceCertification.mjs';
 
 /**
  * @param {object} deps
@@ -45,63 +43,19 @@ import { SurfaceRegistry } from '#apps/school/surfaces/SurfaceRegistry.mjs';
  * @returns {Promise<{wired: boolean, reason: string|null, registry: object|null, certification: object|null}>}
  */
 export async function createSchoolSurfaces({ schoolCatalog, dataDir, logger = null } = {}) {
-  if (!schoolCatalog?.wired || !schoolCatalog.catalogs || !schoolCatalog.content
-      || !schoolCatalog.lessonBundles || !schoolCatalog.moduleRegistry) {
-    return inert('School Catalog is not wired');
-  }
-  if (typeof dataDir !== 'string' || dataDir.trim().length === 0) {
-    return inert('dataDir is required to locate surface profiles');
-  }
-  try {
-    // Surface profiles are household RENDER POLICY (what a paper sheet or a
-    // browser screen can do), not curriculum — so they do NOT live under the
-    // catalog's contentRoot. They did until 2026-08-21, which is why the Portal
-    // logged `school.surfaces.profile.unresolved` for 'screen-browser' 29 times
-    // in 24h: contentRoot pointed at a directory that does not exist.
-    const surfacesDirectory = path.join(dataDir, 'household', 'school', 'surfaces');
-    const profileRepository = new YamlSurfaceProfileRepository({
-      directory: surfacesDirectory,
-      customCapabilities: schoolCatalog.moduleRegistry.list().map((definition) => definition.capability),
-    });
-    const entries = await profileRepository.listProfiles();
-    entries.filter((entry) => !entry.profile).forEach((entry) => {
-      logger?.warn?.('school.surfaces.profile-invalid', { file: entry.file, errors: entry.errors });
-    });
-
-    const registry = new SurfaceRegistry({
-      profiles: entries,
-      ports: {
-        schoolcalc: new Ti86SurfaceCertification({ codec: new Ti86SchoolCalcCodec() }),
-        paper: new PaperCertification(),
-        screen: new ScreenCertification(),
-      },
-      baselines: [{ profile: ti86CodecBaselineProfile(), baseline: 'codec' }],
-    });
-
-    const { catalogs, lessonBundles, content } = schoolCatalog;
-    const banks = { getBank: (bankId) => content.getQuestionBank(bankId) };
-    // A fresh instance per call — see file doc: avoids stale-bundle
-    // memoization across the process lifetime of an HTTP router dependency.
-    const buildCertification = () => new GetSurfaceCertification({
-      buildLesson: lessonBundles, catalogs, banks, registry,
-    });
-    const certification = {
-      lesson: (address) => buildCertification().lesson(address),
-      bank: (bankId) => buildCertification().bank(bankId),
-    };
-
-    return Object.freeze({
-      wired: true, reason: null, registry, certification,
-    });
-  } catch (error) {
-    logger?.error?.('school.surfaces.wiring-failed', { error: error.message });
-    return inert(error.message);
-  }
-}
-
-function inert(reason) {
-  return Object.freeze({
-    wired: false, reason, registry: null, certification: null,
+  const profileRepository = new YamlSurfaceProfileRepository({
+    dataDir,
+    capabilitySource: schoolCatalog?.moduleRegistry,
+  });
+  return new BuildSchoolSurfaceCertification({ logger }).execute({
+    schoolCatalog,
+    profileRepository,
+    ports: {
+      schoolcalc: new Ti86SurfaceCertification({ codec: new Ti86SchoolCalcCodec() }),
+      paper: new PaperCertification(),
+      screen: new ScreenCertification(),
+    },
+    baselines: [{ profile: ti86CodecBaselineProfile(), baseline: 'codec' }],
   });
 }
 

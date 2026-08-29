@@ -23,7 +23,7 @@ import { describe, it, expect } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { YamlHubConfigDatastore } from '../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
+import { YamlHubConfigDatastore, serializeHubConfig } from '../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
 
 const FIXTURES = path.resolve(import.meta.dirname, '../fixtures/playback-hub');
 
@@ -58,7 +58,7 @@ describe('YamlHubConfigDatastore vs validate_config.py — shared fixture parity
       // JSON.parse(JSON.stringify(...)) drops `undefined` and unwraps
       // frozen structures into plain JSON-equivalent shapes — same
       // canonicalization the Python validator's json.dump performs.
-      const actual = JSON.parse(JSON.stringify(cfg.toYaml()));
+      const actual = JSON.parse(JSON.stringify(serializeHubConfig(cfg)));
       expect(actual, `fixture ${fname} canonical-form drift between JS and expected.json`).toEqual(expected);
     }
   });

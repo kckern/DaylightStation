@@ -7,13 +7,17 @@ import { SessionService } from '#apps/fitness/services/SessionService.mjs';
 import { HealthDashboardUseCase } from '#apps/health/HealthDashboardUseCase.mjs';
 import { LongitudinalAggregationService } from '#apps/health/LongitudinalAggregationService.mjs';
 import { PersonalContextLoader } from '#apps/health/PersonalContextLoader.mjs';
+import { YamlPersonalPlaybookStore } from '#adapters/health/YamlPersonalPlaybookStore.mjs';
 import { SetDailyCoachingUseCase } from '#apps/health/SetDailyCoachingUseCase.mjs';
-import { dataService } from '#system/config/index.mjs';
-import fs from 'fs/promises';
-import yaml from 'js-yaml';
+import { HealthOperations } from '#apps/health/HealthOperations.mjs';
+import { dataService } from '../runtimePersistence.mjs';
+import { nowDate } from '#system/utils/time.mjs';
+import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import { createHealthServices } from '../bootstrap.mjs';
 import { createHealthDashboardRouter } from '#api/v1/routers/health-dashboard.mjs';
+import { AgentHealthDashboardService } from '#apps/health/AgentHealthDashboardService.mjs';
+import { DataServiceHealthDashboardRepository } from '#adapters/persistence/files/DataServiceHealthDashboardRepository.mjs';
 
 /**
  * Create health API router
@@ -60,24 +64,8 @@ export function createHealthApiRouter(config) {
   //    CoachingComplianceCard can render the right rows
   const dataDirForCoaching = configService?.getDataDir?.() || './data';
   const archiveRootForCoaching = path.resolve(dataDirForCoaching, 'users');
-  const yamlReaderForCoaching = {
-    readYaml: async (absPath) => {
-      try {
-        const content = await fs.readFile(absPath, 'utf8');
-        return yaml.load(content) || null;
-      } catch (err) {
-        if (err.code === 'ENOENT') return null;
-        logger.warn?.('health_router.personal_context.read_failed', {
-          path: absPath,
-          error: err?.message || String(err),
-        });
-        return null;
-      }
-    },
-  };
   const personalContextLoader = new PersonalContextLoader({
-    dataService: yamlReaderForCoaching,
-    archiveRoot: archiveRootForCoaching,
+    playbookStore: new YamlPersonalPlaybookStore({ usersRoot: archiveRootForCoaching, logger }),
     logger,
   });
 
@@ -87,17 +75,26 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  const healthOperations = new HealthOperations({
+    healthData: healthServices.healthStore,
+    nutritionItems: healthServices.nutriListStore,
+    personalContext: personalContextLoader,
+    setDailyCoaching: setDailyCoachingUseCase,
+    nutritionInput: webNutribotAdapter,
+    resolveDefaultUsername: () => configService?.getHeadOfHousehold?.()
+      || configService?.getDefaultUsername?.()
+      || 'default',
+    resolveCoachingUsername: () => configService?.getHeadOfHousehold?.() || null,
+    today: nowDate,
+    newId: uuidv4,
+  });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
-    healthStore: healthServices.healthStore,
-    nutriListStore: healthServices.nutriListStore,
+    healthOperations,
     dashboardService,
     longitudinalService,
-    setDailyCoachingUseCase,
-    personalContextLoader,
-    configService,
     catalogService,
-    webNutribotAdapter,
     logger
   });
 }
@@ -115,8 +112,11 @@ export function createHealthDashboardApiRouter(config) {
     logger = console
   } = config;
 
-  return createHealthDashboardRouter({
-    dataService,
-    logger
+  const repository = new DataServiceHealthDashboardRepository({ dataService });
+  const dashboardService = new AgentHealthDashboardService({
+    repository,
+    clock: { now: () => new Date() },
+    logger,
   });
+  return createHealthDashboardRouter({ dashboardService });
 }

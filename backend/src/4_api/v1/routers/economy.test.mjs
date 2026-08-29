@@ -5,6 +5,7 @@ import express from 'express';
 import request from 'supertest';
 import { YamlEconomyDatastore } from '#adapters/persistence/yaml/YamlEconomyDatastore.mjs';
 import { EconomyService } from '#apps/economy/EconomyService.mjs';
+import { EconomyConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
 import { createEconomyRouter } from './economy.mjs';
 
 const USER = 'test-user';
@@ -24,7 +25,7 @@ const clean = () => { try { fs.rmSync(USER_DIR, { recursive: true, force: true }
 const makeApp = () => {
   const economyService = new EconomyService({
     datastore: new YamlEconomyDatastore({ configService }),
-    configService,
+    configProjection: new EconomyConfigProjection({ configService }),
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
   });
   const app = express();

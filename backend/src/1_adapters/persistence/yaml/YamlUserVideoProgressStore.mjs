@@ -1,6 +1,5 @@
-import fs from 'fs';
 import path from 'path';
-import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
+import { getStats, loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 
 /**
  * UserVideoProgressStore — per-user video course progress for the piano kiosk.
@@ -158,7 +157,7 @@ export class YamlUserVideoProgressStore {
   progressFileMtime(userId) {
     const dir = this.#userDir(userId);
     if (!dir) return 0;
-    try { return fs.statSync(path.join(dir, `${this.#filename}.yml`)).mtimeMs; } catch { return 0; }
+    return getStats(path.join(dir, `${this.#filename}.yml`))?.mtimeMs ?? 0;
   }
 
   // Convenience guard reused by routers.

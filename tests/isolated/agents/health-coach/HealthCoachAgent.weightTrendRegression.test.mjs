@@ -69,8 +69,8 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
       },
     };
 
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
-    const orchestrator = new AgentOrchestrator({ agentRuntime, configService: cfg });
+    const resolveDefaultUserId = vi.fn(() => 'user_1');
+    const orchestrator = new AgentOrchestrator({ agentRuntime, resolveDefaultUserId, createTurnId: () => 'test-turn' });
     orchestrator.register(StubAgent, {
       agentRuntime,
       workingMemory: { load: vi.fn(async () => null), save: vi.fn() },
@@ -80,11 +80,11 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
 
     // Assertions inside agentRuntime.execute fired during the call.
     // configService.getHeadOfHousehold was called by orchestrator
-    expect(cfg.getHeadOfHousehold).toHaveBeenCalled();
+    expect(resolveDefaultUserId).toHaveBeenCalled();
   });
 
   it('userId missing → resolved to user_1 same as default', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
+    const resolveDefaultUserId = vi.fn(() => 'user_1');
     let captured;
     const agentRuntime = {
       execute: async ({ context }) => {
@@ -92,7 +92,7 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
         return { output: 'ok', toolCalls: [] };
       },
     };
-    const orch = new AgentOrchestrator({ agentRuntime, configService: cfg });
+    const orch = new AgentOrchestrator({ agentRuntime, resolveDefaultUserId, createTurnId: () => 'test-turn' });
     orch.register(StubAgent, {
       agentRuntime,
       workingMemory: { load: vi.fn(async () => null), save: vi.fn() },
@@ -102,7 +102,7 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
   });
 
   it('userId=user_5 → passes through unchanged', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
+    const resolveDefaultUserId = vi.fn(() => 'user_1');
     let captured;
     const agentRuntime = {
       execute: async ({ context }) => {
@@ -110,13 +110,13 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
         return { output: 'ok', toolCalls: [] };
       },
     };
-    const orch = new AgentOrchestrator({ agentRuntime, configService: cfg });
+    const orch = new AgentOrchestrator({ agentRuntime, resolveDefaultUserId, createTurnId: () => 'test-turn' });
     orch.register(StubAgent, {
       agentRuntime,
       workingMemory: { load: vi.fn(async () => null), save: vi.fn() },
     });
     await orch.run('stub', "what's my weight trend?", { userId: 'user_5' });
     expect(captured.userId).toBe('user_5');
-    expect(cfg.getHeadOfHousehold).not.toHaveBeenCalled();
+    expect(resolveDefaultUserId).not.toHaveBeenCalled();
   });
 });

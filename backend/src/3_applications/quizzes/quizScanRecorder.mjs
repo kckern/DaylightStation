@@ -25,11 +25,7 @@
 // A question with no mark is OMITTED from `answers`; a multi-marked question
 // records every letter (e.g. `15: [A, E]`) so grading policy stays downstream.
 // An unreadable test-ID digit (blank or multi-marked) records as `?`.
-import { promises as fs } from 'fs';
-import path from 'path';
-import yaml from 'js-yaml';
 
-const DEFAULT_TOPIC = 'omr';
 // Same retransmit-suppression semantics (and config knob) as the relay's raw
 // persistence, so the decoded file and the manifest agree on what "one card" is.
 const DEFAULT_DEDUP_WINDOW_MS = 2000;
@@ -114,30 +110,13 @@ export function decodeQuizSheet(marks) {
 }
 
 /**
- * Bus topic(s) a decoded-scan consumer should subscribe to for THIS config —
- * always the default `omr` topic, plus any reader-specific topic named in
- * `config.scanners`. Shared between `createQuizScanRecorder` below and any
- * other consumer of the same decoded stream (Task 7's `ResolveCardScan`
- * wiring, `5_composition/modules/schoolPrintScanConsumer.mjs`) so the two
- * never disagree about which topics carry sheets.
- *
- * @param {object} [config] parsed config/omr-readers.yml
- * @returns {string[]}
- */
-export function resolveQuizScanTopics(config = {}) {
-  const readerDefs = config?.scanners || {};
-  return [...new Set([DEFAULT_TOPIC, ...Object.values(readerDefs).map((r) => r?.topic).filter(Boolean)])];
-}
-
-/**
  * Live decoder: subscribes to the relay's bus topic(s) and appends a decoded
  * record per sheet to {quizzesDir}/{reader-id}/{YYYY-MM-DD}.yml. Same
  * constructor shape and config file (omr-readers.yml) as createOmrRelay.
  *
  * @param {object} deps
- * @param {object} deps.eventBus  IEventBus (subscribe only)
- * @param {string} deps.dataDir   resolved data dir
- * @param {object} [deps.config]  parsed config/omr-readers.yml
+ * @param {{observe: Function}} deps.scanSource
+ * @param {number} [deps.dedupWindowMs]
  * @param {object} [deps.logger]
  * @returns {{ dispose: () => void }}
  */
@@ -151,14 +130,13 @@ export function resolveQuizScanTopics(config = {}) {
  * file. The composition root resolves the location — config override
  * included — and passes directories down.
  */
-export function createQuizScanRecorder({ eventBus, dataDir, outRoot, config = {}, logger = console }) {
-  if (!eventBus?.subscribe) {
-    throw new Error('createQuizScanRecorder: eventBus with subscribe required');
+export function createQuizScanRecorder({ scanSource, decodedScanStore, dedupWindowMs = DEFAULT_DEDUP_WINDOW_MS, logger = console }) {
+  if (!scanSource?.observe) {
+    throw new Error('createQuizScanRecorder: scanSource required');
   }
 
-  if (!outRoot) throw new Error('createQuizScanRecorder: outRoot required');
-  const dedupWindowMs = Number(config?.persistence?.dedupWindowMs ?? DEFAULT_DEDUP_WINDOW_MS);
-  const topics = new Set(resolveQuizScanTopics(config));
+  if (!decodedScanStore?.append) throw new Error('createQuizScanRecorder: decodedScanStore required');
+  const effectiveDedupWindowMs = Number(dedupWindowMs);
 
   const lastSheet = new Map(); // reader id -> { signature, atMs }
 
@@ -171,7 +149,7 @@ export function createQuizScanRecorder({ eventBus, dataDir, outRoot, config = {}
     const signature = payload.marks.join(',');
     const nowMs = Date.now();
     const prev = lastSheet.get(id);
-    if (prev && prev.signature === signature && (nowMs - prev.atMs) < dedupWindowMs) {
+    if (prev && prev.signature === signature && (nowMs - prev.atMs) < effectiveDedupWindowMs) {
       logger.debug?.('quiz.decode.deduped', { id, sinceMs: nowMs - prev.atMs });
       return;
     }
@@ -182,13 +160,13 @@ export function createQuizScanRecorder({ eventBus, dataDir, outRoot, config = {}
       id, testId: record.testId, answered: Object.keys(record.answers).length,
     });
     writeChain = writeChain
-      .then(() => appendDecoded(outRoot, id, record))
+      .then(() => decodedScanStore.append(id, record))
       .catch((err) => logger.warn?.('quiz.decode.persist_failed', { id, error: err.message }));
   };
 
-  const unsubs = [...topics].map((topic) => eventBus.subscribe(topic, onPayload));
-  logger.info?.('quiz.decode.ready', { outRoot, topics: [...topics] });
-  return { dispose: () => { for (const u of unsubs) { try { u?.(); } catch { /* noop */ } } } };
+  const unsubscribe = scanSource.observe(onPayload);
+  logger.info?.('quiz.decode.ready');
+  return { dispose: () => { try { unsubscribe?.(); } catch { /* noop */ } } };
 }
 
 /**
@@ -198,71 +176,29 @@ export function createQuizScanRecorder({ eventBus, dataDir, outRoot, config = {}
  *
  * @returns {{ readers: number, days: number, sheets: number }}
  */
-export async function rebuildQuizDayFiles({ historyRoot, outRoot, config = {}, logger = console }) {
+export async function rebuildQuizDayFiles({ decodedScanStore, logger = console }) {
+  if (!decodedScanStore) throw new Error('rebuildQuizDayFiles: decodedScanStore required');
 
   const result = { readers: 0, days: 0, sheets: 0 };
-  let readerIds = [];
-  try {
-    readerIds = (await fs.readdir(historyRoot, { withFileTypes: true }))
-      .filter((e) => e.isDirectory()).map((e) => e.name);
-  } catch (err) {
-    if (err.code === 'ENOENT') return result; // no history yet — nothing to do
-    throw err;
-  }
+  const readerIds = await decodedScanStore.listRawReaders();
 
   for (const id of readerIds) {
     result.readers += 1;
-    const dayFiles = (await fs.readdir(path.join(historyRoot, id)))
-      .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f)).sort();
+    const dayFiles = await decodedScanStore.listRawDays(id);
     for (const dayFile of dayFiles) {
-      const raw = yaml.load(await fs.readFile(path.join(historyRoot, id, dayFile), 'utf8'));
+      const raw = await decodedScanStore.readRawDay(id, dayFile);
       if (!Array.isArray(raw)) continue;
       const decoded = raw
         .filter((r) => r?.event === 'sheet' && Array.isArray(r.marks))
         .map((r) => ({ ts: r.ts, ...decodeQuizSheet(r.marks) }));
       if (!decoded.length) continue;
-      const outDir = path.join(outRoot, id);
-      await fs.mkdir(outDir, { recursive: true });
-      await fs.writeFile(path.join(outDir, dayFile), dumpQuizYaml(decoded), 'utf8');
+      await decodedScanStore.replaceDecodedDay(id, dayFile, decoded);
       result.days += 1;
       result.sheets += decoded.length;
       logger.info?.('quiz.backfill.day', { id, day: dayFile, sheets: decoded.length });
     }
   }
   return result;
-}
-
-function resolveDir(dataDir, configured, fallback) {
-  const rel = (configured || fallback).replace(/^\/+/, '');
-  return path.join(dataDir, ...rel.split('/'));
-}
-
-async function appendDecoded(outRoot, id, record) {
-  const day = (typeof record?.ts === 'string' && /^\d{4}-\d{2}-\d{2}/.test(record.ts))
-    ? record.ts.slice(0, 10)
-    : new Date().toISOString().slice(0, 10);
-  const dir = path.join(outRoot, id);
-  const file = path.join(dir, `${day}.yml`);
-  await fs.mkdir(dir, { recursive: true });
-
-  let list = [];
-  try {
-    const existing = yaml.load(await fs.readFile(file, 'utf8'));
-    if (Array.isArray(existing)) list = existing;
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-  }
-  list.push(record);
-  await fs.writeFile(file, dumpQuizYaml(list), 'utf8');
-}
-
-// js-yaml quotes numeric-looking string keys ('1': A). Question numbers ARE
-// numbers, so unquote them for a clean human-readable file; flowLevel keeps
-// multi-mark answers inline (15: [A, E]) instead of a block list.
-function dumpQuizYaml(list) {
-  return yaml
-    .dump(list, { indent: 2, lineWidth: -1, noRefs: true, flowLevel: 3 })
-    .replace(/^(\s+)'(\d+)':/gm, '$1$2:');
 }
 
 export default createQuizScanRecorder;

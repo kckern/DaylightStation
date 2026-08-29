@@ -1,6 +1,6 @@
 // tests/isolated/agents/health-coach/compute.test.mjs
 import { describe, it, expect } from 'vitest';
-import { ComputeSandbox } from '../../../../backend/src/3_applications/agents/health-coach/services/ComputeSandbox.mjs';
+import { ComputeSandboxAdapter as ComputeSandbox } from '../../../../backend/src/1_adapters/agents/health-coach/ComputeSandboxAdapter.mjs';
 
 describe('ComputeSandbox.evaluate', () => {
   const sandbox = new ComputeSandbox();

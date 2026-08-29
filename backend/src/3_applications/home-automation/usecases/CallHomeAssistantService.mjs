@@ -17,8 +17,8 @@
  * @module 3_applications/home-automation/usecases/CallHomeAssistantService
  */
 
-import { ValidationError } from '#system/utils/errors/index.mjs';
 import { ApplicationError } from '#apps/common/errors/index.mjs';
+import { InvalidInputError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class CallHomeAssistantService {
   #haGateway;
@@ -45,13 +45,13 @@ export class CallHomeAssistantService {
    */
   async execute({ domain, service, data = {} } = {}) {
     if (!domain) {
-      throw new ValidationError('domain required', {
+      throw new InvalidInputError('domain required', {
         code: 'HA_CALL_MISSING_DOMAIN',
         field: 'domain',
       });
     }
     if (!service) {
-      throw new ValidationError('service required', {
+      throw new InvalidInputError('service required', {
         code: 'HA_CALL_MISSING_SERVICE',
         field: 'service',
       });

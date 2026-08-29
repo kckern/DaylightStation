@@ -251,6 +251,21 @@ export function ensureDir(dirPath) {
   }
 }
 
+/** Asynchronously ensure a directory exists. */
+export async function ensureDirAsync(dirPath) {
+  await fs.promises.mkdir(dirPath, { recursive: true });
+}
+
+/** Create a uniquely named temporary directory from a full prefix path. */
+export async function createTempDir(prefix) {
+  return fs.promises.mkdtemp(prefix);
+}
+
+/** Whether a path is executable by this process. */
+export function isExecutable(filePath) {
+  try { fs.accessSync(filePath, fs.constants.X_OK); return true; } catch { return false; }
+}
+
 /**
  * List subdirectories in a directory
  * @param {string} dirPath - Directory path
@@ -319,6 +334,14 @@ export function listFiles(dirPath, options = {}) {
   }
 }
 
+/**
+ * List directory entries without turning filesystem failures into an empty
+ * result. Use when an adapter's caller must retain the native error contract.
+ */
+export function readDirectory(dirPath, options = undefined) {
+  return options === undefined ? fs.readdirSync(dirPath) : fs.readdirSync(dirPath, options);
+}
+
 // ============================================================
 // Raw file operations (for non-YAML files)
 // ============================================================
@@ -338,6 +361,41 @@ export function readFile(filePath) {
 }
 
 /**
+ * Read a text file without masking errors. Persistence adapters use this when
+ * a missing file has a defined meaning but malformed/unreadable data must not
+ * be silently treated as absent.
+ */
+export function readTextFromPath(filePath) {
+  return fs.readFileSync(filePath, 'utf8');
+}
+
+/** Asynchronously read text without masking filesystem errors. */
+export async function readTextFromPathAsync(filePath) {
+  return fs.promises.readFile(filePath, 'utf8');
+}
+
+/** Asynchronously list directory entries without masking filesystem errors. */
+export async function readDirectoryAsync(dirPath, options = undefined) {
+  return options === undefined ? fs.promises.readdir(dirPath) : fs.promises.readdir(dirPath, options);
+}
+
+/** Asynchronously stat a path without masking filesystem errors. */
+export async function getFileStatsAsync(filePath) {
+  return fs.promises.stat(filePath);
+}
+
+/** Asynchronously test for a path while treating only absence as false. */
+export async function fileExistsAsync(filePath) {
+  try {
+    await fs.promises.access(filePath);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+/**
  * Write a file (for non-YAML files)
  * @param {string} filePath - Full file path
  * @param {string} content - File content
@@ -351,6 +409,68 @@ export function writeFile(filePath, content) {
     logPermissionError(filePath, err);
     throw err;
   }
+}
+
+/** Asynchronously write text, creating the parent directory first. */
+export async function writeTextFileAsync(filePath, content, options = {}) {
+  const dir = path.dirname(filePath);
+  await fs.promises.mkdir(dir, { recursive: true });
+  try {
+    await fs.promises.writeFile(filePath, content, { encoding: 'utf8', ...options });
+  } catch (err) {
+    logPermissionError(filePath, err);
+    throw err;
+  }
+}
+
+/**
+ * Asynchronously write text without creating a parent directory. This retains
+ * Node's native ENOENT contract for adapters whose configured storage root
+ * must already exist.
+ */
+export async function writeTextFileStrictAsync(filePath, content) {
+  try {
+    await fs.promises.writeFile(filePath, content, 'utf8');
+  } catch (err) {
+    logPermissionError(filePath, err);
+    throw err;
+  }
+}
+
+/** Asynchronously rename a path, preserving Node's native failure contract. */
+export async function renameFileAsync(sourcePath, destinationPath) {
+  await fs.promises.rename(sourcePath, destinationPath);
+}
+
+/** Create a hard link while preserving native filesystem errors. */
+export async function createHardLinkAsync(sourcePath, destinationPath) {
+  await fs.promises.link(sourcePath, destinationPath);
+}
+
+/** Copy one file while preserving native filesystem errors. */
+export async function copyFileAsync(sourcePath, destinationPath) {
+  await fs.promises.copyFile(sourcePath, destinationPath);
+}
+
+/**
+ * Write text only when a destination is absent. The native EEXIST error is
+ * intentionally preserved for durable claim/receipt adapters.
+ */
+export function writeFileExclusive(filePath, content, { mode } = {}) {
+  ensureDir(path.dirname(filePath));
+  const options = { encoding: 'utf8', flag: 'wx', ...(mode === undefined ? {} : { mode }) };
+  return fs.writeFileSync(filePath, content, options);
+}
+
+/** Append text to a file, creating its parent directory if needed. */
+export function appendTextFile(filePath, content) {
+  ensureDir(path.dirname(filePath));
+  fs.appendFileSync(filePath, content, 'utf8');
+}
+
+/** Truncate an existing file to an exact byte length. */
+export function truncateFile(filePath, length) {
+  fs.truncateSync(filePath, length);
 }
 
 /**
@@ -378,6 +498,74 @@ export function writeFileAtomic(filePath, content) {
   }
 }
 
+/** Atomically move a prepared file into place on the same filesystem. */
+export function renameFile(sourcePath, destinationPath) {
+  fs.renameSync(sourcePath, destinationPath);
+}
+
+/** Set filesystem timestamps synchronously, preserving native errors. */
+export function setFileTimes(filePath, atime, mtime) {
+  fs.utimesSync(filePath, atime, mtime);
+}
+
+/**
+ * Open a text/binary file for synchronous append, creating its parent
+ * directory first. Kept here so adapter streaming sinks do not reach around
+ * the central filesystem gateway for file-descriptor operations.
+ * @param {string} filePath
+ * @returns {number} file descriptor
+ */
+export function openFileForAppend(filePath) {
+  ensureDir(path.dirname(filePath));
+  return fs.openSync(filePath, 'a');
+}
+
+/** Create an append-mode write stream, creating its parent directory first. */
+export function createAppendWriteStream(filePath) {
+  ensureDir(path.dirname(filePath));
+  return fs.createWriteStream(filePath, { flags: 'a' });
+}
+
+/** Create a write stream with caller-provided options. */
+export function createWriteStream(filePath, options = undefined) {
+  return options === undefined ? fs.createWriteStream(filePath) : fs.createWriteStream(filePath, options);
+}
+
+/** Create a read stream with caller-provided byte-range options. */
+export function createReadStream(filePath, options = undefined) {
+  return options === undefined ? fs.createReadStream(filePath) : fs.createReadStream(filePath, options);
+}
+
+/** Open a new file exclusively, preserving Node's EEXIST conflict signal. */
+export function openFileExclusive(filePath) {
+  ensureDir(path.dirname(filePath));
+  return fs.openSync(filePath, 'wx');
+}
+
+/** Write a complete chunk to an open synchronous file descriptor. */
+export function writeToFileDescriptor(fd, content) {
+  const chunk = Buffer.isBuffer(content) ? content : Buffer.from(content);
+  let offset = 0;
+  while (offset < chunk.length) {
+    const written = fs.writeSync(fd, chunk, offset, chunk.length - offset);
+    if (!Number.isInteger(written) || written <= 0) {
+      throw new Error(`File descriptor write made no progress at byte ${offset} of ${chunk.length}`);
+    }
+    offset += written;
+  }
+  return offset;
+}
+
+/** Close an open synchronous file descriptor. */
+export function closeFileDescriptor(fd) {
+  fs.closeSync(fd);
+}
+
+/** Flush an open synchronous file descriptor to durable storage. */
+export function syncFileDescriptor(fd) {
+  fs.fsyncSync(fd);
+}
+
 /**
  * Load YAML from a full path (when extension is already known)
  * @param {string} filePath - Full file path with extension
@@ -391,6 +579,21 @@ export function loadYamlFromPath(filePath) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Load YAML from a known path without hiding read or parse failures.
+ *
+ * Use this when a caller must distinguish a missing file from corrupt or
+ * unreadable data. `ENOENT` is deliberately left intact for the caller to
+ * interpret; every other error is likewise preserved for logging or recovery.
+ *
+ * @param {string} filePath - Full path with extension
+ * @returns {any} Parsed YAML content
+ * @throws {Error} If the file cannot be read or parsed
+ */
+export function readYamlFromPath(filePath) {
+  return yaml.load(fs.readFileSync(filePath, 'utf8'));
 }
 
 /**
@@ -447,6 +650,21 @@ export function deleteFile(filePath) {
   }
 }
 
+/** Delete one path while preserving native filesystem errors for the caller. */
+export function deleteFileStrict(filePath) {
+  fs.unlinkSync(filePath);
+}
+
+/** Asynchronously delete one path while preserving native filesystem errors. */
+export async function deleteFileStrictAsync(filePath) {
+  await fs.promises.unlink(filePath);
+}
+
+/** Asynchronously remove a file, optionally treating absence as success. */
+export async function removeFileAsync(filePath, { force = false } = {}) {
+  await fs.promises.rm(filePath, { force });
+}
+
 /**
  * Delete a YAML file (tries both .yml and .yaml extensions)
  * @param {string} basePath - Path without extension
@@ -471,6 +689,11 @@ export function deleteDir(dirPath) {
   } catch {
     return false;
   }
+}
+
+/** Asynchronously delete a directory tree, preserving native failures. */
+export async function deleteDirAsync(dirPath, { force = false } = {}) {
+  await fs.promises.rm(dirPath, { recursive: true, force });
 }
 
 /**
@@ -518,6 +741,42 @@ export function readBinary(filePath) {
   }
 }
 
+/** Read binary content without masking missing, permission, or I/O errors. */
+export function readBinaryFromPath(filePath) {
+  return fs.readFileSync(filePath);
+}
+
+/** Asynchronously read binary content without masking filesystem errors. */
+export async function readBinaryFromPathAsync(filePath) {
+  return fs.promises.readFile(filePath);
+}
+
+/** Asynchronously write binary data, creating the parent directory first. */
+export async function writeBinaryAsync(filePath, buffer) {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  try {
+    await fs.promises.writeFile(filePath, buffer);
+  } catch (err) {
+    logPermissionError(filePath, err);
+    throw err;
+  }
+}
+
+/** Asynchronously create a binary file exclusively, preserving EEXIST. */
+export async function writeBinaryExclusiveAsync(filePath, buffer) {
+  await fs.promises.writeFile(filePath, buffer, { flag: 'wx' });
+}
+
+/**
+ * Write binary content only if the destination does not already exist.
+ * The caller receives Node's EEXIST error, which is important for immutable
+ * artifact stores that distinguish a replay from a newly-created artifact.
+ */
+export function writeBinaryExclusive(filePath, buffer, { mode } = {}) {
+  ensureDir(path.dirname(filePath));
+  return fs.writeFileSync(filePath, buffer, { flag: 'wx', ...(mode === undefined ? {} : { mode }) });
+}
+
 function atomicStagingPath(filePath) {
   return `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -552,6 +811,24 @@ export function isFile(filePath) {
 export function getStats(filePath) {
   try {
     return fs.statSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+/** Read filesystem metadata while preserving native filesystem errors. */
+export function getFileStats(filePath) {
+  return fs.statSync(filePath);
+}
+
+/**
+ * Resolve a path through symlinks. Returns null when it cannot be resolved so
+ * callers that intentionally tolerate a vanished/unreadable path can retain
+ * their existing fallback behavior.
+ */
+export function resolveRealPath(filePath) {
+  try {
+    return fs.realpathSync(filePath);
   } catch {
     return null;
   }

@@ -3,7 +3,7 @@
  *
  * This is one of two `IReceiptRenderer`s the lifecycle builds: `render(document,
  * opts)` → `{ items, footer }`, the shape `ThermalPrinterAdapter.print()`
- * accepts. The other is the raster path (`DocumentReceiptRasterRenderer.mjs`,
+ * accepts. The other is the raster path (`DocumentReceiptRasterAdapter.mjs`,
  * wrapping this module's sibling `DocumentReceiptRenderer.mjs`), which is what
  * actually reaches paper for the three receipts this console prints today
  * (spec §6.2) — see `5_composition/modules/schoolLifecycle.mjs` for why, and
@@ -15,7 +15,7 @@
  * that a bitmap cannot do for itself:
  *
  *  - **Operator transcript.** ESC/POS has no channel for embedding decodable
- *    text inside a raster image, so `DocumentReceiptRasterRenderer` runs this
+ *    text inside a raster image, so `DocumentReceiptRasterAdapter` runs this
  *    renderer on the side (never printed) and reads its `items` back as plain
  *    words via `transcribeEscPosItems` — the same transcript
  *    `VirtualThermalPrinterAdapter`'s capture and the e2e suite have always

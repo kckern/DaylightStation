@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createFitnessRouter } from './fitness.mjs';
+import { ManageAccess } from '#apps/fitness/usecases/ManageAccess.mjs';
 
 const silent = { info(){}, warn(){}, error(){}, debug(){} };
 
@@ -14,19 +15,31 @@ function appWith({ profiles = {}, primary, admin, unlockService, manageService, 
   };
   const configService = { getDefaultHouseholdId: () => 'default' };
   const fitnessConfigService = {
-    loadRawConfig: () => ({ users: { primary: primary ?? Object.keys(profiles), admin: admin ?? [] } }),
+    getAccessPolicy: () => ({ users: { primary: primary ?? Object.keys(profiles), admin: admin ?? [] } }),
   };
   const writes = [];
   const fingerprintProfileWriter = {
     addFingerprint: vi.fn(async (u, e) => { writes.push(['add', u, e]); }),
     removeFingerprint: vi.fn(async (u, id) => { writes.push(['remove', u, id]); }),
   };
+  const resolveUnlockService = () => unlockService ?? null;
+  const resolveManageService = () => manageService ?? null;
+  const manageAccess = new ManageAccess({
+    userService,
+    fitnessConfigService,
+    fingerprintProfileWriter,
+    resolveUnlockService,
+    resolveManageService,
+    identityRelay: identityRelay ?? null,
+    logger: silent,
+  });
   const app = express();
   app.use(express.json());
   app.use('/', createFitnessRouter({
     userService, configService, fitnessConfigService, fingerprintProfileWriter,
-    resolveUnlockService: () => unlockService ?? null,
-    resolveManageService: () => manageService ?? null,
+    manageAccess,
+    resolveUnlockService,
+    resolveManageService,
     identityRelay: identityRelay ?? null,
     logger: silent,
   }));

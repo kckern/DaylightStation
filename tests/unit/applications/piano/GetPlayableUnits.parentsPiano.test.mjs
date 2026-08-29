@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GetPlayableUnits } from '../../../../backend/src/3_applications/piano/usecases/GetPlayableUnits.mjs';
+import { PianoConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
 
 // GetPlayableUnits now RECEIVES the curriculum reader (Decision D1), so this
 // is a plain injected double rather than a module mock — no vi.mock, and no
@@ -58,7 +59,7 @@ const fitnessPlayableService = {
 const makeUseCase = () => new GetPlayableUnits({
   fitnessPlayableService,
   userVideoProgressStore: null,
-  configService,
+  configProjection: new PianoConfigProjection({ configService }),
   curriculumIndex,
   logger: noop,
 });
@@ -104,7 +105,7 @@ describe('GetPlayableUnits (parents piano enrichment)', () => {
         },
       },
       userVideoProgressStore: null,
-      configService,
+      configProjection: new PianoConfigProjection({ configService }),
       logger: noop,
     });
 

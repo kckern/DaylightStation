@@ -1,8 +1,7 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { ILearningEvidenceRepository } from '#apps/school/ports/ILearningEvidenceRepository.mjs';
 import { validateLearningEvidence } from '#domains/school/progress/index.mjs';
-import { ensureDir, loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
+import { ensureDir, fileExists, loadYamlSafe, readDirectory, saveYaml } from '#system/utils/FileIO.mjs';
 
 const DAY_FILE = /^\d{4}-\d{2}-\d{2}\.yml$/;
 
@@ -59,8 +58,8 @@ export class YamlLearningEvidenceRepository extends ILearningEvidenceRepository 
   }
 
   #readAll(directory) {
-    if (!fs.existsSync(directory)) return [];
-    return fs.readdirSync(directory)
+    if (!fileExists(directory)) return [];
+    return readDirectory(directory)
       .filter((file) => DAY_FILE.test(file))
       .sort()
       .flatMap((file) => {
@@ -80,4 +79,3 @@ function stableValue(value) {
 }
 
 export default YamlLearningEvidenceRepository;
-

@@ -10,7 +10,7 @@
  *
  * Shapes borrowed from the real seams:
  *  - `getStatus()` returns `SlotStatus[]`, exactly like
- *    {@link HttpPlaybackHubAdapter#getStatus}, built through `SlotStatus.fromHubJson`
+ *    {@link HttpPlaybackHubAdapter#getStatus}, built as semantic `SlotStatus` values
  *    so the wire shape cannot drift.
  *  - `contentId` is split on the hub adapter's convention: a bare id is a Plex id,
  *    a prefixed `source:id` keeps its source.
@@ -186,8 +186,8 @@ export class VirtualPlaybackAdapter {
   getStatus() {
     return this.#targets.map((target, i) => {
       const live = [...this.#dispatches].reverse().find((d) => d.target === target && d.status === 'playing');
-      return SlotStatus.fromHubJson({
-        slot: i + 1,
+      return new SlotStatus({
+        position: i + 1,
         color: target,
         bt_connected: true,
         paused: false,

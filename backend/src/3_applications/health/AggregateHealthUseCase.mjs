@@ -10,6 +10,20 @@
 import { HealthAggregator } from '#domains/health/services/HealthAggregationService.mjs';
 import { HealthMetric } from '#domains/health/entities/HealthMetric.mjs';
 
+function mergeHealthData(existing, newData) {
+  const merged = { ...existing };
+  for (const [date, metric] of Object.entries(newData)) {
+    merged[date] = metric;
+  }
+  return Object.keys(merged)
+    .sort()
+    .reverse()
+    .reduce((acc, key) => {
+      acc[key] = merged[key];
+      return acc;
+    }, {});
+}
+
 export class AggregateHealthUseCase {
   #healthStore;
   #reconciliationProcessor;
@@ -76,7 +90,7 @@ export class AggregateHealthUseCase {
     }
 
     // Merge with existing health data (pure)
-    const mergedHealth = HealthAggregator.mergeHealthData(existingHealth, metrics);
+    const mergedHealth = mergeHealthData(existingHealth, metrics);
 
     // Save aggregated data (I/O)
     await this.#healthStore.saveHealthData(userId, mergedHealth);
@@ -105,7 +119,7 @@ export class AggregateHealthUseCase {
   async getHealthForDate(userId, date) {
     const healthData = await this.#healthStore.loadHealthData(userId);
     const dayData = healthData[date];
-    return dayData ? HealthMetric.fromJSON(dayData) : null;
+    return dayData ? new HealthMetric(dayData) : null;
   }
 
   /**
@@ -121,7 +135,7 @@ export class AggregateHealthUseCase {
 
     for (const [date, data] of Object.entries(healthData)) {
       if (date >= startDate && date <= endDate) {
-        result[date] = HealthMetric.fromJSON(data);
+        result[date] = new HealthMetric(data);
       }
     }
 

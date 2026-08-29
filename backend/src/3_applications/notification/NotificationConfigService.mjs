@@ -8,24 +8,19 @@ function validationError(message) {
 }
 
 export class NotificationConfigService {
-  #configService;
+  #repository;
   #logger;
 
-  #configFiles;
-
-  /** D5: the YAML write goes through a datastore port, not FileIO. */
-  constructor({ configFiles, configService, logger = console }) {
-    this.#configFiles = configFiles;
-    this.#configService = configService;
+  constructor({ repository, logger = console }) {
+    if (!repository?.load || !repository?.save) throw new Error('NotificationConfigService: repository required');
+    this.#repository = repository;
     this.#logger = logger;
   }
 
   getConfig() {
-    // Use reloadHouseholdAppConfig (fresh disk read), NOT getHouseholdAppConfig
-    // (stale in-memory cache) — the latter never reflects admin edits written by
-    // updateConfig() below, since reloadHouseholdAppConfig returns the fresh
-    // value without updating the frozen #config cache.
-    const c = this.#configService.reloadHouseholdAppConfig?.(null, 'notifications') || {};
+    // The repository performs a fresh read so admin edits written by
+    // updateConfig() are immediately visible without a frozen cache.
+    const c = this.#repository.load();
     return {
       quiet_hours: { ...DEFAULTS.quiet_hours, ...(c.quiet_hours || {}) },
       cooldowns: { ...DEFAULTS.cooldowns, ...(c.cooldowns || {}) },
@@ -45,15 +40,8 @@ export class NotificationConfigService {
       quiet_hours: { enabled: !!qh.enabled, start: qh.start, end: qh.end },
       cooldowns: { default: 60, ...cooldowns },
     };
-    // Must resolve through the SAME registry logic getConfig()'s
-    // reloadHouseholdAppConfig() reads through — a second,
-    // hand-rolled path here drifts from the read side (task-13 review,
-    // Critical 2: this used to hardcode the legacy config/notifications.yml
-    // path, so a write "succeeded" into a file getConfig() never read back).
-    const file = this.#configService.getHouseholdAppConfigPath(null, 'notifications');
-    this.#configFiles.writeYaml(file, next);
-    this.#configService.reloadHouseholdAppConfig?.(null, 'notifications');
-    this.#logger?.info?.('notification.config.updated', { file });
+    this.#repository.save(next);
+    this.#logger?.info?.('notification.config.updated', {});
     return this.getConfig();
   }
 }

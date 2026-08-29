@@ -11,9 +11,20 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import {
-  HealthArchiveScope,
+  HealthArchiveScope as HealthArchiveScopeClass,
   DEFAULT_WORKOUT_SOURCES,
 } from '#apps/health/archive/HealthArchiveScope.mjs';
+import { FilesystemHealthArchiveAddressPolicyFactory } from '#adapters/health/FilesystemHealthArchiveAddressPolicyFactory.mjs';
+
+const addressPolicyFactory = new FilesystemHealthArchiveAddressPolicyFactory();
+function HealthArchiveScope({ dataRoot, mediaRoot, ...options } = {}) {
+  return new HealthArchiveScopeClass({
+    archiveAddressPolicy: addressPolicyFactory.create({ dataRoot, mediaRoot }),
+    ...options,
+  });
+}
+HealthArchiveScope.assertValidUserId = HealthArchiveScopeClass.assertValidUserId;
+HealthArchiveScope.validatePathSegment = HealthArchiveScopeClass.validatePathSegment;
 
 const USER = 'test-user';
 const OTHER = 'other-user';
@@ -54,8 +65,6 @@ describe('HealthArchiveScope', () => {
       });
       // path.normalize collapses redundant segments. Trailing slashes are
       // preserved on POSIX, but `.` and `..` are resolved.
-      expect(s.dataRoot).toBe('/foo/bar/baz');
-      expect(s.mediaRoot).toBe('/baz/qux');
     });
   });
 

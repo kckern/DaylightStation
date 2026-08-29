@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 // backend/src/4_api/routers/admin/eventbus.mjs
 import express from 'express';
 import { nowTs } from '#system/utils/index.mjs';
@@ -11,12 +12,12 @@ import { nowTs } from '#system/utils/index.mjs';
  * - GET /status - Get WebSocket server status and metrics
  *
  * @param {Object} config
- * @param {Object} config.eventBus - WebSocketEventBus instance
+ * @param {Object} config.eventBusAdministration
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createEventBusRouter(config) {
-  const { eventBus, logger = console } = config;
+  const { eventBusAdministration, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -27,14 +28,14 @@ export function createEventBusRouter(config) {
     try {
       logger.info?.('admin.eventbus.restart.requested');
 
-      if (!eventBus) {
+      if (!eventBusAdministration?.available) {
         return res.status(503).json({
           error: 'EventBus not configured',
           timestamp: nowTs()
         });
       }
 
-      await eventBus.restart();
+      await eventBusAdministration.restart();
 
       logger.info?.('admin.eventbus.restart.success');
       res.json({
@@ -43,7 +44,7 @@ export function createEventBusRouter(config) {
       });
     } catch (error) {
       logger.error?.('admin.eventbus.restart.failed', { error: error.message });
-      res.status(500).json({
+      sendInternalError(res, {
         error: error.message || 'Failed to restart WebSocket server',
         timestamp: nowTs()
       });
@@ -59,7 +60,7 @@ export function createEventBusRouter(config) {
    */
   router.all('/broadcast', (req, res) => {
     try {
-      if (!eventBus) {
+      if (!eventBusAdministration?.available) {
         return res.status(503).json({
           error: 'EventBus not configured',
           timestamp: nowTs()
@@ -78,7 +79,7 @@ export function createEventBusRouter(config) {
         ...payload
       };
 
-      eventBus.broadcast('admin', message);
+      eventBusAdministration.broadcastAdmin(message);
 
       logger.info?.('admin.eventbus.broadcast', { payload: Object.keys(payload) });
       res.json({
@@ -88,7 +89,7 @@ export function createEventBusRouter(config) {
       });
     } catch (error) {
       logger.error?.('admin.eventbus.broadcast.failed', { error: error.message });
-      res.status(500).json({ error: error.message || 'Failed to broadcast' });
+      sendInternalError(res, { error: error.message || 'Failed to broadcast' });
     }
   });
 
@@ -111,17 +112,17 @@ export function createEventBusRouter(config) {
    * Get WebSocket server status and metrics
    */
   router.get('/status', (req, res) => {
-    if (!eventBus) {
+    if (!eventBusAdministration?.available) {
       return res.status(503).json({
         error: 'EventBus not configured',
         timestamp: nowTs()
       });
     }
 
-    const metrics = eventBus.getMetrics?.() || {};
+    const eventBusStatus = eventBusAdministration.status();
     res.json({
-      status: eventBus.isRunning?.() ? 'running' : 'stopped',
-      metrics,
+      status: eventBusStatus.running ? 'running' : 'stopped',
+      metrics: eventBusStatus.metrics,
       timestamp: nowTs()
     });
   });

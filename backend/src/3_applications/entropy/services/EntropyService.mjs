@@ -5,7 +5,7 @@
  * High entropy = stale data, low entropy = fresh data.
  *
  * Located in application layer because it uses infrastructure services
- * (configService, logging) for bootstrapping and configuration.
+ * (configuration projection, logging) for bootstrapping and configuration.
  *
  * @module entropy/services
  */
@@ -14,23 +14,39 @@ import moment from 'moment';
 import { EntropyItem, MetricType } from '#domains/entropy/entities/EntropyItem.mjs';
 import { UnsupportedOperationError } from '../../common/errors/index.mjs';
 
+function toEntropyRecord(item) {
+  return {
+    id: item.source,
+    source: item.source,
+    name: item.name,
+    icon: item.icon,
+    status: item.status,
+    value: item.value,
+    label: item.label,
+    lastUpdate: item.lastUpdate,
+    url: item.url,
+    weight: item.weight,
+  };
+}
+
 /**
  * Service for calculating entropy (data staleness) reports
  */
 export class EntropyService {
   #entropyReader;
-  #configService;
+  #configProjection;
   #logger;
 
   /**
    * @param {Object} config
    * @param {IEntropyReader} config.entropyReader - Reader for data timestamps
-   * @param {Object} config.configService - Config service for app config
+   * @param {Object} config.configProjection - Semantic entropy configuration
    * @param {Object} [config.logger] - Logger instance
    */
-  constructor({ entropyReader, configService, logger = console }) {
+  constructor({ entropyReader, configProjection, logger = console }) {
+    if (!configProjection?.sources) throw new Error('EntropyService requires configProjection');
     this.#entropyReader = entropyReader;
-    this.#configService = configService;
+    this.#configProjection = configProjection;
     this.#logger = logger;
   }
 
@@ -71,7 +87,7 @@ export class EntropyService {
     });
 
     return {
-      items: items.map((item) => item.toJSON()),
+      items: items.map(toEntropyRecord),
       summary,
     };
   }
@@ -92,7 +108,7 @@ export class EntropyService {
     }
 
     const item = await this.#evaluateSource(username, sourceId, sourceConfig);
-    return item.toJSON();
+    return toEntropyRecord(item);
   }
 
   /**
@@ -100,8 +116,7 @@ export class EntropyService {
    * @private
    */
   #getEntropyConfig(username) {
-    // Try user profile first, then fall back to app config
-    return this.#configService.getAppConfig?.('entropy') || {};
+    return { sources: this.#configProjection.sources(username) };
   }
 
   /**
@@ -148,11 +163,11 @@ export class EntropyService {
    * @returns {Promise<{ value: number, lastUpdate: string | null, lastItem: Object | null }>}
    */
   async #getMetricValue(username, sourceId, config) {
-    const dataPath = config.dataPath || sourceId;
+    const datasetId = config.datasetId || sourceId;
     const metric = config.metric || MetricType.DAYS_SINCE;
 
     if (metric === MetricType.DAYS_SINCE) {
-      const result = await this.#entropyReader.getLastUpdated(username, dataPath, {
+      const result = await this.#entropyReader.readLatestObservation(username, datasetId, {
         dateField: config.dateField,
         filter: config.filter,
         listProperty: config.listProperty,
@@ -176,7 +191,7 @@ export class EntropyService {
     }
 
     if (metric === MetricType.COUNT) {
-      const result = await this.#entropyReader.getCount(username, dataPath, {
+      const result = await this.#entropyReader.readMetricCount(username, datasetId, {
         countField: config.countField,
         listProperty: config.listProperty,
         dataSource: config.dataSource,
@@ -216,56 +231,5 @@ export class EntropyService {
   }
 }
 
-/**
- * Create EntropyService with legacy dependencies
- *
- * Factory function that creates a fully configured EntropyService using
- * legacy static imports (io.mjs, configService, ArchiveService).
- * Used for backward compatibility during migration.
- *
- * @returns {Promise<{ entropyService: EntropyService, getEntropyReport: Function }>}
- */
-export async function createWithLegacyDependencies() {
-  // Dynamic imports to avoid circular dependencies
-  const { userDataService, configService } = await import('../../../0_system/config/index.mjs');
-
-  // Adapter functions for YamlEntropyReader interface
-  const userLoadFile = (username, service) => userDataService.readUserData(username, `lifelog/${service}`);
-  const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
-
-  const ArchiveServiceModule = await import('../../content/services/ArchiveService.mjs');
-  const { createLogger } = await import('../../../0_system/logging/logger.mjs');
-
-  const ArchiveService = ArchiveServiceModule.default;
-
-  const logger = createLogger({
-    source: 'backend',
-    app: 'entropy',
-  });
-
-  // Create adapter implementing IEntropyReader
-  const { YamlEntropyReader } = await import('#adapters/entropy/YamlEntropyReader.mjs');
-
-  const entropyReader = new YamlEntropyReader({
-    io: { userLoadFile, userLoadCurrent },
-    archiveService: ArchiveService,
-    logger,
-  });
-
-  // Create service
-  const entropyService = new EntropyService({
-    entropyReader,
-    configService,
-    logger,
-  });
-
-  // Legacy-compatible wrapper function
-  const getEntropyReport = async () => {
-    const username = configService.getHeadOfHousehold();
-    return entropyService.getReport(username);
-  };
-
-  return { entropyService, getEntropyReport };
-}
 
 export default EntropyService;

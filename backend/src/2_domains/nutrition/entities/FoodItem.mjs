@@ -6,10 +6,9 @@
  * Immutable value object with validation.
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import { validateFoodItem } from './schemas.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
-import { shortId, shortIdFromUuid } from '#domains/core/utils/id.mjs';
+import { shortIdFromUuid } from '#domains/core/utils/id.mjs';
 
 /**
  * FoodItem value object
@@ -163,32 +162,6 @@ export class FoodItem {
   }
 
   /**
-   * Convert to plain object
-   * @returns {object}
-   */
-  toJSON() {
-    return {
-      id: this.#id,
-      uuid: this.#uuid,
-      label: this.#label,
-      icon: this.#icon,
-      grams: this.#grams,
-      unit: this.#unit,
-      amount: this.#amount,
-      color: this.#color,
-      // Nutrition fields
-      calories: this.#calories,
-      protein: this.#protein,
-      carbs: this.#carbs,
-      fat: this.#fat,
-      fiber: this.#fiber,
-      sugar: this.#sugar,
-      sodium: this.#sodium,
-      cholesterol: this.#cholesterol,
-    };
-  }
-
-  /**
    * Check equality
    * @param {FoodItem} other
    * @returns {boolean}
@@ -201,16 +174,12 @@ export class FoodItem {
   // ==================== Factory Methods ====================
 
   /**
-   * Create a new FoodItem with auto-generated ID
+   * Create a new FoodItem from caller-supplied identity.
    * @param {object} props
    * @returns {FoodItem}
    */
   static create(props) {
-    return new FoodItem({
-      id: shortId(),
-      uuid: uuidv4(),
-      ...props,
-    });
+    return new FoodItem(props);
   }
 
   /**
@@ -229,8 +198,9 @@ export class FoodItem {
    * @param {string} [id] - Optional ID (will be generated if not provided)
    * @returns {FoodItem}
    */
-  static fromLegacy(legacy, id) {
-    const itemUuid = legacy.uuid || legacy.id || uuidv4();
+  static fromLegacy(legacy, id, generatedUuid = null) {
+    const itemUuid = legacy.uuid || legacy.id || generatedUuid;
+    if (!itemUuid) throw new ValidationError('uuid is required for legacy FoodItem hydration');
     return new FoodItem({
       id: id || shortIdFromUuid(itemUuid),
       uuid: itemUuid,

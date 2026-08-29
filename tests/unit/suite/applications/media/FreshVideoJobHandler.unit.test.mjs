@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createFreshVideoJobHandler } from '#apps/media/FreshVideoJobHandler.mjs';
+import { FilesystemFreshVideoMediaStore } from '#adapters/persistence/files/FilesystemFreshVideoMediaStore.mjs';
 
 describe('FreshVideoJobHandler', () => {
   describe('createFreshVideoJobHandler', () => {
@@ -30,54 +31,55 @@ describe('FreshVideoJobHandler', () => {
       }
     });
 
-    it('should throw ValidationError if mediaPath is undefined', () => {
+    it('should throw ValidationError if mediaStore is undefined', () => {
       const mockGateway = { download: jest.fn() };
-      const mockLoadFile = jest.fn().mockResolvedValue({ sources: [] });
+      const sourceCatalog = { list: jest.fn().mockResolvedValue([]) };
       const mockLogger = { info: jest.fn(), error: jest.fn() };
 
       expect(() => createFreshVideoJobHandler({
         videoSourceGateway: mockGateway,
-        loadFile: mockLoadFile,
-        mediaPath: undefined,
+        sourceCatalog,
+        mediaStore: undefined,
         logger: mockLogger
-      })).toThrow(/mediaPath.*required/i);
+      })).toThrow(/mediaStore.*required/i);
     });
 
-    it('should throw ValidationError if mediaPath is null', () => {
+    it('should throw ValidationError if mediaStore is null', () => {
       const mockGateway = { download: jest.fn() };
-      const mockLoadFile = jest.fn().mockResolvedValue({ sources: [] });
+      const sourceCatalog = { list: jest.fn().mockResolvedValue([]) };
       const mockLogger = { info: jest.fn(), error: jest.fn() };
 
       expect(() => createFreshVideoJobHandler({
         videoSourceGateway: mockGateway,
-        loadFile: mockLoadFile,
-        mediaPath: null,
+        sourceCatalog,
+        mediaStore: null,
         logger: mockLogger
-      })).toThrow(/mediaPath.*required/i);
+      })).toThrow(/mediaStore.*required/i);
     });
 
-    it('should throw ValidationError if mediaPath is empty string', () => {
+    it('should throw ValidationError if mediaStore is absent', () => {
       const mockGateway = { download: jest.fn() };
-      const mockLoadFile = jest.fn().mockResolvedValue({ sources: [] });
+      const sourceCatalog = { list: jest.fn().mockResolvedValue([]) };
       const mockLogger = { info: jest.fn(), error: jest.fn() };
 
       expect(() => createFreshVideoJobHandler({
         videoSourceGateway: mockGateway,
-        loadFile: mockLoadFile,
-        mediaPath: '',
+        sourceCatalog,
+        mediaStore: null,
         logger: mockLogger
-      })).toThrow(/mediaPath.*required/i);
+      })).toThrow(/mediaStore.*required/i);
     });
 
-    it('should create handler successfully with valid mediaPath', () => {
+    it('should create handler successfully with a media store', () => {
       const mockGateway = { download: jest.fn() };
-      const mockLoadFile = jest.fn().mockResolvedValue({ sources: [] });
+      const sourceCatalog = { list: jest.fn().mockResolvedValue([]) };
       const mockLogger = { info: jest.fn(), error: jest.fn() };
 
       const handler = createFreshVideoJobHandler({
         videoSourceGateway: mockGateway,
-        loadFile: mockLoadFile,
-        mediaPath: tempDir,
+        sourceCatalog,
+        mediaStore: new FilesystemFreshVideoMediaStore({ mediaRoot: tempDir }),
+        lockOwnerId: 4242,
         logger: mockLogger
       });
 

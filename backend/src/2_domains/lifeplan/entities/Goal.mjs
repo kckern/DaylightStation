@@ -32,11 +32,13 @@ export class Goal {
       );
     }
 
+    if (!timestamp) throw new Error('timestamp is required for goal transition');
+
     this.state_history.push({
       from: this.state,
       to: newState,
       reason,
-      timestamp: timestamp || new Date().toISOString(),
+      timestamp,
     });
 
     this.state = newState;
@@ -57,28 +59,4 @@ export class Goal {
     return Math.min(sum / this.metrics.length, 1);
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      name: this.name,
-      state: this.state,
-      quality: this.quality,
-      why: this.why,
-      sacrifice: this.sacrifice,
-      deadline: this.deadline,
-      metrics: this.metrics,
-      audacity: this.audacity,
-      milestones: this.milestones,
-      state_history: this.state_history,
-      dependencies: this.dependencies,
-      avoids_nightmare: this.avoids_nightmare,
-      nightmare_proximity: this.nightmare_proximity,
-      retrospective: this.retrospective,
-      achieved_date: this.achieved_date,
-      failed_date: this.failed_date,
-      abandoned_reason: this.abandoned_reason,
-      paused_reason: this.paused_reason,
-      resume_conditions: this.resume_conditions,
-    };
-  }
 }

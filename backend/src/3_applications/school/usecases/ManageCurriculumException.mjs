@@ -1,11 +1,11 @@
-import { createHash } from 'node:crypto';
+import { sha256Text } from '#system/utils/sha256.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 const LEARNER_KINDS = new Set(['excused', 'deferred', 'replaced']);
 const PAUSE_REASONS = new Set(['defective', 'garbled', 'missing', 'broken', 'inappropriate']);
 const TARGETS = new Set(['lesson', 'module']);
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
-const idFor = (value) => `exc_${createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 16)}`;
+const idFor = (value) => `exc_${sha256Text(JSON.stringify(value)).slice(0, 16)}`;
 
 export class ManageCurriculumException {
   #store; #curriculum; #teacherGate; #clock;

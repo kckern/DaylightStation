@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { YamlConversationDatastore } from '#adapters/persistence/yaml/YamlConversationDatastore.mjs';
-import { ConversationService } from '#domains/messaging/services/ConversationService.mjs';
+import { ConversationService } from '#apps/messaging/services/ConversationService.mjs';
 
 const noopLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
@@ -34,7 +34,7 @@ describe('conversation stored YAML shape (characterization)', () => {
       dataService: makeDataService(root),
       logger: noopLogger
     });
-    service = new ConversationService({ conversationStore: store });
+    service = new ConversationService({ conversationStore: store, random: () => 0.5 });
   });
 
   afterEach(() => {

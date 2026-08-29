@@ -1,6 +1,5 @@
 // backend/src/4_api/v1/agents/createAgentMemoryRouter.mjs
 import express from 'express';
-import { WorkingMemoryState } from '#apps/agents/framework/WorkingMemory.mjs';
 
 /**
  * Memory CRUD endpoints — admin/debug surface for inspecting and clearing
@@ -11,9 +10,11 @@ import { WorkingMemoryState } from '#apps/agents/framework/WorkingMemory.mjs';
  *   DELETE /:agentId/memory/:userId
  *   DELETE /:agentId/memory/:userId/:key
  */
-export function createAgentMemoryRouter({ orchestrator, workingMemory, logger = console } = {}) {
-  if (!orchestrator) throw new Error('createAgentMemoryRouter: orchestrator required');
-  if (!workingMemory) throw new Error('createAgentMemoryRouter: workingMemory required');
+export function createAgentMemoryRouter({
+  memoryAdministration,
+  logger = console,
+} = {}) {
+  if (!memoryAdministration) throw new Error('createAgentMemoryRouter: memoryAdministration required');
 
   const router = express.Router();
 
@@ -24,11 +25,11 @@ export function createAgentMemoryRouter({ orchestrator, workingMemory, logger = 
   router.get('/:agentId/memory/:userId', async (req, res, next) => {
     try {
       const { agentId, userId } = req.params;
-      if (!orchestrator.has(agentId)) {
+      const result = await memoryAdministration.read(agentId, userId);
+      if (result.kind === 'agent_not_found') {
         return res.status(404).json({ error: `Agent '${agentId}' not found` });
       }
-      const state = await workingMemory.load(agentId, userId);
-      const entries = state.toJSON();
+      const { entries } = result;
       logger.info?.('agents.memory.read', { agentId, userId, count: Object.keys(entries).length });
       res.json({ agentId, userId, entries });
     } catch (err) { next(err); }
@@ -41,10 +42,10 @@ export function createAgentMemoryRouter({ orchestrator, workingMemory, logger = 
   router.delete('/:agentId/memory/:userId', async (req, res, next) => {
     try {
       const { agentId, userId } = req.params;
-      if (!orchestrator.has(agentId)) {
+      const result = await memoryAdministration.clear(agentId, userId);
+      if (result.kind === 'agent_not_found') {
         return res.status(404).json({ error: `Agent '${agentId}' not found` });
       }
-      await workingMemory.save(agentId, userId, new WorkingMemoryState());
       logger.info?.('agents.memory.cleared', { agentId, userId });
       res.json({ agentId, userId, cleared: true });
     } catch (err) { next(err); }
@@ -57,15 +58,12 @@ export function createAgentMemoryRouter({ orchestrator, workingMemory, logger = 
   router.delete('/:agentId/memory/:userId/:key', async (req, res, next) => {
     try {
       const { agentId, userId, key } = req.params;
-      if (!orchestrator.has(agentId)) {
+      const result = await memoryAdministration.remove(agentId, userId, key);
+      if (result.kind === 'agent_not_found') {
         return res.status(404).json({ error: `Agent '${agentId}' not found` });
       }
-      const state = await workingMemory.load(agentId, userId);
-      const existed = state.get(key) !== undefined;
-      state.remove(key);
-      await workingMemory.save(agentId, userId, state);
       logger.info?.('agents.memory.entry.deleted', { agentId, userId, key });
-      res.json({ agentId, userId, key, deleted: existed });
+      res.json({ agentId, userId, key, deleted: result.deleted });
     } catch (err) { next(err); }
   });
 

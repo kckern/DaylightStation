@@ -30,16 +30,4 @@ export class Rule {
     if (this.state === 'defined') this.state = 'tested';
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      trigger: this.trigger,
-      action: this.action,
-      quality_id: this.quality_id,
-      state: this.state,
-      times_triggered: this.times_triggered,
-      times_followed: this.times_followed,
-      times_helped: this.times_helped,
-    };
-  }
 }

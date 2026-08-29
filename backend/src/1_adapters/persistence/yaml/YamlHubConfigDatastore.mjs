@@ -19,8 +19,6 @@
  *     Round-trip read→save is non-destructive for those keys.
  */
 
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import yaml from 'js-yaml';
 
 import { IHubConfigRepository } from '#apps/playback-hub/ports/IHubConfigRepository.mjs';
@@ -36,6 +34,9 @@ import { DayPattern } from '#domains/playback-hub/value-objects/DayPattern.mjs';
 import { QueueRef } from '#domains/playback-hub/value-objects/QueueRef.mjs';
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 import { InfrastructureError } from '#system/utils/errors/InfrastructureError.mjs';
+import {
+  deleteFileStrictAsync, readTextFromPathAsync, renameFileAsync, writeTextFileStrictAsync,
+} from '#system/utils/FileIO.mjs';
 
 const VALID_CLASS = new Set(['private', 'public']);
 const VALID_DAY_STRINGS = new Set(['all', 'weekdays', 'weekends']);
@@ -48,6 +49,57 @@ const MODELED_DEVICE_KEYS = new Set([
 
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+export function serializeVolumeBounds(bounds) {
+  const out = {};
+  for (const key of ['default', 'min', 'max']) {
+    if (bounds.hasExplicit(key)) out[key] = bounds[key];
+  }
+  return out;
+}
+
+export function serializeHubDevice(device) {
+  const out = {
+    slot: device.position.value,
+    color: device.color.value,
+    mac: device.mac,
+    class: device.class.value
+  };
+  if (device.haEntityId !== null) out.ha_entity_id = device.haEntityId;
+  if (device.haTurnOffOnStop) out.ha_turn_off_on_stop = true;
+  const volume = serializeVolumeBounds(device.volumeBounds);
+  if (Object.keys(volume).length > 0) out.volume = volume;
+  if (device.continuousSchedules.length > 0) {
+    out.schedules = device.continuousSchedules.map(schedule => {
+      const entry = { start: schedule.start, end: schedule.end, queue: schedule.queue.toString() };
+      if (schedule.shuffle) entry.shuffle = true;
+      return entry;
+    });
+  }
+  if (device.extras !== null) {
+    for (const key of Object.keys(device.extras)) {
+      if (!(key in out)) out[key] = device.extras[key];
+    }
+  }
+  return out;
+}
+
+export function serializeHubConfig(config) {
+  const out = { devices: config.devices.map(serializeHubDevice) };
+  if (config.scheduledFires.length > 0) {
+    out.scheduled = config.scheduledFires.map(fire => {
+      const entry = {
+        id: fire.id, time: fire.time, target: fire.target,
+        queue: fire.queue.toString(), days: fire.days.value
+      };
+      if (fire.durationMin !== null) entry.duration_min = fire.durationMin;
+      if (fire.volumeOverride !== null) entry.volume_override = fire.volumeOverride;
+      return entry;
+    });
+  }
+  if (config.daylightStation !== null) out.daylight_station = { ...config.daylightStation };
+  return out;
 }
 
 export class YamlHubConfigDatastore extends IHubConfigRepository {
@@ -73,7 +125,7 @@ export class YamlHubConfigDatastore extends IHubConfigRepository {
   async getConfig() {
     let raw;
     try {
-      raw = await fs.readFile(this.#yamlPath, 'utf8');
+      raw = await readTextFromPathAsync(this.#yamlPath);
     } catch (err) {
       throw new InfrastructureError(`failed to read ${this.#yamlPath}: ${err.message}`, {
         code: 'YAML_READ_FAILED', cause: err.message
@@ -374,25 +426,24 @@ export class YamlHubConfigDatastore extends IHubConfigRepository {
    * @private
    */
   async #doSave(hubConfig) {
-    const yamlObj = hubConfig.toYaml();
+    const yamlObj = serializeHubConfig(hubConfig);
     // Re-run validation on the about-to-be-written form. Catches any drift
     // between domain invariants and YAML schema.
     this.#validate(yamlObj);
     const text = yaml.dump(yamlObj, { sortKeys: false, lineWidth: 1000 });
-    const dir = path.dirname(this.#yamlPath);
     const stagingPath = `${this.#yamlPath}.staging.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
     try {
-      await fs.writeFile(stagingPath, text, 'utf8');
+      await writeTextFileStrictAsync(stagingPath, text);
     } catch (err) {
       throw new InfrastructureError(`failed to write staging file: ${err.message}`, {
         code: 'YAML_STAGING_FAILED', cause: err.message, path: stagingPath
       });
     }
     try {
-      await fs.rename(stagingPath, this.#yamlPath);
+      await renameFileAsync(stagingPath, this.#yamlPath);
     } catch (err) {
       // Clean up the staging file — original file remains intact.
-      await fs.unlink(stagingPath).catch(() => {});
+      await deleteFileStrictAsync(stagingPath).catch(() => {});
       throw new InfrastructureError(`failed to rename staging into place: ${err.message}`, {
         code: 'YAML_RENAME_FAILED', cause: err.message, path: this.#yamlPath, stagingPath
       });

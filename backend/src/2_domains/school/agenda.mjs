@@ -157,15 +157,12 @@ const isTimeHeld = (entry) => (entry.status === 'upcoming' || entry.status === '
  *   never-scheduled dated unit, a blocker already passed (a contradiction the
  *   planner cannot produce, so evidence the data is wrong), or a cycle.
  */
-function blockerChainIsReachable(start, entryByUnit, logger) {
+function blockerChainIsReachable(start, entryByUnit) {
   const visited = new Set();
   let cursor = start;
   while (cursor) {
     if (visited.has(cursor.unitId)) {
       // A malformed curriculum must not hang the planner.
-      logger?.warn?.('school.agenda.blocker-cycle', {
-        unitId: start.unitId, subject: start.subject ?? null, chain: [...visited],
-      });
       return false;
     }
     visited.add(cursor.unitId);
@@ -217,12 +214,10 @@ export function programStatusFor(programStatuses, entry) {
  * @param {string} args.now               ISO string — compared against, never stamped
  * @param {string|null} [args.timezone]   IANA zone, or null
  * @param {number} [args.boundaryHour]    study-day rollover hour (default 4am)
- * @param {object} [args.logger]          structured logger; `warn` is called when a
- *                                         subject turns out to be blocked by nothing reachable
  * @returns {{ sections: object[] }}
  */
 export function planDailyAgenda({
-  plan, sessions = [], programStatuses = {}, now, timezone = null, boundaryHour = 4, logger = null,
+  plan, sessions = [], programStatuses = {}, now, timezone = null, boundaryHour = 4,
 } = {}) {
   const nowMs = Date.parse(now ?? '');
   const today = studyDayForInstant(nowMs, { timezone, boundaryHour });
@@ -239,7 +234,6 @@ export function planDailyAgenda({
   // One warning per unit per build. The agenda is rebuilt on every page load,
   // so this cannot dedupe across builds — it only stops one unit reported by
   // two entries from being reported twice in the same answer.
-  const warnedSchedules = new Set();
   const latestBySessionUnit = latestGradedPerUnit(sessions);
   const passedToday = sessions
     .filter((s) => s?.outcome?.result === 'passed'
@@ -329,22 +323,6 @@ export function planDailyAgenda({
     // changes a verdict, but a typo in one is still a typo, and this is the
     // only place anything looks at it.
     const verdicts = list.map((e) => ({ entry: e, ...scheduleVerdict(today, e.schedule ?? null) }));
-    verdicts.forEach(({ entry: e, errors }) => {
-      if (!errors.length || warnedSchedules.has(e.unitId)) return;
-      warnedSchedules.add(e.unitId);
-      // A schedule that will not validate is IGNORED, which is the safe
-      // direction but a silent one: the obligation stands and nobody learns
-      // that the vacation they authored is not in force. The errors travel in
-      // the payload so the answer is "except has an invalid date: Christmas"
-      // rather than "something is wrong somewhere".
-      logger?.warn?.('school.agenda.invalid-schedule', {
-        learnerId: plan?.learnerId ?? null,
-        subject,
-        unitId: e.unitId,
-        courseId: e.courseId ?? null,
-        errors,
-      });
-    });
     // Today is not a school day for this section only when EVERY piece of
     // required work in it says so. An entry with no schedule is a school day
     // (the verdict fails open), so one unscheduled course sitting beside a
@@ -368,15 +346,8 @@ export function planDailyAgenda({
         // live chain for the subject to have somewhere to go.
         const lockedNonElective = nonElectiveList.filter((e) => e.status === 'locked');
         const reachable = lockedNonElective
-          .some((e) => blockerChainIsReachable(e, entryByUnit, logger));
+          .some((e) => blockerChainIsReachable(e, entryByUnit));
         reason = reachable ? 'blocked_no_offer' : 'blocked_unreachable';
-        if (!reachable) {
-          logger?.warn?.('school.agenda.blocked-unreachable', {
-            subject,
-            unitIds: lockedNonElective.map((e) => e.unitId),
-            blockerIds: lockedNonElective.map((e) => e.remedy?.unitId ?? null),
-          });
-        }
       } else if (hasNonElective((e) => e.status === 'dormant')) reason = 'awaiting_grown_up';
       else if (hasNonElective((e) => e.status === 'upcoming')) reason = 'opens_later';
       else reason = 'caught_up';

@@ -35,6 +35,7 @@
 import { YamlDoNowDatastore } from '#adapters/persistence/yaml/YamlDoNowDatastore.mjs';
 import { DoNowService } from '#apps/donow/DoNowService.mjs';
 import { DoNowApprovals } from '#apps/donow/DoNowApprovals.mjs';
+import { authenticate } from '#apps/trigger/guards/authenticate.mjs';
 import { HaApprovalNotifier } from '#adapters/home-automation/donow/HaApprovalNotifier.mjs';
 import { CallHomeAssistantService } from '#apps/home-automation/usecases/CallHomeAssistantService.mjs';
 import { createDoNowRouter } from '#api/v1/routers/donow.mjs';
@@ -55,6 +56,9 @@ import { PianoKioskSurface } from '#apps/donow/surfaces/PianoKioskSurface.mjs';
 // Household-level DoNow gets its OWN instance — sharing the school console's
 // would tie an unrelated surface's lifetime to `school.yml`'s lifecycle gate.
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
+import { ReceiptRendererAdapter } from '#adapters/school/documents/DocumentRendererAdapter.mjs';
+import { HomeAssistantTvState } from '#adapters/donow/HomeAssistantTvState.mjs';
+import { EventBusDoNowRealtimeAdapter } from '#adapters/donow/EventBusDoNowRealtimeAdapter.mjs';
 
 /**
  * @param {object} deps
@@ -93,13 +97,14 @@ export async function createDonow({
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'donow') || {};
   const timezone = configService.getTimezone?.() || null;
+  const realtimeGateway = eventBus ? new EventBusDoNowRealtimeAdapter({ eventBus }) : null;
 
   // --- presence trackers (spec §5.1) -----------------------------------------
   // Both throw if handed no eventBus; guard here so a household with no bus
   // (a bare test harness) degrades every soft-occupancy surface to `unknown`
   // instead of this whole module throwing.
-  const midiPresence = eventBus ? new MidiPresenceTracker({ eventBus, logger }) : null;
-  const playbackPresence = eventBus ? new PlaybackPresenceTracker({ eventBus, logger }) : null;
+  const midiPresence = realtimeGateway ? new MidiPresenceTracker({ activitySource: realtimeGateway, logger }) : null;
+  const playbackPresence = realtimeGateway ? new PlaybackPresenceTracker({ activitySource: realtimeGateway, logger }) : null;
   // No eventBus dependency at all (Task 7 discovery: `ingestFrontendLogs` has
   // no per-event hook of its own) — always constructed; `app.mjs` wires the
   // one-line tap into `ingestFrontendLogs`'s `onEvent` hook by calling
@@ -129,19 +134,16 @@ export async function createDonow({
       logger.warn?.('donow.thermal.no-printer', { location: cfg.thermalPrinterLocation ?? null, error: err.message });
     }
   }
-  const receipts = new ReceiptPrinting({ renderer: receiptRenderer, printer: thermalPrinter, logger });
+  const receipts = new ReceiptPrinting({
+    renderer: receiptRenderer ? new ReceiptRendererAdapter({ renderer: receiptRenderer }) : null,
+    printer: thermalPrinter,
+    logger,
+  });
 
   // --- living-room TV: tvState is a thin wrap over TVControlAdapter -----------
   const tvAdapter = homeAutomationAdapters?.tvAdapter ?? null;
   const livingroomDeviceId = cfg.livingroomDeviceId ?? 'livingroom-tv';
-  const tvState = tvAdapter
-    ? {
-      isOn: async () => {
-        const state = await tvAdapter.getState('living_room');
-        return state?.state === 'on';
-      },
-    }
-    : null;
+  const tvState = tvAdapter ? new HomeAssistantTvState({ tvAdapter }) : null;
 
   // --- the seven v1 surfaces (spec §5) -----------------------------------------
   // `laser` is v1 DEFERRED-thin (Task 8): the spec's eventual shape is an
@@ -152,7 +154,7 @@ export async function createDonow({
   // null` already gives (attribution still logs, `dispatched:false`).
   const surfaces = new Map([
     ['portal', new PortalSurface({
-      eventBus,
+      schoolLauncher: realtimeGateway,
       schoolActivity: typeof schoolService?.activeSittings === 'function' ? schoolService : null,
       logger,
     })],
@@ -170,14 +172,14 @@ export async function createDonow({
       deviceId: livingroomDeviceId,
       logger,
     })],
-    ['garage-fitness', new GarageFitnessSurface({ eventBus, presence: fitnessPresence, logger })],
+    ['garage-fitness', new GarageFitnessSurface({ fitnessLauncher: realtimeGateway, presence: fitnessPresence, logger })],
     // Default-registered (Task 9's updated verdict, after the sheet-music
     // fix-up: an explicit `source:localId` contentId IS reachable today via
     // SheetMusic's own `view/*` route) — `PianoKioskSurface.validateAction`
     // itself now enforces that shape, so an unreachable contentId is REJECTED
     // (`failed`) rather than silently dispatching to a warn+no-op tablet.
     ['piano-kiosk', new PianoKioskSurface({
-      eventBus, presence: midiPresence, kioskDeviceParam: cfg.pianoKioskDeviceParam ?? null, logger,
+      pianoLauncher: realtimeGateway, presence: midiPresence, kioskDeviceParam: cfg.pianoKioskDeviceParam ?? null, logger,
     })],
   ]);
 
@@ -196,7 +198,7 @@ export async function createDonow({
     surfaces,
     datastore,
     notifier,
-    eventBus,
+    realtimeGateway,
     clock,
     timezone,
     approvalTtlSeconds: cfg.approvalTtlSeconds ?? undefined,
@@ -218,7 +220,11 @@ export async function createDonow({
     logger.warn?.('donow.approvals.no-token', { householdId });
   }
   const router = createDoNowRouter({
-    service, approvals, expectedToken: approvalsAuth.approvalsToken ?? null, logger,
+    service,
+    approvals,
+    authenticateApproval: authenticate,
+    expectedToken: approvalsAuth.approvalsToken ?? null,
+    logger,
   });
 
   logger.info?.('donow.ready', {

@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { createDocumentPdfRenderer } from './DocumentPdfRenderer.mjs';
 import { createMeasurementDocument, measureBlocks } from './measure.mjs';
 import { createWorkbookTheme } from './workbookTheme.mjs';
-import { createSubjectIconResolver } from './assetResolver.mjs';
+import { createSubjectIconResolver } from '#adapters/school/documents/FilesystemSchoolAssetResolver.mjs';
 import { texToSvg } from './mathSvg.mjs';
 
 const theme = createWorkbookTheme();

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Text } from '#system/utils/sha256.mjs';
 import { findCatalogLesson } from '#domains/school/catalog/index.mjs';
 import { capabilityReasons, moduleVerdict, rollUpLesson } from '#domains/school/surfaces/index.mjs';
 
@@ -18,7 +18,7 @@ function sortKeys(value) {
 
 /** sha256 hex of a value's canonical (sorted-key) JSON form. */
 function digest(value) {
-  return createHash('sha256').update(JSON.stringify(sortKeys(value))).digest('hex');
+  return sha256Text(JSON.stringify(sortKeys(value)));
 }
 
 function parseAddress(address) {
@@ -133,6 +133,11 @@ export class GetSurfaceCertification {
         bank, contentDigest, profile, baseline,
       }),
     }));
+  }
+
+  async select({ address = null, bankId = null, surfaceId = null }) {
+    const rows = address !== null ? await this.lesson(address) : await this.bank(bankId);
+    return surfaceId === null ? rows : rows.filter((row) => row.surfaceId === surfaceId);
   }
 
   #targets() {

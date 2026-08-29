@@ -1,8 +1,7 @@
 // backend/src/3_applications/agents/AgentOrchestrator.mjs
 
-import crypto from 'node:crypto';
-import { ValidationError } from '#system/utils/errors/index.mjs';
 import { ServiceNotFoundError } from '../common/errors/index.mjs';
+import { InvalidInputError } from '../common/errors/SemanticErrors.mjs';
 
 /**
  * AgentOrchestrator - Central service for agent registration and invocation
@@ -15,31 +14,34 @@ export class AgentOrchestrator {
   #agents = new Map();
   #agentRuntime;
   #logger;
-  #configService;       // ← new
+  #resolveDefaultUserId;
+  #createTurnId;
 
   /**
    * @param {Object} deps
    * @param {Object} deps.agentRuntime - IAgentRuntime implementation
    * @param {Object} [deps.logger] - Logger instance
-   * @param {Object} [deps.configService] - ConfigService for userId resolution
+   * @param {Function} [deps.resolveDefaultUserId] - Resolve the default actor
    */
   constructor(deps) {
     if (!deps.agentRuntime) {
-      throw new ValidationError('agentRuntime is required', { field: 'agentRuntime' });
+      throw new InvalidInputError('agentRuntime is required', { context: { field: 'agentRuntime' } });
     }
     this.#agentRuntime = deps.agentRuntime;
     this.#logger = deps.logger || console;
-    this.#configService = deps.configService || null;
+    this.#resolveDefaultUserId = deps.resolveDefaultUserId || (() => null);
+    if (typeof deps.createTurnId !== 'function') throw new InvalidInputError('createTurnId is required', { context: { field: 'createTurnId' } });
+    this.#createTurnId = deps.createTurnId;
   }
 
   /**
    * Resolve a userId. Treats 'default' (frontend sentinel) and missing userId
    * as a hint to use the configured head-of-household. Real userIds pass through.
-   * Falls back to the raw value when configService is unavailable.
+   * Falls back to the raw value when no default actor is configured.
    */
   #resolveUserId(rawUserId) {
     if (rawUserId && rawUserId !== 'default') return rawUserId;
-    const head = this.#configService?.getHeadOfHousehold?.();
+    const head = this.#resolveDefaultUserId();
     return head || rawUserId || null;
   }
 
@@ -50,7 +52,7 @@ export class AgentOrchestrator {
    */
   register(AgentClass, dependencies) {
     if (!AgentClass.id) {
-      throw new ValidationError('Agent class must have static id property', { field: 'id' });
+      throw new InvalidInputError('Agent class must have static id property', { context: { field: 'id' } });
     }
 
     // Default agentRuntime + logger come FIRST so dependency-supplied
@@ -75,7 +77,7 @@ export class AgentOrchestrator {
    */
   async run(agentId, input, context = {}) {
     const agent = this.#getAgent(agentId);
-    const turnId = context.turnId ?? crypto.randomUUID();
+    const turnId = context.turnId ?? this.#createTurnId();
     const userId = this.#resolveUserId(context.userId);
     const augmented = { ...context, turnId, userId };
 
@@ -95,7 +97,7 @@ export class AgentOrchestrator {
    */
   async *streamExecute(agentId, input, context = {}) {
     const agent = this.#getAgent(agentId);
-    const turnId = context.turnId ?? crypto.randomUUID();
+    const turnId = context.turnId ?? this.#createTurnId();
     const userId = this.#resolveUserId(context.userId);
     const augmented = { ...context, turnId, userId };
 
@@ -115,7 +117,7 @@ export class AgentOrchestrator {
    */
   async runInBackground(agentId, input, context = {}) {
     const agent = this.#getAgent(agentId);
-    const turnId = context.turnId ?? crypto.randomUUID();
+    const turnId = context.turnId ?? this.#createTurnId();
     const userId = this.#resolveUserId(context.userId);
     const augmented = { ...context, turnId, userId };
 
@@ -168,7 +170,7 @@ export class AgentOrchestrator {
    */
   async runAssignment(agentId, assignmentId, options = {}) {
     const agent = this.#getAgent(agentId);
-    const turnId = options.context?.turnId ?? crypto.randomUUID();
+    const turnId = options.context?.turnId ?? this.#createTurnId();
     const userId = this.#resolveUserId(options.userId ?? options.context?.userId);
     const augmentedOpts = {
       ...options,

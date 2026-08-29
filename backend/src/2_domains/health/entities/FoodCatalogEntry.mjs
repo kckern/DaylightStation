@@ -4,19 +4,18 @@
  * Built passively from logged foods. Tracks usage frequency for quick-add.
  */
 
-import { randomUUID } from 'crypto';
-
 export class FoodCatalogEntry {
   constructor(data) {
-    this.id = data.id || randomUUID();
+    if (!data.id || !data.lastUsed || !data.createdAt) throw new Error('FoodCatalogEntry requires id, lastUsed, and createdAt');
+    this.id = data.id;
     this.name = data.name;
     this.normalizedName = data.normalizedName || FoodCatalogEntry.normalize(data.name);
     this.nutrients = data.nutrients || { calories: 0, protein: 0, carbs: 0, fat: 0 };
     this.source = data.source || 'manual';
     this.barcodeUpc = data.barcodeUpc || null;
     this.useCount = data.useCount || 1;
-    this.lastUsed = data.lastUsed || new Date().toISOString().split('T')[0];
-    this.createdAt = data.createdAt || new Date().toISOString();
+    this.lastUsed = data.lastUsed;
+    this.createdAt = data.createdAt;
   }
 
   /**
@@ -32,9 +31,10 @@ export class FoodCatalogEntry {
   /**
    * Record another usage of this entry.
    */
-  recordUsage() {
+  recordUsage(lastUsed) {
+    if (typeof lastUsed !== 'string' || !lastUsed) throw new Error('FoodCatalogEntry.recordUsage requires lastUsed');
     this.useCount++;
-    this.lastUsed = new Date().toISOString().split('T')[0];
+    this.lastUsed = lastUsed;
   }
 
   /**

@@ -11,4 +11,3 @@ export { FinanceHarvestService } from './FinanceHarvestService.mjs';
 export { PayrollSyncService } from './PayrollSyncService.mjs';
 
 // Ports
-export { ITransactionSource } from './ports/ITransactionSource.mjs';

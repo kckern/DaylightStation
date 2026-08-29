@@ -7,7 +7,7 @@
  * @module adapters/feed/HeadlineHarvesterAdapter
  */
 
-import { IHarvester, HarvesterCategory } from '../harvester/ports/IHarvester.mjs';
+import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 
 export class HeadlineHarvesterAdapter extends IHarvester {
   #headlineService;

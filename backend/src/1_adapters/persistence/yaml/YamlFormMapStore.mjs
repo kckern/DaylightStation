@@ -10,9 +10,9 @@
  * was never on the sheet in the child's hand.
  */
 import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { IFormMapStore } from '#apps/school/ports/IFormMapStore.mjs';
+import { readTextFromPath, writeFile } from '#system/utils/FileIO.mjs';
 
 const FORM_ID_RE = /^[a-z0-9][a-z0-9._-]*$/i;
 
@@ -45,8 +45,7 @@ export class YamlFormMapStore extends IFormMapStore {
       const existing = await this.get(formId);
       // First write wins — see the header: the paper is already printed.
       if (existing) return existing;
-      await fs.mkdir(this.#root(), { recursive: true });
-      await fs.writeFile(this.#fileFor(formId), dumpYaml(formMap), 'utf8');
+      writeFile(this.#fileFor(formId), dumpYaml(formMap));
       return formMap;
     });
     this.#writeChain = queued.catch(() => {});
@@ -57,7 +56,7 @@ export class YamlFormMapStore extends IFormMapStore {
   async get(formId) {
     if (!isSafeFormId(formId)) return null;
     try {
-      const raw = yaml.load(await fs.readFile(this.#fileFor(formId), 'utf8'));
+      const raw = yaml.load(readTextFromPath(this.#fileFor(formId)));
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
       return raw;
     } catch {

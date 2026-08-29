@@ -7,8 +7,9 @@
 
 import { jest } from '@jest/globals';
 import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
+import { HarvestedLifelogSourceRegistry } from '#adapters/lifelog/HarvestedLifelogSourceRegistry.mjs';
 import { initConfigService, resetConfigService, configService } from '#system/config/index.mjs';
-import { userDataService } from '#system/config/UserDataService.mjs';
+import { userDataService } from '#adapters/persistence/files/UserDataService.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
 
 // Get data dir from config helper (SSOT)
@@ -39,7 +40,7 @@ describe('LifelogAggregator', () => {
       };
 
       const aggregator = new LifelogAggregator({
-        userLoadFile,
+        sourceRegistry: new HarvestedLifelogSourceRegistry({ userLoadFile }),
         logger: console,
       });
 
@@ -62,8 +63,9 @@ describe('LifelogAggregator', () => {
     });
 
     it('should return empty results when userLoadFile is not provided', async () => {
-      // Create aggregator WITHOUT userLoadFile (simulates the bug)
       const aggregator = new LifelogAggregator({
+        sourceRegistry: { availableSources: () => [], readDay: async () => [],
+          readRange: async (_user, dates) => ({ days: Object.fromEntries(dates.map(date => [date, []])), availableSources: [] }) },
         logger: {
           info: jest.fn(),
           warn: jest.fn(),
@@ -81,6 +83,7 @@ describe('LifelogAggregator', () => {
 
     it('should list available extractor sources', () => {
       const aggregator = new LifelogAggregator({
+        sourceRegistry: new HarvestedLifelogSourceRegistry({ userLoadFile: () => null }),
         logger: console,
       });
 
@@ -110,9 +113,13 @@ describe('LifelogAggregator', () => {
         getUserTimezone: () => 'America/Los_Angeles',
       };
 
-      // Create container with userDataService (the fix)
+      // Create container with its application reader port.
       const container = new JournalistContainer(config, {
-        userDataService,
+        lifelogAggregator: new LifelogAggregator({
+          sourceRegistry: new HarvestedLifelogSourceRegistry({
+            userLoadFile: (user, filename) => userDataService.getLifelogData(user, filename),
+          }),
+        }),
         logger: console,
         // Other dependencies would be mocked in a full test
       });
@@ -120,20 +127,18 @@ describe('LifelogAggregator', () => {
       // Get the lifelog aggregator
       const aggregator = container.getLifelogAggregator();
 
-      // Should have extractors
-      expect(aggregator.extractors).toBeDefined();
-      expect(aggregator.extractors.length).toBeGreaterThan(0);
+      expect(aggregator.getAvailableSources().length).toBeGreaterThan(0);
 
       // Aggregate should work
       const result = await aggregator.aggregate(username);
       expect(result).toHaveProperty('_meta');
 
-      // The key assertion: with userDataService, we should get data
+      // The key assertion: with the reader port, we should get data
       // (assuming the user has some lifelog data)
       console.log(`JournalistContainer aggregated ${result._meta.availableSourceCount} sources`);
     });
 
-    it('should fail gracefully when userDataService is NOT injected (reproduces bug)', async () => {
+    it('should reject a missing semantic lifelog aggregator', async () => {
       const { JournalistContainer } = await import('#apps/journalist/JournalistContainer.mjs');
 
       const config = {
@@ -142,10 +147,10 @@ describe('LifelogAggregator', () => {
         getUserTimezone: () => 'America/Los_Angeles',
       };
 
-      // Create container WITHOUT userDataService (the bug condition)
+      // Create container without the reader port.
       const warnFn = jest.fn();
       const container = new JournalistContainer(config, {
-        // userDataService NOT provided - this is the bug
+        // userLoadFile intentionally not provided.
         logger: {
           info: jest.fn(),
           warn: warnFn,
@@ -153,18 +158,7 @@ describe('LifelogAggregator', () => {
         },
       });
 
-      const aggregator = container.getLifelogAggregator();
-      const result = await aggregator.aggregate(username);
-
-      // Should return 0 sources because userLoadFile is null
-      expect(result._meta.availableSourceCount).toBe(0);
-
-      // Should have logged warnings about no-loader
-      expect(warnFn).toHaveBeenCalled();
-      const noLoaderCalls = warnFn.mock.calls.filter(
-        call => call[0] === 'lifelog.source.no-loader'
-      );
-      expect(noLoaderCalls.length).toBeGreaterThan(0);
+      expect(() => container.getLifelogAggregator()).toThrow('lifelogAggregator not configured');
     });
   });
 });

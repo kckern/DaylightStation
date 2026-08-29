@@ -7,6 +7,7 @@ import { TelegramWebhookParser } from '#adapters/telegram/TelegramWebhookParser.
 import { createBotWebhookHandler } from '#adapters/telegram/createBotWebhookHandler.mjs';
 import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 import { createHomebotServices } from '../bootstrap.mjs';
+import { InMemoryRequestDeduplicationStore } from '#adapters/http/InMemoryRequestDeduplicationStore.mjs';
 
 /**
  * Create homebot API router
@@ -32,7 +33,8 @@ export function createHomebotApiRouter(config) {
     gateway,
     createTelegramWebhookHandler,
     middleware,
-    logger = console
+    logger = console,
+    idempotencyStore = new InMemoryRequestDeduplicationStore({ logger })
   } = config;
 
   // Create webhook parser and input router
@@ -51,7 +53,7 @@ export function createHomebotApiRouter(config) {
       })
     : null;
 
-  return createHomebotRouter(homebotServices.homebotContainer, {
+  return createHomebotRouter({
     webhookHandler,
     telegramIdentityAdapter,
     botId,
@@ -59,6 +61,7 @@ export function createHomebotApiRouter(config) {
     gateway,
     createTelegramWebhookHandler,
     middleware,
+    idempotencyStore,
     logger
   });
 }

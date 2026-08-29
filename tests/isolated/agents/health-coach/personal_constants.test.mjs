@@ -1,19 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { PersonalConstantsService } from '../../../../backend/src/3_applications/agents/health-coach/services/PersonalConstantsService.mjs';
 
+const workspace = (getHealthProfile) => ({ getHealthProfile });
+
 describe('PersonalConstantsService.get', () => {
   it('returns canonical shape from user profile', async () => {
     const svc = new PersonalConstantsService({
-      dataService: {
-        user: {
-          read: async (path, userId) => {
-            if (path === 'profile/health') {
-              return { height_cm: 180, age: 40, sex: 'M', activity_pal: 1.55, scale_bias_lbs: 0 };
-            }
-            return null;
-          },
-        },
-      },
+      workspaceRepository: workspace(async () => ({ height_cm: 180, age: 40, sex: 'M', activity_pal: 1.55, scale_bias_lbs: 0 })),
       healthStore: {
         loadWeightData: async () => ({
           '2026-05-09': { lbs: 171.0 },
@@ -37,7 +30,7 @@ describe('PersonalConstantsService.get', () => {
 
   it('throws when user profile missing', async () => {
     const svc = new PersonalConstantsService({
-      dataService: { user: { read: async () => null } },
+      workspaceRepository: workspace(async () => null),
       healthStore: { loadWeightData: async () => ({}) },
     });
     await expect(svc.get('kc')).rejects.toThrow(/profile/);
@@ -45,9 +38,7 @@ describe('PersonalConstantsService.get', () => {
 
   it('returns null for weight_lbs when no weigh-ins exist', async () => {
     const svc = new PersonalConstantsService({
-      dataService: {
-        user: { read: async () => ({ height_cm: 180, age: 40, sex: 'M' }) },
-      },
+      workspaceRepository: workspace(async () => ({ height_cm: 180, age: 40, sex: 'M' })),
       healthStore: { loadWeightData: async () => ({}) },
     });
     const c = await svc.get('kc');
@@ -57,9 +48,7 @@ describe('PersonalConstantsService.get', () => {
 
   it('defaults activity_pal to 1.55 if missing in profile', async () => {
     const svc = new PersonalConstantsService({
-      dataService: {
-        user: { read: async () => ({ height_cm: 180, age: 40, sex: 'F' }) },
-      },
+      workspaceRepository: workspace(async () => ({ height_cm: 180, age: 40, sex: 'F' })),
       healthStore: { loadWeightData: async () => ({ '2026-05-10': { lbs: 140.0 } }) },
     });
     const c = await svc.get('kc');

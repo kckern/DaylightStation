@@ -2,6 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 
 function subject({ knownUser = true, withStore = true, roles = ['kiosk'], user = null } = {}) {
   const store = { save: vi.fn((_user, value) => value), list: vi.fn(() => []) };
@@ -9,11 +10,11 @@ function subject({ knownUser = true, withStore = true, roles = ['kiosk'], user =
   const server = express();
   server.use(express.json());
   server.use((req, _res, next) => { req.roles = roles; req.user = user; next(); });
-  server.use('/api/v1/piano', createPianoRouter({
+  server.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({
     pianoContainer: { studioDatastore: { isKnownUser: () => knownUser }, composerSongStore: {} },
     pianoAttemptStore: withStore ? store : null,
     logger,
-  }));
+  })));
   return { server, store, logger };
 }
 

@@ -2,7 +2,7 @@
  * PlaybackPresenceTracker — the "is something actually playing" half of
  * living-room-tv soft occupancy (spec §5.1 "livingroom-tv").
  *
- * Source: the `playback.log` eventBus topic — the SAME topic
+ * Source: the playback activity stream — the SAME underlying publication
  * `WakeAndLoadService#armPlaybackWatchdog` subscribes to (verified by grep:
  * `backend/src/3_applications/devices/services/WakeAndLoadService.mjs`),
  * broadcast by `backend/src/4_api/v1/routers/play.mjs` on every progress
@@ -46,7 +46,7 @@ export class PlaybackPresenceTracker {
 
   /**
    * @param {Object} config
-   * @param {Object} config.eventBus - `{ subscribe(topic, handler): unsubscribe }`.
+   * @param {Object} config.activitySource - `{ observePlaybackActivity(handler): unsubscribe }`.
    * @param {Function} [config.clock] - `() => Date`, overridable for tests.
    * @param {number} [config.freshMs=120000] - Freshness window (spec §5.1: 2 minutes).
    * @param {Function} [config.match] - `(payload) => boolean`; only matching
@@ -57,16 +57,16 @@ export class PlaybackPresenceTracker {
    * @param {Object} [config.logger]
    */
   constructor({
-    eventBus, clock = () => new Date(), freshMs = 2 * 60_000, match = () => true, logger,
+    activitySource, clock = () => new Date(), freshMs = 2 * 60_000, match = () => true, logger,
   } = {}) {
-    if (!eventBus || typeof eventBus.subscribe !== 'function') {
-      throw new Error('PlaybackPresenceTracker requires eventBus');
+    if (!activitySource || typeof activitySource.observePlaybackActivity !== 'function') {
+      throw new Error('PlaybackPresenceTracker requires activitySource');
     }
     this.#clock = clock;
     this.#freshMs = freshMs;
     this.#match = typeof match === 'function' ? match : () => true;
     this.#logger = logger || null;
-    this.#unsubscribe = eventBus.subscribe('playback.log', (payload) => this.#onPlaybackLog(payload));
+    this.#unsubscribe = activitySource.observePlaybackActivity((payload) => this.#onPlaybackLog(payload));
   }
 
   #onPlaybackLog(payload) {
@@ -81,7 +81,7 @@ export class PlaybackPresenceTracker {
     return this.#nowMs() - this.#lastSeenAt <= this.#freshMs;
   }
 
-  /** Unsubscribe from the eventBus. Safe to call more than once. */
+  /** Stop observing activity. Safe to call more than once. */
   stop() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;

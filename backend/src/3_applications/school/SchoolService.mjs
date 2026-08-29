@@ -9,8 +9,8 @@ import {
   createAttempt, isRegradeCorrection, GuestForbiddenError, SessionGoneError, normalizeLearningContext, bankContentRev,
 } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
-import { PersistenceError } from '#system/utils/errors/index.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { PersistenceError } from '#apps/common/errors/SemanticErrors.mjs';
+import { shortId } from '#system/utils/id.mjs';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 // A persisted sitting outlives the in-memory session (2h) but not the day it
@@ -569,6 +569,7 @@ export class SchoolService {
     if (s.userId != null) {
       const attemptAt = recordedAt ?? new Date(this.#now()).toISOString();
       const attempt = createAttempt({
+        id: `att_${shortId(8)}`,
         at: attemptAt,
         sessionId: s.id, bankId: s.bankId, itemId: item.id, itemType: item.type,
         mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId, transport,

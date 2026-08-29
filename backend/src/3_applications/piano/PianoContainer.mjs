@@ -5,13 +5,12 @@
  *   - studioDatastore        (YamlPianoStudioDatastore) — all persistence + paths
  *   - fitnessPlayableService — shared Plex-backed playable-episodes service
  *   - userVideoProgressStore — per-user video course progress
- *   - configService          — piano app config + user profiles (passed, not imported)
+ *   - configProjection       — semantic piano settings and user projections
  *
  * Per Decision D1 it does NOT import concrete adapters; they arrive via config.
  * Use cases are lazily memoized (mirrors PlaybackHubContainer / NutribotContainer).
- * The datastore is exposed directly for the router's straight-through CRUD (studio,
- * producer, preferences, progress, lessons, history, effect-audit, loop-manifest,
- * roster); the two orchestrating algorithms live in use cases.
+ * Legacy datastore accessors remain for test/composition compatibility. HTTP
+ * adapters consume semantic PianoApiServices rather than these stores directly.
  */
 import { GetCourseProgress } from './usecases/GetCourseProgress.mjs';
 import { GetPlayableUnits } from './usecases/GetPlayableUnits.mjs';
@@ -24,7 +23,7 @@ export class PianoContainer {
   #fitnessPlayableService;
   #userVideoProgressStore;
   #composerSongStore;
-  #configService;
+  #configProjection;
   #plexClient;
   #learningService;
   #schoolAssignments;
@@ -34,15 +33,15 @@ export class PianoContainer {
   #getPlayableUnits;
   #getRecentCourseActivity;
 
-  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configService, plexClient = null, learningService = null, schoolAssignments = null, logger = console } = {}) {
+  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configProjection, plexClient = null, learningService = null, schoolAssignments = null, logger = console } = {}) {
     this.#curriculumIndex = arguments[0]?.curriculumIndex ?? null;
     if (!studioDatastore) throw new Error('PianoContainer: studioDatastore required');
-    if (!configService) throw new Error('PianoContainer: configService required');
+    if (!configProjection) throw new Error('PianoContainer: configProjection required');
     this.#studioDatastore = studioDatastore;
     this.#fitnessPlayableService = fitnessPlayableService;
     this.#userVideoProgressStore = userVideoProgressStore;
     this.#composerSongStore = composerSongStore;
-    this.#configService = configService;
+    this.#configProjection = configProjection;
     this.#plexClient = plexClient;
     this.#learningService = learningService;
     // School's learner assignment store, read only to tell whether a
@@ -52,12 +51,12 @@ export class PianoContainer {
     this.#logger = logger;
   }
 
-  /** The persistence adapter (straight-through CRUD lives here). */
+  /** Legacy composition/test accessor; API routers must use PianoStudioService. */
   get studioDatastore() {
     return this.#studioDatastore;
   }
 
-  /** Per-user Composer-mode composition persistence. */
+  /** Legacy composition/test accessor; API routers use PianoCompositionService. */
   get composerSongStore() {
     return this.#composerSongStore;
   }
@@ -72,7 +71,7 @@ export class PianoContainer {
       this.#getCourseProgress = new GetCourseProgress({
         fitnessPlayableService: this.#fitnessPlayableService,
         userVideoProgressStore: this.#userVideoProgressStore,
-        configService: this.#configService,
+        configProjection: this.#configProjection,
         logger: this.#logger,
       });
     }
@@ -84,7 +83,7 @@ export class PianoContainer {
       this.#getPlayableUnits = new GetPlayableUnits({
         fitnessPlayableService: this.#fitnessPlayableService,
         userVideoProgressStore: this.#userVideoProgressStore,
-        configService: this.#configService,
+        configProjection: this.#configProjection,
         learningService: this.#learningService,
         curriculumIndex: this.#curriculumIndex,
         schoolAssignments: this.#schoolAssignments,
@@ -104,7 +103,7 @@ export class PianoContainer {
       this.#getRecentCourseActivity = new GetRecentCourseActivity({
         fitnessPlayableService: this.#fitnessPlayableService,
         userVideoProgressStore: this.#userVideoProgressStore,
-        configService: this.#configService,
+        configProjection: this.#configProjection,
         plexClient: this.#plexClient,
         logger: this.#logger,
       });

@@ -17,11 +17,24 @@
 import path from 'path';
 import moment from 'moment-timezone';
 import crypto from 'crypto';
-import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
+import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listYamlFiles, ensureDir, loadYamlSafe, saveYaml, deleteFile } from '#system/utils/FileIO.mjs';
 import { evaluateActivitySessionMatch } from '#domains/fitness/services/activitySessionMatch.mjs';
+
+function hydrateStoredTimeline(data) {
+  if (!data?.timeline?.series) return data;
+  const series = {};
+  for (const [key, stored] of Object.entries(data.timeline.series)) {
+    let entries = stored;
+    if (typeof stored === 'string') {
+      try { entries = JSON.parse(stored); } catch { continue; }
+    }
+    if (Array.isArray(entries)) series[key] = entries;
+  }
+  return { ...data, timeline: { ...data.timeline, series } };
+}
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 
@@ -686,7 +699,7 @@ export class StravaHarvester extends IHarvester {
 
       for (const filename of files) {
         const filePath = path.join(dateDir, `${filename}.yml`);
-        const data = loadYamlSafe(filePath);
+        const data = hydrateStoredTimeline(loadYamlSafe(filePath));
         if (!data?.session?.start || !data?.participants) continue;
 
         sessions.push({

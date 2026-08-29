@@ -1,6 +1,6 @@
 // tests/unit/domains/journaling/services/JournalService.test.mjs
 import { vi } from 'vitest';
-import { JournalService } from '#domains/journaling/services/JournalService.mjs';
+import { JournalService } from '#apps/journaling/services/JournalService.mjs';
 
 describe('JournalService', () => {
   let service;
@@ -27,12 +27,13 @@ describe('JournalService', () => {
   describe('createEntry', () => {
     test('creates and saves entry', async () => {
       const entry = await service.createEntry({
+        id: 'journal-fixed',
         userId: 'user-1',
         date: '2026-01-11',
         content: 'Today was great'
       }, TS);
 
-      expect(entry.id).toMatch(/^journal-/);
+      expect(entry.id).toBe('journal-fixed');
       expect(entry.userId).toBe('user-1');
       expect(entry.content).toBe('Today was great');
       expect(mockStore.save).toHaveBeenCalled();
@@ -185,14 +186,4 @@ describe('JournalService', () => {
     });
   });
 
-  describe('generateId', () => {
-    test('generates unique IDs', () => {
-      // Production now requires explicit nowMs (no wall-clock reach).
-      const id1 = service.generateId(NOW_MS);
-      const id2 = service.generateId(NOW_MS);
-
-      expect(id1).toMatch(/^journal-/);
-      expect(id1).not.toBe(id2);
-    });
-  });
 });

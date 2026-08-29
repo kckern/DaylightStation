@@ -20,6 +20,19 @@
 import express from 'express';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
+function serializeJobExecution(execution) {
+  return {
+    jobId: execution.jobId,
+    executionId: execution.executionId,
+    startTime: execution.startTime,
+    endTime: execution.endTime,
+    status: execution.status,
+    error: execution.error,
+    durationMs: execution.durationMs,
+    manual: execution.manual
+  };
+}
+
 /**
  * Create Admin Scheduler Router
  *
@@ -42,7 +55,7 @@ export function createAdminSchedulerRouter(config) {
 
   // POST /jobs - Create a new job
   router.post('/jobs', asyncHandler((req, res) => {
-    const { job } = service.createJob(req.body || {});
+    const job = service.createJob(req.body || {});
     res.status(201).json({ ok: true, job });
   }));
 
@@ -53,22 +66,32 @@ export function createAdminSchedulerRouter(config) {
 
   // PUT /jobs/:id - Update job fields (cannot change id)
   router.put('/jobs/:id', asyncHandler((req, res) => {
-    const { job } = service.updateJob(req.params.id, req.body || {});
+    const job = service.updateJob(req.params.id, req.body || {});
     res.json({ ok: true, job });
   }));
 
   // DELETE /jobs/:id - Remove a job
   router.delete('/jobs/:id', asyncHandler((req, res) => {
-    const { id } = service.deleteJob(req.params.id);
+    const id = service.deleteJob(req.params.id);
     res.json({ ok: true, id });
   }));
 
   // POST /jobs/:id/run - Trigger immediate job execution via the real scheduler
   router.post('/jobs/:id/run', asyncHandler(async (req, res) => {
     const result = await service.runJob(req.params.id);
-    res.status(202).json({ ok: true, ...result });
+    res.status(202).json({
+      ok: true,
+      ...result,
+      execution: serializeJobExecution(result.execution)
+    });
   }));
 
+  router.use((error, req, res, next) => {
+    if (error?.name === 'OperationUnavailableError' && error?.code === 'NOT_IMPLEMENTED') {
+      error.status = 501;
+    }
+    next(error);
+  });
   router.use(errorHandlerMiddleware({ shape: 'string' }));
 
   return router;

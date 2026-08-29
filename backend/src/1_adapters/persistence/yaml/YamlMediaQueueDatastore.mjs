@@ -10,6 +10,28 @@ import { IMediaQueueDatastore } from '#apps/media/ports/IMediaQueueDatastore.mjs
 import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
+function hydrateMediaQueue(data) {
+  return new MediaQueue({
+    position: data.position,
+    shuffle: data.shuffle,
+    repeat: data.repeat,
+    volume: data.volume,
+    items: data.items ? data.items.map((item) => ({ ...item })) : [],
+    shuffleOrder: data.shuffleOrder ? [...data.shuffleOrder] : [],
+  });
+}
+
+function toQueueRecord(mediaQueue) {
+  return {
+    position: mediaQueue.position,
+    shuffle: mediaQueue.shuffle,
+    repeat: mediaQueue.repeat,
+    volume: mediaQueue.volume,
+    items: mediaQueue.items.map((item) => ({ ...item })),
+    shuffleOrder: [...mediaQueue.shuffleOrder],
+  };
+}
+
 export class YamlMediaQueueDatastore extends IMediaQueueDatastore {
   /**
    * @param {Object} config
@@ -48,7 +70,7 @@ export class YamlMediaQueueDatastore extends IMediaQueueDatastore {
     const queuePath = this._getQueuePath(householdId);
     const data = loadYamlSafe(queuePath);
     if (!data) return null;
-    return MediaQueue.fromJSON(data);
+    return hydrateMediaQueue(data);
   }
 
   /**
@@ -61,10 +83,7 @@ export class YamlMediaQueueDatastore extends IMediaQueueDatastore {
     const queuePath = this._getQueuePath(householdId);
     const dir = path.dirname(queuePath);
     ensureDir(dir);
-    const data = typeof mediaQueue.toJSON === 'function'
-      ? mediaQueue.toJSON()
-      : mediaQueue;
-    saveYaml(queuePath, data);
+    saveYaml(queuePath, toQueueRecord(mediaQueue));
   }
 }
 

@@ -2,11 +2,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { Readable } from 'node:stream';
 import { createCanvasRouter } from '../../../../backend/src/4_api/v1/routers/canvas.mjs';
 
 describe('Canvas API', () => {
   let app;
   let mockCanvasService;
+  let getCanvasImage;
 
   beforeEach(() => {
     mockCanvasService = {
@@ -21,7 +23,14 @@ describe('Canvas API', () => {
       stopRotation: vi.fn(),
     };
 
-    const router = createCanvasRouter({ canvasService: mockCanvasService });
+    getCanvasImage = { execute: vi.fn().mockResolvedValue({
+      size: 5, mimeType: 'image/jpeg', open: () => Readable.from(Buffer.from('image')),
+    }) };
+    const sendFileResource = vi.fn((_req, res, image) => {
+      res.type(image.mimeType);
+      return image.open().pipe(res);
+    });
+    const router = createCanvasRouter({ canvasService: mockCanvasService, getCanvasImage, sendFileResource });
     app = express();
     app.use(express.json());
     app.use((req, res, next) => {
@@ -29,6 +38,22 @@ describe('Canvas API', () => {
       next();
     });
     app.use('/api/v1/canvas', router);
+  });
+
+  describe('GET /image/*', () => {
+    it('sends the opaque image resource returned by the use case', async () => {
+      const res = await request(app).get('/api/v1/canvas/image/gallery/work.jpg');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/^image\/jpeg/);
+      expect(getCanvasImage.execute).toHaveBeenCalledWith('gallery/work.jpg');
+    });
+
+    it('preserves the image-not-found envelope', async () => {
+      getCanvasImage.execute.mockResolvedValueOnce(null);
+      const res = await request(app).get('/api/v1/canvas/image/missing.jpg');
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: 'Image not found', path: 'missing.jpg' });
+    });
   });
 
   describe('GET /current', () => {

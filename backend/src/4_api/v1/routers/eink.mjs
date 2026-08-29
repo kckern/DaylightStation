@@ -32,6 +32,18 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
+function parseTelemetry(query = {}) {
+  const number = (value) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+  const telemetry = Object.fromEntries(['bat', 'rssi', 'up', 'heap', 'psram', 'rst']
+    .map((key) => [key, number(query[key])]).filter(([, value]) => value !== undefined));
+  if (typeof query.wake === 'string' && query.wake) telemetry.wake = query.wake;
+  return telemetry;
+}
+
 /**
  * @param {Object} config
  * @param {import('#apps/eink/EinkPanelService.mjs').EinkPanelService} config.einkPanelService
@@ -40,6 +52,9 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  */
 export function createEinkRouter({ einkPanelService, logger = console }) {
   const router = express.Router();
+  const notFoundMessage = (error, id) => error?.code === 'EINK_PANEL_NOT_FOUND'
+    ? `eink panel config not found: screens/${id}.yml`
+    : error.message;
 
   // Pure on-demand render of a panel's current view. The panel only reaches here
   // after /config told it the image_hash changed, so there is no conditional-GET
@@ -55,7 +70,7 @@ export function createEinkRouter({ einkPanelService, logger = console }) {
       // Express's automatic If-None-Match/304 freshness check entirely.
       return res.end(png);
     } catch (err) {
-      if (err?.status === 404) return res.status(404).json({ error: err.message });
+      if (err?.name === 'NotFoundError') return res.status(404).json({ error: notFoundMessage(err, id) });
       throw err;
     }
   }));
@@ -73,7 +88,7 @@ export function createEinkRouter({ einkPanelService, logger = console }) {
     // this wake poll — zero extra cost, since a deep-sleep device can't host its own
     // server. Capture it before rendering the snapshot; it must never break /config,
     // so guard it (recordTelemetry is also internally non-throwing).
-    try { einkPanelService.recordTelemetry(id, req.query); } catch (e) {
+    try { einkPanelService.recordTelemetry(id, parseTelemetry(req.query)); } catch (e) {
       logger.warn?.('eink.telemetry.record_failed', { id, error: e?.message });
     }
     try {
@@ -85,7 +100,7 @@ export function createEinkRouter({ einkPanelService, logger = console }) {
         `btn_right=${snap.buttons.right}`,
         `btn_left=${snap.buttons.left}`,
         `next_wake=${snap.nextWakeSec}`,
-        `image=${snap.image}`,
+        `image=/api/v1/eink/${encodeURIComponent(snap.id)}/panel`,
         `image_hash=${snap.imageHash}`,
         '',
       ].join('\n');
@@ -93,7 +108,7 @@ export function createEinkRouter({ einkPanelService, logger = console }) {
       res.type('text/plain');
       return res.send(body);
     } catch (err) {
-      if (err?.status === 404) return res.status(404).json({ error: err.message });
+      if (err?.name === 'NotFoundError') return res.status(404).json({ error: notFoundMessage(err, id) });
       throw err;
     }
   }));
@@ -120,7 +135,7 @@ export function createEinkRouter({ einkPanelService, logger = console }) {
       const result = await einkPanelService.advance(id, action);
       return res.json({ ok: true, ...result });
     } catch (err) {
-      if (err?.status === 404) return res.status(404).json({ error: err.message });
+      if (err?.name === 'NotFoundError') return res.status(404).json({ error: notFoundMessage(err, id) });
       throw err;
     }
   }));

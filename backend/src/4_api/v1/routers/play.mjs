@@ -1,10 +1,9 @@
 // backend/src/4_api/routers/play.mjs
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { nowTs24 } from '#system/utils/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
-import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
+import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 
 /**
  * Read the opaque client session off the query string.
@@ -33,15 +32,13 @@ function readSessionParam(req) {
  * - GET /api/play/plex/mpd/:id - Get MPD manifest URL for Plex item
  *
  * @param {Object} config
- * @param {Object} config.registry - ContentSourceRegistry
- * @param {Object} config.mediaProgressMemory - MediaProgressMemory
- * @param {Object} config.playResponseService - PlayResponseService (toPlayResponse, getWatchState)
- * @param {Object} [config.contentQueryService] - ContentQueryService for smart selection
+ * @param {Object} config.recordPlaybackProgress - RecordPlaybackProgress use case
+ * @param {Object} config.playbackReadService - Semantic playback read facade
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncSources, progressSyncService, eventBus = null, userVideoProgressStore = null, economyService = null, logger = console } = config;
+  const { recordPlaybackProgress, playbackReadService, logger = console } = config;
   const router = express.Router();
 
   // ==========================================================================
@@ -67,7 +64,7 @@ export function createPlayRouter(config) {
       headers: { 'content-type': req.headers['content-type'] }
     });
 
-    const { type, assetId, percent, seconds, title, watched_duration, listId, userId, engaged } = req.body;
+    const { type, assetId, percent, seconds } = req.body;
 
       // Validate required fields
       if (!type || !assetId || percent === undefined) {
@@ -79,189 +76,7 @@ export function createPlayRouter(config) {
         return res.status(400).json({ error: 'Invalid request: seconds < 10' });
       }
 
-      // Determine storage path based on type
-      let storagePath = type;
-      let itemMetadata = null;
-      const compoundId = assetId.includes(':') ? assetId : `${type}:${assetId}`;
-
-      // Use adapter (if available) for storage path and metadata enrichment
-      const adapter = registry.get(type);
-      if (adapter) {
-        try {
-          if (typeof adapter.getStoragePath === 'function') {
-            storagePath = await adapter.getStoragePath(compoundId);
-          }
-          if (typeof adapter.getItem === 'function') {
-            const item = await adapter.getItem(compoundId);
-            itemMetadata = item?.metadata;
-          }
-        } catch (e) {
-          logger.warn?.('play.log.metadata_fetch_failed', { assetId, error: e.message });
-        }
-      }
-
-      // Override with list namespace when listId is provided (server-side resolution)
-      if (listId) {
-        const listAdapter = registry.adapters?.get('watchlist');
-        if (listAdapter?.getListNamespace) {
-          const ns = await listAdapter.getListNamespace(listId);
-          if (ns) storagePath = ns;
-        }
-      }
-
-      // Get existing watch state
-      const existingState = mediaProgressMemory ? await mediaProgressMemory.get(compoundId, storagePath) : null;
-
-      // Calculate duration from percent if not in metadata
-      const normalizedSeconds = parseInt(seconds, 10);
-      const normalizedPercent = parseFloat(percent);
-      const estimatedDuration = normalizedPercent > 0
-        ? Math.round(normalizedSeconds / (normalizedPercent / 100))
-        : (itemMetadata?.duration ? Math.round(itemMetadata.duration / 1000) : 0);
-
-      // Calculate watch time accumulation
-      const sessionWatchTime = Number.isFinite(watched_duration)
-        ? parseFloat(watched_duration)
-        : Math.max(0, normalizedSeconds - (existingState?.playhead || 0));
-      const existingWatchTime = existingState?.watchTime ?? 0;
-      const newWatchTime = existingWatchTime + sessionWatchTime;
-
-      // Calculate final percent for state object
-      const statePercent = estimatedDuration > 0
-        ? Math.round((normalizedSeconds / estimatedDuration) * 100)
-        : 0;
-
-      // Stamp completedAt the first time watched-threshold (>=90%) is crossed.
-      // Once stamped, it is never cleared, so a later rewatch from the start
-      // cannot revert the item to "in progress."
-      const COMPLETION_THRESHOLD_PERCENT = 90;
-      const completedAt = existingState?.completedAt
-        || (statePercent >= COMPLETION_THRESHOLD_PERCENT ? nowTs24() : null);
-
-      // Create updated media progress via domain entity
-      const newState = new MediaProgress({
-        contentId: compoundId,
-        playhead: normalizedSeconds,
-        duration: estimatedDuration,
-        percent: statePercent,
-        playCount: (existingState?.playCount ?? 0) + (!existingState || normalizedSeconds < (existingState.playhead || 0) ? 1 : 0),
-        lastPlayed: nowTs24(),
-        watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0,
-        completedAt
-      });
-
-      // Persist state
-      if (mediaProgressMemory) {
-        await mediaProgressMemory.set(newState, storagePath);
-      }
-
-      // Progress sync: debounced write-back (fire-and-forget)
-      if (progressSyncSources?.has(type) && progressSyncService) {
-        const localId = assetId.includes(':') ? assetId.split(':').slice(1).join(':') : assetId;
-        progressSyncService.onProgressUpdate(compoundId, localId, {
-          playhead: normalizedSeconds,
-          duration: estimatedDuration,
-          percent: statePercent,
-          watchTime: sessionWatchTime
-        });
-      }
-
-      logger.info?.('play.log.updated', {
-        assetId,
-        type,
-        percent: normalizedPercent,
-        playhead: normalizedSeconds,
-        storagePath
-      });
-
-      // Broadcast playback.log so backend watchdogs (e.g. WakeAndLoadService)
-      // can observe that the device is actively playing.
-      if (eventBus?.publish) {
-        try {
-          eventBus.publish('playback.log', {
-            contentId: compoundId,
-            type,
-            assetId,
-            percent: normalizedPercent,
-            playhead: normalizedSeconds,
-            storagePath,
-            timestamp: Date.now()
-          });
-        } catch (err) {
-          logger.warn?.('play.log.broadcast_failed', { error: err.message });
-        }
-      }
-
-      // Per-user video course progress (piano kiosk). Additive — the device-level
-      // media-memory write above is unaffected. Only fires when a userId is supplied
-      // and the store is wired. engaged = the user played along (any MIDI) this session.
-      let userProgress = null;
-      if (userId && userVideoProgressStore) {
-        try {
-          userProgress = userVideoProgressStore.record({
-            userId,
-            plexId: assetId,
-            percent: normalizedPercent,
-            seconds: normalizedSeconds,
-            duration: estimatedDuration,
-            engaged: !!engaged,
-          });
-        } catch (err) {
-          logger.warn?.('play.log.user_progress_failed', { userId, assetId, error: err.message });
-        }
-      }
-
-      // Economy earn-hook (Task 8): pay coins the first time a lesson crosses
-      // completion. Fire-and-forget — never awaited, never affects the HTTP
-      // response, and its own replay guard makes a double-fire harmless. The
-      // `newlyCompleted` flag guarantees we only fire on the genuine transition.
-      // ref matches the store's key form (plex:{id}) so earn dedups per lesson.
-      if (economyService && userProgress?.newlyCompleted) {
-        const ref = `plex:${String(assetId).replace(/^plex:/, '')}`;
-        economyService.earn(userId, { action: 'piano-lesson-complete', source: 'piano', ref })
-          .catch((err) => logger.warn?.('play.log.economy_earn_failed', { userId, assetId, error: err?.message }));
-      }
-
-      // School ceremony (piano-course program): announce the SAME genuine
-      // transition the earn-hook above pays on. Published, not called — this
-      // router must not know whether School is wired, and School decides for
-      // itself whether this player was discharging an obligation (most piano
-      // use is not schoolwork). Synchronous publish inside its own try: a
-      // subscriber that throws must never fail the progress write that just
-      // succeeded, nor the HTTP response.
-      if (eventBus?.publish && userProgress?.newlyCompleted) {
-        try {
-          eventBus.publish('piano.lesson.completed', {
-            userId,
-            plexId: `plex:${String(assetId).replace(/^plex:/, '')}`,
-            title: itemMetadata?.title || title || null,
-            at: new Date().toISOString(),
-          });
-        } catch (err) {
-          logger.warn?.('play.log.lesson_completed_publish_failed', { userId, assetId, error: err?.message });
-        }
-      }
-
-      // Strip the internal newlyCompleted signal from the public response shape.
-      const userProgressPublic = userProgress
-        ? (() => { const { newlyCompleted, ...rest } = userProgress; return rest; })()
-        : undefined;
-
-      res.json({
-        response: {
-          type,
-          library: storagePath,
-          title: itemMetadata?.title || title,
-          contentId: newState.contentId,
-          playhead: newState.playhead,
-          duration: newState.duration,
-          percent: newState.percent,
-          playCount: newState.playCount,
-          lastPlayed: newState.lastPlayed,
-          watchTime: newState.watchTime,
-          userProgress: userProgressPublic,
-        }
-      });
+      res.json(await recordPlaybackProgress.execute(req.body));
   }));
 
   /**
@@ -275,31 +90,23 @@ export function createPlayRouter(config) {
     const { id } = req.params;
       const maxVideoBitrate = parseInt(req.query.maxVideoBitrate, 10);
 
-      const plexAdapter = registry.get('plex');
-      if (!plexAdapter) {
+      const opts = Number.isFinite(maxVideoBitrate) ? { maxVideoBitrate } : {};
+      const result = await playbackReadService.getPlexManifest(id, opts);
+      if (result.kind === 'unconfigured') {
         return res.status(503).json({ error: 'Plex adapter not configured' });
       }
-
-      // Get media URL from adapter
-      const opts = Number.isFinite(maxVideoBitrate) ? { maxVideoBitrate } : {};
-      let mediaUrl;
-
-      if (typeof plexAdapter.getMediaUrl !== 'function') {
+      if (result.kind === 'unsupported') {
         return res.status(501).json({ error: 'Plex adapter does not support media URL retrieval' });
       }
-      const result = await plexAdapter.getMediaUrl(id, opts);
-      mediaUrl = result?.url ?? null;
-
-      if (!mediaUrl) {
+      if (result.kind === 'not_found') {
         return res.status(404).json({
           error: 'Media URL not found',
           id,
-          ...(result?.reason ? { reason: result.reason } : {}),
+          ...(result.reason ? { reason: result.reason } : {}),
         });
       }
-
       // Redirect through proxy (replace plex host with proxy path)
-      const proxyUrl = mediaUrl.replace(/https?:\/\/[^\/]+/, '/api/v1/proxy/plex');
+      const proxyUrl = result.url.replace(/https?:\/\/[^\/]+/, '/api/v1/proxy/plex');
       res.redirect(proxyUrl);
   }));
 
@@ -320,128 +127,30 @@ export function createPlayRouter(config) {
       const rawPath = splatPath(req);
       const { compoundId, modifiers } = parseActionRouteId({ source, path: rawPath });
 
-      // Resolve content ID through unified resolver (handles all layers:
-      // exact source, prefix resolution, system aliases, household aliases)
-      const resolved = contentIdResolver.resolve(compoundId);
-
-      if (!resolved?.adapter) {
+      const result = await playbackReadService.resolve({
+        compoundId,
+        shuffle: modifiers.shuffle,
+        resume: req.query.resume === 'false' ? false : undefined,
+        session: readSessionParam(req),
+        bookmark: req.query.bookmark === 'true',
+      });
+      if (result.kind === 'unknown_source') {
         logger.warn?.('play.source.unknown', { compoundId, source, rawPath, ip: req.ip });
         return res.status(404).json({ error: `Unknown source: ${source}` });
       }
-
-      const adapter = resolved.adapter;
-      const finalSource = resolved.source;
-      const finalLocalId = resolved.localId;
-
-      // Karaoke/play-along tracks pass ?resume=false so the response never
-      // carries a resume_position (or a Plex stream offset) — computed once
-      // up front so every response branch below (shuffle, container, single
-      // item) forwards it consistently.
-      const resumeOverride = req.query.resume === 'false' ? false : undefined;
-
-      // The client session. The frontend has minted and sent this for a long
-      // time; nothing here read it until 2026-08-16, so PlexAdapter fell
-      // through to a fresh random identifier per request and Plex logged one
-      // retrying tablet as 495 separate clients. PlayResponseService threads it
-      // into the Plex stream url — a query param, not a header, because the
-      // <video>/dash element issues that request itself and cannot be given
-      // custom headers.
-      const session = readSessionParam(req);
-
-      // If shuffle modifier, use resolve with random pick
-      if (modifiers.shuffle) {
-        let selectedItem;
-
-        if (contentQueryService) {
-          const result = await contentQueryService.resolve(finalSource, finalLocalId, { now: new Date() }, { pick: 'random' });
-
-          if (!result.items.length) {
-            return res.status(404).json({ error: 'No playable items found' });
-          }
-
-          selectedItem = result.items[0];
-        } else if (adapter.resolvePlayables) {
-          // Fallback: use adapter directly
-          const playables = await adapter.resolvePlayables(finalLocalId);
-          if (!playables.length) {
-            return res.status(404).json({ error: 'No playable items found' });
-          }
-
-          selectedItem = playables[Math.floor(Math.random() * playables.length)];
-        } else {
-          return res.status(404).json({ error: 'No playable items found' });
-        }
-
-        const storagePath = typeof adapter.getStoragePath === 'function'
-          ? await adapter.getStoragePath(selectedItem.id)
-          : finalSource;
-        const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
-
-        // No containerId: `/shuffle` reaches queries and containers alike, so
-        // this branch cannot claim playback started from a programme. Picking
-        // one item at random out of a season is not playing the season.
-        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride, session }));
-      }
-
-      // Get single item using resolver's localId
-      const item = await adapter.getItem(finalLocalId);
-      if (!item) {
+      if (result.kind === 'item_not_found') {
         logger.warn?.('play.item.not_found', {
           compoundId,
-          resolvedSource: finalSource,
-          resolvedLocalId: finalLocalId,
-          adapterSource: adapter.source,
+          resolvedSource: result.source,
+          resolvedLocalId: result.localId,
+          adapterSource: result.adapterSource,
           ip: req.ip
         });
-        return res.status(404).json({ error: 'Item not found', source: finalSource, localId: finalLocalId });
+        return res.status(404).json({ error: 'Item not found', source: result.source, localId: result.localId });
       }
-
-      // Check if it's a container (needs resolution to playable)
-      if (item.isContainer?.() || item.itemType === 'container') {
-        let playables;
-
-        if (contentQueryService) {
-          try {
-            const result = await contentQueryService.resolve(finalSource, finalLocalId, { now: new Date() });
-            playables = result.items;
-          } catch {
-            // Fallback if contentQueryService can't resolve this source
-            playables = adapter.resolvePlayables ? await adapter.resolvePlayables(finalLocalId) : [];
-          }
-        } else {
-          // Fallback: use adapter directly
-          playables = adapter.resolvePlayables ? await adapter.resolvePlayables(finalLocalId) : [];
-        }
-
-        if (!playables.length) {
-          return res.status(404).json({ error: 'No playable items in container' });
-        }
-
-        const selectedItem = playables[0];
-        const storagePath = typeof adapter.getStoragePath === 'function'
-          ? await adapter.getStoragePath(selectedItem.id)
-          : finalSource;
-        const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
-
-        // Playback started FROM the container, so its first playable is part 0
-        // of that programme and inherits its frame — see PlayResponseService.
-        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, {
-          adapter, resume: resumeOverride, session, containerId: `${finalSource}:${finalLocalId}`
-        }));
-      }
-
-      // Return playable item
-      const storagePath = typeof adapter.getStoragePath === 'function'
-        ? await adapter.getStoragePath(item.id)
-        : finalSource;
-      const watchState = await playResponseService.getWatchState(item, storagePath, adapter);
-
-      // Bookmark restore: override playhead with bookmark position
-      if (req.query.bookmark === 'true' && watchState?.bookmark) {
-        watchState.playhead = watchState.bookmark.playhead;
-      }
-
-      res.json(playResponseService.toPlayResponse(item, watchState, { adapter, resume: resumeOverride, session }));
+      if (result.kind === 'no_playables') return res.status(404).json({ error: 'No playable items found' });
+      if (result.kind === 'empty_container') return res.status(404).json({ error: 'No playable items in container' });
+      res.json(presentPublicResources(result.body));
   }));
 
   // GET /:source - handles compound IDs like /play/plex:12345 and heuristics like /play/12345
@@ -450,70 +159,22 @@ export function createPlayRouter(config) {
     const { source } = req.params;
     const { compoundId, modifiers } = parseActionRouteId({ source, path: '' });
 
-    const resolved = contentIdResolver.resolve(compoundId);
-    if (!resolved?.adapter) {
+    const result = await playbackReadService.resolve({
+      compoundId,
+      shuffle: modifiers.shuffle,
+      resume: req.query.resume === 'false' ? false : undefined,
+      session: readSessionParam(req),
+      bookmark: req.query.bookmark === 'true',
+    });
+    if (result.kind === 'unknown_source') {
       return res.status(404).json({ error: `Unknown source: ${source}` });
     }
-
-    const adapter = resolved.adapter;
-    const finalSource = resolved.source;
-    const finalLocalId = resolved.localId;
-
-    // Karaoke/play-along content ids are bare compound ids (e.g. `plex:662039`)
-    // and land on this route, not the /:source/*splat one above — it must
-    // forward the same override or ?resume=false silently does nothing here.
-    const resumeOverride = req.query.resume === 'false' ? false : undefined;
-
-    // Bare compound ids (`plex:694719`) land here, not on the splat route above,
-    // and the piano kiosk's lecture player uses exactly that form — so this is
-    // the route the 2026-08-16 storm ran through. It must read the session too.
-    const session = readSessionParam(req);
-
-    const item = await adapter.getItem(finalLocalId);
-    if (!item) {
-      return res.status(404).json({ error: 'Item not found', source: finalSource, localId: finalLocalId });
+    if (result.kind === 'item_not_found') {
+      return res.status(404).json({ error: 'Item not found', source: result.source, localId: result.localId });
     }
-
-    // Check if it's a container (needs resolution to playable)
-    if (item.isContainer?.() || item.itemType === 'container') {
-      let playables;
-      if (contentQueryService) {
-        try {
-          const result = await contentQueryService.resolve(finalSource, finalLocalId, { now: new Date() });
-          playables = result.items;
-        } catch {
-          playables = adapter.resolvePlayables ? await adapter.resolvePlayables(finalLocalId) : [];
-        }
-      } else {
-        playables = adapter.resolvePlayables ? await adapter.resolvePlayables(finalLocalId) : [];
-      }
-
-      if (!playables.length) {
-        return res.status(404).json({ error: 'No playable items in container' });
-      }
-
-      const selectedItem = playables[0];
-      const storagePath = typeof adapter.getStoragePath === 'function'
-        ? await adapter.getStoragePath(selectedItem.id)
-        : finalSource;
-      const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
-      // Same container context as the splat route above.
-      return res.json(playResponseService.toPlayResponse(selectedItem, watchState, {
-        adapter, resume: resumeOverride, session, containerId: `${finalSource}:${finalLocalId}`
-      }));
-    }
-
-    const storagePath = typeof adapter.getStoragePath === 'function'
-      ? await adapter.getStoragePath(item.id)
-      : finalSource;
-    const watchState = await playResponseService.getWatchState(item, storagePath, adapter);
-
-    // Bookmark restore: override playhead with bookmark position
-    if (req.query.bookmark === 'true' && watchState?.bookmark) {
-      watchState.playhead = watchState.bookmark.playhead;
-    }
-
-    res.json(playResponseService.toPlayResponse(item, watchState, { adapter, resume: resumeOverride, session }));
+    if (result.kind === 'no_playables') return res.status(404).json({ error: 'No playable items found' });
+    if (result.kind === 'empty_container') return res.status(404).json({ error: 'No playable items in container' });
+    res.json(presentPublicResources(result.body));
   }));
 
   return router;

@@ -7,7 +7,7 @@ import {
   getSessionFileTransport,
   resetSessionFileTransport
 } from '#backend/src/0_system/logging/transports/sessionFile.mjs';
-import { ingestFrontendLogs } from '#backend/src/0_system/logging/ingestion.mjs';
+import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
 import {
   initializeLogging,
   resetLogging,

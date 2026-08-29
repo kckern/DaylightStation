@@ -13,10 +13,10 @@
  * @module adapters/persistence/yaml/YamlHeadlineCacheStore
  */
 
-import fs from 'fs';
 import path from 'path';
 import { IHeadlineStore } from '#apps/feed/ports/IHeadlineStore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { listFiles } from '#system/utils/FileIO.mjs';
 
 const CACHE_BASE = 'current/feed';
 
@@ -92,9 +92,7 @@ export class YamlHeadlineCacheStore extends IHeadlineStore {
     if (!dummyPath) return result;
 
     const cacheDir = path.dirname(dummyPath);
-    if (!fs.existsSync(cacheDir)) return result;
-
-    const files = fs.readdirSync(cacheDir).filter(f => f.endsWith('.yml'));
+    const files = listFiles(cacheDir).filter(f => f.endsWith('.yml'));
     for (const file of files) {
       const sourceId = file.replace('.yml', '');
       const data = await this.loadSource(sourceId, username);

@@ -1,5 +1,6 @@
 // tests/unit/domains/fitness/entities/Session.test.mjs
 import { Session } from '#domains/fitness/entities/Session.mjs';
+import { serializeSession } from '#apps/fitness/sessionRecords.mjs';
 
 describe('Session', () => {
   let session;
@@ -199,8 +200,8 @@ describe('Session', () => {
     });
   });
 
-  describe('toJSON/fromJSON', () => {
-    test('round-trips session data', () => {
+  describe('boundary reconstitution', () => {
+    test('round-trips session data through its boundary record', () => {
       const s = new Session({
         sessionId: '20260111120000',
         startTime: 1736596800000,
@@ -213,8 +214,8 @@ describe('Session', () => {
         metadata: { type: 'workout' }
       });
 
-      const json = s.toJSON();
-      const restored = Session.fromJSON(json);
+      const json = serializeSession(s);
+      const restored = new Session(json);
 
       expect(restored.sessionId.toString()).toBe(s.sessionId.toString());
       expect(restored.startTime).toBe(s.startTime);
@@ -223,7 +224,7 @@ describe('Session', () => {
     });
 
     test('handles legacy id field', () => {
-      const restored = Session.fromJSON({ id: '20260111120000', startTime: 123 });
+      const restored = new Session({ id: '20260111120000', sessionId: '20260111120000', startTime: 123 });
       expect(restored.sessionId.toString()).toBe('20260111120000');
     });
   });
@@ -267,7 +268,7 @@ describe('Session', () => {
   });
 
   describe('v3 field preservation', () => {
-    test('round-trips v3 fields through toJSON/fromJSON', () => {
+    test('round-trips v3 fields through its boundary record', () => {
       const v3Session = new Session({
         sessionId: '20260206182302',
         startTime: 1770459782635,
@@ -290,8 +291,8 @@ describe('Session', () => {
         roster: [{ name: 'User_4', isPrimary: true }]
       });
 
-      const json = v3Session.toJSON();
-      const restored = Session.fromJSON(json);
+      const json = serializeSession(v3Session);
+      const restored = new Session(json);
 
       // v3 fields survive round-trip
       expect(restored.version).toBe(3);
@@ -311,13 +312,13 @@ describe('Session', () => {
       expect(restored.participants.user_4.display_name).toBe('User_4');
     });
 
-    test('toJSON omits empty v3 fields', () => {
+    test('boundary record omits empty v3 fields', () => {
       const minimal = new Session({
         sessionId: '20260111120000',
         startTime: 1736596800000
       });
 
-      const json = minimal.toJSON();
+      const json = serializeSession(minimal);
       expect(json.version).toBe(3);
       expect(json.events).toBeUndefined();
       expect(json.participants).toBeUndefined();

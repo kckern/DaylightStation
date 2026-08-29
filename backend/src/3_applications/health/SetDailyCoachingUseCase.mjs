@@ -87,10 +87,14 @@ export class SetDailyCoachingUseCase {
     let serialized = null;
     if (coaching !== null && coaching !== undefined) {
       const dimensionsSchema = await this.#resolveDimensionsSchema(userId);
-      const entry = new DailyCoachingEntry(coaching, dimensionsSchema, {
-        logger: this.#logger,
-      });
-      serialized = entry.serialize();
+      if (!dimensionsSchema?.length) {
+        this.#logger.warn?.('daily_coaching_entry.trust_mode', {
+          reason: 'no_dimensions_schema',
+          keys: Object.keys(coaching),
+        });
+      }
+      const entry = new DailyCoachingEntry(coaching, dimensionsSchema);
+      serialized = entry.snapshot();
     }
 
     const allData = (await this.#healthStore.loadHealthData(userId)) || {};

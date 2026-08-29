@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import { BrowseExerciseLibrary, pickFacets } from './BrowseExerciseLibrary.mjs';
+import { BrowseExerciseLibrary } from './BrowseExerciseLibrary.mjs';
 import { YamlExerciseLibraryRepository } from '#adapters/reference/exercise-library/index.mjs';
 
 const silentLogger = { error() {}, warn() {}, info() {}, debug() {} };
@@ -134,46 +134,6 @@ afterAll(() => {
 describe('BrowseExerciseLibrary construction', () => {
   it('refuses to be built without a library rather than failing per request', () => {
     expect(() => new BrowseExerciseLibrary({})).toThrow(/exerciseLibrary/);
-  });
-});
-
-describe('filterFromQuery', () => {
-  it('keeps the four facets and drops everything else', () => {
-    const filter = pickFacets({
-      group: 'chest', muscle: 'lats', equipment: 'barbell', q: 'row',
-      household: 'main', _: '1729', limit: '10',
-    });
-    expect(filter).toEqual({ group: 'chest', muscle: 'lats', equipment: 'barbell', q: 'row' });
-  });
-
-  it('passes a repeated key through as the ARRAY qs produced, not a joined string', () => {
-    const filter = pickFacets({ group: ['chest', 'back'] });
-    expect(filter.group).toEqual(['chest', 'back']);
-    expect(typeof filter.group).not.toBe('string');
-  });
-
-  it('passes a non-scalar facet through untouched, so the domain can reject it', () => {
-    // `?group[x]=y`. Dropping it here would silently widen the query to the whole corpus.
-    const filter = pickFacets({ group: { x: 'y' } });
-    expect(filter).toHaveProperty('group');
-    expect(filter.group).toEqual({ x: 'y' });
-  });
-
-  it('omits a facet the caller never sent, and ignores inherited keys', () => {
-    expect(pickFacets({})).toEqual({});
-    // A prototype-backed query object: `constructor` exists but was not sent.
-    expect(Object.hasOwn(pickFacets({ q: 'row' }), 'group')).toBe(false);
-  });
-
-  it('survives a missing or non-object query', () => {
-    expect(pickFacets()).toEqual({});
-    expect(pickFacets(null)).toEqual({});
-    expect(pickFacets('group=chest')).toEqual({});
-  });
-
-  it('is reachable from an instance, so a handler needs no import of this layer', () => {
-    expect(browse.filterFromQuery({ group: ['chest', 'back'], household: 'main' }))
-      .toEqual({ group: ['chest', 'back'] });
   });
 });
 

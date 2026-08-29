@@ -14,13 +14,14 @@
 
 import { describe, it, expect, jest } from '@jest/globals';
 import { FitnessConfigService } from '../../../backend/src/3_applications/fitness/FitnessConfigService.mjs';
+import { FitnessConfigProjection } from '../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
 
 function buildService(rawConfig) {
   const configService = {
     getDefaultHouseholdId: () => 'test',
     getHouseholdAppConfig: jest.fn(() => rawConfig)
   };
-  return new FitnessConfigService({ configService, userDataService: null, logger: { error: () => {} } });
+  return new FitnessConfigService({ configProjection: new FitnessConfigProjection({ configService }), logger: { error: () => {} } });
 }
 
 describe('FitnessConfigService — governance.usage_threshold_seconds', () => {

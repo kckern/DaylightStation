@@ -17,7 +17,7 @@ export class LoggingAIGateway {
   #aiGateway;
   #logger;
   #username;
-  #saveFile;
+  #interactionLogStore;
 
   /**
    * @param {Object} deps
@@ -39,7 +39,7 @@ export class LoggingAIGateway {
     this.#aiGateway = deps.aiGateway;
     this.#username = deps.username;
     this.#logger = deps.logger;
-    this.#saveFile = deps.saveFile;
+    this.#interactionLogStore = deps.interactionLogStore || null;
   }
 
   /**
@@ -97,10 +97,7 @@ export class LoggingAIGateway {
         error: error ? error.message : null,
       };
 
-      // Save to file if saveFile function is available
-      if (this.#saveFile) {
-        this.#saveFile(`journalist/last_gpt.yml`, logEntry);
-      }
+      this.#interactionLogStore?.save(this.#username, logEntry);
 
       if (this.#logger) {
         this.#logger.debug('journalist.gpt.logged', {

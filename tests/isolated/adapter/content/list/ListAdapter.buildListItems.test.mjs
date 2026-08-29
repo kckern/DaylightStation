@@ -15,11 +15,11 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
 const { ListAdapter } = await import('#adapters/content/list/ListAdapter.mjs');
 
 // Progress store double. getAll returns one entity per supplied entry,
-// keyed by contentId (matching YamlMediaProgressMemory.getAll's shape).
+// keyed by contentId (matching YamlMediaProgressMemory.listProgress's shape).
 function makeMemory(entries = []) {
   return {
-    get: vi.fn(async () => null),
-    getAll: vi.fn(async () => entries.map((e) => ({ ...e }))),
+    findProgress: vi.fn(async () => null),
+    listProgress: vi.fn(async () => entries.map((e) => ({ ...e }))),
   };
 }
 
@@ -52,9 +52,9 @@ describe('ListAdapter._buildListItems progress enrichment', () => {
     );
 
     expect(result).toHaveLength(50);
-    expect(memory.getAll).toHaveBeenCalledTimes(1);
-    expect(memory.getAll).toHaveBeenCalledWith('scriptures');
-    expect(memory.get).not.toHaveBeenCalled();
+    expect(memory.listProgress).toHaveBeenCalledTimes(1);
+    expect(memory.listProgress).toHaveBeenCalledWith('scriptures');
+    expect(memory.findProgress).not.toHaveBeenCalled();
   });
 
   it('enriches each child with watch state from the bulk-loaded map', async () => {

@@ -1,7 +1,7 @@
 // CurriculumIndex.mjs — loads a per-show curriculum index and merges it onto items.
-import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { fileExists, readTextFromPath } from '#system/utils/FileIO.mjs';
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), 'curriculum');
 const cache = new Map(); // showRatingKey -> index | null
@@ -11,7 +11,7 @@ export function getCurriculumIndex(showRatingKey) {
   if (cache.has(key)) return cache.get(key);
   const path = join(DIR, `${key}.json`);
   let index = null;
-  try { if (existsSync(path)) index = JSON.parse(readFileSync(path, 'utf8')); } catch { index = null; }
+  try { if (fileExists(path)) index = JSON.parse(readTextFromPath(path)); } catch { index = null; }
   cache.set(key, index);
   return index;
 }

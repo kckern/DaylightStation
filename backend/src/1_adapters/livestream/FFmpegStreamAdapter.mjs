@@ -90,6 +90,14 @@ export class FFmpegStreamAdapter {
     return id;
   }
 
+  /** Create and register one HTTP subscriber stream. */
+  openClient() {
+    const stream = new PassThrough();
+    const clientId = this.addClient(stream);
+    stream.on('close', () => this.removeClient(clientId));
+    return { stream, clientId };
+  }
+
   removeClient(clientId) {
     this.#clients.delete(clientId);
     this.#logger.info?.('livestream.client.removed', { clientId, total: this.#clients.size });

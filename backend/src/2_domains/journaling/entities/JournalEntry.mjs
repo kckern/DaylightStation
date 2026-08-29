@@ -121,27 +121,6 @@ export class JournalEntry {
     return this.mood !== null;
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      userId: this.userId,
-      date: this.date,
-      title: this.title,
-      content: this.content,
-      mood: this.mood,
-      tags: this.tags,
-      gratitudeItems: this.gratitudeItems,
-      prompts: this.prompts,
-      attachments: this.attachments,
-      createdAt: this.createdAt,
-      updatedAt: this.updatedAt,
-      metadata: this.metadata
-    };
-  }
-
-  static fromJSON(data) {
-    return new JournalEntry(data);
-  }
 }
 
 export default JournalEntry;

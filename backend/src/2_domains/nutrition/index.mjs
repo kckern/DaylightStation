@@ -38,9 +38,6 @@ export {
   formatFoodList,
 } from './entities/formatters.mjs';
 
-// Services
-export { FoodLogService } from './services/FoodLogService.mjs';
-
 // Services — scan vocabulary (fridge-sheet QR grammar)
 export {
   parseScan,

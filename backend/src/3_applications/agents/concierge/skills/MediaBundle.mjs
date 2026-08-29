@@ -1,6 +1,7 @@
 import { ToolBundle } from '../../framework/ToolBundle.mjs';
 import { PlayMediaUseCase } from '../usecases/PlayMedia.mjs';
 import { AliasMap } from '#domains/common/AliasMap.mjs';
+import { streamRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 /**
  * MediaBundle — thin tool wrapper that exposes voice-driven media playback
@@ -42,17 +43,13 @@ export class MediaBundle extends ToolBundle {
   #config;
   /** @type {AliasMap} */
   #nameAliases;
+  #resourcePresenter;
 
-  constructor({ contentQuery, gateway, logger = console, config = {}, judge = null, policyGate = null } = {}) {
+  constructor({ contentQuery, gateway, resourcePresenter, logger = console, config = {}, judge = null, policyGate = null } = {}) {
     super();
     if (!contentQuery) throw new Error('MediaBundle: contentQuery required');
     if (!gateway) throw new Error('MediaBundle: gateway required');
-    if (!config?.ds_base_url || typeof config.ds_base_url !== 'string') {
-      throw new Error(
-        'MediaBundle: ds_base_url is required (the URL where this server is reachable '
-        + 'from media-player devices on the LAN). Configure devices.yml.daylightHost*.'
-      );
-    }
+    if (!resourcePresenter?.present) throw new Error('MediaBundle: resourcePresenter required');
     this.#contentQuery = contentQuery;
     this.#gateway = gateway;
     this.#logger = logger;
@@ -60,6 +57,7 @@ export class MediaBundle extends ToolBundle {
     // Optional MediaPolicyGate — when satellite has media_policy, this gate
     // applies library/label whitelisting. Pass-through if not provided.
     this.#policyGate = policyGate;
+    this.#resourcePresenter = resourcePresenter;
     // Defaults are vendor-neutral. All vendor specifics (source names,
     // library IDs, source-namespaced query keys, ranking field names) are
     // expected to come from concierge.yml.media. Empty defaults mean no
@@ -155,8 +153,7 @@ You can play household media (music, songs, podcasts, ambient sounds, lectures).
       },
       gateway: this.#gateway,
       urlBuilder: (playable, source, localId) => {
-        const relative = playable.mediaUrl ?? `/api/v1/stream/${source}/${localId}`;
-        return absoluteUrl(cfg.ds_base_url, relative);
+        return this.#resourcePresenter.present({ playable, stream: streamRef(source, localId) });
       },
       judge: this.#judge,
       logger: this.#logger,
@@ -210,13 +207,6 @@ function applyPrefix(query, mediaClass, aliases) {
   }
   if (mediaClass && !lc.includes(':')) return `${mediaClass}:${query}`;
   return query;
-}
-
-function absoluteUrl(base, relativeOrAbsolute) {
-  if (/^https?:\/\//i.test(relativeOrAbsolute)) return relativeOrAbsolute;
-  const trimmedBase = base.replace(/\/$/, '');
-  const path = relativeOrAbsolute.startsWith('/') ? relativeOrAbsolute : `/${relativeOrAbsolute}`;
-  return `${trimmedBase}${path}`;
 }
 
 export default MediaBundle;

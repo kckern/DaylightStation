@@ -4,7 +4,8 @@ const date = (value, fallback) => {
   return parsed && !Number.isNaN(parsed.getTime()) ? parsed : fallback;
 };
 
-export function selectReviewCards(deck, progressByCard = {}, { now = new Date(), newLimit = 20, limit = 20 } = {}) {
+export function selectReviewCards(deck, progressByCard = {}, { now, newLimit = 20, limit = 20 } = {}) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new Error('selectReviewCards requires a valid now');
   const due = []; const fresh = [];
   for (const card of deck?.cards || []) {
     const progress = progressByCard[card.cardId];

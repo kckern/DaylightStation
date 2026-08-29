@@ -3,6 +3,14 @@ import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createLocalContentRouter } from '#backend/src/4_api/v1/routers/localContent.mjs';
+import { LegacyLocalContentService } from '#apps/content/LegacyLocalContentService.mjs';
+import { LegacyLocalContentRepository } from '#adapters/content/LegacyLocalContentRepository.mjs';
+
+const routerForRegistry = (registry) => createLocalContentRouter({
+  localContentService: new LegacyLocalContentService({
+    repository: new LegacyLocalContentRepository({ registry }),
+  }),
+});
 
 describe('LocalContent API Router', () => {
   let app;
@@ -19,7 +27,7 @@ describe('LocalContent API Router', () => {
     };
 
     app = express();
-    app.use('/api/local-content', createLocalContentRouter({ registry: mockRegistry }));
+    app.use('/api/local-content', routerForRegistry(mockRegistry));
   });
 
   describe('GET /api/local-content/scripture/:path', () => {
@@ -199,7 +207,7 @@ describe('LocalContent API Router', () => {
       };
 
       const errorApp = express();
-      errorApp.use('/api/local-content', createLocalContentRouter({ registry: mockRegistry }));
+      errorApp.use('/api/local-content', routerForRegistry(mockRegistry));
 
       const res = await request(errorApp).get('/api/local-content/scripture/test');
 

@@ -93,7 +93,10 @@ export class HealthDashboardUseCase {
 
     // Historical tiers
     const allDays = Object.values(healthData || {}).filter(d => d?.date);
-    const history = rollUpHistory(allDays);
+    // Sample at aggregation time, after the asynchronous loads, matching the
+    // domain service's former observation point without letting the domain read
+    // the ambient clock itself.
+    const history = rollUpHistory(allDays, { today: new Date() });
 
     this.#logger.debug?.('health.dashboard.complete', {
       userId,

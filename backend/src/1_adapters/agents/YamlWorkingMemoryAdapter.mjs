@@ -1,12 +1,13 @@
 // backend/src/1_adapters/agents/YamlWorkingMemoryAdapter.mjs
 
-import { WorkingMemoryState } from '#apps/agents/framework/WorkingMemory.mjs';
+import { IWorkingMemoryRecordStore } from '#apps/agents/ports/IWorkingMemoryRecordStore.mjs';
 
-export class YamlWorkingMemoryAdapter {
+export class YamlWorkingMemoryAdapter extends IWorkingMemoryRecordStore {
   #dataService;
   #logger;
 
   constructor({ dataService, logger = console }) {
+    super();
     if (!dataService) {
       throw new Error('dataService is required');
     }
@@ -14,29 +15,25 @@ export class YamlWorkingMemoryAdapter {
     this.#logger = logger;
   }
 
-  async load(agentId, userId) {
+  async loadRecord(agentId, userId) {
     const relativePath = `agents/${agentId}/working-memory`;
     const data = this.#dataService.user.read(relativePath, userId);
 
     if (!data) {
       this.#logger.info?.('workingMemory.load.empty', { agentId, userId });
-      return new WorkingMemoryState();
+      return null;
     }
-
-    const state = WorkingMemoryState.fromJSON(data);
-    state.pruneExpired();
 
     this.#logger.info?.('workingMemory.load.ok', {
       agentId, userId,
-      entryCount: Object.keys(state.getAll()).length,
+      entryCount: Object.keys(data).length,
     });
 
-    return state;
+    return data;
   }
 
-  async save(agentId, userId, state) {
+  async saveRecord(agentId, userId, data) {
     const relativePath = `agents/${agentId}/working-memory`;
-    const data = state.toJSON();
 
     this.#dataService.user.write(relativePath, data, userId);
 

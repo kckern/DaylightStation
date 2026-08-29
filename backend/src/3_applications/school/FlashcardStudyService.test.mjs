@@ -8,7 +8,12 @@ const scheduler = {
   preview: () => [],
 };
 const policyResolver = { resolveLaunch: async () => ({ studyPolicy: {}, profiles: { defaultProfile: 'default', byId: { default: profile } }, layers: [] }), resolveCard: () => profile };
-const deps = { scheduler, policyResolver };
+const deps = {
+  scheduler,
+  policyResolver,
+  now: () => Date.parse('2026-08-24T12:00:00.000Z'),
+  id: () => 'test-session',
+};
 function harness() { let state = { schema: 'school.flashcard-progress/v1', cards: {}, sessions: {} }; const now = Date.parse('2026-08-24T12:00:00.000Z'); return { service: new FlashcardStudyService({ ...deps, progressStore: { update: (_u, fn) => { state = fn(state); return state; }, read: () => structuredClone(state) }, decks: { getFlashcardDeck: async () => deck, listFlashcardDecks: async () => [deck] }, now: () => now, id: () => 'session-1' }), read: () => state }; }
 describe('FlashcardStudyService', () => {
   it('creates a resumable due/new study session and persists ratings', async () => { const { service, read } = harness(); const opened = await service.open({ userId: 'kid', deckId: deck.id }); expect(opened.cards).toHaveLength(2); const rated = service.review({ userId: 'kid', sessionId: opened.session.sessionId, cardId: 'a', rating: 'again' }); expect(rated.card.state).toBe('learning'); expect(read().sessions['session-1'].reviews).toBe(1); });

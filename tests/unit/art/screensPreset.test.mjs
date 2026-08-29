@@ -3,6 +3,8 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { createScreensRouter } from '../../../backend/src/4_api/v1/routers/screens.mjs';
+import { ScreensQueryService } from '#apps/screens/ScreensQueryService.mjs';
+import { FilesystemScreensRepository } from '#adapters/persistence/files/FilesystemScreensRepository.mjs';
 
 let dataPath;
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -24,7 +26,15 @@ const res = () => {
 };
 const call = async (id) => {
   const r = res();
-  await getHandler(createScreensRouter({ householdDir: path.join(dataPath, 'household'), logger }))({ params: { screenId: id } }, r, (e) => { if (e) throw e; });
+  const screensRepository = new FilesystemScreensRepository({
+    householdDir: path.join(dataPath, 'household'),
+    logger,
+  });
+  const screensQueryService = new ScreensQueryService({ screensRepository, logger });
+  await getHandler(createScreensRouter({
+    screensQueryService,
+    logger,
+  }))({ params: { screenId: id } }, r, (e) => { if (e) throw e; });
   return r;
 };
 

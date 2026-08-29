@@ -3,19 +3,20 @@ import { describe, test, expect, vi } from 'vitest';
 import { createDeviceRouter } from '../../../backend/src/4_api/v1/routers/device.mjs';
 import express from 'express';
 import request from 'supertest';
+import { DeviceContentDispatchService } from '#apps/devices/services/DeviceContentDispatchService.mjs';
 
 function makeApp(wakeResult) {
   const app = express();
+  const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const router = createDeviceRouter({
-    wakeAndLoadService: {
-      execute: vi.fn().mockResolvedValue(wakeResult),
-    },
-    deviceService: { get: () => ({ id: 'tv' }), listDevices: () => [] },
-    // Pin the input-precondition contract: stub configService so the handler's
-    // checkInputPrecondition gets `null` from getDeviceConfig and short-circuits
-    // to ok:true. Avoids relying on a `?.` early-return in production code.
-    configService: { getDeviceConfig: () => null },
-    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    dispatchService: new DeviceContentDispatchService({
+      wakeAndLoad: { execute: vi.fn().mockResolvedValue(wakeResult) },
+      idempotency: { runWithIdempotency: vi.fn() },
+      // Pin the input-precondition contract: no device config short-circuits
+      // to ok:true without relying on concrete config file layout.
+      configuration: { device: () => null },
+      logger,
+    }),
   });
   app.use('/api/v1/device', router);
   return app;

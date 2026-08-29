@@ -52,25 +52,6 @@ export class Participant {
     this.hrDeviceId = null;
   }
 
-  /**
-   * Serialize to plain object
-   */
-  toJSON() {
-    return {
-      name: this.name,
-      hrDeviceId: this.hrDeviceId,
-      isGuest: this.isGuest,
-      isPrimary: this.isPrimary,
-      metadata: this.metadata
-    };
-  }
-
-  /**
-   * Create from plain object
-   */
-  static fromJSON(data) {
-    return new Participant(data);
-  }
 }
 
 export default Participant;

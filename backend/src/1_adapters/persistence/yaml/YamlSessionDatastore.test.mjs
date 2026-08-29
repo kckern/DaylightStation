@@ -2,6 +2,26 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { synthesizeRosterFromParticipants, deriveHasVideo } from './YamlSessionDatastore.mjs';
 import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMapper.mjs';
+import { hydrateTimeline, dehydrateTimeline } from './SessionTimelineCodec.mjs';
+
+test('session timeline codec preserves the compact JSON/RLE storage contract', () => {
+  const hydrated = hydrateTimeline({ series: { hr: '[[120,2],125]' }, events: [] });
+  assert.deepEqual(hydrated.series.hr, [120, 120, 125]);
+  assert.equal(dehydrateTimeline(hydrated).series.hr, '[[120,2],125]');
+});
+
+test('session timeline codec preserves legacy timebase and unknown fields across load-save', () => {
+  const stored = {
+    timebase: { startAbsMs: 1_754_930_000_000, intervalMs: 5000, tickCount: 3 },
+    series: { hr: '[[120,2],125]' },
+    events: [{ type: 'session_start', timestamp: 1_754_930_000_000 }],
+    source_clock: 'garage-kiosk-v3',
+  };
+
+  const roundTripped = dehydrateTimeline(hydrateTimeline(stored));
+
+  assert.deepEqual(roundTripped, stored);
+});
 
 // Regression: the v2 `participants` map must synthesize roster entries that carry
 // the slug as `id` and the name as `display_name`. Dropping the slug made every
@@ -30,13 +50,13 @@ test('synthesized roster drives correct per-participant names AND distinct HR (n
   });
   const session = {
     sessionId: 'S1', startTime: 1_000_000, endTime: 1_060_000,
-    timeline: {
+    timeline: hydrateTimeline({
       interval_seconds: 5,
       series: {
         'user_1:hr': JSON.stringify([[150, 12]]),
         'user_2:hr': JSON.stringify([[120, 12]])
       }
-    },
+    }),
     snapshots: { captures: [{ index: 0, timestamp: 1_000_000, role: 'camera', filename: '0.jpg' }] },
     roster
   };

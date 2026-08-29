@@ -9,14 +9,14 @@
 /**
  * Create home-dashboard scene handler
  * @param {Object} deps
- * @param {Object} deps.container - HomeAutomationContainer
+ * @param {Object} deps.operation - ActivateDashboardScene use case
  * @param {Object} [deps.logger]
  * @returns {Function} Express handler
  */
-export function homeDashboardSceneHandler({ container, logger = console }) {
+export function homeDashboardSceneHandler({ operation }) {
   return async (req, res) => {
     const { sceneId } = req.params;
-    const result = await container.activateDashboardScene().execute({ sceneId });
+    const result = await operation.execute({ sceneId });
     res.json(result);
   };
 }

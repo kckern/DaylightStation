@@ -27,12 +27,13 @@ Rendering is a server-side presentation concern — parallel to what `frontend/`
 Rendering sits at the same dependency tier as adapters (`1_`):
 
 ```
-0_system/        → imports nothing
-1_adapters/      → imports from 0, 2, 3(ports)
-1_rendering/     → imports from 0, 2
-2_domains/       → imports from 0 (minimal)
-3_applications/  → imports from 0, 1_adapters, 1_rendering, 2
-4_api/           → imports from 0, 1, 2, 3
+0_system/        → imports only system code and external runtime packages
+1_adapters/      → imports from 0, 2, and application-owned port contracts
+1_rendering/     → imports from 0 and 2
+2_domains/       → imports only documented pure shared-kernel utilities
+3_applications/  → imports from 0 and 2
+4_api/           → imports API/shared HTTP utilities and injected dependencies
+5_composition/   → imports any layer solely to wire dependencies
 ```
 
 The `1_` prefix indicates dependency tier. `1_adapters/` and `1_rendering/` are peers.
@@ -69,7 +70,7 @@ The `1_` prefix indicates dependency tier. `1_adapters/` and `1_rendering/` are 
 
 | Source | Purpose | Examples |
 |--------|---------|---------|
-| `0_system/utils/` | System utilities | Font paths, file I/O |
+| `0_system/utils/` | Pure system utilities | Formatting, deterministic helpers |
 | `2_domains/` | Domain utilities | `decodeSingleSeries` for RLE data |
 | `1_rendering/lib/` | Shared primitives | `CanvasFactory`, `TextRenderer` |
 
@@ -152,15 +153,12 @@ Renderers are factory functions that return canvas creators:
  * Create a {domain} renderer.
  *
  * @param {Object} config
- * @param {Function} config.getData - Async function returning pre-computed domain data
+ * @param {Object} model - Pre-computed presentation model
  * @param {string} [config.fontDir] - Font directory path
  * @returns {{ createCanvas: Function }}
  */
-export function create{Domain}Renderer(config) {
-  const { getData, fontDir } = config;
-
-  async function createCanvas(params) {
-    const data = await getData(params);
+export function create{Domain}Renderer({ fontDir }) {
+  async function createCanvas(model) {
     // Layout + drawing using shared primitives
     return { canvas, width, height };
   }
@@ -171,7 +169,8 @@ export function create{Domain}Renderer(config) {
 
 ### Key Constraints
 
-- **No data fetching** — Renderers receive data via callbacks, never import services
+- **No data fetching or persistence** — Renderers receive complete presentation
+  models as method arguments and never load/save business data
 - **No business logic** — Stats, selection algorithms, and computations belong in `2_domains/`
 - **Theme-driven** — All magic numbers live in theme files, not inline
 - **Factory pattern with DI** — Same pattern as adapters: constructor receives dependencies
@@ -229,9 +228,8 @@ export const fitnessReceiptTheme = {
 Renderers fail gracefully when data is missing:
 
 ```javascript
-async function createCanvas(sessionId) {
-  const data = await getData(sessionId);
-  if (!data) return null;  // No data = no canvas
+async function createCanvas(model) {
+  if (!model) return null;  // No data = no canvas
   // ... render
 }
 ```
@@ -253,7 +251,8 @@ async function createCanvas(sessionId) {
 | **Hardcoded values** | `ctx.font = 'bold 42px Roboto'` inline | Use theme constants |
 | **Cross-domain theme import** | Fitness renderer importing gratitude theme | Each renderer uses its own theme |
 | **Adapter import** | `import { ... } from '#adapters/...'` | Peer layers don't import each other |
-| **Data fetching in renderer** | `await sessionStore.findById(id)` | Receive pre-fetched data via callback |
+| **Data fetching in renderer** | `await sessionStore.findById(id)` | Receive a pre-fetched presentation model as a method argument |
+| **Storage in renderer** | Writing a report to a temporary or permanent path | Return rendered bytes; an adapter owns delivery and persistence |
 
 ---
 

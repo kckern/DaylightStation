@@ -5,12 +5,13 @@
 
 import { Transaction } from '#domains/finance/entities/Transaction.mjs';
 import { Account } from '#domains/finance/entities/Account.mjs';
+import { IFinanceProvider } from '#apps/finance/ports/IFinanceProvider.mjs';
 import { nowTs24, nowDate } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const BUXFER_API_BASE = 'https://www.buxfer.com/api';
 
-export class BuxferAdapter {
+export class BuxferAdapter extends IFinanceProvider {
   /**
    * @param {Object} config - Adapter configuration
    * @param {string} config.email - Buxfer account email
@@ -20,6 +21,7 @@ export class BuxferAdapter {
    * @param {Object} [deps.logger] - Logger instance
    */
   constructor(config, deps = {}) {
+    super();
     const { email, password } = config;
     const { httpClient, logger } = deps;
 

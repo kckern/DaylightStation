@@ -10,7 +10,7 @@ import {
   formatAsChat,
   truncateToLength,
 } from '#domains/journalist/services/HistoryFormatter.mjs';
-import { parseGPTResponse } from '#domains/journalist/services/QuestionParser.mjs';
+import { parseGPTResponse } from '#apps/journalist/services/QuestionParser.mjs';
 import {
   formatQuestion,
   buildDefaultChoices,

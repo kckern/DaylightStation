@@ -9,7 +9,7 @@
 // lull an explicit step in the test rather than a race against the event loop.
 
 import { describe, it, expect, vi } from 'vitest';
-import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
+import { createScaleNutribotBridge } from '#adapters/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 
 // A scheduler we drive by hand: no fake timers, no real waiting.

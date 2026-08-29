@@ -249,7 +249,10 @@ export class CostBudgetService {
         id: budget.id,
         name: budget.name,
         category: budget.category?.toString() || null,
-        amount: budget.amount.toJSON()
+        amount: {
+          amount: budget.amount.amount,
+          currency: budget.amount.currency
+        }
       },
       currentSpend: {
         amount: status.spent,

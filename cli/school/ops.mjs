@@ -5,7 +5,7 @@ import yaml from 'js-yaml';
 // The SAME codec the backend decodes with. A CLI that rolled its own base64
 // would be a second opinion about what a link means, and the first time the
 // payload gains a field the tool would quietly emit links the panel refuses.
-import { encodeLaunchPreviewLink } from '#domains/school/selfService/launchPreviewLink.mjs';
+import { encodeLaunchPreviewLink } from '#apps/school/services/launchPreviewLink.mjs';
 
 const DEFAULT_BASE = process.env.SCHOOL_BASE_URL || 'http://localhost:3111/api/v1/school';
 

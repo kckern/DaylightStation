@@ -17,17 +17,4 @@ export class Quality {
     return beliefs.every(b => refutedBeliefIds.includes(typeof b === 'string' ? b : b.id || b));
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      name: this.name,
-      description: this.description,
-      principles: this.principles,
-      rules: this.rules,
-      grounded_in: this.grounded_in,
-      shadow: this.shadow,
-      shadow_state: this.shadow_state,
-      last_shadow_check: this.last_shadow_check,
-    };
-  }
 }

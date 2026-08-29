@@ -35,8 +35,8 @@ export class RecapSweep {
    * @param {number} [opts.now] - current time ms (injectable for tests)
    */
   async run({ householdId, lookbackDays = 2, now = Date.now() } = {}) {
-    const { sessionService, generateSessionTimelapse, configService, logger } = this.#d;
-    const hid = householdId || configService?.getDefaultHouseholdId?.() || undefined;
+    const { sessionService, generateSessionTimelapse, resolveDefaultHouseholdId, logger } = this.#d;
+    const hid = householdId || resolveDefaultHouseholdId?.() || undefined;
 
     const dates = recentDateStrings(now, lookbackDays);
     const stats = { scanned: 0, triggered: 0, deferred: 0, rendered: 0, skipped: 0, failed: 0, errors: 0 };

@@ -1,6 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
+import { ensureDir, fileExists, readDirectory, readTextFromPath, writeFileExclusive } from '#system/utils/FileIO.mjs';
 
 const SEGMENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 
@@ -39,11 +39,11 @@ export class YamlPianoAttemptStore {
     if (existingFile) return this.#resolveExisting(existingFile, attempt);
     const day = now.toISOString().slice(0, 10);
     const dir = path.join(this.usersDir, String(userId), 'apps', 'piano', 'attempts', day);
-    fs.mkdirSync(dir, { recursive: true });
+    ensureDir(dir);
     const file = path.join(dir, `${attempt.attempt_id}.yml`);
     const record = { ...structuredClone(attempt), user_id: userId, created_at: now.toISOString() };
     try {
-      fs.writeFileSync(file, YAML.stringify(record), { flag: 'wx' });
+      writeFileExclusive(file, YAML.stringify(record));
     } catch (error) {
       if (error?.code === 'EEXIST') return this.#resolveExisting(file, attempt);
       throw error;
@@ -53,18 +53,18 @@ export class YamlPianoAttemptStore {
 
   #findAttemptFile(userId, attemptId) {
     const root = path.join(this.usersDir, String(userId), 'apps', 'piano', 'attempts');
-    if (!fs.existsSync(root)) return null;
+    if (!fileExists(root)) return null;
     const filename = `${attemptId}.yml`;
-    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    for (const entry of readDirectory(root, { withFileTypes: true })) {
       if (!entry.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(entry.name)) continue;
       const candidate = path.join(root, entry.name, filename);
-      if (fs.existsSync(candidate)) return candidate;
+      if (fileExists(candidate)) return candidate;
     }
     return null;
   }
 
   #resolveExisting(file, attempt) {
-    const existing = YAML.parse(fs.readFileSync(file, 'utf8'), { uniqueKeys: true });
+    const existing = YAML.parse(readTextFromPath(file), { uniqueKeys: true });
     if (JSON.stringify(attemptPayload(existing)) !== JSON.stringify(attemptPayload(attempt))) {
       throw idempotencyConflict(attempt?.attempt_id);
     }
@@ -74,15 +74,15 @@ export class YamlPianoAttemptStore {
   listRecent(userId, { limit = 100 } = {}) {
     if (!SEGMENT_RE.test(String(userId))) return [];
     const root = path.join(this.usersDir, String(userId), 'apps', 'piano', 'attempts');
-    if (!fs.existsSync(root)) return [];
-    const files = fs.readdirSync(root, { withFileTypes: true })
+    if (!fileExists(root)) return [];
+    const files = readDirectory(root, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
       .sort((a, b) => b.name.localeCompare(a.name))
-      .flatMap((day) => fs.readdirSync(path.join(root, day.name))
+      .flatMap((day) => readDirectory(path.join(root, day.name))
         .filter((name) => name.endsWith('.yml'))
         .map((name) => path.join(root, day.name, name)));
     return files
-      .map((file) => YAML.parse(fs.readFileSync(file, 'utf8'), { uniqueKeys: true }))
+      .map((file) => YAML.parse(readTextFromPath(file), { uniqueKeys: true }))
       .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
       .slice(0, Math.max(0, limit));
   }

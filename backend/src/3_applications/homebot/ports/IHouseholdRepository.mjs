@@ -4,13 +4,13 @@
  * Port interface for household data access
  * @interface IHouseholdRepository
  */
-export const IHouseholdRepository = {
+export class IHouseholdRepository {
   /**
    * Get household members
    * @param {string} householdId
    * @returns {Promise<Array<{userId: string, displayName: string, group?: string}>>}
    */
-  async getMembers(householdId) {},
+  async getMembers(_householdId) { throw new Error('IHouseholdRepository.getMembers not implemented'); }
 
   /**
    * Get display name for a user
@@ -18,22 +18,22 @@ export const IHouseholdRepository = {
    * @param {string} userId
    * @returns {Promise<string>}
    */
-  async getMemberDisplayName(householdId, userId) {},
+  async getMemberDisplayName(_householdId, _userId) { throw new Error('IHouseholdRepository.getMemberDisplayName not implemented'); }
 
   /**
    * Get household timezone
    * @param {string} householdId
    * @returns {Promise<string>}
    */
-  async getTimezone(householdId) {},
+  async getTimezone(_householdId) { throw new Error('IHouseholdRepository.getTimezone not implemented'); }
 
   /**
    * Resolve household ID from conversation ID
    * @param {string} conversationId
    * @returns {Promise<string|null>}
    */
-  async resolveHouseholdId(conversationId) {}
-};
+  async resolveHouseholdId(_conversationId) { throw new Error('IHouseholdRepository.resolveHouseholdId not implemented'); }
+}
 
 /**
  * Validate object implements IHouseholdRepository

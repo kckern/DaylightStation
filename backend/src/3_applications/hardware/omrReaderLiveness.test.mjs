@@ -8,7 +8,7 @@
 // client connected-but-never-subscribed past a short grace period logs a
 // named warning, once per deaf connection.
 import { describe, it, expect } from 'vitest';
-import { createOmrReaderLiveness } from './omrReaderLiveness.mjs';
+import { createOmrReaderLiveness } from '#adapters/hardware/omrReaderLiveness.mjs';
 
 const READER_ID = 'study-omr';
 const READER_IP = '10.0.0.19';

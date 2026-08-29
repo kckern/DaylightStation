@@ -150,28 +150,25 @@ export const PROGRAM_STATES = [
  * Normalise one metric, or return null if it cannot be trusted.
  *
  * Fail-closed but LOUD, matching `resolveCategory`: an unknown kind or a
- * malformed payload is dropped and logged naming the program, rather than
+ * malformed payload is dropped rather than
  * reaching a renderer that has no branch for it. A silently missing metric is
  * recoverable; a crashed report panel takes every other program down with it.
  */
-export function normalizeMetric(raw, { logger, program } = {}) {
+export function normalizeMetric(raw) {
   if (!raw || typeof raw !== 'object') return null;
 
   const spec = METRIC_KINDS[raw.kind];
   if (!spec) {
-    logger?.warn?.('school.report.metric-kind-unknown', { program, kind: raw.kind });
     return null;
   }
   for (const field of spec.required) {
     if (raw[field] === undefined || raw[field] === null) {
-      logger?.warn?.('school.report.metric-incomplete', { program, kind: raw.kind, missing: field });
       return null;
     }
   }
 
   const payload = spec.coerce(raw);
   if (!spec.valid(payload)) {
-    logger?.warn?.('school.report.metric-invalid', { program, kind: raw.kind });
     return null;
   }
 
@@ -214,14 +211,12 @@ export function metricsFor(metrics, audience) {
  * the view — one broken program must never blank the board for the others.
  *
  * @param {object} raw - as emitted by a program's `summarize()`
- * @param {{logger?: object}} [opts]
  * @returns {object|null}
  */
-export function normalizeReport(raw, { logger } = {}) {
+export function normalizeReport(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const program = raw.program ? String(raw.program) : null;
   if (!program) {
-    logger?.warn?.('school.report.program-missing', {});
     return null;
   }
 
@@ -235,9 +230,6 @@ export function normalizeReport(raw, { logger } = {}) {
     // hides the work entirely), it is surfaced with an explicit admission that
     // the program failed to explain itself — visible, and traceable to whoever
     // emitted it.
-    if (blocked && !raw.next.blockedReason) {
-      logger?.warn?.('school.report.blocked-without-reason', { program });
-    }
     // How much work this is. A child weighs the cost before starting, and
     // "12 sentences" lowers that far more than an unbounded "continue" does.
     // Structured rather than smuggled into `detail`, so a young-reader
@@ -256,7 +248,7 @@ export function normalizeReport(raw, { logger } = {}) {
   }
 
   const metrics = (Array.isArray(raw.metrics) ? raw.metrics : [])
-    .map((m) => normalizeMetric(m, { logger, program }))
+    .map(normalizeMetric)
     .filter(Boolean);
 
   return {

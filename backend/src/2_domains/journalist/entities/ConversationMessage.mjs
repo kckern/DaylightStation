@@ -5,7 +5,6 @@
  * Represents a single message in a journal conversation.
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
@@ -150,7 +149,7 @@ export class ConversationMessage {
   static createBotMessage(props) {
     if (!props.timestamp) throw new ValidationError('timestamp is required');
     return new ConversationMessage({
-      messageId: props.messageId || uuidv4(),
+      messageId: props.messageId,
       chatId: props.chatId,
       timestamp: props.timestamp,
       senderId: 'bot',
@@ -175,7 +174,7 @@ export class ConversationMessage {
   static createUserMessage(props) {
     if (!props.timestamp) throw new ValidationError('timestamp is required');
     return new ConversationMessage({
-      messageId: props.messageId || uuidv4(),
+      messageId: props.messageId,
       chatId: props.chatId,
       timestamp: props.timestamp,
       senderId: props.senderId,
@@ -183,24 +182,6 @@ export class ConversationMessage {
       text: props.text,
       foreignKey: props.foreignKey || {},
     });
-  }
-
-  // ==================== Serialization ====================
-
-  /**
-   * Convert to plain object
-   * @returns {object}
-   */
-  toJSON() {
-    return {
-      messageId: this.#messageId,
-      chatId: this.#chatId,
-      timestamp: this.#timestamp,
-      senderId: this.#senderId,
-      senderName: this.#senderName,
-      text: this.#text,
-      foreignKey: { ...this.#foreignKey },
-    };
   }
 
   /**

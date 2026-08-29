@@ -64,6 +64,12 @@ export function assertSessionControl(obj, context = 'SessionControl') {
   }
 }
 
+export class ISessionControl {
+  async sendCommand() { throw new Error('ISessionControl.sendCommand not implemented'); }
+  getSnapshot() { throw new Error('ISessionControl.getSnapshot not implemented'); }
+  waitForStateChange() { throw new Error('ISessionControl.waitForStateChange not implemented'); }
+}
+
 /**
  * Create a no-op session control (for deployments without this capability).
  * Every method resolves/rejects with an explicit "not configured" signal so

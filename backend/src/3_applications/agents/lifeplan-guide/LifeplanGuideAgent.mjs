@@ -23,8 +23,8 @@ export class LifeplanGuideAgent extends BaseAgent {
    * (When lifeplan-guide grows its own observation fields, union the schema
    * with health-coach's or split into per-agent Memory instances.)
    */
-  static getMemoryConfig({ configService } = {}) {
-    const yaml = loadAgentConfig({ configService, agentId: 'lifeplan-guide' });
+  static getMemoryConfig({ agentConfigProjection } = {}) {
+    const yaml = loadAgentConfig({ configProjection: agentConfigProjection, agentId: 'lifeplan-guide' });
     const m = yaml.memory;
     // Skip Memory entirely when all features are off — avoids @mastra/memory's
     // Zod v3/v4 schema-compat bug that crashes prepare-tools-step.
@@ -48,17 +48,19 @@ export class LifeplanGuideAgent extends BaseAgent {
    * Build memory processors for this agent. Currently: ObservationalMemory for
    * auto-compaction of long threads. T5 will add the TimeWindow processor.
    *
-   * @param {{ configService?, memory? }} [deps]
+   * @param {{ defaultUserId?, memory? }} [deps]
    * @returns {{ inputProcessors: Array, outputProcessors: Array }}
    */
   static getMemoryProcessors() {
     // Disabled pending Mastra schema-compat fix (see getMemoryConfig comment).
     return { inputProcessors: [], outputProcessors: [] };
   }
-  static _disabled_getMemoryProcessors({ configService, memory } = {}) {
-    const yaml = loadAgentConfig({ configService, agentId: 'lifeplan-guide' });
-    const storage = memory?.storage?.stores?.memory ?? null;
-    const obs = buildObservationalMemory(yaml.memory?.observational, { storage });
+  static _disabled_getMemoryProcessors({ agentConfigProjection, memory, memoryProcessorFactory } = {}) {
+    const yaml = loadAgentConfig({ configProjection: agentConfigProjection, agentId: 'lifeplan-guide' });
+    const obs = buildObservationalMemory(yaml.memory?.observational, {
+      memory,
+      processorFactory: memoryProcessorFactory,
+    });
     const tw  = buildTimeWindowProcessor(yaml.memory);
     return {
       inputProcessors:  [tw, obs].filter(Boolean),
@@ -73,7 +75,7 @@ export class LifeplanGuideAgent extends BaseAgent {
   registerTools() {
     const {
       lifePlanStore, goalStateService, beliefEvaluator, feedbackService,
-      planAuthoringService,
+      planAuthoringService, clock,
       aggregator, metricsStore, driftService,
       ceremonyService, ceremonyRecordStore, cadenceService,
       notificationService,
@@ -82,7 +84,7 @@ export class LifeplanGuideAgent extends BaseAgent {
 
     this.addToolFactory(new PlanToolFactory({
       lifePlanStore, goalStateService, beliefEvaluator, feedbackService,
-      planAuthoringService,
+      planAuthoringService, clock,
     }));
 
     this.addToolFactory(new LifelogToolFactory({

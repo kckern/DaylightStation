@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { UserResolver } from '#backend/src/0_system/users/UserResolver.mjs';
+import { UserResolver } from '#adapters/identity/ConfigUserResolver.mjs';
 
 describe('UserResolver', () => {
   // Mock ConfigService that uses resolveUsername (the new approach)

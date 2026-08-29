@@ -3,6 +3,8 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { createArtRouter } from '../../../backend/src/4_api/v1/routers/art.mjs';
+import { ArtPresetService } from '../../../backend/src/3_applications/content/ArtPresetService.mjs';
+import { FilesystemArtPresetCatalog } from '../../../backend/src/1_adapters/content/art/FilesystemArtPresetCatalog.mjs';
 
 let dataPath;
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -20,7 +22,11 @@ const res = () => {
 };
 const call = async (key) => {
   const r = res();
-  await presetHandler(createArtRouter({ artAdapter, householdDir: path.join(dataPath, 'household'), logger }))({ params: { key } }, r, (e) => { if (e) throw e; });
+  const artService = new ArtPresetService({
+    artSource: artAdapter,
+    catalog: new FilesystemArtPresetCatalog({ householdDir: path.join(dataPath, 'household'), logger }),
+  });
+  await presetHandler(createArtRouter({ artService, logger }))({ params: { key } }, r, (e) => { if (e) throw e; });
   return r;
 };
 

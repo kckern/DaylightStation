@@ -168,9 +168,10 @@ describe('Belief Entity', () => {
   describe('state transitions', () => {
     it('transitions hypothesized → testing', () => {
       const belief = new Belief({ id: 'b1', if: 'X', then: 'Y', state: 'hypothesized' });
-      belief.transition('testing', 'Starting experiment');
+      belief.transition('testing', 'Starting experiment', '2025-06-15T10:00:00.000Z');
       expect(belief.state).toBe('testing');
       expect(belief.state_history).toHaveLength(1);
+      expect(belief.state_history[0].timestamp).toBe('2025-06-15T10:00:00.000Z');
     });
 
     it('throws on invalid transition', () => {
@@ -227,7 +228,7 @@ describe('Belief Entity', () => {
         origin: { type: 'experience', description: 'Personal career' },
       };
       const belief = new Belief(data);
-      const json = belief.toJSON();
+      const json = JSON.parse(JSON.stringify(belief));
       const restored = new Belief(json);
       expect(restored.id).toBe('meritocracy');
       expect(restored.state).toBe('confirmed');

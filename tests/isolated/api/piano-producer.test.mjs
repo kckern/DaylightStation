@@ -5,8 +5,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createPianoRouter } from '../../../backend/src/4_api/v1/routers/piano.mjs';
+import { withPianoRouterServices } from '../../_lib/pianoRouterDeps.mjs';
 import { YamlPianoStudioDatastore } from '../../../backend/src/1_adapters/piano/YamlPianoStudioDatastore.mjs';
 import { PianoContainer } from '../../../backend/src/3_applications/piano/PianoContainer.mjs';
+import { PianoConfigProjection } from '../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
 
 const noop = { warn: () => {}, info: () => {}, debug: () => {}, error: () => {}, child: () => noop };
 let tmp, app, studioDatastore;
@@ -52,10 +54,10 @@ beforeEach(() => {
   // Persistence + the two course algorithms live in the container now; the
   // router is thin and takes only the container.
   studioDatastore = new YamlPianoStudioDatastore({ configService, logger: noop });
-  const pianoContainer = new PianoContainer({ studioDatastore, configService, logger: noop });
+  const pianoContainer = new PianoContainer({ studioDatastore, configProjection: new PianoConfigProjection({ configService }), logger: noop });
   app = express();
   app.use(express.json());
-  app.use('/piano', createPianoRouter({ pianoContainer, logger: noop }));
+  app.use('/piano', createPianoRouter(withPianoRouterServices({ pianoContainer, logger: noop })));
 });
 afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 

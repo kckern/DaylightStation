@@ -65,6 +65,7 @@ import { createSchoolLifecycle } from '#composition/modules/schoolLifecycle.mjs'
 import { createDonow } from '#composition/modules/donow.mjs';
 import { YamlSchoolDatastore } from '#adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { YamlEconomyDatastore } from '#adapters/persistence/yaml/YamlEconomyDatastore.mjs';
+import { EconomyConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
 import { SchoolService } from '#apps/school/SchoolService.mjs';
 import { EconomyService } from '#apps/economy/EconomyService.mjs';
 import { createDocumentReceiptRenderer } from '#rendering/school/documents/DocumentReceiptRenderer.mjs';
@@ -321,7 +322,7 @@ export async function createLifecycleHarness({
   // bank silently vanish from a child's agenda.
   await schoolService.warmBanks({ force: true });
   const economyDatastore = new YamlEconomyDatastore({ configService });
-  const economy = new EconomyService({ datastore: economyDatastore, configService, logger });
+  const economy = new EconomyService({ datastore: economyDatastore, configProjection: new EconomyConfigProjection({ configService }), logger });
 
   // Counting, not deciding: every call is forwarded to the real service
   // untouched. `economyCalls` is how a test says "and it was asked exactly once".

@@ -1,87 +1,32 @@
 /**
- * Printer Router
- *
- * API endpoints for thermal printer control, keyed by location:
- *   /printer/<action>{/:location}
- *
- * `{/:location}` is optional (Express 5 optional-segment syntax) and falls
- * back to the default printer configured in the registry.
- *
- * @module api/routers
+ * Thermal printer HTTP API. Printer selection, job construction, dispatch,
+ * and outcome interpretation belong to the injected application capability.
  */
-
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { readPrintOutcome } from '#domains/core/utils/printOutcome.mjs';
 
-/**
- * Collapse the adapter's claim tier to the single yes/no these endpoints
- * report. `verified` means paper — but so does `dispatched` with a
- * `verification: 'unreadable'` status: the pre-flight already refuses when the
- * printer reports it cannot print, so once bytes clear a passing pre-flight,
- * the printer simply not confirming is the ordinary case on this hardware
- * (port 9100 gives no per-job acknowledgment), not evidence of failure. Only
- * a reported fault, or never dispatching at all, is a real failure. A plain
- * boolean is still honoured for any printer surface that answers true/false.
- * @param {boolean|{dispatched?: boolean, verified?: boolean, verification?: string}} outcome
- */
-function printConfirmed(outcome) {
-  return readPrintOutcome(outcome).printed;
-}
-
-/**
- * Report the tier alongside the yes/no, so an operator can tell "the printer
- * refused the job" from "the printer reported a fault" from "the bytes went
- * and the printer would not confirm it". Those all look identical through
- * `success` alone (or through `dispatched`/`verified` alone) and need
- * different actions — `verification`/`faults` is what actually distinguishes
- * the three tiers.
- */
-function printTier(outcome) {
-  if (typeof outcome !== 'object' || outcome === null) return {};
-  return {
-    dispatched: outcome.dispatched === true,
-    verified: outcome.verified === true,
-    verification: outcome.verification ?? null,
-    faults: outcome.faults ?? null,
-    printerState: outcome.printerState ?? null,
-  };
-}
-
-/**
- * Resolve the adapter for a request. Returns the adapter on success, or
- * sends a 404 response and returns null when the location is unknown.
- * @param {import('#adapters/hardware/thermal-printer/ThermalPrinterRegistry.mjs').ThermalPrinterRegistry} registry
- * @param {express.Request} req
- * @param {express.Response} res
- * @returns {import('#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs').ThermalPrinterAdapter | null}
- */
-function resolveAdapter(registry, req, res) {
-  try {
-    return registry.resolve(req.params.location);
-  } catch (err) {
-    res.status(404).json({ success: false, error: err.message });
-    return null;
+function sendResult(res, result) {
+  if (result?.kind === 'not_found') {
+    return res.status(404).json({ success: false, error: result.error });
   }
+  return res.json(result);
 }
 
-/**
- * Create printer router
- * @param {Object} config
- * @param {import('#adapters/hardware/thermal-printer/ThermalPrinterRegistry.mjs').ThermalPrinterRegistry} config.printerRegistry
- * @param {Object} [config.logger]
- * @returns {express.Router}
- */
-export function createPrinterRouter(config) {
-  const router = express.Router();
-  const { printerRegistry, logger = console } = config;
+function rejectUnknownLocation(printerService, location, res) {
+  const error = printerService.locationError(location);
+  if (!error) return false;
+  sendResult(res, error);
+  return true;
+}
 
-  // GET /printer — list configured printers
+export function createPrinterRouter({ printerService }) {
+  const router = express.Router();
+
   router.get('/', (req, res) => {
     res.json({
       message: 'Thermal Printer API',
       status: 'success',
-      printers: printerRegistry.list(),
+      printers: printerService.list(),
       endpoints: {
         'GET /ping{/:location}': 'TCP handshake probe (no bytes written)',
         'GET /status{/:location}': 'ESC/POS status query',
@@ -98,102 +43,63 @@ export function createPrinterRouter(config) {
   });
 
   router.get('/ping{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
-    const result = await adapter.ping();
+    const result = await printerService.ping(req.params.location);
+    if (result?.kind === 'not_found') return sendResult(res, result);
     const statusCode = result.success ? 200 : (result.configured ? 503 : 501);
-    res.status(statusCode).json(result);
+    return res.status(statusCode).json(result);
   }));
 
   router.get('/status{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
-    res.json(await adapter.getStatus());
+    sendResult(res, await printerService.status(req.params.location));
   }));
 
   router.post('/text{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
+    if (rejectUnknownLocation(printerService, req.params.location, res)) return;
     const { text, options = {} } = req.body;
     if (!text) return res.status(400).json({ error: 'Text is required' });
-    const printJob = adapter.createTextPrint(text, options);
-    const outcome = await adapter.print(printJob);
-    const success = printConfirmed(outcome);
-    res.json({ success, ...printTier(outcome), message: success ? 'Text printed successfully' : 'Print failed', printJob });
+    return sendResult(res, await printerService.text(req.params.location, text, options));
   }));
 
   router.post('/image{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
+    if (rejectUnknownLocation(printerService, req.params.location, res)) return;
     const { path, options = {} } = req.body;
     if (!path) return res.status(400).json({ error: 'Image path is required' });
-    const printJob = adapter.createImagePrint(path, options);
-    const outcome = await adapter.print(printJob);
-    const success = printConfirmed(outcome);
-    res.json({ success, ...printTier(outcome), message: success ? 'Image printed successfully' : 'Print failed', printJob });
+    return sendResult(res, await printerService.image(req.params.location, path, options));
   }));
 
   router.post('/receipt{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
+    if (rejectUnknownLocation(printerService, req.params.location, res)) return;
     const receiptData = req.body;
     if (!receiptData) return res.status(400).json({ error: 'Receipt data is required' });
-    const printJob = adapter.createReceiptPrint(receiptData);
-    const outcome = await adapter.print(printJob);
-    const success = printConfirmed(outcome);
-    res.json({ success, ...printTier(outcome), message: success ? 'Receipt printed successfully' : 'Print failed', printJob });
+    return sendResult(res, await printerService.receipt(req.params.location, receiptData));
   }));
 
   router.post('/table{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
+    if (rejectUnknownLocation(printerService, req.params.location, res)) return;
     const tableData = req.body;
     if (!tableData?.headers && (!tableData?.rows || tableData.rows.length === 0)) {
       return res.status(400).json({ error: 'Table must have either headers or rows with data' });
     }
-    const printJob = adapter.createTablePrint(tableData);
-    const outcome = await adapter.print(printJob);
-    const success = printConfirmed(outcome);
-    res.json({ success, ...printTier(outcome), message: success ? 'Table printed successfully' : 'Print failed', printJob });
+    return sendResult(res, await printerService.table(req.params.location, tableData));
   }));
 
   router.post('/print{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
+    if (rejectUnknownLocation(printerService, req.params.location, res)) return;
     const printJob = req.body;
     if (!printJob?.items) return res.status(400).json({ error: 'Valid print object with items array is required' });
-    const outcome = await adapter.print(printJob);
-    const success = printConfirmed(outcome);
-    res.json({ success, ...printTier(outcome), message: success ? 'Print job completed successfully' : 'Print failed', printJob });
+    return sendResult(res, await printerService.print(req.params.location, printJob));
   }));
 
   router.get('/feed-button{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
-    const status = await adapter.getStatus();
-    res.json({
-      success: status.success,
-      feedButtonEnabled: status.feedButtonEnabled,
-      note: 'Feed button status cannot be queried directly from most ESC/POS printers',
-    });
+    return sendResult(res, await printerService.feedStatus(req.params.location));
   }));
 
   router.get('/feed-button/on{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
-    const printJob = adapter.setFeedButton(true);
-    const outcome = await adapter.print(printJob);
-    const success = printConfirmed(outcome);
-    res.json({ success, ...printTier(outcome), message: success ? 'Feed button enabled successfully' : 'Feed button enable failed', enabled: true });
+    return sendResult(res, await printerService.feedButton(req.params.location, true));
   }));
 
   router.get('/feed-button/off{/:location}', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req, res);
-    if (!adapter) return;
-    const printJob = adapter.setFeedButton(false);
-    const outcome = await adapter.print(printJob);
-    const success = printConfirmed(outcome);
-    res.json({ success, ...printTier(outcome), message: success ? 'Feed button disabled successfully' : 'Feed button disable failed', enabled: false });
+    return sendResult(res, await printerService.feedButton(req.params.location, false));
   }));
 
   return router;

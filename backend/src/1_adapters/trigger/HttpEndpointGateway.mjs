@@ -4,11 +4,14 @@
  * Layer: ADAPTER (1_adapters/trigger).
  * @module adapters/trigger/HttpEndpointGateway
  */
+import { IEndpointGateway } from '#apps/trigger/ports/IEndpointGateway.mjs';
+
 const DEFAULT_TIMEOUT_MS = 10000;
 
-export class HttpEndpointGateway {
+export class HttpEndpointGateway extends IEndpointGateway {
   #endpoints; #fetch; #logger; #timeoutMs;
   constructor({ endpoints = {}, fetchFn = fetch, logger = console, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+    super();
     this.#endpoints = endpoints;
     this.#fetch = fetchFn;
     this.#logger = logger;

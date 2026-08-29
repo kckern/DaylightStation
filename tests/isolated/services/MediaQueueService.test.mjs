@@ -21,7 +21,8 @@ const mockLogger = () => ({
  * Returns a MediaQueue with items already added (so queueIds are set).
  */
 function buildQueue(items = [], overrides = {}) {
-  const queue = MediaQueue.empty();
+  let idSequence = 0;
+  const queue = MediaQueue.empty({ newQueueId: () => (idSequence++).toString(16).padStart(8, '0'), random: () => 0.5 });
   if (items.length > 0) {
     queue.addItems(items);
   }

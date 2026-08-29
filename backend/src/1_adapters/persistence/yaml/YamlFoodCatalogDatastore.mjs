@@ -7,6 +7,7 @@
 
 import { IFoodCatalogDatastore } from '#apps/health/ports/IFoodCatalogDatastore.mjs';
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
+import { randomUUID } from 'node:crypto';
 
 export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
   #dataService;
@@ -24,7 +25,13 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
   // Storage -> Domain. The datastore owns hydration (adapter-layer-guidelines
   // Hydration Pattern); the entity no longer carries fromJSON.
   #hydrate(raw) {
-    return new FoodCatalogEntry(raw);
+    const now = new Date();
+    return new FoodCatalogEntry({
+      ...raw,
+      id: raw.id || randomUUID(),
+      lastUsed: raw.lastUsed || now.toISOString().slice(0, 10),
+      createdAt: raw.createdAt || now.toISOString(),
+    });
   }
 
   // Domain -> Storage. The ONLY place the on-disk catalog shape is defined.

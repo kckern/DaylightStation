@@ -24,7 +24,7 @@ import { readdirSync } from 'fs';
 
 import { initConfigService, configService } from '#system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs } from '#system/logging/config.mjs';
-import { DataService } from '#system/config/DataService.mjs';
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
 import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,7 +48,7 @@ await initConfigService(dataDir);
 
 const dataService = new DataService({ configService });
 
-const openaiApiKey = configService.getSecret('OPENAI_API_KEY');
+const openaiApiKey = configService.getSystemAuth('openai', 'api_key');
 if (!openaiApiKey) {
   console.error('ERROR: OPENAI_API_KEY not configured');
   process.exit(1);

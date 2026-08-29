@@ -1,5 +1,8 @@
 import { describe, test, expect, vi } from 'vitest';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+
+const catalogFor = (registry) => new RegistryContentCatalogGateway({ registry });
 
 function makeImmichLikeAdapter() {
   return {
@@ -17,7 +20,7 @@ describe('ContentQueryService enrichment-flag handling', () => {
       get: () => adapter,
       resolveSource: () => [adapter],
     };
-    const svc = new ContentQueryService({ registry });
+    const svc = new ContentQueryService({ contentCatalog: catalogFor(registry) });
 
     await svc.search({
       source: 'immich',
@@ -37,7 +40,7 @@ describe('ContentQueryService enrichment-flag handling', () => {
   test('a query whose only non-meta key is an enrichment flag still reaches the adapter', async () => {
     const adapter = makeImmichLikeAdapter();
     const registry = { get: () => adapter, resolveSource: () => [adapter] };
-    const svc = new ContentQueryService({ registry });
+    const svc = new ContentQueryService({ contentCatalog: catalogFor(registry) });
 
     // Without withExif treated as a meta key, #canHandle would see queryKeys=['withExif'],
     // find no matching capability, and skip the adapter — so search would never be called.

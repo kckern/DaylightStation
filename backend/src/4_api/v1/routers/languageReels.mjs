@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 
 /**
  * Status is mapped by ERROR NAME, not `instanceof`, and the unexpected case is
@@ -13,7 +14,7 @@ import express from 'express';
  */
 const STATUS_BY_NAME = Object.freeze({ EntityNotFoundError: 404, ValidationError: 400 });
 
-export function createLanguageReelsRouter({ service, grants, logger = console } = {}) {
+export function createLanguageReelsRouter({ service, grants, logger = console, sendFileResource = sendLocalFileResource } = {}) {
   const router = express.Router();
   const authorized = (req, res) => {
     const result = grants?.verify(req.get('X-School-Reel-Grant'), { learnerId: req.params.userId, reelId: req.params.reelId });
@@ -44,8 +45,8 @@ export function createLanguageReelsRouter({ service, grants, logger = console } 
     const result = grants?.verify(req.query.grant, { reelId: req.params.reelId });
     if (!result?.ok) { res.status(403).end(); return; }
     if (result.payload.revision !== service.getReel(req.params.reelId).revision) { res.status(403).end(); return; }
-    const file = service.mediaPath(req.params.reelId); if (!file) { res.status(404).end(); return; }
-    res.set('Cache-Control', 'private, no-store'); res.sendFile(file);
+    const resource = service.mediaResource(req.params.reelId); if (!resource) { res.status(404).end(); return; }
+    res.set('Cache-Control', 'private, no-store'); return sendFileResource(req, res, resource);
   }));
   return router;
 }

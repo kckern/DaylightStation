@@ -9,12 +9,12 @@
  *
  * Dependencies:
  * - Harvester adapters from 2_adapters/harvester/
- * - ConfigService for username resolution
+ * - Default-user resolver
  *
  * @module 3_applications/harvester/HarvesterService
  */
 
-import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 import { ServiceNotFoundError } from '../common/errors/index.mjs';
 
 /**
@@ -25,21 +25,21 @@ export class HarvesterService {
   #harvesters = new Map();
 
   /** @type {Object} */
-  #configService;
+  #resolveDefaultUserId;
 
   /** @type {Object} */
   #logger;
 
   /**
    * @param {Object} deps - Dependencies
-   * @param {Object} deps.configService - ConfigService for user resolution
+   * @param {Function} deps.resolveDefaultUserId
    * @param {Object} [deps.logger] - Logger instance
    */
-  constructor({ configService, logger }) {
-    if (!configService) {
-      throw new ValidationError('HarvesterService requires configService', { field: 'configService' });
+  constructor({ resolveDefaultUserId, logger }) {
+    if (typeof resolveDefaultUserId !== 'function') {
+      throw new ValidationError('HarvesterService requires resolveDefaultUserId', { field: 'resolveDefaultUserId' });
     }
-    this.#configService = configService;
+    this.#resolveDefaultUserId = resolveDefaultUserId;
     this.#logger = logger || console;
   }
 
@@ -108,7 +108,7 @@ export class HarvesterService {
     }
 
     // Resolve username: use provided username, or head of household from config, or 'default'
-    const resolvedUsername = username || this.#configService?.getHeadOfHousehold?.() || 'default';
+    const resolvedUsername = username || this.#resolveDefaultUserId() || 'default';
 
     this.#log('info', 'harvester.harvest.start', {
       serviceId,

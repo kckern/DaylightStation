@@ -100,12 +100,16 @@ export function buildDefaultChoices() {
  * @param {string} timestamp - ISO timestamp (required, from application layer)
  * @returns {MessageQueue[]}
  */
-export function createQueueFromQuestions(chatId, questions, foreignKey = {}, timestamp) {
+export function createQueueFromQuestions(chatId, questions, foreignKey = {}, timestamp, newId) {
   if (!timestamp) {
     throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
   }
+  if (questions.length > 0 && typeof newId !== 'function') {
+    throw new ValidationError('newId required', { code: 'MISSING_ID_SOURCE', field: 'newId' });
+  }
   return questions.map((question, index) =>
     MessageQueue.create({
+      uuid: newId(),
       chatId,
       timestamp,
       queuedMessage: question,

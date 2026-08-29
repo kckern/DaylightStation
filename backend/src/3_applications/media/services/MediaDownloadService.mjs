@@ -9,54 +9,48 @@
  * @module applications/media/services/MediaDownloadService
  */
 
-import path from 'path';
-import fs from 'fs';
-import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
 
 /**
  * Application service for media download operations (metadata, thumbnails)
  */
 export class MediaDownloadService {
   #videoSourceGateway;
-  #mediaPath;
+  #newsMediaStore;
+  #downloadThumbnail;
   #logger;
 
   /**
    * @param {Object} deps - Dependencies
    * @param {Object} deps.videoSourceGateway - Gateway implementing fetchChannelMetadata/downloadThumbnail
-   * @param {string} deps.mediaPath - Base path for media storage
+   * @param {Object} deps.newsMediaStore - Persisted metadata and thumbnail-address port
+   * @param {Function} deps.downloadThumbnail - (url, provider) => Promise<boolean>
    * @param {Object} [deps.logger] - Logger instance
    */
-  constructor({ videoSourceGateway, mediaPath, logger }) {
+  constructor({ videoSourceGateway, newsMediaStore, downloadThumbnail, logger }) {
     if (!videoSourceGateway) {
       throw new Error('MediaDownloadService requires videoSourceGateway');
     }
-    if (!mediaPath) {
-      throw new Error('MediaDownloadService requires mediaPath');
+    if (!newsMediaStore) {
+      throw new Error('MediaDownloadService requires newsMediaStore');
+    }
+    if (typeof downloadThumbnail !== 'function') {
+      throw new Error('MediaDownloadService requires downloadThumbnail');
     }
 
     this.#videoSourceGateway = videoSourceGateway;
-    this.#mediaPath = mediaPath;
+    this.#newsMediaStore = newsMediaStore;
+    this.#downloadThumbnail = downloadThumbnail;
     this.#logger = logger || console;
   }
 
   /**
    * Fetch and persist channel metadata for a single source
    *
-   * @param {Object} source - Adapter-format source config
-   * @param {string} source.provider - Provider shortcode
-   * @param {string} source.src - Platform (e.g. 'youtube')
-   * @param {string} source.type - Source type ('channel' | 'playlist')
-   * @param {string} source.id - Platform-specific identifier
+   * @param {Object} source - Provider-neutral source descriptor with opaque sourceRef
    * @returns {Promise<{ok: boolean, title?: string, thumbnailDownloaded: boolean, error?: string}>}
    */
   async fetchAndSaveMetadata(source) {
-    const providerDir = path.join(this.#mediaPath, 'video', 'news', source.provider);
-    ensureDir(providerDir);
-
-    const metadataPath = path.join(providerDir, 'metadata');
-    const thumbnailPath = path.join(providerDir, 'show.jpg');
-    const hasThumbnail = fs.existsSync(thumbnailPath);
+    const hasThumbnail = this.#newsMediaStore.hasThumbnail(source.provider);
 
     this.#logger.info?.('mediaDownload.metadata.fetching', { provider: source.provider });
     const metadata = await this.#videoSourceGateway.fetchChannelMetadata(source);
@@ -66,7 +60,7 @@ export class MediaDownloadService {
     }
 
     // Save metadata.yml
-    saveYaml(metadataPath, {
+    this.#newsMediaStore.saveMetadata(source.provider, {
       title: metadata.title,
       description: metadata.description,
       uploader: metadata.uploader,
@@ -78,12 +72,12 @@ export class MediaDownloadService {
     // Download thumbnail if available and not already present
     let thumbnailDownloaded = false;
     if (metadata.thumbnailUrl && !hasThumbnail) {
-      thumbnailDownloaded = await this.#videoSourceGateway.downloadThumbnail(
-        metadata.thumbnailUrl,
-        thumbnailPath
-      );
+      thumbnailDownloaded = await this.#downloadThumbnail(metadata.thumbnailUrl, source.provider);
       if (thumbnailDownloaded) {
-        this.#logger.info?.('mediaDownload.thumbnail.saved', { provider: source.provider, path: thumbnailPath });
+        this.#logger.info?.('mediaDownload.thumbnail.saved', {
+          provider: source.provider,
+          assetId: `${source.provider}:thumbnail`,
+        });
       }
     }
 
@@ -91,8 +85,7 @@ export class MediaDownloadService {
       ok: true,
       title: metadata.title,
       thumbnailDownloaded,
-      metadataRelPath: `media/video/news/${source.provider}/metadata.yml`,
-      thumbnailRelPath: thumbnailDownloaded ? `media/video/news/${source.provider}/show.jpg` : null
+      ...this.#newsMediaStore.publicReferences(source.provider, { thumbnail: thumbnailDownloaded }),
     };
   }
 

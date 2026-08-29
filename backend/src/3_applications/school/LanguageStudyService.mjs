@@ -29,7 +29,7 @@ const IDLE_AFTER_DAYS = 14;
 const TREND_BUCKETS = 12;
 
 export class SentenceLadderService {
-  #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #eventBus;
+  #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #realtime;
   #corpusCache = new Map();
 
   constructor({
@@ -42,7 +42,7 @@ export class SentenceLadderService {
     // household is never locked out by a feature it did not ask for.
     readGate = null,
     readProgramEnrollment = null,
-    eventBus = null,
+    realtime = null,
   }) {
     this.#ds = datastore;
     this.#logger = logger;
@@ -51,7 +51,7 @@ export class SentenceLadderService {
     this.#boundaryHour = boundaryHour;
     this.#readGate = readGate;
     this.#readProgramEnrollment = typeof readProgramEnrollment === 'function' ? readProgramEnrollment : null;
-    this.#eventBus = eventBus;
+    this.#realtime = realtime;
   }
 
   /** The resolved gate, for diagnosis. */
@@ -181,7 +181,7 @@ export class SentenceLadderService {
   }
 
   #emitDayComplete(userId, corpus, day, policy) {
-    if (!policy.enrollment || !this.#eventBus?.publish) return;
+    if (!policy.enrollment || !this.#realtime?.languageDayCompleted) return;
     const queue = buildDayQueue({
       log: this.#ds.readAllEvents(userId, corpus.id), day,
       dailyLimit: policy.dailyLimit, corpusSize: corpus.size,
@@ -190,7 +190,7 @@ export class SentenceLadderService {
       admission: policy.admission, rungChain: policy.chain,
     });
     if (queue.length > 0 && summarizeQueue(queue).done === queue.length) {
-      this.#eventBus.publish('school.language.day-complete', {
+      this.#realtime.languageDayCompleted({
         learnerId: userId, corpusId: corpus.id, day, programId: policy.enrollment.programId,
       });
     }
@@ -813,9 +813,18 @@ export class SentenceLadderService {
     return this.#ds.resolveAudioPath(corpusId, seq, language);
   }
 
+  getCorpusTargetLanguage(corpusId) {
+    return this.#requireCorpus(corpusId).languages.target;
+  }
+
   resolveRecordingPath(corpusId, userId, seq, ext) {
-    const corpus = this.#requireCorpus(corpusId);
-    return this.#ds.resolveRecordingPath(corpusId, userId, seq, corpus.languages.target, ext);
+    return this.#ds.resolveRecordingPath(
+      corpusId,
+      userId,
+      seq,
+      this.getCorpusTargetLanguage(corpusId),
+      ext,
+    );
   }
 }
 

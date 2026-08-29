@@ -5,7 +5,7 @@
  * Generates multiple choice options for a question.
  */
 
-import { parseGPTResponse } from '#domains/journalist/services/QuestionParser.mjs';
+import { parseGPTResponse } from '#apps/journalist/services/QuestionParser.mjs';
 import { buildDefaultChoices } from '#domains/journalist/services/QueueManager.mjs';
 import { buildMultipleChoicePrompt } from '#domains/journalist/services/PromptBuilder.mjs';
 

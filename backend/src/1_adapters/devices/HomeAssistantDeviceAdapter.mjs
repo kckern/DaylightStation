@@ -17,7 +17,9 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  * @property {string} [volume_script] - Script entity to set volume
  */
 
-export class HomeAssistantDeviceAdapter {
+import { IDeviceControl } from '#apps/devices/ports/IDeviceControl.mjs';
+
+export class HomeAssistantDeviceAdapter extends IDeviceControl {
   #gateway;
   #displays;
   #logger;
@@ -33,6 +35,7 @@ export class HomeAssistantDeviceAdapter {
    * @param {Object} [deps.logger]
    */
   constructor(config, deps = {}) {
+    super();
     if (!deps.gateway) {
       throw new InfrastructureError('HomeAssistantDeviceAdapter requires gateway', {
         code: 'MISSING_DEPENDENCY',

@@ -7,9 +7,9 @@
 export class ResumeStrategy {
   async suggest(context, remainingSlots) {
     if (remainingSlots <= 0) return [];
-    const { recentSessions, fitnessConfig, fitnessPlayableService } = context;
+    const { recentSessions, suggestionPolicy, fitnessPlayableService, contentCatalog } = context;
 
-    const resumableLabels = fitnessConfig?.plex?.resumable_labels || ['Resumable'];
+    const resumableLabels = suggestionPolicy.resumableLabels || ['Resumable'];
 
     // Collect distinct shows from recent sessions
     const showMap = new Map();
@@ -27,10 +27,10 @@ export class ResumeStrategy {
     for (const show of showMap.values()) {
       if (results.length >= remainingSlots) break;
 
-      const localId = show.showId.replace(/^plex:/, '');
+      const showRef = contentCatalog.canonicalize(show.showId);
       let episodeData;
       try {
-        episodeData = await fitnessPlayableService.getPlayableEpisodes(localId);
+        episodeData = await fitnessPlayableService.getPlayableEpisodes(showRef.contentId);
       } catch {
         continue;
       }
@@ -47,7 +47,7 @@ export class ResumeStrategy {
 
         const percent = ep.watchProgress ?? 0;
         // For Resumable shows we replay intentionally, so we can't trust
-        // ep.isWatched (which stays true forever once Plex viewCount or a
+        // ep.isWatched (which stays true forever once a completed provider play or a
         // local completedAt stamp is set). Use the current playhead percent
         // instead: surface if it's in the "middle" of a replay, skip if the
         // user has already almost finished this session's play.
@@ -58,6 +58,7 @@ export class ResumeStrategy {
         const remainingSecs = Math.floor(remainingSec % 60);
 
         const isShowLevel = ep.metadata?.type === 'show';
+        const episodeRef = contentCatalog.canonicalize(ep.id ?? ep.localId);
         results.push({
           type: 'resume',
           action: 'play',
@@ -66,8 +67,8 @@ export class ResumeStrategy {
           title: ep.title,
           showTitle: show.showTitle,
           description: ep.metadata?.summary || null,
-          thumbnail: ep.thumbnail || `/api/v1/display/plex/${ep.localId}`,
-          poster: `/api/v1/content/plex/image/${localId}`,
+          thumbnail: ep.thumbnail || displayImageRef(episodeRef.source, episodeRef.localId),
+          poster: contentImageRef(showRef.source, showRef.localId),
           durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,
           orientation: isShowLevel ? 'portrait' : 'landscape',
           labels: showLabels,
@@ -84,3 +85,4 @@ export class ResumeStrategy {
     return results;
   }
 }
+import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';

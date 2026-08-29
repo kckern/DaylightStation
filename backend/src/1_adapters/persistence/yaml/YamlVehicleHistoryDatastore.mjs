@@ -92,16 +92,16 @@ export class YamlVehicleHistoryDatastore extends IVehicleHistoryRepository {
     return Promise.all(unique.map((descriptor) => this.#withFixes(vehicleId, descriptor)));
   }
 
-  async readTrip(vehicleId, relPath) {
+  async readTrip(vehicleId, tripRef) {
     const tripsDir = path.join(this.#vehicleDir(vehicleId), 'trips');
     if (!dirExists(tripsDir)) return null;
     try {
-      // Containment matters: `relPath` originates in a YAML field and can reach
+      // Containment matters: `tripRef` originates in a YAML field and can reach
       // this method from an HTTP route, so it is untrusted path input.
-      return loadContainedYaml(tripsDir, relPath) || null;
+      return loadContainedYaml(tripsDir, tripRef) || null;
     } catch (error) {
       this.#logger.warn?.('automotive.history.trip_read_failed', {
-        vehicleId, relPath, error: error.message,
+        vehicleId, tripRef, error: error.message,
       });
       return null;
     }

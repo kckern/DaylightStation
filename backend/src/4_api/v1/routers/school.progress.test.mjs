@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolRouter } from './school.mjs';
+import { createSchoolTestRouter as createSchoolRouter } from '../../../../../tests/_lib/school/schoolRouterTestSupport.mjs';
 
 const service = {
   getRoster: () => [], warmBanks: async () => {}, listBanks: () => [],

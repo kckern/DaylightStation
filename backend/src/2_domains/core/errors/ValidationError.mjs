@@ -5,9 +5,11 @@
  * @extends Error
  */
 export class ValidationError extends Error {
-  constructor(message, { code, field, value, details } = {}) {
+  constructor(message, context = {}) {
+    const { code, field, value, details } = context;
     super(message);
     this.name = 'ValidationError';
+    this.context = context;
     this.code = code;
     this.field = field;
     this.value = value;

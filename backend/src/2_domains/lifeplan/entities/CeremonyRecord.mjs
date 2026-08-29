@@ -8,14 +8,4 @@ export class CeremonyRecord {
     this.duration_minutes = data.duration_minutes || null;
   }
 
-  toJSON() {
-    return {
-      type: this.type,
-      date: this.date,
-      cycle_id: this.cycle_id,
-      responses: this.responses,
-      observations: this.observations,
-      duration_minutes: this.duration_minutes,
-    };
-  }
 }

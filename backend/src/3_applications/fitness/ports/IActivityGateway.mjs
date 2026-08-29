@@ -21,17 +21,17 @@
 /**
  * Port interface for an external activity provider gateway.
  */
-export const IActivityGateway = {
+export class IActivityGateway {
   /**
    * Required methods that implementations must provide.
    */
-  requiredMethods: [
+  static requiredMethods = [
     'getActivity',
     'updateActivity',
     'hasAccessToken',
     'refreshToken',
     'getActivityStreams',
-  ],
+  ];
 
   /**
    * Validate that an implementation provides all required methods.
@@ -39,15 +39,21 @@ export const IActivityGateway = {
    * @returns {boolean} true if valid
    * @throws {Error} if missing required methods
    */
-  validate(implementation) {
+  static validate(implementation) {
     for (const method of this.requiredMethods) {
       if (typeof implementation[method] !== 'function') {
         throw new Error(`IActivityGateway: missing required method '${method}'`);
       }
     }
     return true;
-  },
-};
+  }
+
+  async getActivity(_activityId) { throw new Error('IActivityGateway.getActivity not implemented'); }
+  async updateActivity(_activityId, _payload) { throw new Error('IActivityGateway.updateActivity not implemented'); }
+  hasAccessToken() { throw new Error('IActivityGateway.hasAccessToken not implemented'); }
+  async refreshToken(_refreshToken) { throw new Error('IActivityGateway.refreshToken not implemented'); }
+  async getActivityStreams(_activityId, _keys) { throw new Error('IActivityGateway.getActivityStreams not implemented'); }
+}
 
 /**
  * Check if an object implements IActivityGateway (non-throwing).

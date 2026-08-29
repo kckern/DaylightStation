@@ -8,19 +8,13 @@
  * GetReportCard's period resolution — are sync over a tiny file).
  */
 import path from 'path';
-import fsSync from 'fs';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { validateAcademicPeriod } from '#domains/school/progress/learningProgress.mjs';
+import { readTextFromPath, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 
-async function atomicWrite(file, text) {
-  const tmp = `${file}.tmp-${process.pid}`;
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(tmp, text, 'utf8');
-  await fs.rename(tmp, file);
-}
+async function atomicWrite(file, text) { writeFileAtomic(file, text); }
 
 
 export function validatePeriodList(raw) {
@@ -73,7 +67,7 @@ export class YamlAcademicPeriodStore {
   #readState() {
     let text;
     try {
-      text = fsSync.readFileSync(this.#file(), 'utf8');
+      text = readTextFromPath(this.#file());
     } catch { return { state: 'missing' }; }
     try {
       const raw = yaml.load(text);

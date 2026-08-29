@@ -23,35 +23,36 @@ function setup() {
 
 const silent = { debug() {}, warn() {} };
 
-test('listCaptures returns captures in timestamp order with absolute paths', async () => {
-  const { datastore, screenshotsDir } = setup();
-  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+test('listCaptures returns captures in timestamp order with opaque ids', async () => {
+  const { datastore } = setup();
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, logger: silent });
   const caps = await store.listCaptures('S1', 'h');
   assert.equal(caps.length, 2);
   assert.equal(caps[0].index, 0); // sorted by timestamp ascending
   assert.equal(caps[1].index, 1);
-  assert.ok(caps[0].absolutePath.startsWith(screenshotsDir));
+  assert.equal(caps[0].captureId.kind, 'recap-capture');
+  assert.equal('absolutePath' in caps[0], false);
 });
 
 test('readCapture returns the file buffer', async () => {
   const { datastore } = setup();
-  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, logger: silent });
   const caps = await store.listCaptures('S1', 'h');
-  const buf = await store.readCapture(caps[0].absolutePath);
+  const buf = await store.readCapture(caps[0].captureId);
   assert.equal(buf[0], 0xff);
   assert.equal(buf[1], 0xd8);
 });
 
 test('cleanup deletes the screenshots dir when not archiving', async () => {
   const { datastore, screenshotsDir } = setup();
-  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, logger: silent });
   await store.cleanup('S1', 'h', { archive: false });
   assert.equal(fs.existsSync(screenshotsDir), false);
 });
 
 test('cleanup archives instead of deletes when archive:true', async () => {
   const { datastore, screenshotsDir, root } = setup();
-  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, logger: silent });
   await store.cleanup('S1', 'h', { archive: true });
   assert.equal(fs.existsSync(screenshotsDir), false);
   assert.equal(fs.existsSync(path.join(root, 'screenshots_archive')), true);
@@ -70,7 +71,7 @@ function setupTrash() {
 
 test('moveToTrash relocates the frames into _trash (does NOT hard-delete)', async () => {
   const { datastore, screenshotsDir, trashDir } = setupTrash();
-  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, logger: silent });
   const now = Date.UTC(2026, 5, 12, 9, 30, 0);
   const dest = await store.moveToTrash('S1', 'h', { now });
   // Source gone, frames preserved under _trash
@@ -85,7 +86,7 @@ test('moveToTrash relocates the frames into _trash (does NOT hard-delete)', asyn
 test('moveToTrash is a no-op when there are no frames to move', async () => {
   const { datastore, screenshotsDir } = setupTrash();
   fs.rmSync(screenshotsDir, { recursive: true, force: true });
-  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, logger: silent });
   const dest = await store.moveToTrash('S1', 'h', { now: Date.now() });
   assert.equal(dest, null);
 });
@@ -95,7 +96,7 @@ test('moveToTrash overwrites a stale prior trash entry for the same session', as
   // a leftover trash entry from a previous run
   fs.mkdirSync(path.join(trashDir, 'screenshots'), { recursive: true });
   fs.writeFileSync(path.join(trashDir, 'screenshots', 'OLD.jpg'), Buffer.from([0]));
-  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, logger: silent });
   await store.moveToTrash('S1', 'h', { now: Date.now() });
   assert.equal(fs.existsSync(path.join(trashDir, 'screenshots', 'OLD.jpg')), false);
   assert.equal(fs.existsSync(path.join(trashDir, 'screenshots', '2026-06-12_0000.jpg')), true);

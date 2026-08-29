@@ -34,6 +34,7 @@ import { createIconLoader } from '#composition/modules/iconLoader.mjs';
 import { createCellRenderers } from '#rendering/pdf/cellRenderers.mjs';
 import { createSheetService } from '#apps/sheets/SheetService.mjs';
 import { renderSheetPdf } from '#rendering/pdf/QRSheetRenderer.mjs';
+import { layout as layoutSheet } from '#rendering/pdf/SheetLayout.mjs';
 import { parseScan } from '#domains/nutrition/services/ScanVocabularyService.mjs';
 
 // ---- args ------------------------------------------------------------------
@@ -122,6 +123,7 @@ const service = createSheetService({
     }),
   }),
   cellKinds,
+  layoutSheet,
   logger: {
     debug: (event, data) => console.log(`  note  ${event} ${JSON.stringify(data)}`),
   },

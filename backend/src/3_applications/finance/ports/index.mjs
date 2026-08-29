@@ -5,4 +5,7 @@
  * communicates with external systems.
  */
 
-export { ITransactionSource } from './ITransactionSource.mjs';
+export { IFinanceProvider } from './IFinanceProvider.mjs';
+export { IFinanceStore } from './IFinanceStore.mjs';
+export { IPayrollGateway, isPayrollGateway } from './IPayrollGateway.mjs';
+export { IPayrollRepository, isPayrollRepository } from './IPayrollRepository.mjs';

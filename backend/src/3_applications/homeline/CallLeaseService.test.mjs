@@ -9,10 +9,21 @@ const device = overrides => ({
   reboot: vi.fn(async () => ({ ok: true })), prepareForContent: vi.fn(async () => ({ ok: true })),
   loadContent: vi.fn(async () => ({ ok: true })), ...overrides,
 });
+let sequence = 0;
+const testPorts = ({ now = () => Date.now(), after = () => () => {}, wait = async () => {} } = {}) => ({
+  clock: { now },
+  scheduler: { after, wait },
+  identityIssuer: {
+    newCallId: () => `call-${++sequence}`,
+    newDispatchId: () => `dispatch-${++sequence}`,
+    newTvPeerId: () => `tv-${++sequence}`,
+    newCredential: () => `credential-${++sequence}`,
+  },
+});
 const make = (dev = device()) => {
   const wake = { execute: vi.fn(async () => ({ ok: true, coldWake: true, steps: { power: { ok: true } } })) };
   const service = new CallLeaseService({ deviceService: { get: id => id === 'tv' ? dev : null }, wakeAndLoadService: wake,
-    logger: { info() {}, warn() {} }, sleep: vi.fn(async () => {}) });
+    logger: { info() {}, warn() {} }, ...testPorts() });
   return { service, dev, wake };
 };
 
@@ -106,7 +117,7 @@ describe('CallLeaseService', () => {
     const info = vi.fn();
     const dev = device();
     const service = new CallLeaseService({ deviceService: { get: () => dev },
-      wakeAndLoadService: { execute: vi.fn() }, logger: { info, warn: vi.fn() }, sleep: vi.fn() });
+      wakeAndLoadService: { execute: vi.fn() }, logger: { info, warn: vi.fn() }, ...testPorts() });
     const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
     const joined = service.joinActive({ deviceId: 'tv', declaredDeviceId: 'tv', isLocal: true }).body;
     service.authorize({ clientId: 'p', topic: body.topic, credential: body.phoneCredential, role: 'phone', peerId: 'p1' });
@@ -128,7 +139,7 @@ describe('CallLeaseService', () => {
     const info = vi.fn();
     const dev = device();
     const service = new CallLeaseService({ deviceService: { get: () => dev },
-      wakeAndLoadService: { execute: vi.fn() }, logger: { info, warn: vi.fn() }, sleep: vi.fn() });
+      wakeAndLoadService: { execute: vi.fn() }, logger: { info, warn: vi.fn() }, ...testPorts() });
     const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
     service.authorize({ clientId: 'p', topic: body.topic, credential: body.phoneCredential, role: 'phone', peerId: 'p1' });
     const rejected = service.validateSignal('p', { topic: body.topic, callId: body.callId, attemptId: 'a1',
@@ -173,9 +184,8 @@ describe('CallLeaseService', () => {
     const dev = device({ reboot: vi.fn(() => new Promise(resolve => { finishReboot = resolve; })) });
     const service = new CallLeaseService({
       deviceService: { get: () => dev }, wakeAndLoadService: { execute: vi.fn() },
-      logger: { info() {}, warn() {} }, clock: () => now, sleep: vi.fn(async () => {}),
-      setTimer: (fn, delay) => { const timer = { fn, delay, unref() {} }; scheduled.push(timer); return timer; },
-      clearTimer: vi.fn(),
+      logger: { info() {}, warn() {} }, ...testPorts({ now: () => now,
+        after: (delay, fn) => { const timer = { fn, delay, unref() {} }; scheduled.push(timer); return () => {}; } }),
     });
     const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
     now += 179_000;
@@ -225,7 +235,7 @@ describe('CallLeaseService', () => {
     })) };
     const dev = device();
     const service = new CallLeaseService({ deviceService: { get: () => dev }, wakeAndLoadService: wake,
-      logger: { info() {}, warn() {} } });
+      logger: { info() {}, warn() {} }, ...testPorts() });
     const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
     const waking = service.wake(body.callId, 'u1');
     const ending = service.end(body.callId, 'u1', 'cancelled');
@@ -283,9 +293,8 @@ describe('CallLeaseService', () => {
     const service = new CallLeaseService({
       deviceService: { get: id => id === 'tv' ? dev : null },
       wakeAndLoadService: { execute: vi.fn() }, logger: { info() {}, warn() {} },
-      clock: () => now,
-      setTimer: (fn, delay) => { const timer = { fn, delay, cancelled: false, unref() {} }; scheduled.push(timer); return timer; },
-      clearTimer: timer => { if (timer) timer.cancelled = true; },
+      ...testPorts({ now: () => now,
+        after: (delay, fn) => { const timer = { fn, delay, cancelled: false, unref() {} }; scheduled.push(timer); return () => { timer.cancelled = true; }; } }),
     });
     const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
     expect(scheduled[0].delay).toBe(180_000);
@@ -301,9 +310,8 @@ describe('CallLeaseService', () => {
     const dev = device({ getState: vi.fn(async () => ({ power: { state: 'on' }, content: { currentUrl: '/screen/home' } })) });
     const service = new CallLeaseService({
       deviceService: { get: () => dev }, wakeAndLoadService: { execute: vi.fn() },
-      logger: { info() {}, warn() {} }, clock: () => now,
-      setTimer: (fn, delay) => { const timer = { fn, delay, unref() {} }; scheduled.push(timer); return timer; },
-      clearTimer: vi.fn(),
+      logger: { info() {}, warn() {} }, ...testPorts({ now: () => now,
+        after: (delay, fn) => { const timer = { fn, delay, unref() {} }; scheduled.push(timer); return () => {}; } }),
     });
     const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
     const joined = service.joinActive({ deviceId: 'tv', declaredDeviceId: 'tv', isLocal: true }).body;
@@ -327,9 +335,8 @@ describe('CallLeaseService', () => {
     const scheduled = [];
     const service = new CallLeaseService({
       deviceService: { get: () => device({ getState: vi.fn(async () => ({ power: { state: 'on' } })) }) },
-      wakeAndLoadService: { execute: vi.fn() }, logger: { info() {}, warn() {} }, clock: () => now,
-      setTimer: (fn, delay) => { const timer = { fn, delay, unref() {} }; scheduled.push(timer); return timer; },
-      clearTimer: vi.fn(),
+      wakeAndLoadService: { execute: vi.fn() }, logger: { info() {}, warn() {} }, ...testPorts({ now: () => now,
+        after: (delay, fn) => { const timer = { fn, delay, unref() {} }; scheduled.push(timer); return () => {}; } }),
     });
     const { body } = await service.reserve({ deviceId: 'tv', attemptId: 'a1', phonePeerId: 'p1', callerId: 'u1' });
     const joined = service.joinActive({ deviceId: 'tv', declaredDeviceId: 'tv', isLocal: true }).body;

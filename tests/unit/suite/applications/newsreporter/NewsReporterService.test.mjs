@@ -21,15 +21,10 @@ const captureLogger = () => {
 
 const fixedClock = (iso) => ({ now: () => new Date(iso) });
 
-// configService returning a fixed reporter config map.
-// `timezone` (when set) is returned by the canonical getHouseholdTimezone accessor.
+// Semantic projection returning a fixed reporter config map.
 const fakeConfig = (map, { household = {}, timezone } = {}) => ({
-  getHouseholdAppConfig: (hid, app) => {
-    if (app === 'newsreporter') return map;
-    if (app === 'household') return household;
-    return undefined;
-  },
-  ...(timezone !== undefined ? { getHouseholdTimezone: () => timezone } : {}),
+  reporter: (id) => map[id] || null,
+  timezone: () => timezone ?? 'America/Denver',
 });
 
 // source registry: create() returns a source built from a per-type factory.
@@ -69,7 +64,7 @@ const CFG_BASE = {
 };
 
 const baseDeps = (overrides = {}) => ({
-  configService: fakeConfig({ rep: CFG_BASE }),
+  configProjection: fakeConfig({ rep: CFG_BASE }),
   sourceRegistry: fakeSourceRegistry(() => ({ gather: async () => ({ items: [{ a: 1 }], meta: {} }) })),
   consolidator: okConsolidator([{ type: 'heading', text: 'Scores' }]),
   sinkRegistry: fakeSinkRegistry(() => ({ emit: async () => ({ status: 'ok' }) })),
@@ -88,7 +83,7 @@ describe('NewsReporterService', () => {
   });
 
   it('throws EntityNotFoundError when the reporter is disabled', async () => {
-    const deps = baseDeps({ configService: fakeConfig({ rep: { ...CFG_BASE, enabled: false } }) });
+    const deps = baseDeps({ configProjection: fakeConfig({ rep: { ...CFG_BASE, enabled: false } }) });
     const svc = new NewsReporterService(deps);
     await expect(svc.run('rep')).rejects.toBeInstanceOf(EntityNotFoundError);
   });
@@ -148,7 +143,7 @@ describe('NewsReporterService', () => {
     let i = 0;
     const attempts = [];
     const deps = baseDeps({
-      configService: fakeConfig({
+      configProjection: fakeConfig({
         rep: { ...CFG_BASE, sinks: [
           { type: 'printer', printer: 'a' },
           { type: 'printer', printer: 'b' },
@@ -219,14 +214,14 @@ describe('NewsReporterService', () => {
     expect(emits).toHaveLength(1);
   });
 
-  it('uses the household timezone from configService to resolve date placeholders', async () => {
+  it('uses the projected household timezone to resolve date placeholders', async () => {
     // 2026-06-21T04:30:00Z: in America/New_York (UTC-4) it's 00:30 on 06-21,
     // but in the default America/Denver (UTC-6) it's 22:30 on 06-20.
     // So {{date}} → 2026-06-21 in NY vs 2026-06-20 in Denver: the test would
-    // fail if the service ignored the configService timezone.
+    // fail if the service ignored the projected timezone.
     let gatheredCfg = null;
     const deps = baseDeps({
-      configService: fakeConfig(
+      configProjection: fakeConfig(
         { rep: { ...CFG_BASE, sources: [{ type: 'http', id: 'matches', url: 'http://x?d={{date}}' }] } },
         { timezone: 'America/New_York' },
       ),
@@ -243,7 +238,7 @@ describe('NewsReporterService', () => {
   it('resolves placeholders on sink config before sink.emit', async () => {
     let sinkCfg = null;
     const deps = baseDeps({
-      configService: fakeConfig({
+      configProjection: fakeConfig({
         rep: {
           ...CFG_BASE,
           sinks: [{ type: 'printer', printer: 'upstairs', template: { footer: 'daylight · {{date}}' } }],

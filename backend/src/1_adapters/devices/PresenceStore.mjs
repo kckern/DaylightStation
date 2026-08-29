@@ -7,10 +7,12 @@
  * it to disk would buy nothing except a stale value surviving a crash, which is
  * the one outcome the failure policy exists to prevent.
  */
+import { IDevicePresenceStore } from '#apps/devices/ports/IDevicePresenceStore.mjs';
+
 const MAX_DEVICES = 32;
 const HISTORY = 50;
 
-export class PresenceStore {
+export class PresenceStore extends IDevicePresenceStore {
   #byDevice = new Map();
   #history = new Map();
   #logger; #now; #allow;
@@ -21,6 +23,7 @@ export class PresenceStore {
    *        LAN caller can mint unbounded entries by posting new deviceIds.
    */
   constructor({ logger = console, now = () => Date.now(), allowDeviceIds = null } = {}) {
+    super();
     this.#logger = logger;
     this.#now = now;
     this.#allow = allowDeviceIds ? new Set(allowDeviceIds) : null;

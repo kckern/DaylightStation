@@ -1,22 +1,23 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HealthCoachAgent } from '../../../../backend/src/3_applications/agents/health-coach/HealthCoachAgent.mjs';
+import { AgentConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+
+const project = (yaml) => new AgentConfigProjection({ configService: { getAppConfig: () => yaml } });
 
 describe('HealthCoachAgent.getMemoryConfig', () => {
   it('reads last_messages from configService when present', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({
-      configService: {
-        getAppConfig: () => ({
+      agentConfigProjection: project({
           default: { memory: { last_messages: 75 } },
           overrides: {},
-        }),
-      },
+      }),
     });
     expect(cfg).toBeTruthy();
     expect(cfg.lastMessages).toBe(75);
   });
 
   it('returns null in safe-state default when no configService (Mastra bug guard)', () => {
-    const cfg = HealthCoachAgent.getMemoryConfig({ configService: null });
+    const cfg = HealthCoachAgent.getMemoryConfig({ agentConfigProjection: null });
     // Hardcoded defaults disable all memory features, so getMemoryConfig
     // returns null (no Memory attached). Re-enable in agents.yml when
     // upstream Mastra is fixed.
@@ -25,8 +26,7 @@ describe('HealthCoachAgent.getMemoryConfig', () => {
 
   it('returns null when all memory features are disabled (Mastra schema-compat bug guard)', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({
-      configService: {
-        getAppConfig: () => ({
+      agentConfigProjection: project({
           default: {
             memory: {
               last_messages: false,
@@ -35,23 +35,20 @@ describe('HealthCoachAgent.getMemoryConfig', () => {
             },
           },
           overrides: {},
-        }),
-      },
+      }),
     });
     expect(cfg).toBe(null);
   });
 
   it('attaches working memory template when enabled in config', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({
-      configService: {
-        getAppConfig: () => ({
+      agentConfigProjection: project({
           default: {
             memory: {
               working_memory: { enabled: true, scope: 'resource' },
             },
           },
-        }),
-      },
+      }),
     });
     expect(cfg.workingMemory).toBeDefined();
     expect(cfg.workingMemory.enabled).toBe(true);
@@ -62,12 +59,10 @@ describe('HealthCoachAgent.getMemoryConfig', () => {
 
   it('returns null when working_memory disabled and no other features (Mastra bug guard)', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({
-      configService: {
-        getAppConfig: () => ({
+      agentConfigProjection: project({
           default: { memory: { working_memory: { enabled: false } } },
           overrides: {},
-        }),
-      },
+      }),
     });
     // With safe-state defaults, all features off → null (no Memory at all).
     expect(cfg).toBe(null);
@@ -75,18 +70,16 @@ describe('HealthCoachAgent.getMemoryConfig', () => {
 
   it('honors per-agent overrides over defaults', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({
-      configService: {
-        getAppConfig: () => ({
+      agentConfigProjection: project({
           default: { memory: { last_messages: 50 } },
           overrides: { 'health-coach': { memory: { last_messages: 200 } } },
-        }),
-      },
+      }),
     });
     expect(cfg.lastMessages).toBe(200);
   });
 
   it('returns null when no configService (safe-state default; Mastra bug guard)', () => {
-    const cfg = HealthCoachAgent.getMemoryConfig({ configService: null });
+    const cfg = HealthCoachAgent.getMemoryConfig({ agentConfigProjection: null });
     expect(cfg).toBe(null);
   });
 });
@@ -140,21 +133,24 @@ describe('HealthCoachAgent.getDomainAdapters', () => {
 });
 
 describe('HealthCoachAgent.getBaselineService', () => {
-  it('returns a PersonalBaselineService when adapters and dataService given', () => {
+  it('returns a PersonalBaselineService when adapters and workspace repository are given', () => {
     const adapters = { workout: { list: vi.fn() } };
-    const dataService = { user: { read: vi.fn(), write: vi.fn() } };
-    const svc = HealthCoachAgent.getBaselineService({ adapters, dataService });
+    const workspaceRepository = {
+      getHealthProfile: vi.fn(), getBaselines: vi.fn(), saveBaselines: vi.fn(), saveDashboard: vi.fn(),
+      getGoals: vi.fn(), getProgramState: vi.fn(), saveProgramState: vi.fn(), listRecentFitnessProgress: vi.fn(),
+    };
+    const svc = HealthCoachAgent.getBaselineService({ adapters, workspaceRepository });
     expect(svc).toBeDefined();
     expect(typeof svc.getBaselines).toBe('function');
   });
 
-  it('returns null when dataService is missing', () => {
+  it('returns null when workspace repository is missing', () => {
     const svc = HealthCoachAgent.getBaselineService({ adapters: { workout: {} } });
     expect(svc).toBe(null);
   });
 
   it('returns null when adapters missing', () => {
-    const svc = HealthCoachAgent.getBaselineService({ dataService: { user: {} } });
+    const svc = HealthCoachAgent.getBaselineService({ workspaceRepository: {} });
     expect(svc).toBe(null);
   });
 });

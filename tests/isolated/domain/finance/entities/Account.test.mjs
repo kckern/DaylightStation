@@ -99,10 +99,10 @@ describe('Account', () => {
     });
   });
 
-  describe('toJSON/fromJSON', () => {
-    test('round-trips account data', () => {
-      const json = account.toJSON();
-      const restored = Account.fromJSON(json);
+  describe('reconstitution', () => {
+    test('reconstitutes an account record', () => {
+      const json = { ...account };
+      const restored = new Account(json);
       expect(restored.id).toBe(account.id);
       expect(restored.balance).toBe(account.balance);
     });

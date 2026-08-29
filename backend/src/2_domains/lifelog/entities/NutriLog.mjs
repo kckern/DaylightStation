@@ -48,13 +48,14 @@ export class NutriLog {
    * @param {NutriLogProps} props
    */
   constructor(props) {
-    this.#id = props.id || this.#generateShortId();
+    if (!props.id) throw new ValidationError('NutriLog id is required');
+    this.#id = props.id;
     this.#userId = props.userId;
     this.#conversationId = props.conversationId || props.userId;
     this.#status = props.status || 'pending';
     this.#text = props.text || '';
     this.#meal = props.meal;
-    this.#items = (props.items || []).map(i => i instanceof FoodItem ? i : FoodItem.fromJSON(i));
+    this.#items = (props.items || []).map(item => item instanceof FoodItem ? item : new FoodItem(item));
     this.#questions = props.questions || [];
     this.#nutrition = props.nutrition || {};
     this.#metadata = props.metadata || {};
@@ -64,10 +65,6 @@ export class NutriLog {
     this.#acceptedAt = props.acceptedAt || null;
 
     Object.freeze(this);
-  }
-
-  #generateShortId() {
-    return Math.random().toString(36).substring(2, 10);
   }
 
   // Getters
@@ -178,7 +175,7 @@ export class NutriLog {
     if (!timestamp) {
       throw new ValidationError('timestamp is required for addItem');
     }
-    const foodItem = item instanceof FoodItem ? item : FoodItem.fromJSON(item);
+    const foodItem = item instanceof FoodItem ? item : new FoodItem(item);
     return this.#withUpdates({
       items: [...this.#items, foodItem]
     }, timestamp);
@@ -229,7 +226,7 @@ export class NutriLog {
       throw new ValidationError('timestamp is required for setItems');
     }
     return this.#withUpdates({
-      items: items.map(i => i instanceof FoodItem ? i : FoodItem.fromJSON(i))
+      items: items.map(item => item instanceof FoodItem ? item : new FoodItem(item))
     }, timestamp);
   }
 
@@ -288,7 +285,7 @@ export class NutriLog {
    */
   #withUpdates(updates, timestamp) {
     return new NutriLog({
-      ...this.toJSON(),
+      ...this.#state(),
       ...updates,
       updatedAt: timestamp
     });
@@ -300,7 +297,22 @@ export class NutriLog {
    */
   toNutriListItems() {
     return this.#items.map(item => ({
-      ...item.toJSON(),
+      id: item.id,
+      uuid: item.uuid,
+      label: item.label,
+      icon: item.icon,
+      grams: item.grams,
+      unit: item.unit,
+      amount: item.amount,
+      color: item.color,
+      calories: item.calories,
+      protein: item.protein,
+      carbs: item.carbs,
+      fat: item.fat,
+      fiber: item.fiber,
+      sugar: item.sugar,
+      sodium: item.sodium,
+      cholesterol: item.cholesterol,
       logId: this.#id,
       date: this.#meal.date,
       status: this.#status,
@@ -309,7 +321,7 @@ export class NutriLog {
     }));
   }
 
-  toJSON() {
+  #state() {
     return {
       id: this.#id,
       userId: this.#userId,
@@ -317,7 +329,7 @@ export class NutriLog {
       status: this.#status,
       text: this.#text,
       meal: { ...this.#meal },
-      items: this.#items.map(i => i.toJSON()),
+      items: this.#items,
       questions: [...this.#questions],
       nutrition: { ...this.#nutrition },
       metadata: { ...this.#metadata },
@@ -326,13 +338,6 @@ export class NutriLog {
       updatedAt: this.#updatedAt,
       acceptedAt: this.#acceptedAt
     };
-  }
-
-  static fromJSON(obj, timezone) {
-    return new NutriLog({
-      ...obj,
-      timezone: timezone || obj.timezone
-    });
   }
 
   /**

@@ -6,22 +6,25 @@ import { checkSchedule } from './scheduleCheck.mjs';
  * Resolves content -> validates device -> executes launch.
  */
 export class LaunchService {
-  #contentRegistry;
+  #contentCatalog;
   #deviceLauncher;
-  #configService;
+  #loadSchedule;
+  #findDeviceByConstraint;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.contentRegistry
+   * @param {Object} config.contentCatalog
    * @param {Object} config.deviceLauncher
-   * @param {Object} [config.configService]
+   * @param {Function} [config.loadSchedule]
+   * @param {Function} [config.findDeviceByConstraint]
    * @param {Object} [config.logger]
    */
   constructor(config) {
-    this.#contentRegistry = config.contentRegistry;
+    this.#contentCatalog = config.contentCatalog;
     this.#deviceLauncher = config.deviceLauncher;
-    this.#configService = config.configService;
+    this.#loadSchedule = config.loadSchedule || (() => null);
+    this.#findDeviceByConstraint = config.findDeviceByConstraint || (() => null);
     this.#logger = config.logger || console;
   }
 
@@ -36,12 +39,12 @@ export class LaunchService {
     this.#logger.info?.('launch.service.requested', { contentId, targetDeviceId });
 
     // 1. Resolve content
-    const resolved = this.#contentRegistry.resolve(contentId);
-    if (!resolved?.adapter) {
+    const resolved = this.#contentCatalog.resolve(contentId);
+    if (!resolved) {
       throw new EntityNotFoundError('ContentSource', contentId);
     }
 
-    const item = await resolved.adapter.getItem(resolved.localId);
+    const item = await this.#contentCatalog.getItem(resolved);
     if (!item) {
       throw new EntityNotFoundError('Content', contentId);
     }
@@ -105,20 +108,17 @@ export class LaunchService {
    * @returns {Promise<{ target: string, params: Object } | null>}
    */
   async resolveIntent(contentId) {
-    const resolved = this.#contentRegistry.resolve(contentId);
-    if (!resolved?.adapter) return null;
+    const resolved = this.#contentCatalog.resolve(contentId);
+    if (!resolved) return null;
 
-    const item = await resolved.adapter.getItem(resolved.localId);
+    const item = await this.#contentCatalog.getItem(resolved);
     if (!item?.launchIntent) return null;
 
     return item.launchIntent;
   }
 
   #checkContentSchedule(contentId) {
-    if (!this.#configService) return;
-
-    const config = this.#configService.reloadHouseholdAppConfig(null, 'games');
-    const { available, nextWindow } = checkSchedule(config?.schedule);
+    const { available, nextWindow } = checkSchedule(this.#loadSchedule());
 
     if (!available) {
       throw new ValidationError('Games are not available right now', {
@@ -128,17 +128,6 @@ export class LaunchService {
     }
   }
 
-  #findDeviceByConstraint(constraint) {
-    if (!this.#configService) return null;
-    const devices = this.#configService.getHouseholdDevices();
-    if (!devices?.devices) return null;
-    for (const [id, config] of Object.entries(devices.devices)) {
-      const fallback = config.content_control?.fallback;
-      if (constraint === 'android' && fallback?.provider === 'adb') return id;
-      if (config.type?.includes(constraint)) return id;
-    }
-    return null;
-  }
 }
 
 export default LaunchService;

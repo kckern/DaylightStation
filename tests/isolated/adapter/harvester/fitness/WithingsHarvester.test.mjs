@@ -10,6 +10,7 @@ describe('WithingsHarvester', () => {
   let mockAuthStore;
   let mockConfigService;
   let mockLogger;
+  let mockWeightProcessor;
 
   beforeEach(async () => {
     // Reset modules to ensure clean state
@@ -19,7 +20,7 @@ describe('WithingsHarvester', () => {
     const module = await import('#adapters/harvester/fitness/WithingsHarvester.mjs');
     WithingsHarvester = module.WithingsHarvester;
 
-    const portsModule = await import('#adapters/harvester/ports/IHarvester.mjs');
+    const portsModule = await import('#apps/harvester/ports/IHarvester.mjs');
     HarvesterCategory = portsModule.HarvesterCategory;
 
     // Setup mocks
@@ -56,6 +57,7 @@ describe('WithingsHarvester', () => {
       warn: vi.fn(),
       error: vi.fn()
     };
+    mockWeightProcessor = { process: vi.fn().mockResolvedValue(undefined) };
 
     harvester = new WithingsHarvester({
       httpClient: mockHttpClient,
@@ -65,6 +67,7 @@ describe('WithingsHarvester', () => {
       clientId: mockConfigService.getSecret('WITHINGS_CLIENT_ID'),
       clientSecret: mockConfigService.getSecret('WITHINGS_CLIENT_SECRET'),
       redirectUri: mockConfigService.getSecret('WITHINGS_REDIRECT'),
+      weightProcessor: mockWeightProcessor,
       timezone: 'America/Los_Angeles',
       logger: mockLogger
     });
@@ -89,9 +92,10 @@ describe('WithingsHarvester', () => {
         lifelogStore: mockLifelogStore,
         authStore: mockAuthStore,
         getUserAuth: mockConfigService.getUserAuth,
-      clientId: mockConfigService.getSecret('WITHINGS_CLIENT_ID'),
-      clientSecret: mockConfigService.getSecret('WITHINGS_CLIENT_SECRET'),
-      redirectUri: mockConfigService.getSecret('WITHINGS_REDIRECT'),
+        clientId: mockConfigService.getSecret('WITHINGS_CLIENT_ID'),
+        clientSecret: mockConfigService.getSecret('WITHINGS_CLIENT_SECRET'),
+        redirectUri: mockConfigService.getSecret('WITHINGS_REDIRECT'),
+        weightProcessor: mockWeightProcessor,
         logger: mockLogger
       });
       expect(instance).toBeInstanceOf(WithingsHarvester);

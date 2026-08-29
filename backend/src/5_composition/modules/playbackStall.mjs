@@ -27,10 +27,10 @@ let instance = null;
  * @returns {{ stallDetector: PlaybackStallDetector }}
  */
 export function createPlaybackStallDetector(config) {
-  const { eventBus, logger = console, clock, stallThresholdMs, onStall, onRecover } = config || {};
+  const { presenceGateway, logger = console, clock, stallThresholdMs, onStall, onRecover } = config || {};
 
-  if (!eventBus) {
-    throw new Error('createPlaybackStallDetector requires eventBus');
+  if (!presenceGateway) {
+    throw new Error('createPlaybackStallDetector requires presenceGateway');
   }
 
   if (instance) {
@@ -39,7 +39,7 @@ export function createPlaybackStallDetector(config) {
   }
 
   const stallDetector = new PlaybackStallDetector({
-    eventBus,
+    presenceGateway,
     logger,
     clock,
     stallThresholdMs,

@@ -1,6 +1,8 @@
 // tests/isolated/application/auth/AuthService.needsSetup.test.mjs
 import { vi } from 'vitest';
 import { AuthService } from '#backend/src/3_applications/auth/AuthService.mjs';
+import { DataServiceAuthAccountRepository } from '#backend/src/1_adapters/auth/DataServiceAuthAccountRepository.mjs';
+import { NodeAuthenticationPrimitives } from '#backend/src/1_adapters/auth/NodeAuthenticationPrimitives.mjs';
 
 describe('AuthService.needsSetup()', () => {
   function buildService({ profiles = new Map(), loginData = {} } = {}) {
@@ -16,7 +18,11 @@ describe('AuthService.needsSetup()', () => {
       getAllUserProfiles: vi.fn(() => profiles),
       getDefaultHouseholdId: vi.fn(() => 'default'),
     };
-    return new AuthService({ dataService, configService, logger: { info: vi.fn() } });
+    return new AuthService({
+      accounts: new DataServiceAuthAccountRepository({ dataService, configService }),
+      authentication: new NodeAuthenticationPrimitives(),
+      logger: { info: vi.fn() },
+    });
   }
 
   test('returns true when no profiles exist', () => {

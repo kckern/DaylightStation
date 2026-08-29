@@ -3,6 +3,8 @@ import express from 'express';
 import request from 'supertest';
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 import { ScreenOverrideService } from '#apps/devices/services/ScreenOverrideService.mjs';
+import { DeviceScreenControlService } from '#apps/devices/services/DeviceScreenControlService.mjs';
+import { ConfigDeviceConfiguration } from '#adapters/devices/ConfigDeviceConfiguration.mjs';
 
 function makeDevice(initialScreenOn, { statusThrows = false } = {}) {
   let screenOn = initialScreenOn;
@@ -17,11 +19,15 @@ function makeApp({ device, screenOverrideService, pianoMidiWakeService, piano = 
   const app = express();
   app.use(express.json());
   app.use('/device', createDeviceRouter({
-    deviceService: { get: () => device },
-    screenOverrideService,
-    pianoMidiWakeService,
-    configService: { getHouseholdAppConfig: () => piano },
-    logger: { info() {}, warn() {}, error() {} },
+    screenService: new DeviceScreenControlService({
+      devices: { get: () => device },
+      screenOverrides: screenOverrideService,
+      midiWake: pianoMidiWakeService,
+      configuration: new ConfigDeviceConfiguration({
+        configService: { getHouseholdAppConfig: () => piano },
+      }),
+      logger: { info() {}, warn() {}, error() {} },
+    }),
   }));
   return app;
 }
@@ -90,10 +96,14 @@ describe('device screen override routes', () => {
     const app = express();
     app.use(express.json());
     app.use('/device', createDeviceRouter({
-      deviceService: { get: () => null },
-      screenOverrideService: override,
-      configService: { getHouseholdAppConfig: () => ({}) },
-      logger: { info() {}, warn() {}, error() {} },
+      screenService: new DeviceScreenControlService({
+        devices: { get: () => null },
+        screenOverrides: override,
+        configuration: new ConfigDeviceConfiguration({
+          configService: { getHouseholdAppConfig: () => ({}) },
+        }),
+        logger: { info() {}, warn() {}, error() {} },
+      }),
     }));
     const res = await request(app).get('/device/nope/screen/toggle');
     expect(res.status).toBe(404);

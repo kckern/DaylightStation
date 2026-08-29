@@ -1,7 +1,6 @@
 import Cube from 'cubejs';
-import { COLORS, FACES, createCube, isValidCube } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
+import { CUBE_FACELETS as FACELETS, faceletsToEngineCube, engineCubeToFacelets } from '#shared/gaming/rulesets/rubiks-cube/facelets.mjs';
 
-const FACELETS = Object.freeze(['U', 'R', 'F', 'D', 'L', 'B']);
 const CORNERS = Object.freeze(['URF', 'UFL', 'ULB', 'UBR', 'DFR', 'DLF', 'DBL', 'DRB']);
 const EDGES = Object.freeze(['UR', 'UF', 'UL', 'UB', 'DR', 'DF', 'DL', 'DB', 'FR', 'FL', 'BL', 'BR']);
 
@@ -71,19 +70,6 @@ export function parsePhysicalCube(rawFaces) {
   return { ok: true, facelets, cube, centers, entered };
 }
 
-export function faceletsToEngineCube(facelets) {
-  if (typeof facelets !== 'string' || facelets.length !== 54) return null;
-  const cube = createCube();
-  FACELETS.forEach((face, faceIndex) => {
-    cube[face] = [...facelets.slice(faceIndex * 9, faceIndex * 9 + 9)].map((role) => COLORS[role]);
-  });
-  return isValidCube(cube) ? cube : null;
-}
-
-export function engineCubeToFacelets(cube) {
-  if (!isValidCube(cube)) return null;
-  const roleForColor = new Map(Object.entries(COLORS).map(([face, color]) => [color, face]));
-  return FACELETS.flatMap((face) => cube[face].map((color) => roleForColor.get(color))).join('');
-}
+export { faceletsToEngineCube, engineCubeToFacelets };
 
 export default { parsePhysicalCube, faceletsToEngineCube, engineCubeToFacelets };

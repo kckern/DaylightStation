@@ -17,6 +17,7 @@ const silent = { warn() {}, info() {}, error() {}, debug() {} };
 
 const bookTap = (over = {}) => ({
   kind: 'content',
+  dispatchId: 'test-dispatch',
   target: 'livingroom-tv',
   location: 'livingroom',
   expression: { action: 'play-next', contentId: 'plex:620681', options: {} },
@@ -42,7 +43,9 @@ function build({ storyTime = owing, sessions = new ReadingSessionService({ logge
   const interceptor = new ReadingSessionInterceptor({
     sessions,
     storyTime,
-    eventBus: { broadcast: (topic, payload) => sent.push({ topic, payload }) },
+    realtime: {
+      readingRoomChanged: (location, { kind, ...payload }) => sent.push({ topic: `reading:${location}`, payload: { event: kind, ...payload } }),
+    },
     logger: silent,
   });
   return { interceptor, sessions, sent };

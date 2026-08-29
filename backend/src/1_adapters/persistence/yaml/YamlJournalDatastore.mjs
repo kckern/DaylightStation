@@ -18,6 +18,24 @@ import { IJournalDatastore } from '#apps/journaling/ports/IJournalDatastore.mjs'
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listHouseholdDirs, parseHouseholdId } from '#system/utils/householdDirs.mjs';
 
+function dehydrateJournalEntry(entry) {
+  return {
+    id: entry.id,
+    userId: entry.userId,
+    date: entry.date,
+    title: entry.title,
+    content: entry.content,
+    mood: entry.mood,
+    tags: entry.tags,
+    gratitudeItems: entry.gratitudeItems,
+    prompts: entry.prompts,
+    attachments: entry.attachments,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+    metadata: entry.metadata
+  };
+}
+
 export class YamlJournalDatastore extends IJournalDatastore {
   /**
    * @param {Object} config
@@ -79,7 +97,7 @@ export class YamlJournalDatastore extends IJournalDatastore {
    * @returns {Promise<void>}
    */
   async save(entry) {
-    const data = typeof entry.toJSON === 'function' ? entry.toJSON() : entry;
+    const data = dehydrateJournalEntry(entry);
     const filePath = this.getEntryPath(data.userId, data.date);
     this._writeFile(filePath, data);
   }

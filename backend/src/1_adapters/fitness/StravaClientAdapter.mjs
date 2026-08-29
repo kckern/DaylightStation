@@ -13,10 +13,11 @@
  */
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { IActivityGateway } from '#apps/fitness/ports/IActivityGateway.mjs';
 
 const STRAVA_BASE_URL = 'https://www.strava.com';
 
-export class StravaClientAdapter {
+export class StravaClientAdapter extends IActivityGateway {
   #httpClient;
   #configService;
   #currentAccessToken;
@@ -30,6 +31,7 @@ export class StravaClientAdapter {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({ httpClient, configService, logger = console }) {
+    super();
     if (!httpClient) {
       throw new InfrastructureError('StravaClientAdapter requires httpClient', {
         code: 'MISSING_DEPENDENCY',
@@ -56,8 +58,8 @@ export class StravaClientAdapter {
    * @returns {Promise<Object>} Token response with access_token, refresh_token, expires_at
    */
   async refreshToken(refreshToken) {
-    const clientId = this.#configService.getSecret('STRAVA_CLIENT_ID');
-    const clientSecret = this.#configService.getSecret('STRAVA_CLIENT_SECRET');
+    const clientId = this.#configService.getSystemAuth('strava', 'client_id');
+    const clientSecret = this.#configService.getSystemAuth('strava', 'client_secret');
 
     if (!clientId || !clientSecret) {
       throw new InfrastructureError('Strava OAuth credentials not configured (STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET)', {

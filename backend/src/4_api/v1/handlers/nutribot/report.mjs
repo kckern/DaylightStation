@@ -7,12 +7,12 @@
 
 /**
  * Create NutriBot report handler
- * @param {import('../../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
+ * @param {Object} nutribotApi
  * @param {Object} [options]
  * @param {Object} [options.logger]
  * @returns {Function} Express handler
  */
-export function nutribotReportHandler(container, options = {}) {
+export function nutribotReportHandler(nutribotApi, options = {}) {
   const logger = options.logger || console;
 
   return async (req, res) => {
@@ -31,11 +31,7 @@ export function nutribotReportHandler(container, options = {}) {
       });
     }
 
-    // Get use case
-    const useCase = container.getGetReportAsJSON();
-
-    // Execute
-    const result = await useCase.execute({ userId: chatId });
+    const result = await nutribotApi.report({ userId: chatId });
 
     logger.info?.('report.generated', { traceId, chatId });
 

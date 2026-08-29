@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { WeeklyReviewService } from '#apps/weekly-review/WeeklyReviewService.mjs';
+import { FilesystemWeeklyReviewStore } from '#adapters/persistence/files/FilesystemWeeklyReviewStore.mjs';
 
 const WEEK = '2026-06-13';
 const OLD_MS = Date.now() - 60 * 24 * 60 * 60 * 1000;
@@ -22,6 +23,13 @@ describe('sweepStaleDrafts — orphaned processing files', () => {
     svc = new WeeklyReviewService({
       householdDir: path.join(tmp, 'household'),
       mediaPath: path.join(tmp, 'media'),
+    }, {
+      reviewStore: new FilesystemWeeklyReviewStore({
+        householdDir: path.join(tmp, 'household'),
+        mediaPath: path.join(tmp, 'media'),
+        logger: { warn() {}, info() {} },
+      }),
+      runCommand: async () => ({}),
       logger: { warn() {}, info() {} },
     });
     draftDir = path.join(tmp, 'media', 'weekly-review', WEEK, '.drafts');

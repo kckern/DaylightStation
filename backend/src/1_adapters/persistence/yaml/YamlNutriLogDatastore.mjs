@@ -3,8 +3,62 @@ import { NutriLog } from '#domains/lifelog/entities/NutriLog.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { INutriLogDatastore } from '#apps/nutribot/ports/INutriLogDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { v4 as uuidv4 } from 'uuid';
 
 const NUTRILOG_PATH = 'lifelog/nutrition/nutrilog';
+
+function hydrateNutriLog(data) {
+  if (!data) return null;
+  return new NutriLog({
+    ...data,
+    id: data.id || Math.random().toString(36).substring(2, 10),
+    items: (data.items || []).map((item) => ({
+      ...item,
+      id: item.id || Math.random().toString(36).substring(2, 8),
+      uuid: item.uuid || uuidv4(),
+    })),
+  });
+}
+
+function dehydrateFoodItem(item) {
+  return {
+    id: item.id,
+    uuid: item.uuid,
+    label: item.label,
+    icon: item.icon,
+    grams: item.grams,
+    unit: item.unit,
+    amount: item.amount,
+    color: item.color,
+    calories: item.calories,
+    protein: item.protein,
+    carbs: item.carbs,
+    fat: item.fat,
+    fiber: item.fiber,
+    sugar: item.sugar,
+    sodium: item.sodium,
+    cholesterol: item.cholesterol
+  };
+}
+
+function dehydrateNutriLog(log) {
+  return {
+    id: log.id,
+    userId: log.userId,
+    conversationId: log.conversationId,
+    status: log.status,
+    text: log.text,
+    meal: log.meal,
+    items: log.items.map(dehydrateFoodItem),
+    questions: log.questions,
+    nutrition: log.nutrition,
+    metadata: log.metadata,
+    timezone: log.timezone,
+    createdAt: log.createdAt,
+    updatedAt: log.updatedAt,
+    acceptedAt: log.acceptedAt
+  };
+}
 
 /**
  * YAML-based NutriLog persistence adapter
@@ -44,7 +98,7 @@ export class YamlNutriLogDatastore extends INutriLogDatastore {
 
   async save(nutriLog) {
     const logs = this.#loadLogs(nutriLog.userId);
-    logs[nutriLog.id] = nutriLog.toJSON();
+    logs[nutriLog.id] = dehydrateNutriLog(nutriLog);
     this.#saveLogs(nutriLog.userId, logs);
 
     this.#logger.debug?.('nutrilog.saved', {
@@ -59,14 +113,14 @@ export class YamlNutriLogDatastore extends INutriLogDatastore {
   async findById(userId, id) {
     const logs = this.#loadLogs(userId);
     const data = logs[id];
-    return data ? NutriLog.fromJSON(data) : null;
+    return hydrateNutriLog(data);
   }
 
   async findByDate(userId, date) {
     const logs = this.#loadLogs(userId);
     return Object.values(logs)
       .filter(log => log.meal?.date === date && log.status !== 'deleted')
-      .map(log => NutriLog.fromJSON(log));
+      .map(hydrateNutriLog);
   }
 
   async findByDateRange(userId, startDate, endDate) {
@@ -76,21 +130,21 @@ export class YamlNutriLogDatastore extends INutriLogDatastore {
         const date = log.meal?.date;
         return date >= startDate && date <= endDate && log.status !== 'deleted';
       })
-      .map(log => NutriLog.fromJSON(log));
+      .map(hydrateNutriLog);
   }
 
   async findPending(userId) {
     const logs = this.#loadLogs(userId);
     return Object.values(logs)
       .filter(log => log.status === 'pending')
-      .map(log => NutriLog.fromJSON(log));
+      .map(hydrateNutriLog);
   }
 
   async findAccepted(userId) {
     const logs = this.#loadLogs(userId);
     return Object.values(logs)
       .filter(log => log.status === 'accepted')
-      .map(log => NutriLog.fromJSON(log));
+      .map(hydrateNutriLog);
   }
 
   async updateStatus(userId, id, status) {
@@ -104,7 +158,7 @@ export class YamlNutriLogDatastore extends INutriLogDatastore {
     }
 
     this.#saveLogs(userId, logs);
-    return NutriLog.fromJSON(logs[id]);
+    return hydrateNutriLog(logs[id]);
   }
 
   async delete(userId, id) {

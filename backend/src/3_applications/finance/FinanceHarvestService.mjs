@@ -16,7 +16,7 @@
  */
 
 import { nowDate } from '#system/utils/time.mjs';
-import { NotFoundError, ValidationError } from '#system/utils/errors/index.mjs';
+import { NotFoundError, ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class FinanceHarvestService {
   #transactionSource;

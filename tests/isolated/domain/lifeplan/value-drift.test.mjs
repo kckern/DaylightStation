@@ -164,7 +164,7 @@ describe('Value Entity', () => {
         drift_history: [{ date: '2025-01-01', correlation: 0.6 }],
       };
       const value = new Value(data);
-      const restored = new Value(value.toJSON());
+      const restored = new Value(JSON.parse(JSON.stringify(value)));
       expect(restored.id).toBe('achievement');
       expect(restored.rank).toBe(2);
       expect(restored.justified_by).toHaveLength(1);

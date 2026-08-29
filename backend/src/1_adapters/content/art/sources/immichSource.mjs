@@ -3,7 +3,7 @@
 // Dimensions via the shared immichDimensions helper (orientation-corrected);
 // matte from preview bytes.
 import { Jimp } from 'jimp';
-import { buildPhotoTitle, formatPhotoDate, orderPeopleByFace } from '../../gallery/immich/photoLabels.mjs';
+import { buildPhotoTitle, formatPhotoDate, orderPeopleByFace } from '#shared/content/immich/photoLabels.mjs';
 import { immichDimensions } from '../../gallery/immich/immichDimensions.mjs';
 
 const MAX_RATIO = 16 / 9;

@@ -35,7 +35,7 @@ describe('Goal Entity', () => {
   describe('transition()', () => {
     it('transitions dream → considered', () => {
       const goal = new Goal({ id: 'g1', name: 'Test', state: 'dream' });
-      goal.transition('considered', 'Exploring this idea');
+      goal.transition('considered', 'Exploring this idea', '2025-06-15T10:00:00.000Z');
       expect(goal.state).toBe('considered');
       expect(goal.state_history).toHaveLength(1);
       expect(goal.state_history[0].from).toBe('dream');
@@ -57,7 +57,7 @@ describe('Goal Entity', () => {
 
     it('records timestamp on transition', () => {
       const goal = new Goal({ id: 'g1', name: 'Test', state: 'dream' });
-      goal.transition('considered', 'reason');
+      goal.transition('considered', 'reason', '2025-06-15T10:00:00.000Z');
       expect(goal.state_history[0].timestamp).toBeTruthy();
     });
   });
@@ -123,7 +123,7 @@ describe('Goal Entity', () => {
         state_history: [{ from: 'dream', to: 'considered', reason: 'test', timestamp: '2025-01-01' }],
       };
       const goal = new Goal(data);
-      const json = goal.toJSON();
+      const json = JSON.parse(JSON.stringify(goal));
       const restored = new Goal(json);
       expect(restored.id).toBe('run-marathon');
       expect(restored.state).toBe('committed');

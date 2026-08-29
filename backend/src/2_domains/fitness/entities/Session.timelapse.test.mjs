@@ -38,10 +38,10 @@ test('markTimelapseFailed records the error message', () => {
   assert.match(s.timelapse.error, /ffmpeg/);
 });
 
-test('timelapse survives toJSON/fromJSON round-trip', () => {
+test('timelapse survives stored-record reconstitution', () => {
   const s = activeSession();
   s.attachTimelapse({ videoPath: 'p.mp4', durationSeconds: 5, fps: 10, frameCount: 50, now: Date.now() });
-  const round = Session.fromJSON(s.toJSON());
+  const round = new Session({ ...s, sessionId: s.sessionId.toString() });
   assert.equal(round.timelapse.status, 'ready');
   assert.equal(round.timelapse.videoPath, 'p.mp4');
 });

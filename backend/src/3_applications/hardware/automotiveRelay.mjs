@@ -10,13 +10,10 @@
 //      so any app/display can subscribe live. `trip` messages arrive chunked
 //      (`seq`/`final`) and are reassembled per (vehicle, trip_id).
 //
-//   2) PERSIST (bus-side): snapshots (throttled) and events append to
-//      {dataDir}/{persistence.dir}/{id}/{YYYY-MM-DD}.yml, keyed by the
-//      HOUSEHOLD-LOCAL day — a UTC key filed every evening drive under
-//      tomorrow and split trips that crossed 00:00Z. Each reassembled trip
-//      writes {.../}{id}/trips/{YYYY-MM}/{YYYY-MM-DD}_{HHMM}_{trip_id}.yml.
-//      After a trip persists, the device gets {"type":"trip-ack"} via
-//      sendToClient so it deletes its buffered copy — the ack MUST only follow
+//   2) PERSIST (bus-side): snapshots (throttled), events, and reassembled
+//      trips are delegated to semantic stores using the household-local date.
+//      After a trip persists, the device is acknowledged so it deletes its
+//      buffered copy — the ack MUST only follow
 //      a durable write, and is also sent for trips dropped below the sample
 //      floor (otherwise the device retries the same blip forever).
 //
@@ -33,15 +30,11 @@
 // ended_boot_ms), wall-clock start/end are rebased from upload_epoch_ms;
 // otherwise times stay unrecoverable and `time_source: boot-relative`.
 //
-// Config-driven from the household SSOT (config/vehicles.yml), passed as
-// `config`. Design: docs/_wip/plans/2026-07-14-obd-relay-design.md
-import path from 'path';
-import yaml from 'js-yaml';
-import { formatIsoLocal, formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
+// Config-driven from the household vehicle SSOT, passed as `config`.
+import { formatIsoLocal } from '#domains/core/utils/time.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
+import { isFirmwareRelayGateway } from './ports/IFirmwareRelayGateway.mjs';
 
-const RELAY_SOURCE = 'obd-relay';
-const DEFAULT_TOPIC = 'automotive';
 const DEFAULT_SNAPSHOT_MIN_S = 60;
 const DEFAULT_MIN_TRIP_SAMPLES = 0; // opt-in; 0 keeps every trip
 const CHUNK_TTL_MS = 10 * 60 * 1000; // drop stale partial trip reassemblies
@@ -73,12 +66,11 @@ const ECU_FIELDS = ['rpm', 'coolant_c', 'fuel_pct'];
 
 /**
  * @param {object}   deps
- * @param {object}   deps.eventBus  IEventBus (WebSocketEventBus) — needs
- *                                  onClientMessage + subscribe + broadcast + sendToClient
- * @param {string}   deps.dataDir   resolved data dir (configService.getDataDir())
- * @param {object}   [deps.config]  parsed config/vehicles.yml — { persistence:{dir,snapshot_min_s,min_trip_samples}, vehicles:{<id>:{topic}} }
- * @param {string}   [deps.timezone] IANA zone for day keys + trip filenames
- *                                  (configService.getHouseholdTimezone())
+ * @param {object}   deps.relayGateway semantic automotive relay gateway
+ * @param {number}   [deps.snapshotMinSeconds] resolved snapshot persistence interval
+ * @param {number}   [deps.minTripSamples] resolved minimum durable trip size
+ * @param {string}   [deps.timezone] IANA zone for household-local persistence
+ *                                  (resolved at composition)
  * @param {object}   [deps.logger]  structured logger
  * @param {() => number} [deps.now] clock (injectable for tests)
  * @returns {{ dispose: () => void, flush: () => Promise<void> }}
@@ -94,20 +86,22 @@ const ECU_FIELDS = ['rpm', 'coolant_c', 'fuel_pct'];
  * any `persistence.dir` override, and hands down one directory.
  */
 export function createAutomotiveRelay({
-  eventBus, dataDir, dayLog, config = {}, timezone = DEFAULT_TIMEZONE, logger = console, now = Date.now,
+  relayGateway, dayLog, tripStore, snapshotMinSeconds = DEFAULT_SNAPSHOT_MIN_S,
+  minTripSamples = DEFAULT_MIN_TRIP_SAMPLES, timezone = DEFAULT_TIMEZONE, logger = console,
 }) {
-  if (!eventBus?.onClientMessage || !eventBus?.broadcast) {
-    throw new Error('createAutomotiveRelay: eventBus with onClientMessage + broadcast required');
+  if (!isFirmwareRelayGateway(relayGateway)
+    || typeof relayGateway.publish !== 'function'
+    || typeof relayGateway.acknowledgeTrip !== 'function') {
+    throw new Error('createAutomotiveRelay: relayGateway required');
   }
+  if (!tripStore?.inspect || !tripStore?.save) throw new Error('createAutomotiveRelay: tripStore required');
 
-  const vehicleDefs = config?.vehicles || {};
-  const snapshotMinMs = (Number(config?.persistence?.snapshot_min_s) > 0
-    ? Number(config.persistence.snapshot_min_s)
+  const snapshotMinMs = (Number(snapshotMinSeconds) > 0
+    ? Number(snapshotMinSeconds)
     : DEFAULT_SNAPSHOT_MIN_S) * 1000;
-  const minTripSamples = Number(config?.persistence?.min_trip_samples) > 0
-    ? Number(config.persistence.min_trip_samples)
+  minTripSamples = Number(minTripSamples) > 0
+    ? Number(minTripSamples)
     : DEFAULT_MIN_TRIP_SAMPLES;
-  const topicForId = (id) => vehicleDefs[id]?.topic || DEFAULT_TOPIC;
 
   // Serialize all writes: day logs are read-modify-write, and a trip-ack must
   // not be sent before its trip file is durably written.
@@ -121,20 +115,16 @@ export function createAutomotiveRelay({
   const lastSnapshotPersist = new Map(); // vehicle id -> ms
   const pendingTrips = new Map();        // `${id}:${trip_id}` -> { samples, touchedAt }
 
-  const ingest = (clientId, message) => {
-    if (!message || message.source !== RELAY_SOURCE) return;
-    const id = typeof message.id === 'string' && message.id ? message.id : 'unknown';
-    const at = now();
-    const ts = formatIsoLocal(new Date(at), timezone);
-    const topic = topicForId(id);
+  const ingest = ({ clientId, id, kind, payload: message, at, ts }) => {
+    if (!message) return;
 
-    if (message.type === 'hello') {
+    if (kind === 'hello') {
       logger.info?.('automotive.ingest.hello', { clientId, id, fw: message.fw, rssi: message.rssi });
-      eventBus.broadcast(topic, { id, event: 'hello', fw: message.fw, rssi: message.rssi, ts });
+      relayGateway.publish(id, { id, event: 'hello', fw: message.fw, rssi: message.rssi, ts });
       return;
     }
 
-    if (message.type === 'snapshot') {
+    if (kind === 'snapshot') {
       const snapshot = {
         id,
         kind: 'snapshot',
@@ -145,7 +135,7 @@ export function createAutomotiveRelay({
         dtc: Array.isArray(message.dtc_codes) ? message.dtc_codes : [],
         ts,
       };
-      eventBus.broadcast(topic, snapshot);
+      relayGateway.publish(id, snapshot);
       const last = lastSnapshotPersist.get(id) || 0;
       if (at - last >= snapshotMinMs) {
         lastSnapshotPersist.set(id, at);
@@ -154,7 +144,7 @@ export function createAutomotiveRelay({
       return;
     }
 
-    if (message.type === 'event') {
+    if (kind === 'event') {
       // Most events are a bare name. `harsh-motion` carries a magnitude and raw
       // axes, and dropping them would leave a breadcrumb that says something
       // happened without saying what — so known payload fields ride along.
@@ -165,18 +155,18 @@ export function createAutomotiveRelay({
         detail.speed_kph = Number(message.speed_kph);
       }
       const record = { id, kind: 'event', event: String(message.event || 'unknown'), ...detail, ts };
-      eventBus.broadcast(topic, record);
+      relayGateway.publish(id, record);
       enqueue('event', id, () => dayLog.appendAt(id, at, record, { omitKeys: ['id'] }));
       return;
     }
 
-    if (message.type === 'trip') {
-      handleTripChunk(clientId, id, topic, message, at, ts);
+    if (kind === 'trip') {
+      handleTripChunk(clientId, id, message, at, ts);
       return;
     }
   };
 
-  const handleTripChunk = (clientId, id, topic, message, at, ts) => {
+  const handleTripChunk = (clientId, id, message, at, ts) => {
     const tripId = typeof message.trip_id === 'string' && message.trip_id ? message.trip_id : null;
     if (!tripId) { logger.warn?.('automotive.trip.missing_id', { clientId, id }); return; }
     const key = `${id}:${tripId}`;
@@ -206,7 +196,7 @@ export function createAutomotiveRelay({
         await dayLog.appendAt(id, at, {
           id, kind: 'trip-dropped', trip_id: tripId, ts, samples: count, reason: 'below-sample-floor',
         }, at, timezone);
-        eventBus.sendToClient?.(clientId, { type: 'trip-ack', trip_id: tripId });
+        relayGateway.acknowledgeTrip(clientId, tripId);
         logger.info?.('automotive.trip.dropped', { id, tripId, samples: count, floor: minTripSamples });
       });
       return;
@@ -214,16 +204,16 @@ export function createAutomotiveRelay({
 
     // Persist FULL trip, then summary to the day log, then ack the device.
     enqueue('trip', id, async () => {
-      const relPath = path.join('trips', tripRelPath(trip, timezone));
-      if (await dayLog.documentExists?.(id, relPath)) {
-        eventBus.sendToClient?.(clientId, { type: 'trip-ack', trip_id: tripId });
-        logger.info?.('automotive.trip.duplicate', { id, tripId, file: relPath });
+      const existing = await tripStore.inspect(id, trip, timezone);
+      if (existing.exists) {
+        relayGateway.acknowledgeTrip(clientId, tripId);
+        logger.info?.('automotive.trip.duplicate', { id, tripId, file: existing.reference });
         return;
       }
-      await dayLog.writeDocument(id, relPath, dumpTrip(trip));
+      const tripReference = await tripStore.save(id, trip, timezone);
       await dayLog.appendAt(id, at, {
         id, kind: 'trip', trip_id: tripId, ts,
-        file: relPath,
+        file: tripReference,
         started: trip.meta.started,
         ended: trip.meta.ended,
         time_source: trip.meta.time_source,
@@ -233,13 +223,13 @@ export function createAutomotiveRelay({
         ecu: trip.meta.ecu,
         samples: count,
       }, at, timezone);
-      const acked = eventBus.sendToClient?.(clientId, { type: 'trip-ack', trip_id: tripId });
-      logger.info?.('automotive.trip.persisted', { id, tripId, samples: count, file: relPath, acked: Boolean(acked) });
+      const acked = relayGateway.acknowledgeTrip(clientId, tripId);
+      logger.info?.('automotive.trip.persisted', { id, tripId, samples: count, file: tripReference, acked: Boolean(acked) });
     });
-    eventBus.broadcast(topic, { id, kind: 'trip', trip_id: tripId, meta: trip.meta, ts });
+    relayGateway.publish(id, { id, kind: 'trip', trip_id: tripId, meta: trip.meta, ts });
   };
 
-  const offClientMessage = eventBus.onClientMessage(ingest);
+  const offClientMessage = relayGateway.subscribe(ingest);
 
   logger.info?.('automotive.relay.ready', { snapshotMinMs, minTripSamples, timezone });
   return {
@@ -518,34 +508,3 @@ function odometerCounters(meta) {
 }
 
 const round = (n, places) => Number(n.toFixed(places));
-
-/**
- * Where a trip file lives, relative to the vehicle's trips/ dir: sharded by
- * month and named for its local start time.
- *
- * The device's own trip id is `esp_random()-millis()` — collision-free but
- * unsortable and meaningless, so it becomes a suffix rather than the whole
- * name. Trips whose clock is unrecoverable are prefixed `unknown_` and dated by
- * arrival, so they sort together instead of silently interleaving with real
- * timestamps.
- *
- * Exported for the history migration (cli/automotive.cli.mjs), which must place
- * converted files exactly where the relay would have.
- *
- * @returns {string} e.g. 2026-08/2026-08-11_1730_abc1.yml
- */
-export function tripRelPath(trip, timezone) {
-  const stamp = trip.meta.started
-    ? new Date(trip.meta.started)
-    : new Date(trip.meta.received);
-  const [day, clock] = formatLocalTimestamp(stamp, timezone).split(' ');
-  const hhmm = clock.slice(0, 5).replace(':', '');
-  const prefix = trip.meta.started ? '' : 'unknown_';
-  return path.join(day.slice(0, 7), `${prefix}${day}_${hhmm}_${sanitize(trip.meta.trip_id)}.yml`);
-}
-
-/** Serialize a trip: flowLevel 2 keeps one sample per line — diff-friendly, and
- *  a grepped line stays readable on its own. Exported for the migration. */
-export const dumpTrip = (trip) => yaml.dump(trip, { noRefs: true, flowLevel: 2, lineWidth: -1 });
-
-const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');

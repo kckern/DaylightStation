@@ -13,10 +13,11 @@
  */
 
 import { spawn } from 'child_process';
-import { writeFile, mkdir, stat } from 'fs/promises';
 import path from 'path';
 
 import { localEpochSeconds, exifTimestamp } from '#domains/camera/sheetPlan.mjs';
+import { buildSheetDescription, buildSheetMetadata } from './sheetMetadata.mjs';
+import { ensureDirAsync, writeTextFileAsync } from '#system/utils/FileIO.mjs';
 
 export function runFfmpeg(args, { logger = console, timeoutMs = 3600000 } = {}) {
   return new Promise((resolve, reject) => {
@@ -63,8 +64,8 @@ export function scaleFilter(scale) {
 /** Write an ffmpeg concat demuxer list. Paths are single-quote escaped. */
 export async function writeConcatList(files, listPath) {
   const body = files.map((f) => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
-  await mkdir(path.dirname(listPath), { recursive: true });
-  await writeFile(listPath, body + '\n', 'utf8');
+  await ensureDirAsync(path.dirname(listPath));
+  await writeTextFileAsync(listPath, body + '\n');
   return listPath;
 }
 
@@ -216,7 +217,13 @@ export class ArchiveEncoder {
   }
 
   writeSheetMetadata(args) {
-    return writeSheetMetadata({ ...args, logger: this.#logger });
+    const { metadata, ...artifact } = args;
+    return writeSheetMetadata({
+      ...artifact,
+      description: buildSheetDescription(metadata),
+      yaml: buildSheetMetadata(metadata),
+      logger: this.#logger,
+    });
   }
 }
 

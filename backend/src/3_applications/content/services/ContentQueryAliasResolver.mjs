@@ -12,7 +12,7 @@
  * 5. Passthrough (all sources, no filtering)
  *
  * @example
- * const resolver = new ContentQueryAliasResolver({ registry, configService });
+ * const resolver = new ContentQueryAliasResolver({ contentCatalog, loadUserAliases });
  * const result = resolver.resolveContentQuery('music');
  * // { intent: 'audio-for-listening', sources: [...], gatekeeper: fn, ... }
  */
@@ -48,8 +48,8 @@ const logger = createLogger({
  */
 
 export class ContentQueryAliasResolver {
-  #registry;
-  #configService;
+  #contentCatalog;
+  #loadUserAliases;
   #householdId;
   #prefixAliases;
 
@@ -81,14 +81,17 @@ export class ContentQueryAliasResolver {
 
   /**
    * @param {Object} deps
-   * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} deps.registry
-   * @param {import('#system/config/ConfigService.mjs').ConfigService} deps.configService
+   * @param {import('../ports/IContentCatalogGateway.mjs')} deps.contentCatalog
+   * @param {Function} deps.loadUserAliases - Semantic alias projection
    * @param {string} [deps.householdId] - Household ID for user config lookup
    * @param {Object<string, string>} [deps.prefixAliases={}] - Map of prefix names to source:collection strings from content-prefixes.yml
    */
-  constructor({ registry, configService, householdId = null, prefixAliases = {} }) {
-    this.#registry = registry;
-    this.#configService = configService;
+  constructor({ contentCatalog, loadUserAliases = () => ({}), householdId = null, prefixAliases = {} }) {
+    if (!contentCatalog?.resolveQueryScope) {
+      throw new Error('ContentQueryAliasResolver requires contentCatalog');
+    }
+    this.#contentCatalog = contentCatalog;
+    this.#loadUserAliases = loadUserAliases;
     this.#householdId = householdId;
     this.#prefixAliases = prefixAliases;
   }
@@ -141,7 +144,7 @@ export class ContentQueryAliasResolver {
    */
   #getUserAlias(prefix) {
     // Get content aliases from app config
-    const aliasConfig = this.#configService.getAppConfig('content', 'aliases');
+    const aliasConfig = this.#loadUserAliases(this.#householdId);
     if (!aliasConfig) return null;
 
     // Direct alias definition
@@ -209,20 +212,17 @@ export class ContentQueryAliasResolver {
     let sources = [];
 
     if (alias.mapToSource) {
-      const adapter = this.#registry.get(alias.mapToSource);
-      sources = adapter ? [alias.mapToSource] : [];
+      sources = this.#contentCatalog.resolveQueryScope(alias.mapToSource, 'source').sources;
     } else if (alias.mapToProvider) {
-      const adapters = this.#registry.getByProvider(alias.mapToProvider);
-      sources = adapters.map(a => a.source);
+      sources = this.#contentCatalog.resolveQueryScope(alias.mapToProvider, 'provider').sources;
     } else if (alias.mapToCategory) {
-      const adapters = this.#registry.getByCategory(alias.mapToCategory);
-      sources = adapters.map(a => a.source);
+      sources = this.#contentCatalog.resolveQueryScope(alias.mapToCategory, 'category').sources;
     } else if (alias.preferLibraryType || alias.preferMediaType) {
       // Use all sources, will be filtered by gatekeeper
-      sources = this.#registry.list();
+      sources = this.#contentCatalog.sourceNames();
     } else {
       // Default to all sources
-      sources = this.#registry.list();
+      sources = this.#contentCatalog.sourceNames();
     }
 
     // Build gatekeeper function
@@ -311,54 +311,22 @@ export class ContentQueryAliasResolver {
   }
 
   /**
-   * Resolve prefix directly from registry (provider, category, or source).
+   * Resolve prefix against the semantic catalog scope (source, provider, or category).
    *
    * @param {string} prefix - Normalized prefix
    * @returns {ResolvedQuery}
    * @private
    */
   #resolveFromRegistry(prefix) {
-    // Try exact source match first
-    const exactAdapter = this.#registry.get(prefix);
-    if (exactAdapter) {
-      logger.debug('content-query-alias.resolve.exactSource', { prefix });
-      return {
-        intent: `source-${prefix}`,
-        sources: [prefix],
-        gatekeeper: null,
-        libraryFilter: {},
-        originalPrefix: prefix,
-        isRegistryResolved: true
-      };
-    }
-
-    // Try provider match
-    const byProvider = this.#registry.getByProvider(prefix);
-    if (byProvider.length > 0) {
-      logger.debug('content-query-alias.resolve.provider', {
+    const scope = this.#contentCatalog.resolveQueryScope(prefix);
+    if (scope.sources.length > 0) {
+      logger.debug(`content-query-alias.resolve.${scope.kind}`, {
         prefix,
-        sourceCount: byProvider.length
+        sourceCount: scope.sources.length
       });
       return {
-        intent: `provider-${prefix}`,
-        sources: byProvider.map(a => a.source),
-        gatekeeper: null,
-        libraryFilter: {},
-        originalPrefix: prefix,
-        isRegistryResolved: true
-      };
-    }
-
-    // Try category match
-    const byCategory = this.#registry.getByCategory(prefix);
-    if (byCategory.length > 0) {
-      logger.debug('content-query-alias.resolve.category', {
-        prefix,
-        sourceCount: byCategory.length
-      });
-      return {
-        intent: `category-${prefix}`,
-        sources: byCategory.map(a => a.source),
+        intent: `${scope.kind}-${prefix}`,
+        sources: scope.sources,
         gatekeeper: null,
         libraryFilter: {},
         originalPrefix: prefix,
@@ -370,8 +338,7 @@ export class ContentQueryAliasResolver {
     const prefixMapping = this.#prefixAliases[prefix];
     if (prefixMapping) {
       const [source] = prefixMapping.split(':');
-      const adapter = this.#registry.get(source);
-      if (adapter) {
+      if (this.#contentCatalog.hasSource(source)) {
         logger.debug('content-query-alias.resolve.prefixAlias', {
           prefix,
           mapping: prefixMapping,
@@ -404,7 +371,7 @@ export class ContentQueryAliasResolver {
   #createPassthroughResult(prefix) {
     return {
       intent: 'unknown',
-      sources: this.#registry.list(),
+      sources: this.#contentCatalog.sourceNames(),
       gatekeeper: null,
       libraryFilter: {},
       originalPrefix: prefix || null,
@@ -419,7 +386,7 @@ export class ContentQueryAliasResolver {
    */
   getAvailableAliases() {
     const builtIn = Object.keys(this.#builtInAliases);
-    const userAliases = this.#configService.getAppConfig('content', 'aliases') || {};
+    const userAliases = this.#loadUserAliases(this.#householdId) || {};
     const userKeys = Object.keys(userAliases).filter(k => !k.startsWith('_'));
 
     const prefixKeys = Object.keys(this.#prefixAliases);

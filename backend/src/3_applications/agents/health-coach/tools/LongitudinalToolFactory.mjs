@@ -16,9 +16,6 @@
 // helpers (makeQueryWeightExecutor, etc.) are retained here because
 // query_named_period internally delegates to them.
 
-import path from 'node:path';
-import fsPromises from 'node:fs/promises';
-
 import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
 import { HealthArchiveScope } from '#apps/health/archive/HealthArchiveScope.mjs';
@@ -53,11 +50,7 @@ export class LongitudinalToolFactory extends ToolFactory {
       healthStore,
       healthService,
       personalContextLoader,
-      archiveScope,           // legacy: pre-factory direct injection (still
-                              // accepted so existing tests keep working)
-      archiveScopeFactory,    // F4-A: per-user scope factory (preferred)
-      fs = fsPromises,
-      dataRoot,
+      notesArchive,
     } = this.deps;
 
     // Shared executors used internally by query_named_period to aggregate
@@ -71,7 +64,7 @@ export class LongitudinalToolFactory extends ToolFactory {
     // call, which matches the agent's execution scope.
     const readNotesCache = new Map();
     const readNotesFile = makeReadNotesFileExecutor({
-      archiveScope, archiveScopeFactory, fs, dataRoot, cache: readNotesCache,
+      notesArchive, cache: readNotesCache,
     });
 
     return [
@@ -436,12 +429,12 @@ function makeQueryWorkoutsExecutor(healthService) {
  *   (legacy direct injection)
  * @param {{forUser: Function}} [opts.archiveScopeFactory] Per-user factory
  *   (F4-A — preferred)
- * @param {{readFile: Function}} opts.fs fs adapter (defaults to node:fs/promises in createTools)
+ * @param {{readFile: Function}} opts.fs injected file-reader adapter
  * @param {string} opts.dataRoot absolute data root path
  * @param {Map} opts.cache closure-scoped per-execution cache
  * @returns {Function} the tool executor
  */
-function makeReadNotesFileExecutor({ archiveScope, archiveScopeFactory, fs, dataRoot, cache }) {
+function makeReadNotesFileExecutor({ notesArchive, cache }) {
   return async function readNotesFile({ userId, filename, section = null }) {
     try {
       // 1) userId format
@@ -469,26 +462,10 @@ function makeReadNotesFileExecutor({ archiveScope, archiveScopeFactory, fs, data
         };
       }
 
-      // 4) dataRoot must be configured.
-      if (!dataRoot || typeof dataRoot !== 'string') {
-        return { filename, error: 'read_notes_file: dataRoot dependency missing' };
+      // 4) The archive adapter owns per-user scope resolution and storage layout.
+      if (!notesArchive || typeof notesArchive.read !== 'function') {
+        return { filename, error: 'read_notes_file: file-reader dependency missing' };
       }
-
-      // 5) Resolve the per-user scope. Prefer the F4-A factory; fall back
-      //    to the legacy direct injection for older callers/tests.
-      let scope = archiveScope;
-      if (archiveScopeFactory && typeof archiveScopeFactory.forUser === 'function') {
-        scope = await archiveScopeFactory.forUser(userId);
-      }
-      if (!scope || typeof scope.assertReadable !== 'function') {
-        return { filename, error: 'read_notes_file: archiveScope dependency missing' };
-      }
-
-      // 6) Compose absolute path and assert against the F-106 whitelist.
-      const absPath = path.join(
-        dataRoot, 'users', userId, 'lifelog/archives', normalizedFilename,
-      );
-      scope.assertReadable(absPath, userId);
 
       // 7) Cache check.
       const cacheKey = `${userId}:${normalizedFilename}:${section || ''}`;
@@ -503,7 +480,7 @@ function makeReadNotesFileExecutor({ archiveScope, archiveScopeFactory, fs, data
       if (cache.has(rawKey)) {
         raw = cache.get(rawKey).content;
       } else {
-        raw = await fs.readFile(absPath, 'utf8');
+        raw = await notesArchive.read(userId, normalizedFilename);
         const rawResult = { filename: normalizedFilename, content: raw };
         cache.set(rawKey, rawResult);
         if (!section) {

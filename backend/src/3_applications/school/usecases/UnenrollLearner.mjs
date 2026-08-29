@@ -7,6 +7,7 @@
  * codebase has been bitten by before.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { StateConflictError } from '#apps/common/errors/SemanticErrors.mjs';
 import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class UnenrollLearner {
@@ -42,7 +43,7 @@ export class UnenrollLearner {
    * @param {string} [args.removedBy] - a roster id that must pass TeacherGate
    * @param {string|null} [args.pin]
    * @param {string|null} [args.baseUpdatedAt] - the assignment updatedAt the caller loaded;
-   *   a mismatch is a 409 rather than a silent clobber
+   *   a mismatch is refused rather than silently clobbered
    * @returns {Promise<object>} the stored assignment record
    * @throws {ValidationError} if not enrolled, on stale save, or on open sessions
    */
@@ -65,13 +66,13 @@ export class UnenrollLearner {
       const open = ((await this.#sessions.listOpenForLearner(learnerId)) ?? [])
         .filter((row) => row?.unitId && inCourse.has(row.unitId));
       if (open.length) {
-        const err = new ValidationError(
+        throw new StateConflictError(
           `${learnerId} has ${open.length} open session${open.length === 1 ? '' : 's'} on ${courseId} — close or abandon them before unenrolling`,
+          {
+            code: 'OPEN_SESSIONS',
+            details: { sessions: open.map((r) => ({ sessionId: r.sessionId, unitId: r.unitId, state: r.state })) },
+          },
         );
-        err.code = 'OPEN_SESSIONS';
-        err.status = 409;
-        err.details = { sessions: open.map((r) => ({ sessionId: r.sessionId, unitId: r.unitId, state: r.state })) };
-        throw err;
       }
     }
 

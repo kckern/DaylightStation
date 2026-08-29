@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createChessEngine } from './ChessEngineAdapter.mjs';
+import { createStockfishEngine } from '../chess/StockfishEngineAdapter.mjs';
 import { INITIAL_FEN, legalMoves } from '../../../../shared/gaming/rulesets/chess/engine.mjs';
 
 test('worker-backed adapter returns a legal move for a fresh game (no transcript)', async (context) => {
-  const engine = createChessEngine();
+  const engine = createChessEngine({ engine: createStockfishEngine() });
   context.after(() => engine.dispose());
   const move = await engine.chooseMove({ transcript: undefined, gameSessionId: 'g1', opponent: { level: 1 } });
   assert.ok(move, 'expected a move for the starting position');
@@ -14,7 +15,7 @@ test('worker-backed adapter returns a legal move for a fresh game (no transcript
 });
 
 test('replays a SAN transcript into a position before asking the engine for a reply', async (context) => {
-  const engine = createChessEngine();
+  const engine = createChessEngine({ engine: createStockfishEngine() });
   context.after(() => engine.dispose());
   // 1.e4 e5 2.Nf3 leaves Black on move; the adapter has to have replayed all
   // three plies (not just looked at the last one) to hand Stockfish a legal
@@ -26,7 +27,7 @@ test('replays a SAN transcript into a position before asking the engine for a re
 });
 
 test('a transcript that fails to replay resolves to null rather than throwing', async (context) => {
-  const engine = createChessEngine();
+  const engine = createChessEngine({ engine: createStockfishEngine() });
   context.after(() => engine.dispose());
   // White's queen cannot go to h5 twice in a row — the second 'Qh5' is not a
   // legal move in the resulting position, so replay fails partway through.

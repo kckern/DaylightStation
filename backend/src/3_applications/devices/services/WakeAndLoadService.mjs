@@ -20,10 +20,9 @@
  * @module applications/devices/services
  */
 
-import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
-import { resolveContentId } from '../contentIdKeys.mjs';
+import { resolveContentId } from '../ports/contentControlQuery.mjs';
 import { contentRequiresCamera } from './contentRequiresCamera.mjs';
 
 // Note: 'playback' is an optional trailing step emitted only by the playback
@@ -42,6 +41,9 @@ export class WakeAndLoadService {
   #haGateway;
   #commandHandlerLivenessService;
   #logger;
+  #clock;
+  #createDispatchId;
+  #scheduler;
 
   /**
    * @param {Object} deps
@@ -59,15 +61,22 @@ export class WakeAndLoadService {
   #dispatchCorrelation = new Map();
 
   constructor(deps) {
+    if (!deps.clock?.now || typeof deps.createDispatchId !== 'function'
+      || !deps.scheduler?.wait || !deps.scheduler?.after || !deps.scheduler?.withDeadline) {
+      throw new Error('WakeAndLoadService requires clock, createDispatchId, and scheduler');
+    }
     this.#deviceService = deps.deviceService;
     this.#readinessPolicy = deps.readinessPolicy;
-    this.#broadcast = deps.broadcast;
+    this.#broadcast = typeof deps.broadcast === 'function' ? deps.broadcast : () => {};
     this.#eventBus = deps.eventBus || null;
     this.#prewarmService = deps.prewarmService || null;
     this.#sessionControlService = deps.sessionControlService || null;
     this.#haGateway = deps.haGateway || null;
     this.#commandHandlerLivenessService = deps.commandHandlerLivenessService || null;
     this.#logger = deps.logger || console;
+    this.#clock = deps.clock;
+    this.#createDispatchId = deps.createDispatchId;
+    this.#scheduler = deps.scheduler;
     if (!this.#commandHandlerLivenessService) {
       this.#logger.warn?.('wake-and-load.no-liveness-service', {
         note: 'WS-first warm-switch will fall back to subscriber-count gate only',
@@ -116,7 +125,7 @@ export class WakeAndLoadService {
   }
 
   async #executeInner(deviceId, query = {}, options = {}) {
-    const startTime = Date.now();
+    const startTime = this.#clock.now();
     const topic = `homeline:${deviceId}`;
     // A caller that supplies its own dispatchId can correlate the whole cast
     // in its own logs; one that doesn't gets a server-minted id and is
@@ -124,7 +133,7 @@ export class WakeAndLoadService {
     // steps but never logged initiating them" is answerable from one line
     // instead of a code audit (2026-08-12 session review).
     const clientSuppliedDispatchId = typeof options.dispatchId === 'string' && options.dispatchId.length > 0;
-    const dispatchId = clientSuppliedDispatchId ? options.dispatchId : randomUUID();
+    const dispatchId = clientSuppliedDispatchId ? options.dispatchId : this.#createDispatchId();
     if (options.correlation && typeof options.correlation === 'object') {
       const correlation = Object.fromEntries(Object.entries(options.correlation)
         .filter(([key]) => ['callId', 'attemptId', 'callerId', 'phonePeerId', 'tvPeerId', 'state'].includes(key)));
@@ -163,7 +172,7 @@ export class WakeAndLoadService {
       result.error = 'Dispatch cancelled';
       result.cancelled = true;
       result.failedStep = afterStep;
-      result.totalElapsedMs = Date.now() - startTime;
+      result.totalElapsedMs = this.#clock.now() - startTime;
       this.#logger.info?.('wake-and-load.cancelled', { deviceId, dispatchId, afterStep });
       return true;
     };
@@ -203,7 +212,7 @@ export class WakeAndLoadService {
       this.#logger.error?.('wake-and-load.power.failed', { deviceId, dispatchId, error: powerResult.error });
       result.error = powerResult.error;
       result.failedStep = 'power';
-      result.totalElapsedMs = Date.now() - startTime;
+      result.totalElapsedMs = this.#clock.now() - startTime;
       return result;
     }
 
@@ -248,7 +257,7 @@ export class WakeAndLoadService {
         result.failedStep = 'verify';
         result.error = 'Display did not turn on';
         result.allowOverride = true; // Phone can choose "Connect anyway"
-        result.totalElapsedMs = Date.now() - startTime;
+        result.totalElapsedMs = this.#clock.now() - startTime;
         if (!options._isRetry && options.deferredRetry !== false) {
           this.#scheduleRetry(deviceId, query, options);
         }
@@ -269,10 +278,10 @@ export class WakeAndLoadService {
       this.#logger.info?.('wake-and-load.volume.start', { deviceId, dispatchId, level: volumeLevel });
 
       try {
-        const volumeResult = await Promise.race([
-          device.setVolume(volumeLevel),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), VOLUME_TIMEOUT_MS))
-        ]);
+        const volumeResult = await this.#scheduler.withDeadline(device.setVolume(volumeLevel), {
+          milliseconds: VOLUME_TIMEOUT_MS,
+          errorFactory: () => new Error('timeout'),
+        });
         result.steps.volume = volumeResult;
         this.#emitProgress(topic, dispatchId, 'volume', 'done', { level: volumeLevel });
         this.#logger.info?.('wake-and-load.volume.done', { deviceId, dispatchId, level: volumeLevel, ok: volumeResult.ok });
@@ -320,7 +329,7 @@ export class WakeAndLoadService {
       this.#logger.error?.('wake-and-load.prepare.failed', { deviceId, dispatchId, error: prepResult.error });
       result.error = prepResult.error;
       result.failedStep = 'prepare';
-      result.totalElapsedMs = Date.now() - startTime;
+      result.totalElapsedMs = this.#clock.now() - startTime;
       return result;
     }
 
@@ -409,7 +418,7 @@ export class WakeAndLoadService {
             result.error = `Content unresolvable: ${prewarmResult.reason}`;
             result.failedStep = 'prewarm';
             result.permanent = true;
-            result.totalElapsedMs = Date.now() - startTime;
+            result.totalElapsedMs = this.#clock.now() - startTime;
             return result;
           }
         } else if (prewarmResult?.status === 'skipped') {
@@ -484,7 +493,7 @@ export class WakeAndLoadService {
         };
         result.error = errMsg;
         result.failedStep = 'load';
-        result.totalElapsedMs = Date.now() - startTime;
+        result.totalElapsedMs = this.#clock.now() - startTime;
         return result;
       }
 
@@ -493,7 +502,7 @@ export class WakeAndLoadService {
       result.canProceed = true;
       result.coldWake = coldWake;
       result.cameraAvailable = cameraAvailable;
-      result.totalElapsedMs = Date.now() - startTime;
+      result.totalElapsedMs = this.#clock.now() - startTime;
       this.#logger.info?.('wake-and-load.complete', {
         deviceId, dispatchId, totalElapsedMs: result.totalElapsedMs, mode: 'adopt',
       });
@@ -559,7 +568,7 @@ export class WakeAndLoadService {
 
           // Wait for device-ack from useCommandAckPublisher (frontend emits
           // this once the command reaches a handler).
-          const ackStart = Date.now();
+          const ackStart = this.#clock.now();
           await this.#eventBus.waitForMessage(
             (msg) =>
               msg?.topic === 'device-ack' &&
@@ -568,7 +577,7 @@ export class WakeAndLoadService {
             4000
           );
 
-          const ackMs = Date.now() - ackStart;
+          const ackMs = this.#clock.now() - ackStart;
           this.#logger.info?.('wake-and-load.load.ws-ack', { deviceId, dispatchId, ackMs });
 
           result.steps.load = { ok: true, method: 'websocket', ackMs };
@@ -619,7 +628,7 @@ export class WakeAndLoadService {
         this.#emitProgress(topic, dispatchId, 'load', 'retrying', { method: 'websocket' });
 
         // Ensure the screen has time to load the base URL before sending WS
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await this.#scheduler.wait(3000);
 
         // Load the base URL first if it hasn't loaded yet
         const baseLoadResult = await device.loadContent(screenPath, {});
@@ -628,7 +637,7 @@ export class WakeAndLoadService {
         }
 
         // Give the screen framework time to mount and subscribe to WS
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await this.#scheduler.wait(2000);
 
         // Broadcast content command via CommandEnvelope (targeted to this device).
         const fbResolved = resolveContentId(contentQuery);
@@ -671,7 +680,7 @@ export class WakeAndLoadService {
         this.#logger.error?.('wake-and-load.load.failed', { deviceId, dispatchId, error: loadResult.error });
         result.error = loadResult.error;
         result.failedStep = 'load';
-        result.totalElapsedMs = Date.now() - startTime;
+        result.totalElapsedMs = this.#clock.now() - startTime;
         return result;
       }
     }
@@ -681,7 +690,7 @@ export class WakeAndLoadService {
     result.canProceed = true;
     result.coldWake = coldWake;
     result.cameraAvailable = cameraAvailable;
-    result.totalElapsedMs = Date.now() - startTime;
+    result.totalElapsedMs = this.#clock.now() - startTime;
 
     this.#logger.info?.('wake-and-load.complete', {
       deviceId, dispatchId, totalElapsedMs: result.totalElapsedMs
@@ -709,7 +718,7 @@ export class WakeAndLoadService {
    */
   #scheduleRetry(deviceId, query, options) {
     const RETRY_DELAY_MS = 45_000;
-    const timer = setTimeout(async () => {
+    this.#scheduler.after(RETRY_DELAY_MS, async () => {
       this.#logger.info?.('wake-and-load.retry.start', { deviceId, delayMs: RETRY_DELAY_MS });
       try {
         const result = await this.execute(deviceId, query, { ...options, _isRetry: true });
@@ -723,8 +732,7 @@ export class WakeAndLoadService {
         this.#logger.error?.('wake-and-load.retry.error', { deviceId, error: err.message });
         await this.#notifyPowerFailure(deviceId);
       }
-    }, RETRY_DELAY_MS);
-    if (timer.unref) timer.unref();
+    });
   }
 
   /**
@@ -800,7 +808,7 @@ export class WakeAndLoadService {
 
     const cleanup = () => {
       resolved = true;
-      if (timer) clearTimeout(timer);
+      timer?.();
       if (unsubscribe) unsubscribe();
     };
 
@@ -831,7 +839,7 @@ export class WakeAndLoadService {
       }
     });
 
-    timer = setTimeout(() => {
+    timer = this.#scheduler.after(timeoutMs, () => {
       if (resolved) return;
       cleanup();
       this.#logger.warn?.('wake-and-load.playback.timeout', {
@@ -840,9 +848,7 @@ export class WakeAndLoadService {
       this.#emitProgress(topic, dispatchId, 'playback', 'timeout', {
         expectedContentId, timeoutMs
       });
-    }, timeoutMs);
-
-    if (timer.unref) timer.unref();
+    });
   }
 }
 

@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
+const realtimeFor = (sent) => ({
+  readingRoomChanged: (location, { kind, ...payload }) => sent.push({ topic: `reading:${location}`, payload: { event: kind, ...payload } }),
+});
 
 describe('ReadingSessionService', () => {
   it('has no session at a location until a card opens one', () => {
@@ -52,7 +55,7 @@ describe('ReadingSessionService', () => {
   it('broadcasts the open so the screen can render it', () => {
     const sent = [];
     const s = new ReadingSessionService({
-      eventBus: { broadcast: (t, p) => sent.push({ topic: t, payload: p }) }, logger: silent,
+      realtime: realtimeFor(sent), logger: silent,
     });
     s.open({ location: 'livingroom', learnerId: 'learner-c' });
     expect(sent[0]).toMatchObject({
@@ -64,7 +67,7 @@ describe('ReadingSessionService', () => {
   it('broadcasts the close too', () => {
     const sent = [];
     const s = new ReadingSessionService({
-      eventBus: { broadcast: (t, p) => sent.push({ topic: t, payload: p }) }, logger: silent,
+      realtime: realtimeFor(sent), logger: silent,
     });
     s.open({ location: 'livingroom', learnerId: 'learner-c' });
     s.close('livingroom');
@@ -77,7 +80,7 @@ describe('ReadingSessionService', () => {
   it('does not broadcast a close for a location with no session', () => {
     const sent = [];
     const s = new ReadingSessionService({
-      eventBus: { broadcast: (t, p) => sent.push({ topic: t, payload: p }) }, logger: silent,
+      realtime: realtimeFor(sent), logger: silent,
     });
     expect(s.close('livingroom')).toBeNull();
     expect(sent).toEqual([]);
@@ -87,7 +90,7 @@ describe('ReadingSessionService', () => {
   // never cost the child the session they just opened.
   it('opens even when the event bus throws', () => {
     const s = new ReadingSessionService({
-      eventBus: { broadcast: () => { throw new Error('bus down'); } }, logger: silent,
+      realtime: { readingRoomChanged: () => { throw new Error('bus down'); } }, logger: silent,
     });
     expect(() => s.open({ location: 'livingroom', learnerId: 'learner-c' })).not.toThrow();
     expect(s.current('livingroom').learnerId).toBe('learner-c');
@@ -95,7 +98,7 @@ describe('ReadingSessionService', () => {
 
   it('closes even when the event bus throws', () => {
     const s = new ReadingSessionService({
-      eventBus: { broadcast: () => { throw new Error('bus down'); } }, logger: silent,
+      realtime: { readingRoomChanged: () => { throw new Error('bus down'); } }, logger: silent,
     });
     s.open({ location: 'livingroom', learnerId: 'learner-c' });
     expect(() => s.close('livingroom')).not.toThrow();
@@ -120,7 +123,7 @@ describe('ReadingSessionService', () => {
   it('updates a session in place and broadcasts the update', () => {
     const sent = [];
     const s = new ReadingSessionService({
-      eventBus: { broadcast: (t, p) => sent.push({ topic: t, payload: p }) }, logger: silent,
+      realtime: realtimeFor(sent), logger: silent,
     });
     s.open({ location: 'livingroom', learnerId: 'learner-c' });
     const updated = s.update('livingroom', { state: 'reading' });
@@ -179,10 +182,9 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
       idleTimeoutMs,
       onTimeout: onTimeout ?? (async (session) => { torn.push(session); }),
       scheduler: {
-        setInterval: (fn, ms) => { ticks.push({ fn, ms }); return ticks.length; },
-        clearInterval: (handle) => cleared.push(handle),
+        every: (ms, fn) => { ticks.push({ fn, ms }); const handle = ticks.length; return () => cleared.push(handle); },
       },
-      eventBus: { broadcast: (topic, payload) => sent.push({ topic, payload }) },
+      realtime: realtimeFor(sent),
       logger: silent,
     });
     return {

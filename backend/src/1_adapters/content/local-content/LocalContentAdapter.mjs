@@ -1,7 +1,6 @@
 // backend/src/2_adapters/content/local-content/LocalContentAdapter.mjs
 import path from 'path';
 import { generateReference } from 'scripture-guide';
-import { ScriptureResolver } from '#adapters/content/readalong/resolvers/scripture.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { ItemSelectionService } from '#domains/content/index.mjs';
@@ -14,8 +13,10 @@ import {
   loadYamlSafe,
   listYamlFiles,
   listEntries,
+  readDirectory,
   dirExists,
   fileExists,
+  getFileStats,
   findMediaFileByPrefix
 } from '#system/utils/FileIO.mjs';
 
@@ -260,6 +261,9 @@ export class LocalContentAdapter {
     this.mediaPath = config.mediaPath;
     this.mediaProgressMemory = config.mediaProgressMemory || null;
     this.contentRegistry = config.contentRegistry || null;
+    // Filesystem-backed scripture resolution is supplied by composition. This
+    // keeps this adapter from reaching into the readalong adapter directly.
+    this.scriptureResolver = config.scriptureResolver || null;
     this._durationCache = new Map();
   }
 
@@ -356,7 +360,7 @@ export class LocalContentAdapter {
   async _buildTalkWatchMap() {
     if (!this.mediaProgressMemory) return new Map();
 
-    const allProgress = await this.mediaProgressMemory.getAll('talk');
+    const allProgress = await this.mediaProgressMemory.listProgress('talk');
     const watchMap = new Map();
 
     for (const p of allProgress) {
@@ -424,7 +428,8 @@ export class LocalContentAdapter {
     const context = { containerType: 'talk', now: new Date() };
     let selected = ItemSelectionService.select(enrichedItems, context, {
       strategy: 'discovery',  // random sort, pick first
-      filter: 'none'          // we handle watched filter below
+      filter: 'none',         // we handle watched filter below
+      random: Math.random,
     });
 
     // Apply watched filter manually
@@ -434,7 +439,8 @@ export class LocalContentAdapter {
     if (selected.length === 0) {
       selected = ItemSelectionService.select(enrichedItems, context, {
         strategy: 'discovery',
-        filter: 'none'
+        filter: 'none',
+        random: Math.random,
       });
     }
 
@@ -680,7 +686,7 @@ export class LocalContentAdapter {
           if (entry.startsWith('.') || entry.startsWith('_')) continue;
 
           const entryPath = path.join(mediaBasePath, entry);
-          const stats = await import('fs').then(fs => fs.statSync(entryPath));
+          const stats = getFileStats(entryPath);
 
           if (stats.isDirectory()) {
             const containerType = resolveContainerType(entry, this.mediaPath);
@@ -703,8 +709,7 @@ export class LocalContentAdapter {
 
       // Then check data path for conference folders
       if (dirExists(dataBasePath)) {
-        const fs = await import('fs');
-        const entries = fs.readdirSync(dataBasePath, { withFileTypes: true });
+        const entries = readDirectory(dataBasePath, { withFileTypes: true });
 
         for (const e of entries) {
           if (!e.isDirectory() || e.name.startsWith('.') || e.name.startsWith('_')) continue;
@@ -746,8 +751,7 @@ export class LocalContentAdapter {
       const manifest = loadYamlSafe(path.join(basePath, 'manifest')) || {};
       const volumeTitles = manifest.volumeTitles || {};
 
-      const fs = await import('fs');
-      const entries = fs.readdirSync(basePath, { withFileTypes: true });
+      const entries = readDirectory(basePath, { withFileTypes: true });
       const volumes = entries
         .filter(e => e.isDirectory())
         .map(e => ({
@@ -774,8 +778,7 @@ export class LocalContentAdapter {
     try {
       if (!dirExists(basePath)) return [];
 
-      const fs = await import('fs');
-      const entries = fs.readdirSync(basePath, { withFileTypes: true });
+      const entries = readDirectory(basePath, { withFileTypes: true });
       const collections = entries
         .filter(e => e.isDirectory())
         .map(e => ({
@@ -801,7 +804,7 @@ export class LocalContentAdapter {
   _selectAmbientUrl() {
     const tracks = Array.from({ length: 115 }, (_, i) => ({ id: i + 1 }));
     const [selected] = ItemSelectionService.applyPick(
-      ItemSelectionService.applySort(tracks, 'random'),
+      ItemSelectionService.applySort(tracks, 'random', Math.random),
       'first'
     );
     const trackNum = String(selected.id).padStart(3, '0');
@@ -956,12 +959,19 @@ export class LocalContentAdapter {
     const manifest = loadYamlSafe(path.join(basePath, 'manifest')) || {};
 
     const parts = localId.split('/');
-      const isExplicitPath = parts.length === 3 && /^\d+$/.test(parts[2]);
+    const isCanonicalExplicitPath = parts.length === 3 && /^\d+$/.test(parts[2]);
+    const isLegacyExplicitPath = parts.length === 2 && Boolean(loadContainedYaml(basePath, localId));
+    const isExplicitPath = isCanonicalExplicitPath || isLegacyExplicitPath;
     let resolvedLocalId = localId;
     let resolvedAudioPath = null;
 
     if (!isExplicitPath) {
-      const resolved = ScriptureResolver.resolve(localId, basePath, {
+      if (!this.scriptureResolver?.resolve) {
+        throw new InfrastructureError('LocalContentAdapter requires scriptureResolver for scripture content', {
+          code: 'MISSING_DEPENDENCY', dependency: 'scriptureResolver',
+        });
+      }
+      const resolved = this.scriptureResolver.resolve(localId, basePath, {
         mediaPath: mediaBasePath,
         defaults: manifest.defaults || {},
         allowVolumeAsContainer: true
@@ -1204,14 +1214,13 @@ export class LocalContentAdapter {
 
       // Build thumbnail URL with cascading fallback (self → parent series)
       let thumbnail = null;
-      const fs = await import('fs');
       const imgNames = ['cover.jpg', 'show.jpg', 'cover.png', 'show.png'];
 
       // Check own folder first
       const folderMediaPath = path.join(mediaBasePath, folderId);
       if (dirExists(folderMediaPath)) {
         for (const imgName of imgNames) {
-          if (fs.existsSync(path.join(folderMediaPath, imgName))) {
+          if (fileExists(path.join(folderMediaPath, imgName))) {
             thumbnail = `/api/v1/local/stream/video/readalong/talks/${folderId}/${imgName}`;
             break;
           }
@@ -1223,7 +1232,7 @@ export class LocalContentAdapter {
         const seriesMediaPath = path.join(mediaBasePath, parentSeriesId);
         if (dirExists(seriesMediaPath)) {
           for (const imgName of imgNames) {
-            if (fs.existsSync(path.join(seriesMediaPath, imgName))) {
+            if (fileExists(path.join(seriesMediaPath, imgName))) {
               thumbnail = `/api/v1/local/stream/video/readalong/talks/${parentSeriesId}/${imgName}`;
               break;
             }
@@ -1239,7 +1248,7 @@ export class LocalContentAdapter {
           const seriesMediaPath = path.join(mediaBasePath, seriesId);
           if (dirExists(seriesMediaPath)) {
             for (const imgName of imgNames) {
-              if (fs.existsSync(path.join(seriesMediaPath, imgName))) {
+              if (fileExists(path.join(seriesMediaPath, imgName))) {
                 thumbnail = `/api/v1/local/stream/video/readalong/talks/${seriesId}/${imgName}`;
                 break;
               }
@@ -1329,9 +1338,8 @@ export class LocalContentAdapter {
 
       // Build thumbnail URL (check cover.jpg, show.jpg)
       let thumbnail = null;
-      const fs = await import('fs');
       for (const imgName of ['cover.jpg', 'show.jpg', 'cover.png', 'show.png']) {
-        if (fs.existsSync(path.join(seriesPath, imgName))) {
+        if (fileExists(path.join(seriesPath, imgName))) {
           thumbnail = `/api/v1/local/stream/video/readalong/talks/${seriesId}/${imgName}`;
           break;
         }
@@ -1384,7 +1392,6 @@ export class LocalContentAdapter {
     // Try _ldsgc subdirectory first (General Conference recordings), then root
     let mediaFile = metadata.mediaFile;
     if (!mediaFile && this.mediaPath) {
-      const { findMediaFileByPrefix } = await import('../../../0_system/utils/FileIO.mjs');
       const preferences = collection === 'hymn' ? ['_ldsgc', ''] : [''];
       for (const pref of preferences) {
         const searchDir = pref
@@ -1518,8 +1525,6 @@ export class LocalContentAdapter {
     if (!dirExists(basePath)) return [];
 
     try {
-      const fs = await import('fs');
-
       // Helper to search a conference folder
       // Every talk is a SYNC YAML load+parse — hundreds back-to-back block
       // the event loop for seconds, starving every concurrent adapter's HTTP
@@ -1560,7 +1565,7 @@ export class LocalContentAdapter {
           if (entry.startsWith('.') || entry.startsWith('_')) continue;
 
           const entryPath = path.join(mediaBasePath, entry);
-          if (!fs.statSync(entryPath).isDirectory()) continue;
+          if (!getFileStats(entryPath).isDirectory()) continue;
 
           // Check if series folder (contains conferences)
           const subEntries = listEntries(entryPath);
@@ -1582,7 +1587,7 @@ export class LocalContentAdapter {
       }
 
       // Search flat conference folders in data path
-      const dataEntries = fs.readdirSync(basePath, { withFileTypes: true });
+      const dataEntries = readDirectory(basePath, { withFileTypes: true });
       for (const e of dataEntries) {
         if (results.length >= limit) break;
         if (!e.isDirectory() || e.name.startsWith('.') || e.name.startsWith('_')) continue;
@@ -1669,8 +1674,7 @@ export class LocalContentAdapter {
     if (!dirExists(basePath)) return [];
 
     try {
-      const fs = await import('fs');
-      const collections = fs.readdirSync(basePath, { withFileTypes: true })
+      const collections = readDirectory(basePath, { withFileTypes: true })
         .filter(e => e.isDirectory())
         .map(e => e.name);
 

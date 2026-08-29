@@ -1,6 +1,13 @@
 export class GoalStateService {
   transition(goal, newState, reason, clock) {
-    const timestamp = clock ? clock.now().toISOString() : new Date().toISOString();
+    const supplied = clock?.now ? clock.now() : clock;
+    if (supplied === undefined || supplied === null) {
+      // Goal performs transition validation first, preserving the established
+      // invalid-transition error before timestamp validation.
+      goal.transition(newState, reason, null);
+      return;
+    }
+    const timestamp = supplied instanceof Date ? supplied.toISOString() : new Date(supplied).toISOString();
     goal.transition(newState, reason, timestamp);
   }
 
@@ -24,7 +31,9 @@ export class GoalStateService {
       return { status: 'no_deadline', progress: goal.getProgress() };
     }
 
-    const now = clock ? clock.now() : new Date();
+    const supplied = clock?.now ? clock.now() : clock;
+    if (supplied === undefined || supplied === null) throw new Error('reference time is required to evaluate goal progress');
+    const now = supplied instanceof Date ? supplied : new Date(supplied);
     const deadline = new Date(goal.deadline);
     const commitStart = this.#getCommitDate(goal) || now;
 

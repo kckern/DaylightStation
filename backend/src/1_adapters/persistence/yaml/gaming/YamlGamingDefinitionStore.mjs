@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { canonicalStringify } from '#shared/gaming/kernel/canonical.mjs';
+import { ensureDir, fileExists, readDirectory, readTextFromPath, writeFileExclusive } from '#system/utils/FileIO.mjs';
 
 const GAME_ID_RE = /^[a-z][a-z0-9:-]{0,127}$/;
 const HASH_RE = /^[a-f0-9]{64}$/;
@@ -13,8 +13,8 @@ export class YamlGamingDefinitionStore {
     this.definitionsDir = definitionsDir;
     this.archiveDir = archiveDir;
     this.logger = logger;
-    fs.mkdirSync(this.definitionsDir, { recursive: true });
-    for (const dir of [this.archiveDir, this.#archiveDir('rules'), this.#archiveDir('content'), this.#archiveDir('bundles')]) fs.mkdirSync(dir, { recursive: true });
+    ensureDir(this.definitionsDir);
+    for (const dir of [this.archiveDir, this.#archiveDir('rules'), this.#archiveDir('content'), this.#archiveDir('bundles')]) ensureDir(dir);
   }
 
   #hash(definition) {
@@ -31,8 +31,8 @@ export class YamlGamingDefinitionStore {
   }
 
   #readArtifact(file, label) {
-    if (!fs.existsSync(file)) return null;
-    const value = YAML.parse(fs.readFileSync(file, 'utf8'), { uniqueKeys: true });
+    if (!fileExists(file)) return null;
+    const value = YAML.parse(readTextFromPath(file), { uniqueKeys: true });
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`);
     return value;
   }
@@ -85,7 +85,7 @@ export class YamlGamingDefinitionStore {
         content_pack: { id: gameId, hash: contentHash },
       },
       parts: { rules: structuredClone(rules), content: structuredClone(content) },
-      source: { rules: rulesFile, content: fs.existsSync(contentFile) ? contentFile : null },
+      source: { rules: rulesFile, content: fileExists(contentFile) ? contentFile : null },
     };
   }
 
@@ -96,7 +96,7 @@ export class YamlGamingDefinitionStore {
   listIds({ prefix = null } = {}) {
     const expected = prefix == null ? null : `${String(prefix)}:`;
     if (prefix != null && !/^[a-z][a-z0-9-]*$/.test(String(prefix))) throw new Error(`invalid definition prefix: ${prefix}`);
-    return fs.readdirSync(this.definitionsDir, { withFileTypes: true })
+    return readDirectory(this.definitionsDir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && GAME_ID_RE.test(entry.name) && (!expected || entry.name.startsWith(expected)))
       .map((entry) => entry.name)
       .sort();
@@ -117,7 +117,7 @@ export class YamlGamingDefinitionStore {
     const hash = this.#hash(bundle);
     for (const [kind, artifactHash, artifact] of [['rules', rulesHash, rules], ['content', contentHash, content], ['bundles', hash, bundle]]) {
       const file = this.#archiveFile(kind, artifactHash);
-      if (!fs.existsSync(file)) fs.writeFileSync(file, YAML.stringify(artifact), { flag: 'wx' });
+      if (!fileExists(file)) writeFileExclusive(file, YAML.stringify(artifact));
     }
     return { hash, definition: this.#compose(rules, content, loaded.artifacts.rules_definition.id), artifacts: structuredClone(loaded.artifacts) };
   }

@@ -13,7 +13,11 @@ import request from 'supertest';
 import { createPlayRouter } from '#backend/src/4_api/v1/routers/play.mjs';
 import { createProxyRouter } from '#backend/src/4_api/v1/routers/proxy.mjs';
 import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
+import { PlaybackReadService } from '#apps/content/services/PlaybackReadService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 import { sanitizePlexSessionId } from '#adapters/content/media/plex/PlexAdapter.mjs';
+import { RegistryPlaybackStreamGateway } from '#adapters/proxy/RegistryPlaybackStreamGateway.mjs';
+import { MintPlaybackStream } from '#apps/proxy/MintPlaybackStream.mjs';
 
 const instanceA = '008c56a342:0#AbCdEfGhIj';
 const instanceB = '008c56a342:0#KlMnOpQrSt';
@@ -41,11 +45,12 @@ function fakePlexAdapter() {
 
 function playApp(adapter = fakePlexAdapter()) {
   const app = express();
+  const registry = { get: () => adapter };
+  const playResponseService = new PlayResponseService({ mediaProgressMemory: null });
+  const contentIdResolver = { resolve: (compoundId) => ({ adapter, source: 'plex', localId: compoundId.split(':')[1] }) };
+  const contentCatalog = new RegistryContentCatalogGateway({ registry });
   app.use('/play', createPlayRouter({
-    registry: { get: () => adapter },
-    mediaProgressMemory: null,
-    playResponseService: new PlayResponseService({ mediaProgressMemory: null }),
-    contentIdResolver: { resolve: (compoundId) => ({ adapter, source: 'plex', localId: compoundId.split(':')[1] }) },
+    playbackReadService: new PlaybackReadService({ contentCatalog, playResponseService, contentIdResolver }),
     logger: silentLogger,
   }));
   return app;
@@ -54,8 +59,12 @@ function playApp(adapter = fakePlexAdapter()) {
 function proxyApp(getMediaUrl) {
   const plex = { getMediaUrl };
   const app = express();
-  app.use('/proxy', createProxyRouter({
+  const gateway = new RegistryPlaybackStreamGateway({
     registry: { get: (name) => (name === 'plex' ? plex : null) },
+    logger: silentLogger,
+  });
+  app.use('/proxy', createProxyRouter({
+    mintPlaybackStream: new MintPlaybackStream({ gateway }),
     logger: silentLogger,
   }));
   return app;
@@ -139,7 +148,8 @@ describe('proxy route → PlexAdapter', () => {
     const logger = { ...silentLogger, sampled: (event, data) => sampled.push({ event, data }) };
     const plex = { getMediaUrl: async () => ({ url: 'http://plex.test/x.mpd' }), resolveClientIdentifier: sanitizePlexSessionId };
     const app = express();
-    app.use('/proxy', createProxyRouter({ registry: { get: () => plex }, logger }));
+    const gateway = new RegistryPlaybackStreamGateway({ registry: { get: () => plex }, logger });
+    app.use('/proxy', createProxyRouter({ mintPlaybackStream: new MintPlaybackStream({ gateway }), logger }));
 
     await request(app).get(`/proxy/plex/stream/694719?session=${encodeURIComponent(instanceA)}`);
 

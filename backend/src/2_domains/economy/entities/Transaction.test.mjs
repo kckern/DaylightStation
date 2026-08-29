@@ -3,8 +3,8 @@ import { createTransaction, foldBalance } from './Transaction.mjs';
 
 describe('createTransaction', () => {
   it('builds a stamped transaction with generated id', () => {
-    const t = createTransaction({ kind: 'earn', delta: 5, action: 'piano-lesson-complete', source: 'piano', ref: 'plex:123' });
-    expect(t.id).toMatch(/^txn_/);
+    const t = createTransaction({ id: 'txn_fixed', kind: 'earn', delta: 5, action: 'piano-lesson-complete', source: 'piano', ref: 'plex:123', at: '2026-08-28T00:00:00.000Z' });
+    expect(t.id).toBe('txn_fixed');
     expect(t.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(t.kind).toBe('earn');
     expect(t.delta).toBe(5);

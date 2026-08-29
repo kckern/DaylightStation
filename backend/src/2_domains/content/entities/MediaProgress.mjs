@@ -37,7 +37,8 @@ export class MediaProgress {
     // Bookmark for position recovery (optional, expires after 7 days)
     const rawBookmark = props.bookmark ?? null;
     if (rawBookmark && rawBookmark.createdAt) {
-      const now = props.now ?? Date.now();
+      if (!Number.isFinite(props.now)) throw new ValidationError('MediaProgress requires now to evaluate a bookmark', { code: 'MISSING_NOW' });
+      const now = props.now;
       const age = now - Date.parse(rawBookmark.createdAt);
       this.bookmark = age <= 7 * 24 * 60 * 60 * 1000 ? rawBookmark : null;
     } else {
@@ -70,28 +71,6 @@ export class MediaProgress {
    */
   isInProgress() {
     return this.playhead > 0 && !this.isWatched();
-  }
-
-  /**
-   * Serialize to a plain object using canonical field names.
-   * Excludes legacy field aliases (seconds, mediaDuration, time).
-   * Conditionally includes completedAt and bookmark when present (truthy check —
-   * null/undefined are omitted to match the canonical persisted shape).
-   * @returns {Object}
-   */
-  toJSON() {
-    const json = {
-      contentId: this.contentId,
-      playhead: this.playhead,
-      duration: this.duration,
-      percent: this.percent,
-      playCount: this.playCount,
-      lastPlayed: this.lastPlayed,
-      watchTime: this.watchTime
-    };
-    if (this.completedAt) json.completedAt = this.completedAt;
-    if (this.bookmark) json.bookmark = this.bookmark;
-    return json;
   }
 
 }

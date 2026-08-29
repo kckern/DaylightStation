@@ -9,6 +9,7 @@
  */
 
 import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { IFoodLogDatastore } from '#apps/nutribot/ports/IFoodLogDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -21,6 +22,26 @@ import {
 } from '#system/utils/FileIO.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
+
+function dehydrateFoodItem(item) {
+  return {
+    id: item.id, uuid: item.uuid, label: item.label, icon: item.icon,
+    grams: item.grams, unit: item.unit, amount: item.amount, color: item.color,
+    calories: item.calories, protein: item.protein, carbs: item.carbs, fat: item.fat,
+    fiber: item.fiber, sugar: item.sugar, sodium: item.sodium, cholesterol: item.cholesterol,
+  };
+}
+
+function dehydrateNutriLog(log) {
+  const record = {
+    id: log.id, userId: log.userId, status: log.status, text: log.text,
+    meal: log.meal, items: log.items.map(dehydrateFoodItem), questions: log.questions,
+    nutrition: log.nutrition, metadata: log.metadata, timezone: log.timezone,
+    createdAt: log.createdAt, updatedAt: log.updatedAt, acceptedAt: log.acceptedAt,
+  };
+  if (log.conversationId !== log.userId) record.conversationId = log.conversationId;
+  return record;
+}
 
 export class YamlFoodLogDatastore extends IFoodLogDatastore {
   #configService;
@@ -137,7 +158,7 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
     try {
       // Handle legacy format with food_data
       if (entity.food_data && !entity.meal) {
-        return NutriLog.fromLegacy(entity, userId, entity.chat_id || userId, this.#timezone, new Date());
+        return NutriLog.fromLegacy(entity, userId, entity.chat_id || userId, this.#timezone, new Date(), uuidv4);
       }
       return NutriLog.from(entity, this.#timezone);
     } catch (err) {
@@ -187,7 +208,7 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
     const data = this.#readFile(filePath);
 
     // Add/update entity
-    data[id] = nutriLog.toJSON();
+    data[id] = dehydrateNutriLog(nutriLog);
 
     // Save back
     this.#writeFile(filePath, data);

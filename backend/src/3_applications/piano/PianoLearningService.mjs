@@ -4,6 +4,11 @@ import {
   normalizeRequirement,
   requirementEvidence,
 } from '#shared/music/learningPrograms.mjs';
+import {
+  InvalidInputError,
+  MissingResourceError,
+  StateConflictError,
+} from '#apps/common/errors/SemanticErrors.mjs';
 
 export class PianoLearningService {
   constructor({ exerciseBank, attemptStore, learningStore, studioDatastore = null, teacherGate = null, logger = console } = {}) {
@@ -48,14 +53,14 @@ export class PianoLearningService {
   }
 
   enroll(userId, programId) {
-    if (!this.program(programId)) throw Object.assign(new Error('Unknown piano program'), { status: 404 });
+    if (!this.program(programId)) throw new MissingResourceError('Unknown piano program', { code: null });
     return this.learningStore.enroll(userId, programId);
   }
 
   unenroll(userId, programId) {
     const assignment = this.learningStore.getAssignment(userId);
     if ((assignment?.programs ?? []).includes(programId)) {
-      throw Object.assign(new Error('A required program cannot be removed by the learner.'), { status: 409 });
+      throw new StateConflictError('A required program cannot be removed by the learner.', { code: null });
     }
     return this.learningStore.unenroll(userId, programId);
   }
@@ -70,7 +75,7 @@ export class PianoLearningService {
     });
     const known = new Set(this.programs().map((program) => program.id));
     const ghosts = (programs ?? []).filter((id) => !known.has(id));
-    if (ghosts.length) throw Object.assign(new Error(`Unknown piano program: ${ghosts.join(', ')}`), { status: 400 });
+    if (ghosts.length) throw new InvalidInputError(`Unknown piano program: ${ghosts.join(', ')}`, { code: null });
     const record = this.learningStore.putAssignment({ learnerId, programs, assignedBy, baseUpdatedAt });
     this.logger.info?.('piano.program-assignment.updated', { learnerId, assignedBy, programs: programs.length });
     return record;
@@ -97,7 +102,7 @@ export class PianoLearningService {
 
   rememberCheckpoint(userId, checkpoint) {
     const requirement = normalizeRequirement(checkpoint?.requirement);
-    if (!requirement) throw Object.assign(new Error('Invalid exercise checkpoint'), { status: 400 });
+    if (!requirement) throw new InvalidInputError('Invalid exercise checkpoint', { code: null });
     return this.learningStore.putPendingCheckpoint(userId, { ...checkpoint, requirement });
   }
 }

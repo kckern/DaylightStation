@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
-import { YamlSecretsProvider } from '#backend/src/0_system/secrets/providers/YamlSecretsProvider.mjs';
+import { YamlSecretsProvider } from '#backend/src/1_adapters/secrets/YamlSecretsProvider.mjs';
 
 describe('YamlSecretsProvider', () => {
   let tempDir;

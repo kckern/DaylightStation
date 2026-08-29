@@ -5,11 +5,11 @@ const SAFE_KEYS = new Set(['requestRetention', 'maximumIntervalDays', 'enableSho
 
 /** Resolve only server-owned scheduler policy sources into one card snapshot. */
 export class FlashcardSchedulerPolicyResolver {
-  #config; #assignments; #catalog;
-  constructor({ configService, assignments, catalog = null } = {}) {
-    if (!configService?.getHouseholdAppConfig || !configService?.getUserProfile) throw new Error('FlashcardSchedulerPolicyResolver requires configService');
+  #policySource; #assignments; #catalog;
+  constructor({ policySource, assignments, catalog = null } = {}) {
+    if (!policySource?.householdScheduler || !policySource?.learnerScheduler) throw new Error('FlashcardSchedulerPolicyResolver requires policySource');
     if (!assignments?.get) throw new Error('FlashcardSchedulerPolicyResolver requires assignments');
-    this.#config = configService; this.#assignments = assignments; this.#catalog = catalog;
+    this.#policySource = policySource; this.#assignments = assignments; this.#catalog = catalog;
   }
   async resolveLaunch({ userId, deck, learning = null, requireAssignment = false } = {}) {
     const assignment = await this.#assignments.get(userId);
@@ -22,13 +22,13 @@ export class FlashcardSchedulerPolicyResolver {
       if (!module || module.deck?.id !== deck.id) throw new ValidationError('Catalog flashcard launch does not match this deck');
     }
     if (requireAssignment && !enrollment && !bundle) throw new ValidationError('This graded flashcard Test is available only to assigned learners');
-    const household = this.#config.getHouseholdAppConfig(null, 'school')?.flashcards?.scheduler ?? {};
+    const household = this.#policySource.householdScheduler() ?? {};
     const layers = [
       { source: 'household', value: household },
       ...catalogLayers(bundle, module),
       { source: 'deck', value: deck.scheduler ?? {} },
       { source: 'assignment', value: enrollment?.policy?.scheduler ?? {} },
-      { source: 'learner', value: this.#config.getUserProfile(userId)?.apps?.school?.flashcards?.scheduler ?? {} },
+      { source: 'learner', value: this.#policySource.learnerScheduler(userId) ?? {} },
     ];
     return {
       enrollment, catalog: bundle ? learningAddress(learning) : null, layers, profiles: normalizeProfiles(household),

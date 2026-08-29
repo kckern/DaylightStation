@@ -2,9 +2,7 @@
  * CommandHandlerLivenessService — tracks per-device freshness of frontend
  * command handlers (the `useCommandAckPublisher` mount).
  *
- * Two ingest signals, both observed on the inbound-client-message stream
- * via eventBus.onClientMessage (NOT the internal pubsub — inbound acks
- * and presence beacons are not auto-republished to it):
+ * Two semantic activity signals are observed through the presence gateway:
  *
  *   1. `topic: 'device-ack'` — definitive proof a handler ran in response
  *      to a queue/playback/seek/etc. command.
@@ -18,20 +16,16 @@
  * alone is the canonical "stale subscriber" — the WS connection is alive
  * but useScreenCommands/useCommandAckPublisher aren't mounted.
  *
- * The dispatcher closure is registered exactly once, in the constructor,
- * via `eventBus.onClientMessage`. start()/stop() are pure flag flips on
- * #started; the dispatcher returns early when stopped. This is necessary
- * because WebSocketEventBus.onClientMessage doesn't expose unsubscribe.
+ * The dispatcher closure is registered exactly once in the constructor;
+ * start()/stop() are flag flips and the dispatcher returns early when stopped.
  *
  * @module applications/devices/services
  */
 
-import { COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX } from '#shared-contracts/media/topics.mjs';
-
 const DEFAULT_FRESHNESS_MS = 30_000;
 
 export class CommandHandlerLivenessService {
-  #eventBus;
+  #presenceGateway;
   #logger;
   #clock;
   #freshnessMs;
@@ -40,13 +34,10 @@ export class CommandHandlerLivenessService {
   #started = false;
 
   constructor(deps = {}) {
-    if (!deps.eventBus) {
-      throw new TypeError('CommandHandlerLivenessService requires eventBus');
+    if (typeof deps.presenceGateway?.subscribeHandlerActivity !== 'function') {
+      throw new TypeError('CommandHandlerLivenessService requires presenceGateway');
     }
-    if (typeof deps.eventBus.onClientMessage !== 'function') {
-      throw new TypeError('CommandHandlerLivenessService requires eventBus.onClientMessage');
-    }
-    this.#eventBus = deps.eventBus;
+    this.#presenceGateway = deps.presenceGateway;
     this.#logger = deps.logger || console;
     this.#clock = deps.clock || Date;
     this.#freshnessMs = typeof deps.freshnessMs === 'number' && deps.freshnessMs > 0
@@ -55,19 +46,16 @@ export class CommandHandlerLivenessService {
 
     // Register the inbound-message dispatcher once, here.
     // start()/stop() are flag flips; the dispatcher gates itself on #started.
-    this.#dispatch = (clientId, message) => this.#handleInbound(clientId, message);
-    this.#eventBus.onClientMessage(this.#dispatch);
+    this.#dispatch = (activity) => this.#handleActivity(activity);
+    this.#presenceGateway.subscribeHandlerActivity(this.#dispatch);
   }
 
-  #handleInbound(_clientId, message) {
+  #handleActivity(activity) {
     if (!this.#started) return;
-    const topic = message?.topic;
-    if (typeof topic !== 'string') return;
-
-    if (topic.startsWith(COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX)) {
-      const deviceId = message?.deviceId || topic.slice(COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX.length);
+    if (activity?.kind === 'presence') {
+      const { deviceId } = activity;
       if (!deviceId) return;
-      if (message?.online === false) {
+      if (activity.online === false) {
         this.#lastSeenAt.delete(deviceId);
         this.#logger.debug?.('command-handler-liveness.offline', { deviceId });
       } else {
@@ -77,12 +65,12 @@ export class CommandHandlerLivenessService {
       return;
     }
 
-    if (topic === 'device-ack') {
-      const deviceId = message?.deviceId;
+    if (activity?.kind === 'ack') {
+      const deviceId = activity.deviceId;
       if (!deviceId) return;
       this.#lastSeenAt.set(deviceId, this.#clock.now());
       this.#logger.debug?.('command-handler-liveness.ack', {
-        deviceId, commandId: message?.commandId,
+        deviceId, commandId: activity.commandId,
       });
     }
   }

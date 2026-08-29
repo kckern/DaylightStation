@@ -8,7 +8,7 @@
  *  - `VirtualThermalPrinterAdapter` derives a capture's `.txt` transcript from
  *    the items it actually put on the wire — the double-only audit trail
  *    tests assert on.
- *  - `1_rendering/school/documents/DocumentReceiptRasterRenderer.mjs` derives
+ *  - `1_adapters/school/documents/DocumentReceiptRasterAdapter.mjs` derives
  *    the SAME transcript for a raster job, whose only wire item is a single
  *    `{type:'image'}` that (by ESC/POS's own nature — a bitmap, not glyphs)
  *    carries no decodable text of its own. It gets there by handing an

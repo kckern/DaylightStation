@@ -1,9 +1,8 @@
 // backend/src/4_api/v1/routers/camera.mjs
 import express from 'express';
-import fs from 'fs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
-export function createCameraRouter({ cameraService, broadcastEvent, logger = console }) {
+export function createCameraRouter({ cameraService, cameraEvents, logger = console }) {
   const router = express.Router();
 
   // GET / — list cameras
@@ -43,8 +42,7 @@ export function createCameraRouter({ cameraService, broadcastEvent, logger = con
     }
 
     try {
-      const dir = await cameraService.startStream(id);
-      const playlist = await fs.promises.readFile(`${dir}/stream.m3u8`, 'utf8');
+      const playlist = await cameraService.getLivePlaylist(id);
       res.set({
         'Content-Type': 'application/vnd.apple.mpegurl',
         'Cache-Control': 'no-cache',
@@ -70,18 +68,10 @@ export function createCameraRouter({ cameraService, broadcastEvent, logger = con
       return res.status(400).json({ error: 'Invalid segment name' });
     }
 
-    cameraService.touchStream(id);
-
-    const dir = await cameraService.startStream(id);
-    const segmentPath = `${dir}/${segment}`;
-
-    try {
-      await fs.promises.access(segmentPath);
-    } catch {
+    const segmentData = await cameraService.getLiveSegment(id, segment);
+    if (!segmentData) {
       return res.status(404).json({ error: 'Segment not found', segment });
     }
-
-    const segmentData = await fs.promises.readFile(segmentPath);
     res.set({
       'Content-Type': 'video/mp2t',
       'Content-Length': segmentData.length,
@@ -145,7 +135,7 @@ export function createCameraRouter({ cameraService, broadcastEvent, logger = con
 
     const topic = req.body.topic || 'doorbell';
     logger.info?.('camera.event', { cameraId: id, event, topic });
-    broadcastEvent({ topic, event, cameraId: id });
+    cameraEvents.received(id, topic, event);
     res.json({ broadcast: true, topic, event, cameraId: id });
   });
 

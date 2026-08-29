@@ -11,6 +11,7 @@
  * through, and a throw is proof it did not.
  */
 import { describe, it, expect } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { GradeSubmission } from './GradeSubmission.mjs';
 import { TeacherGate } from '../TeacherGate.mjs';
 import { TeacherCapabilitySessions } from '../TeacherCapabilitySessions.mjs';
@@ -22,7 +23,8 @@ function fixture() {
     roster: () => [{ id: 'parent', birthyear: 1984 }, { id: 'kid', birthyear: 2016 }],
     clock, logger: { warn() {} },
   });
-  const capabilities = new TeacherCapabilitySessions({ teacherGate, clock });
+  const capabilities = new TeacherCapabilitySessions({ teacherGate,
+    tokenFactory: () => randomBytes(32).toString('base64url'), clock });
   teacherGate.bindCapabilitySessions(capabilities);
   const grade = new GradeSubmission({
     curriculum: { getUnit: async () => null, getDocument: async () => null },

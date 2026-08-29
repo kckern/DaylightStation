@@ -24,34 +24,34 @@ const binaryBody = raw({
 
 /** Create the authenticated product-oriented SchoolCalc HTTP surface. */
 export function createSchoolCalcRouter({
-  container,
+  operations,
   authenticateIngress,
   relayIdFromRequest = (req) => req.schoolCalcIngress?.id ?? null,
 } = {}) {
-  if (!container) throw new Error('createSchoolCalcRouter requires container');
+  if (!operations) throw new Error('createSchoolCalcRouter requires operations');
   if (typeof authenticateIngress !== 'function') throw new Error('createSchoolCalcRouter requires authenticateIngress middleware');
   if (typeof relayIdFromRequest !== 'function') throw new Error('createSchoolCalcRouter requires relayIdFromRequest');
 
   const router = Router();
   router.use(authenticateIngress);
-  router.post('/devices/enroll', json({ limit: '16kb' }), asyncHandler(schoolCalcEnrollHandler({ container })));
-  router.post('/devices/identify', binaryBody, asyncHandler(schoolCalcIdentifyHandler({ container })));
-  router.post('/devices/:deviceId/observe', binaryBody, asyncHandler(schoolCalcObserveHandler({ container, relayIdFromRequest })));
-  router.get('/devices/:deviceId/learners', asyncHandler(schoolCalcLearnerRosterHandler({ container })));
-  router.get('/devices/:deviceId/progress', asyncHandler(schoolCalcProgressHandler({ container })));
+  router.post('/devices/enroll', json({ limit: '16kb' }), asyncHandler(schoolCalcEnrollHandler({ operations })));
+  router.post('/devices/identify', binaryBody, asyncHandler(schoolCalcIdentifyHandler({ operations })));
+  router.post('/devices/:deviceId/observe', binaryBody, asyncHandler(schoolCalcObserveHandler({ operations, relayIdFromRequest })));
+  router.get('/devices/:deviceId/learners', asyncHandler(schoolCalcLearnerRosterHandler({ operations })));
+  router.get('/devices/:deviceId/progress', asyncHandler(schoolCalcProgressHandler({ operations })));
   router.post('/devices/:deviceId/follow-ups/:actionKey/resolve', json({ limit: '4kb' }),
-    asyncHandler(schoolCalcFollowUpResolveHandler({ container })));
-  router.get('/devices/:deviceId/catalog', asyncHandler(schoolCalcCatalogHandler({ container })));
-  router.post('/devices/:deviceId/requests', binaryBody, asyncHandler(schoolCalcDeliveryRequestsHandler({ container })));
-  router.get('/artifacts/:artifactId', asyncHandler(schoolCalcArtifactHandler({ container })));
+    asyncHandler(schoolCalcFollowUpResolveHandler({ operations })));
+  router.get('/devices/:deviceId/catalog', asyncHandler(schoolCalcCatalogHandler({ operations })));
+  router.post('/devices/:deviceId/requests', binaryBody, asyncHandler(schoolCalcDeliveryRequestsHandler({ operations })));
+  router.get('/artifacts/:artifactId', asyncHandler(schoolCalcArtifactHandler({ operations })));
   router.post('/results/import',
     raw({ type: ['application/octet-stream', 'application/vnd.daylight.schoolcalc.result'], limit: '64kb' }),
     text({ type: 'text/plain', limit: '64kb' }),
-    asyncHandler(schoolCalcResultImportHandler({ container })));
-  router.post('/devices/:deviceId/sync', json({ limit: '256kb' }), asyncHandler(schoolCalcSyncHandler({ container, relayIdFromRequest })));
-  router.get('/devices/:deviceId/remediation', asyncHandler(schoolCalcRemediationListHandler({ container })));
-  router.get('/devices/:deviceId/remediation/:sessionId', asyncHandler(schoolCalcRemediationSessionHandler({ container })));
-  router.post('/devices/:deviceId/remediation/:sessionId/actions', json({ limit: '16kb' }), asyncHandler(schoolCalcRemediationActionHandler({ container })));
+    asyncHandler(schoolCalcResultImportHandler({ operations })));
+  router.post('/devices/:deviceId/sync', json({ limit: '256kb' }), asyncHandler(schoolCalcSyncHandler({ operations, relayIdFromRequest })));
+  router.get('/devices/:deviceId/remediation', asyncHandler(schoolCalcRemediationListHandler({ operations })));
+  router.get('/devices/:deviceId/remediation/:sessionId', asyncHandler(schoolCalcRemediationSessionHandler({ operations })));
+  router.post('/devices/:deviceId/remediation/:sessionId/actions', json({ limit: '16kb' }), asyncHandler(schoolCalcRemediationActionHandler({ operations })));
   router.use(errorHandlerMiddleware({ shape: 'string' }));
   return router;
 }

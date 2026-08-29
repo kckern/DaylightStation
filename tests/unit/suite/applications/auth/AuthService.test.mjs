@@ -1,6 +1,8 @@
 // tests/unit/suite/applications/auth/AuthService.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { AuthService } from '#apps/auth/AuthService.mjs';
+import { DataServiceAuthAccountRepository } from '#adapters/auth/DataServiceAuthAccountRepository.mjs';
+import { NodeAuthenticationPrimitives } from '#adapters/auth/NodeAuthenticationPrimitives.mjs';
 
 describe('AuthService', () => {
   let service;
@@ -30,8 +32,8 @@ describe('AuthService', () => {
     };
 
     service = new AuthService({
-      dataService: mockDataService,
-      configService: mockConfigService,
+      accounts: new DataServiceAuthAccountRepository({ dataService: mockDataService, configService: mockConfigService }),
+      authentication: new NodeAuthenticationPrimitives(),
       logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }
     });
   });

@@ -18,16 +18,13 @@
  * Location: backend/src/3_applications/health/PersonalContextLoader.mjs
  */
 
-import path from 'path';
-
 const USER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const DEFAULT_TOKEN_BUDGET = 3000;
 const CHARS_PER_TOKEN = 4;
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
 
 export class PersonalContextLoader {
-  #dataService;
-  #archiveRoot;
+  #playbookStore;
   #tokenBudget;
   #charBudget;
   #logger;
@@ -40,11 +37,10 @@ export class PersonalContextLoader {
    * @param {Object} [config.logger] - Logger with debug/info/warn/error methods (defaults to console)
    */
   constructor(config = {}) {
-    if (!config.dataService || typeof config.dataService.readYaml !== 'function') {
-      throw new Error('PersonalContextLoader requires dataService with readYaml()');
+    if (!config.playbookStore || typeof config.playbookStore.load !== 'function') {
+      throw new Error('PersonalContextLoader requires playbookStore with load()');
     }
-    this.#dataService = config.dataService;
-    this.#archiveRoot = config.archiveRoot || 'data/users';
+    this.#playbookStore = config.playbookStore;
     this.#tokenBudget = config.tokenBudget || DEFAULT_TOKEN_BUDGET;
     this.#charBudget = this.#tokenBudget * CHARS_PER_TOKEN;
     this.#logger = config.logger || console;
@@ -67,18 +63,11 @@ export class PersonalContextLoader {
       throw new Error(`Invalid userId: must match ${USER_ID_PATTERN}`);
     }
 
-    const playbookPath = path.join(
-      this.#archiveRoot,
-      userId,
-      'lifelog/archives/playbook/playbook.yml',
-    );
-
-    this.#logger.debug?.('personal_context.load_start', { userId, path: playbookPath });
-
-    const playbook = await this.#dataService.readYaml(playbookPath);
+    this.#logger.debug?.('personal_context.load_start', { userId });
+    const playbook = await this.#playbookStore.load(userId);
 
     if (!playbook || typeof playbook !== 'object') {
-      this.#logger.info?.('personal_context.playbook_missing', { userId, path: playbookPath });
+      this.#logger.info?.('personal_context.playbook_missing', { userId });
       return null;
     }
 

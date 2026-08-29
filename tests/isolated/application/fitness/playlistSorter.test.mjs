@@ -54,18 +54,11 @@ describe('sortPlaylistItems', () => {
     expect(sortPlaylistItems(items)).toHaveLength(2);
   });
 
-  test('equal-rated items are shuffled (grab-bag)', () => {
+  test('equal-rated items use injected entropy for grab-bag ordering', () => {
     const items = Array.from({ length: 10 }, (_, i) => ({ id: `plex:${i}`, userRating: 5 }));
-    const input = items.map(i => i.id).join(',');
-    let sawShuffle = false;
-    for (let trial = 0; trial < 20; trial++) {
-      const out = sortPlaylistItems(items).map(i => i.id);
-      expect(out.sort()).toEqual(input.split(',').sort());
-      if (sortPlaylistItems(items).map(i => i.id).join(',') !== input) {
-        sawShuffle = true;
-      }
-    }
-    expect(sawShuffle).toBe(true);
+    const out = sortPlaylistItems(items, { random: () => 0 }).map(i => i.id);
+    expect(out).not.toEqual(items.map(i => i.id));
+    expect([...out].sort()).toEqual(items.map(i => i.id).sort());
   });
 
   test('handles empty / single / non-array inputs', () => {

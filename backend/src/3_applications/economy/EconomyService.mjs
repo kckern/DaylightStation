@@ -5,25 +5,30 @@
  */
 import { createTransaction, foldBalance, resolvePolicy, inBlackout, drainPerSecond } from '#domains/economy/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 
 const STALE_SESSION_MS = 5 * 60 * 1000; // no settle for 5 min → session considered dead
 
 export class EconomyService {
-  #ds; #configService; #logger;
+  #ds; #configProjection; #logger; #newTransactionId; #newSessionId;
 
-  constructor({ datastore, configService, logger = console }) {
+  constructor({ datastore, configProjection, logger = console,
+    newTransactionId = () => `txn_${shortId()}`,
+    newSessionId = () => `ses_${shortId()}` }) {
     this.#ds = datastore;
-    this.#configService = configService;
+    if (!configProjection?.policy || !configProjection?.hasUser) throw new Error('EconomyService requires configProjection');
+    this.#configProjection = configProjection;
     this.#logger = logger;
+    this.#newTransactionId = newTransactionId;
+    this.#newSessionId = newSessionId;
   }
 
   #config() {
-    return this.#configService.getHouseholdAppConfig?.(null, 'economy') || {};
+    return this.#configProjection.policy();
   }
 
   #assertUser(userId) {
-    if (!this.#configService.getUserProfile?.(userId)) {
+    if (!this.#configProjection.hasUser(userId)) {
       throw new EntityNotFoundError(`unknown user: ${userId}`);
     }
   }
@@ -49,7 +54,7 @@ export class EconomyService {
   async deposit(userId, { amount, note = null, source = 'admin' }) {
     this.#assertUser(userId);
     if (!Number.isInteger(amount) || amount <= 0) throw new ValidationError('deposit amount must be a positive integer');
-    this.#ds.appendTransaction(userId, createTransaction({ kind: 'deposit', delta: amount, action: 'parent-deposit', source, ref: note }));
+    this.#ds.appendTransaction(userId, createTransaction({ id: this.#newTransactionId(), kind: 'deposit', delta: amount, action: 'parent-deposit', source, ref: note, at: new Date().toISOString() }));
     const wallet = this.#snapshot(userId);
     this.#logger.info('economy-deposit', { userId, amount, balance: wallet.balance });
     return { userId, balance: wallet.balance };
@@ -77,7 +82,7 @@ export class EconomyService {
       const wallet = this.#snapshot(userId);
       return { userId, adjusted: 0, duplicate: false, txnId: null, balance: wallet.balance };
     }
-    const txn = createTransaction({ kind: 'adjust', delta, action: 'reward-reconciliation', source, ref, note });
+    const txn = createTransaction({ id: this.#newTransactionId(), kind: 'adjust', delta, action: 'reward-reconciliation', source, ref, note, at: new Date().toISOString() });
     this.#ds.appendTransaction(userId, txn);
     const wallet = this.#snapshot(userId);
     this.#logger.info('economy-adjust', { userId, delta, source, ref, balance: wallet.balance });
@@ -133,7 +138,7 @@ export class EconomyService {
     const grant = Math.max(0, Math.min(reward, cap - earnedToday));
     let txnId = null;
     if (grant > 0) {
-      const txn = createTransaction({ kind: 'earn', delta: grant, action, source, ref });
+      const txn = createTransaction({ id: this.#newTransactionId(), kind: 'earn', delta: grant, action, source, ref, at: new Date().toISOString() });
       this.#ds.appendTransaction(userId, txn);
       txnId = txn.id ?? null;
     }
@@ -146,12 +151,12 @@ export class EconomyService {
     this.#assertUser(userId);
     const policy = resolvePolicy(this.#config(), userId, action);
     if (!policy || policy.type !== 'spend') throw new ValidationError(`unknown spend action: ${action}`);
-    if (inBlackout(policy.blackout)) throw new ValidationError(`${action} is in a blackout window`);
+    if (inBlackout(policy.blackout, new Date())) throw new ValidationError(`${action} is in a blackout window`);
     const wallet = this.#reapStale(userId);
     if (wallet.session) throw new ValidationError(`user already has an open session: ${wallet.session.id}`);
     if (wallet.balance <= 0) throw new ValidationError('insufficient balance');
     const session = {
-      id: `ses_${shortId()}`, action,
+      id: this.#newSessionId(), action,
       opened_at: new Date().toISOString(),
       last_settled_at: new Date().toISOString(),
       settled_coins: 0,
@@ -179,7 +184,7 @@ export class EconomyService {
     const newlyConsumed = Math.max(0, cumulative - session.settled_coins);
     const spend = Math.min(newlyConsumed, wallet.balance);
     if (spend > 0) {
-      this.#ds.appendTransaction(userId, createTransaction({ kind: 'spend', delta: -spend, action: session.action, source: 'economy-session', ref: sessionId }));
+      this.#ds.appendTransaction(userId, createTransaction({ id: this.#newTransactionId(), kind: 'spend', delta: -spend, action: session.action, source: 'economy-session', ref: sessionId, at: new Date().toISOString() }));
     }
     const updated = { ...session, last_settled_at: new Date().toISOString(), settled_coins: session.settled_coins + spend };
     const next = this.#snapshot(userId, updated);

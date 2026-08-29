@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs';
-import { createDocumentReceiptRasterRenderer } from '#rendering/school/documents/DocumentReceiptRasterRenderer.mjs';
+import { createDocumentReceiptRasterRenderer } from '#adapters/school/documents/DocumentReceiptRasterAdapter.mjs';
 import { createDocumentEscPosRenderer } from '#rendering/school/documents/DocumentEscPosRenderer.mjs';
 import { agendaDocument } from '#domains/school/documents/receipts.mjs';
 

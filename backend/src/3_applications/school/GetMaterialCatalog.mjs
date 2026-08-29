@@ -40,24 +40,24 @@ export class GetMaterialCatalog {
   #config;
   #logger;
   #now;
+  #scheduler;
   #sourceTimeoutMs;
   #cache = new Map(); // source+root -> { materials: Material[]<no category>, at: number }
   #inflight = new Map(); // source+root -> Promise, so a stampede doesn't fan out N cold builds
 
-  constructor({ sources, config, logger = console, now = () => Date.now(), sourceTimeoutMs = SOURCE_TIMEOUT_MS }) {
+  constructor({ sources, config, scheduler = null, logger = console, now = () => Date.now(), sourceTimeoutMs = SOURCE_TIMEOUT_MS }) {
     this.#sources = sources;
     this.#config = config;
     this.#logger = logger;
     this.#now = now;
+    this.#scheduler = scheduler;
     this.#sourceTimeoutMs = sourceTimeoutMs;
   }
 
   #withTimeout(promise, ms, label) {
-    let t;
-    const timeout = new Promise((_, reject) => {
-      t = setTimeout(() => reject(new Error(`listMaterials("${label}") timed out after ${ms}ms`)), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+    return this.#scheduler?.withDeadline
+      ? this.#scheduler.withDeadline(promise, { milliseconds: ms, description: `listMaterials("${label}")` })
+      : promise;
   }
 
   async #listMaterialsCached(entry) {
@@ -86,6 +86,9 @@ export class GetMaterialCatalog {
 
   #stamp(material, entry) {
     const { key: category } = resolveCategory(entry.category, { logger: this.#logger, sourceLabel: entry.label });
+    if (category !== entry.category) {
+      this.#logger.warn?.('school.materials.category-unknown', { category: entry.category ?? null, source: entry.label });
+    }
     return {
       ...material,
       source: entry.source,

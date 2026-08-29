@@ -1,8 +1,13 @@
 // tests/isolated/adapters/agents/MastraAdapter.memory.test.mjs
 import { describe, it, expect, vi } from 'vitest';
 import { MastraAdapter } from '../../../../backend/src/1_adapters/agents/MastraAdapter.mjs';
+import { AgentExecutionPolicy } from '#apps/agents/framework/AgentExecutionPolicy.mjs';
 
 const silentLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+const createAdapter = (deps = {}) => new MastraAdapter({
+  ...deps,
+  executionPolicy: new AgentExecutionPolicy({ logger: deps.logger || silentLogger }),
+});
 
 function makeFakeAgentClass() {
   const recorded = [];
@@ -28,7 +33,7 @@ describe('MastraAdapter — memory wiring', () => {
   it('passes memory to Agent constructor when memory is configured', async () => {
     const fakeMemory = { __isFakeMemory: true };
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: fakeMemory });
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: fakeMemory });
     await adapter.execute({
       agent: { constructor: { id: 'stub' } },
       agentId: 'stub',
@@ -44,7 +49,7 @@ describe('MastraAdapter — memory wiring', () => {
   it('passes { memory: { resource, thread } } to generate when threadId + userId both present', async () => {
     const fakeMemory = { __isFakeMemory: true };
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: fakeMemory });
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: fakeMemory });
     await adapter.execute({
       agent: { constructor: { id: 'stub' } },
       agentId: 'stub',
@@ -60,7 +65,7 @@ describe('MastraAdapter — memory wiring', () => {
   it('does NOT pass memory opts when threadId is missing', async () => {
     const fakeMemory = { __isFakeMemory: true };
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: fakeMemory });
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: fakeMemory });
     await adapter.execute({
       agent: { constructor: { id: 'stub' } },
       agentId: 'stub',
@@ -75,7 +80,7 @@ describe('MastraAdapter — memory wiring', () => {
 
   it('does NOT pass memory at all when adapter has no memory configured', async () => {
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent });  // no memory
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent });  // no memory
     await adapter.execute({
       agent: { constructor: { id: 'stub' } },
       agentId: 'stub',
@@ -92,7 +97,7 @@ describe('MastraAdapter — memory wiring', () => {
   it('streamExecute passes same memory opts', async () => {
     const fakeMemory = { __isFakeMemory: true };
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: fakeMemory });
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: fakeMemory });
     const iter = adapter.streamExecute({
       agent: { constructor: { id: 'stub' } },
       agentId: 'stub',

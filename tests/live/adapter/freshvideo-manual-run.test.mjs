@@ -16,6 +16,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { createFreshVideoJobHandler } from '#apps/media/FreshVideoJobHandler.mjs';
 import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
+import { FilesystemFreshVideoMediaStore } from '#adapters/persistence/files/FilesystemFreshVideoMediaStore.mjs';
 
 function getBasePath() {
   if (process.env.DAYLIGHT_BASE_PATH) return process.env.DAYLIGHT_BASE_PATH;
@@ -47,18 +48,26 @@ describe('FreshVideo manual run', () => {
     expect(fs.existsSync(mediaPath)).toBe(true);
     expect(fs.existsSync(configPath)).toBe(true);
 
-    const loadFile = (relativePath) => {
-      const fullPath = path.join(householdDir, relativePath + '.yml');
+    const sourceCatalog = { list: () => {
+      const fullPath = path.join(householdDir, 'media/sources.yml');
       const raw = fs.readFileSync(fullPath, 'utf8');
-      return yaml.load(raw);
-    };
+      return (yaml.load(raw) || []).map((source) => ({
+        provider: source.shortcode,
+        sourceRef: {
+          platform: source.src || 'youtube',
+          collectionType: (source.type || 'playlist').toLowerCase(),
+          locator: source.playlist,
+        },
+      }));
+    } };
 
-    const videoSourceGateway = new YtDlpAdapter({ logger: console });
+    const videoSourceGateway = new YtDlpAdapter({ logger: console, downloadRoot: mediaPath });
 
     handler = createFreshVideoJobHandler({
       videoSourceGateway,
-      loadFile,
-      mediaPath,
+      sourceCatalog,
+      mediaStore: new FilesystemFreshVideoMediaStore({ mediaRoot: mediaPath, logger: console }),
+      lockOwnerId: process.pid,
       logger: console,
     });
   });

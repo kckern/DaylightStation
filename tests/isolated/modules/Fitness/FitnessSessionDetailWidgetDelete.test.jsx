@@ -6,11 +6,11 @@ import { MantineProvider } from '@mantine/core';
 const mockRestore = vi.fn();
 const mockRefetch = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('@/screen-framework/providers/ScreenProvider.jsx', () => ({
+vi.mock('@/screen-framework/providers/useScreen.js', () => ({
   useScreen: () => ({ restore: mockRestore, replace: () => () => {} }),
 }));
 
-vi.mock('@/screen-framework/data/ScreenDataProvider.jsx', () => ({
+vi.mock('@/screen-framework/data/useScreenData.js', () => ({
   useScreenDataRefetch: () => mockRefetch,
   useScreenData: () => null,
 }));
@@ -19,7 +19,7 @@ vi.mock('@/screen-framework/widgets/registry.js', () => ({
   getWidgetRegistry: () => ({ get: () => null }),
 }));
 
-vi.mock('@/modules/Fitness/FitnessScreenProvider.jsx', () => ({
+vi.mock('@/modules/Fitness/useFitnessScreen.js', () => ({
   useFitnessScreen: () => ({ onNavigate: null }),
 }));
 

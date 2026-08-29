@@ -12,6 +12,10 @@ const units = [
 const policy = { mode: 'module_blocks', required_opening_module: 'opening', one_active_module: true, module_order: 'shuffle_once', lesson_order: 'shuffle_once' };
 
 describe('course enrollment ordering', () => {
+  it('requires caller-supplied entropy when the authored policy shuffles', () => {
+    expect(() => createCourseEnrollment({ courseId: 'atlas', units, policy })).toThrow(/rng is required/);
+  });
+
   it('keeps required opening first and freezes shuffled module/lesson order', () => {
     const enrollment = createCourseEnrollment({ enrollmentId: 'enr-learner4-atlas', courseId: 'atlas', profile: 'upper', units, policy, rng: () => 0 });
     expect(enrollment.enrollmentId).toBe('enr-learner4-atlas');

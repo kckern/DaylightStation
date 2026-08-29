@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendInternalError } from '#api/utils/internalError.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { isValidFen } from '#shared/gaming/rulesets/chess/engine.mjs';
 import { safeSegment } from './lib/emulatorPaths.mjs';
@@ -153,7 +154,7 @@ export function createChessRouter({
     const saved = await recordStore.save(userId, req.body || {});
     if (!saved) {
       logger?.warn?.('chess.game.record-failed', { userId, result: req.body?.result, moves: req.body?.moves });
-      return res.status(500).json({ error: 'save_failed' });
+      return sendInternalError(res, { error: 'save_failed' });
     }
     logger?.info?.('chess.game.recorded', {
       userId, result: req.body?.result, moves: req.body?.moves, opponent: req.body?.opponent || null,

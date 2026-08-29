@@ -4,8 +4,6 @@
 // assumed to be canonical C. Consumed by the /loop-manifest endpoint and,
 // downstream, by useLoopLibrary → libraryRanking (grid-based gate).
 
-import path from 'path';
-import { listFiles, readFile, getStats } from '#system/utils/FileIO.mjs';
 import { musicXmlToNotes, readBrickMeta } from '#shared/music/musicXmlToNotes.mjs';
 import { harmonicTimeline } from '#shared/music/harmonicTimeline.mjs';
 
@@ -54,9 +52,9 @@ export function computeTonicPc(harmonyKey, roman) {
 }
 
 /** Read the conversion ledger → analysis metadata keyed by output path. */
-function readLedger(midiDir) {
+function readLedger(source) {
   const map = new Map();
-  const raw = readFile(path.join(midiDir, '_workspace', '_ledger.jsonl'));
+  const raw = source.readLedger();
   if (!raw) return map;
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
@@ -183,42 +181,34 @@ export function buildBrickEntry(relPath, xml, ledgerRow = null) {
   return entry;
 }
 
-/** Walk the five type folders under midiDir → array of manifest entries. */
-export function buildManifest(midiDir) {
+/** Build manifest entries from the semantic loop-library source. */
+export function buildManifest(source) {
+  if (!source?.listBrickDocuments || !source?.readLedger) throw new Error('buildManifest requires a loop manifest source');
   const bricks = [];
-  const ledger = readLedger(midiDir);
-  for (const folder of TYPE_FOLDERS) {
-    const dir = path.join(midiDir, folder);
-    for (const file of listFiles(dir)) {
-      if (!file.endsWith('.musicxml')) continue;
-      const xml = readFile(path.join(dir, file));
-      if (xml == null) continue;
-      const relPath = `${folder}/${file}`;
-      try {
-        bricks.push(buildBrickEntry(relPath, xml, ledger.get(relPath)));
-      } catch (err) {
-        bricks.push({ path: relPath, type: folder, needsReview: true, needsReviewReason: `build-fail: ${err.message}` });
-      }
+  const ledger = readLedger(source);
+  for (const { type, relativePath, xml } of source.listBrickDocuments(TYPE_FOLDERS)) {
+    try {
+      bricks.push(buildBrickEntry(relativePath, xml, ledger.get(relativePath)));
+    } catch (err) {
+      bricks.push({ path: relativePath, type, needsReview: true, needsReviewReason: `build-fail: ${err.message}` });
     }
   }
   return bricks;
 }
 
 /** Folder-mtime signature — invalidates the cache when bricks are (re)generated. */
-export function manifestSignature(midiDir) {
-  return TYPE_FOLDERS.map((f) => {
-    const st = getStats(path.join(midiDir, f));
-    return `${f}:${st ? st.mtimeMs : 0}`;
-  }).join('|');
+export function manifestSignature(source) {
+  if (!source?.signature) throw new Error('manifestSignature requires a loop manifest source');
+  return source.signature(TYPE_FOLDERS);
 }
 
 let _cache = null; // { sig, bricks }
 
 /** mtime-cached manifest. Pass { refresh: true } to force a rebuild. */
-export function getManifest(midiDir, { refresh = false } = {}) {
-  const sig = manifestSignature(midiDir);
+export function getManifest(source, { refresh = false } = {}) {
+  const sig = manifestSignature(source);
   if (!refresh && _cache && _cache.sig === sig) return _cache.bricks;
-  const bricks = buildManifest(midiDir);
+  const bricks = buildManifest(source);
   _cache = { sig, bricks };
   return bricks;
 }

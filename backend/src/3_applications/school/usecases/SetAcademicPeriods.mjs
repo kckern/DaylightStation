@@ -2,6 +2,8 @@
  * SetAcademicPeriods — the gated periods write (plan W3-1). Gate first, then
  * validate-and-replace with history; a refusal or a bad period writes nothing.
  */
+import { InvalidInputError, StateConflictError } from '#apps/common/errors/SemanticErrors.mjs';
+
 export class SetAcademicPeriods {
   #store; #teacherGate; #frozenPeriodIds; #clock; #logger;
 
@@ -29,22 +31,20 @@ export class SetAcademicPeriods {
     // Concurrent-edit guard (advocacy B14), optional like assignments'.
     if (baseHistoryLength !== undefined && typeof this.#store.historyLength === 'function'
         && this.#store.historyLength() !== baseHistoryLength) {
-      const err = new Error('The periods changed since you loaded them — reload and try again.');
-      err.name = 'ValidationError';
-      err.code = 'STALE_SAVE';
-      // A stale-base write is a conflict with someone else's edit, not a
-      // malformed request — 409, not this name's default 400.
-      err.status = 409;
-      throw err;
+      throw new StateConflictError(
+        'The periods changed since you loaded them — reload and try again.',
+        { code: 'STALE_SAVE' },
+      );
     }
     if (this.#frozenPeriodIds && Array.isArray(periods)) {
       const nextIds = new Set(periods.map((p) => p?.periodId).filter(Boolean));
       const frozen = [...new Set(await this.#frozenPeriodIds())];
       const stranded = frozen.filter((id) => !nextIds.has(id));
       if (stranded.length) {
-        const err = new Error(`refusing: frozen report cards exist for ${stranded.join(', ')} — removing or renaming these periodIds would strand them`);
-        err.name = 'ValidationError';
-        throw err;
+        throw new InvalidInputError(
+          `refusing: frozen report cards exist for ${stranded.join(', ')} — removing or renaming these periodIds would strand them`,
+          { code: 'FROZEN_PERIODS_WOULD_BE_STRANDED' },
+        );
       }
     }
     const validated = await this.#store.replacePeriods(periods, {

@@ -5,19 +5,12 @@
  * list, the agenda's "Notes for you" window) — one delivery path, two
  * sources. Corrupt-file posture per the M3 rule.
  */
-import fsSync from 'fs';
-import path from 'path';
-import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
+import { readTextFromPath, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 
-async function atomicWrite(file, text) {
-  const tmp = `${file}.tmp-${process.pid}`;
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(tmp, text, 'utf8');
-  await fs.rename(tmp, file);
-}
+async function atomicWrite(file, text) { writeFileAtomic(file, text); }
 
 export class YamlTeacherNotes {
   #configService; #logger; #writeChain = Promise.resolve();
@@ -32,7 +25,7 @@ export class YamlTeacherNotes {
 
   #readState() {
     let text;
-    try { text = fsSync.readFileSync(this.#file(), 'utf8'); } catch { return { state: 'missing', entries: [] }; }
+    try { text = readTextFromPath(this.#file()); } catch { return { state: 'missing', entries: [] }; }
     try {
       const raw = yaml.load(text);
       if (Array.isArray(raw?.entries)) return { state: 'ok', entries: raw.entries };

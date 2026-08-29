@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
+import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 
 function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -33,9 +34,11 @@ describe('WakeAndLoadService — prewarm permanent failure', () => {
       }),
     };
     svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn() },
       broadcast,
+      screenGateway: { publishProgress: broadcast, screenSubscriberCount: () => 0 },
       prewarmService,
       logger: makeLogger(),
     });

@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * Entropy API Router
  *
@@ -9,30 +10,25 @@
 
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { presentEntropyItem, presentEntropyReport } from '../presenters/EntropyPresenter.mjs';
 
 /**
  * Create Entropy API router
  *
  * @param {Object} config
  * @param {Object} config.entropyService - EntropyService instance
- * @param {Object} config.configService - ConfigService for user lookup
+ * @param {Object} config.principalResolver - Default-user policy
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createEntropyRouter(config) {
-  const { entropyService, configService, logger = console } = config;
+  const { entropyService, principalResolver, logger = console } = config;
   const router = express.Router();
 
   /**
    * Get default username for requests
    */
-  const getDefaultUsername = () => {
-    return (
-      configService?.getHeadOfHousehold?.() ||
-      configService?.getDefaultUsername?.() ||
-      'default'
-    );
-  };
+  const getDefaultUsername = () => principalResolver.resolve();
 
   // ==========================================================================
   // Endpoints
@@ -62,7 +58,7 @@ export function createEntropyRouter(config) {
         summary: report.summary,
       });
 
-      res.json(report);
+      res.json(presentEntropyReport(report));
     })
   );
 
@@ -95,7 +91,7 @@ export function createEntropyRouter(config) {
         status: item.status,
       });
 
-      res.json(item);
+      res.json(presentEntropyItem(item));
     })
   );
 
@@ -129,7 +125,7 @@ export function createEntropyRouter(config) {
       url: req.url,
       method: req.method,
     });
-    res.status(500).json({ error: err.message });
+    sendInternalError(res, { error: err.message });
   });
 
   return router;

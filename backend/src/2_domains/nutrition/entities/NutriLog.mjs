@@ -6,12 +6,32 @@
  * Manages the lifecycle of a food log from creation through acceptance.
  */
 
-import { v4 as uuidv4 } from 'uuid';
-import { shortId, shortIdFromUuid, isUuid } from '#domains/core/utils/id.mjs';
+import { shortIdFromUuid } from '#domains/core/utils/id.mjs';
 import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { FoodItem } from './FoodItem.mjs';
 import { getMealTimeFromHour, validateNutriLog, LogStatuses } from './schemas.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+
+function foodItemRecord(item) {
+  return {
+    id: item.id,
+    uuid: item.uuid,
+    label: item.label,
+    icon: item.icon,
+    grams: item.grams,
+    unit: item.unit,
+    amount: item.amount,
+    color: item.color,
+    calories: item.calories,
+    protein: item.protein,
+    carbs: item.carbs,
+    fat: item.fat,
+    fiber: item.fiber,
+    sugar: item.sugar,
+    sodium: item.sodium,
+    cholesterol: item.cholesterol,
+  };
+}
 
 /**
  * NutriLog entity - aggregate root for food logging
@@ -71,7 +91,7 @@ export class NutriLog {
 
     // Convert FoodItem arrays if needed
     const itemsAsObjects = (normalizedProps.items || []).map(item =>
-      item instanceof FoodItem ? item.toJSON() : item
+      item instanceof FoodItem ? foodItemRecord(item) : item
     );
 
     // Validate
@@ -231,7 +251,7 @@ export class NutriLog {
 
     const formatted = this.#formatTimestamp(timestamp);
     return new NutriLog({
-      ...this.toJSON(),
+      ...this.#state(),
       status: 'accepted',
       acceptedAt: formatted,
       updatedAt: formatted,
@@ -249,7 +269,7 @@ export class NutriLog {
     }
 
     return new NutriLog({
-      ...this.toJSON(),
+      ...this.#state(),
       status: 'rejected',
       updatedAt: this.#formatTimestamp(timestamp),
     });
@@ -266,7 +286,7 @@ export class NutriLog {
     }
 
     return new NutriLog({
-      ...this.toJSON(),
+      ...this.#state(),
       status: 'deleted',
       updatedAt: this.#formatTimestamp(timestamp),
     });
@@ -284,8 +304,8 @@ export class NutriLog {
     const foodItem = item instanceof FoodItem ? item : FoodItem.from(item);
 
     return new NutriLog({
-      ...this.toJSON(),
-      items: [...this.#items.map(i => i.toJSON()), foodItem.toJSON()],
+      ...this.#state(),
+      items: [...this.#items, foodItem],
       updatedAt: this.#formatTimestamp(timestamp),
     });
   }
@@ -298,8 +318,8 @@ export class NutriLog {
    */
   removeItem(entryId, timestamp) {
     return new NutriLog({
-      ...this.toJSON(),
-      items: this.#items.filter(i => i.id !== entryId).map(i => i.toJSON()),
+      ...this.#state(),
+      items: this.#items.filter(i => i.id !== entryId),
       updatedAt: this.#formatTimestamp(timestamp),
     });
   }
@@ -314,13 +334,13 @@ export class NutriLog {
   updateItem(entryId, updates, timestamp) {
     const items = this.#items.map(item => {
       if (item.id === entryId) {
-        return item.with(updates).toJSON();
+        return item.with(updates);
       }
-      return item.toJSON();
+      return item;
     });
 
     return new NutriLog({
-      ...this.toJSON(),
+      ...this.#state(),
       items,
       updatedAt: this.#formatTimestamp(timestamp),
     });
@@ -334,11 +354,11 @@ export class NutriLog {
    */
   setItems(items, timestamp) {
     const itemsAsJson = items.map(item =>
-      item instanceof FoodItem ? item.toJSON() : item
+      item
     );
 
     return new NutriLog({
-      ...this.toJSON(),
+      ...this.#state(),
       items: itemsAsJson,
       updatedAt: this.#formatTimestamp(timestamp),
     });
@@ -362,7 +382,7 @@ export class NutriLog {
    * @returns {NutriLog}
    */
   updateDate(date, time, timestamp) {
-    const json = this.toJSON();
+    const json = this.#state();
     return new NutriLog({
       ...json,
       meal: {
@@ -384,7 +404,7 @@ export class NutriLog {
    */
   setNutrition(nutrition, timestamp) {
     return new NutriLog({
-      ...this.toJSON(),
+      ...this.#state(),
       nutrition: { ...this.#nutrition, ...nutrition },
       updatedAt: this.#formatTimestamp(timestamp),
     });
@@ -398,7 +418,7 @@ export class NutriLog {
    */
   setText(text, timestamp) {
     return new NutriLog({
-      ...this.toJSON(),
+      ...this.#state(),
       text,
       metadata: { ...this.#metadata, originalText: this.#text },
       updatedAt: this.#formatTimestamp(timestamp),
@@ -413,26 +433,21 @@ export class NutriLog {
    */
   with(updates, timestamp) {
     return new NutriLog({
-      ...this.toJSON(),
+      ...this.#state(),
       ...updates,
       updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
-  // ==================== Serialization ====================
-
-  /**
-   * Convert to plain object
-   * @returns {object}
-   */
-  toJSON() {
-    const json = {
+  #state() {
+    return {
       id: this.#id,
       userId: this.#userId,
+      conversationId: this.#conversationId,
       status: this.#status,
       text: this.#text,
       meal: { ...this.#meal },
-      items: this.#items.map(item => item.toJSON()),
+      items: this.#items,
       questions: [...this.#questions],
       nutrition: { ...this.#nutrition },
       metadata: { ...this.#metadata },
@@ -441,29 +456,6 @@ export class NutriLog {
       updatedAt: this.#updatedAt,
       acceptedAt: this.#acceptedAt,
     };
-
-    // Only include conversationId if it differs from userId
-    if (this.#conversationId !== this.#userId) {
-      json.conversationId = this.#conversationId;
-    }
-
-    return json;
-  }
-
-  /**
-   * Convert to NutriList items (denormalized)
-   * @returns {object[]}
-   */
-  toNutriListItems() {
-    return this.#items.map(item => ({
-      ...item.toJSON(),
-      logId: this.#id,
-      log_uuid: this.#id,
-      date: this.#meal?.date,
-      status: this.#status,
-      createdAt: this.#createdAt,
-      acceptedAt: this.#acceptedAt,
-    }));
   }
 
   // ==================== Factory Methods ====================
@@ -484,22 +476,19 @@ export class NutriLog {
     }
 
     const timezone = props.timezone || 'America/Los_Angeles';
-    const logId = shortId();
+    const logId = props.id;
+    if (typeof logId !== 'string' || !logId) {
+      throw new ValidationError('id is required for NutriLog.create', { field: 'id' });
+    }
     const meal = props.meal || {
       date: formatLocalTimestamp(timestamp, timezone).split(' ')[0],
       time: getMealTimeFromHour(timestamp.getHours()),
     };
 
-    // Generate IDs for items if needed
+    // Identity is supplied by the application boundary.
     const items = (props.items || []).map(item => {
-      const baseItem = item instanceof FoodItem ? item.toJSON() : item;
-      if (!baseItem.id) {
-        return FoodItem.create(baseItem).toJSON();
-      }
-      if (!baseItem.uuid) {
-        const generatedUuid = isUuid(baseItem.id) ? baseItem.id : uuidv4();
-        return { ...baseItem, uuid: generatedUuid };
-      }
+      const baseItem = item instanceof FoodItem ? foodItemRecord(item) : item;
+      if (!baseItem.id || !baseItem.uuid) throw new ValidationError('item id and uuid are required for NutriLog.create');
       return baseItem;
     });
 
@@ -546,7 +535,7 @@ export class NutriLog {
    * @param {Date} currentTimestamp - Current timestamp for fallback values (required)
    * @returns {NutriLog}
    */
-  static fromLegacy(legacy, userId, conversationId, timezone = 'America/Los_Angeles', currentTimestamp) {
+  static fromLegacy(legacy, userId, conversationId, timezone = 'America/Los_Angeles', currentTimestamp, newUuid = null) {
     if (!(currentTimestamp instanceof Date) || isNaN(currentTimestamp.getTime())) {
       throw new ValidationError('currentTimestamp is required for NutriLog.fromLegacy', {
         field: 'currentTimestamp',
@@ -555,7 +544,8 @@ export class NutriLog {
     }
 
     const items = (legacy.food_data?.food || []).map((item) => {
-      const itemUuid = item.uuid || uuidv4();
+      const itemUuid = item.uuid || newUuid?.();
+      if (!itemUuid) throw new ValidationError('newUuid is required for legacy items without uuid');
       return {
         id: shortIdFromUuid(itemUuid),
         uuid: itemUuid,

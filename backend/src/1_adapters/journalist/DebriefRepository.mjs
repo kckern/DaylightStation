@@ -28,7 +28,7 @@ export class DebriefRepository {
    */
   constructor(deps) {
     this.#logger = deps.logger;
-    this.#dataPath = deps.dataPath;
+    this.#dataPath = deps.dataPath || path.join(deps.dataDir, 'users', deps.username, 'lifelog', 'journalist');
   }
 
   /**

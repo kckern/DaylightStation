@@ -7,6 +7,8 @@ import { PlanToolFactory } from '#apps/agents/lifeplan-guide/tools/PlanToolFacto
 // Both handlers re-save the plan via lifePlanStore.save(username, plan) after mutating.
 
 describe('PlanToolFactory writer tools', () => {
+  const now = new Date('2026-08-29T07:00:00.000Z');
+  const clock = { now: () => now };
   it('exposes transition_goal / add_evidence writers and no propose_* tools', () => {
     const factory = new PlanToolFactory({
       lifePlanStore: { load: () => ({}), save: vi.fn() },
@@ -14,6 +16,7 @@ describe('PlanToolFactory writer tools', () => {
       beliefEvaluator: { evaluateEvidence: vi.fn() },
       feedbackService: {},
       planAuthoringService: {},
+      clock,
     });
     const names = factory.createTools().map((t) => t.name);
 
@@ -36,12 +39,13 @@ describe('PlanToolFactory writer tools', () => {
       beliefEvaluator: { evaluateEvidence: vi.fn() },
       feedbackService: {},
       planAuthoringService: {},
+      clock,
     });
     const tool = factory.createTools().find((t) => t.name === 'transition_goal');
 
     const result = await tool.execute({ userId: 'u1', goalId: 'g1', state: 'committed', reason: 'ready to commit' });
 
-    expect(transition).toHaveBeenCalledWith(goal, 'committed', 'ready to commit');
+    expect(transition).toHaveBeenCalledWith(goal, 'committed', 'ready to commit', now);
     expect(save).toHaveBeenCalledWith('u1', plan);
     expect(result.updated.state).toBe('committed');
   });
@@ -55,6 +59,7 @@ describe('PlanToolFactory writer tools', () => {
       beliefEvaluator: { evaluateEvidence: vi.fn() },
       feedbackService: {},
       planAuthoringService: {},
+      clock,
     });
     const tool = factory.createTools().find((t) => t.name === 'transition_goal');
 
@@ -76,12 +81,13 @@ describe('PlanToolFactory writer tools', () => {
       beliefEvaluator: { evaluateEvidence },
       feedbackService: {},
       planAuthoringService: {},
+      clock,
     });
     const tool = factory.createTools().find((t) => t.name === 'add_evidence');
 
     const result = await tool.execute({ userId: 'u1', beliefId: 'b1', type: 'confirmation', note: 'Ran 3x this week' });
 
-    expect(evaluateEvidence).toHaveBeenCalledWith(belief, { type: 'confirmation', note: 'Ran 3x this week' });
+    expect(evaluateEvidence).toHaveBeenCalledWith(belief, { type: 'confirmation', note: 'Ran 3x this week' }, now);
     expect(save).toHaveBeenCalledWith('u1', plan);
     expect(result.updated.evidence_history).toHaveLength(1);
   });
@@ -95,6 +101,7 @@ describe('PlanToolFactory writer tools', () => {
       beliefEvaluator: { evaluateEvidence },
       feedbackService: {},
       planAuthoringService: {},
+      clock,
     });
     const tool = factory.createTools().find((t) => t.name === 'add_evidence');
 

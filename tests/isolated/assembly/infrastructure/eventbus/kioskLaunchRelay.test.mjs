@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   KIOSK_LAUNCH_RELAY_TOPICS,
   shouldRelayKioskLaunchTopic
-} from '#backend/src/0_system/eventbus/kioskLaunchRelay.mjs';
+} from '#apps/eventbus/ClientRelayPolicy.mjs';
 
 describe('kioskLaunchRelay', () => {
   it('relays the admin → kiosk launch command', () => {

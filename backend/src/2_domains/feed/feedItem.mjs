@@ -43,7 +43,9 @@ function normalizeImage(item) {
   };
 }
 
-export function normalizeFeedItem(item = {}, { origin = 'scroll', state = null } = {}) {
+export function normalizeFeedItem(item = {}, { origin = 'scroll', state = null, nowMs } = {}) {
+  if (!Number.isFinite(nowMs)) throw new Error('nowMs is required to normalize a feed item');
+  const nowIso = new Date(nowMs).toISOString();
   const url = canonicalizeFeedUrl(
     item.url || item.link || item.canonical?.[0]?.href || item.alternate?.[0]?.href,
   );
@@ -52,7 +54,7 @@ export function normalizeFeedItem(item = {}, { origin = 'scroll', state = null }
     isRead: !!item.isRead,
     isSaved: false,
     isArchived: false,
-    readAt: item.isRead ? new Date().toISOString() : null,
+    readAt: item.isRead ? nowIso : null,
     savedAt: null,
     archivedAt: null,
     syncStatus: 'synced',
@@ -60,7 +62,7 @@ export function normalizeFeedItem(item = {}, { origin = 'scroll', state = null }
 
   return {
     ...item,
-    id: String(item.id || `${sourceType}:${url || item.title || Date.now()}`),
+    id: String(item.id || `${sourceType}:${url || item.title || nowMs}`),
     stateKey: item.stateKey || feedStateKey({ ...item, url, sourceType }),
     title: item.title || 'Untitled',
     summary: item.summary || item.preview || item.description || '',
@@ -112,7 +114,8 @@ export function defaultFeedItemState() {
   };
 }
 
-export function applyFeedStateAction(previous, action, now = new Date().toISOString()) {
+export function applyFeedStateAction(previous, action, now) {
+  if (!now) throw new Error('now is required to apply a feed state action');
   const next = { ...defaultFeedItemState(), ...(previous || {}) };
   if (action === 'read') { next.isRead = true; next.readAt = now; }
   else if (action === 'unread') { next.isRead = false; next.readAt = null; }

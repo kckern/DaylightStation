@@ -35,38 +35,24 @@ export function isAllNullSeries(parsed) {
 }
 
 /**
- * Decode a single RLE-encoded series string to an array
- * @param {string} encoded - JSON string with RLE encoding
+ * Decode a single RLE series to an array. Wire/storage parsing belongs to an
+ * adapter; this function operates only on semantic array values.
+ * @param {Array} encoded - RLE entries or an already-decoded array
  * @returns {number[]|null} Decoded array or null if empty/invalid
  */
 export function decodeSingleSeries(encoded) {
-  if (typeof encoded !== 'string') return encoded;
-
-  try {
-    const parsed = JSON.parse(encoded);
-    if (!Array.isArray(parsed)) return null;
-    if (isAllNullSeries(parsed)) return null;
-
-    const arr = [];
-    for (const entry of parsed) {
-      // [value, count] format (classic or compact repeats)
-      if (Array.isArray(entry) && entry.length >= 2) {
-        const [val, count] = entry;
-        const reps = Number.isFinite(count) && count > 0 ? count : 0;
-        for (let i = 0; i < reps; i++) {
-          arr.push(val === undefined ? null : val);
-        }
-        continue;
-      }
-      // Bare value (compact RLE singles OR raw arrays)
+  if (!Array.isArray(encoded) || isAllNullSeries(encoded)) return null;
+  const arr = [];
+  for (const entry of encoded) {
+    if (Array.isArray(entry) && entry.length >= 2) {
+      const [val, count] = entry;
+      const reps = Number.isFinite(count) && count > 0 ? count : 0;
+      for (let i = 0; i < reps; i++) arr.push(val === undefined ? null : val);
+    } else {
       arr.push(entry === undefined ? null : entry);
     }
-
-    if (!arr.length || arr.every(v => v == null)) return null;
-    return arr;
-  } catch {
-    return null;
   }
+  return !arr.length || arr.every(v => v == null) ? null : arr;
 }
 
 /**
@@ -79,16 +65,9 @@ export function decodeSeries(series = {}) {
 
   const decoded = {};
   for (const [key, value] of Object.entries(series)) {
-    if (typeof value === 'string') {
+    if (Array.isArray(value)) {
       const decodedValue = decodeSingleSeries(value);
-      if (decodedValue) {
-        decoded[key] = decodedValue;
-      }
-    } else if (Array.isArray(value)) {
-      // Already decoded array - filter out all-null
-      if (value.length && !value.every(v => v == null)) {
-        decoded[key] = value;
-      }
+      if (decodedValue) decoded[key] = decodedValue;
     } else {
       decoded[key] = value;
     }
@@ -132,19 +111,18 @@ export function encodeToRLE(arr) {
 }
 
 /**
- * Encode a single series to JSON string with RLE
+ * Encode a single series to compact RLE entries.
  * @param {number[]} arr - Raw values array
- * @returns {string} JSON string with RLE encoding
+ * @returns {Array} compact RLE entries
  */
 export function encodeSingleSeries(arr) {
-  const rle = encodeToRLE(arr);
-  return JSON.stringify(rle);
+  return encodeToRLE(arr);
 }
 
 /**
  * Encode all series in a timeline for file storage
  * @param {Object} series - Object with series name -> number[]
- * @returns {Object} Object with series name -> JSON string
+ * @returns {Object} Object with series name -> compact RLE entries
  */
 export function encodeSeries(series = {}) {
   if (!isPlainObject(series)) return {};
@@ -155,112 +133,9 @@ export function encodeSeries(series = {}) {
       // Skip all-null series
       if (value.every(v => v == null)) continue;
       encoded[key] = encodeSingleSeries(value);
-    } else if (typeof value === 'string' && value.startsWith('[')) {
-      // Preserve already-encoded string values (v3 format)
-      encoded[key] = value;
     }
   }
   return encoded;
-}
-
-/**
- * Parse a timestamp value to unix milliseconds
- * Handles both unix numbers and human-readable strings
- * @param {unknown} value - Timestamp value
- * @param {string} timezone - Timezone for parsing strings (default: UTC)
- * @returns {number|null}
- */
-export function parseToUnixMs(value, timezone = 'UTC') {
-  // Already a number
-  if (Number.isFinite(Number(value))) {
-    return Number(value);
-  }
-
-  // String timestamp
-  if (typeof value !== 'string') return null;
-
-  try {
-    // Try parsing as ISO date
-    const date = new Date(value);
-    const ms = date.getTime();
-    if (Number.isFinite(ms)) return ms;
-  } catch {
-    // Ignore parsing errors
-  }
-
-  return null;
-}
-
-/**
- * Format unix milliseconds to human-readable timestamp
- * @param {number} ms - Unix milliseconds
- * @param {string} timezone - Target timezone
- * @returns {string} Formatted timestamp
- */
-export function formatTimestamp(ms, timezone = 'UTC') {
-  if (!Number.isFinite(ms)) return null;
-  const date = new Date(ms);
-  return date.toISOString();
-}
-
-/**
- * Prepare timeline for API response (decode series)
- * @param {Object} timeline - Raw timeline from storage
- * @param {string} timezone - Timezone for timestamp parsing
- * @returns {Object} Timeline with decoded series
- */
-export function prepareTimelineForApi(timeline, timezone = 'UTC') {
-  if (!timeline || typeof timeline !== 'object') {
-    return { series: {}, events: [] };
-  }
-
-  const result = {
-    series: decodeSeries(timeline.series || {}),
-    events: []
-  };
-
-  // Preserve timeline metadata fields
-  if (timeline.interval_seconds != null) result.interval_seconds = timeline.interval_seconds;
-  if (timeline.tick_count != null) result.tick_count = timeline.tick_count;
-  if (timeline.encoding) result.encoding = timeline.encoding;
-  if (timeline.timebase) result.timebase = timeline.timebase;
-
-  // Parse event timestamps
-  if (Array.isArray(timeline.events)) {
-    result.events = timeline.events.map(evt => {
-      if (!evt || typeof evt !== 'object') return evt;
-      const ts = parseToUnixMs(evt.timestamp, timezone);
-      if (ts == null) return evt;
-      return { ...evt, timestamp: ts };
-    });
-  }
-
-  return result;
-}
-
-/**
- * Prepare timeline for file storage (encode series, preserve metadata)
- * @param {Object} timeline - Timeline with decoded series
- * @returns {Object} Timeline with encoded series and preserved metadata
- */
-export function prepareTimelineForStorage(timeline) {
-  if (!timeline || typeof timeline !== 'object') {
-    return { series: {}, events: [] };
-  }
-
-  const result = {
-    series: encodeSeries(timeline.series || {}),
-    events: timeline.events || []
-  };
-
-  // Preserve timeline metadata fields (flat form only — timebase is redundant)
-  if (timeline.interval_seconds != null) result.interval_seconds = timeline.interval_seconds;
-  if (timeline.tick_count != null) result.tick_count = timeline.tick_count;
-  if (timeline.encoding) result.encoding = timeline.encoding;
-  // Note: timeline.timebase intentionally omitted from storage — it duplicates
-  // the flattened interval_seconds / tick_count / encoding fields above.
-
-  return result;
 }
 
 /**
@@ -323,9 +198,5 @@ export default {
   encodeSingleSeries,
   encodeToRLE,
   isAllNullSeries,
-  parseToUnixMs,
-  formatTimestamp,
-  prepareTimelineForApi,
-  prepareTimelineForStorage,
   mergeTimelines
 };

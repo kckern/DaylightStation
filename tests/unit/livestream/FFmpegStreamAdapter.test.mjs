@@ -58,6 +58,16 @@ describe('FFmpegStreamAdapter', () => {
   });
 
   describe('addClient / removeClient', () => {
+    it('owns subscriber stream creation and unregisters it on close', () => {
+      adapter.start();
+      const { stream, clientId } = adapter.openClient();
+      expect(stream).toBeInstanceOf(PassThrough);
+      expect(typeof clientId).toBe('string');
+      expect(adapter.clientCount).toBe(1);
+      stream.emit('close');
+      expect(adapter.clientCount).toBe(0);
+    });
+
     it('pipes encoder output to client stream', () => {
       adapter.start();
       const client = new PassThrough();

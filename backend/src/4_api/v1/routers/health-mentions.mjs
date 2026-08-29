@@ -22,105 +22,21 @@ const METRIC_LIST = [
  * Create the health-mentions router. Endpoints power the dscli health
  * autocomplete dropdowns in the CoachChat composer.
  *
- * Deps: { healthAnalyticsService, healthStore?, healthService?, now? }
+ * Deps: { mentionSuggestions }
  */
 export function createHealthMentionsRouter({
-  healthAnalyticsService,
-  healthStore = null,
-  healthService = null,
-  now = () => new Date(),
+  mentionSuggestions,
 }) {
   const router = Router();
 
   // ── Internal helpers ──
 
   async function fetchPeriodsInternal({ userId, prefix, limit = 50 }) {
-    const out = [];
-
-    // Rolling vocab
-    for (const label of ROLLING_LABELS) {
-      out.push({
-        slug: label,
-        label: humanizeRollingLabel(label),
-        value: { rolling: label },
-        group: 'period',
-      });
-    }
-    // Calendar named labels
-    for (const label of CALENDAR_LABELS) {
-      out.push({
-        slug: label,
-        label: humanizeCalendarLabel(label),
-        value: { calendar: label },
-        group: 'period',
-      });
-    }
-    // Named periods
-    if (healthAnalyticsService?.listPeriods) {
-      try {
-        const r = await healthAnalyticsService.listPeriods({ userId });
-        for (const p of (r.periods || [])) {
-          out.push({
-            slug: p.slug,
-            label: p.label || p.slug,
-            value: { named: p.slug },
-            group: 'period',
-            subSource: p.source,
-          });
-        }
-      } catch { /* surface as no named periods */ }
-    }
-
-    const filtered = prefix
-      ? out.filter(s =>
-          s.slug.toLowerCase().includes(prefix) ||
-          (s.label || '').toLowerCase().includes(prefix))
-      : out;
-
-    return filtered.slice(0, limit);
+    return mentionSuggestions.periods({ userId, prefix, limit });
   }
 
   async function fetchRecentDaysInternal({ userId, prefix, has = null, days = 30, limit = 50 }) {
-    const today = now();
-    const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-    const fromDate = new Date(todayUtc);
-    fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1));
-    const fromStr = fromDate.toISOString().slice(0, 10);
-    const toStr = todayUtc.toISOString().slice(0, 10);
-
-    const [weight, nutrition, range] = await Promise.all([
-      healthStore?.loadWeightData?.(userId).catch(() => ({})) ?? Promise.resolve({}),
-      healthStore?.loadNutritionData?.(userId).catch(() => ({})) ?? Promise.resolve({}),
-      healthService?.getHealthForRange?.(userId, fromStr, toStr).catch(() => ({})) ?? Promise.resolve({}),
-    ]);
-
-    const results = [];
-    for (let i = 0; i < days; i++) {
-      const d = new Date(todayUtc);
-      d.setUTCDate(todayUtc.getUTCDate() - i);
-      const date = d.toISOString().slice(0, 10);
-      const hasWeight = !!weight?.[date];
-      const hasNutrition = !!nutrition?.[date] && (nutrition[date].calories ?? 0) > 0;
-      const hasWorkout = Array.isArray(range?.[date]?.workouts) && range[date].workouts.length > 0;
-
-      const entry = {
-        slug: date,
-        label: date,
-        value: { date },
-        group: 'day',
-        has: { weight: hasWeight, nutrition: hasNutrition, workout: hasWorkout },
-      };
-      if (has === 'weight'    && !hasWeight)    continue;
-      if (has === 'nutrition' && !hasNutrition) continue;
-      if (has === 'workout'   && !hasWorkout)   continue;
-      results.push(entry);
-    }
-
-    const filtered = prefix
-      ? results.filter(s => s.slug.toLowerCase().includes(prefix))
-      : results;
-
-    return filtered.slice(0, limit);
+    return mentionSuggestions.recentDays({ userId, prefix, has, days, limit });
   }
 
   // ── Routes ──
@@ -143,7 +59,7 @@ export function createHealthMentionsRouter({
 
   router.get('/metrics', (req, res) => {
     const prefix = (req.query.prefix || '').toString().toLowerCase();
-    res.json({ suggestions: fetchMetricsInternal({ prefix }) });
+    res.json({ suggestions: mentionSuggestions.metrics({ prefix }) });
   });
 
   router.get('/all', async (req, res) => {
@@ -151,13 +67,7 @@ export function createHealthMentionsRouter({
     if (!userId) return res.status(400).json({ error: 'user query param required' });
     const prefix = (req.query.prefix || '').toString().toLowerCase();
 
-    const [periods, days, metrics] = await Promise.all([
-      fetchPeriodsInternal({ userId, prefix, limit: 8 }),
-      fetchRecentDaysInternal({ userId, prefix, days: 14, limit: 14 }),
-      fetchMetricsInternal({ prefix, limit: 6 }),
-    ]);
-
-    res.json({ suggestions: roundRobin([periods, days, metrics]) });
+    res.json({ suggestions: await mentionSuggestions.all({ userId, prefix }) });
   });
 
   return router;

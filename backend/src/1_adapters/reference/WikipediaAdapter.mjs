@@ -1,6 +1,7 @@
 // backend/src/1_adapters/reference/WikipediaAdapter.mjs
 
 import { HttpClient } from '#system/services/HttpClient.mjs';
+import { IEncyclopediaGateway } from '#apps/reference/ports/IEncyclopediaGateway.mjs';
 
 /**
  * WikipediaAdapter — client for the self-hosted Wikipedia service
@@ -11,7 +12,7 @@ import { HttpClient } from '#system/services/HttpClient.mjs';
  *
  * @module adapters/reference/WikipediaAdapter
  */
-export class WikipediaAdapter {
+export class WikipediaAdapter extends IEncyclopediaGateway {
   #baseUrl;
   #httpClient;
   #logger;
@@ -23,6 +24,7 @@ export class WikipediaAdapter {
    * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
    */
   constructor({ baseUrl, logger = console, httpClient } = {}) {
+    super();
     if (!baseUrl) throw new Error('WikipediaAdapter requires baseUrl');
     this.#baseUrl = baseUrl.replace(/\/$/, '');
     this.#logger = logger;

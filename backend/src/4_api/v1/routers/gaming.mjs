@@ -1,6 +1,6 @@
 import express from 'express';
-import path from 'node:path';
 import { splatPath } from '#api/utils/wildcard.mjs';
+import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 
 const STATUS = { definition_not_found: 404, experience_not_found: 404, session_not_found: 404, revision_conflict: 409, idempotency_conflict: 409, session_terminal: 409, authorization_denied: 403, journal_corrupt: 500, invalid_contract: 400, invalid_definition: 422, invalid_session_setup: 422, experience_manifest_invalid: 422, surface_required: 422, surface_incompatible: 422, authority_incompatible: 422, rule_rejected: 422, illegal_command: 422, invalid_wager: 422, invalid_dice_notation: 422, no_selection_candidates: 422, verifier_required: 422 };
 
@@ -27,7 +27,7 @@ function requireHost(req) {
   return viewer;
 }
 
-export function createGamingRouter({ gamingApplication, assetCatalog = null, mediaPartyGamesDir = null, broadcastEvent = null, logger = null }) {
+export function createGamingRouter({ gamingApplication, gamingMediaService = null, broadcastEvent = null, logger = null, sendFileResource = sendLocalFileResource }) {
   if (!gamingApplication) throw new Error('createGamingRouter: gamingApplication required');
   const router = express.Router();
   const handle = (operation) => async (req, res) => {
@@ -79,28 +79,28 @@ export function createGamingRouter({ gamingApplication, assetCatalog = null, med
 
   router.get('/media/*splat', handle((req, res) => {
     requireViewer(req);
-    if (!mediaPartyGamesDir) return res.status(404).json({ error: 'media_not_configured' });
-    const root = path.resolve(mediaPartyGamesDir); const file = path.resolve(root, splatPath(req));
-    if (!file.startsWith(`${root}${path.sep}`)) return res.status(404).json({ error: 'media_not_found' });
-    return res.sendFile(file, (error) => { if (error && !res.headersSent) res.status(404).json({ error: 'media_not_found' }); });
+    const result = gamingMediaService?.getPartyMedia(splatPath(req)) || { kind: 'unavailable' };
+    if (result.kind === 'unavailable') return res.status(404).json({ error: 'media_not_configured' });
+    if (result.kind === 'not_found') return res.status(404).json({ error: 'media_not_found' });
+    return sendFileResource(req, res, result.value.resource, (error) => { if (error && !res.headersSent) res.status(404).json({ error: 'media_not_found' }); });
   }));
 
   router.get('/assets/:packId', handle((req, res) => {
     requireViewer(req);
-    if (!assetCatalog) return res.status(404).json({ error: 'asset_catalog_unavailable' });
-    const catalog = assetCatalog.get(req.params.packId); if (!catalog) return res.status(404).json({ error: 'asset_pack_not_found' });
-    const assets = Object.fromEntries(Object.entries(catalog.assets).filter(([, asset]) => asset.status === 'approved').map(([id, asset]) => {
-      const { source, source_sha256: ignoredHash, provenance, distribution, ...publicAsset } = asset; void source; void ignoredHash; void provenance; void distribution;
-      return [id, { ...publicAsset, image_url: `/api/v1/gaming/assets/${encodeURIComponent(req.params.packId)}/${encodeURIComponent(id)}/image` }];
-    }));
-    res.json({ schema_version: catalog.schema_version, pack: catalog.pack, assets });
+    const result = gamingMediaService?.getCatalog(req.params.packId) || { kind: 'unavailable' };
+    if (result.kind === 'unavailable') return res.status(404).json({ error: 'asset_catalog_unavailable' });
+    if (result.kind === 'not_found') return res.status(404).json({ error: 'asset_pack_not_found' });
+    const assets = Object.fromEntries(Object.entries(result.value.assets).map(([id, asset]) => [id, { ...asset, image_url: `/api/v1/gaming/assets/${encodeURIComponent(req.params.packId)}/${encodeURIComponent(id)}/image` }]));
+    res.json({ schema_version: result.value.schemaVersion, pack: result.value.pack, assets });
   }));
   router.get('/assets/:packId/:assetId/image', handle((req, res) => {
     requireViewer(req);
-    if (!assetCatalog) return res.status(404).json({ error: 'asset_catalog_unavailable' });
-    const asset = assetCatalog.getAsset(req.params.packId, req.params.assetId); if (!asset) return res.status(404).json({ error: 'asset_not_found' });
-    const etag = `"${asset.source_sha256}"`; res.set({ ETag: etag, 'Cache-Control': 'private, max-age=31536000, immutable' });
-    if (req.headers?.['if-none-match'] === etag) return res.status(304).end(); return res.type('png').sendFile(asset.file);
+    const result = gamingMediaService?.getAssetImage(req.params.packId, req.params.assetId) || { kind: 'unavailable' };
+    if (result.kind === 'unavailable') return res.status(404).json({ error: 'asset_catalog_unavailable' });
+    if (result.kind === 'not_found') return res.status(404).json({ error: 'asset_not_found' });
+    const etag = `"${result.value.contentHash}"`; res.set({ ETag: etag, 'Cache-Control': 'private, max-age=31536000, immutable' });
+    if (req.headers?.['if-none-match'] === etag) return res.status(304).end();
+    res.type('png'); return sendFileResource(req, res, result.value.resource);
   }));
   return router;
 }

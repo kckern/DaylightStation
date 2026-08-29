@@ -13,16 +13,16 @@ import { requireParam } from '#api/utils/validation.mjs';
 /**
  * Create home-dashboard toggle handler
  * @param {Object} deps
- * @param {Object} deps.container - HomeAutomationContainer
+ * @param {Object} deps.operation - ToggleDashboardEntity use case
  * @param {Object} [deps.logger]
  * @returns {Function} Express handler
  */
-export function homeDashboardToggleHandler({ container, logger = console }) {
+export function homeDashboardToggleHandler({ operation }) {
   return async (req, res) => {
     const source = { ...req.query, ...req.body };
     const entityId = requireParam(source, 'entityId');
     const desiredState = requireParam(source, 'desiredState');
-    const result = await container.toggleDashboardEntity().execute({ entityId, desiredState });
+    const result = await operation.execute({ entityId, desiredState });
     res.json(result);
   };
 }

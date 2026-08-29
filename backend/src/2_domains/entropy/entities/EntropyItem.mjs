@@ -140,24 +140,6 @@ export class EntropyItem {
     });
   }
 
-  /**
-   * Convert to plain object for API response
-   * @returns {Object}
-   */
-  toJSON() {
-    return {
-      id: this.source,
-      source: this.source,
-      name: this.name,
-      icon: this.icon,
-      status: this.status,
-      value: this.value,
-      label: this.label,
-      lastUpdate: this.lastUpdate,
-      url: this.url,
-      weight: this.weight,
-    };
-  }
 }
 
 export default EntropyItem;

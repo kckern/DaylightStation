@@ -30,14 +30,16 @@ const configDir = path.join(dataDir, 'system', 'config');
 // Bootstrap config
 const { hydrateProcessEnvFromConfigs } = await import('#system/logging/config.mjs');
 const { initConfigService, configService } = await import('#system/config/index.mjs');
+const { createSecretsProvider } = await import('#adapters/secrets/createSecretsProvider.mjs');
 
 hydrateProcessEnvFromConfigs(configDir);
-await initConfigService(dataDir);
+await initConfigService(dataDir, { secretsProviderFactory: createSecretsProvider });
 
 const { ABSEbookFeedAdapter } = await import('#adapters/feed/sources/ABSEbookFeedAdapter.mjs');
 const { AudiobookshelfClient } = await import('#adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs');
 const { default: axios } = await import('axios');
-const { dataService } = await import('#system/config/index.mjs');
+const { DataService } = await import('#adapters/persistence/files/DataService.mjs');
+const dataService = new DataService({ configService });
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');

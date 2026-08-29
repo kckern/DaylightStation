@@ -7,7 +7,6 @@
  */
 
 import { createCanvas, registerFont, loadImage } from 'canvas';
-import fs from 'fs';
 import path from 'path';
 
 /**
@@ -44,11 +43,6 @@ export class CanvasRenderer {
 
     if (this.#registeredFonts.has(key)) {
       return true;
-    }
-
-    if (!fs.existsSync(fullPath)) {
-      this.#logger.warn?.('canvas.font.notFound', { path: fullPath });
-      return false;
     }
 
     try {

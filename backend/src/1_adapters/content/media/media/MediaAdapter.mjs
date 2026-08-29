@@ -84,9 +84,9 @@ export class MediaAdapter {
   _getMediaProgress(mediaKey) {
     if (!this.mediaProgressMemory) return null;
     // Try both with and without source prefix
-    const state = this.mediaProgressMemory.get(mediaKey) ||
-                  this.mediaProgressMemory.get(`files:${mediaKey}`) ||
-                  this.mediaProgressMemory.get(`media:${mediaKey}`);
+    const state = this.mediaProgressMemory.findProgress(mediaKey) ||
+                  this.mediaProgressMemory.findProgress(`files:${mediaKey}`) ||
+                  this.mediaProgressMemory.findProgress(`media:${mediaKey}`);
     return state || null;
   }
 
@@ -605,7 +605,7 @@ export class MediaAdapter {
       let watched = false;
       if (this.mediaProgressMemory) {
         const mediaKey = item.localId || item.id?.replace(/^(files|media):/, '');
-        const state = await this.mediaProgressMemory.get(mediaKey, 'media');
+        const state = await this.mediaProgressMemory.findProgress(mediaKey, 'media');
         percent = state?.percent || 0;
         watched = percent >= 90;
       }

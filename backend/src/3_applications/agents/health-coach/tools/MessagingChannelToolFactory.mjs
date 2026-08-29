@@ -7,7 +7,7 @@ export class MessagingChannelToolFactory extends ToolFactory {
   static domain = 'messaging';
 
   createTools() {
-    const { messagingGateway, conversationId } = this.deps;
+    const { messagingGateway, conversationId, logger = console } = this.deps;
 
     return [
       createTool({
@@ -31,6 +31,7 @@ export class MessagingChannelToolFactory extends ToolFactory {
             const result = await messagingGateway.sendMessage(conversationId, text, { parseMode });
             return { success: true, messageId: result.messageId };
           } catch (err) {
+            logger.warn?.('health-coach.tool.send-message.failed', { conversationId, error: err.message });
             return { success: false, error: err.message };
           }
         },

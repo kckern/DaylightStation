@@ -9,6 +9,7 @@ import {
 } from '#composition/modules/schoolCalc.mjs';
 import { createSchoolCatalog } from '#composition/modules/schoolCatalog.mjs';
 import { decodeTi86Envelope, decodeTi86LearnerRoster } from '#adapters/schoolcalc/ti86/index.mjs';
+import { SchoolCalcRelayCredentialVerifier } from '#adapters/schoolcalc/SchoolCalcRelayCredentialVerifier.mjs';
 
 const TOKEN_A = 'a'.repeat(32);
 const TOKEN_B = 'b'.repeat(32);
@@ -152,10 +153,10 @@ describe('SchoolCalc composition', () => {
 
   it('maps each bearer token to one server-owned relay identity', () => {
     const authenticate = createSchoolCalcIngressAuthenticator({
-      credentials: [
+      credentialVerifier: new SchoolCalcRelayCredentialVerifier({ credentials: [
         { relayId: 'relay-a', apiToken: TOKEN_A },
         { relayId: 'relay-b', apiToken: TOKEN_B },
-      ],
+      ] }),
     });
     const req = { get: (name) => ({ Authorization: `Bearer ${TOKEN_B}` }[name]) };
     const res = responseDouble();
@@ -168,7 +169,9 @@ describe('SchoolCalc composition', () => {
 
   it('rejects invalid credentials and a relay header that contradicts the credential', () => {
     const authenticate = createSchoolCalcIngressAuthenticator({
-      credentials: [{ relayId: 'relay-a', apiToken: TOKEN_A }],
+      credentialVerifier: new SchoolCalcRelayCredentialVerifier({
+        credentials: [{ relayId: 'relay-a', apiToken: TOKEN_A }],
+      }),
     });
     for (const headers of [
       { Authorization: 'Bearer wrong' },
@@ -186,7 +189,7 @@ describe('SchoolCalc composition', () => {
   });
 
   it('rejects shared relay secrets because a credential must identify exactly one relay', () => {
-    expect(() => createSchoolCalcIngressAuthenticator({ credentials: [
+    expect(() => new SchoolCalcRelayCredentialVerifier({ credentials: [
       { relayId: 'relay-a', apiToken: TOKEN_A },
       { relayId: 'relay-b', apiToken: TOKEN_A },
     ] })).toThrow(/distinct api_token/);

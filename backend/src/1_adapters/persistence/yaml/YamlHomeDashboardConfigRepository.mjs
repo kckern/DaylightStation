@@ -15,10 +15,11 @@
  */
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { IHomeDashboardConfigRepository } from '#apps/home-automation/ports/IHomeDashboardConfigRepository.mjs';
 
 const CONFIG_PATH = 'home/dashboard';   // was 'config/home-dashboard'
 
-export class YamlHomeDashboardConfigRepository {
+export class YamlHomeDashboardConfigRepository extends IHomeDashboardConfigRepository {
   #dataService;
   #householdId;
   #logger;
@@ -31,6 +32,7 @@ export class YamlHomeDashboardConfigRepository {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({ dataService, configService, householdId, logger = console } = {}) {
+    super();
     if (!dataService) {
       throw new InfrastructureError('YamlHomeDashboardConfigRepository requires dataService', {
         code: 'MISSING_DEPENDENCY',

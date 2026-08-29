@@ -350,7 +350,7 @@ export class ImmichAdapter {
           capturedAt: asset.exifInfo?.dateTimeOriginal,
           // Wall-clock at the place (serialized with a misleading `Z`); the display
           // label is built from this, not capturedAt (a true UTC instant). See the
-          // TIMEZONE CONTRACT in photoLabels.mjs.
+          // TIMEZONE CONTRACT in shared/content/immich/photoLabels.mjs.
           localDateTime: asset.localDateTime,
           favorite: asset.isFavorite
         }

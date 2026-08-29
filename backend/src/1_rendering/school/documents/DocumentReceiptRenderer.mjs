@@ -23,8 +23,6 @@
  * @module rendering/school/documents/DocumentReceiptRenderer
  */
 
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
 import QRCode from 'qrcode';
@@ -43,10 +41,6 @@ import {
  * files are `currentColor` inline icons; tape has no CSS cascade, so the
  * loader pins the ink below.
  */
-const DEFAULT_ICON_DIR = fileURLToPath(
-  new URL('../../../../../frontend/src/modules/School/home/icons/svg', import.meta.url),
-);
-
 /** Blocks this target can print. Anything else is refused by name. */
 const SUPPORTED = new Set(['rich_text', 'math', 'question', 'media_action', 'scan_action', 'result_summary', 'done_summary']);
 
@@ -69,7 +63,7 @@ export function createDocumentReceiptRenderer({
   texToSvg = mathJaxTexToSvg,
   rasterizeSvg = defaultRasterizeSvg,
   fontDir = undefined,
-  iconDir = DEFAULT_ICON_DIR,
+  resolveSubjectIcon = null,
   scanCodes = 'box',
 } = {}) {
   const contentWidth = theme.canvas.width - 2 * theme.layout.margin;
@@ -88,7 +82,9 @@ export function createDocumentReceiptRenderer({
     // it must not turn a decoration into a directory-traversal read.
     if (/^[a-z0-9][a-z0-9-]*$/.test(icon)) {
       try {
-        const svg = await readFile(`${iconDir}/${icon}.svg`, 'utf8');
+        const resolved = await resolveSubjectIcon?.(`subject-icon:${icon}`);
+        const svg = resolved?.sourceSvg ?? resolved?.svg;
+        if (!svg) throw new Error('subject icon unresolved');
         png = await rasterizeSvg({
           svgString: svg.replaceAll('currentColor', theme.colors.text),
           widthPx: theme.action.iconPx * 2,

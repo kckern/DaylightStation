@@ -1,4 +1,4 @@
-import { AuthorizationError } from '#system/utils/errors/index.mjs';
+import { AuthorizationError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class ActivateDashboardScene {
   #configRepository;

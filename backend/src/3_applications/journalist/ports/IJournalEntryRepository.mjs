@@ -104,24 +104,10 @@
  * @returns {Promise<Array<{date: string, entries: JournalEntry[]}>>}
  */
 
-// Export interface documentation
-export const IJournalEntryRepository = {
-  name: 'IJournalEntryRepository',
-  methods: [
-    // From IRepository
-    'save',
-    'findById',
-    'findAll',
-    'update',
-    'delete',
-    'exists',
-    // Extended
-    'findByDateRange',
-    'findByDate',
-    'findRecent',
-    'getMessageHistory',
-    'aggregateByDate',
-  ],
-};
+export class IJournalEntryRepository {
+  async save() { throw new Error('IJournalEntryRepository.save not implemented'); }
+  async findById() { throw new Error('IJournalEntryRepository.findById not implemented'); }
+  async findAll() { throw new Error('IJournalEntryRepository.findAll not implemented'); }
+}
 
 export default IJournalEntryRepository;

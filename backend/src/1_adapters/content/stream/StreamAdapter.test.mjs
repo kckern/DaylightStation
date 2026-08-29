@@ -4,7 +4,7 @@ import { StreamAdapter } from './StreamAdapter.mjs';
 import { StreamProfile } from '#domains/content/value-objects/StreamProfile.mjs';
 import { StreamResult } from '#domains/content/value-objects/StreamResult.mjs';
 import { encodeStreamUrl } from './streamUrlCodec.mjs';
-import { validateAdapter } from '#domains/content/services/validateContentSource.mjs';
+import { validateAdapter } from '#apps/content/ports/IContentSource.mjs';
 
 function fakeResolver(strategy, result) {
   return { strategy, resolve: async () => result };

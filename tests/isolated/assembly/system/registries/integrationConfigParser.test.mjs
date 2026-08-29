@@ -4,7 +4,7 @@ import {
   CAPABILITY_KEYS,
   parseIntegrationsConfig,
   parseAppRouting,
-} from '#backend/src/0_system/registries/integrationConfigParser.mjs';
+} from '#composition/integrations/integrationConfigParser.mjs';
 
 describe('integrationConfigParser', () => {
   describe('PROVIDER_CAPABILITY_MAP', () => {

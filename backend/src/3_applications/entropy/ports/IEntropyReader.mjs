@@ -17,7 +17,7 @@ export class IEntropyReader {
    * Get the most recent timestamp from a data source
    *
    * @param {string} username - User identifier
-   * @param {string} dataPath - Path to data file (relative to user lifelog)
+   * @param {string} datasetId - Semantic dataset identifier
    * @param {Object} [options] - Additional options
    * @param {string} [options.dateField='date'] - Field name containing date
    * @param {Object} [options.filter] - Filter criteria { field, operator, value }
@@ -25,22 +25,22 @@ export class IEntropyReader {
    * @param {string} [options.checkField] - Field that must exist for valid entry
    * @returns {Promise<{ timestamp: number, date: string, data: any } | null>}
    */
-  async getLastUpdated(username, dataPath, options = {}) {
-    throw new Error('IEntropyReader.getLastUpdated must be implemented');
+  async readLatestObservation(username, datasetId, options = {}) {
+    throw new Error('IEntropyReader.readLatestObservation must be implemented');
   }
 
   /**
    * Get count from a data source
    *
    * @param {string} username - User identifier
-   * @param {string} dataPath - Path to data file (relative to user lifelog)
+   * @param {string} datasetId - Semantic dataset identifier
    * @param {Object} [options] - Additional options
    * @param {string} [options.countField] - Field containing count value
    * @param {string} [options.listProperty] - Nested property containing list
    * @returns {Promise<{ count: number, lastUpdated: string | null }>}
    */
-  async getCount(username, dataPath, options = {}) {
-    throw new Error('IEntropyReader.getCount must be implemented');
+  async readMetricCount(username, datasetId, options = {}) {
+    throw new Error('IEntropyReader.readMetricCount must be implemented');
   }
 }
 

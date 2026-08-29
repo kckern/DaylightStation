@@ -6,9 +6,9 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
+import { createNutriLog } from '../nutriLogRecords.mjs';
 
 /**
  * Log food from image use case
@@ -25,10 +25,12 @@ export class LogFoodFromImage {
   #imageProcessor;
   #reconciliationReader;
   #catalogService;
+  #imageDownloader;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
     if (!deps.aiGateway) throw new Error('aiGateway is required');
+    if (!deps.imageDownloader) throw new Error('imageDownloader is required');
 
     this.#messagingGateway = deps.messagingGateway;
     this.#aiGateway = deps.aiGateway;
@@ -41,6 +43,7 @@ export class LogFoodFromImage {
     this.#imageProcessor = deps.imageProcessor; // Optional: for downloading/processing images
     this.#reconciliationReader = deps.reconciliationReader || null;
     this.#catalogService = deps.catalogService || null;
+    this.#imageDownloader = deps.imageDownloader;
   }
 
   /**
@@ -48,7 +51,7 @@ export class LogFoodFromImage {
    * @private
    */
   #getTimezone() {
-    return this.#config?.getDefaultTimezone?.() || this.#config?.weather?.timezone || 'America/Los_Angeles';
+    return this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
   }
 
   /**
@@ -128,9 +131,7 @@ export class LogFoodFromImage {
       let photoSource;
       if (imageUrl && imageUrl.startsWith('http')) {
         try {
-          const dlResponse = await fetch(imageUrl);
-          const arrayBuffer = await dlResponse.arrayBuffer();
-          photoSource = Buffer.from(arrayBuffer);
+          photoSource = await this.#imageDownloader.download(imageUrl);
         } catch (e) {
           this.#logger.warn?.('logImage.download.failed', { conversationId, error: e.message });
           photoSource = imageUrl; // Fallback to URL
@@ -230,7 +231,7 @@ export class LogFoodFromImage {
       else if (localHour >= 14 && localHour < 20) mealTime = 'evening';
       else if (localHour >= 20 || localHour < 5) mealTime = 'night';
 
-      const nutriLog = NutriLog.create({
+      const nutriLog = createNutriLog({
         userId: conversationId.split(':')[0] === 'cli' ? 'cli-user' : userId,
         conversationId,
         items: foodItems,

@@ -7,7 +7,7 @@
  *
  * Reads from the YAML-backed concierge memory store the agent uses.
  * Internal agentId/userId are 'concierge' / 'household' (set inside the
- * YamlConciergeMemoryAdapter — not configurable here).
+ * ConciergeMemoryService — not configurable here).
  */
 
 import { printJson, printError, EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG } from '../_output.mjs';

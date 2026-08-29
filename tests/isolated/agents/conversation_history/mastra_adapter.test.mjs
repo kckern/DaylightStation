@@ -1,8 +1,13 @@
 // tests/isolated/agents/conversation_history/mastra_adapter.test.mjs
 import { describe, it, expect, vi } from 'vitest';
 import { MastraAdapter } from '../../../../backend/src/1_adapters/agents/MastraAdapter.mjs';
+import { AgentExecutionPolicy } from '#apps/agents/framework/AgentExecutionPolicy.mjs';
 
 const silentLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+const createAdapter = (deps = {}) => new MastraAdapter({
+  ...deps,
+  executionPolicy: new AgentExecutionPolicy({ logger: deps.logger || silentLogger }),
+});
 
 function makeFakeAgentClass() {
   const recorded = [];
@@ -23,7 +28,7 @@ function makeFakeAgentClass() {
 describe('MastraAdapter — messages threading', () => {
   it('execute() calls mastraAgent.generate(messages) when non-empty', async () => {
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent });
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent });
     const messages = [
       { role: 'user', content: 'first' },
       { role: 'assistant', content: 'reply' },
@@ -45,7 +50,7 @@ describe('MastraAdapter — messages threading', () => {
 
   it('execute() falls back to generate(input) when messages is empty', async () => {
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent });
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent });
     await adapter.execute({
       agent: { constructor: { id: 'stub' } },
       agentId: 'stub',
@@ -60,7 +65,7 @@ describe('MastraAdapter — messages threading', () => {
 
   it('execute() falls back to generate(input) when messages is undefined', async () => {
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent });
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent });
     await adapter.execute({
       agent: { constructor: { id: 'stub' } },
       agentId: 'stub',
@@ -74,7 +79,7 @@ describe('MastraAdapter — messages threading', () => {
 
   it('streamExecute() calls mastraAgent.stream(messages) when non-empty', async () => {
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent });
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent });
     const messages = [{ role: 'user', content: 'hi' }];
     const iter = adapter.streamExecute({
       agent: { constructor: { id: 'stub' } },
@@ -92,7 +97,7 @@ describe('MastraAdapter — messages threading', () => {
 
   it('streamExecute() falls back to stream(input) when messages is empty', async () => {
     const { FakeAgent, recorded } = makeFakeAgentClass();
-    const adapter = new MastraAdapter({ logger: silentLogger, agentClass: FakeAgent });
+    const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent });
     const iter = adapter.streamExecute({
       agent: { constructor: { id: 'stub' } },
       agentId: 'stub',

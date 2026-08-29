@@ -1,6 +1,6 @@
 // backend/src/domains/content/index.mjs
 //
-// Note: ArchiveService and MediaMemoryService moved to 3_applications/content/services
+// Note: ArchiveService lives in applications; media-memory filesystem helpers live in system/media.
 // (they use infrastructure like fs, config services)
 
 // Value Objects
@@ -30,9 +30,7 @@ export {
 
 // Services
 export { CanvasSelectionService } from './services/CanvasSelectionService.mjs';
-export { ContentSourceRegistry } from './services/ContentSourceRegistry.mjs';
 export { ItemSelectionService } from './services/ItemSelectionService.mjs';
-export { MediaMemoryValidatorService } from './services/MediaMemoryValidatorService.mjs';
-export { IMediaProgressClassifier } from './services/IMediaProgressClassifier.mjs';
+export { MediaProgressClassificationStrategy } from './services/MediaProgressClassificationStrategy.mjs';
 export { DefaultMediaProgressClassifier } from './services/DefaultMediaProgressClassifier.mjs';
 export { RelevanceScoringService } from './services/RelevanceScoringService.mjs';

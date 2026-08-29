@@ -12,9 +12,10 @@ import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { CONTENT_ID_KEYS, resolveContentId } from '#apps/devices/contentIdKeys.mjs';
+import { IContentControl } from '#apps/devices/ports/IContentControl.mjs';
+import { CONTENT_ID_KEYS, resolveContentId } from '#apps/devices/ports/contentControlQuery.mjs';
 
-export class WebSocketContentAdapter {
+export class WebSocketContentAdapter extends IContentControl {
   #topic;
   #deviceId;
   #wsBus;
@@ -23,6 +24,7 @@ export class WebSocketContentAdapter {
   #metrics;
 
   constructor(config, deps = {}) {
+    super();
     if (!deps.wsBus) {
       throw new InfrastructureError('WebSocketContentAdapter requires wsBus', {
         code: 'MISSING_DEPENDENCY',

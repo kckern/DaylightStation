@@ -7,7 +7,7 @@
  * sources record on the same day, e.g. an InBody and a DEXA).
  *
  * Notes:
- *   - userId is hardened via HealthArchiveScope.assertValidUserId to block
+ *   - userId is hardened via the domain identifier policy to block
  *     path-traversal before any I/O.
  *   - js-yaml's default schema coerces unquoted ISO dates (`2024-01-15`) to
  *     JS Date instances. We load with JSON_SCHEMA which preserves them as
@@ -23,14 +23,34 @@
  */
 
 import path from 'node:path';
-import fs from 'node:fs/promises';
 import yaml from 'js-yaml';
 
 import { HealthScan } from '#domains/health/entities/HealthScan.mjs';
-import { HealthArchiveScope } from '#apps/health/archive/HealthArchiveScope.mjs';
+import { assertValidHealthUserId } from '#domains/health/policies/HealthUserId.mjs';
 import { IHealthScanDatastore } from '#apps/health/ports/IHealthScanDatastore.mjs';
+import {
+  deleteFileStrictAsync, readDirectoryAsync, readTextFromPathAsync, writeTextFileAsync,
+} from '#system/utils/FileIO.mjs';
 
 const SCAN_FILE_EXT = '.yml';
+
+export function serializeHealthScan(scan) {
+  const out = {
+    date: scan.date, source: scan.source, device_type: scan.deviceType,
+    weight_lbs: scan.weightLbs, body_fat_percent: scan.bodyFatPercent,
+    lean_tissue_lbs: scan.leanTissueLbs, fat_tissue_lbs: scan.fatTissueLbs,
+  };
+  if (scan.boneMineralContentLbs !== null) out.bone_mineral_content_lbs = scan.boneMineralContentLbs;
+  if (scan.bmrKcal !== null) { out.bmr_kcal = scan.bmrKcal; out.bmr_method = scan.bmrMethod; }
+  if (scan.visceralFatLbs !== null) out.visceral_fat_lbs = scan.visceralFatLbs;
+  if (scan.boneDensityZScore !== null) out.bone_density_z_score = scan.boneDensityZScore;
+  if (scan.asymmetry !== null) out.asymmetry = { ...scan.asymmetry };
+  if (scan.regional !== null) out.regional = { ...scan.regional };
+  if (scan.notes) out.notes = scan.notes;
+  if (scan.rawPdfPath) out.raw_pdf_path = scan.rawPdfPath;
+  if (scan.rawImagePath) out.raw_image_path = scan.rawImagePath;
+  return out;
+}
 
 export class YamlHealthScanDatastore extends IHealthScanDatastore {
   #dataDir;
@@ -59,7 +79,7 @@ export class YamlHealthScanDatastore extends IHealthScanDatastore {
    * @private
    */
   #scansDir(userId) {
-    HealthArchiveScope.assertValidUserId(userId);
+    assertValidHealthUserId(userId);
     return path.join(
       this.#dataDir,
       'users',
@@ -77,7 +97,7 @@ export class YamlHealthScanDatastore extends IHealthScanDatastore {
   async #listYamlFiles(dir) {
     let entries;
     try {
-      entries = await fs.readdir(dir);
+      entries = await readDirectoryAsync(dir);
     } catch (err) {
       if (err.code === 'ENOENT') return [];
       throw err;
@@ -93,7 +113,7 @@ export class YamlHealthScanDatastore extends IHealthScanDatastore {
     const fullPath = path.join(dir, filename);
     let content;
     try {
-      content = await fs.readFile(fullPath, 'utf8');
+      content = await readTextFromPathAsync(fullPath);
     } catch (err) {
       this.#logger.warn?.('health.scan.read_failed', {
         file: filename,
@@ -175,9 +195,8 @@ export class YamlHealthScanDatastore extends IHealthScanDatastore {
     const filename = `${scan.date}-${scan.source}${SCAN_FILE_EXT}`;
     const fullPath = path.join(dir, filename);
 
-    await fs.mkdir(dir, { recursive: true });
-    const yamlText = yaml.dump(scan.serialize(), { lineWidth: 120, noRefs: true });
-    await fs.writeFile(fullPath, yamlText, 'utf8');
+    const yamlText = yaml.dump(serializeHealthScan(scan), { lineWidth: 120, noRefs: true });
+    await writeTextFileAsync(fullPath, yamlText);
 
     this.#logger.debug?.('health.scan.saved', {
       userId,
@@ -201,7 +220,7 @@ export class YamlHealthScanDatastore extends IHealthScanDatastore {
     for (const filename of matches) {
       const fullPath = path.join(dir, filename);
       try {
-        await fs.unlink(fullPath);
+        await deleteFileStrictAsync(fullPath);
       } catch (err) {
         if (err.code !== 'ENOENT') throw err;
       }

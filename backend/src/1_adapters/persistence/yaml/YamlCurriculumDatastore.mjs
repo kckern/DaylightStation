@@ -30,9 +30,11 @@
  * child standing at the printer depends on.
  */
 import path from 'path';
-import fs from 'fs';
 import yaml from 'js-yaml';
-import { listYamlFiles, loadYamlSafe } from '#system/utils/FileIO.mjs';
+import {
+  fileExists, listYamlFiles, loadYamlSafe, readBinaryFromPathAsync, readDirectory,
+  readTextFromPathAsync,
+} from '#system/utils/FileIO.mjs';
 import { ICurriculumCatalog } from '#apps/school/ports/ICurriculumCatalog.mjs';
 import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -86,7 +88,7 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
    */
   #works(subject) {
     try {
-      return fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
+      return readDirectory(path.join(this.#schoolDir(), subject), { withFileTypes: true })
         .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
         .map((e) => e.name);
     } catch { return []; /* empty shelf */ }
@@ -179,7 +181,7 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
         const where = `${subject}/${work}/${kind}`;
         let entries;
         try {
-          entries = fs.readdirSync(dir, { withFileTypes: true });
+          entries = readDirectory(dir, { withFileTypes: true });
         } catch (err) {
           // A directory that does not exist yet is an empty shelf, not a throw —
           // most works have no curriculum of a given kind. Anything else (a
@@ -224,7 +226,7 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
       // eslint-disable-next-line no-await-in-loop
       const chunk = await Promise.all(slice.map(async ({ id, file, subject, dir, embeddedLesson = false, sourceTitle = null }) => {
         try {
-          const document = yaml.load(await fs.promises.readFile(path.join(dir, file), 'utf8'));
+          const document = yaml.load(await readTextFromPathAsync(path.join(dir, file)));
           // An empty (or `null`) file is not an entity. Reporting it beats
           // handing the validators a null to reject with a vaguer message.
           if (document === null || document === undefined) return { id, error: 'file is empty' };
@@ -288,14 +290,14 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
       for (const work of this.#works(subject)) {
         const v2 = this.#courseV2(subject, work);
         const root = this.#workDir(subject, work);
-        const file = v2 && fs.existsSync(path.join(root, '_index.yml'))
+        const file = v2 && fileExists(path.join(root, '_index.yml'))
           ? path.join(root, '_index.yml')
-          : v2 && fs.existsSync(path.join(root, 'index.yml'))
+          : v2 && fileExists(path.join(root, 'index.yml'))
             ? path.join(root, 'index.yml')
             : v2 ? path.join(root, 'course.yml') : path.join(root, 'work.yml');
         let text;
         try {
-          text = await fs.promises.readFile(file, 'utf8'); // eslint-disable-line no-await-in-loop
+          text = await readTextFromPathAsync(file); // eslint-disable-line no-await-in-loop
         } catch (err) {
           // A work with no config is not an error — most of the imported Khan
           // shelves have none yet, and reporting each would drown the real ones.
@@ -329,7 +331,7 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
       const course = this.#courseConfig(subject, id);
       if (course?.schema !== COURSE_V2 || course?.poster !== 'poster.jpg') continue;
       try {
-        const bytes = await fs.promises.readFile(path.join(this.#workDir(subject, id), 'poster.jpg'));
+        const bytes = await readBinaryFromPathAsync(path.join(this.#workDir(subject, id), 'poster.jpg'));
         // JPEG SOI + marker. Serving a renamed SVG/HTML file as an image from a
         // teacher-authenticated route would still be content-sniffing trouble.
         if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return null;

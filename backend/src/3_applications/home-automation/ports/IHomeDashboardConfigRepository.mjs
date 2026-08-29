@@ -18,4 +18,8 @@ export function assertHomeDashboardConfigRepository(obj) {
   }
 }
 
-export default { isHomeDashboardConfigRepository, assertHomeDashboardConfigRepository };
+export class IHomeDashboardConfigRepository {
+  async load() { throw new Error('IHomeDashboardConfigRepository.load not implemented'); }
+}
+
+export default IHomeDashboardConfigRepository;

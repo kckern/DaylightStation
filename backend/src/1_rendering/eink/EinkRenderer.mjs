@@ -28,6 +28,8 @@ import { DEFAULT_THEME } from './einkTheme.mjs';
  *   receives; it never fetches. Pass `{}` for data-free layouts.
  * @param {string} [options.fontDir] - Font directory path
  * @param {boolean} [options.grayscale=true] - emit a compact 8-bit grayscale PNG
+ * @param {Date} options.renderReferenceTime - one application-supplied instant
+ *   shared by every time-sensitive widget in the render
  *   (mono panels, e.g. E1003 Gray16). Pass false for full-colour panels (e.g.
  *   E1004 Spectra-6) to emit an RGB PNG the panel firmware colour-dithers itself.
  * @returns {Promise<Buffer>} PNG buffer
@@ -37,6 +39,7 @@ export async function render(screenConfig, options = {}) {
     data,
     fontDir = '/usr/share/fonts',
     grayscale = true,
+    renderReferenceTime,
   } = options;
 
   if (!data || typeof data !== 'object') {
@@ -46,6 +49,9 @@ export async function render(screenConfig, options = {}) {
     );
     err.code = 'EINK_RENDER_DATA_REQUIRED';
     throw err;
+  }
+  if (!(renderReferenceTime instanceof Date) || Number.isNaN(renderReferenceTime.getTime())) {
+    throw new TypeError('EinkRenderer.render requires options.renderReferenceTime');
   }
 
   const width = screenConfig.width || 1600;
@@ -80,7 +86,7 @@ export async function render(screenConfig, options = {}) {
       ctx.beginPath();
       ctx.rect(region.box.x, region.box.y, region.box.w, region.box.h);
       ctx.clip();
-      drawFn(ctx, region.box, { ...data, ...region.props }, theme);
+      drawFn(ctx, region.box, { ...data, ...region.props, renderReferenceTime }, theme);
       ctx.restore();
     } else {
       ctx.save();

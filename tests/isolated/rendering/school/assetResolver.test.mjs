@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createFileAssetResolver, svgDimensions } from '#rendering/school/documents/assetResolver.mjs';
+import { createFileAssetResolver, svgDimensions } from '#adapters/school/documents/FilesystemSchoolAssetResolver.mjs';
 import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
 import { UnresolvedAssetError } from '#rendering/school/documents/measure.mjs';
 

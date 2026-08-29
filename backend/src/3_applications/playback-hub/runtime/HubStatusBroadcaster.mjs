@@ -24,6 +24,15 @@
  *     requested cadence directly.
  */
 
+function projectSlotStatus(slot) {
+  return {
+    position: slot.position, color: slot.color, bt_connected: slot.bt_connected,
+    paused: slot.paused, now_playing: slot.now_playing ?? null, volume: slot.volume,
+    playlist_pos: slot.playlist_pos, playlist_count: slot.playlist_count,
+    armed_source: slot.armed_source ?? null,
+  };
+}
+
 export class HubStatusBroadcaster {
   /** @type {import('../ports/IPlaybackHubGateway.mjs').IPlaybackHubGateway} */ #gateway;
   /** @type {{ publish: Function }} */ #eventPublisher;
@@ -43,7 +52,8 @@ export class HubStatusBroadcaster {
    *   logger?: object,
    *   intervalMs?: number,
    *   maxBackoffMs?: number,
-   *   sleepFn?: (ms:number)=>Promise<void>
+   *   sleepFn?: (ms:number)=>Promise<void>,
+   *   scheduler?: { wait: (ms:number)=>Promise<void> }
    * }} deps
    */
   constructor({
@@ -52,7 +62,8 @@ export class HubStatusBroadcaster {
     logger,
     intervalMs = 3000,
     maxBackoffMs = 30000,
-    sleepFn
+    sleepFn,
+    scheduler,
   } = {}) {
     if (!gateway) throw new Error('HubStatusBroadcaster: gateway required');
     if (!eventPublisher || typeof eventPublisher.publish !== 'function') {
@@ -63,7 +74,8 @@ export class HubStatusBroadcaster {
     this.#logger = logger || console;
     this.#intervalMs = intervalMs;
     this.#maxBackoffMs = maxBackoffMs;
-    this.#sleepFn = sleepFn || ((ms) => new Promise(r => setTimeout(r, ms)));
+    this.#sleepFn = sleepFn || scheduler?.wait?.bind(scheduler);
+    if (!this.#sleepFn) throw new Error('HubStatusBroadcaster: scheduler required');
   }
 
   /**
@@ -99,7 +111,7 @@ export class HubStatusBroadcaster {
       const startedAt = Date.now();
       try {
         const devices = await this.#gateway.getStatus();
-        this.#lastSnapshot = { devices, fetchedAt: new Date() };
+        this.#lastSnapshot = { devices: devices.map(projectSlotStatus), fetchedAt: new Date() };
         this.#eventPublisher.publish({
           topic: 'playback-hub:status',
           type: 'playback-hub.status.snapshot',

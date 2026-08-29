@@ -1,5 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { deleteFile, ensureDir, fileExists, readTextFromPath, writeFileAtomic } from '#system/utils/FileIO.mjs';
+import { DrawingCheckpointRepository } from '#apps/gaming/ports/DrawingCheckpointRepository.mjs';
 
 const SESSION = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/;
 const INK = /^#[a-fA-F0-9]{6}$/;
@@ -17,10 +18,10 @@ export function validateDrawingCheckpoint(checkpoint) {
   return { strokes: structuredClone(strokes) };
 }
 
-export class YamlDrawingCheckpointRepository {
-  constructor({ checkpointsDir }) { if (!checkpointsDir) throw new Error('checkpointsDir is required'); this.checkpointsDir = checkpointsDir; fs.mkdirSync(checkpointsDir, { recursive: true }); }
+export class YamlDrawingCheckpointRepository extends DrawingCheckpointRepository {
+  constructor({ checkpointsDir }) { super(); if (!checkpointsDir) throw new Error('checkpointsDir is required'); this.checkpointsDir = checkpointsDir; ensureDir(checkpointsDir); }
   #file(sessionId) { if (!SESSION.test(String(sessionId))) throw new Error('invalid gaming session id'); return path.join(this.checkpointsDir, `${String(sessionId).replaceAll(':', '_')}.json`); }
-  async get(sessionId) { const file = this.#file(sessionId); return fs.existsSync(file) ? validateDrawingCheckpoint(JSON.parse(fs.readFileSync(file, 'utf8'))) : { strokes: [] }; }
-  async put(sessionId, checkpoint) { const value = validateDrawingCheckpoint(checkpoint); const file = this.#file(sessionId); const temporary = `${file}.${process.pid}.tmp`; fs.writeFileSync(temporary, JSON.stringify(value), { flag: 'wx' }); fs.renameSync(temporary, file); return value; }
-  async delete(sessionId) { const file = this.#file(sessionId); if (!fs.existsSync(file)) return false; fs.unlinkSync(file); return true; }
+  async get(sessionId) { const file = this.#file(sessionId); return fileExists(file) ? validateDrawingCheckpoint(JSON.parse(readTextFromPath(file))) : { strokes: [] }; }
+  async put(sessionId, checkpoint) { const value = validateDrawingCheckpoint(checkpoint); writeFileAtomic(this.#file(sessionId), JSON.stringify(value)); return value; }
+  async delete(sessionId) { return deleteFile(this.#file(sessionId)); }
 }

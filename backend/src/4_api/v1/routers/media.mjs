@@ -14,27 +14,39 @@
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
+
+function serializeMediaQueue(queue) {
+  return {
+    position: queue.position,
+    shuffle: queue.shuffle,
+    repeat: queue.repeat,
+    volume: queue.volume,
+    items: queue.items.map((item) => ({ ...item })),
+    shuffleOrder: [...queue.shuffleOrder],
+  };
+}
 
 /**
  * Factory function that returns an Express Router for media queue endpoints.
  *
  * @param {Object} config
  * @param {Object} config.mediaQueueService - MediaQueueService instance
- * @param {Object} config.configService - ConfigService instance (for browse config)
+ * @param {Object} config.mediaSurfaceConfig - Semantic browse config service
  * @param {Function} config.contentIdResolver - Resolves content IDs (reserved for future use)
- * @param {Function} config.broadcastEvent - (eventName, payload) => void
+ * @param {Object} config.mediaQueueEvents
  * @param {Object} config.logger - Structured logger
  * @returns {express.Router}
  */
 export function createMediaRouter(config) {
   const {
     mediaQueueService,
-    configService,
+    mediaSurfaceConfig,
     contentIdResolver,
-    broadcastEvent,
+    mediaQueueEvents,
+    createMediaQueue,
     logger = console,
   } = config;
+  if (typeof createMediaQueue !== 'function') throw new Error('createMediaRouter requires createMediaQueue');
 
   const router = express.Router();
 
@@ -55,7 +67,7 @@ export function createMediaRouter(config) {
    * @param {string} [mutationId]
    */
   function broadcast(queue, mutationId) {
-    broadcastEvent('media:queue', { ...queue.toJSON(), mutationId });
+    mediaQueueEvents.changed(serializeMediaQueue(queue), mutationId);
   }
 
   /**
@@ -86,13 +98,7 @@ export function createMediaRouter(config) {
     // serves empty arrays. Read whichever entry actually carries the surface so
     // the endpoint is correct on both sides of the move; Phase E drops the
     // legacy half with the other fallbacks.
-    const surfaceApp = configService.getHouseholdAppConfig(hid, 'media-app') || {};
-    const legacyApp = configService.getHouseholdAppConfig(hid, 'media') || {};
-    const appConfig = (surfaceApp.browse || surfaceApp.searchScopes) ? surfaceApp : legacyApp;
-    res.json({
-      browse: appConfig.browse || [],
-      searchScopes: appConfig.searchScopes || [],
-    });
+    res.json(mediaSurfaceConfig.get(hid));
   }));
 
   // ── 1. GET /queue ──────────────────────────────────────────────
@@ -100,7 +106,7 @@ export function createMediaRouter(config) {
   router.get('/queue', asyncHandler(async (req, res) => {
     const hid = resolveHid(req);
     const queue = await mediaQueueService.load(hid);
-    res.json(queue.toJSON());
+    res.json(serializeMediaQueue(queue));
   }));
 
   // ── 2. PUT /queue ──────────────────────────────────────────────
@@ -108,10 +114,10 @@ export function createMediaRouter(config) {
   router.put('/queue', asyncHandler(async (req, res) => {
     const hid = resolveHid(req);
     const { items, position, shuffle, repeat, volume, mutationId } = req.body;
-    const queue = new MediaQueue({ items, position, shuffle, repeat, volume });
+    const queue = createMediaQueue({ items, position, shuffle, repeat, volume });
     await mediaQueueService.replace(queue, hid);
     broadcast(queue, mutationId);
-    res.json(queue.toJSON());
+    res.json(serializeMediaQueue(queue));
   }));
 
   // ── 3. POST /queue/items ───────────────────────────────────────
@@ -127,7 +133,7 @@ export function createMediaRouter(config) {
     const added = await mediaQueueService.addItems(items, placement || 'end', hid);
     const queue = await mediaQueueService.load(hid);
     broadcast(queue, mutationId);
-    res.json({ added, queue: queue.toJSON() });
+    res.json({ added, queue: serializeMediaQueue(queue) });
   }));
 
   // ── 4. DELETE /queue/items/:queueId ────────────────────────────
@@ -138,7 +144,7 @@ export function createMediaRouter(config) {
     const mutationId = req.body?.mutationId || req.query.mutationId;
     const queue = await mediaQueueService.removeItem(queueId, hid);
     broadcast(queue, mutationId);
-    res.json(queue.toJSON());
+    res.json(serializeMediaQueue(queue));
   }));
 
   // ── 5. PATCH /queue/items/reorder ──────────────────────────────
@@ -148,7 +154,7 @@ export function createMediaRouter(config) {
     const { queueId, toIndex, mutationId } = req.body;
     const queue = await mediaQueueService.reorder(queueId, toIndex, hid);
     broadcast(queue, mutationId);
-    res.json(queue.toJSON());
+    res.json(serializeMediaQueue(queue));
   }));
 
   // ── 6. POST /queue/advance ─────────────────────────────────────
@@ -165,7 +171,7 @@ export function createMediaRouter(config) {
 
     const queue = await mediaQueueService.advance(step, { auto }, hid);
     broadcast(queue, mutationId);
-    res.json(queue.toJSON());
+    res.json(serializeMediaQueue(queue));
   }));
 
   // ── 7. PATCH /queue/position ───────────────────────────────────
@@ -182,7 +188,7 @@ export function createMediaRouter(config) {
 
     const queue = await mediaQueueService.setPosition(position, hid);
     broadcast(queue, mutationId);
-    res.json(queue.toJSON());
+    res.json(serializeMediaQueue(queue));
   }));
 
   // ── 7. PATCH /queue/state ──────────────────────────────────────
@@ -199,7 +205,7 @@ export function createMediaRouter(config) {
 
     const queue = await mediaQueueService.updateState(state, hid);
     broadcast(queue, mutationId);
-    res.json(queue.toJSON());
+    res.json(serializeMediaQueue(queue));
   }));
 
   // ── 8. DELETE /queue ───────────────────────────────────────────
@@ -209,7 +215,7 @@ export function createMediaRouter(config) {
     const mutationId = req.body?.mutationId || req.query.mutationId;
     const queue = await mediaQueueService.clear(hid);
     broadcast(queue, mutationId);
-    res.json(queue.toJSON());
+    res.json(serializeMediaQueue(queue));
   }));
 
   return router;

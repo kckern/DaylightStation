@@ -29,43 +29,40 @@ import { createAdminNotificationsRouter } from './notifications.mjs';
  * sub-routers never import #apps — they only forward the injected services.
  *
  * @param {Object} config
- * @param {Object} config.userDataService - UserDataService for household paths
- * @param {Object} config.configService - ConfigService for default household
- * @param {string} config.mediaPath - Base path for media storage
- * @param {Function} [config.loadFile] - Function to load config files
- * @param {Object} [config.mediaDownloadService] - MediaDownloadService instance (optional)
+ * @param {Object} config.householdContext - Default household policy for content lists
+ * @param {Object} [config.adminMediaService] - AdminMediaService instance (optional)
  * @param {Object} [config.eventBus] - WebSocketEventBus instance (optional)
  * @param {Object} config.householdAdminService - Injected HouseholdAdminService
  * @param {Object} config.yamlConfigFileService - Injected YamlConfigFileService
  * @param {Object} config.appsConfigService - Injected AppsConfigService
  * @param {Object} config.schedulerAdminService - Injected SchedulerAdminService
  * @param {Object} config.integrationsQueryService - Injected IntegrationsQueryService
+ * @param {Object} config.adminArtService - Injected AdminArtService
  * @param {Object} [config.logger=console] - Logger instance
  * @returns {express.Router}
  */
 export function createAdminRouter(config) {
   const {
-    userDataService,
-    configService,
-    mediaPath,
-    loadFile,
-    mediaDownloadService,
-    eventBus,
+    householdContext,
+    adminMediaService,
+    eventBusAdministration,
     householdAdminService,
     yamlConfigFileService,
     appsConfigService,
     schedulerAdminService,
     integrationsQueryService,
-    notificationConfigService,
-    notificationLedgerStore,
+    adminNotificationOperations,
+    listManagementService,
+    adminArtService,
+    adminImageService,
     logger = console
   } = config;
   const router = express.Router();
 
   // Mount content router
   const contentRouter = createAdminContentRouter({
-    userDataService,
-    configService,
+    householdContext,
+    listManagementService,
     logger: logger.child?.({ submodule: 'content' }) || logger
   });
   router.use('/content', contentRouter);
@@ -73,7 +70,6 @@ export function createAdminRouter(config) {
   // Mount config router (security policy + I/O live in the injected YamlConfigFileService)
   const configRouter = createAdminConfigRouter({
     yamlConfigFileService,
-    configService,
     logger: logger.child?.({ submodule: 'config' }) || logger
   });
   router.use('/config', configRouter);
@@ -88,7 +84,6 @@ export function createAdminRouter(config) {
   // Mount household router (persistence + rules live in the injected HouseholdAdminService)
   const householdRouter = createAdminHouseholdRouter({
     householdAdminService,
-    configService,
     logger: logger.child?.({ submodule: 'household' }) || logger
   });
   router.use('/household', householdRouter);
@@ -107,36 +102,33 @@ export function createAdminRouter(config) {
   });
   router.use('/apps', appsRouter);
 
-  // Mount art router (ArtMode library curation). householdDir lets the collection-aware
-  // tag filter read collection defs from <householdDir>/config/art.yml.
+  // Mount art router (ArtMode library curation).
   const artRouter = createAdminArtRouter({
-    mediaPath,
-    householdDir: configService?.getHouseholdPath?.(''),
+    artService: adminArtService,
     logger: logger.child?.({ submodule: 'art' }) || logger
   });
   router.use('/art', artRouter);
 
   // Mount images router
   const imagesRouter = createAdminImagesRouter({
-    mediaPath,
+    imageService: adminImageService,
     logger: logger.child?.({ submodule: 'images' }) || logger
   });
   router.use('/images', imagesRouter);
 
   // Mount media router (freshvideo metadata, etc.)
-  if (mediaDownloadService && loadFile) {
+  if (adminMediaService) {
     const mediaRouter = createAdminMediaRouter({
-      mediaDownloadService,
-      loadFile,
+      adminMediaService,
       logger: logger.child?.({ submodule: 'media' }) || logger
     });
     router.use('/media', mediaRouter);
   }
 
   // Mount eventbus router (existing)
-  if (eventBus) {
+  if (eventBusAdministration?.available) {
     const eventBusRouter = createEventBusRouter({
-      eventBus,
+      eventBusAdministration,
       logger: logger.child?.({ submodule: 'eventbus' }) || logger
     });
     router.use('/ws', eventBusRouter);
@@ -146,8 +138,7 @@ export function createAdminRouter(config) {
   // cooldowns, and delivery ledger). Config validation + persistence live in the
   // injected NotificationConfigService; ledger reads live in notificationLedgerStore.
   const notificationsRouter = createAdminNotificationsRouter({
-    notificationConfigService,
-    notificationLedgerStore,
+    adminNotificationOperations,
     logger: logger.child?.({ submodule: 'notifications' }) || logger,
   });
   router.use('/notifications', notificationsRouter);

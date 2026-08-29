@@ -67,11 +67,11 @@ describe('gaming API router', () => {
   });
 
   it('exposes approved art separately from image bytes', async () => {
-    const app = { getDefinition: vi.fn() }; const assetCatalog = {
-      get: vi.fn(() => ({ schema_version: 1, pack: { id: 'default' }, assets: { approved: { status: 'approved', source: 'secret.png' }, candidate: { status: 'candidate' } } })),
-      getAsset: vi.fn(() => ({ file: '/tmp/a.png', source_sha256: 'a'.repeat(64) })),
+    const app = { getDefinition: vi.fn() }; const gamingMediaService = {
+      getCatalog: vi.fn(() => ({ kind: 'found', value: { schemaVersion: 1, pack: { id: 'default' }, assets: { approved: { status: 'approved' } } } })),
+      getAssetImage: vi.fn(() => ({ kind: 'found', value: { resource: {}, contentHash: 'a'.repeat(64) } })),
     };
-    const router = createGamingRouter({ gamingApplication: app, assetCatalog });
+    const router = createGamingRouter({ gamingApplication: app, gamingMediaService, sendFileResource: (_req, res) => res.sendFile('/tmp/a.png') });
     const catalog = await invoke(router, 'get', '/assets/:packId', { roles: ['gaming-host'], params: { packId: 'default' } }); expect(Object.keys(catalog.body.assets)).toEqual(['approved']); expect(catalog.body.assets.approved).not.toHaveProperty('source');
     const image = await invoke(router, 'get', '/assets/:packId/:assetId/image', { roles: ['gaming-host'], params: { packId: 'default', assetId: 'approved' } }); expect(image.body.file).toBe('/tmp/a.png');
   });

@@ -32,6 +32,18 @@ export class CameraService {
     return this.#streamAdapter.ensureStream(cameraId, rtspUrl);
   }
 
+  async getLivePlaylist(cameraId) {
+    const rtspUrl = this.#gateway.getStreamUrl(cameraId, 'sub');
+    if (!rtspUrl) throw new Error(`No stream URL for camera: ${cameraId}`);
+    return this.#streamAdapter.readPlaylist(cameraId, rtspUrl);
+  }
+
+  async getLiveSegment(cameraId, segment) {
+    const rtspUrl = this.#gateway.getStreamUrl(cameraId, 'sub');
+    if (!rtspUrl) return null;
+    return this.#streamAdapter.readSegment(cameraId, rtspUrl, segment);
+  }
+
   touchStream(cameraId) { this.#streamAdapter.touch(cameraId); }
   stopStream(cameraId) { this.#streamAdapter.stop(cameraId); }
   isStreamActive(cameraId) { return this.#streamAdapter.isActive(cameraId); }

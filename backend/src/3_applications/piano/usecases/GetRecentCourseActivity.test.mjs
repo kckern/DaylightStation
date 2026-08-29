@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GetRecentCourseActivity } from './GetRecentCourseActivity.mjs';
+import { PianoConfigProjection } from '../../../1_adapters/config/ApplicationConfigProjections.mjs';
 
 let PIANO_CFG;
 const basePianoCfg = () => ({ videos: { collections: [
@@ -13,11 +14,11 @@ function makeDeps({ summaries, itemCounts = {} }) {
   PIANO_CFG = basePianoCfg();
   // summaries: { [userId]: { [showId]: { completed, total, lastPlayedAt } } }
   return {
-    configService: {
+    configProjection: new PianoConfigProjection({ configService: {
       getHouseholdAppConfig: () => PIANO_CFG,
       getHouseholdUsers: () => ['kc', 'learner2'],
       getUserProfile: (id) => ({ display_name: id.toUpperCase() }),
-    },
+    } }),
     plexClient: {
       children: async (key) => (String(key) === '100'
         ? [{ ratingKey: '10', title: 'Course A', thumb: '/img/a' }, { ratingKey: '11', title: 'Course B', thumb: '/img/b' }]
@@ -180,7 +181,7 @@ function learnerThreeDeps() {
     userLastPlayedAt: it.plex === 'intro' ? '2026-07-27T00:00:00Z'
       : (it.plex === 'm5' ? '2026-07-21T00:00:00Z' : null),
   })));
-  deps.configService.getHouseholdUsers = () => ['learner3'];
+  deps.configProjection.roster = () => ['learner3'];
   return deps;
 }
 

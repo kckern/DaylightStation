@@ -5,13 +5,6 @@ const DEFAULT_MODEL = 'gpt-5.6-luna';
 const FORBIDDEN = [/[a-h][1-8]/i, /\b(?:row|column|square)\s*\d+/i, /\b(?:midi|note)\s*\d+/i];
 const DEFAULTS = Object.freeze({ timeoutMs: 1800, maxChars: 96, maxTokens: 40 });
 
-function deadline(promise, timeoutMs) {
-  let timer;
-  return Promise.race([promise, new Promise((unused, reject) => {
-    timer = setTimeout(() => reject(new Error('dialogue_timeout')), timeoutMs);
-  })]).finally(() => clearTimeout(timer));
-}
-
 function history(dialogue, ply) {
   return Array.isArray(dialogue) ? dialogue.slice(0, Math.ceil(ply / 2)).map((entry) => ({
     ply: Number(entry?.ply) || null,
@@ -46,11 +39,11 @@ function publicRivalry(value) {
 /** Fail-open cosmetic dialogue. Rules adapters own replay and semantic redaction. */
 export class OpponentDialogueService {
   constructor({
-    aiGateway = null, resolveOpponent, readConfig = async () => ({}),
+    dialogueGenerator = null, resolveOpponent, readConfig = async () => ({}),
     recallRivalry = async () => null, readLadder = async () => null,
     adapters, logger = null,
   }) {
-    this.aiGateway = aiGateway;
+    this.dialogueGenerator = dialogueGenerator;
     this.resolveOpponent = resolveOpponent;
     this.readConfig = readConfig;
     this.recallRivalry = recallRivalry;
@@ -82,7 +75,7 @@ export class OpponentDialogueService {
       wins: Number(ladder.wins || 0),
       needed: Number(ladder.wins_required || 0),
     } : null;
-    if (!enabled || !this.aiGateway?.chat) {
+    if (!enabled || !this.dialogueGenerator?.available) {
       const source = enabled ? 'fallback' : 'disabled';
       const fallbackReason = enabled ? 'generation_error' : 'disabled';
       this.logger?.info?.('piano-game.dialogue.fallback', {
@@ -91,9 +84,9 @@ export class OpponentDialogueService {
       return { eventId: facts.eventId, quip: facts.fallback, source, fallbackReason, opponent };
     }
     try {
-      const raw = await deadline(this.aiGateway.chat([
-        { role: 'system', content: 'Return one child-safe spoken reaction, 2 to 12 words, and nothing else.' },
-        { role: 'user', content: [
+      const raw = await this.dialogueGenerator.generate({
+        instruction: 'Return one child-safe spoken reaction, 2 to 12 words, and nothing else.',
+        prompt: [
           `You are ${profile.name}, an opponent in a children's ${gameId} piano game.`,
           `Persona: ${profile.dialogue.persona}`, `Voice: ${profile.dialogue.voice}`,
           'Never reveal coordinates, notation, MIDI values, move codes, or private analysis.',
@@ -101,11 +94,10 @@ export class OpponentDialogueService {
           `Previously displayed lines: ${JSON.stringify(prior)}`,
           `Rivalry memory: ${JSON.stringify(publicRivalry(rivalry))}`,
           `Ladder position: ${JSON.stringify(promotion)}`,
-        ].join('\n') },
-      ], {
-        model: options.model, reasoningEffort: 'none', maxTokens: DEFAULTS.maxTokens,
-        timeout: options.timeoutMs,
-      }), options.timeoutMs);
+        ].join('\n'),
+        timeoutMs: options.timeoutMs,
+        timeoutMessage: 'dialogue_timeout',
+      });
       const quip = normalizeOpponentDialogue(raw, {
         maxChars: options.maxChars, dialogue: prior, lore: profile.dialogue.lore,
         forbiddenPatterns: [...FORBIDDEN, ...(facts.forbiddenPatterns || [])],

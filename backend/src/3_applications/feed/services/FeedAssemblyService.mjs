@@ -58,17 +58,6 @@ export class FeedAssemblyService {
     logger = console,
     // Keep sourceAdapters for getDetail()
     sourceAdapters = null,
-    // Legacy params accepted but unused (kept for bootstrap compat)
-    dataService,
-    configService,
-    freshRSSAdapter,
-    headlineService,
-    entropyService,
-    contentQueryService,
-    contentRegistry,
-    userDataService,
-    queryConfigs,
-    feedCacheService,
   }) {
     this.#feedPoolManager = feedPoolManager;
     this.#scrollConfigLoader = scrollConfigLoader;

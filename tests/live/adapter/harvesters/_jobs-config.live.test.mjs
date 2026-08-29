@@ -5,7 +5,8 @@
  */
 
 import path from 'path';
-import { configService, initConfigService, dataService } from '#backend/src/0_system/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
+import { dataService } from '#adapters/persistence/files/DataService.mjs';
 import { createHarvesterServices } from '#composition/bootstrap.mjs';
 import { loadYaml, saveYaml } from '#backend/src/0_system/utils/FileIO.mjs';
 import axios from 'axios';

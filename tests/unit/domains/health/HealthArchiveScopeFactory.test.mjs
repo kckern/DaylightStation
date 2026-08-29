@@ -8,7 +8,17 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import path from 'node:path';
-import { HealthArchiveScopeFactory } from '#apps/health/archive/HealthArchiveScopeFactory.mjs';
+import { HealthArchiveScopeFactory as HealthArchiveScopeFactoryClass } from '#apps/health/archive/HealthArchiveScopeFactory.mjs';
+import { FilesystemHealthArchiveAddressPolicyFactory } from '#adapters/health/FilesystemHealthArchiveAddressPolicyFactory.mjs';
+
+const addressPolicyFactory = new FilesystemHealthArchiveAddressPolicyFactory();
+function HealthArchiveScopeFactory(options) {
+  const { dataRoot, mediaRoot, ...applicationOptions } = options;
+  return new HealthArchiveScopeFactoryClass({
+    ...applicationOptions,
+    archiveAddressPolicy: addressPolicyFactory.create({ dataRoot, mediaRoot }),
+  });
+}
 
 const PROJECT_ROOT = '/srv/daylight';
 const DATA_ROOT = path.join(PROJECT_ROOT, 'data');

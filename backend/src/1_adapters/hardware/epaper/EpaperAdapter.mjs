@@ -11,6 +11,8 @@
  * @module adapters/hardware/epaper
  */
 
+import { IEpaperDisplay } from '#apps/epaper/ports/IEpaperDisplay.mjs';
+
 const DISPLAY_WIDTH = 1600;
 const DISPLAY_HEIGHT = 1200;
 
@@ -37,12 +39,13 @@ const PALETTE = {
  *   adapter must be handed its data.
  */
 
-export class EpaperAdapter {
+export class EpaperAdapter extends IEpaperDisplay {
   #fontDir;
   #screenConfig;
   #dataProvider;
   #renderFn;
   #logger;
+  #clock;
   #lastRender = null;
   #lastRenderTime = null;
 
@@ -58,11 +61,13 @@ export class EpaperAdapter {
    * @param {Object} [deps.logger]
    */
   constructor(config, deps = {}) {
+    super();
     if (typeof deps.renderFn !== 'function') {
       throw new TypeError('EpaperAdapter requires deps.renderFn (the eink render function) — inject it at the composition root');
     }
     this.#renderFn = deps.renderFn;
     this.#logger = deps.logger || console;
+    this.#clock = deps.clock || (() => new Date());
     this.#fontDir = config.fontDir;
     this.#screenConfig = config.screenConfig || null;
     this.#dataProvider = config.dataProvider || null;
@@ -100,6 +105,7 @@ export class EpaperAdapter {
     const buffer = await this.#renderFn(screenConfig, {
       data: resolved,
       fontDir: this.#fontDir,
+      renderReferenceTime: this.#clock(),
     });
     this.#lastRender = buffer;
     this.#lastRenderTime = Date.now();

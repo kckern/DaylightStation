@@ -8,7 +8,7 @@
  * @module applications/media/MediaJobExecutor
  */
 
-import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 import { ServiceNotFoundError } from '../common/errors/index.mjs';
 
 export class MediaJobExecutor {

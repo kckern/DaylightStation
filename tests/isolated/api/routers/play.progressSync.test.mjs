@@ -4,6 +4,9 @@ import express from 'express';
 import request from 'supertest';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
 import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
+import { RecordPlaybackProgress } from '#apps/content/usecases/RecordPlaybackProgress.mjs';
+import { PlaybackReadService } from '#apps/content/services/PlaybackReadService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 // ---------------------------------------------------------------------------
 // Minimal stubs
@@ -45,8 +48,8 @@ function createStubContentIdResolver(registry) {
 
 function createStubMediaProgressMemory() {
   return {
-    get: vi.fn(async () => null),
-    set: vi.fn(async () => {})
+    findProgress: vi.fn(async () => null),
+    saveProgress: vi.fn(async () => {})
   };
 }
 
@@ -60,16 +63,26 @@ function createStubProgressSyncService() {
 function buildApp(config) {
   // Production play router shapes responses through PlayResponseService.
   // Wire a real PlayResponseService over the test's stubs so the
-  // reconcileOnPlay / mediaProgressMemory.get fall-through is exercised
+  // reconcileOnPlay / mediaProgressMemory.findProgress fall-through is exercised
   // exactly as production runs it.
   const playResponseService = new PlayResponseService({
     mediaProgressMemory: config.mediaProgressMemory,
     progressSyncService: config.progressSyncService || null,
     progressSyncSources: config.progressSyncSources || new Set(),
   });
+  const recordPlaybackProgress = new RecordPlaybackProgress({
+    ...config,
+    contentCatalog: new RegistryContentCatalogGateway({ registry: config.registry }),
+    nowTimestamp: () => '2026-08-28 12:00:00',
+  });
+  const playbackReadService = new PlaybackReadService({
+    ...config,
+    contentCatalog: new RegistryContentCatalogGateway({ registry: config.registry }),
+    playResponseService,
+  });
   const app = express();
   app.use(express.json());
-  app.use('/play', createPlayRouter({ ...config, playResponseService }));
+  app.use('/play', createPlayRouter({ recordPlaybackProgress, playbackReadService, logger: config.logger }));
   return app;
 }
 
@@ -111,7 +124,7 @@ describe('Play router — ProgressSyncService integration', () => {
 
       await request(app).get('/play/abs:abc123');
 
-      expect(mediaProgressMemory.get).toHaveBeenCalledWith('abs:abc123', 'abs');
+      expect(mediaProgressMemory.findProgress).toHaveBeenCalledWith('abs:abc123', 'abs');
     });
 
     it('uses sync service result for resume_position', async () => {

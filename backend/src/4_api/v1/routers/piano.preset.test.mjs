@@ -21,8 +21,10 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
 }));
 
 import { createPianoRouter } from './piano.mjs';
+import { withPianoRouterServices } from '../../../../../tests/_lib/pianoRouterDeps.mjs';
 import { YamlPianoStudioDatastore } from '../../../1_adapters/piano/YamlPianoStudioDatastore.mjs';
 import { PianoContainer } from '../../../3_applications/piano/PianoContainer.mjs';
+import { PianoConfigProjection } from '../../../1_adapters/config/ApplicationConfigProjections.mjs';
 
 const configService = {
   getUserDir: (id) => `/data/users/${id}`,
@@ -34,10 +36,10 @@ const configService = {
 
 function app() {
   const studioDatastore = new YamlPianoStudioDatastore({ configService });
-  const pianoContainer = new PianoContainer({ studioDatastore, configService });
+  const pianoContainer = new PianoContainer({ studioDatastore, configProjection: new PianoConfigProjection({ configService }) });
   const a = express();
   a.use(express.json());
-  a.use('/api/v1/piano', createPianoRouter({ pianoContainer, logger: { info() {}, error() {} } }));
+  a.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({ pianoContainer, logger: { info() {}, error() {} } })));
   return a;
 }
 

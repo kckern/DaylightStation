@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PianoMidiWakeService } from './PianoMidiWakeService.mjs';
 import { ScreenOverrideService } from './ScreenOverrideService.mjs';
+import { PianoMidiBridgeAdapter } from '../../../1_adapters/devices/PianoMidiBridgeAdapter.mjs';
 
 class FakeWs { on() {} close() {} }
 
@@ -50,14 +51,18 @@ function makeService(overrides = {}) {
     return Promise.resolve({ ok: true, json: () => Promise.resolve({ values: { ...store } }) });
   };
   const screenOverride = new ScreenOverrideService({ clock });
+  const bridge = new PianoMidiBridgeAdapter({
+    bridgeUrl: 'ws://10.0.0.245:8770',
+    fetchImpl,
+    WebSocketImpl: FakeWs,
+    logger: { info() {}, warn() {} },
+  });
   const svc = new PianoMidiWakeService({
     deviceService,
     deviceId: 'yellow-room-tablet',
-    bridgeUrl: 'ws://10.0.0.245:8770',
+    bridge,
     cooldownMs: 8000,
     clock,
-    fetchImpl,
-    WebSocketImpl: FakeWs,
     screenOverride,
     logger: { info() {}, warn() {} },
     ...overrides,

@@ -1,29 +1,17 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PassThrough } from 'stream';
 
 import { ChannelManager } from '../../../backend/src/3_applications/livestream/ChannelManager.mjs';
 
 // Adapters are injected as factories by the composition root; tests inject mocks.
-function makeMockStreamAdapter() {
+function makeMockRuntime() {
   return {
-    start: vi.fn(() => new PassThrough()),
-    stop: vi.fn(),
-    addClient: vi.fn(() => 'client-1'),
-    removeClient: vi.fn(),
-    isRunning: true,
-    clientCount: 0,
-  };
-}
-
-function makeMockFeeder({ onNeedTrack }) {
-  return {
-    playFile: vi.fn(),
+    dispose: vi.fn(),
+    play: vi.fn(),
+    stopSource: vi.fn(),
     playSilence: vi.fn(),
     playAmbientLoop: vi.fn(),
-    stop: vi.fn(),
-    currentFile: null,
-    _onNeedTrack: onNeedTrack,
+    openListener: vi.fn(() => ({ clientId: 'client-1', pipeTo: vi.fn(), close: vi.fn() })),
   };
 }
 
@@ -35,10 +23,12 @@ describe('ChannelManager', () => {
   beforeEach(() => {
     mockBroadcast = vi.fn();
     manager = new ChannelManager({
-      mediaBasePath: '/media',
       broadcastEvent: mockBroadcast,
-      createStreamAdapter: vi.fn((opts) => makeMockStreamAdapter(opts)),
-      createSourceFeeder: vi.fn((opts) => makeMockFeeder(opts)),
+      createChannelRuntime: vi.fn(() => makeMockRuntime()),
+      loadProgram: vi.fn(),
+      clock: () => new Date('2026-08-28T12:00:00.000Z'),
+      random: () => 0.5,
+      scheduler: { after: () => () => {} },
       logger: mockLogger,
     });
   });
@@ -116,16 +106,17 @@ describe('ChannelManager', () => {
     });
   });
 
-  describe('getClientStream', () => {
-    it('returns a readable stream for HTTP clients', () => {
+  describe('openListener', () => {
+    it('returns a semantic listener subscription', () => {
       manager.create('yoto', {});
-      const { stream, clientId } = manager.getClientStream('yoto');
-      expect(stream).toBeInstanceOf(PassThrough);
+      const { pipeTo, close, clientId } = manager.openListener('yoto');
+      expect(typeof pipeTo).toBe('function');
+      expect(typeof close).toBe('function');
       expect(typeof clientId).toBe('string');
     });
 
     it('throws if channel does not exist', () => {
-      expect(() => manager.getClientStream('nope')).toThrow(/not found/);
+      expect(() => manager.openListener('nope')).toThrow(/not found/);
     });
   });
 

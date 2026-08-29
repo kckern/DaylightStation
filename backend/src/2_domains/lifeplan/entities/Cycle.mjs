@@ -13,15 +13,4 @@ export class Cycle {
     return this.status === 'active';
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      cadence_level: this.cadence_level,
-      start_date: this.start_date,
-      end_date: this.end_date,
-      status: this.status,
-      targets: this.targets,
-      retrospective: this.retrospective,
-    };
-  }
 }

@@ -9,6 +9,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { LogFoodFromText } from '#apps/nutribot/usecases/LogFoodFromText.mjs';
 import { AcceptFoodLog } from '#apps/nutribot/usecases/AcceptFoodLog.mjs';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
+import { createNutriLog, serializeNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
 
 // Fixed clocks for deterministic date behavior
 const THU_NOON_PT = new Date('2026-04-16T19:00:00Z'); // Thu 12:00 PT
@@ -116,7 +117,7 @@ describe('Date bulletproofing — accept', () => {
     // Mock adjustment: plan text had items: [], but AcceptFoodLog's
     // saveMany branch short-circuits when items.length === 0, making the
     // assertion vacuous. Add one item so the bug under test is exercised.
-    const log = NutriLog.create({
+    const log = createNutriLog({
       userId: 'u1', conversationId: 'c1', text: 'peas',
       items: [{ label: 'Peas', grams: 100, color: 'green', calories: 50, unit: 'g', amount: 100 }],
       meal: { date: '2026-04-16', time: 'afternoon' },
@@ -131,7 +132,7 @@ describe('Date bulletproofing — accept', () => {
   it('preserves original meal.date when accepted next day', async () => {
     // Log created Thu, accepted Fri
     mockClock(THU_NOON_PT);
-    const log = NutriLog.create({
+    const log = createNutriLog({
       userId: 'u1', conversationId: 'c1', text: 'peas',
       items: [{ label: 'Peas', grams: 100, color: 'green', calories: 50, unit: 'g', amount: 100 }],
       meal: { date: '2026-04-16', time: 'afternoon' },
@@ -150,23 +151,22 @@ describe('Date bulletproofing — accept', () => {
     // yields nothing useful — we build a plain-object double that has the
     // exact shape AcceptFoodLog reads from (status, items, meal, createdAt).
     mockClock(THU_NOON_PT);
-    const realLog = NutriLog.create({
+    const realLog = createNutriLog({
       userId: 'u1', conversationId: 'c1', text: 'peas',
       items: [{ label: 'Peas', grams: 100, color: 'green', calories: 50, unit: 'g', amount: 100 }],
       meal: { date: '2026-04-16', time: 'afternoon' },
       timestamp: THU_NOON_PT,
     });
-    const brokenJson = { ...realLog.toJSON(), meal: { time: 'afternoon' } };
     const brokenLog = {
       id: realLog.id,
       userId: realLog.userId,
       status: 'pending',
       text: realLog.text,
-      items: realLog.items, // array of FoodItem instances — AcceptFoodLog spreads/toJSONs them
+      items: realLog.items,
       meal: { time: 'afternoon' }, // no date
       metadata: realLog.metadata,
       createdAt: realLog.createdAt, // still Thu
-      toJSON: () => brokenJson,
+      conversationId: realLog.conversationId,
     };
     const deps = buildAcceptDeps(brokenLog);
     mockClock(FRI_NOON_PT);
@@ -304,14 +304,14 @@ describe('End-to-end: Thu log → Fri accept → Sat revision', () => {
 
 describe('NutriLog.updateDate', () => {
   it('updates meal.date and does not leak a top-level date field', () => {
-    const log = NutriLog.create({
+    const log = createNutriLog({
       userId: 'u1', conversationId: 'c1', text: 'peas',
       items: [{ label: 'Peas', grams: 100, color: 'green', calories: 50, unit: 'g', amount: 100 }],
       meal: { date: '2026-04-16', time: 'afternoon' },
       timestamp: new Date('2026-04-16T19:00:00Z'),
     });
     const updated = log.updateDate('2026-04-15', 'evening', new Date('2026-04-16T20:00:00Z'));
-    const json = updated.toJSON();
+    const json = serializeNutriLog(updated);
     expect(json.meal.date).toBe('2026-04-15');
     expect(json.meal.time).toBe('evening');
     expect(json.date).toBeUndefined(); // no stray top-level date

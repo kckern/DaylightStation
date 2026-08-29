@@ -70,22 +70,6 @@ export class StreamChannel {
   addListener() { this.#listenerCount++; }
   removeListener() { this.#listenerCount = Math.max(0, this.#listenerCount - 1); }
 
-  toJSON() {
-    return {
-      name: this.#name,
-      status: this.status,
-      format: this.#format,
-      bitrate: this.#bitrate,
-      ambient: this.#ambient,
-      currentTrack: this.#currentTrack,
-      queue: this.queue,
-      queueLength: this.queueLength,
-      activeProgram: this.#activeProgram,
-      waitingForInput: this.#waitingForInput,
-      listenerCount: this.#listenerCount,
-      soundboard: this.#soundboard,
-    };
-  }
 }
 
 export default StreamChannel;

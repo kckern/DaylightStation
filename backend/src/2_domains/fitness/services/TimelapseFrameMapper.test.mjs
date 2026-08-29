@@ -14,9 +14,9 @@ function fakeSession() {
       tick_count: 12,
       series: {
         // RLE-encoded JSON strings (as persisted)
-        'bike:7138:rpm': JSON.stringify([[80, 6], [90, 6]]), // 80 for ticks 0-5, 90 for 6-11
-        'user_1:hr': JSON.stringify([[140, 12]]),
-        'user_1:zone': JSON.stringify([['active', 12]])
+        'bike:7138:rpm': [[80, 6], [90, 6]], // 80 for ticks 0-5, 90 for 6-11
+        'user_1:hr': [[140, 12]],
+        'user_1:zone': [['active', 12]]
       },
       events: [
         { timestamp: 1000_000, type: 'media', data: { contentId: 'plex:674287', title: 'Daytona USA', grandparentTitle: 'Game Cycling' } }
@@ -85,8 +85,8 @@ test('honors a provided resolveName for participant display names', () => {
 
 test('builds per-bike cadence (equipment + assigned colour); excludes idle bikes', () => {
   const s = fakeSession();
-  s.timeline.series['bike:7138:rpm'] = JSON.stringify([[66, 12]]);
-  s.timeline.series['bike:49904:rpm'] = JSON.stringify([[0, 12]]);   // idle -> excluded
+  s.timeline.series['bike:7138:rpm'] = [[66, 12]];
+  s.timeline.series['bike:49904:rpm'] = [[0, 12]];   // idle -> excluded
   const frames = new TimelapseFrameMapper().buildFrames(s, {
     speedup: 10, outputFps: 10,
     cadenceDevices: { 7138: 'niceday', 49904: 'cycle_ace' },
@@ -102,7 +102,7 @@ test('builds per-bike cadence (equipment + assigned colour); excludes idle bikes
 test('prefers group labels when 2+ riders are present (KC -> Dad)', () => {
   const s = fakeSession();
   s.roster = [{ id: 'user_1' }, { id: 'user_2' }];
-  s.timeline.series['user_2:hr'] = JSON.stringify([[120, 12]]);
+  s.timeline.series['user_2:hr'] = [[120, 12]];
   const frames = new TimelapseFrameMapper().buildFrames(s, {
     speedup: 10, outputFps: 10,
     resolveName: (id) => (id === 'user_1' ? 'User_1' : id),

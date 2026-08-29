@@ -74,7 +74,7 @@ describe('DailyCoachingEntry', () => {
       expect(entry.get('morning_meditation')).toBeNull();
       expect(entry.get('mobility_drill')).toBeNull();
       expect(entry.get('reflection')).toBeNull();
-      expect(entry.serialize()).toEqual({});
+      expect(entry.snapshot()).toEqual({});
     });
 
     it('rejects unknown top-level keys (defense against typos)', () => {
@@ -156,17 +156,17 @@ describe('DailyCoachingEntry', () => {
         mobility_drill: { movement: 'cossack_squat', reps: 12 },
         reflection: 'felt heavy',
       }, FULL_SCHEMA);
-      expect(entry.serialize()).toEqual({
+      expect(entry.snapshot()).toEqual({
         morning_meditation: { taken: true, timestamp: '07:15' },
         mobility_drill: { movement: 'cossack_squat', reps: 12 },
         reflection: 'felt heavy',
       });
 
       const partial = new DailyCoachingEntry({ reflection: 'only note' }, FULL_SCHEMA);
-      expect(partial.serialize()).toEqual({ reflection: 'only note' });
+      expect(partial.snapshot()).toEqual({ reflection: 'only note' });
 
       const empty = new DailyCoachingEntry({}, FULL_SCHEMA);
-      expect(empty.serialize()).toEqual({});
+      expect(empty.snapshot()).toEqual({});
     });
 
     it('arbitrary dimension keys are accepted (no hardcoded names)', () => {
@@ -203,27 +203,26 @@ describe('DailyCoachingEntry', () => {
         anything: { foo: 'bar' },
         another: 42,
       });
-      expect(entry.serialize()).toEqual({ anything: { foo: 'bar' }, another: 42 });
+      expect(entry.snapshot()).toEqual({ anything: { foo: 'bar' }, another: 42 });
     });
 
     it('accepts an arbitrary plain object when schema is empty array', () => {
       const entry = new DailyCoachingEntry({ x: 'y' }, []);
-      expect(entry.serialize()).toEqual({ x: 'y' });
+      expect(entry.snapshot()).toEqual({ x: 'y' });
     });
 
     it('still rejects non-plain-object inputs', () => {
       expect(() => new DailyCoachingEntry([1, 2, 3])).toThrow(/object/);
     });
 
-    it('emits a warn event when running in trust mode', () => {
+    it('does not perform logging while running in trust mode', () => {
       const warnCalls = [];
       const logger = {
         warn: (event, data) => warnCalls.push([event, data]),
       };
       const entry = new DailyCoachingEntry({ key: 'val' }, null, { logger });
-      expect(entry.serialize()).toEqual({ key: 'val' });
-      expect(warnCalls.length).toBe(1);
-      expect(warnCalls[0][0]).toBe('daily_coaching_entry.trust_mode');
+      expect(entry.snapshot()).toEqual({ key: 'val' });
+      expect(warnCalls.length).toBe(0);
     });
   });
 });

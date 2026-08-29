@@ -3,18 +3,28 @@
 
 import { PlexPosterProvider } from '#adapters/content/media/plex/PlexPosterProvider.mjs';
 import { FitnessAssetResolver } from '#adapters/fitness/FitnessAssetResolver.mjs';
+import { ProviderFitnessContentCatalog } from '#adapters/fitness/ProviderFitnessContentCatalog.mjs';
+import { FitnessConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
+import { FilesystemMenuMusicCatalog } from '#adapters/fitness/FilesystemMenuMusicCatalog.mjs';
+import { FilesystemScreenshotStore } from '#adapters/fitness/FilesystemScreenshotStore.mjs';
+import { FilesystemSessionTrashStore } from '#adapters/fitness/FilesystemSessionTrashStore.mjs';
+import { FilesystemTimelapseArtifactStore } from '#adapters/fitness/FilesystemTimelapseArtifactStore.mjs';
+import { FilesystemVoiceMemoDebugStore } from '#adapters/fitness/FilesystemVoiceMemoDebugStore.mjs';
+import { TemporaryImagePrintGateway } from '#adapters/hardware/thermal-printer/TemporaryImagePrintGateway.mjs';
 import { YamlRecapSnapshotStore } from '#adapters/persistence/yaml/YamlRecapSnapshotStore.mjs';
 import { YamlFitnessSchoolAttemptStore } from '#adapters/persistence/yaml/YamlFitnessSchoolAttemptStore.mjs';
+import { FitnessSchoolPublications } from '#adapters/eventbus/FitnessSchoolPublications.mjs';
 import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
-import { Scheduler } from '#apps/agents/index.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { FitnessSchoolCourseService } from '#apps/fitness/FitnessSchoolCourseService.mjs';
-import { FitnessSimulationService } from '#apps/fitness/services/FitnessSimulationService.mjs';
+import { FitnessSimulationService } from '#adapters/fitness/FitnessSimulationProcess.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
+import { getManageService } from '#apps/fitness/manageService.mjs';
+import { getUnlockService } from '#apps/fitness/unlockService.mjs';
 import { DiscoveryStrategy } from '#apps/fitness/suggestions/DiscoveryStrategy.mjs';
 import { FavoriteStrategy } from '#apps/fitness/suggestions/FavoriteStrategy.mjs';
 import { FitnessSuggestionService } from '#apps/fitness/suggestions/FitnessSuggestionService.mjs';
@@ -26,16 +36,28 @@ import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSession
 import { LogStrengthRun } from '#apps/fitness/usecases/LogStrengthRun.mjs';
 import { PrepareWorkoutRun } from '#apps/fitness/usecases/PrepareWorkoutRun.mjs';
 import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
+import { WorkoutCatalogService } from '#apps/fitness/services/WorkoutCatalogService.mjs';
+import { FitnessContentService } from '#apps/fitness/services/FitnessContentService.mjs';
+import { FitnessUserHydrator } from '#apps/fitness/services/FitnessUserHydrator.mjs';
+import { FitnessHardwareService } from '#apps/fitness/services/FitnessHardwareService.mjs';
+import { FitnessWebhookService } from '#apps/fitness/services/FitnessWebhookService.mjs';
+import { EmergencyAccessService } from '#apps/fitness/services/EmergencyAccessService.mjs';
+import { EmergencyLockdownService } from '#apps/fitness/services/EmergencyLockdownService.mjs';
+import { FitnessVoiceMemoService } from '#apps/fitness/services/FitnessVoiceMemoService.mjs';
+import { FitnessSessionOperations } from '#apps/fitness/services/FitnessSessionOperations.mjs';
+import { CycleRaceApiService } from '#apps/fitness/services/CycleRaceApiService.mjs';
+import { GetFitnessMenuMusic } from '#apps/fitness/usecases/GetFitnessMenuMusic.mjs';
+import { PrintFitnessReceipt } from '#apps/fitness/usecases/PrintFitnessReceipt.mjs';
+import { SaveDebugVoiceMemo } from '#apps/fitness/usecases/SaveDebugVoiceMemo.mjs';
+import { ManageAccess } from '#apps/fitness/usecases/ManageAccess.mjs';
 import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
 import { TrashRetentionSweep } from '#apps/fitness/usecases/TrashRetentionSweep.mjs';
+import { shouldSendExerciseReaction } from '#apps/fitness/webhookCoachingPolicy.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMapper.mjs';
 import { makeDeviceColorResolver } from '#domains/fitness/strapColors.mjs';
 import { createTimelapseFrameRenderer } from '#rendering/fitness/TimelapseFrameRenderer.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
-import { ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
-import fs from 'fs/promises';
-import nodeFs from 'node:fs';
 import path from 'path';
 import { createFitnessServices } from '../bootstrap.mjs';
 
@@ -44,7 +66,6 @@ import { createFitnessServices } from '../bootstrap.mjs';
  * @param {Object} config
  * @param {Object} config.fitnessServices - Services from createFitnessServices
  * @param {Object} config.userService - UserService for config hydration
- * @param {Object} config.userDataService - UserDataService for household data
  * @param {Object} config.configService - ConfigService
  * @param {Object} [config.fitnessConfig] - Fitness app config (for content_source)
  * @param {Object} [config.contentRegistry] - Content source registry (for show endpoint)
@@ -56,7 +77,6 @@ export function createFitnessApiRouter(config) {
   const {
     fitnessServices,
     userService,
-    userDataService,
     configService,
     fitnessConfig,
     contentRegistry,
@@ -84,34 +104,40 @@ export function createFitnessApiRouter(config) {
 
   // Create FitnessConfigService for normalized config access, playlist enrichment, and member names
   const fitnessConfigService = new FitnessConfigService({
-    userDataService,
-    configService,
+    configProjection: new FitnessConfigProjection({ configService }),
     logger
   });
 
   // Resolve fitness content adapter from config (defaults to plex)
   const fitnessContentSource = fitnessConfig?.content_source || 'plex';
   const fitnessContentAdapter = contentRegistry?.get(fitnessContentSource);
+  const fitnessContentCatalog = fitnessContentAdapter
+    ? new ProviderFitnessContentCatalog({
+      contentAdapter: fitnessContentAdapter,
+      contentQueryService,
+      source: fitnessContentSource,
+      fitnessLibraryId: fitnessConfig?.plex?.library_id || 14,
+      logger,
+    })
+    : null;
 
   // Create FitnessPlayableService for show/playable orchestration
   const fitnessPlayableService = new FitnessPlayableService({
     fitnessConfigService,
-    contentAdapter: fitnessContentAdapter,
-    contentQueryService,
+    contentCatalog: fitnessContentCatalog,
     createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
     logger
   });
-  const fitnessSchoolCourseService = new FitnessSchoolCourseService({
+  const fitnessSchoolCourseService = createFitnessSchoolCourseOperation({
     attemptStore: new YamlFitnessSchoolAttemptStore({ configService, logger }),
     sessionService: fitnessServices.sessionService,
-    eventBus,
+    publications: new FitnessSchoolPublications({ eventBus }),
     logger,
   });
 
   // Create ScreenshotService for session screenshot handling
   const screenshotService = new ScreenshotService({
-    sessionService: fitnessServices.sessionService,
-    fileIO: { ensureDir, writeBinary },
+    screenshotStore: new FilesystemScreenshotStore({ sessionService: fitnessServices.sessionService }),
     logger
   });
 
@@ -128,8 +154,7 @@ export function createFitnessApiRouter(config) {
     sessionDatastore: fitnessServices.sessionStore,
     fitnessConfigService,
     fitnessPlayableService,
-    contentAdapter: fitnessContentAdapter,
-    contentQueryService,
+    contentCatalog: fitnessContentCatalog,
     logger,
   });
 
@@ -152,15 +177,18 @@ export function createFitnessApiRouter(config) {
   // readout with its device in the recap footer.
   const fitnessImgDir = configService.getPath('img') || path.join(configService.getMediaDir(), 'img');
   const fitnessAssetResolver = new FitnessAssetResolver({
-    avatarsDir: path.join(fitnessImgDir, 'users'),
-    equipmentDir: path.join(fitnessImgDir, 'equipment'),
+    imgDir: fitnessImgDir,
   });
   const generateSessionTimelapse = new GenerateSessionTimelapse({
     sessionDatastore: fitnessServices.sessionStore,
-    snapshotStore: new YamlRecapSnapshotStore({ sessionDatastore: fitnessServices.sessionStore, fileIO: nodeFs, logger }),
+    snapshotStore: new YamlRecapSnapshotStore({ sessionDatastore: fitnessServices.sessionStore, logger }),
     frameMapper: new TimelapseFrameMapper(),
     frameRenderer: createTimelapseFrameRenderer(timelapseConfig || {}),
-    videoEncoder: new FfmpegVideoAdapter({ logger }),
+    artifactStore: new FilesystemTimelapseArtifactStore({
+      mediaDir: configService.getMediaDir(),
+      videoEncoder: new FfmpegVideoAdapter({ logger }),
+      logger,
+    }),
     posterProvider: plexPosterProvider.getPoster.bind(plexPosterProvider),
     avatarProvider: fitnessAssetResolver.getAvatars.bind(fitnessAssetResolver),
     equipmentProvider: fitnessAssetResolver.getEquipmentImages.bind(fitnessAssetResolver),
@@ -173,9 +201,7 @@ export function createFitnessApiRouter(config) {
     // Cadence (bike) device → equipment name + per-bike colour, for the RPM readouts.
     cadenceDevices: fitnessConfig?.devices?.cadence || null,
     cadenceColors: fitnessConfig?.device_colors?.cadence || null,
-    mediaDir: configService.getMediaDir(),
     config: timelapseConfig,
-    fileIO: nodeFs,
     logger
   });
 
@@ -185,7 +211,7 @@ export function createFitnessApiRouter(config) {
   const recapSweep = new RecapSweep({
     sessionService: fitnessServices.sessionService,
     generateSessionTimelapse,
-    configService,
+    resolveDefaultHouseholdId: () => configService.getDefaultHouseholdId?.(),
     logger
   });
 
@@ -195,8 +221,9 @@ export function createFitnessApiRouter(config) {
   // the `_trash` root so it can never reach the live sessions tree. Registered on
   // the agents Scheduler in app.mjs (Docker/prod-gated cron).
   const trashRetentionSweep = new TrashRetentionSweep({
-    trashDir: path.join(configService.getMediaDir(), 'fitness', '_trash'),
-    fileIO: nodeFs,
+    trashStore: new FilesystemSessionTrashStore({
+      mediaDir: configService.getMediaDir(),
+    }),
     logger
   });
 
@@ -209,6 +236,15 @@ export function createFitnessApiRouter(config) {
     sessionService: fitnessServices.sessionService,
     sessionGroupingService: fitnessServices.sessionGroupingService,
     logger
+  });
+  const manageAccess = new ManageAccess({
+    userService,
+    fitnessConfigService,
+    identityRelay,
+    resolveUnlockService: getUnlockService,
+    resolveManageService: getManageService,
+    fingerprintProfileWriter,
+    logger,
   });
 
   // Browse: the read side of the exercise corpus. Wraps the SAME library instance
@@ -241,6 +277,9 @@ export function createFitnessApiRouter(config) {
   const prepareWorkoutRun = workoutRepository && exerciseLibrary
     ? new PrepareWorkoutRun({ workoutRepository, exerciseLibrary, logger })
     : null;
+  const workoutCatalog = workoutRepository
+    ? new WorkoutCatalogService({ workoutRepository })
+    : null;
 
   // Filesystem access the router used to do inline now lives behind these
   // injected providers (keeps the API layer free of fs/path).
@@ -250,68 +289,102 @@ export function createFitnessApiRouter(config) {
   // it listed a directory that no longer exists and the catch below turned that
   // into an empty playlist. Menu music was silently off. Read and emit are now
   // built from ONE base so they cannot drift apart again.
-  const MENU_MUSIC_REL = 'fitness/ux/menus';
-  const menuMusicProvider = () => {
-    const musicDir = path.join(configService.getMediaDir(), ...MENU_MUSIC_REL.split('/'));
-    try {
-      return nodeFs.readdirSync(musicDir)
-        .filter(f => /\.(mp3|m4a|ogg|wav)$/i.test(f))
-        .sort()
-        .map(f => `media/${MENU_MUSIC_REL}/${f}`);
-    } catch (err) {
-      // Empty is a legitimate answer (no music configured), so this stays
-      // non-fatal — but it must not be SILENT. A missing directory read as
-      // "no music" is exactly how this went unnoticed.
-      logger?.warn?.('fitness.menu_music.dir_unreadable', { musicDir, error: String(err?.message ?? err) });
-      return [];
-    }
-  };
-  const voiceMemoDebugStore = {
-    // DEBUG ONLY: dump the raw webm blob under <dataDir>/_debug/voice_memos/.
-    async save(buffer) {
-      const savedAt = Date.now();
-      const iso = new Date(savedAt).toISOString().replace(/:/g, '-');
-      const filename = `${iso}.webm`;
-      const filePath = path.join(configService.getDataDir(), '_debug', 'voice_memos', filename);
-      // writeBinary handles mkdirSync({ recursive: true }) internally.
-      writeBinary(filePath, buffer);
-      return { path: filePath, filename, size: buffer.length, savedAt };
-    },
-  };
+  const menuMusicCatalog = new FilesystemMenuMusicCatalog({
+    mediaDir: configService.getMediaDir(),
+    logger,
+  });
+  const voiceMemoDebugStore = new FilesystemVoiceMemoDebugStore({ dataDir: configService.getDataDir() });
+  const fitnessContentService = new FitnessContentService({
+    fitnessConfigService,
+    userHydrator: new FitnessUserHydrator({ profileReader: userService, logger }),
+    contentAccessAvailable: Boolean(contentRegistry),
+    contentCatalog: fitnessContentCatalog,
+    logger,
+  });
+  const fitnessHardwareService = new FitnessHardwareService({
+    zoneLedController: fitnessServices.ambientLedController,
+    danceLightingController: fitnessServices.danceLightingController,
+    equipmentFanController: fitnessServices.equipmentFanController,
+  });
+  const fitnessWebhookService = new FitnessWebhookService({
+    providerWebhookAdapters,
+    enrichmentService,
+    shouldSendExerciseReaction,
+    getCoachingConversationId: () => configService?.getNutribotConversationId?.() || null,
+    logger,
+  });
+  const printFitnessReceipt = new PrintFitnessReceipt({
+    printerRegistry,
+    createReceiptCanvas,
+    imagePrintGateway: new TemporaryImagePrintGateway(),
+  });
+  const getFitnessMenuMusic = new GetFitnessMenuMusic({
+    menuMusicCatalog,
+    fitnessConfigService,
+  });
+  const saveDebugVoiceMemo = new SaveDebugVoiceMemo({
+    debugAudioStore: voiceMemoDebugStore,
+    logger,
+  });
+  const emergencyAccessService = new EmergencyAccessService({
+    identityRelay,
+    resolveUnlockService: getUnlockService,
+    manageAccess,
+    logger,
+  });
+  const voiceMemoOperations = new FitnessVoiceMemoService({
+    transcription: fitnessServices.transcriptionService,
+    sessions: fitnessServices.sessionService,
+    config: fitnessConfigService,
+    enrichment: enrichmentService,
+    logger,
+  });
+  const emergencyOperations = new EmergencyLockdownService({
+    access: emergencyAccessService,
+    trigger: triggerEmergencyLockdown,
+    release: releaseEmergencyLockdown,
+    state: getLockdownState,
+    sessions: fitnessServices.sessionService,
+    timelapse: generateSessionTimelapse,
+    logger,
+  });
+  const fitnessSessionOperations = new FitnessSessionOperations({
+    sessions: fitnessServices.sessionService,
+    grouping: fitnessServices.sessionGroupingService,
+    timelapse: generateSessionTimelapse,
+    renderReceipt: createReceiptCanvas,
+    config: fitnessConfigService,
+    logger,
+  });
+  const cycleRaceApi = new CycleRaceApiService({ races: fitnessServices.cycleRaceService, config: fitnessConfigService });
 
   const fitnessRouter = createFitnessRouter({
     sessionService: fitnessServices.sessionService,
+    fitnessSessionOperations,
     cycleRaceService: fitnessServices.cycleRaceService,
+    cycleRaceApi,
     generateSessionTimelapse,
     sessionGroupingService: fitnessServices.sessionGroupingService,
     sessionLockService,
     simulationService,
     querySessions,
-    zoneLedController: fitnessServices.ambientLedController,
-    danceLightingController: fitnessServices.danceLightingController,
-    equipmentFanController: fitnessServices.equipmentFanController,
-    transcriptionService: fitnessServices.transcriptionService,
+    manageAccess,
+    isScreenshotValidationError: (error) => error?.name === 'ScreenshotValidationError',
+    fitnessHardwareService,
+    voiceMemoOperations,
     screenshotService,
     fitnessConfigService,
     fitnessPlayableService,
     fitnessSchoolCourseService,
-    fitnessContentAdapter,
+    fitnessContentService,
     fitnessSuggestionService,
-    userService,
-    configService,
-    contentRegistry,  // Still needed for playlist thumbnail enrichment
-    createReceiptCanvas,
-    printerRegistry,
-    providerWebhookAdapters,
-    enrichmentService,
-    fingerprintProfileWriter,
-    triggerEmergencyLockdown,
-    releaseEmergencyLockdown,
-    getLockdownState,
-    identityRelay,
-    menuMusicProvider,
-    voiceMemoDebugStore,
-    workoutRepository,
+    defaultHouseholdId: configService?.getDefaultHouseholdId?.() ?? null,
+    printFitnessReceipt,
+    fitnessWebhookService,
+    emergencyOperations,
+    getFitnessMenuMusic,
+    saveDebugVoiceMemo,
+    workoutCatalog,
     saveWorkout,
     logStrengthRun,
     browseExerciseLibrary,
@@ -327,4 +400,9 @@ export function createFitnessApiRouter(config) {
   fitnessRouter.fitnessPlayableService = fitnessPlayableService;
   fitnessRouter.fitnessSchoolCourseService = fitnessSchoolCourseService;
   return fitnessRouter;
+}
+
+export function createFitnessSchoolCourseOperation({ attemptStore, sessionService, publications = null,
+  clock = () => new Date(), logger = console }) {
+  return new FitnessSchoolCourseService({ attemptStore, sessionService, publications, clock, logger });
 }

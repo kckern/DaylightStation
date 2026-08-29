@@ -21,7 +21,7 @@
  * @property {boolean} ok - Whether send was successful
  */
 
-export const IMessagingGateway = {
+export class IMessagingGateway {
   /**
    * Send a text message
    * @param {string} chatId - Chat identifier
@@ -29,7 +29,7 @@ export const IMessagingGateway = {
    * @param {SendMessageOptions} [options] - Send options
    * @returns {Promise<SendMessageResult>}
    */
-  async sendMessage(chatId, text, options = {}) {},
+  async sendMessage(_chatId, _text, _options = {}) { throw new Error('IMessagingGateway.sendMessage not implemented'); }
 
   /**
    * Send an image
@@ -39,7 +39,7 @@ export const IMessagingGateway = {
    * @param {SendMessageOptions} [options] - Send options
    * @returns {Promise<SendMessageResult>}
    */
-  async sendImage(chatId, imageSource, caption, options = {}) {},
+  async sendImage(_chatId, _imageSource, _caption, _options = {}) { throw new Error('IMessagingGateway.sendImage not implemented'); }
 
   /**
    * Edit an existing message
@@ -48,7 +48,7 @@ export const IMessagingGateway = {
    * @param {Object} updates - Updates to apply
    * @returns {Promise<void>}
    */
-  async updateMessage(chatId, messageId, updates) {},
+  async updateMessage(_chatId, _messageId, _updates) { throw new Error('IMessagingGateway.updateMessage not implemented'); }
 
   /**
    * Update keyboard on a message
@@ -57,7 +57,7 @@ export const IMessagingGateway = {
    * @param {Array<Array<string|Object>>} choices - New keyboard
    * @returns {Promise<void>}
    */
-  async updateKeyboard(chatId, messageId, choices) {},
+  async updateKeyboard(_chatId, _messageId, _choices) { throw new Error('IMessagingGateway.updateKeyboard not implemented'); }
 
   /**
    * Delete a message
@@ -65,22 +65,22 @@ export const IMessagingGateway = {
    * @param {string} messageId - Message to delete
    * @returns {Promise<void>}
    */
-  async deleteMessage(chatId, messageId) {},
+  async deleteMessage(_chatId, _messageId) { throw new Error('IMessagingGateway.deleteMessage not implemented'); }
 
   /**
    * Transcribe a voice message
    * @param {string} fileId - Voice file ID
    * @returns {Promise<string>} Transcribed text
    */
-  async transcribeVoice(fileId) {},
+  async transcribeVoice(_fileId) { throw new Error('IMessagingGateway.transcribeVoice not implemented'); }
 
   /**
    * Get download URL for a file
    * @param {string} fileId - File ID
    * @returns {Promise<string>} Download URL
    */
-  async getFileUrl(fileId) {}
-};
+  async getFileUrl(_fileId) { throw new Error('IMessagingGateway.getFileUrl not implemented'); }
+}
 
 /**
  * Validate that an object implements IMessagingGateway

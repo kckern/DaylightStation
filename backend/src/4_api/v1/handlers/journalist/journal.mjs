@@ -7,10 +7,10 @@
 
 /**
  * Create Journalist journal handler
- * @param {import('../../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
+ * @param {Object} journalistApi
  * @returns {Function} Express handler
  */
-export function journalistJournalHandler(container) {
+export function journalistJournalHandler(journalistApi) {
   return async (req, res) => {
     // Extract chatId from query or body
     const chatId = req.query.chatId || req.body?.chatId;
@@ -24,9 +24,7 @@ export function journalistJournalHandler(container) {
     }
 
     // Get use case
-    const useCase = container.getExportJournalMarkdown?.();
-
-    if (!useCase) {
+    if (!journalistApi.canExportJournal()) {
       return res.status(501).json({
         ok: false,
         error: 'Export not available',
@@ -34,7 +32,7 @@ export function journalistJournalHandler(container) {
     }
 
     // Execute
-    const markdown = await useCase.execute({ chatId, startDate });
+    const markdown = await journalistApi.export({ chatId, startDate });
 
     // Set content type and send
     res.setHeader('Content-Type', 'text/markdown; charset=utf-8');

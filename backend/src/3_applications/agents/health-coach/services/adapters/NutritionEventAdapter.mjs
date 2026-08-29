@@ -2,6 +2,7 @@
 
 import { EventAdapter } from '../EventAdapter.mjs';
 import { resolvePeriod, toIso } from '../EventQueryService.mjs';
+import { serializeNutriLog } from '#apps/nutrition/NutriLogProjection.mjs';
 
 export class NutritionEventAdapter extends EventAdapter {
   #foodLogService;
@@ -42,7 +43,7 @@ export class NutritionEventAdapter extends EventAdapter {
     const items = log.items || [];
     return {
       ...base,
-      log_full: typeof log.toJSON === 'function' ? log.toJSON() : log,
+      log_full: serializeNutriLog(log),
       items_summary: {
         count: items.length,
         names: items.map(i => i?.name).filter(Boolean),

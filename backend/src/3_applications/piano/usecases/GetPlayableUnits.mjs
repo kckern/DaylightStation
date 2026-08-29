@@ -1,4 +1,5 @@
 import { isSameStudyDay } from '#domains/school/studyDay.mjs';
+import { playableUnitSettings } from '#apps/piano/PianoVideoPolicy.mjs';
 
 /** School's program id for a sequential piano VIDEO course. */
 const PIANO_COURSE_PROGRAM = 'piano-course';
@@ -45,13 +46,13 @@ const numericOrder = (value) => (Number.isFinite(Number(value)) ? Number(value) 
  *   { ok: false, reason: 'invalid_user' }         → router 400
  *   { ok: true, result: { ...playable, isSequential, coProgressLock, referenceUnitIds } }
  *
- * Dependencies (fitnessPlayableService, userVideoProgressStore, configService)
+ * Dependencies (fitnessPlayableService, userVideoProgressStore, configProjection)
  * are constructor-injected at the composition root.
  */
 export class GetPlayableUnits {
   #fitnessPlayableService;
   #userVideoProgressStore;
-  #configService;
+  #configProjection;
   #logger;
   #learningService;
   #curriculumIndex;
@@ -73,14 +74,14 @@ export class GetPlayableUnits {
    * own status() is built on this use case.
    */
   constructor({
-    fitnessPlayableService, userVideoProgressStore = null, configService,
+    fitnessPlayableService, userVideoProgressStore = null, configProjection,
     learningService = null, curriculumIndex = null, schoolAssignments = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     this.#curriculumIndex = curriculumIndex;
     this.#fitnessPlayableService = fitnessPlayableService;
     this.#userVideoProgressStore = userVideoProgressStore;
-    this.#configService = configService;
+    this.#configProjection = configProjection;
     this.#learningService = learningService;
     this.#schoolAssignments = schoolAssignments;
     this.#clock = clock;
@@ -91,7 +92,7 @@ export class GetPlayableUnits {
   #isKnownUser(userId) {
     return typeof userId === 'string' && userId.length > 0
       && !userId.includes('/') && !userId.includes('\\') && !userId.includes('..')
-      && !!this.#configService.getUserProfile(userId);
+      && this.#configProjection.isKnownUser(userId);
   }
 
   /**
@@ -171,10 +172,10 @@ export class GetPlayableUnits {
       });
     }
 
-    const pianoConfig = this.#configService.getHouseholdAppConfig(null, 'piano') || {};
+    const settings = playableUnitSettings(this.#configProjection.raw());
     const compoundId = playable.compoundId || `plex:${courseId}`;
     const sequentialLabels = new Set(
-      (pianoConfig.videos?.sequential_labels || []).map((l) => l.toLowerCase())
+      settings.sequentialLabels.map((l) => l.toLowerCase())
     );
     const isSequential = Array.isArray(playable.info?.labels) &&
       playable.info.labels.some((l) => sequentialLabels.has(String(l).toLowerCase()));
@@ -183,7 +184,7 @@ export class GetPlayableUnits {
     // are never gated, give no progression credit, and render in the always-open
     // Practice & Reference zone. Matched per course against unit (season) titles.
     const referenceUnitIds = new Set();
-    const refRule = (pianoConfig.videos?.reference_units || []).find((r) => r.courseId === compoundId);
+    const refRule = settings.referenceUnits.find((r) => r.courseId === compoundId);
     if (refRule) {
       const patterns = (refRule.titlePatterns || []).map((p) => String(p).toLowerCase()).filter(Boolean);
       const explicit = new Set((refRule.unitIds || []).map(String));
@@ -206,7 +207,7 @@ export class GetPlayableUnits {
     // episodes give no credit, so they're excluded from both users' counts.
     let coProgressLock = null;
     if (isSequential && userId && !isGuest && this.#userVideoProgressStore) {
-      const rules = pianoConfig.videos?.co_progress || [];
+      const rules = settings.coProgress;
       const rule = rules.find(
         (r) => r.courseId === compoundId &&
                Array.isArray(r.users) &&
@@ -290,7 +291,7 @@ export class GetPlayableUnits {
     // Already did today's lesson: the obligation is discharged and everything
     // after it is discretionary practice again, which pacing rightly governs.
     const nowMs = this.#nowMs();
-    const timezone = this.#configService.getTimezone?.() ?? null;
+    const timezone = this.#configProjection.timezone();
     const doneToday = credit.some((item) => item.userCompletedAt
       && isSameStudyDay(Date.parse(item.userCompletedAt), nowMs, { timezone, boundaryHour: STUDY_DAY_BOUNDARY_HOUR }));
     if (doneToday) return null;

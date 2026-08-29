@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import createNotificationRouter from '#api/v1/routers/notification.mjs';
-import { NotificationPreference } from '#domains/notification/entities/NotificationPreference.mjs';
 
 describe('Notification API Router', () => {
   let app;
@@ -23,13 +22,16 @@ describe('Notification API Router', () => {
     };
 
     mockPreferenceStore = {
-      load: vi.fn().mockResolvedValue(new NotificationPreference(prefConfig)),
-      save: vi.fn().mockResolvedValue(undefined),
+      readPreferences: vi.fn().mockResolvedValue(prefConfig),
+      savePreferences: vi.fn().mockResolvedValue(undefined),
     };
 
     const router = createNotificationRouter({
-      notificationService: mockNotificationService,
-      preferenceStore: mockPreferenceStore,
+      notificationOperations: {
+        ...mockPreferenceStore,
+        pending: mockNotificationService.getPending,
+        dismiss: mockNotificationService.dismiss,
+      },
     });
 
     app = express();
@@ -43,7 +45,7 @@ describe('Notification API Router', () => {
       expect(res.status).toBe(200);
       expect(res.body.ceremony).toBeTruthy();
       expect(res.body.ceremony.normal).toEqual(['telegram']);
-      expect(mockPreferenceStore.load).toHaveBeenCalledWith('user_1');
+      expect(mockPreferenceStore.readPreferences).toHaveBeenCalledWith('user_1');
     });
   });
 
@@ -55,7 +57,7 @@ describe('Notification API Router', () => {
         .send(newPrefs);
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
-      expect(mockPreferenceStore.save).toHaveBeenCalledWith('user_1', newPrefs);
+      expect(mockPreferenceStore.savePreferences).toHaveBeenCalledWith('user_1', newPrefs);
     });
   });
 

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { applySequence, isSolved, normalizeMove } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
-import { faceletsToEngineCube } from '#apps/school/rubiksCube/physicalCube.mjs';
+import { faceletsToEngineCube } from '#shared/gaming/rulesets/rubiks-cube/facelets.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 

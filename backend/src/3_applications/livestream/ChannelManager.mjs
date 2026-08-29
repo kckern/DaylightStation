@@ -1,43 +1,53 @@
-import { PassThrough } from 'stream';
-import path from 'path';
 import { StreamChannel } from '../../2_domains/livestream/StreamChannel.mjs';
+
+export function toChannelStatus(channel) {
+  return {
+    name: channel.name, status: channel.status, format: channel.format,
+    bitrate: channel.bitrate, ambient: channel.ambient, currentTrack: channel.currentTrack,
+    queue: channel.queue, queueLength: channel.queueLength, activeProgram: channel.activeProgram,
+    waitingForInput: channel.waitingForInput, listenerCount: channel.listenerCount,
+    soundboard: channel.soundboard,
+  };
+}
 import { ProgramRunner } from '../../2_domains/livestream/ProgramRunner.mjs';
+import { assertStreamChannelRuntime, assertStreamChannelRuntimeFactory } from './ports/IStreamChannelRuntime.mjs';
 
 /**
  * ChannelManager — application service for livestream channels.
  *
  * Orchestrates channel lifecycle: create/destroy, wire up
- * stream adapter ↔ source feeder ↔ StreamChannel, route commands.
- * Concrete adapters (FFmpegStreamAdapter, SourceFeeder) are supplied as
- * factory functions by the composition root.
+ * a semantic stream runtime ↔ StreamChannel and routes commands. Encoder,
+ * decoder, file resolution, and listener streams are runtime concerns.
  */
 export class ChannelManager {
-  #channels = new Map();    // name → { channel, adapter, feeder, runner }
-  #mediaBasePath;
-  #programsBasePath;
+  #channels = new Map();    // name → { channel, runtime, runner }
   #broadcastEvent;
-  #createStreamAdapter;
-  #createSourceFeeder;
+  #createChannelRuntime;
+  #loadProgram;
   #logger;
+  #clock;
+  #random;
+  #scheduler;
 
   /**
    * @param {Object} config
-   * @param {string} config.mediaBasePath
-   * @param {string} [config.programsBasePath]
    * @param {Function} config.broadcastEvent
-   * @param {Function} config.createStreamAdapter - ({ format, bitrate, logger }) => stream adapter
-   * @param {Function} config.createSourceFeeder - ({ encoderStdin, onTrackEnd, onNeedTrack, logger }) => feeder
+   * @param {Function} config.createChannelRuntime - creates an infrastructure-owned channel runtime
+   * @param {Function} config.loadProgram - (programPath) => parsed program definition
    * @param {Object} [config.logger]
    */
-  constructor({ mediaBasePath, programsBasePath, broadcastEvent, createStreamAdapter, createSourceFeeder, logger = console }) {
-    if (typeof createStreamAdapter !== 'function' || typeof createSourceFeeder !== 'function') {
-      throw new Error('ChannelManager: createStreamAdapter and createSourceFeeder factories are required — inject them from the composition root');
-    }
-    this.#mediaBasePath = mediaBasePath;
-    this.#programsBasePath = programsBasePath;
+  constructor({ broadcastEvent, createChannelRuntime, loadProgram, clock, random, scheduler, logger = console }) {
+    assertStreamChannelRuntimeFactory(createChannelRuntime);
+    if (typeof loadProgram !== 'function') throw new Error('ChannelManager requires loadProgram');
+    if (typeof clock !== 'function') throw new Error('ChannelManager requires clock');
+    if (typeof random !== 'function') throw new Error('ChannelManager requires random');
+    if (!scheduler?.after) throw new Error('ChannelManager requires scheduler');
     this.#broadcastEvent = broadcastEvent;
-    this.#createStreamAdapter = createStreamAdapter;
-    this.#createSourceFeeder = createSourceFeeder;
+    this.#createChannelRuntime = createChannelRuntime;
+    this.#loadProgram = loadProgram;
+    this.#clock = clock;
+    this.#random = random;
+    this.#scheduler = scheduler;
     this.#logger = logger;
   }
 
@@ -45,19 +55,15 @@ export class ChannelManager {
     if (this.#channels.has(name)) throw new Error(`Channel "${name}" already exists`);
 
     const channel = new StreamChannel({ name, ...config });
-    const adapter = this.#createStreamAdapter({
-      format: channel.format, bitrate: channel.bitrate, logger: this.#logger,
-    });
-    const encoderStdin = adapter.start();
-
-    const feeder = this.#createSourceFeeder({
-      encoderStdin,
+    const runtime = assertStreamChannelRuntime(this.#createChannelRuntime({
+      format: channel.format,
+      bitrate: channel.bitrate,
       onTrackEnd: () => { channel.setCurrentTrack(null); this.#broadcast(name); },
       onNeedTrack: () => this.#feedNext(name),
       logger: this.#logger,
-    });
+    }));
 
-    this.#channels.set(name, { channel, adapter, feeder, runner: null });
+    this.#channels.set(name, { channel, runtime, runner: null });
     this.#startAmbient(name);
     this.#logger.info?.('livestream.channel.created', { name, format: channel.format, bitrate: channel.bitrate });
     this.#broadcast(name);
@@ -65,8 +71,7 @@ export class ChannelManager {
 
   destroy(name) {
     const entry = this.#getEntry(name);
-    entry.feeder.stop();
-    entry.adapter.stop();
+    entry.runtime.dispose();
     this.#channels.delete(name);
     this.#logger.info?.('livestream.channel.destroyed', { name });
   }
@@ -74,8 +79,7 @@ export class ChannelManager {
   destroyAll() {
     for (const name of [...this.#channels.keys()]) {
       const entry = this.#channels.get(name);
-      entry.feeder.stop();
-      entry.adapter.stop();
+      entry.runtime.dispose();
       this.#channels.delete(name);
     }
   }
@@ -94,18 +98,17 @@ export class ChannelManager {
   }
 
   forcePlay(name, file) {
-    const { channel, feeder } = this.#getEntry(name);
-    const resolved = this.#resolvePath(file);
+    const { channel, runtime } = this.#getEntry(name);
     channel.setCurrentTrack(file);
-    feeder.playFile(resolved);
+    runtime.play(file);
     this.#logger.info?.('livestream.force', { channel: name, file });
     this.#broadcast(name);
   }
 
   skip(name) {
-    const { channel, feeder } = this.#getEntry(name);
+    const { channel, runtime } = this.#getEntry(name);
     channel.setCurrentTrack(null);
-    feeder.stop();
+    runtime.stopSource();
     this.#feedNext(name);
     this.#logger.info?.('livestream.skip', { channel: name });
     this.#broadcast(name);
@@ -132,38 +135,30 @@ export class ChannelManager {
     this.#broadcast(name);
   }
 
-  getClientStream(name) {
-    const { channel, adapter } = this.#getEntry(name);
-    const stream = new PassThrough();
-    const clientId = adapter.addClient(stream);
+  openListener(name) {
+    const { channel, runtime } = this.#getEntry(name);
     channel.addListener();
-    stream.on('close', () => {
-      adapter.removeClient(clientId);
+    const listener = runtime.openListener(() => {
       channel.removeListener();
       this.#broadcast(name);
     });
-    return { stream, clientId };
+    return listener;
   }
 
   getStatus(name) {
     const { channel } = this.#getEntry(name);
-    return channel.toJSON();
+    return toChannelStatus(channel);
   }
 
   listChannels() {
-    return [...this.#channels.values()].map(({ channel }) => channel.toJSON());
+    return [...this.#channels.values()].map(({ channel }) => toChannelStatus(channel));
   }
 
   async startProgram(name, programName, programDef) {
     const entry = this.#getEntry(name);
     if (programDef.type === 'yaml') {
-      const fs = await import('fs');
-      const yaml = await import('js-yaml');
-      const path = await import('path');
-      const fullPath = path.default.join(this.#programsBasePath, programDef.path);
-      const content = fs.default.readFileSync(fullPath, 'utf8');
-      const program = yaml.default.load(content);
-      const runner = new ProgramRunner(program);
+      const program = await this.#loadProgram(programDef.path);
+      const runner = new ProgramRunner(program, { now: this.#clock, random: this.#random });
       entry.runner = runner;
       entry.channel.setProgram(programName);
       const action = runner.start();
@@ -186,7 +181,7 @@ export class ChannelManager {
     switch (action.type) {
       case 'play':
         entry.channel.setCurrentTrack(action.file);
-        entry.feeder.playFile(this.#resolvePath(action.file));
+        entry.runtime.play(action.file);
         break;
       case 'queue':
         entry.channel.enqueueAll(action.files);
@@ -197,11 +192,11 @@ export class ChannelManager {
           timeout: action.timeout,
           default: action.default,
         });
-        if (action.prompt) entry.feeder.playFile(this.#resolvePath(action.prompt));
+        if (action.prompt) entry.runtime.play(action.prompt);
         if (action.timeout) {
-          setTimeout(() => {
+          this.#scheduler.after(action.timeout * 1000, () => {
             if (entry.runner?.isWaitingForInput) this.sendInput(name, null);
-          }, action.timeout * 1000);
+          });
         }
         break;
       case 'stop':
@@ -215,7 +210,7 @@ export class ChannelManager {
 
   #feedNext(name) {
     if (!this.#channels.has(name)) return;
-    const { channel, feeder, runner } = this.#channels.get(name);
+    const { channel, runtime, runner } = this.#channels.get(name);
     if (runner && !runner.isFinished && !runner.isWaitingForInput) {
       const action = runner.advance();
       this.#executeAction(name, action);
@@ -224,7 +219,7 @@ export class ChannelManager {
     const next = channel.dequeue();
     if (next) {
       channel.setCurrentTrack(next);
-      feeder.playFile(this.#resolvePath(next));
+      runtime.play(next);
       this.#broadcast(name);
     } else {
       this.#startAmbient(name);
@@ -232,21 +227,21 @@ export class ChannelManager {
   }
 
   #startAmbient(name) {
-    const { channel, feeder } = this.#channels.get(name);
+    const { channel, runtime } = this.#channels.get(name);
     const ambient = channel.ambient;
     if (ambient === 'silence' || !ambient) {
-      feeder.playSilence();
+      runtime.playSilence();
     } else if (ambient.startsWith('file:')) {
-      feeder.playAmbientLoop(this.#resolvePath(ambient.slice(5)));
+      runtime.playAmbientLoop(ambient.slice(5));
     } else {
-      feeder.playSilence();
+      runtime.playSilence();
     }
   }
 
   #broadcast(name) {
     if (!this.#channels.has(name)) return;
     const { channel } = this.#channels.get(name);
-    this.#broadcastEvent(`livestream:${name}`, channel.toJSON());
+    this.#broadcastEvent(`livestream:${name}`, toChannelStatus(channel));
   }
 
   #getEntry(name) {
@@ -255,16 +250,6 @@ export class ChannelManager {
     return entry;
   }
 
-  /**
-   * Resolve a file path — if relative, prepend mediaBasePath.
-   * @private
-   */
-  #resolvePath(filePath) {
-    if (!filePath) return filePath;
-    if (path.isAbsolute(filePath)) return filePath;
-    // Resolve relative to app root (one level above backend/)
-    return path.resolve('..', filePath);
-  }
 }
 
 export default ChannelManager;

@@ -1,23 +1,22 @@
 /** Reconciles Fitness-owned attempt facts into School's work-session ledger. */
 import { createEvent, reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
-import { FITNESS_SCHOOL_ACCEPTED_TOPIC, FITNESS_SCHOOL_ASSESSED_TOPIC } from '#apps/fitness/FitnessSchoolCourseService.mjs';
 
 export class FitnessSchoolAssessmentBridge {
-  #eventBus; #sessions; #curriculum; #close; #evidence; #clock; #logger; #unsubscribers = [];
-  constructor({ eventBus, sessions, curriculum, closeSessionOutcome, evidenceRepository = null,
+  #realtime; #sessions; #curriculum; #close; #evidence; #clock; #logger; #unsubscribers = [];
+  constructor({ realtime, sessions, curriculum, closeSessionOutcome, evidenceRepository = null,
     clock = () => new Date(), logger = console } = {}) {
-    if (!eventBus?.subscribe || !sessions || !curriculum || !closeSessionOutcome) {
-      throw new Error('FitnessSchoolAssessmentBridge requires eventBus, sessions, curriculum and closeSessionOutcome');
+    if (!realtime?.onFitnessActivityAccepted || !realtime?.onFitnessActivityAssessed || !sessions || !curriculum || !closeSessionOutcome) {
+      throw new Error('FitnessSchoolAssessmentBridge requires realtime, sessions, curriculum and closeSessionOutcome');
     }
-    this.#eventBus = eventBus; this.#sessions = sessions; this.#curriculum = curriculum;
+    this.#realtime = realtime; this.#sessions = sessions; this.#curriculum = curriculum;
     this.#close = closeSessionOutcome; this.#evidence = evidenceRepository; this.#clock = clock; this.#logger = logger;
   }
 
   start() {
     if (this.#unsubscribers.length) return;
     this.#unsubscribers.push(
-      this.#eventBus.subscribe(FITNESS_SCHOOL_ACCEPTED_TOPIC, (payload) => this.#accepted(payload).catch((error) => this.#failed('accepted', payload, error))),
-      this.#eventBus.subscribe(FITNESS_SCHOOL_ASSESSED_TOPIC, (payload) => this.#assessed(payload).catch((error) => this.#failed('assessed', payload, error))),
+      this.#realtime.onFitnessActivityAccepted((payload) => this.#accepted(payload).catch((error) => this.#failed('accepted', payload, error))),
+      this.#realtime.onFitnessActivityAssessed((payload) => this.#assessed(payload).catch((error) => this.#failed('assessed', payload, error))),
     );
   }
   stop() { this.#unsubscribers.splice(0).forEach((unsubscribe) => unsubscribe?.()); }
@@ -92,4 +91,3 @@ export class FitnessSchoolAssessmentBridge {
 }
 
 export default FitnessSchoolAssessmentBridge;
-

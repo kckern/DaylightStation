@@ -24,12 +24,6 @@
 // relay firmware or the ingest path.
 //
 // Design: docs/plans/2026-07-10-food-scale-relay-design.md
-import path from 'path';
-import { formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
-import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
-
-const RELAY_SOURCE = 'food-scale-relay';
-const DEFAULT_TOPIC = 'food-scale';
 
 // Ingest discriminators we accept. `kitchen-relay` is the unified kitchen board
 // (_extensions/kitchen-relay), which carries the scale AND the DS2278 scanner and
@@ -40,9 +34,7 @@ const DEFAULT_TOPIC = 'food-scale';
 // A `type:'scan'` message from the kitchen board reaches this handler too and
 // falls out of the bottom untouched — barcodeRelay.mjs owns it. That is the whole
 // contract between the two handlers: same source, disjoint `type` sets.
-const INGEST_SOURCES = new Set([RELAY_SOURCE, 'kitchen-relay']);
-
-// Persistence policy tuning (overridable via config.persistence).
+// Persistence policy tuning is injected as resolved values.
 // - emptyThresholdG: at/below this the pan is considered empty → a fresh
 //   measurement session may begin (re-arms dedup so an identical next weight
 //   still records).
@@ -55,9 +47,9 @@ const DEFAULT_DEDUP_DELTA_G = 2;
 
 /**
  * @param {object}   deps
- * @param {object}   deps.eventBus  IEventBus (WebSocketEventBus)
- * @param {string}   deps.dataDir   resolved data dir (configService.getDataDir())
- * @param {object}   [deps.config]  parsed config/scales.yml — { persistence:{dir}, scales:{<id>:{topic}} }
+ * @param {object}   deps.relayGateway semantic scale relay gateway
+ * @param {number}   [deps.emptyThresholdG]
+ * @param {number}   [deps.dedupDeltaG]
  * @param {string}   [deps.timezone] IANA tz for the `ts` field + day-file bucket (default household tz)
  * @param {object}   [deps.logger]  structured logger
  * @returns {{ dispose: () => void }}
@@ -73,55 +65,16 @@ const DEFAULT_DEDUP_DELTA_G = 2;
  * this file at all. The composition root resolves the location, including any
  * `persistence.dir` override, and hands down one directory.
  */
-export function createFoodScaleRelay({ eventBus, dataDir, dayLog, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
-  if (!eventBus?.onClientMessage || !eventBus?.subscribe) {
-    throw new Error('createFoodScaleRelay: eventBus with onClientMessage + subscribe required');
+export function createFoodScaleRelay({
+  relayGateway, dayLog, emptyThresholdG = DEFAULT_EMPTY_THRESHOLD_G,
+  dedupDeltaG = DEFAULT_DEDUP_DELTA_G, logger = console,
+}) {
+  if (!relayGateway?.subscribe) {
+    throw new Error('createFoodScaleRelay: relayGateway required');
   }
 
-  const scaleDefs = config?.scales || {};
-  const emptyThresholdG = Number(config?.persistence?.emptyThresholdG ?? DEFAULT_EMPTY_THRESHOLD_G);
-  const dedupDeltaG = Number(config?.persistence?.dedupDeltaG ?? DEFAULT_DEDUP_DELTA_G);
-  const topicForId = (id) => scaleDefs[id]?.topic || DEFAULT_TOPIC;
-  // Every distinct topic we must persist from (default + any per-scale overrides).
-  const topics = new Set([DEFAULT_TOPIC, ...Object.values(scaleDefs).map((s) => s?.topic).filter(Boolean)]);
-
-  // ---- 1) INGEST: relay device client → bus ------------------------------
-  eventBus.onClientMessage((clientId, message) => {
-    if (!message || !INGEST_SOURCES.has(message.source)) return;
-    const id = typeof message.id === 'string' && message.id ? message.id : 'unknown';
-    // Local wall-clock timestamp (household tz), NOT UTC — the day-file bucket is
-    // its date prefix, so an evening-local event never spills into the next UTC day.
-    const ts = formatLocalTimestamp(new Date(), timezone);
-    const topic = topicForId(id);
-
-    if (message.type === 'scale') {
-      const grams = Number(message.grams);
-      if (!Number.isFinite(grams)) {
-        logger.warn?.('food_scale.ingest.bad_weight', { clientId, id });
-        return;
-      }
-      eventBus.broadcast(topic, {
-        id,
-        grams,
-        stable: Boolean(message.stable),
-        unit: message.unit || 'g',
-        ts,
-        source: 'ble-relay',
-      });
-      return;
-    }
-
-    if (message.type === 'button') {
-      eventBus.broadcast(topic, {
-        id,
-        event: 'button',
-        press: message.press === 'long' ? 'long' : 'short',
-        ts,
-      });
-      return;
-    }
-  });
-
+  emptyThresholdG = Number(emptyThresholdG);
+  dedupDeltaG = Number(dedupDeltaG);
   // ---- 2) PERSIST: bus → disk (settled measurements + buttons) ------------
   // Per-scale state:
   //  - lastReading:      most recent decoded frame (settled OR not) — lets a
@@ -175,10 +128,10 @@ export function createFoodScaleRelay({ eventBus, dataDir, dayLog, config = {}, t
     enqueueAppend(id, { ts: payload.ts, grams, unit, kind: 'settled' });
   };
 
-  const unsubs = [...topics].map((topic) => eventBus.subscribe(topic, onPayload));
+  const unsubscribe = relayGateway.subscribe(onPayload);
 
-  logger.info?.('food_scale.relay.ready', { topics: [...topics] });
-  return { dispose: () => { for (const u of unsubs) { try { u?.(); } catch { /* noop */ } } } };
+  logger.info?.('food_scale.relay.ready');
+  return { dispose: () => { try { unsubscribe?.(); } catch { /* noop */ } } };
 }
 
 

@@ -5,7 +5,6 @@
  * Represents a quiz question for structured journaling.
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import { isValidQuizCategory } from '../value-objects/QuizCategory.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
@@ -38,7 +37,8 @@ export class QuizQuestion {
       throw new ValidationError('choices must be an array with at least 2 options');
     }
 
-    this.#uuid = props.uuid || uuidv4();
+    if (!props.uuid) throw new ValidationError('uuid is required');
+    this.#uuid = props.uuid;
     this.#category = props.category;
     this.#question = props.question;
     this.#choices = Object.freeze([...props.choices]);
@@ -99,7 +99,10 @@ export class QuizQuestion {
   markAsked(timestamp) {
     if (!timestamp) throw new ValidationError('timestamp is required for markAsked');
     return new QuizQuestion({
-      ...this.toJSON(),
+      uuid: this.#uuid,
+      category: this.#category,
+      question: this.#question,
+      choices: this.#choices,
       lastAsked: timestamp,
     });
   }
@@ -111,8 +114,11 @@ export class QuizQuestion {
    */
   withChoices(choices) {
     return new QuizQuestion({
-      ...this.toJSON(),
+      uuid: this.#uuid,
+      category: this.#category,
+      question: this.#question,
       choices,
+      lastAsked: this.#lastAsked,
     });
   }
 
@@ -125,22 +131,6 @@ export class QuizQuestion {
    */
   static create(props) {
     return new QuizQuestion(props);
-  }
-
-  // ==================== Serialization ====================
-
-  /**
-   * Convert to plain object
-   * @returns {object}
-   */
-  toJSON() {
-    return {
-      uuid: this.#uuid,
-      category: this.#category,
-      question: this.#question,
-      choices: [...this.#choices],
-      lastAsked: this.#lastAsked,
-    };
   }
 
   /**

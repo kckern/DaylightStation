@@ -18,7 +18,11 @@
 /**
  * Letter-size PDF target.
  *
- * @typedef {{ pdf: Buffer, pageCount: number, formMap: object|null }} RenderedDocument
+ * @typedef {{
+ *   printWith: (printer: object, options?: object) => Promise<unknown>,
+ *   retainWith: (store: object|null, metadata: object) => Promise<RenderedDocumentArtifact>
+ * }} RenderedDocumentArtifact
+ * @typedef {{ artifact: RenderedDocumentArtifact, pageCount: number, formMap: object|null }} RenderedDocument
  */
 export class IDocumentRenderer {
   /**
@@ -39,25 +43,11 @@ export class IDocumentRenderer {
 }
 
 /**
- * Thermal receipt target. Returns a print job in the shape
- * `ThermalPrinterAdapter.print()` accepts — `{ items, footer }` — because the
- * ESC/POS item list IS the receipt's rendered form for a text renderer; there
- * is no intermediate bitmap for the application layer to care about.
+ * Thermal receipt target. Returns an opaque artifact that can dispatch itself
+ * through a printer; raw ESC/POS jobs and raster scratch cleanup remain on the
+ * adapter side of this boundary.
  *
- * A RASTER renderer (`1_rendering/school/documents/
- * DocumentReceiptRasterRenderer.mjs`) is the other legitimate shape: its
- * `items` is a single `{type:'image'}`, and the three optional fields below
- * exist because a bitmap cannot carry them itself — `transcript` is the
- * words a text renderer would have printed (an image has no decodable text
- * for the printer capture/log to read back), `codes` is what a text renderer
- * would have put in scannable `barcode`/`qrcode` items (a raster's QR is
- * pixels), and `cleanup` releases whatever scratch resource (a temp PNG file)
- * the renderer needed to produce the image item. `ReceiptPrinting` treats all
- * three as optional and calls `cleanup` after the print attempt regardless of
- * outcome; a text renderer that sets none of them is unaffected.
- *
- * @typedef {{ items: object[], footer?: object, transcript?: string,
- *   codes?: Array<{token: string, label: string}>, cleanup?: () => Promise<void>|void }} RenderedReceipt
+ * @typedef {{ printWith: (printer: object) => Promise<unknown> }} RenderedReceipt
  */
 export class IReceiptRenderer {
   /**

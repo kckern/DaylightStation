@@ -2,7 +2,7 @@ import { NotificationCategory } from '../value-objects/NotificationCategory.mjs'
 import { NotificationUrgency } from '../value-objects/NotificationUrgency.mjs';
 
 export class NotificationIntent {
-  constructor({ title, body, category, urgency, actions = [], metadata = {}, dedupeKey } = {}) {
+  constructor({ title, body, category, urgency, actions = [], metadata = {}, dedupeKey, createdAt } = {}) {
     if (!NotificationCategory.isValid(category)) {
       throw new Error(`Invalid notification category: "${category}". Valid: ${NotificationCategory.values().join(', ')}`);
     }
@@ -17,19 +17,7 @@ export class NotificationIntent {
     this.actions = actions;
     this.metadata = metadata;
     this.dedupeKey = dedupeKey;
-    this.createdAt = new Date().toISOString();
+    this.createdAt = createdAt;
   }
 
-  toJSON() {
-    return {
-      title: this.title,
-      body: this.body,
-      category: this.category,
-      urgency: this.urgency,
-      actions: this.actions,
-      metadata: this.metadata,
-      dedupeKey: this.dedupeKey,
-      createdAt: this.createdAt,
-    };
-  }
 }

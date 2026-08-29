@@ -10,46 +10,10 @@
  */
 
 import moment from 'moment-timezone';
-import { decodeSingleSeries } from '#domains/fitness/services/TimelineService.mjs';
-import {
-  computeParticipantStats,
-  computeHrHistogram,
-  ringsPerMinute,
-  normalizeSessionEvents,
-  dedupeChallengeEvents,
-  discoverParticipants,
-  zoneIntensity,
-} from '#domains/fitness/services/SessionStatsService.mjs';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
 import { drawDivider, drawBorder, flipCanvas, formatDuration } from '#rendering/lib/LayoutHelpers.mjs';
 import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { fitnessReceiptTheme as theme } from './fitnessReceiptTheme.mjs';
-
-// ─── Helpers ──────────────────────────────────────────────
-
-/**
- * Map zone symbol from data ('c','a','w','h','fire') to zone name
- */
-function resolveZone(sym) {
-  return theme.chart.zoneSymbolMap[sym] || null;
-}
-
-function downsampleZones(zones, targetRows) {
-  if (!zones || zones.length <= targetRows) return zones || [];
-  const windowSize = Math.max(1, Math.ceil(zones.length / targetRows));
-  const result = [];
-  for (let i = 0; i < zones.length; i += windowSize) {
-    const window = zones.slice(i, i + windowSize);
-    let best = null;
-    for (const z of window) {
-      if (z != null && (best == null || zoneIntensity(z) > zoneIntensity(best))) {
-        best = z;
-      }
-    }
-    result.push(best);
-  }
-  return result;
-}
 
 // ─── Renderer Factory ─────────────────────────────────────
 
@@ -62,18 +26,17 @@ function downsampleZones(zones, targetRows) {
  * @returns {{ createCanvas: Function }}
  */
 export function createFitnessReceiptRenderer(config) {
-  const { getSessionData, resolveDisplayName, fontDir } = config;
+  const { fontDir } = config;
 
   /**
    * Render a fitness receipt canvas.
    *
-   * @param {string} sessionId
+   * @param {Object} model - Complete precomputed receipt presentation model
    * @param {boolean} [upsidedown=false]
    * @returns {Promise<{canvas, width: number, height: number}>}
    */
-  async function createCanvas(sessionId, upsidedown = false) {
-    const data = await getSessionData(sessionId);
-    if (!data) return null;
+  async function createCanvas(model, upsidedown = false) {
+    if (!model) return null;
 
     // Register the receipt font and grab a 1x1 scratch context for text
     // measurement during the height pre-calculation below.
@@ -85,118 +48,11 @@ export function createFitnessReceiptRenderer(config) {
       fontFamily: theme.fonts.family,
     });
 
-    // ─── Parse session data ───────────────────────────────
-    const sessionInfo = data.session || {};
-    const participants = data.participants || {};
-    const timeline = data.timeline || {};
-    const treasureBox = data.treasureBox || data.totals || null;
-    const tz = data.timezone || sessionInfo.timezone || 'UTC';
-
-    const intervalSeconds = timeline.interval_seconds || 5;
-    const tickCount = timeline.tick_count || 0;
-
-    // Series live in timeline.series (flat keys: 'slug:hr', 'slug:zone', etc.)
-    // OR timeline.participants.slug.hr (v3 nested format)
-    const series = timeline.series || {};
-    const timelineParticipants = timeline.participants || {};
-
-    // Discover participant slugs (series slug:zone keys ∪ participants block,
-    // minus global/device:/bike:) — timeline-schema knowledge, domain-owned.
-    const participantSlugs = discoverParticipants(series, participants);
-
-    // ─── Decode RLE series per participant ─────────────────
-    const decoded = {};
-    for (const slug of participantSlugs) {
-      // Try flat series keys first, then nested participants format
-      const rawZone = series[`${slug}:zone`] || timelineParticipants[slug]?.zone;
-      const rawHr = series[`${slug}:hr`] || timelineParticipants[slug]?.hr;
-      // Legacy `<slug>:coins` included — see ringSeries.mjs. `readRingSeries`
-      // returns [] rather than undefined, so the nested-format fallback below
-      // must be reached on emptiness, not on nullishness.
-      const flatRings = readRingSeries(series, slug);
-      const rawRings = flatRings.length ? flatRings : timelineParticipants[slug]?.rings;
-
-      // decodeSingleSeries handles both RLE strings and already-decoded arrays
-      const zoneArr = decodeSingleSeries(rawZone) || (Array.isArray(rawZone) ? rawZone : []);
-      const hrArr = decodeSingleSeries(rawHr) || (Array.isArray(rawHr) ? rawHr : []);
-      const ringsArr = decodeSingleSeries(rawRings) || (Array.isArray(rawRings) ? rawRings : []);
-
-      // Map zone symbols to names
-      const zones = zoneArr.map(z => z != null ? (resolveZone(z) || z) : null);
-
-      decoded[slug] = { zones, hr: hrArr, rings: ringsArr };
-    }
-
-    // ─── Per-participant stats ─────────────────────────────
-    const stats = {};
-    for (const slug of participantSlugs) {
-      const p = participants[slug] || {};
-      const d = decoded[slug] || { zones: [], hr: [], rings: [] };
-      const computed = computeParticipantStats({
-        hr: d.hr,
-        zones: d.zones,
-        rings: d.rings,
-        intervalSeconds,
-        participant: p,
-      });
-      stats[slug] = {
-        displayName: p.display_name || (resolveDisplayName ? resolveDisplayName(slug) : null) || slug,
-        ...computed,
-      };
-    }
-
-    // ─── Downsample zone data for chart ───────────────────
-    const targetRows = theme.chart.downsampleTarget;
-    const dsZones = {};
-    for (const slug of participantSlugs) {
-      dsZones[slug] = downsampleZones(decoded[slug].zones, targetRows);
-    }
-    const chartRows = participantSlugs.length > 0
-      ? Math.max(...participantSlugs.map(s => dsZones[s].length))
-      : 0;
-
-    // ─── Flatten events ──────────────────────────────────
-    // Events can be: array of { at, type, data } OR dict { type: [...] }
-    const sessionStart = sessionInfo.start
-      ? moment.tz(sessionInfo.start, tz)
-      : null;
-    // Flattening across both stored schema shapes + event-type normalization
-    // is session-schema knowledge (domain); the renderer only maps the
-    // normalized events onto chart rows and symbols.
-    const normalizedEvents = normalizeSessionEvents(data);
-
-    // Map events to chart row positions
-    const ticksPerRow = tickCount > 0 && chartRows > 0 ? tickCount / chartRows : 1;
-    const chartEvents = [];
-    for (const { type, event: ev } of normalizedEvents) {
-      const evTime = ev.at || ev.timestamp;
-      if (!evTime || !sessionStart) continue;
-      const evMoment = moment.tz(evTime, tz);
-      const offsetSec = evMoment.diff(sessionStart, 'seconds');
-      const tickIndex = Math.max(0, Math.floor(offsetSec / intervalSeconds));
-      const rowIndex = Math.min(chartRows - 1, Math.max(0, Math.floor(tickIndex / ticksPerRow)));
-      const symbol = theme.chart.eventSymbols[type] || '\u25CF';
-      const label = ev.title || ev.name || ev.challenge_name || type;
-      chartEvents.push({ rowIndex, type, symbol, label, event: ev });
-    }
-    chartEvents.sort((a, b) => a.rowIndex - b.rowIndex);
-
-    // ─── Treasure box data ────────────────────────────────
-    const tbRings = treasureBox?.totalRings ?? treasureBox?.rings ?? 0;
-    const tbBuckets = treasureBox?.buckets || {};
-    const hasTreasureBox = tbRings > 0;
-
-    // ─── Leaderboard (sorted by rings desc) ───────────────
-    const leaderboard = participantSlugs
-      .map(slug => ({ slug, ...stats[slug] }))
-      .sort((a, b) => b.totalRings - a.totalRings);
-
-    // ─── Event details by type (use chart events which are already normalized) ──
-    // Challenge dedup (LAST challenge_end per challengeId wins) is domain
-    // logic; chartEvents are time-sorted, which defines "last".
-    const challenges = dedupeChallengeEvents(chartEvents);
-    const media = chartEvents.filter(e => e.type === 'media');
-    const voiceMemos = chartEvents.filter(e => e.type === 'voice_memo');
+    const {
+      sessionInfo, tz, intervalSeconds, participantSlugs, stats, dsZones,
+      chartRows, ticksPerRow, chartEvents, tbRings, tbBuckets, hasTreasureBox,
+      leaderboard, challenges, media, voiceMemos,
+    } = model;
 
     // ─── Calculate canvas height ──────────────────────────
     const { width } = theme.canvas;
@@ -544,9 +400,7 @@ export function createFitnessReceiptRenderer(config) {
         ctx.fillText(v, numColRight - ctx.measureText(v).width, ly);
         ctx.fillText('\u2661', heartX, ly);
       }
-      const activeMin = p.activeSeconds > 0 ? p.activeSeconds / 60 : 0;
-      const cpm = ringsPerMinute(p.totalRings, activeMin);
-      const cpmStr = `\u26C0${cpm}/min`;
+      const cpmStr = `\u26C0${p.ringsPerMinute}/min`;
       ctx.fillText(cpmStr, rightColRight - ctx.measureText(cpmStr).width, ly);
       ly += lineH;
 
@@ -559,11 +413,8 @@ export function createFitnessReceiptRenderer(config) {
       }
       ly += lineH + 4;
 
-      // HR Histogram (10 vertical bars grouped by HR zone). The buckets and
-      // per-bucket zone majority vote are domain stats (computeHrHistogram);
-      // this section only draws them.
-      const d = decoded[p.slug] || { zones: [], hr: [] };
-      const hist = computeHrHistogram(d.hr, d.zones, { buckets: numBuckets });
+      // HR Histogram (precomputed buckets; this section only draws them).
+      const hist = p.hrHistogram;
       if (hist) {
         const { minHr, bucketSize, counts: buckets, maxCount, bucketZones } = hist;
 

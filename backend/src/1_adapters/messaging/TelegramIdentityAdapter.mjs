@@ -11,7 +11,7 @@
 import { TelegramChatRef } from '../telegram/TelegramChatRef.mjs';
 import { ConversationId } from '#domains/messaging/value-objects/ConversationId.mjs';
 import { ResolvedIdentity } from '#domains/messaging/value-objects/ResolvedIdentity.mjs';
-import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class TelegramIdentityAdapter {
   #userIdentityService;

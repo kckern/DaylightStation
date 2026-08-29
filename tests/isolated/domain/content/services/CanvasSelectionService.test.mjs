@@ -42,19 +42,19 @@ describe('CanvasSelectionService', () => {
 
   describe('pickNext', () => {
     it('picks random item from pool', () => {
-      const result = service.pickNext(mockItems, [], { mode: 'random' });
+      const result = service.pickNext(mockItems, [], { mode: 'random', random: () => 0.5 });
       expect(mockItems).toContainEqual(result);
     });
 
     it('avoids items in shownHistory', () => {
       const shownHistory = ['1', '2', '3'];
-      const result = service.pickNext(mockItems, shownHistory, { mode: 'random' });
+      const result = service.pickNext(mockItems, shownHistory, { mode: 'random', random: () => 0.5 });
       expect(result.id).toBe('4');
     });
 
     it('resets when all items shown', () => {
       const shownHistory = ['1', '2', '3', '4'];
-      const result = service.pickNext(mockItems, shownHistory, { mode: 'random' });
+      const result = service.pickNext(mockItems, shownHistory, { mode: 'random', random: () => 0.5 });
       expect(mockItems).toContainEqual(result);
     });
 

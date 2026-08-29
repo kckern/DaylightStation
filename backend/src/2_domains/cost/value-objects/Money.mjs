@@ -132,18 +132,6 @@ export class Money {
   }
 
   /**
-   * Convert to JSON-serializable object
-   *
-   * @returns {{ amount: number, currency: string }}
-   */
-  toJSON() {
-    return {
-      amount: this.#amount,
-      currency: this.#currency
-    };
-  }
-
-  /**
    * Assert that another Money has the same currency
    *
    * @param {Money} other - Money to check
@@ -180,16 +168,6 @@ export class Money {
    * @returns {Money}
    * @throws {ValidationError} If data is invalid
    */
-  static fromJSON(data) {
-    if (!data || typeof data.amount !== 'number') {
-      throw new ValidationError('Invalid Money JSON: amount is required', {
-        code: 'INVALID_MONEY_JSON',
-        value: data
-      });
-    }
-    return new Money(data.amount, data.currency || 'USD');
-  }
-
   /**
    * Create a zero Money
    *

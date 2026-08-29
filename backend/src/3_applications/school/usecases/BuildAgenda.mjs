@@ -34,9 +34,10 @@ import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
 import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayWindowForDate, studyDayForInstant } from '#domains/school/studyDay.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
+import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
 const HOUR_MS = 3_600_000;
@@ -472,7 +473,7 @@ export class BuildAgenda {
       // failure the self-service poster route exists to refuse.
       const posterUrl = entry.programContext?.lesson?.thumbnail
         ?? (entry.courseId
-          ? `/api/v1/school/selfservice/curriculum/${encodeURIComponent(entry.courseId)}/poster.jpg`
+          ? curriculumPosterRef('selfservice', entry.courseId)
           : null);
       return { taxonomy, progressLabel, posterUrl };
     };

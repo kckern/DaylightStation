@@ -23,6 +23,7 @@ export class ProcessVoiceEntry {
   #messagingGateway;
   #processTextEntry;
   #logger;
+  #pause;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -31,6 +32,7 @@ export class ProcessVoiceEntry {
     this.#messagingGateway = deps.messagingGateway;
     this.#processTextEntry = deps.processTextEntry;
     this.#logger = deps.logger || console;
+    this.#pause = deps.pause || (async () => {});
   }
 
   /**
@@ -104,7 +106,7 @@ export class ProcessVoiceEntry {
         await messaging.sendMessage(messageParts[i], {});
         // Small delay between messages to maintain order
         if (i < messageParts.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
+          await this.#pause(50);
         }
       }
 

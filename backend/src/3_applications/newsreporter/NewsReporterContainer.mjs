@@ -19,7 +19,7 @@ import { NewsReporterJobExecutor } from '#apps/newsreporter/NewsReporterJobExecu
 export class NewsReporterContainer {
   /**
    * @param {{
-   *   configService: object,
+   *   configProjection: object,
    *   runtimeFor: (model?: string) => object,
    *   defaultModel: string,
    *   renderer: object,
@@ -36,12 +36,12 @@ export class NewsReporterContainer {
    *     renderer instances constructed at the composition root.
    * @returns {{ service: NewsReporterService, jobDatastore: object, executor: NewsReporterJobExecutor }}
    */
-  static build({ configService, runtimeFor, defaultModel, renderer, sourceRegistry, jobDatastore, history, printerRegistry, logger = console }) {
+  static build({ configProjection, runtimeFor, defaultModel, renderer, sourceRegistry, jobDatastore, history, printerRegistry, logger = console }) {
     const consolidator = new Consolidator({ runtimeFor, logger, defaultModel });
     const sinkRegistry = createSinkRegistry({ renderer, printerRegistry, logger });
 
     const service = new NewsReporterService({
-      configService,
+      configProjection,
       sourceRegistry,
       consolidator,
       sinkRegistry,

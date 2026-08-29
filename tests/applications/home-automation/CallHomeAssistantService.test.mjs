@@ -10,8 +10,8 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CallHomeAssistantService } from '../../../backend/src/3_applications/home-automation/usecases/CallHomeAssistantService.mjs';
-import { ValidationError } from '../../../backend/src/0_system/utils/errors/index.mjs';
 import { ApplicationError } from '../../../backend/src/3_applications/common/errors/index.mjs';
+import { InvalidInputError } from '../../../backend/src/3_applications/common/errors/SemanticErrors.mjs';
 
 /**
  * Minimal recording fake of the Home Assistant gateway.
@@ -79,7 +79,7 @@ describe('CallHomeAssistantService', () => {
     it('throws ValidationError when domain is missing', async () => {
       await expect(
         useCase.execute({ service: 'turn_on', data: {} })
-      ).rejects.toBeInstanceOf(ValidationError);
+      ).rejects.toBeInstanceOf(InvalidInputError);
       expect(gateway.calls).toHaveLength(0);
     });
 
@@ -88,7 +88,7 @@ describe('CallHomeAssistantService', () => {
         await useCase.execute({ service: 'turn_on' });
         throw new Error('expected ValidationError');
       } catch (err) {
-        expect(err).toBeInstanceOf(ValidationError);
+        expect(err).toBeInstanceOf(InvalidInputError);
         expect(err.code).toBe('HA_CALL_MISSING_DOMAIN');
       }
     });
@@ -96,7 +96,7 @@ describe('CallHomeAssistantService', () => {
     it('throws ValidationError when service is missing', async () => {
       await expect(
         useCase.execute({ domain: 'switch', data: {} })
-      ).rejects.toBeInstanceOf(ValidationError);
+      ).rejects.toBeInstanceOf(InvalidInputError);
       expect(gateway.calls).toHaveLength(0);
     });
 
@@ -105,7 +105,7 @@ describe('CallHomeAssistantService', () => {
         await useCase.execute({ domain: 'switch' });
         throw new Error('expected ValidationError');
       } catch (err) {
-        expect(err).toBeInstanceOf(ValidationError);
+        expect(err).toBeInstanceOf(InvalidInputError);
         expect(err.code).toBe('HA_CALL_MISSING_SERVICE');
       }
     });
@@ -113,13 +113,13 @@ describe('CallHomeAssistantService', () => {
     it('throws ValidationError when domain is empty string', async () => {
       await expect(
         useCase.execute({ domain: '', service: 'turn_on' })
-      ).rejects.toBeInstanceOf(ValidationError);
+      ).rejects.toBeInstanceOf(InvalidInputError);
     });
 
     it('throws ValidationError when service is empty string', async () => {
       await expect(
         useCase.execute({ domain: 'switch', service: '' })
-      ).rejects.toBeInstanceOf(ValidationError);
+      ).rejects.toBeInstanceOf(InvalidInputError);
     });
   });
 

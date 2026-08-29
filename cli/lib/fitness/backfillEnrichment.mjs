@@ -63,6 +63,7 @@ export async function run(argv, ctx) {
   const { loadYamlSafe, saveYaml, listYamlFiles, fileExists, dirExists, listDirs } =
     await import('#system/utils/FileIO.mjs');
   const { absorbOverlappingSlivers } = await import('#apps/fitness/sliverAbsorption.mjs');
+  const { YamlFitnessHistoryRepository } = await import('#adapters/fitness/YamlFitnessHistoryRepository.mjs');
 
   hydrateProcessEnvFromConfigs(configDir);
   // initConfigService throws when called twice; tolerate a dispatcher (or a
@@ -84,6 +85,7 @@ export async function run(argv, ctx) {
   if (!fitnessHistoryDir) {
     throw new CliError('Could not resolve the fitness history directory');
   }
+  const historyRepository = new YamlFitnessHistoryRepository({ root: fitnessHistoryDir });
 
   const cutoff = moment().subtract(daysBack, 'days').format('YYYY-MM-DD');
 
@@ -321,10 +323,11 @@ export async function run(argv, ctx) {
       // expects the raw Strava activity body (start_date, elapsed_time, id);
       // the archive wrapper holds those at archive.data.
       const activityForAbsorb = { ...data, id: archive.id };
-      const absorbResult = absorbOverlappingSlivers(activityForAbsorb, sessionDir, {
+      const absorbResult = absorbOverlappingSlivers(activityForAbsorb, historyRepository.list(dateStr), {
         justCreatedSessionId: sessionId,
         tz: TIMEZONE,
         logger: console,
+        removeSession: (id) => historyRepository.remove(id),
       });
       sliversAbsorbed += absorbResult.absorbed.length;
     }

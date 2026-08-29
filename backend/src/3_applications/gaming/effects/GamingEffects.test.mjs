@@ -5,11 +5,11 @@ import { GamingEffectService, normalizeAiEffect } from './GamingEffectService.mj
 
 describe('Gaming effects', () => {
   it('fails open and keeps only the newest AI response', async () => {
-    const resolvers = []; const policy = new NewestWinsAiPolicy({ aiGateway: { chat: () => new Promise((resolve) => resolvers.push(resolve)) }, timeoutMs: 10_000 });
+    const resolvers = []; const policy = new NewestWinsAiPolicy({ proposalGenerator: { generate: () => new Promise((resolve) => resolvers.push(resolve)) }, timeoutMs: 10_000 });
     const first = policy.propose('session', { messages: [] }); const second = policy.propose('session', { messages: [] });
     resolvers[0]('old'); resolvers[1]('new');
     await expect(first).resolves.toBeNull(); await expect(second).resolves.toBe('new');
-    await expect(new NewestWinsAiPolicy({ aiGateway: { chat: async () => { throw new Error('offline'); } } }).propose('x', { messages: [] })).resolves.toBeNull();
+    await expect(new NewestWinsAiPolicy({ proposalGenerator: { generate: async () => { throw new Error('offline'); } } }).propose('x', { messages: [] })).resolves.toBeNull();
   });
 
   it('prints at most once per session', async () => {

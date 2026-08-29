@@ -64,7 +64,7 @@ function harness() {
     return next();
   };
   const app = express();
-  app.use('/api/v1/school/calc', createSchoolCalcRouter({ container, authenticateIngress }));
+  app.use('/api/v1/school/calc', createSchoolCalcRouter({ operations: container, authenticateIngress }));
   return { app, container, bytes };
 }
 

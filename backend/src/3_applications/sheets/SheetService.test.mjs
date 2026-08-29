@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { createSheetService } from './SheetService.mjs';
+import { createSheetService as createApplicationSheetService } from './SheetService.mjs';
+import { layout as layoutSheet } from '#rendering/pdf/SheetLayout.mjs';
+
+const createSheetService = (deps) => createApplicationSheetService({ layoutSheet, ...deps });
 
 /**
  * Fixtures are hand-built on purpose. The real nutrition providers live in

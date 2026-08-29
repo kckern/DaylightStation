@@ -73,7 +73,7 @@ async function sendToTelegram(cfg, debrief) {
 async function main() {
   const SEND = process.argv.includes('--send');
   const cfg = await getConfigService();
-  const apiKey = cfg.getSecret('OPENAI_API_KEY');
+  const apiKey = cfg.getSystemAuth('openai', 'api_key');
   if (!apiKey) throw new Error('OPENAI_API_KEY not resolved from config.');
 
   const journalDir = path.join(cfg.getDataDir(), 'users', USERNAME, 'lifelog', 'journalist');

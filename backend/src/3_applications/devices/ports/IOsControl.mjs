@@ -40,6 +40,10 @@ export function assertOsControl(obj, context = 'OsControl') {
   }
 }
 
+export class IOsControl {
+  async execute() { throw new Error('IOsControl.execute not implemented'); }
+}
+
 /**
  * Create a no-op OS control (for devices without this capability)
  * @returns {Object}

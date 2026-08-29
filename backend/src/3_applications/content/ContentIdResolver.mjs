@@ -12,29 +12,30 @@
  * Layer 6: Empty-rest fallback → check bareNameMap (e.g., "fhe:" → "menu:fhe")
  */
 export class ContentIdResolver {
-  #registry;
+  #catalog;
   #systemAliases;
   #householdAliases;
   #bareNameMap;
 
   /**
-   * @param {import('../../2_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
+   * @param {import('./ports/IContentCatalogGateway.mjs').IContentCatalogGateway} catalog
    * @param {Object} options
    * @param {Object<string, string>} [options.systemAliases] - e.g., { hymn: 'singalong:hymn' }
    * @param {Object<string, string>} [options.householdAliases] - e.g., { music: 'plex:12345' }
    * @param {Object<string, string>} [options.bareNameMap] - e.g., { fhe: 'menu' } for Layer 4a
    */
-  constructor(registry, { systemAliases = {}, householdAliases = {}, bareNameMap = {} } = {}) {
-    this.#registry = registry;
+  constructor(catalog, { systemAliases = {}, householdAliases = {}, bareNameMap = {} } = {}) {
+    if (!catalog?.resolveSource || !catalog?.hasSource) throw new Error('ContentIdResolver requires content catalog');
+    this.#catalog = catalog;
     this.#systemAliases = systemAliases;
     this.#householdAliases = householdAliases;
     this.#bareNameMap = bareNameMap;
   }
 
   /**
-   * Resolve a compound content ID to source + localId + adapter.
+   * Resolve a compound content ID to a provider-neutral catalog address.
    * @param {string} compoundId - e.g., "plex:457385", "hymn:166", "sfx/intro"
-   * @returns {{ source: string, localId: string, adapter: any } | null}
+   * @returns {{ source: string, localId: string } | null}
    */
   resolve(compoundId) {
     if (!compoundId) return null;
@@ -53,8 +54,7 @@ export class ContentIdResolver {
         return this.resolve(`${mappedPrefix}:${bareKey}`);
       }
       // Layer 4b: Default to media (original behavior)
-      const adapter = this.#registry.get('media');
-      return adapter ? { source: 'media', localId: normalized, adapter } : null;
+      return this.#catalog.hasSource('media') ? { source: 'media', localId: normalized } : null;
     }
 
     const rawPrefix = normalized.slice(0, colonIdx);
@@ -62,15 +62,14 @@ export class ContentIdResolver {
     const rest = normalized.slice(colonIdx + 1).trim();
 
     // Layer 1: Exact source match
-    const exactAdapter = this.#registry.get(prefix);
-    if (exactAdapter) {
-      return { source: prefix, localId: rest, adapter: exactAdapter };
+    if (this.#catalog.hasSource(prefix)) {
+      return { source: prefix, localId: rest };
     }
 
     // Layer 2: Registry prefix match (handles legacy prefixes with transforms)
-    const prefixResult = this.#registry.resolveFromPrefix(prefix, rest);
+    const prefixResult = this.#catalog.resolveSource(prefix, rest);
     if (prefixResult) {
-      return { source: prefixResult.adapter.source, localId: prefixResult.localId, adapter: prefixResult.adapter };
+      return prefixResult;
     }
 
     // Layer 3: System alias
@@ -80,10 +79,9 @@ export class ContentIdResolver {
       if (aliasColonIdx !== -1) {
         const aliasSource = aliasTarget.slice(0, aliasColonIdx);
         const aliasPath = aliasTarget.slice(aliasColonIdx + 1);
-        const adapter = this.#registry.get(aliasSource);
-        if (adapter) {
+        if (this.#catalog.hasSource(aliasSource)) {
           const localId = aliasPath && rest ? `${aliasPath}/${rest}` : (rest || aliasPath);
-          return { source: aliasSource, localId, adapter };
+          return { source: aliasSource, localId };
         }
       }
     }
@@ -95,9 +93,8 @@ export class ContentIdResolver {
       if (aliasColonIdx !== -1) {
         const aliasSource = aliasTarget.slice(0, aliasColonIdx);
         const aliasLocalId = aliasTarget.slice(aliasColonIdx + 1);
-        const adapter = this.#registry.get(aliasSource);
-        if (adapter) {
-          return { source: aliasSource, localId: rest || aliasLocalId, adapter };
+        if (this.#catalog.hasSource(aliasSource)) {
+          return { source: aliasSource, localId: rest || aliasLocalId };
         }
       }
     }

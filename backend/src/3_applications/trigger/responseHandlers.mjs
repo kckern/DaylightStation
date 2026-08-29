@@ -1,13 +1,11 @@
 /**
  * Open response-handler registry. Generalizes actionHandlers: dispatch by
- * Response.kind. deps = { wakeAndLoadService, deviceService, haGateway }.
+ * Response.kind. Provider/device actuation is delegated to a semantic gateway.
  *
  * Layer: APPLICATION (3_applications/trigger).
  *
  * @module applications/trigger/responseHandlers
  */
-import { randomUUID } from 'node:crypto';
-
 export class UnknownResponseKindError extends Error {
   constructor(kind) {
     super(`Unknown response kind: ${kind}`);
@@ -24,8 +22,8 @@ function buildContentQuery(expression) {
   return { ...(options || {}), [action]: contentId };
 }
 
-function buildLoadOptions(response, suppressEnd = false) {
-  const opts = { dispatchId: response.dispatchId || randomUUID() };
+function buildLoadOptions(response, suppressEnd = false, createDispatchId) {
+  const opts = { dispatchId: response.dispatchId || createDispatchId() };
   if (response.end && !suppressEnd) {
     opts.endBehavior = response.end;
     if (response.endLocation) opts.endLocation = response.endLocation;
@@ -114,7 +112,7 @@ export const responseHandlers = {
     }
 
     const query = buildContentQuery(response.expression);
-    const loadOptions = buildLoadOptions(response, suppressEnd);
+    const loadOptions = buildLoadOptions(response, suppressEnd, deps.createDispatchId);
     if (response.posture === 'optimistic' && deps.contentDispatcher?.optimistic) {
       return deps.contentDispatcher.optimistic(response.target, query, loadOptions);
     }
@@ -122,31 +120,25 @@ export const responseHandlers = {
   },
 
   device: async (response, deps) => {
-    const device = deps.deviceService.get(response.target);
-    if (!device) throw new Error(`Unknown target device: ${response.target}`);
-    if (response.op === 'clear') return device.clearContent();
+    if (response.op === 'clear') return deps.actuationGateway.clearDevice(response.target);
     if (!response.path) throw new Error('device open requires a path');
-    return device.loadContent(response.path, response.params || {});
+    return deps.actuationGateway.openDevice(response.target, response.path, response.params || {});
   },
 
   ha: async (response, deps) => {
     if (response.op === 'scene') {
-      return deps.haGateway.callService('scene', 'turn_on', { entity_id: response.scene });
+      return deps.actuationGateway.activateScene(response.scene);
     }
-    const [domain, service] = String(response.service || '').split('.');
-    if (!domain || !service) throw new Error(`Invalid ha service: ${response.service}`);
-    const data = { ...(response.data || {}) };
-    if (response.entity) data.entity_id = response.entity;
-    return deps.haGateway.callService(domain, service, data);
+    return deps.actuationGateway.invokeHomeAction(response.service, response.entity, response.data || {});
   },
 
   transport: async (response, deps) => {
-    const payload = deps.commandResolver?.(response.command, response.arg);
-    if (!payload) {
+    const dispatch = deps.actuationGateway.sendTransport(response.target, response.command, response.arg);
+    if (!dispatch.handled) {
       deps.logger?.warn?.('trigger.transport.unknown', { command: response.command, target: response.target });
       return;
     }
-    return deps.screenBroadcast?.(response.target, payload);
+    return dispatch.result;
   },
 
   script: async (response, deps) => {

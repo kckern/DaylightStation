@@ -81,23 +81,6 @@ export class HealthArchiveManifest {
   }
 
   /**
-   * Convert to a YAML-shaped plain object for persistence to manifest.yml.
-   * Uses snake_case keys to match on-disk YAML conventions.
-   * @returns {Object}
-   */
-  serialize() {
-    return {
-      manifest_version: 1,
-      user_id: this.userId,
-      category: this.category,
-      last_sync: this.lastSync,
-      source_locations: this.sourceLocations,
-      schema_versions: this.schemaVersions,
-      record_counts: this.recordCounts,
-    };
-  }
-
-  /**
    * Whole days since the last successful sync.
    * Returns Infinity if the manifest has never been synced.
    * @param {number} now - Current time as epoch ms (caller-supplied).

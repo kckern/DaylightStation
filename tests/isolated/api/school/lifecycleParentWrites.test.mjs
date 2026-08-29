@@ -17,6 +17,7 @@ import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
+import { SchoolLifecycleReadService } from '#apps/school/services/SchoolLifecycleReadService.mjs';
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 const clock = () => new Date('2026-07-27T09:00:00.000Z');
@@ -65,8 +66,9 @@ beforeAll(async () => {
   app.use('/api/v1/school/lifecycle', createSchoolLifecycleRouter({
     // One use case is enough to get the router past its "nothing is wired" guard.
     buildAgenda: { execute: async () => ({ offers: [] }) },
-    assignments,
-    reviewQueue,
+    lifecycleReadService: new SchoolLifecycleReadService({
+      sessions: sessionsStore, reviewQueue, assignments,
+    }),
     resolveReviewItem: new ResolveReviewItem({ reviewQueue, grownUps, clock, logger: silent }),
     setAssignments: new SetAssignments({ assignments, grownUps, clock, logger: silent }),
     markSessionAbandoned: new MarkSessionAbandoned({
@@ -187,8 +189,8 @@ describe('fail closed when the guarded use case is missing', () => {
     app.use(express.json());
     // The stores ARE wired; only the guarded use cases are absent.
     app.use('/api/v1/school/lifecycle', createSchoolLifecycleRouter({
-      buildAgenda: { execute: async () => ({ offers: [] }) },
-      assignments, reviewQueue, clock, logger: silent,
+      lifecycleReadService: new SchoolLifecycleReadService({ reviewQueue, assignments }),
+      logger: silent,
     }));
     app.use(errorHandlerMiddleware({ logger: silent, shape: 'string' }));
     const bare = await new Promise((res) => { const s = app.listen(0, () => res(s)); });

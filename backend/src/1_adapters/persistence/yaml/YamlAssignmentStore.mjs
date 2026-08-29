@@ -9,11 +9,10 @@
  * entries). Dumb storage — nothing here knows what a course is.
  */
 import path from 'path';
-import { promises as fs } from 'fs';
-import { readFileSync } from 'fs';
 import yaml from 'js-yaml';
 import { IAssignmentStore } from '#apps/school/ports/IAssignmentStore.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
+import { readDirectoryAsync, readTextFromPath, readTextFromPathAsync, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 // One flat segment starting alphanumeric: "..", "/", and hidden names cannot
 // match, which is what keeps traversal out (same guard as the sibling stores).
@@ -38,7 +37,6 @@ const toDomainRecord = (raw, learnerId) => ({
   assignedBy: typeof raw?.assignedBy === 'string' ? raw.assignedBy : null,
 });
 
-const stagingPathFor = (filePath) => `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 export class YamlAssignmentStore extends IAssignmentStore {
   #configService;
@@ -84,7 +82,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
   async #readHistory(learnerId) {
     let text;
     try {
-      text = await fs.readFile(this.#historyFileFor(learnerId), 'utf8');
+      text = await readTextFromPathAsync(this.#historyFileFor(learnerId));
     } catch (err) {
       if (err?.code === 'ENOENT') { this.#corruptHistory.delete(learnerId); return []; }
       this.#markHistoryCorrupt(learnerId);
@@ -125,7 +123,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
   async #read(learnerId) {
     let text;
     try {
-      text = await fs.readFile(this.#fileFor(learnerId), 'utf8');
+      text = await readTextFromPathAsync(this.#fileFor(learnerId));
     } catch (err) {
       if (err?.code === 'ENOENT') { this.#corruptCurrent.delete(learnerId); return null; }
       this.#markCurrentCorrupt(learnerId);
@@ -150,15 +148,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
 
   /** Atomically replace a YAML file: write beside it, then rename over it. */
   async #writeYamlAtomic(filePath, content) {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    const staging = stagingPathFor(filePath);
-    try {
-      await fs.writeFile(staging, dumpYaml(content), 'utf8');
-      await fs.rename(staging, filePath);
-    } catch (err) {
-      await fs.unlink(staging).catch(() => {});
-      throw err;
-    }
+    writeFileAtomic(filePath, dumpYaml(content));
   }
 
   /** @inheritdoc */
@@ -171,7 +161,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
   readProgramEnrollment(learnerId, corpusId) {
     if (!isSafeLearnerId(learnerId)) return null;
     try {
-      const raw = yaml.load(readFileSync(this.#fileFor(learnerId), 'utf8'));
+      const raw = yaml.load(readTextFromPath(this.#fileFor(learnerId)));
       return (Array.isArray(raw?.programs) ? raw.programs : [])
         .find((entry) => entry?.corpusId === corpusId) ?? null;
     } catch { return null; }
@@ -240,7 +230,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
   async list() {
     let names;
     try {
-      names = await fs.readdir(this.#root());
+      names = await readDirectoryAsync(this.#root());
     } catch {
       return [];
     }

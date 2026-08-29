@@ -5,9 +5,11 @@
 
 import { nowTs24, nowDate } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { IEmailGateway } from '#apps/messaging/ports/IEmailGateway.mjs';
 
-export class GmailAdapter {
+export class GmailAdapter extends IEmailGateway {
   constructor({ googleAuth, logger }) {
+    super();
     this.googleAuth = googleAuth; // Function to get authenticated Gmail client
     this.logger = logger || console;
 

@@ -29,6 +29,19 @@ import {
 const NOW = '2026-08-28T17:00:00.000Z';
 const PRINT_REF = 'print/quiz-one@abc123def';
 
+function renderedPdf(content, { pageCount = 1, formMap = null } = {}) {
+  const bytes = Buffer.from(content);
+  const artifact = (payload) => ({
+    printWith: (printer, options) => printer.printPdf(payload, options),
+    retainWith: async (store, metadata) => {
+      if (!store) return artifact(payload);
+      const retained = await store.put({ ...metadata, bytes: payload });
+      return artifact(retained.bytes);
+    },
+  });
+  return { artifact: artifact(bytes), pageCount, formMap };
+}
+
 /** Every `warn` the use case emitted, so a refusal can be shown to leave a trace. */
 function recordingLogger() {
   const warns = [];
@@ -94,7 +107,7 @@ function issuer({ unit, logger }) {
       calls: 0,
       async render() {
         this.calls += 1;
-        return { pdf: Buffer.from('%PDF legacy'), pageCount: 1, formMap: { formId: 'fm-1', rows: [] } };
+        return renderedPdf('%PDF legacy', { formMap: { formId: 'fm-1', rows: [] } });
       },
     },
     printer,

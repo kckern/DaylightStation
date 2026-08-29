@@ -1,9 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import os from 'node:os';
-import fs from 'node:fs';
-import path from 'node:path';
 import { GenerateSessionTimelapse, buildSlug, participantSlug, durationMinutes } from './GenerateSessionTimelapse.mjs';
+import { serializeSession } from '../sessionRecords.mjs';
 
 function baseSession() {
   return {
@@ -25,14 +23,19 @@ function fakes(overrides = {}) {
   const sessionData = overrides.sessionData || baseSession();
   const saved = [];
   const calls = { posters: [], avatars: 0, rendered: [] };
+  const workspace = Object.freeze({ kind: 'test-workspace' });
+  const artifact = Object.freeze({ kind: 'test-artifact' });
   const f = {
     saved, calls, sessionData,
     sessionDatastore: {
       findById: async () => sessionData,
-      save: async (s) => saved.push(typeof s.toJSON === 'function' ? s.toJSON() : s)
+      save: async (s) => saved.push(serializeSession(s))
     },
     snapshotStore: {
-      listCaptures: async () => sessionData.snapshots.captures.map(c => ({ ...c, absolutePath: '/abs/' + c.filename })),
+      listCaptures: async () => sessionData.snapshots.captures.map(c => ({
+        ...c,
+        captureId: Object.freeze({ kind: 'test-capture', filename: c.filename }),
+      })),
       readCapture: async () => Buffer.from([0xff, 0xd8]),
       cleanup: async (...a) => { calls.cleaned = a; }
     },
@@ -44,13 +47,20 @@ function fakes(overrides = {}) {
       }] : [])
     },
     frameRenderer: { renderFrame: async (args) => { calls.rendered.push(args); return Buffer.from([0xff, 0xd8, 1, 2, 3]); } },
-    videoEncoder: { encodeSequence: async ({ outputPath }) => { fs.writeFileSync(outputPath, Buffer.from([0, 1, 2, 3])); return { outputPath }; } },
+    artifactStore: {
+      createWorkspace: async (sessionId) => { calls.workspaceSessionId = sessionId; return workspace; },
+      writeFrame: async (...args) => { (calls.frames ||= []).push(args); },
+      encode: async (...args) => {
+        calls.encoded = args;
+        return { artifact, videoPath: 'media/video/fitness/session-recap.mp4', sizeBytes: 4 };
+      },
+      publishPlexCopy: async (...args) => { calls.plex = args; return 'media/video/fitness/plex/recap.mp4'; },
+      discardWorkspace: async (...args) => { (calls.discarded ||= []).push(args); },
+    },
     posterProvider: async (contentId) => { calls.posters.push(contentId); return Buffer.from([0xff, 0xd8, 9]); },
     avatarProvider: async () => { calls.avatars++; return { kc: Buffer.from([0xff, 0xd8, 7]) }; },
     resolveName: (slug) => slug.toUpperCase(),
-    mediaDir: fs.mkdtempSync(path.join(os.tmpdir(), 'media-')),
     config: { enabled: true, speedup: 10, output_fps: 10, crf: 20, resolution: [1280, 720], archive_frames: false },
-    fileIO: fs,
     logger: { info() {}, warn() {}, error() {}, debug() {} }
   };
   return { ...f, ...overrides };
@@ -72,12 +82,15 @@ test('happy path: processing -> render with poster+avatars -> encode -> ready ->
   assert.ok(f.calls.rendered[0].playerBuffer);
   // raw frames cleaned up on success
   assert.ok(f.calls.cleaned);
+  assert.equal(f.calls.frames.length, 1);
+  assert.equal(f.calls.encoded[0].kind, 'test-workspace');
+  assert.equal(result.videoPath, 'media/video/fitness/session-recap.mp4');
 });
 
 test('no captures -> skipped, no encode', async () => {
   const sessionData = baseSession(); sessionData.snapshots.captures = [];
   const f = fakes({ sessionData });
-  let encoded = false; f.videoEncoder.encodeSequence = async () => { encoded = true; return {}; };
+  let encoded = false; f.artifactStore.encode = async () => { encoded = true; return {}; };
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'skipped');
@@ -95,7 +108,7 @@ test('no player capture -> playerBuffer null, still encodes (PiP skipped)', asyn
 });
 
 test('encoder failure -> failed status, no cleanup', async () => {
-  const f = fakes(); f.videoEncoder.encodeSequence = async () => { throw new Error('boom'); };
+  const f = fakes(); f.artifactStore.encode = async () => { throw new Error('boom'); };
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'failed');
@@ -105,7 +118,9 @@ test('encoder failure -> failed status, no cleanup', async () => {
 
 test('mp4 not written (0 bytes) -> failed, frames NOT cleaned (kept for retry)', async () => {
   const f = fakes();
-  f.videoEncoder.encodeSequence = async () => ({});   // returns but writes no file
+  f.artifactStore.encode = async () => ({
+    artifact: {}, videoPath: 'media/video/fitness/missing.mp4', sizeBytes: 0,
+  });
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'failed');
@@ -139,7 +154,7 @@ test('non-finalized session that ended within the merge window -> deferred, noth
   sessionData.finalized = false;
   sessionData.endTime = Date.now() - 60_000; // ended a minute ago — well inside the 30-min window
   const f = fakes({ sessionData });
-  let encoded = false; f.videoEncoder.encodeSequence = async () => { encoded = true; return {}; };
+  let encoded = false; f.artifactStore.encode = async () => { encoded = true; return {}; };
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'deferred');
@@ -154,7 +169,7 @@ test('already-ready session is skipped (idempotent) — no re-render that would 
   sessionData.finalized = true;
   sessionData.timelapse = { status: 'ready', videoPath: 'media/video/fitness/x.mp4' };
   const f = fakes({ sessionData });
-  let encoded = false; f.videoEncoder.encodeSequence = async () => { encoded = true; return {}; };
+  let encoded = false; f.artifactStore.encode = async () => { encoded = true; return {}; };
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'already');
@@ -169,7 +184,7 @@ test('fresh processing session (< 30min old) is skipped unless forced', async ()
   sessionData.finalized = true;
   sessionData.timelapse = { status: 'processing', startedAt: Date.now() - 60_000 }; // 1 min ago
   const f = fakes({ sessionData });
-  let encoded = false; f.videoEncoder.encodeSequence = async () => { encoded = true; return {}; };
+  let encoded = false; f.artifactStore.encode = async () => { encoded = true; return {}; };
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'already');
@@ -235,7 +250,7 @@ test('buildSlug prefers the primary media item over earlier background audio (ES
       ]
     }
   };
-  assert.equal(buildSlug(data), '20260625170246_30m_kckern-user_3-learnerTwo_game-cycling');
+  assert.equal(buildSlug(data), '20260625170246_30m_user_1-user_3-user_2_game-cycling');
 });
 
 test('buildSlug drops the redundant date prefix (sessionId already carries the date)', () => {
@@ -246,7 +261,7 @@ test('buildSlug drops the redundant date prefix (sessionId already carries the d
     summary: { media: [{ showTitle: 'Insanity Max:30', primary: true }] }
   };
   const slug = buildSlug(data);
-  assert.equal(slug, '20260626151907_34m_kckern-learnerTwo_insanity-max-30');
+  assert.equal(slug, '20260626151907_34m_user_1-user_2_insanity-max-30');
   assert.equal(slug.startsWith('20260626151907_'), true);
   assert.equal(slug.includes('20260626_'), false); // no double-date
 });
@@ -264,7 +279,7 @@ test('buildSlug omits users/duration segments when unavailable', () => {
 
 test('participantSlug excludes device:* pseudo-ids and preserves order', () => {
   assert.equal(participantSlug({ participants: { 'device:1': {}, user_1: {}, 'user_10': {}, user_5: {} } }),
-    'kckern-user_10-user_5');
+    'user_1-user_10-user_5');
   assert.equal(participantSlug({ summary: { participants: { user_3: {} } } }), 'user_3');
   assert.equal(participantSlug({}), '');
 });

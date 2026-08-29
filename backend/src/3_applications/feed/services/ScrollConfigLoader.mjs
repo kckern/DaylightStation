@@ -60,10 +60,11 @@ const TIER_DEFAULT_MAX_AGE = Object.freeze({
 });
 
 export class ScrollConfigLoader {
-  #dataService;
+  #configRepository;
 
-  constructor({ dataService }) {
-    this.#dataService = dataService;
+  constructor({ configRepository }) {
+    if (typeof configRepository?.getScrollConfig !== 'function') throw new Error('ScrollConfigLoader requires configRepository');
+    this.#configRepository = configRepository;
   }
 
   /**
@@ -73,8 +74,7 @@ export class ScrollConfigLoader {
    * @returns {Object} Merged scroll config
    */
   load(username) {
-    const feedConfig = this.#dataService.user.read('config/feed', username) || {};
-    const scrollConfig = feedConfig.scroll || {};
+    const scrollConfig = this.#configRepository.getScrollConfig(username) || {};
     return this.#merge(scrollConfig);
   }
 

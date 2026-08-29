@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 // backend/src/4_api/v1/routers/feed.mjs
 /**
  * Feed API Router
@@ -11,35 +12,25 @@
  */
 
 import express from 'express';
-import { randomUUID } from 'node:crypto';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * @param {Object} config
- * @param {Object} config.freshRSSAdapter - FreshRSSFeedAdapter instance
+ * @param {Object} config.feedReaderService - Semantic reader and dismissal service
  * @param {Object} config.headlineService - HeadlineService instance
  * @param {Object} config.feedAssemblyService - FeedAssemblyService for scroll endpoint
  * @param {Object} config.feedContentService - FeedContentService for icon/readable endpoints
- * @param {Object} config.configService - ConfigService for user lookup
+ * @param {Object} config.feedPrincipalResolver - Request-subject fallback policy
+ * @param {Object} config.feedReaderTimelineService - Vendor-neutral reader projection
+ * @param {Object} config.feedScrollSessionService - Scroll lifecycle and persistence
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
 export function createFeedRouter(config) {
-  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, feedStateService = null, feedSessionStore = null, dismissedItemsStore, sourceAdapters = [], contentPluginRegistry = null, configService, logger = console } = config;
-
-  // Build adapter lookup map by sourceType for dismiss routing.
-  // Only register adapters that genuinely persist read-state — the base class
-  // supplies a no-op markRead, so `typeof adapter.markRead === 'function'` is
-  // always true and would route dismisses into a silent no-op (F-07).
-  const adapterMap = new Map();
-  for (const adapter of sourceAdapters) {
-    if (adapter.sourceType && adapter.supportsMarkRead === true) {
-      adapterMap.set(adapter.sourceType, adapter);
-    }
-  }
+  const { feedReaderService, headlineService, feedAssemblyService, feedContentService,
+    feedStateService = null, feedPrincipalResolver, feedReaderTimelineService,
+    feedScrollSessionService, logger = console } = config;
   const router = express.Router();
-  const scrollSessions = new Map();
-  const sessionTtlMs = 24 * 60 * 60 * 1000;
 
   // Clamp a query-param integer into [min, max]; returns `def` when absent/invalid.
   const toBoundedInt = (val, { min, max, def }) => {
@@ -56,7 +47,7 @@ export function createFeedRouter(config) {
   // the actual caller — not always the head of household. Falls back to the
   // head only for unauthenticated LAN requests (explicit household-trust policy).
   const getUsername = (req) => {
-    return req?.user?.sub || configService?.getHeadOfHousehold?.() || 'default';
+    return feedPrincipalResolver.resolve(req?.user?.sub || null);
   };
 
   // =========================================================================
@@ -65,13 +56,13 @@ export function createFeedRouter(config) {
 
   router.get('/reader/categories', asyncHandler(async (req, res) => {
     const username = getUsername(req);
-    const categories = await freshRSSAdapter.getCategories(username);
+    const categories = await feedReaderService.getCategories(username);
     res.json(categories);
   }));
 
   router.get('/reader/feeds', asyncHandler(async (req, res) => {
     const username = getUsername(req);
-    const feeds = await freshRSSAdapter.getFeeds(username);
+    const feeds = await feedReaderService.getFeeds(username);
     res.json(feeds);
   }));
 
@@ -81,7 +72,7 @@ export function createFeedRouter(config) {
       return res.status(400).json({ error: 'feed parameter required' });
     }
     const username = getUsername(req);
-    const { items, continuation: nextContinuation } = await freshRSSAdapter.getItems(feed, username, {
+    const { items, continuation: nextContinuation } = await feedReaderService.getItems(feed, username, {
       count: count === undefined ? undefined : toBoundedInt(count, { min: 1, max: 500, def: 50 }),
       continuation,
       excludeRead: excludeRead === 'true',
@@ -100,9 +91,9 @@ export function createFeedRouter(config) {
     const username = getUsername(req);
 
     if (action === 'read') {
-      await freshRSSAdapter.markRead(feedItemIds, username);
+      await feedReaderService.markItems(feedItemIds, username, action);
     } else if (action === 'unread') {
-      await freshRSSAdapter.markUnread(feedItemIds, username);
+      await feedReaderService.markItems(feedItemIds, username, action);
     } else {
       return res.status(400).json({ error: 'action must be "read" or "unread"' });
     }
@@ -113,110 +104,14 @@ export function createFeedRouter(config) {
   router.get('/reader/stream', asyncHandler(async (req, res) => {
     const { days: daysParam, count, continuation, excludeRead, feeds } = req.query;
     const username = getUsername(req);
-    feedStateService?.ensureHistoryBackfill(username);
-    const isFiltered = !!feeds;
-    const feedIds = isFiltered ? feeds.split(',') : [];
-
-    // Filtered mode:  fetch directly from feed stream(s), count-based, full backlog
-    // Unfiltered mode: fetch from reading-list, day-based primer
-    const boundedCount = count === undefined ? undefined : toBoundedInt(count, { min: 1, max: 500, def: 50 });
-    let streamId;
-    let fetchCount;
-    if (isFiltered && feedIds.length === 1) {
-      // Single feed — fetch directly from that feed's stream
-      streamId = feedIds[0];
-      fetchCount = boundedCount ?? 50;
-    } else {
-      streamId = 'user/-/state/com.google/reading-list';
-      fetchCount = boundedCount ?? 200;
-    }
-
-    const [{ items, continuation: freshCont }, allFeeds] = await Promise.all([
-      freshRSSAdapter.getItems(streamId, username, {
-        count: fetchCount,
-        continuation,
-        excludeRead: excludeRead === 'true',
-      }),
-      freshRSSAdapter.getFeeds(username),
-    ]);
-
-    // Build feedId → feed URL lookup (for site URL / icon resolution)
-    const feedUrlMap = new Map();
-    for (const f of allFeeds) {
-      if (f.id && f.url) feedUrlMap.set(f.id, f.url);
-    }
-
-    // Enrich items
-    const READ_TAG = 'user/-/state/com.google/read';
-    const enriched = items.map(item => {
-      const isRead = (item.categories || []).some(c => c === READ_TAG);
-      const preview = (item.content || '')
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 200);
-      const tags = (item.categories || [])
-        .filter(c => c.includes('/label/'))
-        .map(c => c.split('/label/').pop());
-
-      // Resolve icon URL server-side so frontend is vendor-agnostic
-      const feedUrl = feedUrlMap.get(item.feedId) || null;
-      const articleUrl = item.canonical?.[0]?.href || item.alternate?.[0]?.href || null;
-      const iconUrl = feedContentService.resolveIconPath(feedUrl, articleUrl);
-
-      return { ...item, isRead, preview, tags, iconUrl };
+    const result = await feedReaderTimelineService.getTimeline(username, {
+      feedIds: feeds ? feeds.split(',') : [],
+      count: count === undefined ? null : toBoundedInt(count, { min: 1, max: 500, def: 50 }),
+      continuation,
+      excludeRead: excludeRead === 'true',
+      days: daysParam === undefined ? 3 : toBoundedInt(daysParam, { min: 1, max: 30, def: 3 }),
     });
-
-    // Multi-feed filter: post-filter by feedId (single-feed already fetched directly)
-    let result = enriched;
-    if (isFiltered && feedIds.length > 1) {
-      const feedSet = new Set(feedIds);
-      result = enriched.filter(item => feedSet.has(item.feedId));
-    }
-
-    let nextContinuation = freshCont;
-    let exhausted = !freshCont && items.length < fetchCount;
-
-    // Day-based trimming only in unfiltered mode
-    if (!isFiltered) {
-      // Sort by published date descending so day trimming picks the N most
-      // recent calendar days, not the first N days in FreshRSS crawl order.
-      result.sort((a, b) => new Date(b.published || 0) - new Date(a.published || 0));
-
-      const targetDays = daysParam === undefined ? 3 : toBoundedInt(daysParam, { min: 1, max: 30, def: 3 });
-      const dayKey = (d) => d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'unknown';
-      const distinctDays = new Set();
-      const trimmed = [];
-      for (const item of result) {
-        const key = dayKey(item.published ? new Date(item.published) : null);
-        if (distinctDays.size < targetDays || distinctDays.has(key)) {
-          distinctDays.add(key);
-          trimmed.push(item);
-        } else {
-          break;
-        }
-      }
-      if (trimmed.length < result.length && trimmed.length > 0) {
-        const oldest = trimmed[trimmed.length - 1];
-        if (oldest?.published) {
-          // FreshRSS continuation tokens are microsecond timestamps
-          nextContinuation = String(Math.floor(new Date(oldest.published).getTime() * 1000));
-        }
-        // We trimmed — there's more data beyond this day window
-        exhausted = false;
-      }
-      result = trimmed;
-    }
-
-    // Content-type enrichment (e.g., detect YouTube URLs in FreshRSS items)
-    if (contentPluginRegistry) {
-      contentPluginRegistry.enrich(result);
-    }
-
-    const responseItems = feedStateService
-      ? feedStateService.enrich(username, result, 'reader')
-      : result;
-    res.json({ items: responseItems, continuation: nextContinuation, nextCursor: nextContinuation, exhausted });
+    res.json({ ...result, nextCursor: result.continuation });
   }));
 
   // =========================================================================
@@ -254,26 +149,7 @@ export function createFeedRouter(config) {
 
     let result = await headlineService.getAllHeadlines(username, pageId);
     if (!result) return res.status(404).json({ error: 'Page not found', page: pageId });
-    if (feedStateService) {
-      const sources = {};
-      for (const [sourceId, source] of Object.entries(result.sources || {})) {
-        sources[sourceId] = {
-          ...source,
-          items: feedStateService.enrich(username, (source.items || []).map(item => ({
-            ...item,
-            sourceType: 'headlines',
-            sourceId,
-            sourceLabel: source.label || sourceId,
-          })), 'headlines'),
-        };
-      }
-      const itemsById = new Map(Object.values(sources).flatMap(source => source.items || []).map(item => [item.id, item]));
-      const briefing = (result.briefing || []).map(story => {
-        const coverage = (story.coverage || []).map(item => ({ ...item, ...(itemsById.get(item.id) || {}) }));
-        return { ...story, coverage, state: coverage[0]?.state || null };
-      });
-      result = { ...result, sources, briefing };
-    }
+    if (feedStateService) result = feedStateService.enrichHeadlinePage(username, result);
     res.json(result);
   }));
 
@@ -457,63 +333,29 @@ export function createFeedRouter(config) {
 
   router.post('/scroll/sessions', asyncHandler(async (req, res) => {
     const username = getUsername(req);
-    const sessionId = randomUUID();
     const { limit, focus, sources, filter } = req.body || {};
-    const result = await feedAssemblyService.getNextBatch(username, {
+    const result = await feedScrollSessionService.create(username, {
       limit: limit === undefined ? undefined : toBoundedInt(limit, { min: 1, max: 100, def: 15 }),
       focus: focus || null,
       sources: Array.isArray(sources) ? sources : null,
       filter: filter || null,
-      sourcePreferences: feedStateService?.getSourcePreferences(username) || {},
-      sessionId,
     });
-    scrollSessions.set(sessionId, { username, createdAt: Date.now(), lastAccess: Date.now() });
-    feedSessionStore?.save(username, sessionId, feedAssemblyService.snapshotSession(username, sessionId));
-    const items = feedStateService ? feedStateService.enrich(username, result.items || [], 'scroll') : result.items;
-    res.status(201).json({ ...result, items, sessionId, nextCursor: items?.at(-1)?.id || null });
+    res.status(201).json(result);
   }));
 
   router.get('/scroll/sessions/:sessionId', asyncHandler(async (req, res) => {
     const username = getUsername(req);
-    let session = scrollSessions.get(req.params.sessionId);
-    if (!session && feedSessionStore) {
-      const persisted = feedSessionStore.load(username, req.params.sessionId);
-      if (persisted && feedAssemblyService.restoreSession(username, req.params.sessionId, persisted.snapshot)) {
-        session = { username, createdAt: new Date(persisted.createdAt).getTime(), lastAccess: Date.now() };
-        scrollSessions.set(req.params.sessionId, session);
-      }
-    }
-    if (!session || session.username !== username || Date.now() - session.lastAccess > sessionTtlMs) {
-      scrollSessions.delete(req.params.sessionId);
-      return res.status(404).json({ error: 'Scroll session expired' });
-    }
-    session.lastAccess = Date.now();
-    if (req.query.resume === '1') {
-      const resumed = feedAssemblyService.getSessionItems(username, req.params.sessionId);
-      const items = feedStateService ? feedStateService.enrich(username, resumed, 'scroll') : resumed;
-      const hasMore = feedAssemblyService.sessionHasMore(username, req.params.sessionId);
-      const metadata = feedAssemblyService.getSessionMetadata(username, req.params.sessionId);
-      return res.json({
-        ...metadata,
-        items,
-        hasMore,
-        caughtUp: !hasMore,
-        sessionId: req.params.sessionId,
-        nextCursor: items.at(-1)?.id || null,
-        resumed: true,
-      });
-    }
-    const result = await feedAssemblyService.getNextBatch(username, {
+    const continuation = await feedScrollSessionService.continue(username, req.params.sessionId, {
+      resume: req.query.resume === '1',
       limit: req.query.limit === undefined ? undefined : toBoundedInt(req.query.limit, { min: 1, max: 100, def: 15 }),
       cursor: req.query.cursor || 'continue',
       filter: req.query.filter || null,
       focus: req.query.focus || null,
-      sourcePreferences: feedStateService?.getSourcePreferences(username) || {},
-      sessionId: req.params.sessionId,
     });
-    const items = feedStateService ? feedStateService.enrich(username, result.items || [], 'scroll') : result.items;
-    feedSessionStore?.save(username, req.params.sessionId, feedAssemblyService.snapshotSession(username, req.params.sessionId));
-    res.json({ ...result, items, sessionId: req.params.sessionId, nextCursor: items?.at(-1)?.id || null });
+    if (continuation.kind === 'expired') {
+      return res.status(404).json({ error: 'Scroll session expired' });
+    }
+    res.json(continuation.result);
   }));
 
   router.get('/scroll', asyncHandler(async (req, res) => {
@@ -522,27 +364,15 @@ export function createFeedRouter(config) {
     const { cursor, limit, focus, source, nocache, filter, session } = req.query;
     const parsedLimit = limit === undefined ? undefined : toBoundedInt(limit, { min: 1, max: 100, def: 15 });
 
-    if (session && !feedAssemblyService.hasSession(username, session) && feedSessionStore) {
-      const persisted = feedSessionStore.load(username, session);
-      if (persisted) feedAssemblyService.restoreSession(username, session, persisted.snapshot);
-    }
-
-    let result = await feedAssemblyService.getNextBatch(username, {
+    const result = await feedScrollSessionService.getBatch(username, {
       limit: parsedLimit,
       cursor,
       focus: focus || null,
       sources: source ? source.split(',').map(s => s.trim()) : null,
       nocache: nocache === '1',
       filter: filter || null,
-      sourcePreferences: feedStateService?.getSourcePreferences(username) || {},
       sessionId: session || null,
     });
-
-    if (feedStateService) {
-      result = { ...result, items: feedStateService.enrich(username, result.items || [], 'scroll') };
-    }
-
-    if (session) feedSessionStore?.save(username, session, feedAssemblyService.snapshotSession(username, session));
 
     logger.info?.('feed.scroll.served', {
       durationMs: Date.now() - start,
@@ -604,51 +434,8 @@ export function createFeedRouter(config) {
 
     const username = getUsername(req);
 
-    // Partition by source type: route to adapter.markRead() or YAML dismiss store
-    const bySource = new Map(); // sourceType → [prefixedIds]
-    const otherIds = [];
-
-    for (const id of feedItemIds) {
-      const colonIdx = id.indexOf(':');
-      if (colonIdx > 0) {
-        const sourceType = id.slice(0, colonIdx);
-        if (adapterMap.has(sourceType)) {
-          if (!bySource.has(sourceType)) bySource.set(sourceType, []);
-          bySource.get(sourceType).push(id);
-          continue;
-        }
-      }
-      otherIds.push(id);
-    }
-
-    // Track truthful outcomes: count what actually persisted, collect failures.
-    let dismissed = 0;
-    const failed = [];
-
-    const promises = [];
-    for (const [sourceType, ids] of bySource) {
-      const adapter = adapterMap.get(sourceType);
-      promises.push(
-        adapter.markRead(ids, username)
-          .then(() => { dismissed += ids.length; })
-          .catch(err => {
-            logger.warn?.('feed.dismiss.adapter.error', { sourceType, error: err.message, count: ids.length });
-            failed.push(...ids);
-          })
-      );
-    }
-    await Promise.all(promises);
-
-    // Non-adapter ids always persist to the YAML dismiss store.
-    if (otherIds.length > 0 && dismissedItemsStore) {
-      dismissedItemsStore.add(otherIds);
-      dismissed += otherIds.length;
-    } else if (otherIds.length > 0) {
-      // No store available — these could not be persisted.
-      failed.push(...otherIds);
-    }
-
-    const body = { dismissed, failed };
+    const body = await feedReaderService.dismiss(feedItemIds, username);
+    const { dismissed, failed } = body;
     if (failed.length > 0 && dismissed === 0) {
       return res.status(502).json(body);
     }
@@ -763,7 +550,7 @@ export function createFeedRouter(config) {
 
   router.use((err, req, res, next) => {
     logger.error?.('feed.router.error', { error: err.message, url: req.url });
-    res.status(500).json({ error: 'Internal error' });
+    sendInternalError(res, { error: 'Internal error' });
   });
 
   return router;

@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
+import { VirtualSchoolDeviceConsole } from '#apps/school/services/VirtualSchoolDeviceConsole.mjs';
 import { VirtualLaserPrinterAdapter } from '#adapters/hardware/laser-printer/VirtualLaserPrinterAdapter.mjs';
 import { VirtualThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/VirtualThermalPrinterAdapter.mjs';
 import { VirtualScannerAdapter } from '#adapters/hardware/scanner/VirtualScannerAdapter.mjs';
@@ -21,6 +22,10 @@ import { VirtualPlaybackAdapter } from '#adapters/hardware/playback/VirtualPlayb
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+const createRouter = (deps = {}) => createSchoolVirtualDevicesRouter({
+  consoleOperations: new VirtualSchoolDeviceConsole(deps),
+  logger: deps.logger,
+});
 
 /** Smallest thing the laser double accepts: %PDF- magic and one /Type /Page. */
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Page >>\nendobj\n%%EOF\n', 'latin1');
@@ -67,7 +72,7 @@ describe('fail closed: no doubles wired', () => {
   afterEach(async () => { await srv?.close(); srv = null; });
 
   it('registers no routes at all — every path 404s', async () => {
-    srv = await serve(createSchoolVirtualDevicesRouter({ logger: silent }));
+    srv = await serve(createRouter({ logger: silent }));
     const paths = [
       ['GET', '/status'],
       ['GET', '/captures'],
@@ -87,14 +92,14 @@ describe('fail closed: no doubles wired', () => {
   });
 
   it('a router built with no arguments at all is empty too', async () => {
-    srv = await serve(createSchoolVirtualDevicesRouter());
+    srv = await serve(createRouter());
     expect((await fetch(`${srv.base}/status`)).status).toBe(404);
     expect((await post(srv.base, '/fault', { device: 'thermal', fault: 'jam' })).status).toBe(404);
   });
 
   it('gates per device: a scanner-only console exposes /scan but not /fault or /captures', async () => {
     const scanner = new VirtualScannerAdapter({ eventBus: makeBus(), logger: silent });
-    srv = await serve(createSchoolVirtualDevicesRouter({ scanner, logger: silent }));
+    srv = await serve(createRouter({ scanner, logger: silent }));
 
     expect((await post(srv.base, '/scan', { code: 'sch:abc' })).status).toBe(200);
     expect((await post(srv.base, '/fault', { device: 'laser', fault: 'offline' })).status).toBe(404);
@@ -106,7 +111,7 @@ describe('fail closed: no doubles wired', () => {
 
   it('gates OMR on the form-map resolver, not just the reader', async () => {
     const omrReader = new VirtualOmrReader({ logger: silent });
-    srv = await serve(createSchoolVirtualDevicesRouter({ omrReader, logger: silent }));
+    srv = await serve(createRouter({ omrReader, logger: silent }));
     expect((await fetch(`${srv.base}/omr/forms/wk-fractions-v1/layout`)).status).toBe(404);
     expect((await post(srv.base, '/omr/submit', { formId: 'wk-fractions-v1', answers: {} })).status).toBe(404);
     // The reader itself IS wired, so /status still reports it.
@@ -131,7 +136,7 @@ describe('virtual device console, fully wired', () => {
     omrReader = new VirtualOmrReader({ eventBus: bus, readerId: 'omr-1100-virtual', logger: silent });
     formIds = new Map([['wk-fractions-v1', FORM_MAP]]);
 
-    srv = await serve(createSchoolVirtualDevicesRouter({
+    srv = await serve(createRouter({
       laserPrinter,
       thermalPrinter,
       scanner,

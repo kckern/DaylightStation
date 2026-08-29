@@ -46,11 +46,7 @@
  *
  * @module applications/school/readingSessionInterceptor
  */
-import { readingTopic } from './ReadingSessionService.mjs';
-
 export const CLAIMED_BY = 'reading-session';
-
-const mintPickId = () => `pick_${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`}`;
 
 /** The states in which a story is on screen and the mode split applies. */
 const MID_STORY = new Set(['reading']);
@@ -62,7 +58,7 @@ const MID_STORY = new Set(['reading']);
 const MODE_UNREADABLE = 'unreadable';
 
 export class ReadingSessionInterceptor {
-  #sessions; #storyTime; #eventBus; #clock; #logger;
+  #sessions; #storyTime; #realtime; #clock; #logger; #idFactory; #idSequence = 0;
 
   /**
    * @param {object} config
@@ -72,12 +68,13 @@ export class ReadingSessionInterceptor {
    *   Absent means browsing, silently; `error` (or a throw) means browsing WITH
    *   a `session-error` on screen. See `#modeFor`.
    */
-  constructor({ sessions, storyTime = null, eventBus = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ sessions, storyTime = null, realtime = null, clock = () => new Date(), idFactory = null, logger = console } = {}) {
     if (!sessions) throw new Error('ReadingSessionInterceptor requires a sessions store');
     this.#sessions = sessions;
     this.#storyTime = storyTime;
-    this.#eventBus = eventBus;
+    this.#realtime = realtime;
     this.#clock = clock;
+    this.#idFactory = idFactory;
     this.#logger = logger;
   }
 
@@ -133,7 +130,7 @@ export class ReadingSessionInterceptor {
     // countdown, whatever they owe.
     const samePick = session.state === 'confirm' && session.pick?.contentId === contentId;
     const pick = samePick ? session.pick : {
-      pickId: mintPickId(), learnerId, contentId, target: response.target ?? null,
+      pickId: this.#nextPickId(), learnerId, contentId, target: response.target ?? null,
       studyDay: this.#storyTime?.studyDay?.() ?? null, at: this.#clock().toISOString(),
     };
     if (!this.#broadcast(location, { event: 'book-selected', learnerId, location, sessionId: session.sessionId, ...pick })) return null;
@@ -274,8 +271,9 @@ export class ReadingSessionInterceptor {
   /** @returns {boolean} whether the screen can actually be told about this claim */
   #broadcast(location, payload) {
     try {
-      if (!this.#eventBus?.broadcast) throw new Error('no event bus');
-      this.#eventBus.broadcast(readingTopic(location), payload);
+      if (!this.#realtime?.readingRoomChanged) throw new Error('no realtime gateway');
+      const { event: kind, ...announcement } = payload;
+      this.#realtime.readingRoomChanged(location, { kind, ...announcement });
       return true;
     } catch (err) {
       this.#log('warn', 'school.reading.claim-abandoned', {
@@ -287,6 +285,12 @@ export class ReadingSessionInterceptor {
 
   #log(level, event, data) {
     try { this.#logger?.[level]?.(event, data); } catch { /* the tap outranks the log line */ }
+  }
+
+  #nextPickId() {
+    if (this.#idFactory) return this.#idFactory('pick');
+    this.#idSequence += 1;
+    return `pick_${this.#clock().getTime().toString(36)}_${this.#idSequence.toString(36)}`;
   }
 }
 

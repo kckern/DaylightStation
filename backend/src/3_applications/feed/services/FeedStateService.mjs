@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { applyFeedStateAction, defaultFeedItemState, normalizeFeedItem } from '#domains/feed/feedItem.mjs';
 
 const ACTIONS = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
@@ -34,15 +33,15 @@ function validTimestamp(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function normalizeCheckpoint(value = {}, { preserveVisitedAt = false } = {}) {
+function normalizeCheckpoint(value = {}, { preserveVisitedAt = false, nowIso } = {}) {
   return {
     itemId: cleanText(value.itemId, 512) || null,
     scrollOffset: Math.max(0, Math.round(finiteIn(value.scrollOffset, 0, 100_000_000, 0))),
-    visitedAt: preserveVisitedAt ? (validTimestamp(value.visitedAt) || new Date().toISOString()) : new Date().toISOString(),
+    visitedAt: preserveVisitedAt ? (validTimestamp(value.visitedAt) || nowIso) : nowIso,
   };
 }
 
-function normalizeImportedState(value = {}) {
+function normalizeImportedState(value = {}, nowIso) {
   const isRead = value.isRead === true;
   const isSaved = value.isSaved === true;
   const isArchived = value.isArchived === true;
@@ -55,11 +54,11 @@ function normalizeImportedState(value = {}) {
     savedAt: isSaved ? validTimestamp(value.savedAt) : null,
     archivedAt: isArchived ? validTimestamp(value.archivedAt) : null,
     syncStatus: 'synced',
-    updatedAt: new Date().toISOString(),
+    updatedAt: nowIso,
   };
 }
 
-function normalizeImportedHistoryItem(value) {
+function normalizeImportedHistoryItem(value, nowMs) {
   if (!value || typeof value !== 'object') return null;
   const id = cleanText(value.id, 512);
   const stateKey = cleanText(value.stateKey, 1024);
@@ -91,7 +90,7 @@ function normalizeImportedHistoryItem(value) {
       type: cleanText(link?.type, 128),
       id: cleanText(link?.id, 512),
     })).filter(link => link.type && link.id) : [],
-  }, { origin: value.origins?.find(mode => MODES.has(mode)) || 'search' });
+  }, { origin: value.origins?.find(mode => MODES.has(mode)) || 'search', nowMs });
 }
 
 function normalizeSourcePreferences(value = {}) {
@@ -104,21 +103,20 @@ function normalizeSourcePreferences(value = {}) {
   return preferences;
 }
 
-function normalizeAnnotation(value, prior = null) {
-  const now = new Date().toISOString();
+function normalizeAnnotation(value, prior = null, { nowIso, createId }) {
   const note = cleanText(value.note, 10_000);
   const quote = cleanText(value.quote, 5_000);
   if (!note && !quote) throw new Error('Annotation requires a note or quote');
   return {
-    id: prior?.id || randomUUID(),
+    id: prior?.id || createId(),
     itemId: cleanText(value.itemId || prior?.itemId, 512),
     stateKey: cleanText(value.stateKey || prior?.stateKey, 1024),
     quote,
     note,
     color: ANNOTATION_COLORS.has(value.color) ? value.color : (prior?.color || 'yellow'),
     locator: cleanText(value.locator || prior?.locator, 1_000) || null,
-    createdAt: prior?.createdAt || now,
-    updatedAt: now,
+    createdAt: prior?.createdAt || nowIso,
+    updatedAt: nowIso,
   };
 }
 
@@ -132,23 +130,38 @@ export class FeedStateService {
   #legacyMigrations = new Set();
   #retrying = new Set();
   #retryTimers = new Map();
+  #clock;
+  #createId;
+  #scheduler;
 
-  constructor({ store, historyStore, sourceAdapters = [], legacyDismissedStore = null, logger = console }) {
+  constructor({ store, historyStore, sourceAdapters = [], legacyDismissedStore = null, clock, createId, scheduler, logger = console }) {
+    if (!clock?.now) throw new Error('FeedStateService requires clock');
+    if (typeof createId !== 'function') throw new Error('FeedStateService requires createId');
+    if (!scheduler?.after) throw new Error('FeedStateService requires scheduler');
     this.#store = store;
     this.#history = historyStore;
     this.#sourceAdapters = new Map(sourceAdapters.map(adapter => [adapter.sourceType, adapter]));
     this.#legacyDismissedStore = legacyDismissedStore;
     this.#logger = logger;
+    this.#clock = clock;
+    this.#createId = createId;
+    this.#scheduler = scheduler;
   }
 
+  #nowMs() { return this.#clock.now(); }
+  #nowIso() { return new Date(this.#nowMs()).toISOString(); }
+
   enrich(username, items, origin) {
-    const normalized = items.map(item => normalizeFeedItem(item, { origin }));
+    const nowMs = this.#nowMs();
+    const nowIso = new Date(nowMs).toISOString();
+    const normalized = items.map(item => normalizeFeedItem(item, { origin, nowMs }));
     const states = this.#store.getMany(username, normalized.map(item => item.stateKey));
     const legacyDismissed = this.#legacyDismissedStore?.load() || new Set();
     const enriched = normalized.map(item => normalizeFeedItem(item, {
       origin,
+      nowMs,
       state: states.get(item.stateKey) || (legacyDismissed.has(item.id)
-        ? { ...defaultFeedItemState(), isArchived: true, archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        ? { ...defaultFeedItemState(), isArchived: true, archivedAt: nowIso, updatedAt: nowIso }
         : item.state || defaultFeedItemState()),
     }));
     const migrations = enriched.filter(item => legacyDismissed.has(item.id) && !states.get(item.stateKey) && !this.#legacyMigrations.has(`${username}:${item.stateKey}`));
@@ -169,10 +182,33 @@ export class FeedStateService {
     return enriched;
   }
 
+  /** Apply durable item state consistently across a headline page and briefing. */
+  enrichHeadlinePage(username, result) {
+    const sources = {};
+    for (const [sourceId, source] of Object.entries(result.sources || {})) {
+      sources[sourceId] = {
+        ...source,
+        items: this.enrich(username, (source.items || []).map((item) => ({
+          ...item,
+          sourceType: 'headlines',
+          sourceId,
+          sourceLabel: source.label || sourceId,
+        })), 'headlines'),
+      };
+    }
+    const itemsById = new Map(Object.values(sources).flatMap((source) => source.items || []).map((item) => [item.id, item]));
+    const briefing = (result.briefing || []).map((story) => {
+      const coverage = (story.coverage || []).map((item) => ({ ...item, ...(itemsById.get(item.id) || {}) }));
+      return { ...story, coverage, state: coverage[0]?.state || null };
+    });
+    return { ...result, sources, briefing };
+  }
+
   async mutate(username, itemIds, action) {
     if (!ACTIONS.has(action)) throw new Error(`Unsupported feed state action: ${action}`);
-    const resolved = itemIds.map(id => this.#history.findById(username, id) || normalizeFeedItem({ id }));
-    const now = new Date().toISOString();
+    const resolutionNowMs = this.#nowMs();
+    const resolved = itemIds.map(id => this.#history.findById(username, id) || normalizeFeedItem({ id }, { nowMs: resolutionNowMs }));
+    const now = this.#nowIso();
     let updated;
     await this.#store.update(username, data => {
       data.version = 1;
@@ -231,7 +267,7 @@ export class FeedStateService {
                 refs: [...entry.refs],
                 action: syncAction,
                 attempts: 0,
-                nextAttemptAt: Date.now() + 1_000,
+                nextAttemptAt: this.#nowMs() + 1_000,
                 lastError: error.message,
               };
               const index = data.pendingSync.findIndex(value => value.key === operation.key);
@@ -255,6 +291,7 @@ export class FeedStateService {
       ...result,
       items: result.items.map(item => normalizeFeedItem(item, {
         origin: item.origins?.[0] || 'search',
+        nowMs: this.#nowMs(),
         state: states.get(item.stateKey) || defaultFeedItemState(),
       })),
     };
@@ -264,7 +301,7 @@ export class FeedStateService {
     const item = this.#history.findById(username, id);
     if (!item) return null;
     const state = this.#store.getMany(username, [item.stateKey]).get(item.stateKey);
-    return normalizeFeedItem(item, { origin: item.origins?.[0] || 'history', state: state || defaultFeedItemState() });
+    return normalizeFeedItem(item, { origin: item.origins?.[0] || 'history', state: state || defaultFeedItemState(), nowMs: this.#nowMs() });
   }
 
   summary(username) {
@@ -280,7 +317,7 @@ export class FeedStateService {
     const data = this.#store.load(username);
     const checkpoints = {};
     for (const [mode, checkpoint] of Object.entries(data.checkpoints || {})) {
-      if (MODES.has(mode)) checkpoints[mode] = normalizeCheckpoint(checkpoint, { preserveVisitedAt: true });
+      if (MODES.has(mode)) checkpoints[mode] = normalizeCheckpoint(checkpoint, { preserveVisitedAt: true, nowIso: this.#nowIso() });
     }
     return {
       preferences: normalizePreferences(data.preferences),
@@ -302,7 +339,7 @@ export class FeedStateService {
 
   async recordCheckpoint(username, mode, value = {}) {
     if (!MODES.has(mode)) throw new Error('Unsupported feed checkpoint mode');
-    const checkpoint = normalizeCheckpoint(value);
+    const checkpoint = normalizeCheckpoint(value, { nowIso: this.#nowIso() });
     await this.#store.update(username, data => {
       data.checkpoints ||= {};
       data.checkpoints[mode] = checkpoint;
@@ -349,6 +386,7 @@ export class FeedStateService {
     const annotation = normalizeAnnotation(
       { ...value, itemId: item.id, stateKey: item.stateKey },
       requestedId ? { id: requestedId } : null,
+      { nowIso: this.#nowIso(), createId: this.#createId },
     );
     await this.#store.update(username, data => {
       data.annotations ||= {};
@@ -369,7 +407,7 @@ export class FeedStateService {
         quote: value?.quote ?? prior.quote,
         color: value?.color ?? prior.color,
         locator: value?.locator ?? prior.locator,
-      }, prior);
+      }, prior, { nowIso: this.#nowIso(), createId: this.#createId });
       data.annotations[annotationId] = annotation;
       return data;
     });
@@ -392,15 +430,15 @@ export class FeedStateService {
     const data = this.#store.load(username);
     const checkpoints = {};
     for (const [mode, checkpoint] of Object.entries(data.checkpoints || {})) {
-      if (MODES.has(mode)) checkpoints[mode] = normalizeCheckpoint(checkpoint, { preserveVisitedAt: true });
+      if (MODES.has(mode)) checkpoints[mode] = normalizeCheckpoint(checkpoint, { preserveVisitedAt: true, nowIso: this.#nowIso() });
     }
     return {
       format: 'daylight.feed-export/v1',
-      exportedAt: new Date().toISOString(),
+      exportedAt: this.#nowIso(),
       preferences: normalizePreferences(data.preferences),
       sourcePreferences: normalizeSourcePreferences(data.sourcePreferences),
       checkpoints,
-      states: Object.entries(data.items || {}).map(([stateKey, state]) => ({ stateKey, state: normalizeImportedState(state) })),
+      states: Object.entries(data.items || {}).map(([stateKey, state]) => ({ stateKey, state: normalizeImportedState(state, this.#nowIso()) })),
       annotations: Object.values(data.annotations || {}),
       items: this.#history.exportDocuments?.(username) || [],
     };
@@ -424,18 +462,18 @@ export class FeedStateService {
       };
       for (const [mode, checkpoint] of Object.entries(payload.checkpoints || {})) {
         if (MODES.has(mode) && checkpoint && typeof checkpoint === 'object') {
-          data.checkpoints[mode] = normalizeCheckpoint(checkpoint, { preserveVisitedAt: true });
+          data.checkpoints[mode] = normalizeCheckpoint(checkpoint, { preserveVisitedAt: true, nowIso: this.#nowIso() });
         }
       }
       for (const entry of states) {
         const stateKey = cleanText(entry?.stateKey, 1024);
         if (!stateKey || !entry?.state || typeof entry.state !== 'object') continue;
-        data.items[stateKey] = normalizeImportedState(entry.state);
+        data.items[stateKey] = normalizeImportedState(entry.state, this.#nowIso());
         importedStates += 1;
       }
       for (const raw of annotations) {
         try {
-          const annotation = normalizeAnnotation(raw, raw?.id ? { ...raw, id: cleanText(raw.id, 128) } : null);
+          const annotation = normalizeAnnotation(raw, raw?.id ? { ...raw, id: cleanText(raw.id, 128) } : null, { nowIso: this.#nowIso(), createId: this.#createId });
           if (annotation.id && annotation.itemId && annotation.stateKey) {
             data.annotations[annotation.id] = annotation;
             importedAnnotations += 1;
@@ -444,7 +482,7 @@ export class FeedStateService {
       }
       return data;
     });
-    const safeItems = items.map(normalizeImportedHistoryItem).filter(Boolean).map(item => this.#historyDocument(item));
+    const safeItems = items.map(value => normalizeImportedHistoryItem(value, this.#nowMs())).filter(Boolean).map(item => this.#historyDocument(item));
     this.#history.record(username, safeItems);
     const current = this.#store.load(username);
     const saved = safeItems.filter(item => current.items?.[item.stateKey]?.isSaved);
@@ -456,14 +494,14 @@ export class FeedStateService {
     if (this.#retrying.has(username)) return;
     const scheduled = this.#retryTimers.get(username);
     if (scheduled) {
-      clearTimeout(scheduled);
+      scheduled();
       this.#retryTimers.delete(username);
     }
     const pending = this.#store.load(username).pendingSync || [];
-    const due = pending.filter(operation => force || !operation.nextAttemptAt || operation.nextAttemptAt <= Date.now());
+    const due = pending.filter(operation => force || !operation.nextAttemptAt || operation.nextAttemptAt <= this.#nowMs());
     if (!due.length) {
       const next = pending.reduce((minimum, operation) => Math.min(minimum, operation.nextAttemptAt || Infinity), Infinity);
-      if (Number.isFinite(next)) this.#scheduleRetry(username, Math.max(250, next - Date.now()));
+      if (Number.isFinite(next)) this.#scheduleRetry(username, Math.max(250, next - this.#nowMs()));
       return;
     }
     this.#retrying.add(username);
@@ -481,7 +519,7 @@ export class FeedStateService {
             if (current) {
               current.attempts = (current.attempts || 0) + 1;
               current.lastError = error.message;
-              current.nextAttemptAt = Date.now() + Math.min(5 * 60_000, 1_000 * (2 ** current.attempts));
+              current.nextAttemptAt = this.#nowMs() + Math.min(5 * 60_000, 1_000 * (2 ** current.attempts));
             }
             return data;
           });
@@ -490,8 +528,8 @@ export class FeedStateService {
     } finally {
       this.#retrying.delete(username);
       const remaining = this.#store.load(username).pendingSync || [];
-      const next = remaining.reduce((minimum, operation) => Math.min(minimum, operation.nextAttemptAt || Date.now()), Infinity);
-      if (Number.isFinite(next)) this.#scheduleRetry(username, Math.max(250, next - Date.now()));
+      const next = remaining.reduce((minimum, operation) => Math.min(minimum, operation.nextAttemptAt || this.#nowMs()), Infinity);
+      if (Number.isFinite(next)) this.#scheduleRetry(username, Math.max(250, next - this.#nowMs()));
     }
   }
 
@@ -509,26 +547,25 @@ export class FeedStateService {
 
   #scheduleRetry(username, delay) {
     const existing = this.#retryTimers.get(username);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(() => {
+    existing?.();
+    const cancel = this.#scheduler.after(Math.min(delay, 5 * 60_000), () => {
       this.#retryTimers.delete(username);
       this.retryPending(username).catch(error => this.#logger.warn?.('feed.state.retry_cycle_failed', { username, error: error.message }));
-    }, Math.min(delay, 5 * 60_000));
-    timer.unref?.();
-    this.#retryTimers.set(username, timer);
+    });
+    this.#retryTimers.set(username, cancel);
   }
 
   ensureHistoryBackfill(username) {
     const existing = this.#backfills.get(username);
     if (existing?.status === 'running' || existing?.status === 'complete') return existing;
     const persisted = this.#history.getBackfillStatus?.(username);
-    if (persisted?.status === 'complete' && Date.now() - new Date(persisted.completedAt || 0).getTime() < 24 * 60 * 60 * 1000) {
+    if (persisted?.status === 'complete' && this.#nowMs() - new Date(persisted.completedAt || 0).getTime() < 24 * 60 * 60 * 1000) {
       this.#backfills.set(username, persisted);
       return persisted;
     }
     const adapter = this.#sourceAdapters.get('freshrss');
     if (!adapter?.getHistoryPage) return { status: 'unavailable', indexed: 0 };
-    const progress = { status: 'running', indexed: 0, startedAt: new Date().toISOString() };
+    const progress = { status: 'running', indexed: 0, startedAt: this.#nowIso() };
     this.#backfills.set(username, progress);
     this.#history.setBackfillStatus?.(username, progress);
     progress.promise = this.#runHistoryBackfill(username, adapter, progress);
@@ -543,7 +580,7 @@ export class FeedStateService {
   }
 
   async #runHistoryBackfill(username, adapter, progress) {
-    const cutoff = Date.now() - (365 * 24 * 60 * 60 * 1000);
+    const cutoff = this.#nowMs() - (365 * 24 * 60 * 60 * 1000);
     let continuation = null;
     try {
       do {
@@ -561,7 +598,7 @@ export class FeedStateService {
         if (!items.length || oldest < cutoff || progress.indexed >= 10_000) continuation = null;
       } while (continuation);
       progress.status = 'complete';
-      progress.completedAt = new Date().toISOString();
+      progress.completedAt = this.#nowIso();
       this.#history.setBackfillStatus?.(username, this.historyBackfillStatus(username));
     } catch (error) {
       progress.status = 'failed';

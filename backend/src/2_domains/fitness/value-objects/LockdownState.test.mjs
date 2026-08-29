@@ -12,11 +12,11 @@ test('isActive is true before lockedUntil and false at/after it', () => {
   assert.equal(s.isActive(1000 + 5000), false);
 });
 
-test('is immutable and round-trips through toData/fromData', () => {
+test('is immutable and can be reconstituted from domain values', () => {
   const s = LockdownState.create({ lockedBy: 'bob', durationSec: 60, now: 500 });
   assert.throws(() => { s.lockedBy = 'mallory'; });
-  const again = LockdownState.fromData(s.toData());
-  assert.deepEqual(again.toData(), s.toData());
+  const again = new LockdownState({ lockedBy: s.lockedBy, lockedAt: s.lockedAt, lockedUntil: s.lockedUntil });
+  assert.deepEqual([again.lockedBy, again.lockedAt, again.lockedUntil], [s.lockedBy, s.lockedAt, s.lockedUntil]);
 });
 
 test('create rejects bad input', () => {

@@ -11,13 +11,14 @@ import { DeleteScheduledFire } from '../../../backend/src/3_applications/playbac
 import { VerifyAudioFlowing } from '../../../backend/src/3_applications/playback-hub/usecases/VerifyAudioFlowing.mjs';
 import { HubStatusBroadcaster } from '../../../backend/src/3_applications/playback-hub/runtime/HubStatusBroadcaster.mjs';
 import { SlotStatus } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotStatus.mjs';
+const statusFromFixture = value => new SlotStatus({ ...value, position: value.slot ?? value.position });
 
 class StubEventPublisher {
   events = [];
   publish(ev) { this.events.push(ev); }
 }
 
-const makeStatus = () => SlotStatus.fromHubJson({
+const makeStatus = () => statusFromFixture({
   slot: 1, color: 'red', bt_connected: true, paused: false, now_playing: null,
   volume: 50, playlist_pos: 0, playlist_count: 0, armed_source: null
 });

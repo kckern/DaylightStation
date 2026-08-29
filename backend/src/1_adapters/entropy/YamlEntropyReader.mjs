@@ -9,13 +9,14 @@
 
 import moment from 'moment';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { IEntropyReader } from '#apps/entropy/ports/IEntropyReader.mjs';
 
 /**
  * YAML-based entropy data reader
  *
  * @implements {IEntropyReader}
  */
-export class YamlEntropyReader {
+export class YamlEntropyReader extends IEntropyReader {
   #io;
   #archiveService;
   #logger;
@@ -27,6 +28,7 @@ export class YamlEntropyReader {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({ io, archiveService = null, logger = console }) {
+    super();
     if (!io?.userLoadFile) {
       throw new InfrastructureError('YamlEntropyReader requires io.userLoadFile', {
         code: 'MISSING_DEPENDENCY',
@@ -51,7 +53,7 @@ export class YamlEntropyReader {
    * @param {string} [options.dataSource='lifelog'] - 'lifelog' or 'current'
    * @returns {Promise<{ timestamp: number, date: string, data: any } | null>}
    */
-  async getLastUpdated(username, dataPath, options = {}) {
+  async readLatestObservation(username, datasetId, options = {}) {
     const {
       dateField = 'date',
       filter = null,
@@ -63,13 +65,13 @@ export class YamlEntropyReader {
     // Fast path: Use ArchiveService for archive-enabled services
     if (
       dataSource === 'lifelog' &&
-      this.#archiveService?.isArchiveEnabled?.(dataPath) &&
+      this.#archiveService?.isArchiveEnabled?.(datasetId) &&
       !filter &&
       !checkField
     ) {
       const fastResult = this.#archiveService.getMostRecentTimestamp(
         username,
-        dataPath
+        datasetId
       );
       if (fastResult) {
         return fastResult;
@@ -77,7 +79,7 @@ export class YamlEntropyReader {
     }
 
     // Slow path: Load full data
-    const data = this.#loadData(username, dataPath, dataSource);
+    const data = this.#loadData(username, datasetId, dataSource);
     if (!data) return null;
 
     let itemsToProcess = data;
@@ -118,14 +120,14 @@ export class YamlEntropyReader {
    * @param {string} [options.dataSource='current'] - 'lifelog' or 'current'
    * @returns {Promise<{ count: number, lastUpdated: string | null }>}
    */
-  async getCount(username, dataPath, options = {}) {
+  async readMetricCount(username, datasetId, options = {}) {
     const {
       countField = 'count',
       listProperty = null,
       dataSource = 'current',
     } = options;
 
-    const data = this.#loadData(username, dataPath, dataSource);
+    const data = this.#loadData(username, datasetId, dataSource);
 
     if (!data) {
       return { count: 0, lastUpdated: null };
@@ -155,11 +157,11 @@ export class YamlEntropyReader {
    * Load data from appropriate source
    * @private
    */
-  #loadData(username, dataPath, dataSource) {
+  #loadData(username, datasetId, dataSource) {
     if (dataSource === 'current') {
-      return this.#io.userLoadCurrent?.(username, dataPath) || null;
+      return this.#io.userLoadCurrent?.(username, datasetId) || null;
     }
-    return this.#io.userLoadFile(username, dataPath);
+    return this.#io.userLoadFile(username, datasetId);
   }
 
   /**

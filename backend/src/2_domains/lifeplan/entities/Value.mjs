@@ -21,16 +21,4 @@ export class Value {
     return this.justified_by.every(j => refutedBeliefIds.includes(j.belief || j));
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      name: this.name,
-      rank: this.rank,
-      description: this.description,
-      justified_by: this.justified_by,
-      conflicts_with: this.conflicts_with,
-      alignment: this.alignment,
-      drift_history: this.drift_history,
-    };
-  }
 }

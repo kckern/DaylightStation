@@ -9,13 +9,13 @@
 /**
  * Create home-dashboard state handler
  * @param {Object} deps
- * @param {Object} deps.container - HomeAutomationContainer
+ * @param {Object} deps.operation - GetDashboardState use case
  * @param {Object} [deps.logger]
  * @returns {Function} Express handler
  */
-export function homeDashboardStateHandler({ container, logger = console }) {
+export function homeDashboardStateHandler({ operation }) {
   return async (_req, res) => {
-    const result = await container.getDashboardState().execute();
+    const result = await operation.execute();
     res.json(result);
   };
 }

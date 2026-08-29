@@ -1,6 +1,19 @@
 import { vi } from 'vitest';
-import { TranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
+import { TranscodePrewarmService as BaseTranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
+import { resolvedAdapterContentCatalog } from '../../../_lib/resolvedAdapterContentCatalog.mjs';
+
+class TranscodePrewarmService extends BaseTranscodePrewarmService {
+  constructor(dependencies) {
+    super({
+      contentCatalog: resolvedAdapterContentCatalog(),
+      clock: { now: () => Date.now() },
+      createToken: () => 'testtoken0000000',
+      scheduler: { after: () => () => {} },
+      ...dependencies,
+    });
+  }
+}
 
 function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

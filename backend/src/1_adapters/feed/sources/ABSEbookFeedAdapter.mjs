@@ -16,9 +16,15 @@
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
 import imageSize from 'image-size';
-import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { deleteFileStrict, fileExists, readTextFromPath, writeFile } from '#system/utils/FileIO.mjs';
+import {
+  partitionEbookCandidates,
+  rankRotatingEbooks,
+  chooseEbookChapter,
+  recordEbookSelection,
+} from '#domains/feed/ebookRotationPolicy.mjs';
 
 export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
   #absClient;
@@ -28,6 +34,8 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
   #logger;
   #httpClient;
   #prefetching = false;
+  #clock;
+  #random;
 
   /**
    * @param {Object} deps
@@ -38,7 +46,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
    * @param {Object} [deps.logger]
    * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
    */
-  constructor({ absClient, token, mediaDir, webUrl = null, logger = console, httpClient } = {}) {
+  constructor({ absClient, token, mediaDir, webUrl = null, logger = console, httpClient, clock = () => new Date(), random = Math.random } = {}) {
     super();
     if (!absClient) throw new Error('ABSEbookFeedAdapter requires absClient');
     if (!token) throw new Error('ABSEbookFeedAdapter requires token');
@@ -49,6 +57,8 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
     this.#webUrl = webUrl ? webUrl.replace(/\/$/, '') : null;
     this.#logger = logger;
     this.#httpClient = httpClient || new HttpClient({ logger });
+    this.#clock = clock;
+    this.#random = random;
   }
 
   #cachePath(bookId) {
@@ -62,8 +72,8 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
   #readRotation() {
     try {
       const filePath = this.#rotationPath();
-      if (!fs.existsSync(filePath)) return { lastBookId: null, books: {} };
-      const content = fs.readFileSync(filePath, 'utf-8');
+      if (!fileExists(filePath)) return { lastBookId: null, books: {} };
+      const content = readTextFromPath(filePath);
       return yaml.load(content) || { lastBookId: null, books: {} };
     } catch {
       return { lastBookId: null, books: {} };
@@ -72,16 +82,14 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
 
   #writeRotation(state) {
     const filePath = this.#rotationPath();
-    const dir = path.dirname(filePath);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(filePath, yaml.dump(state, { lineWidth: -1 }), 'utf-8');
+    writeFile(filePath, yaml.dump(state, { lineWidth: -1 }));
   }
 
   #readCache(bookId) {
     try {
       const filePath = this.#cachePath(bookId);
-      if (!fs.existsSync(filePath)) return null;
-      const content = fs.readFileSync(filePath, 'utf-8');
+      if (!fileExists(filePath)) return null;
+      const content = readTextFromPath(filePath);
       return yaml.load(content) || null;
     } catch {
       return null;
@@ -90,9 +98,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
 
   #writeCache(bookId, data) {
     const filePath = this.#cachePath(bookId);
-    const dir = path.dirname(filePath);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: -1 }), 'utf-8');
+    writeFile(filePath, yaml.dump(data, { lineWidth: -1 }));
   }
 
   get sourceType() { return 'abs-ebooks'; }
@@ -137,20 +143,14 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
     if (books.length === 0) return [];
 
     const itemLimit = query.limit || 1;
-    const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
-    const now = Date.now();
+    const now = this.#clock().getTime();
 
-    // Filter to ebook-capable books with cached chapter data
-    const eligible = [];
-    const uncached = [];
-    for (const book of books) {
-      if (!book.media?.ebookFormat && !book.media?.ebookFile) continue;
-      if (this.#readCache(book.id)) {
-        eligible.push(book);
-      } else {
-        uncached.push(book);
-      }
-    }
+    const { eligible, uncached } = partitionEbookCandidates(
+      books.map(book => ({
+        book,
+        cached: Boolean((book.media?.ebookFormat || book.media?.ebookFile) && this.#readCache(book.id)),
+      })),
+    );
 
     // Background-prefetch uncached books (fire and forget)
     if (uncached.length > 0) {
@@ -159,38 +159,13 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
 
     if (eligible.length === 0) return [];
 
-    // --- Round-robin book selection ---
-    const rotation = this.#readRotation();
-    const rotBooks = rotation.books || {};
-
-    // Purge expired entries (older than 24h)
-    for (const [id, entry] of Object.entries(rotBooks)) {
-      if (now - new Date(entry.lastServed).getTime() >= COOLDOWN_MS) {
-        delete rotBooks[id];
-      }
-    }
-
-    // Score eligible books: never-served first, then oldest lastServed
-    const scored = eligible.map(book => {
-      const entry = rotBooks[book.id];
-      return {
-        book,
-        lastServed: entry ? new Date(entry.lastServed).getTime() : 0,
-        inCooldown: entry ? (now - new Date(entry.lastServed).getTime() < COOLDOWN_MS) : false,
-        isLastBook: book.id === rotation.lastBookId,
-      };
-    });
-
-    // Priority: not in cooldown > in cooldown; not last book > last book; oldest first
-    scored.sort((a, b) => {
-      if (a.inCooldown !== b.inCooldown) return a.inCooldown ? 1 : -1;
-      if (a.isLastBook !== b.isLastBook) return a.isLastBook ? 1 : -1;
-      return a.lastServed - b.lastServed;
-    });
+    let rotation = this.#readRotation();
+    const selection = rankRotatingEbooks(eligible, rotation, now);
+    let activeBooks = selection.activeBooks;
 
     const items = [];
 
-    for (const { book } of scored) {
+    for (const { book } of selection.ranked) {
       if (items.length >= itemLimit) break;
 
       const bookId = book.id;
@@ -205,13 +180,11 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
       const title = metadata.title || 'Untitled';
 
       // Exclude chapters already served during this book's cooldown window
-      const servedChapterIds = new Set(rotBooks[bookId]?.servedChapters || []);
-      let available = chapters.filter(ch => !servedChapterIds.has(ch.id));
-      // If all chapters served, allow any (full rotation complete)
-      if (available.length === 0) available = chapters;
-
-      // Pick a random chapter from available
-      const chapter = available[Math.floor(Math.random() * available.length)];
+      const chapter = chooseEbookChapter(
+        chapters,
+        activeBooks[bookId]?.servedChapters || [],
+        this.#random(),
+      );
 
       items.push({
         id: `abs-ebooks:${bookId}:${chapter.id}`,
@@ -221,7 +194,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
         body: chapter.preview || `${author} — ${title}`,
         image: coverUrl,
         link: this.#webUrl ? `${this.#webUrl}/item/${bookId}` : null,
-        timestamp: new Date().toISOString(),
+        timestamp: this.#clock().toISOString(),
         priority: query.priority || 5,
         meta: {
           bookId,
@@ -236,16 +209,15 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
       });
 
       // Update rotation state
-      if (!rotBooks[bookId]) {
-        rotBooks[bookId] = { lastServed: new Date().toISOString(), servedChapters: [] };
-      } else {
-        rotBooks[bookId].lastServed = new Date().toISOString();
-      }
-      rotBooks[bookId].servedChapters.push(chapter.id);
-      rotation.lastBookId = bookId;
+      rotation = recordEbookSelection(
+        rotation,
+        activeBooks,
+        bookId,
+        chapter.id,
+        this.#clock().toISOString(),
+      );
+      activeBooks = rotation.books;
     }
-
-    rotation.books = rotBooks;
     this.#writeRotation(rotation);
 
     return items;
@@ -508,7 +480,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
       try {
         if (force) {
           const fp = this.#cachePath(bookId);
-          if (fs.existsSync(fp)) fs.unlinkSync(fp);
+          if (fileExists(fp)) deleteFileStrict(fp);
         }
         await this.#getChapters(bookId, metadata);
         cached++;

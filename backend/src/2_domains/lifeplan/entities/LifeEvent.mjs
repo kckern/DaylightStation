@@ -23,21 +23,4 @@ export class LifeEvent {
     return this.duration_type === 'permanent';
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      type: this.type,
-      subtype: this.subtype,
-      name: this.name,
-      status: this.status,
-      impact_type: this.impact_type,
-      duration_type: this.duration_type,
-      expected_date: this.expected_date,
-      actual_date: this.actual_date,
-      impact: this.impact,
-      resolution: this.resolution,
-      signals: this.signals,
-      notes: this.notes,
-    };
-  }
 }

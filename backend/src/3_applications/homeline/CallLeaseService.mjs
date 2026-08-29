@@ -1,5 +1,3 @@
-import { randomBytes, randomUUID } from 'node:crypto';
-
 export const HOMELINE_SETUP_TTL_MS = 180_000;
 export const HOMELINE_HEARTBEAT_STALE_MS = 20_000;
 
@@ -45,19 +43,20 @@ const publicLease = lease => ({
 });
 
 export class CallLeaseService {
-  #devices; #wake; #logger; #clock; #setTimer; #clearTimer; #sleep;
+  #devices; #wake; #logger; #clock; #scheduler; #identityIssuer;
   #byCall = new Map(); #byDevice = new Map(); #credentials = new Map(); #restoring = new Map();
 
-  constructor({ deviceService, wakeAndLoadService, logger = console, clock = () => Date.now(),
-    setTimer = setTimeout, clearTimer = clearTimeout,
-    sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+  constructor({ deviceService, wakeAndLoadService, logger = console, clock, scheduler, identityIssuer } = {}) {
+    if (!clock?.now || !scheduler?.after || !scheduler?.wait || !identityIssuer?.newCallId
+      || !identityIssuer?.newDispatchId || !identityIssuer?.newTvPeerId || !identityIssuer?.newCredential) {
+      throw new Error('CallLeaseService requires clock, scheduler, and identityIssuer');
+    }
     this.#devices = deviceService;
     this.#wake = wakeAndLoadService;
     this.#logger = logger;
     this.#clock = clock;
-    this.#setTimer = setTimer;
-    this.#clearTimer = clearTimer;
-    this.#sleep = sleep;
+    this.#scheduler = scheduler;
+    this.#identityIssuer = identityIssuer;
   }
 
   async reserve({ deviceId, attemptId, phonePeerId, callerId }) {
@@ -86,10 +85,10 @@ export class CallLeaseService {
     const raced = this.#activeForDevice(deviceId);
     if (raced) return { kind: 'busy', lease: publicLease(raced) };
 
-    const now = this.#clock();
-    const callId = randomUUID();
+    const now = this.#clock.now();
+    const callId = this.#identityIssuer.newCallId();
     const lease = {
-      callId, attemptId, dispatchId: randomUUID(), deviceId, callerId, phonePeerId,
+      callId, attemptId, dispatchId: this.#identityIssuer.newDispatchId(), deviceId, callerId, phonePeerId,
       tvPeerId: null, topic: `homeline-call:${callId}`, state: 'reserved', priorState,
       createdAt: now, expiresAt: now + HOMELINE_SETUP_TTL_MS, hardRecoveryUsed: false,
       softRecoveryUsed: false, wakeUsed: false, hardExtensionUsed: false,
@@ -146,7 +145,7 @@ export class CallLeaseService {
     if (!isLocal || declaredDeviceId !== deviceId) return { kind: 'forbidden' };
     const lease = this.#activeForDevice(deviceId);
     if (!lease) return { kind: 'empty' };
-    const tvPeerId = `tv-${randomUUID()}`;
+    const tvPeerId = this.#identityIssuer.newTvPeerId();
     this.#revokeRole(lease, 'tv');
     lease.tvPeerId = tvPeerId;
     const tvCredential = this.#mintCredential(lease, 'tv', tvPeerId);
@@ -191,7 +190,7 @@ export class CallLeaseService {
         // through its reboot/power-cycle despite owning the one extension.
         if (!lease.hardExtensionUsed) {
           lease.hardExtensionUsed = true;
-          lease.expiresAt = Math.max(lease.expiresAt, this.#clock() + HOMELINE_SETUP_TTL_MS);
+          lease.expiresAt = Math.max(lease.expiresAt, this.#clock.now() + HOMELINE_SETUP_TTL_MS);
           for (const credential of this.#credentials.values()) {
             if (credential.callId === lease.callId && !credential.revoked) credential.expiresAt = lease.expiresAt;
           }
@@ -203,16 +202,16 @@ export class CallLeaseService {
           method = 'power-cycle';
           const off = await device.powerOff();
           if (!off?.ok) throw new Error(off?.error || 'Power off failed');
-          await this.#sleep(10_000);
+          await this.#scheduler.wait(10_000);
           if (TERMINAL.has(lease.state)) throw new Error('CALL_ENDED');
           const on = await device.powerOn();
           if (!on?.ok) throw new Error(on?.error || 'Power on failed');
           if (isPoweredOn(lease.priorState?.power) === false) lease.callTurnedDeviceOn = true;
-          await this.#sleep(60_000);
+          await this.#scheduler.wait(60_000);
         } else {
           method = 'reboot';
           if (isPoweredOn(lease.priorState?.power) === false) lease.callTurnedDeviceOn = true;
-          await this.#sleep(15_000);
+          await this.#scheduler.wait(15_000);
         }
         if (TERMINAL.has(lease.state)) throw new Error('CALL_ENDED');
       }
@@ -249,8 +248,8 @@ export class CallLeaseService {
       return { kind: 'ok', body: { ok: true, ...publicLease(lease), restoration: lease.restoration } };
     }
     lease.state = 'ended';
-    this.#clearTimer(lease.timer);
-    this.#clearTimer(lease.heartbeatTimer);
+    lease.timer?.();
+    lease.heartbeatTimer?.();
     this.#revokeLease(lease);
     this.#byDevice.delete(lease.deviceId);
     this.#restoring.set(lease.deviceId, lease);
@@ -268,14 +267,14 @@ export class CallLeaseService {
     const record = this.#credentials.get(credential);
     if (!record || record.revoked) return { ok: false, code: 'INVALID_CREDENTIAL' };
     const lease = this.#byCall.get(record.callId);
-    if (record.expiresAt <= this.#clock() && !lease?.wasActive) return { ok: false, code: 'INVALID_CREDENTIAL' };
+    if (record.expiresAt <= this.#clock.now() && !lease?.wasActive) return { ok: false, code: 'INVALID_CREDENTIAL' };
     if (!lease || TERMINAL.has(lease.state) || lease.topic !== topic || record.role !== role || record.peerId !== peerId) {
       return { ok: false, code: 'LEASE_MISMATCH' };
     }
     if (record.clientId && record.clientId !== clientId) return { ok: false, code: 'CREDENTIAL_IN_USE' };
     record.clientId = clientId;
     for (const key of lease.sequence.keys()) if (key.startsWith(`${role}:`)) lease.sequence.delete(key);
-    lease.participants.set(role, { clientId, peerId, lastSeenAt: this.#clock() });
+    lease.participants.set(role, { clientId, peerId, lastSeenAt: this.#clock.now() });
     return { ok: true, callId: lease.callId, role, peerId };
   }
 
@@ -321,7 +320,7 @@ export class CallLeaseService {
     if (phaseError) return reject(phaseError);
     lease.revision.set(message.role, revision);
     lease.sequence.set(key, sequence);
-    lease.participants.set(message.role, { clientId, peerId: message.peerId, lastSeenAt: this.#clock() });
+    lease.participants.set(message.role, { clientId, peerId: message.peerId, lastSeenAt: this.#clock.now() });
     if (message.type === 'heartbeat') this.#refreshActiveState(lease);
     if (message.type === 'ready') lease.signals.phoneReady = true;
     if (message.type === 'waiting') lease.signals.tvWaiting = true;
@@ -341,7 +340,7 @@ export class CallLeaseService {
       lease.signals.mediaVerified.add(message.role);
       if (lease.signals.mediaVerified.size === 2) {
         lease.phase = 'active'; lease.state = 'active'; lease.wasActive = true;
-        this.#clearTimer(lease.timer); this.#armParticipantStale(lease);
+        lease.timer?.(); this.#armParticipantStale(lease);
       }
     }
     if (!['candidate', 'heartbeat'].includes(message.type)) {
@@ -365,7 +364,7 @@ export class CallLeaseService {
     const callId = this.#byDevice.get(deviceId);
     const lease = callId && this.#byCall.get(callId);
     if (!lease || TERMINAL.has(lease.state)) return null;
-    if (!lease.wasActive && lease.expiresAt <= this.#clock()) { this.#expire(lease); return null; }
+    if (!lease.wasActive && lease.expiresAt <= this.#clock.now()) { this.#expire(lease); return null; }
     return lease;
   }
   #owned(callId, callerId) {
@@ -373,7 +372,7 @@ export class CallLeaseService {
     return lease && !TERMINAL.has(lease.state) && lease.callerId === callerId ? lease : null;
   }
   #mintCredential(lease, role, peerId) {
-    const token = randomBytes(32).toString('base64url');
+    const token = this.#identityIssuer.newCredential();
     this.#credentials.set(token, { callId: lease.callId, role, peerId, expiresAt: lease.expiresAt, revoked: false, clientId: null });
     return token;
   }
@@ -407,10 +406,9 @@ export class CallLeaseService {
     return 'UNEXPECTED_PHASE';
   }
   #armExpiry(lease) {
-    if (lease.timer) this.#clearTimer(lease.timer);
-    const delay = Math.max(0, lease.expiresAt - this.#clock());
-    lease.timer = this.#setTimer(() => this.#expire(lease), delay);
-    lease.timer?.unref?.();
+    lease.timer?.();
+    const delay = Math.max(0, lease.expiresAt - this.#clock.now());
+    lease.timer = this.#scheduler.after(delay, () => this.#expire(lease));
   }
   #expire(lease) {
     if (TERMINAL.has(lease.state) || lease.wasActive) return;
@@ -424,7 +422,7 @@ export class CallLeaseService {
     });
   }
   #refreshActiveState(lease) {
-    const now = this.#clock();
+    const now = this.#clock.now();
     const phone = lease.participants.get('phone');
     const tv = lease.participants.get('tv');
     if (phone && tv && now - phone.lastSeenAt <= HOMELINE_HEARTBEAT_STALE_MS && now - tv.lastSeenAt <= HOMELINE_HEARTBEAT_STALE_MS) {
@@ -433,12 +431,12 @@ export class CallLeaseService {
     if (lease.phase === 'active') this.#armParticipantStale(lease);
   }
   #armParticipantStale(lease) {
-    this.#clearTimer(lease.heartbeatTimer);
-    const phoneSeenAt = lease.participants.get('phone')?.lastSeenAt ?? this.#clock();
-    const tvSeenAt = lease.participants.get('tv')?.lastSeenAt ?? this.#clock();
+    lease.heartbeatTimer?.();
+    const phoneSeenAt = lease.participants.get('phone')?.lastSeenAt ?? this.#clock.now();
+    const tvSeenAt = lease.participants.get('tv')?.lastSeenAt ?? this.#clock.now();
     const staleAt = Math.min(phoneSeenAt, tvSeenAt) + HOMELINE_HEARTBEAT_STALE_MS;
-    lease.heartbeatTimer = this.#setTimer(() => {
-      const now = this.#clock();
+    lease.heartbeatTimer = this.#scheduler.after(Math.max(0, staleAt - this.#clock.now()), () => {
+      const now = this.#clock.now();
       const phone = lease.participants.get('phone');
       const tv = lease.participants.get('tv');
       if (phone && tv && now - phone.lastSeenAt < HOMELINE_HEARTBEAT_STALE_MS
@@ -452,7 +450,7 @@ export class CallLeaseService {
         lease.restoration = result;
         this.#event('device.restored', lease, { outcome: result.outcome, reason: result.reason });
       });
-    }, Math.max(0, staleAt - this.#clock()));
+    });
     lease.heartbeatTimer?.unref?.();
   }
   async #restore(lease) {
@@ -501,7 +499,7 @@ export class CallLeaseService {
       deviceId: lease.deviceId, callerId: lease.callerId, phonePeerId: lease.phonePeerId,
       tvPeerId: lease.tvPeerId, state: lease.state, previousState,
       peerRevision: Math.max(-1, ...lease.revision.values()),
-      elapsedMs: this.#clock() - lease.createdAt, ...extra,
+      elapsedMs: this.#clock.now() - lease.createdAt, ...extra,
     });
     lease.lastLoggedState = lease.state;
   }

@@ -7,11 +7,12 @@ const deckRevision = (deck) => String(deck?.revision ?? '1');
 /** Server-authoritative state transitions for rich flashcard study. */
 export class FlashcardStudyService {
   #store; #decks; #now; #id; #assignments; #grader; #timezone; #boundaryHour; #scheduler; #policies; #teacherGate;
-  constructor({ progressStore, decks, assignments = null, grader = null, scheduler, policyResolver, teacherGate = null, timezone = null, boundaryHour = 4, now = () => Date.now(), id = () => crypto.randomUUID() } = {}) {
+  constructor({ progressStore, decks, assignments = null, grader = null, scheduler, policyResolver, teacherGate = null, timezone = null, boundaryHour = 4, now, id } = {}) {
     if (!progressStore || typeof progressStore.update !== 'function' || typeof progressStore.read !== 'function') throw new Error('FlashcardStudyService requires progressStore');
     if (!decks || typeof decks.getFlashcardDeck !== 'function') throw new Error('FlashcardStudyService requires decks.getFlashcardDeck');
     if (!scheduler?.initial || !scheduler?.rate || !scheduler?.preview) throw new Error('FlashcardStudyService requires scheduler');
     if (!policyResolver?.resolveLaunch || !policyResolver?.resolveCard) throw new Error('FlashcardStudyService requires policyResolver');
+    if (typeof now !== 'function' || typeof id !== 'function') throw new Error('FlashcardStudyService requires now and id');
     this.#store = progressStore; this.#decks = decks; this.#assignments = assignments; this.#grader = grader; this.#scheduler = scheduler; this.#policies = policyResolver; this.#teacherGate = teacherGate; this.#timezone = timezone; this.#boundaryHour = boundaryHour; this.#now = now; this.#id = id;
   }
   async open({ userId, deckId, learning = null } = {}) {

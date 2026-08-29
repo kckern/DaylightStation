@@ -38,21 +38,14 @@ export const CATEGORIES = {
  * Fail-closed, but loudly (spec §3 "Fail-closed, but loudly"). An omitted or
  * unrecognised `category` resolves to `reference` — no gate, no credit — so a
  * config slip makes material inert rather than silently ungated-and-credited.
- * The unrecognised value is logged, naming the source, so the typo is
- * discoverable instead of silent (a typo'd `category: coures` would otherwise
- * serve a whole course ungated and uncredited, with no quiz evidence
- * collected to reconstruct later).
+ * A typo'd category therefore cannot silently become credited work.
  *
  * @param {string} name - the configured category value (may be missing/unknown)
- * @param {object} opts
- * @param {object} opts.logger - structured logger; `warn` is called on fallback
- * @param {string} opts.sourceLabel - the source's configured label, for the warning
  * @returns {{ key: string, def: object }}
  */
-export function resolveCategory(name, { logger, sourceLabel } = {}) {
+export function resolveCategory(name) {
   if (Object.prototype.hasOwnProperty.call(CATEGORIES, name)) {
     return { key: name, def: CATEGORIES[name] };
   }
-  logger?.warn?.('school.materials.category-unknown', { source: sourceLabel, category: name });
   return { key: 'reference', def: CATEGORIES.reference };
 }

@@ -6,7 +6,7 @@
  * If newDate is not provided, shows a date picker first.
  */
 
-import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
+import { createNutriLog } from '../nutriLogRecords.mjs';
 
 /**
  * Move item to date use case
@@ -122,7 +122,7 @@ export class MoveItemToDate {
 
       // 6. Create new log for the new date with the item
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
-      const newLog = NutriLog.create({
+      const newLog = createNutriLog({
         userId,
         conversationId,
         text: `Moved: ${item.label}`,

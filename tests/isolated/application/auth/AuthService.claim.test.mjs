@@ -1,6 +1,8 @@
 // tests/isolated/application/auth/AuthService.claim.test.mjs
 import { vi } from 'vitest';
 import { AuthService } from '#backend/src/3_applications/auth/AuthService.mjs';
+import { DataServiceAuthAccountRepository } from '#backend/src/1_adapters/auth/DataServiceAuthAccountRepository.mjs';
+import { NodeAuthenticationPrimitives } from '#backend/src/1_adapters/auth/NodeAuthenticationPrimitives.mjs';
 
 describe('AuthService.claim()', () => {
   function buildService({ profiles = new Map(), loginData = {} } = {}) {
@@ -21,7 +23,11 @@ describe('AuthService.claim()', () => {
       getAllUserProfiles: vi.fn(() => profiles),
       getDefaultHouseholdId: vi.fn(() => 'default'),
     };
-    const svc = new AuthService({ dataService, configService, logger: { info: vi.fn() } });
+    const svc = new AuthService({
+      accounts: new DataServiceAuthAccountRepository({ dataService, configService }),
+      authentication: new NodeAuthenticationPrimitives(),
+      logger: { info: vi.fn() },
+    });
     return { svc, dataService, written };
   }
 

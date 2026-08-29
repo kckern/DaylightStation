@@ -1,28 +1,29 @@
 // backend/src/3_applications/agents/framework/buildAgentMemory.mjs
-import { buildMastraMemory } from '#system/memory/buildMastraMemory.mjs';
+import { isAgentMemoryFactory } from '../ports/IAgentMemoryFactory.mjs';
 
 /**
- * Per-agent Memory factory. Wraps buildMastraMemory with friendlier error
- * handling — returns null + logs warn instead of throwing — so a single
+ * Per-agent memory builder with friendly error handling. Returns null + logs
+ * warn instead of throwing, so a single
  * agent's Memory failure doesn't cascade through bootstrap.
  *
  * @param {object|null} memoryConfig — what AgentClass.getMemoryConfig(deps)
  *   returned. Shape: { lastMessages, workingMemory? }.
- * @param {object} sharedDeps — { dataPath, logger, agentId? }
- * @returns {Memory|null}
+ * @param {object} sharedDeps — { dataPath, logger, agentId?, memoryFactory }
+ * @returns {object|null}
  */
 export function buildAgentMemory(memoryConfig, sharedDeps = {}) {
   if (!memoryConfig) return null;
-  const { dataPath, logger = console, agentId } = sharedDeps;
+  const { dataPath, logger = console, agentId, memoryFactory } = sharedDeps;
   if (dataPath == null) {
     logger.warn?.('agent.memory.init_failed', { agentId, error: 'dataPath required' });
     return null;
   }
-  // v1: shared db file across agents at data/agents/memory.db. Per-agent
-  // sub-files can come later if write contention surfaces.
-  const dbPath = dataPath === ':memory:' ? ':memory:' : `${dataPath}/agents/memory.db`;
+  if (!isAgentMemoryFactory(memoryFactory)) {
+    logger.warn?.('agent.memory.init_failed', { agentId, error: 'memoryFactory required' });
+    return null;
+  }
   try {
-    return buildMastraMemory({ dbPath, ...memoryConfig });
+    return memoryFactory.createMemory({ dataPath, ...memoryConfig });
   } catch (err) {
     logger.warn?.('agent.memory.init_failed', { agentId, error: err?.message });
     return null;

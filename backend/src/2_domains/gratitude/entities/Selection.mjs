@@ -7,7 +7,6 @@
  * @module domains/gratitude/entities
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import { GratitudeItem } from './GratitudeItem.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
@@ -33,7 +32,8 @@ export class Selection {
    * @param {SelectionData} data
    */
   constructor(data) {
-    this.#id = data.id || uuidv4();
+    if (!data.id) throw new ValidationError('id is required');
+    this.#id = data.id;
     this.#userId = data.userId;
     this.#item = data.item instanceof GratitudeItem
       ? data.item
@@ -93,22 +93,6 @@ export class Selection {
   }
 
   /**
-   * Convert to plain object.
-   * Transitional: retained for API response DTOs (4_api/v1/routers/gratitude.mjs).
-   * Storage (de)hydration lives in YamlGratitudeDatastore, NOT here.
-   * @returns {SelectionData}
-   */
-  toJSON() {
-    return {
-      id: this.#id,
-      userId: this.#userId,
-      item: this.#item.toJSON(),
-      datetime: this.#datetime,
-      printed: [...this.#printed]
-    };
-  }
-
-  /**
    * Create a new selection
    * @param {string} userId
    * @param {Object} item
@@ -116,13 +100,13 @@ export class Selection {
    * @returns {Selection}
    * @throws {ValidationError} If timestamp is not provided
    */
-  static create(userId, item, timestamp) {
+  static create(userId, item, timestamp, id) {
     if (!timestamp) {
       throw new ValidationError('timestamp is required for Selection.create');
     }
 
     return new Selection({
-      id: uuidv4(),
+      id,
       userId,
       item,
       datetime: timestamp

@@ -291,12 +291,15 @@ export async function run(argv, ctx) {
     const { absorbOverlappingSlivers } = await import(
       path.join(ctx.projectRoot, 'backend/src/3_applications/fitness/sliverAbsorption.mjs')
     );
+    const { YamlFitnessHistoryRepository } = await import(
+      path.join(ctx.projectRoot, 'backend/src/1_adapters/fitness/YamlFitnessHistoryRepository.mjs')
+    );
+    const historyRepository = new YamlFitnessHistoryRepository({ root: historyDir });
 
     const stravaOnlySessions = sessions.filter(s => s.source === 'strava');
     let totalAbsorbed = 0;
 
     for (const s of stravaOnlySessions) {
-      const dateDir = path.join(historyDir, s.date);
       if (!s.stravaActivityId) continue;
       // The scanner doesn't fetch from the Strava API; reconstruct the minimal
       // fields the helper needs from the session's stored data.
@@ -306,10 +309,11 @@ export async function run(argv, ctx) {
         elapsed_time: Math.round((s.endMs - s.startMs) / 1000),
         moving_time: Math.round((s.endMs - s.startMs) / 1000),
       };
-      const result = absorbOverlappingSlivers(activityShim, dateDir, {
+      const result = absorbOverlappingSlivers(activityShim, historyRepository.list(s.date), {
         justCreatedSessionId: s.sessionId,
         tz: 'America/Los_Angeles',
         logger: console,
+        removeSession: (id) => historyRepository.remove(id),
       });
       if (result.absorbed.length > 0) {
         console.log(`  ${s.date}: absorbed ${result.absorbed.length} sliver(s) for ${s.stravaName || s.stravaActivityId}`);

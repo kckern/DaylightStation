@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
+import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
+import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 
 function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -35,10 +37,12 @@ describe('WakeAndLoadService — end-behavior propagation', () => {
     };
     device = makeDevice();
     svc = new WakeAndLoadService({
+      ...testApplicationRuntime(),
       deviceService: { get: vi.fn().mockReturnValue(device) },
       readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
       broadcast,
       eventBus,
+      screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
       logger: makeLogger(),
     });
   });

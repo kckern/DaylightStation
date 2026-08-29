@@ -116,7 +116,7 @@ export class HealthAggregator {
       weight: weightData,
       nutrition: nutritionData,
       steps: stepsData,
-      workouts: workouts.map(w => w.toJSON()),
+      workouts,
       coaching
     });
   }
@@ -200,28 +200,6 @@ export class HealthAggregator {
     return mergedWorkouts;
   }
 
-  /**
-   * Merge new health metrics into existing health data, sorted by date descending
-   * @param {Object} existing - Existing health data keyed by date
-   * @param {Object<string, HealthMetric>} newData - New metrics keyed by date
-   * @returns {Object} Merged health data keyed by date (sorted descending)
-   */
-  static mergeHealthData(existing, newData) {
-    const merged = { ...existing };
-
-    for (const [date, metric] of Object.entries(newData)) {
-      merged[date] = metric.toJSON();
-    }
-
-    // Sort by date descending
-    return Object.keys(merged)
-      .sort()
-      .reverse()
-      .reduce((acc, key) => {
-        acc[key] = merged[key];
-        return acc;
-      }, {});
-  }
 }
 
 export default HealthAggregator;

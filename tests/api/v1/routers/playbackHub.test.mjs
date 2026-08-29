@@ -31,6 +31,15 @@ function makeFakeContainer(overrides = {}) {
   };
 }
 
+function fakeHubDevice({ volume = {} } = {}) {
+  return {
+    position: { value: 1 }, color: { value: 'red' }, mac: 'aa:bb', class: { value: 'private' },
+    haEntityId: null, haTurnOffOnStop: false,
+    volumeBounds: { hasExplicit: key => key in volume, ...volume },
+    continuousSchedules: [], extras: null,
+  };
+}
+
 /**
  * Build an Express app mounting the router under /api/v1/playback-hub.
  */
@@ -38,7 +47,7 @@ function buildApp(container) {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/playback-hub', createPlaybackHubRouter({
-    container,
+    operations: container,
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
   }));
   return app;
@@ -49,8 +58,8 @@ function buildApp(container) {
 // ---------------------------------------------------------------------------
 
 describe('createPlaybackHubRouter (construction)', () => {
-  it('throws when container is missing', () => {
-    expect(() => createPlaybackHubRouter({})).toThrow(/container required/);
+  it('throws when operations are missing', () => {
+    expect(() => createPlaybackHubRouter({})).toThrow(/operations required/);
   });
 });
 
@@ -125,9 +134,9 @@ describe('GET /api/v1/playback-hub/status', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /api/v1/playback-hub/config', () => {
-  it('200 — returns hubConfig.toYaml()', async () => {
+  it('200 — serializes the HubConfig to its legacy public shape', async () => {
     const yamlShape = { devices: [{ slot: 1, color: 'red', mac: 'aa:bb', class: 'private' }] };
-    const fakeConfig = { toYaml: vi.fn().mockReturnValue(yamlShape) };
+    const fakeConfig = { devices: [fakeHubDevice()], scheduledFires: [], daylightStation: null };
     const container = makeFakeContainer({
       getHubConfig: vi.fn().mockResolvedValue(fakeConfig),
     });
@@ -136,7 +145,6 @@ describe('GET /api/v1/playback-hub/config', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, config: yamlShape });
-    expect(fakeConfig.toYaml).toHaveBeenCalledOnce();
   });
 
   it('500 — yaml-IO InfrastructureError surfaces as 502 (any cause maps to 502)', async () => {
@@ -319,9 +327,9 @@ describe('POST /api/v1/playback-hub/command', () => {
 // ---------------------------------------------------------------------------
 
 describe('PATCH /api/v1/playback-hub/devices/:color', () => {
-  it('200 — returns device.toYaml()', async () => {
+  it('200 — serializes the device to its legacy public shape', async () => {
     const yamlShape = { slot: 1, color: 'red', mac: 'aa:bb', class: 'private', volume: { max: 30 } };
-    const fakeDevice = { toYaml: vi.fn().mockReturnValue(yamlShape) };
+    const fakeDevice = fakeHubDevice({ volume: { max: 30 } });
     const container = makeFakeContainer({
       updateDeviceConfig: vi.fn().mockResolvedValue(fakeDevice),
     });
@@ -333,6 +341,23 @@ describe('PATCH /api/v1/playback-hub/devices/:color', () => {
     expect(container.updateDeviceConfig.execute).toHaveBeenCalledWith({
       color: 'red',
       patch: { volumeBounds: { min: 0, default: 25, max: 30 } },
+    });
+  });
+
+  it('translates public device patch names into the application command', async () => {
+    const fakeDevice = fakeHubDevice();
+    const container = makeFakeContainer({ updateDeviceConfig: vi.fn().mockResolvedValue(fakeDevice) });
+    const res = await request(buildApp(container))
+      .patch('/api/v1/playback-hub/devices/red')
+      .send({ volume: { min: 0, default: 25, max: 30 }, schedules: [{ start: '08:00', end: '09:00', queue: 'morning', shuffle: true }], ha_entity_id: 'switch.kitchen', ha_turn_off_on_stop: true });
+    expect(res.status).toBe(200);
+    expect(container.updateDeviceConfig.execute).toHaveBeenCalledWith({
+      color: 'red',
+      patch: {
+        volumeBounds: { min: 0, default: 25, max: 30 },
+        continuousSchedules: [{ start: '08:00', end: '09:00', queue: 'morning', shuffle: true }],
+        haEntityId: 'switch.kitchen', haTurnOffOnStop: true,
+      },
     });
   });
 

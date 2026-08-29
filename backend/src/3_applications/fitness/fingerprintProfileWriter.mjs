@@ -32,25 +32,25 @@ export function removeFingerprintEntry(profile, uuid) {
  * Application-layer writer: read the user's profile via the injected persistence
  * datastore, mutate identities.fingerprints with the pure helpers above, write it
  * back, then refresh the cached profile so the change is visible without an app
- * restart. The datastore (a `1_adapters` persistence port) and configService are
+ * restart. The datastore and cache refresher are
  * injected — this orchestrator holds no filesystem code, keeping dependencies
  * pointing inward per the DDD layering reference.
  *
  * @param {object} deps
  * @param {{readProfile:(u:string)=>object|null, writeProfile:(u:string, p:object)=>void}} deps.datastore
- * @param {{reloadUserProfile:(u:string)=>any}} deps.configService
+ * @param {{refresh:(u:string)=>any}} deps.profileCache
  */
-export function createFingerprintProfileWriter({ datastore, configService }) {
+export function createFingerprintProfileWriter({ datastore, profileCache }) {
   async function addFingerprint(username, entry) {
     const profile = datastore.readProfile(username) || {};
     datastore.writeProfile(username, addFingerprintEntry(profile, entry));
-    configService.reloadUserProfile(username);
+    profileCache.refresh(username);
   }
 
   async function removeFingerprint(username, uuid) {
     const profile = datastore.readProfile(username) || {};
     datastore.writeProfile(username, removeFingerprintEntry(profile, uuid));
-    configService.reloadUserProfile(username);
+    profileCache.refresh(username);
   }
 
   return { addFingerprint, removeFingerprint };

@@ -36,8 +36,13 @@
 // answering — false, and no amount of retrying could clear it.
 
 import path from 'path';
-import os from 'node:os';
-import { promises as fs } from 'fs';
+import { DocumentRendererAdapter, ReceiptRendererAdapter } from '#adapters/school/documents/DocumentRendererAdapter.mjs';
+import { RetainedReceiptPrinter } from '#adapters/school/documents/RetainedReceiptPrinter.mjs';
+import { ReceiptPngArtifactRenderer } from '#adapters/school/documents/ReceiptPngArtifactRenderer.mjs';
+import { UnavailableSchoolMediaDispatcher } from '#adapters/school/UnavailableSchoolMediaDispatcher.mjs';
+import { SchoolServiceBankReader } from '#adapters/school/SchoolServiceBankReader.mjs';
+import { SchoolTeacherConfigSource } from '#adapters/school/SchoolTeacherConfigSource.mjs';
+import { HouseholdSchoolRoster } from '#adapters/school/HouseholdSchoolRoster.mjs';
 import { YamlCurriculumDatastore } from '#adapters/persistence/yaml/YamlCurriculumDatastore.mjs';
 import { YamlFitnessCourseProjectionStore } from '#adapters/persistence/yaml/YamlFitnessCourseProjectionStore.mjs';
 import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSessionDatastore.mjs';
@@ -62,6 +67,7 @@ import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { PlanProjection } from '#apps/school/PlanProjection.mjs';
 import { FitnessCourseCurriculumCatalog } from '#apps/school/FitnessCourseCurriculumCatalog.mjs';
 import { FitnessSchoolAssessmentBridge } from '#apps/school/FitnessSchoolAssessmentBridge.mjs';
+import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SentenceLadderProgramLauncher } from '#apps/school/SentenceLadderProgramLauncher.mjs';
@@ -69,10 +75,13 @@ import { LanguageReelsProgramLauncher } from '#apps/school/LanguageReelsProgramL
 import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.mjs';
 import { RubiksCubeProgramLauncher } from '#apps/school/RubiksCubeProgramLauncher.mjs';
 import { RUBIKS_CUBE_COURSE_ID } from '#apps/school/rubiksCube/courseCatalog.mjs';
+import { createSchoolProgramEnrollmentValidators } from '#apps/school/SchoolProgramEnrollmentValidators.mjs';
+import { SchoolSurfaceValidatorCatalog } from '#apps/school/SchoolSurfaceValidatorCatalog.mjs';
+import { createSchoolSessionId } from '#apps/school/SchoolSessionIdentityPolicy.mjs';
+import { PreviewSchoolSessionStore, PreviewSchoolTokenRegistry } from '#apps/school/PreviewSchoolStores.mjs';
+import { SyllabusManagementService } from '#apps/school/SyllabusManagementService.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
 import { StoryTimeProgramLauncher } from '#apps/school/StoryTimeProgramLauncher.mjs';
-import { transcribeEscPosItems } from '#system/utils/escposTranscript.mjs';
-import { codesFrom as receiptCodesFrom } from '#rendering/school/documents/DocumentReceiptRasterRenderer.mjs';
 import { PianoCourseProgramLauncher } from '#apps/school/PianoCourseProgramLauncher.mjs';
 import { PianoLessonCeremonyBridge } from '#apps/school/PianoLessonCeremonyBridge.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
@@ -115,14 +124,14 @@ import { ReplaceLostAnswerSheet } from '#apps/school/usecases/ReplaceLostAnswerS
 import { CreateLostAnswerSheetTicket } from '#apps/school/usecases/CreateLostAnswerSheetTicket.mjs';
 import { EnrollLearner } from '#apps/school/usecases/EnrollLearner.mjs';
 import { UnenrollLearner } from '#apps/school/usecases/UnenrollLearner.mjs';
-import { validateSyllabus } from '#domains/school/curriculum/syllabus.mjs';
-import { validateFlashcardEnrollment } from '#domains/school/flashcards/index.mjs';
-import { validateStoryTimeEnrollment, STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
+import { STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
 import { validateFitnessActivityDescriptor } from '#domains/school/fitnessCourse.mjs';
-import { ValidationError } from '#domains/core/errors/index.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
-import { shortId, shortIdLower } from '#domains/core/utils/id.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
+import { SchoolLifecycleAgendaResource } from '#apps/school/services/SchoolLifecycleAgendaResource.mjs';
+import { SchoolLifecycleReadService } from '#apps/school/services/SchoolLifecycleReadService.mjs';
+import { SchoolLifecycleSyllabusService } from '#apps/school/services/SchoolLifecycleSyllabusService.mjs';
+import { VirtualSchoolDeviceConsole } from '#apps/school/services/VirtualSchoolDeviceConsole.mjs';
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
 import { createSchoolSelfServiceRouter } from '#api/v1/routers/school.selfservice.mjs';
 
@@ -203,7 +212,7 @@ function cryptoRng(crypto) {
  */
 export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
-  economyService = null, userService = null, eventBus = null,
+  economyService = null, userService = null, eventBus = null, realtime = null,
   thermalPrinterRegistry = null, playbackAdapter = null, wakeScreen = null,
   startReadingSession = null,
   languageStudyService = null,
@@ -220,6 +229,7 @@ export async function createSchoolLifecycle({
   fitnessPlayableService = null,
   fitnessSchoolCourseService = null,
   learningEvidenceRepository = null,
+  learnerDirectory = null,
   // `SchoolGradingHookAdapter` bound to `piano_lesson_hook`; null with no HA.
   pianoLessonHook = null,
   flashcardStudyService = null,
@@ -236,6 +246,8 @@ export async function createSchoolLifecycle({
   declaredEntryActions = undefined,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
+  const schoolRealtime = realtime ?? (eventBus ? new EventBusSchoolRealtimeAdapter({ eventBus }) : null);
+  const realtimeSubscriptionsAvailable = realtime != null || typeof eventBus?.subscribe === 'function';
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
   const lifecycleCfg = cfg.lifecycle || {};
   const dataDir = configService.getDataDir();
@@ -258,16 +270,24 @@ export async function createSchoolLifecycle({
 
   // --- rendering (the one dependency the application layer cannot import) ----
   let documentRenderer = null;
+  let printDocumentRendering = null;
   let receiptRenderer = null;
+  let schoolAssetResolver = null;
   try {
     const { createDocumentPdfRenderer } = await import('#rendering/school/documents/DocumentPdfRenderer.mjs');
-    const { createSchoolAssetResolver } = await import('#rendering/school/documents/assetResolver.mjs');
+    const { createSchoolAssetResolver } = await import('#adapters/school/documents/FilesystemSchoolAssetResolver.mjs');
+    const { createPrintDocumentRendering } = await import('#rendering/school/documents/PrintDocumentRendering.mjs');
+    const resolveAsset = createSchoolAssetResolver({
+      rootDir: cfg.assets?.dir || path.join(dataDir, 'content', 'assets'),
+      logger,
+    });
+    schoolAssetResolver = resolveAsset;
+    printDocumentRendering = createPrintDocumentRendering({ resolveAsset });
     // Already the `IDocumentRenderer` shape: `render(document, opts)` →
     // `{pdf, pageCount, formMap}`. No adaptation needed, and none invented.
-    documentRenderer = createDocumentPdfRenderer({
-      resolveAsset: createSchoolAssetResolver({
-        rootDir: cfg.assets?.dir || path.join(dataDir, 'content', 'assets'),
-        logger,
+    documentRenderer = new DocumentRendererAdapter({
+      renderer: createDocumentPdfRenderer({
+        resolveAsset,
       }),
     });
   } catch (err) {
@@ -322,7 +342,10 @@ export async function createSchoolLifecycle({
   let receiptPngRenderer = null;
   try {
     const { createDocumentReceiptRenderer } = await import('#rendering/school/documents/DocumentReceiptRenderer.mjs');
-    receiptPngRenderer = createDocumentReceiptRenderer({ scanCodes: 'qr' });
+    receiptPngRenderer = createDocumentReceiptRenderer({
+      scanCodes: 'qr',
+      resolveSubjectIcon: schoolAssetResolver,
+    });
   } catch (err) {
     logger.warn?.('school.lifecycle.no-receipt-png-renderer', { error: err.message });
   }
@@ -336,12 +359,15 @@ export async function createSchoolLifecycle({
   // rather than throwing (`ReceiptPrinting`'s own contract).
   let receiptPrintRenderer = receiptRenderer;
   if (receiptPngRenderer) {
-    const { createDocumentReceiptRasterRenderer } = await import('#rendering/school/documents/DocumentReceiptRasterRenderer.mjs');
+    const { createDocumentReceiptRasterRenderer } = await import('#adapters/school/documents/DocumentReceiptRasterAdapter.mjs');
     receiptPrintRenderer = createDocumentReceiptRasterRenderer({
       canvasRenderer: receiptPngRenderer,
       escPosRenderer: receiptRenderer,
       logger,
     });
+  }
+  if (receiptPrintRenderer) {
+    receiptPrintRenderer = new ReceiptRendererAdapter({ renderer: receiptPrintRenderer });
   }
 
   const devices = {};
@@ -621,21 +647,7 @@ export async function createSchoolLifecycle({
   // isn't one today, but the shape is the same for-free consistency) would
   // still be seen. Absent `donowSurfaces` -> empty Map, matching
   // `CurriculumAccess`'s own default -> no unit can carry a `launch:` block.
-  const surfaceValidators = () => {
-    const map = new Map();
-    if (donowSurfaces) {
-      for (const [id, adapter] of donowSurfaces) {
-        map.set(id, (raw) => {
-          try {
-            return adapter.validateAction(raw) || [];
-          } catch (err) {
-            return [err?.message || String(err)];
-          }
-        });
-      }
-    }
-    return map;
-  };
+  const surfaceValidators = new SchoolSurfaceValidatorCatalog({ surfaces: donowSurfaces });
 
   // --- collaborators ---------------------------------------------------------
   const draw = rng ?? cryptoRng(globalThis.crypto);
@@ -646,30 +658,29 @@ export async function createSchoolLifecycle({
   // across the tree (`ses_hmSsHlJR` vs `ws-ses-hmsshljr`) and made that fold
   // lossy. A lowercase alphabet makes it the identity, and 10 chars keeps the
   // entropy above what the mixed-case 8 gave. Existing ids stay valid.
-  const newSessionId = () => `ses_${shortIdLower(10)}`;
+  const newSessionId = () => createSchoolSessionId();
+  const bankReader = new SchoolServiceBankReader({ schoolService });
   const curriculum = new CurriculumAccess({
     catalog: stores.catalog,
     // Read per call, never captured: banks warm asynchronously after boot, and
     // a set snapshotted at construction would be empty for the first minute.
-    bankIds: () => (schoolService?.listBanks?.() || []).map((b) => b.id).filter(Boolean),
+    bankIds: bankReader.listIds,
     // Same read-per-call rule: a launcher registered after boot (or one that
     // never showed up) must be reflected immediately, not frozen at construction.
     programIds: () => [...launchers.keys()],
-    surfaceValidators,
+    surfaceValidators: surfaceValidators.read,
     activityValidators: () => new Map([['fitness', validateFitnessActivityDescriptor]]),
     logger,
   });
-  const bankReader = {
-    getBank: (id) => { try { return schoolService.getBank(id); } catch { return null; } },
-  };
   const receipts = new ReceiptPrinting({ renderer: receiptPrintRenderer, printer: receiptPrinter, logger });
   // Who may act for a child. Read through `userService` per call, never
   // snapshotted: a member added after boot is a member. With no user service at
   // all, nobody is a grown-up and every parent-only write is refused — the
   // console still teaches and prints, it just cannot be signed off, which is the
   // right way round for a household with an unreadable roster.
+  const schoolRoster = new HouseholdSchoolRoster({ userService });
   const grownUps = new GrownUpGate({
-    roster: () => userService?.getHouseholdRoster?.() ?? [],
+    roster: schoolRoster.list,
     clock,
     logger,
   });
@@ -677,7 +688,12 @@ export async function createSchoolLifecycle({
   // The console write predicate (teacher-console spec §1): role + pin over
   // the same live-roster adult rule, via the one shared factory so the
   // config accessors cannot drift between composition sites.
-  const teacherGate = makeTeacherGate({ configService, userService, clock, logger });
+  const teacherConfig = new SchoolTeacherConfigSource({ configService });
+  const teacherGate = makeTeacherGate({
+    loadTeachers: teacherConfig.teachers,
+    loadTeacherPin: teacherConfig.pin,
+    userService, clock, logger,
+  });
   const { YamlCurriculumExceptionStore } = await import('#adapters/persistence/yaml/YamlCurriculumExceptionStore.mjs');
   const { ManageCurriculumException } = await import('#apps/school/usecases/ManageCurriculumException.mjs');
   const curriculumExceptionStore = new YamlCurriculumExceptionStore({ configService });
@@ -689,7 +705,7 @@ export async function createSchoolLifecycle({
   const { ManageProgramDayBypass } = await import('#apps/school/usecases/ManageProgramDayBypass.mjs');
   const manageProgramDayBypass = new ManageProgramDayBypass({
     store: programDayBypassStore, assignments: stores.assignments, teacherGate,
-    eventBus, timezone, clock, logger,
+    realtime: schoolRealtime, timezone, clock, logger,
   });
   // Mid-period pass-criteria overrides (W3-2): read at grade time, one
   // consumption point (CloseSessionOutcome).
@@ -769,11 +785,7 @@ export async function createSchoolLifecycle({
   // scannable ticket. `appendEvent` is a no-op because `ensureSession` only needs to
   // REDUCE a session's events to decide what is next; it never has to persist
   // one for a preview to be accurate.
-  const previewSessions = {
-    listForLearner: (id) => stores.sessions.listForLearner(id),
-    readEvents: (sid) => stores.sessions.readEvents(sid),
-    appendEvent: async () => {},
-  };
+  const previewSessions = new PreviewSchoolSessionStore({ sessions: stores.sessions });
   const previewPlanProjection = new PlanProjection({
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
@@ -789,10 +801,7 @@ export async function createSchoolLifecycle({
     // Write path stubbed, READ path real: a preview must never persist a
     // ticket, but it must see the codes that are already live, or it would
     // show a parent a code that belongs to a different child's lesson.
-    tokens: {
-      put: async () => {},
-      liveAccessCodes: () => stores.tokens.liveAccessCodes(),
-    },
+    tokens: new PreviewSchoolTokenRegistry({ tokens: stores.tokens }),
     launchers, languageReelService, timezone, clock, rng: draw, newSessionId,
     subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours,
     // Same real, read-only review queue as `buildAgenda` — a preview showing
@@ -860,66 +869,19 @@ export async function createSchoolLifecycle({
   const issuedArtifacts = new YamlIssuedArtifactStore({ configService });
   // Capture the same canvas the thermal raster path draws. The application
   // receives a small port returning immutable PNG bytes, never a renderer.
-  const receiptCapture = receiptPngRenderer ? new CaptureResultReceiptArtifact({
+  const receiptArtifactRenderer = receiptPngRenderer
+    ? new ReceiptPngArtifactRenderer({ renderer: receiptPngRenderer })
+    : null;
+  const receiptCapture = receiptArtifactRenderer ? new CaptureResultReceiptArtifact({
     issuedArtifacts,
-    renderReceipt: async (document) => {
-      const rendered = await receiptPngRenderer.createCanvas(document);
-      return { bytes: rendered.canvas.toBuffer('image/png'), width: rendered.width, height: rendered.height };
-    },
+    renderReceipt: receiptArtifactRenderer.render,
     logger,
   }) : null;
-  const receiptArtifactPrinter = receiptPrinter ? {
-    /**
-     * Printing RETAINED bytes still has to say what they say.
-     *
-     * A raster job carries no text item, so the operator transcript (and the
-     * list of codes a child could scan off the paper) cannot be derived from
-     * `items` — `DocumentReceiptRasterRenderer` handles that by rendering the
-     * document a second time through the ESC/POS renderer purely to harvest
-     * its words. This path bypassed that renderer entirely, so every result
-     * receipt printed from a captured artifact recorded an EMPTY transcript:
-     * the paper was right, the record of it was blank, and the e2e assertion
-     * "the result receipt is a thing a child can read" had nothing to read.
-     *
-     * `sourceDocument` is the same document that was rasterized, so harvesting
-     * from it describes exactly the bytes being printed. It is optional and
-     * best-effort: a document the text renderer refuses must not sink a print
-     * whose bytes are already correct.
-     */
-    async print({ bytes, representation, jobName, sourceDocument = null }) {
-      if (representation?.mediaType !== 'image/png') return false;
-      let transcript;
-      let codes;
-      if (sourceDocument && receiptRenderer) {
-        try {
-          const textJob = await receiptRenderer.render(sourceDocument, {});
-          transcript = transcribeEscPosItems(textJob.items);
-          codes = receiptCodesFrom(textJob);
-        } catch (err) {
-          logger.warn?.('school.receipt.artifact-transcript-unavailable', {
-            jobName, error: err.message,
-          });
-        }
-      }
-      const tempPath = path.join(os.tmpdir(), `school-retained-receipt-${shortId(16)}.png`);
-      await fs.writeFile(tempPath, bytes, { flag: 'wx' });
-      try {
-        // Callers of this port (`CloseSessionOutcome`, `ReprintResultReceiptArtifact`)
-        // turn a `true` here into a permanent event, so only the adapter's
-        // CONFIRMED tier may become one. `dispatched` alone is the claim that
-        // let a receipt be recorded as issued without paper.
-        const outcome = await receiptPrinter.print({
-          items: [{ type: 'image', path: tempPath, width: representation.width ?? 384,
-            height: representation.height ?? 1, align: 'left', threshold: 128 }],
-          footer: { paddingLines: 3, autoCut: true }, jobName,
-          ...(typeof transcript === 'string' ? { transcript } : {}),
-          ...(codes ? { codes } : {}),
-        });
-        return outcome === true || outcome?.verified === true;
-      } finally { await fs.unlink(tempPath).catch(() => {}); }
-    },
-  } : null;
+  const receiptArtifactPrinter = receiptPrinter
+    ? new RetainedReceiptPrinter({ printer: receiptPrinter, textRenderer: receiptRenderer, logger })
+    : null;
   const renderPrintDocument = new RenderPrintDocument({
+    rendering: printDocumentRendering,
     repository: printDocuments,
     banks: createYamlBankReader({ dataDir }),
     allocationStore,
@@ -1016,22 +978,19 @@ export async function createSchoolLifecycle({
     // 2026-08-23-student-completion-state-machine) for `schoolCompletionBridge`
     // below — optional, so an install with no eventBus settles exactly as
     // it did before that feature existed.
-    eventBus,
+    realtime: schoolRealtime,
     clock, rng: draw, logger,
   });
-  const closeLanguageDay = languageStudyService && eventBus
+  const closeLanguageDay = languageStudyService && schoolRealtime
     ? new CloseLanguageDay({
       assignments: stores.assignments, curriculum, sessions: stores.sessions,
-      closeSessionOutcome, eventBus, clock, logger,
+      closeSessionOutcome, realtime: schoolRealtime, clock, logger,
     })
     : null;
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions,
     curriculumExceptions: curriculumExceptionStore, clock, logger });
   // One name lookup for everything that prints a learner's name — the card
   // scan AND the agenda routes, so tape and preview show the same header.
-  const displayRoster = {
-    displayName: (id) => (userService?.getHouseholdRoster?.() || []).find((u) => u.id === id)?.name ?? null,
-  };
   const resolvePersonalCard = new ResolvePersonalCard({
     buildAgenda, receipts,
     // The SAME capture port the result-receipt path uses — one canvas renderer,
@@ -1039,7 +998,7 @@ export async function createSchoolLifecycle({
     // so every printed agenda was rendered and thrown away while result
     // receipts had been archived all along.
     captureAgenda: receiptCapture,
-    roster: displayRoster,
+    roster: schoolRoster,
     // Slice G: the SAME `school.yml` top level `agenda:` block a household
     // edits alongside `printing:`/`selfService:` — `cooldownMinutes: 0`
     // disables the cooldown outright; unset falls through to
@@ -1056,13 +1015,7 @@ export async function createSchoolLifecycle({
   // The media leg is optional (a household with no playback target still prints
   // worksheets), but the scan resolver is not — so a no-op stand-in keeps the
   // single entry point whole rather than making every caller check.
-  const mediaOrNothing = dispatchMedia ?? {
-    selectableTargets: () => [],
-    execute: async ({ sessionId }) => ({
-      status: 'unavailable', sessionId, dispatchId: null, target: null, contentId: null,
-      durationSec: null, message: 'There is nowhere to play this right now. Tell a grown-up.', document: null,
-    }),
-  };
+  const mediaOrNothing = dispatchMedia ?? new UnavailableSchoolMediaDispatcher();
   const replaceLostAnswerSheet = new ReplaceLostAnswerSheet({
     allocationStore, printDocuments, renderPrintDocument, printer: laserPrinter,
     teacherGate, clock, logger,
@@ -1098,14 +1051,14 @@ export async function createSchoolLifecycle({
   // resolvable via a fresh scan), rather than this file throwing.
   let donowSchoolBridge = null;
   let fitnessSchoolAssessmentBridge = null;
-  if (eventBus && typeof eventBus.subscribe === 'function') {
+  if (realtimeSubscriptionsAvailable && schoolRealtime?.onApprovedLaunchDispatched) {
     donowSchoolBridge = new DoNowSchoolBridge({
-      eventBus, sessions: stores.sessions, closeSessionOutcome, clock, logger,
+      realtime: schoolRealtime, sessions: stores.sessions, closeSessionOutcome, clock, logger,
     });
     donowSchoolBridge.start();
     if (fitnessSchoolCourseService) {
       fitnessSchoolAssessmentBridge = new FitnessSchoolAssessmentBridge({
-        eventBus, sessions: stores.sessions, curriculum, closeSessionOutcome,
+        realtime: schoolRealtime, sessions: stores.sessions, curriculum, closeSessionOutcome,
         evidenceRepository: learningEvidenceRepository, clock, logger,
       });
       fitnessSchoolAssessmentBridge.start();
@@ -1121,9 +1074,9 @@ export async function createSchoolLifecycle({
   // `getLearnerDayCompletion`; only the push notification is unavailable.
   let schoolCompletionBridge = null;
   let pianoLessonCeremonyBridge = null;
-  if (eventBus && typeof eventBus.subscribe === 'function') {
+  if (realtimeSubscriptionsAvailable && schoolRealtime?.onSessionOutcomeRecorded) {
     schoolCompletionBridge = new SchoolCompletionBridge({
-      eventBus, getLearnerDayCompletion, clock, logger,
+      realtime: schoolRealtime, getLearnerDayCompletion, clock, logger,
     });
     schoolCompletionBridge.start();
     // The daily piano requirement's own announcement — distinct from the
@@ -1133,7 +1086,7 @@ export async function createSchoolLifecycle({
     // banner).
     if (pianoCourseLauncher) {
       pianoLessonCeremonyBridge = new PianoLessonCeremonyBridge({
-        eventBus,
+        realtime: schoolRealtime,
         assignments: stores.assignments,
         launcher: pianoCourseLauncher,
         evidenceRepository: learningEvidenceRepository,
@@ -1159,63 +1112,19 @@ export async function createSchoolLifecycle({
   });
   // Stale-sweep roster (admin advocacy A5): the same students: list the rest
   // of the lifecycle serves — enough identity for listStale, no directory dep.
-  const staleLearnerDirectory = {
-    listLearners: async () => (cfg.students ?? []).map((id) => ({
-      id, name: userService?.getProfile?.(id)?.name ?? id,
-    })),
-  };
   const markSessionAbandoned = new MarkSessionAbandoned({
-    sessions: stores.sessions, teacherGate, learnerDirectory: staleLearnerDirectory, clock, logger,
+    sessions: stores.sessions, teacherGate, learnerDirectory, clock, logger,
   });
   const setAssignments = new SetAssignments({
     assignments: stores.assignments, grownUps, teacherGate, curriculum,
-    programValidators: new Map([
-      ...(languageStudyService ? [['sentence-ladder', (raw) => languageStudyService.validateEnrollment(raw)]] : []),
-      ...(languageReelService ? [['language-reels', (raw) => {
-        const valid = raw?.corpusId === 'korean-language-reels' && raw?.daily?.selection === 'random_category';
-        return valid ? { errors: [], enrollment: { programId: 'language-reels', corpusId: raw.corpusId, daily: { selection: 'random_category' } } }
-          : { errors: ['language-reels requires corpusId korean-language-reels and daily.selection random_category'] };
-      }]] : []),
-      ...(flashcardStudyService ? [['flashcards', async (raw) => {
-        const result = validateFlashcardEnrollment(raw);
-        if (result.errors.length) return result;
-        try {
-          await flashcardStudyService.getDeck(result.enrollment.deckId);
-          return result;
-        } catch {
-          return { errors: [`flashcard deck '${result.enrollment.deckId}' was not found`] };
-        }
-      }]] : []),
-      ...(pianoCourseLauncher ? [['piano-course', (raw) => {
-        // The course id is a Plex compound id (`plex:675689`); there is no
-        // School catalog to check it against, so the shape is what is
-        // validated. A course that does not exist surfaces as the launcher's
-        // own `error: true` (agenda reads `program_unavailable`) rather than
-        // being silently accepted as an empty obligation.
-        const courseId = raw?.courseId ?? raw?.corpusId;
-        if (typeof courseId !== 'string' || !/^plex:\d+$/.test(courseId)) {
-          return { errors: ['piano-course requires a courseId of the form plex:<ratingKey>'] };
-        }
-        const subject = raw?.subject ?? 'arts';
-        if (typeof subject !== 'string' || !subject) return { errors: ['piano-course subject must be a string'] };
-        return { errors: [], enrollment: {
-          programId: 'piano-course', corpusId: courseId, courseId, subject,
-          ...(raw?.title ? { title: String(raw.title) } : {}),
-        } };
-      }]] : []),
-      // Unconditional, matching the launcher registration: story-time has no
-      // service behind it that could be missing.
-      [STORY_TIME_PROGRAM_ID, (raw) => validateStoryTimeEnrollment(raw)],
-      // Same RUBIKS_CUBE_COURSE_ID gate as the launcher registration above:
-      // no course.yml authored means no valid courseId ever exists, so don't
-      // offer the validator at all rather than have it reject every attempt.
-      ...(rubiksCubeService && RUBIKS_CUBE_COURSE_ID ? [['rubiks-cube', (raw) => {
-        const courseId = raw?.courseId ?? raw?.corpusId;
-        return courseId === RUBIKS_CUBE_COURSE_ID
-          ? { errors: [], enrollment: { programId: 'rubiks-cube', corpusId: courseId, courseId } }
-          : { errors: [`rubiks-cube requires courseId ${RUBIKS_CUBE_COURSE_ID}`] };
-      }]] : []),
-    ]),
+    programValidators: createSchoolProgramEnrollmentValidators({
+      languageStudyService,
+      languageReelService,
+      flashcardStudyService,
+      pianoCourseLauncher,
+      rubiksCubeService,
+      rubiksCubeCourseId: RUBIKS_CUBE_COURSE_ID,
+    }),
     roster: () => userService?.getHouseholdRoster?.() ?? [],
     clock, logger,
   });
@@ -1225,27 +1134,12 @@ export async function createSchoolLifecycle({
   const timingAnchorStore = new YamlTimingAnchorStore({ configService, logger });
   // The store is dumb; validation and the teacher gate belong to the write,
   // not to persistence — the same split SetAssignments/YamlAssignmentStore use.
-  const syllabi = {
-    get: (id) => syllabusStore.get(id),
-    list: () => syllabusStore.list(),
-    async save({ raw, editedBy, pin }) {
-      teacherGate.assert({ userId: editedBy, pin, action: 'syllabus.put', context: { syllabusId: raw?.syllabusId } });
-      const works = await curriculum.listWorks();
-      const courseIds = new Set(works.map((w) => w.work).filter(Boolean));
-      const profileIds = new Set(Object.keys(works.find((w) => w.work === raw?.courseId)?.profiles ?? {}));
-      const { errors, syllabus } = validateSyllabus({ schema: 'school.syllabus/v1', ...raw }, { courseIds, profileIds });
-      if (errors.length) {
-        const err = new ValidationError(errors.join('; '));
-        err.status = 400;
-        throw err;
-      }
-      return syllabusStore.put({ ...syllabus, editedBy, updatedAt: clock().toISOString() });
-    },
-    archiveGuarded({ syllabusId, archivedBy, pin }) {
-      teacherGate.assert({ userId: archivedBy, pin, action: 'syllabus.archive', context: { syllabusId } });
-      return syllabusStore.archive(syllabusId, { archivedBy, at: clock().toISOString() });
-    },
-  };
+  const syllabi = new SyllabusManagementService({
+    store: syllabusStore,
+    teacherGate,
+    curriculum,
+    clock,
+  });
 
   const enrollLearner = new EnrollLearner({
     syllabi: syllabusStore, assignments: stores.assignments, curriculum,
@@ -1279,7 +1173,7 @@ export async function createSchoolLifecycle({
     curriculumExceptions: curriculumExceptionStore,
     issueDocument,
     companions,
-    roster: displayRoster,
+    roster: schoolRoster,
     selfService: cfg.selfService,
     timezone,
     clock,
@@ -1341,17 +1235,23 @@ export async function createSchoolLifecycle({
     getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode,
   };
 
-  const router = createSchoolLifecycleRouter({
-    ...useCases,
-    receiptPngRenderer,
-    assignments: stores.assignments,
-    reviewQueue: stores.reviewQueue,
-    curriculum,
+  const lifecycleAgendaResource = new SchoolLifecycleAgendaResource({
+    buildAgenda, previewAgenda, pngRenderer: receiptPngRenderer, roster: schoolRoster,
+  });
+  const lifecycleReadService = new SchoolLifecycleReadService({
     sessions: stores.sessions,
     listLearnerSessions,
     listPrintableWorksheetSessions,
-    roster: displayRoster,
-    syllabi,
+    reviewQueue: stores.reviewQueue,
+    curriculum,
+    assignments: stores.assignments,
+  });
+  const lifecycleSyllabusService = new SchoolLifecycleSyllabusService({ syllabi });
+  const router = createSchoolLifecycleRouter({
+    ...useCases,
+    lifecycleAgendaResource,
+    lifecycleReadService,
+    lifecycleSyllabusService,
     logger,
   });
 
@@ -1389,8 +1289,10 @@ export async function createSchoolLifecycle({
   // route for a device it was not handed.
   const devicesRouter = useVirtual
     ? createSchoolVirtualDevicesRouter({
-      ...devices,
-      getFormMap: (formId) => stores.formMaps.get(formId),
+      consoleOperations: new VirtualSchoolDeviceConsole({
+        ...devices,
+        getFormMap: (formId) => stores.formMaps.get(formId),
+      }),
       logger,
     })
     : null;
@@ -1449,10 +1351,7 @@ export async function createSchoolLifecycle({
       document: documentRenderer, receipt: receiptRenderer,
       receiptPng: receiptPngRenderer, receiptPrint: receiptPrintRenderer,
     },
-    renderReceiptArtifact: receiptPngRenderer ? async (document) => {
-      const rendered = await receiptPngRenderer.createCanvas(document);
-      return { bytes: rendered.canvas.toBuffer('image/png'), width: rendered.width, height: rendered.height };
-    } : null,
+    renderReceiptArtifact: receiptArtifactRenderer?.render ?? null,
     // Null when no eventBus was wired (see above) — `app.mjs` calls
     // `schoolLifecycle.donowSchoolBridge?.stop()` on shutdown, same
     // conditional-on-existence pattern as its other graceful-shutdown hooks.

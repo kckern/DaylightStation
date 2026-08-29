@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createFitnessRouter } from '../../../../backend/src/4_api/v1/routers/fitness.mjs';
+import { FitnessHardwareService } from '#apps/fitness/services/FitnessHardwareService.mjs';
 
 function mountApp(equipmentFanController) {
   const configService = {
@@ -11,8 +12,7 @@ function mountApp(equipmentFanController) {
   };
   const router = createFitnessRouter({
     sessionService: { getStoragePaths: vi.fn() },
-    zoneLedController: null,
-    equipmentFanController,
+    fitnessHardwareService: new FitnessHardwareService({ equipmentFanController }),
     userService: { hydrateFitnessConfig: (d) => d },
     configService,
     contentRegistry: null,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolLifecycleRouter } from './schoolLifecycle.mjs';
+import { createSchoolLifecycleTestRouter as createSchoolLifecycleRouter } from '../../../../../tests/_lib/school/schoolLifecycleRouterTestSupport.mjs';
 
 function appWith(previewAgenda) {
   const app = express();

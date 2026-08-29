@@ -336,8 +336,17 @@ export class FakeDocumentRenderer extends IDocumentRenderer {
   async render(document, opts = {}) {
     this.calls.push({ document, opts });
     const body = JSON.stringify({ id: document.id, seed: document.seed, variant: opts.variant ?? document.variant, tokens: opts.tokens ?? {} });
+    const bytes = Buffer.from(`%PDF-1.4\n${body}\n/Type /Page\n/Type /Page\n%%EOF`);
+    const makeArtifact = (payload) => ({
+      printWith: (printer, options) => printer.printPdf(payload, options),
+      retainWith: async (store, metadata) => {
+        if (!store) return makeArtifact(payload);
+        const retained = await store.put({ ...metadata, bytes: payload });
+        return makeArtifact(retained.bytes);
+      },
+    });
     return {
-      pdf: Buffer.from(`%PDF-1.4\n${body}\n/Type /Page\n/Type /Page\n%%EOF`),
+      artifact: makeArtifact(bytes),
       pageCount: this.pageCount,
       formMap: this.formMapFor ? this.formMapFor(document, opts) : null,
     };
@@ -372,7 +381,8 @@ export class FakeReceiptRenderer extends IReceiptRenderer {
     const withLabels = items.flatMap((item) => (item.type === 'barcode'
       ? [{ type: 'text', content: item.label }, { type: 'barcode', content: item.content }]
       : [item]));
-    return { items: withLabels, footer: { paddingLines: 3, autoCut: true } };
+    const job = { items: withLabels, footer: { paddingLines: 3, autoCut: true } };
+    return { printWith: (printer) => printer.print(job) };
   }
 }
 

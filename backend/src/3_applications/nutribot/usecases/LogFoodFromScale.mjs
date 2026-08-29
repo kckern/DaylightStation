@@ -9,10 +9,10 @@
 // message. If it's already touched/gone/non-pending, we no-op (the bridge's committed
 // flag owns that case) — posting a fresh prompt would duplicate.
 
-import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { computeNet } from '#domains/nutrition/index.mjs';
 import { ApplicationError } from '#apps/common/errors/index.mjs';
 import { buildDensityKeyboard, densityForLevel, densityPromptText } from '../lib/scaleNutribotConfig.mjs';
+import { createNutriLog, serializeFoodItem } from '../nutriLogRecords.mjs';
 
 /**
  * Resolve a scanned container id against the table and apply its tare.
@@ -191,7 +191,7 @@ export class LogFoodFromScale {
     if (existingLogUuid && messageId) {
       const existing = await this.#foodLogStore.findByUuid(existingLogUuid, userId);
       if (this.#isUntouched(existing)) {
-        const item0 = typeof existing.items[0].toJSON === 'function' ? existing.items[0].toJSON() : { ...existing.items[0] };
+        const item0 = serializeFoodItem(existing.items[0]);
         const updated = existing.with({
           items: [{ ...item0, grams: net }],
           metadata: { ...existing.metadata, grossGrams: gross },
@@ -213,7 +213,7 @@ export class LogFoodFromScale {
     }
 
     const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
-    const nutriLog = NutriLog.create({
+    const nutriLog = createNutriLog({
       userId,
       conversationId,
       // NET, not gross: SelectScaleDensity multiplies this by kcal_per_g.

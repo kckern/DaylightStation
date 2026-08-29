@@ -7,7 +7,8 @@
  * is no longer a single shared instance.
  *
  * The factory:
- *   - Holds the absolute `dataRoot` / `mediaRoot` and a `personalContextLoader`
+ *   - Receives an already-bound semantic archive-addressing capability and a
+ *     `personalContextLoader`
  *   - Exposes `forUser(userId)` returning a HealthArchiveScope
  *   - Caches per-userId for `cacheTtlMs` (default 1h) so playbook edits
  *     eventually take effect without process restart
@@ -32,8 +33,7 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export class HealthArchiveScopeFactory {
-  #dataRoot;
-  #mediaRoot;
+  #archiveAddressPolicy;
   #personalContextLoader;
   #logger;
   #cache;
@@ -42,8 +42,8 @@ export class HealthArchiveScopeFactory {
 
   /**
    * @param {object} opts
-   * @param {string} opts.dataRoot Absolute path to the data root
-   * @param {string} opts.mediaRoot Absolute path to the media root
+   * @param {object} opts.archiveAddressPolicy Bound semantic archive access
+   *   policy. Composition and its adapter own concrete roots and layout.
    * @param {object} [opts.personalContextLoader] Loader exposing
    *   `loadPlaybook(userId)`. When absent, every user gets a default-only
    *   scope — used in tests and as a graceful-degradation path in prod.
@@ -53,21 +53,16 @@ export class HealthArchiveScopeFactory {
    *   `Date.now`.
    */
   constructor({
-    dataRoot,
-    mediaRoot,
+    archiveAddressPolicy,
     personalContextLoader = null,
     logger = console,
     cacheTtlMs = DEFAULT_CACHE_TTL_MS,
     now = () => Date.now(),
   } = {}) {
-    if (!dataRoot || typeof dataRoot !== 'string') {
-      throw new ValidationError('HealthArchiveScopeFactory: dataRoot is required', { code: 'MISSING_DATA_ROOT', field: 'dataRoot', value: dataRoot });
+    if (!archiveAddressPolicy?.isReadableLocation) {
+      throw new ValidationError('HealthArchiveScopeFactory: archiveAddressPolicy is required', { code: 'MISSING_ARCHIVE_ADDRESS_POLICY', field: 'archiveAddressPolicy', value: archiveAddressPolicy });
     }
-    if (!mediaRoot || typeof mediaRoot !== 'string') {
-      throw new ValidationError('HealthArchiveScopeFactory: mediaRoot is required', { code: 'MISSING_MEDIA_ROOT', field: 'mediaRoot', value: mediaRoot });
-    }
-    this.#dataRoot = dataRoot;
-    this.#mediaRoot = mediaRoot;
+    this.#archiveAddressPolicy = archiveAddressPolicy;
     this.#personalContextLoader = personalContextLoader;
     this.#logger = logger;
     this.#cacheTtlMs = cacheTtlMs;
@@ -108,8 +103,7 @@ export class HealthArchiveScopeFactory {
       });
     }
     const scope = new HealthArchiveScope({
-      dataRoot: this.#dataRoot,
-      mediaRoot: this.#mediaRoot,
+      archiveAddressPolicy: this.#archiveAddressPolicy,
       workoutSources: sources,
       additionalPrivacyExclusions: additions,
     });

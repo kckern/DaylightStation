@@ -4,9 +4,13 @@
 import { YamlTriggerConfigRepository } from '#adapters/trigger/YamlTriggerConfigRepository.mjs';
 import { YamlObservedStateStore } from '#adapters/persistence/yaml/YamlObservedStateStore.mjs';
 import { HttpEndpointGateway } from '#adapters/trigger/HttpEndpointGateway.mjs';
+import { TriggerActuationGateway } from '#adapters/trigger/TriggerActuationGateway.mjs';
 import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
+import { dispatchSideEffect, TriggerSideEffectExecutor, UnknownSideEffectError } from '#apps/trigger/sideEffectHandlers.mjs';
 import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
 import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '../bootstrap.mjs';
+import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Create Trigger application service + API router
@@ -71,29 +75,39 @@ export function createTriggerApiRouter(config) {
   }
 
   const endpointGateway = new HttpEndpointGateway({ endpoints: triggerConfig.endpoints || {}, logger });
+  const actuationGateway = new TriggerActuationGateway({
+    deviceService: deviceServices.deviceService,
+    homeGateway: haGateway,
+    commandResolver,
+    screenBroadcast,
+  });
 
   const triggerDispatchService = new TriggerDispatchService({
     config: triggerConfig,
     contentIdResolver,
     wakeAndLoadService,
-    haGateway,
-    deviceService: deviceServices.deviceService,
+    actuationGateway,
     tagWriter: triggerConfigRepository,
     onUnknownTag,
     contentDispatcher,
     contentInterceptors,
-    screenBroadcast,
-    commandResolver,
     endpointGateway,
     learnerActions,
     broadcast,
+    createDispatchId: randomUUID,
+    scheduler: new NodeApplicationScheduler(),
     logger,
   });
 
   const router = createTriggerRouter({
     triggerDispatchService,
-    tvControlAdapter,
-    deviceService: deviceServices.deviceService,
+    sideEffectExecutor: new TriggerSideEffectExecutor({
+      dispatch: (request) => dispatchSideEffect(request, {
+        tvControlAdapter,
+        deviceService: deviceServices.deviceService,
+      }),
+    }),
+    isUnknownSideEffectError: (error) => error instanceof UnknownSideEffectError,
     logger,
   });
 

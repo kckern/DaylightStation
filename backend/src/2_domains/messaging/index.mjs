@@ -19,6 +19,4 @@ export { Conversation } from './entities/Conversation.mjs';
 export { Message } from './entities/Message.mjs';
 
 // Services
-export { NotificationService } from './services/NotificationService.mjs';
-export { ConversationService } from './services/ConversationService.mjs';
 export { UserIdentityService } from './services/UserIdentityService.mjs';

@@ -30,6 +30,7 @@ import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS, MEDIA_UNIT, MEDIA_BANK_ID, fixtureBank,
 } from '#testlib/school/lifecycleFixtures.mjs';
 import { createMediaLessonRouter } from '../../../../backend/src/4_api/v1/routers/mediaLesson.mjs';
+import { LessonPositionReporter } from '#apps/events/RealtimePublications.mjs';
 
 const SID = 'ses_1';
 const LEARNER = 'test-user';
@@ -78,7 +79,10 @@ function build({
     recordMediaCompletion: new RecordMediaCompletion({
       curriculum, sessions, clock: clock.now, logger: silentLogger,
     }),
-    eventBus: bus,
+    positionReporter: new LessonPositionReporter({
+      publish: bus?.broadcast?.bind(bus),
+      now: () => new Date(clock.iso()),
+    }),
     resolveLearner,
     logger: silentLogger,
     ...overrides,

@@ -2,7 +2,7 @@
  * MidiPresenceTracker — soft occupancy for the piano kiosk (spec §5.1
  * "piano-kiosk").
  *
- * Source: the `midi` eventBus topic the piano bridge broadcasts on
+ * Source: the MIDI activity stream supplied by the realtime gateway
  * (`session_start` / `note_on` / `session_end`). ANY payload on that topic
  * — regardless of which of those event names it carries — refreshes
  * `lastSeen`; the bridge emits continuously while anyone plays, so treating
@@ -28,19 +28,19 @@ export class MidiPresenceTracker {
 
   /**
    * @param {Object} config
-   * @param {Object} config.eventBus - `{ subscribe(topic, handler): unsubscribe }`.
+   * @param {Object} config.activitySource - `{ observeMidiActivity(handler): unsubscribe }`.
    * @param {Function} [config.clock] - `() => Date`, overridable for tests.
    * @param {number} [config.ttlMs=300000] - Freshness window (spec §5.1: 5 minutes).
    * @param {Object} [config.logger]
    */
-  constructor({ eventBus, clock = () => new Date(), ttlMs = 5 * 60_000, logger } = {}) {
-    if (!eventBus || typeof eventBus.subscribe !== 'function') {
-      throw new Error('MidiPresenceTracker requires eventBus');
+  constructor({ activitySource, clock = () => new Date(), ttlMs = 5 * 60_000, logger } = {}) {
+    if (!activitySource || typeof activitySource.observeMidiActivity !== 'function') {
+      throw new Error('MidiPresenceTracker requires activitySource');
     }
     this.#clock = clock;
     this.#ttlMs = ttlMs;
     this.#logger = logger || null;
-    this.#unsubscribe = eventBus.subscribe('midi', (payload) => this.#onMidiEvent(payload));
+    this.#unsubscribe = activitySource.observeMidiActivity((payload) => this.#onMidiEvent(payload));
   }
 
   #onMidiEvent(payload) {
@@ -57,7 +57,7 @@ export class MidiPresenceTracker {
     return { state: fresh ? 'active' : 'idle', occupantId: null };
   }
 
-  /** Unsubscribe from the eventBus. Safe to call more than once. */
+  /** Stop observing activity. Safe to call more than once. */
   stop() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;

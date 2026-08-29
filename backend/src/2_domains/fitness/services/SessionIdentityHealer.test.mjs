@@ -182,11 +182,11 @@ describe('planHeal — RLE-encoded on-disk series (decode integration)', () => {
         interval_seconds: 5,
         series: {
           // RLE: [116, 1] then null x1 -> one 116, one null
-          'parent-two:hr': JSON.stringify([116, null]),
-          'parent-two:rings': JSON.stringify([[0, 2]]),
-          'grannie:hr': JSON.stringify([[85, 4]]),
-          'grannie:rings': JSON.stringify([[20, 4]]),
-          'grannie:zone': JSON.stringify([['a', 4]])
+          'parent-two:hr': [116, null],
+          'parent-two:rings': [[0, 2]],
+          'grannie:hr': [[85, 4]],
+          'grannie:rings': [[20, 4]],
+          'grannie:zone': [['a', 4]]
         }
       }
     };

@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { loadSeedIfEmpty, readSeedFile } from '../../../../../backend/src/3_applications/agents/health-coach/playbooks/seedLoader.mjs';
+import { fileURLToPath } from 'node:url';
+import { loadSeedIfEmpty } from '../../../../../backend/src/3_applications/agents/health-coach/playbooks/seedLoader.mjs';
+import { YamlPlaybookSeedReader } from '../../../../../backend/src/1_adapters/persistence/yaml/YamlPlaybookSeedReader.mjs';
 import { WorkingMemoryState } from '../../../../../backend/src/3_applications/agents/framework/WorkingMemory.mjs';
+
+const seedReader = new YamlPlaybookSeedReader({
+  filePath: fileURLToPath(new URL('../../../../../backend/src/3_applications/agents/health-coach/playbooks/seed.yml', import.meta.url)),
+});
 
 describe('seedLoader.readSeedFile', () => {
   it('parses the YAML seed file into an array of playbook objects', async () => {
-    const playbooks = await readSeedFile();
+    const playbooks = await seedReader.read();
     expect(Array.isArray(playbooks)).toBe(true);
     expect(playbooks.length).toBeGreaterThanOrEqual(8);
     expect(playbooks[0]).toMatchObject({
@@ -16,7 +22,7 @@ describe('seedLoader.readSeedFile', () => {
   });
 
   it('every playbook has id, fact, and recipe', async () => {
-    const playbooks = await readSeedFile();
+    const playbooks = await seedReader.read();
     for (const p of playbooks) {
       expect(p.id).toBeTruthy();
       expect(p.fact).toBeTruthy();
@@ -28,7 +34,7 @@ describe('seedLoader.readSeedFile', () => {
 describe('seedLoader.loadSeedIfEmpty', () => {
   it('writes seed playbooks when memory has none', async () => {
     const memory = new WorkingMemoryState();
-    const result = await loadSeedIfEmpty(memory);
+    const result = await loadSeedIfEmpty(memory, { seedReader });
     expect(result.loaded).toBe(true);
     expect(memory.get('playbooks').length).toBeGreaterThanOrEqual(8);
   });
@@ -36,7 +42,7 @@ describe('seedLoader.loadSeedIfEmpty', () => {
   it('does NOT overwrite existing playbooks', async () => {
     const memory = new WorkingMemoryState();
     memory.set('playbooks', [{ id: 'pre-existing', fact: 'x', recipe: 'y' }]);
-    const result = await loadSeedIfEmpty(memory);
+    const result = await loadSeedIfEmpty(memory, { seedReader });
     expect(result.loaded).toBe(false);
     expect(memory.get('playbooks')).toEqual([{ id: 'pre-existing', fact: 'x', recipe: 'y' }]);
   });

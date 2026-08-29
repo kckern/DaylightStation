@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { FeedbackService, feedbackItemPath } from './FeedbackService.mjs';
+import { FeedbackService } from './FeedbackService.mjs';
+import { FilesystemFeedbackRepository, feedbackItemPath } from '#adapters/feedback/FilesystemFeedbackRepository.mjs';
 
 /**
  * Covers the two riskiest edges of the month-partitioning refactor that the
@@ -17,11 +18,10 @@ import { FeedbackService, feedbackItemPath } from './FeedbackService.mjs';
 const noopLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
 function makeService(dir, extra = {}) {
-  const configService = {
-    getMediaDir: () => path.join(dir, 'media'),
-    getHouseholdPath: (rel) => path.join(dir, 'household', rel),
-  };
-  return new FeedbackService({ configService, logger: noopLogger, ...extra });
+  const feedbackRepository = new FilesystemFeedbackRepository({
+    itemsRoot: path.join(dir, 'household', 'feedback'), mediaDir: path.join(dir, 'media'),
+  });
+  return new FeedbackService({ feedbackRepository, logger: noopLogger, ...extra });
 }
 
 function itemsRootOf(dir) {
@@ -90,6 +90,25 @@ test('update() round-trips through the month-partitioned path', async () => {
 
     const file = feedbackItemPath(itemsRootOf(dir), 'fitness', item.id);
     assert.equal(existsSync(file), true, 'the update write landed at the month-partitioned path');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('audioResource() returns an opaque local-file capability rather than a path', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'feedback-audio-resource-'));
+  try {
+    const service = makeService(dir);
+    const item = await service.create({ app: 'piano', audioBuffer: Buffer.from('voice'), mimeType: 'audio/webm' });
+
+    const resource = service.audioResource('piano', item.id);
+
+    assert.equal(resource.size, 5);
+    assert.equal(resource.mimeType, 'audio/webm');
+    assert.equal(Object.hasOwn(resource, 'path'), false);
+    assert.equal(Object.hasOwn(resource, 'filePath'), false);
+    const stored = service.get('piano', item.id);
+    assert.equal(stored.audio, `audio/feedback/piano/${item.id}.webm`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

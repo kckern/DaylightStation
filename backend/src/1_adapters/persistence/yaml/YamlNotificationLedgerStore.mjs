@@ -11,7 +11,7 @@ const COOLDOWN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
  */
 export class YamlNotificationLedgerStore {
   #basePath;
-  constructor({ basePath }) { this.#basePath = basePath; }
+  constructor({ dataPath, basePath = dataPath && path.join(dataPath, 'household', 'notifications') }) { this.#basePath = basePath; }
 
   #file() { return path.join(this.#basePath, 'ledger.yml'); }
   #key(username, dedupeKey) { return `${username || '-'}|${dedupeKey}`; }

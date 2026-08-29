@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { GetSchoolReport } from '#apps/school/GetSchoolReport.mjs';
-import { isProgramReporter } from '#apps/school/ports/IProgramReporter.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore, FakeReviewQueue,
   fakeClock, silentLogger,
@@ -40,7 +39,7 @@ beforeEach(() => build());
 
 describe('the contract', () => {
   it('is a program reporter', () => {
-    expect(isProgramReporter(reporter)).toBe(true);
+    expect(typeof reporter.summarize).toBe('function');
     expect(reporter.id).toBe('coursework');
   });
 

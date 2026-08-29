@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHandlerLivenessService.mjs';
+import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 function makeBus() {
   const handlers = [];
@@ -22,7 +23,7 @@ describe('CommandHandlerLivenessService', () => {
     bus = makeBus();
     now = 1_000_000;
     svc = new CommandHandlerLivenessService({
-      eventBus: bus,
+      presenceGateway: new EventBusDeviceTransportGateway({ eventBus: bus }),
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       clock: { now: () => now },
       freshnessMs: 30_000,
@@ -123,13 +124,13 @@ describe('CommandHandlerLivenessService', () => {
     expect(svc.isFresh('tv')).toBe(false);
   });
 
-  it('constructor throws when eventBus is missing', () => {
-    expect(() => new CommandHandlerLivenessService({})).toThrow(/requires eventBus/);
-    expect(() => new CommandHandlerLivenessService()).toThrow(/requires eventBus/);
+  it('constructor throws when presenceGateway is missing', () => {
+    expect(() => new CommandHandlerLivenessService({})).toThrow(/requires presenceGateway/);
+    expect(() => new CommandHandlerLivenessService()).toThrow(/requires presenceGateway/);
   });
 
-  it('constructor throws when eventBus.onClientMessage is missing', () => {
-    expect(() => new CommandHandlerLivenessService({ eventBus: {} }))
-      .toThrow(/requires eventBus.onClientMessage/);
+  it('constructor throws when presenceGateway cannot subscribe', () => {
+    expect(() => new CommandHandlerLivenessService({ presenceGateway: {} }))
+      .toThrow(/requires presenceGateway/);
   });
 });

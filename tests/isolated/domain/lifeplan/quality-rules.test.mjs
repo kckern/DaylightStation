@@ -84,7 +84,7 @@ describe('Quality Entity', () => {
         last_shadow_check: '2025-06-01',
       };
       const quality = new Quality(data);
-      const restored = new Quality(quality.toJSON());
+      const restored = new Quality(JSON.parse(JSON.stringify(quality)));
       expect(restored.id).toBe('physical');
       expect(restored.principles).toHaveLength(1);
       expect(restored.shadow.name).toBe('Obsessive');
@@ -175,7 +175,7 @@ describe('Rule Entity', () => {
         times_triggered: 5, times_followed: 4, times_helped: 3,
       };
       const rule = new Rule(data);
-      const restored = new Rule(rule.toJSON());
+      const restored = new Rule(JSON.parse(JSON.stringify(rule)));
       expect(restored.id).toBe('r1');
       expect(restored.state).toBe('tested');
       expect(restored.times_triggered).toBe(5);
@@ -273,7 +273,7 @@ describe('Purpose Entity', () => {
         },
       };
       const purpose = new Purpose(data);
-      const restored = new Purpose(purpose.toJSON());
+      const restored = new Purpose(JSON.parse(JSON.stringify(purpose)));
       expect(restored.statement).toBe('To maximize joy');
       expect(restored.adopted).toBe('2024-01-15');
       expect(restored.grounded_in.beliefs).toHaveLength(1);

@@ -32,6 +32,7 @@ import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
 import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { ResolveCardScan } from '#apps/school/documents/ResolveCardScan.mjs';
 import { RecordCardScanOutcome } from '#apps/school/documents/RecordCardScanOutcome.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
@@ -328,7 +329,9 @@ export async function main(argv = process.argv.slice(2)) {
     const repository = new YamlPrintDocumentRepository({ directory: scratch });
     const allocationStore = new YamlAllocationStore({ directory: scratch });
     const worksheetInstances = new MemoryWorksheetInstances();
-    const renderPrintDocument = new RenderPrintDocument({ repository, allocationStore });
+    const renderPrintDocument = new RenderPrintDocument({
+      rendering: createPrintDocumentRendering(), repository, allocationStore,
+    });
     let worksheetPdf = null;
     const issueDocument = new IssueDocument({
       curriculum, sessions, tokens,

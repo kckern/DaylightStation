@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { EinkPanelService } from '#apps/eink/EinkPanelService.mjs';
+import { DataServiceEinkPanelStore } from '#adapters/eink/DataServiceEinkPanelStore.mjs';
+import { Sha1ContentFingerprint } from '#adapters/eink/Sha1ContentFingerprint.mjs';
+
+const PANEL_RENDERER = { version: 'test', render: async () => Buffer.from('png') };
 
 // A stateful fake household store so we can assert persistence (read-modify-write).
 function makeService() {
@@ -12,20 +16,22 @@ function makeService() {
   };
   const warnings = [];
   const svc = new EinkPanelService({
-    baseUrl: 'http://test.local',
-    dataService,
+    panelStore: new DataServiceEinkPanelStore({ dataService }),
+    dataSourceGateway: { resolve: async () => ({}) },
+    panelRenderer: PANEL_RENDERER,
+    fingerprint: new Sha1ContentFingerprint(),
     logger: { info() {}, warn: (e, d) => warnings.push({ e, d }) },
   });
   return { svc, store, warnings };
 }
 
-const FULL = { bat: '4012', rssi: '-61', wake: 'timer', up: '1840', heap: '210000', psram: '5300000', rst: '4' };
+const FULL = { bat: 4012, rssi: -61, wake: 'timer', up: 1840, heap: 210000, psram: 5300000, rst: 4 };
 
 describe('EinkPanelService telemetry', () => {
-  it('records piggybacked /config params, parsed and timestamped', () => {
+  it('records typed telemetry supplied by the boundary and timestamps it', () => {
     const { svc } = makeService();
     const rec = svc.recordTelemetry('upstairs-eink', FULL);
-    expect(rec.bat).toBe(4012);          // coerced to number
+    expect(rec.bat).toBe(4012);
     expect(rec.rssi).toBe(-61);
     expect(rec.wake).toBe('timer');      // enum stays a string
     expect(rec.up).toBe(1840);
@@ -37,19 +43,19 @@ describe('EinkPanelService telemetry', () => {
 
   it('computes a battery percent from millivolts (LiPo 3300=empty..4200=full)', () => {
     const { svc } = makeService();
-    expect(svc.recordTelemetry('p', { bat: '4200' }).batteryPercent).toBe(100);
-    expect(svc.recordTelemetry('p', { bat: '3300' }).batteryPercent).toBe(0);
-    expect(svc.recordTelemetry('p', { bat: '3750' }).batteryPercent).toBe(50);
+    expect(svc.recordTelemetry('p', { bat: 4200 }).batteryPercent).toBe(100);
+    expect(svc.recordTelemetry('p', { bat: 3300 }).batteryPercent).toBe(0);
+    expect(svc.recordTelemetry('p', { bat: 3750 }).batteryPercent).toBe(50);
     // bat=0 means "not available" — no false reading
-    expect(svc.recordTelemetry('p', { bat: '0', rssi: '-50' }).batteryPercent).toBe(null);
+    expect(svc.recordTelemetry('p', { bat: 0, rssi: -50 }).batteryPercent).toBe(null);
   });
 
   it('flags low battery and logs a warning', () => {
     const { svc, warnings } = makeService();
-    const rec = svc.recordTelemetry('p', { bat: '3380' }); // ~9%
+    const rec = svc.recordTelemetry('p', { bat: 3380 }); // ~9%
     expect(rec.low).toBe(true);
     expect(warnings.some((w) => w.e === 'eink.telemetry.low_battery')).toBe(true);
-    expect(svc.recordTelemetry('p', { bat: '4012' }).low).toBe(false);
+    expect(svc.recordTelemetry('p', { bat: 4012 }).low).toBe(false);
   });
 
   it('persists across instances (survives a redeploy)', () => {
@@ -57,7 +63,11 @@ describe('EinkPanelService telemetry', () => {
     svc.recordTelemetry('upstairs-eink', FULL);
     // A fresh service sharing the same backing store reads the last reading.
     const dataService = { household: { read: (p) => (p in store ? store[p] : null), write: () => true } };
-    const svc2 = new EinkPanelService({ dataService, logger: { info() {}, warn() {} } });
+    const svc2 = new EinkPanelService({
+      panelStore: new DataServiceEinkPanelStore({ dataService }),
+      dataSourceGateway: { resolve: async () => ({}) }, panelRenderer: PANEL_RENDERER,
+      fingerprint: new Sha1ContentFingerprint(), logger: { info() {}, warn() {} },
+    });
     expect(svc2.getTelemetry('upstairs-eink').bat).toBe(4012);
   });
 

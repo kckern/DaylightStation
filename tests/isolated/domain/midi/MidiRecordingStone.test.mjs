@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { MidiRecordingStone } from '#domains/midi/MidiRecordingStone.mjs';
+import {
+  archiveRelPathForStone,
+  parseMidiRecordingStone,
+} from '#adapters/jamcorder/MidiRecordingStoneCodec.mjs';
 
 const FIXTURE = readFileSync(new URL('../../../fixtures/jamcorder/Jmx-A00005-Jan-02-2026.mid', import.meta.url));
 
 describe('MidiRecordingStone', () => {
   it('parses the embedded jmxStoneHdr timestamp + metadata', () => {
-    const s = MidiRecordingStone.fromMidiBuffer(FIXTURE);
+    const s = parseMidiRecordingStone(FIXTURE);
     expect(s.unixtime).toBe(1767406660);
     expect(s.localOffsetMin).toBe(-480);
     expect(s.recorderName).toBe('Living Room Baby Grand');
@@ -16,11 +19,11 @@ describe('MidiRecordingStone', () => {
   });
 
   it('derives the local-time archive rel path', () => {
-    const s = MidiRecordingStone.fromMidiBuffer(FIXTURE);
-    expect(s.archiveRelPath()).toBe('2026/2026-01/2026-01-02 18.17.40.mid');
+    const s = parseMidiRecordingStone(FIXTURE);
+    expect(archiveRelPathForStone(s)).toBe('2026/2026-01/2026-01-02 18.17.40.mid');
   });
 
   it('throws when the buffer has no jmxStoneHdr', () => {
-    expect(() => MidiRecordingStone.fromMidiBuffer(Buffer.from('MThd not a jamcorder file'))).toThrow();
+    expect(() => parseMidiRecordingStone(Buffer.from('MThd not a jamcorder file'))).toThrow();
   });
 });

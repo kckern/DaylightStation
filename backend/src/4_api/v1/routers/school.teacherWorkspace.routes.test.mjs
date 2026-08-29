@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolRouter } from './school.mjs';
+import { createSchoolTestRouter as createSchoolRouter } from '../../../../../tests/_lib/school/schoolRouterTestSupport.mjs';
 
 function app(overrides = {}) {
   const server = express();

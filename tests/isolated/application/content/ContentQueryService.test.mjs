@@ -1,12 +1,25 @@
 // tests/isolated/application/content/ContentQueryService.test.mjs
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
+import { ContentQueryService as ApplicationContentQueryService } from '#apps/content/ContentQueryService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+
+// Keep the rich registry fixtures, but cross the application boundary through
+// the same semantic catalog gateway used by composition.
+class ContentQueryService extends ApplicationContentQueryService {
+  constructor({ registry, contentCatalog, prefixAliases = {}, ...deps }) {
+    super({
+      ...deps,
+      prefixAliases,
+      contentCatalog: contentCatalog || new RegistryContentCatalogGateway({ registry, prefixAliases }),
+    });
+  }
+}
 
 describe('ContentQueryService', () => {
   describe('constructor', () => {
     it('accepts mediaProgressMemory as optional dependency', () => {
       const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
-      const mockMemory = { get: vi.fn(), getAll: vi.fn(async () => []) };
+      const mockMemory = { findProgress: vi.fn(), listProgress: vi.fn(async () => []) };
 
       const service = new ContentQueryService({
         registry: mockRegistry,
@@ -369,13 +382,13 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (contentId) => {
+          findProgress: vi.fn(async (contentId) => {
             if (contentId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
             if (contentId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
             return null;
           }),
-          // Production now bulk-loads progress via getAll(storagePath); return entries with contentId keys
-          getAll: vi.fn(async () => [
+          // Production bulk-loads progress for the namespace; return entries with contentId keys.
+          listProgress: vi.fn(async () => [
             { contentId: 'plex:123', percent: 95, playhead: 1800, duration: 1900 },
             { contentId: 'plex:456', percent: 10, playhead: 100, duration: 1000 },
           ])
@@ -412,13 +425,13 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (contentId) => {
+          findProgress: vi.fn(async (contentId) => {
             if (contentId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
             if (contentId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
             return null;
           }),
-          // Production now bulk-loads progress via getAll(storagePath); return entries with contentId keys
-          getAll: vi.fn(async () => [
+          // Production bulk-loads progress for the namespace; return entries with contentId keys.
+          listProgress: vi.fn(async () => [
             { contentId: 'plex:123', percent: 95, playhead: 1800, duration: 1900 },
             { contentId: 'plex:456', percent: 10, playhead: 100, duration: 1000 },
           ])
@@ -502,8 +515,8 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async () => null),
-          getAll: vi.fn(async () => [])
+          findProgress: vi.fn(async () => null),
+          listProgress: vi.fn(async () => [])
         };
 
         const service = new ContentQueryService({
@@ -534,11 +547,11 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (contentId) => {
+          findProgress: vi.fn(async (contentId) => {
             if (contentId === 'plex:456') return { percent: 45 };
             return null;
           }),
-          getAll: vi.fn(async () => [
+          listProgress: vi.fn(async () => [
             { contentId: 'plex:456', percent: 45 },
           ])
         };
@@ -578,12 +591,12 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (contentId) => {
+          findProgress: vi.fn(async (contentId) => {
             if (contentId === 'plex:123') return { percent: 95 }; // watched
             if (contentId === 'plex:456') return { percent: 10 }; // in progress
             return null; // not started
           }),
-          getAll: vi.fn(async () => [
+          listProgress: vi.fn(async () => [
             { contentId: 'plex:123', percent: 95 },
             { contentId: 'plex:456', percent: 10 },
           ])
@@ -619,11 +632,11 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (contentId) => {
+          findProgress: vi.fn(async (contentId) => {
             if (contentId === 'plex:123') return { percent: 95 }; // watched
             return null;
           }),
-          getAll: vi.fn(async () => [])
+          listProgress: vi.fn(async () => [])
         };
 
         const service = new ContentQueryService({

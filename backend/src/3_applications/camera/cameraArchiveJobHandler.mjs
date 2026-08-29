@@ -16,8 +16,7 @@
  */
 
 import { ArchiveCameraDay } from '#apps/camera/usecases/ArchiveCameraDay.mjs';
-import { readLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
-import { resolveCameraEndpoint } from './resolveCameraEndpoint.mjs';
+import { isCameraJobRuntimeGateway } from './ports/ICameraJobRuntimeGateway.mjs';
 
 /** Local calendar date offset by N days — recordings are searched by local day. */
 function localDay(offsetDays = 0, now = new Date()) {
@@ -32,102 +31,61 @@ function localDay(offsetDays = 0, now = new Date()) {
 
 /**
  * @param {Object} deps
- * @param {Object} deps.configService
+ * @param {Object} deps.runtimeGateway
  * @param {string} [deps.householdId]
  * @param {Object} [deps.logger]
  * @returns {Function} (logger, executionId) => Promise
  */
-/**
- * Camera adapters arrive as an INJECTED bundle, not imports.
- *
- * Decision D1: a Container/handler never imports a concrete adapter — no
- * exceptions. These build a client per camera at run time, so what is injected
- * is the set of factories rather than instances; bootstrap owns which concrete
- * implementations those are.
- */
+/** Runtime capabilities arrive through one semantic gateway. */
 export function createCameraArchiveJobHandler({
-  configService, cameraAdapters, householdId = null, logger = console,
+  runtimeGateway, ledgerStore, householdId = null, logger = console,
 }) {
-  const { ReolinkClient, makeSource, ArchiveEncoder, ArchiveManifestStore } = cameraAdapters || {};
-  if (!ReolinkClient || !makeSource || !ArchiveEncoder || !ArchiveManifestStore) {
-    throw new Error('createCameraArchiveJobHandler requires cameraAdapters '
-      + '{ ReolinkClient, makeSource, ArchiveEncoder, ArchiveManifestStore }');
+  if (!isCameraJobRuntimeGateway(runtimeGateway)) {
+    throw new TypeError('createCameraArchiveJobHandler requires runtimeGateway');
   }
+  if (!ledgerStore?.read) throw new TypeError('createCameraArchiveJobHandler requires ledgerStore.read');
   return async function runCameraArchive(scopedLogger, executionId) {
     const log = scopedLogger?.info ? scopedLogger : logger;
-    const config = configService.getHouseholdAppConfig(householdId, 'camera-archive');
+    const plan = runtimeGateway.loadArchivePlan(householdId);
 
-    if (!config?.cameras?.length) {
+    if (!plan?.cameras?.length) {
       log.warn?.('camera.archive.skipped', { executionId, reason: 'config missing or no cameras' });
       return { skipped: true };
     }
-    if (config.archive?.enabled === false) {
+    if (!plan.enabled) {
       log.info?.('camera.archive.disabled', { executionId });
       return { skipped: true, reason: 'disabled' };
     }
 
-    // auth.yml's `ref` used to live in archive.yml (config.auth?.ref); it now
-    // comes from devices.yml via the NVR entry, which every camera in this
-    // pipeline shares (all auth_ref: reolink — see devices.yml camera-nvr).
-    // resolveCameraEndpoint validates `host` too, which this auth-only lookup
-    // does not need — a missing/malformed camera-nvr entry must degrade to
-    // the same no-auth skip as a bad ref used to, not hard-fail the job.
-    let authRef;
+    // Runtime preparation can fail when the deployment has no usable camera
+    // credentials. Preserve the scheduler's historical graceful skip.
+    let runtime;
     try {
-      ({ authRef } = resolveCameraEndpoint(configService, 'camera-nvr', householdId));
+      runtime = runtimeGateway.createArchiveRuntime({ householdId, logger: log });
     } catch (err) {
+      if (err?.code !== 'CAMERA_AUTH_UNAVAILABLE') throw err;
       log.error?.('camera.archive.no_auth', { executionId, error: err.message });
       return { skipped: true, reason: 'no-auth' };
     }
-    const auth = configService.getHouseholdAuth(authRef, householdId);
-    if (!auth?.username || !auth?.password) {
-      log.error?.('camera.archive.no_auth', { executionId });
-      return { skipped: true, reason: 'no-auth' };
-    }
 
-    const day = localDay(config.archive?.dayOffset ?? -1);
-    const streamType = config.sources?.streamType ?? 'sub';
-    const encoder = new ArchiveEncoder({ logger: log });
-    const manifestStore = new ArchiveManifestStore({ root: config.storage.hotPath, logger: log });
-    const ledgerRoot = config.storage.ledgerPaths[0];
-
+    const day = localDay(plan.dayOffset);
     const results = [];
-    for (const cameraCfg of config.cameras) {
+    for (const cameraCfg of plan.cameras) {
       try {
-        const { host: cameraHost } = resolveCameraEndpoint(
-          configService, cameraCfg.id, householdId,
-        );
-        const sources = {
-          camera: makeSource({
-            kind: 'camera',
-            client: new ReolinkClient({ host: cameraHost, ...auth, logger: log }),
-            channel: 0,
-            streamType,
-          }),
-          nvr: (() => {
-            const { host: nvrHost } = resolveCameraEndpoint(
-              configService, 'camera-nvr', householdId,
-            );
-            return makeSource({
-              kind: 'nvr',
-              client: new ReolinkClient({ host: nvrHost, ...auth, logger: log }),
-              channel: cameraCfg.nvrChannel,
-              streamType,
-            });
-          })(),
-        };
+        const sources = runtime.createSources(cameraCfg);
 
-        const footageSource = sources[config.sources?.footageFrom ?? 'nvr'];
-        const metaSource = sources[config.sources?.metadataFrom ?? 'camera'];
-        if (!footageSource) throw new Error(`No footage source configured (${config.sources?.footageFrom})`);
+        const { footage: footageSource, metadata: metaSource } = sources;
+        if (!footageSource) throw new Error('No footage source configured');
 
         const useCase = new ArchiveCameraDay({
           metaSource,
           footageSource,
-          encoder,
-          manifestStore,
-          readLedger: (camera, d) => readLedger(ledgerRoot, camera, d),
-          config,
+          encoder: runtime.encoder,
+          manifestStore: runtime.manifestStore,
+          readLedger: (camera, d) => ledgerStore.read({ camera, day: d }),
+          policy: plan.policy,
+          archiveArtifacts: runtime.archiveArtifacts,
+          sheetArtifacts: runtime.sheetArtifacts,
           logger: log,
         });
 

@@ -3,6 +3,8 @@ import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPlayRouter } from '#backend/src/4_api/v1/routers/play.mjs';
+import { PlaybackReadService } from '#apps/content/services/PlaybackReadService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 describe('Play API Router', () => {
   let app;
@@ -108,12 +110,13 @@ describe('Play API Router', () => {
     };
 
     app = express();
+    const contentCatalog = new RegistryContentCatalogGateway({ registry: mockRegistry });
     app.use('/api/play', createPlayRouter({
-      registry: mockRegistry,
-      watchStore: mockWatchStore,
-      mediaProgressMemory: mockMediaProgressMemory,
-      playResponseService: mockPlayResponseService,
-      contentIdResolver: mockContentIdResolver,
+      playbackReadService: new PlaybackReadService({
+        contentCatalog,
+        playResponseService: mockPlayResponseService,
+        contentIdResolver: mockContentIdResolver,
+      }),
     }));
   });
 

@@ -1,37 +1,29 @@
 // backend/src/3_applications/content/ContentQueryService.mjs
 
 import { ItemSelectionService, RelevanceScoringService } from '#domains/content/index.mjs';
+import { IContentQueryPort } from '../feed/ports/IContentQueryPort.mjs';
 
 /**
  * Race a promise against a timeout. A non-positive `ms` disables the timeout
  * (returns the promise unchanged). On timeout the returned promise rejects with
  * an Error whose message contains the adapter label and "timeout".
  */
-function withTimeout(promise, ms, label) {
-  if (!ms || ms <= 0) return promise;
-  let t;
-  const timeout = new Promise((_, reject) => {
-    t = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
-}
-
 /**
  * Application service for orchestrating content queries across multiple sources.
  * Handles canonical key translation, result merging, and capability filtering.
  */
-export class ContentQueryService {
-  #registry;
+export class ContentQueryService extends IContentQueryPort {
+  #contentCatalog;
   #mediaProgressMemory;
-  #prefixAliases;
   #logger;
   #aliasResolver;
   #adapterTimeoutMs;
   #sourceTimeoutsMs;
+  #deadline;
 
   /**
    * @param {Object} deps
-   * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} deps.registry
+   * @param {Object} deps.contentCatalog
    * @param {import('#apps/content/ports/IMediaProgressMemory.mjs').IMediaProgressMemory} [deps.mediaProgressMemory]
   * @param {Object<string, string>} [deps.prefixAliases] - Map of prefix aliases to canonical format (e.g., { hymn: 'singalong:hymn' })
    * @param {Object} [deps.logger] - Logger instance for performance and debug logging
@@ -39,14 +31,21 @@ export class ContentQueryService {
    * @param {number} [deps.adapterTimeoutMs=3000] - Default per-adapter search timeout
    * @param {Object<string, number>} [deps.sourceTimeoutsMs] - Per-source timeout overrides (e.g., { abs: 6000 })
    */
-  constructor({ registry, mediaProgressMemory = null, prefixAliases = {}, logger = console, aliasResolver = null, adapterTimeoutMs = 3000, sourceTimeoutsMs = {} }) {
-    this.#registry = registry;
+  constructor({ contentCatalog, mediaProgressMemory = null, prefixAliases = {}, logger = console, aliasResolver = null, adapterTimeoutMs = 3000, sourceTimeoutsMs = {}, deadline = { run: work => work } }) {
+    super();
+    if (!contentCatalog?.search) throw new Error('ContentQueryService requires contentCatalog');
+    this.#contentCatalog = contentCatalog;
     this.#mediaProgressMemory = mediaProgressMemory;
-    this.#prefixAliases = prefixAliases;
     this.#logger = logger;
     this.#aliasResolver = aliasResolver;
     this.#adapterTimeoutMs = adapterTimeoutMs;
     this.#sourceTimeoutsMs = sourceTimeoutsMs || {};
+    this.#deadline = deadline;
+  }
+
+  #within(work, ms, label) {
+    if (!ms || ms <= 0) return work;
+    return this.#deadline.run(work, { timeoutMs: ms, message: `${label} timeout after ${ms}ms` });
   }
 
   /**
@@ -105,7 +104,7 @@ export class ContentQueryService {
     const { prefix, term } = this.#parseContentQuery(query.text);
 
     // Resolve sources and gatekeeper through alias system if available
-    let adapters;
+    let sources;
     let gatekeeper = null;
 
     if (this.#aliasResolver && prefix) {
@@ -113,11 +112,9 @@ export class ContentQueryService {
 
       // Use resolved sources if available, otherwise fall back to registry
       if (resolved.sources?.length > 0) {
-        adapters = resolved.sources
-          .map(s => this.#registry.get(s))
-          .filter(Boolean);
+        sources = resolved.sources.filter((source) => this.#contentCatalog.hasSource(source));
       } else {
-        adapters = this.#registry.resolveSource(query.source || prefix);
+        sources = this.#contentCatalog.sourcesFor(query.source || prefix);
       }
 
       gatekeeper = resolved.gatekeeper;
@@ -125,13 +122,13 @@ export class ContentQueryService {
       // Update query text to use just the term (without prefix)
       query = { ...query, text: term };
     } else {
-      adapters = this.#registry.resolveSource(query.source);
+      sources = this.#contentCatalog.sourcesFor(query.source);
     }
 
     const warnings = [];
 
     // Check if query.text looks like a direct ID
-    const idMatch = this.#parseIdFromText(query.text);
+    const idMatch = this.#contentCatalog.parseDirectReference(query.text);
 
     // Run ID lookup and text search in parallel
     const [idResult, searchResults] = await Promise.all([
@@ -146,30 +143,30 @@ export class ContentQueryService {
 
       // Standard text search across adapters
       Promise.all(
-        adapters.map(async (adapter) => {
+        sources.map(async (source) => {
           const adapterStart = performance.now();
           try {
-            if (!this.#canHandle(adapter, query)) {
-              perf.adapters[adapter.source] = { ms: 0, skipped: true };
+            if (!this.#canHandle(source, query)) {
+              perf.adapters[source] = { ms: 0, skipped: true };
               return null;
             }
 
-            const translated = this.#translateQuery(adapter, query);
-            const result = await withTimeout(adapter.search(translated), this.#timeoutFor(adapter.source), adapter.source);
+            const translated = this.#translateQuery(source, query);
+            const result = await this.#within(this.#contentCatalog.search(source, translated), this.#timeoutFor(source), source);
             const ms = Math.round(performance.now() - adapterStart);
-            perf.adapters[adapter.source] = {
+            perf.adapters[source] = {
               ms,
               count: result?.items?.length ?? 0,
             };
-            return { adapter, result };
+            return { source, result };
           } catch (error) {
             const ms = Math.round(performance.now() - adapterStart);
-            perf.adapters[adapter.source] = {
+            perf.adapters[source] = {
               ms,
               error: error.message,
             };
             warnings.push({
-              source: adapter.source,
+              source,
               error: error.message,
             });
             return null;
@@ -208,7 +205,7 @@ export class ContentQueryService {
     const logData = {
       query: { text: query.text, source: query.source },
       totalMs: perf.totalMs,
-      adapterCount: adapters.length,
+      adapterCount: sources.length,
       resultCount: merged.items?.length ?? 0,
       slowAdapters: slowAdapters || null,
       perf,
@@ -241,7 +238,7 @@ export class ContentQueryService {
     const { prefix, term } = this.#parseContentQuery(query.text);
 
     // Resolve sources and gatekeeper through alias system if available
-    let adapters;
+    let sources;
     let gatekeeper = null;
     let resolvedIntent = null;
 
@@ -251,11 +248,9 @@ export class ContentQueryService {
 
       // Use resolved sources if available, otherwise fall back to registry
       if (resolved.sources?.length > 0) {
-        adapters = resolved.sources
-          .map(s => this.#registry.get(s))
-          .filter(Boolean);
+        sources = resolved.sources.filter((source) => this.#contentCatalog.hasSource(source));
       } else {
-        adapters = this.#registry.resolveSource(query.source || prefix);
+        sources = this.#contentCatalog.sourcesFor(query.source || prefix);
       }
 
       gatekeeper = resolved.gatekeeper;
@@ -264,10 +259,10 @@ export class ContentQueryService {
       query = { ...query, text: term };
     } else {
       // Standard resolution through registry
-      adapters = this.#registry.resolveSource(query.source);
+      sources = this.#contentCatalog.sourcesFor(query.source);
     }
 
-    const pending = new Set(adapters.map(a => a.source));
+    const pending = new Set(sources);
 
     // Track emitted item ids so the same item is never streamed twice
     // (e.g. the files adapter surfaced duplicate itemIds from overlapping
@@ -285,21 +280,21 @@ export class ContentQueryService {
     const sourceTimings = {};
 
     // Create promises for all adapters
-    const adapterPromises = adapters.map(async (adapter) => {
-      if (!this.#canHandle(adapter, query)) {
-        return { adapter, result: null, skipped: true };
+    const adapterPromises = sources.map(async (source) => {
+      if (!this.#canHandle(source, query)) {
+        return { source, result: null, skipped: true };
       }
 
       const startedAt = performance.now();
       try {
-        const translated = this.#translateQuery(adapter, query);
-        const result = await withTimeout(adapter.search(translated), this.#timeoutFor(adapter.source), adapter.source);
-        sourceTimings[adapter.source] = Math.round(performance.now() - startedAt);
-        return { adapter, result, error: null };
+        const translated = this.#translateQuery(source, query);
+        const result = await this.#within(this.#contentCatalog.search(source, translated), this.#timeoutFor(source), source);
+        sourceTimings[source] = Math.round(performance.now() - startedAt);
+        return { source, result, error: null };
       } catch (error) {
-        sourceTimings[adapter.source] = Math.round(performance.now() - startedAt);
-        warnings.push({ source: adapter.source, error: error.message });
-        return { adapter, result: null, error };
+        sourceTimings[source] = Math.round(performance.now() - startedAt);
+        warnings.push({ source, error: error.message });
+        return { source, result: null, error };
       }
     });
 
@@ -313,11 +308,11 @@ export class ContentQueryService {
       // Remove completed promise
       remaining.splice(winner.index, 1);
 
-      const { adapter, result, skipped, error } = winner.result;
-      pending.delete(adapter.source);
+      const { source, result, skipped, error } = winner.result;
+      pending.delete(source);
 
       if (error) {
-        yield { event: 'source_error', source: adapter.source, error: error.message, pending: [...pending] };
+        yield { event: 'source_error', source, error: error.message, pending: [...pending] };
         continue;
       }
       if (skipped || !result?.items?.length) {
@@ -341,7 +336,7 @@ export class ContentQueryService {
       // Dedupe within the stream: drop items whose id was already emitted
       // by this adapter (cheap Set lookup; ids are stable compound ids).
       items = items.filter(item => {
-        const key = `${adapter.source}|${item?.id}`;
+        const key = `${source}|${item?.id}`;
         if (emittedIds.has(key)) return false;
         emittedIds.add(key);
         return true;
@@ -375,7 +370,7 @@ export class ContentQueryService {
 
       yield {
         event: 'results',
-        source: adapter.source,
+        source,
         items,
         pending: [...pending]
       };
@@ -387,7 +382,7 @@ export class ContentQueryService {
     const logData = {
       query: { text: query.text, source: query.source },
       totalMs,
-      adapterCount: adapters.length,
+      adapterCount: sources.length,
       sourceTimings,
       ...(resolvedIntent && { intent: resolvedIntent })
     };
@@ -416,51 +411,13 @@ export class ContentQueryService {
    * @param {string} text - Search text to check
    * @returns {{source: string, id: string} | null}
    */
-  #parseIdFromText(text) {
-    if (!text || typeof text !== 'string') return null;
-
-    const trimmed = text.trim();
-
-    // Explicit source:id format (e.g., "plex:456724", "hymn:123", "immich:abc-123")
-    const explicitMatch = trimmed.match(/^([a-z]+):(.+)$/i);
-    if (explicitMatch) {
-      const prefix = explicitMatch[1].toLowerCase();
-      const localId = explicitMatch[2];
-
-      // Check if prefix is an alias (e.g., "hymn" -> "singalong:hymn")
-      const legacyMapping = this.#prefixAliases[prefix];
-      if (legacyMapping) {
-        // legacyMapping is like "singalong:hymn" - split to get source and category
-        const [source, category] = legacyMapping.split(':');
-        // Transform to canonical format: source='singalong', id='hymn/123'
-        return { source, id: `${category}/${localId}` };
-      }
-
-      // Not a legacy prefix, return as-is
-      return { source: prefix, id: localId };
-    }
-
-    // Implicit all-digits → plex (e.g., "456724")
-    if (/^\d+$/.test(trimmed)) {
-      return { source: 'plex', id: trimmed };
-    }
-
-    // Implicit UUID → immich (e.g., "ff940f1a-f5ea-4580-a517-dfc68413e215")
-    // UUID format: 8-4-4-4-12 hex characters
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
-      return { source: 'immich', id: trimmed };
-    }
-
-    return null;
-  }
-
   /**
    * Public wrapper for testing legacy prefix mapping.
    * @param {string} text - Search text to check
    * @returns {{source: string, id: string} | null}
    */
   _parseIdFromTextPublic(text) {
-    return this.#parseIdFromText(text);
+    return this.#contentCatalog.parseDirectReference(text);
   }
 
   /**
@@ -473,18 +430,17 @@ export class ContentQueryService {
    */
   async #lookupById(source, id, warnings) {
     try {
-      const adapter = this.#registry.get(source);
-      if (!adapter) {
+      let resolution = this.#contentCatalog.resolveSource(source, id);
+      if (!resolution) {
         // Try resolving by source name in case it's a provider name
-        const adapters = this.#registry.resolveSource(source);
-        if (adapters.length === 0) return null;
+        const sources = this.#contentCatalog.sourcesFor(source);
+        if (sources.length === 0) return null;
         // Use first matching adapter
-        return this.#lookupById(adapters[0].source, id, warnings);
+        return this.#lookupById(sources[0], id, warnings);
       }
 
-      // Try getItem if available
-      if (typeof adapter.getItem === 'function') {
-        const item = await withTimeout(adapter.getItem(id), this.#timeoutFor(source), `${source} id-lookup`);
+      if (this.#contentCatalog.supports(resolution, 'getItem')) {
+        const item = await this.#within(this.#contentCatalog.getItem(resolution, id), this.#timeoutFor(source), `${source} id-lookup`);
         if (item) {
           // matchReason is a public field (survives to the API response) so UIs
           // can label ID-pinned results; _idMatch is internal and stripped later.
@@ -493,8 +449,8 @@ export class ContentQueryService {
       }
 
       // Fallback: try to get item info via other means
-      if (typeof adapter.getMetadata === 'function') {
-        const metadata = await withTimeout(adapter.getMetadata(id), this.#timeoutFor(source), `${source} id-lookup`);
+      if (this.#contentCatalog.supports(resolution, 'getMetadata')) {
+        const metadata = await this.#within(this.#contentCatalog.getMetadata(resolution, id), this.#timeoutFor(source), `${source} id-lookup`);
         if (metadata) {
           return {
             id: `${source}:${id}`,
@@ -613,25 +569,25 @@ export class ContentQueryService {
    */
   async list(query) {
     const { from, source, pick } = query;
-    const adapters = this.#registry.resolveSource(source);
+    const sources = this.#contentCatalog.sourcesFor(source);
     const results = [];
     const warnings = [];
 
     await Promise.all(
-      adapters.map(async (adapter) => {
+      sources.map(async (sourceName) => {
         try {
-          const aliases = adapter.getContainerAliases?.() ?? {};
+          const aliases = this.#contentCatalog.containerAliases(sourceName);
           const containerPath = aliases[from];
 
           if (!containerPath) return;
 
           // Pass full query with adapter-specific params, overriding alias with resolved path
           const listQuery = { ...query, from: containerPath };
-          const items = await adapter.getList(listQuery);
-          results.push({ adapter, result: { items, total: items.length } });
+          const items = await this.#contentCatalog.listSource(sourceName, listQuery);
+          results.push({ source: sourceName, result: { items, total: items.length } });
         } catch (error) {
           warnings.push({
-            source: adapter.source,
+            source: sourceName,
             error: error.message,
           });
         }
@@ -663,15 +619,14 @@ export class ContentQueryService {
 
     const picked = containers[Math.floor(Math.random() * containers.length)];
     const [source] = picked.id.split(':');
-    const adapter = this.#registry.get(source);
-
-    if (!adapter) {
+    const resolution = this.#contentCatalog.resolveSource(source, picked.id.replace(`${source}:`, ''));
+    if (!resolution) {
       return { ...listResult, picked, items: [], total: 0 };
     }
 
     // Get contents of picked container
     const localId = picked.id.replace(`${source}:`, '');
-    const contents = await adapter.getList(localId);
+    const contents = await this.#contentCatalog.getList(resolution, localId);
 
     // Apply filters to contents
     let filteredContents = contents;
@@ -697,8 +652,8 @@ export class ContentQueryService {
   /**
    * Check if adapter can handle the query.
    */
-  #canHandle(adapter, query) {
-    const caps = adapter.getSearchCapabilities?.() ?? { canonical: [], specific: [] };
+  #canHandle(source, query) {
+    const caps = this.#contentCatalog.searchCapabilities(source);
     const META_KEYS = ['source', 'take', 'skip', 'sort', 'withExif', 'withPeople'];
     const queryKeys = Object.keys(query).filter(k => !META_KEYS.includes(k));
 
@@ -713,8 +668,8 @@ export class ContentQueryService {
   /**
    * Translate canonical query keys to adapter-specific.
    */
-  #translateQuery(adapter, query) {
-    const mappings = adapter.getQueryMappings?.() ?? {};
+  #translateQuery(source, query) {
+    const mappings = this.#contentCatalog.queryMappings(source);
     const translated = {};
 
     for (const [key, value] of Object.entries(query)) {
@@ -806,46 +761,46 @@ export class ContentQueryService {
 
   /**
    * Enrich items with watch state from mediaProgressMemory.
-   * Optimized to load storage path once from container and batch-load all progress.
+   * Optimized to resolve the progress namespace once and batch-load all progress.
    * Falls back to scanning all library files when source is offline.
    * @param {Array} items - Items to enrich
-   * @param {Object} adapter - Adapter for storage path resolution
-   * @param {string} [containerId] - Container ID for efficient storage path lookup
+   * @param {string} source - Content source for progress namespace resolution
+   * @param {string} [containerId] - Container ID for efficient namespace lookup
    * @returns {Promise<Array>} Enriched items
    */
-  async #enrichWithWatchState(items, adapter, containerId = null) {
+  async #enrichWithWatchState(items, source, containerId = null) {
     if (!this.#mediaProgressMemory || items.length === 0) {
       return items;
     }
 
-    // Get storage path once from container (not per-item) to avoid N API calls
-    let storagePath = adapter.source || 'default';
+    // Resolve the namespace once from the container (not per-item) to avoid N API calls.
+    let progressNamespace = source || 'default';
     let usesFallback = false;
-    if (typeof adapter.getStoragePath === 'function') {
-      // Use container ID if provided, otherwise use first item
-      const lookupId = containerId || items[0]?.id;
-      if (lookupId) {
-        try {
-          storagePath = await adapter.getStoragePath(lookupId);
-        } catch {
-          // Fall back to default on error
-          usesFallback = true;
-        }
+    const lookupId = containerId || items[0]?.id;
+    if (lookupId) {
+      try {
+        const resolution = this.#contentCatalog.resolveSource(source, lookupId);
+        progressNamespace = await this.#contentCatalog.progressNamespace(resolution, lookupId);
+      } catch {
+        usesFallback = true;
       }
     }
 
-    this.#logger.debug?.('content-query.watch-state.storage-path', { storagePath, usesFallback });
+    this.#logger.debug?.('content-query.watch-state.storage-path', {
+      storagePath: progressNamespace,
+      usesFallback,
+    });
 
-    // Load ALL progress for this storage path at once (1 file read, not N)
-    let allProgress = await this.#mediaProgressMemory.getAll(storagePath);
+    // Load all progress for this namespace at once (1 repository read, not N).
+    let allProgress = await this.#mediaProgressMemory.listProgress(progressNamespace);
     this.#logger.debug?.('content-query.watch-state.progress-loaded', { count: allProgress.length });
 
     // If no progress found and we're using fallback, scan all library files
     // This handles the case when the source is offline (e.g., Plex unreachable)
-    if (allProgress.length === 0 && (usesFallback || storagePath === adapter.source)) {
-      // Try loading from all library-prefixed paths (e.g., plex/14_fitness, plex/24_church-series)
-      if (typeof this.#mediaProgressMemory.getAllFromAllLibraries === 'function') {
-        allProgress = await this.#mediaProgressMemory.getAllFromAllLibraries(adapter.source || 'plex');
+    if (allProgress.length === 0 && (usesFallback || progressNamespace === source)) {
+      // Try loading across all namespaces owned by the source.
+      if (typeof this.#mediaProgressMemory.listSourceProgress === 'function') {
+        allProgress = await this.#mediaProgressMemory.listSourceProgress(source || 'plex');
       }
     }
 
@@ -893,13 +848,12 @@ export class ContentQueryService {
    * @returns {Promise<Array>} Enriched items with percent, playhead, watched, etc.
    */
   async enrichWithWatchState(items, source, containerId = null) {
-    const adapter = this.#registry.get(source);
-    if (!adapter) {
+    if (!this.#contentCatalog.hasSource(source)) {
       this.#logger.debug?.('content-query.watch-state.no-adapter', { source });
       return items;
     }
     this.#logger.debug?.('content-query.watch-state.enrich', { source, containerId, itemCount: items.length });
-    return this.#enrichWithWatchState(items, adapter, containerId);
+    return this.#enrichWithWatchState(items, source, containerId);
   }
 
   /**
@@ -913,25 +867,22 @@ export class ContentQueryService {
    * @returns {Promise<{items: Array, strategy: Object}>}
    */
   async resolve(source, localId, context = {}, overrides = {}) {
-    const adapter = this.#registry.get(source);
-    if (!adapter) {
+    const resolution = this.#contentCatalog.resolveSource(source, localId);
+    if (!resolution) {
       throw new Error(`Unknown source: ${source}`);
     }
 
-    if (typeof adapter.resolvePlayables !== 'function') {
+    const items = await this.#contentCatalog.resolvePlayables(resolution, localId);
+    if (items === null) {
       throw new Error(`Adapter ${source} does not support resolvePlayables`);
     }
-
-    const items = await adapter.resolvePlayables(localId);
     // Pass container ID for efficient batch loading of watch state
     const containerId = `${source}:${localId}`;
-    const enriched = await this.#enrichWithWatchState(items, adapter, containerId);
+    const enriched = await this.#enrichWithWatchState(items, source, containerId);
 
     // Determine container type from adapter if not provided
     const containerType = context.containerType
-      || (typeof adapter.getContainerType === 'function'
-          ? adapter.getContainerType(localId)
-          : 'watchlist');
+      || this.#contentCatalog.containerType(resolution, localId);
 
     const selectionContext = {
       ...context,
@@ -940,7 +891,7 @@ export class ContentQueryService {
     };
 
     const strategy = ItemSelectionService.resolveStrategy(selectionContext, overrides);
-    const selected = ItemSelectionService.select(enriched, selectionContext, overrides);
+    const selected = ItemSelectionService.select(enriched, selectionContext, { ...overrides, random: Math.random });
 
     return {
       items: selected,

@@ -28,6 +28,8 @@ import axios from 'axios';
 import { ReolinkClient, makeSource } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
 import { ArchiveEncoder } from '#adapters/camera/ArchiveEncoder.mjs';
 import { ArchiveManifestStore } from '#adapters/camera/ArchiveManifestStore.mjs';
+import { FilesystemCameraArchiveArtifacts } from '#adapters/camera/FilesystemCameraArchiveArtifacts.mjs';
+import { FilesystemContactSheetArtifacts } from '#adapters/camera/FilesystemContactSheetArtifacts.mjs';
 import { ArchiveCameraDay } from '#apps/camera/usecases/ArchiveCameraDay.mjs';
 import { readLedger, buildLedgerRecords, writeLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
 import { createHaDetectionSource } from '#adapters/camera/HaDetectionSource.mjs';
@@ -40,6 +42,7 @@ import { renderContactSheets } from '#apps/camera/usecases/RenderContactSheets.m
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '../..');
+const sheetArtifacts = new FilesystemContactSheetArtifacts();
 
 // ---------------------------------------------------------------------------
 // Args & config
@@ -243,6 +246,8 @@ async function runPlan({ config, auth, days, opts, logger }) {
       manifestStore,
       readLedger: (camera, d) => readLedger(ledgerRoot, camera, d),
       config: { ...config, storage: { ...config.storage, hotPath } },
+      archiveArtifacts: new FilesystemCameraArchiveArtifacts({ workRoot: config.storage.workDir, hotRoot: hotPath }),
+      sheetArtifacts,
       logger,
     });
 
@@ -386,6 +391,7 @@ async function runSpanTier({ config, auth, days, opts, logger, encoder, manifest
             encoder,
             detections,
             profile,
+            sheetArtifacts,
             provenance: { pipeline: 'B-span', source: config.sources.footageFrom, channel: cameraCfg.nvrChannel, tier },
             logger,
           });
@@ -530,6 +536,7 @@ async function materializeUntagged({
       encoder,
       detections,
       profile: sheetProfile,
+      sheetArtifacts,
       provenance: { pipeline: 'B', source: config.sources.footageFrom, channel: cameraCfg.nvrChannel },
       logger,
     });

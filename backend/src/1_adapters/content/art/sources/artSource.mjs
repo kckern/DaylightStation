@@ -1,11 +1,11 @@
 // artSource.mjs — resolves an `art` collection def into normalized candidates.
 // Scans media/img/art/<scope>/<work>/, reads metadata.yaml, classifies aspect,
 // applies the collection predicate. Each candidate exposes loadImage() → Jimp.
-import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { Jimp } from 'jimp';
 import { isMember } from '../collections.mjs';
+import { getFileStatsAsync, readDirectoryAsync, readTextFromPathAsync } from '#system/utils/FileIO.mjs';
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 
@@ -58,7 +58,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
   async function readMeta(dir) {
     let raw;
     try {
-      raw = await fs.readFile(path.join(dir, 'metadata.yaml'), 'utf-8');
+      raw = await readTextFromPathAsync(path.join(dir, 'metadata.yaml'));
     } catch (err) {
       // No metadata.yaml here. With sectioned scopes (art/<scope>/<section>/<work>/)
       // a missing file just means "this dir is a section, not a work" — that is
@@ -89,7 +89,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
   }
 
   async function findImageFile(dir) {
-    const files = await fs.readdir(dir);
+    const files = await readDirectoryAsync(dir);
     return files.find(
       (f) => !f.startsWith('.') && IMAGE_EXTS.includes(path.extname(f).toLowerCase())
     ) || null;
@@ -126,7 +126,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
   async function sectionsUnchanged(sections) {
     for (const [dir, mtimeMs] of sections) {
       try {
-        const s = await fs.stat(dir);
+        const s = await getFileStatsAsync(dir);
         if (s.mtimeMs !== mtimeMs) return false;
       } catch { return false; }                              // section vanished → rescan
     }
@@ -141,7 +141,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
   async function scanScope(scope, scopeDir) {
     let stat;
     try {
-      stat = await fs.stat(scopeDir);
+      stat = await getFileStatsAsync(scopeDir);
     } catch (err) {
       logger.warn?.('art.scope.unreadable', { scope, error: err.message });
       return [];
@@ -151,7 +151,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
       return cached.entries;
     }
 
-    const dirents = await fs.readdir(scopeDir, { withFileTypes: true });
+    const dirents = await readDirectoryAsync(scopeDir, { withFileTypes: true });
     const childDirs = dirents.filter((e) => e.isDirectory()).map((e) => e.name);
     const entries = [];
     const sections = new Map();                              // sectionDir → mtimeMs
@@ -162,9 +162,9 @@ export function createArtSource({ imgBasePath, logger = console }) {
       const childDir = path.join(scopeDir, child);
       let subDirents;
       try {
-        subDirents = await fs.readdir(childDir, { withFileTypes: true });
+        subDirents = await readDirectoryAsync(childDir, { withFileTypes: true });
       } catch { continue; }
-      try { sections.set(childDir, (await fs.stat(childDir)).mtimeMs); } catch { /* skip */ }
+      try { sections.set(childDir, (await getFileStatsAsync(childDir)).mtimeMs); } catch { /* skip */ }
       for (const sub of subDirents.filter((e) => e.isDirectory()).map((e) => e.name)) {
         const nested = await readWork(scope, scopeDir, path.join(child, sub), child);
         if (nested) entries.push(nested);

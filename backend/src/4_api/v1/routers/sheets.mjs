@@ -13,7 +13,6 @@
  * @module api/v1/routers/sheets
  */
 import express from 'express';
-import { renderSheetPdf } from '#rendering/pdf/QRSheetRenderer.mjs';
 
 /**
  * A structural failure means the sheet does not exist as described — a bad id, a
@@ -28,19 +27,17 @@ const STRUCTURAL = /unknown (sheet|source|cell kind|page size)/i;
 
 /**
  * @param {object} deps
- * @param {{build: (id: string, params: object) => Promise<object>}} deps.sheetService
- * @param {Record<string, Function>} deps.cellKinds Renderer per `cell.kind`.
+ * @param {Object} deps.printableSheets
  * @param {object} [deps.logger]
  * @returns {import('express').Router}
  */
-export function createSheetsRouter({ sheetService, cellKinds, logger = console }) {
+export function createSheetsRouter({ printableSheets, logger = console }) {
   const router = express.Router();
 
   router.get('/:id.pdf', async (req, res) => {
     const { id } = req.params;
     try {
-      const model = await sheetService.build(id, req.query);
-      const pdf = await renderSheetPdf(model, { cellKinds, logger });
+      const { model, pdf } = await printableSheets.render(id, req.query);
 
       res.setHeader('Content-Type', 'application/pdf');
       // The fingerprint rides in the filename so a saved or printed copy carries

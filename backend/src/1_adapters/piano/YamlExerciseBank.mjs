@@ -19,8 +19,7 @@
  * hold superseded material kept for reference, not content to serve.
  */
 import path from 'path';
-import fs from 'fs';
-import { loadYaml } from '#system/utils/FileIO.mjs';
+import { fileExists, loadYaml, readDirectory } from '#system/utils/FileIO.mjs';
 
 const HIDDEN = (name) => name.startsWith('_') || name.startsWith('.');
 
@@ -42,7 +41,7 @@ export class YamlExerciseBank {
   }
 
   available() {
-    return fs.existsSync(this.#root);
+    return fileExists(this.#root);
   }
 
   getIndex() {
@@ -52,8 +51,8 @@ export class YamlExerciseBank {
   /** Every category path in the tree, depth-first: `chords`, `drills`, `drills/hanon`. */
   listCategories(under = '') {
     const dir = under ? this.#resolve(under) : this.#root;
-    if (!dir || !fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir, { withFileTypes: true })
+    if (!dir || !fileExists(dir)) return [];
+    return readDirectory(dir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && !HIDDEN(entry.name))
       .flatMap((entry) => {
         const relative = under ? `${under}/${entry.name}` : entry.name;
@@ -69,15 +68,15 @@ export class YamlExerciseBank {
 
   getCategory(category) {
     const dir = this.#resolve(category);
-    if (!dir || !fs.existsSync(dir)) return null;
+    if (!dir || !fileExists(dir)) return null;
     return loadYaml(path.join(dir, 'index')) || null;
   }
 
   /** Seed ids directly in one category — full paths, not bare filenames. */
   listSeeds(category) {
     const dir = this.#resolve(category);
-    if (!dir || !fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir)
+    if (!dir || !fileExists(dir)) return [];
+    return readDirectory(dir)
       .filter((file) => file.endsWith('.yml') && file !== 'index.yml')
       .map((file) => `${category}/${file.replace(/\.yml$/, '')}`)
       .sort();
@@ -95,7 +94,7 @@ export class YamlExerciseBank {
   /** `chords/triads` or `drills/hanon/001` — the id is the path. */
   getSeed(id) {
     const stem = this.#resolve(id);
-    if (!stem || !fs.existsSync(`${stem}.yml`)) return null;
+    if (!stem || !fileExists(`${stem}.yml`)) return null;
     return loadYaml(stem) || null;
   }
 }

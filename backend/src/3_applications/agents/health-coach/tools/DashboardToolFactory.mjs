@@ -2,13 +2,12 @@
 
 import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
-import { configService } from '#system/config/index.mjs';
 
 export class DashboardToolFactory extends ToolFactory {
   static domain = 'dashboard';
 
   createTools() {
-    const { dataService, healthStore } = this.deps;
+    const { workspaceRepository, healthStore, logger = console } = this.deps;
 
     return [
       createTool({
@@ -25,9 +24,10 @@ export class DashboardToolFactory extends ToolFactory {
         },
         execute: async ({ userId, date, dashboard }) => {
           try {
-            dataService.user.write(`health-dashboard/${date}`, dashboard, userId);
-            return { success: true, path: `health-dashboard/${date}` };
+            const path = await workspaceRepository.saveDashboard(userId, date, dashboard);
+            return { success: true, path };
           } catch (err) {
+            logger.warn?.('health-coach.tool.write-dashboard.failed', { userId, date, error: err.message });
             return { error: err.message, success: false };
           }
         },
@@ -45,26 +45,7 @@ export class DashboardToolFactory extends ToolFactory {
         },
         execute: async ({ userId }) => {
           try {
-            const goals = dataService.user.read('agents/health-coach/goals', userId) || {};
-
-            // Enrich with nutrition goals from user profile if not in agent goals
-            if (!goals.nutrition?.calories_min && configService?.isReady?.()) {
-              const profile = configService.getUserProfile(userId);
-              const profileGoals = profile?.apps?.nutribot?.goals;
-              if (profileGoals) {
-                goals.nutrition = {
-                  ...goals.nutrition,
-                  calories_min: profileGoals.calories_min,
-                  calories_max: profileGoals.calories_max,
-                  protein_g: goals.nutrition?.protein_g || profileGoals.protein,
-                  carbs_g: goals.nutrition?.carbs_g || profileGoals.carbs,
-                  fat_g: goals.nutrition?.fat_g || profileGoals.fat,
-                  fiber_g: goals.nutrition?.fiber_g || profileGoals.fiber,
-                  sodium_mg: goals.nutrition?.sodium_mg || profileGoals.sodium,
-                };
-              }
-            }
-
+            const goals = workspaceRepository.getGoals(userId) || {};
             return { goals: goals || null };
           } catch (err) {
             return { error: err.message, goals: null };
@@ -100,6 +81,7 @@ export class DashboardToolFactory extends ToolFactory {
             await healthStore.saveCoachingData(userId, existing);
             return { success: true };
           } catch (err) {
+            logger.warn?.('health-coach.tool.log-note.failed', { userId, date, error: err.message });
             return { error: err.message, success: false };
           }
         },

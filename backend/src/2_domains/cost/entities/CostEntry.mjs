@@ -264,61 +264,22 @@ export class CostEntry {
   }
 
   /**
-   * Convert to JSON-serializable object
-   *
-   * @returns {Object} JSON-serializable representation
-   */
-  toJSON() {
-    return {
-      id: this.#id,
-      occurredAt: this.#occurredAt.toISOString(),
-      amount: this.#amount.toJSON(),
-      category: this.#category.toJSON(),
-      entryType: this.#entryType,
-      attribution: this.#attribution.toJSON(),
-      usage: this.#usage ? this.#usage.toJSON() : null,
-      description: this.#description,
-      metadata: this.#metadata,
-      spreadSource: this.#spreadSource ? this.#spreadSource.toJSON() : null,
-      reconcilesUsage: this.#reconcilesUsage,
-      variance: this.#variance ? this.#variance.toJSON() : null
-    };
-  }
-
-  /**
-   * Create a CostEntry from a JSON object
-   *
-   * @param {Object} data - JSON data
-   * @returns {CostEntry}
-   * @throws {ValidationError} If data is invalid
-   */
-  static fromJSON(data) {
-    return new CostEntry({
-      id: data.id,
-      occurredAt: new Date(data.occurredAt),
-      amount: Money.fromJSON(data.amount),
-      category: CostCategory.fromJSON(data.category),
-      entryType: data.entryType,
-      attribution: Attribution.fromJSON(data.attribution),
-      usage: data.usage ? Usage.fromJSON(data.usage) : null,
-      description: data.description ?? null,
-      metadata: data.metadata || {},
-      spreadSource: data.spreadSource ? SpreadSource.fromJSON(data.spreadSource) : null,
-      reconcilesUsage: data.reconcilesUsage ?? false,
-      variance: data.variance ? Money.fromJSON(data.variance) : null
-    });
-  }
-
-  /**
    * Generate a unique ID for a cost entry
    *
    * Format: YYYYMMDDHHmmss-xxxxxx where xxxxxx is a random 6-char suffix
    *
-   * @param {Date} [timestamp=new Date()] - Timestamp to use for the prefix
+   * @param {Date|string|number} timestamp - Timestamp to use for the prefix
    * @returns {string} Generated ID
    */
-  static generateId(timestamp = new Date()) {
+  static generateId(timestamp, random) {
+    if (timestamp === undefined || timestamp === null) {
+      throw new ValidationError('timestamp is required for generateId', {
+        code: 'MISSING_TIMESTAMP',
+        field: 'timestamp'
+      });
+    }
     const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    if (typeof random !== 'function') throw new ValidationError('random is required for generateId');
 
     // Format: YYYYMMDDHHmmss
     const year = date.getUTCFullYear();
@@ -334,7 +295,7 @@ export class CostEntry {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let suffix = '';
     for (let i = 0; i < 6; i++) {
-      suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+      suffix += chars.charAt(Math.floor(random() * chars.length));
     }
 
     return `${timestampPart}-${suffix}`;

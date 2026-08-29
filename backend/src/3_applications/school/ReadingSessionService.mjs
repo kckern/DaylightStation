@@ -39,9 +39,6 @@
  * @module applications/school/ReadingSessionService
  */
 
-/** One topic per reader, so a screen subscribes to its own room and nothing else. */
-export const readingTopic = (location) => `reading:${location}`;
-
 /** Where a fresh session starts: nothing picked, nothing playing. */
 export const PROMPT = 'prompt';
 export const STARTING = 'starting';
@@ -94,8 +91,8 @@ export class ReadingSessionService {
   #observationStore;
   /** Locations already reported stuck, so the 15s sweep warns once, not always. */
   #stuckReported = new Set();
-  #eventBus; #clock; #logger;
-  #idleTimeoutMs; #sweepIntervalMs; #onTimeout; #scheduler; #timer = null;
+  #realtime; #clock; #logger; #idFactory; #idSequence = 0;
+  #idleTimeoutMs; #sweepIntervalMs; #onTimeout; #scheduler; #cancelSweep = null;
 
   /**
    * @param {object} [config]
@@ -105,25 +102,26 @@ export class ReadingSessionService {
    * @param {(session: object) => Promise<void>|void} [config.onTimeout] - the
    *   teardown itself, which in the field is "power the TV off". Injected
    *   because THIS class must not know what a TV is; composition does.
-   * @param {{setInterval: Function, clearInterval: Function}} [config.scheduler]
+   * @param {import('./ports/IAsyncScheduler.mjs').IAsyncScheduler} [config.scheduler]
    *   - injected so the timeout can be tested in milliseconds rather than in
    *   the two minutes the field waits.
    */
   constructor({
-    eventBus = null, clock = () => new Date(), logger = console,
+    realtime = null, clock = () => new Date(), idFactory = null, logger = console,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
     sweepIntervalMs = DEFAULT_SWEEP_INTERVAL_MS,
     onTimeout = null,
-    scheduler = { setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval }, observationStore = null,
+    scheduler = null, observationStore = null,
   } = {}) {
-    this.#eventBus = eventBus;
+    this.#realtime = realtime;
     this.#clock = clock;
     this.#logger = logger;
     this.#idleTimeoutMs = Number.isFinite(idleTimeoutMs) ? idleTimeoutMs : DEFAULT_IDLE_TIMEOUT_MS;
     this.#sweepIntervalMs = sweepIntervalMs;
     this.#onTimeout = onTimeout;
     this.#scheduler = scheduler;
-    this.#serverEpoch = `reading_${Math.random().toString(36).slice(2, 12)}`;
+    this.#idFactory = idFactory;
+    this.#serverEpoch = this.#nextId('reading');
     this.#observationStore = observationStore;
   }
 
@@ -132,25 +130,23 @@ export class ReadingSessionService {
    * second call must not leave a second timer running against the same Map.
    */
   start() {
-    if (this.#timer || !this.#idleTimeoutMs) return this;
-    this.#timer = this.#scheduler.setInterval(() => {
+    if (this.#cancelSweep || !this.#idleTimeoutMs || !this.#scheduler?.every) return this;
+    this.#cancelSweep = this.#scheduler.every(this.#sweepIntervalMs, () => {
       // Never let a rejected sweep become an unhandled rejection on a timer
       // nobody is awaiting. `sweep` already swallows its own teardown errors;
       // this is the belt to that braces.
       Promise.resolve(this.sweep()).catch((err) => {
         this.#log('warn', 'school.reading.sweep-failed', { error: err?.message ?? String(err) });
       });
-    }, this.#sweepIntervalMs);
-    // A sweep timer must never hold the process open on its own account.
-    this.#timer?.unref?.();
+    });
     return this;
   }
 
   /** Disarm the sweep. Safe to call twice, and safe to call having never started. */
   stop() {
-    if (!this.#timer) return this;
-    this.#scheduler.clearInterval(this.#timer);
-    this.#timer = null;
+    if (!this.#cancelSweep) return this;
+    this.#cancelSweep();
+    this.#cancelSweep = null;
     return this;
   }
 
@@ -277,18 +273,11 @@ export class ReadingSessionService {
     if ([...this.#sessions.values()].some((session) => session.sessionId === sessionId && session.acknowledgedAt)) {
       return Promise.resolve(true);
     }
-    return new Promise((resolve) => {
-      const finish = (value) => {
-        const current = this.#ackWaiters.get(sessionId);
-        if (!current) return;
-        this.#ackWaiters.delete(sessionId);
-        clearTimeout(timer);
-        resolve(value);
-      };
-      const timer = setTimeout(() => finish(false), timeoutMs);
-      timer?.unref?.();
-      this.#ackWaiters.set(sessionId, finish);
-    });
+    const acknowledgement = new Promise((resolve) => this.#ackWaiters.set(sessionId, resolve));
+    if (!this.#scheduler?.withDeadline) return acknowledgement;
+    return this.#scheduler.withDeadline(acknowledgement, {
+      milliseconds: timeoutMs, description: `reading acknowledgement ${sessionId}`,
+    }).catch(() => false).finally(() => this.#ackWaiters.delete(sessionId));
   }
 
   /** Replay the exact current state; snapshots make this safe for a reload. */
@@ -331,7 +320,7 @@ export class ReadingSessionService {
       location: location.trim(),
       learnerId: learnerId.trim(),
       target,
-      sessionId: `rs_${Math.random().toString(36).slice(2, 12)}`,
+      sessionId: this.#nextId('rs'),
       revision: this.#nextRevision(location.trim()),
       serverEpoch: this.#serverEpoch,
       state,
@@ -420,7 +409,8 @@ export class ReadingSessionService {
 
   #broadcast(location, payload) {
     try {
-      this.#eventBus?.broadcast?.(readingTopic(location), payload);
+      const { event: kind, ...announcement } = payload;
+      this.#realtime?.readingRoomChanged?.(location, { kind, ...announcement });
     } catch (err) {
       this.#log('warn', 'school.reading.broadcast-failed', {
         location, event: payload?.event ?? null, error: err?.message ?? String(err),
@@ -432,6 +422,12 @@ export class ReadingSessionService {
     const next = (this.#revisions.get(location) ?? 0) + 1;
     this.#revisions.set(location, next);
     return next;
+  }
+
+  #nextId(prefix) {
+    if (this.#idFactory) return this.#idFactory(prefix);
+    this.#idSequence += 1;
+    return `${prefix}_${this.#clock().getTime().toString(36)}_${this.#idSequence.toString(36)}`;
   }
 
   #observe(type, session, extra = {}) {

@@ -45,35 +45,6 @@
 // is the long-form anatomy essay (86 KB across 38 muscles) that the School shelf renders
 // as reader content. A filter rail draws a name and a chip, so the essays stay out of it.
 
-/**
- * The query params that are facets. Anything else in the query string is ignored rather
- * than forwarded, so a stray param can never be mistaken for a constraint.
- *
- * `q` is free text over name and slug; the other three are slug facets.
- */
-export const FACET_PARAMS = Object.freeze(['group', 'muscle', 'equipment', 'q']);
-
-/**
- * Pull the facets out of a query object.
- *
- * Keys are SELECTED; values are copied by reference and never inspected, coerced or
- * normalized — see WHAT THIS MUST NOT DO. A facet the caller did not send is left absent
- * rather than set to undefined, so the filter object states exactly what was asked for.
- *
- * @param {Object} [query] typically `req.query`
- * @returns {Object} a filter for the domain
- */
-export function pickFacets(query = {}) {
-  const filter = {};
-  if (!query || typeof query !== 'object') return filter;
-  for (const param of FACET_PARAMS) {
-    // Own-property check: the query object may be prototype-backed, and
-    // `query.constructor` is a function, not a facet the caller sent.
-    if (Object.hasOwn(query, param)) filter[param] = query[param];
-  }
-  return filter;
-}
-
 /** What a browse card draws, and nothing else. See PROJECTION. */
 function toExerciseSummary(exercise) {
   return {
@@ -117,21 +88,6 @@ export class BrowseExerciseLibrary {
     if (!exerciseLibrary) throw new Error('BrowseExerciseLibrary requires exerciseLibrary');
     this.#library = exerciseLibrary;
     this.#logger = logger ?? console;
-  }
-
-  /**
-   * {@link pickFacets}, reachable from an injected instance.
-   *
-   * An INSTANCE method rather than a static or a bare import so a request handler can
-   * reach the facet policy through the dependency it was already given. The API layer
-   * is not supposed to import the application layer at all (`api-no-apps`), and adding
-   * an import to read one helper off a class would widen that debt to buy nothing.
-   *
-   * @param {Object} [query] typically `req.query`
-   * @returns {Object} a filter for the domain
-   */
-  filterFromQuery(query = {}) {
-    return pickFacets(query);
   }
 
   /**

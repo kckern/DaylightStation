@@ -13,17 +13,10 @@
  *     render once, at the chosen density, with furniture (footer +
  *     archetype-driven gutter/duplex) and `growLastPage` threaded through.
  *
- * D1 NOTE: this file imports `1_rendering` directly, unlike the rest of
- * `3_applications` (which reaches rendering only through the `IDocumentRenderer`
- * port — see that port's own docstring). `fit.mjs`'s docstring names this use
- * case, explicitly, as the one place allowed to run rendering's measurement
- * loop: "the loop that actually RUNS measurement at each density ... is Task
- * 8's use case (3_applications), which is allowed to call rendering." Every
- * rendering dependency is still constructor-injectable (`renderer`, `measure`,
- * `layout`) so callers/tests can substitute fakes exactly like a port would
- * allow.
+ * The use case owns the fit orchestration, while all presentation primitives
+ * arrive through IPrintDocumentRendering. This keeps density choice and
+ * allocation policy here without importing or constructing renderers here.
  */
-import path from 'node:path';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { validateAnyDocument, DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
 import { DOCUMENT_SOURCE_SCHEMA, publishDocument } from '#domains/school/documents/documentSource.mjs';
@@ -31,14 +24,7 @@ import { deriveShuffle, applyShuffle } from '#domains/school/documents/shuffle.m
 import { resolveFitPlan } from '#domains/school/documents/fit.mjs';
 import { planRows } from '#domains/school/documents/allocation.mjs';
 import { formatCode } from '#domains/school/companionCode.mjs';
-import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
-import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
-import { createMeasurementDocument, measureDocumentFragments } from '#rendering/school/documents/measure.mjs';
-import { placeFragments, contentHeightPt } from '#rendering/school/documents/layout.mjs';
-import { contentBox } from '#rendering/school/documents/furniture.mjs';
-import { texToSvg as mathJaxTexToSvg } from '#rendering/school/documents/mathSvg.mjs';
-import { createSubjectIconResolver } from '#rendering/school/documents/assetResolver.mjs';
-import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
+import { assertPrintDocumentRendering } from './ports/IPrintDocumentRendering.mjs';
 
 /**
  * The header furniture already prints `document.title`; a leading rich_text
@@ -110,32 +96,8 @@ const MANIFEST_ARCHETYPES = new Set(['worksheet']);
  * lifetime (one render, or one CLI invocation) is safe: nothing in this
  * process is expected to publish a NEW bank file mid-render.
  */
-export function createYamlBankReader({ dataDir } = {}) {
-  const resolvedDataDir = dataDir
-    ?? (process.env.DAYLIGHT_BASE_PATH ? path.join(process.env.DAYLIGHT_BASE_PATH, 'data') : '/usr/src/app/data');
-  const directory = path.resolve(resolvedDataDir, 'content/school/learning-catalog/question-banks');
-  let cache = null;
-
-  function loadAll() {
-    if (cache) return cache;
-    cache = new Map();
-    const files = [...listYamlFiles(directory, { recursive: true })].sort();
-    for (const relative of files) {
-      const raw = loadYaml(path.join(directory, relative));
-      if (raw && typeof raw.id === 'string' && !cache.has(raw.id)) cache.set(raw.id, raw);
-    }
-    return cache;
-  }
-
-  return {
-    getBank(bankId) {
-      return loadAll().get(bankId) ?? null;
-    },
-  };
-}
-
 function defaultBankReader() {
-  return createYamlBankReader();
+  return { getBank() { return null; } };
 }
 
 /** Bank-item types a bank-select sugar block can expand into a printable `question` (see `#expandBankSelectSugar`). */
@@ -727,26 +689,24 @@ export function buildTeacherKeyBlocks(document, bank, letters) {
 
 export class RenderPrintDocument {
   #repository; #rendererFactory; #createMeasurementDocument; #measureDocumentFragments;
-  #placeFragments; #contentHeightPt; #texToSvg; #resolveAsset; #legacyRenderer; #banks; #allocationStore;
+  #placeFragments; #contentHeightPt; #contentBox; #createTheme; #texToSvg;
+  #resolveAsset; #legacyRenderer; #banks; #allocationStore;
 
   /**
-   * @param {Object} [deps]
+   * @param {Object} deps
    * @param {{get: (id: string) => (object|Promise<object>), getDerivedBank?: Function}} [deps.repository] -
    *   resolves `execute({id})`; required only when `id` (not `document`) is used.
    *   `getDerivedBank(id, rev)` (Task 5), when present, resolves the derived
    *   bank behind a PUBLISHED (`rev`-carrying) v2 document.
    * @param {{getBank: (id: string) => (object|null)}} [deps.banks] - resolves a
-   *   bank-select sugar block's `bankId` (spec §6.2, Task 5). Defaults to a YAML
-   *   reader over the school content mount's question-banks directory (see
-   *   `defaultBankReader`).
-   * @param {Function} [deps.renderer] - `({theme?, texToSvg, resolveAsset, fontDir?}) => {render}`;
-   *   defaults to `createDocumentPdfRenderer`. Called once per density (v2) or
-   *   once for the legacy theme (v1) — cheap, so never cached across calls.
+   *   bank-select sugar block's `bankId` (spec §6.2, Task 5). Composition
+   *   supplies a repository-backed reader when bank selection is enabled.
+   * @param {Object} deps.rendering - IPrintDocumentRendering capability.
+   * @param {Function} [deps.renderer] - optional renderer override for tests.
    * @param {{createMeasurementDocument: Function, measureDocumentFragments: Function}} [deps.measure]
    * @param {{placeFragments: Function, contentHeightPt: Function}} [deps.layout]
-   * @param {Function} [deps.texToSvg] - TeX → SVG; defaults to the real MathJax renderer
-   * @param {Function|null} [deps.resolveAsset] - (ref) => {svg, widthPt, heightPt}; default
-   *   throws on any asset reference, matching `createDocumentPdfRenderer`'s own default
+   * @param {Function} [deps.texToSvg] - optional TeX → SVG override.
+   * @param {Function|null} [deps.resolveAsset] - optional asset resolver override.
    * @param {{allocate: Function}|null} [deps.allocationStore] - OMR card allocation
    *   store (spec §5.3/§5.4, Task 5: `YamlAllocationStore`-shaped — `allocate({cardId?,
    *   request})`). Required only for a card-attached render (`context.cardId`/`freshCard`
@@ -756,26 +716,32 @@ export class RenderPrintDocument {
   constructor({
     repository = null,
     banks = null,
-    renderer = createDocumentPdfRenderer,
-    measure = { createMeasurementDocument, measureDocumentFragments },
-    layout = { placeFragments, contentHeightPt },
-    texToSvg = mathJaxTexToSvg,
-    resolveAsset = createSubjectIconResolver(),
+    rendering,
+    renderer = null,
+    measure = null,
+    layout = null,
+    texToSvg = null,
+    resolveAsset = null,
     allocationStore = null,
   } = {}) {
+    const capabilities = assertPrintDocumentRendering(rendering);
     this.#repository = repository;
     this.#banks = banks ?? defaultBankReader();
-    this.#rendererFactory = renderer;
-    this.#createMeasurementDocument = measure.createMeasurementDocument;
-    this.#measureDocumentFragments = measure.measureDocumentFragments;
-    this.#placeFragments = layout.placeFragments;
-    this.#contentHeightPt = layout.contentHeightPt;
-    this.#texToSvg = texToSvg;
-    this.#resolveAsset = resolveAsset;
+    this.#rendererFactory = renderer ?? capabilities.createRenderer;
+    this.#createMeasurementDocument = measure?.createMeasurementDocument
+      ?? capabilities.createMeasurementDocument;
+    this.#measureDocumentFragments = measure?.measureDocumentFragments
+      ?? capabilities.measureDocumentFragments;
+    this.#placeFragments = layout?.placeFragments ?? capabilities.placeFragments;
+    this.#contentHeightPt = layout?.contentHeightPt ?? capabilities.contentHeightPt;
+    this.#contentBox = capabilities.contentBox;
+    this.#createTheme = capabilities.createTheme;
+    this.#texToSvg = texToSvg ?? capabilities.texToSvg;
+    this.#resolveAsset = resolveAsset ?? capabilities.resolveAsset;
     this.#allocationStore = allocationStore;
     // The legacy (v1) render target: default theme, no furniture, no
-    // growLastPage — literally what `createDocumentPdfRenderer(...)` already
-    // meant before this use case existed.
+    // growLastPage — the legacy rendering behavior retained from before this
+    // use case existed.
     this.#legacyRenderer = this.#rendererFactory({ texToSvg: this.#texToSvg, resolveAsset: this.#resolveAsset });
   }
 
@@ -1024,7 +990,7 @@ export class RenderPrintDocument {
       duplex: DUPLEX_ARCHETYPES.has(document.archetype),
     };
 
-    const normalTheme = createWorkbookTheme({ typeScale: document.fit.typeScale, density: 'normal' });
+    const normalTheme = this.#createTheme({ typeScale: document.fit.typeScale, density: 'normal' });
     const normalAttempt = this.#measureAttempt(document, normalTheme, 'normal', context, furnitureOpts, totalPoints);
 
     const attempts = [normalAttempt];
@@ -1040,7 +1006,7 @@ export class RenderPrintDocument {
     // density rather than failing (see `resolveFitPlan`'s own doc comment).
     if ((document.fit.policy === 'one-page' || document.fit.policy === 'prefer-one-page')
       && normalAttempt.pageCount !== 1) {
-      compactTheme = createWorkbookTheme({ typeScale: document.fit.typeScale, density: 'compact' });
+      compactTheme = this.#createTheme({ typeScale: document.fit.typeScale, density: 'compact' });
       attempts.push(this.#measureAttempt(document, compactTheme, 'compact', context, furnitureOpts, totalPoints));
     }
 
@@ -1453,7 +1419,7 @@ export class RenderPrintDocument {
     // render (`#renderV2` → DocumentPdfRenderer.renderPlaced) computes this
     // identically from the same `theme`/`furnitureOpts`, so a fit decision
     // made here can never disagree with what actually gets drawn.
-    const box = contentBox(theme, furnitureOpts);
+    const box = this.#contentBox(theme, furnitureOpts);
     const measurementDoc = this.#createMeasurementDocument({ theme });
     const fragments = this.#measureDocumentFragments(document, {
       doc: measurementDoc,

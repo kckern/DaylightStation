@@ -15,15 +15,17 @@ function makeEpisode(id, index, { isWatched = false, summary = null } = {}) {
 
 function makeContext(favorites = [], contentItems = {}, playablesByShow = {}) {
   return {
-    fitnessConfig: {
-      suggestions: { favorites },
-    },
-    contentAdapter: {
-      getItem: async (compoundId) => contentItems[compoundId] || null,
+    suggestionPolicy: { favorites },
+    contentCatalog: {
+      canonicalize: (value) => {
+        const localId = String(value).replace(/^plex:/, '');
+        return { source: 'plex', localId, contentId: `plex:${localId}` };
+      },
+      describeItem: async (contentId) => contentItems[contentId] || null,
     },
     fitnessPlayableService: {
       getPlayableEpisodes: async (showId) => ({
-        items: playablesByShow[showId] || [],
+        items: playablesByShow[String(showId).replace(/^plex:/, '')] || [],
       }),
     },
   };

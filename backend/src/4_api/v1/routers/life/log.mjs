@@ -1,59 +1,9 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 import { Router } from 'express';
-import moment from 'moment-timezone';
 import { createLogger } from '#system/logging/logger.mjs';
 
-const VALID_SCOPES = ['week', 'month', 'season', 'year', 'decade'];
-
-const SCOPE_DAYS = {
-  week: 7,
-  month: 30,
-  season: 90,
-  year: 365,
-  decade: 3650,
-};
-
-function isValidDate(str) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(str) && !isNaN(Date.parse(str));
-}
-
-function resolveScopeRange(scope, at) {
-  if (at) {
-    // Specific period: at=YYYY-MM or at=YYYY
-    if (/^\d{4}-\d{2}$/.test(at)) {
-      const start = moment(at, 'YYYY-MM').startOf('month');
-      const end = start.clone().endOf('month');
-      return { start: start.format('YYYY-MM-DD'), end: end.format('YYYY-MM-DD') };
-    }
-    if (/^\d{4}$/.test(at)) {
-      const start = moment(at, 'YYYY').startOf('year');
-      const end = start.clone().endOf('year');
-      return { start: start.format('YYYY-MM-DD'), end: end.format('YYYY-MM-DD') };
-    }
-  }
-
-  const end = moment();
-  const days = SCOPE_DAYS[scope] || 30;
-  const start = end.clone().subtract(days - 1, 'days');
-  return { start: start.format('YYYY-MM-DD'), end: end.format('YYYY-MM-DD') };
-}
-
-function filterByCategory(rangeResult, category) {
-  const filtered = { ...rangeResult, days: {} };
-  for (const [date, day] of Object.entries(rangeResult.days)) {
-    const catData = day.categories?.[category];
-    if (catData && Object.keys(catData).length > 0) {
-      filtered.days[date] = {
-        sources: catData,
-        categories: { [category]: catData },
-        summaries: day.summaries?.filter(s => s.category === category) || [],
-      };
-    }
-  }
-  return filtered;
-}
-
 export default function createLogRouter(config) {
-  const { aggregator, usernameResolver } = config;
+  const { lifeApi, usernameResolver } = config;
   const router = Router();
   const logger = createLogger({ source: 'backend', app: 'life', context: { router: 'log' } });
 
@@ -68,8 +18,7 @@ export default function createLogRouter(config) {
 
   // GET /sources — available extractors
   router.get('/sources', (req, res) => {
-    const sources = aggregator.getAvailableSources?.() || [];
-    res.json({ sources });
+    res.json({ sources: lifeApi.sources() });
   });
 
   // GET /:username/range?start=&end= — date range
@@ -78,17 +27,14 @@ export default function createLogRouter(config) {
       const { username } = req.params;
       const { start, end } = req.query;
 
-      if (!start || !end || !isValidDate(start) || !isValidDate(end)) {
+      const outcome = await lifeApi.range(username, start, end);
+      if (outcome.kind === 'invalid_range') {
         return res.status(400).json({ error: 'Both start and end date params required (YYYY-MM-DD)' });
       }
-
-      const t0 = Date.now();
-      const result = await aggregator.aggregateRange(username, start, end);
-      logger.info('life.log.range-aggregated', { username, start, end, dayCount: Object.keys(result?.days || {}).length, durationMs: Date.now() - t0 });
-      res.json(result);
+      res.json(outcome.value);
     } catch (err) {
       logger.error('life.log.range-error', { error: err.message });
-      res.status(500).json({ error: err.message });
+      sendInternalError(res, { error: err.message });
     }
   });
 
@@ -97,18 +43,12 @@ export default function createLogRouter(config) {
     try {
       const { username, scope } = req.params;
 
-      if (!VALID_SCOPES.includes(scope)) {
-        return res.status(400).json({ error: `Invalid scope. Must be one of: ${VALID_SCOPES.join(', ')}` });
-      }
-
-      const { start, end } = resolveScopeRange(scope, req.query.at);
-      const t0 = Date.now();
-      const result = await aggregator.aggregateRange(username, start, end);
-      logger.info('life.log.scope-aggregated', { username, scope, start, end, dayCount: Object.keys(result?.days || {}).length, durationMs: Date.now() - t0 });
-      res.json(result);
+      const outcome = await lifeApi.scope(username, scope, req.query.at);
+      if (outcome.kind === 'invalid_scope') return res.status(400).json({ error: `Invalid scope. Must be one of: ${outcome.validScopes.join(', ')}` });
+      res.json(outcome.value);
     } catch (err) {
       logger.error('life.log.scope-error', { scope, error: err.message });
-      res.status(500).json({ error: err.message });
+      sendInternalError(res, { error: err.message });
     }
   });
 
@@ -118,26 +58,9 @@ export default function createLogRouter(config) {
       const { username, category } = req.params;
       const { start, end, scope } = req.query;
 
-      let rangeStart, rangeEnd;
-      if (start && end) {
-        rangeStart = start;
-        rangeEnd = end;
-      } else if (scope && VALID_SCOPES.includes(scope)) {
-        const resolved = resolveScopeRange(scope);
-        rangeStart = resolved.start;
-        rangeEnd = resolved.end;
-      } else {
-        // Default: last 30 days
-        const resolved = resolveScopeRange('month');
-        rangeStart = resolved.start;
-        rangeEnd = resolved.end;
-      }
-
-      const result = await aggregator.aggregateRange(username, rangeStart, rangeEnd);
-      const filtered = filterByCategory(result, category);
-      res.json(filtered);
+      res.json(await lifeApi.category(username, category, { start, end, scope }));
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      sendInternalError(res, { error: err.message });
     }
   });
 
@@ -146,17 +69,14 @@ export default function createLogRouter(config) {
     try {
       const { username, date } = req.params;
 
-      if (!isValidDate(date)) {
+      const outcome = await lifeApi.day(username, date);
+      if (outcome.kind === 'invalid_date') {
         return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
       }
-
-      const t0 = Date.now();
-      const result = await aggregator.aggregate(username, date);
-      logger.info('life.log.day-aggregated', { username, date, sourceCount: Object.keys(result?.sources || {}).length, durationMs: Date.now() - t0 });
-      res.json(result);
+      res.json(outcome.value);
     } catch (err) {
       logger.error('life.log.day-error', { date, error: err.message });
-      res.status(500).json({ error: err.message });
+      sendInternalError(res, { error: err.message });
     }
   });
 

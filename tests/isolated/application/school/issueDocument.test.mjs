@@ -6,6 +6,7 @@ import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { pdfText, requirePdftotext } from '#testlib/school/pdfText.mjs';
 import {
@@ -476,7 +477,9 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
   const buildPrintCase = async ({ configured = true } = {}) => {
     repository = fakeRepository();
     allocationStore = fakeAllocationStore();
-    renderPrintDocument = new RenderPrintDocument({ repository, allocationStore });
+    renderPrintDocument = new RenderPrintDocument({
+      repository, allocationStore, rendering: createPrintDocumentRendering(),
+    });
 
     const publisher = new PublishPrintDocument({ repository });
     const { rev } = await publisher.execute({ source: sourceQuiz(QUIZ_DOC_ID) });
@@ -647,6 +650,7 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
     const explodingRenderer = () => ({ render: async () => { throw new Error('renderer exploded'); } });
     const explodingRenderPrintDocument = new RenderPrintDocument({
       repository, allocationStore, renderer: explodingRenderer,
+      rendering: createPrintDocumentRendering(),
     });
     const warnSpy = vi.fn();
     const useCase = new IssueDocument({

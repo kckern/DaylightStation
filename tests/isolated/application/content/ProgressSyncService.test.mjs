@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ProgressSyncService } from '#apps/content/services/ProgressSyncService.mjs';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
+import { ProgressWriteRuntime } from '#adapters/content/ProgressWriteRuntime.mjs';
 
 // ── Mock factories ───────────────────────────────────────────────────
 
@@ -14,8 +15,8 @@ function createMockRemoteProgressProvider() {
 function createMockMediaProgressMemory() {
   const store = new Map();
   return {
-    get: vi.fn(async (contentId) => store.get(contentId) || null),
-    set: vi.fn(async (state, storagePath) => store.set(state.contentId, state)),
+    findProgress: vi.fn(async (contentId) => store.get(contentId) || null),
+    saveProgress: vi.fn(async (state, namespaceId) => store.set(state.contentId, state)),
     _store: store,
   };
 }
@@ -37,6 +38,8 @@ function createService(overrides = {}) {
   const service = new ProgressSyncService({
     remoteProgressProvider,
     mediaProgressMemory,
+    progressWriteRuntime: new ProgressWriteRuntime(),
+    clock: { now: () => new Date(), epoch: () => Date.now() },
     logger,
     ...overrides,
   });
@@ -117,8 +120,8 @@ describe('ProgressSyncService', () => {
       await service.reconcileOnPlay('abs:book-1', 'plex/audiobooks', 'li_abc123');
 
       // Check that set was called (saving the bookmark)
-      expect(mediaProgressMemory.set).toHaveBeenCalled();
-      const savedProgress = mediaProgressMemory.set.mock.calls[0][0];
+      expect(mediaProgressMemory.saveProgress).toHaveBeenCalled();
+      const savedProgress = mediaProgressMemory.saveProgress.mock.calls[0][0];
       expect(savedProgress.bookmark).toBeDefined();
       expect(savedProgress.bookmark.playhead).toBe(600);
       expect(savedProgress.bookmark.reason).toBe('session-start');
@@ -142,7 +145,7 @@ describe('ProgressSyncService', () => {
       expect(result).toBeDefined();
       expect(result.playhead).toBe(900);
       // Should have updated the local store with remote values
-      expect(mediaProgressMemory.set).toHaveBeenCalled();
+      expect(mediaProgressMemory.saveProgress).toHaveBeenCalled();
     });
 
     it('returns null when both local and remote are null', async () => {
@@ -154,7 +157,7 @@ describe('ProgressSyncService', () => {
       expect(result).toBeNull();
     });
 
-    it('initializes skepticalMap entry with resolved playhead and storagePath', async () => {
+    it('initializes skepticalMap entry with resolved playhead and namespaceId', async () => {
       const local = makeLocalProgress({ playhead: 600 });
       mediaProgressMemory._store.set('abs:book-1', local);
       remoteProgressProvider.getProgress.mockResolvedValue(null);
@@ -164,7 +167,7 @@ describe('ProgressSyncService', () => {
       const tracking = service._skepticalMap.get('abs:book-1');
       expect(tracking).toBeDefined();
       expect(tracking.lastCommittedPlayhead).toBe(600);
-      expect(tracking.storagePath).toBe('plex/audiobooks');
+      expect(tracking.namespaceId).toBe('plex/audiobooks');
     });
 
     it('buffers remote write-back when local wins', async () => {
@@ -196,7 +199,7 @@ describe('ProgressSyncService', () => {
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
-        storagePath: 'plex/audiobooks',
+        namespaceId: 'plex/audiobooks',
       });
 
       await service.onProgressUpdate('abs:book-1', 'li_abc123', {
@@ -215,7 +218,7 @@ describe('ProgressSyncService', () => {
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
-        storagePath: 'plex/audiobooks',
+        namespaceId: 'plex/audiobooks',
       });
 
       await service.onProgressUpdate('abs:book-1', 'li_abc123', {
@@ -233,7 +236,7 @@ describe('ProgressSyncService', () => {
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
-        storagePath: 'plex/audiobooks',
+        namespaceId: 'plex/audiobooks',
       });
 
       // First update: large jump, not yet committed
@@ -267,7 +270,7 @@ describe('ProgressSyncService', () => {
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
-        storagePath: 'plex/audiobooks',
+        namespaceId: 'plex/audiobooks',
       });
 
       await service.onProgressUpdate('abs:book-1', 'li_abc123', {
@@ -284,21 +287,21 @@ describe('ProgressSyncService', () => {
       await Promise.resolve();
 
       // Should have saved a pre-jump bookmark via mediaProgressMemory
-      expect(mediaProgressMemory.set).toHaveBeenCalled();
-      const savedProgress = mediaProgressMemory.set.mock.calls[0][0];
+      expect(mediaProgressMemory.saveProgress).toHaveBeenCalled();
+      const savedProgress = mediaProgressMemory.saveProgress.mock.calls[0][0];
       expect(savedProgress.bookmark).toBeDefined();
       expect(savedProgress.bookmark.reason).toBe('pre-jump');
       expect(savedProgress.bookmark.playhead).toBe(600);
     });
 
-    it('passes storagePath to mediaProgressMemory in pre-jump bookmark', async () => {
+    it('passes namespaceId to mediaProgressMemory in pre-jump bookmark', async () => {
       const existing = makeLocalProgress({ playhead: 600 });
       mediaProgressMemory._store.set('abs:book-1', existing);
 
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
-        storagePath: 'plex/audiobooks',
+        namespaceId: 'plex/audiobooks',
       });
 
       await service.onProgressUpdate('abs:book-1', 'li_abc123', {
@@ -312,11 +315,11 @@ describe('ProgressSyncService', () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      // Verify get was called with storagePath
-      expect(mediaProgressMemory.get).toHaveBeenCalledWith('abs:book-1', 'plex/audiobooks');
-      // Verify set was called with storagePath
-      expect(mediaProgressMemory.set).toHaveBeenCalled();
-      const setCall = mediaProgressMemory.set.mock.calls[0];
+      // Verify the lookup was called with namespaceId.
+      expect(mediaProgressMemory.findProgress).toHaveBeenCalledWith('abs:book-1', 'plex/audiobooks');
+      // Verify the save was called with namespaceId.
+      expect(mediaProgressMemory.saveProgress).toHaveBeenCalled();
+      const setCall = mediaProgressMemory.saveProgress.mock.calls[0];
       expect(setCall[1]).toBe('plex/audiobooks');
     });
 
@@ -397,7 +400,7 @@ describe('ProgressSyncService', () => {
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
-        storagePath: 'plex/audiobooks',
+        namespaceId: 'plex/audiobooks',
       });
 
       service.dispose();

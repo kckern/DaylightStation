@@ -1,8 +1,6 @@
 // backend/src/4_api/routers/list.mjs
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
-import { parseModifiers } from '../utils/modifierParser.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 
@@ -270,43 +268,13 @@ export function toListItem(item) {
  * - GET /api/list/:source/(path)/shuffle - Shuffled list
  *
  * @param {Object} config
- * @param {Object} config.registry - ContentSourceRegistry
- * @param {Function} [config.loadFile] - Function to load state files
- * @param {Object} [config.configService] - ConfigService for household paths
- * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
+ * @param {Object} [config.browseCatalog] - Household Browse catalog query
+ * @param {Object} config.listBrowse - Semantic list browsing facade
  * @returns {express.Router}
  */
 export function createListRouter(config) {
-  const { registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath, logger = console } = config;
+  const { browseCatalog, listBrowse, recordMenuSelection, logger = console } = config;
   const router = express.Router();
-
-  /**
-   * Extract media key from item's action objects for menu_memory lookup
-   * Items may be raw Item entities (with item.actions) or transformed (with top-level play/queue/etc)
-   * @param {Object} item - Item entity or list item
-   * @returns {string|null} Media key for lookup
-   */
-  function getMenuMemoryKey(item) {
-    // Check both Item entity format (item.actions.X) and transformed format (item.X)
-    const action = item.actions?.play || item.actions?.queue || item.actions?.list || item.actions?.open ||
-                   item.play || item.queue || item.list || item.open;
-    if (!action) return null;
-    // Action is an object like { plex: "123" } or { list: "FHE" }
-    // Get the first value from the action object
-    const values = Object.values(action);
-    return values.length > 0 ? values[0] : null;
-  }
-
-  /**
-   * Shuffle array in place
-   */
-  function shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
-  }
 
   /**
    * POST /api/v1/list/menu-log
@@ -318,12 +286,9 @@ export function createListRouter(config) {
     if (!assetId) {
       return res.status(400).json({ error: 'assetId is required' });
     }
-    const menuLog = loadYaml(menuMemoryPath) || {};
-    const nowUnix = Math.floor(Date.now() / 1000);
-    menuLog[assetId] = nowUnix;
-    saveYaml(menuMemoryPath, menuLog);
-    logger.info?.('list.menu_log', { assetId, timestamp: nowUnix });
-    res.json({ [assetId]: nowUnix });
+    const result = recordMenuSelection(assetId);
+    logger.info?.('list.menu_log', { assetId });
+    res.json(result);
   }));
 
   /**
@@ -333,8 +298,7 @@ export function createListRouter(config) {
    * config), falling back to the registered content sources.
    */
   router.get('/', asyncHandler(async (req, res) => {
-    const appConfig = configService?.getHouseholdAppConfig?.(null, 'media') || {};
-    const browse = Array.isArray(appConfig.browse) ? appConfig.browse : [];
+    const browse = browseCatalog?.getEntries?.() || [];
 
     let items;
     if (browse.length > 0) {
@@ -354,7 +318,7 @@ export function createListRouter(config) {
         });
     } else {
       // No browse config — surface the registered sources themselves
-      const sources = registry?.adapters ? [...registry.adapters.keys()] : [];
+      const sources = listBrowse?.getSourceNames?.() || [];
       items = sources.map(source => ({
         id: `${source}:`,
         title: source,
@@ -394,143 +358,32 @@ export function createListRouter(config) {
 
       logger.info?.('list.request', { source, localId, modifiers, ip: req.ip });
 
-      // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
-      const compoundIdForResolver = `${source}:${localId}`;
-      const resolved = contentIdResolver.resolve(compoundIdForResolver);
-
-      let adapter = resolved?.adapter;
-      let resolvedLocalId = resolved?.localId ?? localId;
-      let resolvedSource = resolved?.source ?? source;
-      let resolvedViaPrefix = resolvedSource !== source;
-
-      if (!adapter) {
-        // Category fallback: "readable" (or "gallery", etc.) is a registry
-        // category, not a source. Aggregate the root listing of every source
-        // registered under that category (e.g. readable → abs + komga).
-        // Items keep their compound ids, so drill-down routes to the
-        // concrete source.
-        const categoryAdapters = !localId ? (registry?.getByCategory?.(source) ?? []) : [];
-        if (categoryAdapters.length > 0) {
-          const lists = await Promise.all(categoryAdapters.map(async (categoryAdapter) => {
-            try {
-              const result = await categoryAdapter.getList(`${categoryAdapter.source}:`);
-              if (Array.isArray(result)) return result;
-              return result?.items || result?.children || [];
-            } catch (err) {
-              logger.warn?.('list.category_source_failed', { category: source, source: categoryAdapter.source, error: err.message });
-              return [];
-            }
-          }));
-          const items = lists.flat();
-          logger.info?.('list.category_fallback', {
-            category: source,
-            sources: categoryAdapters.map(a => a.source),
-            itemCount: items.length
-          });
-          return res.json({
-            [source]: '',
-            assetId: '',
-            source,
-            path: '',
-            title: source,
-            label: source,
-            info: null,
-            parents: null,
-            items: items.map(toListItem)
-          });
-        }
-
+      const browseResult = await listBrowse.browse({ source, localId, modifiers });
+      if (browseResult.kind === 'category') {
+        return res.json({
+          [source]: '',
+          assetId: '',
+          source,
+          path: '',
+          title: source,
+          label: source,
+          info: null,
+          parents: null,
+          items: browseResult.items.map(toListItem)
+        });
+      }
+      if (browseResult.kind === 'unknown_source') {
         logger.warn?.('list.unknown_source', { source, localId });
         return res.status(404).json({ error: `Unknown source: ${source}` });
       }
-
-      let items;
-
-      // When resolved via prefix, localId already includes transform (e.g., 'talk:ldsgc202510')
-      // Don't add source prefix again. For watchlist: source, registry.get('watchlist') returns
-      // ListAdapter which accepts watchlist:X compound IDs.
-      const compoundId = resolvedViaPrefix ? resolvedLocalId : `${source}:${resolvedLocalId}`;
-
-      if (modifiers.launchable) {
-        // Resolve to launchable items only (flattened across containers)
-        if (!adapter.resolveLaunchables) {
-          return res.status(400).json({ error: 'Source does not support launchable resolution' });
-        }
-        items = await adapter.resolveLaunchables(compoundId);
-      } else if (modifiers.playable) {
-        // Resolve to playable items only
-        if (!adapter.resolvePlayables) {
-          return res.status(400).json({ error: 'Source does not support playable resolution' });
-        }
-        items = await adapter.resolvePlayables(compoundId);
-      } else {
-        // Get container contents
-        const result = await adapter.getList(compoundId);
-
-        // Handle different response shapes. Adapters variously return a bare
-        // array, { children }, or { items } (e.g. SingalongAdapter's root
-        // collection list) — dropping the { items } shape made Browse Hymns
-        // render "Nothing here yet" over real collections.
-        if (Array.isArray(result)) {
-          items = result;
-        } else if (Array.isArray(result?.children)) {
-          items = result.children;
-        } else if (Array.isArray(result?.items)) {
-          items = result.items;
-        } else {
-          items = [];
-        }
+      if (browseResult.kind === 'unsupported_launchable') {
+        return res.status(400).json({ error: 'Source does not support launchable resolution' });
       }
-
-      // Enrich with watch state via ContentQueryService (DDD-compliant)
-      if (contentQueryService) {
-        const enriched = await contentQueryService.enrichWithWatchState(items, source, compoundId);
-        // Map domain fields to API contract field names
-        items = enriched.map(item => ({
-          ...item,
-          watchProgress: item.percent ?? null,
-          watchSeconds: item.playhead ?? null,
-          watchedDate: item.lastPlayed ?? null
-        }));
+      if (browseResult.kind === 'unsupported_playable') {
+        return res.status(400).json({ error: 'Source does not support playable resolution' });
       }
-
-      // Check if any item has fixed_order flag - maintain YAML order
-      const hasFixedOrder = items.some(item => item.metadata?.fixedOrder);
-
-      // Apply shuffle if requested (skip if fixed order)
-      if (modifiers.shuffle && !hasFixedOrder) {
-        items = shuffleArray([...items]);
-      }
-
-      // Apply recent_on_top sorting if requested (uses menu_memory, not play history)
-      // Skip if fixed order - maintain YAML order
-      if (modifiers.recent_on_top && !hasFixedOrder) {
-        // Same store the sibling handlers above read and write via the
-        // INJECTED menuMemoryPath. This line used to name the location itself
-        // (`history/menu_memory`, then `media/menu-memory`), so one file
-        // addressed one store two different ways and the reorganization had
-        // to find both.
-        const menuMemory = loadYaml(menuMemoryPath) || {};
-
-        items = [...items].sort((a, b) => {
-          const aKey = getMenuMemoryKey(a);
-          const bKey = getMenuMemoryKey(b);
-
-          const aTime = aKey ? (menuMemory[aKey] || 0) : 0;
-          const bTime = bKey ? (menuMemory[bKey] || 0) : 0;
-
-          return bTime - aTime; // Most recent first
-        });
-      }
-
-      // Build response
-      const containerInfo = adapter.getItem ? await adapter.getItem(compoundId) : null;
-
-      // Build info object for FitnessShow compatibility
-      let info = null;
-      if (adapter.getContainerInfo) {
-        info = await adapter.getContainerInfo(compoundId);
-      }
+      let { items } = browseResult;
+      const { containerInfo, info } = browseResult;
 
       // === Playlist-as-show wrapping ===
       // When the container is a playlist, return a single "show" container item

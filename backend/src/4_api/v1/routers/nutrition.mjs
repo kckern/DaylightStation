@@ -5,18 +5,16 @@
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { nowDate } from '#system/utils/time.mjs';
 
 /**
  * Create router with dependencies
  * @param {Object} deps
- * @param {Object} deps.foodLogService - Pre-built FoodLogService instance
- * @param {Object} deps.foodLogStore - Pre-built YamlFoodLogDatastore instance
+ * @param {Object} deps.nutritionOperations
  * @param {Object} [deps.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createNutritionRouter(deps) {
-  const { foodLogService, foodLogStore, logger } = deps;
+  const { nutritionOperations } = deps;
   const router = express.Router();
 
   /**
@@ -29,9 +27,9 @@ export function createNutritionRouter(deps) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const dates = await foodLogStore.listDates(hid);
-    const today = nowDate();
-    const todaySummary = await foodLogService.getDailySummary(hid, today);
+    const dates = await nutritionOperations.listDates(hid);
+    const today = nutritionOperations.currentDate();
+    const todaySummary = await nutritionOperations.dailySummary(hid, today);
 
     res.json({
       module: 'nutrition',
@@ -52,7 +50,7 @@ export function createNutritionRouter(deps) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const dates = await foodLogStore.listDates(hid);
+    const dates = await nutritionOperations.listDates(hid);
     res.json({ dates });
   }));
 
@@ -68,7 +66,7 @@ export function createNutritionRouter(deps) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const log = await foodLogService.getLog(hid, date);
+    const log = await nutritionOperations.readLog(hid, date);
     if (!log) {
       return res.status(404).json({ error: 'Food log not found' });
     }
@@ -89,7 +87,7 @@ export function createNutritionRouter(deps) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const log = await foodLogService.logFood(hid, date, entry);
+    const log = await nutritionOperations.logFood(hid, date, entry);
     res.json(log);
   }));
 
@@ -105,7 +103,7 @@ export function createNutritionRouter(deps) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const log = await foodLogService.removeEntry(hid, date, parseInt(index, 10));
+    const log = await nutritionOperations.removeEntry(hid, date, parseInt(index, 10));
     res.json(log);
   }));
 
@@ -121,7 +119,7 @@ export function createNutritionRouter(deps) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const summary = await foodLogService.getDailySummary(hid, date);
+    const summary = await nutritionOperations.dailySummary(hid, date);
     res.json(summary);
   }));
 
@@ -137,7 +135,7 @@ export function createNutritionRouter(deps) {
       return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
 
-    const summary = await foodLogService.getWeeklySummary(hid, weekStart);
+    const summary = await nutritionOperations.weeklySummary(hid, weekStart);
     res.json(summary);
   }));
 
@@ -155,7 +153,7 @@ export function createNutritionRouter(deps) {
       return res.status(400).json({ error: 'Missing startDate or endDate' });
     }
 
-    const logs = await foodLogService.getLogsInRange(hid, startDate, endDate);
+    const logs = await nutritionOperations.readRange(hid, startDate, endDate);
     res.json({ logs });
   }));
 

@@ -97,8 +97,11 @@
     "dscli": "./cli/dscli.mjs"
   },
   "scripts": {
+    "prepare": "node scripts/install-git-hooks.mjs",
+    "hooks:install": "node scripts/install-git-hooks.mjs",
+    "audit:fs": "node scripts/audit-direct-fs-imports.mjs",
     "audit:layers": "node scripts/audit-layer-imports.mjs",
-    "test:refactor": "vitest run tests/unit/tooling/auditLayerImports.test.mjs tests/unit/system/vendorError.test.mjs tests/unit/system/systemErrors.test.mjs tests/unit/system/errorHandlerString.test.mjs tests/unit/system/deepMerge.test.mjs tests/unit/system/logging/inputChannelRouting.test.mjs tests/unit/system/logging/sessionEventsFile.test.mjs tests/unit/domains/fitness/zoneSSOT.test.mjs tests/unit/domains/fitness/receiptStats.char.test.mjs tests/unit/domains/messaging/conversationStoredShape.char.test.mjs tests/unit/domains/gratitude/gratitudeStoredShape.char.test.mjs tests/unit/config/timezoneDefault.test.mjs tests/unit/applications/fitness/querySessionsDateWindow.test.mjs tests/unit/applications/fitness/manageAccessEligibility.test.mjs tests/unit/applications/admin/yamlConfigFileService.test.mjs tests/unit/applications/piano/GetCourseProgress.char.test.mjs tests/unit/applications/piano/GetPlayableUnits.char.test.mjs tests/unit/domains/health/foodCatalogStoredShape.char.test.mjs",
+    "test:refactor": "vitest run tests/unit/tooling/auditLayerImports.test.mjs tests/unit/tooling/auditDirectFsImports.test.mjs tests/unit/system/vendorError.test.mjs tests/unit/system/systemErrors.test.mjs tests/unit/system/errorHandlerString.test.mjs tests/unit/system/deepMerge.test.mjs tests/unit/system/logging/inputChannelRouting.test.mjs tests/unit/system/logging/sessionEventsFile.test.mjs tests/unit/domains/fitness/zoneSSOT.test.mjs tests/unit/domains/fitness/receiptStats.char.test.mjs tests/unit/domains/messaging/conversationStoredShape.char.test.mjs tests/unit/domains/gratitude/gratitudeStoredShape.char.test.mjs tests/unit/config/timezoneDefault.test.mjs tests/unit/applications/fitness/querySessionsDateWindow.test.mjs tests/unit/applications/fitness/manageAccessEligibility.test.mjs tests/unit/applications/admin/yamlConfigFileService.test.mjs tests/unit/applications/piano/GetCourseProgress.char.test.mjs tests/unit/applications/piano/GetPlayableUnits.char.test.mjs tests/unit/domains/health/foodCatalogStoredShape.char.test.mjs",
     "dev": "npm run start:dev",
     "dev:clean": "node scripts/port-manager.mjs clean-all && npm run dev",
     "dev:kill": "node scripts/port-manager.mjs kill 3112",
@@ -156,7 +159,7 @@
     "test:unit:vitest": "node scripts/gate-vitest.mjs",
     "sheet": "node scripts/gen-sheet.mjs",
     "audit:paths": "node scripts/audit-household-paths.mjs",
-    "test:backend": "node scripts/test-backend.mjs",
+    "test:backend": "node tests/_infrastructure/harnesses/isolated.harness.mjs --only=domain,adapter,flow,contract,assembly,application,api,nutribot,modules,adapters,agents,applications,composition,e2e,hardware,hooks,lifeplan,notification,observability,rendering,screen-framework,services,system,tooling,ui",
     "audit:links": "node scripts/audit-esm-links.mjs",
     "smoke:yaml": "node scripts/smoke-yaml-contracts.mjs"
   }

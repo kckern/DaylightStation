@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { applySequence, cubeFaces, goalReached } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
 
 const GROUP_SIZE = 4;
@@ -18,14 +17,17 @@ const instruction = (goal) => ({
  * identity.  Every emitted group is replayed through the house engine.
  */
 export class RubiksPacketPlanner {
-  #solver; #clock;
-  constructor({ solver, clock = () => new Date() } = {}) { this.#solver = solver; this.#clock = clock; }
+  #solver; #clock; #idFactory;
+  constructor({ solver, idFactory, clock = () => new Date() } = {}) {
+    if (typeof idFactory !== 'function') throw new Error('RubiksPacketPlanner requires an idFactory');
+    this.#solver = solver; this.#idFactory = idFactory; this.#clock = clock;
+  }
 
   async plan({ unitId, lessonId, goal, facelets, cube }) {
     if (!cube || !facelets) throw new Error('Enter a valid physical cube before making a packet.');
     if (unitId === 'know-the-cube') {
       return {
-        id: crypto.randomUUID(), schema: 'school.rubiks-packet/v1', planner: 'foundation-intake-v1', unitId, lessonId, goal: 'orientation',
+        id: this.#idFactory(), schema: 'school.rubiks-packet/v1', planner: 'foundation-intake-v1', unitId, lessonId, goal: 'orientation',
         generatedAt: this.#clock().toISOString(), inputFacelets: facelets, inputCube: cubeFaces(cube),
         steps: [{ number: 1, title: 'Meet your own cube', instruction: 'Find the six centre stickers. They do not move; they name each face.', moves: [], before: cubeFaces(cube), after: cubeFaces(cube) },
           { number: 2, title: 'Read the faces', instruction: 'With white on top and green in front, name the faces U, R, F, D, L, and B on your cube.', moves: [], before: cubeFaces(cube), after: cubeFaces(cube) }],
@@ -40,7 +42,7 @@ export class RubiksPacketPlanner {
       if (goalReached(working, goal)) break;
     }
     if (!goalReached(working, goal)) throw new Error('The planner could not reach this unit’s goal from the entered cube.');
-    return { id: crypto.randomUUID(), schema: 'school.rubiks-packet/v1', planner: 'verified-route-v1', unitId, lessonId, goal,
+    return { id: this.#idFactory(), schema: 'school.rubiks-packet/v1', planner: 'verified-route-v1', unitId, lessonId, goal,
       generatedAt: this.#clock().toISOString(), inputFacelets: facelets, inputCube: cubeFaces(cube), steps };
   }
 }

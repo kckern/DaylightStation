@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { YouTubeContentSource } from './YouTubeContentSource.mjs';
 import { encodeStreamUrl } from '#adapters/content/stream/streamUrlCodec.mjs';
-import { validateAdapter } from '#domains/content/services/validateContentSource.mjs';
+import { validateAdapter } from '#apps/content/ports/IContentSource.mjs';
 
 const VID = 'F1sMvm6D-0Y';
 

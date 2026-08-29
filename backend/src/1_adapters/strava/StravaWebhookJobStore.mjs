@@ -9,9 +9,8 @@
  * @module adapters/strava/StravaWebhookJobStore
  */
 
-import fs from 'fs';
 import path from 'path';
-import { loadYaml, saveYaml, ensureDir, listYamlFiles, dirExists } from '#system/utils/FileIO.mjs';
+import { deleteFile, loadYaml, saveYaml, ensureDir, listYamlFiles, dirExists } from '#system/utils/FileIO.mjs';
 
 export class StravaWebhookJobStore {
   #basePath;
@@ -138,11 +137,8 @@ export class StravaWebhookJobStore {
 
       const completedAt = job.completedAt ? new Date(job.completedAt).getTime() : 0;
       if (completedAt && (now - completedAt) > maxAgeMs) {
-        try {
-          const resolved = filePath.endsWith('.yml') ? filePath : `${filePath}.yml`;
-          fs.unlinkSync(resolved);
-          cleaned++;
-        } catch { /* ignore */ }
+        const resolved = filePath.endsWith('.yml') ? filePath : `${filePath}.yml`;
+        if (deleteFile(resolved)) cleaned++;
       }
     }
 

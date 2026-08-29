@@ -76,9 +76,9 @@ describe('Zone', () => {
       expect(zone.isLowerThan(hotZone)).toBe(true);
     });
 
-    test('toJSON/fromJSON round-trips', () => {
-      const json = zone.toJSON();
-      const restored = Zone.fromJSON(json);
+    test('reconstitutes a zone record', () => {
+      const json = { ...zone };
+      const restored = new Zone(json);
       expect(restored.name).toBe(zone.name);
       expect(restored.minHr).toBe(zone.minHr);
     });

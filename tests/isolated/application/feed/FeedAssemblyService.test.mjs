@@ -3,6 +3,8 @@ import { vi } from 'vitest';
 import { FeedAssemblyService } from '#apps/feed/services/FeedAssemblyService.mjs';
 import { FeedPoolManager } from '#apps/feed/services/FeedPoolManager.mjs';
 
+const TEST_SCHEDULER = { withDeadline: (work) => work };
+
 describe('FeedAssemblyService scroll config integration', () => {
   let mockScrollConfigLoader;
   let mockTierAssemblyService;
@@ -45,6 +47,7 @@ describe('FeedAssemblyService scroll config integration', () => {
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
     const feedPoolManager = new FeedPoolManager({
+      scheduler: TEST_SCHEDULER,
       sourceAdapters: adapters,
       queryConfigs,
       logger: { info: () => {}, warn: () => {}, debug: () => {} },
@@ -92,8 +95,8 @@ describe('FeedAssemblyService scroll config integration', () => {
 
     const service = createService(
       [
-        { type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' },
-        { type: 'health', feed_type: 'grounding', _filename: 'health.yml' },
+        { type: 'reddit', feed_type: 'external', key: 'reddit' },
+        { type: 'health', feed_type: 'grounding', key: 'health' },
       ],
       [mockAdapter, mockHealthAdapter],
     );
@@ -115,7 +118,7 @@ describe('FeedAssemblyService scroll config integration', () => {
     });
 
     const service = createService(
-      [{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', feed_type: 'external', key: 'reddit' }],
       [mockAdapter],
     );
 
@@ -148,7 +151,7 @@ describe('FeedAssemblyService scroll config integration', () => {
     };
 
     const service = createService(
-      [{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', feed_type: 'external', key: 'reddit' }],
       [mockAdapter],
     );
 
@@ -165,7 +168,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       sourceType: 'reddit',
       fetchItems: vi.fn().mockResolvedValue([makeExternalItem('reddit', 'r1'), makeExternalItem('headlines', 'h1')]),
     };
-    const service = createService([{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }], [adapter]);
+    const service = createService([{ type: 'reddit', feed_type: 'external', key: 'reddit' }], [adapter]);
 
     await service.getNextBatch('user_1', { sourcePreferences: { reddit: 'mute', headlines: 'more' } });
 
@@ -190,7 +193,7 @@ describe('FeedAssemblyService scroll config integration', () => {
     };
 
     const service = createService(
-      [{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', feed_type: 'external', key: 'reddit' }],
       [mockAdapter],
     );
 
@@ -212,7 +215,7 @@ describe('FeedAssemblyService scroll config integration', () => {
     };
 
     const service = createService(
-      [{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', feed_type: 'external', key: 'reddit' }],
       [mockAdapter],
     );
 
@@ -243,9 +246,9 @@ describe('FeedAssemblyService scroll config integration', () => {
 
     const service = createService(
       [
-        { type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' },
-        { type: 'headlines', feed_type: 'external', _filename: 'headlines.yml' },
-        { type: 'weather', feed_type: 'grounding', _filename: 'weather.yml' },
+        { type: 'reddit', feed_type: 'external', key: 'reddit' },
+        { type: 'headlines', feed_type: 'external', key: 'headlines' },
+        { type: 'weather', feed_type: 'grounding', key: 'weather' },
       ],
       [redditAdapter, headlinesAdapter, weatherAdapter],
     );
@@ -273,7 +276,7 @@ describe('FeedAssemblyService scroll config integration', () => {
     };
 
     const service = createService(
-      [{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', feed_type: 'external', key: 'reddit' }],
       [redditAdapter],
     );
 
@@ -310,6 +313,7 @@ describe('image dimensions passthrough', () => {
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
     const feedPoolManager = new FeedPoolManager({
+      scheduler: TEST_SCHEDULER,
       sourceAdapters: adapters,
       queryConfigs,
       logger: { info: () => {}, warn: () => {}, debug: () => {} },
@@ -343,7 +347,7 @@ describe('image dimensions passthrough', () => {
     };
 
     const service = createService(
-      [{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', feed_type: 'external', key: 'reddit' }],
       [mockAdapter],
     );
 
@@ -369,7 +373,7 @@ describe('image dimensions passthrough', () => {
     };
 
     const service = createService(
-      [{ type: 'headlines', feed_type: 'external', _filename: 'headlines.yml' }],
+      [{ type: 'headlines', feed_type: 'external', key: 'headlines' }],
       [headlineAdapter],
     );
 
@@ -395,7 +399,7 @@ describe('image dimensions passthrough', () => {
     };
 
     const service = createService(
-      [{ type: 'freshrss', feed_type: 'external', _filename: 'freshrss.yml' }],
+      [{ type: 'freshrss', feed_type: 'external', key: 'freshrss' }],
       [freshrssAdapter],
     );
 
@@ -443,6 +447,7 @@ describe('seenIds dedup', () => {
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
     const feedPoolManager = new FeedPoolManager({
+      scheduler: TEST_SCHEDULER,
       sourceAdapters: adapters,
       queryConfigs,
       logger: { info: () => {}, warn: () => {}, debug: () => {} },
@@ -476,7 +481,7 @@ describe('seenIds dedup', () => {
       ),
     };
     const service = createService(
-      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', key: 'reddit' }],
       [adapter],
     );
     const result = await service.getNextBatch('testuser');
@@ -495,7 +500,7 @@ describe('seenIds dedup', () => {
       fetchItems: vi.fn().mockResolvedValue(items),
     };
     const service = createService(
-      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', key: 'reddit' }],
       [adapter],
     );
 
@@ -525,7 +530,7 @@ describe('seenIds dedup', () => {
       fetchItems: vi.fn().mockResolvedValue(items),
     };
     const service = createService(
-      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', key: 'reddit' }],
       [adapter],
     );
 
@@ -551,6 +556,7 @@ describe('padding', () => {
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
     const feedPoolManager = new FeedPoolManager({
+      scheduler: TEST_SCHEDULER,
       sourceAdapters: adapters,
       queryConfigs,
       logger: { info: () => {}, warn: () => {}, debug: () => {} },
@@ -616,8 +622,8 @@ describe('padding', () => {
 
     const service = createService(
       [
-        { type: 'reddit', _filename: 'reddit.yml' },
-        { type: 'photos', _filename: 'photos.yml' },
+        { type: 'reddit', key: 'reddit' },
+        { type: 'photos', key: 'photos' },
       ],
       [wireAdapter, photoAdapter],
       { scrollConfigLoader: mockScrollConfigLoader },
@@ -657,6 +663,7 @@ describe('selection tracking integration', () => {
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
     const feedPoolManager = new FeedPoolManager({
+      scheduler: TEST_SCHEDULER,
       sourceAdapters: adapters,
       queryConfigs,
       logger: { info: () => {}, warn: () => {}, debug: () => {} },
@@ -691,7 +698,7 @@ describe('selection tracking integration', () => {
     };
 
     const service = createService(
-      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', key: 'reddit' }],
       [adapter],
       { selectionTrackingStore: mockTrackingStore },
     );
@@ -724,7 +731,7 @@ describe('selection tracking integration', () => {
     };
 
     const service = createService(
-      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [{ type: 'reddit', key: 'reddit' }],
       [adapter],
     );
 

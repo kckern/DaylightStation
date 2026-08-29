@@ -1,6 +1,9 @@
 // tests/isolated/assembly/content/ContentIdResolver.test.mjs
 import { describe, it, test, expect, beforeEach } from 'vitest';
 import { ContentIdResolver } from '#apps/content/ContentIdResolver.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+
+const catalogFor = (registry) => new RegistryContentCatalogGateway({ registry });
 
 function createMockRegistry() {
   const sources = new Map();
@@ -72,14 +75,14 @@ describe('ContentIdResolver', () => {
       music: 'plex:12345',
     };
 
-    resolver = new ContentIdResolver(registry, { systemAliases, householdAliases });
+    resolver = new ContentIdResolver(catalogFor(registry), { systemAliases, householdAliases });
   });
 
   test('Layer 1: resolves exact source match', () => {
     const result = resolver.resolve('plex:457385');
     expect(result.source).toBe('plex');
     expect(result.localId).toBe('457385');
-    expect(result.adapter).toBe(plexAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 
   test('Layer 1: resolves singalong source', () => {
@@ -155,7 +158,7 @@ describe('ContentIdResolver', () => {
     const result = resolver.resolve('local:TVApp');
     expect(result.source).toBe('watchlist');
     expect(result.localId).toBe('TVApp');
-    expect(result.adapter).toBe(watchlistAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 
   // Note: "media:X" resolves via Layer 2 (FileAdapter prefix) in the real system.
@@ -165,21 +168,21 @@ describe('ContentIdResolver', () => {
     const result = resolver.resolve('singing:hymn/166');
     expect(result.source).toBe('singalong');
     expect(result.localId).toBe('hymn/166');
-    expect(result.adapter).toBe(singalongAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 
   test('Layer 3: resolves simple rename "narrated" → "readalong"', () => {
     const result = resolver.resolve('narrated:scripture/alma-32');
     expect(result.source).toBe('readalong');
     expect(result.localId).toBe('scripture/alma-32');
-    expect(result.adapter).toBe(readalongAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 
   test('Layer 3: resolves simple rename "list" → "menu"', () => {
     const result = resolver.resolve('list:fhe');
     expect(result.source).toBe('menu');
     expect(result.localId).toBe('fhe');
-    expect(result.adapter).toBe(menuAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 });
 
@@ -198,49 +201,49 @@ describe('ContentIdResolver — Layer 4a bareNameMap', () => {
   });
 
   test('Layer 4a: bare name resolves to menu via bareNameMap', () => {
-    const resolver = new ContentIdResolver(registry, { bareNameMap: { fhe: 'menu' } });
+    const resolver = new ContentIdResolver(catalogFor(registry), { bareNameMap: { fhe: 'menu' } });
     const result = resolver.resolve('fhe');
     expect(result.source).toBe('menu');
     expect(result.localId).toBe('fhe');
-    expect(result.adapter).toBe(menuAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 
   test('Layer 4a: bare name resolves to program via bareNameMap', () => {
-    const resolver = new ContentIdResolver(registry, { bareNameMap: { morningprogram: 'program' } });
+    const resolver = new ContentIdResolver(catalogFor(registry), { bareNameMap: { morningprogram: 'program' } });
     const result = resolver.resolve('morningprogram');
     expect(result.source).toBe('program');
     expect(result.localId).toBe('morningprogram');
-    expect(result.adapter).toBe(programAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 
   test('Layer 4b: bare name not in bareNameMap falls back to media', () => {
-    const resolver = new ContentIdResolver(registry, { bareNameMap: { fhe: 'menu' } });
+    const resolver = new ContentIdResolver(catalogFor(registry), { bareNameMap: { fhe: 'menu' } });
     const result = resolver.resolve('sfx/intro');
     expect(result.source).toBe('media');
     expect(result.localId).toBe('sfx/intro');
-    expect(result.adapter).toBe(mediaAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 
   test('Layer 4a: collision priority — menu wins over program', () => {
     // bareNameMap is built with menu last, so menu overwrites program for shared names
-    const resolver = new ContentIdResolver(registry, { bareNameMap: { shared: 'menu' } });
+    const resolver = new ContentIdResolver(catalogFor(registry), { bareNameMap: { shared: 'menu' } });
     const result = resolver.resolve('shared');
     expect(result.source).toBe('menu');
     expect(result.localId).toBe('shared');
-    expect(result.adapter).toBe(menuAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 
   test('Layer 6: "fhe:" (empty rest) falls back to bareNameMap → menu', () => {
     // parseActionRouteId produces "fhe:" when path is empty — colon with empty rest
-    const resolver = new ContentIdResolver(registry, { bareNameMap: { fhe: 'menu' } });
+    const resolver = new ContentIdResolver(catalogFor(registry), { bareNameMap: { fhe: 'menu' } });
     const result = resolver.resolve('fhe:');
     expect(result.source).toBe('menu');
     expect(result.localId).toBe('fhe');
-    expect(result.adapter).toBe(menuAdapter);
+    expect(result).not.toHaveProperty('adapter');
   });
 
   test('Layer 6: "unknown:" without bareNameMap entry still returns null', () => {
-    const resolver = new ContentIdResolver(registry, { bareNameMap: { fhe: 'menu' } });
+    const resolver = new ContentIdResolver(catalogFor(registry), { bareNameMap: { fhe: 'menu' } });
     const result = resolver.resolve('unknown:');
     expect(result).toBeNull();
   });

@@ -421,7 +421,7 @@ export class CompositionStore {
     const entry = this.#live(scaleId);
     const composition = entry?.composition ?? Composition.empty();
     return {
-      ...composition.toData(),
+      ...composition.snapshot(),
       complete: composition.isComplete,
       active: entry !== null,
     };

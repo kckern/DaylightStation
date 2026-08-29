@@ -1,6 +1,6 @@
 // backend/src/1_domains/fitness/services/FitnessProgressClassifier.mjs
 
-import { IMediaProgressClassifier } from '#domains/content/index.mjs';
+import { MediaProgressClassificationStrategy } from '#domains/content/index.mjs';
 
 /**
  * Fitness-specific media progress classifier
@@ -24,7 +24,7 @@ import { IMediaProgressClassifier } from '#domains/content/index.mjs';
  * - Example: User seeks to preview a workout segment, closes after 5s
  *   of actual playback = stays "in_progress" even if playhead is at 90%
  */
-export class FitnessProgressClassifier extends IMediaProgressClassifier {
+export class FitnessProgressClassifier extends MediaProgressClassificationStrategy {
   /**
    * @param {Object} config - Override default thresholds
    * @param {number} [config.shortThresholdPercent=50] - % to mark short content watched

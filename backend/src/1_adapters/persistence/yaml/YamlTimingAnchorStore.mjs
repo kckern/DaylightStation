@@ -1,7 +1,5 @@
 /** Household-owned anchors for materializing time-sensitive School plans. */
-import { promises as fs } from 'fs';
-import path from 'path';
-import yaml from 'js-yaml';
+import { readYamlFromPath } from '#system/utils/FileIO.mjs';
 
 const SAFE_ID = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -20,7 +18,7 @@ export class YamlTimingAnchorStore {
 
   async list() {
     try {
-      const raw = yaml.load(await fs.readFile(this.#file(), 'utf8'));
+      const raw = readYamlFromPath(this.#file());
       return Array.isArray(raw?.anchors) ? raw.anchors.filter((anchor) => SAFE_ID.test(anchor?.anchorId ?? '')) : [];
     } catch (error) {
       if (error?.code !== 'ENOENT') this.#logger.warn?.('school.timing-anchors.read-failed', { error: error.message, file: this.#file() });

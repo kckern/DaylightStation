@@ -3,10 +3,10 @@
  * FeedCacheService
  *
  * Stale-while-revalidate cache for feed source adapter results.
- * In-memory Map backed by YAML file for persistence across restarts.
+ * In-memory Map backed by a semantic repository for persistence across restarts.
  *
  * Lifecycle:
- * 1. First request: hydrate from _cache.yml into memory
+ * 1. First request: hydrate the user's persisted cache into memory
  * 2. Fresh cache hit: serve from memory
  * 3. Stale cache hit: serve from memory, background refresh + disk flush
  * 4. Cold (no cache): await fetch, cache + flush
@@ -38,9 +38,9 @@ const DEFAULT_TTL = 10 * 60 * 1000; // 10 min fallback
 const FLUSH_DEBOUNCE_MS = 30 * 1000; // 30 seconds
 
 export class FeedCacheService {
-  #dataService;
-  #cachePath;
+  #cacheRepository;
   #logger;
+  #scheduler;
 
   /** @type {Map<string, Map<string, { items: Object[], fetchedAt: string }>>} */
   #caches = new Map();
@@ -49,18 +49,20 @@ export class FeedCacheService {
   #refreshing = new Map();
 
   #hydratedUsers = new Set();
-  #flushTimers = new Map();
+  #flushCancellations = new Map();
   #dirtyUsers = new Set();
 
   /**
    * @param {Object} config
-   * @param {Object} config.dataService - DataService for YAML I/O
-   * @param {string} [config.cachePath='current/feed/_cache'] - User-scoped storage path for cache
+   * @param {Object} config.cacheRepository - Semantic feed-cache repository
+   * @param {{after: Function}} config.scheduler
    * @param {Object} [config.logger]
    */
-  constructor({ dataService, cachePath = 'current/feed/_cache', logger = console }) {
-    this.#dataService = dataService;
-    this.#cachePath = cachePath;
+  constructor({ cacheRepository, scheduler, logger = console }) {
+    if (!cacheRepository?.load || !cacheRepository?.save) throw new Error('FeedCacheService requires cacheRepository');
+    if (!scheduler?.after) throw new Error('FeedCacheService requires scheduler');
+    this.#cacheRepository = cacheRepository;
+    this.#scheduler = scheduler;
     this.#logger = logger;
   }
 
@@ -114,7 +116,7 @@ export class FeedCacheService {
     const cache = this.#cacheFor(username);
 
     try {
-      const data = this.#dataService.user.read(this.#cachePath, username);
+      const data = this.#cacheRepository.load(username);
       if (data && typeof data === 'object') {
         for (const [key, entry] of Object.entries(data)) {
           if (entry?.items && entry?.fetchedAt) {
@@ -172,18 +174,18 @@ export class FeedCacheService {
   }
 
   /**
-   * Debounced disk flush — writes full cache to _cache.yml at most once per 30s.
+   * Debounced persistence — writes the full cache at most once per 30s.
    */
   #scheduleDiskFlush(username) {
     this.#dirtyUsers.add(username);
-    if (this.#flushTimers.has(username)) return; // already scheduled
+    if (this.#flushCancellations.has(username)) return; // already scheduled
 
-    this.#flushTimers.set(username, setTimeout(() => {
-      this.#flushTimers.delete(username);
+    this.#flushCancellations.set(username, this.#scheduler.after(FLUSH_DEBOUNCE_MS, () => {
+      this.#flushCancellations.delete(username);
       if (!this.#dirtyUsers.has(username)) return;
       this.#dirtyUsers.delete(username);
       this.#flushToDisk(username);
-    }, FLUSH_DEBOUNCE_MS));
+    }));
   }
 
   /**
@@ -198,7 +200,7 @@ export class FeedCacheService {
           items: entry.items,
         };
       }
-      this.#dataService.user.write(this.#cachePath, data, username);
+      this.#cacheRepository.save(username, data);
       this.#logger.debug?.('feed.cache.flushed', { sources: Object.keys(data).length });
     } catch (err) {
       this.#logger.warn?.('feed.cache.flush.error', { error: err.message });

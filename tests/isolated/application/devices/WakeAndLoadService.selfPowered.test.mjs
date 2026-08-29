@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
+import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 
 function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -23,9 +24,11 @@ function makeSelfPoweredDevice(overrides = {}) {
 
 function makeSvc(device, readinessPolicy) {
   return new WakeAndLoadService({
+    ...testApplicationRuntime(),
     deviceService: { get: vi.fn().mockReturnValue(device) },
     readinessPolicy,
-    broadcast: vi.fn(),
+    broadcast: () => {},
+    screenGateway: { publishProgress: vi.fn(), screenSubscriberCount: () => 0 },
     haGateway: undefined,
     logger: makeLogger(),
   });

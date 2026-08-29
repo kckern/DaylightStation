@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ResolveAccessCode } from './ResolveAccessCode.mjs';
-import { encodeLaunchPreviewLink } from '#domains/school/selfService/launchPreviewLink.mjs';
+import { encodeLaunchPreviewLink } from '#apps/school/services/launchPreviewLink.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 
 const LEARNER_ID = 'learner4';

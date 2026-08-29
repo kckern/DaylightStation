@@ -2,106 +2,102 @@
  * Health Dashboard API Router
  *
  * Serves agent-generated dashboard data for the fitness frontend.
- * Data is written by the health coach agent's DailyDashboard assignment
- * via the write_dashboard tool, persisted as YAML via dataService.
  *
  * @module api/v1/routers/health-dashboard
  */
 
 import express from 'express';
-import fs from 'node:fs';
+
+const Outcome = Object.freeze({
+  INVALID_DATE: 'invalid-date',
+  NOT_FOUND: 'not-found',
+  NOT_FOUND_TODAY: 'not-found-today',
+  DELETE_NOT_FOUND: 'delete-not-found',
+  DELETE_FAILED: 'delete-failed',
+});
+const INTERNAL_ERROR_STATUS = 500;
 
 /**
- * Create Health Dashboard API router
+ * Create Health Dashboard API router.
  *
  * @param {Object} config
- * @param {Object} config.dataService - DataService for YAML persistence
- * @param {Object} [config.logger] - Logger instance
+ * @param {import('#apps/health/AgentHealthDashboardService.mjs').AgentHealthDashboardService} config.dashboardService
  * @returns {express.Router}
  */
-export function createHealthDashboardRouter(config) {
+export function createHealthDashboardRouter(config = {}) {
   const router = express.Router();
-  const { dataService, logger = console } = config;
+  const { dashboardService } = config;
 
-  if (!dataService) {
-    throw new Error('dataService is required');
+  if (!dashboardService
+    || typeof dashboardService.getForDate !== 'function'
+    || typeof dashboardService.getToday !== 'function'
+    || typeof dashboardService.deleteForDate !== 'function') {
+    throw new Error('dashboardService is required');
   }
 
-  /**
-   * GET /:userId/:date
-   * Read the agent-generated dashboard for a specific user and date
-   */
   router.get('/:userId/:date', (req, res) => {
-    const { userId, date } = req.params;
-
-    // Validate date format
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: 'Date must be YYYY-MM-DD format' });
-    }
-
-    const dashboard = dataService.user.read(`health-dashboard/${date}`, userId);
-
-    if (!dashboard) {
-      return res.status(404).json({
-        error: 'No dashboard available',
-        userId,
-        date,
-        hint: 'The agent may not have run yet for this date',
-      });
-    }
-
-    res.json({ userId, date, dashboard });
+    const result = dashboardService.getForDate(req.params);
+    sendReadResult(res, result);
   });
 
-  /**
-   * GET /:userId
-   * Read today's dashboard (convenience endpoint)
-   */
   router.get('/:userId', (req, res) => {
-    const { userId } = req.params;
-    const today = new Date().toISOString().split('T')[0];
-
-    const dashboard = dataService.user.read(`health-dashboard/${today}`, userId);
-
-    if (!dashboard) {
-      return res.status(404).json({
-        error: 'No dashboard available for today',
-        userId,
-        date: today,
-      });
-    }
-
-    res.json({ userId, date: today, dashboard });
+    const result = dashboardService.getToday({ userId: req.params.userId });
+    sendReadResult(res, result);
   });
 
-  /**
-   * DELETE /:userId/:date
-   * Remove the dashboard file for a specific user and date
-   */
   router.delete('/:userId/:date', (req, res) => {
-    const { userId, date } = req.params;
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: 'Date must be YYYY-MM-DD format' });
-    }
-
-    const filePath = dataService.user.resolvePath(`health-dashboard/${date}`, userId);
-
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        logger.info?.('health-dashboard.deleted', { userId, date, filePath });
-        res.json({ userId, date, deleted: true });
-      } else {
-        res.status(404).json({ error: 'No dashboard file for this date', userId, date });
-      }
-    } catch (err) {
-      logger.error?.('health-dashboard.delete.error', { userId, date, error: err.message });
-      res.status(500).json({ error: 'Failed to delete dashboard file' });
+    const result = dashboardService.deleteForDate(req.params);
+    switch (result.outcome) {
+      case Outcome.INVALID_DATE:
+        res.status(400).json({ error: 'Date must be YYYY-MM-DD format' });
+        break;
+      case Outcome.DELETE_NOT_FOUND:
+        res.status(404).json({
+          error: 'No dashboard file for this date',
+          userId: result.userId,
+          date: result.date,
+        });
+        break;
+      case Outcome.DELETE_FAILED:
+        // This legacy endpoint's public contract predates the shared error
+        // envelope, so retain its exact one-field response during extraction.
+        res.status(INTERNAL_ERROR_STATUS).json({ error: 'Failed to delete dashboard file' });
+        break;
+      default:
+        res.json({ userId: result.userId, date: result.date, deleted: true });
     }
   });
 
   return router;
+}
+
+function sendReadResult(res, result) {
+  switch (result.outcome) {
+    case Outcome.INVALID_DATE:
+      res.status(400).json({ error: 'Date must be YYYY-MM-DD format' });
+      break;
+    case Outcome.NOT_FOUND:
+      res.status(404).json({
+        error: 'No dashboard available',
+        userId: result.userId,
+        date: result.date,
+        hint: 'The agent may not have run yet for this date',
+      });
+      break;
+    case Outcome.NOT_FOUND_TODAY:
+      res.status(404).json({
+        error: 'No dashboard available for today',
+        userId: result.userId,
+        date: result.date,
+      });
+      break;
+    default:
+      res.json({
+        userId: result.userId,
+        date: result.date,
+        dashboard: result.dashboard,
+      });
+  }
 }
 
 export default createHealthDashboardRouter;

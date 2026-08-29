@@ -1,7 +1,7 @@
 // backend/src/1_adapters/persistence/yaml/YamlComposerSongStore.mjs
 import path from 'path';
 import { loadYaml, saveYaml, listYamlFiles, deleteYaml, deleteFile, ensureDir, writeBinary, readFile, listFiles } from '#system/utils/FileIO.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 
 const ID_RE = /^[a-z0-9-]{1,64}$/;
 

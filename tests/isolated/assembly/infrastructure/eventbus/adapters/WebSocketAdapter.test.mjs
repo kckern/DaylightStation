@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/eventbus/adapters/WebSocketAdapter.test.mjs
 import { vi } from 'vitest';
-import { WebSocketAdapter } from '#backend/src/0_system/eventbus/adapters/WebSocketAdapter.mjs';
+import { WebSocketAdapter } from '#adapters/eventbus/transports/WebSocketEventTransport.mjs';
 
 describe('WebSocketAdapter', () => {
   let adapter;

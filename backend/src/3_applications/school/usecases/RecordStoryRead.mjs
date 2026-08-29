@@ -20,10 +20,8 @@
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
-export const STORY_READ_TOPIC = 'school';
-
 export class RecordStoryRead {
-  #readingLog; #eventBus; #studyDay; #clock; #logger;
+  #readingLog; #realtime; #studyDay; #clock; #logger;
 
   /**
    * @param {object} config
@@ -31,11 +29,11 @@ export class RecordStoryRead {
    * @param {() => string} config.studyDay - the household's current study-day
    *   key; pass the story-time launcher's own `studyDay()` (required).
    */
-  constructor({ readingLog, studyDay, eventBus = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ readingLog, studyDay, realtime = null, clock = () => new Date(), logger = console } = {}) {
     if (!readingLog) throw new Error('RecordStoryRead requires a readingLog');
     if (typeof studyDay !== 'function') throw new Error('RecordStoryRead requires a studyDay() source');
     this.#readingLog = readingLog;
-    this.#eventBus = eventBus;
+    this.#realtime = realtime;
     this.#studyDay = studyDay;
     this.#clock = clock;
     this.#logger = logger;
@@ -70,12 +68,9 @@ export class RecordStoryRead {
     });
     this.#logger.info?.('school.story-time.read-recorded', { learnerId, studyDay, contentId, title });
 
-    // The `school` topic the self-service ceremony already listens on — same
-    // transport `piano-lesson-complete` arrives by, so no new plumbing.
+    // Live acknowledgement is best-effort; durable evidence was written first.
     try {
-      this.#eventBus?.broadcast?.(STORY_READ_TOPIC, {
-        event: 'story-read', learnerId, title, contentId, at, studyDay, pickId,
-      });
+      this.#realtime?.storyReadRecorded?.({ learnerId, title, contentId, at, studyDay, pickId });
     } catch (err) {
       this.#logger.warn?.('school.story-time.broadcast-failed', { learnerId, error: err.message });
     }

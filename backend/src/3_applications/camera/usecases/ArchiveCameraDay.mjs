@@ -23,9 +23,6 @@
  * @module 3_applications/camera/usecases/ArchiveCameraDay
  */
 
-import path from 'path';
-import { mkdir, rm } from 'fs/promises';
-
 import { toClip, sessionize, labelSessions, selectSessions } from '#domains/camera/selection.mjs';
 import { sunTimes, phaseAt } from '#domains/camera/sun.mjs';
 import { planContactSheets, primaryLabel } from '#domains/camera/sheetPlan.mjs';
@@ -39,7 +36,7 @@ export class ArchiveCameraDay {
   }
 
   async execute({ camera, day, dryRun = false }) {
-    const { metaSource, manifestStore, readLedger, config, logger } = this.#deps;
+    const { metaSource, manifestStore, readLedger, policy, logger } = this.#deps;
 
     const existing = await manifestStore.read(camera.id, day);
     if (manifestStore.isComplete(existing) && !dryRun) {
@@ -54,16 +51,16 @@ export class ArchiveCameraDay {
     }
 
     const ledger = await readLedger(camera.id, day);
-    const sessions = labelSessions(sessionize(clips, config.sessionize), ledger, {
-      toleranceSeconds: config.classification?.matchToleranceSeconds ?? 15,
+    const sessions = labelSessions(sessionize(clips, policy.sessionize), ledger, {
+      toleranceSeconds: policy.matchToleranceSeconds,
     });
 
     const plan = selectSessions(sessions, {
-      ...config.scoring,
-      budgetMB: config.budget.fullClipsMB,
-      compressionRatio: config.budget.compressionRatio,
+      ...policy.scoring,
+      budgetMB: policy.fullClipsBudgetMB,
+      compressionRatio: policy.compressionRatio,
     });
-    const sun = sunTimes(day, config.sun.latitude, config.sun.longitude);
+    const sun = sunTimes(day, policy.sun.latitude, policy.sun.longitude);
 
     logger.info?.('camera.archive.planned', {
       camera: camera.id,
@@ -87,7 +84,7 @@ export class ArchiveCameraDay {
       sessions: [...plan.selected, ...plan.rejected],
       outputs,
       sun,
-      config,
+      config: policy,
       stats: { projectedMB: Math.round(plan.projectedMB), clipCount: clips.length },
     });
     await manifestStore.write(camera.id, day, manifest);
@@ -103,12 +100,8 @@ export class ArchiveCameraDay {
   }
 
   async #materialize({ camera, day, plan, sessions, sun, ledger }) {
-    const { footageSource, encoder, config, logger } = this.#deps;
-
-    const workDir = path.join(config.storage.workDir, camera.id, day);
-    const outDir = path.join(config.storage.hotPath, camera.id, day);
-    await mkdir(workDir, { recursive: true });
-    await mkdir(path.join(outDir, 'audio'), { recursive: true });
+    const { footageSource, encoder, policy, archiveArtifacts, sheetArtifacts, logger } = this.#deps;
+    const dayArtifacts = await archiveArtifacts.beginDay(camera.id, day);
 
     const outputs = { sessions: [], sheets: [], timelapse: {}, audio: [] };
 
@@ -116,35 +109,36 @@ export class ArchiveCameraDay {
     const segments = (await footageSource.search(day)).map((r) => toClip(r, { date: day }));
     const local = [];
     for (const [i, seg] of segments.entries()) {
-      const segPath = path.join(workDir, `seg-${String(i).padStart(3, '0')}.mp4`);
+      const segPath = archiveArtifacts.segment(dayArtifacts, i);
       await footageSource.fetch({ clip: seg, start: seg.start, end: seg.end, destPath: segPath });
       local.push({ start: seg.start, end: seg.end, path: segPath });
       logger.debug?.('camera.archive.segment', { camera: camera.id, day, n: i + 1, of: segments.length });
     }
 
     // --- contact sheets ------------------------------------------------------
-    if (config.contactSheets?.enabled !== false) {
+    if (policy.contactSheets?.enabled !== false) {
       const sheetPlan = planContactSheets(sessions, day, {
-        maxSpanMs: (config.contactSheets?.maxSpanMinutes ?? 60) * 60_000,
+        maxSpanMs: (policy.contactSheets?.maxSpanMinutes ?? 60) * 60_000,
       });
       const profile = {
-        ...(config.contactSheets ?? {}),
-        ...(config.contactSheets?.byCamera?.[camera.id] ?? {}),
+        ...(policy.contactSheets ?? {}),
+        ...(policy.contactSheets?.byCamera?.[camera.id] ?? {}),
       };
       const res = await renderContactSheets({
         segments: local,
         plan: sheetPlan,
         camera: camera.id,
-        outDir: path.join(outDir, 'sheets'),
+        outDir: archiveArtifacts.sheetCollection(dayArtifacts),
         encoder,
         detections: ledger,
         profile,
         provenance: {
           pipeline: 'A',
-          source: config.sources?.footageFrom ?? 'nvr',
+          source: policy.provenance.source,
           channel: camera.nvrChannel,
-          streamType: config.sources?.streamType ?? 'sub',
+          streamType: policy.provenance.streamType,
         },
+        sheetArtifacts,
         logger,
       });
       outputs.sheets = res.written;
@@ -153,45 +147,45 @@ export class ArchiveCameraDay {
     // --- selected session clips ---------------------------------------------
     for (const [i, session] of plan.selected.entries()) {
       const label = primaryLabel(session.labels);
-      const outPath = path.join(outDir, `s${String(i + 1).padStart(2, '0')}-${hhmm(session.start)}-${label}.mp4`);
-      const cut = await this.#cutSpan({ local, start: session.start, end: session.end, outPath, workDir, i });
+      const output = archiveArtifacts.sessionClip(dayArtifacts, { index: i, time: hhmm(session.start), label });
+      const cut = await this.#cutSpan({ local, start: session.start, end: session.end, outPath: output.locator, dayArtifacts, i });
       if (!cut) continue;
-      session.output = path.basename(outPath);
+      session.output = output.name;
       outputs.sessions.push(session.output);
     }
 
     // --- audio sidecars, daylight-gated -------------------------------------
-    const active = config.audio?.activeHours;
+    const active = policy.activeAudioHours;
     for (const seg of local) {
       const h = seg.start.getHours();
       if (active && (h < active.start || h >= active.end)) continue;
-      const audioPath = path.join(outDir, 'audio', `${hhmm(seg.start)}.${config.encoding.audioSidecar.container}`);
+      const output = archiveArtifacts.audioSidecar(dayArtifacts, { time: hhmm(seg.start), container: policy.audioEncoding.container });
       await encoder.extractAudio({
         inputPath: seg.path,
-        outPath: audioPath,
-        profile: config.encoding.audioSidecar,
+        outPath: output.locator,
+        profile: policy.audioEncoding,
       });
-      outputs.audio.push(path.basename(audioPath));
+      outputs.audio.push(output.name);
     }
 
     // --- timelapses, over the WHOLE day -------------------------------------
     const phaseFiles = { day: [], night: [] };
     for (const seg of local) {
-      phaseFiles[phaseAt(seg.start, sun, config.sun.offsetMinutes)].push(seg.path);
+      phaseFiles[phaseAt(seg.start, sun, policy.sun.offsetMinutes)].push(seg.path);
     }
-    for (const [phase, profile] of Object.entries(config.timelapse.phases)) {
+    for (const [phase, profile] of Object.entries(policy.timelapse.phases)) {
       if (!profile.enabled || !phaseFiles[phase]?.length) continue;
-      const outPath = path.join(outDir, `timelapse-${phase}.mp4`);
+      const output = archiveArtifacts.timelapse(dayArtifacts, phase);
       await encoder.encodeTimelapse({
         files: phaseFiles[phase],
-        outPath,
-        profile: { ...profile, videoCodec: config.timelapse.videoCodec },
+        outPath: output.locator,
+        profile: { ...profile, videoCodec: policy.timelapse.videoCodec },
       });
-      outputs.timelapse[phase] = path.basename(outPath);
+      outputs.timelapse[phase] = output.name;
     }
 
-    if (config.sources.deleteSourceAfterExtract) {
-      await rm(workDir, { recursive: true, force: true }).catch((err) =>
+    if (policy.discardSourceAfterExtract) {
+      await archiveArtifacts.discard(dayArtifacts).catch((err) =>
         logger.warn?.('camera.archive.cleanup_failed', { camera: camera.id, day, error: err.message }),
       );
     }
@@ -205,8 +199,8 @@ export class ArchiveCameraDay {
    * overlapping segments are concatenated first, so a clip is never silently
    * truncated at an arbitrary hour mark.
    */
-  async #cutSpan({ local, start, end, outPath, workDir, i }) {
-    const { encoder, config, logger } = this.#deps;
+  async #cutSpan({ local, start, end, outPath, dayArtifacts, i }) {
+    const { encoder, policy, archiveArtifacts, logger } = this.#deps;
     const overlapping = local.filter((s) => s.start < end && s.end > start);
     if (!overlapping.length) {
       logger.warn?.('camera.archive.session_no_footage', { at: start.toISOString() });
@@ -220,10 +214,10 @@ export class ArchiveCameraDay {
       await encoder.encodeSession({
         files: overlapping.map((s) => s.path),
         outPath,
-        profile: config.encoding.fullClip,
+        profile: policy.fullClipEncoding,
         seekSeconds,
         durationSeconds,
-        listPath: path.join(workDir, `session-${i}.concat.txt`),
+        listPath: archiveArtifacts.concatManifest(dayArtifacts, i),
       });
       return outPath;
     } catch (err) {

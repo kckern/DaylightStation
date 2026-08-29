@@ -140,8 +140,8 @@ describe('Message', () => {
     });
   });
 
-  describe('toJSON (transitional API DTO)', () => {
-    test('round-trips message data through the constructor', () => {
+  describe('constructor hydration', () => {
+    test('accepts a plain message record', () => {
       const original = new Message({
         id: 'msg-123',
         conversationId: 'conv-456',
@@ -153,10 +153,19 @@ describe('Message', () => {
         metadata: { edited: true }
       });
 
-      // Datastores hydrate via the constructor; static fromJSON was removed
-      // (serialization-ownership migration, phase 1)
-      const json = original.toJSON();
-      const restored = new Message(json);
+      const record = {
+        id: original.id,
+        conversationId: original.conversationId,
+        senderId: original.senderId,
+        recipientId: original.recipientId,
+        type: original.type,
+        direction: original.direction,
+        content: original.content,
+        attachments: original.attachments,
+        timestamp: original.timestamp,
+        metadata: original.metadata
+      };
+      const restored = new Message(record);
 
       expect(restored.id).toBe(original.id);
       expect(restored.conversationId).toBe(original.conversationId);
@@ -166,32 +175,30 @@ describe('Message', () => {
   });
 
   describe('static factory methods', () => {
-    const testNowMs = 1704969600000; // Fixed timestamp for testing
-
     test('createText creates text message', () => {
       const msg = Message.createText({
+        id: 'msg-1704969600000-fixed01',
         conversationId: 'conv-1',
         senderId: 'user-1',
         recipientId: 'user-2',
         text: 'Hello there',
         timestamp: testTimestamp,
-        nowMs: testNowMs
       });
 
       expect(msg.type).toBe('text');
       expect(msg.content).toBe('Hello there');
-      expect(msg.id).toMatch(/^msg-/);
+      expect(msg.id).toBe('msg-1704969600000-fixed01');
     });
 
     test('createVoice creates voice message', () => {
       const msg = Message.createVoice({
+        id: 'msg-voice-fixed',
         conversationId: 'conv-1',
         senderId: 'user-1',
         recipientId: 'user-2',
         fileId: 'file-123',
         duration: 5,
         timestamp: testTimestamp,
-        nowMs: testNowMs
       });
 
       expect(msg.type).toBe('voice');
@@ -200,13 +207,13 @@ describe('Message', () => {
 
     test('createImage creates image message', () => {
       const msg = Message.createImage({
+        id: 'msg-image-fixed',
         conversationId: 'conv-1',
         senderId: 'user-1',
         recipientId: 'user-2',
         fileId: 'file-123',
         caption: 'Nice photo',
         timestamp: testTimestamp,
-        nowMs: testNowMs
       });
 
       expect(msg.type).toBe('image');
@@ -216,12 +223,12 @@ describe('Message', () => {
 
     test('createCallback creates callback message', () => {
       const msg = Message.createCallback({
+        id: 'msg-callback-fixed',
         conversationId: 'conv-1',
         senderId: 'user-1',
         recipientId: 'user-2',
         callbackData: 'option_selected',
         timestamp: testTimestamp,
-        nowMs: testNowMs
       });
 
       expect(msg.type).toBe('callback');
@@ -229,18 +236,4 @@ describe('Message', () => {
     });
   });
 
-  describe('generateId', () => {
-    test('generates unique IDs', () => {
-      const nowMs = Date.now();
-      const id1 = Message.generateId(nowMs);
-      const id2 = Message.generateId(nowMs);
-
-      expect(id1).toMatch(/^msg-\d+-[a-z0-9]+$/);
-      expect(id1).not.toBe(id2);
-    });
-
-    test('throws if nowMs not provided', () => {
-      expect(() => Message.generateId()).toThrow('nowMs timestamp required');
-    });
-  });
 });

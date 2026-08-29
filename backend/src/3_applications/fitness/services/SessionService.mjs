@@ -6,10 +6,11 @@
  */
 
 import { Session } from '#domains/fitness/entities/Session.mjs';
-import { prepareTimelineForApi, prepareTimelineForStorage, mergeTimelines } from '#domains/fitness/services/TimelineService.mjs';
+import { mergeTimelines } from '#domains/fitness/services/TimelineService.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { SESSION_RESUME_MERGE_WINDOW_MS } from '../sessionConsolidationPolicy.mjs';
+import { reconstituteSession, serializeSession } from '../sessionRecords.mjs';
 
 /**
  * Parse a timestamp string into Unix milliseconds.
@@ -46,7 +47,7 @@ function convertParticipantsToRoster(participants) {
 }
 
 /**
- * Normalize a session payload to internal structure for Session.fromJSON().
+ * Normalize a session payload to internal structure for reconstitution.
  *
  * Handles payloads with nested session block:
  *   - session.id, session.start, session.end, session.duration_seconds
@@ -180,13 +181,7 @@ export class SessionService {
     const data = await this.sessionStore.findById(sanitizedId, hid);
     if (!data) return null;
 
-    const session = Session.fromJSON(data);
-
-    // Optionally decode timeline series for API consumption
-    if (options.decodeTimeline !== false) {
-      const tz = options.timezone || session.timezone || 'UTC';
-      session.replaceTimeline(prepareTimelineForApi(session.timeline, tz));
-    }
+    const session = reconstituteSession(data);
 
     return session;
   }
@@ -270,13 +265,10 @@ export class SessionService {
     }
 
     // Normalize to Session entity
-    const session = Session.fromJSON({
+    const session = reconstituteSession({
       ...normalized,
       sessionId: sanitizedId
     });
-
-    // Encode timeline series for storage
-    session.replaceTimeline(prepareTimelineForStorage(session.timeline));
 
     // Merge with existing file to preserve snapshots
     const existing = await this.sessionStore.findById(sanitizedId, hid);
@@ -307,7 +299,6 @@ export class SessionService {
     }
 
     session.end(endTime);
-    session.replaceTimeline(prepareTimelineForStorage(session.timeline));
     await this.sessionStore.save(session, this.resolveHouseholdId(householdId));
     return session;
   }
@@ -410,7 +401,7 @@ export class SessionService {
 
     return {
       resumable: true,
-      session: fullSession.toJSON(),
+      session: serializeSession(fullSession),
       finalized: !!fullSession.finalized
     };
   }
@@ -470,7 +461,7 @@ export class SessionService {
     target.startTime = mergedStart;
     target.endTime = mergedEnd;
     target.durationMs = mergedEnd - mergedStart;
-    target.replaceTimeline(prepareTimelineForStorage(merged));
+    target.replaceTimeline(merged);
 
     // Fold the SOURCE's aggregates into the (surviving) target. NOTE: use `source`,
     // not `earlier` — `target` may be the earlier-starting session, in which case
@@ -617,7 +608,7 @@ export class SessionService {
 
     // Load existing or create minimal session
     let existing = await this.sessionStore.findById(sanitizedId, hid);
-    const session = existing ? Session.fromJSON(existing) : new Session({ sessionId: sanitizedId });
+    const session = existing ? reconstituteSession(existing) : new Session({ sessionId: sanitizedId });
 
     // Remove duplicate by filename if exists
     session.removeDuplicateSnapshot(capture.filename);
@@ -634,7 +625,7 @@ export class SessionService {
   async getActiveSessions(householdId) {
     const hid = this.resolveHouseholdId(householdId);
     const sessions = await this.sessionStore.findActive(hid);
-    return sessions.map(s => Session.fromJSON(s));
+    return sessions.map(reconstituteSession);
   }
 
   /**
@@ -657,6 +648,13 @@ export class SessionService {
     const sanitizedId = Session.sanitizeSessionId(sessionId);
     if (!sanitizedId) return null;
     return this.sessionStore.getStoragePaths(sanitizedId, hid);
+  }
+
+  /** Save one session and return the legacy persistence receipt used by clients. */
+  async saveSessionWithReceipt(sessionData, householdId) {
+    const session = await this.saveSession(sessionData, householdId);
+    const paths = this.getStoragePaths(session.sessionId, householdId);
+    return { session, filename: paths?.sessionFilePath };
   }
 }
 

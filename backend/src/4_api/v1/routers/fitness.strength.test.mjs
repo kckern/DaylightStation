@@ -16,6 +16,7 @@ import { YamlWorkoutRepository } from '#adapters/fitness/YamlWorkoutRepository.m
 import { SessionService } from '#apps/fitness/services/SessionService.mjs';
 import { LogStrengthRun } from '#apps/fitness/usecases/LogStrengthRun.mjs';
 import { expandWorkout } from '#domains/fitness/workout/workout.mjs';
+import { serializeSession } from '#apps/fitness/sessionRecords.mjs';
 
 const silentLogger = { error() {}, warn() {}, info() {}, debug() {} };
 const HH = 'main';
@@ -44,7 +45,7 @@ function makeStore() {
   return {
     saved,
     async save(session, householdId) {
-      const data = typeof session.toJSON === 'function' ? session.toJSON() : session;
+      const data = serializeSession(session);
       saved.set(`${householdId}:${data.sessionId}`, data);
     },
     async findById(id, householdId) { return saved.get(`${householdId}:${id}`) ?? null; },

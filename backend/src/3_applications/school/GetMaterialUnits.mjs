@@ -94,11 +94,12 @@ export class GetMaterialUnits {
   #attemptsReader;
   #logger;
   #materialTimeoutMs;
+  #scheduler;
   #snapshot;
   #materialCache = new Map(); // materialId -> { full, at }
   #materialInflight = new Map(); // materialId -> Promise
 
-  constructor({ catalog, sources, config, progressStore, bankIndex, attemptsReader, logger = console, materialTimeoutMs = MATERIAL_TIMEOUT_MS, snapshot = null }) {
+  constructor({ catalog, sources, config, progressStore, bankIndex, attemptsReader, scheduler = null, logger = console, materialTimeoutMs = MATERIAL_TIMEOUT_MS, snapshot = null }) {
     this.#catalog = catalog;
     this.#sources = sources;
     this.#config = config;
@@ -107,9 +108,10 @@ export class GetMaterialUnits {
     this.#attemptsReader = attemptsReader;
     this.#logger = logger;
     this.#materialTimeoutMs = materialTimeoutMs;
+    this.#scheduler = scheduler;
     this.#snapshot = snapshot;
     if (snapshot) {
-      // Seed the in-memory cache from the last process's snapshot so a
+      // Seed the in-memory cache from the last runtime's snapshot so a
       // redeploy starts warm. Best-effort: a failed seed just means a cold
       // start, exactly what we had before snapshots existed.
       try {
@@ -122,11 +124,9 @@ export class GetMaterialUnits {
   }
 
   #withTimeout(promise, ms, materialId) {
-    let t;
-    const timeout = new Promise((_, reject) => {
-      t = setTimeout(() => reject(new Error(`getMaterial("${materialId}") timed out after ${ms}ms`)), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+    return this.#scheduler?.withDeadline
+      ? this.#scheduler.withDeadline(promise, { milliseconds: ms, description: `getMaterial("${materialId}")` })
+      : promise;
   }
 
   // The expensive part: pull the material + its raw units from the source.

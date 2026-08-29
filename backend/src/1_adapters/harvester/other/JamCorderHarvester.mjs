@@ -4,7 +4,7 @@
  * Layer: ADAPTER (1_adapters/harvester). Delegates all work to the use case.
  * @module adapters/harvester/other/JamCorderHarvester
  */
-import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
+import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 
 export class JamCorderHarvester extends IHarvester {
   #harvestUseCase; #logger;

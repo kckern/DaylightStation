@@ -14,12 +14,11 @@
  * - users/{username}/auth/login.yml -- per-user login/auth data (read-only here)
  * - household/hardware/devices.yml  -- device registry (task-13; was household/config/devices.yml)
  */
-import path from 'path';
 import {
   ValidationError,
   NotFoundError,
   ConflictError
-} from '#system/utils/errors/index.mjs';
+} from '#apps/common/errors/SemanticErrors.mjs';
 
 /**
  * Validate that an identifier is safe (alphanumeric, hyphens, underscores only).
@@ -34,21 +33,16 @@ function isValidId(str) {
 const YAML_DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true };
 
 export class HouseholdAdminService {
-  #configFiles;
+  #configStore;
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.configService - ConfigService for data directory paths
+   * @param {Object} deps.configStore - Semantic admin configuration store
    * @param {Object} [deps.logger=console] - Logger instance
    */
-  constructor({ configService, configFiles, logger = console }) {
-    // D5: no fs in the application layer. This service still decides WHICH
-    // file and what its contents mean; the store does the four primitives.
-    this.#configFiles = configFiles;
-    if (!configService) {
-      throw new Error('HouseholdAdminService requires a configService dependency');
-    }
-    this.configService = configService;
+  constructor({ configStore, logger = console }) {
+    if (!configStore) throw new Error('HouseholdAdminService requires a configStore dependency');
+    this.#configStore = configStore;
     this.logger = logger;
   }
 
@@ -56,60 +50,39 @@ export class HouseholdAdminService {
   // Path + persistence helpers (moved verbatim from the router)
   // ---------------------------------------------------------------------------
 
-  /** Get the resolved data root directory */
-  #getDataRoot() {
-    return path.resolve(this.configService.getDataDir());
-  }
-
   /** Read household config from household/household.yml */
   #readHousehold() {
-    const absPath = path.join(this.#getDataRoot(), 'household/household.yml');
-    if (!this.#configFiles.exists(absPath)) return {};
-    return this.#configFiles.readYaml(absPath, {});
+    return this.#configStore.readHousehold();
   }
 
   /** Write household config to household/household.yml */
   #writeHousehold(data) {
-    const absPath = path.join(this.#getDataRoot(), 'household/household.yml');
-    const parentDir = path.dirname(absPath);
-    this.#configFiles.writeYaml(absPath, data);
+    this.#configStore.writeHousehold(data);
   }
 
   /** Read a user's profile from users/{username}/profile.yml */
   #readProfile(username) {
-    const absPath = path.join(this.#getDataRoot(), `users/${username}/profile.yml`);
-    if (!this.#configFiles.exists(absPath)) return null;
-    return this.#configFiles.readYaml(absPath, {});
+    return this.#configStore.readMemberProfile(username);
   }
 
   /** Write a user's profile to users/{username}/profile.yml */
   #writeProfile(username, data) {
-    // writeYaml creates the parent, so the explicit mkdir is gone with the
-    // fs import.
-    const absPath = path.join(this.#getDataRoot(), `users/${username}`, 'profile.yml');
-    this.#configFiles.writeYaml(absPath, data);
+    this.#configStore.writeMemberProfile(username, data);
   }
 
   /** Read a user's login data from users/{username}/auth/login.yml */
   #readLoginData(username) {
-    const absPath = path.join(this.#getDataRoot(), `users/${username}/auth/login.yml`);
-    if (!this.#configFiles.exists(absPath)) return null;
-    return this.#configFiles.readYaml(absPath, {});
+    return this.#configStore.readMemberLogin(username);
   }
 
   /** Read devices map from household/hardware/devices.yml */
   #readDevices() {
-    const absPath = path.join(this.#getDataRoot(), 'household/hardware/devices.yml');
-    if (!this.#configFiles.exists(absPath)) return {};
-    const raw = this.#configFiles.readYaml(absPath, {});
-    return raw.devices || {};
+    return this.#configStore.readDevices();
   }
 
   /** Write devices map to household/hardware/devices.yml */
   #writeDevices(devices) {
-    const absPath = path.join(this.#getDataRoot(), 'household/hardware/devices.yml');
-    const parentDir = path.dirname(absPath);
-    this.#configFiles.writeYaml(absPath, { devices });
+    this.#configStore.writeDevices(devices);
   }
 
   // ---------------------------------------------------------------------------

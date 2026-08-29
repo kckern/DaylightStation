@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SchoolCompletionBridge } from '#apps/school/SchoolCompletionBridge.mjs';
+import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
 import { fakeClock, silentLogger } from '#testlib/school/lifecycleFakes.mjs';
 
 class FakeEventBus {
@@ -34,7 +35,7 @@ const build = () => {
   eventBus = new FakeEventBus();
   nextState = 'incomplete';
   getCompletion = { execute: async ({ learnerId }) => ({ learnerId, studyDate: '2026-08-23', state: nextState, excused: [], faults: [] }) };
-  bridge = new SchoolCompletionBridge({ eventBus, getLearnerDayCompletion: getCompletion, clock: clock.now, logger: silentLogger });
+  bridge = new SchoolCompletionBridge({ realtime: new EventBusSchoolRealtimeAdapter({ eventBus }), getLearnerDayCompletion: getCompletion, clock: clock.now, logger: silentLogger });
 };
 
 beforeEach(() => build());
@@ -42,7 +43,7 @@ beforeEach(() => build());
 describe('construction', () => {
   it('requires eventBus and getLearnerDayCompletion', () => {
     expect(() => new SchoolCompletionBridge({})).toThrow();
-    expect(() => new SchoolCompletionBridge({ eventBus })).toThrow();
+    expect(() => new SchoolCompletionBridge({ realtime: new EventBusSchoolRealtimeAdapter({ eventBus }) })).toThrow();
   });
 });
 

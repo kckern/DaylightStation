@@ -3,6 +3,7 @@ import { vi } from 'vitest';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
 import { SOURCE_BLOCKED_IMAGE_URLS } from '#adapters/feed/RssHeadlineHarvester.mjs';
 import { GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS } from '#adapters/feed/sources/GoogleNewsFeedAdapter.mjs';
+import { DataServiceFeedConfigRepository } from '#adapters/feed/DataServiceFeedConfigRepository.mjs';
 
 // Injected as values by the composition root in prod; tests do the same.
 const blockedImageConfig = {
@@ -58,7 +59,7 @@ describe('HeadlineService', () => {
     service = new HeadlineService({
       headlineStore: mockStore,
       harvester: mockHarvester,
-      dataService: mockDataService,
+      configRepository: new DataServiceFeedConfigRepository({ dataService: mockDataService }),
       config: blockedImageConfig,
     });
   });
@@ -156,7 +157,7 @@ describe('HeadlineService', () => {
       return new HeadlineService({
         headlineStore: mockStore,
         harvester: mockHarvester,
-        dataService: ds,
+        configRepository: new DataServiceFeedConfigRepository({ dataService: ds }),
         webContentGateway: mockWebContentGateway,
         config: blockedImageConfig,
       });
@@ -333,7 +334,7 @@ describe('HeadlineService', () => {
       const svc = new HeadlineService({
         headlineStore: mockStore,
         harvester: mockHarvester,
-        dataService: ds,
+        configRepository: new DataServiceFeedConfigRepository({ dataService: ds }),
         config: blockedImageConfig,
       });
       const now = new Date().toISOString();

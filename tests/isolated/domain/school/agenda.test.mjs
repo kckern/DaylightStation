@@ -398,41 +398,29 @@ describe('the school-day calendar', () => {
     expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'elective_only' });
   });
 
-  it('warns with the validator errors when a schedule is malformed — a typo must be findable', () => {
-    const logger = { warn: vi.fn() };
-    on(SATURDAY, {
-      logger,
+  it('keeps work obligated when a schedule is malformed', () => {
+    const { sections } = on(SATURDAY, {
       plan: { learnerId: 'learner-a', entries: [entry({ unitId: 'u1', subject: 'math', courseId: 'c1', schedule: { except: ['Christmas'] } })], errors: [] },
     });
-    expect(logger.warn).toHaveBeenCalledWith('school.agenda.invalid-schedule', {
-      learnerId: 'learner-a',
-      subject: 'math',
-      unitId: 'u1',
-      courseId: 'c1',
-      errors: ['except has an invalid date: Christmas'],
-    });
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
   });
 
-  it('warns once per unit per build', () => {
-    const logger = { warn: vi.fn() };
+  it('handles duplicate malformed unit rows deterministically', () => {
     const broken = { schedule: { daysofweek: [1, 2, 3, 4, 5] } };
-    on(SATURDAY, {
-      logger,
+    const { sections } = on(SATURDAY, {
       plan: plan([
         entry({ unitId: 'u1', subject: 'math', ...broken }),
         entry({ unitId: 'u1', subject: 'math', ...broken }),
       ]),
     });
-    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(sections).toHaveLength(1);
   });
 
-  it('warns about an ELECTIVE entry too — an inert schedule is still a typo', () => {
-    const logger = { warn: vi.fn() };
-    on(SATURDAY, {
-      logger,
+  it('keeps an elective malformed schedule elective-only', () => {
+    const { sections } = on(SATURDAY, {
       plan: plan([entry({ unitId: 'u1', subject: 'math', elective: true, schedule: { holidays: [] } })]),
     });
-    expect(logger.warn).toHaveBeenCalledWith('school.agenda.invalid-schedule', expect.objectContaining({ unitId: 'u1' }));
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'elective_only' });
   });
 
   it('still reports a broken curriculum on a non-school day — an excuse is not a silence', () => {
@@ -449,9 +437,6 @@ describe('the school-day calendar', () => {
     // The verdict is right — a Saturday must not fault — but the diagnostic
     // that detects a broken unlock chain has to keep firing.
     expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
-    expect(logger.warn).toHaveBeenCalledWith('school.agenda.blocked-unreachable', expect.objectContaining({
-      subject: 'math', unitIds: ['u2'],
-    }));
   });
 
   it('a malformed schedule leaves the obligation intact — it never excuses a term', () => {

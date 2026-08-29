@@ -10,13 +10,13 @@
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class JournalFeedAdapter extends IFeedSourceAdapter {
-  #userDataService;
+  #loadLifelog;
   #logger;
 
-  constructor({ userDataService, logger = console }) {
+  constructor({ loadLifelog, logger = console }) {
     super();
-    if (!userDataService) throw new Error('JournalFeedAdapter requires userDataService');
-    this.#userDataService = userDataService;
+    if (typeof loadLifelog !== 'function') throw new Error('JournalFeedAdapter requires loadLifelog');
+    this.#loadLifelog = loadLifelog;
     this.#logger = logger;
   }
 
@@ -25,7 +25,7 @@ export class JournalFeedAdapter extends IFeedSourceAdapter {
 
   async fetchItems(query, username) {
     try {
-      const data = this.#userDataService.getLifelogData(username, 'journalist', 'messages');
+      const data = this.#loadLifelog(username, 'journalist', 'messages');
       if (!data?.messages) return [];
 
       // Group all messages by calendar day (YYYY-MM-DD)
@@ -118,7 +118,7 @@ export class JournalFeedAdapter extends IFeedSourceAdapter {
   }
 
   #buildTimeline(currentDayKey, username) {
-    const data = this.#userDataService.getLifelogData(username, 'journalist', 'messages');
+    const data = this.#loadLifelog(username, 'journalist', 'messages');
     if (!data?.messages) return [];
 
     const dayMap = this.#groupByDay(data.messages);

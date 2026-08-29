@@ -7,6 +7,7 @@
 
 import { QuizAnswer } from '#domains/journalist/entities/QuizAnswer.mjs';
 import { nowDate, nowTs24 } from '#system/utils/time.mjs';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Record quiz answer use case
@@ -49,6 +50,7 @@ export class RecordQuizAnswer {
     try {
       // 1. Create QuizAnswer entity
       const quizAnswer = QuizAnswer.create({
+        uuid: uuidv4(),
         questionUuid,
         chatId,
         date: date || nowDate(),

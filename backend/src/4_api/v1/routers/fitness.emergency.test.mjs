@@ -3,14 +3,16 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createFitnessRouter } from './fitness.mjs';
+import { EmergencyAccessService } from '#apps/fitness/services/EmergencyAccessService.mjs';
+import { EmergencyLockdownService } from '#apps/fitness/services/EmergencyLockdownService.mjs';
+import { ManageAccess } from '#apps/fitness/usecases/ManageAccess.mjs';
 
 const silentLogger = { info(){}, warn(){}, error(){}, debug(){} };
 
 /**
  * Build an app exercising the emergency-lockdown endpoints with controllable
- * lockdown use cases and an injected fake identityRelay. The emergency
- * endpoints consume a short-lived pending detection from identityRelay
- * (via consumePendingDetection(Date.now())) rather than scanning themselves.
+ * lockdown use cases and a semantic emergency-access facade. The facade owns
+ * consumption of the short-lived identity relay state and active re-scans.
  */
 function appWith({
   triggerEmergencyLockdown,
@@ -22,7 +24,8 @@ function appWith({
   profiles,
 } = {}) {
   const fitnessConfigService = {
-    loadRawConfig: vi.fn(() => rawConfig ?? { locks: { emergency: ['alice'] } }),
+    getPublicConfig: vi.fn(() => rawConfig ?? { locks: { emergency: ['alice'] } }),
+    getAccessPolicy: vi.fn(() => ({ users: rawConfig?.users || {} })),
   };
   const userService = {
     getProfile: vi.fn(() => null),
@@ -31,6 +34,20 @@ function appWith({
   const configService = {
     getDefaultHouseholdId: () => 'default',
   };
+  const manageAccess = new ManageAccess({ userService, fitnessConfigService, logger: silentLogger });
+  const emergencyAccessService = new EmergencyAccessService({
+    identityRelay: identityRelay ?? null,
+    resolveUnlockService: resolveUnlockService ?? (() => null),
+    manageAccess,
+    logger: silentLogger,
+  });
+  const emergencyOperations = new EmergencyLockdownService({
+    access: emergencyAccessService,
+    trigger: triggerEmergencyLockdown ?? null,
+    release: releaseEmergencyLockdown ?? null,
+    state: getLockdownState ?? null,
+    logger: silentLogger,
+  });
 
   const app = express();
   app.use(express.json());
@@ -38,11 +55,9 @@ function appWith({
     fitnessConfigService,
     userService,
     configService,
-    triggerEmergencyLockdown: triggerEmergencyLockdown ?? null,
-    releaseEmergencyLockdown: releaseEmergencyLockdown ?? null,
-    getLockdownState: getLockdownState ?? null,
-    identityRelay: identityRelay ?? null,
-    resolveUnlockService: resolveUnlockService ?? (() => null),
+    defaultHouseholdId: configService.getDefaultHouseholdId(),
+    emergencyOperations,
+    manageAccess,
     logger: silentLogger,
   }));
   return { app, fitnessConfigService, userService };

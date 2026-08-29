@@ -1,6 +1,6 @@
 // tests/unit/domains/messaging/services/NotificationService.test.mjs
 import { vi } from 'vitest';
-import { NotificationService } from '#domains/messaging/services/NotificationService.mjs';
+import { NotificationService } from '#apps/messaging/services/NotificationService.mjs';
 
 describe('NotificationService', () => {
   let service;

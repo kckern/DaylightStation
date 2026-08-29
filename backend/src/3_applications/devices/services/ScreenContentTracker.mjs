@@ -12,23 +12,22 @@ const DEFAULT_TTL_MS = 15000;
 export class ScreenContentTracker {
   #devices; #clock; #ttlMs; #logger;
 
-  constructor({ clock = Date, ttlMs = DEFAULT_TTL_MS, logger = console } = {}) {
+  constructor({ presenceGateway, clock = Date, ttlMs = DEFAULT_TTL_MS, logger = console } = {}) {
+    if (!presenceGateway?.subscribeScreenPresence) throw new Error('ScreenContentTracker requires presenceGateway');
     this.#devices = new Map();   // deviceId -> { playing, lastSeen }
     this.#clock = clock;
     this.#ttlMs = ttlMs;
     this.#logger = logger;
+    this.presenceGateway = presenceGateway;
   }
 
-  /** @param {{onClientMessage?:Function}} eventBus */
-  start(eventBus) {
-    if (typeof eventBus?.onClientMessage === 'function') {
-      eventBus.onClientMessage((_clientId, message) => this.record(message));
-    }
+  start() {
+    this.presenceGateway.subscribeScreenPresence((presence) => this.record(presence));
     this.#logger.info?.('screen-content.started', { ttlMs: this.#ttlMs });
   }
 
   record(message) {
-    if (!message || message.type !== 'screen.presence' || !message.deviceId) return;
+    if (!message?.deviceId) return;
     this.#devices.set(message.deviceId, {
       playing: message.playing === true,
       lastSeen: this.#clock.now(),

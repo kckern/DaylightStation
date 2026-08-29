@@ -46,6 +46,6 @@ describe('shared School learning-loop composition', () => {
     expect(createRemediationSessionId(input)).not.toBe(createRemediationSessionId({
       ...input, source: { surface: 'schoolcalc', externalId: 'assessment-1' },
     }));
-    expect(createRemediationTurnId(() => Buffer.alloc(8, 0xab))).toBe('TURN_ABABABABABABABAB');
+    expect(createRemediationTurnId(() => 'ab'.repeat(8))).toBe('TURN_ABABABABABABABAB');
   });
 });

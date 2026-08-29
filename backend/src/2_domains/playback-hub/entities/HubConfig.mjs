@@ -215,32 +215,6 @@ export class HubConfig {
     });
   }
 
-  /**
-   * Sparse-preserving YAML serialization.
-   * @returns {object}
-   */
-  toYaml() {
-    const out = {};
-    out.devices = this.#devices.map(d => d.toYaml());
-    if (this.#scheduledFires.length > 0) {
-      out.scheduled = this.#scheduledFires.map(f => {
-        const entry = {
-          id: f.id,
-          time: f.time,
-          target: f.target,
-          queue: f.queue.toString(),
-          days: f.days.value
-        };
-        if (f.durationMin !== null) entry.duration_min = f.durationMin;
-        if (f.volumeOverride !== null) entry.volume_override = f.volumeOverride;
-        return entry;
-      });
-    }
-    if (this.#daylightStation !== null) {
-      out.daylight_station = { ...this.#daylightStation };
-    }
-    return out;
-  }
 }
 
 export default HubConfig;

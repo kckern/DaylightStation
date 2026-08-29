@@ -7,13 +7,7 @@
 
 import crypto from 'node:crypto';
 import { createLogger } from '../../logging/logger.mjs';
-import {
-  DomainError,
-  ValidationError,
-  NotFoundError,
-  AuthorizationError,
-  InfrastructureError,
-} from '../../utils/errors/index.mjs';
+import { InfrastructureError } from '../../utils/errors/index.mjs';
 
 const logger = createLogger({ source: 'middleware', app: 'http' });
 
@@ -29,12 +23,8 @@ function getHttpStatus(error) {
   // silently discarded and every such refusal surfaced as a 500.
   const explicit = error?.status ?? error?.statusCode;
   if (typeof explicit === 'number' && Number.isFinite(explicit)) return explicit;
-  if (error instanceof ValidationError) return 400;
-  if (error instanceof AuthorizationError) return 403;
-  if (error instanceof NotFoundError) return 404;
-  if (error instanceof DomainError) return 422;
   if (error instanceof InfrastructureError) return 503;
-  return 500;
+  return getHttpStatusByName(error);
 }
 
 /**
@@ -63,6 +53,7 @@ function getHttpStatusByName(error) {
       return 403;
     case 'DomainInvariantError':
     case 'BusinessRuleError':
+    case 'DomainError':
       return 422;
     case 'ConflictError':
       return 409;
@@ -159,7 +150,9 @@ export function errorHandlerMiddleware(options = {}) {
     const actualStatus = getHttpStatus(err);
 
     // Log based on error type
-    if (err instanceof DomainError) {
+    if (['DomainError', 'ValidationError', 'NotFoundError', 'AuthorizationError',
+      'ConflictError', 'BusinessRuleError', 'DomainInvariantError',
+      'EntityNotFoundError'].includes(err?.name)) {
       logger.warn('http.error.domain', {
         traceId,
         errorType: err.constructor.name,

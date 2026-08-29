@@ -14,7 +14,7 @@
  */
 
 import { TransactionClassifier, MortgageCalculator } from '#domains/finance/index.mjs';
-import { NotFoundError, ValidationError } from '#system/utils/errors/index.mjs';
+import { NotFoundError, ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 
 export class BudgetCompilationService {
   #financeStore;

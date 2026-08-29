@@ -36,7 +36,7 @@ const winstonFactory = () => ({
 // the mocks against the source file's resolutions too (when they exist), then
 // import the module under test AFTER the mocks via dynamic import (vi.doMock
 // is not hoisted, so ordering is explicit).
-const sourcePath = path.resolve('backend/src/0_system/logging/transports/loggly.mjs');
+const sourcePath = path.resolve('backend/src/1_adapters/logging/LogglyTransport.mjs');
 const requireFromSource = createRequire(sourcePath);
 for (const [specifier, factory] of [
   ['winston-loggly-bulk', logglyFactory],
@@ -49,7 +49,8 @@ for (const [specifier, factory] of [
   } catch { /* not resolvable from the source dir — bare mock suffices */ }
 }
 
-const { createLogglyTransport } = await import('#backend/src/0_system/logging/transports/loggly.mjs');
+const { createLogglyTransport } = await import('#adapters/logging/LogglyTransport.mjs');
+const { StartupMetricSamplingPolicy } = await import('#apps/logging/StartupMetricSamplingPolicy.mjs');
 
 describe('LogglyTransport', () => {
   let stderrWrite;
@@ -160,6 +161,10 @@ describe('LogglyTransport', () => {
   });
 
   describe('startup-metric throttling', () => {
+    const createSampledTransport = () => {
+      const sampling = new StartupMetricSamplingPolicy();
+      return createLogglyTransport({ ...validOptions, acceptEvent: (event) => sampling.accept(event) });
+    };
     const startupMetric = (extra = {}, contextExtra = {}) => makeEvent({
       event: 'playback.media-metric',
       data: { metric: 'startup_duration_ms', value: 100, waitKey: 'wait-1', ...extra },
@@ -167,7 +172,7 @@ describe('LogglyTransport', () => {
     });
 
     test('sends the first sample and drops intermediate ones for the same key', () => {
-      const transport = createLogglyTransport(validOptions);
+      const transport = createSampledTransport();
 
       transport.send(startupMetric());          // first → sent
       transport.send(startupMetric());          // intermediate → dropped
@@ -177,7 +182,7 @@ describe('LogglyTransport', () => {
     });
 
     test('sends the final sample once and drops further finals', () => {
-      const transport = createLogglyTransport(validOptions);
+      const transport = createSampledTransport();
 
       transport.send(startupMetric());                    // first → sent
       transport.send(startupMetric());                    // dropped
@@ -188,7 +193,7 @@ describe('LogglyTransport', () => {
     });
 
     test('isFinal flag is honored like final', () => {
-      const transport = createLogglyTransport(validOptions);
+      const transport = createSampledTransport();
 
       transport.send(startupMetric());                    // first → sent
       transport.send(startupMetric({ isFinal: true }));   // final → sent
@@ -197,7 +202,7 @@ describe('LogglyTransport', () => {
     });
 
     test('different waitKeys are throttled independently', () => {
-      const transport = createLogglyTransport(validOptions);
+      const transport = createSampledTransport();
 
       transport.send(startupMetric({ waitKey: 'a' }));
       transport.send(startupMetric({ waitKey: 'b' }));
@@ -208,7 +213,7 @@ describe('LogglyTransport', () => {
     });
 
     test('falls back to sessionId then a global key when waitKey is absent', () => {
-      const transport = createLogglyTransport(validOptions);
+      const transport = createSampledTransport();
 
       transport.send(startupMetric({ waitKey: undefined }, { sessionId: 's1' })); // sent
       transport.send(startupMetric({ waitKey: undefined }, { sessionId: 's1' })); // dropped
@@ -220,7 +225,7 @@ describe('LogglyTransport', () => {
     });
 
     test('non-startup metrics are never throttled', () => {
-      const transport = createLogglyTransport(validOptions);
+      const transport = createSampledTransport();
 
       transport.send(makeEvent({ event: 'playback.media-metric', data: { metric: 'buffer_ms' } }));
       transport.send(makeEvent({ event: 'playback.media-metric', data: { metric: 'buffer_ms' } }));
@@ -229,7 +234,7 @@ describe('LogglyTransport', () => {
     });
 
     test('throttle state map is cleared past 2000 keys (no unbounded growth)', () => {
-      const transport = createLogglyTransport(validOptions);
+      const transport = createSampledTransport();
 
       transport.send(startupMetric({ waitKey: 'key-0' }));
       transport.send(startupMetric({ waitKey: 'key-0' })); // dropped, state remembered

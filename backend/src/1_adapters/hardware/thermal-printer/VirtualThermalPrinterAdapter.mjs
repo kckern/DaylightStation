@@ -33,11 +33,11 @@
  *
  * @module adapters/hardware/thermal-printer
  */
-import { promises as fs } from 'fs';
 import path from 'path';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { transcribeEscPosItems } from '#system/utils/escposTranscript.mjs';
+import { ensureDirAsync, writeTextFileAsync } from '#system/utils/FileIO.mjs';
 import { ThermalPrinterAdapter } from './ThermalPrinterAdapter.mjs';
 
 const FAULTS = Object.freeze(['offline', 'jam']);
@@ -228,9 +228,9 @@ export class VirtualThermalPrinterAdapter extends ThermalPrinterAdapter {
       codes: printJob.codes ?? null,
     };
 
-    await fs.mkdir(this.#captureDir, { recursive: true });
-    await fs.writeFile(path.join(this.#captureDir, `${receiptId}.json`), `${JSON.stringify(capture, null, 2)}\n`, 'utf8');
-    await fs.writeFile(path.join(this.#captureDir, `${receiptId}.txt`), transcript, 'utf8');
+    await ensureDirAsync(this.#captureDir);
+    await writeTextFileAsync(path.join(this.#captureDir, `${receiptId}.json`), `${JSON.stringify(capture, null, 2)}\n`);
+    await writeTextFileAsync(path.join(this.#captureDir, `${receiptId}.txt`), transcript);
     this.#receipts.push(capture);
 
     this.#logger.info?.('virtual-thermal.receipt-captured', { receiptId, itemCount: printJob.items.length });

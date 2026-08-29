@@ -1,11 +1,8 @@
 /** Last-known-good compiled School projection for Fitness-owned source data. */
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
-import yaml from 'js-yaml';
+import { readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 
 const SAFE_ID = /^[a-z0-9][a-z0-9-]*$/;
-const dump = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
-
 export class YamlFitnessCourseProjectionStore {
   #config; #logger;
   constructor({ configService, logger = console } = {}) {
@@ -19,7 +16,7 @@ export class YamlFitnessCourseProjectionStore {
   async get(work) {
     if (!SAFE_ID.test(work ?? '')) return null;
     try {
-      const value = yaml.load(await fs.readFile(this.#file(work), 'utf8'));
+      const value = readYamlFromPath(this.#file(work));
       return value?.schema === 'school.fitness-course-projection/v1' ? value : null;
     } catch (error) {
       if (error?.code !== 'ENOENT') this.#logger.warn?.('school.fitness-course.snapshot-read-failed', { work, error: error.message });
@@ -34,14 +31,9 @@ export class YamlFitnessCourseProjectionStore {
       compiledAt: new Date().toISOString(),
       ...structuredClone(projection),
     };
-    await fs.mkdir(this.#root(), { recursive: true });
-    const file = this.#file(work);
-    const temp = `${file}.${process.pid}.tmp`;
-    await fs.writeFile(temp, dump(record), { encoding: 'utf8', flag: 'wx' });
-    await fs.rename(temp, file);
+    saveYamlToPathAtomic(this.#file(work), record, { indent: 2, lineWidth: -1, noRefs: true });
     return record;
   }
 }
 
 export default YamlFitnessCourseProjectionStore;
-

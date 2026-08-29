@@ -8,6 +8,11 @@
  * configured descriptor.
  */
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
+import {
+  InvalidInputError,
+  MissingResourceError,
+  StateConflictError,
+} from '#apps/common/errors/SemanticErrors.mjs';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -54,24 +59,24 @@ export class SchoolPianoChallengeCompletionService {
     const descriptor = text(descriptorId);
     const assessment = text(assessmentId);
     if (!descriptor || !assessment || !DAY.test(studyDay) || typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1) {
-      throw Object.assign(new Error('Invalid School PianoChallenge completion'), { status: 400 });
+      throw new InvalidInputError('Invalid School PianoChallenge completion', { code: null });
     }
     // Never let an HTTP caller mint an opaque completion record.  The course
     // launcher exposes descriptors only for its current owed lesson; this
     // guard additionally makes a removed or misspelled config id ineligible
     // even when an old kiosk tab retries its request.
     if (!this.#descriptorById(descriptor)) {
-      throw Object.assign(new Error('Unknown School PianoChallenge descriptor'), { status: 404 });
+      throw new MissingResourceError('Unknown School PianoChallenge descriptor', { code: null });
     }
     const current = this.#datastore.getPreferences(learnerId);
-    if (current === null) throw Object.assign(new Error('Invalid user'), { status: 400 });
+    if (current === null) throw new InvalidInputError('Invalid user', { code: null });
     const root = current.pianoChallenge?.schoolCompletions ?? {};
     const existing = root?.[studyDay]?.[descriptor] ?? null;
     if (existing?.assessmentId === assessment && existing?.status === 'completed') {
       return { studyDay, descriptorId: descriptor, duplicate: true, completedAt: existing.completedAt };
     }
     if (existing?.status === 'completed') {
-      throw Object.assign(new Error('School PianoChallenge already completed by another assessment'), { status: 409 });
+      throw new StateConflictError('School PianoChallenge already completed by another assessment', { code: null });
     }
     const completedAt = this.#clock().toISOString();
     const next = {

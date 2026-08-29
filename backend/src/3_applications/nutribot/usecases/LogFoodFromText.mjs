@@ -6,10 +6,10 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
+import { createNutriLog, serializeNutriLog } from '../nutriLogRecords.mjs';
 
 /**
  * Get current time details for date context in prompts
@@ -61,6 +61,7 @@ export class LogFoodFromText {
   #foodIconsString;
   #reconciliationReader;
   #catalogService;
+  #pause;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -76,6 +77,7 @@ export class LogFoodFromText {
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
     this.#reconciliationReader = deps.reconciliationReader || null;
     this.#catalogService = deps.catalogService || null;
+    this.#pause = deps.pause || (async () => {});
   }
 
   /**
@@ -83,7 +85,7 @@ export class LogFoodFromText {
    * @private
    */
   #getTimezone() {
-    return this.#config?.getDefaultTimezone?.() || this.#config?.weather?.timezone || 'America/Los_Angeles';
+    return this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
   }
 
   /**
@@ -201,7 +203,7 @@ export class LogFoodFromText {
           const existing = await this.#foodLogStore.findByUuid(pendingLogUuid, userId);
           if (existing) {
             asOfDateForRevision = deriveLogDate(
-              typeof existing.toJSON === 'function' ? existing.toJSON() : existing,
+              serializeNutriLog(existing),
               this.#getTimezone(),
             );
           }
@@ -279,7 +281,7 @@ export class LogFoodFromText {
       // 4. Create NutriLog entity
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
       const createTimestamp = new Date();
-      const nutriLog = NutriLog.create({
+      const nutriLog = createNutriLog({
         userId,
         conversationId,
         text,
@@ -406,7 +408,7 @@ export class LogFoodFromText {
         const isRetryable = error.code === 'EAI_AGAIN' || error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET';
         if (isRetryable && attempt < maxRetries) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          await this.#pause(delay);
         } else {
           return;
         }
@@ -728,7 +730,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       //    the revision-day wall clock).
       const timezone = this.#getTimezone();
       const originalDate = deriveLogDate(
-        typeof targetLog.toJSON === 'function' ? targetLog.toJSON() : targetLog,
+        serializeNutriLog(targetLog),
         timezone,
       );
       const prompt = this.#buildDetectionPrompt(contextualText, '', originalDate);
@@ -898,7 +900,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
     // reasoning as #handleRevisionDirect)
     const timezone = this.#getTimezone();
     const originalDate = deriveLogDate(
-      typeof targetLog.toJSON === 'function' ? targetLog.toJSON() : targetLog,
+      serializeNutriLog(targetLog),
       timezone,
     );
     const prompt = this.#buildDetectionPrompt(contextualText, '', originalDate);

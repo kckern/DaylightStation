@@ -88,7 +88,7 @@ import { ScanDispatcher } from '#apps/scan/ScanDispatcher.mjs';
 
 import { evaluatePrintQuota, DEFAULT_PRINT_POLICY } from '#domains/school/index.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId } from '#system/utils/id.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
@@ -97,7 +97,9 @@ import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
 import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { ensureSession } from '#apps/school/usecases/offerSession.mjs';
-import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
+import { createYamlBankReader } from '#adapters/school/documents/YamlBankReader.mjs';
 import { ResolveCardScan } from '#apps/school/documents/ResolveCardScan.mjs';
 import { RecordCardScanOutcome } from '#apps/school/documents/RecordCardScanOutcome.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
@@ -432,6 +434,7 @@ function buildIssueDocument({
 }) {
   const capture = capturingPrinter();
   const renderPrintDocument = new RenderPrintDocument({
+    rendering: createPrintDocumentRendering(),
     repository: printDocuments,
     banks: createYamlBankReader({ dataDir }),
     allocationStore,
@@ -993,7 +996,9 @@ export async function runProof({
     const repository = new YamlPrintDocumentRepository({ directory: printDocumentsRoot });
     const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot });
     const worksheetInstances = new MemoryWorksheetInstances();
-    const renderPrintDocument = new RenderPrintDocument({ repository, allocationStore });
+    const renderPrintDocument = new RenderPrintDocument({
+      rendering: createPrintDocumentRendering(), repository, allocationStore,
+    });
     let worksheetPdf = null;
     const issueDocument = new IssueDocument({
       curriculum,

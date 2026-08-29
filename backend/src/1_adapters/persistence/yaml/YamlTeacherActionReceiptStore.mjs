@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
 import yaml from 'js-yaml';
 import { ITeacherActionReceiptStore } from '#apps/school/ports/ITeacherActionReceiptStore.mjs';
+import { ensureDir, readTextFromPath, renameFile, writeFileExclusive } from '#system/utils/FileIO.mjs';
 
 const SCHEMA = 'school.teacher-action-receipt/v1';
 const digest = (value) => createHash('sha256').update(value).digest('hex');
@@ -22,7 +22,7 @@ export class YamlTeacherActionReceiptStore extends ITeacherActionReceiptStore {
 
   async #read(key) {
     let raw;
-    try { raw = await fs.readFile(this.#file(key), 'utf8'); } catch (error) {
+    try { raw = readTextFromPath(this.#file(key)); } catch (error) {
       if (error?.code === 'ENOENT') return null;
       throw error;
     }
@@ -41,10 +41,10 @@ export class YamlTeacherActionReceiptStore extends ITeacherActionReceiptStore {
       throw new Error('teacher action receipt requires a bounded key and fingerprint');
     }
     const normalized = key.trim();
-    await fs.mkdir(this.#dir(), { recursive: true });
+    ensureDir(this.#dir());
     const pending = { schema: SCHEMA, key: normalized, fingerprint, status: 'pending', createdAt: at };
     try {
-      await fs.writeFile(this.#file(normalized), dump(pending), { encoding: 'utf8', flag: 'wx' });
+      writeFileExclusive(this.#file(normalized), dump(pending));
       return { kind: 'new' };
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
@@ -64,8 +64,8 @@ export class YamlTeacherActionReceiptStore extends ITeacherActionReceiptStore {
     const completed = { ...existing, status: 'completed', completedAt: at, receipt };
     const file = this.#file(normalized);
     const temporary = `${file}.${process.pid}-${Date.now()}.tmp`;
-    await fs.writeFile(temporary, dump(completed), { encoding: 'utf8', flag: 'wx' });
-    await fs.rename(temporary, file);
+    writeFileExclusive(temporary, dump(completed));
+    renameFile(temporary, file);
     return receipt;
   }
 }

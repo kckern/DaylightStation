@@ -69,16 +69,6 @@ describe('Notification', () => {
     });
   });
 
-  describe('toJSON/fromJSON', () => {
-    test('round-trips notification data', () => {
-      notification.markSent('2026-01-11T12:00:00.000Z');
-      const json = notification.toJSON();
-      const restored = Notification.fromJSON(json);
-      expect(restored.id).toBe(notification.id);
-      expect(restored.sentAt).toBe(notification.sentAt);
-    });
-  });
-
   describe('validation', () => {
     test('markSent throws if timestamp not provided', () => {
       expect(() => notification.markSent()).toThrow('timestamp required');

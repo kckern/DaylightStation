@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { WebSocketEventBus } from '#system/eventbus/WebSocketEventBus.mjs';
+import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
 
 const socket = () => ({ OPEN: 1, readyState: 1, send: vi.fn() });
 

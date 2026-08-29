@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+# The index is the commit. Scan it explicitly so an unstaged clean copy cannot
+# hide a staged violation, then scan the complete working tree as an immediate
+# feedback gate for edits not yet staged.
+node scripts/audit-direct-fs-imports.mjs --staged
+node scripts/audit-direct-fs-imports.mjs
+
+# Enforce the rest of docs/reference/core/layers-of-abstraction as executable
+# dependency and link-integrity rules on every commit.
+npm run audit:layers
+node scripts/audit-layer-imports.mjs --staged
+npm run audit:links
+node scripts/audit-esm-links.mjs --staged
+npm run check:parse
+node scripts/check-parse.mjs --staged

@@ -1,4 +1,4 @@
-import { TsFsrsEngine } from '#system/scheduling/TsFsrsEngine.mjs';
+import { TsFsrsEngine } from './TsFsrsEngine.mjs';
 import { IFlashcardScheduler } from '#apps/school/ports/IFlashcardScheduler.mjs';
 
 /** Anti-corruption adapter for the package-backed FSRS engine. */

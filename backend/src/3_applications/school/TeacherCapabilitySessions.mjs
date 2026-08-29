@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 
 export const TEACHER_SESSION_COOKIE = 'daylight_teacher_session';
@@ -6,7 +5,6 @@ export const TEACHER_SESSION_IDLE_MS = 10 * 60_000;
 export const TEACHER_SESSION_ABSOLUTE_MS = 30 * 60_000;
 export const TEACHER_STEP_UP_MS = 2 * 60_000;
 
-const token = () => randomBytes(32).toString('base64url');
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const STEP_UP_ACTIONS = new Set([
   'agenda.dispatch', 'attempts.regrade', 'sessions.grade-adjust',
@@ -50,10 +48,12 @@ export function requiresTeacherStepUp(action, context = {}) {
 
 /** Process-local capabilities; restart intentionally locks every browser. */
 export class TeacherCapabilitySessions {
-  #teacherGate; #clock; #sessions = new Map(); #grants = new Map();
-  constructor({ teacherGate, clock = () => new Date() } = {}) {
+  #teacherGate; #clock; #tokenFactory; #sessions = new Map(); #grants = new Map();
+  constructor({ teacherGate, tokenFactory, clock = () => new Date() } = {}) {
     if (!teacherGate) throw new Error('TeacherCapabilitySessions requires teacherGate');
+    if (typeof tokenFactory !== 'function') throw new Error('TeacherCapabilitySessions requires a tokenFactory');
     this.#teacherGate = teacherGate;
+    this.#tokenFactory = tokenFactory;
     this.#clock = clock;
   }
 
@@ -61,7 +61,7 @@ export class TeacherCapabilitySessions {
     this.#teacherGate.assert({ userId, pin, action: 'teacher.auth.unlock' });
     const now = this.#clock().getTime();
     this.#prune(now);
-    const capabilityToken = token();
+    const capabilityToken = this.#tokenFactory();
     this.#sessions.set(capabilityToken, { userId, issuedAt: now, lastUsedAt: now });
     return { capabilityToken, userId, idleExpiresAt: new Date(now + TEACHER_SESSION_IDLE_MS).toISOString(),
       absoluteExpiresAt: new Date(now + TEACHER_SESSION_ABSOLUTE_MS).toISOString() };
@@ -97,7 +97,7 @@ export class TeacherCapabilitySessions {
     }
     this.#teacherGate.assert({ userId: session.userId, pin, action: 'teacher.auth.step-up',
       context: { requestedAction: normalizedAction, resource: normalizedResource } });
-    const grantToken = token();
+    const grantToken = this.#tokenFactory();
     const now = this.#clock().getTime();
     this.#grants.set(grantToken, { capabilityToken, action: normalizedAction, resource: normalizedResource, expiresAt: now + TEACHER_STEP_UP_MS });
     return { grantToken, action: normalizedAction, resource: normalizedResource,

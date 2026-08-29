@@ -1,123 +1,139 @@
 # Backend DDD Compliance Audit
 
-**Date:** 2026-08-28  
-**Scope:** Production code in `backend/src/` and the project's layer-audit gate. Tests were not treated as production-layer violations because the gate intentionally excludes `*.test.mjs`.
+**Date:** 2026-08-28
+**Scope:** Production runtime code under `backend/src/`, composition, audit tooling,
+and contract-characterization tests.
+**Authority:** [`docs/reference/core/layers-of-abstraction/`](../../reference/core/layers-of-abstraction/)
 
 ## Verdict
 
-**Not compliant.** The core dependency direction is healthy, but the backend has substantial, acknowledged transition debt and one new regression that makes the existing layer gate fail.
+The production backend satisfies every enforced layer rule. The normal gate,
+AST report, application-infrastructure report, domain-hierarchy report, and
+full runtime filesystem scanner all report zero confirmed violations.
 
-`npm run audit:layers` currently exits non-zero:
+This was an ownership-only remediation. It did not intentionally change any
+route, method, status, header, response envelope/value, WebSocket/streaming
+contract, stored YAML/JSON/JSONL shape, identifier, timestamp format, ordering,
+or failure semantics. It requires no backup, rewrite, backfill, or migration.
 
-| Rule | Current | Baseline | Result |
-|------|--------:|---------:|--------|
-| `adapters-no-direct-fs` | 93 | 92 | Regression |
+Independent final review and branch integration are tracked separately in the
+[finish-line checklist](../plans/2026-08-28-backend-ddd-finish-line.md).
 
-All other existing rule counts are at or below their baselines. A baseline match is not compliance: it only means no new debt was added for that rule.
+## Final Machine Evidence
 
-## Confirmed Findings
+`npm run audit:layers` and `--ast-report` agree on these results:
 
-### P0 — New adapter bypasses the required atomic FileIO path
+| Concern | Final result |
+|---|---:|
+| System upward imports | 0 |
+| Domain adapter/Node-I/O imports | 0 |
+| Domain ambient clock and nondeterminism | 0 |
+| Application adapter/config/FileIO/Node-infrastructure access | 0 |
+| Application global fetch/process/timer/event-bus/config-service access | 0 |
+| Adapter raw filesystem imports | 0 |
+| Adapter config-singleton/rendering/cross-adapter imports | 0 |
+| Rendering adapter/application imports | 0 |
+| API adapter/application/domain/config/rendering/FileIO/Node imports | 0 |
+| API global fetch/process access | 0 |
+| Ports outside applications or with zero importers | 0 |
+| Adapter port implementations lacking `extends` | 0 |
+| `UserDataService` runtime references | 0 |
+| Domain `toJSON` / `fromJSON` ownership | 0 / 0 |
+| Storage paths declared outside allowed boundaries | 0 |
+| Upward domain-hierarchy imports | 0 |
 
-[`YamlReadingSessionTimelineStore`](../../../backend/src/1_adapters/persistence/yaml/YamlReadingSessionTimelineStore.mjs) imports `fs`, reads its YAML file, and writes it directly with `fs.writeFile`.
+Additional gates:
 
-This is the one new `adapters-no-direct-fs` finding. It violates Decision D10, which bans direct adapter filesystem access in favor of `#system/utils/FileIO.mjs`; the decision was made specifically after a non-atomic YAML read-modify-write corrupted a school record. The store's in-process promise chain does not make writes atomic or coordinate separate processes.
+- `npm run audit:fs`: 2,398 runtime files checked; no raw `fs` import outside
+  `0_system`.
+- `--application-infrastructure-report`: 0.
+- `--domain-hierarchy-report`: 0.
+- API literal route comparison against `HEAD`: no route removals. The six added
+  Homeline call routes are unrelated pre-existing user work and excluded from
+  this remediation's integration set.
+- Backend app module imports successfully without starting a runtime.
 
-**Remediation:** use the FileIO YAML load/save helpers and its atomic writer, or add an adapter-facing persistence primitive there. Do not raise the baseline.
+## Semantic Review
 
-### P1 — API layer still contains wiring and direct cross-layer dependencies
+The import graph alone was not treated as proof. Production modules were also
+reviewed for misplaced decisions:
 
-The API guideline permits only API/system HTTP utilities at module scope; dependencies from other layers must be injected by composition. The current gate reports 33 forbidden runtime imports:
+- API modules now parse HTTP input and translate injected operation results;
+  they do not construct application services or perform filesystem, process,
+  provider, configuration, or domain work.
+- Application services express workflows through capability-oriented ports;
+  they do not know YAML/JSON filenames, storage layouts, environment variables,
+  config-tree keys, generic event-bus mechanics, global timers, or raw network
+  calls.
+- Adapters own hydration/dehydration and infrastructure mechanics. Workflow and
+  business-selection policies found in adapters were moved to applications or
+  domains.
+- Composition owns concrete construction, provider selection, registry loading,
+  runtime projections, and port binding. The large `app.mjs` policy blocks were
+  extracted into named services and composition modules. The independent review
+  additionally moved screen fallback, receipt projection, Strava authorization,
+  Telegram identity, and kitchen relay liveness behind named operations/adapters.
+- Domains are deterministic and serialization-free. Current time and IDs enter
+  from callers; stored/wire projections occur at boundaries.
+- Application-facing ports live under `3_applications/*/ports/`; production
+  adapters explicitly implement their live contracts.
 
-| Rule | Count | Representative locations |
-|------|------:|--------------------------|
-| `api-no-adapters` | 10 | [`admin/content.mjs`](../../../backend/src/4_api/v1/routers/admin/content.mjs), [`art.mjs`](../../../backend/src/4_api/v1/routers/art.mjs), [`screens.mjs`](../../../backend/src/4_api/v1/routers/screens.mjs) |
-| `api-no-apps` | 13 | [`content.mjs`](../../../backend/src/4_api/v1/routers/content.mjs), [`fitness.mjs`](../../../backend/src/4_api/v1/routers/fitness.mjs), [`trigger.mjs`](../../../backend/src/4_api/v1/routers/trigger.mjs) |
-| `api-no-domains` | 9 | [`media.mjs`](../../../backend/src/4_api/v1/routers/media.mjs), [`play.mjs`](../../../backend/src/4_api/v1/routers/play.mjs), [`school.mjs`](../../../backend/src/4_api/v1/routers/school.mjs) |
-| `api-no-config` | 1 | [`api.mjs`](../../../backend/src/4_api/v1/routers/api.mjs) |
+## Deliberate Non-Violations
 
-Several are concrete wiring violations, not merely type references:
+- `api-handrolled-500`: **0**. The 83 historical sites documented in the
+  [classification ledger](2026-08-28-api-handwritten-500-classification.md)
+  now delegate to the API-owned `sendInternalError` presenter while preserving
+  each route's exact status and body.
+- `apps-success-false`: **44**, comprising 43 executable use-case/tool/batch
+  outcomes and one comment-only match. They are existing application result
+  contracts, not infrastructure access.
 
-- `admin/content.mjs` imports both `YamlListDatastore` and `ListManagementService`, then supplies a fallback `new ListManagementService(...)`.
-- `content.mjs` imports application/domain code and constructs `ContentAlternatesService` in a route handler.
-- `device.mjs` imports and constructs `DispatchIdempotencyService` when one is not injected.
-- `createAgentMemoryRouter.mjs` imports `WorkingMemoryState` from applications.
+The remaining application results are public/use-case contracts, not
+infrastructure access. Both counters are ratcheted at their current values.
 
-There are also 13 production API modules importing Node filesystem/process APIs directly (including `proxy.mjs`, `screens.mjs`, `canvas.mjs`, and `routers/lib/emulatorFs.mjs`). The current gate does not test this, but it conflicts with the API layer's translation-only responsibility.
+## Verification
 
-**Remediation:** move construction and filesystem/proxy work into adapters or application use cases; wire the resulting ports/use cases in `5_composition`; make router factory parameters required rather than providing construction fallbacks.
+| Gate | Result |
+|---|---|
+| Parse/conflict-marker gate | 8,758 parsed; 10,110 scanned |
+| Refactor/characterization suite | 19 files; 192 passed |
+| Legacy unit harness | 74 suites; 480 passed |
+| Integrated harness | 7 suites; 55 passed; 4 existing todos |
+| Deployment-shaped integration | 1 suite; 2 passed |
+| Isolated backend suite | 830 passed suites, 4 explicitly skipped; 10,602 passed tests, 52 skipped, 3 todos |
+| Layer audit | all hard rules zero |
+| Runtime filesystem audit | 2,398 files; zero violations |
+| App import | passed |
+| `git diff --check` | passed |
 
-### P1 — Application layer owns infrastructure/configuration concerns
+Focused final semantic-remediation coverage passes 66 tests across the affected
+device, presentation, Playback Hub, and list-router paths. The independent
+reviewer's four P2 leaks were moved to the correct boundary; it additionally
+caught and the remediation fixed a P1 Playback Hub serializer regression before
+integration. The fresh final independent reviewer signed off with no remaining
+P0/P1/P2 finding.
 
-The ratchet preserves the following direct application-layer violations:
+The skipped/todo tests are pre-existing explicit exclusions; they are not hidden
+failures or newly suppressed cases. Live/smoke tests were not run because they
+can control household devices and are not required to prove a dependency-only
+refactor.
 
-| Rule | Count | Meaning |
-|------|------:|---------|
-| `apps-no-config-internals` | 8 | Imports from `#system/config/` |
-| `apps-no-fs` | 19 | Direct filesystem or child-process imports |
-| `apps-no-fileio` | 8 | Direct `FileIO` imports, which D5 bans from applications |
+## Enforcement Added
 
-Examples include [`ArchiveService`](../../../backend/src/3_applications/content/services/ArchiveService.mjs) (filesystem, YAML, config singletons, and `UserDataService`), [`MediaMemoryService`](../../../backend/src/3_applications/content/services/MediaMemoryService.mjs) (paths and filesystem), and [`DashboardToolFactory`](../../../backend/src/3_applications/agents/health-coach/tools/DashboardToolFactory.mjs) (config singleton).
+- The layer audit parses static, multiline, re-exported, CommonJS, and literal
+  dynamic imports and performs graph-level port/hierarchy checks.
+- A separate full-runtime scanner rejects `node:fs`, `fs`, `node:fs/promises`,
+  and `fs/promises` outside `0_system`, including aliases and dynamic imports.
+- `.githooks/pre-commit` scans both the staged index and the complete working
+  tree for filesystem violations, then runs the layer, ESM-link, and parse
+  gates; the installation script configures the repository hook path.
+- Audit-rule tests cover true positives and false positives so pure path/date
+  parsing is not confused with I/O or an ambient clock read.
 
-The scan also found application code that receives `configService` and then navigates infrastructure-specific config shapes, e.g. [`cameraArchiveJobHandler.mjs`](../../../backend/src/3_applications/camera/cameraArchiveJobHandler.mjs). That escapes the import-based rule but conflicts with the documented “no config structure knowledge” rule.
+## Conclusion
 
-**Remediation:** introduce app-owned ports for persistence, process execution, and resolved feature settings. Inject concrete implementations and resolved values from composition.
-
-### P1 — Adapter filesystem migration remains large
-
-There are now 93 direct Node filesystem imports across adapters. Most are YAML stores and belong in an adapter layer, but Decision D10 still requires them to use FileIO so writes are atomic and behavior is centralized. Four adapters also import other adapters directly, contrary to the peer-isolation rule:
-
-- [`ImmichCanvasAdapter.mjs`](../../../backend/src/1_adapters/content/canvas/immich/ImmichCanvasAdapter.mjs)
-- [`LocalContentAdapter.mjs`](../../../backend/src/1_adapters/content/local-content/LocalContentAdapter.mjs)
-- [`YouTubeContentSource.mjs`](../../../backend/src/1_adapters/content/media/youtube/YouTubeContentSource.mjs) (two imports)
-
-**Remediation:** first fix the new timeline-store regression, then migrate the high-write-risk YAML stores in small batches. Extract genuinely shared codec/resolver utilities to an allowed lower/shared layer rather than importing a sibling adapter.
-
-### P2 — Domain purity has no forbidden imports, but has implicit clocks
-
-The strongest result: `domains-no-adapters` and `domains-no-node-io` are both zero, and no domain imports applications, API, rendering, or system modules outside the documented shared-kernel exception.
-
-However, the domain guidelines explicitly prohibit knowing the current time. Production domain code still reads an implicit clock in at least these places:
-
-- [`MediaProgress.mjs`](../../../backend/src/2_domains/content/entities/MediaProgress.mjs) falls back to `Date.now()`.
-- [`ShutdownState.mjs`](../../../backend/src/2_domains/shutdown/ShutdownState.mjs) defaults both methods to `Date.now()`.
-- [`FoodCatalogEntry.mjs`](../../../backend/src/2_domains/health/entities/FoodCatalogEntry.mjs) stamps dates itself.
-- [`Goal.mjs`](../../../backend/src/2_domains/lifeplan/entities/Goal.mjs), [`Belief.mjs`](../../../backend/src/2_domains/lifeplan/entities/Belief.mjs), and [`Headline.mjs`](../../../backend/src/2_domains/feed/entities/Headline.mjs) supply current-time defaults.
-
-`Math.random()` is likewise used in domain selection and ID paths. It is not explicitly ratcheted, but injecting an RNG where deterministic behavior matters would improve testability.
-
-**Remediation:** require a timestamp/clock value at factory or operation boundaries; preserve the existing `core/utils/time.mjs` approach as the model.
-
-### P2 — Serialization and governance documentation remain out of sync
-
-- The gate finds 67 domain `toJSON()` definitions. This is known migration debt, but directly conflicts with the domain guideline that adapters own hydration/dehydration.
-- Decision D6 requires every folder in `2_domains/` to appear in the hierarchy table. The table in `ddd-reference.md` omits `camera`, `donow`, `economy`, `exercise`, `measures`, `midi`, `piano`, `pianoaudio`, `scan`, and `shutdown`.
-
-The current domain graph does not show cross-domain runtime imports, so no upward domain dependency was found. The incomplete table nevertheless prevents future checks from determining whether a new cross-domain import is legal.
-
-## What Passed
-
-- `0_system` has no forbidden upward imports.
-- Domain code has no adapter/API/application/rendering imports and no Node filesystem/process imports.
-- Applications have no direct `#adapters` imports.
-- Rendering has no adapter/application imports.
-- No deep relative import crosses a numbered layer.
-- Of 98 production adapters that import an application port at runtime, all but a documentation-only source-registry reference declare an `extends` relationship; no obvious D7 contract bypass was found in that sample.
-
-## Audit-Gate Gaps
-
-The existing gate is useful as a ratchet but is not a complete DDD compliance proof:
-
-1. It scans only non-test `.mjs` files and static one-line import/export syntax.
-2. It does not flag direct Node I/O in the API layer.
-3. It cannot detect a dependency injected as `configService` and then used to traverse config/storage internals.
-4. It does not enforce implicit-clock purity in domains.
-5. It reports baseline debt as “ok,” which is expected ratchet behavior but should not be read as compliant.
-
-## Recommended Order
-
-1. Fix `YamlReadingSessionTimelineStore` with the atomic FileIO path and return the gate to green.
-2. Eliminate API-layer construction/imports in `admin/content`, `content`, `device`, and agent memory routing; move their dependencies to composition.
-3. Replace application-layer filesystem/config use with ports and resolved settings, starting with high-risk read-modify-write paths.
-4. Continue adapter FileIO migration, prioritizing YAML stores that write mutable household records.
-5. Add the missing domain hierarchy entries and then ratchet implicit clocks and domain serialization downward.
+No confirmed production DDD violation remains in the audited scope. The code
+and automated gates encode the structural non-negotiable rules; a final fresh
+independent semantic review remains required before integration because the
+first requested reviewer exhausted its service allowance after reporting the
+findings resolved above.

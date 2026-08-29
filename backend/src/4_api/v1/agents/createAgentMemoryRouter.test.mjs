@@ -4,6 +4,7 @@ import express from 'express';
 import http from 'node:http';
 import { createAgentMemoryRouter } from './createAgentMemoryRouter.mjs';
 import { WorkingMemoryState } from '#apps/agents/framework/WorkingMemory.mjs';
+import { AgentMemoryAdministrationService } from '#apps/agents/AgentMemoryAdministrationService.mjs';
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
@@ -34,7 +35,15 @@ describe('createAgentMemoryRouter', () => {
       save: async (agentId, userId, state) => { store.set(`${agentId}/${userId}`, state); },
     };
     const app = express(); app.use(express.json());
-    app.use('/api/v1/agents', createAgentMemoryRouter({ orchestrator, workingMemory, logger: silentLogger }));
+    const memoryAdministration = new AgentMemoryAdministrationService({
+      orchestrator,
+      workingMemory,
+      createEmptyState: () => new WorkingMemoryState(),
+    });
+    app.use('/api/v1/agents', createAgentMemoryRouter({
+      memoryAdministration,
+      logger: silentLogger,
+    }));
     return { app, store, workingMemory };
   }
 
@@ -92,11 +101,7 @@ describe('createAgentMemoryRouter', () => {
     } finally { server.close(); }
   });
 
-  it('throws when orchestrator is missing', () => {
-    expect(() => createAgentMemoryRouter({ workingMemory: {} })).toThrow('orchestrator required');
-  });
-
-  it('throws when workingMemory is missing', () => {
-    expect(() => createAgentMemoryRouter({ orchestrator: {} })).toThrow('workingMemory required');
+  it('throws when memory administration is missing', () => {
+    expect(() => createAgentMemoryRouter()).toThrow('memoryAdministration required');
   });
 });

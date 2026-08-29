@@ -18,9 +18,9 @@
 // The conversion functions are pure; all I/O lives in cli/automotive.cli.mjs.
 import {
   buildTripRecord,
-  tripRelPath,
   normalizeSnapshotReadings,
 } from '#apps/hardware/automotiveRelay.mjs';
+import { automotiveTripRelativePath } from '#adapters/hardware/automotive/YamlAutomotiveTripStore.mjs';
 import { formatIsoLocal, getDateInTimezone } from '#domains/core/utils/time.mjs';
 
 /**
@@ -103,7 +103,7 @@ export function convertLegacyTrip(doc, timezone) {
 
   return {
     trip,
-    relPath: tripRelPath(trip, timezone),
+    relPath: automotiveTripRelativePath(trip, timezone),
     droppable: samples.length === 0,
   };
 }

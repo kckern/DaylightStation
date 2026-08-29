@@ -1,3 +1,4 @@
+import { sendInternalError } from '#api/utils/internalError.mjs';
 /**
  * Display Router
  *
@@ -27,12 +28,12 @@ import { splatPath } from '#api/utils/wildcard.mjs';
  * - GET /api/v1/display/:id - Get displayable image (heuristic resolution)
  *
  * @param {Object} config
- * @param {Object} config.registry - ContentSourceRegistry
+ * @param {Object} config.contentAccessService - Semantic content display query
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createDisplayRouter(config) {
-  const { registry, contentIdResolver, logger = console } = config;
+  const { contentAccessService, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -50,42 +51,25 @@ export function createDisplayRouter(config) {
     // Parse ID using unified parser
     const { source: parsedSource, localId: parsedLocalId, compoundId } = parseActionRouteId({ source, path: pathParam });
 
-    // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
-    const resolved = contentIdResolver.resolve(compoundId);
-
-    const adapter = resolved?.adapter;
-    const resolvedSource = resolved?.source ?? parsedSource;
-    const localId = resolved?.localId ?? parsedLocalId;
-
-    if (!adapter) {
+    const outcome = await contentAccessService.display(compoundId, parsedSource, parsedLocalId);
+    const resolvedSource = outcome.source;
+    const localId = outcome.localId;
+    if (outcome.kind === 'unknown_source') {
       return res.status(404).json({
         error: `Unknown source: ${resolvedSource}`,
         hint: 'Valid sources: plex, immich, watchlist, filesystem, canvas'
       });
     }
 
-    if (!localId) {
+    if (outcome.kind === 'missing_id') {
       return res.status(400).json({ error: 'Missing item ID' });
     }
 
-    // Get thumbnail URL from adapter
-    let thumbnailUrl;
-    let itemTitle;
-    try {
-      if (typeof adapter.getThumbnailUrl === 'function') {
-        thumbnailUrl = await adapter.getThumbnailUrl(localId);
-      }
-
-      // Fallback: try getItem if getThumbnailUrl doesn't exist or returns null
-      if (!thumbnailUrl && typeof adapter.getItem === 'function') {
-        const item = await adapter.getItem(compoundId);
-        thumbnailUrl = item?.thumbnail || item?.imageUrl;
-        itemTitle = item?.title;
-      }
-    } catch (err) {
-      logger.error?.('display.getThumbnail.error', { compoundId, error: err.message });
-      return res.status(500).json({ error: err.message });
+    if (outcome.kind === 'failed') {
+      logger.error?.('display.getThumbnail.error', { compoundId, error: outcome.error.message });
+      return sendInternalError(res, { error: outcome.error.message });
     }
+    const { thumbnailUrl, title: itemTitle } = outcome;
 
     if (!thumbnailUrl) {
       const svg = generatePlaceholderSvg({ type: resolvedSource, title: itemTitle || localId });

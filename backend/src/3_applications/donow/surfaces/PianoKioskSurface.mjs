@@ -40,22 +40,22 @@ import { isSheetMusicContentId, isPianoCourseLessonAction } from '#domains/donow
 const PLAY_MODES = ['listen', 'learn', 'polish', 'perform'];
 
 export class PianoKioskSurface {
-  #eventBus;
+  #pianoLauncher;
   #presence;
   #kioskDeviceParam;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {{broadcast: Function}} [config.eventBus] - optional; absent means no target is listening
+   * @param {{launchPiano: Function, launchPianoCourseLesson: Function}} [config.pianoLauncher]
    * @param {{occupancy: Function}} [config.presence] - MidiPresenceTracker-shaped; optional
    * @param {string} config.kioskDeviceParam - the tablet's `?device=` identity string (NOT a devices.yml id)
    * @param {Object} [config.logger]
    */
   constructor({
-    eventBus = null, presence = null, kioskDeviceParam = null, logger = console,
+    pianoLauncher = null, presence = null, kioskDeviceParam = null, logger = console,
   } = {}) {
-    this.#eventBus = eventBus;
+    this.#pianoLauncher = pianoLauncher;
     this.#presence = presence;
     this.#kioskDeviceParam = kioskDeviceParam;
     this.#logger = logger;
@@ -97,16 +97,14 @@ export class PianoKioskSurface {
 
   /** @returns {Promise<{dispatched: boolean}>} */
   async dispatch({ action, learnerId = null }) {
-    if (!this.#eventBus) {
+    if (!this.#pianoLauncher) {
       this.#logger.warn?.('donow.piano-kiosk.no-bus', { contentId: action?.contentId });
       return { dispatched: false };
     }
     try {
       if (action.kind === 'course-lesson') {
-        this.#eventBus.broadcast('kiosk.launch', {
-          topic: 'kiosk.launch',
+        this.#pianoLauncher.launchPianoCourseLesson({
           deviceId: this.#kioskDeviceParam,
-          type: 'piano.course-lesson.launch',
           learnerId: action.learnerId ?? learnerId,
           courseId: action.courseId,
           courseTitle: action.courseTitle ?? null,
@@ -117,15 +115,13 @@ export class PianoKioskSurface {
         });
         return { dispatched: true };
       }
-      this.#eventBus.broadcast('kiosk.launch', {
-        topic: 'kiosk.launch',
+      this.#pianoLauncher.launchPiano({
         deviceId: this.#kioskDeviceParam,
         contentId: action.contentId,
-        type: 'piano.launch',
         // Optional remote-PLAY hint (2026-08-23): with it the kiosk opens the
         // score AND starts it in that mode; without it the score just opens.
         // Validated in validateAction — never forwarded unchecked.
-        ...(action.play ? { play: action.play } : {}),
+        play: action.play,
       });
     } catch (err) {
       this.#logger.warn?.('donow.piano-kiosk.dispatch-failed', { error: err?.message || String(err) });

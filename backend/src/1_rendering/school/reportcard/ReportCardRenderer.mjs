@@ -250,13 +250,11 @@ function drawCourses(doc, theme, courses) {
   drawRow(cols.map((c) => c.label), { bold: true });
   for (const course of courses) {
     const unitGrades = course.unitGrades ?? [];
-    const attempted = unitGrades.filter((u) => (u.attempts ?? 0) > 0).length;
-    const passed = unitGrades.filter((u) => u.passed === true).length;
     drawRow([
       labelize(course.courseId),
       formatPercent(course.coursePercent),
-      passed,
-      attempted,
+      course.passedCount,
+      course.attemptedCount,
       unitGrades.length,
     ]);
   }

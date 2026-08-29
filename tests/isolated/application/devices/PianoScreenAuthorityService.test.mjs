@@ -58,8 +58,14 @@ function makeService({ gateway, device, overrides = {} } = {}) {
     reconcileIntervalMs: RECONCILE_MS,
     maxRetries: 3,
     notifyService: 'mobile_app_kc_phone',
-    // Make retry backoff instant so fake timers don't need to chase it.
-    sleep: () => Promise.resolve(),
+    scheduler: {
+      every: (intervalMs, task) => {
+        const timer = setInterval(task, intervalMs);
+        return () => clearInterval(timer);
+      },
+      // Make retry backoff instant so fake timers don't need to chase it.
+      wait: () => Promise.resolve(),
+    },
     ...overrides,
   });
   return { svc, logger };

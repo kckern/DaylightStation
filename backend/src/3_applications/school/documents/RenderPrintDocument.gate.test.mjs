@@ -17,10 +17,15 @@ import { describe, it, expect } from 'vitest';
 import {
   RenderPrintDocument, prepareV2Document, mergeBank, buildTeacherKeyBlocks,
 } from './RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { COMPANION_GATE_ITEM_ID } from '#domains/school/companionCode.mjs';
 import { planRows } from '#domains/school/documents/allocation.mjs';
+
+const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
+  rendering: createPrintDocumentRendering(), ...deps,
+});
 
 const gateBlock = (code) => ({
   type: 'question',
@@ -147,7 +152,7 @@ describe('a card-attached worksheet allocates the gate a real card row', () => {
 
   it('records the gate as row 1 of the card, typed companion_code', async () => {
     const store = allocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore: store });
+    const useCase = createRenderPrintDocument({ allocationStore: store });
 
     const result = await useCase.execute({
       document: source([gateBlock(['A', 'C', 'E']), question(1), question(2)]),
@@ -165,7 +170,7 @@ describe('a card-attached worksheet allocates the gate a real card row', () => {
 
   it('leaves an ungated worksheet with exactly its own questions', async () => {
     const store = allocationStore();
-    const useCase = new RenderPrintDocument({ allocationStore: store });
+    const useCase = createRenderPrintDocument({ allocationStore: store });
 
     const result = await useCase.execute({
       document: source([question(1), question(2)]),

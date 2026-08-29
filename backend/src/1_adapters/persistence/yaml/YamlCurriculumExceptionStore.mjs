@@ -1,7 +1,4 @@
-import path from 'node:path';
-import { promises as fs } from 'node:fs';
-import yaml from 'js-yaml';
-import { saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import { readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 
 /** Append-only curriculum exception ledger. */
 export class YamlCurriculumExceptionStore {
@@ -12,7 +9,7 @@ export class YamlCurriculumExceptionStore {
   }
   #file() { return this.#configService.getHouseholdPath('school/records/curriculum-exceptions.yml'); }
   async list() {
-    try { const raw = yaml.load(await fs.readFile(this.#file(), 'utf8')); return Array.isArray(raw) ? raw : []; } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+    try { const raw = readYamlFromPath(this.#file()); return Array.isArray(raw) ? raw : []; } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
   }
   async append(record) {
     const run = async () => {

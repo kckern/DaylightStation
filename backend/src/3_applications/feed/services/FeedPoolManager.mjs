@@ -24,6 +24,7 @@ export class FeedPoolManager {
   #loadUserQueries;
   #dismissedItemsStore;
   #logger;
+  #scheduler;
 
   /** @type {Map<string, Object[]>} Per-user cached merged query configs */
   #userQueryConfigs = new Map();
@@ -71,9 +72,11 @@ export class FeedPoolManager {
     queryConfigs = [],
     loadUserQueries = null,
     dismissedItemsStore = null,
+    scheduler,
     logger = console,
   }) {
     if (!logger) throw new Error('FeedPoolManager requires a logger');
+    if (!scheduler?.withDeadline) throw new Error('FeedPoolManager requires scheduler');
 
     this.#sourceAdapters = new Map();
     for (const adapter of sourceAdapters) {
@@ -83,6 +86,7 @@ export class FeedPoolManager {
     this.#queryConfigs = queryConfigs;
     this.#loadUserQueries = loadUserQueries;
     this.#dismissedItemsStore = dismissedItemsStore;
+    this.#scheduler = scheduler;
     this.#logger = logger;
   }
 
@@ -257,7 +261,7 @@ export class FeedPoolManager {
     const poolLimit = stripLimits ? 10000 : (scrollConfig.batch_size || 50);
     queries = queries.map(q => ({ ...q, limit: q.limit || poolLimit }));
     const results = await Promise.allSettled(
-      queries.map(query => FeedPoolManager.#withTimeout(
+      queries.map(query => this.#withTimeout(
         this.#fetchSourcePage(query, username, scrollConfig, undefined, { noCache: stripLimits }),
         FeedPoolManager.#SOURCE_TIMEOUT_MS,
       ))
@@ -294,7 +298,7 @@ export class FeedPoolManager {
   // =========================================================================
 
   async #fetchSourcePage(query, username, scrollConfig, cursorToken = undefined, { noCache = false } = {}) {
-    const sourceKey = query._filename?.replace('.yml', '') || query.type;
+    const sourceKey = query.key || query.type;
     const maxAgeMs = ScrollConfigLoader.getMaxAgeMs(scrollConfig, sourceKey);
     const now = Date.now();
 
@@ -355,7 +359,7 @@ export class FeedPoolManager {
     }
 
     // Tag items with query name for filter matching
-    const queryName = query._filename?.replace('.yml', '') || null;
+    const queryName = query.key || null;
     if (queryName) {
       for (const item of items) {
         item.meta = item.meta || {};
@@ -390,14 +394,14 @@ export class FeedPoolManager {
       const existingIds = new Set(pool.map(i => i.id));
 
       const refillable = queries.filter(q => {
-        const key = q._filename?.replace('.yml', '') || q.type;
+        const key = q.key || q.type;
         const state = cursorMap.get(key);
         return state && !state.exhausted && state.cursor !== null;
       });
 
       const results = await Promise.allSettled(
         refillable.map(query => {
-          const key = query._filename?.replace('.yml', '') || query.type;
+          const key = query.key || query.type;
           const cursorToken = cursorMap.get(key).cursor;
           return this.#fetchSourcePage(query, username, scrollConfig, cursorToken);
         })
@@ -437,12 +441,11 @@ export class FeedPoolManager {
     if (this.#userQueryConfigs.has(username)) {
       return this.#userQueryConfigs.get(username);
     }
-    // Start with household queries keyed by filename
-    const merged = new Map(this.#queryConfigs.map(q => [q._filename, q]));
-    // User queries override household with same filename
+    // User queries override household queries with the same semantic key.
+    const merged = new Map(this.#queryConfigs.map(query => [query.key, query]));
     if (this.#loadUserQueries) {
       for (const q of this.#loadUserQueries(username)) {
-        merged.set(q._filename, q);
+        merged.set(q.key, q);
       }
     }
     const configs = Array.from(merged.values());
@@ -455,7 +458,7 @@ export class FeedPoolManager {
     const enabledSources = ScrollConfigLoader.getEnabledSources(scrollConfig);
     if (enabledSources.size === 0) return queryConfigs;
     return queryConfigs.filter(query => {
-      const key = query._filename?.replace('.yml', '');
+      const key = query.key;
       return key && enabledSources.has(key);
     });
   }
@@ -464,11 +467,11 @@ export class FeedPoolManager {
     return sessionId ? `${username}\u0000${sessionId}` : username;
   }
 
-  static #withTimeout(promise, ms) {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error(`Source fetch timed out after ${ms}ms`)), ms)),
-    ]);
+  #withTimeout(promise, ms) {
+    return this.#scheduler.withDeadline(promise, {
+      milliseconds: ms,
+      errorFactory: () => new Error(`Source fetch timed out after ${ms}ms`),
+    });
   }
 
 }

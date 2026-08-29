@@ -23,7 +23,13 @@ describe('screen-override composition wiring', () => {
 
   it('the midi-wake factory injects the shared override', () => {
     const cfg = configService({ midi_wake: { enabled: true, device_id: 'yellow-room-tablet', bridge_url: 'ws://x:8770' } });
-    const { pianoMidiWakeService } = createPianoMidiWake({ deviceService, configService: cfg, logger: { info() {}, warn() {} } });
+    const bridge = { start() {}, stop() {}, suppressWakeUntil: async () => {} };
+    const { pianoMidiWakeService } = createPianoMidiWake({
+      deviceService,
+      configService: cfg,
+      bridgeFactory: () => bridge,
+      logger: { info() {}, warn() {} },
+    });
     expect(pianoMidiWakeService).not.toBeNull();
     pianoMidiWakeService.suppressWakeUntil(Date.now() + 30 * 60_000);
     expect(getScreenOverrideService().get('yellow-room-tablet')?.state).toBe('off');

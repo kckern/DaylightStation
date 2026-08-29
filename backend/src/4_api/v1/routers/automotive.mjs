@@ -4,7 +4,7 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
 /**
  * Automotive API — the vehicle record system.
  *
- * Thin HTTP layer over `AutomotiveContainer`'s use cases. No domain logic here:
+ * Thin HTTP layer over semantic automotive queries and commands. No domain logic here:
  * journey stitching, place matching, mileage accumulation, and fuel economy all
  * live in `2_domains/automotive`.
  *
@@ -31,27 +31,21 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
  * Domain errors (ValidationError → 400, EntityNotFoundError → 404) are shaped
  * by errorHandlerMiddleware({ shape: 'string' }).
  */
-export function createAutomotiveRouter({ automotiveContainer, logger = console }) {
-  if (!automotiveContainer) throw new Error('createAutomotiveRouter requires automotiveContainer');
+export function createAutomotiveRouter({ automotiveQuery, automotiveCommands, logger = console }) {
+  if (!automotiveQuery) throw new Error('createAutomotiveRouter requires automotiveQuery');
+  if (!automotiveCommands) throw new Error('createAutomotiveRouter requires automotiveCommands');
   const router = express.Router();
-  const { useCases, recordRepository, placeRepository } = automotiveContainer;
 
   router.get('/vehicles', asyncHandler(async (req, res) => {
-    const ids = await automotiveContainer.listVehicleIds();
-    const vehicles = await Promise.all(ids.map(async (id) => {
-      const record = await recordRepository.readVehicle(id);
-      return { ...(record || {}), id, label: automotiveContainer.vehicleLabel(id, record) };
-    }));
-    res.json({ vehicles });
+    res.json({ vehicles: await automotiveQuery.listVehicles() });
   }));
 
   router.get('/vehicles/:id', asyncHandler(async (req, res) => {
-    const overview = await useCases.getVehicleOverview.execute({ vehicleId: req.params.id });
-    res.json({ ...overview, label: automotiveContainer.vehicleLabel(req.params.id, overview.vehicle) });
+    res.json(await automotiveQuery.overview(req.params.id));
   }));
 
   router.get('/vehicles/:id/journeys', asyncHandler(async (req, res) => {
-    res.json(await useCases.listJourneys.execute({
+    res.json(await automotiveQuery.journeys({
       vehicleId: req.params.id,
       from: parseDate(req.query.from),
       to: parseDate(req.query.to),
@@ -61,7 +55,7 @@ export function createAutomotiveRouter({ automotiveContainer, logger = console }
   }));
 
   router.get('/vehicles/:id/trip', asyncHandler(async (req, res) => {
-    res.json(await useCases.getTripDetail.execute({
+    res.json(await automotiveQuery.tripDetail({
       vehicleId: req.params.id,
       file: String(req.query.file || ''),
     }));
@@ -71,7 +65,7 @@ export function createAutomotiveRouter({ automotiveContainer, logger = console }
   // harsh-motion. These record what happened BETWEEN trips, which is where
   // refuelling, code-clearing and rough driving actually live.
   router.get('/vehicles/:id/events', asyncHandler(async (req, res) => {
-    const events = await automotiveContainer.historyRepository.listEvents(req.params.id, {
+    const events = await automotiveQuery.events(req.params.id, {
       from: parseDate(req.query.from),
       to: parseDate(req.query.to),
       events: req.query.event ? String(req.query.event).split(',') : null,
@@ -80,72 +74,61 @@ export function createAutomotiveRouter({ automotiveContainer, logger = console }
   }));
 
   router.get('/vehicles/:id/fuel', asyncHandler(async (req, res) => {
-    const [logs, stops] = await Promise.all([
-      recordRepository.listFuelLogs(req.params.id),
-      // Fill-ups the CAR noticed — a rise in fuel level between trips — that
-      // have no logged entry. Detection needs no place registry; a known place
-      // only labels the result.
-      useCases.getFuelStops.execute({
-        vehicleId: req.params.id,
-        tankCapacityL: automotiveContainer.tankCapacityL(req.params.id),
-      }),
-    ]);
-    const { summarizeFuel } = await import('#domains/automotive/services/FuelEconomyService.mjs');
+    const fuel = await automotiveQuery.fuel(req.params.id);
     res.json({
-      logs: logs.map(presentFuelLog),
-      summary: summarizeFuel(logs),
-      detected: stops.unlogged,
+      ...fuel,
+      logs: fuel.logs.map(presentFuelLog),
     });
   }));
 
   router.post('/vehicles/:id/fuel', asyncHandler(async (req, res) => {
-    const log = await useCases.logFuel.execute({ vehicleId: req.params.id, ...(req.body || {}) });
+    const log = await automotiveCommands.logFuel({ vehicleId: req.params.id, ...(req.body || {}) });
     res.json(presentFuelLog(log));
   }));
 
   router.delete('/vehicles/:id/fuel/:logId', asyncHandler(async (req, res) => {
-    res.json({ deleted: await recordRepository.deleteFuelLog(req.params.id, req.params.logId) });
+    res.json({ deleted: await automotiveCommands.deleteFuel(req.params.id, req.params.logId) });
   }));
 
   // The maintenance vocabulary, so the form's options come from config rather
   // than from a list hardcoded in the frontend.
   router.get('/service-types', asyncHandler(async (req, res) => {
-    res.json({ types: automotiveContainer.serviceTypes });
+    res.json({ types: automotiveQuery.serviceTypes() });
   }));
 
   router.get('/vehicles/:id/service', asyncHandler(async (req, res) => {
-    const records = await recordRepository.listServiceRecords(req.params.id);
+    const records = await automotiveQuery.serviceRecords(req.params.id);
     res.json({ records: records.map(presentServiceRecord) });
   }));
 
   router.post('/vehicles/:id/service', asyncHandler(async (req, res) => {
-    const record = await useCases.logServiceRecord.execute({ vehicleId: req.params.id, ...(req.body || {}) });
+    const record = await automotiveCommands.logService({ vehicleId: req.params.id, ...(req.body || {}) });
     res.json(presentServiceRecord(record));
   }));
 
   router.delete('/vehicles/:id/service/:recordId', asyncHandler(async (req, res) => {
-    res.json({ deleted: await recordRepository.deleteServiceRecord(req.params.id, req.params.recordId) });
+    res.json({ deleted: await automotiveCommands.deleteService(req.params.id, req.params.recordId) });
   }));
 
   router.get('/vehicles/:id/documents', asyncHandler(async (req, res) => {
-    const documents = await recordRepository.listDocuments(req.params.id);
+    const documents = await automotiveQuery.documents(req.params.id);
     res.json({ documents: documents.map(presentDocument) });
   }));
 
   // Places are household-scoped, not per-vehicle: home and school do not change
   // when the car does.
   router.get('/places', asyncHandler(async (req, res) => {
-    const places = await placeRepository.listPlaces();
+    const places = await automotiveQuery.places();
     res.json({ places: places.map(presentPlace) });
   }));
 
   router.post('/places', asyncHandler(async (req, res) => {
-    const place = await useCases.namePlace.execute({ ...(req.body || {}) });
+    const place = await automotiveCommands.namePlace({ ...(req.body || {}) });
     res.json(presentPlace(place));
   }));
 
   router.delete('/places/:placeId', asyncHandler(async (req, res) => {
-    res.json({ deleted: await placeRepository.deletePlace(req.params.placeId) });
+    res.json({ deleted: await automotiveCommands.deletePlace(req.params.placeId) });
   }));
 
   router.use(errorHandlerMiddleware({ shape: 'string' }));

@@ -8,49 +8,22 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
- * Create router with pre-built adapters
+ * Create router with an application AI capability.
  * @param {Object} deps
- * @param {Object} [deps.openaiAdapter] - Pre-built OpenAI adapter (optional)
- * @param {Object} [deps.anthropicAdapter] - Pre-built Anthropic adapter (optional)
+ * @param {Object} deps.aiService
  * @param {Object} [deps.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createAIRouter(deps) {
-  const { openaiAdapter, anthropicAdapter, logger } = deps;
+  const { aiService } = deps;
   const router = express.Router();
-
-  /**
-   * Get adapter by provider name
-   */
-  function getAdapter(provider) {
-    if (provider === 'anthropic' && anthropicAdapter) {
-      return anthropicAdapter;
-    }
-    if (provider === 'openai' && openaiAdapter) {
-      return openaiAdapter;
-    }
-    // Default to OpenAI if available, otherwise Anthropic
-    return openaiAdapter || anthropicAdapter;
-  }
 
   /**
    * GET /api/ai
    * Get AI module status
    */
   router.get('/', (req, res) => {
-    res.json({
-      module: 'ai',
-      providers: {
-        openai: {
-          configured: !!openaiAdapter,
-          model: openaiAdapter?.model || null
-        },
-        anthropic: {
-          configured: !!anthropicAdapter,
-          model: anthropicAdapter?.model || null
-        }
-      }
-    });
+    res.json(aiService.status());
   });
 
   /**
@@ -64,17 +37,11 @@ export function createAIRouter(deps) {
       return res.status(400).json({ error: 'Messages array is required' });
     }
 
-    const adapter = getAdapter(provider);
-    if (!adapter) {
+    const result = await aiService.chat(messages, { provider, model, maxTokens, temperature });
+    if (!result) {
       return res.status(503).json({ error: 'No AI provider configured' });
     }
-
-    const response = await adapter.chat(messages, { model, maxTokens, temperature });
-
-    res.json({
-      response,
-      provider: provider || (adapter === openaiAdapter ? 'openai' : 'anthropic')
-    });
+    res.json(result);
   }));
 
   /**
@@ -88,17 +55,11 @@ export function createAIRouter(deps) {
       return res.status(400).json({ error: 'Messages array is required' });
     }
 
-    const adapter = getAdapter(provider);
-    if (!adapter) {
+    const result = await aiService.chatJson(messages, { provider, model, maxTokens, temperature });
+    if (!result) {
       return res.status(503).json({ error: 'No AI provider configured' });
     }
-
-    const response = await adapter.chatWithJson(messages, { model, maxTokens, temperature });
-
-    res.json({
-      response,
-      provider: provider || (adapter === openaiAdapter ? 'openai' : 'anthropic')
-    });
+    res.json(result);
   }));
 
   /**
@@ -115,17 +76,11 @@ export function createAIRouter(deps) {
       return res.status(400).json({ error: 'imageUrl is required' });
     }
 
-    const adapter = getAdapter(provider);
-    if (!adapter) {
+    const result = await aiService.chatVision(messages, imageUrl, { provider, model, maxTokens });
+    if (!result) {
       return res.status(503).json({ error: 'No AI provider configured' });
     }
-
-    const response = await adapter.chatWithImage(messages, imageUrl, { model, maxTokens });
-
-    res.json({
-      response,
-      provider: provider || (adapter === openaiAdapter ? 'openai' : 'anthropic')
-    });
+    res.json(result);
   }));
 
   /**
@@ -133,10 +88,9 @@ export function createAIRouter(deps) {
    * Transcribe audio to text (OpenAI Whisper only)
    */
   router.post('/transcribe', asyncHandler(async (req, res) => {
-    if (!openaiAdapter) {
+    if (!aiService.supportsTranscription()) {
       return res.status(503).json({ error: 'OpenAI not configured (required for transcription)' });
     }
-
     const { audioBase64, language, prompt } = req.body;
 
     if (!audioBase64) {
@@ -144,9 +98,9 @@ export function createAIRouter(deps) {
     }
 
     const audioBuffer = Buffer.from(audioBase64, 'base64');
-    const text = await openaiAdapter.transcribe(audioBuffer, { language, prompt });
-
-    res.json({ text, provider: 'openai' });
+    const result = await aiService.transcribe(audioBuffer, { language, prompt });
+    if (!result) return res.status(503).json({ error: 'OpenAI not configured (required for transcription)' });
+    res.json(result);
   }));
 
   /**
@@ -154,23 +108,18 @@ export function createAIRouter(deps) {
    * Generate text embedding (OpenAI only)
    */
   router.post('/embed', asyncHandler(async (req, res) => {
-    if (!openaiAdapter) {
+    if (!aiService.supportsEmbedding()) {
       return res.status(503).json({ error: 'OpenAI not configured (required for embeddings)' });
     }
-
     const { text } = req.body;
 
     if (!text) {
       return res.status(400).json({ error: 'text is required' });
     }
 
-    const embedding = await openaiAdapter.embed(text);
-
-    res.json({
-      embedding,
-      dimensions: embedding.length,
-      provider: 'openai'
-    });
+    const result = await aiService.embed(text);
+    if (!result) return res.status(503).json({ error: 'OpenAI not configured (required for embeddings)' });
+    res.json(result);
   }));
 
   /**
@@ -178,12 +127,7 @@ export function createAIRouter(deps) {
    * Get adapter metrics
    */
   router.get('/metrics', (req, res) => {
-    const metrics = {
-      openai: openaiAdapter?.getMetrics() || null,
-      anthropic: anthropicAdapter?.getMetrics() || null
-    };
-
-    res.json(metrics);
+    res.json(aiService.metrics());
   });
 
   /**
@@ -191,10 +135,7 @@ export function createAIRouter(deps) {
    * Reset adapter metrics
    */
   router.post('/metrics/reset', (req, res) => {
-    openaiAdapter?.resetMetrics();
-    anthropicAdapter?.resetMetrics();
-
-    res.json({ success: true });
+    res.json(aiService.resetMetrics());
   });
 
   return router;
