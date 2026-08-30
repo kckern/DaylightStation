@@ -2444,7 +2444,15 @@ export async function createAgentsServices(config) {
     conversationId = null,
     nutriListStore = null,
     foodLogStore = null,
+    nutribotConfig: rawNutribotConfig = null,
   } = config;
+
+  // The coaching orchestrator consumes the NutriBot runtime contract rather
+  // than ConfigService. Keep this local to the agents composition root: this
+  // function is also used independently of createNutribotServices.
+  const nutribotConfig = createNutribotRuntimeConfig(
+    rawNutribotConfig ?? configService?.getAppConfig?.('nutribot') ?? {},
+  );
 
   const agentConfigProjection = new AgentConfigProjection({ configService });
 
