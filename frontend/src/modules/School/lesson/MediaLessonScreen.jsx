@@ -6,10 +6,10 @@
  * it: it RENDERS NOTHING unless a lesson is live, so the screen's own menu and
  * screensaver are untouched by this widget existing; it mounts the Player
  * through `useScreenOverlay()`, the same slot a cast and a reading session's
- * book use; it keeps STABLE listener refs, because the media element outlives
- * several renders and `removeEventListener` matches by reference; and it treats
- * `clear` (the Player stopping for ANY reason) as categorically different from
- * the element's own `ended`.
+ * book use; it keeps a STABLE `playing` listener ref, because the media element
+ * outlives several renders and `removeEventListener` matches by reference; and
+ * it treats `clear` (the Player stopping for ANY reason) as categorically
+ * different from Player's semantic `onPlaybackCompleted` natural-end signal.
  *
  * Everything below that is what a GATE adds to a reading session.
  *
@@ -199,10 +199,11 @@ function createLessonStore(initial) {
  *   opened 495 Plex transcode sessions.
  * @param {() => (HTMLMediaElement|null)} props.getMediaEl
  * @param {(el: HTMLMediaElement|null) => void} props.onMediaRef
+ * @param {() => void} props.onPlaybackCompleted Player's natural-end callback.
  * @param {() => void} props.clear the Player is done, for ANY reason.
  * @param {string} props.mediaKind `'video'` | `'audio'` | `null` until attached.
  */
-export function LessonStage({ store, api, play, getMediaEl, onMediaRef, clear, logger = null }) {
+export function LessonStage({ store, api, play, getMediaEl, onMediaRef, onPlaybackCompleted, clear, logger = null }) {
   const state = useSyncExternalStore(store.subscribe, store.get);
   const contentId = play?.contentId ?? null;
   const log = useMemo(
@@ -277,7 +278,12 @@ export function LessonStage({ store, api, play, getMediaEl, onMediaRef, clear, l
         seeking={seeking}
         logger={log}
       >
-        <Player play={play} onMediaRef={onMediaRef} clear={clear} />
+        <Player
+          play={play}
+          onMediaRef={onMediaRef}
+          onPlaybackCompleted={onPlaybackCompleted}
+          clear={clear}
+        />
       </SurroundFrame>
 
       {quizUp && state.dueCheckpoint ? (
@@ -300,6 +306,7 @@ LessonStage.propTypes = {
   play: PropTypes.object.isRequired,
   getMediaEl: PropTypes.func.isRequired,
   onMediaRef: PropTypes.func.isRequired,
+  onPlaybackCompleted: PropTypes.func.isRequired,
   clear: PropTypes.func.isRequired,
   logger: PropTypes.object,
 };
@@ -346,7 +353,6 @@ export function MediaLessonScreen({ location = 'livingroom', checkpointCelebrate
   // outlives several renders, and `removeEventListener` matches by reference.
   const listeners = useRef({
     playing: () => handlers.current.notePlaybackStarted?.(),
-    ended: () => handlers.current.notePlaybackCompleted?.(),
   });
 
   const getMediaEl = useCallback(() => mediaRef.current, []);
@@ -355,7 +361,6 @@ export function MediaLessonScreen({ location = 'livingroom', checkpointCelebrate
     const el = mediaRef.current;
     if (!el) return;
     el.removeEventListener('playing', listeners.current.playing);
-    el.removeEventListener('ended', listeners.current.ended);
     mediaRef.current = null;
     setMediaKind(null);
   }, []);
@@ -365,7 +370,6 @@ export function MediaLessonScreen({ location = 'livingroom', checkpointCelebrate
     detachMedia();
     mediaRef.current = el;
     el.addEventListener('playing', listeners.current.playing);
-    el.addEventListener('ended', listeners.current.ended);
     const tag = el.tagName?.toLowerCase?.() ?? null;
     setMediaKind(tag === 'video' || tag === 'audio' ? tag : null);
     log.info('school.lesson.media-attached', { tag });
@@ -384,8 +388,8 @@ export function MediaLessonScreen({ location = 'livingroom', checkpointCelebrate
 
   const session = useMediaLessonSession({ location, onRewind, checkpointCelebrateMs, lessonCelebrateMs });
 
-  // Rebound every render so the listeners registered above always call the
-  // freshest closures — the element outlives several renders of this component.
+  // Rebound every render so the media listener and Player completion callback
+  // always call the freshest closures.
   handlers.current.notePlaybackStarted = session.notePlaybackStarted;
   handlers.current.notePlaybackCompleted = session.notePlaybackCompleted;
   handlers.current.notePlaybackDismissed = session.notePlaybackDismissed;
@@ -443,6 +447,7 @@ export function MediaLessonScreen({ location = 'livingroom', checkpointCelebrate
       play: { contentId, ...(Number.isFinite(resumePosition) && resumePosition > 0 ? { seconds: resumePosition } : null) },
       getMediaEl,
       onMediaRef: attachMedia,
+      onPlaybackCompleted: () => handlers.current.notePlaybackCompleted?.(),
       clear: clearPlayer,
       logger: log,
     }, { chrome: 'media', priority: 'high' });

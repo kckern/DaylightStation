@@ -132,7 +132,7 @@ export class StoryTimeProgramLauncher {
   #unavailable(progressLabel, target, enrolled = null) {
     return {
       error: true, enrolled, doneToday: false, progressLabel, score: null, terminal: false,
-      count: null, target, reads: [],
+      count: null, target, reads: [], obligationProgress: null, servedWork: [],
     };
   }
 
@@ -145,7 +145,7 @@ export class StoryTimeProgramLauncher {
     return {
       error: false, enrolled: false, doneToday: false,
       progressLabel: 'No reading assignment', score: null, terminal: false,
-      count: null, target: null, reads: [],
+      count: null, target: null, reads: [], obligationProgress: null, servedWork: [],
     };
   }
 
@@ -180,16 +180,21 @@ export class StoryTimeProgramLauncher {
       return this.#unavailable('Reading log unavailable', target, true);
     }
     const count = Array.isArray(rows) ? rows.length : 0;
+    const doneToday = count >= target;
     return {
       error: false,
       enrolled: true,
-      doneToday: count >= target,
+      doneToday,
       progressLabel: `${count} of ${target} ${target === 1 ? 'story' : 'stories'}`,
       score: null,
       terminal: false,
       count,
       target,
       reads: rows ?? [],
+      obligationProgress: { completed: Math.min(count, target), total: target },
+      // Daily story time has no work session, so this is the durable identity
+      // that keeps its completed disc on the board after `next` disappears.
+      servedWork: doneToday ? [{ unitId: 'story-time:daily', title: 'Story time' }] : [],
     };
   }
 

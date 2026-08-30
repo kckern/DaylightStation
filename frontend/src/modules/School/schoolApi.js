@@ -442,8 +442,8 @@ export const schoolApi = {
   // while looking like a successful POST. It is also NOT defaulted: an omitted
   // position must reach the server as absent, not as a fabricated 0.
   lessonPosition: (sessionId, position) => req(`/lesson/${encodeURIComponent(sessionId)}/position`, { position }),
-  // The media element's own `ended` fired. A body-less POST still needs a body
-  // argument, for the same reason `answer()` defaults to `{}`.
+  // Player reported semantic natural completion. A body-less POST still needs
+  // a body argument, for the same reason `answer()` defaults to `{}`.
   lessonEnded: (sessionId) => req(`/lesson/${encodeURIComponent(sessionId)}/ended`, {}),
 };
 

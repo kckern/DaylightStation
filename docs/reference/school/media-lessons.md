@@ -34,7 +34,7 @@ nothing.
 | 7 | It paints a curtain (the child's face, their name, the lesson title), then mounts `Player` in the screen's overlay slot. | |
 | 8 | The playhead crosses an uncleared checkpoint → the gate blocks → the element pauses → the question card mounts. | `useCheckpointGate` → `useMediaGate` → `CheckpointQuizOverlay` |
 | 9 | Each answer is graded **server-side**; when every item at that checkpoint is right, a `checkpoint_cleared` event is appended and the gate releases after a short ✓ beat. | `RecordCheckpointAnswer` |
-| 10 | The media element's own `ended` posts `/ended`. Only then is the lesson complete, and only then does a linked quiz or form release. | `RecordMediaCompletion` |
+| 10 | Player's semantic natural-end callback posts `/ended` before queue advance or cleanup. Only then is the lesson complete, and only then does a linked quiz or form release. | `RecordMediaCompletion` |
 
 **There is no separate "lesson session."** `sessionId` throughout is the unit's
 ordinary work session — the one a scan or an issued worksheet already opened — and

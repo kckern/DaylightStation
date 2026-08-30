@@ -38,10 +38,11 @@ export function dayStatus({ total, done }) {
  * served — and a sheet a child is holding is the most real thing on their
  * plate. The plan has to be in it because work not yet started has no session.
  *
- * Three states, from the two the outcome vocabulary actually has
- * (`passed | needs_remediation`) plus the absence of one:
+ * Four states, from the two worksheet outcomes, structured program obligation
+ * progress, and the absence of either:
  *   passed      — scanned and over the pass threshold
  *   needs-retry — scanned and under it
+ *   in-progress — a non-worksheet program obligation is partly complete
  *   pending     — no outcome recorded yet
  */
 const stateOf = (result) => (
@@ -105,11 +106,16 @@ export function summarize(sections, sessions, entries = []) {
     const next = section.next;
     if (!next?.unitId || byUnit.has(next.unitId)) continue;
     const entry = fromEntries.get(next.unitId);
+    const progress = next.obligationProgress;
+    const inProgress = Number.isFinite(progress?.completed)
+      && Number.isFinite(progress?.total)
+      && progress.total > 0
+      && progress.completed > 0;
     byUnit.set(next.unitId, {
       unitId: next.unitId,
       subject: entry?.subject ?? section.subject,
       label: nameFor(entry?.subject ?? section.subject),
-      state: 'pending',
+      state: inProgress ? 'in-progress' : 'pending',
     });
   }
 

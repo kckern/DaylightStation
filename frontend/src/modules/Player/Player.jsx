@@ -118,6 +118,7 @@ const Player = forwardRef(function Player(props, ref) {
     maxVideoBitrate,
     maxResolution,
     plexClientSession: externalPlexClientSession,
+    onPlaybackCompleted,
     onError,
     mediaLoadTimeoutMs,
     forceShader
@@ -1095,8 +1096,8 @@ const Player = forwardRef(function Player(props, ref) {
     // Where a NON-queue item goes when it ends: either it loops, or the Player
     // clears itself. Both were silent, so "the story finished and the Player
     // vanished" produced no log line naming which of the two happened or why —
-    // and a consumer that depends on `clear` (the school reading session, whose
-    // completion hangs off it) had no way to tell a missing call from a
+    // and a consumer that observes `clear` (the school reading session uses it
+    // only for dismissal cleanup) had no way to tell a missing call from a
     // no-op one. See docs/_wip/bugs/2026-08-28-story-time-portal-launch-*.
     playbackLog('single-item-ended', {
       action: singlePlayerProps?.continuous ? 'loop' : 'clear',
@@ -1115,6 +1116,72 @@ const Player = forwardRef(function Player(props, ref) {
       clear();
     }
   }, [singlePlayerProps?.continuous, singlePlayerProps?.assetId, singlePlayerProps?.plex, clear]);
+
+  // Completion is a PLAYER fact, not a DOM-listener race. Renderers call the
+  // `advance` handed down below only for a natural terminal condition (native
+  // `ended`, segment end, or the at-duration watchdog). Imperative skip/back,
+  // resilience exhaustion, load failure and explicit clear keep using the raw
+  // transition callbacks and never pass through here.
+  //
+  // The guard also closes the native-ended/watchdog race. Without it, two
+  // terminal notifications could advance a queue twice and dispatch two
+  // completion callbacks for one asset.
+  const completedMediaKeyRef = useRef(null);
+  const completionAssetId = singlePlayerProps?.assetId
+    ?? singlePlayerProps?.contentId
+    ?? singlePlayerProps?.id
+    ?? singlePlayerProps?.plex
+    ?? effectiveMeta?.assetId
+    ?? effectiveMeta?.contentId
+    ?? effectiveMeta?.id
+    ?? effectiveMeta?.plex
+    ?? null;
+  const naturalAdvance = useCallback(() => {
+    const identity = currentMediaGuid ?? completionAssetId ?? 'player-media-unknown';
+    // Queue position distinguishes two adjacent entries that intentionally point
+    // at the same asset. Returning to the asset after another queue item also
+    // remains a fresh natural completion, while duplicate native/watchdog signals
+    // for this exact item collapse here.
+    const mediaKey = isQueue ? `${identity}@${queuePosition ?? 'unknown'}` : identity;
+    if (completedMediaKeyRef.current === mediaKey) {
+      playbackLog('completion-dispatch-duplicate', {
+        assetId: completionAssetId,
+        consumerRegistered: typeof onPlaybackCompleted === 'function',
+      }, { level: 'warn' });
+      return;
+    }
+    completedMediaKeyRef.current = mediaKey;
+
+    const info = { reason: 'natural-end', assetId: completionAssetId };
+    const consumerRegistered = typeof onPlaybackCompleted === 'function';
+    playbackLog('completion-dispatch', { assetId: completionAssetId, consumerRegistered }, { level: 'info' });
+    if (consumerRegistered) {
+      try {
+        const pending = onPlaybackCompleted(info);
+        if (pending && typeof pending.catch === 'function') {
+          pending.catch((error) => {
+            playbackLog('completion-consumer-failed', {
+              assetId: completionAssetId,
+              error: error?.message ?? String(error),
+            }, { level: 'warn' });
+          });
+        }
+      } catch (error) {
+        playbackLog('completion-consumer-failed', {
+          assetId: completionAssetId,
+          error: error?.message ?? String(error),
+        }, { level: 'warn' });
+      }
+    }
+
+    if (isQueue) advance();
+    else singleAdvance();
+  }, [advance, completionAssetId, currentMediaGuid, isQueue, onPlaybackCompleted, queuePosition, singleAdvance]);
+
+  // Renderers use this only for user-driven navigation and non-completion
+  // failures. Keeping it separate from `naturalAdvance` is the contract that
+  // makes skip/back/load-failure incapable of earning completion.
+  const manualAdvance = isQueue ? advance : singleAdvance;
 
   // Compose onMediaRef so we keep existing external callback semantics
   const handleMediaRef = useCallback((el) => {
@@ -1346,7 +1413,8 @@ const Player = forwardRef(function Player(props, ref) {
   }, [requestRecovery]);
 
   const playerProps = {
-    advance: isQueue ? advance : singleAdvance,
+    advance: naturalAdvance,
+    manualAdvance,
     clear,
     shader: effectiveShader,
     volume: effectiveVolume,
@@ -1507,6 +1575,8 @@ Player.propTypes = {
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   onController: PropTypes.func,
+  /** Synchronous semantic notification before natural advance/clear. */
+  onPlaybackCompleted: PropTypes.func,
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   /** External Plex client session ID for multi-player isolation */

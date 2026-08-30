@@ -58,6 +58,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
     contentData,
     parseContent,
     onAdvance,
+    onManualAdvance = onAdvance,
     onClear,
     onProgress,
     shaders,
@@ -377,7 +378,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
     // Use centralized keyboard handler
     useMediaKeyboardHandler({
       mediaRef: mainRef,
-      onEnd: onAdvance,
+      onEnd: onManualAdvance,
       onClear,
       cycleThroughClasses,
       playbackKeys,

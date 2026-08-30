@@ -47,6 +47,11 @@ import { schoolLog } from '../schoolLog.js';
 import { dayStatus, summarize, ringsByLearner } from './agendaStatusModel.js';
 
 const REFRESH_MS = 5 * 60_000;
+const SCHOOL_REFRESH_EVENTS = new Set([
+  'story-read',
+  'piano-lesson-complete',
+  'program-day-bypass-changed',
+]);
 
 // The subject wall's own icon set, addressed by subject id (icons/MANIFEST.md:
 // "filenames are the subject ids"), so the board and the wall say the same
@@ -75,6 +80,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
   // covers the whole roster, so folding it in would mean re-settling every
   // card when it lands — and a slow measures read would hold the plans back.
   const [rings, setRings] = useState({});
+  const rosterIds = useMemo(() => new Set(kids.map((kid) => kid.id)), [kids]);
 
   /**
    * ONE CARD PER KID FROM THE FIRST PAINT, filled in as each read lands.
@@ -150,7 +156,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
   }, []);
 
   /**
-   * A SCAN CHANGES THE BOARD NOW, not in up to five minutes.
+   * COMPLETED WORK CHANGES THE BOARD NOW, not in up to five minutes.
    *
    * The poll above is the floor, not the mechanism. When a worksheet is scanned
    * its result receipt usually prints, and a printed receipt SUPPRESSES the
@@ -159,22 +165,42 @@ export default function AgendaStatusBoard({ kids = [], day }) {
    * was that the most legible moment in the whole flow (a disc turning green)
    * was invisible to the child standing right there.
    *
-   * So the board listens to the same `omr` topic the ceremony does and simply
-   * re-reads. It does NOT paint the result from the payload: the payload
+   * So the board listens to the same `omr` topic the ceremony does and to the
+   * School events emitted by story time, piano, and program bypasses, then
+   * simply re-reads. It does NOT paint a result from the payload: the payload
    * carries `percent`/`correctCount`, and re-reading keeps this board unable to
    * display a score even by accident. It also means one code path produces the
    * discs, so a pushed update and a polled one can never disagree.
    *
    * Any terminal scan outcome triggers it, not just a pass — a failed sheet
-   * turns a disc yellow and that is just as much news.
+   * turns a disc yellow and that is just as much news. School events are scoped
+   * to the displayed roster; story reads are also scoped to this study day.
    */
   const onScan = useCallback((payload) => {
     const event = payload?.event;
     if (!event || !String(event).startsWith('scan-')) return;
-    schoolLog.scan('status-board.refresh', { event, learnerId: payload.learnerId ?? null });
+    schoolLog.scan('status-board.refresh', {
+      source: 'omr', event, learnerId: payload.learnerId ?? null, studyDay: day,
+    });
     setNonce((n) => n + 1);
-  }, []);
+  }, [day]);
   useWebSocketSubscription('omr', onScan, [onScan]);
+
+  const onSchool = useCallback((payload) => {
+    const event = payload?.event;
+    if (!SCHOOL_REFRESH_EVENTS.has(event)) return;
+    const learnerId = payload?.learnerId ?? null;
+    if (!learnerId || !rosterIds.has(learnerId)) return;
+
+    const eventStudyDay = payload?.studyDay ?? payload?.studyDate ?? null;
+    if (event === 'story-read' && eventStudyDay && eventStudyDay !== day) return;
+
+    schoolLog.selfService('status-board.refresh', {
+      source: 'school', event, learnerId, studyDay: eventStudyDay ?? day,
+    });
+    setNonce((n) => n + 1);
+  }, [day, rosterIds]);
+  useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const visible = useMemo(() => rows ?? [], [rows]);
   // Once EVERY card has settled with nothing to show, the board is not a
@@ -284,6 +310,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                           label={`${segment.label}: ${
                             segment.state === 'passed' ? 'done'
                               : segment.state === 'needs-retry' ? 'try again'
+                                : segment.state === 'in-progress' ? 'in progress'
                                 : 'not done'
                           }`}
                         />

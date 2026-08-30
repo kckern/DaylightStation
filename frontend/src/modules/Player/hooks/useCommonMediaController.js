@@ -50,6 +50,7 @@ export function useCommonMediaController({
   start = 0,
   playbackRate = 1,
   onEnd = () => {},
+  onManualEnd = onEnd,
   onClear = () => {},
   isAudio = false,
   isVideo = false,
@@ -362,7 +363,7 @@ export function useCommonMediaController({
   // Use centralized keyboard handler
   useMediaKeyboardHandler({
     getMediaEl,
-    onEnd,
+    onEnd: onManualEnd,
     onClear,
     cycleThroughClasses,
     playbackKeys,

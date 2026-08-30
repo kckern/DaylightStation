@@ -51,6 +51,7 @@ const buildDashElementKey = ({ mediaUrl, bitrate, elementKey }) => `${mediaUrl}:
 export function VideoPlayer({
   media,
   advance,
+  manualAdvance = advance,
   clear,
   shader,
   volume,
@@ -147,6 +148,7 @@ export function VideoPlayer({
       : (media.segment ? media.segment.start : media.seconds),
     playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
+    onManualEnd: manualAdvance,
     onClear: clear,
     isAudio: false,
     isVideo: true,
@@ -922,6 +924,7 @@ export function VideoPlayer({
 VideoPlayer.propTypes = {
   media: PropTypes.object.isRequired,
   advance: PropTypes.func.isRequired,
+  manualAdvance: PropTypes.func,
   clear: PropTypes.func.isRequired,
   shader: PropTypes.string,
   volume: PropTypes.number,

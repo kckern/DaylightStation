@@ -22,6 +22,7 @@ const LONG_FRAME_THRESHOLD_MS = 50;
 export function ImageFrame({
   media,
   advance,
+  manualAdvance = advance,
   clear: _clear,
   shader: _shader,
   resilienceBridge,
@@ -44,6 +45,8 @@ export function ImageFrame({
   // unnecessary cleanup cycles that would clear the advance timer.
   const advanceRef = useRef(advance);
   advanceRef.current = advance;
+  const manualAdvanceRef = useRef(manualAdvance);
+  manualAdvanceRef.current = manualAdvance;
   const resilienceBridgeRef = useRef(resilienceBridge);
   resilienceBridgeRef.current = resilienceBridge;
 
@@ -523,7 +526,7 @@ export function ImageFrame({
     incomingImg.onload = onIncomingLoad;
     incomingImg.onerror = () => {
       logger.warn('image-frame-load-error', { imageId: currentId, mediaUrl: thumbnailUrl });
-      advanceRef.current?.();
+      manualAdvanceRef.current?.();
     };
     incomingImg.src = thumbnailUrl;
 

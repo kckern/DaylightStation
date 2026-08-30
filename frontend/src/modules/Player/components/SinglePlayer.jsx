@@ -39,6 +39,7 @@ export function SinglePlayer(props = {}) {
     plex,
     media,
     advance,
+    manualAdvance = advance,
     open,
     clear,
     setShader,
@@ -436,6 +437,7 @@ export function SinglePlayer(props = {}) {
           <ImageFrame
             media={mediaInfo}
             advance={advance}
+            manualAdvance={manualAdvance}
             clear={clear}
             shader={shader}
             resilienceBridge={resilienceBridge}
@@ -449,6 +451,7 @@ export function SinglePlayer(props = {}) {
         <PlayerComponent
           media={mediaInfo}
           advance={advance}
+          manualAdvance={manualAdvance}
           clear={clear}
           shader={shader}
           volume={volume}
@@ -540,6 +543,7 @@ SinglePlayer.propTypes = {
   media: PropTypes.string,
   rate: PropTypes.number,
   advance: PropTypes.func,
+  manualAdvance: PropTypes.func,
   open: PropTypes.string,
   clear: PropTypes.func,
   setShader: PropTypes.func,

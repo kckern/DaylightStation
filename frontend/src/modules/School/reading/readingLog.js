@@ -26,8 +26,8 @@
  *                          learned about — attribution WILL be null
  *   committed-unattributable  the pick was frozen with no learner; the story
  *                          plays and the completion is already doomed
- *   media-detached         the `playing`/`ended` listeners came off the element;
- *                          past this point a story can finish in total silence
+ *   media-detached         the `playing`/`timeupdate` listeners came off the
+ *                          element; completion itself is Player-semantic
  *   player-cleared         the Player handed back `clear`, distinguishing "the
  *                          call never came" from "it came and did nothing"
  *   screensaver-cleared    (pre-existing) — its ABSENCE is the tell that the

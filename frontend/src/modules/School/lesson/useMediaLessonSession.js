@@ -35,11 +35,11 @@
  * naming a sibling who wandered past would do exactly that. Same hazard, same
  * rule, as the reading session's D4.
  *
- * ## `ended` IS THE ONLY COMPLETION
+ * ## PLAYER'S NATURAL-END CALLBACK IS THE ONLY COMPLETION
  *
- * The Player calls `clear` for every reason it stops — end of content, a load
- * failure, a grown-up pressing back — so only the media element's own `ended`
- * may POST `/ended`. `notePlaybackDismissed` records nothing, ever.
+ * Before a natural end advances or clears, Player calls `onPlaybackCompleted`.
+ * Load failures, skips, back, and explicit clear do not call it, so only that
+ * callback may POST `/ended`. `notePlaybackDismissed` records nothing, ever.
  *
  * ## THREE DECISIONS THIS HOOK MAKES (delegated at design time)
  *
@@ -65,8 +65,8 @@
  * the SAME for the last checkpoint as for any other: the milestone is finishing
  * the lesson, not clearing its final gate, and a long beat there would sit on a
  * paused picture with the lesson still to run. The long celebration belongs to
- * `ended`. If the media ends DURING a checkpoint beat, `ended` wins: the
- * pending clear is flushed immediately (the server already recorded it — the
+ * natural completion. If media ends DURING a checkpoint beat, completion wins:
+ * the pending clear is flushed immediately (the server already recorded it — the
  * delay was only ever cosmetic) and the beat's timer is cancelled, so it cannot
  * fire back over the lesson's own ending.
  *
@@ -371,7 +371,7 @@ export function useMediaLessonSession({
     await sendPosition();
   }, [sendPosition]);
 
-  /** The media element's own `ended` — the ONLY thing that may claim the lesson. */
+  /** Player's semantic natural-end notification — the only completion claim. */
   const notePlaybackCompleted = useCallback(async () => {
     if (endedRef.current) return;
     const sessionId = sessionIdRef.current;
@@ -438,8 +438,8 @@ export function useMediaLessonSession({
   }, [commitClear, cue, lessonCelebrateMs, say]);
 
   /**
-   * The Player went away WITHOUT `ended` — a load failure, a bail, a grown-up
-   * pressing back. Records nothing, ever.
+   * The Player went away without a natural-end notification — a load failure,
+   * a bail, a grown-up pressing back. Records nothing, ever.
    */
   const notePlaybackDismissed = useCallback(() => {
     if (endedRef.current || !sessionIdRef.current) return;

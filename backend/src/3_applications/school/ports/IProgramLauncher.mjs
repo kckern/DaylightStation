@@ -10,11 +10,12 @@
  * somewhere) and should only be called on an actual "go" action.
  *
  * The status shape is intentionally the same shape `planDailyAgenda` already
- * consumes as `programStatuses` — `{ doneToday, progressLabel, score }` — so a
+ * consumes as `programStatuses` — `{ doneToday, progressLabel, score,
+ * obligationProgress? }` — so a
  * launcher's `status()` can be wired straight into agenda compilation without
- * an adapter in between. `score` is a 0–1 ratio when the program can produce
- * one, and `null` when it cannot (a language ladder does not grade; a
- * question bank does).
+ * an adapter in between. `score` is a percentage from 0–100 when the program
+ * can produce one, and `null` when it cannot (a language ladder does not grade;
+ * a question bank does).
  *
  * @interface IProgramLauncher
  */
@@ -92,7 +93,8 @@ export class IProgramLauncher {
    * language corpus); launchers with no instance-specific state may ignore it.
    *
    * @param {{userId: string, programInstance?: string|null}} args
-   * @returns {Promise<{doneToday: boolean, progressLabel: string|null, score: number|null}>}
+   * @returns {Promise<{doneToday: boolean, progressLabel: string|null, score: number|null,
+   *   obligationProgress?: {completed: number, total: number}|null, servedWork?: object[]}>}
    */
   // eslint-disable-next-line no-unused-vars
   status({ userId, programInstance = null }) {
