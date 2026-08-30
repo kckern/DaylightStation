@@ -182,3 +182,4 @@ docs/_moveme/
 # 31MB of binaries, and the .86s payloads carry learner identities baked in at
 # build time — neither belongs in a public repo.
 _extensions/ti86-app/dist/
+/tmp
