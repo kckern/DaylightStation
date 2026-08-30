@@ -314,7 +314,7 @@ export class FitnessSyncerAdapter {
 
     try {
       const response = await this.#httpClient.get(
-        'https://www.fitnesssyncer.com/api/sources',
+        'https://api.fitnesssyncer.com/api/providers/sources',
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -403,15 +403,10 @@ export class FitnessSyncerAdapter {
       });
       }
 
-      // Calculate date range
-      const endDate = new Date();
-      const startDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
-
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
-
-      // Fetch activities from API
-      const url = `https://www.fitnesssyncer.com/api/activities?sourceId=${sourceId}&startDate=${startDateStr}&endDate=${endDateStr}`;
+      // FitnessSyncer's provider API exposes items below each source. The old
+      // www host `/api/activities` endpoint was retired and returns 400 even
+      // with a valid bearer token.
+      const url = `https://api.fitnesssyncer.com/api/providers/sources/${encodeURIComponent(sourceId)}/items?offset=0&limit=100`;
 
       const response = await this.#httpClient.get(url, {
         headers: {
@@ -419,7 +414,13 @@ export class FitnessSyncerAdapter {
         },
       });
 
-      const activities = response.data?.items || [];
+      const startAt = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+      const activities = (response.data?.items || []).filter((item) => {
+        const timestamp = item?.date || item?.startTime || item?.start_time;
+        if (!timestamp) return true;
+        const parsed = new Date(timestamp).getTime();
+        return Number.isNaN(parsed) || parsed >= startAt;
+      });
 
       // Record success
       this.#circuitBreaker.recordSuccess();
