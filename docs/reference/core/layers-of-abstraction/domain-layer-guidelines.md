@@ -333,7 +333,7 @@ session.complete(parseToDate(new Date()));
 Level 0 (foundation):   core
                           ↑
 Level 1 (shared):       content, common, messaging, notification,
-                        scheduling, entropy
+                        scheduling, entropy, requirements
                           ↑
 Level 2 (features):     ambient, art, barcode, concierge, cost, feed,
                         finance, fitness, gaming, gratitude, home-automation,
@@ -348,7 +348,7 @@ Level 3 (aggregators):  health, journalist, lifelog, weekly-review
 | Level | Domain folders |
 |-------|----------------|
 | **0 — Foundation** | `core` |
-| **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy` |
+| **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy`, `requirements` |
 | **2 — Features** | `ambient`, `art`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gaming`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `trigger` |
 | **3 — Aggregators** | `health`, `journalist`, `lifelog`, `weekly-review` |
 
