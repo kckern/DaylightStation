@@ -44,12 +44,24 @@ function fetchExemptions() {
 }
 
 /**
+ * @param {string[]} configuredExemptions exemptions already held by the fitness
+ * configuration context. Supplying these prevents a chart's first paint from
+ * briefly treating an exempt participant as a scale subject.
  * @returns {string[]} exempt usernames, or [] until loaded / on failure
  */
-export function useGovernanceExemptions() {
-  const [exemptions, setExemptions] = useState(EMPTY);
+export function useGovernanceExemptions(configuredExemptions) {
+  const configured = Array.isArray(configuredExemptions)
+    ? configuredExemptions
+    : EMPTY;
+  const [exemptions, setExemptions] = useState(configured);
 
   useEffect(() => {
+    // FitnessContext has already received this same configuration, so never
+    // replace a correct first render with an asynchronous duplicate request.
+    if (configured.length > 0) {
+      setExemptions(configured);
+      return undefined;
+    }
     let cancelled = false;
     fetchExemptions().then((list) => {
       // Skip the state write when nothing changed, so a chart that mounts after
@@ -57,7 +69,7 @@ export function useGovernanceExemptions() {
       if (!cancelled && list.length > 0) setExemptions(list);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [configured]);
 
   return exemptions;
 }
