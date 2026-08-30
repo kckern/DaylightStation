@@ -1515,7 +1515,16 @@ export async function createPlaybackHubServices(config) {
   const gateway = new HttpPlaybackHubAdapter({
     baseUrl,
     requestTimeoutSec,
-    httpClient: new HttpClient({ logger }),
+    // The broadcaster owns outage reporting and recovery.  Keep the generic
+    // transport's per-probe network error out of the production error stream;
+    // otherwise a physically offline hub emits two alarming records every
+    // retry despite the broadcaster already exposing one actionable warning.
+    httpClient: new HttpClient({
+      logger: {
+        debug: logger.debug?.bind(logger),
+        error: () => {},
+      },
+    }),
     logger,
   });
 
