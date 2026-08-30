@@ -76,8 +76,10 @@ export class FitnessSyncerAdapter {
     this.#authStore = authStore;
     this.#configService = configService;
     this.#logger = logger;
-    this.#clientId = clientId || configService?.getSystemAuth?.('fitsync', 'client_id') || null;
-    this.#clientSecret = clientSecret || configService?.getSystemAuth?.('fitsync', 'client_secret') || null;
+    // Explicit credentials are a fallback. A user refresh token is bound to
+    // the OAuth client that issued it, so its adjacent client pair must win.
+    this.#clientId = clientId || null;
+    this.#clientSecret = clientSecret || null;
 
     // In-memory token cache
     this.#tokenCache = {
@@ -159,9 +161,14 @@ export class FitnessSyncerAdapter {
       return null;
     }
 
-    // Get credentials - prefer constructor params, fall back to stored
-    const clientId = this.#clientId || authData?.client_id;
-    const clientSecret = this.#clientSecret || authData?.client_secret;
+    // A refresh token is client-bound. Prefer the pair stored with that token;
+    // system and explicit configuration are only fallbacks for legacy records.
+    const clientId = authData?.client_id
+      || this.#clientId
+      || this.#configService?.getSystemAuth?.('fitsync', 'client_id');
+    const clientSecret = authData?.client_secret
+      || this.#clientSecret
+      || this.#configService?.getSystemAuth?.('fitsync', 'client_secret');
 
     if (!clientId || !clientSecret) {
       this.#logger.error?.('fitsync.auth.credentials_missing', {
@@ -211,9 +218,9 @@ export class FitnessSyncerAdapter {
         client_secret: clientSecret,
       };
 
-      await this.#authStore?.save?.(username, 'fitsync', newAuthData);
+      await this.#authStore?.save?.(username, 'fitnesssyncer', newAuthData);
       // Also update via configService if available
-      this.#configService?.setUserAuth?.(username, 'fitsync', newAuthData);
+      this.#configService?.setUserAuth?.('fitnesssyncer', username, newAuthData);
 
       this.#logger.info?.('fitsync.auth.token_refreshed', {
         expiresAt: new Date(expiresAt).toISOString(),
