@@ -1,5 +1,5 @@
 import React from 'react';
-import '../../../platform/ui/components.scss';
+import '@gaming-ui/components.scss';
 import { clampWager } from './wager.js';
 
 const STEP = 100;

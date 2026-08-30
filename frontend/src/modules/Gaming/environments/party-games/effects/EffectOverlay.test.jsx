@@ -13,6 +13,7 @@ describe('EffectOverlay', () => {
     render(<EffectOverlay sessionId="session:1" />);
     act(() => subscriber({ kind: 'effect', sessionId: 'session:1', effect: { type: 'ai.judgment-proposal', proposal: { advisory: true, recommendation: 'confirm', reason: 'The answer matches.' } } }));
     expect(await screen.findByText('confirm — The answer matches.')).toBeTruthy();
-    expect(screen.getByText('AI suggestion')).toBeTruthy();
+    expect(screen.getByText('Review suggestion')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Dismiss message' })).toBeTruthy();
   });
 });

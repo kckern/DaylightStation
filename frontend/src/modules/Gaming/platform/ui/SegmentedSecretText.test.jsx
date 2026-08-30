@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import SegmentedSecretText, { activeSegmentsFor } from './SegmentedSecretText.jsx';
+import SegmentedSecretText from './SegmentedSecretText.jsx';
+import { activeSegmentsFor } from './segmentedSecretGeometry.js';
 
 describe('SegmentedSecretText', () => {
   it('maps the full clue to segmented glyphs while retaining an accessible label', () => {

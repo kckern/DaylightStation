@@ -1,12 +1,124 @@
-.activity-party { min-height: 100%; padding: 2rem; color: #fff; background: radial-gradient(circle at top, #27356c, #080b1c 70%); display: grid; gap: 1.5rem; }
-.activity-party > header { display: flex; align-items: center; justify-content: space-between; text-transform: uppercase; letter-spacing: .08em; }
-.activity-party button { min-height: 3.25rem; padding: .7rem 1.25rem; font: inherit; font-weight: 800; border-radius: .65rem; border: 2px solid #e6b325; background: #121b43; color: #fff; }
-.activity-party__ready, .activity-party__prompt, .activity-party__judge, .activity-party__verify, .activity-party__complete, .activity-party__charades { display: grid; place-items: center; gap: 1.25rem; text-align: center; }
-.activity-party__performing { position: relative; display: grid; gap: 1rem; }
-.activity-party__timer { position: absolute; right: 1rem; top: 1rem; display: grid; place-items: center; z-index: 2; }
-.activity-party__timer > * { grid-area: 1 / 1; }
-.activity-party__aid { display: flex; justify-content: center; gap: 1rem; font-size: 1.5rem; }
-.party-games-drawing canvas { display: block; width: min(100%, 1280px); aspect-ratio: 16 / 9; background: #fff; cursor: crosshair; touch-action: none; border-radius: .75rem; }
-.party-games-drawing nav { display: flex; gap: .75rem; justify-content: center; margin-top: .75rem; }
-.party-games-decoder-text { padding: .55rem 1rem; border-radius: .35rem; font-weight: 900; text-shadow: 0 1px #000; }
-.party-games-decoder-mask { max-height: 12rem; background: #fff; }
+.activity-party {
+  --gp-show-accent: var(--gp-accent-activity);
+  height: 100%;
+  min-height: 0;
+  color: var(--gp-paper);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--gp-show-accent), transparent 91%) 0 20%, transparent 20% 80%, color-mix(in srgb, var(--gp-show-accent), transparent 94%) 80%),
+    var(--gp-stage);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+
+  &__ready,
+  &__prompt,
+  &__judge,
+  &__verify,
+  &__complete,
+  &__charades {
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 1rem;
+    padding: 1rem;
+    text-align: center;
+  }
+
+  &__performing {
+    position: relative;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    overflow: hidden;
+  }
+
+  &__timer {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    display: grid;
+    place-items: center;
+    z-index: 4;
+    > * { grid-area: 1 / 1; }
+    strong { font: 1.35rem/1 var(--gp-font-display); font-variant-numeric: tabular-nums; }
+  }
+
+  &__aid {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 2.5rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    color: var(--gp-paper-dim);
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  &__charades {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+.activity-party__prompt {
+  .segmented-secret-text {
+    width: min(100%, 34rem);
+    padding: 0.45rem 0.65rem;
+    gap: 0.25rem 0.45rem;
+  }
+  .segmented-secret-text__word { gap: 0.08rem; }
+  .segmented-secret-text__word-gap { width: 0.4rem; }
+  .segmented-secret-text__glyph { width: clamp(1rem, 2.4vw, 1.45rem); }
+}
+
+.party-games-drawing {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    background: var(--gp-paper);
+    cursor: crosshair;
+    touch-action: none;
+    border: 0.25rem solid var(--gp-show-accent);
+    border-radius: var(--gp-radius-card);
+    box-sizing: border-box;
+  }
+
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    padding-bottom: 0.15rem;
+    button { min-height: 2.75rem; padding: 0.45rem 0.9rem; font-size: 1rem; }
+  }
+}
+
+.party-games-decoder-mask {
+  max-width: 40%;
+  max-height: 5rem;
+  background: var(--gp-paper);
+}
+
+@media (max-height: 600px) {
+  .activity-party__performing { padding-block: 0.25rem; }
+  .activity-party__aid { min-height: 2rem; }
+  .party-games-drawing nav button { min-height: 2.4rem; padding-block: 0.3rem; }
+}

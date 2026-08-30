@@ -4,11 +4,12 @@
 // computed from WCAG relative luminance, not looked up.
 
 export const TEAM_COLORS = ['#3273dc', '#2fbf71', '#9b5de5', '#f28c28', '#1fa8a0', '#c2559f'];
+export const NEUTRAL_TEAM_COLOR = '#8d94b6';
 
 // Intentional duplicates of --gp-paper / --gp-ink (CSS vars aren't readable
 // from this pure helper; keep in sync with styles/_tokens.scss).
-const PAPER = '#f3efe2';
-const INK = '#10131f';
+const PAPER = '#fff8ea';
+const INK = '#191b2e';
 
 function linear(hex, i) {
   const v = parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255;

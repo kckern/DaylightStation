@@ -29,7 +29,11 @@ function makeService({ cfg = HOUSEHOLD_CFG } = {}) {
     getContent: (id) => Object.fromEntries(Object.entries(definitions.get(id)?.parts.content || {}).filter(([key]) => key !== 'artifact')),
   };
   const manifests = new Map([
-    ['quiz@1', { id: 'quiz', version: 1, surfaces: [{ id: 'party-games', presenter: 'quiz-board' }], setup: { kind: 'teams' } }],
+    ['quiz@1', {
+      id: 'quiz', version: 1, theme: { id: 'quiz-show' },
+      input_profile: { gamepad: 'host-and-buzzer' }, lifecycle_capabilities: ['teams', 'scores'],
+      surfaces: [{ id: 'party-games', presenter: 'quiz-board', inputs: ['keyboard', 'gamepad'] }], setup: { kind: 'teams' },
+    }],
     ['drawing@2', { id: 'drawing', version: 2, surfaces: [{ id: 'party-games', presenter: 'drawing-stage' }], setup: { kind: 'individuals-or-teams' } }],
     ['solo@1', { id: 'solo', version: 1, surfaces: [{ id: 'school', presenter: 'solo-view' }] }],
   ]);
@@ -59,6 +63,12 @@ describe('PartyGamesCatalog', () => {
       expect.objectContaining({ definition_id: 'quiz:broken', valid: false, error: 'catalog title is required' }),
     ]));
     expect(catalog.some((entry) => entry.definition_id === 'solo:private')).toBe(false);
+    expect(catalog.find((entry) => entry.definition_id === 'quiz:night')).toMatchObject({
+      theme: { id: 'quiz-show' },
+      input_profile: { gamepad: 'host-and-buzzer' },
+      lifecycle_capabilities: ['teams', 'scores'],
+      inputs: ['keyboard', 'gamepad'],
+    });
   });
 
   it('returns mounted content only through its matching experience reference', () => {

@@ -5,28 +5,72 @@
 .party-games,
 .gp-host {
   // stage
-  --gp-stage: #070b1e;
-  --gp-stage-glow: #101a56;
-  --gp-well: #04061a;
-  --gp-surface: rgba(255, 255, 255, 0.08);
-  --gp-surface-border: rgba(255, 255, 255, 0.14);
+  --gp-stage: #080d24;
+  --gp-stage-glow: #121a3b;
+  --gp-well: #080d24;
+  --gp-surface: #222b53;
+  --gp-surface-raised: #2d3766;
+  --gp-surface-border: rgba(201, 204, 224, 0.28);
+  --gp-overlay: rgba(8, 13, 36, 0.94);
 
   // board
-  --gp-tile-hi: #1b2fb0;
-  --gp-tile-lo: #111d75;
-  --gp-tile-used: #0a1030;
+  --gp-tile-hi: #244ac7;
+  --gp-tile-lo: #16308c;
+  --gp-tile-used: #121a3b;
 
   // ink
-  --gp-paper: #f3efe2;
-  --gp-paper-dim: rgba(243, 239, 226, 0.72);
-  --gp-ink: #10131f;
+  --gp-card: #fff5df;
+  --gp-paper: #fff8ea;
+  --gp-paper-dim: #c9cce0;
+  --gp-ink: #191b2e;
 
   // accents
-  --gp-brass: #e8b54a;
-  --gp-brass-bright: #f6d482;
-  --gp-danger: #e05263;
-  --gp-danger-soft: rgba(224, 82, 99, 0.35); // --gp-danger at 35% — soft chip fill
-  --gp-negative: #efa9b3;
+  --gp-brass: #f6c453;
+  --gp-brass-bright: #ffe19a;
+  --gp-focus: #6ae6ff;
+  --gp-success: #4fd39b;
+  --gp-danger: #ff667d;
+  --gp-danger-soft: rgba(255, 102, 125, 0.24);
+  --gp-negative: #ff9dac;
+  --gp-neutral-team: #8d94b6;
+  --gp-show-accent: var(--gp-brass);
+
+  // show identities: a show selects one of these on its root; status and
+  // control semantics remain owned by the network palette above.
+  --gp-accent-jeopardy: #244ac7;
+  --gp-accent-activity: #ff846f;
+  --gp-accent-charades: #38d6c7;
+  --gp-accent-dice: #ff994f;
+  --gp-accent-selector: #a87aff;
+
+  // decoder-family optical colors are content encodings, not status colors.
+  --gp-decoder-signal: #43d8a0;
+  --gp-decoder-mask-dark: #d9485b;
+  --gp-decoder-mask-light: #ff8a93;
+  --gp-image-decoder-frame: #192b31;
+  --gp-image-decoder-well: #020708;
+  --gp-image-decoder-subject: #22e4f2;
+  --gp-image-decoder-bubble: #f12639;
+  --gp-image-decoder-bubble-edge: #ff5a66;
+  --gp-image-decoder-ring: #ff263b;
+  --gp-segment-signal-1: #fff34d;
+  --gp-segment-signal-2: #ff83d5;
+  --gp-segment-signal-3: #ff7438;
+  --gp-segment-signal-4: #ffffff;
+  --gp-segment-mask-1: #24dff2;
+  --gp-segment-mask-2: #2453ff;
+  --gp-segment-mask-3: #4de34c;
+
+  // geometry, depth, and motion
+  --gp-radius-control: 0.65rem;
+  --gp-radius-card: 0.9rem;
+  --gp-radius-stage: 1.25rem;
+  --gp-shadow-control: 0 3px 0 rgba(8, 13, 36, 0.7);
+  --gp-shadow-raised: 0 0.75rem 2rem rgba(8, 13, 36, 0.42);
+  --gp-motion-press: 120ms;
+  --gp-motion-scene: 220ms;
+  --gp-motion-reveal: 420ms;
+  --gp-ease-show: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   // type
   --gp-font-display: 'Anton', 'Arial Narrow', sans-serif;
@@ -45,6 +89,16 @@
   50% { box-shadow: 0 0 1.2rem 0.2rem var(--team-color, var(--gp-brass)); }
 }
 
+@keyframes gp-scene-in {
+  from { opacity: 0; transform: translateY(0.65rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes gp-reveal-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .party-games *,
   .gp-host * {
@@ -58,14 +112,20 @@
   font-size: var(--gp-fs-label);
   font-weight: 600;
   color: var(--gp-paper);
-  background: var(--gp-surface);
+  background: var(--gp-surface-raised);
   border: 1px solid var(--gp-surface-border);
-  border-radius: 0.5rem;
+  border-radius: var(--gp-radius-control);
   padding: 0.7rem 1.75rem;
   cursor: pointer;
+  box-shadow: var(--gp-shadow-control);
+  transition: transform var(--gp-motion-press) ease, border-color var(--gp-motion-press) ease, background var(--gp-motion-press) ease;
 
-  &:focus { outline: 3px solid var(--gp-brass-bright); outline-offset: 2px; }
+  &:hover { background: color-mix(in srgb, var(--gp-surface-raised), var(--gp-paper) 8%); }
+  &:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(8, 13, 36, 0.7); }
+  &:focus { outline: none; }
+  &:focus-visible { outline: 3px solid var(--gp-focus); outline-offset: 3px; }
   &:disabled { opacity: 0.4; cursor: default; }
+  &[aria-busy='true'] { cursor: wait; }
 }
 
 @mixin gp-button-primary {
@@ -75,5 +135,12 @@
   color: var(--gp-ink);
   font-weight: 700;
 
-  &:focus { outline: 3px solid var(--gp-paper); }
+  &:focus-visible { outline-color: var(--gp-focus); }
+}
+
+@mixin gp-button-danger {
+  @include gp-button;
+  background: var(--gp-danger);
+  border-color: transparent;
+  color: var(--gp-ink);
 }

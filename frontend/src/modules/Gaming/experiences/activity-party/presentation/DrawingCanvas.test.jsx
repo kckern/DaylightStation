@@ -30,7 +30,7 @@ describe('DrawingCanvas controls', () => {
     expect(screen.getByRole('button', { name: 'Ink' }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'Eraser' }));
     expect(screen.getByRole('button', { name: 'Eraser' }).getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish drawing' }));
     expect(onFinish).toHaveBeenCalledOnce();
   });
 });

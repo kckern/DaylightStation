@@ -8,6 +8,7 @@ import { checkersRuleModule } from '#shared/gaming/rulesets/checkers/index.mjs';
 import { chessRuleModule } from '#shared/gaming/rulesets/chess/index.mjs';
 import { connectFourRuleModule } from '#shared/gaming/rulesets/connect-four/index.mjs';
 import { GamingApplication } from '#apps/gaming/runtime/GamingApplication.mjs';
+import { GamingDiagnosticSessions } from '#apps/gaming/runtime/GamingDiagnosticSessions.mjs';
 import { YamlGamingSnapshotRepository } from '#adapters/persistence/yaml/gaming/YamlGamingSnapshotRepository.mjs';
 import { YamlGamingSessionJournal } from '#adapters/persistence/yaml/gaming/YamlGamingSessionJournal.mjs';
 import { YamlGamingEffectStore } from '#adapters/persistence/yaml/gaming/YamlGamingEffectStore.mjs';
@@ -43,5 +44,15 @@ export function createGamingApiModule({ definitionStore, manifestStore, snapshot
     printPolicy: effectStore ? new OncePerSessionPrintPolicy({ renderer: new HostPacketRenderer(), printer, receipts: effectStore }) : null,
     store: effectStore, observability, broadcast: broadcastEvent, autoPrint, drawingCheckpoints,
   });
-  return { gamingApplication: new GamingApplication({ coordinator, definitions: definitionStore, partyGamesCatalog, effects, manifestStore, drawingCheckpoints }), coordinator, runtime, snapshots, journal, effects, observability, drawingCheckpoints };
+  const gamingApplication = new GamingApplication({ coordinator, definitions: definitionStore, partyGamesCatalog, effects, manifestStore, drawingCheckpoints });
+  const gamingDiagnostics = new GamingDiagnosticSessions({
+    runtime,
+    definitions: definitionStore,
+    manifestStore,
+    partyGamesCatalog,
+    ids,
+    authorization: new SessionActorAuthorization(),
+    clock,
+  });
+  return { gamingApplication, gamingDiagnostics, coordinator, runtime, snapshots, journal, effects, observability, drawingCheckpoints };
 }

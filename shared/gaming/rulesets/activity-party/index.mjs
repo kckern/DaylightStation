@@ -109,6 +109,7 @@ export const activityPartyRuleModule = defineRuleModule({
     const performerMemberIds = new Set((performer?.members || []).map((member) => String(member.id || member.user_id || member.participant_id || member)));
     const maySeeSecret = viewer?.role === 'host'
       || viewer?.participant_id === state.performer_id
+      || (state.phase === 'verification' && viewer?.participant_id === state.verifier_id)
       || performerMemberIds.has(String(viewer?.participant_id || ''));
     if (!maySeeSecret && projected.challenge) {
       projected.challenge = { id: projected.challenge.id, activity: projected.challenge.activity };

@@ -52,6 +52,33 @@ describe('gaming API router', () => {
     expect(broadcastEvent.mock.calls[0][0]).not.toHaveProperty('snapshot');
   });
 
+  it('routes diagnostic sessions through the process-memory authority and exposes host-only controls', async () => {
+    const app = { resumeSession: vi.fn() };
+    const gamingDiagnostics = {
+      createSession: vi.fn(async () => ({ header: { session_id: 'diagnostic:one', ruleset: { id: 'dice' }, revision: 0 } })),
+      resumeSession: vi.fn(async () => ({ header: { session_id: 'diagnostic:one', revision: 0 } })),
+      listSessions: vi.fn(() => [{ session_id: 'diagnostic:one' }]),
+      inspect: vi.fn(() => ({ diagnostic: { ephemeral: true, history: [] } })),
+      advance: vi.fn(() => ({ header: { session_id: 'diagnostic:one', ruleset: { id: 'dice' }, revision: 1 }, state: { roll_count: 1 } })),
+      overrideState: vi.fn(() => ({ header: { session_id: 'diagnostic:one', ruleset: { id: 'dice' }, revision: 2 }, state: { phase: 'showcase' } })),
+      deleteSession: vi.fn(() => ({ deleted: true })),
+    };
+    const broadcastEvent = vi.fn();
+    const router = createGamingRouter({ gamingApplication: app, gamingDiagnostics, broadcastEvent });
+    const auth = { roles: ['gaming-host'] };
+
+    expect((await invoke(router, 'post', '/diagnostics/sessions', { ...auth, body: { definition_id: 'dice:test' } })).statusCode).toBe(201);
+    expect((await invoke(router, 'get', '/sessions/:sessionId', { ...auth, params: { sessionId: 'diagnostic:one' } })).body.header.session_id).toBe('diagnostic:one');
+    expect(app.resumeSession).not.toHaveBeenCalled();
+    expect((await invoke(router, 'post', '/diagnostics/sessions/:sessionId/advance', { ...auth, params: { sessionId: 'diagnostic:one' }, body: { command: { type: 'dice.roll' } } })).body.state.roll_count).toBe(1);
+    expect((await invoke(router, 'patch', '/diagnostics/sessions/:sessionId/state', { ...auth, params: { sessionId: 'diagnostic:one' }, body: { patch: { phase: 'showcase' } } })).body.state.phase).toBe('showcase');
+    expect((await invoke(router, 'delete', '/diagnostics/sessions/:sessionId', { ...auth, params: { sessionId: 'diagnostic:one' } })).body.deleted).toBe(true);
+    expect(broadcastEvent).toHaveBeenCalledTimes(2);
+
+    const denied = await invoke(router, 'patch', '/diagnostics/sessions/:sessionId/state', { params: { sessionId: 'diagnostic:one' }, body: { patch: {} } });
+    expect(denied).toMatchObject({ statusCode: 401, body: { error: 'authentication_required' } });
+  });
+
   it('ignores body and query identity claims and fails closed without server-established identity', async () => {
     const app = { resumeSession: vi.fn(), dispatch: vi.fn() };
     const router = createGamingRouter({ gamingApplication: app });

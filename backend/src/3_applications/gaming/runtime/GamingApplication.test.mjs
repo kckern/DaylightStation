@@ -15,10 +15,10 @@ const manifest = {
   theme: { id: 'mounted-theme' }, result_schema: 'gaming-result/v1',
 };
 
-function fixture({ resumedState = {}, manifestOverride = {}, partyGamesCatalog = null } = {}) {
+function fixture({ resumedState = {}, resumedView = null, manifestOverride = {}, partyGamesCatalog = null } = {}) {
   const coordinator = {
     create: vi.fn(async (request) => ({ header: { session_id: 'session:1', ruleset: request.ruleset }, definition: {} })),
-    resume: vi.fn(async () => ({ state: resumedState })),
+    resume: vi.fn(async () => resumedView || ({ state: resumedState })),
     dispatch: vi.fn(), close: vi.fn(async () => ({
       header: { session_id: 'session:1', status: 'complete', revision: 3, experience: { id: 'experience' } },
       state: { winner_id: 'red', scores: { red: 10, blue: 5 } },
@@ -122,6 +122,17 @@ describe('GamingApplication mounted launch authority', () => {
         outcome: { kind: 'win', winner_ids: ['red'] },
         scores: [{ subject_id: 'red', value: 10 }, { subject_id: 'blue', value: 5 }],
       },
+    });
+  });
+
+  it('returns the normalized result when a completed session resumes', async () => {
+    const resumedView = {
+      header: { session_id: 'session:1', status: 'complete', revision: 4, experience: { id: 'experience' } },
+      state: { winner_id: 'blue', scores: { red: 10, blue: 20 } },
+    };
+    const { application } = fixture({ resumedView });
+    await expect(application.resumeSession('session:1', { role: 'host' })).resolves.toMatchObject({
+      result: { schema: 'gaming-result/v1', outcome: { kind: 'win', winner_ids: ['blue'] } },
     });
   });
 });

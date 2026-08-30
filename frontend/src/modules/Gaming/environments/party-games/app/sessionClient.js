@@ -1,9 +1,13 @@
 import { DaylightAPI } from '@/lib/api.mjs';
 
-export async function fetchBoot() {
-  const [config, catalog] = await Promise.all([
+export async function fetchBoot({ diagnosticSessionId = null, sessionId = null } = {}) {
+  if (diagnosticSessionId && !diagnosticSessionId.startsWith('diagnostic:')) throw new Error('Diagnostic session id must use the diagnostic: prefix');
+  if (diagnosticSessionId && sessionId) throw new Error('Only one session attachment may be requested');
+  const attachedSessionId = diagnosticSessionId || sessionId;
+  const [config, catalog, attachedSession] = await Promise.all([
     DaylightAPI('api/v1/gaming/environments/party-games/profile'),
     DaylightAPI('api/v1/gaming/environments/party-games/catalog'),
+    attachedSessionId ? DaylightAPI(`api/v1/gaming/sessions/${encodeURIComponent(attachedSessionId)}`) : null,
   ]);
   const sets = (catalog.entries || []).map((entry) => ({
     ...entry,
@@ -13,22 +17,24 @@ export async function fetchBoot() {
     setupProfile: entry.setup_profile || { kind: entry.setup || 'none' },
     roundCount: entry.round_count,
   }));
-  return { config, sets };
+  return { config, sets, attachedSession, diagnosticSession: diagnosticSessionId ? attachedSession : null };
 }
 
-export function createSession({ definitionId, teams = [], hostMode = 'human', setupProfile = {} }) {
-  const participants = teams.flatMap((team) => team.members || []);
+export function createSession({ definitionId, seats = [], teams = null, hostMode = 'human', setupProfile = {} }) {
+  const resolvedSeats = teams || seats;
+  const participants = resolvedSeats.flatMap((seat) => seat.members || []);
   const setup = {
-    ...(teams.length > 0 ? { teams } : {}),
+    ...(resolvedSeats.length > 0 ? { seats: resolvedSeats } : {}),
+    ...(['teams', 'individuals-or-teams'].includes(setupProfile.kind) && resolvedSeats.length > 0 ? { teams: resolvedSeats } : {}),
     ...(setupProfile.host_modes ? { host: { mode: hostMode } } : {}),
     ...(setupProfile.verifier === 'opponent'
-      ? { verifier_id: teams[1]?.members?.[0]?.id || teams[1]?.members?.[0]?.user_id || null }
+      ? { verifier_id: resolvedSeats[1]?.members?.[0]?.id || resolvedSeats[1]?.members?.[0]?.user_id || null }
       : {}),
   };
   return DaylightAPI('api/v1/gaming/sessions', {
     definition_id: definitionId,
     surface_id: 'party-games',
-    seats: teams, setup, participants,
+    seats: resolvedSeats, setup, participants,
   }, 'POST');
 }
 

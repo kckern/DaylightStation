@@ -91,7 +91,11 @@ export const jeopardyRuleModule = defineRuleModule({
     const teams = setup.teams || seats;
     const teamIds = teams.map((team) => team.id);
     const teamActors = Object.fromEntries(teams.map((team) => [team.id, (team.members || []).flatMap((member) => [member?.id, member?.user_id, member?.participant_id, member]).filter(Boolean).map(String)]));
-    return { ...initJeopardy(definition, teamIds), scores: Object.fromEntries(teamIds.map((id) => [id, 0])), team_actors: teamActors, status: 'active' };
+    const normalizedDefinition = {
+      ...definition,
+      rounds: definition.rounds.map((round) => ({ ...round, multiplier: Number(round.multiplier) > 0 ? Number(round.multiplier) : 1 })),
+    };
+    return { ...initJeopardy(normalizedDefinition, teamIds), scores: Object.fromEntries(teamIds.map((id) => [id, 0])), team_actors: teamActors, status: 'active' };
   },
   handleCommand(state, command, _definition, context) {
     if (state.status !== 'active') return { error: { code: 'session_terminal', message: 'Jeopardy session is complete' } };

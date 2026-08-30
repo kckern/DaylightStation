@@ -11,9 +11,13 @@ function WebGlDie({ sides, value, delay = 0, onFailure }) {
     renderer.setSize(180, 180); element.replaceChildren(renderer.domElement);
     const contextLost = (event) => { event.preventDefault(); onFailure(new Error('WebGL context lost')); };
     renderer.domElement.addEventListener('webglcontextlost', contextLost);
+    const styles = getComputedStyle(element);
+    const brass = styles.getPropertyValue('--gp-brass').trim() || 'goldenrod';
+    const paper = styles.getPropertyValue('--gp-paper').trim() || 'white';
+    const surface = styles.getPropertyValue('--gp-surface').trim() || 'midnightblue';
     const scene = new THREE.Scene(); const camera = new THREE.PerspectiveCamera(42, 1, .1, 100); camera.position.z = 5;
-    const mesh = new THREE.Mesh(geometryFor(sides), new THREE.MeshStandardMaterial({ color: 0xe6b325, roughness: .32, metalness: .2 })); scene.add(mesh);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x25305e, 3));
+    const mesh = new THREE.Mesh(geometryFor(sides), new THREE.MeshStandardMaterial({ color: brass, roughness: .32, metalness: .2 })); scene.add(mesh);
+    scene.add(new THREE.HemisphereLight(paper, surface, 3));
     let frame; const start = performance.now() + delay;
     const draw = (now) => { const progress = Math.max(0, Math.min(1, (now - start) / 700)); const eased = 1 - (1 - progress) ** 3; mesh.rotation.x = eased * Math.PI * (2 + value % 3); mesh.rotation.y = eased * Math.PI * (3 + value % 5); renderer.render(scene, camera); if (progress < 1) frame = requestAnimationFrame(draw); };
     frame = requestAnimationFrame(draw);

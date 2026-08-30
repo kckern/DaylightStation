@@ -1,4 +1,4 @@
-@use '../../../platform/ui/tokens' as gp;
+@use '@gaming-ui/tokens' as gp;
 
 .gp-host {
   min-height: 100vh; // real phone page — vh is correct here, unlike the TV frame
@@ -28,7 +28,7 @@
     flex: 1 1 40%;
     padding: 0.4rem 0.75rem;
     border-radius: 0.4rem;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--gp-overlay);
     border-left: 0.3rem solid var(--team-color);
     font-size: 0.95rem;
 
@@ -43,6 +43,14 @@
   &__phase {
     text-transform: uppercase;
     letter-spacing: 0.1em;
+    color: var(--gp-paper-dim);
+    font-size: 0.85rem;
+  }
+
+  &__utility {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     color: var(--gp-paper-dim);
     font-size: 0.85rem;
   }
@@ -144,6 +152,14 @@
     gap: 0.6rem;
     position: sticky;
     bottom: 0.5rem;
+    padding-top: 0.5rem;
+    background: linear-gradient(transparent, var(--gp-stage) 0.5rem);
+  }
+
+  &__adjust {
+    color: var(--gp-paper-dim);
+    summary { padding: 0.5rem 0; cursor: pointer; }
+    &[open] { display: grid; gap: 0.5rem; }
   }
 }
 
@@ -156,6 +172,8 @@
   cursor: pointer;
   color: var(--gp-paper);
   background: var(--gp-surface);
+  box-shadow: var(--gp-shadow-control);
+  transition: transform var(--gp-motion-press) ease, opacity var(--gp-motion-press) ease;
 
   &--primary {
     background: linear-gradient(180deg, var(--gp-brass-bright), var(--gp-brass));
@@ -168,4 +186,8 @@
   }
 
   &:active { transform: scale(0.97); }
+  &:focus { outline: none; }
+  &:focus-visible { outline: 3px solid var(--gp-focus); outline-offset: 2px; }
+  &:disabled { opacity: 0.5; cursor: default; }
+  &[aria-busy='true'] { cursor: wait; }
 }

@@ -30,6 +30,8 @@ export default {
     alias: {
       '#frontend': path.resolve(__dirname, 'frontend/src'),
       '@': path.resolve(__dirname, 'frontend/src'),
+      '@gaming': path.resolve(__dirname, 'frontend/src/modules/Gaming'),
+      '@gaming-ui': path.resolve(__dirname, 'frontend/src/modules/Gaming/platform/ui'),
       '@shared-contracts': path.resolve(__dirname, 'shared/contracts'),
       '@shared-music': path.resolve(__dirname, 'shared/music'),
       '@shared-gaming': path.resolve(__dirname, 'shared/gaming'),

@@ -2037,6 +2037,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   const gamingRouter = createGamingRouter({
     gamingApplication: gamingModule.gamingApplication,
+    gamingDiagnostics: gamingModule.gamingDiagnostics,
     gamingMediaService: new GamingMediaService({ repository: new FilesystemGamingMediaRepository({
       assetCatalog: gamingAssetCatalog,
       partyMediaRoot: join(mediaBasePath, 'games', 'party-games'),

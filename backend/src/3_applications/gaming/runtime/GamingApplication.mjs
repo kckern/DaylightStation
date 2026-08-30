@@ -1,5 +1,6 @@
 import { GamingKernelError } from '#shared/gaming/kernel/index.mjs';
 import { gamingResult } from '#shared/gaming/experience/index.mjs';
+import { authorizeGamingSessionCreation, prepareGamingSessionSetup } from './gamingSessionSetup.mjs';
 
 function completedResult(view, { abandoned = false } = {}) {
   if (view?.header?.status !== 'complete' || !view.header.experience?.id) return null;
@@ -64,35 +65,11 @@ export class GamingApplication {
   }
 
   async createSession(request) {
-    const participants = request.participants || [];
-    const seats = request.seats || [];
     const viewer = request.viewer;
-    if (!viewer) throw new GamingKernelError('authorization_denied', 'A session creator identity is required');
-    if (viewer.role !== 'host' && (participants.length === 0
-      || participants.some((participant) => String(participant.id || participant.user_id || '') !== viewer.participant_id)
-      || seats.length > 0)) {
-      throw new GamingKernelError('authorization_denied', 'Participants may create only an unseated session for themselves');
-    }
+    authorizeGamingSessionCreation({ viewer, participants: request.participants, seats: request.seats });
     const launch = await this.getLaunchDescriptor(request.definitionId, { surfaceId: request.surfaceId, authorityMode: 'remote' });
     const manifest = this.manifestStore.get(launch.experience.id, launch.experience.version);
-    const setup = structuredClone(request.setup || {});
-    const setupKind = manifest.setup?.kind || 'none';
-    if (setupKind === 'individuals' && participants.length === 0) throw new GamingKernelError('invalid_session_setup', 'This experience requires participants');
-    if (setupKind === 'teams' && seats.length === 0) throw new GamingKernelError('invalid_session_setup', 'This experience requires team seats');
-    if (setupKind === 'individuals-or-teams' && participants.length === 0 && seats.length === 0) throw new GamingKernelError('invalid_session_setup', 'This experience requires participants or team seats');
-    const seatIds = seats.map((seat) => seat?.id).filter(Boolean).map(String);
-    if (seatIds.length !== seats.length || new Set(seatIds).size !== seatIds.length) throw new GamingKernelError('invalid_session_setup', 'Session seats require unique IDs');
-    const allowedHostModes = manifest.setup?.host_modes || [];
-    if (setup.host?.mode && !allowedHostModes.includes(setup.host.mode)) {
-      throw new GamingKernelError('invalid_session_setup', `Host mode ${setup.host.mode} is not allowed by the experience manifest`);
-    }
-    if (manifest.setup?.verifier === 'opponent' && setup.host?.mode && setup.host.mode !== 'human' && !setup.verifier_id) {
-      throw new GamingKernelError('invalid_session_setup', 'This host mode requires an opponent verifier');
-    }
-    if (manifest.setup?.candidate_source === 'household-members') {
-      if (!this.partyGamesCatalog) throw new GamingKernelError('invalid_session_setup', 'Household candidates require the Party Games environment');
-      setup.candidates = this.partyGamesCatalog.getConfig().household_members;
-    }
+    const { setup } = prepareGamingSessionSetup({ manifest, request, partyGamesCatalog: this.partyGamesCatalog });
     const result = await this.coordinator.create({
       ...request,
       setup,
@@ -107,7 +84,11 @@ export class GamingApplication {
     this.#launchEffect('after-create', this.effects?.afterCreate({ session: result, definition: result.definition }), { sessionId: result.header.session_id });
     return result;
   }
-  resumeSession(sessionId, viewer) { return this.coordinator.resume(sessionId, viewer); }
+  async resumeSession(sessionId, viewer) {
+    const view = await this.coordinator.resume(sessionId, viewer);
+    const normalized = completedResult(view);
+    return normalized ? { ...view, result: normalized } : view;
+  }
   async dispatch(sessionId, envelope, viewer) {
     const result = await this.coordinator.dispatch(sessionId, envelope, viewer);
     this.#launchEffect('after-commit', this.effects?.afterCommit({ sessionId, result, command: envelope, viewer }), { sessionId, revision: result.header.revision });

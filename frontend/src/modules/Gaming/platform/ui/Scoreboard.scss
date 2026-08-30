@@ -12,11 +12,11 @@
     padding: 0.4rem 1.25rem;
     border-radius: 0.5rem;
     border-top: 0.3rem solid var(--team-color);
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--gp-overlay);
     text-align: center;
 
-    &.is-active { outline: 2px solid var(--gp-brass-bright); }
-    &.is-locked { animation: gp-pulse 0.9s ease-in-out infinite; }
+    &.is-active { outline: 2px solid var(--gp-focus); outline-offset: 2px; }
+    &.is-locked { box-shadow: 0 0 0.8rem var(--team-color); }
   }
   &__name {
     display: block;
@@ -40,4 +40,11 @@
 
     &.is-negative { color: var(--gp-negative); } // distinct from danger red (audit §3.5)
   }
+}
+
+@media (max-height: 600px) {
+  .gp-scoreboard { gap: 0.6rem; padding-block: 0.35rem; }
+  .gp-scoreboard__team { min-width: 8rem; padding: 0.25rem 0.8rem; }
+  .gp-scoreboard__members { display: none; }
+  .gp-scoreboard__score { font-size: 1.7rem; }
 }

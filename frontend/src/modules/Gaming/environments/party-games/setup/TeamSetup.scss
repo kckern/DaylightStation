@@ -1,4 +1,4 @@
-@use '../../../platform/ui/tokens' as gp;
+@use '@gaming-ui/tokens' as gp;
 
 .gp-teamsetup {
   height: 100%;
@@ -17,10 +17,12 @@
   &__teams {
     flex: 1;
     min-height: 0;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     gap: 1rem;
-    justify-content: center;
-    overflow: hidden;
+    align-content: start;
+    overflow-y: auto;
+    padding: 0.2rem 0.2rem 0.75rem;
   }
   &__individuals {
     flex: 1;
@@ -33,16 +35,16 @@
     overflow-y: auto;
   }
   &__team {
-    flex: 0 1 16rem; // shrinkable — 4+ teams compress instead of overflowing the frame
+    min-height: 8rem;
     min-width: 0;
     padding: 1rem;
     border-radius: 0.75rem;
     border-top: 0.4rem solid var(--team-color);
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--gp-overlay);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    overflow-y: auto;
+    overflow: visible;
   }
   &__teamname {
     font-family: var(--gp-font-display);
@@ -53,6 +55,7 @@
   &__confirm {
     @include gp.gp-button-primary;
     align-self: center;
+    flex: 0 0 auto;
   }
 }
 
@@ -69,7 +72,8 @@
   color: var(--gp-paper);
   cursor: pointer;
 
-  &:focus { outline: 3px solid var(--gp-brass-bright); }
+  &:focus { outline: none; }
+  &:focus-visible { outline: 3px solid var(--gp-focus); outline-offset: 2px; }
   &.is-active {
     background: var(--gp-brass);
     color: var(--gp-ink);

@@ -30,6 +30,8 @@ describe('Activity Party rules', () => {
     const proposed = activityPartyRuleModule.handleCommand(state, { type: 'outcome.correct' }, definition, { actorId: 'a', logicalTime: 1 }).state;
     expect(proposed.phase).toBe('verification');
     expect(activityPartyRuleModule.handleCommand(proposed, { type: 'outcome.confirm', accepted: true }, definition, { actorId: 'b', logicalTime: 2 }).state.scores.a).toBe(2);
+    expect(activityPartyRuleModule.project(proposed, definition, { role: 'participant', participant_id: 'b' }).state.challenge.prompt).toBe('Tree');
+    expect(activityPartyRuleModule.project(proposed, definition, { role: 'participant', participant_id: 'observer' }).state.challenge).toEqual({ activity: 'draw' });
   });
   it('advances host hints while drawing persistence stays outside rule state and journal', () => {
     const drawDefinition = { ...definition, challenges: [{ activity: 'draw', prompt: 'Tree', hints: ['green'] }] };

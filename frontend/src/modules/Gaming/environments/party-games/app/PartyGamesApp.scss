@@ -1,17 +1,36 @@
-@use '../../../platform/ui/tokens' as gp;
+@use '@gaming-ui/tokens' as gp;
 
 .party-games {
   width: 100%;
-  height: 100%;
-  position: relative; // own the absolutely-positioned chrome (QR card, WS badge)
-  background: radial-gradient(ellipse at 50% 30%, var(--gp-stage-glow) 0%, var(--gp-stage) 70%);
+  height: 100dvh;
+  min-height: 0;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
   color: var(--gp-paper);
   font-family: var(--gp-font-ui);
-  display: flex;
-  flex-direction: column;
 
   // direct-mounted title cards (loading / set-loading) fill the stage
   > .gp-titlecard { flex: 1; }
+
+  &__play {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+  &__play-stage { min-width: 0; min-height: 0; overflow: hidden; }
+  &__companion-rail {
+    width: 6.5rem;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0.5rem;
+    border-left: 1px solid var(--gp-surface-border);
+    background: var(--gp-overlay);
+  }
 
   &__team-and-host {
     flex: 1;
@@ -28,47 +47,47 @@
 
   &__host-mode {
     flex: 0 0 auto;
-    margin: 0.75rem 1.5rem 0;
-    padding: 0.5rem 0.75rem;
+    margin: 0.5rem 1rem 0;
+    padding: 0.35rem 0.6rem;
     display: flex;
     align-items: center;
     gap: 0.75rem;
 
-    legend { padding: 0 0.35rem; }
+    legend { padding: 0 0.35rem; color: var(--gp-paper-dim); }
     button { @include gp.gp-button; }
   }
 
   &__error {
-    color: var(--gp-danger);
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 1rem;
+    color: var(--gp-paper);
+    background: var(--gp-overlay);
     font-family: var(--gp-font-serif);
     font-size: var(--gp-fs-label);
-    padding: 1rem;
+    padding: 2rem;
     text-align: center;
+    strong { color: var(--gp-danger); font: 2.5rem/1 var(--gp-font-display); text-transform: uppercase; }
+    > div { display: flex; gap: 0.75rem; }
   }
   &__ws-warn {
     position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    opacity: 0.6;
-    font-size: 1.2rem;
-  }
-  &__hostqr {
-    position: absolute;
-    bottom: 0.75rem;
-    right: 0.75rem;
-    text-align: center;
-    background: var(--gp-paper);
-    border-radius: 0.4rem;
-    padding: 0.3rem;
-    opacity: 0.85;
-
-    img { display: block; }
-    span {
-      display: block;
-      color: var(--gp-ink);
-      font-size: 0.75rem;
-      font-weight: 700;
-    }
+    z-index: 20;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: grid;
+    gap: 0.1rem;
+    padding: 0.45rem 0.7rem;
+    color: var(--gp-ink);
+    background: var(--gp-card);
+    border-left: 0.3rem solid var(--gp-danger);
+    border-radius: var(--gp-radius-control);
+    font-size: 0.75rem;
+    box-shadow: var(--gp-shadow-raised);
   }
   &__resume,
   &__sets,
@@ -79,12 +98,43 @@
     align-items: center;
     justify-content: center;
     gap: 1rem;
+    min-height: 0;
+    padding: 1rem;
 
     button {
       @include gp.gp-button;
-      &.is-binding { animation: gp-pulse 0.9s infinite; }
+      &.is-binding { border-color: var(--gp-focus); box-shadow: 0 0 0 3px var(--gp-focus); }
     }
   }
+  &__sets {
+    display: flex;
+    flex-flow: row wrap;
+    justify-content: center;
+    align-content: center;
+    align-items: stretch;
+    width: min(64rem, 100%);
+    margin: 0 auto;
+    overflow-y: auto;
+    > .gp-titlecard,
+    > p { flex: 0 0 100%; }
+    > p { text-align: center; }
+  }
+  &__set-card {
+    flex: 0 1 calc((100% - 3rem) / 4);
+    min-width: 11rem;
+    max-width: 20rem;
+    min-height: 8.875rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    text-align: left;
+    border-radius: var(--gp-radius-card) var(--gp-radius-card) 1.6rem var(--gp-radius-card) !important;
+    strong { font: 1.6rem/1.1 var(--gp-font-display); letter-spacing: 0.04em; text-transform: uppercase; }
+    span, small { color: var(--gp-paper-dim); font-size: 0.9rem; }
+  }
+  &__bind { width: min(42rem, 100%); margin: 0 auto; text-align: center; }
+  &__bind-list, &__bind-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; }
 }
 
 .jeopardy {
@@ -94,5 +144,31 @@
   display: flex;
   flex-direction: column;
 }
-.party-games-effect { position: fixed; left: 50%; bottom: 2rem; transform: translateX(-50%); z-index: 30; display: grid; gap: .25rem; width: min(44rem, calc(100vw - 3rem)); padding: 1rem 1.25rem; border: 2px solid var(--gp-brass, #e6b325); border-radius: .75rem; background: rgba(5, 8, 24, .94); color: #fff; text-align: center; box-shadow: 0 .5rem 2rem #0008; }
-.party-games-effect strong { color: var(--gp-brass, #e6b325); text-transform: uppercase; letter-spacing: .08em; }
+.party-games-effect {
+  position: fixed;
+  right: 7.5rem;
+  bottom: 1rem;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.25rem 0.75rem;
+  width: min(32rem, calc(100vw - 10rem));
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--gp-brass);
+  border-radius: var(--gp-radius-control);
+  background: var(--gp-overlay);
+  color: var(--gp-paper);
+  box-shadow: var(--gp-shadow-raised);
+  strong, span { grid-column: 1; }
+  button { grid-column: 2; grid-row: 1 / 3; align-self: center; @include gp.gp-button; padding: 0.4rem 0.7rem; font-size: 0.85rem; }
+}
+.party-games-effect strong { color: var(--gp-brass); text-transform: uppercase; letter-spacing: .08em; }
+
+@media (max-width: 720px), (max-height: 560px) {
+  .party-games__companion-rail { width: 5.25rem; padding: 0.3rem; }
+  .party-games__companion-rail .gp-companion img { width: 68px; height: 68px; }
+}
+
+@media (max-width: 720px) {
+  .party-games__set-card { flex-basis: calc((100% - 2rem) / 3); }
+}

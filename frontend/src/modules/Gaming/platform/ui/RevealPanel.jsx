@@ -6,7 +6,7 @@ import './components.scss';
 function promptSize(prompt) {
   const len = (prompt || '').length;
   if (len > 200) return 'sm';
-  if (len > 120) return 'md';
+  if (len > 90) return 'md';
   return 'lg';
 }
 
