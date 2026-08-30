@@ -10,7 +10,8 @@
  *   - SERIAL — never two concurrent gateway calls (no overlap).
  *   - SUBTRACT elapsed from interval (so 3s tick stays a 3s cadence even
  *     when fetches take 200ms).
- *   - On gateway failure: increment `consecutiveFailures`, log warn,
+ *   - On gateway failure: increment `consecutiveFailures`, emit one actionable
+ *     offline warning, then continue bounded recovery probes quietly,
  *     exponential backoff capped at `maxBackoffMs` (default 30000):
  *       backoffMs = min(maxBackoff, interval * 2 ** min(failures, 4))
  *   - On any success: reset `consecutiveFailures` to 0.
@@ -120,13 +121,33 @@ export class HubStatusBroadcaster {
         this.#logger.debug?.('playback-hub.broadcaster.publish', {
           deviceCount: devices.length
         });
+        if (consecutiveFailures > 0) {
+          this.#logger.info?.('playback-hub.broadcaster.recovered', {
+            consecutiveFailures,
+            deviceCount: devices.length,
+          });
+        }
         consecutiveFailures = 0;
       } catch (err) {
         consecutiveFailures += 1;
-        this.#logger.warn?.('playback-hub.broadcaster.fetch_failed', {
-          consecutiveFailures,
-          error: err.message
-        });
+        const target = Math.min(
+          this.#maxBackoffMs,
+          this.#intervalMs * 2 ** Math.min(consecutiveFailures, 4)
+        );
+        if (consecutiveFailures === 1) {
+          // One visible warning establishes the real fault and retry posture.
+          // Subsequent expected failures are probes, not fresh operator events.
+          this.#logger.warn?.('playback-hub.broadcaster.offline', {
+            error: err.message,
+            nextProbeMs: target,
+          });
+        } else {
+          this.#logger.debug?.('playback-hub.broadcaster.recovery_probe_failed', {
+            consecutiveFailures,
+            error: err.message,
+            nextProbeMs: target,
+          });
+        }
       }
       if (!this.#running) break;
       const elapsed = Date.now() - startedAt;
