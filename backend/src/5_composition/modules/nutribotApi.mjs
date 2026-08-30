@@ -43,6 +43,7 @@ export function createNutribotApiRouter(config) {
     userResolver,
     userIdentityService,
     config: nutribotServices.nutribotContainer.getConfig?.(),
+    aiGatewayAvailable,
     logger,
   });
   const inputRouter = new LegacyNutribotInputRouter({ inputRouter: applicationInputRouter, logger });

@@ -64,6 +64,16 @@ describe('ActivityReconciliationService — Pass 3: sliver absorption', () => {
     });
   });
 
+  test('rejects an incomplete history repository at construction', () => {
+    expect(() => new ActivityReconciliationService({
+      activityGateway: stravaClient,
+      lookbackDays: 10,
+      selectionConfig: {},
+      timezone: 'America/Los_Angeles',
+      historyRepository: { list() {} },
+    })).toThrow('requires historyRepository');
+  });
+
   test('absorbs orphan slivers next to a Strava-only session during reconcile', async () => {
     listYamlFiles.mockReturnValue(['strava-only-id', 'phantom-sliver']);
     loadYamlSafe.mockImplementation((p) => {

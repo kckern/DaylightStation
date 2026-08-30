@@ -13,6 +13,7 @@ import { NutribotScaleRefusal } from '../ports/NutribotScaleRefusal.mjs';
 export class NutribotInputRouter extends BaseInputRouter {
   #userResolver;
   #userIdentityService;
+  #aiGatewayAvailable;
 
   /**
    * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
@@ -25,6 +26,7 @@ export class NutribotInputRouter extends BaseInputRouter {
     super(container, options);
     this.#userIdentityService = options.userIdentityService || null;
     this.#userResolver = options.userResolver;
+    this.#aiGatewayAvailable = options.aiGatewayAvailable !== false;
   }
 
   // ==================== Event Handlers ====================
@@ -67,6 +69,9 @@ export class NutribotInputRouter extends BaseInputRouter {
         }
 
         if (state?.activeFlow === 'scale_describe' && pendingLogUuid) {
+          if (!this.#aiGatewayAvailable) {
+            return this.#aiUnavailable(event, responseContext, 'Food analysis is temporarily unavailable. Please try again shortly.');
+          }
           this.logger.info?.('nutribot.handleText.scaleDescribeRouted', {
             conversationId: event.conversationId,
             pendingLogUuid,
@@ -91,6 +96,9 @@ export class NutribotInputRouter extends BaseInputRouter {
     }
 
     // Default: log new food
+    if (!this.#aiGatewayAvailable) {
+      return this.#aiUnavailable(event, responseContext, 'Food analysis is temporarily unavailable. Please try again shortly.');
+    }
     const useCase = this.container.getLogFoodFromText();
     const result = await useCase.execute({
       userId: this.#resolveUserId(event),
@@ -103,6 +111,9 @@ export class NutribotInputRouter extends BaseInputRouter {
   }
 
   async handleImage(event, responseContext) {
+    if (!this.#aiGatewayAvailable) {
+      return this.#aiUnavailable(event, responseContext, 'Image nutrition analysis is temporarily unavailable. Please describe the food instead.');
+    }
     const useCase = this.container.getLogFoodFromImage();
     const result = await useCase.execute({
       userId: this.#resolveUserId(event),
@@ -118,6 +129,9 @@ export class NutribotInputRouter extends BaseInputRouter {
   }
 
   async handleVoice(event, responseContext) {
+    if (!this.#aiGatewayAvailable) {
+      return this.#aiUnavailable(event, responseContext, 'Voice nutrition analysis is temporarily unavailable. Please describe the food instead.');
+    }
     const useCase = this.container.getLogFoodFromVoice();
     const result = await useCase.execute({
       userId: this.#resolveUserId(event),
@@ -141,6 +155,15 @@ export class NutribotInputRouter extends BaseInputRouter {
       responseContext,
     });
     return { ok: true, result };
+  }
+
+  #aiUnavailable(event, responseContext, message) {
+    this.logger.warn?.('nutribot.ai.unavailable', {
+      conversationId: event.conversationId,
+      type: event.type,
+    });
+    return Promise.resolve(responseContext?.sendMessage?.(message))
+      .then(() => ({ ok: false, code: 'AI_UNAVAILABLE', error: message }));
   }
 
   async handleCallback(event, responseContext) {
@@ -253,6 +276,9 @@ export class NutribotInputRouter extends BaseInputRouter {
         });
       }
       case CallbackActions.RETRY_IMAGE: {
+        if (!this.#aiGatewayAvailable) {
+          return this.#aiUnavailable(event, responseContext, 'Image nutrition analysis is temporarily unavailable. Please describe the food instead.');
+        }
         const useCase = this.container.getRetryImageDetection();
         return await useCase.execute({
           userId: this.#resolveUserId(event),
