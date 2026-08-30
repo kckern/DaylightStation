@@ -87,7 +87,7 @@ When bounded contexts need to communicate, define explicit relationships:
 Level 0 (foundation):   core (errors, utils, base types)
                           ↑
 Level 1 (shared):       content, common, messaging, notification,
-                        scheduling, entropy
+                        scheduling, entropy, requirements
                           ↑
 Level 2 (features):     ambient, art, automotive, barcode, concierge, cost,
                         feed, finance, fitness, gaming, gratitude, home-automation,
@@ -104,7 +104,7 @@ The table below assigns **every** domain folder in `2_domains/` a level (Decisio
 | Level | Domain folders |
 |-------|----------------|
 | **0 — Foundation** | `core` |
-| **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy` |
+| **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy`, `requirements` |
 | **2 — Features** | `ambient`, `art`, `automotive`, `barcode`, `camera`, `concierge`, `cost`, `donow`, `economy`, `exercise`, `feed`, `finance`, `fitness`, `gaming`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `measures`, `media`, `midi`, `nutrition`, `piano`, `pianoaudio`, `playback-hub`, `scan`, `school`, `shutdown`, `trigger` |
 | **3 — Aggregators** | `health`, `journalist`, `lifelog`, `weekly-review` |
 

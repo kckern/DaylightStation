@@ -10,6 +10,7 @@ import { createAdminIntegrationsRouter } from './integrations.mjs';
 import { createAdminAppsRouter } from './apps.mjs';
 import { createAdminArtRouter } from './art.mjs';
 import { createAdminNotificationsRouter } from './notifications.mjs';
+import { createAdminRequirementsRouter } from './requirements.mjs';
 
 /**
  * Combined Admin Router
@@ -55,6 +56,8 @@ export function createAdminRouter(config) {
     listManagementService,
     adminArtService,
     adminImageService,
+    requirementsAdministration,
+    requirementsActorFromRequest,
     logger = console
   } = config;
   const router = express.Router();
@@ -143,7 +146,14 @@ export function createAdminRouter(config) {
   });
   router.use('/notifications', notificationsRouter);
 
-  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/apps', '/art', '/images', '/media', '/ws', '/notifications'] });
+  if (requirementsAdministration && requirementsActorFromRequest) {
+    router.use('/requirements', createAdminRequirementsRouter({
+      operations: requirementsAdministration,
+      actorFromRequest: requirementsActorFromRequest,
+    }));
+  }
+
+  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/apps', '/art', '/images', '/media', '/ws', '/notifications', '/requirements'] });
   return router;
 }
 
@@ -158,3 +168,4 @@ export { createAdminIntegrationsRouter } from './integrations.mjs';
 export { createAdminAppsRouter } from './apps.mjs';
 export { createAdminArtRouter } from './art.mjs';
 export { createAdminNotificationsRouter } from './notifications.mjs';
+export { createAdminRequirementsRouter } from './requirements.mjs';

@@ -13,6 +13,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { createNutribotServices } from './bootstrap.mjs';
 import { createFeedRouter } from '#api/v1/routers/feed.mjs';
 import { createArtRouter } from '#api/v1/routers/art.mjs';
+import { createRequirementsModule } from './modules/requirements.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const logger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
@@ -54,6 +58,37 @@ const contracts = [
     },
   },
   {
+    id: 'requirements.atomic-foundation-wiring',
+    async verify() {
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'requirements-composition-'));
+      const policy = { schema: 'daylight.requirements-policy/v1', policy_revision: 1, publishers: {}, subject_sets: {}, claim_types: {}, requirements: {}, entitlements: {} };
+      const eventBus = { publish: vi.fn() };
+      const module = await createRequirementsModule({
+        householdId: 'home', eventBus, roleIds: ['admin', 'parent'],
+        clock: { now: () => Date.parse('2026-08-30T12:00:00-07:00') },
+        configService: {
+          getHouseholdPath: () => path.join(directory, 'requirements/current'),
+          reloadHouseholdAppConfig: () => policy,
+          getHouseholdAppConfig: () => policy,
+          getHouseholdUsers: () => ['learner-a'],
+          getHouseholdDevices: () => ({ devices: {} }),
+          getHouseholdTimezone: () => 'America/Los_Angeles',
+          getAllHouseholdIds: () => [],
+        },
+        logger: logger(),
+      });
+      try {
+        expect(module.requirementsRouter).toEqual(expect.any(Function));
+        expect(module.entitlementsRouter).toEqual(expect.any(Function));
+        expect(await module.container.getCurrentRequirements('home')).toMatchObject({ currentRevision: 1, items: [] });
+        expect(fs.existsSync(path.join(directory, 'requirements/current.yml'))).toBe(true);
+      } finally {
+        module.dispose();
+        fs.rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  },
+  {
     id: 'feed.router-required-runtime-capabilities',
     verify() {
       const base = {
@@ -90,4 +125,3 @@ describe('composition contract registry', () => {
     await verify();
   });
 });
-
