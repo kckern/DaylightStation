@@ -105,13 +105,10 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
 });
 
 /**
- * Anti-freeload: the exemption (and guest non-subject status) is a privilege
- * that only exists while a REAL participant is carrying the session — i.e. at
- * least one active BASELINE subject (registered, non-exempt, non-guest) is
- * present. With no such subject, exemptions are SUSPENDED and every participant
- * is governed as a subject, so an exempt- or guest-only roster cannot satisfy a
- * requirement without actually meeting the zone. Closes the "borrow the exempt
- * kid's HR strap and turn it on alone" loophole.
+ * Anti-freeload applies to configured-user exemptions: without a real baseline
+ * rider, an exempt household user is governed normally. Guests are different:
+ * product policy says they never create a blocker or punishment, even when they
+ * are the only active rider; they may still earn a positive challenge win.
  */
 describe('GovernanceEngine — exemption suspension when no real subject present', () => {
   it('_buildSubjectFilter treats an exempt-only roster as all-subjects', () => {
@@ -122,12 +119,12 @@ describe('GovernanceEngine — exemption suspension when no real subject present
     expect(isSubject('mom')).toBe(true); // suspended → exempt user is governed
   });
 
-  it('_buildSubjectFilter treats a guest-only roster as all-subjects', () => {
+  it('_buildSubjectFilter keeps a guest-only roster non-subject', () => {
     const eng = new GovernanceEngine();
     eng.config = { exemptions: [] };
     eng._captureLatestInputs({ activeParticipants: ['g1'], guestIds: ['g1'] });
     const isSubject = eng._buildSubjectFilter(['g1']);
-    expect(isSubject('g1')).toBe(true); // suspended → guest is governed
+    expect(isSubject('g1')).toBe(false);
   });
 
   it('keeps exemptions ACTIVE when a real subject is present (regression)', () => {
@@ -140,12 +137,12 @@ describe('GovernanceEngine — exemption suspension when no real subject present
     expect(isSubject('g1')).toBe(false);   // still guest
   });
 
-  it('requiredCount no longer collapses to 0 for an exempt/guest-only roster', () => {
+  it('only an exempt household user becomes subject when no baseline rider remains', () => {
     const eng = new GovernanceEngine();
     eng.config = { exemptions: ['mom'] };
     eng._captureLatestInputs({ activeParticipants: ['mom', 'g1'], guestIds: ['g1'] });
-    // Suspended → both count as subjects → 'all' over 2 = 2 (was 0 → vacuously satisfied).
-    expect(eng._normalizeRequiredCount('all', 2, ['mom', 'g1'])).toBe(2);
+    // Suspended exemption → mom is subject, but the guest remains non-subject.
+    expect(eng._normalizeRequiredCount('all', 2, ['mom', 'g1'])).toBe(1);
   });
 
   it('steady-state: exempt-only roster must meet the zone (loophole closed)', () => {
@@ -163,13 +160,33 @@ describe('GovernanceEngine — exemption suspension when no real subject present
     expect(hot.satisfied).toBe(true);
   });
 
-  it('_classifyParticipants reports suspended exempt/guests as subjects', () => {
+  it('_classifyParticipants preserves guest status while suspending exemptions', () => {
     const eng = new GovernanceEngine();
     eng.config = { exemptions: ['mom'] };
     eng._captureLatestInputs({ activeParticipants: ['mom', 'g1'], guestIds: ['g1'] });
     const cls = eng._classifyParticipants(['mom', 'g1']);
-    expect([...cls.subjects].sort()).toEqual(['g1', 'mom']);
-    expect(cls.guests).toEqual([]);
+    expect(cls.subjects).toEqual(['mom']);
+    expect(cls.guests).toEqual(['g1']);
     expect(cls.exempt).toEqual([]);
+  });
+
+  it('a below-zone guest alone never creates a steady-state blocker', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: [] };
+    const zoneRankMap = { cold: 0, hot: 2 };
+    eng._captureLatestInputs({ activeParticipants: ['g1'], guestIds: ['g1'], zoneRankMap });
+    const result = eng._evaluateZoneRequirement('hot', 'all', ['g1'], { g1: 'cold' }, zoneRankMap, {}, 1);
+    expect(result).toMatchObject({ satisfied: true, requiredCount: 0, actualCount: 0, missingUsers: [] });
+  });
+
+  it('a guest-only challenge needs their in-zone contribution instead of auto-winning', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: [] };
+    const zoneRankMap = { cold: 0, hot: 2 };
+    eng._captureLatestInputs({ activeParticipants: ['g1'], guestIds: ['g1'], zoneRankMap });
+    const missed = eng.evaluateChallengeZone({ zone: 'hot', rule: 1 }, ['g1'], { g1: 'cold' }, 1);
+    const met = eng.evaluateChallengeZone({ zone: 'hot', rule: 1 }, ['g1'], { g1: 'hot' }, 1);
+    expect(missed).toMatchObject({ satisfied: false, requiredCount: 1, actualCount: 0, missingUsers: [] });
+    expect(met).toMatchObject({ satisfied: true, requiredCount: 1, actualCount: 1, missingUsers: [] });
   });
 });
