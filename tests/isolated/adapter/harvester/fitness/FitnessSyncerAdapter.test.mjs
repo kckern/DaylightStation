@@ -534,7 +534,7 @@ describe('FitnessSyncerAdapter', () => {
 
       expect(sourceId).toBe('src-123');
       expect(mockHttpClient.get).toHaveBeenCalledWith(
-        'https://www.fitnesssyncer.com/api/sources',
+        'https://api.fitnesssyncer.com/api/providers/sources',
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer valid-token',
@@ -744,7 +744,7 @@ describe('FitnessSyncerAdapter', () => {
 
       // Should have called activities API
       expect(mockHttpClient.get).toHaveBeenCalledWith(
-        expect.stringMatching(/https:\/\/www\.fitnesssyncer\.com\/api\/activities\?sourceId=src-garmin-123&startDate=.*&endDate=.*/),
+        'https://api.fitnesssyncer.com/api/providers/sources/src-garmin-123/items?offset=0&limit=100',
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer valid-token',
@@ -761,7 +761,7 @@ describe('FitnessSyncerAdapter', () => {
       await adapter.getActivities({ daysBack: 7 });
 
       expect(mockHttpClient.get).toHaveBeenCalledWith(
-        expect.stringContaining('sourceId=src-garmin-123'),
+        expect.stringContaining('/sources/src-garmin-123/items'),
         expect.any(Object)
       );
     });
@@ -773,7 +773,7 @@ describe('FitnessSyncerAdapter', () => {
       await adapter.getActivities({ daysBack: 7, sourceKey: 'Strava' });
 
       expect(mockHttpClient.get).toHaveBeenCalledWith(
-        expect.stringContaining('sourceId=src-strava-456'),
+        expect.stringContaining('/sources/src-strava-456/items'),
         expect.any(Object)
       );
     });
@@ -830,42 +830,28 @@ describe('FitnessSyncerAdapter', () => {
         .rejects.toThrow('No access token available');
     });
 
-    test('calculates date range from daysBack parameter', async () => {
+    test('filters provider items to the requested daysBack window', async () => {
       mockHttpClient.get.mockResolvedValue(mockActivitiesResponse);
 
       await adapter.getActivities({ daysBack: 30 });
 
       const callUrl = mockHttpClient.get.mock.calls[0][0];
       const url = new URL(callUrl);
-      const startDate = url.searchParams.get('startDate');
-      const endDate = url.searchParams.get('endDate');
-
-      // Start date should be ~30 days ago
-      const expectedStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const actualStart = new Date(startDate);
-      const diffDays = Math.abs((actualStart - expectedStart) / (24 * 60 * 60 * 1000));
-      expect(diffDays).toBeLessThan(1);
-
-      // End date should be today
-      const actualEnd = new Date(endDate);
-      const diffEndDays = Math.abs((actualEnd - new Date()) / (24 * 60 * 60 * 1000));
-      expect(diffEndDays).toBeLessThan(1);
+      expect(url.searchParams.get('offset')).toBe('0');
+      expect(url.searchParams.get('limit')).toBe('100');
     });
 
-    test('defaults to 7 days back when daysBack not specified', async () => {
-      mockHttpClient.get.mockResolvedValue(mockActivitiesResponse);
+    test('defaults to a seven-day client-side activity window', async () => {
+      mockHttpClient.get.mockResolvedValue({
+        data: { items: [
+          ...mockActivitiesResponse.data.items,
+          { id: 'old-item', startTime: '2025-12-01T00:00:00Z' },
+        ] },
+      });
 
-      await adapter.getActivities({});
+      const result = await adapter.getActivities({});
 
-      const callUrl = mockHttpClient.get.mock.calls[0][0];
-      const url = new URL(callUrl);
-      const startDate = url.searchParams.get('startDate');
-
-      // Start date should be ~7 days ago
-      const expectedStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const actualStart = new Date(startDate);
-      const diffDays = Math.abs((actualStart - expectedStart) / (24 * 60 * 60 * 1000));
-      expect(diffDays).toBeLessThan(1);
+      expect(result.map((item) => item.id)).toEqual(['act-001', 'act-002']);
     });
   });
 
