@@ -340,9 +340,9 @@ export class ParticipantRoster {
    * Returns active participant IDs and their zone map in a single call.
    * Consumers should use this instead of reading getRoster() and re-extracting.
    *
-   * Guests are excluded — they are exempt from governance: their HR neither
-   * blocks nor satisfies unlock requirements (anti-cheat: a primary user can't
-   * escape governance by handing the strap to a guest).
+   * Guests are included and explicitly flagged: they can contribute to a
+   * positive challenge win, but GovernanceEngine keeps them out of blockers,
+   * pauses, punishments, and the steady-state denominator.
    *
    * hrInactive users (HR=0/null) are excluded from `participants` and returned
    * in `hrInactiveUsers` instead, matching the snapshot path in

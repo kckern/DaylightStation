@@ -2600,10 +2600,16 @@ export class GovernanceEngine {
       }
     });
 
-    const requiredCount = this._normalizeRequiredCount(rule, totalCount, activeParticipants);
+    const subjectCount = activeParticipants.filter(isSubject).length;
+    // A guest can appear alone (or outlast the registered riders). That must
+    // be neutral, never a warning/lock: guests may earn a challenge win but
+    // must never create a blocker or punishment.
+    const requiredCount = subjectCount === 0
+      ? 0
+      : this._normalizeRequiredCount(rule, totalCount, activeParticipants);
     // Steady-state: only SUBJECTS satisfy it (guests/exempt can't clear the
     // always-on requirement — anti-cheat). They are also never blamed.
-    const satisfied = subjectMetCount >= requiredCount;
+    const satisfied = subjectCount === 0 || subjectMetCount >= requiredCount;
     const missingUsers = activeParticipants.filter((participantId) =>
       !metUsers.includes(participantId) && isSubject(participantId)
     );
@@ -2662,7 +2668,7 @@ export class GovernanceEngine {
       if (pRank >= requiredRank) metUsers.push(participantId);
     });
 
-    const requiredCount = this._normalizeRequiredCount(challenge.rule, totalCount, activeParticipants);
+    const requiredCount = this._normalizeChallengeRequiredCount(challenge.rule, totalCount, activeParticipants);
     const satisfied = metUsers.length >= requiredCount; // eligible numerator
     const missingUsers = activeParticipants.filter((participantId) =>
       !metUsers.includes(participantId) && isSubject(participantId)
@@ -2712,23 +2718,24 @@ export class GovernanceEngine {
    * @returns {(participantId: string) => boolean}
    */
   _buildSubjectFilter(activeParticipants) {
-    // Exemptions/guest status are SUSPENDED when no real subject is carrying the
-    // session — everyone becomes a subject so an exempt/guest-only roster cannot
-    // satisfy a requirement without actually meeting the zone (anti-freeload).
-    if (!this._exemptionsApply(activeParticipants)) return () => true;
-    const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
     const guestIds = new Set(this._latestInputs?.guestIds || []);
+    // Guests are never governed.  The separate exemption anti-freeload rule
+    // may suspend configured-user exemptions when no baseline rider remains,
+    // but it must not turn a guest into a blocker/punishment target.
+    if (!this._exemptionsApply(activeParticipants)) {
+      return (participantId) => !guestIds.has(participantId);
+    }
+    const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
     return (participantId) =>
       !guestIds.has(participantId) &&
       !exemptUsers.includes(normalizeName(participantId));
   }
 
   /**
-   * Exemptions (and guest non-subject status) only apply while a REAL
-   * participant is carrying the session — i.e. ≥1 active BASELINE subject
-   * (registered, not exempt, not guest) is present. With none, exemptions are
-   * suspended and every participant is governed as a subject. Falls back to the
-   * latest captured roster when called without an explicit list.
+   * Configured-user exemptions apply only while a REAL participant is carrying
+   * the session — i.e. ≥1 active BASELINE subject (registered, not exempt, not
+   * guest) is present. Guests remain non-subjects in every circumstance.
+   * Falls back to the latest captured roster when called without an explicit list.
    * @param {string[]} [activeParticipants]
    * @returns {boolean}
    */
@@ -2749,19 +2756,15 @@ export class GovernanceEngine {
    * @returns {{ subjects: string[], guests: string[], exempt: string[] }}
    */
   _classifyParticipants(activeParticipants = []) {
-    // When exemptions are suspended (no real subject present), everyone is a
-    // subject — mirror that here so diagnostics match the governing decision.
-    if (!this._exemptionsApply(activeParticipants)) {
-      return { subjects: [...activeParticipants], guests: [], exempt: [] };
-    }
     const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
     const guestSet = new Set(this._latestInputs?.guestIds || []);
+    const exemptionsApply = this._exemptionsApply(activeParticipants);
     const subjects = [];
     const guests = [];
     const exempt = [];
     for (const id of activeParticipants) {
       if (guestSet.has(id)) guests.push(id);
-      else if (exemptUsers.includes(normalizeName(id))) exempt.push(id);
+      else if (exemptionsApply && exemptUsers.includes(normalizeName(id))) exempt.push(id);
       else subjects.push(id);
     }
     return { subjects, guests, exempt };
@@ -2797,6 +2800,29 @@ export class GovernanceEngine {
       }
     }
     return effectiveCount;
+  }
+
+  _normalizeChallengeRequiredCount(rule, totalCount, activeParticipants = []) {
+    // Challenge wins are positive-only: every active rider, including a guest
+    // or exempt rider, can fill the tally. Unlike steady-state governance, do
+    // not reduce a numeric target to the subject count or a guest's contribution
+    // becomes irrelevant (and a guest-only challenge can auto-win at zero).
+    const eligibleCount = Array.isArray(activeParticipants) && activeParticipants.length > 0
+      ? activeParticipants.length
+      : Math.max(0, Number(totalCount) || 0);
+    if (typeof rule === 'number' && Number.isFinite(rule)) {
+      return Math.min(Math.max(0, Math.round(rule)), eligibleCount);
+    }
+    if (typeof rule === 'string') {
+      const normalized = rule.toLowerCase().trim();
+      if (normalized === 'all') return eligibleCount;
+      if (normalized === 'majority' || normalized === 'most') return Math.max(1, Math.ceil(eligibleCount * 0.5));
+      if (normalized === 'some') return Math.max(1, Math.ceil(eligibleCount * 0.3));
+      if (normalized === 'any') return eligibleCount > 0 ? 1 : 0;
+      const numeric = Number(rule);
+      if (Number.isFinite(numeric)) return Math.min(Math.max(0, Math.round(numeric)), eligibleCount);
+    }
+    return eligibleCount;
   }
 
   _describeRule(rule, requiredCount) {
