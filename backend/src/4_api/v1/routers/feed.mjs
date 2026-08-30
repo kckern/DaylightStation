@@ -30,6 +30,18 @@ export function createFeedRouter(config) {
   const { feedReaderService, headlineService, feedAssemblyService, feedContentService,
     feedStateService = null, feedPrincipalResolver, feedReaderTimelineService,
     feedScrollSessionService, logger = console } = config;
+  const required = {
+    feedReaderService,
+    headlineService,
+    feedAssemblyService,
+    feedContentService,
+    feedPrincipalResolver,
+    feedReaderTimelineService,
+    feedScrollSessionService,
+  };
+  for (const [name, dependency] of Object.entries(required)) {
+    if (!dependency) throw new TypeError(`createFeedRouter requires ${name}`);
+  }
   const router = express.Router();
 
   // Clamp a query-param integer into [min, max]; returns `def` when absent/invalid.

@@ -1735,6 +1735,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
 
     const { FeedFilterResolver } = await import('./3_applications/feed/services/FeedFilterResolver.mjs');
+    const { FeedPrincipalResolver } = await import('./3_applications/feed/services/FeedPrincipalResolver.mjs');
+    const { FeedReaderService } = await import('./3_applications/feed/services/FeedReaderService.mjs');
+    const { FeedReaderTimelineService } = await import('./3_applications/feed/services/FeedReaderTimelineService.mjs');
+    const { FeedScrollSessionService } = await import('./3_applications/feed/services/FeedScrollSessionService.mjs');
+    const { FeedSessionPersistenceService } = await import('./3_applications/feed/services/FeedSessionPersistenceService.mjs');
     const feedFilterResolver = new FeedFilterResolver({
       sourceTypes: feedSourceAdapters.map(a => a.sourceType),
       queryNames: queryConfigs.map(q => q._filename?.replace('.yml', '')).filter(Boolean),
@@ -1777,17 +1782,36 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       scheduler: new NodeApplicationScheduler(),
       logger: rootLogger.child({ module: 'feed-state' }),
     });
+    const feedReaderService = new FeedReaderService({
+      readerGateway: feedServices.freshRSSAdapter,
+      sourceAdapters: feedSourceAdapters,
+      dismissedItemsStore,
+      contentPluginRegistry,
+      logger: rootLogger.child({ module: 'feed-reader' }),
+    });
+    const feedPrincipalResolver = new FeedPrincipalResolver({
+      defaultUsername: () => configService.getHeadOfHousehold?.(),
+    });
+    const feedReaderTimelineService = new FeedReaderTimelineService({
+      reader: feedReaderService,
+      content: feedContentService,
+      state: feedStateService,
+    });
+    const feedScrollSessionService = new FeedScrollSessionService({
+      assembly: feedAssemblyService,
+      state: feedStateService,
+      persistence: new FeedSessionPersistenceService({ store: feedSessionStore }),
+      createId: crypto.randomUUID,
+    });
     v1Routers.feed = createFeedRouter({
-      freshRSSAdapter: feedServices.freshRSSAdapter,
+      feedReaderService,
       headlineService: feedServices.headlineService,
       feedAssemblyService,
       feedContentService,
       feedStateService,
-      feedSessionStore,
-      dismissedItemsStore,
-      sourceAdapters: feedSourceAdapters,
-      contentPluginRegistry,
-      configService,
+      feedPrincipalResolver,
+      feedReaderTimelineService,
+      feedScrollSessionService,
       logger: rootLogger.child({ module: 'feed' }),
     });
   }
@@ -1927,9 +1951,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       { category: 'art' }
     );
   }
+  const { ArtPresetService } = await import('#apps/content/ArtPresetService.mjs');
+  const { FilesystemArtPresetCatalog } = await import('#adapters/content/art/FilesystemArtPresetCatalog.mjs');
   v1Routers.art = createArtRouter({
-    artAdapter,
-    householdDir: configService.getHouseholdPath(''),
+    artService: new ArtPresetService({
+      catalog: new FilesystemArtPresetCatalog({
+        householdDir: configService.getHouseholdPath(''),
+        logger: rootLogger.child({ module: 'art-catalog' }),
+      }),
+      artSource: artAdapter,
+    }),
     logger: rootLogger.child({ module: 'art-api' })
   });
 

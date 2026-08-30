@@ -20,6 +20,9 @@ export function createArtRouter(config = {}) {
     artService,
     logger = console,
   } = config;
+  if (!artService?.selectFeatured || !artService?.getPreset) {
+    throw new TypeError('createArtRouter requires artService with selectFeatured and getPreset');
+  }
   const router = express.Router();
 
   /**

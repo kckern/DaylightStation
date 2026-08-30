@@ -5,6 +5,7 @@ import { createLocalRouter } from './local.mjs';
 import { createDisplayRouter } from './display.mjs';
 import { createInfoRouter } from './info.mjs';
 import { createFeedRouter } from './feed.mjs';
+import { createArtRouter } from './art.mjs';
 
 const mounted = (path, router, { json = false } = {}) => {
   const app = express();
@@ -74,11 +75,24 @@ describe('contract-preserving semantic router boundaries', () => {
       getCategories: vi.fn().mockResolvedValue([{ id: 'news' }]),
       dismiss: vi.fn().mockResolvedValue({ dismissed: 1, failed: ['broken:2'] }),
     };
-    const router = createFeedRouter({ feedReaderService, feedPrincipalResolver: { resolve: () => 'alice' } });
+    const router = createFeedRouter({
+      feedReaderService,
+      headlineService: {},
+      feedAssemblyService: {},
+      feedContentService: {},
+      feedPrincipalResolver: { resolve: () => 'alice' },
+      feedReaderTimelineService: {},
+      feedScrollSessionService: {},
+    });
     const app = mounted('/feed', router, { json: true });
     expect((await request(app).get('/feed/reader/categories')).body).toEqual([{ id: 'news' }]);
     const dismissed = await request(app).post('/feed/scroll/dismiss').send({ itemIds: ['ok:1', 'broken:2'] });
     expect(dismissed.status).toBe(207);
     expect(dismissed.body).toEqual({ dismissed: 1, failed: ['broken:2'] });
+  });
+
+  it('fails at composition time when Feed or Art dependencies are omitted', () => {
+    expect(() => createFeedRouter({})).toThrow('createFeedRouter requires feedReaderService');
+    expect(() => createArtRouter({})).toThrow('createArtRouter requires artService');
   });
 });
