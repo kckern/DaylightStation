@@ -82,6 +82,16 @@ import Player from './modules/Player/Player.jsx';
 <Player play={{ plex: "video", overlay: "audioPlaylist" }} clear={clearFn} />
 ```
 
+### Natural completion
+
+Consumers that record durable evidence may pass `onPlaybackCompleted`. Player
+calls it synchronously as `onPlaybackCompleted({ reason: 'natural-end', assetId })`
+before advancing a naturally completed queue item or clearing a naturally
+completed single item. Imperative skip/back, load failure, and explicit clear do
+not call it. Player also suppresses duplicate terminal notifications for the
+same item; consumers should retain their own evidence idempotency key as the
+downstream safety boundary.
+
 ## Benefits of Refactoring
 
 1. **Maintainability**: Each file has a single, clear responsibility

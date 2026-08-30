@@ -22,18 +22,18 @@
  * that leaves no trace anywhere and is invisible until a report card is wrong.
  *
  * ONE PICK IS ONE `pickId`. Minted at expiry, sent with the completion, and
- * the reading log dedups on it — so a player that fires `ended` twice, or a
- * screen that remounts mid-book, credits one book rather than two.
+ * the reading log dedups on it — so duplicate Player terminal notifications,
+ * or a screen that remounts mid-book, credit one book rather than two.
  *
  * PLAYBACK-STARTED IS NOT COUNTDOWN-EXPIRED. They differ by however long the
  * content takes to load, and the gap between them is exactly the window in
  * which a stray tap misbehaves — so the backend is told about the FIRST FRAME,
  * from the media element itself, not about the timer running out.
  *
- * A COMPLETION IS `ended`, NOT A DISMISSAL. The Player calls `clear` for every
- * reason it stops — end of content, a load failure, a bail — and only the media
- * element's own `ended` event says the story was actually finished. Invariant 1:
- * a read is credited only on completion, never on pick and never on play.
+ * A COMPLETION IS PLAYER-SEMANTIC, NOT A DISMISSAL. Before a natural end advances
+ * the queue or clears a single item, Player synchronously calls
+ * `onPlaybackCompleted`; load failures, skips, back, and explicit clear do not.
+ * Invariant 1: a read is credited only on completion, never on pick or play.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocketSubscription } from '../../../hooks/useWebSocket.js';
@@ -353,9 +353,9 @@ export function useReadingSession({
   }, []);
 
   /**
-   * The Player went away. If `ended` never fired, the story did not finish —
-   * a load failure, a bail, a grown-up pressing back. Nothing is credited, and
-   * the child lands back at the prompt rather than on a dead screen.
+   * The Player went away. If its natural-end callback never arrived, the story
+   * did not finish — a load failure, a bail, a grown-up pressing back. Nothing
+   * is credited, and the child lands back at the prompt rather than a dead screen.
    */
   const notePlaybackDismissed = useCallback(() => {
     if (endedRef.current) return;

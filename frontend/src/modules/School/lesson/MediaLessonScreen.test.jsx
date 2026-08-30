@@ -43,7 +43,7 @@ const h = vi.hoisted(() => {
     trace: [],
     clock: mkStore({ position: 0, duration: 600, playing: false, seeking: false }),
     clockOpts: null,
-    player: { clear: null, onMediaRef: null, play: null },
+    player: { clear: null, onMediaRef: null, onPlaybackCompleted: null, play: null },
     posts: [],
     mkStore,
   };
@@ -71,6 +71,7 @@ vi.mock('../../Player/Player.jsx', () => ({
   default: (props) => {
     h.player.clear = props.clear;
     h.player.onMediaRef = props.onMediaRef;
+    h.player.onPlaybackCompleted = props.onPlaybackCompleted;
     h.player.play = props.play;
     return null;
   },
@@ -174,6 +175,7 @@ describe('MediaLessonScreen', () => {
     h.clock.set({ position: 0, duration: 600, playing: false, seeking: false });
     h.player.clear = null;
     h.player.onMediaRef = null;
+    h.player.onPlaybackCompleted = null;
     h.player.play = null;
     h.posts.length = 0;
     resetActionBus();
@@ -333,10 +335,16 @@ describe('MediaLessonScreen', () => {
   });
 
   // ── the end ─────────────────────────────────────────────────────────────
-  it('claims the lesson only on the media element\'s own `ended`, and celebrates it', async () => {
-    const { el } = await openLesson({ celebrateMs: 10000 });
-    await act(async () => { el.dispatchEvent(new Event('ended')); });
+  it('claims the lesson only on Player semantic completion, once, and celebrates it', async () => {
+    await openLesson({ celebrateMs: 10000 });
+    await act(async () => {
+      const pending = h.player.onPlaybackCompleted({ reason: 'natural-end', assetId: 'plex:4242' });
+      h.player.clear();
+      h.player.onPlaybackCompleted({ reason: 'natural-end', assetId: 'plex:4242' });
+      await pending;
+    });
     await waitFor(() => expect(h.posts.some((p) => p.href.endsWith('/ended'))).toBe(true));
+    expect(h.posts.filter((p) => p.href.endsWith('/ended'))).toHaveLength(1);
     await waitFor(() => expect(screen.getByTestId('media-lesson-celebrate')).toBeInTheDocument());
     expect(h.overlay.get()).toBeNull();
   });

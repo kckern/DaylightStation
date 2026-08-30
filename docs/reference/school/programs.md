@@ -10,6 +10,12 @@ unknown/duplicate policies, and normalize known legacy ids. A launcher failure
 faults only that program entry and makes completion indeterminate when the
 program was required.
 
+Program status may expose `obligationProgress: { completed, total }` for a
+single daily obligation. This is structured UI state, separate from the human
+`progressLabel`, longitudinal course `progress`, and optional `score`. The agenda
+copies it only onto that program's selected `next` item; clients must not parse
+the label or reuse course progress to guess whether today's obligation has begun.
+
 Sentence Ladder is the first code-registered program. Its canonical id is
 `sentence-ladder`; `language` is a deprecated read/write compatibility alias.
 
@@ -87,9 +93,9 @@ kiosk within a beat instead of waiting out its 15s poll.
 sequence, no gate, no grade — so it is the clearest example of what the program
 lane is for. An entry in `assignment.programs[]` with `courseId: null` is
 projected by `appendAssignedProgramEntries` into a `cadence: 'daily'` agenda
-entry, and `StoryTimeProgramLauncher` owns the evidence. Nothing in
-`agenda.mjs`, `completion.mjs` or `AgendaStatusBoard` knows it exists; they read
-`doneToday` as they already did.
+entry, and `StoryTimeProgramLauncher` owns the evidence. The generic agenda and
+board pipeline reads its `doneToday`, `obligationProgress`, and `servedWork`
+without a story-time-specific branch.
 
 ```yaml
 programs:
@@ -111,6 +117,14 @@ The program is **never terminal**: tomorrow it asks again. That is what
 separates it from a `cadence: 'once'` program, which leaves the agenda when its
 launcher reports terminal. Reading past the target is never a penalty — a third
 story reads `3 of 2 stories` and stays done.
+
+The board's daily obligation remains one stable disc: 0/2 is gray, 1/2 is amber
+and announced as "in progress," and 2/2 is green and increments the completed
+assignment count. The launcher clamps structured `completed` to `target`, so
+3/2 remains complete, while the human label may still say `3 of 2 stories`.
+Once complete it returns `story-time:daily` in `servedWork`, keeping the green
+disc visible after there is no longer a `next` offer. Errors and non-enrollment
+return `obligationProgress: null` rather than inventing progress.
 
 `corpusId: null` makes `SetAssignments`' dedupe key `story-time\0`, so a second
 story-time enrollment for the same learner is refused.
@@ -209,9 +223,10 @@ of the ways a shard goes bad — should not be the cause.
 
 ### `pickId` — one finish, one row
 
-A caller mints a `pickId` when playback starts and sends it back when the story
-ends. `doneToday` is `rows.length >= target`, so a duplicate row is a duplicate
-BOOK: a retried request or a remounted player credits the child twice.
+A caller mints a `pickId` when playback starts and sends it back when Player
+reports semantic natural completion. `doneToday` is `rows.length >= target`, so
+a duplicate row is a duplicate BOOK: a retried request or a remounted player
+credits the child twice.
 `IReadingLogStore.append` is therefore specified as idempotent on `pickId` —
 return the existing row rather than appending a second — and a `null` pickId is
 not a key, so two hand-recorded reads of the same book stay two reads.
@@ -220,8 +235,8 @@ not a key, so two hand-recorded reads of the same book stay two reads.
 
 `append` is **idempotent on `pickId`**, scoped to the study day. The caller
 mints one id per finish (the living-room screen mints it when playback starts
-and sends it back on `ended`) and may send it more than once — a retried POST,
-a player that remounts mid-story and fires `ended` twice. Because `doneToday`
+and sends it back from Player's natural-end callback) and may send it more than
+once — a retried POST or duplicate terminal notification. Because `doneToday`
 is `rows.length >= target`, a duplicate row is a duplicate **book**: the same
 child credited twice for one story.
 

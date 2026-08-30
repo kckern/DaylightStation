@@ -25,7 +25,7 @@ enough to enumerate exhaustively, which is why this document can claim coverage.
 |---|---|
 | `card` | a personal NFC card, resolving to a learner |
 | `book` | a book NFC sticker, resolving to content |
-| `ended` | the player reports the current item finished |
+| `playback-completed` | Player reports a semantic natural end, before advancing or clearing |
 
 Derived / internal:
 
@@ -135,7 +135,7 @@ sequenceDiagram
     TV->>B: play the book
     TV-->>K: story plays
 
-    TV->>B: ended, with pickId and learner
+    TV->>B: Player natural-end callback, with pickId
     B->>B: RecordStoryRead to the reading log
     B-->>TV: story-read on the school topic
     TV-->>K: back to their screen, 2 of 2
@@ -180,7 +180,7 @@ stateDiagram-v2
     TV_IDLE --> FOREIGN_PLAY: book, no session
 
     FOREIGN_PLAY --> FOREIGN_PLAY: card — refused, D2
-    FOREIGN_PLAY --> TV_IDLE: ended
+    FOREIGN_PLAY --> TV_IDLE: playback-completed
 
     PROMPT --> CONFIRM: book
     PROMPT --> PROMPT: another card — swap learner
@@ -194,8 +194,8 @@ stateDiagram-v2
     READING --> READING: card — swap context only, D4
     READING --> READING: book — assignment mode refuses, D5
     READING --> CONFIRM: book — browsing mode relaxes, D5
-    READING --> CELEBRATE: ended, target met
-    READING --> PROMPT: ended, still owed
+    READING --> CELEBRATE: playback-completed, target met
+    READING --> PROMPT: playback-completed, still owed
 
     CELEBRATE --> TEARDOWN: ceremony done
     CELEBRATE --> PROMPT: any tap cancels, D7
@@ -252,7 +252,7 @@ The two modes differ in exactly one cell, which is the point of the distinction.
 
 ### Assignment mode — hardened
 
-| State | `card` | `book` | `ended` | `expire` | `timeout` |
+| State | `card` | `book` | `playback-completed` | `expire` | `timeout` |
 |---|---|---|---|---|---|
 | `OFF` | wake → `PROMPT` | plays → `FOREIGN_PLAY` | — | — | — |
 | `TV_IDLE` | → `PROMPT` | plays → `FOREIGN_PLAY` | — | — | — |
@@ -344,7 +344,7 @@ mid-assignment child's hardening off with nothing anywhere to say so.
 |---|---|---|
 | `GET /session`, `POST /session/ack` | `location`, then `location, sessionId` | Snapshot/revision recovery for a TV that booted or reloaded after the broadcast. ACK is delivery proof, not merely a WebSocket connection. |
 | `GET /events` | `?location=&limit=` | Bounded, restart-safe timeline in `school/runtime/reading-sessions/events.yml`: opening age, ACK/progress ages, server-observed visible state and `displayedSince`, plus timestamped transitions. This is the operator answer to “what has the TV been doing?” |
-| `POST /progress` | `location, sessionId, pickId, positionSec, durationSec, paused` | Liveness heartbeat. A stalled player, long pause, or terminal media without `ended` returns to the prompt without granting credit. |
+| `POST /progress` | `location, sessionId, pickId, positionSec, durationSec, paused` | Liveness heartbeat. A stalled player, long pause, or terminal media without Player's completion callback returns to the prompt without granting credit. |
 | `POST /playing` | `location, learnerId, contentId, pickId` | **Nothing else moves a session to `reading`.** The backend cannot see the first frame; without this, `state` never leaves `confirm`, D5 never fires in the field, and every book tapped during a story is claimed as a fresh prompt. It reports PLAYBACK START, not countdown expiry — they differ by however long the content takes to load, and that gap is exactly when a stray tap misbehaves. |
 | `POST /read` | `learnerId, contentId, title, tagUid, location, pickId` | The only path that writes evidence. `pickId` is the idempotency key. It also performs `READING → PROMPT`: a session left at `reading` refuses the next book while nothing plays (D5) and never expires (D6), so the TV stays on all night. |
 | `GET /read-status` | `learnerId, studyDay, pickId` | Resolves an ambiguous completion response from the durable idempotency key, without guessing or double-counting. |
@@ -395,8 +395,8 @@ flowchart TD
   C -->|advancing| D[Keep READING]
   C -->|paused over 10 min| E[Reset PROMPT, no credit]
   C -->|no heartbeat over 90 sec| E
-  C -->|near end but no ended over 20 sec| E
-  F[ended] --> G[POST read with sessionId and pickId]
+  C -->|near end but no completion over 20 sec| E
+  F[Player natural-end callback] --> G[POST read with sessionId and pickId]
   G --> H{Response known?}
   H -->|yes| I[Refresh summary]
   H -->|network ambiguous| J[Retry once]
@@ -434,15 +434,15 @@ Not state transitions, but each must land somewhere visible.
 | TV wakes slowly, fails to wake, reloads, or misses the event | Reserve before wake; activate after the bounded wake result; a client that hydrated during `STARTING` polls until activation, applies the authoritative snapshot, and ACKs the `sessionId`. Until ACK, re-foreground then replay the current revision for up to three attempts, then send one adult HA alert. The open session remains available to a later snapshot. |
 | Reading log write fails | The story still played. Surface it; never claim a read that was not recorded |
 | Backend restart mid-session | Session state is in-memory and is lost — correct; nobody is at the reader after a restart |
-| Player remounts or completion response is lost | Must not double-count. `pickId` dedup plus one retry and `read-status` recovery. |
-| `ended` fires twice | Same `pickId` dedup |
+| Player remounts or completion response is lost | Must not double-count. Player suppresses duplicate terminal notifications; `pickId` dedup plus one retry and `read-status` recover transport ambiguity. |
+| Native terminal signals repeat | Player dispatches one semantic completion; the same `pickId` also dedups downstream evidence. |
 | Teardown suppression fails | The TV powers off before the ceremony. Guard with a test — this is the D8 hazard |
 
 ---
 
 ## 10. Invariants
 
-1. **A read is credited only on completion** — never on pick, never on play.
+1. **A read is credited only from Player's semantic natural-end callback** — never on pick, play, skip, back, load failure, or explicit clear.
 2. **Attribution is decided and stored server-side at pick time**; the client cannot replace it.
 3. **No session, no credit.** An unclaimed book tap plays and counts for nobody.
 4. **Mode is derived, never stored.** It cannot go stale and it flips by itself.

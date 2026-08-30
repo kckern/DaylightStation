@@ -20,6 +20,7 @@ export function SingalongScroller({
   contentId,
   initialData,
   advance,
+  manualAdvance = advance,
   clear,
   volume,
   playbackKeys,
@@ -123,6 +124,7 @@ export function SingalongScroller({
         contentData={data.content}
         parseContent={parseContent}
         onAdvance={advance}
+        onManualAdvance={manualAdvance}
         onClear={clear}
         playbackKeys={playbackKeys}
         ignoreKeys={ignoreKeys}

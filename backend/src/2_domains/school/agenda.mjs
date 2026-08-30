@@ -210,7 +210,7 @@ export function programStatusFor(programStatuses, entry) {
  * @param {object} args.plan              `planLearnerWork()` result — reads `.entries`
  * @param {Array}  [args.sessions]        derived session facts — same shape the planner consumes,
  *                                         plus `gradedPercent: number|null`
- * @param {object} [args.programStatuses] `{ [programStatusKey]: { doneToday, terminal?, progressLabel, score } | { error: true } }`
+ * @param {object} [args.programStatuses] `{ [programStatusKey]: { doneToday, terminal?, progressLabel, score, obligationProgress? } | { error: true } }`
  * @param {string} args.now               ISO string — compared against, never stamped
  * @param {string|null} [args.timezone]   IANA zone, or null
  * @param {number} [args.boundaryHour]    study-day rollover hour (default 4am)
@@ -285,7 +285,12 @@ export function planDailyAgenda({
     const servedToday = (subjectPassedToday || programDone)
       && !(isFocus && candidatePasses < focusBudget(candidate));
 
-    const next = !servedToday ? candidate : null;
+    const candidateStatus = candidate?.program ? programStatusFor(programStatuses, candidate) : null;
+    const next = !servedToday && candidate
+      ? (candidate.program
+        ? { ...candidate, obligationProgress: candidateStatus?.obligationProgress ?? null }
+        : candidate)
+      : null;
 
     const lockedRemedy = (!servedToday && !next && list.some((e) => e.status === 'locked'))
       ? (list.find((e) => e.status === 'locked')?.lockReason ?? null)

@@ -2476,17 +2476,17 @@
     .school-icon { display: flex; width: 58%; height: 58%; line-height: 1; }
     svg { width: 100%; height: 100%; }
 
-    // THREE STATES, matching the outcome vocabulary the domain actually has.
+    // FOUR STATES: worksheet outcome, structured program progress, or pending.
     // `pending` is the base style above (grey): planned or printed, no result
     // recorded yet.
     &[data-state='passed'], &[data-done='true'] {
       background: var(--school-board-done);
       color: var(--school-board-done-ink);
     }
-    // Scanned and under the pass threshold. Amber rather than red on purpose:
-    // this is a wall panel a sibling can read, and "try again" is the message,
-    // not "you failed". The ink is dark for contrast on a light amber.
-    &[data-state='needs-retry'] {
+    // Needs-retry and partly-complete program work are both amber rather than
+    // red. The accessible label distinguishes "try again" from "in progress";
+    // the shared colour says only that the assignment is not complete yet.
+    &[data-state='needs-retry'], &[data-state='in-progress'] {
       background: var(--school-board-retry, #e2a33c);
       color: var(--school-board-retry-ink, #2a1a05);
     }

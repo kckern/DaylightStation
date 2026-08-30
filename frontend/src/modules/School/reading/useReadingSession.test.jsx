@@ -6,7 +6,7 @@
  * field — nothing on any screen would look wrong:
  *   1. attribution is frozen at pick time (D4) — a sibling wandering past
  *      mid-story must not inherit the read;
- *   2. one pick is one `pickId`, and `ended` twice is still one book;
+ *   2. one pick is one `pickId`, and duplicate completion is still one book;
  *   3. a read that did NOT record is never shown as though it had (§9).
  */
 import { renderHook, act } from '@testing-library/react';
@@ -187,7 +187,7 @@ describe('useReadingSession — playback', () => {
     });
   });
 
-  it('a player that fires ended TWICE credits one book', async () => {
+  it('a player that reports completion twice credits one book', async () => {
     const { result } = await mountAndPick();
     await act(async () => { await result.current.notePlaybackCompleted(); });
     await act(async () => { await result.current.notePlaybackCompleted(); });

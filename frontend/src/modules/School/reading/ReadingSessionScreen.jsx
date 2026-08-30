@@ -18,9 +18,11 @@
  *
  * THE PLAYER IS MOUNTED HERE, NOT IN THE HOOK, because it needs the screen
  * framework's overlay slot — the same one `ScreenActionHandler` uses for a book
- * tapped with no session open. Two things come back off it:
- *   `onMediaRef` → the media element, whose `playing` and `ended` events are the
- *                  only honest witnesses to playback starting and finishing;
+ * tapped with no session open. Three things come back off it:
+ *   `onMediaRef` → the media element, whose `playing` and `timeupdate` events
+ *                  witness playback starting and sampled progress;
+ *   `onPlaybackCompleted` → Player's semantic natural-end notification, the
+ *                  only honest witness to playback finishing;
  *   `clear`      → the Player is done for ANY reason, which is not the same as
  *                  the story having finished, and must never be read as one.
  */
@@ -92,21 +94,17 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   // outlives several renders, and `removeEventListener` matches by reference.
   const listeners = useRef({
     playing: () => handlers.current.notePlaybackStarted?.(),
-    ended: () => handlers.current.notePlaybackCompleted?.(),
     timeupdate: (event) => handlers.current.notePlaybackProgress?.(event.currentTarget),
   });
 
-  // LOGGED, because these two listeners are the ONLY witnesses to a story
-  // starting and finishing. Once they are off the element, a story can play to
-  // its end and complete in total silence — which is exactly what happened on
-  // 2026-08-28: the Player went away with no `ended` and no `clear` reaching
-  // this widget, and there was no line anywhere saying the ears had been
-  // removed. `reason` distinguishes an ordinary swap from a teardown.
+  // LOGGED because these listeners witness playback starting and sampled
+  // progress. Completion no longer depends on their attachment: Player owns
+  // natural-end semantics and calls the callback below before advance/clear.
+  // `reason` distinguishes an ordinary swap from a teardown.
   const detachMedia = useCallback((reason = 'swap') => {
     const el = mediaRef.current;
     if (!el) return;
     el.removeEventListener('playing', listeners.current.playing);
-    el.removeEventListener('ended', listeners.current.ended);
     el.removeEventListener('timeupdate', listeners.current.timeupdate);
     mediaRef.current = null;
     readingLog.playback('media-detached', { reason });
@@ -117,7 +115,6 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     detachMedia();
     mediaRef.current = el;
     el.addEventListener('playing', listeners.current.playing);
-    el.addEventListener('ended', listeners.current.ended);
     el.addEventListener('timeupdate', listeners.current.timeupdate);
     readingLog.playback('media-attached', { tag: el.tagName?.toLowerCase?.() ?? null });
   }, [detachMedia]);
@@ -132,10 +129,11 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     showOverlay(Player, {
       play: { contentId: committed.contentId },
       onMediaRef: attachMedia,
+      onPlaybackCompleted: () => handlers.current.notePlaybackCompleted?.(),
       clear: () => {
         // The Player is done for SOME reason — end of content, a load failure,
         // a bail, a queue running out. Logged on arrival because `clear` and
-        // the element's own `ended` are the two ways a story can finish, and
+        // Player's semantic completion callback are the two terminal signals, and
         // on 2026-08-28 NEITHER of them fired: without a line here there is no
         // way to tell "clear never came" from "clear came and did nothing".
         // NOT named `ended` — an earlier version was, and it measured the wrong
@@ -153,8 +151,8 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
 
   const session = useReadingSession({ location, confirmMs, onPlay, onCue: cueTone });
 
-  // Rebound every render so the listeners registered above always call the
-  // freshest closures — the element outlives several renders of this component.
+  // Rebound every render so the media listeners and Player completion callback
+  // always call the freshest closures.
   handlers.current.notePlaybackDismissed = session.notePlaybackDismissed;
   handlers.current.notePlaybackStarted = session.notePlaybackStarted;
   handlers.current.notePlaybackCompleted = session.notePlaybackCompleted;

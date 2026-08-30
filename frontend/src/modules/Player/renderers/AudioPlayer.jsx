@@ -15,6 +15,7 @@ const logger = getLogger().child({ component: 'AudioPlayer' });
 export function AudioPlayer({ 
   media, 
   advance, 
+  manualAdvance = advance,
   clear, 
   shader, 
   setShader, 
@@ -55,6 +56,7 @@ export function AudioPlayer({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
+    onManualEnd: manualAdvance,
     onClear: clear,
     isAudio: true,
     isVideo: false,
@@ -301,6 +303,7 @@ export function AudioPlayer({
 AudioPlayer.propTypes = {
   media: PropTypes.object.isRequired,
   advance: PropTypes.func.isRequired,
+  manualAdvance: PropTypes.func,
   clear: PropTypes.func.isRequired,
   shader: PropTypes.string,
   setShader: PropTypes.func,

@@ -74,6 +74,28 @@ describe('planDailyAgenda', () => {
     expect(sections[0]).toMatchObject({ subject: 'language', servedToday: true, next: null, progressLabel: 'Day 61' });
   });
 
+  it('copies only the selected program\'s structured obligation progress onto next', () => {
+    const story = entry({
+      unitId: 'story-time:daily', subject: 'english', courseId: null, sequence: null,
+      program: 'story-time', programInstance: 'daily', cadence: 'daily',
+    });
+    const { sections } = planDailyAgenda(args({
+      plan: plan([story]),
+      programStatuses: { 'story-time::daily': {
+        doneToday: false,
+        progressLabel: 'words that must not be parsed',
+        progress: [{ label: 'Lifetime', completed: 80, total: 100 }],
+        obligationProgress: { completed: 1, total: 2 },
+        score: null,
+      } },
+    }));
+    expect(sections[0].next).toMatchObject({
+      unitId: 'story-time:daily',
+      obligationProgress: { completed: 1, total: 2 },
+    });
+    expect(sections[0].next.obligationProgress).not.toEqual({ completed: 80, total: 100 });
+  });
+
   it('a launcher error marks the section unavailable without touching others', () => {
     const { sections } = planDailyAgenda(args({
       plan: plan([

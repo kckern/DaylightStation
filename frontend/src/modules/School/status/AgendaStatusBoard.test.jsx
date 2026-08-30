@@ -48,6 +48,29 @@ describe('AgendaStatusBoard model', () => {
     expect(summary.done).toBe(1);
   });
 
+  it('keeps one story-time disc gray, amber, then green for 0/2, 1/2, 2/2', () => {
+    const entry = { unitId: 'story-time:daily', subject: 'english' };
+    const at = (completed) => summarize([{
+      subject: 'english',
+      next: { unitId: 'story-time:daily', obligationProgress: { completed, total: 2 } },
+    }], [], [entry]);
+    const done = summarize([{
+      subject: 'english',
+      servedWork: [{ unitId: 'story-time:daily', title: 'Story time' }],
+    }], [], [entry]);
+
+    expect(at(0)).toMatchObject({ total: 1, done: 0, segments: [{ state: 'pending' }] });
+    expect(at(1)).toMatchObject({ total: 1, done: 0, segments: [{ state: 'in-progress' }] });
+    expect(done).toMatchObject({ total: 1, done: 1, segments: [{ state: 'passed' }] });
+  });
+
+  it('does not infer obligation progress from a display label', () => {
+    const summary = summarize([{
+      subject: 'english', progressLabel: '1 of 2 stories', next: { unitId: 'story-time:daily' },
+    }], [], [{ unitId: 'story-time:daily', subject: 'english' }]);
+    expect(summary.segments[0].state).toBe('pending');
+  });
+
   it('takes the union of evidence and plan, so a "one more?" lesson still shows', () => {
     // A lesson taken through the chain never appears as a section's `next`
     // (the subject is already served), but the child is holding the sheet.
@@ -269,6 +292,23 @@ describe('AgendaStatusBoard render', () => {
     expect(board.textContent).not.toMatch(/\d+%/);
   });
 
+  it('renders partial program progress amber with accessible in-progress wording', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+      sections: [{
+        subject: 'english',
+        next: { unitId: 'story-time:daily', obligationProgress: { completed: 1, total: 2 } },
+      }],
+      entries: [{ unitId: 'story-time:daily', subject: 'english' }],
+    } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-24" />);
+    await waitFor(() => expect(screen.getByText('0 of 1')).toBeTruthy());
+
+    const board = screen.getByTestId('agenda-status-board');
+    expect(board.querySelectorAll('[data-state="in-progress"]')).toHaveLength(1);
+    expect(screen.getByLabelText('English & Literature: in progress')).toBeTruthy();
+  });
+
   it('every segment draws a subject icon and states its subject and state by name', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
       { learnerId: 'learner1', sessions: [
@@ -326,6 +366,7 @@ describe('a scan updates the board immediately', () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [], entries: [] } });
     render(<AgendaStatusBoard kids={KIDS} day="2026-08-26" />);
     await waitFor(() => expect(wsHandlers.some((h) => h.topic === 'omr')).toBe(true));
+    expect(wsHandlers.some((h) => h.topic === 'school')).toBe(true);
   });
 
   it('re-reads on a scan, so the disc turns without waiting out the poll', async () => {
@@ -358,5 +399,43 @@ describe('a scan updates the board immediately', () => {
     const calls = schoolApi.teacherDay.mock.calls.length;
     wsHandlers.find((h) => h.topic === 'omr').cb({ event: 'reader-heartbeat' });
     expect(schoolApi.teacherDay.mock.calls.length).toBe(calls);
+  });
+
+  it.each(['story-read', 'piano-lesson-complete', 'program-day-bypass-changed'])(
+    're-reads immediately on a relevant %s event for a displayed learner',
+    async (event) => {
+      schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+      schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+        sections: [{ subject: 'math', next: { unitId: 'm.01' } }],
+        entries: [{ unitId: 'm.01', subject: 'math' }],
+      } });
+      render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
+      await waitFor(() => expect(screen.getByText('0 of 1')).toBeTruthy());
+      const before = schoolApi.teacherDay.mock.calls.length;
+
+      wsHandlers.find((h) => h.topic === 'school').cb({
+        event, learnerId: 'learner1', studyDay: '2026-08-26', studyDate: '2026-08-26',
+      });
+
+      await waitFor(() => expect(schoolApi.teacherDay.mock.calls.length).toBeGreaterThan(before));
+    },
+  );
+
+  it('ignores story events outside the displayed roster, from another study day, and unrelated traffic', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+      sections: [{ subject: 'math', next: { unitId: 'm.01' } }],
+      entries: [{ unitId: 'm.01', subject: 'math' }],
+    } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
+    await waitFor(() => expect(screen.getByText('0 of 1')).toBeTruthy());
+    const school = wsHandlers.find((h) => h.topic === 'school');
+    const before = schoolApi.teacherDay.mock.calls.length;
+
+    school.cb({ event: 'story-read', learnerId: 'learner2', studyDay: '2026-08-26' });
+    school.cb({ event: 'story-read', learnerId: 'learner1', studyDay: '2026-08-25' });
+    school.cb({ event: 'reader-heartbeat', learnerId: 'learner1', studyDay: '2026-08-26' });
+
+    expect(schoolApi.teacherDay.mock.calls.length).toBe(before);
   });
 });

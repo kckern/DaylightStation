@@ -17,24 +17,32 @@ describe('StoryTimeProgramLauncher', () => {
     const s = await makeLauncher({ rows: [] }).status({ userId: 'learner-c' });
     expect(s.doneToday).toBe(false);
     expect(s.progressLabel).toBe('0 of 2 stories');
+    expect(s.obligationProgress).toEqual({ completed: 0, total: 2 });
+    expect(s.servedWork).toEqual([]);
   });
 
   it('is not done partway', async () => {
     const s = await makeLauncher({ rows: [{ title: 'One' }] }).status({ userId: 'learner-c' });
     expect(s.doneToday).toBe(false);
     expect(s.progressLabel).toBe('1 of 2 stories');
+    expect(s.obligationProgress).toEqual({ completed: 1, total: 2 });
+    expect(s.servedWork).toEqual([]);
   });
 
   it('is done at the target', async () => {
     const s = await makeLauncher({ rows: [{ title: 'One' }, { title: 'Two' }] }).status({ userId: 'learner-c' });
     expect(s.doneToday).toBe(true);
     expect(s.progressLabel).toBe('2 of 2 stories');
+    expect(s.obligationProgress).toEqual({ completed: 2, total: 2 });
+    expect(s.servedWork).toEqual([{ unitId: 'story-time:daily', title: 'Story time' }]);
   });
 
   it('stays done past the target — extra stories are never a penalty', async () => {
     const s = await makeLauncher({ rows: [{}, {}, {}] }).status({ userId: 'learner-c' });
     expect(s.doneToday).toBe(true);
     expect(s.progressLabel).toBe('3 of 2 stories');
+    expect(s.obligationProgress).toEqual({ completed: 2, total: 2 });
+    expect(s.servedWork).toEqual([{ unitId: 'story-time:daily', title: 'Story time' }]);
   });
 
   it('is never terminal — a daily obligation does not complete', async () => {
@@ -64,6 +72,7 @@ describe('StoryTimeProgramLauncher', () => {
     const s = await launcher.status({ userId: 'learner-c' });
     expect(s.error).toBe(true);
     expect(s.doneToday).toBe(false);
+    expect(s.obligationProgress).toBeNull();
   });
   // Deviation from the plan, deliberate: the plan returned `{ok:false, reason}`,
   // but both callers read `decision` and then relay `message` verbatim — an
@@ -165,6 +174,7 @@ describe('StoryTimeProgramLauncher', () => {
     expect(s.enrolled).toBe(false);
     expect(s.target).toBe(null);
     expect(s.count).toBe(null);
+    expect(s.obligationProgress).toBeNull();
   });
 
   it('an EMPTY but readable assignment record is not enrolled either', async () => {

@@ -225,6 +225,31 @@ describe('ReadingSessionScreen', () => {
       expect(screen.queryByTestId('reading-session')).toBeNull();
     });
 
+    it('records semantic Player completion once before cleanup, but not a genuine dismissal', async () => {
+      render(<ReadingSessionScreen confirmMs={100} />);
+      await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
+      await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:620681', pickId: 'pick-1' });
+      await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+      const mounted = h.overlay.shown[0].props;
+
+      let completion;
+      act(() => {
+        completion = mounted.onPlaybackCompleted({ reason: 'natural-end', assetId: 'plex:620681' });
+        mounted.clear();
+        mounted.onPlaybackCompleted({ reason: 'natural-end', assetId: 'plex:620681' });
+      });
+      await act(async () => { await completion; });
+
+      const readPosts = fetch.mock.calls.filter(([url]) => String(url).includes('/reading/read'));
+      expect(readPosts).toHaveLength(1);
+
+      // A new story that is merely dismissed must not create another read.
+      await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:999', pickId: 'pick-2' });
+      await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+      h.overlay.shown.at(-1).props.clear();
+      expect(fetch.mock.calls.filter(([url]) => String(url).includes('/reading/read'))).toHaveLength(1);
+    });
+
     // D10: a child tapping the same book twice is expressing certainty. The 3 s
     // media dedup window would otherwise swallow the second tap entirely.
     it('the SAME book tapped again confirms immediately', async () => {

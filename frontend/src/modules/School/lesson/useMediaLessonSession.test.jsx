@@ -4,7 +4,7 @@
  *
  *   1. the HARD GATE stays hard — a failed answer POST clears nothing, and a
  *      "rewind and rewatch" clears nothing either;
- *   2. `ended` is the only completion — `clear` (a bail, a load failure) must
+ *   2. semantic natural completion is the only completion — `clear` must
  *      never POST /ended;
  *   3. a session that died server-side (410) can never leave a frozen picture
  *      with no way out;
@@ -290,7 +290,7 @@ describe('useMediaLessonSession', () => {
   });
 
   // ── completion ───────────────────────────────────────────────────────────
-  it('credits the lesson on `ended`, once, then celebrates and finishes', async () => {
+  it('credits the lesson on natural completion once, then celebrates and finishes', async () => {
     const { result } = await mountOpen();
     await act(async () => { await result.current.notePlaybackStarted(); });
     await act(async () => { await result.current.notePlaybackCompleted(); });
@@ -358,7 +358,7 @@ describe('useMediaLessonSession', () => {
     expect(result.current.notice).toMatchObject({ tone: 'error', title: "I couldn't save that lesson" });
   });
 
-  it('`clear` is NOT `ended` — a bail credits nothing', async () => {
+  it('`clear` is not natural completion — a bail credits nothing', async () => {
     const { result } = await mountOpen();
     await act(async () => { await result.current.notePlaybackStarted(); });
     await act(async () => { await result.current.notePlaybackDismissed(); });
@@ -416,7 +416,7 @@ describe('useMediaLessonSession', () => {
     expect(result.current.checkpoints).toEqual([]);
   });
 
-  it('a 410 on `ended` finishes quietly — it never claims a lesson it could not record', async () => {
+  it('a 410 on completion finishes quietly — it never claims a lesson it could not record', async () => {
     stubApi({ lessonEnded: vi.fn(() => bad(410)) });
     const { result } = await mountOpen();
     await act(async () => { await result.current.notePlaybackStarted(); });

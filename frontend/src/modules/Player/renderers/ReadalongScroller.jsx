@@ -20,6 +20,7 @@ export function ReadalongScroller({
   contentId,
   initialData,
   advance,
+  manualAdvance = advance,
   clear,
   onProgress,
   volume,
@@ -178,6 +179,7 @@ export function ReadalongScroller({
         contentData={data.content}
         parseContent={parseContent}
         onAdvance={advance}
+        onManualAdvance={manualAdvance}
         onClear={clear}
         onProgress={onProgress}
         playbackKeys={playbackKeys}
