@@ -126,6 +126,9 @@ import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAda
 
 // UPC Gateway for barcode lookups
 import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
+import { YamlFitnessHistoryRepository } from '#adapters/fitness/YamlFitnessHistoryRepository.mjs';
+import { ConfigQueryService } from '#apps/config/ConfigQueryService.mjs';
+import { ConfigApiYamlSource } from '#adapters/config/ConfigApiYamlSource.mjs';
 
 // Thermal printer registry (multi-printer support)
 import { ThermalPrinterAdapter, ThermalPrinterRegistry } from '#adapters/hardware/thermal-printer/index.mjs';
@@ -2198,8 +2201,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Config router - serves configuration to frontend
+  const configApiYamlSource = new ConfigApiYamlSource({
+    contentPrefixesPath: path.join(configService.getHouseholdPath(''), 'media', 'content-prefixes'),
+    playerConfigPath: path.join(configService.getHouseholdPath(''), 'player', 'config'),
+  });
   v1Routers.config = createConfigRouter({
-    householdDir: configService.getHouseholdPath(''),
+    configQueryService: new ConfigQueryService({
+      loadContentPrefixes: configApiYamlSource.loadContentPrefixes,
+      loadPlayerConfig: configApiYamlSource.loadPlayerConfig,
+      logger: rootLogger.child({ module: 'config-query' }),
+    }),
     logger: rootLogger.child({ module: 'config-api' })
   });
 
@@ -3265,7 +3276,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         lookbackDays: stravaLookbackDays,
         selectionConfig: stravaSelectionConfig,
         timezone: stravaTimezone,
-        fitnessHistoryDir: configService.getHouseholdPath('fitness/log'),
+        historyRepository: new YamlFitnessHistoryRepository({
+          root: configService.getHouseholdPath('fitness/log'),
+        }),
+        pause: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
         logger: rootLogger.child({ module: 'strava-reconciliation' }),
       });
 
@@ -5433,7 +5447,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Register morning debrief as a scheduled task (via agents scheduler)
   const agentsScheduler = v1Routers.agents?.scheduler;
-  if (agentsScheduler && journalistServices?.journalistContainer) {
+  if (agentsScheduler && journalistServices?.journalistContainer && journalistAiGateway) {
     const debriefCron = journalistConfig.morning_debrief?.schedule || '0 7 * * *';
     const debriefUsername = configService.getHeadOfHousehold?.() || 'user_1';
 
@@ -5481,6 +5495,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         });
       }
     });
+  } else if (agentsScheduler && journalistServices?.journalistContainer) {
+    rootLogger.warn?.('journalist.scheduled_debrief.disabled', { reason: 'ai_gateway_unavailable' });
   }
 
   // AI API router - provides direct AI endpoints (/api/ai/*)

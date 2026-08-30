@@ -2700,7 +2700,9 @@ export async function createAgentsServices(config) {
       messagingGateway,
       healthStore,
       nutriListStore,
-      config: configService,
+      // The orchestrator needs the nutrition-goal contract, not the broad
+      // ConfigService. This normalized config also supplies safe defaults.
+      config: nutribotConfig,
       logger,
     });
   }
@@ -3278,9 +3280,12 @@ export function createHarvesterServices(config) {
   const getHouseholdConfig = (householdId) => configService.getHouseholdConfig(householdId);
   const getUserDir = (user) => configService.getUserDir(user);
   const secret = (key) => configService?.getSecret?.(key);
-  const googleClientId = secret('GOOGLE_CLIENT_ID');
-  const googleClientSecret = secret('GOOGLE_CLIENT_SECRET');
-  const googleRedirectUri = secret('GOOGLE_REDIRECT_URI');
+  // OAuth client credentials are system-scoped; user auth holds refresh tokens.
+  // Do not use the legacy flat-secret names here: production stores these in
+  // data/system/auth/google.yml.
+  const googleClientId = configService.getSystemAuth?.('google', 'client_id') || secret('GOOGLE_CLIENT_ID');
+  const googleClientSecret = configService.getSystemAuth?.('google', 'client_secret') || secret('GOOGLE_CLIENT_SECRET');
+  const googleRedirectUri = configService.getSystemAuth?.('google', 'redirect_uri') || secret('GOOGLE_REDIRECT_URI');
   const googleRefreshToken = secret('GOOGLE_REFRESH_TOKEN');
   const clickupAdapterConfig = configService?.isReady?.() ? configService.getAdapterConfig('clickup') : null;
   const weatherConfig = configService?.isReady?.()
@@ -3500,9 +3505,9 @@ export function createHarvesterServices(config) {
       lifelogStore,
       authStore,
       getUserAuth,
-      clientId: secret('WITHINGS_CLIENT_ID') || secret('WITHINGS_CLIENT'),
-      clientSecret: secret('WITHINGS_CLIENT_SECRET') || secret('WITHINGS_SECRET'),
-      redirectUri: secret('WITHINGS_REDIRECT'),
+      clientId: configService.getSystemAuth?.('withings', 'client_id') || secret('WITHINGS_CLIENT_ID') || secret('WITHINGS_CLIENT'),
+      clientSecret: configService.getSystemAuth?.('withings', 'client_secret') || secret('WITHINGS_CLIENT_SECRET') || secret('WITHINGS_SECRET'),
+      redirectUri: configService.getSystemAuth?.('withings', 'redirect_uri') || secret('WITHINGS_REDIRECT'),
       weightProcessor: new WeightProcessor({
         lifelogStore,
         timezone: harvesterTimezone,

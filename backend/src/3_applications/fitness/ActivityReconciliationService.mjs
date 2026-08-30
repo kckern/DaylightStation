@@ -34,10 +34,14 @@ export class ActivityReconciliationService {
    * @param {number} config.lookbackDays - Days of session history to sweep
    * @param {Object} config.selectionConfig - Primary-media selection config (from buildSelectionConfig)
    * @param {string} config.timezone - IANA timezone for the date-range sweep
-   * @param {string} config.fitnessHistoryDir - Path to fitness history directory
+   * @param {{list: Function, save: Function, remove: Function}} config.historyRepository - Fitness session persistence
    * @param {Object} [config.logger]
    */
   constructor({ activityGateway, lookbackDays, selectionConfig, timezone, historyRepository, pause = async () => {}, logger = console }) {
+    if (!historyRepository || typeof historyRepository.list !== 'function'
+      || typeof historyRepository.save !== 'function' || typeof historyRepository.remove !== 'function') {
+      throw new TypeError('ActivityReconciliationService requires historyRepository with list(), save(), and remove()');
+    }
     this.#activityGateway = activityGateway;
     this.#lookbackDays = lookbackDays;
     this.#selectionConfig = selectionConfig;

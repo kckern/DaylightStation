@@ -76,8 +76,8 @@ export class FitnessSyncerAdapter {
     this.#authStore = authStore;
     this.#configService = configService;
     this.#logger = logger;
-    this.#clientId = clientId;
-    this.#clientSecret = clientSecret;
+    this.#clientId = clientId || configService?.getSystemAuth?.('fitsync', 'client_id') || null;
+    this.#clientSecret = clientSecret || configService?.getSystemAuth?.('fitsync', 'client_secret') || null;
 
     // In-memory token cache
     this.#tokenCache = {
@@ -115,8 +115,12 @@ export class FitnessSyncerAdapter {
     }
 
     // Check persistent store (use configService if available, otherwise authStore)
-    const authData = this.#configService?.getUserAuth?.('fitsync', username) || 
-                     await this.#authStore?.load?.(username, 'fitsync');
+    // The durable user credential is named `fitnesssyncer.yml`; retain the
+    // historical `fitsync` alias for already-written refreshes.
+    const authData = this.#configService?.getUserAuth?.('fitnesssyncer', username)
+      || this.#configService?.getUserAuth?.('fitsync', username)
+      || await this.#authStore?.load?.(username, 'fitnesssyncer')
+      || await this.#authStore?.load?.(username, 'fitsync');
 
     // Check if stored token is still valid (with buffer)
     if (authData?.access_token && authData.expires_at) {

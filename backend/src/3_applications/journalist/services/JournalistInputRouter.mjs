@@ -20,6 +20,7 @@ export class JournalistInputRouter {
   #logger;
   #userResolver;
   #userIdentityService;
+  #aiGatewayAvailable;
   /** @type {import('../telegram/IInputEvent.mjs').IInputEvent|null} */
   #currentEvent;
   /** @type {import('../../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext|null} */
@@ -40,6 +41,7 @@ export class JournalistInputRouter {
     this.#container = container;
     this.#userIdentityService = options.userIdentityService || null;
     this.#userResolver = options.userResolver;
+    this.#aiGatewayAvailable = options.aiGatewayAvailable !== false;
     this.#logger = options.logger || console;
     this.#currentEvent = null;
     this.#responseContext = null;
@@ -134,6 +136,11 @@ export class JournalistInputRouter {
 
     // Check for special starts (🎲, ❌)
     if (this.#isSpecialStart(text)) {
+      // 🎲 starts a new AI-generated prompt; ❌ only clears state and remains
+      // available while the model is offline.
+      if (!this.#aiGatewayAvailable && (text.includes('🎲') || text.toLowerCase().includes('change'))) {
+        return this.#unavailable(conversationId, 'special-start');
+      }
       const useCase = this.#container.getHandleSpecialStart?.();
       if (useCase) {
         return useCase.execute({
@@ -191,6 +198,7 @@ export class JournalistInputRouter {
     }
 
     // Regular text entry - route to ProcessTextEntry
+    if (!this.#aiGatewayAvailable) return this.#unavailable(conversationId, 'text');
     const useCase = this.#container.getProcessTextEntry();
     return useCase.execute({
       chatId: conversationId,
@@ -241,6 +249,7 @@ export class JournalistInputRouter {
   async #handleVoice(conversationId, payload, messageId, metadata) {
     this.#logger.debug?.('router.voice', { conversationId, hasFileId: !!payload.fileId });
 
+    if (!this.#aiGatewayAvailable) return this.#unavailable(conversationId, 'voice');
     const useCase = this.#container.getProcessVoiceEntry();
     return useCase.execute({
       chatId: conversationId,
@@ -268,6 +277,11 @@ export class JournalistInputRouter {
       }
     } catch (e) {
       // Ignore delete errors (message may already be gone)
+    }
+
+    const aiCommands = new Set(['prompt', 'start', 'yesterday', 'counsel', 'therapist', 'analyze']);
+    if (!this.#aiGatewayAvailable && aiCommands.has(String(command || '').toLowerCase())) {
+      return this.#unavailable(conversationId, 'command');
     }
 
     const useCase = this.#container.getHandleSlashCommand?.();
@@ -389,6 +403,7 @@ export class JournalistInputRouter {
       }
 
       case 'ask': {
+        if (!this.#aiGatewayAvailable) return this.#unavailable(conversationId, 'debrief');
         // Start interview flow (generate questions on-demand)
         const stateStore = this.#container.getConversationStateStore();
         const state = await stateStore.get(conversationId);
@@ -439,6 +454,13 @@ export class JournalistInputRouter {
   }
 
   // ==================== Helpers ====================
+
+  async #unavailable(conversationId, type) {
+    const message = 'Journal prompts and analysis are temporarily unavailable. Please try again shortly.';
+    this.#logger.warn?.('journalist.ai.unavailable', { conversationId, type });
+    await this.#getMessaging(conversationId).sendMessage(message, {});
+    return { ok: false, code: 'AI_UNAVAILABLE', error: message };
+  }
 
   /**
    * Resolve user ID from platform identity using UserResolver

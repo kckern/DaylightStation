@@ -10,7 +10,10 @@ function makeContainer(spies) {
     getShowScaleDensityHelp: () => ({ execute: spies.help }),
     getLogScaleFoodFromText: () => ({ execute: spies.describe }),
     getLogFoodFromText: () => ({ execute: spies.logText }),
+    getLogFoodFromVoice: () => ({ execute: spies.logVoice }),
     getProcessRevisionInput: () => ({ execute: spies.revision }),
+    getLogFoodFromImage: () => ({ execute: spies.logImage }),
+    getRetryImageDetection: () => ({ execute: spies.retryImage }),
   };
 }
 
@@ -24,7 +27,10 @@ describe('NutribotInputRouter scale routing', () => {
       help: jest.fn().mockResolvedValue({ ok: true }),
       describe: jest.fn().mockResolvedValue({ ok: true }),
       logText: jest.fn().mockResolvedValue({ ok: true }),
+      logVoice: jest.fn().mockResolvedValue({ ok: true }),
       revision: jest.fn().mockResolvedValue({ ok: true }),
+      logImage: jest.fn().mockResolvedValue({ ok: true }),
+      retryImage: jest.fn().mockResolvedValue({ ok: true }),
     };
     router = new NutribotInputRouter(makeContainer(spies), {
       logger: { debug() {}, info() {}, warn() {}, error() {} },
@@ -76,5 +82,52 @@ describe('NutribotInputRouter scale routing', () => {
   it("routes 'sh' (h:0) to ShowScaleDensityHelp with showHelp false", async () => {
     await router.handleCallback(evt({ payload: { callbackData: JSON.stringify({ cmd: 'sh', id: 'log1', h: 0 }) } }), {});
     expect(spies.help).toHaveBeenCalledWith(expect.objectContaining({ logUuid: 'log1', showHelp: false }));
+  });
+
+  it('returns a visible refusal instead of throwing when image AI is unavailable', async () => {
+    router = new NutribotInputRouter(makeContainer(spies), {
+      aiGatewayAvailable: false,
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+    });
+    const responseContext = { sendMessage: jest.fn().mockResolvedValue() };
+
+    await expect(router.handleImage(evt({ payload: { fileId: 'photo-1' } }), responseContext))
+      .resolves.toMatchObject({ ok: false, code: 'AI_UNAVAILABLE' });
+
+    expect(spies.logImage).not.toHaveBeenCalled();
+    expect(responseContext.sendMessage).toHaveBeenCalledWith(expect.stringContaining('temporarily unavailable'));
+  });
+
+  it.each([
+    ['text', (router, event, context) => router.handleText(event, context), 'logText'],
+    ['voice', (router, event, context) => router.handleVoice(event, context), 'logVoice'],
+  ])('does not invoke AI-backed %s intake when AI is unavailable', async (_type, invoke, spyName) => {
+    router = new NutribotInputRouter(makeContainer(spies), {
+      aiGatewayAvailable: false,
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+    });
+    const responseContext = { sendMessage: jest.fn().mockResolvedValue() };
+
+    await expect(invoke(router, evt({ payload: { text: 'apple', fileId: 'voice-1' } }), responseContext))
+      .resolves.toMatchObject({ ok: false, code: 'AI_UNAVAILABLE' });
+
+    expect(spies[spyName]).not.toHaveBeenCalled();
+    expect(responseContext.sendMessage).toHaveBeenCalledWith(expect.stringContaining('temporarily unavailable'));
+  });
+
+  it('does not retry image detection through AI when unavailable', async () => {
+    router = new NutribotInputRouter(makeContainer(spies), { aiGatewayAvailable: false, logger: { warn() {} } });
+    const responseContext = { sendMessage: jest.fn().mockResolvedValue() };
+    await expect(router.handleCallback(evt({ payload: { callbackData: JSON.stringify({ cmd: 'ir' }) } }), responseContext))
+      .resolves.toMatchObject({ code: 'AI_UNAVAILABLE' });
+    expect(spies.retryImage).not.toHaveBeenCalled();
+  });
+
+  it('does not send scale descriptions to AI when unavailable', async () => {
+    spies.stateStore.get = jest.fn().mockResolvedValue({ activeFlow: 'scale_describe', flowState: { pendingLogUuid: 'log1' } });
+    router = new NutribotInputRouter(makeContainer(spies), { aiGatewayAvailable: false, logger: { debug() {}, warn() {} } });
+    await expect(router.handleText(evt({ payload: { text: 'oatmeal' } }), { sendMessage: jest.fn().mockResolvedValue() }))
+      .resolves.toMatchObject({ code: 'AI_UNAVAILABLE' });
+    expect(spies.describe).not.toHaveBeenCalled();
   });
 });

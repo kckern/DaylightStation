@@ -140,10 +140,22 @@ export class WeatherHarvester extends IHarvester {
 
       const weatherResponse = weatherResponses[0];
       const airQualityResponse = airQualityResponses[0];
+      if (!weatherResponse?.hourly || !airQualityResponse?.current) {
+        throw new InfrastructureError('Weather provider returned an incomplete response', {
+          code: 'UPSTREAM_INCOMPLETE_RESPONSE',
+          service: 'Weather',
+        });
+      }
       const currentAir = airQualityResponse.current();
 
       const utcOffsetSeconds = weatherResponse.utcOffsetSeconds();
       const hourlyWeather = weatherResponse.hourly();
+      if (!hourlyWeather?.time || !hourlyWeather?.timeEnd || !hourlyWeather?.interval) {
+        throw new InfrastructureError('Weather provider returned no hourly timeline', {
+          code: 'UPSTREAM_INCOMPLETE_RESPONSE',
+          service: 'Weather',
+        });
+      }
 
       // Build hourly data
       const hourly = this.#buildHourlyData(hourlyWeather, utcOffsetSeconds, tz);
