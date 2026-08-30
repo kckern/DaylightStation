@@ -202,11 +202,11 @@ describe('FitnessSyncerAdapter', () => {
 
       await adapter.getAccessToken();
 
-      // Production save signature: save(username, 'fitsync', data) — first arg is undefined
+      // Persist in the canonical per-user FitnessSyncer credential file.
       // since no username is passed in this test invocation.
       expect(mockAuthStore.set).toHaveBeenCalledWith(
         undefined,
-        'fitsync',
+        'fitnesssyncer',
         expect.objectContaining({
           access_token: 'new-access-token',
           refresh: 'new-refresh-token',
@@ -455,7 +455,7 @@ describe('FitnessSyncerAdapter', () => {
       expect(params.get('client_secret')).toBe('stored-client-secret');
     });
 
-    test('prefers constructor credentials over stored credentials', async () => {
+    test('prefers the client pair stored with a refresh token', async () => {
       mockAuthStore.get.mockResolvedValue({
         refresh: 'test-refresh-token',
         client_id: 'stored-client-id',
@@ -473,8 +473,8 @@ describe('FitnessSyncerAdapter', () => {
       await adapter.getAccessToken();
 
       const params = mockHttpClient.post.mock.calls[0][1];
-      expect(params.get('client_id')).toBe('test-client-id');
-      expect(params.get('client_secret')).toBe('test-client-secret');
+      expect(params.get('client_id')).toBe('stored-client-id');
+      expect(params.get('client_secret')).toBe('stored-client-secret');
     });
   });
 
