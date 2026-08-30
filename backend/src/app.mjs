@@ -5136,6 +5136,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     nutriListStore: healthServices.nutriListStore,
     // Task 9: pass foodLogStore so NutritionEventAdapter can be wired for baselines
     foodLogStore: nutribotServices.foodLogStore,
+    nutribotConfig,
     lifeplanServices: {
       container: lifeplanResult.container,
       services: lifeplanResult.services,
