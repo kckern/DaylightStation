@@ -2165,6 +2165,7 @@ export function createHomebotServices(config) {
  * @param {Object} [config.upcGateway] - UPC lookup gateway
  * @param {Object} [config.googleImageGateway] - Google Image Search gateway
  * @param {Object} [config.conversationStateStore] - State store for conversation flow
+ * @param {Object} [config.reportRenderer] - PNG report renderer; adapted to report delivery here
  * @param {Object} [config.reportDelivery] - Prepared-report delivery capability
  * @param {Object} [config.nutribotConfig] - NutriBot configuration
  * @param {Object} [config.agentOrchestrator] - AgentOrchestrator for delegating to health-coach agent
@@ -2180,6 +2181,7 @@ export async function createNutribotServices(config) {
     upcGateway,
     googleImageGateway,
     conversationStateStore,
+    reportRenderer = null,
     reportDelivery,
     nutribotConfig: rawNutribotConfig = {},
     reconciliationReader,
@@ -2214,6 +2216,19 @@ export async function createNutribotServices(config) {
   const { BarcodeImageAdapter } = await import('#adapters/nutribot/BarcodeImageAdapter.mjs');
   const barcodeGenerator = new BarcodeImageAdapter({ logger });
 
+  // Preserve the application boundary: GenerateDailyReport receives a delivery
+  // capability, never a renderer or temporary-file convention. App composition
+  // historically supplied `reportRenderer` under its old name, leaving this
+  // undefined and silently downgrading every report to text.
+  let resolvedReportDelivery = reportDelivery ?? null;
+  if (!resolvedReportDelivery && reportRenderer) {
+    const { TemporaryNutriReportDelivery } = await import('#adapters/nutribot/TemporaryNutriReportDelivery.mjs');
+    resolvedReportDelivery = new TemporaryNutriReportDelivery({ renderer: reportRenderer, logger });
+  }
+  logger.info?.('nutribot.report.delivery.configured', {
+    mode: resolvedReportDelivery ? 'photo' : 'text-fallback',
+  });
+
   // Build food icon list from available icon files on disk
   const foodIconDir = configService.getPath('icons') + '/food';
   const foodIconCatalog = new FilesystemFoodIconCatalog({ iconDir: foodIconDir });
@@ -2244,7 +2259,7 @@ export async function createNutribotServices(config) {
     foodLogStore,
     nutriListStore,
     conversationStateStore,
-    reportDelivery,
+    reportDelivery: resolvedReportDelivery,
     barcodeGenerator,
     foodIconsString,
     reconciliationReader,

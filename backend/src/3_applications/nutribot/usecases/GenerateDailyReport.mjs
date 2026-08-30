@@ -297,6 +297,9 @@ export class GenerateDailyReport {
         messageId = result.messageId;
       }
 
+      const deliveryMode = preparedReport ? 'photo' : 'text';
+      this.#logger.info?.('report.delivery.sent', { userId, date, messageId, mode: deliveryMode });
+
       // 12. Save report message ID
       if (messageId && this.#conversationStateStore) {
         try {
@@ -321,7 +324,9 @@ export class GenerateDailyReport {
         }).catch(e => this.#logger.warn?.('report.coaching.error', { error: e.message }));
       }
 
-      this.#logger.info?.('report.generate.success', { userId, date, messageId, itemCount: summary.itemCount });
+      this.#logger.info?.('report.generate.success', {
+        userId, date, messageId, itemCount: summary.itemCount, deliveryMode,
+      });
 
       return { success: true, messageId, summary };
     } catch (error) {
