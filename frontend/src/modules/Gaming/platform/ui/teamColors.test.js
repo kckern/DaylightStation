@@ -8,19 +8,19 @@ describe('teamColors', () => {
   });
 
   it('dark team colors get paper text', () => {
-    expect(onColor('#3273dc')).toBe('#f3efe2');
-    expect(onColor('#9b5de5')).toBe('#f3efe2');
-    expect(onColor('#c2559f')).toBe('#f3efe2');
+    expect(onColor('#3273dc')).toBe('#fff8ea');
+    expect(onColor('#9b5de5')).toBe('#fff8ea');
+    expect(onColor('#c2559f')).toBe('#fff8ea');
   });
 
   it('light team colors get dark ink', () => {
-    expect(onColor('#2fbf71')).toBe('#10131f');
-    expect(onColor('#f28c28')).toBe('#10131f');
-    expect(onColor('#e6b325')).toBe('#10131f'); // mounted preset gold
+    expect(onColor('#2fbf71')).toBe('#191b2e');
+    expect(onColor('#f28c28')).toBe('#191b2e');
+    expect(onColor('#e6b325')).toBe('#191b2e'); // mounted preset gold
   });
 
   it('garbage input falls back to paper', () => {
-    expect(onColor(undefined)).toBe('#f3efe2');
-    expect(onColor('blue')).toBe('#f3efe2');
+    expect(onColor(undefined)).toBe('#fff8ea');
+    expect(onColor('blue')).toBe('#fff8ea');
   });
 });

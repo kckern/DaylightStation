@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import TitleCard from '../../platform/ui/TitleCard.jsx';
-import RevealPanel from '../../platform/ui/RevealPanel.jsx';
-import MediaCluePlayer from '../../platform/ui/MediaCluePlayer.jsx';
+import TitleCard from '@gaming-ui/TitleCard.jsx';
+import RevealPanel from '@gaming-ui/RevealPanel.jsx';
+import MediaCluePlayer from '@gaming-ui/MediaCluePlayer.jsx';
 import WagerPanel from './ui/WagerPanel.jsx';
-import ControlLegend from '../../platform/ui/ControlLegend.jsx';
+import ControlLegend from '@gaming-ui/ControlLegend.jsx';
+import GameButton from '@gaming-ui/GameButton.jsx';
+import StageActions from '@gaming-ui/StageActions.jsx';
 import './Jeopardy.scss';
 
 function finalRoundMax(set) {
   const last = set.rounds[set.rounds.length - 1];
-  return Math.max(...last.categories.flatMap((c) => c.clues.map((q) => q.value))) * last.multiplier;
+  return Math.max(...last.categories.flatMap((c) => c.clues.map((q) => q.value))) * Number(last.multiplier ?? 1);
 }
 
 export function FinalRound({ state, teams, scores, onAction }) {
@@ -19,7 +21,7 @@ export function FinalRound({ state, teams, scores, onAction }) {
     return (
       <div className="jp-final">
         <TitleCard title="Final Jeopardy" subtitle={set.final.category} />
-        <button type="button" autoFocus onClick={() => onAction({ type: 'START_ROUND' })}>Continue</button>
+        <GameButton tone="primary" autoFocus onClick={() => onAction({ type: 'START_ROUND' })}>Continue</GameButton>
       </div>
     );
   }
@@ -61,10 +63,10 @@ export function FinalRound({ state, teams, scores, onAction }) {
             <div key={team.id} className="jp-final__team">
               <span>{team.name} (wagered {finalWagers[team.id]})</span>
               {finalJudged[team.id] == null ? (
-                <>
-                  <button type="button" onClick={() => onAction({ type: 'JUDGE_FINAL', teamId: team.id, correct: true })}>Correct</button>
-                  <button type="button" onClick={() => onAction({ type: 'JUDGE_FINAL', teamId: team.id, correct: false })}>Wrong</button>
-                </>
+                <StageActions>
+                  <GameButton tone="success" onClick={() => onAction({ type: 'JUDGE_FINAL', teamId: team.id, correct: true })}>Correct</GameButton>
+                  <GameButton tone="danger" onClick={() => onAction({ type: 'JUDGE_FINAL', teamId: team.id, correct: false })}>Wrong</GameButton>
+                </StageActions>
               ) : (
                 <span>{finalJudged[team.id] ? '✓' : '✗'}</span>
               )}

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { getChildLogger } from '../../../../../lib/logging/singleton.js';
+import SegmentedSecretText from '@gaming-ui/SegmentedSecretText.jsx';
 import { normalizeMaskPixels } from './decoderPixels.js';
 
 const logger = getChildLogger({ component: 'party-games-decoder' });
 
-export function DecoderText({ children }) {
-  return <span className="party-games-decoder-text" style={{ color: '#29b36b', background: 'repeating-linear-gradient(0deg,#d71920 0 3px,#ef6b70 3px 6px)' }}>{children}</span>;
+export function DecoderText({ children, accessibleText = 'Encoded clue for the performer' }) {
+  return <SegmentedSecretText text={children} label="Activity clue" accessibleText={accessibleText} />;
 }
 
 export function HighContrastMask({ src, alt = '' }) {

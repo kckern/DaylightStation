@@ -1,16 +1,160 @@
 @use './tokens' as gp;
 
+.gp-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: var(--gp-paper);
+  background:
+    radial-gradient(ellipse at 50% 18%, color-mix(in srgb, var(--gp-show-accent), transparent 82%), transparent 48%),
+    radial-gradient(ellipse at 50% 30%, var(--gp-stage-glow), var(--gp-stage) 72%);
+  animation: gp-scene-in var(--gp-motion-scene) var(--gp-ease-show);
+}
+
+.gp-button { @include gp.gp-button; }
+.gp-button--primary { @include gp.gp-button-primary; }
+.gp-button--danger { @include gp.gp-button-danger; }
+.gp-button--success {
+  @include gp.gp-button;
+  background: var(--gp-success);
+  border-color: transparent;
+  color: var(--gp-ink);
+}
+.gp-button--quiet { background: transparent; box-shadow: none; }
+
+// Quiet actions sit on both the dark stage and warm paper cards. Light-card
+// composition owns the contrast inversion so individual shows never fork the
+// shared button state contract.
+.gp-instruction-card .gp-button--quiet,
+.gp-outcome .gp-button--quiet {
+  color: var(--gp-ink);
+  border-color: color-mix(in srgb, var(--gp-ink), transparent 72%);
+
+  &:hover { background: color-mix(in srgb, var(--gp-ink), transparent 92%); }
+}
+
+.gp-show-header {
+  flex: 0 0 auto;
+  min-height: 3.5rem;
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) auto minmax(7rem, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid var(--gp-surface-border);
+
+  h1 {
+    margin: 0;
+    font-family: var(--gp-font-display);
+    font-size: clamp(1.8rem, 4.8vh, 2.8rem);
+    line-height: 1;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+  }
+
+  &__eyebrow,
+  &__status {
+    color: var(--gp-paper-dim);
+    font-size: var(--gp-fs-caption);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  &__status { text-align: right; }
+}
+
+.gp-instruction-card {
+  width: min(42rem, calc(100% - 2rem));
+  padding: clamp(1.25rem, 4vh, 2.5rem);
+  color: var(--gp-ink);
+  background: var(--gp-card);
+  border: 1px solid color-mix(in srgb, var(--gp-brass), var(--gp-ink) 30%);
+  border-radius: var(--gp-radius-card) var(--gp-radius-card) 2.5rem var(--gp-radius-card);
+  box-shadow: var(--gp-shadow-raised), 0.45rem 0.45rem 0 var(--gp-show-accent);
+  text-align: center;
+
+  h2 {
+    margin: 0;
+    font-family: var(--gp-font-serif);
+    font-size: clamp(1.75rem, 5vh, 3rem);
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+  &__eyebrow {
+    display: block;
+    margin-bottom: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  &__body { margin-top: 1rem; font-size: var(--gp-fs-label); line-height: 1.45; }
+  footer { margin-top: 1.25rem; }
+}
+
+.gp-stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  &--start { justify-content: flex-start; }
+  &--end { justify-content: flex-end; }
+}
+
+.gp-outcome {
+  width: min(38rem, calc(100% - 2rem));
+  display: grid;
+  place-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 2rem;
+  color: var(--gp-ink);
+  background: var(--gp-card);
+  border: 0.25rem solid var(--gp-show-accent);
+  border-radius: var(--gp-radius-stage);
+  box-shadow: var(--gp-shadow-raised);
+  text-align: center;
+  animation: gp-reveal-in var(--gp-motion-reveal) var(--gp-ease-show);
+
+  h2 { margin: 0; font: 3rem/1 var(--gp-font-display); letter-spacing: 0.05em; text-transform: uppercase; }
+  &--success { border-color: var(--gp-success); }
+  &--danger { border-color: var(--gp-danger); }
+}
+
+.gp-companion {
+  flex: 0 0 auto;
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  padding: 0.35rem;
+  color: var(--gp-ink);
+  background: var(--gp-card);
+  border: 1px solid var(--gp-brass);
+  border-radius: var(--gp-radius-control);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  box-shadow: var(--gp-shadow-raised);
+
+  img { display: block; }
+}
+
 .gp-titlecard {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
+  padding: 1rem;
+  text-align: center;
 
   h1 {
     margin: 0;
     font-family: var(--gp-font-display);
-    font-size: var(--gp-fs-display);
+    font-size: clamp(2.5rem, 10vh, var(--gp-fs-display));
     line-height: 1.05;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -33,7 +177,7 @@
   align-items: center;
   justify-content: center;
   gap: 1.5rem;
-  padding: 0 2rem;
+  padding: 0 clamp(1rem, 4vw, 2.5rem);
   text-align: center;
 
   &__prompt {
@@ -55,6 +199,7 @@
     color: var(--gp-brass);
     border-top: 2px solid var(--gp-surface-border);
     padding-top: 1.25rem;
+    animation: gp-reveal-in var(--gp-motion-reveal) var(--gp-ease-show);
   }
 }
 
@@ -109,6 +254,7 @@
   font-family: var(--gp-font-ui);
   font-size: var(--gp-fs-caption); // was 1rem @ 0.7 opacity — below the 10-foot floor
   color: var(--gp-paper-dim);
+  flex-wrap: wrap;
 
   kbd {
     background: var(--gp-surface);
@@ -118,4 +264,9 @@
     margin-right: 0.3rem;
     color: var(--gp-paper);
   }
+}
+
+@media (max-height: 600px) {
+  .gp-instruction-card { padding: 1rem 1.5rem; }
+  .gp-show-header { min-height: 3rem; }
 }

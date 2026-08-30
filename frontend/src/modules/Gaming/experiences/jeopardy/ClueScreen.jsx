@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import RevealPanel from '../../platform/ui/RevealPanel.jsx';
-import MediaCluePlayer from '../../platform/ui/MediaCluePlayer.jsx';
-import ControlLegend from '../../platform/ui/ControlLegend.jsx';
-import TimerRing from '../../platform/ui/TimerRing.jsx';
-import { useCountdown } from '../../platform/ui/useCountdown.js';
-import { onColor } from '../../platform/ui/teamColors.js';
-import MemberAvatar from '../../platform/ui/MemberAvatar.jsx';
+import RevealPanel from '@gaming-ui/RevealPanel.jsx';
+import MediaCluePlayer from '@gaming-ui/MediaCluePlayer.jsx';
+import ControlLegend from '@gaming-ui/ControlLegend.jsx';
+import TimerRing from '@gaming-ui/TimerRing.jsx';
+import { useCountdown } from '@gaming-ui/useCountdown.js';
+import { onColor } from '@gaming-ui/teamColors.js';
+import MemberAvatar from '@gaming-ui/MemberAvatar.jsx';
 import './Jeopardy.scss';
 
 /**
@@ -17,10 +17,10 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
   const [mediaError, setMediaError] = useState(null);
   const { active, revealed, isDailyDouble, wager, phase } = state;
   const running = phase === 'clue' && !revealed;
-  const { progress } = useCountdown({ seconds: timerSeconds, running, onExpire: onTimeout });
+  const { progress, remaining } = useCountdown({ seconds: timerSeconds, running, onExpire: onTimeout });
   if (!active) return null;
   const round = state.set.rounds[state.roundIndex];
-  const value = isDailyDouble ? wager : active.clue.value * round.multiplier;
+  const value = isDailyDouble ? wager : active.clue.value * Number(round.multiplier ?? 1);
   const judging = phase === 'judging';
   const legend = judging
     ? [{ key: '↑', label: 'Correct' }, { key: '↓', label: 'Wrong' }, ...(revealed ? [] : [{ key: '↵', label: 'Show answer' }])]
@@ -33,7 +33,7 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
       <div className="jp-clue__banner">
         {isDailyDouble && <span className="jp-clue__dd">DAILY DOUBLE</span>}
         <span className="jp-clue__value">${value?.toLocaleString?.() ?? value}</span>
-        <TimerRing progress={progress} size={72} />
+        {!judging && <TimerRing progress={progress} remaining={remaining} size={72} />}
       </div>
       {active.clue.media && !mediaError && (
         <MediaCluePlayer media={active.clue.media} onError={setMediaError} />

@@ -9,5 +9,5 @@ export default function EffectOverlay({ sessionId }) {
   const content = effect.type === 'ai.judgment-proposal'
     ? `${effect.proposal?.recommendation || 'abstain'} — ${effect.proposal?.reason || 'No reason supplied'}`
     : effect.content;
-  return <aside className={`party-games-effect party-games-effect--${effect.type.replaceAll('.', '-')}`} aria-live="polite"><strong>{effect.type === 'ai.judgment-proposal' ? 'AI suggestion' : 'Host commentary'}</strong><span>{content}</span></aside>;
+  return <aside className={`party-games-effect party-games-effect--${effect.type.replaceAll('.', '-')}`} aria-live="polite"><strong>{effect.type === 'ai.judgment-proposal' ? 'Review suggestion' : 'Host note'}</strong><span>{content}</span><button type="button" aria-label="Dismiss message" onClick={() => setEffect(null)}>Dismiss</button></aside>;
 }

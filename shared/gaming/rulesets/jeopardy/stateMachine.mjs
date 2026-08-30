@@ -17,7 +17,7 @@ export function boardDone(state) {
 export function scoreDelta(state, correct) {
   const teamId = state.answeringTeamId;
   if (!teamId || !state.active) return null;
-  const base = state.isDailyDouble ? state.wager : state.active.clue.value * currentRound(state).multiplier;
+  const base = state.isDailyDouble ? state.wager : state.active.clue.value * Number(currentRound(state)?.multiplier ?? 1);
   if (correct) return { teamId, delta: base };
   return { teamId, delta: currentRound(state).penalize_wrong ? -base : 0 };
 }

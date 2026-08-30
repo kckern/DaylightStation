@@ -3,8 +3,8 @@
 // traversal works without a custom focus engine.
 import React, { useReducer, useMemo, useState } from 'react';
 import { teamSetupReducer, initTeamSetup } from './teamSetupReducer.js';
-import { TEAM_COLORS } from '../../../platform/ui/teamColors.js';
-import MemberAvatar from '../../../platform/ui/MemberAvatar.jsx';
+import { TEAM_COLORS } from '@gaming-ui/teamColors.js';
+import MemberAvatar from '@gaming-ui/MemberAvatar.jsx';
 import './TeamSetup.scss';
 
 export function TeamSetup({ config, setupKind = 'teams', onConfirm }) {

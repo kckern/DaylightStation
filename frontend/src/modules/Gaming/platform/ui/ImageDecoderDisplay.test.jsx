@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import ImageDecoderDisplay, { generateDecoderArtifacts } from './ImageDecoderDisplay.jsx';
+import ImageDecoderDisplay from './ImageDecoderDisplay.jsx';
+import { generateDecoderArtifacts } from './imageDecoderArtifacts.js';
 
 describe('ImageDecoderDisplay', () => {
   it('generates stable artifacts for a clue seed', () => {

@@ -50,6 +50,8 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
+        '@gaming': path.resolve(__dirname, 'src/modules/Gaming'),
+        '@gaming-ui': path.resolve(__dirname, 'src/modules/Gaming/platform/ui'),
         '@shared-contracts': path.resolve(__dirname, '../shared/contracts'),
         '@shared-music': path.resolve(__dirname, '../shared/music'),
         '@shared-gaming': path.resolve(__dirname, '../shared/gaming'),

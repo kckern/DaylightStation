@@ -9,7 +9,7 @@ describe('RevealPanel type buckets', () => {
   });
 
   it('mid-length prompts step down to medium', () => {
-    const prompt = 'x'.repeat(150);
+    const prompt = 'x'.repeat(100);
     render(<RevealPanel prompt={prompt} />);
     expect(screen.getByText(prompt).className).toContain('gp-reveal__prompt--md');
   });

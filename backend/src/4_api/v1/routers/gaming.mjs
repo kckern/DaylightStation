@@ -27,9 +27,23 @@ function requireHost(req) {
   return viewer;
 }
 
-export function createGamingRouter({ gamingApplication, gamingMediaService = null, broadcastEvent = null, logger = null, sendFileResource = sendLocalFileResource }) {
+export function createGamingRouter({ gamingApplication, gamingDiagnostics = null, gamingMediaService = null, broadcastEvent = null, logger = null, sendFileResource = sendLocalFileResource }) {
   if (!gamingApplication) throw new Error('createGamingRouter: gamingApplication required');
   const router = express.Router();
+  const applicationFor = (sessionId) => {
+    if (!String(sessionId).startsWith('diagnostic:')) return gamingApplication;
+    if (!gamingDiagnostics) throw Object.assign(new Error('Gaming diagnostics are unavailable'), { code: 'session_not_found' });
+    return gamingDiagnostics;
+  };
+  const diagnostics = () => {
+    if (!gamingDiagnostics) throw Object.assign(new Error('Gaming diagnostics are unavailable'), { code: 'session_not_found' });
+    return gamingDiagnostics;
+  };
+  const broadcastSessionUpdate = (result) => broadcastEvent?.({
+    source: 'gaming-authority', topic: 'gaming', kind: 'session-updated',
+    sessionId: result.header.session_id, rulesetId: result.header.ruleset.id,
+    revision: result.header.revision, ts: Date.now(),
+  });
   const handle = (operation) => async (req, res) => {
     try { await operation(req, res); }
     catch (error) {
@@ -63,19 +77,48 @@ export function createGamingRouter({ gamingApplication, gamingMediaService = nul
       definitionId: body.definition_id, surfaceId: body.surface_id, participants, seats: body.seats || [], setup: body.setup || {}, seed: body.seed, viewer,
     }));
   }));
-  router.get('/sessions/:sessionId', handle(async (req, res) => res.json(await gamingApplication.resumeSession(req.params.sessionId, requireViewer(req)))));
+  router.get('/diagnostics/sessions', handle((req, res) => res.json({ sessions: gamingDiagnostics?.listSessions(requireHost(req)) || [] })));
+  router.post('/diagnostics/sessions', handle(async (req, res) => {
+    const diagnosticApplication = diagnostics();
+    const body = req.body || {};
+    if (typeof body.definition_id !== 'string') return res.status(400).json({ error: 'definition_id_required' });
+    const result = await diagnosticApplication.createSession({
+      definitionId: body.definition_id,
+      surfaceId: body.surface_id || 'party-games',
+      participants: body.participants || [],
+      seats: body.seats || [],
+      setup: body.setup || {},
+      seed: body.seed,
+      viewer: requireHost(req),
+    });
+    return res.status(201).json(result);
+  }));
+  router.get('/diagnostics/sessions/:sessionId', handle((req, res) => res.json(diagnostics().inspect(req.params.sessionId, requireHost(req)))));
+  router.post('/diagnostics/sessions/:sessionId/advance', handle((req, res) => {
+    const result = diagnostics().advance(req.params.sessionId, { command: req.body?.command, actorId: req.body?.actor_id || 'host' }, requireHost(req));
+    broadcastSessionUpdate(result);
+    return res.json(result);
+  }));
+  router.patch('/diagnostics/sessions/:sessionId/state', handle((req, res) => {
+    const result = diagnostics().overrideState(req.params.sessionId, req.body?.patch, requireHost(req));
+    broadcastSessionUpdate(result);
+    return res.json(result);
+  }));
+  router.delete('/diagnostics/sessions/:sessionId', handle((req, res) => res.json(diagnostics().deleteSession(req.params.sessionId, requireHost(req)))));
+
+  router.get('/sessions/:sessionId', handle(async (req, res) => res.json(await applicationFor(req.params.sessionId).resumeSession(req.params.sessionId, requireViewer(req)))));
   router.post('/sessions/:sessionId/commands', handle(async (req, res) => {
     if (!req.body?.command_id) return res.status(400).json({ error: 'command_envelope_required' });
-    const result = await gamingApplication.dispatch(req.params.sessionId, req.body, requireViewer(req));
-    broadcastEvent?.({ source: 'gaming-authority', topic: 'gaming', kind: 'session-updated', sessionId: req.params.sessionId, rulesetId: result.header.ruleset.id, revision: result.header.revision, ts: Date.now() });
+    const result = await applicationFor(req.params.sessionId).dispatch(req.params.sessionId, req.body, requireViewer(req));
+    broadcastSessionUpdate(result);
     res.json(result);
   }));
-  router.post('/sessions/:sessionId/close', handle(async (req, res) => { requireHost(req); return res.json(await gamingApplication.closeSession(req.params.sessionId, req.body || {})); }));
-  router.get('/sessions/:sessionId/effects', handle(async (req, res) => { requireHost(req); return res.json({ effects: await gamingApplication.listEffects(req.params.sessionId) }); }));
-  router.get('/sessions/:sessionId/drawing-checkpoint', handle(async (req, res) => res.json(await gamingApplication.getDrawingCheckpoint(req.params.sessionId, requireViewer(req)))));
-  router.put('/sessions/:sessionId/drawing-checkpoint', handle(async (req, res) => res.json(await gamingApplication.putDrawingCheckpoint(req.params.sessionId, { strokes: req.body?.strokes }, requireViewer(req)))));
-  router.delete('/sessions/:sessionId/drawing-checkpoint', handle(async (req, res) => res.json(await gamingApplication.deleteDrawingCheckpoint(req.params.sessionId, requireViewer(req)))));
-  router.post('/sessions/:sessionId/host-packet/print', handle(async (req, res) => { requireHost(req); return res.json(await gamingApplication.printHostPacket(req.params.sessionId, { explicit: true })); }));
+  router.post('/sessions/:sessionId/close', handle(async (req, res) => { const viewer = requireHost(req); return res.json(await applicationFor(req.params.sessionId).closeSession(req.params.sessionId, req.body || {}, viewer)); }));
+  router.get('/sessions/:sessionId/effects', handle(async (req, res) => { requireHost(req); return res.json({ effects: await applicationFor(req.params.sessionId).listEffects(req.params.sessionId) }); }));
+  router.get('/sessions/:sessionId/drawing-checkpoint', handle(async (req, res) => res.json(await applicationFor(req.params.sessionId).getDrawingCheckpoint(req.params.sessionId, requireViewer(req)))));
+  router.put('/sessions/:sessionId/drawing-checkpoint', handle(async (req, res) => res.json(await applicationFor(req.params.sessionId).putDrawingCheckpoint(req.params.sessionId, { strokes: req.body?.strokes }, requireViewer(req)))));
+  router.delete('/sessions/:sessionId/drawing-checkpoint', handle(async (req, res) => res.json(await applicationFor(req.params.sessionId).deleteDrawingCheckpoint(req.params.sessionId, requireViewer(req)))));
+  router.post('/sessions/:sessionId/host-packet/print', handle(async (req, res) => { requireHost(req); return res.json(await applicationFor(req.params.sessionId).printHostPacket(req.params.sessionId, { explicit: true })); }));
 
   router.get('/media/*splat', handle((req, res) => {
     requireViewer(req);

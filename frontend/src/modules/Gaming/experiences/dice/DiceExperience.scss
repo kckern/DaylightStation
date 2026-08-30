@@ -1,5 +1,72 @@
-.dice-experience { min-height: 100%; display: grid; place-items: center; align-content: center; gap: 1.25rem; padding: 2rem; color: #fff; background: radial-gradient(circle, #293a78, #080b1b 72%); }
-.dice-polyhedra, .dice-fallback { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; min-height: 180px; }
-.dice-3d { width: 180px; height: 180px; position: relative; }.dice-3d > span { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1; color: #111; font-size: 2rem; font-weight: 900; pointer-events: none; }
-.dice-fallback span { width: 7rem; height: 7rem; display: grid; place-items: center; border: .4rem solid #e6b325; border-radius: 1rem; background: #fff; color: #111; font-size: 2.5rem; font-weight: 900; }
-.dice-fallback--percentile-pair span:nth-child(odd) { border-radius: 50%; }.dice-total { font-size: 2rem; font-weight: 900; }.dice-presets { display: flex; flex-wrap: wrap; gap: .5rem; }.dice-experience button, .dice-experience input { min-height: 2.8rem; padding: .55rem .9rem; font: inherit; }.dice-roll { font-size: 1.5rem !important; font-weight: 900; }
+@use '@gaming-ui/tokens' as gp;
+
+.dice-experience {
+  --gp-show-accent: var(--gp-accent-dice);
+  height: 100%;
+  min-height: 0;
+  color: var(--gp-paper);
+  background:
+    radial-gradient(ellipse at center, color-mix(in srgb, var(--gp-show-accent), transparent 91%), transparent 55%),
+    var(--gp-stage);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+
+  &__table {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(15rem, 1fr) minmax(14rem, 0.7fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem 1.5rem;
+    padding: 0.75rem 1.25rem;
+    overflow: hidden;
+  }
+
+  &__well {
+    min-height: 0;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--gp-surface-border);
+    border-radius: 50% 50% var(--gp-radius-stage) var(--gp-radius-stage);
+    background: radial-gradient(ellipse, var(--gp-surface) 0%, var(--gp-well) 72%);
+    box-shadow: inset 0 0 2rem var(--gp-stage), var(--gp-shadow-raised);
+    animation: gp-reveal-in var(--gp-motion-reveal) var(--gp-ease-show);
+    overflow: hidden;
+  }
+
+  &__controls { display: grid; justify-items: center; gap: 0.75rem; }
+  &__controls label { display: grid; gap: 0.3rem; color: var(--gp-paper-dim); font-size: 0.9rem; }
+  &__controls input {
+    width: 10rem;
+    min-height: 2.75rem;
+    padding: 0.45rem 0.75rem;
+    color: var(--gp-ink);
+    background: var(--gp-card);
+    border: 2px solid transparent;
+    border-radius: var(--gp-radius-control);
+    font: 700 1.1rem var(--gp-font-ui);
+    &:focus { outline: none; }
+    &:focus-visible { border-color: var(--gp-focus); outline: 2px solid var(--gp-focus); outline-offset: 2px; }
+  }
+  &__error { grid-column: 1 / -1; margin: 0; color: var(--gp-danger); text-align: center; }
+}
+
+.dice-polyhedra,
+.dice-fallback { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.75rem; min-height: 8rem; }
+.dice-3d { width: min(180px, 24vh); height: min(180px, 24vh); position: relative; filter: drop-shadow(0 0.65rem 0.45rem color-mix(in srgb, var(--gp-stage), transparent 30%)); }
+.dice-3d > span { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1; color: var(--gp-ink); font-size: 2rem; font-weight: 900; pointer-events: none; }
+.dice-fallback span { width: 6rem; height: 6rem; display: grid; place-items: center; border: 0.3rem solid var(--gp-show-accent); border-radius: var(--gp-radius-card); background: var(--gp-card); color: var(--gp-ink); font-size: 2.5rem; font-weight: 900; }
+.dice-fallback--percentile-pair span:nth-child(odd) { border-radius: 50%; }
+.dice-total { display: grid; place-items: center; gap: 0.2rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.dice-total span { color: var(--gp-paper-dim); }
+.dice-total strong { color: var(--gp-brass); font: clamp(4rem, 16vh, 8rem)/0.9 var(--gp-font-display); font-variant-numeric: tabular-nums; }
+.dice-presets { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; }
+.dice-presets .gp-button { min-width: 3.8rem; padding: 0.45rem 0.75rem; }
+.dice-roll { min-width: 9rem; }
+
+@media (max-height: 600px) {
+  .dice-experience__table { padding-block: 0.4rem; }
+  .dice-3d { width: 130px; height: 130px; }
+}
