@@ -1,7 +1,8 @@
 # Living-room reading sessions — lifecycle and state machine
 
-> **Status:** built and wired, 2026-08-26. Not yet verified on the hardware —
-> see §11 for what a person still has to watch happen on the actual TV.
+> **Status:** built and wired, 2026-08-26. Cold-wake recovery repaired locally
+> 2026-08-30 after a field failure; the repaired path still needs the hardware
+> verification in §11.
 > Implementation plan: `docs/_wip/plans/2026-08-26-preschool-reading-03-livingroom-session-screen.md`.
 > This document is the authority on *behaviour*; the plan is the authority on *how*.
 
@@ -356,6 +357,24 @@ prompt context during a story without stealing its credit (**D4**).
 
 ### Delivery and recovery loops
 
+The wake is helpful, but it is not the delivery contract. A cold Android/Fully
+Kiosk resume may be slow, may reconnect its socket late, or may reload the page
+after the command returns. The in-process session snapshot is the authority,
+and the screen's ACK of that exact `sessionId` is the proof.
+
+For an already-mounted widget, device preparation uses the `broadcast` profile:
+`screenOn` plus `toForeground`, with no audio-bridge, microphone, camera, or
+`getDeviceInfo` work. Those checks belong to media/call preparation. In the
+2026-08-30 incident `getDeviceInfo` alone consumed its full 10-second transport
+timeout and full preparation took 29.7 seconds; none of that work could prove
+that the Story Time intent had rendered. The application ACK can.
+
+The scheduler and School realtime gateway are required production dependencies.
+The scheduler contract is fail-fast: it bounds each ACK wait and advances the
+loop to recovery. Production composition supplies one shared gateway for
+activation, book selection, and read completion, and the integration tests pin
+those publications.
+
 ```mermaid
 flowchart TD
   A[Card or Portal launch] --> B[Reserve STARTING session]
@@ -363,7 +382,7 @@ flowchart TD
   C --> D[Activate PROMPT and publish revision]
   D --> E{Screen subscribed, hydrated snapshot, ACKed?}
   E -->|yes| F[Closed delivery loop]
-  E -->|no, attempt less than 3| G[Replay current revision and re-foreground]
+  E -->|no, attempt less than 3| G[Re-foreground, then replay current revision]
   G --> E
   E -->|no, attempt 3| H[One adult HA alert]
   H --> I[Open session remains recoverable by snapshot]
@@ -412,7 +431,7 @@ Not state transitions, but each must land somewhere visible.
 |---|---|
 | Content lookup fails | The player bails today. In a session: back to `PROMPT` with "that one didn't work" |
 | No book is picked | After two minutes, close the session. `end: tv-off` turns the configured display off; otherwise the widget returns to its idle/art surface. |
-| TV fails to wake or the screen misses the event | Reserve before wake; replay current snapshot up to three times, then send one adult HA alert. The session remains available to a later snapshot. |
+| TV wakes slowly, fails to wake, reloads, or misses the event | Reserve before wake; activate after the bounded wake result; a client that hydrated during `STARTING` polls until activation, applies the authoritative snapshot, and ACKs the `sessionId`. Until ACK, re-foreground then replay the current revision for up to three attempts, then send one adult HA alert. The open session remains available to a later snapshot. |
 | Reading log write fails | The story still played. Surface it; never claim a read that was not recorded |
 | Backend restart mid-session | Session state is in-memory and is lost — correct; nobody is at the reader after a restart |
 | Player remounts or completion response is lost | Must not double-count. `pickId` dedup plus one retry and `read-status` recovery. |
@@ -436,8 +455,9 @@ Not state transitions, but each must land somewhere visible.
 
 ## 11. What is still unverified
 
-Every rule above is pinned by a test. None of it has been watched happen on the
-actual living-room TV, and three of these cannot be settled any other way:
+Every rule above is pinned by a test. The pre-repair path was watched fail on the
+actual living-room TV on 2026-08-30; the repaired cold-resume path has not yet
+been watched succeed. Three details cannot be settled any other way:
 
 1. **The ceremony rendering before the TV powers off** (the D8 hazard). A
    passing test proves `endBehavior` was stripped; only the room proves the

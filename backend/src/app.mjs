@@ -137,6 +137,7 @@ import { LaserPrinterAdapter } from '#adapters/hardware/laser-printer/index.mjs'
 // Command-handler liveness (Task 8: gates WS-first warm-switch in WakeAndLoadService)
 import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHandlerLivenessService.mjs';
 import { SessionControlService } from '#apps/devices/services/SessionControlService.mjs';
+import { WakeScreenForBroadcast } from '#apps/devices/services/WakeScreenForBroadcast.mjs';
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 // HTTP middleware
@@ -176,6 +177,7 @@ import { CallLeaseService } from '#apps/homeline/CallLeaseService.mjs';
 import { createHomelineRouter } from '#api/v1/routers/homeline.mjs';
 import { SecureHomelineIdentityIssuer } from '#adapters/homeline/SecureHomelineIdentityIssuer.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
+import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs';
 import { SchedulerTimestampCodec } from '#adapters/scheduling/SchedulerTimestampCodec.mjs';
 
 // Pose frame logging
@@ -3736,13 +3738,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
    * @returns {Promise<{ok: boolean, error?: string}>}
    */
   let startReadingSession = null;
-  const wakeScreenForBroadcast = async ({ target, prepareOnly = false } = {}) => {
-    const device = target ? deviceServices.deviceService.get(target) : null;
-    if (!device) return { ok: false, error: `unknown target: ${target}` };
-    const power = prepareOnly ? { ok: true, skipped: true } : await device.powerOn();
-    const foreground = await device.prepareForContent({ skipCameraCheck: true });
-    return { ok: power?.ok !== false && foreground?.ok !== false, power, foreground };
-  };
+  const broadcastScreenWake = new WakeScreenForBroadcast({ devices: deviceServices.deviceService });
+  const wakeScreenForBroadcast = (args) => broadcastScreenWake.execute(args);
 
   try {
     const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
@@ -4463,11 +4460,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
     const { makeReadingTimeoutHandler } = await import('#composition/modules/learnerCardActions.mjs');
     const { YamlReadingSessionTimelineStore } = await import('#adapters/persistence/yaml/YamlReadingSessionTimelineStore.mjs');
+    const { EventBusSchoolRealtimeAdapter } = await import('#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs');
     const readingTimeline = new YamlReadingSessionTimelineStore({ configService, logger: readingLogger });
+    // One gateway for the whole reading ceremony. Passing the raw event bus
+    // here stopped working when the application layer moved to the School
+    // realtime port: JavaScript ignored the unknown `eventBus` option, leaving
+    // activation and book-selection broadcasts as silent no-ops.
+    const readingRealtime = new EventBusSchoolRealtimeAdapter({ eventBus });
 
     readingSessions = new ReadingSessionService({
-      eventBus,
+      realtime: readingRealtime,
       logger: readingLogger,
+      // Delivery recovery and idle teardown are both scheduler-owned. Without
+      // this adapter an ACK wait never reaches its deadline, so the first lost
+      // cold-wake broadcast strands the intent forever instead of replaying it.
+      scheduler: new NodeAsyncScheduler(),
       observationStore: readingTimeline,
       // D6 — the session owns teardown, and this is it. The location's own
       // `end: tv-off` is suppressed while a session is open (D8), so nothing
@@ -4484,7 +4491,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     readingSessionInterceptor = new ReadingSessionInterceptor({
       sessions: readingSessions,
       storyTime: schoolLifecycle.storyTimeLauncher,
-      eventBus,
+      realtime: readingRealtime,
       logger: readingLogger,
     });
 
@@ -4496,7 +4503,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         // second independently-configured source of the shard key would drift
         // from the launcher's own "how many today" without erroring.
         studyDay: () => schoolLifecycle.storyTimeLauncher.studyDay(),
-        eventBus,
+        realtime: readingRealtime,
         logger: readingLogger,
       }),
       sessions: readingSessions,

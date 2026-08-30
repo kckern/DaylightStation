@@ -79,9 +79,15 @@ export class FullyKioskContentAdapter extends IContentControl {
    * @param {boolean} [options.skipCameraCheck=false] - Skip the ~4s camera-availability
    *   probe. Set true when the inbound content does not require the camera (e.g.
    *   plex/files playback). See contentRequiresCamera() in the application layer.
+   * @param {'full'|'broadcast'} [options.profile='full'] - `broadcast` is the
+   *   bounded wake path for a widget that is already mounted in the kiosk. It
+   *   wakes the display and asks FKB to foreground the WebView, then lets the
+   *   widget's application-level acknowledgement prove delivery. It deliberately
+   *   skips audio-bridge and camera health work, which is unrelated to a screen
+   *   broadcast and can block for tens of seconds while Android resumes.
    * @returns {Promise<Object>}
    */
-  async prepareForContent({ skipCameraCheck = false } = {}) {
+  async prepareForContent({ skipCameraCheck = false, profile = 'full' } = {}) {
     const startTime = Date.now();
     const MAX_PREPARE_MS = 60_000; // Hard ceiling — never stall longer than 60s
     this.#metrics.prepares++;
@@ -109,6 +115,37 @@ export class FullyKioskContentAdapter extends IContentControl {
       if (!screenResult.ok) {
         this.#logger.error?.('fullykiosk.prepareForContent.screenOn.failed', { error: screenResult.error });
         return { ok: false, step: 'screenOn', error: screenResult.error };
+      }
+
+      // An already-mounted, broadcast-driven widget does not need the full
+      // media/call preparation below. In particular, getDeviceInfo is only a
+      // proxy for readiness and has a 10s transport timeout; the reading and
+      // lesson workflows have a stronger signal — the mounted client ACKs the
+      // exact intent it applied. Trust the foreground command acknowledgement
+      // here and leave verification/replay to that application-level protocol.
+      if (profile === 'broadcast') {
+        const foreground = await this.#sendCommand('toForeground');
+        if (!foreground.ok) {
+          const error = foreground.authError
+            ? `FKB rejected credentials: ${foreground.error}`
+            : foreground.error;
+          this.#logger.warn?.('fullykiosk.prepareForContent.broadcastForeground.failed', { error });
+          return { ok: false, step: 'toForeground', error, profile };
+        }
+        const elapsedMs = Date.now() - startTime;
+        this.#logger.info?.('fullykiosk.prepareForContent.broadcastReady', {
+          elapsedMs,
+          readiness: 'command-acknowledged',
+        });
+        return {
+          ok: true,
+          profile,
+          coldRestart: false,
+          cameraAvailable: null,
+          cameraSkipped: true,
+          foregroundVerified: false,
+          elapsedMs,
+        };
       }
 
       // Disable FKB background services that hold AUDIO_SOURCE_MIC and Camera 0.

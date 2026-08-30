@@ -1,12 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
+import { ReadingSessionService as ProductionReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
+const TEST_SCHEDULER = {
+  withDeadline: (work) => work,
+  every: () => () => {},
+  wait: async () => {},
+};
+class ReadingSessionService extends ProductionReadingSessionService {
+  constructor(config = {}) { super({ scheduler: TEST_SCHEDULER, ...config }); }
+}
 const realtimeFor = (sent) => ({
   readingRoomChanged: (location, { kind, ...payload }) => sent.push({ topic: `reading:${location}`, payload: { event: kind, ...payload } }),
 });
 
 describe('ReadingSessionService', () => {
+  it('requires the scheduler that drives delivery deadlines and idle recovery', () => {
+    expect(() => new ProductionReadingSessionService({ logger: silent })).toThrow(/requires scheduler methods/);
+  });
+
   it('has no session at a location until a card opens one', () => {
     expect(new ReadingSessionService({ logger: silent }).current('livingroom')).toBeNull();
   });
@@ -50,6 +62,33 @@ describe('ReadingSessionService', () => {
       expect.objectContaining({ type: 'acknowledged' }),
       expect.objectContaining({ type: 'updated', state: 'confirm' }),
     ]));
+  });
+
+  it('turns a missing screen acknowledgement into a bounded false result', async () => {
+    let deadline = null;
+    const scheduler = {
+      withDeadline: async (_work, options) => {
+        deadline = options;
+        throw new Error('screen did not acknowledge');
+      },
+      every: () => () => {},
+      wait: async () => {},
+    };
+    const s = new ProductionReadingSessionService({ scheduler, logger: silent });
+    const opened = s.open({ location: 'livingroom', learnerId: 'learner-c' });
+
+    await expect(s.waitForAcknowledgement(opened.sessionId, 321)).resolves.toBe(false);
+    expect(deadline).toMatchObject({ milliseconds: 321 });
+  });
+
+  it('resolves a pending delivery wait when the mounted screen acknowledges it', async () => {
+    const s = new ReadingSessionService({ logger: silent });
+    const opened = s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    const acknowledgement = s.waitForAcknowledgement(opened.sessionId, 8_000);
+
+    s.acknowledge('livingroom', opened.sessionId);
+
+    await expect(acknowledgement).resolves.toBe(true);
   });
 
   it('broadcasts the open so the screen can render it', () => {
@@ -182,7 +221,9 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
       idleTimeoutMs,
       onTimeout: onTimeout ?? (async (session) => { torn.push(session); }),
       scheduler: {
+        withDeadline: (work) => work,
         every: (ms, fn) => { ticks.push({ fn, ms }); const handle = ticks.length; return () => cleared.push(handle); },
+        wait: async () => {},
       },
       realtime: realtimeFor(sent),
       logger: silent,

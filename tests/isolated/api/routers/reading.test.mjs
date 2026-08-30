@@ -15,12 +15,16 @@
 import { describe, it, expect } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
+import { ReadingSessionService as ProductionReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
 import { RecordStoryRead } from '#apps/school/usecases/RecordStoryRead.mjs';
 import { ReadingApiService } from '#apps/school/ReadingApiService.mjs';
 import { createReadingRouter } from '../../../../backend/src/4_api/v1/routers/reading.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
+const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };
+class ReadingSessionService extends ProductionReadingSessionService {
+  constructor(config = {}) { super({ scheduler: TEST_SCHEDULER, ...config }); }
+}
 
 /** The `append` contract from IReadingLogStore, in memory: idempotent on pickId. */
 function memoryReadingLog(seed = {}) {

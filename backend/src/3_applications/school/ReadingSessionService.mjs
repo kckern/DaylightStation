@@ -102,17 +102,23 @@ export class ReadingSessionService {
    * @param {(session: object) => Promise<void>|void} [config.onTimeout] - the
    *   teardown itself, which in the field is "power the TV off". Injected
    *   because THIS class must not know what a TV is; composition does.
-   * @param {import('./ports/IAsyncScheduler.mjs').IAsyncScheduler} [config.scheduler]
+   * @param {import('./ports/IAsyncScheduler.mjs').IAsyncScheduler} config.scheduler
    *   - injected so the timeout can be tested in milliseconds rather than in
-   *   the two minutes the field waits.
+   *   the two minutes the field waits. Required because the same deadline is
+   *   what advances a missed screen delivery into replay and recovery.
    */
   constructor({
     realtime = null, clock = () => new Date(), idFactory = null, logger = console,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
     sweepIntervalMs = DEFAULT_SWEEP_INTERVAL_MS,
     onTimeout = null,
-    scheduler = null, observationStore = null,
+    scheduler, observationStore = null,
   } = {}) {
+    const missingSchedulerMethods = ['withDeadline', 'every', 'wait']
+      .filter((method) => typeof scheduler?.[method] !== 'function');
+    if (missingSchedulerMethods.length) {
+      throw new TypeError(`ReadingSessionService requires scheduler methods: ${missingSchedulerMethods.join(', ')}`);
+    }
     this.#realtime = realtime;
     this.#clock = clock;
     this.#logger = logger;
@@ -130,7 +136,7 @@ export class ReadingSessionService {
    * second call must not leave a second timer running against the same Map.
    */
   start() {
-    if (this.#cancelSweep || !this.#idleTimeoutMs || !this.#scheduler?.every) return this;
+    if (this.#cancelSweep || !this.#idleTimeoutMs) return this;
     this.#cancelSweep = this.#scheduler.every(this.#sweepIntervalMs, () => {
       // Never let a rejected sweep become an unhandled rejection on a timer
       // nobody is awaiting. `sweep` already swallows its own teardown errors;
@@ -274,7 +280,6 @@ export class ReadingSessionService {
       return Promise.resolve(true);
     }
     const acknowledgement = new Promise((resolve) => this.#ackWaiters.set(sessionId, resolve));
-    if (!this.#scheduler?.withDeadline) return acknowledgement;
     return this.#scheduler.withDeadline(acknowledgement, {
       milliseconds: timeoutMs, description: `reading acknowledgement ${sessionId}`,
     }).catch(() => false).finally(() => this.#ackWaiters.delete(sessionId));

@@ -8,7 +8,7 @@ export class WakeScreenForBroadcast {
     const device = target ? this.devices.get(target) : null;
     if (!device) return { ok: false, error: `unknown target: ${target}` };
     const power = prepareOnly ? { ok: true, skipped: true } : await device.powerOn();
-    const foreground = await device.prepareForContent({ skipCameraCheck: true });
+    const foreground = await device.prepareForContent({ skipCameraCheck: true, profile: 'broadcast' });
     return { ok: power?.ok !== false && foreground?.ok !== false, power, foreground };
   }
 }

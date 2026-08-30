@@ -122,22 +122,40 @@ a hardware fault. A `thermalPrinter.timeout` followed, seconds later, by a
 is a zombie print (2026-08-25 RC-4) — blank paper was cut even though the
 caller was told "refused."
 
-### 4c. Living-room reading session (new, unverified on hardware)
+### 4c. Living-room reading session
 
 ```
-session-open      — card resolved to a learner; mode derived (assignment|browsing)
+session-open      — card resolved and a STARTING reservation was created
+session-opened    — bounded wake returned and PROMPT was activated
+delivery-acknowledged — mounted screen applied the live event or snapshot
 book-selected     — a book tag confirmed the countdown
 POST /playing     — the backend learns the story actually started
 POST /read        — the story finished; RecordStoryRead writes evidence
 session-close     — teardown (ceremony done, or idle timeout)
 ```
 
+Cold-wake diagnosis is an ACK trace, not a stopwatch verdict. Query both the
+School delivery events and Fully Kiosk preparation events:
+
+```bash
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query=(_msg:school.reading.delivery* OR _msg:school.reading.session-open*) AND _time:2h' -d 'limit=100'
+
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query=_msg:fullykiosk.prepareForContent* AND _time:2h' -d 'limit=100'
+```
+
+Healthy cold resume may have a large `wakeMs`; it must still end in
+`delivery-acknowledged`. A `foregroundUnverifiable` plus
+`fullykiosk.sendCommand.error {cmd:getDeviceInfo, code:ECONNABORTED}` explains
+wake latency, but does not explain a lost intent. Replays without an ACK prove
+the page never applied the session; `delivery-unacknowledged` is terminal and
+must correspond to one adult alert.
+
 Every state and every failure path for this loop is enumerated exhaustively
 in [`reading-sessions.md`](../../reference/school/reading-sessions.md) §7–9 —
-that document, not this one, is authoritative for what each event means. Two
-gaps are explicitly known and open: a story abandoned mid-playback never
-tells the backend (session sits at `reading` until something else moves it),
-and teardown after a completed ceremony rides the ~2-minute idle timeout
+that document, not this one, is authoritative for what each event means.
+Teardown after a completed ceremony still rides the ~2-minute idle timeout
 rather than firing immediately.
 
 ## 5. Reading the OMR relay's own health signals

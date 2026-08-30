@@ -51,6 +51,11 @@ export function assertContentControl(obj, context = 'ContentControl') {
 export class IContentControl {
   async load(_path, _query = {}, _options = {}) { throw new Error('IContentControl.load not implemented'); }
   async getStatus() { throw new Error('IContentControl.getStatus not implemented'); }
+  /**
+   * @param {{skipCameraCheck?: boolean, profile?: 'full'|'broadcast'}} [_options]
+   *   `broadcast` prepares an already-mounted screen; the consuming workflow's
+   *   intent acknowledgement is the authoritative readiness signal.
+   */
   async prepareForContent(_options = {}) { throw new Error('IContentControl.prepareForContent not implemented'); }
 }
 
