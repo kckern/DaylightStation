@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createLearnerActions } from '#apps/trigger/learnerActions.mjs';
 import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
 import { makePrintAgendaHandler, makeReadingSessionHandler } from '#composition/modules/learnerCardActions.mjs';
-import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
+import { ReadingSessionService as ProductionReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
 
 const TEST_RUNTIME = {
   createDispatchId: () => 'dispatch-test-id',
@@ -10,6 +10,10 @@ const TEST_RUNTIME = {
 };
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
+const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };
+class ReadingSessionService extends ProductionReadingSessionService {
+  constructor(config = {}) { super({ scheduler: TEST_SCHEDULER, ...config }); }
+}
 
 // The registry shape composition actually hands the dispatcher, with the two
 // readers this plan cares about: the study prints, the living room opens a

@@ -21,6 +21,47 @@ function makeAdapter(handler, logger = makeLogger()) {
   );
 }
 
+describe('FullyKioskContentAdapter broadcast preparation', () => {
+  test('uses the bounded display-only path and leaves readiness to the intent ACK', async () => {
+    const commands = [];
+    const logger = makeLogger();
+    const adapter = makeAdapter((cmd) => {
+      commands.push(cmd);
+      return { status: 200, data: { status: 'OK' } };
+    }, logger);
+
+    const result = await adapter.prepareForContent({ profile: 'broadcast', skipCameraCheck: true });
+
+    expect(result).toMatchObject({
+      ok: true,
+      profile: 'broadcast',
+      cameraAvailable: null,
+      cameraSkipped: true,
+      foregroundVerified: false,
+    });
+    expect(commands).toEqual(['screenOn', 'toForeground']);
+    expect(commands).not.toContain('getDeviceInfo');
+    expect(commands).not.toContain('setBooleanSetting');
+    expect(commands).not.toContain('startApplication');
+    expect(logger.info).toHaveBeenCalledWith(
+      'fullykiosk.prepareForContent.broadcastReady',
+      expect.objectContaining({ readiness: 'command-acknowledged' }),
+    );
+  });
+
+  test('reports a failed foreground request so application recovery can retry it', async () => {
+    const adapter = makeAdapter((cmd) => cmd === 'toForeground'
+      ? { status: 503, data: null }
+      : { status: 200, data: { status: 'OK' } });
+
+    await expect(adapter.prepareForContent({ profile: 'broadcast' })).resolves.toMatchObject({
+      ok: false,
+      profile: 'broadcast',
+      step: 'toForeground',
+    });
+  });
+});
+
 describe('FullyKioskContentAdapter response-shape classification', () => {
   test('auth-error envelope aborts prepare immediately instead of walking the retry loop', async () => {
     const logger = makeLogger();

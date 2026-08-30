@@ -21,6 +21,10 @@ describe('semantic workflows extracted from app composition', () => {
     await expect(service.execute({ target: 'living-room' })).resolves.toEqual({
       ok: true, power: { ok: true }, foreground: { ok: true },
     });
+    expect(device.prepareForContent).toHaveBeenCalledWith({
+      skipCameraCheck: true,
+      profile: 'broadcast',
+    });
   });
 
   it('sends the exact teacher backlog envelope', async () => {

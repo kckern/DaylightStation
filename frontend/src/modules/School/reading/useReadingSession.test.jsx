@@ -31,11 +31,19 @@ const SUMMARY = {
 
 let calls;
 
-function stubFetch({ summary = SUMMARY, readOk = true } = {}) {
+function stubFetch({ summary = SUMMARY, readOk = true, session = null } = {}) {
   calls = [];
+  let sessionReads = 0;
   vi.stubGlobal('fetch', vi.fn((url, opts) => {
     const href = String(url);
     calls.push({ url: href, body: opts?.body ? JSON.parse(opts.body) : null });
+    if (href.includes('/reading/session/ack')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    }
+    if (href.includes('/reading/session?')) {
+      const snapshot = typeof session === 'function' ? session(sessionReads++) : session;
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ location: 'livingroom', session: snapshot }) });
+    }
     if (href.includes('/reading/read')) {
       return Promise.resolve({ ok: readOk, status: readOk ? 200 : 500, json: async () => ({ recorded: readOk }) });
     }
@@ -83,6 +91,78 @@ describe('useReadingSession — playback', () => {
     expect(played[0]).toMatchObject({ learnerId: 'learner-c', contentId: 'plex:620681', location: 'livingroom' });
     expect(played[0].pickId).toMatch(/^pick_/);
     expect(result.current.view).toBe('playing');
+  });
+
+  it('recovers a launch missed during cold resume from the authoritative snapshot and ACKs once', async () => {
+    stubFetch({
+      session: {
+        sessionId: 'rs-cold-resume',
+        location: 'livingroom',
+        learnerId: 'learner-c',
+        state: 'prompt',
+      },
+    });
+
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.view).toBe('open');
+    expect(result.current.learner).toMatchObject({ id: 'learner-c' });
+    expect(posted('/reading/session/ack')).toHaveLength(1);
+    expect(posted('/reading/session/ack')[0].body).toEqual({
+      location: 'livingroom',
+      sessionId: 'rs-cold-resume',
+    });
+  });
+
+  it('does not apply or ACK a reservation that has not been activated yet', async () => {
+    stubFetch({
+      session: {
+        sessionId: 'rs-still-waking',
+        location: 'livingroom',
+        learnerId: 'learner-c',
+        state: 'starting',
+      },
+    });
+
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.view).toBe('idle');
+    expect(posted('/reading/session/ack')).toHaveLength(0);
+  });
+
+  it('polls a STARTING snapshot and recovers once the slow wake activates it', async () => {
+    stubFetch({
+      session: (read) => read === 0
+        ? {
+            sessionId: 'rs-slow-wake', location: 'livingroom',
+            learnerId: 'learner-c', state: 'starting',
+          }
+        : {
+            sessionId: 'rs-slow-wake', location: 'livingroom',
+            learnerId: 'learner-c', state: 'prompt',
+          },
+    });
+
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom' }));
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1000);
+      await Promise.resolve();
+    });
+
+    expect(result.current.view).toBe('open');
+    expect(result.current.learner).toMatchObject({ id: 'learner-c' });
+    expect(posted('/reading/session?')).toHaveLength(2);
+    expect(posted('/reading/session/ack')).toHaveLength(1);
   });
 
   it('reports the FIRST FRAME to the backend, once, with the pick it committed', async () => {

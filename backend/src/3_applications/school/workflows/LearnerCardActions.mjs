@@ -245,10 +245,13 @@ export function makeReadingSessionHandler({
             return;
           }
           if (attempt === maxDeliveryAttempts) break;
-          sessions.reannounce(location, active.sessionId);
           try { await wakeScreen?.({ target, location, prepareOnly: true }); } catch (err) {
             log('warn', 'school.reading.delivery-replay-wake-failed', { location, attempt: attempt + 1, error: err?.message ?? String(err) });
           }
+          // Foreground first, replay second. A cold/reconnecting WebView can
+          // miss a message sent just before it becomes runnable; the current
+          // snapshot is still authoritative if foregrounding itself fails.
+          sessions.reannounce(location, active.sessionId);
         }
         log('error', 'school.reading.delivery-unacknowledged', { location, learnerId, sessionId: active.sessionId, attempts: maxDeliveryAttempts });
         try { await alertAdult?.({ location, target, learnerId, sessionId: active.sessionId }); } catch (err) {

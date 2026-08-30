@@ -15,27 +15,42 @@
  * this reader?". Collapsing the two is how a family movie gets logged as
  * somebody's homework.
  */
-import { describe, it, expect } from 'vitest';
-import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
+import { describe, it, expect, vi } from 'vitest';
+import { ReadingSessionService as ProductionReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
 import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
 import { makeReadingSessionHandler, makeReadingTimeoutHandler } from '#composition/modules/learnerCardActions.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
+const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };
+class ReadingSessionService extends ProductionReadingSessionService {
+  constructor(config = {}) { super({ scheduler: TEST_SCHEDULER, ...config }); }
+}
 
-function build({ playing = false, wake = async () => ({ ok: true }) } = {}) {
+function build({
+  playing = false,
+  wake = async () => ({ ok: true }),
+  scheduler = TEST_SCHEDULER,
+  logger = silent,
+  alertAdult = null,
+  ackTimeoutMs = 8_000,
+  maxDeliveryAttempts = 3,
+} = {}) {
   const sent = [];
   // ONE bus, shared by the store and the handler, exactly as composition wires
   // it: `session-open` is the store's own broadcast and `session-refused` is
   // the handler's, and the screen hears both on the same topic.
   const bus = { broadcast: (topic, payload) => sent.push({ topic, payload }) };
-  const store = new ReadingSessionService({ realtime: new EventBusSchoolRealtimeAdapter({ eventBus: bus }), logger: silent });
+  const store = new ReadingSessionService({ realtime: new EventBusSchoolRealtimeAdapter({ eventBus: bus }), logger, scheduler });
   const woke = [];
   const handler = makeReadingSessionHandler({
     sessions: store,
     isPlaying: typeof playing === 'function' ? playing : () => playing,
     wakeScreen: async (args) => { woke.push(args); return wake(args); },
+    alertAdult,
+    ackTimeoutMs,
+    maxDeliveryAttempts,
     eventBus: bus,
-    logger: silent,
+    logger,
   });
   return { handler, sessions: store, sent, woke };
 }
@@ -101,6 +116,59 @@ describe('reading-session — an ordinary card tap opens a session', () => {
     const result = await handler(tap({ location: null }));
     expect(result).toMatchObject({ status: 'reading_session_failed' });
     expect(sessions.list()).toEqual([]);
+  });
+
+  it('replays the exact intent and re-foregrounds after an acknowledgement timeout', async () => {
+    const deadlines = [];
+    const scheduler = {
+      withDeadline: (work) => Promise.race([
+        work,
+        new Promise((_, reject) => deadlines.push(() => reject(new Error('deadline')))),
+      ]),
+      every: () => () => {},
+      wait: async () => {},
+    };
+    const logger = { ...silent, info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const r = build({ scheduler, logger });
+
+    await r.handler(tap());
+    expect(deadlines).toHaveLength(1);
+
+    deadlines.shift()();
+    await vi.waitFor(() => expect(r.woke).toHaveLength(2));
+    const active = r.sessions.current('livingroom');
+    r.sessions.acknowledge('livingroom', active.sessionId);
+
+    await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith(
+      'school.reading.delivery-acknowledged',
+      expect.objectContaining({ sessionId: active.sessionId, attempt: 2 }),
+    ));
+    expect(r.woke[1]).toMatchObject({ target: 'livingroom-tv', location: 'livingroom', prepareOnly: true });
+    expect(r.sent.filter((entry) => entry.payload?.event === 'session-open')).toHaveLength(2);
+  });
+
+  it('alerts an adult only after every bounded delivery recovery attempt fails', async () => {
+    const scheduler = {
+      withDeadline: async () => { throw new Error('deadline'); },
+      every: () => () => {},
+      wait: async () => {},
+    };
+    const alertAdult = vi.fn(async () => {});
+    const logger = { ...silent, info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const r = build({ scheduler, logger, alertAdult, maxDeliveryAttempts: 3 });
+
+    await r.handler(tap());
+
+    await vi.waitFor(() => expect(alertAdult).toHaveBeenCalledTimes(1));
+    expect(r.woke).toEqual([
+      { target: 'livingroom-tv', location: 'livingroom' },
+      { target: 'livingroom-tv', location: 'livingroom', prepareOnly: true },
+      { target: 'livingroom-tv', location: 'livingroom', prepareOnly: true },
+    ]);
+    expect(logger.error).toHaveBeenCalledWith(
+      'school.reading.delivery-unacknowledged',
+      expect.objectContaining({ attempts: 3 }),
+    );
   });
 });
 

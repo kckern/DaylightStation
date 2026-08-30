@@ -3,10 +3,56 @@
 **Date:** 2026-08-28
 **Found by:** field observation — a learner ran the full story-time flow and a
 grown-up watched every step of it
-**Status:** diagnosed, not fixed. Root causes confirmed against the log store.
+**Status:** original fixes shipped; a 2026-08-30 cold-wake recurrence exposed
+two production composition omissions. Repair implemented locally, awaiting
+deployment and hardware verification.
 **Severity:** story time completes on screen and records **nothing**. A child
 does the work; the obligation never moves.
 **Reference:** `docs/reference/school/reading-sessions.md`
+
+---
+
+## 2026-08-30 recurrence — intent survived in memory but recovery never ran
+
+Alan's study card and Story Time code both resolved correctly. The backend
+reserved reading session `rs_mtg6bp0d_2` for `livingroom` at 11:59:39 PDT, then
+the living-room wake took **35.7 seconds**. Fully Kiosk spent 10.0 seconds on a
+timed-out `getDeviceInfo` read, confirmed foreground on attempt 2 after 24.3
+seconds, relaunched the audio bridge, and completed preparation after 29.7
+seconds. The Shield page started and its WebSocket reconnected during that
+window, but the Launch Card never appeared and the session never ACKed.
+
+The latency widened the race; it was not sufficient to lose the intent. Two
+dependencies introduced by the DDD boundary refactor (`76f2089c3`) were never
+wired at the production composition root:
+
+1. `ReadingSessionService.waitForAcknowledgement()` had no scheduler. Its first
+   timeout therefore became an unbounded promise, so replay, re-foreground,
+   terminal logging, and the adult alert could never run.
+2. `ReadingSessionService` and `ReadingSessionInterceptor` now consume the
+   School realtime port, but production still passed an unknown `eventBus`
+   option. JavaScript ignored it. Activation and book events were silent
+   no-ops. The page hydrated while the reservation was still `STARTING`,
+   correctly ignored it, and then received no activation broadcast.
+
+The repair makes the scheduler contract mandatory, injects `NodeAsyncScheduler`,
+and shares one `EventBusSchoolRealtimeAdapter` across the session, interceptor,
+and read-completion use case. The screen hydrates the current snapshot after
+subscribing, polls if it arrived during `STARTING`, and ACKs the active session
+once. Missing ACKs now advance through three bounded re-foreground-then-replay
+attempts and one adult alert; the session remains available for later hydration
+even after that alert.
+
+Fully Kiosk also has a broadcast-specific preparation profile. Story Time and
+screen lessons need only `screenOn` plus `toForeground`; audio-bridge,
+microphone, camera, and `getDeviceInfo` checks cannot establish whether the
+widget rendered the intent. The client ACK is the stronger readiness signal.
+The full preparation path remains unchanged for media and Homeline flows that
+need those capabilities.
+
+Regression coverage now includes the production dependency contract, bounded
+ACK timeout, replay plus prepare-only recovery, terminal adult alert, cold-mount
+snapshot hydration, single ACK, and the two-command Fully Kiosk broadcast path.
 
 ---
 

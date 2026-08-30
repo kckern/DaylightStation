@@ -46,6 +46,10 @@ export const DEFAULT_CONFIRM_MS = 6000;
 const CELEBRATE_MS = 9000;
 /** How long a refusal or a fault stays on screen. */
 const NOTICE_MS = 7000;
+/** A cold kiosk can mount while the backend is still inside the wake call. */
+const STARTING_HYDRATE_RETRY_MS = 1000;
+/** Stop polling eventually; websocket replay remains available after this. */
+const HYDRATE_RECOVERY_BUDGET_MS = 120_000;
 
 export const readingTopic = (location) => `reading:${location}`;
 
@@ -507,16 +511,40 @@ export function useReadingSession({
   // so a cold TV or an auto-reloaded page cannot miss its only `session-open`.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let retryTimer = null;
+    const startedAt = Date.now();
+    const retryWithinBudget = (reason) => {
+      if (cancelled) return;
+      if (Date.now() - startedAt >= HYDRATE_RECOVERY_BUDGET_MS) {
+        readingLog.warn('session-hydration-timeout', { location, reason });
+        return;
+      }
+      retryTimer = setTimeout(hydrate, STARTING_HYDRATE_RETRY_MS);
+    };
+    const hydrate = async () => {
       const result = await schoolApi.readingSession(location);
+      if (cancelled) return;
+      if (!result.ok) {
+        retryWithinBudget('snapshot-unavailable');
+        return;
+      }
       const session = result.ok ? result.data?.session : null;
-      if (cancelled || !session || session.state === 'starting') return;
+      if (!session) return;
+      if (session.state === 'starting') {
+        retryWithinBudget('session-starting');
+        return;
+      }
+      // `handle(session-open)` owns the one ACK for both websocket delivery and
+      // snapshot recovery. Keeping it there prevents the hydration path from
+      // acknowledging twice while preserving the invariant that only an
+      // applied, non-STARTING session is acknowledged.
       handle({ event: 'session-open', ...session });
-      // This is the delivery proof: the client has subscribed, fetched, and
-      // applied the prompt before it tells the starter that the TV is ready.
-      await schoolApi.acknowledgeReadingSession({ location, sessionId: session.sessionId });
-    })();
-    return () => { cancelled = true; };
+    };
+    hydrate();
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+    };
   }, [handle, location]);
 
   return {

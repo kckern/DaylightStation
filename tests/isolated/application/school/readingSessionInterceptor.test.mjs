@@ -7,13 +7,17 @@
  * and the existing preempt / on-deck queue applies unchanged.
  */
 import { describe, it, expect } from 'vitest';
-import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
+import { ReadingSessionService as ProductionReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
 import { ReadingSessionInterceptor } from '#apps/school/readingSessionInterceptor.mjs';
 // Through the REAL seam, not a stand-in for it: the two halves shipped in
 // separate commits and only this pair proves they meet.
 import { responseHandlers } from '#apps/trigger/responseHandlers.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
+const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };
+class ReadingSessionService extends ProductionReadingSessionService {
+  constructor(config = {}) { super({ scheduler: TEST_SCHEDULER, ...config }); }
+}
 
 const bookTap = (over = {}) => ({
   kind: 'content',
@@ -276,7 +280,7 @@ describe('ReadingSessionInterceptor — failure paths', () => {
     const interceptor = new ReadingSessionInterceptor({
       sessions,
       storyTime: owing,
-      eventBus: { broadcast: () => { throw new Error('bus down'); } },
+      realtime: { readingRoomChanged: () => { throw new Error('bus down'); } },
       logger: silent,
     });
     sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
@@ -470,7 +474,7 @@ describe('ReadingSessionInterceptor — an unknown tag inside a session (D9)', (
     sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
     const interceptor = new ReadingSessionInterceptor({
       sessions, storyTime: owing,
-      eventBus: { broadcast() { throw new Error('bus is gone'); } },
+      realtime: { readingRoomChanged() { throw new Error('bus is gone'); } },
       logger: silent,
     });
     expect(interceptor.noteUnknownTag({ location: 'livingroom', tagUid: '04a1b2c3' })).toBe(false);
