@@ -142,6 +142,7 @@ const useFitnessModule = (moduleId) => {
     zones: fitnessCtx.zones,
     governanceState: fitnessCtx.governanceState,
     activeGovernancePolicy: fitnessCtx.activeGovernancePolicy,
+    governanceConfig: fitnessCtx.governanceConfig,
     governanceChallenge: fitnessCtx.governanceChallenge,
     reportGovernanceMetric: fitnessCtx.reportGovernanceMetric,
     treasureBox: fitnessCtx.treasureBox,

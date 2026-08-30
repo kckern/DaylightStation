@@ -862,8 +862,6 @@ RaceChartSvg.displayName = 'RaceChartSvg';
 
 const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessionData, primaryMediaKey }) => {
 	useRenderProfiler('FitnessChart');
-	// Exempt participants are excluded from the y-scale basis (logScaleBasis.js).
-	const exemptions = useGovernanceExemptions();
 	const {
 		participants,
 		historicalParticipants,
@@ -875,8 +873,13 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 		sessionId,        // Session ID for cache cleanup on session change
 		participantDisplayMap,     // SSoT for name/avatar/progress/zoneIndex per participant
 		sessionParticipantsMeta,   // Persisted session meta (for offline hydration — Issue A)
-		configuredUsers            // userCollections.all — slug -> real name, for historical rosters
+		configuredUsers,           // userCollections.all — slug -> real name, for historical rosters
+		governanceConfig
 	} = useFitnessModule('fitness_chart');
+	// Exempt participants are excluded from the y-scale basis (logScaleBasis.js).
+	// Seed from FitnessContext: fetching this config after mount used to let the
+	// initial results frame include an exempt rider, then redraw differently.
+	const exemptions = useGovernanceExemptions(governanceConfig?.exemptions);
 
 	// Historical mode: use static session data instead of live module data
 	const staticSource = useMemo(() => {
