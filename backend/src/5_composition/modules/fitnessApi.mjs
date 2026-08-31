@@ -101,6 +101,7 @@ export function createFitnessApiRouter(config) {
     // slug guard and the browse read path — never constructed twice.
     exerciseLibrary = null,
     fitnessPlayableModule = null,
+    onSessionsChanged = null,
     logger = console
   } = config;
 
@@ -346,6 +347,7 @@ export function createFitnessApiRouter(config) {
     timelapse: generateSessionTimelapse,
     renderReceipt: createReceiptCanvas,
     config: fitnessConfigService,
+    onSessionsChanged,
     logger,
   });
   const cycleRaceApi = new CycleRaceApiService({ races: fitnessServices.cycleRaceService, config: fitnessConfigService });

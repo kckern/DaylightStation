@@ -28,13 +28,14 @@ class FakeEventBus {
   }
 }
 
-let clock, eventBus, getCompletion, bridge, nextState;
+let clock, eventBus, getCompletion, bridge, nextState, nextStudyDate;
 
 const build = () => {
   clock = fakeClock();
   eventBus = new FakeEventBus();
   nextState = 'incomplete';
-  getCompletion = { execute: async ({ learnerId }) => ({ learnerId, studyDate: '2026-08-23', state: nextState, excused: [], faults: [] }) };
+  nextStudyDate = '2026-08-23';
+  getCompletion = { execute: async ({ learnerId }) => ({ learnerId, studyDate: nextStudyDate, state: nextState, excused: [], faults: [] }) };
   bridge = new SchoolCompletionBridge({ realtime: new EventBusSchoolRealtimeAdapter({ eventBus }), getLearnerDayCompletion: getCompletion, clock: clock.now, logger: silentLogger });
 };
 
@@ -51,6 +52,10 @@ describe('start/stop', () => {
   it('start() subscribes to school.session.outcome-recorded', () => {
     bridge.start();
     expect(eventBus.subscriberCount('school.session.outcome-recorded')).toBe(1);
+    expect(eventBus.subscriberCount('piano.lesson.completed')).toBe(1);
+    expect(eventBus.subscriberCount('piano.school-challenge.completed')).toBe(1);
+    expect(eventBus.subscriberCount('school.assignments.changed')).toBe(1);
+    expect(eventBus.subscriberCount('school')).toBe(1);
   });
 
   it('start() twice does not double-subscribe', () => {
@@ -97,6 +102,31 @@ describe('state observation publish', () => {
     await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's1', unitId: 'u1', result: 'passed', at: clock.iso() });
     await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's2', unitId: 'u2', result: 'failed', at: clock.iso() });
     expect(eventBus.published).toHaveLength(1);
+  });
+
+  it('publishes the first observation of a new study day even when its state is unchanged', async () => {
+    bridge.start();
+    await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1' });
+    nextStudyDate = '2026-08-24';
+    await eventBus.emit('school', { event: 'story-read', learnerId: 'kid1' });
+    expect(eventBus.published).toHaveLength(2);
+    expect(eventBus.published[1].payload).toMatchObject({
+      learnerId: 'kid1', studyDate: '2026-08-24', state: 'incomplete',
+      previousState: null, initial: true,
+    });
+  });
+
+  it.each([
+    ['piano.lesson.completed', { userId: 'kid1' }],
+    ['piano.school-challenge.completed', { userId: 'kid1' }],
+    ['school.assignments.changed', { learnerId: 'kid1' }],
+    ['school', { event: 'program-day-bypass-changed', learnerId: 'kid1' }],
+  ])('recomputes after %s completion input', async (topic, payload) => {
+    bridge.start();
+    await eventBus.emit(topic, payload);
+    expect(eventBus.published?.[0]).toMatchObject({
+      topic: 'school.completion.state-observed', payload: { learnerId: 'kid1' },
+    });
   });
 
   it('serializes rapid recomputations for the same learner', async () => {

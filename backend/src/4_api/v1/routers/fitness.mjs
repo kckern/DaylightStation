@@ -545,6 +545,10 @@ export function createFitnessRouter(config) {
     }
     // EntityNotFoundError → 404 is mapped by name in the error middleware.
     const merged = await sessionService.mergeSessions(sourceSessionId, targetSessionId, household);
+    fitnessSessionOperations?.notifySessionsChanged?.({
+      operation: 'merged', sessionId: merged.sessionId?.toString() ?? targetSessionId,
+      householdId: household,
+    });
     logger.info?.('fitness.sessions.merged', {
       sourceSessionId,
       targetSessionId,

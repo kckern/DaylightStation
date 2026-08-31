@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useWebSocketSubscription } from '../../../hooks/useWebSocket.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 
@@ -9,13 +10,29 @@ export function completionAllowsGames(state) {
   return UNLOCKED_STATES.has(state);
 }
 
+export function activePianoGamesDecision(payload, at = Date.now()) {
+  return (payload?.items ?? [])
+    .filter((item) => item?.capabilityId === 'piano.games'
+      && item?.subject?.kind === 'learner'
+      && item?.period?.kind === 'interval'
+      && Number.isFinite(item.period.startsAt)
+      && Number.isFinite(item.period.endsAt)
+      && at >= item.period.startsAt && at < item.period.endsAt)
+    .sort((left, right) => right.period.startsAt - left.period.startsAt)[0] ?? null;
+}
+
+function completionStateForDecision(decision) {
+  if (!decision || decision.degraded || decision.basisState === 'indeterminate') return 'indeterminate';
+  return decision.decision === 'granted' ? 'complete' : 'incomplete';
+}
+
 /**
  * Resolve whether the active piano player may enter Games.
  *
- * Completion is purely derived and can reopen during a day, so this is not a
- * one-shot fetch. It refreshes while the kiosk is mounted and immediately when
- * the tab becomes visible again. Guest has no roster-backed School identity;
- * Guest, a missing identity, and a failed read all stay closed.
+ * The `piano.games` entitlement is purely derived and can reopen during a day,
+ * so this is not a one-shot fetch. It refreshes on State Gates events, while
+ * mounted, and when the tab becomes visible. Guest has no roster-backed
+ * identity; Guest, a missing identity, and a failed read all stay closed.
  */
 export default function useSchoolGameAccess(learnerId) {
   const guest = learnerId === 'guest';
@@ -52,11 +69,16 @@ export default function useSchoolGameAccess(learnerId) {
 
     try {
       const result = await DaylightAPI(
-        `api/v1/school/lifecycle/learners/${encodeURIComponent(learnerId)}/completion`,
+        `api/v1/entitlements?${new URLSearchParams({
+          capabilityId: 'piano.games', subjectKind: 'learner',
+          subjectId: learnerId, periodKind: 'interval',
+        })}`,
       );
       if (generation !== requestGeneration.current) return;
-      const state = result?.state ?? null;
-      const unlocked = completionAllowsGames(state);
+      const decision = activePianoGamesDecision(result);
+      const state = completionStateForDecision(decision);
+      const unlocked = decision?.decision === 'granted'
+        && decision.degraded !== true && decision.basisState !== 'indeterminate';
       const verdict = `${learnerId}:${state}:${unlocked}`;
       if (lastVerdict.current !== verdict) {
         lastVerdict.current = verdict;
@@ -73,7 +95,7 @@ export default function useSchoolGameAccess(learnerId) {
             // unlocks games exactly as `complete` does, and telling those two
             // apart is the difference between "they finished" and "the gate
             // cannot see their work".
-            { learnerId, state, unlocked },
+            { learnerId, state, unlocked, basisState: decision?.basisState ?? null },
           );
         } catch { /* never let observability close a gate */ }
       }
@@ -87,6 +109,16 @@ export default function useSchoolGameAccess(learnerId) {
       setSnapshot({ learnerId, status: 'error', state: null, unlocked: false });
     }
   }, [learnerId]);
+
+  const onStateGates = useCallback((event) => {
+    const current = event?.payload?.current;
+    const capabilityId = current?.capabilityId ?? event?.payload?.capabilityId ?? null;
+    if (capabilityId !== 'piano.games') return;
+    const subjectId = current?.subject?.id ?? event?.payload?.subject?.id ?? null;
+    if (subjectId && subjectId !== learnerId) return;
+    refresh();
+  }, [learnerId, refresh]);
+  useWebSocketSubscription('state-gates', onStateGates, [onStateGates]);
 
   useEffect(() => {
     let cancelled = false;

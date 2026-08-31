@@ -8,8 +8,10 @@ data/household[-{hid}]/state-gates/config.yml
 
 It is loaded through `ConfigService` under the app key `state-gates`. Configuration is
 runtime-cached, but policy activation calls the reload path before validation. Startup
-also reconciles the current candidate. A candidate becomes active only after the entire
-graph validates.
+also reconciles the current candidate. When this file is absent, composition supplies
+the installed School/Fitness/Piano graph; an authored file replaces that candidate and
+must include those definitions to retain the installed integration behavior. A candidate
+becomes active only after the entire graph validates.
 
 ## Minimal policy
 

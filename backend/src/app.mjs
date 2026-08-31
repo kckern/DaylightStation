@@ -1441,12 +1441,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Stream router for singalong/readalong content
     stream: contentRouters.stream,
   };
+  // Fixed service-principal objects are intentionally private to composition.
+  // Authenticated ingress compares object identity, so neither an HTTP body
+  // nor a generic event-bus message can impersonate these publishers.
+  const schoolStateGatesPrincipal = Object.freeze({ service: 'school-state-gates-producer' });
+  const fitnessStateGatesPrincipal = Object.freeze({ service: 'fitness-state-gates-producer' });
+  const stateGatesProducerScheduler = Object.freeze({
+    schedule(delayMs, task) {
+      const timer = setTimeout(task, delayMs);
+      timer.unref?.();
+      return () => clearTimeout(timer);
+    },
+  });
   const stateGatesModule = await createStateGatesModule({
     configService,
     eventBus,
     householdId,
     clock: { now: () => Date.now() },
     roleIds: Object.keys(authConfig.roles ?? {}),
+    producerPrincipals: {
+      school: schoolStateGatesPrincipal,
+      fitness: fitnessStateGatesPrincipal,
+    },
     logger: rootLogger,
   });
   v1Routers.stateGates = stateGatesModule.stateGatesRouter;
@@ -3461,6 +3477,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'fitness-workouts' })
   });
 
+  let fitnessStateGatesProducer = null;
+
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
@@ -3485,6 +3503,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     saveWorkout,
     exerciseLibrary,
     fitnessPlayableModule,
+    onSessionsChanged: (change) => fitnessStateGatesProducer?.requestReconcile(change),
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 
@@ -3856,6 +3875,31 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // A console that cannot be built must not stop the house from booting: the
     // rest of School (banks, materials, language) is untouched by its absence.
     schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
+  }
+  let schoolStateGatesProducer = null;
+  if (schoolLifecycle.wired && schoolLifecycle.realtime && schoolLifecycle.getLearnerDayCompletion) {
+    try {
+      const { SchoolStateGatesProducer } = await import('#apps/school/SchoolStateGatesProducer.mjs');
+      schoolStateGatesProducer = new SchoolStateGatesProducer({
+        realtime: schoolLifecycle.realtime,
+        getLearnerDayCompletion: schoolLifecycle.getLearnerDayCompletion,
+        learners: () => schoolLearnerDirectory.listLearners(),
+        publishAssertion: (assertion) => stateGatesModule.ingress.observe(
+          householdId, schoolStateGatesPrincipal, assertion,
+        ),
+        retractAssertion: (command) => stateGatesModule.ingress.retract(
+          householdId, schoolStateGatesPrincipal, command,
+        ),
+        timezone: configService.getHouseholdTimezone?.(householdId) || 'UTC',
+        scheduler: stateGatesProducerScheduler,
+        logger: rootLogger.child({ module: 'state-gates-school-producer' }),
+      });
+      await schoolStateGatesProducer.start();
+    } catch (err) {
+      schoolStateGatesProducer?.stop();
+      schoolStateGatesProducer = null;
+      schoolLifecycleLogger.error('school.state-gates-producer.wiring-failed', { error: err.message });
+    }
   }
   const teacherCapabilitySessions = new TeacherCapabilitySessions({
     teacherGate: schoolTeacherGate,
@@ -4825,14 +4869,32 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         .listSessionsInRange(from, to, householdId),
     },
   }));
-  v1Routers.measures = createMeasuresRouter({
-    weeklyMeasures: new GetWeeklyMeasures({
-      registry: measureRegistry,
-      learners: async () => schoolLearnerDirectory.listLearners(),
-      timezone: measuresTimezone,
-      logger: rootLogger.child({ module: 'measures' }),
-    }),
+  const weeklyMeasures = new GetWeeklyMeasures({
+    registry: measureRegistry,
+    learners: async () => schoolLearnerDirectory.listLearners(),
+    timezone: measuresTimezone,
+    logger: rootLogger.child({ module: 'measures' }),
   });
+  v1Routers.measures = createMeasuresRouter({
+    weeklyMeasures,
+  });
+  try {
+    const { WeeklyMeasuresStateGatesProducer } = await import('#apps/measures/WeeklyMeasuresStateGatesProducer.mjs');
+    fitnessStateGatesProducer = new WeeklyMeasuresStateGatesProducer({
+      weeklyMeasures,
+      publishAssertion: (assertion) => stateGatesModule.ingress.observe(
+        householdId, fitnessStateGatesPrincipal, assertion,
+      ),
+      timezone: measuresTimezone,
+      scheduler: stateGatesProducerScheduler,
+      logger: rootLogger.child({ module: 'state-gates-fitness-producer' }),
+    });
+    await fitnessStateGatesProducer.start();
+  } catch (err) {
+    fitnessStateGatesProducer?.stop();
+    fitnessStateGatesProducer = null;
+    rootLogger.error('fitness.state-gates-producer.wiring-failed', { error: err.message });
+  }
   // The action executor is deliberately late-bound: SchoolCalc is composed
   // before the existing print and trigger services, but scans cannot arrive
   // until boot is complete. This keeps one shared policy path rather than a
@@ -6291,6 +6353,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       } catch (err) {
         rootLogger.error?.('school.completion-bridge.shutdown.error', { error: err?.message });
       }
+    });
+  }
+
+  if (schoolStateGatesProducer) {
+    process.on('SIGTERM', () => {
+      schoolStateGatesProducer.stop();
+      rootLogger.info?.('school.state-gates-producer.shutdown.complete');
+    });
+  }
+
+  if (fitnessStateGatesProducer) {
+    process.on('SIGTERM', () => {
+      fitnessStateGatesProducer.stop();
+      rootLogger.info?.('fitness.state-gates-producer.shutdown.complete');
     });
   }
 

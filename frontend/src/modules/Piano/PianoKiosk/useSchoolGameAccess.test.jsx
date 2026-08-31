@@ -1,10 +1,26 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ response: { state: 'incomplete' } }));
+const h = vi.hoisted(() => ({ response: null, stateGatesHandler: null }));
+
+function entitlement({ decision = 'denied', basisState = 'unsatisfied', learnerId = 'kid-one' } = {}) {
+  return {
+    items: [{
+      capabilityId: 'piano.games', gateId: 'school.day-complete',
+      subject: { kind: 'learner', id: learnerId },
+      period: { kind: 'interval', id: 'school-day:2026-08-30', startsAt: 0, endsAt: 4_102_444_800_000 },
+      decision, basisState, degraded: basisState === 'indeterminate',
+    }],
+  };
+}
 
 vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn(async () => h.response),
+}));
+vi.mock('../../../hooks/useWebSocket.js', () => ({
+  useWebSocketSubscription: (topic, handler) => {
+    if (topic === 'state-gates') h.stateGatesHandler = handler;
+  },
 }));
 // Both levels the hook uses. The mock carried only `warn`, which meant a test
 // suite could not have caught the hazard that `info` introduced on 2026-08-28:
@@ -19,7 +35,8 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import useSchoolGameAccess, { completionAllowsGames } from './useSchoolGameAccess.js';
 
 beforeEach(() => {
-  h.response = { state: 'incomplete' };
+  h.response = entitlement();
+  h.stateGatesHandler = null;
   DaylightAPI.mockClear();
 });
 
@@ -59,18 +76,16 @@ describe('useSchoolGameAccess', () => {
     const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current).toMatchObject({ state: 'incomplete', unlocked: false });
-    expect(DaylightAPI).toHaveBeenCalledWith(
-      'api/v1/school/lifecycle/learners/kid-one/completion',
-    );
+    expect(DaylightAPI).toHaveBeenCalledWith(expect.stringMatching(
+      /^api\/v1\/entitlements\?.*capabilityId=piano\.games.*subjectId=kid-one/,
+    ));
   });
 
-  it('unlocks a learner with no work today', async () => {
-    h.response = { state: 'no_work_today' };
+  it('unlocks when the fail-closed piano.games entitlement is granted', async () => {
+    h.response = entitlement({ decision: 'granted', basisState: 'satisfied', learnerId: 'kid one' });
     const { result } = renderHook(() => useSchoolGameAccess('kid one'));
     await waitFor(() => expect(result.current.unlocked).toBe(true));
-    expect(DaylightAPI).toHaveBeenCalledWith(
-      'api/v1/school/lifecycle/learners/kid%20one/completion',
-    );
+    expect(DaylightAPI).toHaveBeenCalledWith(expect.stringContaining('subjectId=kid+one'));
   });
 
   it('keeps Guest locked without asking School for a nonexistent learner', async () => {
@@ -80,7 +95,7 @@ describe('useSchoolGameAccess', () => {
     expect(DaylightAPI).not.toHaveBeenCalled();
   });
 
-  it('fails closed when the completion read fails', async () => {
+  it('fails closed when the entitlement read fails', async () => {
     DaylightAPI.mockRejectedValueOnce(new Error('offline'));
     const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
     await waitFor(() => expect(result.current.status).toBe('error'));
@@ -88,7 +103,7 @@ describe('useSchoolGameAccess', () => {
   });
 
   it('does not carry one player\'s unlock across an identity switch', async () => {
-    h.response = { state: 'complete' };
+    h.response = entitlement({ decision: 'granted', basisState: 'satisfied' });
     const { result, rerender } = renderHook(
       ({ learnerId }) => useSchoolGameAccess(learnerId),
       { initialProps: { learnerId: 'kid-one' } },
@@ -102,14 +117,34 @@ describe('useSchoolGameAccess', () => {
     expect(result.current).toMatchObject({ status: 'loading', unlocked: false });
   });
 
-  it('refreshes completion while the kiosk remains mounted', async () => {
+  it('refreshes the entitlement while the kiosk remains mounted', async () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(result.current.unlocked).toBe(false);
 
-    h.response = { state: 'complete' };
+    h.response = entitlement({ decision: 'granted', basisState: 'satisfied' });
     await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
     expect(result.current).toMatchObject({ state: 'complete', unlocked: true });
+  });
+
+  it('refreshes immediately when this learner\'s State Gates entitlement changes', async () => {
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    h.response = entitlement({ decision: 'granted', basisState: 'satisfied' });
+    await act(async () => {
+      h.stateGatesHandler({
+        kind: 'EntitlementDecisionChanged',
+        payload: { capabilityId: 'piano.games', subject: { kind: 'learner', id: 'kid-one' } },
+      });
+    });
+    await waitFor(() => expect(result.current.unlocked).toBe(true));
+  });
+
+  it('shows indeterminate and stays locked when current evidence is degraded or missing', async () => {
+    h.response = entitlement({ decision: 'granted', basisState: 'indeterminate' });
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current).toMatchObject({ state: 'indeterminate', unlocked: false });
   });
 });

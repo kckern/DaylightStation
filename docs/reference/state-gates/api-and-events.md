@@ -56,8 +56,10 @@ Collection resources accept these optional query parameters:
 | `subjectId` | Stable subject ID |
 | `periodKind` | `instant`, `local_day`, `local_week`, `interval`, or `occurrence` |
 | `periodId` | Stable period ID |
+| `gateId` | Namespaced gate ID (`GET /state-gates` only) |
 
-`GET /entitlements` also accepts `capabilityId`. Gate detail uses the path `gateId`.
+`GET /entitlements` also accepts `capabilityId`. Gate detail also supports the path
+form `GET /state-gates/:gateId`.
 
 Known query parameters must be non-empty scalar values; repeated/array values are
 rejected. Subject and period kinds must use the closed vocabularies above, subject and

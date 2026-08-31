@@ -1,7 +1,7 @@
 /**
  * The school week, as a measure window.
  *
- * Sunday 04:00 → Saturday 04:00 local, on the SAME 4am study-day boundary
+ * Sunday 04:00 → the following Sunday 04:00 local, on the SAME 4am study-day boundary
  * school already uses (`domains/school/timing.mjs#studyDate`). One definition
  * of "day" in the house, not two.
  *

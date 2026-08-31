@@ -10,11 +10,10 @@ evaluates named gates, and publishes both four-state gate evaluations and binary
 entitlement decisions. It does not execute the gated action or decide how a denied
 capability looks in a UI.
 
-**Implementation status:** the core backend is complete and covered across the domain,
-application, adapter, API, persistence, and composition lifecycle. No School, Piano,
-Fitness, chore, or screen producer/consumer migration is included yet. With no valid
-household policy, the rest of DaylightStation starts normally and State Gates reports
-`POLICY_UNAVAILABLE`.
+**Implementation status:** the core backend is complete. School now publishes learner
+study-day completion, Fitness publishes weekly ring totals, Piano consumes the
+fail-closed `piano.games` entitlement, and School's Agenda board reads ring progress
+from `fitness.weekly-rings`. Chore, companion-media, and screen migrations remain open.
 
 ## Reference map
 
@@ -105,7 +104,7 @@ It does not own:
 | Concern | Contract |
 |---|---|
 | Bounded-context namespace | `state-gates` |
-| Policy file | `data/household[-{hid}]/state-gates/config.yml` |
+| Policy source | Household `state-gates/config.yml`, or the installed School/Fitness policy when absent |
 | Durable state | `data/household[-{hid}]/state-gates/current.yml` |
 | Policy schema | `daylight.state-gates-policy/v1` |
 | State schema | `daylight.state-gates-state/v1` |
@@ -173,15 +172,18 @@ Semantic authorization is narrower:
 
 See [API and events](api-and-events.md) for exact resources and error behavior.
 
-## Foundation boundary
+## Installed integrations
 
-The root composition currently registers `manual-attestation` as the only authenticated
-publisher. `producerPrincipals` is empty unless a producer migration explicitly adds a
-fixed principal binding. Merely declaring `school` or `fitness` under `publishers:` in
-YAML cannot authorize it; activation rejects publishers absent from the authenticated
-catalog.
+Root composition registers fixed, object-identity principals for `school` and `fitness`
+in addition to `manual-attestation`. A request body or event-bus message cannot obtain
+those identities. When no household policy exists, the installed policy declares:
 
-Likewise, no existing gate has been replaced. Piano games, Fitness governance, School
-completion, companion media, and screen behavior continue to use their existing
-mechanisms until each migration defines its source assertion, revision semantics,
-capability ID, failure posture, bootstrap/replay behavior, and local presentation.
+| Producer fact | Gate/entitlement consumer |
+|---|---|
+| `school.day.complete` on `interval/school-day:YYYY-MM-DD` | `school.day-complete` -> fail-closed `piano.games` |
+| `fitness.weekly.rings` on `interval/fitness-week:FROM:TO` | `fitness.weekly-rings` progress -> Agenda ring count |
+
+Both intervals use the household's 4 a.m. study-day boundary. A household-authored
+policy replaces the installed candidate and therefore must carry these IDs if it wants
+the installed producer/consumer wiring to remain active. The legacy School completion
+and weekly-measures read APIs remain available to unmigrated callers.

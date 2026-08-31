@@ -21,9 +21,9 @@ import { StateConflictError } from '#apps/common/errors/SemanticErrors.mjs';
 import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class EnrollLearner {
-  #syllabi; #assignments; #curriculum; #sessions; #timingAnchors; #teacherGate; #clock; #timezone; #rng; #logger;
+  #syllabi; #assignments; #curriculum; #sessions; #timingAnchors; #teacherGate; #realtime; #clock; #timezone; #rng; #logger;
 
-  constructor({ syllabi, assignments, curriculum, sessions = null, timingAnchors = null, teacherGate, clock = () => new Date(), timezone = null, rng = Math.random, logger = console } = {}) {
+  constructor({ syllabi, assignments, curriculum, sessions = null, timingAnchors = null, teacherGate, realtime = null, clock = () => new Date(), timezone = null, rng = Math.random, logger = console } = {}) {
     if (!syllabi) throw new Error('EnrollLearner requires a syllabi store');
     if (!assignments) throw new Error('EnrollLearner requires an assignments store');
     if (!curriculum) throw new Error('EnrollLearner requires curriculum access');
@@ -34,6 +34,7 @@ export class EnrollLearner {
     this.#sessions = sessions;
     this.#timingAnchors = timingAnchors;
     this.#teacherGate = teacherGate;
+    this.#realtime = realtime;
     this.#clock = clock;
     this.#timezone = timezone;
     this.#rng = rng;
@@ -160,6 +161,8 @@ export class EnrollLearner {
       assignedBy: enrolledBy,
       updatedAt: nowIso,
     });
+    try { this.#realtime?.assignmentsChanged?.({ learnerId, at: record.updatedAt }); }
+    catch (error) { this.#logger.warn?.('school.enrollment.broadcast-failed', { learnerId, error: error?.message }); }
     // Carries the policy-bearing fields, not just the ids: a later review of
     // "why was this worksheet at this level / graded at this bar" is answered
     // by the enrollment that was in force, and re-materializing can change

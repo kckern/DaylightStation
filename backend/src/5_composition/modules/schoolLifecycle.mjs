@@ -1067,14 +1067,14 @@ export async function createSchoolLifecycle({
     logger.warn?.('school.lifecycle.donow-bridge-unwired', { reason: 'no eventBus' });
   }
 
-  // Pushes `school.completion.changed` on an actual learner-day-completion
-  // transition (design 2026-08-23-student-completion-state-machine) — other
-  // subsystems (piano-kiosk unlocks, coins) subscribe rather than poll.
+  // Pushes `school.completion.state-observed` on an actual learner-day
+  // completion transition (design 2026-08-23-student-completion-state-machine)
+  // after any authoritative completion input changes.
   // Absent an eventBus, completion is still readable directly via
   // `getLearnerDayCompletion`; only the push notification is unavailable.
   let schoolCompletionBridge = null;
   let pianoLessonCeremonyBridge = null;
-  if (realtimeSubscriptionsAvailable && schoolRealtime?.onSessionOutcomeRecorded) {
+  if (realtimeSubscriptionsAvailable && (schoolRealtime?.onCompletionInputChanged || schoolRealtime?.onSessionOutcomeRecorded)) {
     schoolCompletionBridge = new SchoolCompletionBridge({
       realtime: schoolRealtime, getLearnerDayCompletion, clock, logger,
     });
@@ -1126,7 +1126,7 @@ export async function createSchoolLifecycle({
       rubiksCubeCourseId: RUBIKS_CUBE_COURSE_ID,
     }),
     roster: () => userService?.getHouseholdRoster?.() ?? [],
-    clock, logger,
+    realtime: schoolRealtime, clock, logger,
   });
 
   // --- syllabi + enrollment (spec: docs/reference/school/enrollment.md) ------
@@ -1143,11 +1143,11 @@ export async function createSchoolLifecycle({
 
   const enrollLearner = new EnrollLearner({
     syllabi: syllabusStore, assignments: stores.assignments, curriculum,
-    sessions: stores.sessions, timingAnchors: timingAnchorStore, teacherGate, clock, timezone, logger,
+    sessions: stores.sessions, timingAnchors: timingAnchorStore, teacherGate, realtime: schoolRealtime, clock, timezone, logger,
   });
   const unenrollLearner = new UnenrollLearner({
     assignments: stores.assignments, curriculum, sessions: stores.sessions,
-    teacherGate, clock, logger,
+    teacherGate, realtime: schoolRealtime, clock, logger,
   });
 
   // --- the school-room panel's keypad (self-service access codes, §4) -------
@@ -1362,6 +1362,7 @@ export async function createSchoolLifecycle({
     // its push-on-transition bridge — same null-when-unwired,
     // optional-chained-on-shutdown convention as `donowSchoolBridge` above.
     getLearnerDayCompletion,
+    realtime: schoolRealtime,
     schoolCompletionBridge,
     pianoLessonCeremonyBridge,
     // The story-time launcher by name, for the living-room reading session.

@@ -41,10 +41,11 @@ describe('State Gates HTTP translation', () => {
       observeManualAttestation: vi.fn(), retractManualAttestation: vi.fn(),
     };
     await request(appWith(operations))
-      .get('/api/v1/state-gates?subjectKind=learner&subjectId=learner-a&periodKind=local_day&periodId=2026-08-30')
+      .get('/api/v1/state-gates?gateId=fitness.weekly-rings&subjectKind=learner&subjectId=learner-a&periodKind=local_day&periodId=2026-08-30')
       .expect(200);
     expect(getCurrentGates).toHaveBeenCalledWith('home', {
       subjectKind: 'learner', subjectId: 'learner-a', periodKind: 'local_day', periodId: '2026-08-30',
+      gateId: 'fitness.weekly-rings',
     });
 
     await request(appWith(operations))
@@ -61,6 +62,7 @@ describe('State Gates HTTP translation', () => {
     ['/api/v1/state-gates?subjectKind=learner&subjectKind=device', 'INVALID_QUERY_FILTER'],
     ['/api/v1/state-gates?subjectId=', 'INVALID_QUERY_FILTER'],
     ['/api/v1/state-gates?periodKind=day', 'INVALID_QUERY_FILTER'],
+    ['/api/v1/state-gates?gateId=weekly-rings', 'INVALID_QUERY_FILTER'],
     ['/api/v1/entitlements?capabilityId=evening', 'INVALID_QUERY_FILTER'],
     ['/api/v1/state-gates/not-namespaced', 'INVALID_QUERY_FILTER'],
     ['/api/v1/entitlements/not-namespaced', 'INVALID_QUERY_FILTER'],

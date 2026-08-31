@@ -1,8 +1,7 @@
 /**
  * SchoolCompletionBridge (design: 2026-08-23-student-completion-state-machine,
- * §5) — subscribes to every settled session (`school.session.outcome-recorded`,
- * published by `CloseSessionOutcome#settle`, which covers curriculum AND
- * language days since `CloseLanguageDay` routes through the same `#settle`),
+ * §5) — subscribes to every authoritative completion input (settled
+ * sessions, piano progress/challenges, story reads, and program bypasses),
  * recomputes the learner's day completion, and publishes
  * `school.completion.state-observed` on the first observation after startup
  * and on actual state transitions. Consumers can therefore rebuild after a
@@ -24,7 +23,8 @@ export class SchoolCompletionBridge {
   constructor({
     realtime, getLearnerDayCompletion, clock = () => new Date(), logger = console,
   } = {}) {
-    if (!realtime?.onSessionOutcomeRecorded || !realtime?.completionStateObserved || !getLearnerDayCompletion) {
+    if (!(realtime?.onCompletionInputChanged || realtime?.onSessionOutcomeRecorded)
+      || !realtime?.completionStateObserved || !getLearnerDayCompletion) {
       throw new Error('SchoolCompletionBridge requires realtime and getLearnerDayCompletion');
     }
     this.#realtime = realtime;
@@ -36,10 +36,12 @@ export class SchoolCompletionBridge {
     this.#learnerQueues = new Map();
   }
 
-  /** Subscribe to `school.session.outcome-recorded`. Safe to call more than once. */
+  /** Subscribe to completion inputs. Safe to call more than once. */
   start() {
     if (this.#unsubscribe) return;
-    this.#unsubscribe = this.#realtime.onSessionOutcomeRecorded((payload) => (
+    const subscribe = this.#realtime.onCompletionInputChanged?.bind(this.#realtime)
+      ?? this.#realtime.onSessionOutcomeRecorded.bind(this.#realtime);
+    this.#unsubscribe = subscribe((payload) => (
       this.#enqueue(payload).catch((err) => {
         this.#logger.warn?.('school.completion-bridge.handler-threw', { error: err?.message ?? String(err) });
       })
@@ -71,13 +73,13 @@ export class SchoolCompletionBridge {
     const learnerId = payload?.learnerId;
     if (typeof learnerId !== 'string' || !learnerId.trim()) return;
     const { state, studyDate } = await this.#getCompletion.execute({ learnerId });
-    const previousState = this.#lastState.get(learnerId);
-    this.#lastState.set(learnerId, state);
-    if (previousState === state) return;
+    const previous = this.#lastState.get(learnerId);
+    this.#lastState.set(learnerId, { state, studyDate });
+    if (previous?.state === state && previous?.studyDate === studyDate) return;
     this.#realtime.completionStateObserved({
       learnerId, studyDate, state,
-      previousState: previousState ?? null,
-      initial: previousState === undefined,
+      previousState: previous?.studyDate === studyDate ? previous.state : null,
+      initial: previous === undefined || previous.studyDate !== studyDate,
       at: this.#clock().toISOString(),
     });
   }

@@ -11,7 +11,7 @@ import { StateConflictError } from '#apps/common/errors/SemanticErrors.mjs';
 import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class UnenrollLearner {
-  #assignments; #curriculum; #sessions; #teacherGate; #clock; #logger;
+  #assignments; #curriculum; #sessions; #teacherGate; #realtime; #clock; #logger;
 
   /**
    * @param {object} args
@@ -22,7 +22,7 @@ export class UnenrollLearner {
    * @param {Function} [args.clock] - function returning current Date
    * @param {object} [args.logger] - logger with info/warn methods
    */
-  constructor({ assignments, curriculum, sessions = null, teacherGate, clock = () => new Date(), logger = console } = {}) {
+  constructor({ assignments, curriculum, sessions = null, teacherGate, realtime = null, clock = () => new Date(), logger = console } = {}) {
     if (!assignments) throw new Error('UnenrollLearner requires an assignments store');
     if (!curriculum) throw new Error('UnenrollLearner requires curriculum access');
     if (!teacherGate) throw new Error('UnenrollLearner requires a teacherGate');
@@ -30,6 +30,7 @@ export class UnenrollLearner {
     this.#curriculum = curriculum;
     this.#sessions = sessions;
     this.#teacherGate = teacherGate;
+    this.#realtime = realtime;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -86,6 +87,8 @@ export class UnenrollLearner {
       updatedAt: this.#clock().toISOString(),
     });
     this.#logger.info?.('school.enrollment.removed', { learnerId, courseId, removedBy });
+    try { this.#realtime?.assignmentsChanged?.({ learnerId, at: record.updatedAt }); }
+    catch (error) { this.#logger.warn?.('school.enrollment.broadcast-failed', { learnerId, error: error?.message }); }
     return record;
   }
 }

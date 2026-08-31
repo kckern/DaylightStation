@@ -11,6 +11,7 @@ import {
   YamlStateGatesTransitionRepository,
 } from '#adapters/state-gates/index.mjs';
 import { createEntitlementsRouter, createStateGatesRouter } from '#api/v1/routers/state-gates.mjs';
+import { INSTALLED_STATE_GATES_POLICY } from './installedStateGatesPolicy.mjs';
 
 function normalizeRetryPolicy(value = {}) {
   const policy = {
@@ -49,6 +50,7 @@ export function stateGatesRetryDelay(policy, channel, householdId, attempt) {
 export async function createStateGatesModule({
   configService, eventBus, householdId, clock = { now: () => Date.now() }, logger = console,
   roleIds = [], producerPrincipals = {},
+  installedPolicy = INSTALLED_STATE_GATES_POLICY,
   journalRetention = { maxEntries: 5000, maxAgeMs: 30 * 24 * 60 * 60 * 1000 },
   retryPolicy: retryPolicyInput = {},
 }) {
@@ -63,11 +65,12 @@ export async function createStateGatesModule({
   const projectionRepository = new YamlStateGatesProjectionRepository({ engine });
   const transitionRepository = new YamlStateGatesTransitionRepository({ engine });
   const policySource = new YamlStateGatesPolicySource({
-    load: id => configService.reloadHouseholdAppConfig(id, 'state-gates') ?? configService.getHouseholdAppConfig(id, 'state-gates'),
+    load: id => configService.reloadHouseholdAppConfig(id, 'state-gates')
+      ?? configService.getHouseholdAppConfig(id, 'state-gates')
+      ?? installedPolicy,
   });
-  // Producer authorities are added here only when their own bounded context is
-  // explicitly migrated. Foundation ships with human attestations as the sole
-  // authenticated publisher; a YAML publisher declaration cannot authorize itself.
+  // A YAML publisher declaration cannot authorize itself. Only fixed
+  // composition-owned principals can enter through authenticated ingress.
   const publisherIds = async () => ['manual-attestation', ...Object.keys(producerPrincipals)];
   const container = new StateGatesContainer({
     policySource,

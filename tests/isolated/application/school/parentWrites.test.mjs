@@ -194,6 +194,17 @@ describe('changing what a child is assigned', () => {
     expect(await setAssignments.execute(plan())).toMatchObject({ assignedBy: 'dad' });
   });
 
+  it('announces the authoritative completion input after the assignment is durable', async () => {
+    const realtime = { assignmentsChanged: vi.fn() };
+    const uc = new SetAssignments({ assignments, grownUps: gate(), realtime, clock, logger: silent });
+    await uc.execute(plan());
+    expect(realtime.assignmentsChanged).toHaveBeenCalledWith({
+      learnerId: 'learner-1', at: AT.toISOString(),
+    });
+    expect(assignments.put.mock.invocationCallOrder[0])
+      .toBeLessThan(realtime.assignmentsChanged.mock.invocationCallOrder[0]);
+  });
+
   it('REFUSES a child assigning themselves, and writes nothing', async () => {
     await expect(setAssignments.execute(plan({ assignedBy: 'learner-1' })))
       .rejects.toMatchObject({ name: 'GuestForbiddenError' });

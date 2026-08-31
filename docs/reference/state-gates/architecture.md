@@ -1143,8 +1143,9 @@ load last durable projection
 ```
 
 Composition passes resolved values or semantic loader functions. `ConfigService` never
-enters `3_applications/state-gates`, and no policy fallback, claim mapping, or event
-serialization is embedded in bootstrap.
+enters `3_applications/state-gates`. Composition owns selection of the installed policy
+when the household has no candidate; producer claim mapping remains in the producer
+applications and event serialization remains in the State Gates adapter.
 
 ---
 
@@ -1190,8 +1191,8 @@ A safe subscriber algorithm is:
 
 ## 13. Worked examples
 
-These examples show boundary ownership. They are not migrations authorized by this
-foundation phase.
+These examples show boundary ownership. The School/Piano example is now an installed
+integration; the other examples remain illustrative.
 
 ### 13.1 School completion unlocks Piano games
 
@@ -1202,7 +1203,7 @@ decides the learner's local day is complete, its producer-owned translator publi
 claimTypeId: school.day.complete
 publisherId: school                 # fixed by authenticated composition binding
 subject: learner-a
-period: local_day/2026-08-30
+period: interval/school-day:2026-08-30 # 04:00 local to next 04:00 local
 value: true
 sourceRevision: 7
 ```
@@ -1372,21 +1373,21 @@ claims/evidence. Domain code logs nothing. Event-bus output is always subscriber
 - initial materialization does not fire a satisfaction ceremony event.
 
 No live household controller, physical device, or second backend instance is required for
-foundation verification. The implemented matrix uses isolated adapters/fakes and covers
+verification. The implemented matrix uses isolated adapters/fakes and covers
 domain invariants, typed values, every expression family, time/DST boundaries, CAS
 retries and exhaustion, correction/retraction/expiry, persistence and compaction,
 strict HTTP syntax, authorization/provenance boundaries, startup recovery order,
-deterministic jitter, refresh failure, disposal, and household isolation. It imports no
-real producer domain. A later integration phase explicitly migrates each producer or
-consumer.
+deterministic jitter, refresh failure, disposal, and household isolation. It also covers
+the School and Fitness producer translators and the Piano/Agenda consumer projections.
 
 ---
 
 ## 16. Producer and consumer migration boundaries
 
 The domain, application, adapter, API, composition, persistence, recovery, and access
-foundations are implemented together. Producer and consumer migrations remain separate,
-opt-in changes.
+foundations are implemented together. School completion -> Piano Games and Fitness
+rings -> Agenda are installed. Additional producer and consumer migrations remain
+separate, opt-in changes.
 
 Producer/consumer migrations are separate decisions. Each must identify:
 
@@ -1396,8 +1397,9 @@ Producer/consumer migrations are separate decisions. Each must identify:
 - its current-state bootstrap plus replay binding; and
 - which presentation behavior remains local.
 
-The foundation must not preempt those decisions by embedding current School, Piano,
-Fitness, chore, or screen-framework behavior into the State Gates bounded context.
+The State Gates bounded context still does not import School, Piano, Fitness, chore, or
+screen-framework behavior. Installed translators and presentations stay in their owning
+application/frontend modules and communicate only through State Gates contracts.
 
 ---
 

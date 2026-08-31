@@ -15,7 +15,7 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class SetAssignments {
-  #assignments; #grownUps; #teacherGate; #curriculum; #roster; #programValidators; #clock; #logger;
+  #assignments; #grownUps; #teacherGate; #curriculum; #roster; #programValidators; #realtime; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -30,7 +30,7 @@ export class SetAssignments {
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ assignments, grownUps, teacherGate = null, curriculum = null, roster = null, programValidators = new Map(), clock = () => new Date(), logger = console } = {}) {
+  constructor({ assignments, grownUps, teacherGate = null, curriculum = null, roster = null, programValidators = new Map(), realtime = null, clock = () => new Date(), logger = console } = {}) {
     if (!assignments) throw new Error('SetAssignments requires an assignments store');
     if (!grownUps) throw new Error('SetAssignments requires grownUps (a GrownUpGate)');
     this.#assignments = assignments;
@@ -39,6 +39,7 @@ export class SetAssignments {
     this.#curriculum = curriculum;
     this.#roster = typeof roster === 'function' ? roster : null;
     this.#programValidators = programValidators instanceof Map ? programValidators : new Map();
+    this.#realtime = realtime;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -121,6 +122,8 @@ export class SetAssignments {
     this.#logger.info?.('school.assignments.updated', {
       learnerId, assignedBy, courses: courses.length, units: units.length,
     });
+    try { this.#realtime?.assignmentsChanged?.({ learnerId, at: record.updatedAt }); }
+    catch (error) { this.#logger.warn?.('school.assignments.broadcast-failed', { learnerId, error: error?.message }); }
     return record;
   }
 }

@@ -4,7 +4,7 @@ import AgendaStatusBoard from './AgendaStatusBoard.jsx';
 import { dayStatus, summarize, ringsByLearner } from './agendaStatusModel.js';
 
 vi.mock('../schoolApi.js', () => ({
-  schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), measuresWeekly: vi.fn() },
+  schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), stateGates: vi.fn() },
 }));
 // Capture the board's `omr` handler so a scan can be delivered to it directly.
 // The board must not wait out its five-minute poll to show a disc turning.
@@ -15,6 +15,13 @@ vi.mock('../../../hooks/useWebSocket.js', () => ({
 import { schoolApi } from '../schoolApi.js';
 
 const KIDS = [{ id: 'learner1', name: 'Learner One' }, { id: 'learner2', name: 'Learner Two' }];
+const ringGate = (learnerId, current, startsAt = 0, endsAt = 4_102_444_800_000) => ({
+  evaluation: {
+    gateId: 'fitness.weekly-rings', subject: { kind: 'learner', id: learnerId },
+    period: { kind: 'interval', id: 'fitness-week:2026-08-30:2026-09-05', startsAt, endsAt },
+    progress: { current, target: 1, unit: 'rings' },
+  },
+});
 
 describe('AgendaStatusBoard model', () => {
   it('statuses read Not started / In progress / Done for the day', () => {
@@ -168,27 +175,27 @@ describe('AgendaStatusBoard model', () => {
 });
 
 describe('ringsByLearner', () => {
-  it('picks the fitness.rings measure out of the roster payload', () => {
+  it('picks current ring progress out of active State Gate evaluations', () => {
     expect(ringsByLearner({
-      learners: [
-        { learnerId: 'user_4', measures: [{ id: 'fitness.rings', value: 40 }] },
-        { learnerId: 'user_3', measures: [{ id: 'fitness.rings', value: 0 }] },
-      ],
-    })).toEqual({ user_4: 40, user_3: 0 });
+      items: [ringGate('user_4', 40, 500, 1500), ringGate('user_3', 0, 500, 1500)],
+    }, 1000)).toEqual({ user_4: 40, user_3: 0 });
   });
 
-  it('omits a learner whose measure could not be read, rather than showing a false zero', () => {
+  it('omits missing progress rather than showing a false zero', () => {
     // null means "we could not find out". Rendering it as 0 would state that
     // the child did no exercise, which is a different and possibly wrong claim.
     expect(ringsByLearner({
-      learners: [{ learnerId: 'user_4', measures: [{ id: 'fitness.rings', value: null }] }],
-    })).toEqual({});
+      items: [{ ...ringGate('user_4', 2, 500, 1500), evaluation: { ...ringGate('user_4', 2, 500, 1500).evaluation, progress: null } }],
+    }, 1000)).toEqual({});
   });
 
-  it('ignores other measures and survives an empty payload', () => {
+  it('ignores inactive or unrelated gates and survives an empty payload', () => {
     expect(ringsByLearner({
-      learners: [{ learnerId: 'user_4', measures: [{ id: 'something.else', value: 9 }] }],
-    })).toEqual({});
+      items: [
+        ringGate('old', 9, 0, 500),
+        { evaluation: { ...ringGate('other', 9, 500, 1500).evaluation, gateId: 'something.else' } },
+      ],
+    }, 1000)).toEqual({});
     expect(ringsByLearner(null)).toEqual({});
   });
 });
@@ -197,16 +204,16 @@ describe('AgendaStatusBoard render', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default: no ring data. Individual tests opt in.
-    schoolApi.measuresWeekly.mockResolvedValue({ ok: false, status: 0, data: null });
+    schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
   });
 
-  it('shows a ring count when the measures read lands', async () => {
+  it('shows a ring count when the State Gates read lands', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
       entries: [{ unitId: 'math.01', subject: 'math' }] } });
-    schoolApi.measuresWeekly.mockResolvedValue({ ok: true, status: 200, data: { learners: [
-      { learnerId: 'learner1', measures: [{ id: 'fitness.rings', value: 42 }] },
-    ] } });
+    schoolApi.stateGates.mockResolvedValue({ ok: true, status: 200, data: {
+      items: [ringGate('learner1', 42)],
+    } });
 
     render(<AgendaStatusBoard kids={KIDS} day="2026-08-26" />);
     await waitFor(() => expect(screen.getByText('42')).toBeTruthy());
@@ -214,11 +221,11 @@ describe('AgendaStatusBoard render', () => {
     expect(screen.queryByText('0')).toBeNull();
   });
 
-  it('still renders the day when the measures read fails — rings are additive', async () => {
+  it('still renders the day when the State Gates read fails — rings are additive', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
       entries: [{ unitId: 'math.01', subject: 'math' }] } });
-    schoolApi.measuresWeekly.mockResolvedValue({ ok: false, status: 500, data: null });
+    schoolApi.stateGates.mockResolvedValue({ ok: false, status: 500, data: null });
 
     render(<AgendaStatusBoard kids={KIDS} day="2026-08-26" />);
     await waitFor(() => expect(screen.getAllByText('0 of 1').length).toBe(2));
@@ -374,7 +381,7 @@ describe('a scan updates the board immediately', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     wsHandlers.length = 0;
-    schoolApi.measuresWeekly.mockResolvedValue({ ok: false, status: 0, data: null });
+    schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
   });
 
   it('subscribes to the omr topic', async () => {
@@ -383,6 +390,23 @@ describe('a scan updates the board immediately', () => {
     render(<AgendaStatusBoard kids={KIDS} day="2026-08-26" />);
     await waitFor(() => expect(wsHandlers.some((h) => h.topic === 'omr')).toBe(true));
     expect(wsHandlers.some((h) => h.topic === 'school')).toBe(true);
+    expect(wsHandlers.some((h) => h.topic === 'state-gates')).toBe(true);
+  });
+
+  it('re-reads ring progress immediately on a fitness State Gates observation', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+      sections: [{ subject: 'math', next: { unitId: 'm.01' } }],
+      entries: [{ unitId: 'm.01', subject: 'math' }],
+    } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
+    await waitFor(() => expect(wsHandlers.some((h) => h.topic === 'state-gates')).toBe(true));
+    const before = schoolApi.stateGates.mock.calls.length;
+    wsHandlers.find((h) => h.topic === 'state-gates').cb({
+      kind: 'StateObservation',
+      payload: { current: { gateId: 'fitness.weekly-rings', subject: { kind: 'learner', id: 'learner1' } } },
+    });
+    await waitFor(() => expect(schoolApi.stateGates.mock.calls.length).toBeGreaterThan(before));
   });
 
   it('re-reads on a scan, so the disc turns without waiting out the poll', async () => {
