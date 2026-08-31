@@ -51,6 +51,7 @@ courses:
         module_number_start: 35
       moduleOrder: [w35-aug24, w36-aug31]
       optionalModules: []
+      optionalLessons: []
       lessonOrder:
         w35-aug24: [cfm-w35-mon, cfm-w35-tue]
         w36-aug31: [cfm-w36-mon, cfm-w36-tue]
@@ -71,6 +72,7 @@ courses:
 - the learner profile;
 - module membership and order;
 - optional modules;
+- optional lessons (`lesson.required: false`), snapshotted separately from optional modules;
 - the once-only lesson order inside every module;
 - dated module windows, when the course uses `dated_modules`.
 - learner-facing course/module titles, compact titles, and displayed numbers.
@@ -118,6 +120,14 @@ The profile reaches worksheet issuance. The issued worksheet stores its own
 selected questions, order, answer mapping, learner, enrollment, and curriculum
 revision. Grading therefore reads the issued snapshot rather than a potentially
 changed question bank.
+
+An optional lesson stays in `lessonOrder` but appears to the planner as
+`elective`. Earlier optional lessons are ignored when finding blockers, module
+completion counts only required lessons, and a result receipt never promises
+an optional lesson as the next unlock. It becomes available after its preceding
+required work and may be explicitly issued without delaying the required chain.
+Omitting `required` means `true`, so older courses and enrollment snapshots keep
+their existing behavior.
 
 ## Enroll, re-materialize, and unenroll
 

@@ -7,7 +7,7 @@
 
 import { STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
 
-const baseEntry = ({ unitId, title, subject, program, programInstance }) => ({
+const baseEntry = ({ unitId, title, subject, program, programInstance, schedule = null }) => ({
   unitId,
   title,
   description: null,
@@ -16,12 +16,9 @@ const baseEntry = ({ unitId, title, subject, program, programInstance }) => ({
   sequence: null,
   module: null,
   profile: null,
-  // The school-day calendar a course entry carries from its enrollment. Null
-  // here because a program takes its schedule from the program enrollment, not
-  // a syllabus, and nothing reads it into this entry yet — but the planner
-  // entry now has two construction sites and a field silently missing from one
-  // is how they drift.
-  schedule: null,
+  // Programs take their school-day calendar directly from their enrollment;
+  // unlike courses, there is no syllabus snapshot between the two.
+  schedule: schedule ? structuredClone(schedule) : null,
   timing: null,
   timingState: 'available',
   timingPriority: 3,
@@ -52,6 +49,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         subject: 'flashcards',
         program: 'flashcards',
         programInstance: deckId,
+        schedule: enrollment.schedule,
       }));
     }
     if (enrollment?.programId === STORY_TIME_PROGRAM_ID) {
@@ -63,6 +61,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         subject: enrollment.subject ?? 'english',
         program: STORY_TIME_PROGRAM_ID,
         programInstance: 'daily',
+        schedule: enrollment.schedule,
       }));
     }
     if (enrollment?.programId === 'piano-course') {
@@ -74,6 +73,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         subject: enrollment.subject ?? 'arts',
         program: 'piano-course',
         programInstance: courseId,
+        schedule: enrollment.schedule,
       }));
     }
   }

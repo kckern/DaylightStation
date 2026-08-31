@@ -25,6 +25,7 @@ import { changedKeyComponent } from './lib/keyChange.js';
 import { createIdentityChurnCounter } from './lib/identityChurn.js';
 import { getLogger } from '../../lib/logging/Logger.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
+import { getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
 import { DaylightAPI } from '../../lib/api.mjs';
@@ -1309,79 +1310,83 @@ const Player = forwardRef(function Player(props, ref) {
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
-  // --- On-deck: handle player:queue-op events from ScreenActionHandler ---
-  useEffect(() => {
-    const handleQueueOp = async (e) => {
-      const { op, contentId, shader: requestedShader } = e.detail || {};
-      if (!contentId) return;
-      if (op !== 'play-now' && op !== 'play-next') return;
+  // --- On-deck: handle the one queue op this Player owns ---
+  const handleQueueOp = useCallback(async (payload = {}) => {
+    const { op, contentId, shader: requestedShader } = payload;
+    if (!contentId) return;
+    if (op !== 'play-now' && op !== 'play-next') return;
 
-      let info;
-      try {
-        info = await DaylightAPI(`api/v1/play/${contentId}`);
-      } catch (err) {
-        // Without a mediaUrl we can't safely play. Bail out rather than push
-        // a half-built item that will fail at the renderer.
-        return;
-      }
-      const item = {
-        ...info,
-        id: info.id || info.contentId || contentId,
-        contentId,
-        thumbnail: info.thumbnail || `/api/v1/display/${contentId}`,
-        title: info.title || contentId,
-      };
-
-      // External queue ops (NFC, voice, button) reset the shader to either the
-      // request's override or 'default'. Without this, the shader sticks to
-      // whatever the original session was launched with (e.g. a kitchen button
-      // that set shader=minimal), which is surprising for users who expect each
-      // NFC scan to behave like a fresh launch.
-      const aliased = SHADER_ALIASES[requestedShader] ?? requestedShader;
-      const targetShader = (aliased && classes.includes(aliased)) ? aliased : 'default';
-      if (targetShader !== queueShader) {
-        setShader(targetShader);
-      }
-      // Mark as override so it beats explicitShader in the effectiveShader
-      // resolution (otherwise play?.shader from the original launch wins).
-      setShaderUserCycled(true);
-
-      if (op === 'play-now') {
-        playNow(item);
-        return;
-      }
-
-      // op === 'play-next' below
-
-      // Dedup: same content as currently-playing → flash, no replace
-      const current = playQueue[0];
-      if (current && (current.contentId === contentId || current.id === contentId)) {
-        flashOnDeck();
-        return;
-      }
-      // Dedup: same content as on-deck → flash, no replace
-      if (onDeck && (onDeck.contentId === contentId || onDeck.id === contentId)) {
-        flashOnDeck();
-        return;
-      }
-      // Preempt window: if current item just started, replace it in-place.
-      // Going through pushOnDeck + advance() races on React state — advance()
-      // reads onDeck from a stale closure and ends up walking the underlying
-      // queue (e.g. the next track of a multi-track album) instead of jumping
-      // to the just-pushed item.
-      const el = exposedMediaRef.current;
-      const elapsed = el?.currentTime ?? 0;
-      if (Number.isFinite(elapsed) && elapsed < (onDeckCfg?.preempt_seconds || 0)) {
-        playNow(item);
-        return;
-      }
-
-      pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
+    let info;
+    try {
+      info = await DaylightAPI(`api/v1/play/${contentId}`);
+    } catch {
+      // Without a mediaUrl we can't safely play. Bail out rather than push
+      // a half-built item that will fail at the renderer.
+      return;
+    }
+    const item = {
+      ...info,
+      id: info.id || info.contentId || contentId,
+      contentId,
+      thumbnail: info.thumbnail || `/api/v1/display/${contentId}`,
+      title: info.title || contentId,
     };
 
-    window.addEventListener('player:queue-op', handleQueueOp);
-    return () => window.removeEventListener('player:queue-op', handleQueueOp);
+    // External queue ops (NFC, voice, button) reset the shader to either the
+    // request's override or 'default'. Without this, the shader sticks to
+    // whatever the original session was launched with (e.g. a kitchen button
+    // that set shader=minimal), which is surprising for users who expect each
+    // NFC scan to behave like a fresh launch.
+    const aliased = SHADER_ALIASES[requestedShader] ?? requestedShader;
+    const targetShader = (aliased && classes.includes(aliased)) ? aliased : 'default';
+    if (targetShader !== queueShader) {
+      setShader(targetShader);
+    }
+    // Mark as override so it beats explicitShader in the effectiveShader
+    // resolution (otherwise play?.shader from the original launch wins).
+    setShaderUserCycled(true);
+
+    if (op === 'play-now') {
+      playNow(item);
+      return;
+    }
+
+    // op === 'play-next' below
+
+    // Dedup: same content as currently-playing → flash, no replace
+    const current = playQueue[0];
+    if (current && (current.contentId === contentId || current.id === contentId)) {
+      flashOnDeck();
+      return;
+    }
+    // Dedup: same content as on-deck → flash, no replace
+    if (onDeck && (onDeck.contentId === contentId || onDeck.id === contentId)) {
+      flashOnDeck();
+      return;
+    }
+    // Preempt window: if current item just started, replace it in-place.
+    // Going through pushOnDeck + advance() races on React state — advance()
+    // reads onDeck from a stale closure and ends up walking the underlying
+    // queue (e.g. the next track of a multi-track album) instead of jumping
+    // to the just-pushed item.
+    const el = exposedMediaRef.current;
+    const elapsed = el?.currentTime ?? 0;
+    if (Number.isFinite(elapsed) && elapsed < (onDeckCfg?.preempt_seconds || 0)) {
+      playNow(item);
+      return;
+    }
+
+    pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
   }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, queueShader, classes, setShader, setShaderUserCycled]);
+
+  // Register once in mount order while the ref supplies the latest stateful
+  // callback. Re-registering on every queue change would let a background
+  // Player steal ownership merely because it advanced a track.
+  const queueOpHandlerRef = useRef(handleQueueOp);
+  queueOpHandlerRef.current = handleQueueOp;
+  useEffect(() => getPlayerQueueOpRegistry().register(
+    (payload) => queueOpHandlerRef.current?.(payload)
+  ), []);
 
   const suppressOverlaysForBlackout = effectiveShader === 'blackout';
 

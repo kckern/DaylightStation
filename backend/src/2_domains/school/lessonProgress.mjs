@@ -21,9 +21,9 @@ export function lessonProgressRows({ learnerId, unit, assignment, units, session
   });
   const optionalModules = new Set(enrollment?.optionalModules ?? []);
   const requiredModules = (enrollment?.moduleOrder ?? []).filter((module) => !optionalModules.has(module));
-  const moduleEntries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === unit.module);
+  const moduleEntries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === unit.module && !entry.elective);
   const completedModules = requiredModules.filter((module) => {
-    const entries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === module);
+    const entries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === module && !entry.elective);
     return entries.length > 0 && entries.every((entry) => entry.status === 'completed');
   }).length;
   const currentModuleComplete = moduleEntries.length > 0

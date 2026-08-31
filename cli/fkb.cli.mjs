@@ -1,13 +1,16 @@
 #!/usr/bin/env node
-// fkb.cli.mjs — Fully Kiosk Browser REST control for the piano tablet.
+// fkb.cli.mjs — Fleet-wide Fully Kiosk Browser REST and ADB control.
 //
 // Why this exists: the Fully REST API on :2323 survives a reboot (ADB-over-WiFi
 // does not), so this is the channel that keeps working when ADB is gone. It
 // wraps every command used to administer the kiosk SPA, plus a couple of
 // higher-level helpers (JS injection, an fps jank probe).
 //
-// Host:     FKB_HOST env or default 10.0.0.245:2323
-// Password: $FKB_PW, else /tmp/fkb_piano_pw, else `op read op://Private/Fully Kiosk Piano/value`
+// Target:   Set FKB_HOST=<device-ip>:2323 for any FKB device in the fleet.
+//           It defaults to the piano tablet at 10.0.0.245:2323 for convenience.
+// Password: Set FKB_PW to the selected device's password. When omitted, the
+//           legacy fallbacks are piano-specific: /tmp/fkb_piano_pw, then
+//           `op read op://Private/Fully Kiosk Piano/value`.
 // ADB:      optional, for OS-level settings the FKB REST API can't reach (e.g.
 //           "stay awake while plugged"). Set FKB_ADB to the adb invocation — "adb"
 //           if it's on PATH, or "sudo docker exec daylight-station adb" to borrow
@@ -20,6 +23,7 @@
 //
 // Examples:
 //   node fkb.cli.mjs info                       # deviceInfo (RAM/battery/wifi)
+//   FKB_HOST=10.0.0.12:2323 FKB_PW=... node fkb.cli.mjs info  # another fleet device
 //   node fkb.cli.mjs shot /tmp/p.png            # screenshot
 //   node fkb.cli.mjs get forceScreenOrientation
 //   node fkb.cli.mjs set forceScreenOrientation 2
@@ -301,6 +305,8 @@ const commands = {
 const [, , name, ...args] = process.argv;
 if (!name || name === 'help' || !commands[name]) {
   console.log(`fkb — Fully Kiosk control (${BASE})\n`);
+  console.log('Target any fleet device with FKB_HOST=<ip>:2323 and its FKB_PW.');
+  console.log('Without FKB_HOST/FKB_PW, the target and credential fallbacks are piano-specific.\n');
   console.log('Commands:');
   console.log('  info [keys...]            deviceInfo (RAM/battery/wifi)');
   console.log('  shot [path]              screenshot -> file');

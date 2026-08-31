@@ -15,6 +15,7 @@
  * @param {Array} items - Items to select from, each with datetime and printCount properties
  * @param {number} count - Number of items to select
  * @param {number} now - Current time as epoch ms (caller-supplied)
+ * @param {Function} random - Caller-supplied random number generator returning [0, 1)
  * @returns {Array} Selected items
  */
 export function selectItemsForPrint(items, count, now, random) {

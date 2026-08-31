@@ -5,6 +5,22 @@ const mc = (over = {}) => ({ id: 'q1', type: 'multiple_choice', prompt: 'Capital
 const bank = (over = {}) => ({ id: 'test-bank', title: 'Test', items: [mc()], ...over });
 
 describe('validateQuestionBank', () => {
+  it('accepts a safe shared asset stimulus and rejects malformed figure references', () => {
+    const valid = validateQuestionBank(bank({
+      schema: 'school.question-bank/v2',
+      items: [{ id: 'q1', type: 'multiple_choice', prompt: 'Which point?', answer: '8', decoys: ['6', '7', '9', '10'],
+        stimulus: { type: 'asset', ref: 'school/math/number-line-8', alt: 'A labeled number line.' } }],
+    }));
+    expect(valid.ok).toBe(true);
+    const invalid = validateQuestionBank(bank({
+      schema: 'school.question-bank/v2',
+      items: [{ id: 'q1', type: 'multiple_choice', prompt: 'Which point?', answer: '8', decoys: ['6', '7', '9', '10'],
+        stimulus: { type: 'asset', ref: '../../secret', alt: '' } }],
+    }));
+    expect(invalid.errors).toEqual(expect.arrayContaining([
+      expect.stringMatching(/stimulus\.ref/), expect.stringMatching(/stimulus\.alt/),
+    ]));
+  });
   it('accepts a minimal valid bank and normalises defaults', () => {
     const r = validateQuestionBank(bank());
     expect(r.ok).toBe(true);

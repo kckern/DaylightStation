@@ -34,7 +34,16 @@ const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const textList = (v) => asArray(v).filter((text) => typeof text === 'string' && text.trim()).map((text) => text.trim());
 // One relation, used by both the lookup-time rebind and the index-time
 // pre-warning, so the warning can never disagree with the behavior it predicts.
-const titlesOverlap = (a, b) => a.includes(b) || b.includes(a);
+// The shorter side must carry at least two tokens. A lone word such as `Spring`
+// is not enough identity to recover a stale Plex id: it can be a Vivaldi work,
+// a Frog and Toad chapter, or thousands of unrelated items. The exact-id lane
+// remains available to legitimately one-word works; only guess-based recovery
+// refuses them.
+const titlesOverlap = (a, b) => {
+  if (!a || !b || (!a.includes(b) && !b.includes(a))) return false;
+  const shorter = a.length <= b.length ? a : b;
+  return shorter.split(/\s+/).filter(Boolean).length >= 2;
+};
 // An absent key is authoring intent (the block is optional); a present key of
 // the wrong shape is a mistake the type guards quietly paper over.
 const isPresent = (v) => v !== undefined && v !== null;
@@ -444,15 +453,15 @@ export class YamlSurroundStore extends ISurroundStore {
   /**
    * Collect every piece whose authored title matches the live one, ids having gone stale.
    *
-   * Substring, not equality, and in both directions: the live Plex title usually
+   * Strong substring, not equality, and in both directions: the live Plex title usually
    * appends the orchestra and conductor to the authored one, but an authored title
    * may equally be the more specific of the two. An empty normalization (a missing
    * or non-string title on either side) matches nothing rather than everything.
    *
-   * Every match is returned, never just the first: substring matching is lossy
-   * enough that a short authored title (`Spring`) hits whole families of live
-   * titles, and picking by walk order would make the answer depend on the
-   * filesystem. The caller decides what more than one match means.
+   * The shorter normalized side must contain at least two tokens. A one-word
+   * overlap is too weak to recover an id and returns no candidate. Every strong
+   * match is returned, never just the first; the caller decides what more than
+   * one match means.
    *
    * @param {string} title - Live item title
    * @returns {Array<{ title: string, file: string, contentId: string, payload: Object }>}

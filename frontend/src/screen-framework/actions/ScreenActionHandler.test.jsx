@@ -11,6 +11,10 @@ import {
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
 import { MenuNavigationProvider } from '../../context/MenuNavigationContext.jsx';
 import * as apiModule from '../../lib/api.mjs';
+import {
+  __resetPlayerQueueOpRegistryForTests,
+  getPlayerQueueOpRegistry,
+} from '../../modules/Player/lib/queueOpRegistry.js';
 
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
 
@@ -72,6 +76,7 @@ describe('ScreenActionHandler', () => {
   beforeEach(() => {
     resetActionBus();
     resetVolumeModuleState();
+    __resetPlayerQueueOpRegistryForTests();
     window.localStorage.clear();
   });
 
@@ -116,24 +121,31 @@ describe('ScreenActionHandler', () => {
     expect(getByTestId('owns-nav-stack').textContent).toBe('true');
   });
 
-  // A cast Player is fullscreen but renders nothing from the nav stack, so it
-  // must NOT make the menu widget drop whatever it is showing underneath.
-  it('does not claim the nav stack for a Player overlay', () => {
-    function OwnershipProbe() {
-      const { overlayOwnsNavStack } = useScreenOverlay();
-      return <span data-testid="owns-nav-stack">{String(overlayOwnsNavStack)}</span>;
+  // A cast Player does not RENDER the nav stack, but it must suspend the stack's
+  // background renderer. Otherwise a Player already on that stack keeps its
+  // audio alive underneath the fullscreen cast Player.
+  it('suspends the nav stack for a Player overlay without claiming ownership', () => {
+    function NavStackProbe() {
+      const { overlayOwnsNavStack, overlaySuspendsNavStack } = useScreenOverlay();
+      return (
+        <>
+          <span data-testid="owns-nav-stack">{String(overlayOwnsNavStack)}</span>
+          <span data-testid="suspends-nav-stack">{String(overlaySuspendsNavStack)}</span>
+        </>
+      );
     }
 
     const { getByTestId } = render(
       <ScreenOverlayProvider>
         <ScreenActionHandler />
-        <OwnershipProbe />
+        <NavStackProbe />
       </ScreenOverlayProvider>
     );
 
     act(() => getActionBus().emit('media:play', { contentId: 'plex:12345' }));
 
     expect(getByTestId('owns-nav-stack').textContent).toBe('false');
+    expect(getByTestId('suspends-nav-stack').textContent).toBe('true');
   });
 
   // A source-prefixed menuId is a CONTENT ID, not a watchlist key. Handed to
@@ -874,13 +886,27 @@ describe('ScreenActionHandler', () => {
     expect(getByTestId('player')).toBeTruthy();
   });
 
-  it('media:queue-op op=play-next with an active audio player dispatches player:queue-op event', () => {
+  it('does not mount a second Player when media exists but its owner is temporarily unavailable', () => {
     const dummy = document.createElement('div');
     dummy.className = 'audio-player';
     document.body.appendChild(dummy);
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
 
-    const handler = vi.fn();
-    window.addEventListener('player:queue-op', handler);
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-next', contentId: 'plex:1' }));
+
+    expect(queryByTestId('player')).toBeNull();
+    dummy.remove();
+  });
+
+  it('media:queue-op op=play-next dispatches only to the registered Player owner', () => {
+    const background = vi.fn();
+    const foreground = vi.fn();
+    getPlayerQueueOpRegistry().register(background);
+    getPlayerQueueOpRegistry().register(foreground);
 
     render(
       <ScreenOverlayProvider>
@@ -889,11 +915,9 @@ describe('ScreenActionHandler', () => {
     );
     act(() => getActionBus().emit('media:queue-op', { op: 'play-next', contentId: 'plex:1' }));
 
-    expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler.mock.calls[0][0].detail).toMatchObject({ op: 'play-next', contentId: 'plex:1' });
-
-    window.removeEventListener('player:queue-op', handler);
-    dummy.remove();
+    expect(foreground).toHaveBeenCalledTimes(1);
+    expect(foreground).toHaveBeenCalledWith(expect.objectContaining({ op: 'play-next', contentId: 'plex:1' }));
+    expect(background).not.toHaveBeenCalled();
   });
 
   it('media:queue-op op=play-now with no active player mounts a fresh Player', () => {
@@ -907,13 +931,9 @@ describe('ScreenActionHandler', () => {
     expect(getByTestId('player')).toBeTruthy();
   });
 
-  it('media:queue-op op=play-now with an active audio player dispatches player:queue-op (in-place swap)', () => {
-    const dummy = document.createElement('div');
-    dummy.className = 'audio-player';
-    document.body.appendChild(dummy);
-
+  it('media:queue-op op=play-now dispatches to the registered Player owner', () => {
     const handler = vi.fn();
-    window.addEventListener('player:queue-op', handler);
+    getPlayerQueueOpRegistry().register(handler);
 
     render(
       <ScreenOverlayProvider>
@@ -923,10 +943,7 @@ describe('ScreenActionHandler', () => {
     act(() => getActionBus().emit('media:queue-op', { op: 'play-now', contentId: 'plex:2' }));
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler.mock.calls[0][0].detail).toMatchObject({ op: 'play-now', contentId: 'plex:2' });
-
-    window.removeEventListener('player:queue-op', handler);
-    dummy.remove();
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ op: 'play-now', contentId: 'plex:2' }));
   });
 
   describe('hardware Back (popstate) consumer', () => {

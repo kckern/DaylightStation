@@ -92,6 +92,23 @@ not call it. Player also suppresses duplicate terminal notifications for the
 same item; consumers should retain their own evidence idempotency key as the
 downstream safety boundary.
 
+### Screen ownership and queue commands
+
+Screen-framework media overlays are exclusive. `ScreenActionHandler` opens them
+with `suspendsNavStack: true`; `MenuWidget` then unmounts its `MenuStack`, including
+any Player already running on that navigation stack. Dismissing the overlay returns
+to a freshly reset menu instead of resuming hidden playback. Passive fullscreen
+scenes and apps do not suspend the stack unless they opt in.
+
+`play-now` and `play-next` commands use `lib/queueOpRegistry.js`. Every outer
+Player registers on mount, registrations are ordered by mount time, and a command
+is delivered only to the newest live Player. Do not replace this with a window
+event: a `CustomEvent` is a broadcast, so two mounted Players both mutate their
+queues. If the screen sees a media element during the brief interval when no owner
+is registered, it refuses the command and logs `media.queue-op.owner-missing`
+instead of mounting another Player. Successful routing logs
+`media.queue-op.dispatched`.
+
 ## Benefits of Refactoring
 
 1. **Maintainability**: Each file has a single, clear responsibility

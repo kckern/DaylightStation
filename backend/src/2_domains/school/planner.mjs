@@ -117,7 +117,10 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     const members = hasFrozenMembership
       ? publishedMembers.filter((unit) => frozenIds.has(unit.unitId))
       : publishedMembers;
-    members.forEach((u) => { if (!wanted.has(u.unitId)) wanted.set(u.unitId, elective); });
+    const optionalLessonIds = new Set(enrollment?.optionalLessons ?? []);
+    members.forEach((u) => {
+      if (!wanted.has(u.unitId)) wanted.set(u.unitId, elective || optionalLessonIds.has(u.unitId) || u.required === false);
+    });
   });
   const policyFor = (courseId) => {
     const enrollment = enrollmentByCourse.get(courseId)?.enrollment;
@@ -165,6 +168,13 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   });
   courseMembers.forEach((list) => list.sort(bySequence));
 
+  const isOptionalLesson = (unit) => {
+    if (!unit?.courseId) return false;
+    const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
+    return unit.required === false || enrollment?.optionalLessons?.includes(unit.unitId) === true;
+  };
+  const requiredOnly = (unitsToFilter) => unitsToFilter.filter((entry) => !isOptionalLesson(entry));
+
   /** The nearest earlier unit in this unit's course that has not been passed. */
   const blockerFor = (unit) => {
     const siblings = courseMembers.get(unit.courseId) || [];
@@ -175,17 +185,19 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
         ? enrollment.lessonOrder[unit.module].map((id) => byUnitId.get(id)).filter(Boolean)
         : siblings.filter((entry) => entry.module === unit.module).sort(bySequence);
       const at = ordered.findIndex((entry) => entry.unitId === unit.unitId);
-      for (let i = at - 1; i >= 0; i -= 1) if (!passedUnits.has(ordered[i].unitId)) return ordered[i];
+      for (let i = at - 1; i >= 0; i -= 1) {
+        if (!isOptionalLesson(ordered[i]) && !passedUnits.has(ordered[i].unitId)) return ordered[i];
+      }
       return null;
     }
     if (policy?.mode === 'module_blocks' && unit.module) {
       const opening = policy.required_opening_module;
-      const passedModule = (moduleId) => siblings.filter((u) => u.module === moduleId)
+      const passedModule = (moduleId) => requiredOnly(siblings.filter((u) => u.module === moduleId))
         .every((u) => passedUnits.has(u.unitId));
       const optionalModule = enrollment?.optionalModules?.includes(unit.module)
         || siblings.some((u) => u.module === unit.module && u.moduleRole === 'optional');
       if (opening && unit.module !== opening && !passedModule(opening)) {
-        return siblings.find((u) => u.module === opening && !passedUnits.has(u.unitId)) ?? null;
+        return siblings.find((u) => u.module === opening && !isOptionalLesson(u) && !passedUnits.has(u.unitId)) ?? null;
       }
       // Bonus material unlocks with the opening unit but never participates
       // in the serial chain of required regional blocks.
@@ -199,59 +211,64 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
         const moduleIndex = moduleOrder.indexOf(unit.module);
         for (let i = moduleIndex - 1; i >= 0; i -= 1) {
           if (!passedModule(moduleOrder[i])) {
-            return siblings.find((u) => u.module === moduleOrder[i] && !passedUnits.has(u.unitId)) ?? null;
+            return siblings.find((u) => u.module === moduleOrder[i] && !isOptionalLesson(u) && !passedUnits.has(u.unitId)) ?? null;
           }
         }
       }
-      const activeModule = siblings.find((u) => u.module && !passedModule(u.module)
-        && siblings.some((x) => x.module === u.module && openByUnit.has(x.unitId)))?.module ?? null;
+      const activeModule = siblings.find((u) => u.module && !isOptionalLesson(u) && !passedModule(u.module)
+        && siblings.some((x) => x.module === u.module && !isOptionalLesson(x) && openByUnit.has(x.unitId)))?.module ?? null;
       if (policy.one_active_module && activeModule && activeModule !== unit.module) {
-        return siblings.find((u) => u.module === activeModule && !passedUnits.has(u.unitId)) ?? null;
+        return siblings.find((u) => u.module === activeModule && !isOptionalLesson(u) && !passedUnits.has(u.unitId)) ?? null;
       }
       const ordered = enrollment?.lessonOrder?.[unit.module]
         ? enrollment.lessonOrder[unit.module].map((id) => byUnitId.get(id)).filter(Boolean)
         : siblings.filter((u) => u.module === unit.module).sort(bySequence);
       const at = ordered.findIndex((u) => u.unitId === unit.unitId);
-      for (let i = at - 1; i >= 0; i -= 1) if (!passedUnits.has(ordered[i].unitId)) return ordered[i];
+      for (let i = at - 1; i >= 0; i -= 1) {
+        if (!isOptionalLesson(ordered[i]) && !passedUnits.has(ordered[i].unitId)) return ordered[i];
+      }
       return null;
     }
     const index = siblings.findIndex((u) => u.unitId === unit.unitId);
     if (index <= 0) return null;
     for (let i = index - 1; i >= 0; i -= 1) {
-      if (!passedUnits.has(siblings[i].unitId)) return siblings[i];
+      if (!isOptionalLesson(siblings[i]) && !passedUnits.has(siblings[i].unitId)) return siblings[i];
     }
     return null;
   };
 
   /** The unit a pass here would open up — what the result receipt promises. */
   const unlockedBy = (unit) => {
+    if (isOptionalLesson(unit)) return null;
     const siblings = courseMembers.get(unit.courseId) || [];
     const policy = policyFor(unit.courseId);
     const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
     if (policy?.mode === 'dated_modules' && unit.module && enrollment) {
       const inModule = enrollment.lessonOrder?.[unit.module]?.map((id) => byUnitId.get(id)).filter(Boolean) ?? [];
       const at = inModule.findIndex((entry) => entry.unitId === unit.unitId);
-      return at >= 0 && at + 1 < inModule.length ? inModule[at + 1].unitId : null;
+      return at >= 0 ? inModule.slice(at + 1).find((entry) => !isOptionalLesson(entry))?.unitId ?? null : null;
     }
     if (policy?.mode === 'module_blocks' && unit.module && enrollment) {
       const inModule = enrollment.lessonOrder?.[unit.module]
         ?.map((id) => byUnitId.get(id)).filter(Boolean) ?? [];
       const lessonIndex = inModule.findIndex((entry) => entry.unitId === unit.unitId);
-      if (lessonIndex >= 0 && lessonIndex + 1 < inModule.length) {
-        return inModule[lessonIndex + 1].unitId;
+      if (lessonIndex >= 0) {
+        const nextRequired = inModule.slice(lessonIndex + 1).find((entry) => !isOptionalLesson(entry));
+        if (nextRequired) return nextRequired.unitId;
       }
       const moduleIndex = enrollment.moduleOrder?.indexOf(unit.module) ?? -1;
       if (moduleIndex >= 0) {
         for (let i = moduleIndex + 1; i < enrollment.moduleOrder.length; i += 1) {
-          const nextId = enrollment.lessonOrder?.[enrollment.moduleOrder[i]]?.[0];
-          if (nextId && byUnitId.has(nextId)) return nextId;
+          const nextId = enrollment.lessonOrder?.[enrollment.moduleOrder[i]]
+            ?.find((id) => byUnitId.has(id) && !isOptionalLesson(byUnitId.get(id)));
+          if (nextId) return nextId;
         }
       }
       return null;
     }
     const index = siblings.findIndex((u) => u.unitId === unit.unitId);
     if (index === -1 || index + 1 >= siblings.length) return null;
-    return siblings[index + 1].unitId;
+    return siblings.slice(index + 1).find((entry) => !isOptionalLesson(entry))?.unitId ?? null;
   };
 
   // --- entries -------------------------------------------------------------

@@ -103,6 +103,12 @@ export function summarize(sections, sessions, entries = []) {
   // Then the plan, for work with no session yet.
   const fromEntries = new Map((entries ?? []).map((e) => [e.unitId, e]));
   for (const section of planned) {
+    // A non-school day deliberately keeps `next` available for voluntary
+    // work, but that does not put the lesson on the child's required Today
+    // board. Completed evidence above still counts; only the unstarted offer
+    // is omitted. The same rule covers other excused obligations such as
+    // optional backlog and work that is not due yet.
+    if (section.obligation?.state === 'excused') continue;
     const next = section.next;
     if (!next?.unitId || byUnit.has(next.unitId)) continue;
     const entry = fromEntries.get(next.unitId);

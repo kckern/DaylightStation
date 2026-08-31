@@ -30,6 +30,7 @@ function makeService(extra = {}) {
     transcriptionService: null,
     logger: { info() {}, warn() {}, error() {}, debug() {} },
     notificationService,
+    resourcePresenter: (ref) => `/api/v1/feedback/${ref.app}/${ref.id}`,
     ...extra,
   });
 }
@@ -45,6 +46,10 @@ afterEach(() => {
 });
 
 describe('feedback arrival notification', () => {
+  it('fails fast when notifications lack a public-resource presenter', () => {
+    expect(() => makeService({ resourcePresenter: null })).toThrow(/requires resourcePresenter/);
+  });
+
   it('notifies when a person records a report', async () => {
     await service.create({
       app: 'piano',

@@ -117,6 +117,7 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     // so worksheet cards name the book a learner actually holds, not an EPUB
     // authoring sidecar embedded in lesson provenance.
     const sourceTitle = course?.source?.title ?? course?.title ?? null;
+    const delivery = course?.medium === 'paper' && course?.grading?.gate === 'omr' ? 'paper' : null;
     const out = [];
     for (const file of listYamlFiles(root, { recursive: true, stripExtension: false })) {
       const absolute = path.join(root, file);
@@ -144,13 +145,13 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
           errors.push(`${subject}/${work}/${file}: lesson.unitId must match ${CURRICULUM_ID_RE.source}`);
           continue;
         }
-        out.push({ id, file, subject, dir: root, embeddedLesson: true, sourceTitle });
+        out.push({ id, file, subject, dir: root, embeddedLesson: true, sourceTitle, delivery });
       } else if (lessonIndex && raw?.schema === 'school.unit/v1' && raw?.bank) {
         const lessonId = CURRICULUM_ID_RE.test(raw.unitId) ? raw.unitId : path.basename(path.dirname(stem));
         if (!CURRICULUM_ID_RE.test(lessonId)) {
           errors.push(`${subject}/${work}/${file}: unsafe lesson id`);
         } else {
-          out.push({ id: lessonId, file, subject, dir: root, embeddedLesson: false, sourceTitle });
+          out.push({ id: lessonId, file, subject, dir: root, embeddedLesson: false, sourceTitle, delivery });
         }
       }
     }
@@ -224,7 +225,7 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     for (let i = 0; i < entries.length; i += batch) {
       const slice = entries.slice(i, i + batch);
       // eslint-disable-next-line no-await-in-loop
-      const chunk = await Promise.all(slice.map(async ({ id, file, subject, dir, embeddedLesson = false, sourceTitle = null }) => {
+      const chunk = await Promise.all(slice.map(async ({ id, file, subject, dir, embeddedLesson = false, sourceTitle = null, delivery = null }) => {
         try {
           const document = yaml.load(await readTextFromPathAsync(path.join(dir, file)));
           // An empty (or `null`) file is not an entity. Reporting it beats
@@ -232,7 +233,11 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
           if (document === null || document === undefined) return { id, error: 'file is empty' };
           const lesson = embeddedLesson ? document.lesson : document;
           if (lesson === null || lesson === undefined) return { id, error: 'lesson metadata is empty' };
-          const raw = sourceTitle && !lesson.sourceTitle ? { ...lesson, sourceTitle } : lesson;
+          const raw = {
+            ...lesson,
+            ...(sourceTitle && !lesson.sourceTitle ? { sourceTitle } : {}),
+            ...(delivery && !lesson.delivery ? { delivery } : {}),
+          };
           return { id, raw, subject };
         } catch (err) {
           return { id, error: err.message };
@@ -262,9 +267,12 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
           if (!match) continue;
           const document = loadYamlSafe(path.join(match.dir, match.file));
           const lesson = match.embeddedLesson ? document?.lesson ?? null : document;
-          return match.sourceTitle && lesson && !lesson.sourceTitle
-            ? { ...lesson, sourceTitle: match.sourceTitle }
-            : lesson;
+          if (!lesson) return lesson;
+          return {
+            ...lesson,
+            ...(match.sourceTitle && !lesson.sourceTitle ? { sourceTitle: match.sourceTitle } : {}),
+            ...(match.delivery && !lesson.delivery ? { delivery: match.delivery } : {}),
+          };
         }
       }
     }

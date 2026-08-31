@@ -438,7 +438,9 @@ export async function main(argv = process.argv.slice(2)) {
     if (bank.schema !== 'school.question-bank/v2') {
       problems.push(`schema is ${bank.schema ?? 'absent'}; a lesson bank must be school.question-bank/v2`);
     }
-    for (const profile of PROFILES) {
+    const authoredGrades = Array.isArray(bank.lesson?.grades) ? bank.lesson.grades : [];
+    const profiles = authoredGrades.length ? PROFILES.filter((profile) => authoredGrades.includes(profile)) : PROFILES;
+    for (const profile of profiles) {
       try {
         issue({ bank, profile, learner: 'validate', seed: 'validate', lessonId: bank.unit || 'validate' });
       } catch (err) {
@@ -450,7 +452,7 @@ export async function main(argv = process.argv.slice(2)) {
       for (const p of problems) process.stderr.write(`  - ${p}\n`);
       return EXIT_FAIL;
     }
-    process.stdout.write(`OK  ${file}\n  ${bank.items.length} items; both profiles issue\n`);
+    process.stdout.write(`OK  ${file}\n  ${bank.items.length} items; profiles ${profiles.join(', ')} issue\n`);
     return EXIT_OK;
   }
 
@@ -521,6 +523,8 @@ export async function main(argv = process.argv.slice(2)) {
     title: bank.title || lessonId,
     sourceTitle: provenance.sourceTitle,
     printedPages: provenance.printedPages,
+    subjectIcon: bank.subject ?? target.split('/').filter(Boolean)[0] ?? 'school',
+    subjectName: bank.subject ? bank.subject[0].toUpperCase() + bank.subject.slice(1) : null,
   });
 
   // Rendering is NOT reimplemented here. The issued instance is a

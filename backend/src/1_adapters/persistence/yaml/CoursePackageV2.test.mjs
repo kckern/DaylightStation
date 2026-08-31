@@ -80,7 +80,7 @@ describe('school.course/v2 package discovery', () => {
     expect((await curriculum.listWorks()).items.map((entry) => [entry.id, entry.work]))
       .toEqual([['civilization/atlas', 'atlas']]);
     expect((await curriculum.listUnits()).items.map((entry) => entry.id)).toEqual(['maine']);
-    expect(await curriculum.getUnit('maine')).toMatchObject({ unitId: 'maine', sourceTitle: 'Atlas of the United States' });
+    expect(await curriculum.getUnit('maine')).toMatchObject({ unitId: 'maine', sourceTitle: 'Atlas of the United States', delivery: 'paper' });
     expect(school.listBankIds()).toEqual(['civilization/atlas/maine/flashcards', 'civilization/atlas/maine/worksheet']);
     expect(school.readBankRaw('civilization/atlas/maine/worksheet')).toMatchObject({ title: 'Maine worksheet' });
   });
@@ -102,7 +102,7 @@ describe('school.course/v2 package discovery', () => {
       bankIds: () => ['civilization/atlas/maine/worksheet'],
     });
     await expect(curriculum.getUnit('maine')).resolves.toMatchObject({
-      title: 'Maine', sourceTitle: 'Atlas of the United States',
+      title: 'Maine', sourceTitle: 'Atlas of the United States', delivery: 'paper',
     });
     await expect(curriculum.listUnitSummaries()).resolves.toEqual([
       expect.objectContaining({ unitId: 'maine', title: 'Maine', courseId: 'atlas', courseTitle: 'Atlas' }),

@@ -356,7 +356,7 @@ work: beethoven/symphony-3-eroica     # required — corpus ref, <composer>/<wor
 surround: concert-hall                # required — definition id in _surrounds/
 match:                                # required
   contentId: plex:663134              # exact-match fast path
-  title: "Beethoven: 3. Sinfonie"     # rebind fallback (normalized substring)
+  title: "Beethoven: 3. Sinfonie"     # rebind fallback (normalized strong substring)
 performance: "hr-Sinfonieorchester · Andrés Orozco-Estrada · Alte Oper Frankfurt, 11 February 2016"
 starts: [0, 976, 1925, 2278]          # segment start seconds, positional
 musicEndsAt: 2955                     # where the music stops and the applause starts
@@ -507,6 +507,14 @@ live Plex titles carry orchestra suffixes the authored title does not:
 authored:  Beethoven: 3. Sinfonie
 live:      Beethoven: 3. Sinfonie (»Eroica«) ∙ hr-Sinfonieorchester ∙ Andrés Orozco-Estrada
 ```
+
+The overlap must be strong: **the shorter normalized title must contain at least
+two words**. A one-word title such as `Spring` is not identity — it can name a
+Vivaldi concerto, a Frog and Toad chapter, or unrelated media — so it never
+recovers a stale id, even if the longer title contains that word. Exact
+`match.contentId` lookup is unchanged, so legitimately one-word works still get
+their surround when their authored id is current. This rule deliberately prefers
+no surround over a confident-looking wrong one.
 
 When a rebind happens it logs `surround.match.rebound` (warn) naming the stale id
 and the file, so the fix is a one-line edit rather than a mystery. **If two
@@ -760,7 +768,7 @@ curl -s https://logs.kckern.net/select/logsql/query \
 | `surround.segments.none` | A piece resolved to an EMPTY rail. Carries `work`, `parts`, and `segmentKey` — which of `segments` / `chapters` / `movements` the work authored its list under, or `null` for none of them. This is the one that catches a corpus migrated to a key the deployed build does not read: every sidecar resolves, `surround.index.built` reports its usual `pieces` count, and every rail on the fleet is blank. Check `segmentKeys` and `empty` on `surround.index.built` for the corpus-wide picture. |
 | `surround.definition.missing` | The `surround:` id has no file in `_surrounds/`. The piece is excluded rather than shipping half a payload. |
 | `surround.sidecar.duplicate` | Two sidecars claim one contentId. Names both files; last one walked wins. |
-| `surround.titles.ambiguous` | Two authored titles could match the same live title. Emitted at index time so you learn before a playback trips it. |
+| `surround.titles.ambiguous` | Two authored **strong** titles could match the same live title. One-word overlaps are excluded from both lookup and this warning. Emitted at index time so you learn before a playback trips it. |
 | `surround.match.rebound` | A rescan invalidated a contentId and the title rebound it. Fix the id in the named file. |
 | `surround.match.ambiguous` | The title lane matched more than one sidecar at lookup time, so the store refused. Names the live title and every candidate file. |
 | `surround.lookup.miss` | An item played and nothing matched — the first thing to check when a surround doesn't appear. |

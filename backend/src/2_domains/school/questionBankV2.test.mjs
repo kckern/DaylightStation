@@ -35,6 +35,31 @@ describe('question-bank/v2', () => {
     expect(normalized.items[0].choices[0].id).toMatch(new RegExp(`^${normalized.revision}:q0:`));
   });
 
+  it('freezes an asset stimulus into both solo and composed worksheet questions', () => {
+    const illustrated = {
+      ...bank,
+      items: bank.items.map((entry, index) => (index === 0 ? {
+        ...entry,
+        stimulus: { type: 'asset', ref: 'school/math/number-line-12', alt: 'A number line ending at twelve.' },
+      } : entry)),
+    };
+    expect(validateQuestionBank(illustrated).ok).toBe(true);
+    const instance = createWorksheetInstance({
+      id: 'ws-illustrated', sessionId: 'ses-illustrated', bank: illustrated,
+      learnerId: 'learner3', enrollmentId: 'enr', lessonId: 'number-lines',
+      profile: 'lower', seed: 'q0', issuedAt: '2026-08-30T00:00:00.000Z', itemIds: ['q0'],
+    });
+    expect(instance.questions[0].stimulus).toEqual({
+      type: 'asset', ref: 'school/math/number-line-12', alt: 'A number line ending at twelve.',
+    });
+    const soloQuestion = worksheetInstanceDocument(instance).blocks.find((block) => block.type === 'question');
+    expect(soloQuestion.blocks.map((block) => block.type)).toEqual(['rich_text', 'asset', 'omr_response']);
+    const composedQuestion = composedWorksheetDocument({
+      id: 'illustrated-packet', sections: [{ instance, title: 'Number Lines' }],
+    }).source.blocks.find((block) => block.type === 'question');
+    expect(composedQuestion.blocks[1]).toMatchObject({ type: 'asset', ref: 'school/math/number-line-12' });
+  });
+
   it('issues lower and upper profiles while retaining every correct option', () => {
     const lower = issueWorksheet({ bank, learnerId: 'learner3', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'one' });
     const upper = issueWorksheet({ bank, learnerId: 'learner4', enrollmentId: 'e2', lessonId: 'kansas', profile: 'upper', seed: 'two' });

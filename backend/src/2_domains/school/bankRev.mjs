@@ -43,6 +43,7 @@ export function bankContentRev(bank) {
     accept: item.accept ?? null,
     regions: item.regions ?? null,
     asset: item.asset ?? null,
+    stimulus: item.stimulus ?? null,
     ...(item.schoolcalc !== undefined ? { schoolcalc: item.schoolcalc } : {}),
   }));
   const canonical = JSON.stringify(substance, (key, value) => (

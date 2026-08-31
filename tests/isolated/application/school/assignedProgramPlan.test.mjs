@@ -23,6 +23,16 @@ describe('appendAssignedProgramEntries — story-time', () => {
     expect(plan.entries[0].title).toBe('Story time');
   });
 
+  it('projects and isolates the program enrollment schedule', () => {
+    const schedule = { daysOfWeek: [1, 2, 3, 4, 5] };
+    const plan = { entries: [] };
+    appendAssignedProgramEntries(plan, { programs: [{ programId: 'story-time', schedule }] });
+
+    expect(plan.entries[0].schedule).toEqual(schedule);
+    schedule.daysOfWeek.push(7);
+    expect(plan.entries[0].schedule.daysOfWeek).toEqual([1, 2, 3, 4, 5]);
+  });
+
   it('leaves other program kinds untouched', () => {
     const plan = { entries: [] };
     appendAssignedProgramEntries(plan, { programs: [{ programId: 'flashcards', deckId: 'd1' }] });
