@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { createDefaultAuthenticationConfiguration, withRequirementsAuthenticationConfiguration } from '#apps/auth/defaultAuthenticationConfiguration.mjs';
+import { createDefaultAuthenticationConfiguration, withStateGatesAuthenticationConfiguration } from '#apps/auth/defaultAuthenticationConfiguration.mjs';
 
 describe('createDefaultAuthenticationConfiguration', () => {
   it('defines the default application access policy without changing its persisted shape', () => {
@@ -16,13 +16,13 @@ describe('createDefaultAuthenticationConfiguration', () => {
     });
   });
 
-  it('protects requirement and entitlement routes for existing configurations', () => {
-    const config = withRequirementsAuthenticationConfiguration({
+  it('protects state-gate and entitlement routes for existing configurations', () => {
+    const config = withStateGatesAuthenticationConfiguration({
       roles: { parent: { apps: ['fitness'] }, sysadmin: { apps: ['*'] } },
       app_routes: { fitness: ['fitness/*'] },
     });
-    expect(config.roles.parent.apps).toEqual(['fitness', 'requirements']);
+    expect(config.roles.parent.apps).toEqual(['fitness', 'state-gates']);
     expect(config.roles.sysadmin.apps).toEqual(['*']);
-    expect(config.app_routes.requirements).toEqual(['requirements/*', 'entitlements/*']);
+    expect(config.app_routes['state-gates']).toEqual(['state-gates/*', 'entitlements/*']);
   });
 });
