@@ -401,61 +401,9 @@ portalKeys:
 carrying `usePortalKeys` is NOT deployed, the panel has *no working volume at all* — the keys are
 swallowed and nothing listens. Deploy the frontend first, or set `consumeVolume false` until you do.
 
-The production `https://` SPA can connect to `ws://localhost:8771` on this panel's WebView. The
-connection is loopback-only from the page's perspective; LAN WebSocket clients remain useful for
-read-only key diagnostics but cannot invoke camera actions.
-
-## School QR scanner
-
-The locked School keypad uses Portal Keys for QR capture when `screenId=portal`; ordinary browsers
-keep using the browser-local `getUserMedia` scanner. The page opens `ws://localhost:8771`, waits for
-`{"type":"ready","qrScanner":true}`, then sends `{"type":"qr","action":"start"}`.
-
-The Portal's privacy service returns black frames to hidden/offscreen WebView video and to Fully's
-motion/QR camera paths. `QrScannerActivity` therefore owns a real full-screen camera `SurfaceView`
-and registers it through Facebook's installed `com.facebook.portal.sdk` shared library. A separate
-fully opaque instruction window covers the preview; there is no visible-camera mode. ZXing examines
-NV21 frames inside the APK, immediately discards them, beeps on a valid `sch:` QR, and returns only
-the opaque token over the loopback socket. Token contents are never logged.
-
-Scanner observability distinguishes these stages in `/log` and `/logcat`: activity opened, camera
-opened, live non-flat frames observed, capture, timeout, permission denial, no frames, or privacy-
-black frames. `/status` exposes `qrScanner` and `qrScannerActive` without exposing camera data.
-
-Fully must allow Portal Keys to remain foreground:
-
-```bash
-FKB_HOST=<portal-ip>:2323 node cli/fkb.cli.mjs set kioskAppWhitelist net.kckern.portalkeys
-```
-
-Some Portal images leave `com.facebook.portal.aiservice` disabled. The APK detects that state and
-can enable only that package from its exact App Info page, but Fully must permit Settings during
-this one-time setup. Temporarily relax the two other-app guards, include Settings one package per
-line, restart Fully, and start one QR scan:
-
-```bash
-PK_HOST=<portal-ip>:8771 node _extensions/portal-keys/pkctl.mjs config set blockControlCenter false
-FKB_HOST=<portal-ip>:2323 node cli/fkb.cli.mjs set advancedKioskProtection false
-FKB_HOST=<portal-ip>:2323 node cli/fkb.cli.mjs set disableOtherApps false
-FKB_HOST=<portal-ip>:2323 node cli/fkb.cli.mjs set kioskAppWhitelist $'net.kckern.portalkeys\ncom.android.settings'
-FKB_HOST=<portal-ip>:2323 node cli/fkb.cli.mjs restart
-```
-
-`pkctl log` must show `smart-camera-package-enabled`; the APK then relaunches the scanner. Restore
-the kiosk controls immediately:
-
-```bash
-FKB_HOST=<portal-ip>:2323 node cli/fkb.cli.mjs set advancedKioskProtection true
-FKB_HOST=<portal-ip>:2323 node cli/fkb.cli.mjs set disableOtherApps true
-FKB_HOST=<portal-ip>:2323 node cli/fkb.cli.mjs set kioskAppWhitelist net.kckern.portalkeys
-PK_HOST=<portal-ip>:8771 node _extensions/portal-keys/pkctl.mjs config set blockControlCenter true
-```
-
-Android asks for Camera permission on the first scan. APK updates launch Android's returned
-confirmation intent and approve only a Package Installer dialog that explicitly names Portal Keys;
-the updater cannot click arbitrary system UI. Turning the Portal's physical camera privacy control
-off produces a clear `black-frames`/`no-frames` failure rather than reporting an unusable camera as
-on.
+The production `https://` SPA can connect to `ws://localhost:8771` on this panel's WebView.
+Portal Keys exposes only its hardware-key bridge and administrative diagnostics; it does not request
+camera access or provide barcode/QR scanning.
 
 ## Bluetooth keyboard for the locked School keypad
 

@@ -45,7 +45,7 @@ const PROGRAM_ID = 'lang-app';
 /** The id `ResolveAccessCode` reduces a sessionless entry against. Never a session. */
 const SYNTHETIC = 'synthetic:unopened';
 
-let clock, sessions, tokens, assignments, useCase, card, spies, qrToken;
+let clock, sessions, tokens, assignments, useCase, card, spies;
 
 /** A recording stand-in: every call's arguments, and a scripted reply. */
 const spy = (reply) => {
@@ -121,7 +121,6 @@ const build = ({
       accessCode: CODE,
       accessCodeExpiresAt: TOMORROW,
     });
-    qrToken = record.token;
     await tokens.put(record);
 
     spies = {
@@ -223,19 +222,6 @@ beforeEach(async () => { await build(); });
 // ---------------------------------------------------------------------------
 
 describe('opening a session for real', () => {
-  it('uses the scanned token to recompute the card, then acts only after the tap', async () => {
-    const before = sessions.ids();
-    expect(before).toEqual([]);
-
-    const result = await useCase.execute({ token: qrToken, action: 'play' });
-
-    expect(result.outcome).toBe('done');
-    expect(sessions.ids()).toEqual(['ses_new_1']);
-    expect(spies.dispatchMedia.execute.calls).toEqual([{
-      sessionId: 'ses_new_1', target: 'livingroom-tv',
-    }]);
-  });
-
   it('opens one before calling a use case when the entry had none', async () => {
     // The card resolved against a SYNTHETIC created state; acting on it must
     // append a real `created` event and hand the use case the real id.
@@ -791,16 +777,6 @@ describe('screen and program', () => {
 // ---------------------------------------------------------------------------
 
 describe('never a dead end', () => {
-  it('refuses both credentials together, and no credential at all', async () => {
-    const both = await useCase.execute({ code: CODE, token: qrToken, action: 'play' });
-    const neither = await useCase.execute({ action: 'play' });
-
-    expect(both).toMatchObject({ outcome: 'refused', sentence: expect.any(String) });
-    expect(neither).toMatchObject({ outcome: 'refused', sentence: expect.any(String) });
-    expect(sessions.ids()).toEqual([]);
-    expect(allCalls()).toEqual([]);
-  });
-
   it('answers a code that was never minted with the card\'s own sentence', async () => {
     const result = await useCase.execute({ code: '000000', action: 'print' });
     expect(result.outcome).toBe('refused');

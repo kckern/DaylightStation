@@ -156,8 +156,7 @@ export class RunSelfServiceAction {
 
   /**
    * @param {object} args
-   * @param {string} [args.code] - the six digits the card was opened with
-   * @param {string} [args.token] - the opaque QR token the card was opened with
+   * @param {string} args.code - the six digits the card was opened with
    * @param {string|{kind: string}} args.action - the button that was pressed
    * @returns {Promise<{outcome: 'done'|'debounced'|'pending'|'mount'|'refused'|'failed',
    *                    sentence: string, action: string|null,
@@ -168,15 +167,11 @@ export class RunSelfServiceAction {
    *   `effect` carries what it needs to do so. `sessionId` is always a REAL
    *   session id or null — never the card's synthetic marker.
    */
-  async execute({ code, token, action } = {}) {
+  async execute({ code, action } = {}) {
     const kind = typeof action === 'string' ? action : (action?.kind ?? null);
     let result;
     try {
-      const hasCode = typeof code === 'string' && code.length > 0;
-      const hasToken = typeof token === 'string' && token.length > 0;
-      result = hasCode === hasToken
-        ? { outcome: 'refused', sentence: 'Try that again.' }
-        : await this.#run({ code: hasCode ? code : null, token: hasToken ? token : null, kind });
+      result = await this.#run({ code, kind });
     } catch (error) {
       // The outer net. Every branch below has its own catch with better
       // words; this one exists so that no throw at all can reach the router.
@@ -208,12 +203,10 @@ export class RunSelfServiceAction {
     return answer;
   }
 
-  async #run({ code, token, kind }) {
+  async #run({ code, kind }) {
     let resolved;
     try {
-      resolved = token
-        ? await this.#resolver.resolveToken({ token })
-        : await this.#resolver.resolve({ code });
+      resolved = await this.#resolver.resolve({ code });
     } catch (error) {
       this.#logger.error?.('school.selfservice.action.failed', {
         stage: 'resolve', action: kind, error: error?.message ?? String(error),

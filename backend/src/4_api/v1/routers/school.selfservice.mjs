@@ -35,9 +35,8 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * @param {object} deps
- * @param {{execute: (args: {code: string}) => Promise<object>,
- *          executeToken?: (args: {token: string}) => Promise<object>}} deps.resolveAccessCode
- * @param {{execute: (args: {code?: string, token?: string, action: string}) => Promise<object>}} [deps.runSelfServiceAction]
+ * @param {{execute: (args: {code: string}) => Promise<object>}} deps.resolveAccessCode
+ * @param {{execute: (args: {code: string, action: string}) => Promise<object>}} [deps.runSelfServiceAction]
  * @param {{getCoursePoster?: (courseId: string) => Promise<Buffer|null>}} [deps.curriculum]
  * @returns {import('express').Router}
  */
@@ -57,18 +56,6 @@ export function createSchoolSelfServiceRouter({
     router.post('/resolve', asyncHandler(async (req, res) => {
       const { code } = req.body || {};
       const card = await resolveAccessCode.execute({ code });
-      res.set('Cache-Control', 'no-store').json(card);
-    }));
-  }
-
-  // The camera-panel door. A QR carries the opaque school token itself, not
-  // the six digits printed beneath it, and keeps the token's longer scanner
-  // lifetime. It still resolves READ-ONLY to the same launch card; `/act` is
-  // the first place a session or any other durable state may be written.
-  if (resolveAccessCode?.executeToken) {
-    router.post('/resolve-token', asyncHandler(async (req, res) => {
-      const { token } = req.body || {};
-      const card = await resolveAccessCode.executeToken({ token });
       res.set('Cache-Control', 'no-store').json(card);
     }));
   }
@@ -126,8 +113,8 @@ export function createSchoolSelfServiceRouter({
     // on it — so this router does no validation of its own; a bad `action` is
     // a sentence, not a 400.
     router.post('/act', asyncHandler(async (req, res) => {
-      const { code, token, action } = req.body || {};
-      const result = await runSelfServiceAction.execute({ code, token, action });
+      const { code, action } = req.body || {};
+      const result = await runSelfServiceAction.execute({ code, action });
       res.set('Cache-Control', 'no-store').json(result);
     }));
   }

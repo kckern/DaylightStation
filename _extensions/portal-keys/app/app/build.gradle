@@ -12,8 +12,8 @@ android {
         minSdk 26
         targetSdk 28
         // BUMP on every build — install -r rejects a lower versionCode.
-        versionCode 24
-        versionName "1.1-qr-scanner"
+        versionCode 26
+        versionName "1.2-no-qr"
     }
 
     buildTypes {
@@ -33,5 +33,4 @@ dependencies {
     // NanoHTTPD WebSocket server — control channel to the browser kiosk, same
     // version piano-bridge uses on the tablet.
     implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
-    implementation 'com.google.zxing:core:3.5.3'
 }

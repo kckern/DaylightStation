@@ -1860,65 +1860,6 @@
   border-radius: 12px; background: var(--school-surface-2); color: var(--school-fg);
   font-size: 1.1rem; font-weight: 700; cursor: pointer;
 }
-.school-selfservice__camera-source {
-  // Kept composited because WebView camera frames can stop advancing when the
-  // media element is `display:none`; one transparent offscreen pixel provides
-  // a frame source without putting a child's face on the wall panel.
-  position: fixed; left: -2px; top: -2px; width: 1px; height: 1px;
-  opacity: 0; pointer-events: none; overflow: hidden;
-}
-.school-selfservice__scan {
-  display: inline-flex; align-items: center; justify-content: center;
-  gap: 0.55rem; min-height: 58px; padding: 0.55rem 1.25rem;
-  border: 1px solid var(--school-border); border-radius: 14px;
-  background: var(--school-surface); color: var(--school-fg);
-  font: inherit; font-size: 1.08rem; font-weight: 800; cursor: pointer; touch-action: manipulation;
-  svg { color: var(--school-accent); }
-  &:active { background: var(--school-surface-2); transform: scale(0.98); }
-  &:disabled { opacity: 0.45; }
-}
-.school-selfservice__scanner {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: clamp(0.65rem, 1.8vh, 1rem); width: 100%; min-height: min(36rem, 72vh);
-  padding: clamp(1rem, 3vh, 2rem); box-sizing: border-box;
-  border: 1px solid var(--school-border); border-radius: 22px;
-  background: var(--school-surface);
-}
-.school-selfservice__scanner-target {
-  flex: 0 0 auto; padding: 0.8rem; border: 2px solid var(--school-border);
-  border-radius: 20px; color: var(--school-accent);
-  background: var(--school-bg);
-}
-.school-selfservice__scanner-title {
-  margin: 0; color: var(--school-fg); font-size: clamp(1.65rem, 4vw, 2.2rem);
-  font-weight: 850; text-align: center;
-}
-.school-selfservice__scanner-instruction {
-  margin: 0; color: var(--school-muted); font-size: clamp(1rem, 2.5vw, 1.2rem);
-  font-weight: 700; text-align: center;
-}
-.school-selfservice__camera-status {
-  display: flex; align-items: center; justify-content: center; gap: 0.55rem;
-  min-height: 3.2rem; margin: 0; color: var(--school-warn);
-  font-size: clamp(0.95rem, 2.3vw, 1.12rem); font-weight: 800; line-height: 1.25;
-  text-align: center;
-  &.is-on { color: #68d391; }
-}
-.school-selfservice__camera-dot {
-  flex: 0 0 auto; width: 0.7rem; height: 0.7rem; border-radius: 50%;
-  background: currentColor; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 18%, transparent);
-}
-.school-selfservice__scanner-actions {
-  display: flex; justify-content: center; flex-wrap: wrap; gap: 0.75rem; width: 100%;
-}
-.school-selfservice__scanner-action {
-  min-width: 9rem; min-height: 54px; padding: 0.55rem 1.25rem;
-  border: 1px solid var(--school-border); border-radius: 13px;
-  background: var(--school-surface-2); color: var(--school-fg);
-  font: inherit; font-size: 1rem; font-weight: 800; cursor: pointer; touch-action: manipulation;
-  &.is-primary { border-color: var(--school-accent); color: var(--school-accent); }
-  &:active { transform: scale(0.98); }
-}
 .school-selfservice__pad {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(0.45rem, 1.4vh, 0.7rem); width: 100%;
 }
@@ -1999,7 +1940,6 @@
     text-shadow: 0 0 14px rgba(255, 112, 99, 0.8);
   }
   .school-selfservice__key:active { transform: none; }
-  .school-selfservice__scan:active, .school-selfservice__scanner-action:active { transform: none; }
 }
 
 .school-selfservice-card {

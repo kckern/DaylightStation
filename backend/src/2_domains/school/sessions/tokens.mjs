@@ -277,32 +277,6 @@ export function isAccessCodeLive(record, { now } = {}) {
 }
 
 /**
- * Is the QR credential on a self-service card still live?
- *
- * This is deliberately NOT `isAccessCodeLive`. The digits and the QR printed
- * beside them have two clocks: the digits die at the study-day rollover while
- * the opaque ticket keeps the scanner's longer `expiresAt` lifetime. A camera
- * built into the panel is still reading the QR, so narrowing it to the digit
- * clock would make the same printed square mean two different things on two
- * scanners.
- *
- * Only token classes the panel already knows how to turn into a launch card
- * are accepted. Other `sch:` tickets still belong to the universal scanner
- * pipeline; putting one in front of this camera must not quietly give it new
- * self-service semantics.
- */
-export function isSelfServiceQrTokenLive(record, { now } = {}) {
-  if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
-  if (!TOKEN_PATTERN.test(record.token || '') || record.revokedAt) return false;
-  if (!['subject_next', 'worksheet_companion', 'agenda_print'].includes(record.tokenClass)) return false;
-  if (record.expiresAt == null) return true;
-  if (!isIsoTimestamp(record.expiresAt) || !isIsoTimestamp(now)) return false;
-  // Match resolveTokenState's QR boundary: the token is live AT its expiry
-  // instant and dead only after it.
-  return Date.parse(now) <= Date.parse(record.expiresAt);
-}
-
-/**
  * Per-class resolution against the session's derived state.
  *
  * `actionable(state)` is the set of states in which the class's action still

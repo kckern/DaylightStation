@@ -787,7 +787,6 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             <div className="school-lock-split" data-side={lockSide}>
               <Keypad
                 onSubmit={selfService.submit}
-                onScan={selfService.scan}
                 screenId={screenId}
                 busy={selfService.busy}
                 message={selfService.message}
