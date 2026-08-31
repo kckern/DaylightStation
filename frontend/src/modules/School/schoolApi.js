@@ -270,6 +270,10 @@ export const schoolApi = {
   // → 404, or 500) and the panel shows its degraded message instead of "Try
   // again" — the two must not be confused.
   selfServiceResolve: (code) => req('/self-service/resolve', { code }),
+  // Browser-camera QR capture. The opaque token stays in the POST body (never
+  // a URL or log label) and resolves to the same read-only launch card as the
+  // six-digit alias.
+  selfServiceResolveToken: (token) => req('/self-service/resolve-token', { token }),
   // The same card, opened from a link a grown-up was handed instead of six
   // digits a child typed. Same never-errors-for-a-bad-input contract as
   // `/resolve`: an unreadable link is a 200 carrying `{ ok: false, sentence }`,
@@ -279,7 +283,9 @@ export const schoolApi = {
   selfServicePreview: (link) => req(`/self-service/preview/${encodeURIComponent(link)}`),
   // `action` is the Action's `kind` (`print` | `play` | `launch` | `screen` |
   // `program` | `retry`); `exit` never reaches the wire.
-  selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action }),
+  selfServiceAct: ({ code = null, token = null, action }) => req('/self-service/act', {
+    ...(code ? { code } : {}), ...(token ? { token } : {}), action,
+  }),
   companionProgress: (id, body) => req(`/self-service/companions/${encodeURIComponent(id)}/progress`, body),
   // "Can the printer print right now?" — polled ONLY while the panel is asking
   // a child "Did it print?", so it can name a jam or an empty tray instead of
