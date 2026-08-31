@@ -10,7 +10,7 @@ import { createAdminIntegrationsRouter } from './integrations.mjs';
 import { createAdminAppsRouter } from './apps.mjs';
 import { createAdminArtRouter } from './art.mjs';
 import { createAdminNotificationsRouter } from './notifications.mjs';
-import { createAdminRequirementsRouter } from './requirements.mjs';
+import { createAdminStateGatesRouter } from './state-gates.mjs';
 
 /**
  * Combined Admin Router
@@ -56,8 +56,8 @@ export function createAdminRouter(config) {
     listManagementService,
     adminArtService,
     adminImageService,
-    requirementsAdministration,
-    requirementsActorFromRequest,
+    stateGatesAdministration,
+    stateGatesActorFromRequest,
     logger = console
   } = config;
   const router = express.Router();
@@ -146,14 +146,14 @@ export function createAdminRouter(config) {
   });
   router.use('/notifications', notificationsRouter);
 
-  if (requirementsAdministration && requirementsActorFromRequest) {
-    router.use('/requirements', createAdminRequirementsRouter({
-      operations: requirementsAdministration,
-      actorFromRequest: requirementsActorFromRequest,
+  if (stateGatesAdministration && stateGatesActorFromRequest) {
+    router.use('/state-gates', createAdminStateGatesRouter({
+      operations: stateGatesAdministration,
+      actorFromRequest: stateGatesActorFromRequest,
     }));
   }
 
-  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/apps', '/art', '/images', '/media', '/ws', '/notifications', '/requirements'] });
+  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/apps', '/art', '/images', '/media', '/ws', '/notifications', '/state-gates'] });
   return router;
 }
 
@@ -168,4 +168,4 @@ export { createAdminIntegrationsRouter } from './integrations.mjs';
 export { createAdminAppsRouter } from './apps.mjs';
 export { createAdminArtRouter } from './art.mjs';
 export { createAdminNotificationsRouter } from './notifications.mjs';
-export { createAdminRequirementsRouter } from './requirements.mjs';
+export { createAdminStateGatesRouter } from './state-gates.mjs';

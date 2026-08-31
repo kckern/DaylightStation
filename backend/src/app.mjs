@@ -105,11 +105,11 @@ import { createCalendarApiRouter } from '#composition/modules/calendarApi.mjs';
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
 import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
 import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
-import { createRequirementsModule } from '#composition/modules/requirements.mjs';
+import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
-import { withRequirementsAuthenticationConfiguration } from '#apps/auth/defaultAuthenticationConfiguration.mjs';
+import { withStateGatesAuthenticationConfiguration } from '#apps/auth/defaultAuthenticationConfiguration.mjs';
 
 // Health mentions router (CoachChat autocomplete)
 import { createHealthMentionsRouter } from './4_api/v1/routers/health-mentions.mjs';
@@ -542,7 +542,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     authentication: new NodeAuthenticationPrimitives(),
     logger: rootLogger.child({ module: 'auth' }),
   });
-  const authConfig = withRequirementsAuthenticationConfiguration(dataService.system.read('config/auth') || {});
+  const authConfig = withStateGatesAuthenticationConfiguration(dataService.system.read('config/auth') || {});
   const jwtSecret = authConfig?.jwt?.secret || '';
   const jwtConfig = authConfig?.jwt || { issuer: 'daylight-station', expiry: '10y', algorithm: 'HS256' };
 
@@ -1413,7 +1413,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Stream router for singalong/readalong content
     stream: contentRouters.stream,
   };
-  const requirementsModule = await createRequirementsModule({
+  const stateGatesModule = await createStateGatesModule({
     configService,
     eventBus,
     householdId,
@@ -1421,8 +1421,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     roleIds: Object.keys(authConfig.roles ?? {}),
     logger: rootLogger,
   });
-  v1Routers.requirements = requirementsModule.requirementsRouter;
-  v1Routers.entitlements = requirementsModule.entitlementsRouter;
+  v1Routers.stateGates = stateGatesModule.stateGatesRouter;
+  v1Routers.entitlements = stateGatesModule.entitlementsRouter;
   rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'siblings', 'queue', 'play', 'localContent', 'local', 'stream'] });
 
   // Info router (action-based metadata)
@@ -5887,8 +5887,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     integrationsQueryService,
     notificationConfigService,
     notificationLedgerStore: notificationStack.ledgerStore,
-    requirementsAdministration: requirementsModule.administrationOperations,
-    requirementsActorFromRequest: requirementsModule.actorFromRequest,
+    stateGatesAdministration: stateGatesModule.administrationOperations,
+    stateGatesActorFromRequest: stateGatesModule.actorFromRequest,
     logger: adminApiLogger
   });
 
@@ -6238,7 +6238,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
-  process.on('SIGTERM', () => requirementsModule.dispose());
+  process.on('SIGTERM', () => stateGatesModule.dispose());
 
   return app;
 }

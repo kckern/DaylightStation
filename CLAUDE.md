@@ -213,6 +213,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `docs/reference/fitness/exercise-library.md` |
 | Arcade emulator (EmulatorJS boot contract, gamepad routing, fault handling) | `docs/reference/gaming/emulator-resilience.md` |
 | Household economy (coins) | `docs/reference/economy/economy.md` |
+| State Gates (assertions, gate policy, entitlements, replay) | `docs/reference/state-gates/README.md` |
 | DoNow (household "start this, there, now" dispatch) | `docs/reference/donow/README.md` |
 | Nutrition (scan-enriched food logging) | `docs/reference/nutrition/README.md` |
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `docs/reference/omr/README.md` |
