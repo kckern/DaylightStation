@@ -1,5 +1,8 @@
 # Fully Kiosk Browser — JavaScript Interface
 
+For fleet status, screenshots, safe remote commands, and curated settings from
+the Admin app, see the [Fully Kiosk Admin Console](./fully-kiosk-admin-console.md).
+
 FKB exposes a `fully` object to all pages loaded in its WebView. This allows web pages to launch Android apps, bind to device lifecycle events, and control FKB behavior without any server-side involvement.
 
 **No configuration required** — the `fully` object is available on all pages by default.

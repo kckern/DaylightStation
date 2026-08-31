@@ -11,6 +11,7 @@ import { createAdminAppsRouter } from './apps.mjs';
 import { createAdminArtRouter } from './art.mjs';
 import { createAdminNotificationsRouter } from './notifications.mjs';
 import { createAdminStateGatesRouter } from './state-gates.mjs';
+import { createAdminDeviceRemoteRouter } from './device-remote.mjs';
 
 /**
  * Combined Admin Router
@@ -34,6 +35,7 @@ import { createAdminStateGatesRouter } from './state-gates.mjs';
  * @param {Object} [config.adminMediaService] - AdminMediaService instance (optional)
  * @param {Object} [config.eventBus] - WebSocketEventBus instance (optional)
  * @param {Object} config.householdAdminService - Injected HouseholdAdminService
+ * @param {Object} [config.deviceRemoteAdministrationService] - Registered-device administration use cases
  * @param {Object} config.yamlConfigFileService - Injected YamlConfigFileService
  * @param {Object} config.appsConfigService - Injected AppsConfigService
  * @param {Object} config.schedulerAdminService - Injected SchedulerAdminService
@@ -58,6 +60,7 @@ export function createAdminRouter(config) {
     adminImageService,
     stateGatesAdministration,
     stateGatesActorFromRequest,
+    deviceRemoteAdministrationService,
     logger = console
   } = config;
   const router = express.Router();
@@ -83,6 +86,14 @@ export function createAdminRouter(config) {
     logger: logger.child?.({ submodule: 'scheduler' }) || logger
   });
   router.use('/scheduler', schedulerRouter);
+
+  // Device administration is a separate capability from household-config CRUD.
+  if (deviceRemoteAdministrationService) {
+    router.use('/household/devices/:deviceId/fully-kiosk', createAdminDeviceRemoteRouter({
+      service: deviceRemoteAdministrationService,
+      logger: logger.child?.({ submodule: 'device-remote' }) || logger,
+    }));
+  }
 
   // Mount household router (persistence + rules live in the injected HouseholdAdminService)
   const householdRouter = createAdminHouseholdRouter({
@@ -169,3 +180,4 @@ export { createAdminAppsRouter } from './apps.mjs';
 export { createAdminArtRouter } from './art.mjs';
 export { createAdminNotificationsRouter } from './notifications.mjs';
 export { createAdminStateGatesRouter } from './state-gates.mjs';
+export { createAdminDeviceRemoteRouter } from './device-remote.mjs';

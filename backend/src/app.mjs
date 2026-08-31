@@ -159,6 +159,7 @@ import { IntegrationsQueryService } from '#apps/admin/IntegrationsQueryService.m
 import { AdminArtService } from '#apps/admin/AdminArtService.mjs';
 import { AdminImageService } from '#apps/admin/AdminImageService.mjs';
 import { AdminNotificationOperations } from '#apps/admin/AdminNotificationOperations.mjs';
+import { DeviceRemoteAdministrationService } from '#apps/admin/DeviceRemoteAdministrationService.mjs';
 import { ListManagementService } from '#apps/content/services/ListManagementService.mjs';
 import { HouseholdContextService } from '#apps/common/context/HouseholdContextService.mjs';
 import { YamlListDatastore } from '#adapters/persistence/yaml/YamlListDatastore.mjs';
@@ -166,6 +167,7 @@ import { ListConfigCodec } from '#adapters/content/list/ListConfigCodec.mjs';
 import { FilesystemArtAdminRepository } from '#adapters/persistence/files/FilesystemArtAdminRepository.mjs';
 import { AdminImageFileStore } from '#adapters/admin/AdminImageFileStore.mjs';
 import { FetchAdminImageSource } from '#adapters/admin/FetchAdminImageSource.mjs';
+import { FullyKioskRemoteAdministrationAdapter } from '#adapters/devices/FullyKioskRemoteAdministrationAdapter.mjs';
 import { createMediaRouter } from './4_api/v1/routers/media.mjs';
 import { MediaSurfaceConfigService } from '#apps/media/MediaSurfaceConfigService.mjs';
 import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
@@ -5957,6 +5959,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configStore: adminConfigStore,
     logger: adminApiLogger.child?.({ submodule: 'household' }) || adminApiLogger
   });
+  const deviceRemoteAdministrationService = new DeviceRemoteAdministrationService({
+    gateway: new FullyKioskRemoteAdministrationAdapter({
+      readDevices: () => adminConfigStore.readDevices(),
+      resolveAuth: authRef => configService.getHouseholdAuth(authRef),
+      httpClient: axios,
+      logger: adminApiLogger.child?.({ submodule: 'fully-kiosk-transport' }) || adminApiLogger,
+    }),
+    logger: adminApiLogger.child?.({ submodule: 'device-remote' }) || adminApiLogger,
+  });
   const yamlConfigFileService = new YamlConfigFileService({
     configStore: adminConfigStore,
     logger: adminApiLogger.child?.({ submodule: 'config' }) || adminApiLogger
@@ -6011,6 +6022,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     adminImageService,
     adminNotificationOperations,
     householdAdminService,
+    deviceRemoteAdministrationService,
     yamlConfigFileService,
     appsConfigService,
     schedulerAdminService,

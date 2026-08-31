@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Stack, Group, Text, Badge, Button, Paper, TextInput, Select, Alert, Center, Loader, Anchor }  from '@mantine/core';
 import {
-  IconArrowBack, IconTrash, IconAlertCircle
+  IconArrowBack, IconTrash, IconAlertCircle, IconDeviceDesktopCog
 } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
@@ -385,15 +385,27 @@ function DeviceEditor() {
         onSave={handleSave}
         onRevert={handleRevert}
         headerExtra={(
-          <Button
-            color="red"
-            variant="light"
-            size="sm"
-            leftSection={<IconTrash size={14} />}
-            onClick={() => setDeleteOpen(true)}
-          >
-            Delete
-          </Button>
+          <Group gap="xs">
+            {device.content_control?.provider === 'fully-kiosk' && (
+              <Button
+                variant="light"
+                size="sm"
+                leftSection={<IconDeviceDesktopCog size={14} />}
+                onClick={() => navigate(`/admin/household/devices/${deviceId}/fully-kiosk`)}
+              >
+                Fully Kiosk Console
+              </Button>
+            )}
+            <Button
+              color="red"
+              variant="light"
+              size="sm"
+              leftSection={<IconTrash size={14} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete
+            </Button>
+          </Group>
         )}
       />
 
