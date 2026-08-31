@@ -19,8 +19,9 @@ const appWith = (deps) => {
   return app;
 };
 
-const resolverWith = (preview) => ({
+const resolverWith = (preview, executeToken = vi.fn(async () => ({ ok: false }))) => ({
   execute: vi.fn(async () => ({ ok: false })),
+  executeToken,
   preview,
 });
 
@@ -62,5 +63,35 @@ describe('GET /api/v1/school/self-service/preview/:link', () => {
     expect(res.status).toBe(200);
     expect(resolveAccessCode.execute).toHaveBeenCalledWith({ code: '482913' });
     expect(resolveAccessCode.preview).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/v1/school/self-service browser QR routes', () => {
+  it('hands the complete token to /resolve-token and never caches the card', async () => {
+    const executeToken = vi.fn(async () => ({ ok: true, subject: 'math', actions: [] }));
+    const resolveAccessCode = resolverWith(vi.fn(), executeToken);
+    const token = 'sch:ABCDEFGHJKLMNPQR';
+
+    const res = await request(appWith({ resolveAccessCode }))
+      .post('/api/v1/school/self-service/resolve-token').send({ token });
+
+    expect(res.status).toBe(200);
+    expect(executeToken).toHaveBeenCalledWith({ token });
+    expect(res.body).toMatchObject({ ok: true, subject: 'math' });
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  it('keeps the token credential when the child taps the launch card', async () => {
+    const execute = vi.fn(async () => ({ outcome: 'done', sentence: 'Starting.' }));
+    const token = 'sch:ABCDEFGHJKLMNPQR';
+
+    const res = await request(appWith({
+      resolveAccessCode: resolverWith(vi.fn()),
+      runSelfServiceAction: { execute },
+    })).post('/api/v1/school/self-service/act').send({ token, action: 'play' });
+
+    expect(res.status).toBe(200);
+    expect(execute).toHaveBeenCalledWith({ code: undefined, token, action: 'play' });
+    expect(res.headers['cache-control']).toBe('no-store');
   });
 });
