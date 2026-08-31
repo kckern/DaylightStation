@@ -59,6 +59,12 @@ Collection resources accept these optional query parameters:
 
 `GET /entitlements` also accepts `capabilityId`. Gate detail uses the path `gateId`.
 
+Known query parameters must be non-empty scalar values; repeated/array values are
+rejected. Subject and period kinds must use the closed vocabularies above, subject and
+period IDs are capped at 160 characters, and `gateId`/`capabilityId` must be namespaced
+identifiers such as `chores.daily-complete` or `media.evening`. Invalid collection or
+detail filters return `400 INVALID_QUERY_FILTER` before an application operation runs.
+
 ## Gate resources
 
 ### `GET /api/v1/state-gates`
@@ -252,6 +258,10 @@ Query parameters:
 | `afterRevision` | `0` | non-negative integer |
 | `limit` | `100` | positive integer, capped at 500 revision batches |
 
+Replay integers use canonical base-10 syntax. Signs, decimals, exponents, repeated
+parameters, empty strings, and values outside JavaScript's safe-integer range are
+rejected rather than coerced.
+
 Response:
 
 ```json
@@ -338,7 +348,7 @@ current snapshot plus replay.
 
 | Status | Representative codes |
 |---:|---|
-| 400 | `VALIDATION_ERROR`, `INVALID_SOURCE_REVISION`, `INVALID_REPLAY_CURSOR`, `INVALID_REPLAY_LIMIT` |
+| 400 | `VALIDATION_ERROR`, `INVALID_QUERY_FILTER`, `INVALID_SOURCE_REVISION`, `INVALID_REPLAY_CURSOR`, `INVALID_REPLAY_LIMIT` |
 | 401 | `UNAUTHENTICATED` |
 | 403 | `FORBIDDEN`, `PUBLISHER_UNAUTHENTICATED` |
 | 404 | `GATE_NOT_FOUND`, `ENTITLEMENT_NOT_FOUND`, `CLAIM_TYPE_NOT_FOUND`, `ASSERTION_NOT_FOUND` |

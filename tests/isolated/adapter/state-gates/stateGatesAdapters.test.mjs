@@ -6,6 +6,8 @@ import { YamlStateGatesTransitionRepository } from '#adapters/state-gates/persis
 import { IStateGatesProjectionRepository } from '#apps/state-gates/ports/IStateGatesProjectionRepository.mjs';
 import { IStateGatesTransitionRepository } from '#apps/state-gates/ports/IStateGatesTransitionRepository.mjs';
 import { AuthenticatedStateGatesIngress } from '#adapters/state-gates/ingress/AuthenticatedStateGatesIngress.mjs';
+import { HttpStateGatesIdentityAdapter } from '#adapters/state-gates/ingress/HttpStateGatesIdentityAdapter.mjs';
+import { ConfigStateGatesSubjectCatalog } from '#adapters/state-gates/config/ConfigStateGatesSubjectCatalog.mjs';
 import { RoleStateGatesAdministrationAuthorizer } from '#adapters/state-gates/auth/RoleStateGatesAdministrationAuthorizer.mjs';
 import { StateGatesEventBusPublisher } from '#adapters/state-gates/eventbus/StateGatesEventBusPublisher.mjs';
 
@@ -24,6 +26,101 @@ describe('State Gates adapters', () => {
     expect(candidate.gates['school.required'].expression).toMatchObject({ kind: 'claim', publisherId: 'school' });
     expect(candidate.digest).toMatch(/^[a-f0-9]{64}$/);
   });
+
+  it('decodes every authored expression form and explicit progress paths', async () => {
+    const raw = {
+      schema: 'daylight.state-gates-policy/v1', policy_revision: 1,
+      publishers: { school: {} },
+      subject_sets: { learners: { kind: 'learner', members: ['a', 'b'] } },
+      claim_types: {
+        'school.done': {
+          schema_version: 1, value: { type: 'boolean' }, subject_kinds: ['learner'],
+          period_kinds: ['local_day'], accepted_publishers: ['school'], visibility: 'subscriber', validity: {},
+        },
+        'school.minutes': {
+          schema_version: 1, value: { type: 'number', unit: 'minute' }, subject_kinds: ['learner'],
+          period_kinds: ['local_day'], accepted_publishers: ['school'], visibility: 'subscriber', validity: {},
+        },
+      },
+      gates: {
+        'school.base': {
+          schema_version: 1, subject_kinds: ['learner'], period_kinds: ['local_day'],
+          expression: { claim: { type: 'school.done', publisher: 'school' } },
+        },
+        'school.matrix': {
+          schema_version: 1, subject_kinds: ['learner'], period_kinds: ['local_day'],
+          expression: {
+            all: [
+              { any: [{ reference: 'school.base' }, { not: { claim: { type: 'school.done', publisher: 'school' } } }] },
+              { comparison: { claim: { type: 'school.minutes', publisher: 'school' }, op: 'gte', value: { amount: 30, unit: 'minute' } } },
+              { count: { over: 'learners', as: 'learner', where: { claim: { type: 'school.done', publisher: 'school', subject: '$learner' } }, threshold: { at_least: 1 } } },
+              { schedule: { days: ['mon'], start: '08:00', end: '09:00' } },
+            ],
+          },
+          progress: { from: '/all/1' },
+        },
+      },
+      entitlements: {},
+    };
+    const candidate = await new YamlStateGatesPolicySource({ load: async () => raw }).loadCandidate('home');
+    const expression = candidate.gates['school.matrix'].expression;
+    expect(expression).toMatchObject({
+      kind: 'all', nodeId: 'school.matrix/expression',
+      children: [
+        { kind: 'any', children: [{ kind: 'reference', gateId: 'school.base' }, { kind: 'not' }] },
+        { kind: 'comparison', op: 'gte', value: 30, unit: 'minute' },
+        { kind: 'count', over: 'learners', as: 'learner', threshold: { atLeast: 1 } },
+        { kind: 'schedule', days: ['mon'], start: '08:00', end: '09:00' },
+      ],
+    });
+    expect(candidate.gates['school.matrix'].progress).toEqual({
+      basisNodeId: 'school.matrix/expression/1',
+    });
+  });
+
+  it.each([
+    [0, 0],
+    ['P0D', 0],
+    ['PT1.5S', 1_500],
+    ['P1W', 604_800_000],
+    ['P1DT2H', 93_600_000],
+  ])('accepts strict non-negative duration form %j', async (maxAge, expected) => {
+    const raw = {
+      schema: 'daylight.state-gates-policy/v1', policy_revision: 1,
+      publishers: {}, subject_sets: {}, gates: {}, entitlements: {},
+      claim_types: {
+        'school.done': {
+          schema_version: 1, value: { type: 'boolean' }, subject_kinds: ['learner'],
+          period_kinds: ['local_day'], accepted_publishers: [], visibility: 'subscriber',
+          validity: { max_age: maxAge },
+        },
+      },
+    };
+    const candidate = await new YamlStateGatesPolicySource({ load: async () => raw }).loadCandidate('home');
+    expect(candidate.claimTypes['school.done'].validity.maxAgeMs).toBe(expected);
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, '5 minutes', '5000', '-PT1M', 'P', 'PT', 'P1W2D', {}])(
+    'rejects invalid duration %j with its authored field path',
+    async maxAge => {
+      const raw = {
+        schema: 'daylight.state-gates-policy/v1', policy_revision: 1,
+        publishers: {}, subject_sets: {}, gates: {}, entitlements: {},
+        claim_types: {
+          'school.done': {
+            schema_version: 1, value: { type: 'boolean' }, subject_kinds: ['learner'],
+            period_kinds: ['local_day'], accepted_publishers: [], visibility: 'subscriber',
+            validity: { max_age: maxAge },
+          },
+        },
+      };
+      await expect(new YamlStateGatesPolicySource({ load: async () => raw }).loadCandidate('home'))
+        .rejects.toMatchObject({
+          name: 'ValidationError', code: 'INVALID_DURATION',
+          field: 'claim_types.school.done.validity.max_age',
+        });
+    },
+  );
 
   it('atomically stores projections and replays whole revision batches', async () => {
     const memory = new Map();
@@ -53,6 +150,56 @@ describe('State Gates adapters', () => {
     await ingress.observe('home', fixedPrincipal, { assertionId: 'a1' });
     expect(observed[0].publisherId).toBe('school');
     await expect(ingress.observe('home', { publisherId: 'school' }, { assertionId: 'a2' })).rejects.toMatchObject({ code: 'PUBLISHER_UNAUTHENTICATED' });
+  });
+
+  it('injects publisher authority for both observation and retraction ingress', async () => {
+    const principal = Object.freeze({ service: 'school' });
+    const observeAssertion = vi.fn(async () => ({ result: 'observed' }));
+    const retractAssertion = vi.fn(async () => ({ result: 'retracted' }));
+    const ingress = new AuthenticatedStateGatesIngress({
+      observeAssertion, retractAssertion,
+      resolvePublisher: candidate => candidate === principal ? 'school' : null,
+    });
+    await ingress.observe('home', principal, { assertionId: 'a1', publisherId: 'forged' });
+    await ingress.retract('home', principal, { assertionId: 'a1', publisherId: 'forged', sourceRevision: 2 });
+    expect(observeAssertion).toHaveBeenCalledWith('home', { assertionId: 'a1', publisherId: 'school' });
+    expect(retractAssertion).toHaveBeenCalledWith('home', {
+      assertionId: 'a1', publisherId: 'school', sourceRevision: 2,
+    });
+  });
+
+  it('derives HTTP identity only from token or trusted-network context', () => {
+    const identity = new HttpStateGatesIdentityAdapter();
+    expect(identity.actorFromRequest({ user: { sub: 'parent-a', roles: ['parent'] }, roles: ['admin'] }))
+      .toEqual({ id: 'parent-a', kind: 'user', roles: ['admin'], authenticatedBy: 'token' });
+    expect(identity.actorFromRequest({ isLocal: true, roles: ['parent'], headers: { 'x-daylight-device': 'forged' } }))
+      .toEqual({ id: 'trusted-local-network', kind: 'network', roles: ['parent'], authenticatedBy: 'network_trust' });
+    expect(() => identity.actorFromRequest({ headers: { 'x-daylight-device': 'device-a' } }))
+      .toThrowError(expect.objectContaining({ code: 'UNAUTHENTICATED', status: 401 }));
+  });
+
+  it('builds a deduplicated household subject catalog from configuration', async () => {
+    const catalog = new ConfigStateGatesSubjectCatalog({
+      configService: {
+        getHouseholdUsers: () => ['learner-a', { id: 'learner-b' }, { username: 'learner-c' }],
+        getHouseholdDevices: () => ({
+          devices: {
+            tablet: { room: 'yellow-room' }, television: { location: 'yellow-room' }, speaker: { room: 'kitchen' },
+          },
+        }),
+      },
+    });
+    expect(await catalog.load('home')).toEqual([
+      { kind: 'household', id: 'home' },
+      { kind: 'learner', id: 'learner-a' },
+      { kind: 'learner', id: 'learner-b' },
+      { kind: 'learner', id: 'learner-c' },
+      { kind: 'device', id: 'tablet' },
+      { kind: 'device', id: 'television' },
+      { kind: 'device', id: 'speaker' },
+      { kind: 'room', id: 'yellow-room' },
+      { kind: 'room', id: 'kitchen' },
+    ]);
   });
 
   it('maps established roles to attestation and administrative capabilities', async () => {

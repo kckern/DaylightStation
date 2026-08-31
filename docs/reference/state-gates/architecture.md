@@ -20,7 +20,7 @@ consumers.
 The context is a policy projection, not a replacement for School, Piano, Fitness,
 chores, or the screen framework. Those contexts remain authoritative for their own
 state machines. They publish only the facts they choose to expose through the
-the State Gates published language. State Gates never reaches into their repositories
+State Gates published language. State Gates never reaches into their repositories
 or interprets their private records.
 
 The event bus remains transport. It cannot establish truth. Only an authenticated
@@ -805,9 +805,10 @@ entitlements:
     failure_posture: fail_open
 ```
 
-The YAML adapter validates syntax and translates snake_case, duration strings, local
-times, and tagged values into domain types. YAML keys and string parsing never leak into
-the domain or application.
+The YAML adapter validates syntax and translates snake_case, strict non-negative
+ISO-8601 durations (or finite non-negative milliseconds), local times, and tagged values
+into domain types. Duration diagnostics retain their source field path. YAML keys and
+string parsing never leak into the domain or application.
 
 ### 7.2 Complete validation before activation
 
@@ -1371,8 +1372,13 @@ claims/evidence. Domain code logs nothing. Event-bus output is always subscriber
 - initial materialization does not fire a satisfaction ceremony event.
 
 No live household controller, physical device, or second backend instance is required for
-foundation verification. Scenario tests use isolated adapters/fakes until a later
-integration phase explicitly migrates a producer or consumer.
+foundation verification. The implemented matrix uses isolated adapters/fakes and covers
+domain invariants, typed values, every expression family, time/DST boundaries, CAS
+retries and exhaustion, correction/retraction/expiry, persistence and compaction,
+strict HTTP syntax, authorization/provenance boundaries, startup recovery order,
+deterministic jitter, refresh failure, disposal, and household isolation. It imports no
+real producer domain. A later integration phase explicitly migrates each producer or
+consumer.
 
 ---
 
