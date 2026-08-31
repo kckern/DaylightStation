@@ -144,6 +144,7 @@ The fitness system enables family workout sessions on a large touchscreen TV. He
 |-----------|------|----------------|
 | **FitnessApp** | `Apps/FitnessApp.jsx` | Top-level route component. Loads config from API. Manages navigation (menu/show/player/plugin). Wraps everything in `FitnessProvider` |
 | **FitnessContext** | `context/FitnessContext.jsx` | React context provider. Bridges WebSocket data to session. Provides state to all UI components |
+| **FitnessShow** | `Fitness/player/FitnessShow.jsx` | Show/season browser. Chooses the initial incomplete season, preserves explicit season selections, and builds the episode play queue |
 | **FitnessPlayer** | `FitnessPlayer.jsx` | Video player. Manages play queue, video element, playback controls. Enforces governance lock (pause/mute when locked) |
 | **FitnessPlayerOverlay** | `FitnessPlayerOverlay.jsx` | Overlay UI shown during governance lock. Displays participant zones, target requirements, countdown timers |
 | **FitnessSidebar** | `FitnessSidebar.jsx` | Side panel showing user avatars, HR readings, zone colors, coin counts |
@@ -152,6 +153,20 @@ The fitness system enables family workout sessions on a large touchscreen TV. He
 | **FitnessNavbar** | `FitnessNavbar.jsx` | Navigation bar with content categories |
 | **FitnessPlayerFooter** | `FitnessPlayerFooter.jsx` | Seek bar, playback controls, timestamp display |
 | **VolumeProvider** | `VolumeProvider.jsx` | Context for coordinating video and music volume levels |
+
+#### Show season-selection contract
+
+`FitnessShow` may automatically select the first incomplete season when a show is
+opened, and may advance an automatically selected completed season when progress
+data changes. Once the user explicitly selects a season, that selection is
+authoritative until navigation leaves the show. Automatic progress handling must
+never replace a valid explicit selection, even when the selected season is
+complete or fresh progress data arrives.
+
+Season decisions emit structured `fitness.show.season_selected`,
+`fitness.show.season_auto_selected`, and defensive
+`fitness.show.season_explicit_restored` events with the source and destination
+season IDs so selection changes can be reconstructed from production logs.
 
 ---
 
