@@ -35,6 +35,29 @@ describe('question-bank/v2', () => {
     expect(normalized.items[0].choices[0].id).toMatch(new RegExp(`^${normalized.revision}:q0:`));
   });
 
+  it('freezes a remediation reference without printing it beside the question', () => {
+    const referenced = {
+      ...bank,
+      items: bank.items.map((entry) => ({ ...entry,
+        reviewReference: { title: 'Beast Academy 2A Guide', pages: [24, 25], section: 'Place Value' },
+      })),
+    };
+    const issued = issueWorksheet({
+      bank: referenced, learnerId: 'learner', enrollmentId: 'enrollment',
+      lessonId: 'place-value', profile: 'lower', seed: 'reference',
+    });
+    expect(issued.items[0].reviewReference).toEqual({
+      title: 'Beast Academy 2A Guide', pages: [24, 25], section: 'Place Value',
+    });
+    const document = worksheetInstanceDocument(createWorksheetInstance({
+      id: 'ws-reference', sessionId: 'ses-reference', bank: referenced,
+      learnerId: 'learner', enrollmentId: 'enrollment', lessonId: 'place-value',
+      profile: 'lower', seed: 'reference', issuedAt: '2026-08-30T00:00:00.000Z', itemIds: ['q0'],
+    }));
+    const question = document.blocks.find((block) => block.type === 'question');
+    expect(question.blocks.map((block) => block.type)).toEqual(['rich_text', 'omr_response']);
+  });
+
   it('freezes an asset stimulus into both solo and composed worksheet questions', () => {
     const illustrated = {
       ...bank,

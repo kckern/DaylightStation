@@ -10,6 +10,7 @@
  */
 import { GRADES } from '../grades.mjs';
 import { validateCheckpoints } from '../mediaCheckpoints.mjs';
+import { validateStudyReferences } from '../studyReference.mjs';
 
 /**
  * The nine subject shelves. Twin of `frontend/src/modules/School/home/subjects.js`
@@ -211,6 +212,8 @@ export function validateUnit(raw, sets = {}) {
     else if (/\b(?:EPUB|MOBI|HTML)\b|\.(?:epub|mobi|html?)\b/iu.test(raw.sourceTitle)) errors.push('sourceTitle must not reference a digital sidecar');
     else sourceTitle = raw.sourceTitle.trim();
   }
+  const studyResult = validateStudyReferences(raw.studyReferences);
+  errors.push(...studyResult.errors);
 
   if (!SUBJECT_IDS.includes(raw.subject)) {
     errors.push(`subject must be one of ${SUBJECT_IDS.join('|')}, got: ${raw.subject}`);
@@ -537,6 +540,7 @@ export function validateUnit(raw, sets = {}) {
       description,
       ...(reading ? { reading } : {}),
       ...(sourceTitle ? { sourceTitle } : {}),
+      ...(studyResult.references ? { studyReferences: studyResult.references } : {}),
       subject: raw.subject,
       objectives,
       courseId,

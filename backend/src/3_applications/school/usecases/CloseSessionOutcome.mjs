@@ -51,6 +51,7 @@ import { PlanProjection } from '../PlanProjection.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
+import { formatPageSpans } from '#domains/school/questionBankV2.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
@@ -479,6 +480,11 @@ export class CloseSessionOutcome {
     const hints = (worksheet?.questions ?? []).flatMap((question, index) => {
       if (!missed.has(question.itemId)) return [];
       const row = (worksheet.omr?.rowRange?.start ?? 1) + index;
+      if (question.reviewReference) {
+        const reference = question.reviewReference;
+        const pageLabel = reference.pages?.length === 1 ? 'page' : 'pages';
+        return [`${row}: review ${reference.title}, ${pageLabel} ${formatPageSpans(reference.pages)} · ${reference.section}.`];
+      }
       const page = String(question.source?.page ?? '').replace(/^p\.\s*/i, 'page ');
       const zone = String(question.source?.zone ?? '').replaceAll(/[.-]/g, ' ');
       return [`${row}: review ${[page, zone].filter(Boolean).join(' · ')}.`];

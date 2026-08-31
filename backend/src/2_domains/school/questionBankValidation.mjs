@@ -1,3 +1,5 @@
+import { validateReviewReference } from './studyReference.mjs';
+
 /**
  * Pure validation + normalisation of a question bank (spec §4). No I/O.
  * Fail-closed: audience defaults to 'assigned' so an omission never exposes a
@@ -137,6 +139,8 @@ export function validateQuestionBank(raw) {
         errors.push(`${at}: source requires non-empty page and zone`);
       }
     }
+    const reviewResult = validateReviewReference(item.reviewReference, `${at}.reviewReference`);
+    errors.push(...reviewResult.errors);
     if (item.levels !== undefined && (!Array.isArray(item.levels) || item.levels.length === 0
         || !item.levels.every(isNonEmptyString))) errors.push(`${at}: levels must be non-empty strings when present`);
     if (item.optionPool !== undefined) {

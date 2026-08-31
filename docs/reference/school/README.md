@@ -202,6 +202,13 @@ new subset/order. Grading therefore resolves against the issued snapshot, not
 against mutable bank YAML. Existing v1 banks retain their original schema and
 answer-key behavior.
 
+For original parallel-practice courses, `reviewReference: {title, pages,
+section}` names physical-book material that can reteach the assessed skill. It
+is not a provenance claim. It is frozen into the issued item but omitted from
+the question body; only a missed-question receipt reveals it. The enclosing
+unit's `studyReferences` supplies the lesson-card version, with one `primary`
+reference first and at most two `alternate` references.
+
 An item may add profile wording when the assessed fact and option pool are the
 same but the learner needs different scaffolding. The base `prompt` remains the
 required default. The author may use any compatible combination of:
