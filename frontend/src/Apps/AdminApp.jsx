@@ -16,6 +16,7 @@ import MembersIndex from '../modules/Admin/Household/MembersIndex.jsx';
 import MemberEditor from '../modules/Admin/Household/MemberEditor.jsx';
 import DevicesIndex from '../modules/Admin/Household/DevicesIndex.jsx';
 import DeviceEditor from '../modules/Admin/Household/DeviceEditor.jsx';
+import FullyKioskConsole from '../modules/Admin/Household/FullyKioskConsole.jsx';
 import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
 import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
 import NotificationsIndex from '../modules/Admin/Notifications/NotificationsIndex.jsx';
@@ -156,6 +157,7 @@ function AdminApp() {
               <Route path="household/members" element={<MembersIndex />} />
               <Route path="household/members/:username" element={<MemberEditor />} />
               <Route path="household/devices" element={<DevicesIndex />} />
+              <Route path="household/devices/:deviceId/fully-kiosk" element={<FullyKioskConsole />} />
               <Route path="household/devices/:deviceId" element={<DeviceEditor />} />
 
               {/* Agents */}

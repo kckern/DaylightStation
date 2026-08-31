@@ -1,0 +1,60 @@
+.fkb-console {
+  &__back {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: fit-content;
+  }
+
+  &__screenshot-frame {
+    min-height: 320px;
+    max-height: 620px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: var(--mantine-radius-sm);
+    border: 1px solid var(--ds-border);
+    background:
+      linear-gradient(45deg, rgba(255, 255, 255, 0.025) 25%, transparent 25%) 0 0 / 18px 18px,
+      linear-gradient(-45deg, rgba(255, 255, 255, 0.025) 25%, transparent 25%) 0 0 / 18px 18px,
+      var(--ds-bg-base);
+
+    img {
+      width: 100%;
+      height: 100%;
+      max-height: 620px;
+      object-fit: contain;
+      display: block;
+    }
+  }
+
+  &__summary-card {
+    min-height: 88px;
+  }
+
+  &__current-url {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  &__value,
+  &__setting-value {
+    min-width: 260px;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 48em) {
+  .fkb-console {
+    &__screenshot-frame {
+      min-height: 220px;
+    }
+
+    &__value,
+    &__setting-value {
+      min-width: 190px;
+    }
+  }
+}

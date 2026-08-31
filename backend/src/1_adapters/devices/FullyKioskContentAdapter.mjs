@@ -14,14 +14,14 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 
 import { IContentControl } from '#apps/devices/ports/IContentControl.mjs';
+import { FullyKioskRestClient } from './FullyKioskRestClient.mjs';
 
 export class FullyKioskContentAdapter extends IContentControl {
   #host;
   #port;
-  #password;
   #daylightHost;
   #logger;
-  #httpClient;
+  #restClient;
   #metrics;
   #adbAdapter;
   #launchActivity;
@@ -42,7 +42,7 @@ export class FullyKioskContentAdapter extends IContentControl {
    */
   constructor(config, deps = {}) {
     super();
-    if (!deps.httpClient) {
+    if (!deps.httpClient && !deps.restClient) {
       throw new InfrastructureError('FullyKioskContentAdapter requires httpClient', {
         code: 'MISSING_DEPENDENCY',
         dependency: 'httpClient'
@@ -51,10 +51,16 @@ export class FullyKioskContentAdapter extends IContentControl {
 
     this.#host = config.host;
     this.#port = config.port;
-    this.#password = config.password;
     this.#daylightHost = config.daylightHost;
     this.#logger = deps.logger || console;
-    this.#httpClient = deps.httpClient;
+    this.#restClient = deps.restClient || new FullyKioskRestClient({
+      host: config.host,
+      port: config.port,
+      password: config.password,
+    }, {
+      httpClient: deps.httpClient,
+      logger: this.#logger,
+    });
     this.#adbAdapter = deps.adbAdapter || null;
     this.#launchActivity = config.launchActivity || null;
     this.#companionApps = config.companionApps || [];
@@ -551,13 +557,13 @@ export class FullyKioskContentAdapter extends IContentControl {
         return {
           ready: true,
           provider: 'fully-kiosk',
-          currentUrl: data?.currentUrl,
+          currentUrl: data?.currentPageUrl ?? data?.currentUrl,
           // REST `deviceInfo` reports `screenOn`. `isScreenOn` is the in-WebView
           // JS API (fully.isScreenOn()) and is NOT a deviceInfo field — reading it
           // yielded undefined, so every #verify() mismatched and screen/toggle
           // always read "off". Fallback kept for FKB builds that do send it.
           screenOn: data?.screenOn ?? data?.isScreenOn,
-          appVersion: data?.appVersion
+          appVersion: data?.version ?? data?.appVersion
         };
       }
 
@@ -600,83 +606,13 @@ export class FullyKioskContentAdapter extends IContentControl {
    * @private
    */
   async #sendCommand(cmd, params = {}) {
-    const queryParams = new URLSearchParams({
-      cmd,
-      password: this.#password,
-      type: 'json',
-      ...params
-    });
-
-    // Log URL without password for security
-    const logParams = { ...params };
-    const url = `http://${this.#host}:${this.#port}/?${queryParams}`;
-    const logUrl = `http://${this.#host}:${this.#port}/?cmd=${cmd}&password=***${Object.keys(logParams).length ? '&' + new URLSearchParams(logParams) : ''}`;
-
     this.#metrics.lastRequestAt = nowTs24();
-    const startTime = Date.now();
-
-    this.#logger.debug?.('fullykiosk.sendCommand.start', { cmd, host: this.#host, port: this.#port, params: logParams, logUrl });
-
-    try {
-      const response = await this.#httpClient.get(url, { timeout: 10_000 });
-      const elapsedMs = Date.now() - startTime;
-
-      this.#logger.debug?.('fullykiosk.sendCommand.response', {
-        cmd,
-        status: response.status,
-        statusText: response.statusText,
-        hasData: !!response.data,
-        dataType: typeof response.data,
-        elapsedMs
-      });
-
-      // axios uses response.status, not response.ok
-      if (response.status >= 200 && response.status < 300) {
-        let data = response.data;
-
-        // Parse JSON if string
-        if (typeof data === 'string') {
-          try {
-            data = JSON.parse(data);
-          } catch {
-            // Keep as string if not valid JSON
-          }
-        }
-
-        // FKB answers HTTP 200 with several shapes that are NOT usable payloads.
-        // Treating them as success is what let a dispatch spend 38s reading
-        // `foreground` off an object that never had one (2026-08-21 incident).
-        if (typeof data === 'string' && data.trim().startsWith('<')) {
-          const snippet = data.slice(0, 200);
-          this.#logger.warn?.('fullykiosk.sendCommand.nonJsonResponse', { cmd, snippet, elapsedMs });
-          return { ok: false, error: 'FKB returned a non-JSON response', unusablePayload: true, snippet };
-        }
-        if (data && typeof data === 'object' && data.status === 'Error') {
-          const authError = /login/i.test(data.statustext || '');
-          this.#logger.warn?.('fullykiosk.sendCommand.rejected', {
-            cmd, statustext: data.statustext, authError, elapsedMs
-          });
-          return { ok: false, error: data.statustext || 'FKB error', authError, unusablePayload: true };
-        }
-
-        this.#logger.debug?.('fullykiosk.sendCommand.success', { cmd, elapsedMs });
-        return { ok: true, data };
-      } else {
-        this.#logger.warn?.('fullykiosk.sendCommand.httpError', { cmd, status: response.status, elapsedMs });
-        return { ok: false, error: `HTTP ${response.status}` };
-      }
-    } catch (error) {
-      const elapsedMs = Date.now() - startTime;
-      this.#logger.error?.('fullykiosk.sendCommand.error', {
-        cmd,
-        error: error.message,
-        code: error.code,
-        host: this.#host,
-        port: this.#port,
-        elapsedMs
-      });
-      return { ok: false, error: error.message };
-    }
+    const result = await this.#restClient.command(cmd, params);
+    return {
+      ...result,
+      authError: result.code === 'AUTH_REJECTED',
+      unusablePayload: ['AUTH_REJECTED', 'COMMAND_REJECTED', 'INVALID_RESPONSE'].includes(result.code),
+    };
   }
 
   /**
@@ -878,7 +814,7 @@ export class FullyKioskContentAdapter extends IContentControl {
     while (Date.now() < deadline) {
       const info = await this.#sendCommand('getDeviceInfo');
       if (info.ok) {
-        const current = info.data?.currentUrl;
+        const current = info.data?.currentPageUrl ?? info.data?.currentUrl;
         lastSeen = current;
         if (current && normalize(current) === target) {
           return { verified: true, currentUrl: current };
