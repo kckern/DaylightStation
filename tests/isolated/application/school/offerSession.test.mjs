@@ -85,3 +85,16 @@ describe('nextMove: issued/reprinted always routes to a reprint', () => {
     expect(nextMove(unit, issuedState({ unitId: unit.unitId, reprint: true })).kind).not.toBe('wait');
   });
 });
+
+describe('nextMove: a new bank lesson uses declarative delivery', () => {
+  const created = { state: 'created', nextAction: null };
+  const mediaCompleted = { state: 'media_completed', nextAction: { tokenClass: 'issue_document' } };
+
+  it.each([created, mediaCompleted])('routes a paper math bank to print from $state', (state) => {
+    expect(nextMove({ subject: 'math', bank: 'math/course/bank', delivery: 'paper' }, state).kind).toBe('print');
+  });
+
+  it.each([created, mediaCompleted])('keeps a screen bank on screen from $state', (state) => {
+    expect(nextMove({ subject: 'civilization', bank: 'civilization/quiz', delivery: 'screen' }, state).kind).toBe('screen');
+  });
+});

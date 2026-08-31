@@ -104,7 +104,16 @@ programs:
     target: 2          # per learner — a four-year-old's count is not a sibling's
     subject: english
     title: Story time
+    schedule:
+      daysOfWeek: [1, 2, 3, 4, 5]
 ```
+
+Every program enrollment accepts the same strict school-day `schedule` block
+as a course enrollment. `SetAssignments` validates and normalizes that calendar,
+and `appendAssignedProgramEntries` carries it into the agenda entry where the
+ordinary obligation policy can excuse the program on non-school days. Unlike a
+course enrollment, a program takes its schedule directly from the assignment;
+there is no syllabus snapshot between them.
 
 **The target lives on the enrollment, never in `school.yml`.** How many stories
 a child owes is a per-learner teaching decision; a household-wide default would

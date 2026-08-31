@@ -109,6 +109,16 @@ blocks:
   multi-select, true/false, scan/media action codes) plus layout controls
   (dividers, spacers, page breaks). Wordbank/matching orders are
   seeded-shuffled; cloze blanks are fixed-width atoms.
+- **Bank-backed paper delivery is declarative.** Compact `school.course/v2`
+  packages with `medium: paper` and `grading.gate: omr` project
+  `delivery: paper` onto their lesson units. Session offers route those banks
+  to worksheet issuance regardless of subject; other bank lessons remain
+  screen-delivered.
+- **Question figures are frozen stimuli.** A `school.question-bank/v2` item may
+  name one `{type: asset, ref, alt}` stimulus. Issuance snapshots the reference
+  and worksheet construction emits prompt, asset, then OMR response inside one
+  question fragment. Answer choices remain ordinary text/inline math, so the
+  physical row mapping is unchanged.
 - **Fit** is decided by measurement, never streaming. Four policies:
   `flow` paginates at normal density with no shrinking; `one-page` must fit —
   density falls back to compact, and a document still overset at compact is

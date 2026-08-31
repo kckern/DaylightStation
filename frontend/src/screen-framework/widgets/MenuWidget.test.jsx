@@ -9,9 +9,9 @@
 // two unmuted <video>s in sync, doubled audio, two Plex transcode sessions, and
 // a player that outlived the overlay's own exit.
 //
-// These cases pin the yield and, just as importantly, its LIMITS: the widget
-// yields only to an overlay that actually renders the stack, and yielding must
-// not cost a refetch or disturb the overlay's own escape handling.
+// These cases pin both reasons to yield: another MenuStack owns the shared stack,
+// or an exclusive media overlay suspends it so a background Player cannot remain
+// audible. Yielding must not cost a refetch or disturb the overlay's escape handling.
 
 import React from 'react';
 import { render, screen, act, waitFor } from '@testing-library/react';
@@ -68,6 +68,10 @@ function OverlayDriver() {
         data-testid="open-scene-overlay"
         onClick={() => showOverlay(() => <div data-testid="art-scene" />, {}, { priority: 'high' })}
       />
+      <button
+        data-testid="open-player-overlay"
+        onClick={() => showOverlay(() => <div data-testid="cast-player" />, {}, { priority: 'high', suspendsNavStack: true })}
+      />
       <button data-testid="dismiss-overlay" onClick={() => dismissOverlay()} />
     </>
   );
@@ -107,11 +111,7 @@ describe('MenuWidget — yielding the nav stack', () => {
     expect(document.querySelectorAll('[data-owner]')).toHaveLength(1);
   });
 
-  // The limit of the rule. An ArtMode scene, a cast Player and an app are all
-  // fullscreen but render nothing from the nav stack, so whatever the widget
-  // was showing (a menu level, or a Player the user started from the widget
-  // itself) has to survive underneath them — the framework's Back handling
-  // documents that stack as still being there.
+  // Non-media fullscreen scenes do not silence or reset the navigation stack.
   it('does NOT yield to a fullscreen overlay that does not render the stack', async () => {
     renderScreen();
     await waitFor(() => expect(screen.getByTestId('menu-stack-widget')).toBeTruthy());
@@ -120,6 +120,16 @@ describe('MenuWidget — yielding the nav stack', () => {
 
     expect(screen.getByTestId('art-scene')).toBeTruthy();
     expect(screen.getByTestId('menu-stack-widget')).toBeTruthy();
+  });
+
+  it('yields to an exclusive Player overlay so background media is unmounted', async () => {
+    renderScreen();
+    await waitFor(() => expect(screen.getByTestId('menu-stack-widget')).toBeTruthy());
+
+    act(() => { screen.getByTestId('open-player-overlay').click(); });
+
+    expect(screen.getByTestId('cast-player')).toBeTruthy();
+    expect(screen.queryByTestId('menu-stack-widget')).toBeNull();
   });
 
   it('takes the stack back when the owning overlay dismisses', async () => {

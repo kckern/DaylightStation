@@ -100,35 +100,25 @@ export function createFitnessApiRouter(config) {
     // The one loaded exercise-library instance (app.mjs). Shared by the write path's
     // slug guard and the browse read path — never constructed twice.
     exerciseLibrary = null,
+    fitnessPlayableModule = null,
     logger = console
   } = config;
 
-  // Create FitnessConfigService for normalized config access, playlist enrichment, and member names
-  const fitnessConfigService = new FitnessConfigService({
-    configProjection: new FitnessConfigProjection({ configService }),
-    logger
+  // The application root may provide the canonical household-level playable
+  // module. Isolated router consumers can still compose one locally.
+  const playableModule = fitnessPlayableModule || createFitnessPlayableModule({
+    configService,
+    fitnessConfig,
+    contentRegistry,
+    contentQueryService,
+    logger,
   });
-
-  // Resolve fitness content adapter from config (defaults to plex)
-  const fitnessContentSource = fitnessConfig?.content_source || 'plex';
-  const fitnessContentAdapter = contentRegistry?.get(fitnessContentSource);
-  const fitnessContentCatalog = fitnessContentAdapter
-    ? new ProviderFitnessContentCatalog({
-      contentAdapter: fitnessContentAdapter,
-      contentQueryService,
-      source: fitnessContentSource,
-      fitnessLibraryId: fitnessConfig?.plex?.library_id || 14,
-      logger,
-    })
-    : null;
-
-  // Create FitnessPlayableService for show/playable orchestration
-  const fitnessPlayableService = new FitnessPlayableService({
+  const {
     fitnessConfigService,
-    contentCatalog: fitnessContentCatalog,
-    createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
-    logger
-  });
+    fitnessContentAdapter,
+    fitnessContentCatalog,
+    fitnessPlayableService,
+  } = playableModule;
   const fitnessSchoolCourseService = createFitnessSchoolCourseOperation({
     attemptStore: new YamlFitnessSchoolAttemptStore({ configService, logger }),
     sessionService: fitnessServices.sessionService,
@@ -403,6 +393,47 @@ export function createFitnessApiRouter(config) {
   fitnessRouter.fitnessPlayableService = fitnessPlayableService;
   fitnessRouter.fitnessSchoolCourseService = fitnessSchoolCourseService;
   return fitnessRouter;
+}
+
+/**
+ * Compose the one Fitness playable authority shared by Fitness, Piano, School,
+ * and Agents. This keeps its content-catalog port and caches consistent.
+ */
+export function createFitnessPlayableModule({
+  configService,
+  fitnessConfig,
+  contentRegistry,
+  contentQueryService,
+  logger = console,
+} = {}) {
+  const fitnessConfigService = new FitnessConfigService({
+    configProjection: new FitnessConfigProjection({ configService }),
+    logger,
+  });
+  const fitnessContentSource = fitnessConfig?.content_source || 'plex';
+  const fitnessContentAdapter = contentRegistry?.get(fitnessContentSource);
+  const fitnessContentCatalog = fitnessContentAdapter
+    ? new ProviderFitnessContentCatalog({
+      contentAdapter: fitnessContentAdapter,
+      contentQueryService,
+      source: fitnessContentSource,
+      fitnessLibraryId: fitnessConfig?.plex?.library_id || 14,
+      logger,
+    })
+    : null;
+  const fitnessPlayableService = new FitnessPlayableService({
+    fitnessConfigService,
+    contentCatalog: fitnessContentCatalog,
+    createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
+    logger,
+  });
+
+  return {
+    fitnessConfigService,
+    fitnessContentAdapter,
+    fitnessContentCatalog,
+    fitnessPlayableService,
+  };
 }
 
 export function createFitnessSchoolCourseOperation({ attemptStore, sessionService, publications = null,

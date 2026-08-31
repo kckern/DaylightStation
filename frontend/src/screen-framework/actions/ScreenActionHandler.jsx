@@ -6,6 +6,7 @@ import { usePip } from '../pip/usePip.js';
 import { DaylightAPI } from '../../lib/api.mjs';
 import MenuStack from '../../modules/Menu/MenuStack.jsx';
 import { ScreenPlayer as Player } from '../publishers/ScreenPlayer.jsx';
+import { getPlayerQueueOpRegistry } from '../../modules/Player/lib/queueOpRegistry.js';
 import { usePlayerSessionBinding } from '../publishers/usePlayerSessionBinding.js';
 import AppContainer from '../../modules/AppContainer/AppContainer.jsx';
 import { getApp } from '../../lib/appRegistry.js';
@@ -170,7 +171,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     showOverlay(Player, {
       play: { contentId: payload.contentId, ...payload },
       clear: () => dismissOverlay(),
-    }, { chrome: 'media' });
+    }, { chrome: 'media', suspendsNavStack: true });
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
   const handleMediaQueue = useCallback((payload) => {
@@ -179,24 +180,31 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     showOverlay(Player, {
       queue: { contentId: payload.contentId, ...payload },
       clear: () => dismissOverlay(),
-    }, { chrome: 'media' });
+    }, { chrome: 'media', suspendsNavStack: true });
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
   // --- Queue ops (envelope command=queue) ---
-  // --- Queue ops (envelope command=queue) ---
   // Both play-now and play-next share the same active-vs-idle routing.
-  // Active player → dispatch event; the running Player handles in-place
-  // swap (play-now) or on-deck push (play-next), preserving queue state.
+  // Active player → dispatch to the single registered owner; the running Player
+  // handles an in-place swap (play-now) or on-deck push (play-next), preserving
+  // queue state.
   // Idle player → mount a fresh Player overlay.
   const handleMediaQueueOp = useCallback((payload) => {
     const op = payload?.op;
 
     if (op === 'play-now' || op === 'play-next') {
-      const playerActive = !!document.querySelector(
+      if (getPlayerQueueOpRegistry().dispatch({ op, ...payload })) {
+        logger().info('media.queue-op.dispatched', { op, contentId: payload.contentId });
+        return;
+      }
+      // A media element with no registered owner is a short mount/unmount race
+      // or a broken integration. Starting a new Player here would recreate the
+      // exact overlapping-audio failure this arbitration exists to prevent.
+      const unownedPlayerActive = !!document.querySelector(
         '.audio-player, .video-player audio, .video-player video, dash-video'
       );
-      if (playerActive) {
-        window.dispatchEvent(new CustomEvent('player:queue-op', { detail: { op, ...payload } }));
+      if (unownedPlayerActive) {
+        logger().warn('media.queue-op.owner-missing', { op, contentId: payload.contentId });
         return;
       }
       if (isMediaDuplicate(payload.contentId)) return;
@@ -204,7 +212,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       showOverlay(Player, {
         queue: { contentId: payload.contentId, ...payload },
         clear: () => dismissOverlay(),
-      }, { chrome: 'media' });
+      }, { chrome: 'media', suspendsNavStack: true });
       return;
     }
 
@@ -228,9 +236,9 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       logger().debug('playback.secondary-fallback', { secondary: payload.secondary.action });
       const { action, payload: secPayload } = payload.secondary;
       if (action === 'media:queue') {
-        showOverlay(Player, { queue: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media' });
+        showOverlay(Player, { queue: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media', suspendsNavStack: true });
       } else if (action === 'media:play') {
-        showOverlay(Player, { play: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media' });
+        showOverlay(Player, { play: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media', suspendsNavStack: true });
       } else if (action === 'menu:open') {
         showOverlay(MenuStack, { rootMenu: toMenuRoot(secPayload.menuId), playerRef: navPlayerRef }, { ownsNavStack: true });
       }

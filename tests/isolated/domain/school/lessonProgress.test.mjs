@@ -30,4 +30,21 @@ describe('lessonProgressRows display labels', () => {
       { label: 'Psalms 49–86', completed: 0, total: 2, inProgress: 1 },
     ]);
   });
+
+  it('excludes optional worksheets from module progress totals', () => {
+    const units = [
+      { unitId: 'r1', courseId: 'math', module: 'number-sense', sequence: 1, title: 'Required' },
+      { unitId: 'o1', courseId: 'math', module: 'number-sense', sequence: 2, title: 'Practice', required: false },
+    ];
+    const enrollment = {
+      moduleOrder: ['number-sense'], optionalModules: [], optionalLessons: ['o1'],
+      lessonOrder: { 'number-sense': ['r1', 'o1'] }, progression: { mode: 'module_blocks', one_active_module: true },
+    };
+    const rows = lessonProgressRows({
+      learnerId: 'learner', unit: units[0], units, sessions: [],
+      assignment: { courses: [{ courseId: 'math', enrollment }] },
+      works: [{ work: 'math', title: 'Math', progression: enrollment.progression, modules: [{ module: 'number-sense', title: 'Number Sense' }] }],
+    });
+    expect(rows.at(-1)).toMatchObject({ completed: 0, total: 1 });
+  });
 });

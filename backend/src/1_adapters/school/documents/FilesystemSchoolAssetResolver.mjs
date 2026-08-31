@@ -38,6 +38,7 @@ const REF_PATTERN = /^[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*$/;
 /** Point size of an SVG with no intrinsic dimensions we could read. */
 const FALLBACK_WIDTH_PT = 400;
 const FALLBACK_HEIGHT_PT = 200;
+const UNSAFE_SVG = /<\s*(?:script|foreignObject|image)\b|\son[a-z]+\s*=|\s(?:href|xlink:href)\s*=|url\s*\(/iu;
 
 /**
  * The drawn size of an SVG, in points.
@@ -104,6 +105,7 @@ export function createFileAssetResolver({ rootDir, logger = console } = {}) {
       return miss(err.code === 'ENOENT' ? 'not-found' : err.code || 'unreadable');
     }
     if (!svg.includes('<svg')) return miss('not-svg');
+    if (UNSAFE_SVG.test(svg)) return miss('unsafe-svg');
 
     const resolved = { svg, ...svgDimensions(svg) };
     cache.set(ref, resolved);

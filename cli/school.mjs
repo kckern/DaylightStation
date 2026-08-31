@@ -56,6 +56,10 @@ const NAMESPACES = {
     module: './school/decoys.mjs',
     blurb: 'audit answer/decoy construction and length cues in question banks',
   },
+  'math-assets': {
+    module: './school/math-assets.mjs',
+    blurb: 'generate deterministic SVG figures for paper mathematics worksheets',
+  },
   sim: {
     module: './school/sim.mjs',
     blurb: 'end-to-end lifecycle proof for any course — writes nothing real',

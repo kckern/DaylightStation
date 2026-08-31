@@ -84,6 +84,22 @@ describe('AgendaStatusBoard model', () => {
     expect(summary.done).toBe(1);
   });
 
+  it('does not count an excused Sunday offer as required Today work', () => {
+    const sections = [
+      { subject: 'civilization', servedToday: true },
+      {
+        subject: 'math',
+        next: { unitId: 'math.01' },
+        obligation: { state: 'excused', reason: 'not_a_school_day' },
+      },
+    ];
+    const sessions = [{ unitId: 'atlas.kansas', subject: 'civilization', outcome: { result: 'passed' } }];
+    const summary = summarize(sections, sessions, [{ unitId: 'math.01', subject: 'math' }]);
+
+    expect(summary).toMatchObject({ total: 1, done: 1 });
+    expect(summary.segments.map((segment) => segment.unitId)).toEqual(['atlas.kansas']);
+  });
+
   it('collapses a retry to its best outcome — a passed retry is not still yellow', () => {
     const sessions = [
       { unitId: 'a', subject: 'math', outcome: { result: 'needs_remediation' } },
@@ -328,7 +344,7 @@ describe('AgendaStatusBoard render', () => {
       ],
     } });
     render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-24" />);
-    await waitFor(() => expect(screen.getByTestId('agenda-status-board')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('1 of 3')).toBeTruthy());
 
     const segments = screen.getByTestId('agenda-status-board').querySelectorAll('.school-status-board__pill');
     expect(segments).toHaveLength(3);

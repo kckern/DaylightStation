@@ -25,6 +25,7 @@ export class SchedulerOrchestrator {
     stateStore,
     moduleLoader = null,
     harvesterExecutor = null,
+    applicationExecutor = null,
     mediaExecutor = null,
     newsReporterExecutor = null,
     schoolExecutor = null
@@ -43,6 +44,7 @@ export class SchedulerOrchestrator {
       load: (moduleRef) => import(moduleRef),
     };
     this.harvesterExecutor = harvesterExecutor;
+    this.applicationExecutor = applicationExecutor;
     this.mediaExecutor = mediaExecutor;
     this.newsReporterExecutor = newsReporterExecutor;
     this.schoolExecutor = schoolExecutor;
@@ -153,6 +155,10 @@ export class SchedulerOrchestrator {
         execution.succeed(timestamp);
       } else if (this.harvesterExecutor?.canHandle(job.id)) {
         await this.#runWithinDeadline(this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }), job);
+
+        execution.succeed(timestamp);
+      } else if (this.applicationExecutor?.canHandle(job.id)) {
+        await this.#runWithinDeadline(this.applicationExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
         execution.succeed(timestamp);
       } else if (this.schoolExecutor?.canHandle(job.id)) {

@@ -123,6 +123,7 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
     return {
       itemId: item.id, type: item.type, prompt: curlyQuotes(promptForProfile(item, profile)),
       source: item.source ? { ...item.source } : null,
+      ...(item.stimulus ? { stimulus: { type: 'asset', ref: item.stimulus.ref, alt: curlyQuotes(item.stimulus.alt) } } : {}),
       options: visible.map((choice, index) => ({
         id: choice.id, label: curlyQuotes(choice.label), letter: LETTERS[index], correct: choice.correct,
       })),
@@ -358,6 +359,8 @@ export function worksheetInstanceDocument(instance, {
         type: 'question', itemId: question.itemId, number: (gate ? 2 : 1) + index, omr: true, fillAfter: true,
         blocks: [
           { type: 'rich_text', md: question.prompt },
+          ...(question.stimulus ? [{ type: 'asset', ref: question.stimulus.ref, alt: question.stimulus.alt,
+            caption: false, maxHeightPt: 110, maxWidthPt: 300 }] : []),
           {
             type: 'omr_response', itemId: question.itemId,
             choices: question.options.length, layout: 'compact',
@@ -428,6 +431,8 @@ export function composedWorksheetDocument({
         type: 'question', itemId, number: number++, omr: true, fillAfter: true,
         blocks: [
           { type: 'rich_text', md: question.prompt },
+          ...(question.stimulus ? [{ type: 'asset', ref: question.stimulus.ref, alt: question.stimulus.alt,
+            caption: false, maxHeightPt: 110, maxWidthPt: 300 }] : []),
           { type: 'omr_response', itemId, choices: question.options.length, layout: 'compact' },
         ],
         choices: question.options.map((option) => option.label),

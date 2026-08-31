@@ -385,6 +385,17 @@ describe('YamlSurroundStore title rebind', () => {
     expect(store.lookup('plex:999999', 'Vivaldi: Spring')).toBeNull();
   });
 
+  it('refuses a one-word live title that is only a substring of an authored title', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
+    write('classical/vivaldi/spring.yml',
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch:\n  contentId: plex:663146\n  title: "Violin Concerto No. 1 in E Major, RV 269 Spring"\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    expect(store.lookup('plex:622243', 'Spring')).toBeNull();
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.match.rebound', expect.anything());
+  });
+
   it('names the sidecar file and the live contentId in the rebound warning', () => {
     const logger = makeLogger();
     new YamlSurroundStore({ rootDir: root, libraryDir: library, logger })
@@ -480,9 +491,9 @@ describe('YamlSurroundStore rebind ambiguity', () => {
       .toEqual(['The Four Seasons', 'Vivaldi: The Four Seasons']);
   });
 
-  it('refuses a short authored title that over-matches a real Four Seasons title', () => {
-    // The PoC corpus: one sidecar authored sloppily as `Spring`, which is a
-    // substring of every live title carrying that word.
+  it('ignores a one-word authored title when a strong exact title identifies one sidecar', () => {
+    // A one-word title is too weak for stale-id recovery. It must not turn a
+    // strong exact match into ambiguity, or match unrelated media named Spring.
     writeLib('classical/vivaldi/spring-short.yml', 'title: Spring (short)\n');
     writeLib('classical/vivaldi/spring-full.yml', 'title: Spring (full)\n');
     write('classical/vivaldi/spring-short.yml',
@@ -491,10 +502,9 @@ describe('YamlSurroundStore rebind ambiguity', () => {
       'work: vivaldi/spring-full\nsurround: concert-hall\nmatch:\n  contentId: plex:4\n  title: "Violin Concerto No. 1 in E Major, RV 269 Spring"\n');
     const logger = makeLogger();
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
-    expect(store.lookup('plex:999999', 'Violin Concerto No. 1 in E Major, RV 269 Spring')).toBeNull();
-    const warned = logger.warn.mock.calls.find((c) => c[0] === 'surround.match.ambiguous');
-    expect(warned).toBeDefined();
-    expect(warned[1].candidates).toHaveLength(2);
+    expect(store.lookup('plex:999999', 'Violin Concerto No. 1 in E Major, RV 269 Spring').piece.title)
+      .toBe('Spring (full)');
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.match.ambiguous', expect.anything());
   });
 
   it('still rebinds, and does not cry ambiguity, when exactly one sidecar matches', () => {

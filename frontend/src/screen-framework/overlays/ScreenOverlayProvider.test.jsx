@@ -365,10 +365,11 @@ describe('ScreenOverlayProvider - Phase 4 slots', () => {
 // ---------------------------------------------------------------------------
 describe('ScreenOverlayProvider - nav-stack ownership', () => {
   function OwnershipProbe() {
-    const { showOverlay, dismissOverlay, hasOverlay, overlayOwnsNavStack } = useScreenOverlay();
+    const { showOverlay, dismissOverlay, hasOverlay, overlayOwnsNavStack, overlaySuspendsNavStack } = useScreenOverlay();
     return (
       <div>
         <span data-testid="owns">{String(overlayOwnsNavStack)}</span>
+        <span data-testid="suspends">{String(overlaySuspendsNavStack)}</span>
         <span data-testid="has">{String(hasOverlay)}</span>
         <button
           data-testid="show-owning"
@@ -377,6 +378,10 @@ describe('ScreenOverlayProvider - nav-stack ownership', () => {
         <button
           data-testid="show-plain"
           onClick={() => showOverlay(() => <div>scene</div>, {}, { priority: 'high' })}
+        />
+        <button
+          data-testid="show-suspending"
+          onClick={() => showOverlay(() => <div>player</div>, {}, { priority: 'high', suspendsNavStack: true })}
         />
         <button data-testid="dismiss" onClick={() => dismissOverlay()} />
       </div>
@@ -399,12 +404,20 @@ describe('ScreenOverlayProvider - nav-stack ownership', () => {
 
     act(() => { screen.getByTestId('show-owning').click(); });
     expect(screen.getByTestId('owns').textContent).toBe('true');
+    expect(screen.getByTestId('suspends').textContent).toBe('true');
     expect(screen.getByTestId('has').textContent).toBe('true');
   });
 
-  // The distinction the whole mechanism rests on: an ArtMode scene, a cast
-  // Player or an app is fullscreen but renders NOTHING from the nav stack, so
-  // the menu widget must keep whatever it is showing underneath it.
+  it('can suspend the stack without claiming to render it', () => {
+    renderProbe();
+
+    act(() => { screen.getByTestId('show-suspending').click(); });
+    expect(screen.getByTestId('owns').textContent).toBe('false');
+    expect(screen.getByTestId('suspends').textContent).toBe('true');
+  });
+
+  // Plain scenes and apps render nothing from the nav stack and do not suspend
+  // it. Media overlays opt into suspension separately.
   it('does NOT claim the stack for an overlay that only says it is fullscreen', () => {
     renderProbe();
 

@@ -50,9 +50,15 @@ export class FeedbackService {
    * @param {Object} [deps.notificationService] - optional; when wired, each
    *   arriving item raises an alert (see #notifyArrival). Optional because
    *   capture must work whether or not anyone is listening.
+   * @param {(ref: Object) => string} [deps.resourcePresenter] - required when
+   *   notificationService is wired; translates the semantic feedback ref into
+   *   a transport URL without teaching this application service API routes.
    */
-  constructor({ feedbackRepository, transcriptionService = null, logger = console, notificationService = null, resourcePresenter = (ref) => ref }) {
+  constructor({ feedbackRepository, transcriptionService = null, logger = console, notificationService = null, resourcePresenter = null }) {
     if (!feedbackRepository) throw new Error('FeedbackService requires a feedbackRepository dependency');
+    if (notificationService && typeof resourcePresenter !== 'function') {
+      throw new TypeError('FeedbackService requires resourcePresenter when notificationService is configured');
+    }
     this.repository = feedbackRepository;
     this.transcription = transcriptionService;
     this.logger = logger;

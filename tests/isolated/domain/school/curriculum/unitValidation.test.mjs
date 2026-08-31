@@ -195,6 +195,18 @@ describe('validateUnit: objectives', () => {
 });
 
 describe('validateUnit: placement', () => {
+  it('normalizes required lesson and delivery policy for course worksheets', () => {
+    const unit = unitOf(valid({ courseId: 'math-3', sequence: 1, required: false, delivery: 'paper' }));
+    expect(unit).toMatchObject({ required: false, delivery: 'paper' });
+    expect(unitOf(valid({ courseId: 'math-3', sequence: 1 }))).toMatchObject({ required: true });
+  });
+
+  it('rejects optionality outside a course and unknown delivery modes', () => {
+    expect(errs(valid({ required: false }))).toContain('required is only meaningful inside a course');
+    expect(errs(valid({ courseId: 'math-3', sequence: 1, required: 'sometimes' })))
+      .toContain('required must be a boolean when present');
+    expect(errs(valid({ delivery: 'printer' }))).toContain('delivery must be paper|screen');
+  });
   it('accepts a standalone unit with no courseId and no sequence', () => {
     expect(errs(valid())).toEqual([]);
   });

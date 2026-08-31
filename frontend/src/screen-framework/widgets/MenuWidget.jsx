@@ -23,7 +23,7 @@ function MenuWidget({ source }) {
   const [list, setList] = useState(null);
   const logger = useMemo(() => getChildLogger({ widget: 'menu' }), []);
   const playerRef = useRef(null);
-  const { overlayOwnsNavStack } = useScreenOverlay();
+  const { overlaySuspendsNavStack } = useScreenOverlay();
 
   // A menu selection mounts the legacy Player on the nav stack with this ref;
   // bind it into the playerSessionRegistry for fleet device-state publishing.
@@ -49,14 +49,15 @@ function MenuWidget({ source }) {
   // and two Plex transcode sessions for one selection, on a backend that
   // serialises Plex requests.
   //
-  // The stack has exactly one legitimate renderer at a time. While an overlay
-  // owns it, the widget yields. This is a RENDER gate, not a state change: the
-  // nav stack, its selections and its depth are untouched, and nothing in the
-  // overlay's subtree re-renders because of it, so the overlay's player never
-  // remounts mid-playback. When the overlay dismisses, this MenuStack remounts
-  // and resets to its root — the same "exit means home" the overlay's own
-  // player exit already promises (MenuStack.exitToHome).
-  if (overlayOwnsNavStack) {
+  // The stack has exactly one legitimate renderer at a time. The widget yields
+  // while an overlay owns that renderer or explicitly suspends it for exclusive
+  // media. This is a RENDER gate, not a state change: the nav stack, its
+  // selections and its depth are untouched, and nothing in the overlay's
+  // subtree re-renders because of it, so the overlay's player never remounts
+  // mid-playback. When the overlay dismisses, this MenuStack remounts and resets
+  // to its root — the same "exit means home" the overlay's own player exit
+  // already promises (MenuStack.exitToHome).
+  if (overlaySuspendsNavStack) {
     return null;
   }
 

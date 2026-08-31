@@ -77,7 +77,9 @@ export class PlexClient {
       });
       const wrapped = new Error('Media API request failed');
       wrapped.code = error.code || 'MEDIA_API_ERROR';
+      wrapped.status = error.response?.status ?? error.status ?? null;
       wrapped.isTransient = error.isTransient || false;
+      wrapped.cause = error;
       throw wrapped;
     }
   }

@@ -31,6 +31,24 @@ ADB is used in two ways:
 
 2. **Connection-error recovery** — `ResilientContentAdapter` triggers ADB recovery when the primary FK REST API is unreachable (ECONNREFUSED, ETIMEDOUT, EHOSTUNREACH). Application-level errors (bad URL, auth failure) do **not** trigger recovery.
 
+### Fleet diagnostics with `fkb.cli.mjs`
+
+`cli/fkb.cli.mjs` is the fleet-wide operator CLI for any Android device running
+Fully Kiosk. Select the device with `FKB_HOST` and supply that device's Fully
+password with `FKB_PW`:
+
+```bash
+FKB_HOST={device-ip}:2323 FKB_PW=... node cli/fkb.cli.mjs info
+FKB_HOST={device-ip}:2323 FKB_PW=... node cli/fkb.cli.mjs adb-connect
+FKB_HOST={device-ip}:2323 FKB_PW=... node cli/fkb.cli.mjs adb 'dumpsys input'
+```
+
+The CLI derives the ADB target IP from `FKB_HOST`; `FKB_ADB_PORT` overrides the
+default ADB port `5555`. Its no-environment default and automatic password
+fallback are conveniences for the piano tablet only, not a limitation on which
+fleet devices the CLI can manage. Always set both `FKB_HOST` and `FKB_PW` when
+targeting a different device.
+
 ---
 
 ## Configuration

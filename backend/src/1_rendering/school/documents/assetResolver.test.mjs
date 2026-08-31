@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createSubjectIconResolver } from '#adapters/school/documents/FilesystemSchoolAssetResolver.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createFileAssetResolver, createSubjectIconResolver } from '#adapters/school/documents/FilesystemSchoolAssetResolver.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
 import { createPrintDocumentRendering } from './PrintDocumentRendering.mjs';
 
 const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
-  rendering: createPrintDocumentRendering(), ...deps,
+  rendering: createPrintDocumentRendering({ resolveAsset: createSubjectIconResolver({ logger: { warn() {} } }) }), ...deps,
 });
 
 describe('createSubjectIconResolver', () => {
@@ -43,5 +46,21 @@ describe('createSubjectIconResolver', () => {
       },
     });
     expect(result.bytes.length).toBeGreaterThan(1000);
+  });
+});
+
+describe('createFileAssetResolver authoring safety', () => {
+  it('refuses scripts and external references instead of printing partial artwork', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'school-assets-'));
+    try {
+      fs.mkdirSync(path.join(root, 'school/math'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'school/math/unsafe.svg'), '<svg viewBox="0 0 10 10"><script>alert(1)</script></svg>');
+      const warnings = [];
+      const resolve = createFileAssetResolver({ rootDir: root, logger: { warn: (...args) => warnings.push(args) } });
+      expect(resolve('school/math/unsafe')).toBeNull();
+      expect(warnings[0][1]).toMatchObject({ reason: 'unsafe-svg' });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

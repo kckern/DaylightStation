@@ -449,12 +449,14 @@ function measureAssetNode(ctx, block, { widthPt, path }) {
   const resolved = ctx.resolveAsset ? ctx.resolveAsset(block.ref) : null;
   if (ctx.resolveAsset && !resolved?.svg) throw new UnresolvedAssetError(block.ref, path);
 
-  const caption = measureTextLines(ctx.doc, theme, [{ text: block.alt, font: 'regular' }], {
+  const caption = block.caption === false ? null : measureTextLines(ctx.doc, theme, [{ text: block.alt, font: 'regular' }], {
     widthPt, styleKey: 'instruction',
   });
   const naturalWidth = resolved?.widthPt > 0 ? resolved.widthPt : widthPt;
   const naturalHeight = resolved?.heightPt > 0 ? resolved.heightPt : theme.asset.placeholderHeightPt;
-  const scale = Math.min(widthPt / naturalWidth, theme.asset.maxHeightPt / naturalHeight, 1);
+  const maxWidthPt = Math.min(widthPt, block.maxWidthPt ?? widthPt);
+  const maxHeightPt = Math.min(theme.asset.maxHeightPt, block.maxHeightPt ?? theme.asset.maxHeightPt);
+  const scale = Math.min(maxWidthPt / naturalWidth, maxHeightPt / naturalHeight, 1);
   const drawWidthPt = naturalWidth * scale;
   const drawHeightPt = naturalHeight * scale;
 
@@ -467,7 +469,7 @@ function measureAssetNode(ctx, block, { widthPt, path }) {
     drawHeightPt,
     caption,
     widthPt,
-    heightPt: drawHeightPt + theme.asset.captionGapPt + caption.heightPt,
+    heightPt: drawHeightPt + (caption ? theme.asset.captionGapPt + caption.heightPt : 0),
   };
 }
 

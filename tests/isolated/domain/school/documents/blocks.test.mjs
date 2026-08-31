@@ -146,6 +146,14 @@ describe('validateBlock: asset', () => {
     expect(errs({ type: 'asset', ref: 'maps/rome.svg' })).toContain('asset alt must be a non-empty string');
     expect(errs({ type: 'asset', ref: 'maps/rome.svg', alt: '  ' })).toContain('asset alt must be a non-empty string');
   });
+
+  it('accepts bounded, captionless question-figure presentation', () => {
+    expect(errs({ type: 'asset', ref: 'school/math/line', alt: 'A number line.', caption: false, maxHeightPt: 135, maxWidthPt: 360 })).toEqual([]);
+    expect(errs({ type: 'asset', ref: 'school/math/line', alt: 'A number line.', caption: 'no' }))
+      .toContain('asset caption must be a boolean');
+    expect(errs({ type: 'asset', ref: 'school/math/line', alt: 'A number line.', maxHeightPt: 0 }))
+      .toContain('asset maxHeightPt must be a number > 0');
+  });
 });
 
 describe('validateBlock: question', () => {

@@ -86,6 +86,7 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const isPresent = (v) => v !== undefined && v !== null;
 const READALONG_PARTICIPATION = Object.freeze(['optional', 'required']);
+const DELIVERY_MODES = Object.freeze(['paper', 'screen']);
 
 /**
  * The companion handler an author who names none is asking for. `IssueDocument`
@@ -231,6 +232,7 @@ export function validateUnit(raw, sets = {}) {
   let sequence;
   let module;
   let moduleRole;
+  let required = true;
   if (isPresent(raw.courseId)) {
     if (!isNonEmptyString(raw.courseId)) errors.push('courseId must be a non-empty string');
     else courseId = raw.courseId;
@@ -250,6 +252,17 @@ export function validateUnit(raw, sets = {}) {
     else if (!['overview', 'lesson', 'optional'].includes(raw.moduleRole)) {
       errors.push('moduleRole must be overview|lesson|optional');
     } else moduleRole = raw.moduleRole;
+  }
+  if (isPresent(raw.required)) {
+    if (typeof raw.required !== 'boolean') errors.push('required must be a boolean when present');
+    else if (!courseId) errors.push('required is only meaningful inside a course');
+    else required = raw.required;
+  }
+
+  let delivery;
+  if (isPresent(raw.delivery)) {
+    if (!DELIVERY_MODES.includes(raw.delivery)) errors.push(`delivery must be ${DELIVERY_MODES.join('|')}`);
+    else delivery = raw.delivery;
   }
 
   let grades = [];
@@ -530,6 +543,8 @@ export function validateUnit(raw, sets = {}) {
       sequence,
       module,
       moduleRole,
+      required,
+      delivery,
       grades,
       passing,
       reward,

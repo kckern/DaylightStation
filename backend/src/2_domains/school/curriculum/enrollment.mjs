@@ -24,6 +24,7 @@ export function createCourseEnrollment({
   const publishedModules = [...new Set(members.map((u) => u.module).filter(Boolean))];
   const opening = policy.required_opening_module ?? null;
   const optionalModules = publishedModules.filter((id) => members.some((u) => u.module === id && u.moduleRole === 'optional'));
+  const optionalLessons = members.filter((unit) => unit.required === false).map((unit) => unit.unitId);
   const otherModules = publishedModules.filter((id) => id !== opening && !optionalModules.includes(id));
   const requiresShuffle = policy.module_order === 'shuffle_once' || policy.lesson_order === 'shuffle_once';
   if (requiresShuffle && typeof rng !== 'function') throw new Error('rng is required for shuffled course enrollment');
@@ -81,6 +82,7 @@ export function createCourseEnrollment({
     profile: profile ?? null,
     moduleOrder,
     optionalModules,
+    optionalLessons,
     lessonOrder,
     // Effective policy snapshot: progression must not change under a learner
     // because the catalog or syllabus was edited after enrollment.

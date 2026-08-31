@@ -97,6 +97,26 @@ tools consume it unchanged. Its `lesson:` mapping contains the former
 bank reference). The filename is the author-facing lesson id and must agree
 with `lesson.unitId`.
 
+A multiple-choice item may carry one shared, print-only figure without turning
+its answers into image choices:
+
+```yaml
+stimulus:
+  type: asset
+  ref: school/math/elementary-math-2-3/figures/number-line-01
+  alt: A number line from zero to twenty with point A above one tick.
+```
+
+The immutable worksheet instance freezes that mapping and the worksheet places
+the existing `asset` block between the prompt and the OMR response row. SVG
+files live under `content/assets/<ref>.svg`; raw SVG never belongs in lesson
+YAML. School refuses scripts, event handlers, external references, embedded
+images, and unresolved assets rather than printing an incomplete question.
+Use `node cli/school.mjs math-assets generate <spec-or-dir> --data-dir <root>`
+for deterministic number lines, ten frames, counters, base-ten blocks, arrays,
+fraction bars, clocks, graphs, and shape sets. Generated specs use
+`school.math-svg/v1` and may coexist with safe hand-authored SVGs.
+
 For a rich lesson, `_index.yml` is the `school.unit/v1` manifest and each other
 YAML file is a typed artifact. The artifact's stable bank id, not its physical
 path, is its address; moving between compact and rich forms therefore does not

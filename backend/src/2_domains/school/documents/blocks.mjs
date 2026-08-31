@@ -168,6 +168,9 @@ const VALIDATORS = {
     // Alt doubles as the print caption, so it is required even though nothing
     // on paper reads it aloud.
     if (!isNonEmptyString(raw.alt)) push('asset alt must be a non-empty string');
+    if (raw.caption !== undefined && typeof raw.caption !== 'boolean') push('asset caption must be a boolean');
+    if (raw.maxHeightPt !== undefined && !isPositiveNumber(raw.maxHeightPt)) push('asset maxHeightPt must be a number > 0');
+    if (raw.maxWidthPt !== undefined && !isPositiveNumber(raw.maxWidthPt)) push('asset maxWidthPt must be a number > 0');
   },
   question(raw, push, ctx) {
     // `points` overrides the envelope's `defaultPoints` (spec §6.1); legal on

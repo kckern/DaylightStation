@@ -1,5 +1,19 @@
 import { validateFlashcardEnrollment } from '#domains/school/flashcards/index.mjs';
 import { validateStoryTimeEnrollment, STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
+import { validateSchedule } from '#domains/school/schoolCalendar.mjs';
+
+const withSchedule = (validator) => async (raw) => {
+  const result = await validator(raw);
+  if (result?.errors?.length || !result?.enrollment) return result;
+  const { errors, schedule } = validateSchedule(raw?.schedule);
+  if (errors.length) {
+    return { errors: errors.map((message) => (message.startsWith('schedule ') ? message : `schedule.${message}`)) };
+  }
+  return {
+    errors: [],
+    enrollment: { ...result.enrollment, ...(schedule ? { schedule } : {}) },
+  };
+};
 
 /** Build the enrollment validators for the program launchers actually wired at boot. */
 export function createSchoolProgramEnrollmentValidators({
@@ -10,7 +24,7 @@ export function createSchoolProgramEnrollmentValidators({
   rubiksCubeService,
   rubiksCubeCourseId,
 }) {
-  return new Map([
+  const validators = [
     ...(languageStudyService ? [['sentence-ladder', (raw) => languageStudyService.validateEnrollment(raw)]] : []),
     ...(languageReelService ? [['language-reels', validateLanguageReelsEnrollment]] : []),
     ...(flashcardStudyService ? [['flashcards', (raw) => validateFlashcards(raw, flashcardStudyService)]] : []),
@@ -19,7 +33,8 @@ export function createSchoolProgramEnrollmentValidators({
     ...(rubiksCubeService && rubiksCubeCourseId
       ? [['rubiks-cube', (raw) => validateRubiksCubeEnrollment(raw, rubiksCubeCourseId)]]
       : []),
-  ]);
+  ];
+  return new Map(validators.map(([programId, validator]) => [programId, withSchedule(validator)]));
 }
 
 function validateLanguageReelsEnrollment(raw) {

@@ -16,6 +16,7 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isImageSpec = (v) => v && typeof v === 'object' && !Array.isArray(v)
   && Object.values(v).every((x) => isNonEmptyString(x));
 const CONCEPT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const ASSET_REF = /^[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*$/;
 
 export function validateQuestionBank(raw) {
   const errors = [];
@@ -97,6 +98,20 @@ export function validateQuestionBank(raw) {
     else seen.add(item.id);
     if (!ITEM_TYPES.has(item.type)) { errors.push(`${at}: unknown type "${item.type}"`); return; }
     if (!isNonEmptyString(item.prompt)) errors.push(`${at}: prompt is required`);
+    if (item.stimulus !== undefined) {
+      if (!item.stimulus || typeof item.stimulus !== 'object' || Array.isArray(item.stimulus)) {
+        errors.push(`${at}: stimulus must be a mapping when present`);
+      } else {
+        const unknown = Object.keys(item.stimulus).filter((field) => !['type', 'ref', 'alt'].includes(field));
+        if (unknown.length) errors.push(`${at}.stimulus: unknown fields ${unknown.join(', ')}`);
+        if (item.stimulus.type !== 'asset') errors.push(`${at}.stimulus.type must be asset`);
+        if (!isNonEmptyString(item.stimulus.ref) || !ASSET_REF.test(item.stimulus.ref)) {
+          errors.push(`${at}.stimulus.ref must be a safe slash-separated asset reference`);
+        }
+        if (!isNonEmptyString(item.stimulus.alt)) errors.push(`${at}.stimulus.alt is required`);
+        else if (item.stimulus.alt.length > 300) errors.push(`${at}.stimulus.alt must be at most 300 characters`);
+      }
+    }
     for (const field of ['prompt_by_profile', 'prompt_prefix_by_profile', 'prompt_suffix_by_profile']) {
       if (item[field] !== undefined) {
         if (!item[field] || typeof item[field] !== 'object' || Array.isArray(item[field])) {

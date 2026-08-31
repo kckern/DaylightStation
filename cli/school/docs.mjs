@@ -102,13 +102,12 @@ import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrin
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { rangesOverlap } from '#domains/school/documents/allocation.mjs';
 import { SAFE_WORKSHEET_INSTANCE_ID } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
-import { createSubjectIconResolver } from '#adapters/school/documents/FilesystemSchoolAssetResolver.mjs';
+import { createSchoolAssetResolver } from '#adapters/school/documents/FilesystemSchoolAssetResolver.mjs';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
 const EXIT_USAGE = 2;
 const ENTRYPOINT = fileURLToPath(import.meta.url);
-const resolveSubjectIcon = createSubjectIconResolver();
 
 const DENSITIES = new Set(['normal', 'compact']);
 const V2_LIKE_SCHEMAS = new Set([DOCUMENT_V2_SCHEMA, DOCUMENT_SOURCE_SCHEMA]);
@@ -585,8 +584,11 @@ export async function runRender({
   const allocationStore = cardMode
     ? new YamlAllocationStore({ directory: paths.contentRoot })
     : null;
+  const resolveAsset = createSchoolAssetResolver({
+    rootDir: path.join(paths.dataDir, 'content', 'assets'),
+  });
   const useCase = new RenderPrintDocument({
-    rendering: createPrintDocumentRendering({ resolveAsset: resolveSubjectIcon }),
+    rendering: createPrintDocumentRendering({ resolveAsset }),
     repository,
     banks,
     allocationStore,

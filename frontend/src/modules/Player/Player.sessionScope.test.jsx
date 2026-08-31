@@ -3,13 +3,13 @@
  *
  * Since 2026-08-16 the media guid is derived from CONTENT (that is what stops a
  * re-rendering caller from remounting the video), which means two Players showing
- * the same lecture compute the same identity. Two Players CAN be mounted at once:
- * a menu selection mounts one on the nav stack — MenuWidget is a layout widget, so
- * it renders inside the overlay provider's children — while a media:play action
- * mounts a second in the fullscreen slot, and that action's dismissOverlay clears
- * only the overlay slot. If they shared `itemSessionKey` they would share the seek
- * intent behind usePlaybackSession (one consuming the other's resume position) and
- * the recovery ledger's attempt budget (either unmount wiping the survivor's cap).
+ * the same lecture compute the same identity. Two Players CAN still be mounted at
+ * once in composite/preview surfaces and tests, even though screen-framework media
+ * overlays now suspend the MenuWidget nav stack to forbid two audible top-level
+ * Players. If legitimate simultaneous Players shared `itemSessionKey`, they would
+ * share the seek intent behind usePlaybackSession (one consuming the other's resume
+ * position) and the recovery ledger's attempt budget (either unmount wiping the
+ * survivor's cap).
  *
  * The discriminator has to be per INSTANCE, not per mount of the media element:
  * the five-attempt cap accumulates across remounts, and a remount happens below the

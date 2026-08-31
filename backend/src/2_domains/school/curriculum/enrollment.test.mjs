@@ -8,6 +8,7 @@ const units = [
   { unitId: 'atlas.03', courseId: 'atlas', module: 'north', moduleRole: 'lesson', sequence: 3, title: 'North state', subject: 'civilization' },
   { unitId: 'atlas.04', courseId: 'atlas', module: 'south', moduleRole: 'overview', sequence: 4, title: 'South', subject: 'civilization' },
   { unitId: 'atlas.05', courseId: 'atlas', module: 'bonus', moduleRole: 'optional', sequence: 5, title: 'Bonus', subject: 'civilization' },
+  { unitId: 'atlas.06', courseId: 'atlas', module: 'north', moduleRole: 'lesson', sequence: 6, title: 'North practice', subject: 'civilization', required: false },
 ];
 const policy = { mode: 'module_blocks', required_opening_module: 'opening', one_active_module: true, module_order: 'shuffle_once', lesson_order: 'shuffle_once' };
 
@@ -23,6 +24,7 @@ describe('course enrollment ordering', () => {
     expect(enrollment.lessonOrder.north[0]).toBe('atlas.02');
     expect(enrollment.moduleOrder).not.toContain('bonus');
     expect(enrollment.optionalModules).toEqual(['bonus']);
+    expect(enrollment.optionalLessons).toEqual(['atlas.06']);
     expect(enrollment.profile).toBe('upper');
     expect(enrollment.schema).toBe('school.course-enrollment/v2');
     expect(enrollment.progression).toEqual(policy);
@@ -64,6 +66,21 @@ describe('course enrollment ordering', () => {
     expect(plan.entries.find((x) => x.unitId === 'atlas.04').unlocks).toBe('atlas.02');
     expect(plan.entries.find((x) => x.unitId === 'atlas.02').unlocks).toBe('atlas.03');
     expect(plan.entries.find((x) => x.unitId === 'atlas.05').unlocks).toBeNull();
+  });
+
+  it('keeps an optional worksheet visible without making it a blocker or unlock target', () => {
+    const fixedPolicy = { ...policy, module_order: 'fixed', lesson_order: 'fixed' };
+    const enrollment = createCourseEnrollment({ courseId: 'atlas', profile: 'lower', units, policy: fixedPolicy });
+    const plan = planLearnerWork({
+      learnerId: 'learner3', units, coursePolicies: { atlas: fixedPolicy },
+      assignment: { courses: [{ courseId: 'atlas', profile: 'lower', enrollment }] },
+      sessions: [{ unitId: 'atlas.01', terminal: true, outcome: { result: 'passed' } },
+        { unitId: 'atlas.02', terminal: true, outcome: { result: 'passed' } },
+        { unitId: 'atlas.03', terminal: true, outcome: { result: 'passed' } }],
+    });
+    const practice = plan.entries.find((entry) => entry.unitId === 'atlas.06');
+    expect(practice).toMatchObject({ elective: true, status: 'available', unlocks: null });
+    expect(plan.entries.find((entry) => entry.unitId === 'atlas.04').status).toBe('available');
   });
 });
 

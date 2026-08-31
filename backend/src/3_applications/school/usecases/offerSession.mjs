@@ -82,7 +82,7 @@ export function nextMove(unit, state) {
       if (unit.launch) return { kind: 'launch', tokenClass: 'select_unit', label: unit.launch.labelHint ?? 'go do this' };
       if (unit.media) return { kind: 'play', tokenClass: 'select_unit', label: 'watch or listen' };
       if (unit.document) return { kind: 'print', tokenClass: 'select_unit', label: 'print your sheet' };
-      if (unit.bank && unit.subject === 'civilization') {
+      if (unit.bank && unit.delivery === 'paper') {
         return { kind: 'print', tokenClass: 'select_unit', label: 'print your worksheet' };
       }
       if (unit.bank) return { kind: 'screen', tokenClass: 'select_unit', label: 'answer on the screen' };
@@ -99,7 +99,7 @@ export function nextMove(unit, state) {
       // no sheet" — so the label (only) is composition-aware; the token class
       // still rides the reducer's, exactly as before this extraction.
       if (unit.document) return { kind: 'print', tokenClass: reducerTokenClass, label: 'print the questions' };
-      if (unit.bank && unit.subject === 'civilization') {
+      if (unit.bank && unit.delivery === 'paper') {
         return { kind: 'print', tokenClass: reducerTokenClass, label: 'print the questions' };
       }
       if (unit.bank) return { kind: 'screen', tokenClass: reducerTokenClass, label: 'answer on the screen' };
