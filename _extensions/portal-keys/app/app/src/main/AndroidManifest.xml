@@ -7,6 +7,12 @@
          localhost for the kiosk SPA, LAN for the pkctl CLI. Also used for the FKB
          REST calls that drive the backlight. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- QR scanner: frames remain inside this process and only the decoded school
+         token is returned to the kiosk over a loopback-only WebSocket. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Normal-level permission exported by com.facebook.portal.aiservice for the
+         public Portal SDK control service. Without it bindService returns false. -->
+    <uses-permission android:name="com.facebook.portal.permission.SMART_CAMERA_CONTROL" />
 
     <!-- ADB-FREE OPERATIONS. ADB-over-WiFi does NOT survive a reboot on this panel and
          cannot be made to: `adb root` is refused (production build) and
@@ -52,6 +58,12 @@
         android:usesCleartextTraffic="true"
         android:allowBackup="false">
 
+        <!-- Facebook ships its supported Smart Camera client as a shared library.
+             It registers this app with the Portal's virtual-camera/SCAA pipeline;
+             Camera.open(0) produces no frames without that registration. Optional
+             keeps the APK installable on non-Portal Android devices for diagnostics. -->
+        <uses-library android:name="com.facebook.portal.sdk" android:required="false" />
+
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -59,12 +71,23 @@
             </intent-filter>
         </activity>
 
+        <!-- A real SurfaceView is required by the Facebook Portal's camera privacy
+             policy. QrScannerActivity keeps that surface fully covered by opaque UI;
+             the camera image is never drawn for the child. -->
+        <activity
+            android:name=".QrScannerActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:finishOnTaskLaunch="true"
+            android:screenOrientation="landscape" />
+
         <service android:name=".PortalBridgeService" android:exported="false" />
 
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
             <intent-filter><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
         </receiver>
+        <receiver android:name=".UpdateResultReceiver" android:exported="false" />
 
         <!-- AccessibilityService is bound by the SYSTEM. No launcher activity, no
              BootReceiver, no foreground service: the system rebinds it after reboot

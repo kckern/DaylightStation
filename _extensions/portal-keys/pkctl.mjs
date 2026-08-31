@@ -262,7 +262,9 @@ const commands = {
   // ADB-free APK deploy. ADB-over-WiFi cannot survive a reboot on this panel (`adb root`
   // is refused on a production build, `setprop persist.adb.tcp.port` needs root), so this
   // is the durable upgrade path. Requires REQUEST_INSTALL_PACKAGES, granted once over USB.
-  // Android still shows a one-tap confirm on the panel — no silent path exists here.
+  // Android still requires Package Installer confirmation. Portal Keys launches the
+  // exact confirmation Intent and its accessibility service approves only an
+  // Install/Update dialog that explicitly names Portal Keys.
   async update([url]) {
     if (!url) {
       console.error('usage: update <apk-url>   (must be reachable FROM the panel)');
@@ -270,7 +272,7 @@ const commands = {
     }
     console.log('→ ' + url);
     pretty(await req(`/update?url=${encodeURIComponent(url)}`));
-    console.log('\n⚠ tap "Install" on the panel to complete.');
+    console.log('\n→ Android confirmation requested; verify the new version with `pkctl status`.');
   },
 
   // Our own log lines straight off the device — the thing whose absence turned a

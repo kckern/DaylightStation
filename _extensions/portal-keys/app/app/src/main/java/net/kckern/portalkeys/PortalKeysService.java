@@ -2,6 +2,7 @@ package net.kckern.portalkeys;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
+import android.content.Intent;
 import android.hardware.display.DisplayManager;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -53,6 +54,8 @@ public class PortalKeysService extends AccessibilityService
     private BtDiag btDiag;
     private PresenceReporter presenceReporter;
     private ControlServer server;
+    private OwnUpdateConfirmation updateConfirmation;
+    private SmartCameraPackageEnabler smartCameraPackageEnabler;
 
     /** FKB REST calls must never run on the input-dispatch thread. */
     private HandlerThread workerThread;
@@ -88,6 +91,8 @@ public class PortalKeysService extends AccessibilityService
         config = new Config(this);
         fkb = new FkbClient(config);
         eventLog = new EventLog();
+        updateConfirmation = new OwnUpdateConfirmation(this, eventLog);
+        smartCameraPackageEnabler = new SmartCameraPackageEnabler(this, eventLog);
 
         workerThread = new HandlerThread("portalkeys-worker");
         workerThread.start();
@@ -124,6 +129,8 @@ public class PortalKeysService extends AccessibilityService
         bound = false;
         Log.w(TAG, "service-destroyed: no longer receiving keys");
         if (server != null) server.stop();
+        if (updateConfirmation != null) updateConfirmation.finish();
+        if (smartCameraPackageEnabler != null) smartCameraPackageEnabler.finish();
         if (workerThread != null) workerThread.quitSafely();
         INSTANCE = null;
         super.onDestroy();
@@ -276,9 +283,68 @@ public class PortalKeysService extends AccessibilityService
     @Override public boolean isDisplayOn()      { return isPanelLit(); }
     @Override public String  fkbLastError()     { return fkb == null ? null : fkb.lastError(); }
 
+    @Override public boolean startQrScanner() {
+        try {
+            Intent intent = new Intent(this, QrScannerActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            eventLog.add("qr-activity launched");
+            return true;
+        } catch (RuntimeException error) {
+            eventLog.add("qr-activity launch-failed " + error.getClass().getSimpleName());
+            Log.e(TAG, "qr-activity launch-failed: " + error.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    static void relaunchQrScanner() {
+        final PortalKeysService service = INSTANCE;
+        if (service == null || service.ui == null) return;
+        service.ui.postDelayed(new Runnable() {
+            @Override public void run() {
+                service.eventLog.add("qr-activity relaunch-after-setup");
+                service.startQrScanner();
+            }
+        }, 500);
+    }
+
+    @Override public void cancelQrScanner() {
+        QrScannerActivity.cancelActive();
+    }
+
+    @Override public boolean isQrScannerActive() {
+        return QrScannerActivity.isActive();
+    }
+
+    public static void publishQrStatus(String status, String reason) {
+        PortalKeysService service = INSTANCE;
+        if (service == null || service.server == null) return;
+        service.eventLog.add("qr-status " + status
+                + (reason == null ? "" : " reason=" + reason));
+        service.server.broadcastQrStatus(status, reason);
+    }
+
+    public static void publishQrCapture(String token) {
+        PortalKeysService service = INSTANCE;
+        if (service == null || service.server == null) return;
+        service.eventLog.add("qr-captured");
+        service.server.broadcastQrCapture(token);
+    }
+
+    static boolean enableSmartCameraPackage(Runnable onEnabled, Runnable onFailure) {
+        PortalKeysService service = INSTANCE;
+        if (service == null || service.smartCameraPackageEnabler == null) return false;
+        service.smartCameraPackageEnabler.begin(onEnabled, onFailure);
+        return true;
+    }
+
     /** Blocking download+install; the control server already runs off the main thread. */
     @Override public String installUpdate(String url) {
         return new SelfUpdater(this, eventLog).install(url);
+    }
+
+    void beginOwnUpdateConfirmation() {
+        if (updateConfirmation != null) updateConfirmation.begin();
     }
 
     /**

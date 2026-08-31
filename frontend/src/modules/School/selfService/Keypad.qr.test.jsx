@@ -9,6 +9,7 @@ vi.mock('../schoolLog.js', () => ({
 
 afterEach(() => {
   delete navigator.mediaDevices;
+  vi.unstubAllGlobals();
 });
 
 describe('Keypad browser QR affordance', () => {
@@ -36,5 +37,25 @@ describe('Keypad browser QR affordance', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Use keypad' }));
     expect(screen.getByRole('button', { name: '1' })).toBeInTheDocument();
+  });
+
+  it('uses the loopback Portal Keys scanner on the physical Portal screen', () => {
+    const sockets = [];
+    class FakeWebSocket {
+      constructor(url) {
+        this.url = url;
+        this.readyState = 0;
+        sockets.push(this);
+      }
+      send() {}
+      close() { this.readyState = 3; }
+    }
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+
+    render(<Keypad onSubmit={vi.fn()} onScan={vi.fn()} screenId="portal" />);
+    fireEvent.click(screen.getByRole('button', { name: /^scan qr$/i }));
+
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].url).toBe('ws://localhost:8771/');
   });
 });

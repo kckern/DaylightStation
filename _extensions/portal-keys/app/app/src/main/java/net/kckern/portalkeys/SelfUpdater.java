@@ -22,9 +22,10 @@ import java.net.URL;
  * `REQUEST_INSTALL_PACKAGES` is granted once over USB via `appops set ... allow` and
  * survives reboots, so after that first cable this path is always available.
  *
- * CAVEAT: this device has a Google account and Fully is not device-owner, so Android shows
- * a ONE-TAP CONFIRM on the panel for each install. There is no fully silent path. It still
- * beats needing a cable.
+ * Android still requires Package Installer confirmation because Fully is not device-owner.
+ * UpdateResultReceiver launches the exact confirmation Intent returned for this session,
+ * and the accessibility service approves only a Package Installer dialog that explicitly
+ * names Portal Keys and offers Install/Update. It cannot click arbitrary system UI.
  */
 public class SelfUpdater {
 
@@ -71,14 +72,18 @@ public class SelfUpdater {
                 session.fsync(out);
             }
 
-            Intent intent = new Intent(ctx, PortalKeysService.class);
+            PortalKeysService service = PortalKeysService.current();
+            if (service != null) service.beginOwnUpdateConfirmation();
+            Intent intent = new Intent(ctx, UpdateResultReceiver.class);
+            intent.setAction(BuildConfig.APPLICATION_ID + ".UPDATE_RESULT."
+                    + System.currentTimeMillis());
             PendingIntent pending = PendingIntent.getBroadcast(
-                    ctx, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+                    ctx, sessionId, intent, PendingIntent.FLAG_UPDATE_CURRENT);
             session.commit(pending.getIntentSender());
 
             eventLog.add("self-update committed bytes=" + written);
-            Log.i(TAG, "self-update committed, " + written + " bytes — tap Install on the panel");
-            return "committed " + written + " bytes — tap Install on the panel";
+            Log.i(TAG, "self-update committed, " + written + " bytes");
+            return "committed " + written + " bytes — awaiting Android confirmation";
         } catch (Exception e) {
             String err = e.getClass().getSimpleName() + ": " + e.getMessage();
             eventLog.add("self-update failed " + err);

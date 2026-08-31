@@ -11,13 +11,17 @@
      flagRetrieveInteractiveWindows, and Android refuses that flag unless
      canRetrieveWindowContent is true, which is why that flipped from false. All three move
      together; drop any one and the dismissal silently never fires.
-     See PortalKeysService.onAccessibilityEvent.
+     typeWindowStateChanged also lets the narrowly scoped smart-camera setup see the
+     AI Service App Info page during its brief foreground window.
+     See PortalKeysService.onAccessibilityEvent and SmartCameraPackageEnabler.
 
-     canRetrieveWindowContent grants the ability to read screen content. This service reads
-     only window bounds and types from getWindows() and never walks a node tree. -->
+     canRetrieveWindowContent grants the ability to read screen content. Normal operation
+     reads only window bounds/types. Node text is inspected only while one of two bounded,
+     package-scoped confirmation flows is pending: Portal Keys' own installer dialog or the
+     Portal AI Service App Info page. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/accessibility_service_description"
-    android:accessibilityEventTypes="typeWindowsChanged"
+    android:accessibilityEventTypes="typeWindowsChanged|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:canRequestFilterKeyEvents="true"
     android:accessibilityFlags="flagRequestFilterKeyEvents|flagRetrieveInteractiveWindows"
