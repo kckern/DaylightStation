@@ -84,20 +84,6 @@ function makeAccessCodeResolverWithToken({ sessions, record }) {
   return resolver;
 }
 
-function makeQrResolverWithToken({ sessions, record }) {
-  return new ResolveAccessCode({
-    tokens: {
-      async get(token) { return token.trim() === record.token ? record : null; },
-      async getByAccessCode() { return null; },
-    },
-    curriculum: makeCurriculum(),
-    assignments: makeAssignments(),
-    sessions,
-    clock: () => new Date(NOW_ISO),
-    logger: noopLogger,
-  });
-}
-
 function makeSubjectNextResolver({ sessions }) {
   return new ResolveSubjectNext({
     curriculum: makeCurriculum(),
@@ -119,7 +105,6 @@ function tokenRecord({ continueToday }) {
     subject: { learnerId: LEARNER_ID, subject: SUBJECT, ...(continueToday ? { continueToday: true } : {}) },
     at: NOW_ISO,
     rng,
-    expiresAt: '2026-09-01T18:00:00.000Z',
     accessCode: '482913',
     accessCodeExpiresAt: '2026-08-26T04:00:00.000Z',
   });
@@ -178,48 +163,5 @@ describe('ResolveAccessCode — continueToday parity with ResolveSubjectNext', (
 
     expect(codeResolution.kind).toBe(scanResolution.kind);
     expect(codeResolution.entry?.unitId).toBe(scanResolution.entry?.unitId);
-  });
-});
-
-describe('ResolveAccessCode — browser QR credentials', () => {
-  it('opens the same read-only launch card from the full opaque token', async () => {
-    const sessions = makeSessions({ served: false });
-    const record = tokenRecord({ continueToday: true });
-    const resolver = makeQrResolverWithToken({ sessions, record });
-
-    const fromQr = await resolver.resolveToken({ token: record.token });
-
-    expect(fromQr.card.ok).toBe(true);
-    expect(fromQr.card.subject).toBe(SUBJECT);
-    expect(fromQr.resolution.kind).toBe('move');
-    expect(fromQr.resolution.entry?.unitId).toBe(unitA.unitId);
-    expect(sessions.appended).toEqual([]);
-  });
-
-  it('uses the QR expiry, not the shorter six-digit expiry', async () => {
-    const sessions = makeSessions({ served: false });
-    const record = {
-      ...tokenRecord({ continueToday: false }),
-      accessCodeExpiresAt: '2026-08-25T17:00:00.000Z',
-    };
-    const resolver = makeQrResolverWithToken({ sessions, record });
-
-    expect((await resolver.executeToken({ token: record.token })).ok).toBe(true);
-  });
-
-  it('returns a child-safe QR refusal for an unknown or malformed token', async () => {
-    const sessions = makeSessions({ served: false });
-    const record = tokenRecord({ continueToday: false });
-    const resolver = makeQrResolverWithToken({ sessions, record });
-
-    await expect(resolver.executeToken({ token: 'sch:DOESNOTEXIST234' })).resolves.toMatchObject({
-      ok: false,
-      reason: 'unknown_qr',
-      sentence: expect.stringMatching(/QR code.*try another/i),
-    });
-    await expect(resolver.executeToken({ token: 'https://example.com/' })).resolves.toMatchObject({
-      ok: false,
-      reason: 'unknown_qr',
-    });
   });
 });

@@ -37,12 +37,10 @@
  * next) belongs to useSelfService.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IconQrcode } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { screenOff } from '../../../lib/fkb.js';
 import useArmedAction from '../../../lib/identity/useArmedAction.js';
 import { schoolLog } from '../schoolLog.js';
-import useQrScanner from './useQrScanner.js';
 
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
@@ -146,8 +144,6 @@ function useTapFire() {
  *   - resolves with the verdict, so the keypad knows whether to play the
  *     refusal. Anything falsy back (a caller that reports nothing) simply
  *     skips the animation rather than guessing.
- * @param {(token: string) => Promise<{resolved: boolean, degraded?: boolean, skipped?: boolean, sentence?: string}>} [props.onScan]
- *   - resolves a complete opaque QR token through the same launch-card flow.
  * @param {boolean} [props.busy] - a resolve is in flight.
  * @param {string|null} [props.message] - the degraded sentence. A wrong code no
  *   longer arrives here (see the header); if one does, it is shown in the
@@ -177,7 +173,6 @@ function useTapFire() {
 export default function Keypad({
   length = 6,
   onSubmit,
-  onScan = null,
   busy = false,
   message = null,
   degraded = false,
@@ -197,12 +192,6 @@ export default function Keypad({
   const [reject, setReject] = useState(null);
   const timersRef = useRef([]);
   const tap = useTapFire();
-  const qr = useQrScanner({
-    onToken: onScan,
-    provider: screenId === 'portal' ? 'portal-keys' : 'browser',
-  });
-  const qrActive = qr.active;
-  const cancelQr = qr.cancel;
 
   const turnScreenOff = useCallback(async (source) => {
     schoolLog.selfService('screen-off.requested', { source });
@@ -264,10 +253,10 @@ export default function Keypad({
   // cover a resolve in flight and the scan ceremony, which overlays the keypad.
   useEffect(() => {
     const ms = Number(screenOffTimeoutSeconds) * 1000;
-    if (!Number.isFinite(ms) || ms <= 0 || busy || screenOffSuppressed || qrActive) return undefined;
+    if (!Number.isFinite(ms) || ms <= 0 || busy || screenOffSuppressed) return undefined;
     const timer = setTimeout(() => turnScreenOff('idle'), ms);
     return () => clearTimeout(timer);
-  }, [activityEpoch, busy, qrActive, screenOffSuppressed, screenOffTimeoutSeconds, turnScreenOff]);
+  }, [activityEpoch, busy, screenOffSuppressed, screenOffTimeoutSeconds, turnScreenOff]);
 
   const requestScreenOff = useCallback(() => {
     if (!screenOffArmed) schoolLog.selfService('screen-off.armed', { source: 'manual' });
@@ -397,13 +386,6 @@ export default function Keypad({
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
-      if (qrActive) {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          cancelQr();
-        }
-        return;
-      }
       if (/^\d$/.test(event.key)) {
         event.preventDefault();
         noteActivity();
@@ -424,7 +406,7 @@ export default function Keypad({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [backspace, cancelQr, noteActivity, press, qrActive, submit]);
+  }, [backspace, noteActivity, press, submit]);
 
   // `submit` is recreated on every keystroke (it closes over `entry`), so
   // routing the auto-submit timer through a ref — rather than depending on
@@ -455,7 +437,7 @@ export default function Keypad({
    * pad must not move either — a flip mid-NONONO is the same rug pull as a
    * flip mid-code.
    */
-  const engaged = entry.length > 0 || reject !== null || qrActive;
+  const engaged = entry.length > 0 || reject !== null;
   const onEngagedRef = useRef(onEngagedChange);
   onEngagedRef.current = onEngagedChange;
   useEffect(() => {
@@ -482,75 +464,6 @@ export default function Keypad({
     ? Array.from({ length }, (_, i) => (i < reject.shown ? letters[i] : null))
     : Array.from({ length }, (_, i) => entry[i] ?? null);
 
-  // A frame source, never a preview. Keeping the element mounted in BOTH
-  // keypad states means the start gesture can hand it a stream without racing
-  // a conditional render; the CSS leaves it one transparent pixel offscreen.
-  const cameraSource = (
-    <video
-      ref={qr.videoRef}
-      className="school-selfservice__camera-source"
-      muted
-      playsInline
-      autoPlay
-      aria-hidden="true"
-      tabIndex={-1}
-    />
-  );
-
-  if (qrActive) {
-    const waiting = ['starting', 'scanning'].includes(qr.phase);
-    const resolving = qr.phase === 'read';
-    return (
-      <section
-        className="school-selfservice"
-        data-testid="selfservice-keypad"
-        onPointerDownCapture={noteActivity}
-        onKeyDownCapture={noteActivity}
-        onClickCapture={noteActivity}
-      >
-        {cameraSource}
-        <div className="school-selfservice__scanner" data-phase={qr.phase}>
-          <IconQrcode
-            className="school-selfservice__scanner-target"
-            size={132}
-            stroke={1.35}
-            aria-hidden="true"
-          />
-          <h1 className="school-selfservice__scanner-title">Scan your QR code</h1>
-          <p className="school-selfservice__scanner-instruction">Hold it up until you hear a beep.</p>
-          <p
-            className={`school-selfservice__camera-status${qr.cameraOn ? ' is-on' : ''}`}
-            role="status"
-            aria-live="polite"
-          >
-            <span className="school-selfservice__camera-dot" aria-hidden="true" />
-            {qr.message}
-          </p>
-          {!resolving && (
-            <div className="school-selfservice__scanner-actions">
-              {qr.retryLabel && (
-                <button
-                  type="button"
-                  className="school-selfservice__scanner-action is-primary"
-                  {...tap(qr.retry)}
-                >
-                  {qr.retryLabel}
-                </button>
-              )}
-              <button
-                type="button"
-                className="school-selfservice__scanner-action"
-                {...tap(qr.cancel)}
-              >
-                {waiting ? 'Cancel' : 'Use keypad'}
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section
       className="school-selfservice"
@@ -559,7 +472,6 @@ export default function Keypad({
       onKeyDownCapture={noteActivity}
       onClickCapture={noteActivity}
     >
-      {cameraSource}
       <h1 className="school-selfservice__title">Type your code</h1>
       <div
         className={`school-selfservice__entry${reject ? ' is-rejected' : ''}${reject?.phase === 'shake' ? ' is-shaking' : ''}`}
@@ -654,18 +566,6 @@ export default function Keypad({
           ⌫
         </button>
       </div>
-
-      {!degraded && !entry && !reject && onScan && (
-        <button
-          type="button"
-          className="school-selfservice__scan"
-          disabled={busy}
-          {...tap(qr.start)}
-        >
-          <IconQrcode size={25} stroke={1.8} aria-hidden="true" />
-          <span>Scan QR</span>
-        </button>
-      )}
 
       <button
         type="button"

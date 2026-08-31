@@ -173,7 +173,7 @@ const PRINT_KINDS = new Set(['print', 'retry']);
  * wasted tap while a missing one is a dead end at a wall panel that has no
  * other affordance.
  */
-const isBackendFault = (payload) => !['unknown_code', 'unknown_qr'].includes(payload?.reason);
+const isBackendFault = (payload) => payload?.reason !== 'unknown_code';
 
 /**
  * What `onLaunch` (SchoolApp's `onPortalLaunch`) needs in order to route into a
@@ -233,11 +233,9 @@ export function useSelfService({
   // whenever the panel is not asking — the LaunchCard reads it as "draw no
   // clock", so the indicator can never be left over on another view.
   const [confirmRemainingMs, setConfirmRemainingMs] = useState(null);
-  // The credential stays valid across an exit or a timeout — nothing here
-  // revokes it. It is either the six digits or the opaque QR token; keeping
-  // the kind beside the value prevents an action from sending one through the
-  // other's endpoint.
-  const credentialRef = useRef(null);
+  // The code stays valid across an exit or a timeout — nothing here revokes
+  // it, so the child can simply type it again.
+  const codeRef = useRef(null);
   const lastTriedRef = useRef(null);
   // Rule 4. Bumped by every return-to-lock; an in-flight request whose
   // generation has moved on drops its answer on the floor.
@@ -271,7 +269,7 @@ export function useSelfService({
     setMessage(null);
     setDegraded(false);
     setBusy(false);
-    credentialRef.current = null;
+    codeRef.current = null;
   }, []);
 
   /**
@@ -287,16 +285,12 @@ export function useSelfService({
    * animation over a backend outage — telling a child their good code was
    * wrong, which is the one thing rule 1 exists to prevent.
    */
-  const resolveCredential = useCallback(async (credential) => {
-    const kind = credential?.kind;
-    const value = credential?.value;
-    if (!value || !['code', 'token'].includes(kind)) return { resolved: false, sentence: null };
+  const submit = useCallback(async (code) => {
+    if (!code) return { resolved: false, sentence: null };
     if (!beginWork()) return { resolved: false, sentence: null, skipped: true };
     const gen = genRef.current;
-    lastTriedRef.current = credential;
-    const res = kind === 'token'
-      ? await schoolApi.selfServiceResolveToken(value)
-      : await schoolApi.selfServiceResolve(value);
+    lastTriedRef.current = code;
+    const res = await schoolApi.selfServiceResolve(code);
     endWork();
     if (genRef.current !== gen) return { resolved: false, sentence: null, skipped: true }; // rule 4
 
@@ -304,7 +298,7 @@ export function useSelfService({
     if (!res.ok || !res.data) {
       setDegraded(true);
       setMessage(DEGRADED_SENTENCE);
-      schoolLog.selfServiceError('resolve.failed', { source: kind, status: res.status });
+      schoolLog.selfServiceError('resolve.failed', { status: res.status });
       return { resolved: false, sentence: DEGRADED_SENTENCE, degraded: true };
     }
     // `ok` is the ONLY thing separating a REFUSAL (bad code — stay on the
@@ -318,26 +312,21 @@ export function useSelfService({
       setMessage(res.data.sentence || TRY_AGAIN_SENTENCE);
       if (faulted) {
         schoolLog.selfServiceError('resolve.failed', {
-          source: kind, status: res.status, inBody: true, reason: res.data.reason ?? null,
+          status: res.status, inBody: true, reason: res.data.reason ?? null,
         });
       } else {
-        schoolLog.selfService(`${kind}.rejected`, { status: res.status });
+        schoolLog.selfService('code.rejected', { status: res.status });
       }
-      return {
-        resolved: false,
-        sentence: res.data.sentence || TRY_AGAIN_SENTENCE,
-        reason: res.data.reason ?? null,
-        degraded: faulted,
-      };
+      return { resolved: false, sentence: res.data.sentence || TRY_AGAIN_SENTENCE, degraded: faulted };
     }
 
-    credentialRef.current = credential;
+    codeRef.current = code;
     setDegraded(false);
     setMessage(null);
     setCard(res.data);
     setSentence(null);
     setView('card');
-    schoolLog.selfService(`${kind}.resolved`, { subject: res.data.subject ?? null });
+    schoolLog.selfService('code.resolved', { subject: res.data.subject ?? null });
     // Claim so a runner mounted from this card records against the learner the
     // code named — the same soft-claim `useSchoolLaunch` performs. A valid
     // contextual card confirms that identity; the keypad itself stays
@@ -349,17 +338,8 @@ export function useSelfService({
     return { resolved: true, sentence: null, degraded: false };
   }, [beginWork, claim, endWork]);
 
-  const submit = useCallback(
-    (code) => resolveCredential({ kind: 'code', value: code }),
-    [resolveCredential],
-  );
-  const scan = useCallback(
-    (token) => resolveCredential({ kind: 'token', value: token }),
-    [resolveCredential],
-  );
-
-  /** The degraded retry — the same credential, not a fresh capture exercise. */
-  const retry = useCallback(() => resolveCredential(lastTriedRef.current), [resolveCredential]);
+  /** The degraded retry — the same code, not a fresh typing exercise. */
+  const retry = useCallback(() => submit(lastTriedRef.current), [submit]);
 
   /** Land on words with a Done. The ending every non-mounting path shares. */
   const say = useCallback((words) => {
@@ -374,11 +354,7 @@ export function useSelfService({
 
     const gen = genRef.current;
     schoolLog.selfService('action.run', { kind: action.kind });
-    const credential = credentialRef.current;
-    const res = await schoolApi.selfServiceAct({
-      ...(credential?.kind === 'token' ? { token: credential.value } : { code: credential?.value }),
-      action: action.kind,
-    });
+    const res = await schoolApi.selfServiceAct({ code: codeRef.current, action: action.kind });
     endWork();
     if (genRef.current !== gen) return; // rule 4
 
@@ -498,14 +474,14 @@ export function useSelfService({
     schoolLog.selfService('print.retried', {});
     // NOTE: the work lock is taken by `submit`, not here — taking it in both
     // would deadlock the recompute against itself.
-    const { resolved, skipped, sentence: said } = await resolveCredential(credentialRef.current);
+    const { resolved, skipped, sentence: said } = await submit(codeRef.current);
     if (skipped) return;
     if (genRef.current !== gen) return; // rule 4
     // A recompute that failed must not strand the child on a confirm whose
     // question has already been answered: `message`/`degraded` are keypad-only
     // state and would be invisible from here.
     if (!resolved) say(said ?? DEGRADED_SENTENCE);
-  }, [resolveCredential, say, toLock]);
+  }, [say, submit, toLock]);
 
   // Both rule-5 effects reach `confirmPrint`/`say` through refs rather than
   // through the dependency array. `confirmPrint` is rebuilt whenever `submit`
@@ -637,7 +613,7 @@ export function useSelfService({
     // without any chance of the two disagreeing about the window.
     confirmRemainingMs,
     confirmTotalMs: confirmRemainingMs === null ? null : Number(printConfirmTimeoutMs),
-    submit, scan, retry, runAction, confirmPrint, exit: toLock, reload,
+    submit, retry, runAction, confirmPrint, exit: toLock, reload,
   };
 }
 

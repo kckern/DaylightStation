@@ -4,7 +4,6 @@ import {
   TOKEN_PREFIX,
   createTokenRecord,
   isAccessCodeLive,
-  isSelfServiceQrTokenLive,
   isSchoolToken,
   mintToken,
   resolveTokenState,
@@ -470,21 +469,7 @@ describe('access code on a token record', () => {
     const record = withCode();
     const now = '2026-08-21T09:00:00Z'; // past the code's day, inside the token's week
     expect(isAccessCodeLive(record, { now })).toBe(false);
-    expect(isSelfServiceQrTokenLive(record, { now })).toBe(true);
     expect(resolveTokenState(record, { now }).status).toBe('actionable');
-  });
-
-  it('keeps the QR live at its own expiry instant and closes it immediately after', () => {
-    const record = withCode();
-    expect(isSelfServiceQrTokenLive(record, { now: base.expiresAt })).toBe(true);
-    expect(isSelfServiceQrTokenLive(record, { now: '2026-08-27T16:00:00.001Z' })).toBe(false);
-  });
-
-  it('fails a self-service QR closed when revoked, malformed, or from another token class', () => {
-    const now = '2026-08-20T18:00:00Z';
-    expect(isSelfServiceQrTokenLive({ ...withCode(), revokedAt: now }, { now })).toBe(false);
-    expect(isSelfServiceQrTokenLive({ ...withCode(), token: 'sch:not-a-token' }, { now })).toBe(false);
-    expect(isSelfServiceQrTokenLive({ ...withCode(), tokenClass: 'media_action' }, { now })).toBe(false);
   });
 
   it('is live before the rollover', () => {

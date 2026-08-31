@@ -11,14 +11,13 @@
      flagRetrieveInteractiveWindows, and Android refuses that flag unless
      canRetrieveWindowContent is true, which is why that flipped from false. All three move
      together; drop any one and the dismissal silently never fires.
-     typeWindowStateChanged also lets the narrowly scoped smart-camera setup see the
-     AI Service App Info page during its brief foreground window.
-     See PortalKeysService.onAccessibilityEvent and SmartCameraPackageEnabler.
+     typeWindowStateChanged lets the narrowly scoped self-updater see Android's
+     Package Installer confirmation during its brief foreground window.
+     See PortalKeysService.onAccessibilityEvent and OwnUpdateConfirmation.
 
      canRetrieveWindowContent grants the ability to read screen content. Normal operation
-     reads only window bounds/types. Node text is inspected only while one of two bounded,
-     package-scoped confirmation flows is pending: Portal Keys' own installer dialog or the
-     Portal AI Service App Info page. -->
+     reads only window bounds/types. Node text is inspected only while the bounded,
+     package-scoped Portal Keys installer confirmation flow is pending. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/accessibility_service_description"
     android:accessibilityEventTypes="typeWindowsChanged|typeWindowStateChanged"

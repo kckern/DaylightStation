@@ -56,9 +56,7 @@ import { buildContextualLaunchCard } from '#domains/school/selfService/contextua
 import { decodeLaunchPreviewLink } from '#apps/school/services/launchPreviewLink.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
-import {
-  isSchoolToken, isSelfServiceQrTokenLive, resolveTokenState,
-} from '#domains/school/sessions/tokens.mjs';
+import { resolveTokenState } from '#domains/school/sessions/tokens.mjs';
 import { nextMove } from './offerSession.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 import { projectProgramEntry } from '../assignedProgramPlan.mjs';
@@ -97,12 +95,6 @@ export const SYNTHETIC_SESSION_ID = 'synthetic:unopened';
 const TRY_AGAIN = Object.freeze({
   ok: false, reason: 'unknown_code', learner: null, subject: null, title: null,
   sentence: 'Try again.', actions: Object.freeze([]),
-});
-
-/** A QR was decoded correctly, but it is not a live panel credential. */
-const TRY_ANOTHER_QR = Object.freeze({
-  ok: false, reason: 'unknown_qr', learner: null, subject: null, title: null,
-  sentence: 'That QR code did not work. Try another one.', actions: Object.freeze([]),
 });
 
 /** The backend broke, not the child. Distinct wording so the logs and the
@@ -191,39 +183,6 @@ export class ResolveAccessCode {
     return (await this.resolve({ code })).card;
   }
 
-  /** The QR-token counterpart to execute(). Still read-only. */
-  async executeToken({ token } = {}) {
-    return (await this.resolveToken({ token })).card;
-  }
-
-  /**
-   * Open the same launch card from the opaque QR payload. The QR keeps the
-   * scanner's revocation/expiry policy rather than borrowing the shorter
-   * six-digit alias clock.
-   */
-  async resolveToken({ token } = {}) {
-    let record;
-    try {
-      record = isSchoolToken(token) ? await this.#tokens.get(token) : null;
-    } catch (error) {
-      return { card: this.#faulted('qr-lookup', { error: error?.message ?? String(error) }), resolution: null };
-    }
-
-    let now;
-    try {
-      now = this.#clock().toISOString();
-    } catch (error) {
-      return { card: this.#faulted('qr-clock', { error: error?.message ?? String(error) }), resolution: null };
-    }
-    if (!isSelfServiceQrTokenLive(record, { now })) {
-      this.#logger.info?.('school.selfservice.qr.rejected', {
-        reason: record ? 'not-live-or-unsupported' : 'no-record',
-      });
-      return { card: TRY_ANOTHER_QR, resolution: null };
-    }
-    return this.#resolveRecord(record, { source: 'qr' });
-  }
-
   /**
    * The card AND the resolution it was built from.
    *
@@ -251,12 +210,6 @@ export class ResolveAccessCode {
     } catch (error) {
       return { card: this.#faulted('lookup', { error: error?.message ?? String(error) }), resolution: null };
     }
-
-    return this.#resolveRecord(record, { source: 'code' });
-  }
-
-  /** One card builder after either credential has selected a live record. */
-  async #resolveRecord(record, { source }) {
 
     if (record?.tokenClass === 'worksheet_companion') {
       try {
@@ -292,10 +245,10 @@ export class ResolveAccessCode {
       // Typed at a wall panel by a child, so it is logged rather than
       // swallowed: a code that never works is a minting or expiry bug and
       // there is no other way to see it.
-      this.#logger.info?.(`school.selfservice.${source}.rejected`, {
+      this.#logger.info?.('school.selfservice.code.rejected', {
         reason: record ? 'unscoped-record' : 'no-live-record',
       });
-      return { card: source === 'qr' ? TRY_ANOTHER_QR : TRY_AGAIN, resolution: null };
+      return { card: TRY_AGAIN, resolution: null };
     }
 
     try {
@@ -318,7 +271,7 @@ export class ResolveAccessCode {
         sentence: projection.presentation.message,
         ...projection,
       };
-      this.#logger.info?.(`school.selfservice.${source}.resolved`, {
+      this.#logger.info?.('school.selfservice.code.resolved', {
         learnerId, subject, kind: resolution.kind,
         state: resolution.state?.state ?? null,
         unitId: resolution.unit?.unitId ?? null,
