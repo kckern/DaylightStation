@@ -514,9 +514,7 @@ export default function Keypad({
             aria-hidden="true"
           />
           <h1 className="school-selfservice__scanner-title">Scan your QR code</h1>
-          <p className="school-selfservice__scanner-instruction">
-            Hold the QR code in front of the camera. Lower it when you hear the beep.
-          </p>
+          <p className="school-selfservice__scanner-instruction">Hold it up until you hear a beep.</p>
           <p
             className={`school-selfservice__camera-status${qr.cameraOn ? ' is-on' : ''}`}
             role="status"
@@ -612,18 +610,6 @@ export default function Keypad({
             Try again
           </button>
         )}
-        {!degraded && !entry && !reject && onScan && (
-          <button
-            type="button"
-            className="school-selfservice__scan"
-            disabled={busy}
-            {...tap(qr.start)}
-          >
-            <IconQrcode size={25} stroke={1.8} aria-hidden="true" />
-            <span>Scan QR</span>
-            <small>Camera off</small>
-          </button>
-        )}
       </div>
 
       <div className="school-selfservice__pad">
@@ -665,6 +651,18 @@ export default function Keypad({
           ⌫
         </button>
       </div>
+
+      {!degraded && !entry && !reject && onScan && (
+        <button
+          type="button"
+          className="school-selfservice__scan"
+          disabled={busy}
+          {...tap(qr.start)}
+        >
+          <IconQrcode size={25} stroke={1.8} aria-hidden="true" />
+          <span>Scan QR</span>
+        </button>
+      )}
 
       <button
         type="button"

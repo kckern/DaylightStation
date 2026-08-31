@@ -15,7 +15,10 @@ describe('Keypad browser QR affordance', () => {
   it('keeps the camera explicitly off until the child asks to scan', () => {
     render(<Keypad onSubmit={vi.fn()} onScan={vi.fn()} />);
 
-    expect(screen.getByRole('button', { name: /scan qr camera off/i })).toBeInTheDocument();
+    const scan = screen.getByRole('button', { name: /^scan qr$/i });
+    const pad = document.querySelector('.school-selfservice__pad');
+    expect(scan).toBeInTheDocument();
+    expect(pad.compareDocumentPosition(scan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const video = document.querySelector('video.school-selfservice__camera-source');
     expect(video).toBeInTheDocument();
     expect(video).toHaveAttribute('aria-hidden', 'true');
@@ -25,7 +28,7 @@ describe('Keypad browser QR affordance', () => {
     delete navigator.mediaDevices;
     render(<Keypad onSubmit={vi.fn()} onScan={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /scan qr camera off/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^scan qr$/i }));
 
     expect(await screen.findByRole('heading', { name: 'Scan your QR code' })).toBeInTheDocument();
     expect(await screen.findByText(/camera is unavailable/i)).toBeInTheDocument();
