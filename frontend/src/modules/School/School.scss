@@ -1868,16 +1868,12 @@
   opacity: 0; pointer-events: none; overflow: hidden;
 }
 .school-selfservice__scan {
-  display: grid; grid-template-columns: auto auto; align-items: center; justify-content: center;
-  gap: 0.1rem 0.55rem; min-height: 58px; padding: 0.55rem 1.25rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 0.55rem; min-height: 58px; padding: 0.55rem 1.25rem;
   border: 1px solid var(--school-border); border-radius: 14px;
   background: var(--school-surface); color: var(--school-fg);
   font: inherit; font-size: 1.08rem; font-weight: 800; cursor: pointer; touch-action: manipulation;
-  svg { grid-row: 1 / 3; color: var(--school-accent); }
-  small {
-    color: var(--school-muted); font-size: 0.72rem; font-weight: 700;
-    letter-spacing: 0.025em; text-align: left;
-  }
+  svg { color: var(--school-accent); }
   &:active { background: var(--school-surface-2); transform: scale(0.98); }
   &:disabled { opacity: 0.45; }
 }

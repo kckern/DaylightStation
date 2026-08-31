@@ -168,7 +168,7 @@ describe('useQrScanner', () => {
   it('stops scanning after the 20-second active window', async () => {
     const { result, track } = mountScanner(vi.fn());
     await act(async () => { await result.current.start(); });
-    expect(result.current).toMatchObject({ phase: 'scanning', cameraOn: true });
+    expect(result.current).toMatchObject({ phase: 'scanning', cameraOn: true, message: 'Camera on' });
 
     await act(async () => { await vi.advanceTimersByTimeAsync(QR_SCAN_TIMEOUT_MS); });
 

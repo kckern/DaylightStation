@@ -225,7 +225,7 @@ export default function useQrScanner({ onToken } = {}) {
       if (generationRef.current !== generation) return;
 
       setState({
-        phase: 'scanning', message: 'Camera on — looking for the QR code…',
+        phase: 'scanning', message: 'Camera on',
         cameraOn: true, retryLabel: null,
       });
       schoolLog.selfService('qr.camera-on', {});
