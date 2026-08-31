@@ -166,6 +166,7 @@ export class IssueComposedWorksheet {
         sessionId, bank, learnerId: state.learnerId, enrollmentId, lessonId: unit.unitId,
         profile, seed: `${sessionId}:${state.variant ?? 0}`, issuedAt: nowIso,
         itemIds: state.remediationOf && state.remediationItemIds?.length ? state.remediationItemIds : null,
+        worksheet: unit.worksheet ?? null,
       });
       const published = await this.#publish.execute({ source: worksheetInstanceDocument(instance, {
         title: unit.title, description: unit.description ?? null,

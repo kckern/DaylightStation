@@ -352,6 +352,7 @@ async function composePreview({ argv, flags, dataDir }) {
     const instance = createWorksheetInstance({
       id: `ws-cli-compose-${index + 1}`, sessionId: 'cli-preview', issuedAt: new Date(0).toISOString(),
       bank, learnerId: learner, enrollmentId: 'cli-preview', lessonId, profile, seed: `${seed}:${index + 1}`,
+      worksheet: bank.lesson?.worksheet ?? null,
     });
     const provenance = lessonProvenance(file);
     const presentation = worksheetPresentation({ unit: bank.lesson });
@@ -520,6 +521,7 @@ export async function main(argv = process.argv.slice(2)) {
     lessonId,
     profile,
     seed,
+    worksheet: bank.lesson?.worksheet ?? null,
   });
   const provenance = lessonProvenance(file);
   const presentation = worksheetPresentation({ unit: bank.lesson });

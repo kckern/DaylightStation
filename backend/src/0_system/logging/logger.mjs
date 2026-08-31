@@ -78,10 +78,11 @@ export function createLogger({ source = 'backend', app = 'default', context = {}
      * Log with rate limiting and aggregation
      * @param {string} event - Event name
      * @param {Object} data - Event data
-     * @param {Object} options - { maxPerMinute?: number, aggregate?: boolean }
+     * @param {Object} options - { maxPerMinute?: number, aggregate?: boolean,
+     *   level?: 'debug'|'info'|'warn'|'error' }
      */
     sampled(event, data = {}, options = {}) {
-      const { maxPerMinute = 20, aggregate = true } = options;
+      const { maxPerMinute = 20, aggregate = true, level = 'info' } = options;
       const now = Date.now();
 
       let state = samplingState.get(event);
@@ -90,7 +91,7 @@ export function createLogger({ source = 'backend', app = 'default', context = {}
       if (!state || now - state.windowStart >= WINDOW_MS) {
         // Flush previous window's aggregate
         if (state?.skipped > 0 && aggregate) {
-          log('info', `${event}.aggregated`, {
+          log(level, `${event}.aggregated`, {
             sampledCount: state.count,
             skippedCount: state.skipped,
             window: '60s',
@@ -104,7 +105,7 @@ export function createLogger({ source = 'backend', app = 'default', context = {}
       // Within budget: log normally
       if (state.count < maxPerMinute) {
         state.count++;
-        log('info', event, data);
+        log(level, event, data);
         return;
       }
 

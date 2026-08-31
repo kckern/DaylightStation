@@ -25,6 +25,12 @@
  */
 const SCHEMA = 'school.piano-lesson-gate/v1';
 
+function sampledWarning(logger, event, data) {
+  if (typeof logger?.sampled === 'function') {
+    logger.sampled(event, data, { maxPerMinute: 1, aggregate: true, level: 'warn' });
+  } else logger?.warn?.(event, data);
+}
+
 export class GetPianoLessonGate {
   #assignments; #launcher; #logger;
 
@@ -78,14 +84,14 @@ export class GetPianoLessonGate {
         // first owed enrollment wins and the rest need not be read at all.
         status = await this.#launcher.status({ userId: learnerId, programInstance: courseId });
       } catch (err) {
-        this.#logger.warn?.('school.piano-gate.status-failed', {
+        sampledWarning(this.#logger, 'school.piano-gate.status-failed', {
           learnerId, courseId, error: err?.message ?? String(err),
         });
         return { ...base, gated: false, reason: 'unavailable' };
       }
 
       if (status?.error === true) {
-        this.#logger.warn?.('school.piano-gate.status-unavailable', { learnerId, courseId });
+        sampledWarning(this.#logger, 'school.piano-gate.status-unavailable', { learnerId, courseId });
         return { ...base, gated: false, reason: 'unavailable' };
       }
 

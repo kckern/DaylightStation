@@ -49,9 +49,12 @@ export class ReceiptRendererAdapter {
   async render(document, opts) {
     const job = await this.#renderer.render(document, opts);
     return Object.freeze({
-      async printWith(printer) {
+      async printWith(printer, options = {}) {
         try {
-          return await printer.print(job);
+          return await printer.print({
+            ...job,
+            ...(options.jobName ? { jobName: options.jobName } : {}),
+          });
         } finally {
           try { await job.cleanup?.(); } catch { /* scratch cleanup is best effort */ }
         }

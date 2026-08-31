@@ -252,7 +252,10 @@ export class GetPlayableUnits {
       }
     }
 
-    this.#logger.info?.('piano.courses.playable', { courseId, userId: userId || null, isSequential });
+    // This is a high-frequency projection read (thousands per learner/day),
+    // not a lifecycle transition. Keep it available for local diagnosis
+    // without crowding actual School events out of the production info lane.
+    this.#logger.debug?.('piano.courses.playable', { courseId, userId: userId || null, isSequential });
     return { ok: true, result: { ...playable, isSequential, coProgressLock, referenceUnitIds: [...referenceUnitIds] } };
   }
 

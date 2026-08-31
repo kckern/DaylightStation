@@ -30,4 +30,24 @@ describe('ReprintResultReceiptArtifact', () => {
     expect(printer.print).toHaveBeenCalledWith(expect.objectContaining({ bytes: Buffer.from('png') }));
     expect(sessions.appendEvent).toHaveBeenCalledWith(sessionId, expect.objectContaining({ type: 'result_receipt_reprinted', artifactId }));
   });
+
+  it('records an unverified dispatch honestly instead of claiming no paper printed', async () => {
+    const printer = { print: vi.fn(async () => ({ printed: true, confirmed: false, reason: 'unverified' })) };
+    const sessions = { readEvents: vi.fn(async () => events), appendEvent: vi.fn(async () => {}) };
+    const useCase = new ReprintResultReceiptArtifact({
+      issuedArtifacts: { get: vi.fn(async () => ({ bytes: Buffer.from('png'), manifest: {
+        artifactId, sessionId, kind: 'result-receipt', sha256: 'digest',
+        representation: { mediaType: 'image/png', extension: 'png', width: 384, height: 200 },
+      } })) },
+      sessions, teacherGate: { assert: vi.fn() }, receiptArtifactPrinter: printer,
+      clock: () => new Date('2026-08-24T11:00:00.000Z'),
+    });
+
+    await expect(useCase.execute({
+      artifactId, reprintedBy: 'parent', pin: '1234', idempotencyKey: 'r2', apply: true,
+    })).resolves.toMatchObject({ applied: true, confirmed: false });
+    expect(sessions.appendEvent).toHaveBeenCalledWith(sessionId, expect.objectContaining({
+      type: 'result_receipt_reprinted', confirmed: false,
+    }));
+  });
 });

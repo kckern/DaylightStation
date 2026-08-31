@@ -122,6 +122,7 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
     const visible = shuffled([...correct, ...distractors], random);
     return {
       itemId: item.id, type: item.type, prompt: curlyQuotes(promptForProfile(item, profile)),
+      ...(Array.isArray(item.concepts) && item.concepts.length ? { concepts: [...item.concepts] } : {}),
       source: item.source ? { ...item.source } : null,
       ...(item.reviewReference ? { reviewReference: {
         ...item.reviewReference, pages: [...item.reviewReference.pages],
@@ -154,17 +155,37 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
  */
 export function createWorksheetInstance({
   id, sessionId, bank, learnerId, enrollmentId, lessonId, profile, seed,
-  issuedAt, itemIds = null,
+  issuedAt, itemIds = null, worksheet: authoredWorksheet = null,
 } = {}) {
   if (![id, sessionId, learnerId, enrollmentId, lessonId, issuedAt].every((v) => typeof v === 'string' && v)) {
     throw new Error('worksheet instance requires id, sessionId, learnerId, enrollmentId, lessonId and issuedAt');
   }
-  const worksheet = issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profile, seed, itemIds });
+  const issuedWorksheet = issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profile, seed, itemIds });
+  const selectedConcepts = new Set(issuedWorksheet.items.flatMap((question) => question.concepts ?? []));
+  const workedExamples = (authoredWorksheet?.examples ?? [])
+    .filter((example) => !example.appliesTo?.concepts?.length
+      || example.appliesTo.concepts.some((concept) => selectedConcepts.has(concept)))
+    .slice(0, 1)
+    .map((example) => ({
+      id: example.id,
+      title: curlyQuotes(example.title),
+      ...(example.appliesTo ? { appliesTo: { concepts: [...example.appliesTo.concepts] } } : {}),
+      question: {
+        type: example.question.type,
+        prompt: curlyQuotes(example.question.prompt),
+        choices: example.question.choices.map(curlyQuotes),
+      },
+      solution: {
+        steps: example.solution.steps.map(curlyQuotes),
+        answer: curlyQuotes(example.solution.answer),
+      },
+    }));
   return deepFreeze({
     schema: 'school.worksheet-instance/v1', id, sessionId, issuedAt,
     learnerId, enrollmentId, lessonId, profile,
-    bankId: worksheet.bankId, bankRevision: worksheet.bankRevision,
-    seed: worksheet.seed, itemIds: worksheet.itemIds, questions: worksheet.items,
+    bankId: issuedWorksheet.bankId, bankRevision: issuedWorksheet.bankRevision,
+    seed: issuedWorksheet.seed, itemIds: issuedWorksheet.itemIds, questions: issuedWorksheet.items,
+    ...(workedExamples.length ? { workedExamples } : {}),
   });
 }
 
@@ -276,6 +297,35 @@ function companionGateBlock(finishCode) {
 }
 
 /**
+ * The displayed solution is teaching copy, not a hidden assessment key.
+ * Semantic fields let Letter collapse it into a three-line strip; the nested
+ * rich_text remains a complete fallback for text-oriented targets.
+ */
+function workedExampleBlock(example) {
+  if (!example) return null;
+  const correctChoiceIndex = example.question.choices.indexOf(example.solution.answer);
+  if (correctChoiceIndex < 0) throw new Error(`worked example '${example.id}' answer is not one of its choices`);
+  const letter = LETTERS[correctChoiceIndex];
+  const choicesText = example.question.choices
+    .map((choice, index) => `${LETTERS[index]}. ${choice}`)
+    .join('    ');
+  const solutionText = example.solution.steps.map((step, index) => `${index + 1}. ${step}`).join('  ');
+  return {
+    type: 'inset', layout: 'worked_example', keepWithNext: true,
+    title: example.title,
+    questionPrompt: example.question.prompt,
+    choiceLabels: [...example.question.choices],
+    solutionSteps: [...example.solution.steps],
+    correctChoiceIndex,
+    correctText: example.solution.answer,
+    blocks: [{
+      type: 'rich_text',
+      md: `**${example.title}:** ${example.question.prompt}\n\n${choicesText}\n\n${solutionText} **Correct: ${letter} — ${example.solution.answer}**`,
+    }],
+  };
+}
+
+/**
  * Convert an instance into a self-contained publishable OMR document source.
  *
  * @param {string[]|null} [options.finishCode] - the A–E finish code a REQUIRED
@@ -298,6 +348,7 @@ export function worksheetInstanceDocument(instance, {
     throw new Error(`worksheetInstanceDocument: unusable companion finishCode ${JSON.stringify(finishCode)}`);
   }
   const gate = finishCode != null ? companionGateBlock(finishCode) : null;
+  const workedExample = workedExampleBlock(instance.workedExamples?.[0] ?? null);
   const numericSeed = [...String(instance.seed || instance.id)]
     .reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261);
   return {
@@ -358,6 +409,7 @@ export function worksheetInstanceDocument(instance, {
       // one before the questions rather than as an afterthought below them,
       // and it takes the first card row of the allocated range.
       ...(gate ? [gate] : []),
+      ...(workedExample ? [workedExample] : []),
       ...instance.questions.map((question, index) => ({
         type: 'question', itemId: question.itemId, number: (gate ? 2 : 1) + index, omr: true, fillAfter: true,
         blocks: [
@@ -427,6 +479,8 @@ export function composedWorksheetDocument({
       // lesson-card renderer consumes the semantic fields above instead.
       blocks: [{ type: 'rich_text', md: section.title ?? instance.lessonId }],
     });
+    const workedExample = workedExampleBlock(instance.workedExamples?.[0] ?? null);
+    if (workedExample) blocks.push(workedExample);
     instance.questions.forEach((question) => {
       const itemId = `${sectionId}--${question.itemId}`;
       sectionItems.push(itemId);

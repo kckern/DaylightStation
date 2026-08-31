@@ -210,6 +210,16 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
               content: `${row.label} · ${activeProgressPosition(row)} of ${row.total}`,
             });
           });
+        const reviewHints = Array.isArray(block.reviewHints)
+          ? block.reviewHints.filter((hint) => typeof hint === 'string' && hint.trim()) : [];
+        if (reviewHints.length) {
+          items.push({ type: 'space', lines: 1 });
+          items.push({
+            type: 'text', align: 'left', style: { bold: true },
+            content: block.reviewHeading || 'REVIEW BEFORE YOU RETRY',
+          });
+          reviewHints.forEach((hint) => items.push({ type: 'text', align: 'left', content: hint.trim() }));
+        }
         continue;
       }
 

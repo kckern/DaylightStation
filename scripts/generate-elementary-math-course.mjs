@@ -6,6 +6,8 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { renderMathAsset } from '../cli/school/math-assets.mjs';
+import { validateQuestionBank } from '../backend/src/2_domains/school/questionBankValidation.mjs';
+import { validateUnit } from '../backend/src/2_domains/school/curriculum/unitValidation.mjs';
 
 const COURSE = 'elementary-math-2-3';
 const COURSE_TITLE = 'Elementary Mathematics: Grade 2–3 Bridge';
@@ -19,6 +21,53 @@ const SOURCE = Object.freeze({
 const pick = (values, index) => values[index % values.length];
 const slug = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-|-$/gu, '');
 const unique = (values) => [...new Set(values.map(String))];
+const countedNoun = (count, singular, plural = `${singular}s`) => `${count} ${count === 1 ? singular : plural}`;
+const joinedList = (values) => values.length < 2 ? values[0] : values.length === 2
+  ? `${values[0]} and ${values[1]}` : `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
+
+const FEEDBACK_BY_KIND = Object.freeze({
+  calculation: 'Line up the numbers by place value, use the operation shown, and check each step.',
+  place_value: 'Find the named digit, identify its place, and use that place to decide what the digit represents.',
+  base_ten: 'Count the hundreds, tens, and ones separately, then combine their values.',
+  forms: 'Match each digit to its place before combining the expanded-form parts.',
+  sequence: 'Compare neighboring numbers to find the repeated step, then use that step once more.',
+  compare: 'Compare the greatest place first; if those digits tie, move one place to the right.',
+  number_line: 'Start at a labeled tick and count equal spaces—not tick marks—to point A.',
+  round: 'Find the rounding place, then use the digit immediately to its right to decide whether to round up.',
+  ten_frame: 'Count a full group of ten first, then add any counters in the next frame.',
+  missing: 'Undo the known operation to find the missing number, then substitute it to check the equation.',
+  mental: 'Break one number into friendly tens and ones, then combine the partial results.',
+  multi_add: 'Add two numbers first, keep that subtotal, and then add the third number.',
+  fact_family: 'Use the same three numbers to write the related inverse fact.',
+  inverse: 'Add the difference and the number subtracted; the check must return to the starting number.',
+  operation: 'Decide whether the story joins amounts or separates them before choosing an operation.',
+  word: 'Identify what changed in the story, choose the matching operation, and check whether the result is reasonable.',
+  two_step: 'Work the story in time order and carry the first result into the second step.',
+  graph: 'Read the amount for each label from the graph, then compare those amounts.',
+  graph_difference: 'Read both amounts from the graph and subtract the smaller amount from the larger one.',
+  array: 'Count the rows and the number in each row, then multiply those two numbers.',
+  groups: 'Multiply the number of equal groups by the number in each group.',
+  property: 'Turn the array around: switching the two factors does not change the total.',
+  division_model: 'Share the total into equal groups and count how many land in one group.',
+  fraction: 'Count all equal parts for the denominator and shaded parts for the numerator.',
+  fraction_set: 'Use all counters as the denominator and the shaded counters as the numerator.',
+  fraction_line: 'Count the equal spaces from zero to one for the denominator, then count spaces to point A.',
+  fraction_compare: 'For equal denominators, compare numerators; for equivalent fractions, scale numerator and denominator together.',
+  money: 'Find each coin group’s value, then add the groups in cents.',
+  clock: 'Read the short hour hand and then count the long minute hand by fives.',
+  measurement: 'Match the object and what is being measured to a unit of a sensible size.',
+  shape: 'Count sides and corners, and notice whether sides are straight or curved.',
+  quadrilateral: 'Use the number of sides, equal sides, right angles, and parallel sides to classify the shape.',
+  area: 'Area counts square units, so multiply the rectangle’s rows by its columns.',
+  perimeter: 'Perimeter is the distance around the outside, so add all four side lengths.',
+  advanced: 'Line up equal place values, add from right to left, and regroup when a column reaches ten.',
+});
+
+function defaultFeedback(def) {
+  const feedback = FEEDBACK_BY_KIND[def.kind];
+  if (!feedback) throw new Error(`missing instructional feedback for ${def.kind} (${def.id})`);
+  return feedback;
+}
 
 function decoysFor(answer, candidates = []) {
   const target = String(answer); const numeric = Number(answer); const values = [...candidates];
@@ -63,8 +112,9 @@ function item(def, index, { prompt, answer, decoys = [], stimulus = null, feedba
   return {
     id: `${slug(def.id)}-q${String(index + 1).padStart(2, '0')}`,
     type: 'multiple_choice', prompt, answer: String(answer), decoys: decoysFor(answer, decoys), levels: ['lower'],
+    concepts: [slug(def.kind)],
     reviewReference,
-    feedback: { incorrect: feedback ?? `Try the ${def.title.toLowerCase()} strategy again, then check your work.` },
+    feedback: { incorrect: feedback ?? defaultFeedback(def) },
     ...(stimulus ? { stimulus: { type: 'asset', ref: stimulus.ref, alt: stimulus.alt } } : {}),
   };
 }
@@ -97,6 +147,243 @@ function calculation(def, index) {
   return item(def, index, { prompt: `What is $${a} ${op} ${b}$?`, answer });
 }
 
+const solvedExample = (def, { prompt, choices, answer, steps, appliesTo = [slug(def.kind)] }) => ({
+  id: `${slug(def.id)}-worked-example`,
+  title: 'Worked example',
+  ...(appliesTo?.length ? { appliesTo: { concepts: unique(appliesTo) } } : {}),
+  question: { type: 'multiple_choice', prompt, choices: choices.map(String) },
+  solution: { steps, answer: String(answer) },
+});
+
+function calculationWorkedExample(def) {
+  const examples = {
+    addFacts: { a: 4, b: 5, answer: 9, steps: ['Start at 5 and count on 4: 6, 7, 8, 9.', 'So 4 + 5 = 9.'] },
+    add2: { a: 24, b: 13, answer: 37, steps: ['Add ones: 4 + 3 = 7.', 'Add tens: 2 tens + 1 ten = 3 tens.'] },
+    add2Regroup: { a: 27, b: 18, answer: 45, steps: ['7 + 8 = 15, so write 5 ones and regroup 1 ten.', '2 tens + 1 ten + 1 ten = 4 tens.'] },
+    add3: { a: 358, b: 247, answer: 605, steps: ['8 + 7 = 15; write 5 and regroup 1 ten.', '5 + 4 + 1 = 10; write 0 and regroup to make 605.'] },
+    subFacts: { a: 16, b: 7, answer: 9, steps: ['Think: 7 + what equals 16?', '7 + 9 = 16.'] },
+    sub2: { a: 79, b: 35, answer: 44, steps: ['Subtract ones: 9 − 5 = 4.', 'Subtract tens: 7 tens − 3 tens = 4 tens.'] },
+    sub2Regroup: { a: 73, b: 48, answer: 25, steps: ['Regroup 73 as 6 tens and 13 ones.', '13 − 8 = 5 and 6 tens − 4 tens = 2 tens.'] },
+    sub3: { a: 612, b: 287, answer: 325, steps: ['Start with the ones and regroup from the next place when needed.', 'Subtract ones, tens, then hundreds to get 325.'] },
+    sub4: { a: 7043, b: 2685, answer: 4358, steps: ['Start with the ones and regroup across the zero.', 'Subtract each place from ones through thousands to get 4358.'] },
+    mul: { a: 3, b: 4, answer: 12, steps: ['Three groups of 4 are 4 + 4 + 4.', '4 + 4 + 4 = 12.'] },
+    mulAdvanced: { a: 7, b: 12, answer: 84, steps: ['Break 12 into 10 + 2.', '7 × 10 + 7 × 2 = 70 + 14 = 84.'] },
+    div: { a: 21, b: 3, answer: 7, steps: ['Ask how many groups of 3 make 21.', '3 × 7 = 21.'] },
+    divAdvanced: { a: 84, b: 7, answer: 12, steps: ['Use the related multiplication fact.', '7 × 12 = 84.'] },
+  };
+  const chosen = examples[def.params.pairs] ?? (def.params.op === '−' ? examples.sub2
+    : def.params.op === '×' ? examples.mul : def.params.op === '÷' ? examples.div : examples.add2);
+  return solvedExample(def, {
+    prompt: `What is ${chosen.a} ${def.params.op} ${chosen.b}?`,
+    choices: [chosen.answer, chosen.answer + 1, Math.max(0, chosen.answer - 2), chosen.answer + 10],
+    answer: chosen.answer,
+    steps: chosen.steps,
+  });
+}
+
+/** One representative, fully solved question for every lesson kind. */
+function workedExampleFor(def) {
+  if (def.kind === 'mastery') {
+    const representative = workedExampleFor(def.masteryOf[0]);
+    return {
+      ...representative,
+      id: `${slug(def.id)}-worked-example`,
+      // A cumulative sheet intentionally mixes concepts; the example is a
+      // stable orientation strip, so it must not disappear based on its draw.
+      appliesTo: undefined,
+    };
+  }
+  if (def.kind === 'calculation') return calculationWorkedExample(def);
+  if (def.kind === 'place_value') return solvedExample(def, def.params.fourDigit ? {
+    prompt: 'In 5274, what value does the digit 2 represent?', choices: ['2', '20', '200', '2000'], answer: '200',
+    steps: ['The digit 2 is in the hundreds place.', 'Two hundreds equal 200.'],
+  } : {
+    prompt: 'In 364, what value does the digit 6 represent?', choices: ['6', '60', '600'], answer: '60',
+    steps: ['The digit 6 is in the tens place.', 'Six tens equal 60.'],
+  });
+  if (def.kind === 'base_ten') return solvedExample(def, {
+    prompt: 'A model has 2 hundreds, 4 tens, and 3 ones. What number is shown by the base-ten blocks?',
+    choices: ['243', '234', '423'], answer: '243',
+    steps: ['2 hundreds = 200, 4 tens = 40, and 3 ones = 3.', '200 + 40 + 3 = 243.'],
+  });
+  if (def.kind === 'forms') return solvedExample(def, {
+    prompt: 'Which number equals 500 + 30 + 7?', choices: ['537', '573', '503', '5307'], answer: '537',
+    steps: ['500 gives the hundreds digit 5 and 30 gives the tens digit 3.', 'Add 7 ones to make 537.'],
+  });
+  if (def.kind === 'sequence') return solvedExample(def, {
+    prompt: 'What comes next? 15, 20, 25, ___', choices: ['26', '30', '35'], answer: '30',
+    steps: ['Each number is 5 more than the one before it.', '25 + 5 = 30.'],
+  });
+  if (def.kind === 'compare') {
+    const least = def.params.mode === 'least';
+    return solvedExample(def, {
+      prompt: `Which number is ${least ? 'least' : 'greatest'}?`,
+      choices: ['491', '419', '194', '941'], answer: least ? '194' : '941',
+      steps: ['Compare the hundreds digits first.', `${least ? '1 is the smallest' : '9 is the largest'} hundreds digit.`],
+    });
+  }
+  if (def.kind === 'number_line') return solvedExample(def, {
+    prompt: 'On a number line, point A is 2 spaces after 15. What number is marked by point A?',
+    choices: ['16', '17', '18'], answer: '17',
+    steps: ['Start at 15 and count spaces, not tick marks.', 'Two spaces after 15 is 17.'],
+  });
+  if (def.kind === 'round') {
+    const hundreds = def.params.place === 100;
+    return solvedExample(def, hundreds ? {
+      prompt: 'Round 364 to the nearest hundred.', choices: ['300', '360', '400'], answer: '400',
+      steps: ['Look at the tens digit, 6.', 'Because 6 is 5 or more, round 3 hundreds up to 4 hundreds.'],
+    } : {
+      prompt: 'Round 63 to the nearest ten.', choices: ['60', '63', '70'], answer: '60',
+      steps: ['Look at the ones digit, 3.', 'Because 3 is less than 5, keep 6 tens.'],
+    });
+  }
+  if (def.kind === 'ten_frame') return solvedExample(def, {
+    prompt: 'A full ten-frame and 7 more counters are shown. How many counters are shown?',
+    choices: ['7', '10', '17'], answer: '17',
+    steps: ['A full ten-frame has 10 counters.', '10 + 7 = 17.'],
+  });
+  if (def.kind === 'missing') return solvedExample(def, def.params.op === '−' ? {
+    prompt: 'What number makes 18 − □ = 11 true?', choices: ['6', '7', '8'], answer: '7',
+    steps: ['Find the difference between 18 and 11.', '18 − 7 = 11.'],
+  } : {
+    prompt: 'What number makes 7 + □ = 15 true?', choices: ['7', '8', '9'], answer: '8',
+    steps: ['Subtract the known addend from the total.', '15 − 7 = 8.'],
+  });
+  if (def.kind === 'mental') {
+    const subtract = def.params.op === '−';
+    return solvedExample(def, subtract ? {
+      prompt: 'Solve mentally: 47 − 18.', choices: ['29', '31', '39'], answer: '29',
+      steps: ['Subtract 20 to get 27.', 'Add back 2 because 18 is 2 less than 20: 29.'],
+    } : {
+      prompt: 'Solve mentally: 47 + 18.', choices: ['55', '65', '75'], answer: '65',
+      steps: ['Add 20 to get 67.', 'Subtract 2 because 18 is 2 less than 20: 65.'],
+    });
+  }
+  if (def.kind === 'multi_add') return solvedExample(def, {
+    prompt: 'What is 14 + 25 + 36?', choices: ['65', '75', '85'], answer: '75',
+    steps: ['14 + 25 = 39.', '39 + 36 = 75.'],
+  });
+  if (def.kind === 'fact_family') return solvedExample(def, def.params.family === 'division' ? {
+    prompt: 'If 5 × 6 = 30, what is 30 ÷ 5?', choices: ['5', '6', '25'], answer: '6',
+    steps: ['Multiplication and division undo each other.', 'Because 5 × 6 = 30, 30 ÷ 5 = 6.'],
+  } : {
+    prompt: 'If 4 + 9 = 13, what is 13 − 4?', choices: ['4', '9', '17'], answer: '9',
+    steps: ['Addition and subtraction undo each other.', 'Because 4 + 9 = 13, 13 − 4 = 9.'],
+  });
+  if (def.kind === 'inverse') return solvedExample(def, {
+    prompt: 'Which addition equation proves that 62 − 27 = 35 is correct?',
+    choices: ['35 + 27 = 62', '62 + 27 = 89', '62 + 35 = 27'], answer: '35 + 27 = 62',
+    steps: ['Add the difference to the number that was subtracted.', '35 + 27 returns to 62.'],
+  });
+  if (def.kind === 'operation') return solvedExample(def, {
+    prompt: 'Leo has 18 cards and gets 7 more. Which operation finds how many he has now?',
+    choices: ['addition', 'subtraction', 'division'], answer: 'addition',
+    steps: ['The words “gets more” mean the amount increases.', 'Use addition to join the two amounts.'],
+  });
+  if (def.kind === 'word') return solvedExample(def, {
+    prompt: 'A basket held 36 apples. The family used 19. How many apples remain?',
+    choices: ['17', '45', '55'], answer: '17',
+    steps: ['“Remain” asks what is left, so subtract.', '36 − 19 = 17.'],
+  });
+  if (def.kind === 'two_step') return solvedExample(def, {
+    prompt: 'A box held 25 pencils. 12 were added, then 8 were used. How many pencils are in the box?',
+    choices: ['29', '37', '45'], answer: '29',
+    steps: ['First add: 25 + 12 = 37.', 'Then subtract: 37 − 8 = 29.'],
+  });
+  if (def.kind === 'graph') return solvedExample(def, def.params.style === 'line_plot' ? {
+    prompt: 'A line plot has 2 X marks above 2, 5 above 3, and 3 above 4. Which number appears most often?',
+    choices: ['2', '3', '4'], answer: '3',
+    steps: ['Count the X marks above each number.', 'Five is the greatest count, so 3 appears most often.'],
+  } : {
+    prompt: 'A graph shows Red with 3 votes, Blue with 6, and Green with 2. Which color received the most votes?',
+    choices: ['Red', 'Blue', 'Green'], answer: 'Blue',
+    steps: ['Compare the number of votes for each color.', '6 is the greatest number, so Blue has the most.'],
+  });
+  if (def.kind === 'graph_difference') return solvedExample(def, {
+    prompt: 'A graph shows Dogs with 9 votes and Cats with 5. How many more votes did Dogs get than Cats?',
+    choices: ['4', '5', '14'], answer: '4',
+    steps: ['“How many more” asks for the difference.', '9 − 5 = 4.'],
+  });
+  if (def.kind === 'array') return solvedExample(def, {
+    prompt: 'An array has 3 rows with 5 dots in each row. How many dots are in the array?',
+    choices: ['8', '15', '35'], answer: '15',
+    steps: ['Multiply rows by dots in each row.', '3 × 5 = 15.'],
+  });
+  if (def.kind === 'groups') return solvedExample(def, {
+    prompt: 'There are 4 equal groups with 3 in each group. How many altogether?',
+    choices: ['7', '12', '43'], answer: '12',
+    steps: ['Use 4 groups of 3.', '4 × 3 = 12.'],
+  });
+  if (def.kind === 'property') return solvedExample(def, {
+    prompt: 'Which multiplication fact has the same answer as 3 × 7?',
+    choices: ['7 × 3', '3 + 7', '3 × 6'], answer: '7 × 3',
+    steps: ['Turn the array around by switching the factors.', '3 × 7 and 7 × 3 both equal 21.'],
+  });
+  if (def.kind === 'division_model') return solvedExample(def, {
+    prompt: '24 counters are shared equally among 6 groups. How many are in each group?',
+    choices: ['4', '6', '18'], answer: '4',
+    steps: ['Share one counter at a time among all 6 groups.', 'Each group receives 4 because 6 × 4 = 24.'],
+  });
+  if (def.kind === 'fraction') return solvedExample(def, {
+    prompt: 'A bar has 5 equal parts and 3 are shaded. What fraction of the bar is shaded?',
+    choices: ['2/5', '3/5', '3/8'], answer: '3/5',
+    steps: ['Five equal parts make the denominator 5.', 'Three shaded parts make the numerator 3.'],
+  });
+  if (def.kind === 'fraction_set') return solvedExample(def, {
+    prompt: '5 of 8 counters are shaded. What fraction of the counters are shaded?',
+    choices: ['3/8', '5/8', '5/13'], answer: '5/8',
+    steps: ['Use all 8 counters as the denominator.', 'Use the 5 shaded counters as the numerator.'],
+  });
+  if (def.kind === 'fraction_line') return solvedExample(def, {
+    prompt: 'A number line from 0 to 1 has 5 equal spaces. Point A is at the second mark. Which fraction is marked by point A?',
+    choices: ['1/5', '2/5', '2/3'], answer: '2/5',
+    steps: ['Five equal spaces make the denominator 5.', 'Two spaces from 0 make the numerator 2.'],
+  });
+  if (def.kind === 'fraction_compare') return solvedExample(def, {
+    prompt: 'Which fraction is greater: 2/7 or 5/7?', choices: ['2/7', '5/7', 'They are equal'], answer: '5/7',
+    steps: ['The denominators are equal, so compare numerators.', '5 is greater than 2.'],
+  });
+  if (def.kind === 'money') return solvedExample(def, {
+    prompt: 'What is the total value, in cents, of 2 quarters, 1 dime, 2 nickels, and 4 pennies?',
+    choices: ['64', '74', '84'], answer: '74',
+    steps: ['Coin values: 50¢ + 10¢ + 10¢ + 4¢.', '50 + 10 + 10 + 4 = 74¢.'],
+  });
+  if (def.kind === 'clock') return solvedExample(def, {
+    prompt: 'The short hand points just past 7 and the long hand points to the 4. What time does the clock show?',
+    choices: ['4:35', '7:20', '7:40'], answer: '7:20',
+    steps: ['The short hand gives the hour: 7.', 'The long hand at 4 means 4 groups of 5 minutes, or 20 minutes.'],
+  });
+  if (def.kind === 'measurement') return solvedExample(def, {
+    prompt: 'Which unit is best for the height of a door?', choices: ['meters', 'liters', 'grams'], answer: 'meters',
+    steps: ['Height is a length.', 'A door is about 2 meters tall, so meters are a sensible size.'],
+  });
+  if (def.kind === 'shape') return solvedExample(def, {
+    prompt: 'Shape A has five straight sides. What is the name of shape A?',
+    choices: ['triangle', 'pentagon', 'hexagon'], answer: 'pentagon',
+    steps: ['Count the five straight sides.', 'A shape with five sides is a pentagon.'],
+  });
+  if (def.kind === 'quadrilateral') return solvedExample(def, {
+    prompt: 'Which shape has four right angles, two 6-inch sides, and two 3-inch sides?',
+    choices: ['rectangle', 'rhombus', 'trapezoid'], answer: 'rectangle',
+    steps: ['Four right angles rule out the rhombus and trapezoid.', 'Two long sides and two shorter sides describe a rectangle.'],
+  });
+  if (def.kind === 'area') return solvedExample(def, {
+    prompt: 'A rectangle is 4 units by 6 units. What is its area in square units?',
+    choices: ['10', '20', '24'], answer: '24',
+    steps: ['Area counts rows of square units.', '4 × 6 = 24 square units.'],
+  });
+  if (def.kind === 'perimeter') return solvedExample(def, {
+    prompt: 'A rectangle is 6 units long and 4 units wide. What is its perimeter?',
+    choices: ['10', '20', '24'], answer: '20',
+    steps: ['Perimeter adds every outside side.', '6 + 4 + 6 + 4 = 20 units.'],
+  });
+  if (def.kind === 'advanced') return solvedExample(def, {
+    prompt: 'Challenge: What is 2345 + 678?', choices: ['2923', '3013', '3023'], answer: '3023',
+    steps: ['Line up ones, tens, hundreds, and thousands.', 'Add right to left and regroup each total of 10 or more.'],
+  });
+  throw new Error(`missing worked example for ${def.kind} (${def.id})`);
+}
+
 function buildItems(def, ctx) {
   if (def.kind === 'calculation') return Array.from({ length: 12 }, (_, index) => calculation(def, index));
   if (def.kind === 'place_value') return Array.from({ length: 12 }, (_, index) => {
@@ -106,7 +393,19 @@ function buildItems(def, ctx) {
     const places = def.params.fourDigit ? ['thousands', 'hundreds', 'tens', 'ones'] : ['hundreds', 'tens', 'ones']; const place = places[index % places.length];
     const divisor = place === 'thousands' ? 1000 : place === 'hundreds' ? 100 : place === 'tens' ? 10 : 1;
     const digit = Math.floor(number / divisor) % 10;
-    return item(def, index, { prompt: `What is the value of the ${place} digit in ${number}?`, answer: digit * divisor, decoys: [digit, digit * 10, digit * 100, number] });
+    if (index % 3 === 1) {
+      return item(def, index, {
+        prompt: `Which digit is in the ${place} place in ${number}?`, answer: digit,
+        decoys: [...String(number)].map(Number),
+      });
+    }
+    const prompt = index % 3 === 0
+      ? `In ${number}, what value does the digit ${digit} represent?`
+      : `In ${number}, the digit ${digit} is in the ${place} place. Which number shows its value?`;
+    return item(def, index, {
+      prompt, answer: digit * divisor,
+      decoys: [digit, digit * 10, digit * 100, digit * 1000, number],
+    });
   });
   if (def.kind === 'base_ten') return Array.from({ length: 12 }, (_, index) => {
     const h = 1 + index % 4; const t = (index * 2 + 1) % 6; const o = (index * 3 + 2) % 8; const answer = h * 100 + t * 10 + o;
@@ -141,7 +440,7 @@ function buildItems(def, ctx) {
   });
   if (def.kind === 'missing') return Array.from({ length: 12 }, (_, index) => {
     const [a, b] = pick(def.params.op === '−' ? PAIRS.subFacts : PAIRS.addFacts, index); const total = def.params.op === '−' ? a : a + b; const answer = b;
-    const prompt = def.params.op === '−' ? `What number makes $${total} − \Box = ${total - b}$ true?` : `What number makes $${a} + \Box = ${total}$ true?`;
+    const prompt = def.params.op === '−' ? `What number makes $${total} − \\Box = ${total - b}$ true?` : `What number makes $${a} + \\Box = ${total}$ true?`;
     return item(def, index, { prompt, answer });
   });
   if (def.kind === 'mental') return Array.from({ length: 12 }, (_, index) => {
@@ -158,7 +457,7 @@ function buildItems(def, ctx) {
     return item(def, index, { prompt: `If $${a} + ${b} = ${a + b}$, what is $${a + b} − ${a}$?`, answer: b });
   });
   if (def.kind === 'inverse') return Array.from({ length: 12 }, (_, index) => {
-    const [a, b] = pick(PAIRS.sub2Regroup, index); return item(def, index, { prompt: `Which addition checks $${a} − ${b} = ${a - b}$?`, answer: `${a - b} + ${b} = ${a}`,
+    const [a, b] = pick(PAIRS.sub2Regroup, index); return item(def, index, { prompt: `Which addition equation proves that $${a} − ${b} = ${a - b}$ is correct?`, answer: `${a - b} + ${b} = ${a}`,
       decoys: [`${a} + ${b} = ${a + b}`, `${a - b} + ${a} = ${b}`, `${b} + ${a} = ${a - b}`, `${a} − ${a - b} = ${a}`] });
   });
   if (def.kind === 'operation') return Array.from({ length: 12 }, (_, index) => {
@@ -177,10 +476,18 @@ function buildItems(def, ctx) {
     return item(def, index, { prompt: `A shelf held ${start} books. ${add} were added, then ${take} were borrowed. How many books are on the shelf?`, answer });
   });
   if (def.kind === 'graph') return Array.from({ length: 12 }, (_, index) => {
-    const labels = ['Red', 'Blue', 'Green', 'Gold']; const values = [3 + index % 4, 6 + index % 3, 2 + (index * 2) % 5, 5 + (index * 3) % 4];
+    const linePlot = def.params.style === 'line_plot';
+    const labels = linePlot ? ['2', '3', '4', '5'] : ['Red', 'Blue', 'Green', 'Gold'];
+    // Rotating a fixed set keeps one and only one greatest count. The old
+    // formulas produced ties on four of twelve sheets while marking “They are
+    // tied” wrong — a content defect, not merely awkward wording.
+    const counts = linePlot ? [2, 5, 8, 3] : [3, 7, 4, 5];
+    const values = counts.map((_, position) => counts[(position + index) % counts.length]);
     const max = Math.max(...values); const answer = labels[values.indexOf(max)];
-    return item(def, index, { prompt: 'Which category has the greatest value?', answer, decoys: labels.filter((label) => label !== answer).concat(['They are equal']),
-      stimulus: figure(ctx, def, index, 'data_graph', `${def.params.style === 'pictograph' ? 'A pictograph' : def.params.style === 'line_plot' ? 'A line plot' : 'A bar graph'} with four labeled categories and values.`, { labels, values, style: def.params.style ?? 'bar' }) });
+    const prompt = linePlot ? 'Which number appears most often on the line plot?' : 'Which color received the most votes?';
+    const details = labels.map((label, position) => `${label}: ${values[position]}`).join(', ');
+    return item(def, index, { prompt, answer, decoys: labels.filter((label) => label !== answer).concat(['They are tied']),
+      stimulus: figure(ctx, def, index, 'data_graph', `${linePlot ? 'A line plot' : def.params.style === 'pictograph' ? 'A pictograph' : 'A bar graph'} with counts ${details}.`, { labels, values, style: def.params.style ?? 'bar' }) });
   });
   if (def.kind === 'graph_difference') return Array.from({ length: 12 }, (_, index) => {
     const labels = ['Cats', 'Dogs', 'Birds']; const values = [4 + index % 4, 8 + index % 3, 3 + index % 2]; const answer = values[1] - values[0];
@@ -197,7 +504,7 @@ function buildItems(def, ctx) {
     return item(def, index, { prompt: `There are ${groups} equal groups with ${each} in each group. How many altogether?`, answer });
   });
   if (def.kind === 'property') return Array.from({ length: 12 }, (_, index) => {
-    const [a, b] = pick(PAIRS.mul, index); return item(def, index, { prompt: `Which multiplication expression has the same product as $${a} × ${b}$?`, answer: `${b} × ${a}`,
+    const [a, b] = pick(PAIRS.mul, index); return item(def, index, { prompt: `Which multiplication fact has the same answer as $${a} × ${b}$?`, answer: `${b} × ${a}`,
       decoys: [`${a} + ${b}`, `${b} − ${a}`, `${a} × ${Math.max(1, b - 1)}`, `${a + 1} × ${b}`] });
   });
   if (def.kind === 'division_model') return Array.from({ length: 12 }, (_, index) => {
@@ -212,7 +519,7 @@ function buildItems(def, ctx) {
   });
   if (def.kind === 'fraction_set') return Array.from({ length: 12 }, (_, index) => {
     const total = pick([6, 8, 10, 12], index); const selected = 1 + index % (total - 1); const answer = `${selected}/${total}`;
-    return item(def, index, { prompt: `${selected} of ${total} counters are selected. What fraction of the set is selected?`, answer,
+    return item(def, index, { prompt: `${selected} of ${total} counters are shaded. What fraction of the counters are shaded?`, answer,
       decoys: properFractionDecoys(selected, total) });
   });
   if (def.kind === 'fraction_line') return Array.from({ length: 12 }, (_, index) => {
@@ -233,7 +540,11 @@ function buildItems(def, ctx) {
   });
   if (def.kind === 'money') return Array.from({ length: 12 }, (_, index) => {
     const quarters = index % 4; const dimes = (index + 1) % 5; const nickels = index % 3; const pennies = (index * 3) % 5; const answer = quarters * 25 + dimes * 10 + nickels * 5 + pennies;
-    return item(def, index, { prompt: `How many cents are ${quarters} quarters, ${dimes} dimes, ${nickels} nickels, and ${pennies} pennies worth?`, answer });
+    const coins = [
+      [quarters, 'quarter', 'quarters'], [dimes, 'dime', 'dimes'],
+      [nickels, 'nickel', 'nickels'], [pennies, 'penny', 'pennies'],
+    ].filter(([count]) => count > 0).map(([count, singular, plural]) => countedNoun(count, singular, plural));
+    return item(def, index, { prompt: `What is the total value, in cents, of ${joinedList(coins)}?`, answer });
   });
   if (def.kind === 'clock') return Array.from({ length: 12 }, (_, index) => {
     const hour = 1 + index % 12; const minute = pick([0, 5, 15, 30, 45, 55], index); const answer = `${hour}:${String(minute).padStart(2, '0')}`;
@@ -258,7 +569,7 @@ function buildItems(def, ctx) {
   if (def.kind === 'quadrilateral') return Array.from({ length: 12 }, (_, index) => {
     const prompts = [
       ['Which shape always has four equal sides and four right angles?', 'square', ['rectangle', 'rhombus', 'trapezoid', 'triangle']],
-      ['Which word names every polygon with four sides?', 'quadrilateral', ['triangle', 'pentagon', 'hexagon', 'circle']],
+      ['Which word describes every shape with four straight sides?', 'quadrilateral', ['triangle', 'pentagon', 'hexagon', 'circle']],
       ['Which shape has exactly one pair of parallel sides?', 'trapezoid', ['square', 'rectangle', 'rhombus', 'triangle']],
     ];
     const [prompt, answer, decoys] = pick(prompts, index); return item(def, index, { prompt, answer, decoys });
@@ -411,9 +722,15 @@ function moduleIndex(module, index) {
 
 function bankFor(def, items) {
   const sourceName = SOURCE[def.source].name;
+  const conceptIds = unique(items.flatMap((entry) => entry.concepts ?? []));
   return {
     schema: 'school.question-bank/v2', id: `math/${COURSE}/${def.id}/worksheet`, title: def.title, subject: 'math', audience: 'assigned',
-    unit: def.id, topics: [def.module, slug(def.title)], items,
+    unit: def.id, topics: [def.module, slug(def.title)],
+    concepts: conceptIds.map((conceptId) => ({
+      conceptId,
+      title: conceptId.split('-').map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(' '),
+    })),
+    items,
     lesson: {
       schema: 'school.unit/v1', unitId: def.id, title: def.title,
       description: def.required ? `Six-question mastery-oriented worksheet for ${def.title.toLowerCase()}.` : `Optional practice and enrichment for ${def.title.toLowerCase()}.`,
@@ -421,9 +738,59 @@ function bankFor(def, items) {
       grades: ['lower'], objectives: [`Solve grade 2–3 bridge problems involving ${def.title.toLowerCase()}.`],
       bank: `math/${COURSE}/${def.id}/worksheet`, passing: { percent: 80 }, retry: { variants: 12 },
       studyReferences: def.studyReferences,
+      worksheet: { examples: [workedExampleFor(def)] },
       provenance: { source: sourceName, reviewState: 'approved' },
     },
   };
+}
+
+const AMBIGUOUS_PROMPT_PATTERNS = Object.freeze([
+  /What is the value of the (?:ones|tens|hundreds|thousands) digit/iu,
+  /Which category has the greatest value/iu,
+  /counters are selected\. What fraction of the set is selected/iu,
+  /Which multiplication expression has the same product/iu,
+  /Which addition checks/iu,
+  /Which word names every polygon with four sides/iu,
+]);
+const GENERIC_FEEDBACK = /^Try the .+ strategy again, then check your work\.$/iu;
+
+/** Course-specific language checks that run before a generated bank is published. */
+export function auditElementaryMathBank(bank) {
+  const errors = [];
+  (bank?.items ?? []).forEach((entry, index) => {
+    const at = `${bank?.id ?? 'bank'} item ${index + 1}`;
+    const prompt = String(entry?.prompt ?? '').trim();
+    const feedback = String(entry?.feedback?.incorrect ?? '').trim();
+    if (!prompt) errors.push(`${at}: prompt is required`);
+    AMBIGUOUS_PROMPT_PATTERNS.forEach((pattern) => {
+      if (pattern.test(prompt)) errors.push(`${at}: ambiguous or developmentally weak prompt: ${prompt}`);
+    });
+    if (/(^|[^\\])\bBox\b/u.test(prompt)) errors.push(`${at}: unescaped Box token`);
+    if (!feedback) errors.push(`${at}: incorrect feedback is required`);
+    if (GENERIC_FEEDBACK.test(feedback)) errors.push(`${at}: generic incorrect feedback`);
+  });
+  const examples = bank?.lesson?.worksheet?.examples;
+  if (!Array.isArray(examples) || examples.length !== 1) {
+    errors.push(`${bank?.id ?? 'bank'}: every lesson must author exactly one compact worked example`);
+  } else {
+    const [example] = examples;
+    const prompt = String(example?.question?.prompt ?? '').trim();
+    const choices = example?.question?.choices ?? [];
+    const answer = String(example?.solution?.answer ?? '').trim();
+    if (!prompt || /^(?:look|study|notice|observe)\b[^?!.]*[.!]?$/iu.test(prompt)) {
+      errors.push(`${bank.id}: worked example must contain a genuine representative question`);
+    }
+    AMBIGUOUS_PROMPT_PATTERNS.forEach((pattern) => {
+      if (pattern.test(prompt)) errors.push(`${bank.id}: worked example repeats ambiguous wording: ${prompt}`);
+    });
+    if (!Array.isArray(choices) || !choices.includes(answer)) {
+      errors.push(`${bank.id}: worked example's correct answer must be one of its displayed choices`);
+    }
+    if (!Array.isArray(example?.solution?.steps) || example.solution.steps.length < 1) {
+      errors.push(`${bank.id}: worked example must show how to reach the answer`);
+    }
+  }
+  return errors;
 }
 
 function curriculumMarkdown(definitions) {
@@ -464,10 +831,17 @@ export function generateElementaryMathCourse({ dataDir, requireAbsent = true, so
       })));
     } else items = buildItems(def, ctx);
     built.set(def.id, items);
+    const bank = bankFor(def, items);
+    const auditErrors = auditElementaryMathBank(bank);
+    const bankValidation = validateQuestionBank(bank);
+    if (!bankValidation.ok) auditErrors.push(...bankValidation.errors.map((error) => `${bank.id}: ${error}`));
+    const unitValidation = validateUnit(bank.lesson, { bankIds: new Set([bank.id]) });
+    if (unitValidation.errors.length) auditErrors.push(...unitValidation.errors.map((error) => `${bank.id} lesson: ${error}`));
+    if (auditErrors.length) throw new Error(`elementary math content audit failed:\n${auditErrors.join('\n')}`);
     const moduleNumber = modules.findIndex((module) => module.id === def.module) + 1;
     const moduleDir = path.join(courseRoot, `${String(moduleNumber * 10).padStart(3, '0')}-${def.module}`);
     fs.mkdirSync(moduleDir, { recursive: true });
-    fs.writeFileSync(path.join(moduleDir, `${def.id}.yml`), dump(bankFor(def, items)));
+    fs.writeFileSync(path.join(moduleDir, `${def.id}.yml`), dump(bank));
   });
   modules.forEach((module, index) => {
     const moduleDir = path.join(courseRoot, `${String((index + 1) * 10).padStart(3, '0')}-${module.id}`);
@@ -489,6 +863,90 @@ export function generateElementaryMathCourse({ dataDir, requireAbsent = true, so
   return { courseRoot, assetRoot, definitions, bankCount: definitions.length, itemCount: [...built.values()].reduce((sum, items) => sum + items.length, 0), assetCount: ctx.specs.size };
 }
 
+function magickPoster(courseRoot) {
+  const svg = path.join(courseRoot, 'poster.svg');
+  const jpg = path.join(courseRoot, 'poster.jpg');
+  const png = path.join(courseRoot, '.poster-rsvg.png');
+  try {
+    try {
+      execFileSync('magick', [svg, '-quality', '92', jpg], { stdio: 'pipe' });
+    } catch (directError) {
+      // ImageMagick installations on macOS may advertise SVG support while
+      // hard-coding an absent Inkscape.app delegate. Librsvg gives us a plain
+      // PNG first; ImageMagick can always perform the final JPEG conversion.
+      try {
+        execFileSync('rsvg-convert', ['--format', 'png', '--background-color', 'white', '--output', png, svg], { stdio: 'pipe' });
+        execFileSync('magick', [png, '-quality', '92', jpg], { stdio: 'pipe' });
+      } catch (fallbackError) {
+        throw new Error(
+          `poster rendering failed with ImageMagick and librsvg fallback: ${fallbackError.message}`,
+          { cause: directError },
+        );
+      }
+    }
+  } finally {
+    fs.rmSync(png, { force: true });
+  }
+  fs.rmSync(svg);
+}
+
+function stageCompleteCourse({ dataDir, sourceMapPath = SOURCE_MAP_PATH, renderPoster = magickPoster }) {
+  const stageRoot = fs.mkdtempSync(path.join(path.dirname(path.resolve(dataDir)), '.elementary-math-stage-'));
+  try {
+    const result = generateElementaryMathCourse({ dataDir: stageRoot, sourceMapPath });
+    renderPoster(result.courseRoot);
+    if (!fs.existsSync(path.join(result.courseRoot, 'poster.jpg'))) throw new Error('poster renderer did not create poster.jpg');
+    return { stageRoot, result };
+  } catch (error) {
+    fs.rmSync(stageRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/** Build and validate every generated byte without touching live curriculum. */
+export function checkElementaryMathCourse(options = {}) {
+  if (!options.dataDir) throw new Error('dataDir is required');
+  const staged = stageCompleteCourse(options);
+  try {
+    return { banks: staged.result.bankCount, items: staged.result.itemCount, assets: staged.result.assetCount };
+  } finally {
+    fs.rmSync(staged.stageRoot, { recursive: true, force: true });
+  }
+}
+
+/** Publish complete course and asset directories with rollback on any failed move. */
+export function publishElementaryMathCourse(options = {}) {
+  if (!options.dataDir) throw new Error('dataDir is required');
+  const dataDir = path.resolve(options.dataDir);
+  const staged = stageCompleteCourse({ ...options, dataDir });
+  const liveCourse = path.join(dataDir, 'content', 'school', 'math', COURSE);
+  const liveAssets = path.join(dataDir, 'content', 'assets', 'school', 'math', COURSE);
+  const backupRoot = fs.mkdtempSync(path.join(path.dirname(dataDir), '.elementary-math-backup-'));
+  const pairs = [
+    { staged: staged.result.courseRoot, live: liveCourse, backup: path.join(backupRoot, 'course') },
+    { staged: staged.result.assetRoot, live: liveAssets, backup: path.join(backupRoot, 'assets') },
+  ];
+  const saved = []; const installed = [];
+  try {
+    pairs.forEach((pair) => {
+      fs.mkdirSync(path.dirname(pair.live), { recursive: true });
+      if (fs.existsSync(pair.live)) { fs.renameSync(pair.live, pair.backup); saved.push(pair); }
+    });
+    pairs.forEach((pair) => { fs.renameSync(pair.staged, pair.live); installed.push(pair); });
+    return {
+      courseRoot: liveCourse, assetRoot: liveAssets, backupRoot: saved.length ? backupRoot : null,
+      bankCount: staged.result.bankCount, itemCount: staged.result.itemCount, assetCount: staged.result.assetCount,
+    };
+  } catch (error) {
+    installed.reverse().forEach((pair) => fs.rmSync(pair.live, { recursive: true, force: true }));
+    saved.reverse().forEach((pair) => fs.renameSync(pair.backup, pair.live));
+    throw error;
+  } finally {
+    fs.rmSync(staged.stageRoot, { recursive: true, force: true });
+    if (!saved.length) fs.rmSync(backupRoot, { recursive: true, force: true });
+  }
+}
+
 function parseDataDir(argv) {
   const at = argv.indexOf('--data-dir'); return at >= 0 ? argv[at + 1] : null;
 }
@@ -497,10 +955,16 @@ const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPat
 if (isMain) {
   try {
     const argv = process.argv.slice(2); const dataDir = parseDataDir(argv);
-    const result = generateElementaryMathCourse({ dataDir, requireAbsent: !argv.includes('--refresh') });
-    execFileSync('magick', [path.join(result.courseRoot, 'poster.svg'), '-quality', '92', path.join(result.courseRoot, 'poster.jpg')]);
-    fs.rmSync(path.join(result.courseRoot, 'poster.svg'));
-    process.stdout.write(`${JSON.stringify({ course: result.courseRoot, banks: result.bankCount, items: result.itemCount, assets: result.assetCount })}\n`);
+    if (argv.includes('--check')) {
+      process.stdout.write(`${JSON.stringify({ checked: true, ...checkElementaryMathCourse({ dataDir }) })}\n`);
+    } else if (argv.includes('--refresh')) {
+      const result = publishElementaryMathCourse({ dataDir });
+      process.stdout.write(`${JSON.stringify({ course: result.courseRoot, backup: result.backupRoot,
+        banks: result.bankCount, items: result.itemCount, assets: result.assetCount })}\n`);
+    } else {
+      const result = generateElementaryMathCourse({ dataDir }); magickPoster(result.courseRoot);
+      process.stdout.write(`${JSON.stringify({ course: result.courseRoot, banks: result.bankCount, items: result.itemCount, assets: result.assetCount })}\n`);
+    }
   } catch (error) {
     process.stderr.write(`${error.stack ?? error.message}\n`); process.exitCode = 1;
   }

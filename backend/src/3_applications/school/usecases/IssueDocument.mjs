@@ -711,6 +711,7 @@ export class IssueDocument {
         id, sessionId, bank, learnerId: state.learnerId, enrollmentId,
         lessonId: unit.unitId, profile, seed: `${sessionId}:${state.variant ?? 0}`, issuedAt: nowIso,
         itemIds: state.remediationOf && state.remediationItemIds?.length ? state.remediationItemIds : null,
+        worksheet: unit.worksheet ?? null,
       });
       const companion = await this.#prepareCompanion({ instance, unit, nowIso });
       // A required companion this lesson cannot actually offer refuses BEFORE

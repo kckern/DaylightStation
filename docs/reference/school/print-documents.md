@@ -128,6 +128,39 @@ blocks:
   printing it beside the question, and a missed-question receipt repeats it as
   the learner's targeted review location. Existing `source` remains audit
   provenance and the legacy receipt fallback.
+- **A worksheet example explains the sheet, not the subject.** The physical
+  books remain the teaching source. A unit may add one to three authored
+  `worksheet.examples`; issuance selects at most one whose `appliesTo.concepts`
+  intersects the questions drawn for that sheet. The example must ask a real
+  representative multiple-choice question, display the choices, show one to
+  three short reasoning steps, and name the correct choice. It is frozen into
+  the worksheet instance, so a reprint cannot silently acquire a later
+  explanation. On paper it is one indivisible compact inset: question,
+  one-line choices, then numbered reasoning plus answer. It stays with the
+  following question and is not a second lesson card.
+
+  ```yaml
+  worksheet:
+    examples:
+      - id: place-value-worked-example
+        title: Worked example
+        appliesTo:
+          concepts: [place-value]
+        question:
+          type: multiple_choice
+          prompt: In 364, what value does the digit 6 represent?
+          choices: ['6', '60', '600']
+        solution:
+          steps:
+            - The digit 6 is in the tens place.
+            - Six tens equal 60.
+          answer: '60'
+  ```
+
+  `appliesTo` may be omitted for a stable orientation example on a cumulative
+  worksheet. An answer that is absent from `choices`, vague demonstration copy
+  instead of a question, more than three reasoning steps, or unsupported
+  example fields is a publication error.
 - **Fit** is decided by measurement, never streaming. Four policies:
   `flow` paginates at normal density with no shrinking; `one-page` must fit —
   density falls back to compact, and a document still overset at compact is

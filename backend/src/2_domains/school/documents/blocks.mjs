@@ -408,6 +408,31 @@ const VALIDATORS = {
     }
   },
   inset(raw, push, ctx) {
+    if (raw.layout !== undefined && !['lesson_card', 'worked_example'].includes(raw.layout)) {
+      push('inset layout must be lesson_card|worked_example when present');
+    }
+    if (raw.layout === 'worked_example') {
+      if (!isNonEmptyString(raw.title)) push('worked_example title must be a non-empty string');
+      if (!isNonEmptyString(raw.questionPrompt)) push('worked_example questionPrompt must be a non-empty string');
+      if (!isNonEmptyStringArray(raw.choiceLabels) || raw.choiceLabels.length < 2 || raw.choiceLabels.length > 5
+          || new Set(raw.choiceLabels).size !== raw.choiceLabels.length) {
+        push('worked_example choiceLabels must contain 2..5 unique non-empty strings');
+      }
+      if (!Array.isArray(raw.solutionSteps) || raw.solutionSteps.length < 1 || raw.solutionSteps.length > 3
+          || !raw.solutionSteps.every(isNonEmptyString)) {
+        push('worked_example solutionSteps must contain 1..3 non-empty strings');
+      }
+      if (!Number.isInteger(raw.correctChoiceIndex) || raw.correctChoiceIndex < 0
+          || raw.correctChoiceIndex >= (raw.choiceLabels?.length ?? 0)) {
+        push('worked_example correctChoiceIndex must name one choice');
+      }
+      if (!isNonEmptyString(raw.correctText)) {
+        push('worked_example correctText must be a non-empty string');
+      } else if (Number.isInteger(raw.correctChoiceIndex)
+          && raw.choiceLabels?.[raw.correctChoiceIndex] !== raw.correctText) {
+        push('worked_example correctText must match the indexed choice');
+      }
+    }
     if (raw.title !== undefined && !isNonEmptyString(raw.title)) {
       push('inset title must be a non-empty string when present');
     }

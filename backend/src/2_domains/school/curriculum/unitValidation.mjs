@@ -88,6 +88,124 @@ const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArr
 const isPresent = (v) => v !== undefined && v !== null;
 const READALONG_PARTICIPATION = Object.freeze(['optional', 'required']);
 const DELIVERY_MODES = Object.freeze(['paper', 'screen']);
+const WORKSHEET_EXAMPLE_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const WORKSHEET_EXAMPLE_TYPES = Object.freeze(['multiple_choice']);
+
+/**
+ * A lesson-level worked example explains how THIS worksheet phrases an ask;
+ * it is not a second source lesson and it is not an assessable bank item.
+ * Keep the shape intentionally small so the PDF target can guarantee a
+ * compact, three-line teaching strip instead of accepting arbitrary blocks
+ * that quietly consume half a page.
+ */
+function validateWorksheet(raw, errors) {
+  if (!isPresent(raw)) return undefined;
+  if (!isPlainObject(raw)) {
+    errors.push('worksheet must be an object');
+    return undefined;
+  }
+  const unknownWorksheetFields = Object.keys(raw).filter((field) => field !== 'examples');
+  if (unknownWorksheetFields.length) {
+    errors.push(`worksheet: unknown fields ${unknownWorksheetFields.join(', ')}`);
+  }
+  if (!Array.isArray(raw.examples) || raw.examples.length === 0 || raw.examples.length > 3) {
+    errors.push('worksheet.examples must contain 1..3 worked examples');
+    return undefined;
+  }
+
+  const seen = new Set();
+  const examples = raw.examples.map((example, index) => {
+    const at = `worksheet.examples[${index}]`;
+    if (!isPlainObject(example)) {
+      errors.push(`${at}: must be an object`);
+      return null;
+    }
+    const unknown = Object.keys(example)
+      .filter((field) => !['id', 'title', 'appliesTo', 'question', 'solution'].includes(field));
+    if (unknown.length) errors.push(`${at}: unknown fields ${unknown.join(', ')}`);
+    if (!WORKSHEET_EXAMPLE_ID.test(example.id ?? '')) errors.push(`${at}.id must be a lowercase identifier`);
+    else if (seen.has(example.id)) errors.push(`${at}.id duplicates '${example.id}'`);
+    else seen.add(example.id);
+    if (!isNonEmptyString(example.title)) errors.push(`${at}.title is required`);
+
+    let appliesTo;
+    if (isPresent(example.appliesTo)) {
+      if (!isPlainObject(example.appliesTo)) {
+        errors.push(`${at}.appliesTo must be an object when present`);
+      } else {
+        const unknownAppliesTo = Object.keys(example.appliesTo).filter((field) => field !== 'concepts');
+        if (unknownAppliesTo.length) errors.push(`${at}.appliesTo: unknown fields ${unknownAppliesTo.join(', ')}`);
+        const concepts = example.appliesTo.concepts;
+        if (!Array.isArray(concepts) || concepts.length === 0
+            || concepts.some((concept) => !WORKSHEET_EXAMPLE_ID.test(concept ?? ''))
+            || new Set(concepts).size !== concepts.length) {
+          errors.push(`${at}.appliesTo.concepts must be unique lowercase identifiers`);
+        } else appliesTo = { concepts: [...concepts] };
+      }
+    }
+
+    let question;
+    if (!isPlainObject(example.question)) {
+      errors.push(`${at}.question must be an object`);
+    } else {
+      const unknownQuestion = Object.keys(example.question).filter((field) => !['type', 'prompt', 'choices'].includes(field));
+      if (unknownQuestion.length) errors.push(`${at}.question: unknown fields ${unknownQuestion.join(', ')}`);
+      if (!WORKSHEET_EXAMPLE_TYPES.includes(example.question.type)) {
+        errors.push(`${at}.question.type must be ${WORKSHEET_EXAMPLE_TYPES.join('|')}`);
+      }
+      if (!isNonEmptyString(example.question.prompt)) errors.push(`${at}.question.prompt is required`);
+      if (!Array.isArray(example.question.choices) || example.question.choices.length < 2
+          || example.question.choices.length > 5 || !example.question.choices.every(isNonEmptyString)
+          || new Set(example.question.choices).size !== example.question.choices.length) {
+        errors.push(`${at}.question.choices must contain 2..5 unique non-empty strings`);
+      } else {
+        question = {
+          type: example.question.type,
+          prompt: example.question.prompt.trim(),
+          choices: example.question.choices.map((choice) => choice.trim()),
+        };
+      }
+    }
+
+    let solution;
+    if (!isPlainObject(example.solution)) {
+      errors.push(`${at}.solution must be an object`);
+    } else {
+      const unknownSolution = Object.keys(example.solution).filter((field) => !['steps', 'answer'].includes(field));
+      if (unknownSolution.length) errors.push(`${at}.solution: unknown fields ${unknownSolution.join(', ')}`);
+      if (!Array.isArray(example.solution.steps) || example.solution.steps.length < 1
+          || example.solution.steps.length > 3 || !example.solution.steps.every(isNonEmptyString)) {
+        errors.push(`${at}.solution.steps must contain 1..3 non-empty strings`);
+      }
+      if (!isNonEmptyString(example.solution.answer)) {
+        errors.push(`${at}.solution.answer is required`);
+      } else if (Array.isArray(example.question?.choices)
+          && !example.question.choices.includes(example.solution.answer)) {
+        errors.push(`${at}.solution.answer must appear in question.choices`);
+      }
+      if (Array.isArray(example.solution.steps) && example.solution.steps.length >= 1
+          && example.solution.steps.length <= 3 && example.solution.steps.every(isNonEmptyString)
+          && isNonEmptyString(example.solution.answer)) {
+        solution = {
+          steps: example.solution.steps.map((step) => step.trim()),
+          answer: example.solution.answer.trim(),
+        };
+      }
+    }
+
+    if (!question || !solution || !WORKSHEET_EXAMPLE_ID.test(example.id ?? '')
+        || !isNonEmptyString(example.title)) return null;
+    return {
+      id: example.id,
+      title: example.title.trim(),
+      ...(appliesTo ? { appliesTo } : {}),
+      question,
+      solution,
+    };
+  }).filter(Boolean);
+
+  return examples.length === raw.examples.length ? { examples } : undefined;
+}
 
 /**
  * The companion handler an author who names none is asking for. `IssueDocument`
@@ -214,6 +332,7 @@ export function validateUnit(raw, sets = {}) {
   }
   const studyResult = validateStudyReferences(raw.studyReferences);
   errors.push(...studyResult.errors);
+  const worksheet = validateWorksheet(raw.worksheet, errors);
 
   if (!SUBJECT_IDS.includes(raw.subject)) {
     errors.push(`subject must be one of ${SUBJECT_IDS.join('|')}, got: ${raw.subject}`);
@@ -541,6 +660,7 @@ export function validateUnit(raw, sets = {}) {
       ...(reading ? { reading } : {}),
       ...(sourceTitle ? { sourceTitle } : {}),
       ...(studyResult.references ? { studyReferences: studyResult.references } : {}),
+      ...(worksheet ? { worksheet } : {}),
       subject: raw.subject,
       objectives,
       courseId,

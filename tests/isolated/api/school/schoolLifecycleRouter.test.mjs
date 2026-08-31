@@ -146,6 +146,16 @@ beforeAll(async () => {
     gradeSubmission: { execute: async ({ sessionId, verdicts, settle, settledBy }) => ({ status: sessionId === 'ses_open' ? 'awaiting_review' : 'graded', percent: 100, verdicts, settle, settledBy }) },
     closeSessionOutcome: { execute: async ({ sessionId, signedOff }) => ({ status: sessionId === 'ses_done' ? 'already_settled' : 'settled', signedOff }) },
     openRemediation: { execute: async ({ sessionId }) => ({ status: sessionId === 'ses_open' ? 'already_opened' : 'opened' }) },
+    replaceRemediation: {
+      execute: async (args) => ({
+        status: 'replaced',
+        previousSessionId: args.currentSessionId,
+        newSessionId: 'ses_corrected',
+        reason: args.reason,
+        replacedBy: args.replacedBy,
+        idempotencyKey: args.idempotencyKey,
+      }),
+    },
     assignments,
     reviewQueue,
     curriculum,
@@ -327,6 +337,25 @@ describe('submission, grading and close-out', () => {
   it('opens a remediation, and 409s a second one', async () => {
     expect((await post('/sessions/ses_1/remediation')).status).toBe(200);
     expect((await post('/sessions/ses_open/remediation')).status).toBe(409);
+  });
+
+  it('forwards every audited field when replacing an unworked remediation', async () => {
+    const response = await post('/sessions/ses_failed/remediation/replace', {
+      currentSessionId: 'ses_retry',
+      reason: 'corrected worksheet wording',
+      replacedBy: 'parent',
+      pin: '7410',
+      idempotencyKey: 'repair-place-value-v2',
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      status: 'replaced',
+      previousSessionId: 'ses_retry',
+      newSessionId: 'ses_corrected',
+      reason: 'corrected worksheet wording',
+      replacedBy: 'parent',
+      idempotencyKey: 'repair-place-value-v2',
+    });
   });
 });
 

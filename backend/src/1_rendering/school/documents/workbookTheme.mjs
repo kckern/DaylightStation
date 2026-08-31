@@ -425,6 +425,24 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       spacingClass: 'body',
     },
 
+    /**
+     * One solved, non-assessable example immediately ahead of the questions.
+     * It deliberately spends horizontal room (inline choices and arrow-joined
+     * reasoning) to hold the entire teaching strip to roughly three lines.
+     */
+    workedExample: {
+      paddingXPt: density === 'compact' ? 7 : 8,
+      paddingYPt: density === 'compact' ? 4 : 5,
+      lineGapPt: density === 'compact' ? 1.5 : 2,
+      radiusPt: 3,
+      accentWidthPt: 2.5,
+      fill: '#F3F5F6',
+      accent: '#66727A',
+      questionStyleKey: 'body',
+      detailStyleKey: 'instruction',
+      spacingClass: 'body',
+    },
+
     /** Vertical breathing room between the subject mark and progress rail. */
     lessonCard: {
       progressGapPt: 10,

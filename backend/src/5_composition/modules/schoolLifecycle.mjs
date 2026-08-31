@@ -108,6 +108,7 @@ import { CaptureResultReceiptArtifact } from '#apps/school/usecases/CaptureResul
 import { ReprintResultReceiptArtifact } from '#apps/school/usecases/ReprintResultReceiptArtifact.mjs';
 import { IssueCorrectedResultReceipt } from '#apps/school/usecases/IssueCorrectedResultReceipt.mjs';
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
+import { ReplaceRemediation } from '#apps/school/usecases/ReplaceRemediation.mjs';
 import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
@@ -989,6 +990,9 @@ export async function createSchoolLifecycle({
     : null;
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions,
     curriculumExceptions: curriculumExceptionStore, clock, logger });
+  const replaceRemediation = new ReplaceRemediation({
+    curriculum, sessions: stores.sessions, teacherGate, clock, newSessionId, logger,
+  });
   // One name lookup for everything that prints a learner's name — the card
   // scan AND the agenda routes, so tape and preview show the same header.
   const resolvePersonalCard = new ResolvePersonalCard({
@@ -1227,7 +1231,7 @@ export async function createSchoolLifecycle({
 
   const useCases = {
     buildAgenda, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
-    submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
+    submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation, replaceRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,

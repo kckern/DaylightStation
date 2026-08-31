@@ -200,6 +200,12 @@ function claimTier({ dispatched, verification, faults = null, printerState = nul
   };
 }
 
+function jobLogContext(printJob) {
+  return typeof printJob?.jobName === 'string' && printJob.jobName.trim()
+    ? { jobName: printJob.jobName.trim() }
+    : {};
+}
+
 /**
  * @typedef {Object} PrinterConfig
  * @property {string} host - Printer IP address
@@ -512,6 +518,7 @@ export class ThermalPrinterAdapter {
   }
 
   async #printWithClaimTier(printJob) {
+    const logContext = jobLogContext(printJob);
     const outcome = await this.#executePrintJob(printJob);
     const preflightState = outcome.printerState ?? null;
 
@@ -534,11 +541,11 @@ export class ThermalPrinterAdapter {
       });
     }
 
-    const post = await this.#readStatusAfterJob();
+    const post = await this.#readStatusAfterJob(logContext);
     const faults = faultsIn(post);
     if (faults) {
       this.#logger.error?.('thermalPrinter.postjob.fault', {
-        target: `${this.#host}:${this.#port}`, faults,
+        target: `${this.#host}:${this.#port}`, faults, ...logContext,
       });
       return claimTier({
         dispatched: true, verification: 'faulted', faults, printerState: post,
@@ -549,6 +556,7 @@ export class ThermalPrinterAdapter {
         target: `${this.#host}:${this.#port}`,
         error: post?.error ?? null,
         answered: post?.answered ?? 0,
+        ...logContext,
       });
       return claimTier({
         dispatched: true, verification: 'unreadable', printerState: post ?? null,
@@ -556,6 +564,7 @@ export class ThermalPrinterAdapter {
     }
     this.#logger.info?.('thermalPrinter.postjob.ok', {
       target: `${this.#host}:${this.#port}`,
+      ...logContext,
     });
     return claimTier({ dispatched: true, verification: 'verified', printerState: post });
   }
@@ -567,7 +576,7 @@ export class ThermalPrinterAdapter {
    * a job's own socket relies on for the post-destroy lockout) — see that
    * constant's doc comment for why the two must not share a value.
    */
-  async #readStatusAfterJob() {
+  async #readStatusAfterJob(logContext = {}) {
     let last = null;
     for (let attempt = 1; attempt <= POST_JOB_STATUS_ATTEMPTS; attempt += 1) {
       await new Promise((r) => setTimeout(r, this.#statusSettleMs));
@@ -575,6 +584,7 @@ export class ThermalPrinterAdapter {
       if (statusIsConclusive(last) || faultsIn(last)) return last;
       this.#logger.warn?.('thermalPrinter.postjob.status-unreadable', {
         attempt, error: last?.error ?? null,
+        ...logContext,
       });
     }
     return last;
@@ -858,6 +868,7 @@ export class ThermalPrinterAdapter {
    */
   async #executePrintJob(printJob) {
     const startTime = Date.now();
+    const logContext = jobLogContext(printJob);
     const undispatched = (printerState = null, statusCapable = false) =>
       ({ dispatched: false, printerState, statusCapable });
 
@@ -884,7 +895,8 @@ export class ThermalPrinterAdapter {
       this.#logger.info?.('thermalPrinter.job.start', {
         target: `${config.host}:${config.port}`,
         itemCount: printJob.items.length,
-        upsideDown: config.upsideDown
+        upsideDown: config.upsideDown,
+        ...logContext,
       });
 
       // A job that renders itself as a single `{type:'image'}` (the School
@@ -899,6 +911,7 @@ export class ThermalPrinterAdapter {
         this.#logger.info?.('thermalPrinter.job.transcript', {
           target: `${config.host}:${config.port}`,
           transcript: printJob.transcript,
+          ...logContext,
         });
       }
 
@@ -924,7 +937,7 @@ export class ThermalPrinterAdapter {
         const timeoutId = setTimeout(() => {
           aborted = true;
           this.#needsResync = true;
-          this.#logger.error?.('thermalPrinter.timeout', { timeout: config.timeout });
+          this.#logger.error?.('thermalPrinter.timeout', { timeout: config.timeout, ...logContext });
           try { device.close(); } catch { /* never connected — nothing to destroy */ }
           resolve(undispatched());
         }, config.timeout);
@@ -939,13 +952,14 @@ export class ThermalPrinterAdapter {
             // too tight.
             this.#logger.warn?.('thermalPrinter.open.after-abort', {
               target: `${config.host}:${config.port}`,
+              ...logContext,
             });
             try { device.close(); } catch { /* best effort */ }
             return;
           }
 
           if (error) {
-            this.#logger.error?.('thermalPrinter.connect.failed', { error: error.message });
+            this.#logger.error?.('thermalPrinter.connect.failed', { error: error.message, ...logContext });
             resolve(undispatched());
             return;
           }
@@ -969,7 +983,7 @@ export class ThermalPrinterAdapter {
             const faults = faultsIn(preflight);
             if (faults) {
               this.#logger.warn?.('thermalPrinter.preflight.refused', {
-                target: `${config.host}:${config.port}`, faults,
+                target: `${config.host}:${config.port}`, faults, ...logContext,
               });
               // Not a byte of the job goes out. Refusing here is the whole
               // point: paper that will not come out must not be recorded as
@@ -981,6 +995,7 @@ export class ThermalPrinterAdapter {
             this.#logger.info?.('thermalPrinter.preflight.ok', {
               target: `${config.host}:${config.port}`,
               answered: preflight?.answered ?? 0,
+              ...logContext,
             });
           }
 
@@ -1069,6 +1084,7 @@ export class ThermalPrinterAdapter {
               duration: Date.now() - startTime,
               bytes: commands.length,
               drainMs,
+              ...logContext,
             });
             resolve({ dispatched: true, printerState: preflight, statusCapable });
 
@@ -1079,7 +1095,7 @@ export class ThermalPrinterAdapter {
             // resync pad. Nothing is written for a job that failed to build, so
             // no blank paper is cut.
             this.#needsResync = true;
-            this.#logger.error?.('thermalPrinter.process.error', { error: processingError.message });
+            this.#logger.error?.('thermalPrinter.process.error', { error: processingError.message, ...logContext });
             device.close();
             resolve(undispatched(preflight, statusCapable));
           }

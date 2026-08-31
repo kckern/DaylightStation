@@ -1004,6 +1004,65 @@ function measureBoxNode(ctx, block, { widthPt, path }) {
   };
 }
 
+/**
+ * A worked example is a semantic inset with a deliberately compact drawing
+ * plan: question, inline choices, and arrow-joined solution.  Measuring it as
+ * one atomic node keeps the example intact and lets `keepWithNext` bind the
+ * strip to Question 1 without paying the generic inset's gap per paragraph.
+ */
+function measureWorkedExampleNode(ctx, block, { widthPt }) {
+  const { theme, doc } = ctx;
+  const spec = theme.workedExample;
+  const innerWidthPt = widthPt - 2 * spec.paddingXPt;
+  const letter = String.fromCharCode(65 + block.correctChoiceIndex);
+  const groups = [];
+
+  groups.push({
+    styleKey: spec.questionStyleKey,
+    ...measureTextLines(doc, theme, [
+      { text: `${block.title.toUpperCase()}   `, font: 'bold' },
+      { text: block.questionPrompt, font: 'regular' },
+    ], { widthPt: innerWidthPt, styleKey: spec.questionStyleKey }),
+  });
+
+  const choiceRuns = block.choiceLabels.flatMap((choice, index) => [
+    ...(index ? [{ text: '     ', font: 'regular' }] : []),
+    { text: `${String.fromCharCode(65 + index)}. `, font: 'bold' },
+    { text: choice, font: 'regular' },
+  ]);
+  groups.push({
+    styleKey: spec.detailStyleKey,
+    ...measureTextLines(doc, theme, choiceRuns, { widthPt: innerWidthPt, styleKey: spec.detailStyleKey }),
+  });
+
+  const solutionRuns = block.solutionSteps.flatMap((step, index) => [
+    { text: `${index + 1}. `, font: 'bold' },
+    { text: `${step}   `, font: 'regular' },
+  ]);
+  solutionRuns.push({ text: `ANSWER: ${letter} — ${block.correctText}`, font: 'bold' });
+  groups.push({
+    styleKey: spec.detailStyleKey,
+    ...measureTextLines(doc, theme, solutionRuns, { widthPt: innerWidthPt, styleKey: spec.detailStyleKey }),
+  });
+
+  let cursor = spec.paddingYPt;
+  groups.forEach((group, index) => {
+    if (index) cursor += spec.lineGapPt;
+    group.offsetYPt = cursor;
+    cursor += group.heightPt;
+  });
+  return {
+    kind: 'workedExample', groups,
+    paddingXPt: spec.paddingXPt,
+    radiusPt: spec.radiusPt,
+    accentWidthPt: spec.accentWidthPt,
+    fill: spec.fill,
+    accent: spec.accent,
+    widthPt,
+    heightPt: cursor + spec.paddingYPt,
+  };
+}
+
 /** A semantic lesson card: icon rail + breadcrumb + assignment + mastery band. */
 function measureLessonCardNode(ctx, block, { widthPt, path }) {
   const { theme } = ctx;
@@ -1152,6 +1211,7 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
 
     case 'inset':
       if (block.layout === 'lesson_card') return [measureLessonCardNode(ctx, block, { widthPt, path })];
+      if (block.layout === 'worked_example') return [measureWorkedExampleNode(ctx, block, { widthPt, path })];
       return [measureBoxNode(ctx, block, { widthPt, path })];
 
     case 'list':
@@ -1413,6 +1473,7 @@ function fragmentFromNode(node, { id, block, theme }) {
     // to its `?? 0` default and the first question sat flush against the card's
     // border — the gap was never a tuned value, just an omission.
     lessonCard: theme.lessonCard?.spacingClass,
+    workedExample: theme.workedExample?.spacingClass,
   };
   node.offsetYPt = 0;
   return {

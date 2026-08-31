@@ -35,6 +35,10 @@ const PAYLOADS = {
   reward_reconciled: { reconciliationId: 'rec_1', delta: 1, txnId: 'txn_2' },
   reward_reconciliation_failed: { reconciliationId: 'rec_2', delta: -1, reason: 'economy unavailable' },
   remediation_opened: { newSessionId: 'ses_next', variant: 1 },
+  remediation_replaced: {
+    previousSessionId: 'ses_next', newSessionId: 'ses_replacement', variant: 2,
+    replacementKey: 'replace-1', reason: 'corrected worksheet wording', replacedBy: 'parent1',
+  },
   reassigned: { fromLearnerId: 'kid1', toLearnerId: 'kid2', reason: 'Learner Two sat down at Learner One’s sheet' },
   failed: { stage: 'print', reason: 'printer offline' },
   grade_adjusted: { adjustmentId: 'adj_1', percent: 100, reason: 'OMR erased answer misread', adjustedBy: 'parent1' },
@@ -63,7 +67,7 @@ describe('EVENT_TYPES', () => {
       'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'external_activity_assessed',
       'submitted', 'graded', 'companion_gate_read', 'outcome_recorded', 'rewarded',
       'reward_reconciled', 'reward_reconciliation_failed',
-      'remediation_opened', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted', 'failed', 'abandoned',
+      'remediation_opened', 'remediation_replaced', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted', 'failed', 'abandoned',
     ]);
   });
 
@@ -344,6 +348,11 @@ describe('createEvent: per-type payloads', () => {
     ['outcome_recorded', 'outcomeId'],
     ['rewarded', 'txnId'],
     ['remediation_opened', 'newSessionId'],
+    ['remediation_replaced', 'previousSessionId'],
+    ['remediation_replaced', 'newSessionId'],
+    ['remediation_replaced', 'replacementKey'],
+    ['remediation_replaced', 'reason'],
+    ['remediation_replaced', 'replacedBy'],
     ['reassigned', 'fromLearnerId'],
     ['reassigned', 'toLearnerId'],
     // Moving a child's work onto a sibling is a decision with an author and a
@@ -918,6 +927,22 @@ describe('reduceSession: remediation lineage', () => {
     events[0].remediationOf = 'ses_prev';
     const state = reduceSession(events);
     expect(state.remediationOf).toBe('ses_prev');
+  });
+
+  it('updates the active retry with a terminal-safe replacement annotation', () => {
+    const events = log(
+      ['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'remediation_opened', 'remediation_replaced'],
+      { outcome_recorded: { result: 'needs_remediation' }, graded: { attemptIds: ['att_1'], percent: 40 } },
+    );
+    const state = reduceSession(events);
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe('remediation_opened');
+    expect(state.terminal).toBe(true);
+    expect(state.remediation).toEqual({ newSessionId: 'ses_replacement', variant: 2 });
+    expect(state.remediationHistory).toEqual([
+      expect.objectContaining({ kind: 'opened', newSessionId: 'ses_next' }),
+      expect.objectContaining({ kind: 'replaced', previousSessionId: 'ses_next', newSessionId: 'ses_replacement', replacementKey: 'replace-1' }),
+    ]);
   });
 });
 

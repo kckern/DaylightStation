@@ -68,6 +68,49 @@ describe('unit learner-facing reading metadata', () => {
   });
 });
 
+describe('unit worksheet worked examples', () => {
+  const worksheet = {
+    examples: [{
+      id: 'digit-value', title: 'Worked example', appliesTo: { concepts: ['place-value'] },
+      question: {
+        type: 'multiple_choice',
+        prompt: 'In 364, what value does the digit 6 represent?',
+        choices: ['6', '60', '600'],
+      },
+      solution: {
+        steps: ['The digit 6 is in the tens place.', 'Six tens equal 60.'],
+        answer: '60',
+      },
+    }],
+  };
+
+  it('normalizes a bounded, solved, representative worksheet example', () => {
+    const { errors, unit } = validateUnit({ ...base, worksheet }, sets);
+    expect(errors).toEqual([]);
+    expect(unit.worksheet).toEqual(worksheet);
+  });
+
+  it('refuses examples that are unsolved, unanswerable, or arbitrary document blocks', () => {
+    const invalid = structuredClone(worksheet);
+    invalid.examples[0].solution.answer = '30';
+    invalid.examples[0].blocks = [{ type: 'rich_text', md: 'Bypass the compact renderer.' }];
+    expect(validateUnit({ ...base, worksheet: invalid }, sets).errors).toEqual(expect.arrayContaining([
+      expect.stringMatching(/unknown fields blocks/),
+      expect.stringMatching(/answer must appear in question\.choices/),
+    ]));
+  });
+
+  it('requires short structured reasoning instead of an unbounded mini-lesson', () => {
+    const invalid = structuredClone(worksheet);
+    invalid.examples[0].solution.steps = ['one', 'two', 'three', 'four'];
+    invalid.examples[0].question.choices = ['60', '60'];
+    expect(validateUnit({ ...base, worksheet: invalid }, sets).errors).toEqual(expect.arrayContaining([
+      expect.stringMatching(/steps must contain 1\.\.3/),
+      expect.stringMatching(/choices must contain 2\.\.5 unique/),
+    ]));
+  });
+});
+
 // A gated media lesson: the video is the content, the bank holds the
 // comprehension items, and `checkpoints` says where playback stops to ask
 // them. All three are required together — see `mediaCheckpoints.mjs`.
