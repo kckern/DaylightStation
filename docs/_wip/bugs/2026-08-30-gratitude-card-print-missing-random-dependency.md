@@ -1,16 +1,16 @@
 # Gratitude card printing fails before reaching thermal printer — 2026-08-30
 
-**Status:** diagnosed and repaired locally; not deployed or hardware-verified  
-**Severity:** high for the Gratitude print workflow; no destructive side effect observed  
-**First production failure observed:** 2026-08-30 13:58:41 PDT  
-**Latest failure inspected:** 2026-08-30 17:15:30 PDT  
+**Status:** diagnosed and repaired locally; not deployed or hardware-verified
+**Severity:** high for the Gratitude print workflow; no destructive side effect observed
+**First production failure observed:** 2026-08-30 13:58:41 PDT
+**Latest failure inspected:** 2026-08-30 17:15:30 PDT
 **Affected endpoints:** `GET /api/v1/gratitude/card/print/:location` and, by the
-shared renderer path, `GET /api/v1/gratitude/card`  
-**Observed caller:** Home Assistant  
-**Affected printer in observed requests:** `downstairs` (`10.0.0.50:9100`)  
-**Production source revision inspected:** `ca72bbc8d417e432b533ccb8b896489c93568e02`  
+shared renderer path, `GET /api/v1/gratitude/card`
+**Observed caller:** Home Assistant
+**Affected printer in observed requests:** `downstairs` (`10.0.0.50:9100`)
+**Production source revision inspected:** `ca72bbc8d417e432b533ccb8b896489c93568e02`
 **Defect introduced by:** `76f2089c37e1aac702033e312aa364eeb80c26cd`
-(`refactor(backend): complete DDD boundary remediation`, 2026-08-29 09:42 PDT)  
+(`refactor(backend): complete DDD boundary remediation`, 2026-08-29 09:42 PDT)
 **Primary evidence:** VictoriaLogs, deployed source at
 `homeserver.local:/opt/Code/DaylightStation`, live count-only API query, Git history,
 and an isolated reproduction

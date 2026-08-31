@@ -1,13 +1,13 @@
 # Incomplete runtime contracts after backend DDD migration `76f2089c3`
 
-**Date:** 2026-08-30  
-**Status:** all 17 unresolved contract families repaired locally; not deployed  
-**Severity:** critical migration quality issue; confirmed production failures in printing and scheduled data maintenance  
-**Introduced by:** `76f2089c37e1aac702033e312aa364eeb80c26cd`  
-**Migration title:** `refactor(backend): complete DDD boundary remediation`  
-**Migration size:** 2,103 files, 46,519 insertions, 34,947 deletions  
-**Author and committer recorded by Git:** KC Kern `<kc@kckern.com>`  
-**Production revision inspected:** `ca72bbc8d417e432b533ccb8b896489c93568e02`  
+**Date:** 2026-08-30
+**Status:** all 17 unresolved contract families repaired locally; not deployed
+**Severity:** critical migration quality issue; confirmed production failures in printing and scheduled data maintenance
+**Introduced by:** `76f2089c37e1aac702033e312aa364eeb80c26cd`
+**Migration title:** `refactor(backend): complete DDD boundary remediation`
+**Migration size:** 2,103 files, 46,519 insertions, 34,947 deletions
+**Author and committer recorded by Git:** KC Kern `<kc@kckern.com>`
+**Production revision inspected:** `ca72bbc8d417e432b533ccb8b896489c93568e02`
 **Primary evidence:** deployed scheduler state, VictoriaLogs, exact-revision Git comparison, source-contract audit, and focused composition tests
 
 This is the umbrella report. The Gratitude incident has a request-by-request report at
