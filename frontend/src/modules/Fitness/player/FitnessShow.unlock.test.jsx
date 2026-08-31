@@ -77,6 +77,29 @@ const SEQUENTIAL_SHOW = {
   parents: { p1: { index: 1, title: 'Season 1' } }
 };
 
+const MULTI_SEASON_SHOW = {
+  info: { type: 'show', title: 'Multi Season Show', labels: [], image: 'poster.jpg' },
+  items: [
+    { plex: '301', id: 'plex:301', label: 'Alpha 1', parentId: 'p1', itemIndex: 1, image: 'a1.jpg', duration: 600, isWatched: true },
+    { plex: '302', id: 'plex:302', label: 'Alpha 2', parentId: 'p1', itemIndex: 2, image: 'a2.jpg', duration: 600, isWatched: true },
+    { plex: '303', id: 'plex:303', label: 'Beta 1', parentId: 'p2', itemIndex: 1, image: 'b1.jpg', duration: 600, isWatched: true },
+    { plex: '304', id: 'plex:304', label: 'Beta 2', parentId: 'p2', itemIndex: 2, image: 'b2.jpg', duration: 600, isWatched: false },
+    { plex: '305', id: 'plex:305', label: 'Gamma 1', parentId: 'p3', itemIndex: 1, image: 'g1.jpg', duration: 600, isWatched: false }
+  ],
+  parents: {
+    p1: { index: 1, title: 'Alpha' },
+    p2: { index: 2, title: 'Beta' },
+    p3: { index: 3, title: 'Gamma' }
+  }
+};
+
+const MULTI_SEASON_REFRESH = {
+  ...MULTI_SEASON_SHOW,
+  items: MULTI_SEASON_SHOW.items.map((episode) => (
+    episode.parentId === 'p2' ? { ...episode, isWatched: true } : episode
+  ))
+};
+
 // Stable no-op context functions + stable array refs the component reads.
 // (FitnessShow recomputes its fetch callback when nomusicLabels/plexConfig change
 // identity; stable refs avoid a re-fetch loop in the test environment.)
@@ -100,6 +123,14 @@ const SEQUENTIAL_CTX = (locks = {}) => ({
   fitnessConfiguration: { locks },
   governedTypes: [],
   plexConfig: { sequential_labels: ['sequential'] }
+});
+
+const MULTI_SEASON_CTX = (revision = 0) => ({
+  ...CTX_FNS,
+  fitnessConfiguration: { locks: {} },
+  governedLabels: [],
+  governedTypes: [],
+  plexConfig: { revision }
 });
 
 let setFitnessPlayQueue;
@@ -239,5 +270,51 @@ describe('FitnessShow — sequential locked-episode unlock affordance', () => {
 
     expect(registerUnlock).not.toHaveBeenCalled();
     expect(setFitnessPlayQueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('FitnessShow — season selection authority', () => {
+  it('never lets automatic progression override an explicit season selection', async () => {
+    const { container, rerender } = await renderShow(MULTI_SEASON_SHOW, MULTI_SEASON_CTX());
+    const seasonButton = (title) => Array.from(container.querySelectorAll('.season-item'))
+      .find((button) => button.textContent.includes(title));
+
+    // Initial auto-selection advances past completed Alpha to incomplete Beta.
+    await waitFor(() => expect(seasonButton('Beta')?.className).toContain('active'));
+    expect(logSpy.info).toHaveBeenCalledWith(
+      'fitness.show.season_auto_selected',
+      expect.objectContaining({ fromSeasonId: null, toSeasonId: 'p2', reason: 'initialize' })
+    );
+
+    // The user deliberately returns to completed Alpha. That choice is now
+    // authoritative even though automatic progression still prefers Beta.
+    await act(async () => { fireEvent.pointerDown(seasonButton('Alpha')); });
+    await waitFor(() => expect(seasonButton('Alpha')?.className).toContain('active'));
+    expect(seasonButton('Beta')?.className).not.toContain('active');
+    expect(container.querySelector('[data-plex-id="301"]')).toBeTruthy();
+    expect(logSpy.info).toHaveBeenCalledWith(
+      'fitness.show.season_selected',
+      expect.objectContaining({ fromSeasonId: 'p2', toSeasonId: 'p1' })
+    );
+
+    // Simulate refreshed progress where Beta completes and Gamma becomes the
+    // automatic next target. Explicit Alpha must still remain selected.
+    DaylightAPI.mockResolvedValue(MULTI_SEASON_REFRESH);
+    mockCtx = MULTI_SEASON_CTX(1);
+    await act(async () => {
+      rerender(
+        <FitnessShow
+          showId="plex:9000"
+          setFitnessPlayQueue={setFitnessPlayQueue}
+          onPlay={onPlay}
+          onBack={() => {}}
+        />
+      );
+    });
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(seasonButton('Alpha')?.className).toContain('active'));
+    expect(seasonButton('Gamma')?.className).not.toContain('active');
+    expect(container.querySelector('[data-plex-id="301"]')).toBeTruthy();
+    expect(container.querySelector('[data-plex-id="305"]')).toBeNull();
   });
 });

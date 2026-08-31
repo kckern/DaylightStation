@@ -228,6 +228,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   const posterRef = useRef(null);
   const prevQueueLengthRef = useRef(0);
   const [activeSeasonId, setActiveSeasonId] = useState(null);
+  // Automatic progression may choose an initial/next season, but a season the
+  // user explicitly selected is authoritative until they leave this show.
+  const explicitSeasonSelectionRef = useRef({ showId: null, seasonId: null });
   const seasonBarRef = useRef(null);
   const [, setSeasonBarWidth] = useState(0);
   const [selectedInfo, setSelectedInfo] = useState(null); // Selected episode or season for info panel
@@ -296,6 +299,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   const showIdRef = useRef(showId);
   useEffect(() => {
     showIdRef.current = showId;
+    explicitSeasonSelectionRef.current = { showId: null, seasonId: null };
     setGovernanceBypassed(false);
     setPendingUnlock(null);
     clearUnlock();
@@ -994,7 +998,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     if (seasonKeysChanged) setLoadedSeasonImages(nextSeasonMap);
   }, [items, loadedEpisodeImages, loadedSeasonImages, seasons]);
 
-  // Initialize/adjust active season when items or seasons change
+  // Initialize/auto-advance the active season when progress data changes.
+  // An explicit selection always wins, including when a later data refresh
+  // would otherwise advance away from a completed season.
   useEffect(() => {
     if (!seasons.length) {
       if (activeSeasonId !== null) setActiveSeasonId(null);
@@ -1028,18 +1034,61 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
       return (firstIncomplete || seasons[0]).id;
     })();
 
-    setActiveSeasonId((prev) => {
-      const prevValid = prev && seasons.some((s) => s.id === prev);
-      if (!prevValid) return desiredSeasonId ?? null;
-      const prevSeason = seasonById(prev);
-      const prevComplete = isSeasonComplete(prevSeason);
-      const prevIsSpecials = prevSeason && Number.isFinite(prevSeason.number) && prevSeason.number === 0;
-      if ((prevComplete || prevIsSpecials) && desiredSeasonId && desiredSeasonId !== prev) {
-        return desiredSeasonId;
+    const explicitSeasonId = explicitSeasonSelectionRef.current.showId === showId
+      ? explicitSeasonSelectionRef.current.seasonId
+      : null;
+    const explicitSeasonValid = explicitSeasonId != null
+      && seasons.some((season) => season.id === explicitSeasonId);
+
+    if (explicitSeasonId != null && !explicitSeasonValid) {
+      explicitSeasonSelectionRef.current = { showId: null, seasonId: null };
+    }
+
+    // Progress-driven defaults must never override a valid explicit choice.
+    if (explicitSeasonValid) {
+      if (activeSeasonId !== explicitSeasonId) {
+        getLogger().child({ component: 'FitnessShow' }).info('fitness.show.season_explicit_restored', {
+          showId,
+          fromSeasonId: activeSeasonId,
+          toSeasonId: explicitSeasonId
+        });
+        setActiveSeasonId(explicitSeasonId);
       }
-      return prev;
-    });
-  }, [seasons, items, isEpisodeWatched, activeSeasonId]);
+      return;
+    }
+
+    const activeSeason = seasonById(activeSeasonId);
+    const activeSeasonValid = Boolean(activeSeason);
+    const activeSeasonComplete = isSeasonComplete(activeSeason);
+    const activeSeasonIsSpecials = activeSeason
+      && Number.isFinite(activeSeason.number)
+      && activeSeason.number === 0;
+
+    let nextSeasonId = activeSeasonId;
+    let reason = null;
+    if (!activeSeasonValid) {
+      nextSeasonId = desiredSeasonId ?? null;
+      reason = activeSeasonId == null ? 'initialize' : 'selection_invalid';
+    } else if ((activeSeasonComplete || activeSeasonIsSpecials)
+      && desiredSeasonId
+      && desiredSeasonId !== activeSeasonId) {
+      nextSeasonId = desiredSeasonId;
+      reason = activeSeasonComplete ? 'season_complete' : 'specials_default';
+    }
+
+    if (nextSeasonId !== activeSeasonId) {
+      const nextSeason = seasonById(nextSeasonId);
+      getLogger().child({ component: 'FitnessShow' }).info('fitness.show.season_auto_selected', {
+        showId,
+        fromSeasonId: activeSeasonId,
+        toSeasonId: nextSeasonId,
+        fromSeasonNumber: activeSeason?.number ?? null,
+        toSeasonNumber: nextSeason?.number ?? null,
+        reason
+      });
+      setActiveSeasonId(nextSeasonId);
+    }
+  }, [seasons, items, isEpisodeWatched, activeSeasonId, showId]);
 
   // Keep selected episode in sync with filter
   useEffect(() => {
@@ -1417,6 +1466,14 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
                     scrollIntoViewIfNeeded(btn, { axis: 'x', margin: 24 });
                     const { didScroll } = scrollIntoViewIfNeeded(btn, { axis: 'y', margin: 24 });
                     if (didScroll) return;
+                    explicitSeasonSelectionRef.current = { showId, seasonId: s.id };
+                    getLogger().child({ component: 'FitnessShow' }).info('fitness.show.season_selected', {
+                      showId,
+                      fromSeasonId: activeSeasonId,
+                      toSeasonId: s.id,
+                      seasonNumber: s.number ?? null,
+                      seasonTitle: s.rawName || s.name || null
+                    });
                     setActiveSeasonId(s.id);
                     const episodeCount = items.filter(ep => String(ep.parentId) === String(s.id)).length;
                     const hasRealDescription = !!(s.description && s.description.trim());
