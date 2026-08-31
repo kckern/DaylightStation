@@ -64,6 +64,9 @@ function artifactRefs(state) {
     receipt: receipt ? {
       artifactId: receipt.artifactId,
       originalUrl: schoolArtifactRef(receipt.artifactId, 'original'),
+      printed: receipt.printed,
+      printReason: receipt.printReason ?? null,
+      capturedAt: receipt.at ?? null,
     } : null,
   };
 }
@@ -182,6 +185,11 @@ export class GetTeacherToday {
           // lesson. Null until there is something reviewable.
           reviewStatus: reviewStatusFor(state.state, pending, row.sessionId),
           outcome: state.outcome,
+          remediation: {
+            ofSessionId: state.remediationOf ?? null,
+            activeSessionId: state.remediation?.newSessionId ?? null,
+            variant: Number.isInteger(state.variant) ? state.variant : null,
+          },
           artifacts: artifactRefs(state),
         };
         if (originalStudyDay === selectedStudyDay) sessions.push(summary);

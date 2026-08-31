@@ -30,7 +30,10 @@ describe('document rendering adapters', () => {
     const artifact = await adapter.render({ id: 'receipt' });
     const printer = { print: vi.fn(async () => { throw new Error('offline'); }) };
 
-    await expect(artifact.printWith(printer)).rejects.toThrow('offline');
+    await expect(artifact.printWith(printer, { jobName: 'school-receipt-receipt' })).rejects.toThrow('offline');
+    expect(printer.print).toHaveBeenCalledWith(expect.objectContaining({
+      jobName: 'school-receipt-receipt', items: [{ type: 'image' }],
+    }));
     expect(cleanup).toHaveBeenCalledOnce();
   });
 });

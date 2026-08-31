@@ -105,9 +105,10 @@ async function main() {
     `${settled.status}/${settled.result}`);
   const receipt = harness.lastReceiptText() ?? '';
   if (VERBOSE) process.stdout.write(`\n--- result receipt ---\n${receipt}\n\n`);
-  check('the receipt reports the score', receipt.includes('Score: 100%'));
+  check('the receipt reports the score', receipt.includes('6 of 6 correct'));
   check('the receipt names what this opened up',
-    receipt.includes('Next up: Adding and Subtracting Unlike Denominators'));
+    receipt.includes('ONE MORE?')
+    && receipt.includes('Unit · Adding and Subtracting Unlike Denominators'));
 
   // --- 6. the next unit is really open -------------------------------------
   const plan = await harness.plan();
@@ -132,12 +133,22 @@ async function main() {
   const nextAgenda = harness.lastReceiptText() ?? '';
   if (VERBOSE) process.stdout.write(`\n--- next-day agenda ---\n${nextAgenda}\n\n`);
   check('the next-day agenda offers unit 02 as a scannable line',
-    nextAgenda.includes('Adding and Subtracting Unlike Denominators — print your sheet')
+    nextAgenda.includes('Unit · Adding and Subtracting Unlike Denominators')
+    && nextAgenda.includes('PRINT YOUR SHEET')
     && harness.tokensInLastReceipt().length === 1);
 
   // --- 7. the event log is the durable record ------------------------------
   const events = await harness.eventTypes(sessionId);
-  const expected = ['created', 'media_dispatched', 'media_completed', 'submitted', 'graded', 'outcome_recorded', 'rewarded'];
+  const expected = [
+    'created',
+    'media_dispatched',
+    'media_completed',
+    'submitted',
+    'graded',
+    'outcome_recorded',
+    'rewarded',
+    'result_receipt_captured',
+  ];
   check('the whole journey is on an append-only log',
     JSON.stringify(events) === JSON.stringify(expected), events.join(' → '));
 }

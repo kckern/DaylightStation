@@ -124,7 +124,7 @@ const percentIfPresent = (field) => (raw, push) => {
  */
 const SCHEMA = {
   created: {
-    fields: ['learnerId', 'unitId', 'studyDay', 'remediationOf', 'variant', 'remediationItemIds', 'openedBy'],
+    fields: ['learnerId', 'unitId', 'studyDay', 'remediationOf', 'variant', 'remediationItemIds', 'openedBy', 'replacementKey', 'replacesSessionId'],
     validate: allOf(stringField('learnerId'), stringField('unitId'), (raw, push) => {
       if (raw.studyDay !== undefined && !isStudyDay(raw.studyDay)) push('studyDay: must be YYYY-MM-DD when present');
       // Both optional: only a remediation session carries them.
@@ -140,6 +140,15 @@ const SCHEMA = {
       }
       if (raw.openedBy !== undefined && !isNonEmptyString(raw.openedBy)) {
         push('openedBy: must be a non-empty string when present');
+      }
+      if (raw.replacementKey !== undefined && !isNonEmptyString(raw.replacementKey)) {
+        push('replacementKey: must be a non-empty string when present');
+      }
+      if (raw.replacesSessionId !== undefined && !isNonEmptyString(raw.replacesSessionId)) {
+        push('replacesSessionId: must be a non-empty string when present');
+      }
+      if ((raw.replacementKey === undefined) !== (raw.replacesSessionId === undefined)) {
+        push('replacementKey and replacesSessionId must be supplied together');
       }
     }),
   },
@@ -369,6 +378,20 @@ const SCHEMA = {
       }
     }),
   },
+  // A teacher may replace an unworked retry without rewriting either attempt.
+  // This annotation changes which linked sibling is active while the original
+  // failed attempt stays terminal and both retry logs remain auditable.
+  remediation_replaced: {
+    fields: ['previousSessionId', 'newSessionId', 'variant', 'replacementKey', 'reason', 'replacedBy'],
+    validate: allOf(
+      stringField('previousSessionId'), stringField('newSessionId'),
+      stringField('replacementKey'), stringField('reason'), stringField('replacedBy'),
+      (raw, push) => {
+        if (!(Number.isInteger(raw.variant) && raw.variant >= 0)) push('variant: must be an integer >= 0');
+        if (raw.previousSessionId === raw.newSessionId) push('newSessionId must differ from previousSessionId');
+      },
+    ),
+  },
   reassigned: {
     // `reason` is REQUIRED, not optional-when-present. Moving a child's work
     // onto a sibling is a decision with an author and a why (the
@@ -482,7 +505,7 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'failed', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted',
   'reward_reconciled', 'reward_reconciliation_failed',
   'result_receipt_captured', 'result_receipt_reprinted', 'checkpoint_cleared',
-  'companion_gate_read',
+  'companion_gate_read', 'remediation_replaced',
 ]));
 /**
  * Annotations that are legal only from specific states, overriding the default
@@ -514,6 +537,7 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
  */
 const ANNOTATION_STATES = new Map([
   ['checkpoint_cleared', new Set(['media_dispatched', 'media_stalled'])],
+  ['remediation_replaced', new Set(['remediation_opened'])],
 ]);
 
 /**
@@ -733,11 +757,14 @@ const emptyState = () => ({
   rewardReconciliations: [],
   remediationOf: null,
   remediationItemIds: [],
+  replacementKey: null,
+  replacesSessionId: null,
   // Which equivalent-problem form of the unit this session was opened with
   // (spec §3.3). Derived rather than looked up because the document that gets
   // reprinted has to be the SAME variant the child was handed.
   variant: 0,
   remediation: null,
+  remediationHistory: [],
   lastFailure: null,
   launch: null,
   externalActivity: null,
@@ -754,6 +781,8 @@ const APPLY = {
     if (e.remediationOf) s.remediationOf = e.remediationOf;
     if (Array.isArray(e.remediationItemIds)) s.remediationItemIds = [...e.remediationItemIds];
     if (Number.isInteger(e.variant)) s.variant = e.variant;
+    if (isNonEmptyString(e.replacementKey)) s.replacementKey = e.replacementKey;
+    if (isNonEmptyString(e.replacesSessionId)) s.replacesSessionId = e.replacesSessionId;
   },
   issued(s, e) {
     if (e.artifactId && !s.issuedArtifacts.includes(e.artifactId)) s.issuedArtifacts.push(e.artifactId);
@@ -926,6 +955,18 @@ const APPLY = {
   },
   remediation_opened(s, e) {
     s.remediation = { newSessionId: e.newSessionId ?? null, variant: e.variant ?? null };
+    s.remediationHistory.push({
+      kind: 'opened', newSessionId: e.newSessionId ?? null, variant: e.variant ?? null, at: e.at,
+    });
+  },
+  remediation_replaced(s, e) {
+    s.remediation = { newSessionId: e.newSessionId ?? null, variant: e.variant ?? null };
+    s.remediationHistory.push({
+      kind: 'replaced', previousSessionId: e.previousSessionId ?? null,
+      newSessionId: e.newSessionId ?? null, variant: e.variant ?? null,
+      replacementKey: e.replacementKey ?? null, reason: e.reason ?? null,
+      replacedBy: e.replacedBy ?? null, at: e.at,
+    });
   },
   reassigned(s, e) { if (isNonEmptyString(e.toLearnerId)) s.learnerId = e.toLearnerId; },
   grade_adjusted(s, e, push) {

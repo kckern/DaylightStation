@@ -200,6 +200,20 @@ describe('createLogger', () => {
       expect(sentEvents()[0]).toMatchObject({ level: 'info', event: 'scroll.tick', data: { ms: 5 } });
     });
 
+    test('retains a warning level while sampling repeated operational failures', () => {
+      const logger = createLogger({ app: 'test' });
+
+      logger.sampled('school.read.failed', { reason: 'offline' }, { maxPerMinute: 1, level: 'warn' });
+      logger.sampled('school.read.failed', { reason: 'offline' }, { maxPerMinute: 1, level: 'warn' });
+      vi.advanceTimersByTime(60_001);
+      logger.sampled('school.read.failed', { reason: 'offline' }, { maxPerMinute: 1, level: 'warn' });
+
+      expect(sentEvents().filter((event) => event.event === 'school.read.failed'))
+        .toEqual([expect.objectContaining({ level: 'warn' }), expect.objectContaining({ level: 'warn' })]);
+      expect(sentEvents().find((event) => event.event === 'school.read.failed.aggregated'))
+        .toMatchObject({ level: 'warn', data: { skippedCount: 1 } });
+    });
+
     test('drops events over budget within the same window', () => {
       const logger = createLogger({ app: 'test' });
 

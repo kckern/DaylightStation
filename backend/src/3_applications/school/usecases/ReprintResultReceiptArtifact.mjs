@@ -37,14 +37,16 @@ export class ReprintResultReceiptArtifact {
       sha256: artifact.manifest.sha256, kind: artifact.manifest.kind };
     if (prior) return { ...preview, applied: true };
     if (!apply) return preview;
-    const printed = await this.#printer.print({ bytes: artifact.bytes, representation: artifact.manifest.representation,
+    const outcome = await this.#printer.print({ bytes: artifact.bytes, representation: artifact.manifest.representation,
       jobName: `school-receipt-reprint-${artifactId}` });
-    if (printed !== true) throw new DomainInvariantError('thermal printer did not confirm the reprint', { code: 'PRINT_NOT_CONFIRMED' });
+    const printed = outcome === true || outcome?.printed === true;
+    const confirmed = outcome === true || outcome?.confirmed === true;
+    if (!printed) throw new DomainInvariantError('thermal printer did not dispatch the reprint', { code: 'PRINT_NOT_DISPATCHED' });
     const built = createEvent({ type: 'result_receipt_reprinted', at: this.#clock().toISOString(), sessionId,
-      artifactId, confirmed: true, idempotencyKey, reprintedBy });
+      artifactId, confirmed, idempotencyKey, reprintedBy });
     if (built.errors.length) throw new ValidationError(built.errors.join('; '));
     await this.#sessions.appendEvent(sessionId, built.event);
-    return { ...preview, applied: true };
+    return { ...preview, applied: true, confirmed };
   }
 }
 

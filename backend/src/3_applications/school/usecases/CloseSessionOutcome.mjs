@@ -642,14 +642,19 @@ export class CloseSessionOutcome {
    */
   async #printCapturedReceipt(artifact, sourceDocument = null) {
     try {
-      const confirmed = await this.#receiptArtifactPrinter.print({
+      const outcome = await this.#receiptArtifactPrinter.print({
         bytes: artifact.bytes,
         representation: artifact.manifest.representation,
         jobName: `school-result-${artifact.manifest.artifactId}`,
         sourceDocument,
       });
-      if (confirmed === true) return { printed: true, printReason: null };
-      return { printed: false, printReason: 'printer_unconfirmed' };
+      // Accept the legacy boolean port while retaining the richer claim tier.
+      // Dispatched-but-unverified is honest paper, not an invented failure.
+      if (outcome === true) return { printed: true, printReason: null };
+      return {
+        printed: outcome?.printed === true,
+        printReason: outcome?.reason ?? (outcome?.printed ? 'unverified' : 'printer_refused'),
+      };
     } catch (error) {
       this.#logger.warn?.('school.outcome.receipt-unprinted', {
         id: artifact?.manifest?.artifactId ?? null, reason: error.message,

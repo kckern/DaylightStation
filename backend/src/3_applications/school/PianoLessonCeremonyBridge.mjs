@@ -46,7 +46,7 @@ const BOUNDARY_HOUR = 4;
 
 export class PianoLessonCeremonyBridge {
   #realtime; #assignments; #launcher; #evidence; #hook; #resolveStudent;
-  #timezone; #clock; #logger; #unsubscribe; #announced;
+  #timezone; #clock; #logger; #unsubscribe; #announced; #knownEvidence; #evidenceLoads;
 
   /**
    * @param {object} config
@@ -83,6 +83,8 @@ export class PianoLessonCeremonyBridge {
     this.#logger = logger;
     this.#unsubscribe = null;
     this.#announced = new Map();
+    this.#knownEvidence = new Set();
+    this.#evidenceLoads = new Map();
   }
 
   /** Subscribe to Piano's video and PianoChallenge completion signals. Safe to call more than once. */
@@ -117,20 +119,32 @@ export class PianoLessonCeremonyBridge {
   async reconcile() {
     if (!this.#evidence?.appendEvidence || typeof this.#assignments.list !== 'function') return;
     const assignments = await this.#assignments.list();
+    const summary = { learners: 0, completions: 0, recorded: 0, existing: 0, failed: 0 };
     for (const assignment of assignments ?? []) {
       const learnerId = assignment?.learnerId;
       if (!learnerId) continue;
+      summary.learners += 1;
+      // Load the first-write ids once. Reconciliation is a projection repair,
+      // not an attempt to rewrite historical evidence after catalog metadata
+      // is normalized; an existing id is already settled truth.
+      // eslint-disable-next-line no-await-in-loop
+      await this.#loadKnownEvidence(learnerId);
       for (const enrollment of (assignment.programs ?? []).filter((row) => row?.programId === this.#launcher.id)) {
         const courseId = enrollment.courseId ?? enrollment.corpusId ?? null;
         if (!courseId) continue;
         // eslint-disable-next-line no-await-in-loop
         const status = await this.#launcher.status({ userId: learnerId, programInstance: courseId });
         for (const completion of status?.completedLessons ?? []) {
+          summary.completions += 1;
           // eslint-disable-next-line no-await-in-loop
-          await this.#recordEvidence({ learnerId, enrollment, completion });
+          const outcome = await this.#recordEvidence({ learnerId, enrollment, completion });
+          if (outcome?.status === 'recorded') summary.recorded += 1;
+          else if (outcome?.status === 'duplicate') summary.existing += 1;
+          else summary.failed += 1;
         }
       }
     }
+    this.#logger.info?.('school.piano-progress.reconciled', summary);
   }
 
   /** Unsubscribe. Safe before `start()` and safe to call twice. */
@@ -232,10 +246,13 @@ export class PianoLessonCeremonyBridge {
 
   async #recordEvidence({ learnerId, enrollment, completion }) {
     if (!this.#evidence?.appendEvidence || !completion?.lesson?.id || !completion?.completedAt) return null;
+    const evidenceId = `piano-lesson:${learnerId}:${completion.lesson.id}`;
+    await this.#loadKnownEvidence(learnerId);
+    if (this.#knownEvidence.has(evidenceId)) return { status: 'duplicate' };
     const occurredAt = new Date(Date.parse(completion.completedAt)).toISOString();
     const evidence = {
       schema: 'school.learning-evidence/v1',
-      evidenceId: `piano-lesson:${learnerId}:${completion.lesson.id}`,
+      evidenceId,
       learnerId,
       occurredAt,
       verification: 'verified',
@@ -256,12 +273,24 @@ export class PianoLessonCeremonyBridge {
       source: { surface: 'piano-kiosk', transport: 'playback' },
     };
     try {
-      return await this.#evidence.appendEvidence(evidence);
+      const outcome = await this.#evidence.appendEvidence(evidence);
+      if (outcome?.status === 'recorded' || outcome?.status === 'duplicate') {
+        this.#knownEvidence.add(evidenceId);
+      }
+      return outcome;
     } catch (error) {
+      if (error?.code === 'LEARNING_EVIDENCE_CONFLICT') {
+        // A first-write record from an older projection can legitimately carry
+        // older normalized metadata (for example `plex:plex:`). Keep it and do
+        // not emit the same warning for every completion on every boot.
+        this.#knownEvidence.add(evidenceId);
+        this.#logger.debug?.('school.piano-progress.existing-evidence', { learnerId, evidenceId });
+        return { status: 'duplicate' };
+      }
       this.#logger.warn?.('school.piano-progress.record-failed', {
         learnerId, lessonId: completion.lesson.id, error: error?.message ?? String(error),
       });
-      return null;
+      return { status: 'failed' };
     }
   }
 
@@ -271,9 +300,12 @@ export class PianoLessonCeremonyBridge {
     if (Number.isNaN(completedMs)) return null;
     const occurredAt = new Date(completedMs).toISOString();
     const work = status?.servedWork?.[0] ?? {};
+    const evidenceId = `piano-challenge:${learnerId}:${studyDate}:${descriptorId}`;
+    await this.#loadKnownEvidence(learnerId);
+    if (this.#knownEvidence.has(evidenceId)) return { status: 'duplicate' };
     const evidence = {
       schema: 'school.learning-evidence/v1',
-      evidenceId: `piano-challenge:${learnerId}:${studyDate}:${descriptorId}`,
+      evidenceId,
       learnerId, occurredAt, verification: 'verified',
       activity: { id: descriptorId, kind: 'piano_challenge', itemId: descriptorId, graded: true, action: 'complete' },
       learning: {
@@ -283,10 +315,38 @@ export class PianoLessonCeremonyBridge {
       measures: { engagements: 1, completions: 1 },
       source: { surface: 'piano-kiosk', transport: 'piano-challenge' },
     };
-    try { return await this.#evidence.appendEvidence(evidence); } catch (error) {
+    try {
+      const outcome = await this.#evidence.appendEvidence(evidence);
+      if (outcome?.status === 'recorded' || outcome?.status === 'duplicate') this.#knownEvidence.add(evidenceId);
+      return outcome;
+    } catch (error) {
+      if (error?.code === 'LEARNING_EVIDENCE_CONFLICT') {
+        this.#knownEvidence.add(evidenceId);
+        this.#logger.debug?.('school.piano-progress.existing-evidence', { learnerId, evidenceId });
+        return { status: 'duplicate' };
+      }
       this.#logger.warn?.('school.piano-challenge-progress.record-failed', { learnerId, descriptorId, error: error?.message ?? String(error) });
-      return null;
+      return { status: 'failed' };
     }
+  }
+
+  async #loadKnownEvidence(learnerId) {
+    if (typeof this.#evidence?.listEvidence !== 'function') return;
+    if (!this.#evidenceLoads.has(learnerId)) {
+      this.#evidenceLoads.set(learnerId, Promise.resolve()
+        .then(() => this.#evidence.listEvidence({ learnerIds: [learnerId] }))
+        .then((rows) => {
+          for (const row of rows ?? []) {
+            if (typeof row?.evidenceId === 'string') this.#knownEvidence.add(row.evidenceId);
+          }
+        })
+        .catch((error) => {
+          this.#logger.warn?.('school.piano-progress.existing-read-failed', {
+            learnerId, error: error?.message ?? String(error),
+          });
+        }));
+    }
+    await this.#evidenceLoads.get(learnerId);
   }
 
   /**

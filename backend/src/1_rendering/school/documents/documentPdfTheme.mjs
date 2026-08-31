@@ -167,6 +167,20 @@ export const documentPdfTheme = Object.freeze({
     spacingClass: 'action',
   },
 
+  /** Compact solved-example strip used by issued bank worksheets. */
+  workedExample: {
+    paddingXPt: 7,
+    paddingYPt: 4,
+    lineGapPt: 1.5,
+    radiusPt: 3,
+    accentWidthPt: 2.5,
+    fill: '#F3F5F6',
+    accent: '#66727A',
+    questionStyleKey: 'body',
+    detailStyleKey: 'instruction',
+    spacingClass: 'body',
+  },
+
   asset: {
     placeholderHeightPt: 110,
     maxHeightPt: 260,

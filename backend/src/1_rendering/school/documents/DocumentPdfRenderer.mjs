@@ -505,6 +505,23 @@ export function createDocumentPdfRenderer({
     }
   }
 
+  /** Compact solved-example strip: three measured text groups, one quiet band. */
+  function drawWorkedExample(out, node, { xPt, yPt }) {
+    out.save().fillColor(node.fill)
+      .roundedRect(xPt, yPt, node.widthPt, node.heightPt, node.radiusPt).fill().restore();
+    out.save().lineWidth(node.accentWidthPt).strokeColor(node.accent).lineCap('round')
+      .moveTo(xPt + node.accentWidthPt / 2, yPt + node.radiusPt)
+      .lineTo(xPt + node.accentWidthPt / 2, yPt + node.heightPt - node.radiusPt)
+      .stroke().restore();
+    node.groups.forEach((group) => {
+      drawLines(out, group.lines, {
+        xPt: xPt + node.paddingXPt,
+        yPt: yPt + group.offsetYPt,
+        styleKey: group.styleKey,
+      });
+    });
+  }
+
   function drawLessonCard(out, node, { xPt, yPt, codes = null, page = null }) {
     out.save().lineWidth(node.borderWidthPt).strokeColor(theme.ink.box)
       .roundedRect(xPt, yPt, node.widthPt, node.heightPt, node.radiusPt).stroke().restore();
@@ -876,6 +893,7 @@ export function createDocumentPdfRenderer({
       case 'cardHeader': drawCardHeader(out, node, position); break;
       case 'box': drawBox(out, node, position); break;
       case 'lessonCard': drawLessonCard(out, node, position); break;
+      case 'workedExample': drawWorkedExample(out, node, position); break;
       case 'divider': drawDivider(out, node, position); break;
       case 'list': drawList(out, node, position); break;
       case 'wordbank': drawWordbank(out, node, position); break;

@@ -220,6 +220,26 @@ describe('workbook content blocks — measure + draw', () => {
     });
   });
 
+  describe('compact worked example', () => {
+    const example = {
+      type: 'inset', layout: 'worked_example', title: 'Worked example',
+      questionPrompt: 'In 364, what value does the digit 6 represent?',
+      choiceLabels: ['6', '60', '600'],
+      solutionSteps: ['The 6 is in the tens place.', 'Six tens equal 60.'],
+      correctChoiceIndex: 1, correctText: '60',
+      blocks: [{ type: 'rich_text', md: 'Fallback worked example.' }],
+    };
+
+    it('measures as one compact atomic strip and renders a real PDF', async () => {
+      const [fragment] = measureOne(example);
+      expect(fragment.atomic).toBe(true);
+      expect(fragment.nodes[0].kind).toBe('workedExample');
+      expect(fragment.nodes[0].groups).toHaveLength(3);
+      expect(fragment.heightPt).toBeLessThan(90);
+      await expectRealPdf(doc([example]));
+    });
+  });
+
   describe('list', () => {
     it('bullet items get the bullet-character marker', () => {
       const [fragment] = measureOne({ type: 'list', style: 'bullet', items: ['One', 'Two'] });

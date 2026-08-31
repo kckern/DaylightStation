@@ -60,6 +60,9 @@ describe('GetTeacherToday v2', () => {
       receipt: {
         artifactId: 'receipt_1',
         originalUrl: schoolArtifactRef('receipt_1', 'original'),
+        printed: true,
+        printReason: null,
+        capturedAt: '2026-08-24T16:02:00.000Z',
       },
     });
     // The carried-over lane keeps the same references — the dashboard shows

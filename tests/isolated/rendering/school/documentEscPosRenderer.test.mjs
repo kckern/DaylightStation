@@ -253,6 +253,20 @@ describe('which questions were missed, on the text receipt', () => {
     expect(text).toContain('Check again: 7, 9');
   });
 
+  it('includes the same locator-only review lines carried by the raster receipt', () => {
+    const text = textOf(renderer.render(scored({
+      correctCount: 4, marks: [false, true, false, true, true, true],
+      hints: [
+        '7: review Beast Academy 2A Guide, pages 24–29 · Ones, Tens, Hundreds.',
+        '9: review Beast Academy 2A Guide, pages 24–29 · Ones, Tens, Hundreds.',
+      ],
+    })));
+    expect(text).toContain('REVIEW BEFORE YOU RETRY');
+    expect(text).toContain('7: review Beast Academy 2A Guide, pages 24–29 · Ones, Tens, Hundreds.');
+    expect(text).toContain('9: review Beast Academy 2A Guide, pages 24–29 · Ones, Tens, Hundreds.');
+    expect(text).not.toMatch(/correct answer/i);
+  });
+
   it('says nothing when every question is right', () => {
     const text = textOf(renderer.render(scored({
       correctCount: 6, result: 'passed', marks: [true, true, true, true, true, true],

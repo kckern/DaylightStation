@@ -242,11 +242,15 @@ function ScoreMarks({ score }) {
  * middle-click or long-press); the receipt PNG goes through `window.open` so
  * the log line still fires on the way out.
  */
-function ArtifactButtons({ session, onOpen }) {
+export function DigestArtifactButtons({ session, onOpen = () => {} }) {
   const worksheet = session?.artifacts?.worksheet ?? null;
   const receipt = session?.artifacts?.receipt ?? null;
   const worksheetUrl = worksheet?.originalPdfUrl ?? null;
   const receiptUrl = receipt?.originalUrl ?? null;
+  const receiptStatus = receiptUrl
+    ? receipt.printed === false ? 'Receipt print failed; archived image is available'
+      : receipt.printReason === 'unverified' ? 'Sent to printer; printer confirmation unavailable'
+        : receipt.printed === true ? 'Printer confirmed receipt' : 'Archived receipt' : null;
   if (!worksheetUrl && !receiptUrl) return null;
   return (
     <span className="teacher-lesson-card__artifacts">
@@ -257,10 +261,12 @@ function ArtifactButtons({ session, onOpen }) {
       )}
       {receiptUrl && (
         <button type="button" className="teacher-artifact-btn" aria-label="Open the result receipt"
+          title={receiptStatus}
           onClick={() => { onOpen('receipt', session); window.open(receiptUrl, '_blank', 'noopener'); }}>
           <IconReceipt />
         </button>
       )}
+      {receiptStatus && <small className="teacher-lesson-card__print-state">{receiptStatus}</small>}
     </span>
   );
 }
@@ -446,7 +452,13 @@ function LessonCard({ row, learnerId, base, onOpen, showObligation = true }) {
             <span className="teacher-lesson-card__pending">{pendingText}</span>
           ))}
         </span>
-        {session && <ArtifactButtons session={session} onOpen={onOpen} />}
+        {session && <DigestArtifactButtons session={session} onOpen={onOpen} />}
+        {row.carriedOver && session?.remediation?.activeSessionId && (
+          <a className="teacher-btn teacher-btn--quiet teacher-lesson-card__retry-link"
+            href={teacherSessionPath(learnerId, session.remediation.activeSessionId, base, { from: 'today' })}>
+            Open active retry →
+          </a>
+        )}
       </footer>
     </article>
   );
@@ -520,9 +532,9 @@ function DayDots({ rows }) {
  * The expanded day for one learner: the joined rows as a grid of lesson cards.
  * The join itself lives on the entry above — the collapsed card needs it too.
  */
-function LearnerDayGrid({ learnerId, rows, base, studyDay, agenda, onOpenArtifact }) {
+function LearnerDayGrid({ learnerId, rows, markedToday = [], base, studyDay, agenda, onOpenArtifact }) {
   useEffect(() => {
-    teacherLog.nav('drill-open', { learnerId, lessons: rows.length });
+    teacherLog.nav('drill-open', { learnerId, lessons: rows.length, markedToday: markedToday.length });
   }, [learnerId]); // eslint-disable-line react-hooks/exhaustive-deps -- one open, one event
   return (
     <>
@@ -558,7 +570,23 @@ function LearnerDayGrid({ learnerId, rows, base, studyDay, agenda, onOpenArtifac
               });
             })()}
           </div>
-          : <p className="teacher-panel__empty">Nothing planned or recorded for this day.</p>}
+          : markedToday.length === 0
+            ? <p className="teacher-panel__empty">Nothing planned or recorded for this day.</p>
+            : null}
+      {agenda.state !== 'loading' && markedToday.length > 0 && (
+        <section className="teacher-roster__marked-today" aria-label="Marked today">
+          <h4>Marked today</h4>
+          <p className="teacher-muted">Earlier work graded on this date. Its paper and result stay with the original attempt.</p>
+          <div className="teacher-lesson-grid" data-testid="marked-today-grid">
+            {markedToday.map((session) => (
+              <LessonCard key={session.sessionId} learnerId={learnerId} base={base}
+                onOpen={onOpenArtifact} showObligation={false}
+                row={{ key: session.sessionId, subject: session.subject, status: 'done', carriedOver: true,
+                  session, obligation: null, detail: session.studyDay ? `Study day ${session.studyDay}` : null }} />
+            ))}
+          </div>
+        </section>
+      )}
       <a className="teacher-btn teacher-btn--quiet teacher-roster__day-link"
         href={teacherDayPath(learnerId, studyDay, base)}>
         Open the full day record →
@@ -593,6 +621,9 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   const joined = joinLearnerDay({
     sections: agenda.data?.sections ?? [], sessions, carriedOver, studyDay,
   });
+  const claimedCarried = new Set(joined.rows.filter((joinedRow) => joinedRow.carriedOver)
+    .map((joinedRow) => joinedRow.session?.sessionId));
+  const markedToday = carriedOver.filter((session) => !claimedCarried.has(session.sessionId));
   const openArtifact = (kind, session) => {
     teacherLog.nav('artifact-open', { learnerId, sessionId: session.sessionId, kind });
   };
@@ -608,6 +639,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   const summary = [
     lessons > 0 ? `${doneCount} of ${lessons} lesson${lessons === 1 ? '' : 's'} done` : null,
     unplannedCount > 0 ? `${unplannedCount} extra` : null,
+    markedToday.length > 0 ? `${markedToday.length} marked today` : null,
   ].filter(Boolean).join(' · ');
   // The plan link is for a learner who has not begun. `scored` used to mean
   // "any machine-graded attempt today", which missed a day spent entirely on
@@ -729,7 +761,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
       {open && <div id={panelId} className="teacher-roster__details">
         <LearnerDayGrid
           learnerId={learnerId} rows={joined.rows} base={base}
-          studyDay={studyDay} agenda={agenda} onOpenArtifact={openArtifact}
+          markedToday={markedToday} studyDay={studyDay} agenda={agenda} onOpenArtifact={openArtifact}
         />
       </div>}
     </div>

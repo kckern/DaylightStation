@@ -4,7 +4,7 @@
  * were teaches the household to ignore the chime — so the negative cases
  * below matter at least as much as the positive one.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PianoLessonCeremonyBridge } from '#apps/school/PianoLessonCeremonyBridge.mjs';
 import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
 import { validateLearningEvidence } from '#domains/school/progress/index.mjs';
@@ -149,6 +149,39 @@ describe('PianoLessonCeremonyBridge', () => {
       expect.objectContaining({ courseId: COURSE, unitId: 'plex:season:3', lessonId: 'plex:9001' }),
       expect.objectContaining({ courseId: COURSE, unitId: 'plex:season:3', lessonId: 'plex:9002' }),
     ]);
+  });
+
+  it('keeps first-write historical evidence without replaying metadata conflicts on every boot', async () => {
+    const appendEvidence = vi.fn(async () => { throw new Error('must not rewrite first-write evidence'); });
+    const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+    const bridge = new PianoLessonCeremonyBridge({
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: fakeBus() }),
+      assignments: {
+        get: async () => null,
+        list: async () => [{ learnerId: 'learner4', programs: ENROLLED }],
+      },
+      launcher: {
+        id: 'piano-course',
+        status: async () => ({ completedLessons: [completion()] }),
+      },
+      evidenceRepository: {
+        listEvidence: async () => [{
+          evidenceId: 'piano-lesson:learner4:plex:9001',
+          learning: { courseId: 'plex:plex:675689' },
+        }],
+        appendEvidence,
+      },
+      logger,
+    });
+
+    await bridge.reconcile();
+    await bridge.reconcile();
+
+    expect(appendEvidence).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalledWith('school.piano-progress.record-failed', expect.anything());
+    expect(logger.info).toHaveBeenLastCalledWith('school.piano-progress.reconciled', expect.objectContaining({
+      completions: 1, existing: 1, recorded: 0, failed: 0,
+    }));
   });
 
   it('fires once per learner per study day, not once per lesson', async () => {

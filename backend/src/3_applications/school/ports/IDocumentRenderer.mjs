@@ -47,7 +47,7 @@ export class IDocumentRenderer {
  * through a printer; raw ESC/POS jobs and raster scratch cleanup remain on the
  * adapter side of this boundary.
  *
- * @typedef {{ printWith: (printer: object) => Promise<unknown> }} RenderedReceipt
+ * @typedef {{ printWith: (printer: object, options?: {jobName?: string}) => Promise<unknown> }} RenderedReceipt
  */
 export class IReceiptRenderer {
   /**

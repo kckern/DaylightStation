@@ -150,6 +150,58 @@ describe('question-bank/v2', () => {
     expect(result.bank.items).toHaveLength(6);
   });
 
+  it('freezes one solved lesson example and publishes it ahead of the assessed questions', () => {
+    const instance = createWorksheetInstance({
+      id: 'math/place-value/ws-example', sessionId: 'ses-example', bank,
+      learnerId: 'learner3', enrollmentId: 'enr-math', lessonId: 'place-value',
+      profile: 'lower', seed: 'example', issuedAt: '2026-08-31T00:00:00.000Z',
+      worksheet: { examples: [{
+        id: 'digit-value', title: 'Worked example',
+        question: {
+          type: 'multiple_choice', prompt: 'In 364, what value does the digit 6 represent?',
+          choices: ['6', '60', '600'],
+        },
+        solution: { steps: ['The 6 is in the tens place.', 'Six tens equal 60.'], answer: '60' },
+      }] },
+    });
+    expect(instance.workedExamples).toEqual([expect.objectContaining({
+      id: 'digit-value', solution: expect.objectContaining({ answer: '60' }),
+    })]);
+    expect(Object.isFrozen(instance.workedExamples[0])).toBe(true);
+
+    const source = worksheetInstanceDocument(instance, { title: 'Place Value' });
+    expect(source.blocks[1]).toMatchObject({
+      type: 'inset', layout: 'worked_example', keepWithNext: true,
+      questionPrompt: 'In 364, what value does the digit 6 represent?',
+      choiceLabels: ['6', '60', '600'], correctChoiceIndex: 1, correctText: '60',
+    });
+    expect(source.blocks[2].type).toBe('question');
+    const published = publishDocument(source);
+    expect(published.errors).toBeUndefined();
+    expect(published.published.blocks[1]).toMatchObject({ layout: 'worked_example', correctText: '60' });
+  });
+
+  it('selects an example that applies to the concepts on the frozen questions', () => {
+    const conceptual = {
+      ...bank,
+      items: bank.items.map((entry) => ({ ...entry, concepts: ['place-value'] })),
+    };
+    const instance = createWorksheetInstance({
+      id: 'math/place-value/ws-concept', sessionId: 'ses-concept', bank: conceptual,
+      learnerId: 'learner3', enrollmentId: 'enr-math', lessonId: 'place-value',
+      profile: 'lower', seed: 'concept', issuedAt: '2026-08-31T00:00:00.000Z',
+      worksheet: { examples: [
+        { id: 'fractions', title: 'Fraction example', appliesTo: { concepts: ['fractions'] },
+          question: { type: 'multiple_choice', prompt: 'Which fraction?', choices: ['1/2', '1/3'] },
+          solution: { steps: ['Count the parts.'], answer: '1/2' } },
+        { id: 'place-value', title: 'Place-value example', appliesTo: { concepts: ['place-value'] },
+          question: { type: 'multiple_choice', prompt: 'What value?', choices: ['6', '60'] },
+          solution: { steps: ['Count tens.'], answer: '60' } },
+      ] },
+    });
+    expect(instance.workedExamples.map((example) => example.id)).toEqual(['place-value']);
+  });
+
   it('never emits a book-only or placeholder reading instruction', () => {
     const instance = createWorksheetInstance({
       id: 'ws-reading', sessionId: 'session-reading', bank, learnerId: 'learner3', enrollmentId: 'enr',

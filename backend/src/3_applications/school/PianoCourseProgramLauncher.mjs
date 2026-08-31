@@ -43,6 +43,12 @@ import { inProgressSegments, activeProgressPosition } from '#domains/school/prog
 /** The household's study day rolls at 4am, same as the rest of the agenda. */
 const BOUNDARY_HOUR = 4;
 
+function sampledWarning(logger, event, data) {
+  if (typeof logger?.sampled === 'function') {
+    logger.sampled(event, data, { maxPerMinute: 1, aggregate: true, level: 'warn' });
+  } else logger?.warn?.(event, data);
+}
+
 const plexId = (value) => {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const id = String(value);
@@ -204,7 +210,7 @@ export class PianoCourseProgramLauncher {
       }
       result = { ...answer.result, compoundId: answer.result?.compoundId ?? programInstance };
     } catch (err) {
-      this.#logger.warn?.('school.piano-course.status-failed', {
+      sampledWarning(this.#logger, 'school.piano-course.status-failed', {
         userId, courseId: programInstance, error: err?.message ?? String(err),
       });
       return { error: true };

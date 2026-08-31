@@ -124,6 +124,8 @@ function reply(res, result) {
  * @param {object} [deps.gradeSubmission]
  * @param {object} [deps.closeSessionOutcome]
  * @param {object} [deps.openRemediation]
+ * @param {object} [deps.replaceRemediation] - guarded replacement of an
+ *   already-issued retry that has no learner evidence
  * @param {object} [deps.resolveReviewItem] - guarded sign-off; without it the
  *   sign-off route does not exist. The store is never written to directly.
  * @param {object} [deps.setAssignments] - guarded planning write; likewise
@@ -147,6 +149,7 @@ export function createSchoolLifecycleRouter({
   gradeSubmission = null,
   closeSessionOutcome = null,
   openRemediation = null,
+  replaceRemediation = null,
   resolveReviewItem = null,
   setAssignments = null,
   enrollLearner = null,
@@ -170,7 +173,7 @@ export function createSchoolLifecycleRouter({
     lifecycleReadService,
     lifecycleSyllabusService,
     getLearnerDayCompletion, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
-    submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
+    submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation, replaceRemediation,
     resolveReviewItem, setAssignments, enrollLearner, unenrollLearner, markSessionAbandoned,
     replaceLostAnswerSheet, createLostAnswerSheetTicket,
   }).filter(([, v]) => v).map(([k]) => k);
@@ -433,6 +436,26 @@ export function createSchoolLifecycleRouter({
   if (openRemediation) {
     router.post('/sessions/:sessionId/remediation', asyncHandler(async (req, res) => {
       reply(res, await openRemediation.execute({ sessionId: req.params.sessionId }));
+    }));
+  }
+
+  if (replaceRemediation) {
+    router.post('/sessions/:sessionId/remediation/replace', guarded(async (req, res) => {
+      const {
+        currentSessionId = null,
+        reason = null,
+        replacedBy = null,
+        pin = null,
+        idempotencyKey = null,
+      } = req.body || {};
+      reply(res, await replaceRemediation.execute({
+        sessionId: req.params.sessionId,
+        currentSessionId,
+        reason,
+        replacedBy,
+        pin,
+        idempotencyKey,
+      }));
     }));
   }
 

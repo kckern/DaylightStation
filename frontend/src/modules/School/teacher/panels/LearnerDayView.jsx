@@ -19,6 +19,7 @@ import { useTeacherWrite } from '../useTeacherWrite.js';
 import { teacherLog } from '../teacherLog.js';
 import PanelFrame from './PanelFrame.jsx';
 import SessionPaperRecord from './SessionPaperRecord.jsx';
+import { DigestArtifactButtons } from './RosterStrip.jsx';
 import { agendaPreviewSrc } from './agendaPreviewSrc.js';
 
 // Client-minted, resource-scoped: the same shape ArtifactReprint uses so a
@@ -313,6 +314,16 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
                     Study day {teacherDate(session.studyDay)}
                     {teacherTime(session.processedAt) ? ` · marked ${teacherTime(session.processedAt)}` : ''}
                   </small>
+                </div>
+                <div className="teacher-day-row__right">
+                  {scoreLine(session) && <span className="teacher-day-row__score">{scoreLine(session)}</span>}
+                  <DigestArtifactButtons session={session} onOpen={(kind, openedSession) => {
+                    teacherLog.nav('artifact-open', { learnerId, sessionId: openedSession.sessionId, kind });
+                  }} />
+                  {session.remediation?.activeSessionId && (
+                    <button type="button" className="teacher-btn teacher-btn--quiet"
+                      onClick={() => onOpenSession(session.remediation.activeSessionId)}>Open active retry →</button>
+                  )}
                 </div>
               </li>
             ))}

@@ -200,6 +200,33 @@ describe('TodayTab', () => {
     open.mockRestore();
   });
 
+  it('keeps a failed prior-day receipt visible beside the active retry', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
+      { subject: 'math', servedToday: false, next: { unitId: 'place-value', title: 'Place Value Retry', sessionId: 'ses_retry' } },
+    ] }));
+    schoolApi.teacherDay.mockResolvedValue(ok({ studyDay: '2026-08-31', learners: [{
+      learnerId: 'learner-a', pendingReview: 0,
+      sessions: [{ sessionId: 'ses_retry', unitId: 'place-value', lessonTitle: 'Place Value Retry',
+        subject: 'math', state: 'issued', studyDay: '2026-08-31', artifacts: { worksheet: null, receipt: null },
+        remediation: { ofSessionId: 'ses_original', activeSessionId: null, variant: 1 } }],
+      processedToday: [{ sessionId: 'ses_original', unitId: 'place-value', lessonTitle: 'Place Value to 1,000',
+        subject: 'math', state: 'remediation_opened', studyDay: '2026-08-30',
+        effectiveScore: { correctCount: 1, totalCount: 6, percent: 16.67 },
+        remediation: { ofSessionId: null, activeSessionId: 'ses_retry', variant: 0 },
+        artifacts: { worksheet: null, receipt: { originalUrl: '/issued/failed-receipt.png', printed: true, printReason: 'unverified' } } }],
+    }] }));
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    mount(<TodayTab kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    expect(await screen.findByRole('heading', { name: 'Marked today' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('lesson-card')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: /Open active retry/ })).toHaveAttribute('href', expect.stringContaining('ses_retry'));
+    fireEvent.click(screen.getByRole('button', { name: /Open the result receipt/ }));
+    expect(open).toHaveBeenCalledWith('/issued/failed-receipt.png', '_blank', 'noopener');
+    expect(screen.getByText(/Sent to printer; printer confirmation unavailable/)).toBeInTheDocument();
+    open.mockRestore();
+  });
+
   it('the agenda is one tap from the roster card, outside the accordion', async () => {
     mount(<TodayTab kids={KIDS} />);
     const open = vi.spyOn(window, 'open').mockImplementation(() => ({}));

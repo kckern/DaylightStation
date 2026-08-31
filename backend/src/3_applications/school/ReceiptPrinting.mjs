@@ -13,6 +13,8 @@
  * wired, the lifecycle still runs and every response reports that nothing
  * printed.
  */
+import { readPrintOutcome } from '#domains/core/utils/printOutcome.mjs';
+
 export class ReceiptPrinting {
   #renderer; #printer; #logger;
 
@@ -86,22 +88,29 @@ export class ReceiptPrinting {
       //
       // A plain boolean is still accepted so test doubles and any other printer
       // surface that answers true/false keep working, and it never rejects.
-      const outcome = await artifact.printWith(this.#printer);
-      const dispatched = outcome === true || outcome?.dispatched === true;
-      const verified = outcome === true || outcome?.verified === true;
-      const faulted = outcome?.verification === 'faulted';
-      if (verified) return { printed: true, reason: null };
-      if (dispatched) {
-        if (faulted) {
-          this.#logger.warn?.('school.receipt.printer-fault', {
-            id: document.id, faults: outcome?.faults ?? null,
-          });
-          return { printed: false, reason: 'printer_fault' };
-        }
-        this.#logger.warn?.('school.receipt.unverified', { id: document.id });
+      const outcome = await artifact.printWith(this.#printer, {
+        jobName: `school-receipt-${document.id}`,
+      });
+      const claim = readPrintOutcome(outcome);
+      const evidence = {
+        id: document.id,
+        jobName: `school-receipt-${document.id}`,
+        dispatched: outcome === true || outcome?.dispatched === true,
+        verification: outcome === true ? 'verified' : outcome?.verification ?? null,
+        faults: outcome?.faults ?? null,
+        statusAnswered: outcome?.printerState?.answered ?? null,
+        statusError: outcome?.printerState?.error ?? null,
+      };
+      if (claim.confirmed) return { printed: true, reason: null };
+      if (claim.printed) {
+        this.#logger.warn?.('school.receipt.unverified', evidence);
         return { printed: true, reason: 'unverified' };
       }
-      this.#logger.warn?.('school.receipt.refused', { id: document.id });
+      if (claim.faulted && evidence.dispatched) {
+        this.#logger.warn?.('school.receipt.printer-fault', evidence);
+        return { printed: false, reason: 'printer_fault' };
+      }
+      this.#logger.warn?.('school.receipt.refused', evidence);
       return { printed: false, reason: 'printer_refused' };
     } catch (err) {
       this.#logger.warn?.('school.receipt.failed', { id: document.id, error: err.message });

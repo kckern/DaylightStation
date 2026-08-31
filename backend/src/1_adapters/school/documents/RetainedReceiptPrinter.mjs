@@ -5,6 +5,7 @@ import { shortId } from '#system/utils/id.mjs';
 import { transcribeEscPosItems } from '#system/utils/escposTranscript.mjs';
 import { codesFrom as receiptCodesFrom } from './DocumentReceiptRasterAdapter.mjs';
 import { IReceiptArtifactPrinter } from '#apps/school/ports/IReceiptArtifactPrinter.mjs';
+import { readPrintOutcome } from '#domains/core/utils/printOutcome.mjs';
 
 /** Prints retained PNG bytes while preserving transcript/codes and confirmation semantics. */
 export class RetainedReceiptPrinter extends IReceiptArtifactPrinter {
@@ -17,7 +18,9 @@ export class RetainedReceiptPrinter extends IReceiptArtifactPrinter {
   }
 
   async print({ bytes, representation, jobName, sourceDocument = null }) {
-    if (representation?.mediaType !== 'image/png') return false;
+    if (representation?.mediaType !== 'image/png') {
+      return { printed: false, confirmed: false, faulted: false, reason: 'unsupported_representation' };
+    }
     let transcript;
     let codes;
     if (sourceDocument && this.textRenderer) {
@@ -39,7 +42,22 @@ export class RetainedReceiptPrinter extends IReceiptArtifactPrinter {
         ...(typeof transcript === 'string' ? { transcript } : {}),
         ...(codes ? { codes } : {}),
       });
-      return outcome === true || outcome?.verified === true;
+      const claim = readPrintOutcome(outcome);
+      const dispatched = outcome === true || outcome?.dispatched === true;
+      const reason = claim.confirmed ? null : claim.printed ? 'unverified'
+        : claim.faulted && dispatched ? 'printer_fault' : 'printer_refused';
+      const evidence = {
+        jobName,
+        ...claim,
+        reason,
+        dispatched,
+        verification: outcome === true ? 'verified' : outcome?.verification ?? null,
+        faults: outcome?.faults ?? null,
+        statusAnswered: outcome?.printerState?.answered ?? null,
+        statusError: outcome?.printerState?.error ?? null,
+      };
+      this.logger[claim.confirmed ? 'info' : 'warn']?.('school.receipt.artifact-print', evidence);
+      return evidence;
     } finally {
       await removeFileAsync(temporaryPath, { force: true }).catch(() => {});
     }

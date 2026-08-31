@@ -469,6 +469,27 @@ describe('the result receipt reaches paper', () => {
     ]);
   });
 
+  it('records a retained receipt as printed when dispatch succeeded but confirmation was unreadable', async () => {
+    const capture = { execute: vi.fn(async ({ artifactId }) => ({ created: true, artifact: {
+      bytes: Buffer.from('the frozen receipt raster'),
+      manifest: { artifactId, representation: { mediaType: 'image/png' } },
+    } })) };
+    const printer = { print: vi.fn(async () => ({
+      printed: true, confirmed: false, faulted: false, reason: 'unverified',
+    })) };
+    build({ receiptCapture: capture, receiptArtifactPrinter: printer });
+    await graded();
+
+    const result = await close.execute({ sessionId: SID });
+
+    expect(result).toMatchObject({ printed: true, printReason: 'unverified' });
+    expect(sessions.derive(SID).resultReceiptArtifacts).toEqual([
+      expect.objectContaining({
+        artifactId: 'receipt/ses_1/original', printed: true, printReason: 'unverified',
+      }),
+    ]);
+  });
+
   it('prints the receipt as part of settling', async () => {
     await graded();
     const result = await close.execute({ sessionId: SID });

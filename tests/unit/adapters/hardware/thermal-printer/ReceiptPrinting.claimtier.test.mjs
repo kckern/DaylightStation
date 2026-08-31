@@ -24,6 +24,7 @@
  */
 import { describe, it, expect, jest } from '@jest/globals';
 import { ThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs';
+import { ReceiptRendererAdapter } from '#adapters/school/documents/DocumentRendererAdapter.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 
 /** The live printer's `DLE EOT` replies, probed read-only 2026-08-25. */
@@ -88,7 +89,9 @@ function wire(createTransport, logger = quietLogger()) {
     { host: '10.0.0.50', port: 9100, timeout: 5000, upsideDown: false },
     { logger, createTransport, statusSettleMs: 5 },
   );
-  const renderer = { render: jest.fn(async () => ({ ...JOB })) };
+  const renderer = new ReceiptRendererAdapter({
+    renderer: { render: jest.fn(async () => ({ ...JOB })) },
+  });
   return { receipts: new ReceiptPrinting({ renderer, printer, logger }), logger };
 }
 
