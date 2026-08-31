@@ -13,9 +13,12 @@ export class ISchoolRealtimeGateway {
   onPianoLessonCompleted(_handler) { throw new Error('onPianoLessonCompleted must be implemented'); }
   onPianoChallengeCompleted(_handler) { throw new Error('onPianoChallengeCompleted must be implemented'); }
   onSessionOutcomeRecorded(_handler) { throw new Error('onSessionOutcomeRecorded must be implemented'); }
+  onCompletionInputChanged(_handler) { throw new Error('onCompletionInputChanged must be implemented'); }
+  onCompletionStateObserved(_handler) { throw new Error('onCompletionStateObserved must be implemented'); }
   onPrintSheet(_readerConfig, _handler) { throw new Error('onPrintSheet must be implemented'); }
   languageDayCompleted(_fact) { throw new Error('languageDayCompleted must be implemented'); }
   sessionOutcomeRecorded(_fact) { throw new Error('sessionOutcomeRecorded must be implemented'); }
+  assignmentsChanged(_fact) { throw new Error('assignmentsChanged must be implemented'); }
   completionStateObserved(_fact) { throw new Error('completionStateObserved must be implemented'); }
   schoolCeremony(_announcement) { throw new Error('schoolCeremony must be implemented'); }
   programDayBypassChanged(_announcement) { throw new Error('programDayBypassChanged must be implemented'); }

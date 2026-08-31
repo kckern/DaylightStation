@@ -4,21 +4,24 @@ This reference covers the seams around State Gates: authenticated producers, sta
 consumers, durable commits, startup recovery, time boundaries, logging, and migration
 rules.
 
-## Current foundation status
+## Current integration status
 
-No existing feature is migrated. Root composition constructs the State Gates module,
-mounts its APIs, registers `manual-attestation`, and supplies no `producerPrincipals`.
-Consequences:
+The first production slice is active:
 
-- a policy containing only `manual-attestation` claims can activate now;
-- a policy declaring `school`, `fitness`, or another producer is rejected until an
-  explicit authenticated binding is added;
-- no current Piano, School, Fitness, companion-media, chore, or screen gate changes
-  behavior; and
-- no frontend or rendering component consumes gate state yet.
+- School publishes `school.day.complete` after session outcomes, piano lessons and
+  challenges, story reads, program bypasses, assignment/enrollment edits, startup
+  reconciliation, a 15-second authoritative-state reconciliation backstop, and
+  study-day rollover; an indeterminate School result retracts completion evidence
+  so `piano.games` remains denied with `degraded: true`;
+- the fail-closed `piano.games` entitlement controls PianoKiosk Games;
+- Fitness publishes roster-wide `fitness.weekly.rings` after startup, session writes,
+  session finalization/deletion, five-minute reconciliation, and weekly rollover; and
+- `AgendaStatusBoard` reads the active `fitness.weekly-rings` progress count.
 
-This is intentional. A producer/consumer migration is a separate domain decision, not
-a configuration-only switch.
+Both producers enter through fixed authenticated principals. Consumers bootstrap from
+current HTTP state, refresh from the live `state-gates` WebSocket topic, and retain
+periodic snapshot polling as disconnect recovery. The old domain reads remain additive
+compatibility surfaces, not fallbacks used by the migrated consumers.
 
 ## Composition
 
@@ -32,6 +35,7 @@ a configuration-only switch.
 - household subject catalog;
 - `StateGatesContainer` and engine;
 - authenticated producer ingress;
+- the installed School/Fitness policy when no household candidate exists;
 - subscriber, entitlement, and admin routers; and
 - one validity-boundary timer per configured household.
 
@@ -102,9 +106,9 @@ Every migration must define:
 - gate ID;
 - `fail_open` or `fail_closed` behavior for indeterminate evidence;
 - current-state bootstrap query and filters;
-- replay/live subscription handoff;
-- transition-ID deduplication;
-- cursor-expiry resynchronization; and
+- live refresh or replay/subscription handoff;
+- gap and duplicate handling appropriate to that mode; and
+- resynchronization after disconnect or cursor expiry; and
 - local presentation for granted, denied, and degraded decisions.
 
 Consumers should use entitlement decisions for binary gating and gate evaluations for
@@ -119,9 +123,16 @@ genuine later `GateStateChanged` to `satisfied` or `EntitlementDecisionChanged` 
 
 ### Bootstrap and replay
 
-Use the snapshot/subscription/replay algorithm in [API and events](api-and-events.md).
-Never treat the event bus as a complete history. Replay retention is bounded and a
-consumer must handle `CURSOR_EXPIRED` by taking a new snapshot.
+Consumers that maintain a local projection or react to exact transitions must use the
+snapshot/subscription/replay algorithm in [API and events](api-and-events.md). Replay
+retention is bounded, so they must handle `CURSOR_EXPIRED` by taking a new snapshot.
+
+A consumer may instead treat every live event only as an invalidation signal and
+immediately refetch its filtered current-state snapshot. In that mode, event gaps,
+duplicates, and ordering do not alter local truth; periodic and visibility-triggered
+snapshot refresh provide disconnect recovery. PianoKiosk and `AgendaStatusBoard` use
+this invalidation-and-refetch mode. Neither mode may treat the event bus as history or
+truth.
 
 ## Persistence
 
@@ -283,8 +294,8 @@ actor provenance, or evidence.
 
 - [ ] Capability ID, gate ID, and failure posture authored.
 - [ ] Snapshot filters and revision storage defined.
-- [ ] Replay/live buffering and transition deduplication implemented.
-- [ ] `CURSOR_EXPIRED` resnapshot behavior tested.
+- [ ] Invalidation/refetch or replay/live buffering behavior implemented.
+- [ ] Disconnect recovery and, when replay is used, `CURSOR_EXPIRED` behavior tested.
 - [ ] Granted, denied, and degraded presentation remains consumer-owned.
 - [ ] Initial observations do not trigger transition ceremonies.
 
@@ -299,6 +310,6 @@ actor provenance, or evidence.
 - [x] CAS exhaustion, interrupted writes, whole-batch compaction, startup ordering,
   refresh failure, disposal, jitter, and multi-household isolation covered.
 
-These checks exercise the State Gates published language with isolated principals and
-fakes. They do not import a real School, Fitness, Piano, chore, or screen domain; those
-producer/consumer migrations remain separate work.
+These checks exercise the State Gates language with isolated principals and fakes plus
+the real School and Fitness translators and the Piano/Agenda consumer models. Chore,
+companion-media, and screen producer/consumer migrations remain separate work.

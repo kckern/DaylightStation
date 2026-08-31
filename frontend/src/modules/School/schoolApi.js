@@ -20,9 +20,8 @@ async function req(path, body, method, headers = {}) {
 
 /**
  * Same never-throws `{ok, status, data}` contract as `req`, but for a path
- * OUTSIDE `/api/v1/school`. Weekly measures are not a school resource — they
- * are a view over what fitness recorded — so they live under `/api/v1/measures`
- * and the school board merely consumes them.
+ * OUTSIDE `/api/v1/school`. State Gates is a shared subscriber resource, so
+ * the school board consumes it without pretending it is a School endpoint.
  */
 async function reqAbsolute(path) {
   try {
@@ -36,10 +35,14 @@ async function reqAbsolute(path) {
 
 export const schoolApi = {
   /**
-   * Roster-wide weekly measures. One request for the whole board — the same
-   * shape as `teacherDay`, and for the same reason: four cards must not mean
-   * four round trips on a panel that repaints every five minutes.
+   * Roster-wide State Gates query. The filters keep this one request for the
+   * whole board; four learner cards must not mean four round trips.
    */
+  stateGates: (filters = {}) => reqAbsolute(
+    `/api/v1/state-gates?${new URLSearchParams(Object.entries(filters).filter(([, value]) => value != null))}`,
+  ),
+
+  // Compatibility view for callers not yet migrated to State Gates.
   measuresWeekly: (week = null) => reqAbsolute(
     `/api/v1/measures/weekly${week ? `?${new URLSearchParams({ week })}` : ''}`,
   ),

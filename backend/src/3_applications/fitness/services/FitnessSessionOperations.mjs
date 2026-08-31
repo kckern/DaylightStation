@@ -1,12 +1,27 @@
 /** Cohesive session queries/workflows used by the HTTP surface. */
 export class FitnessSessionOperations {
-  constructor({ sessions, grouping = null, timelapse = null, renderReceipt = null, config = null, logger = console }) {
+  constructor({
+    sessions, grouping = null, timelapse = null, renderReceipt = null,
+    config = null, onSessionsChanged = null, logger = console,
+  }) {
     this.sessions = sessions;
     this.grouping = grouping;
     this.timelapse = timelapse;
     this.renderReceipt = renderReceipt;
     this.config = config;
+    this.onSessionsChanged = onSessionsChanged;
     this.logger = logger;
+  }
+
+  notifySessionsChanged(change) {
+    if (typeof this.onSessionsChanged !== 'function') return;
+    try {
+      Promise.resolve(this.onSessionsChanged(change)).catch((error) => {
+        this.logger.warn?.('fitness.sessions.state-gates-refresh-failed', { error: error?.message });
+      });
+    } catch (error) {
+      this.logger.warn?.('fitness.sessions.state-gates-refresh-failed', { error: error?.message });
+    }
   }
 
   async dates(householdId) {
@@ -31,12 +46,14 @@ export class FitnessSessionOperations {
   async delete(sessionId, householdId) {
     if (!await this.sessions.getSession(sessionId, householdId)) return { kind: 'not_found' };
     await this.sessions.deleteSession(sessionId, householdId);
+    this.notifySessionsChanged({ operation: 'deleted', sessionId, householdId });
     this.logger.info?.('fitness.sessions.deleted', { sessionId });
     return { kind: 'deleted' };
   }
 
   async end(sessionId, householdId, endTime) {
     const session = await this.sessions.endSession(sessionId, householdId, endTime);
+    this.notifySessionsChanged({ operation: 'ended', sessionId, householdId });
     this.logger.info?.('fitness.sessions.finalized', { sessionId, endTime, durationMs: session.durationMs });
     if (this.timelapse) Promise.resolve(this.timelapse.execute({
       sessionId: session.sessionId?.toString() || sessionId, householdId,
@@ -60,6 +77,7 @@ export class FitnessSessionOperations {
       return { kind: 'forbidden' };
     }
     const value = await this.sessions.saveSessionWithReceipt(sessionData, householdId);
+    this.notifySessionsChanged({ operation: 'saved', sessionId: sessionData?.sessionId ?? null, householdId });
     return { kind: 'saved', ...value };
   }
 }

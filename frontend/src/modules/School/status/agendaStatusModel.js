@@ -133,12 +133,22 @@ export function summarize(sections, sessions, entries = []) {
   };
 }
 
-/** learnerId -> ring count, from one roster-wide measures read. */
-export function ringsByLearner(payload) {
+/** learnerId -> ring count, from active fitness.weekly-rings gate progress. */
+export function ringsByLearner(payload, at = Date.now()) {
   const out = {};
-  for (const row of payload?.learners ?? []) {
-    const rings = (row.measures ?? []).find((m) => m.id === 'fitness.rings');
-    if (row.learnerId && Number.isFinite(rings?.value)) out[row.learnerId] = rings.value;
+  const chosen = new Map();
+  for (const item of payload?.items ?? []) {
+    const evaluation = item?.evaluation;
+    if (evaluation?.gateId !== 'fitness.weekly-rings') continue;
+    const { period, subject, progress } = evaluation;
+    if (subject?.kind !== 'learner' || !subject.id || period?.kind !== 'interval') continue;
+    if (!Number.isFinite(period.startsAt) || !Number.isFinite(period.endsAt)
+      || at < period.startsAt || at >= period.endsAt || !Number.isFinite(progress?.current)) continue;
+    const previous = chosen.get(subject.id);
+    if (!previous || period.startsAt > previous.startsAt) {
+      chosen.set(subject.id, { startsAt: period.startsAt, value: progress.current });
+    }
   }
+  for (const [learnerId, value] of chosen) out[learnerId] = value.value;
   return out;
 }

@@ -243,4 +243,17 @@ describe('State Gates adapters', () => {
     expect(eventBus.publish.mock.calls[0][1].payload).not.toHaveProperty('previous');
     expect(eventBus.publish.mock.calls[0][1].payload).not.toHaveProperty('assertion');
   });
+
+  it('broadcasts live envelopes when the event bus has a WebSocket transport', async () => {
+    const eventBus = { publish: vi.fn(), broadcast: vi.fn() };
+    const publisher = new StateGatesEventBusPublisher({ eventBus });
+    await publisher.publish([{
+      transitionId: 't1', householdRevision: 1, ordinal: 0, occurredAt: 1,
+      kind: 'StateObservation', payload: { observationKind: 'gate' },
+    }]);
+    expect(eventBus.broadcast).toHaveBeenCalledWith('state-gates', expect.objectContaining({
+      schema: 'daylight.state-gates-event/v1', transitionId: 't1',
+    }));
+    expect(eventBus.publish).not.toHaveBeenCalled();
+  });
 });

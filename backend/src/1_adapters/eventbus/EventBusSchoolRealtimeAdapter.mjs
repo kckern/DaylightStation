@@ -68,6 +68,25 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
   onPianoLessonCompleted(handler) { return this.#on('piano.lesson.completed', handler); }
   onPianoChallengeCompleted(handler) { return this.#on('piano.school-challenge.completed', handler); }
   onSessionOutcomeRecorded(handler) { return this.#on('school.session.outcome-recorded', handler); }
+  onCompletionInputChanged(handler) {
+    const learner = (wire) => {
+      const learnerId = wire?.learnerId ?? wire?.userId;
+      return typeof learnerId === 'string' && learnerId.trim()
+        ? { ...wire, learnerId: learnerId.trim() }
+        : null;
+    };
+    const schoolChange = (wire) => ['story-read', 'program-day-bypass-changed'].includes(wire?.event)
+      ? learner(wire) : null;
+    const unsubscribers = [
+      this.#on('school.session.outcome-recorded', handler, learner),
+      this.#on('piano.lesson.completed', handler, learner),
+      this.#on('piano.school-challenge.completed', handler, learner),
+      this.#on('school.assignments.changed', handler, learner),
+      this.#on('school', handler, schoolChange),
+    ];
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
+  }
+  onCompletionStateObserved(handler) { return this.#on('school.completion.state-observed', handler); }
   onPrintSheet(config, handler) {
     const unsubscribers = printTopics(config).map((topic) => this.#on(topic, handler, (wire) => (
       wire?.event === 'sheet' && Array.isArray(wire.marks) ? decodePrintSheet(wire.marks) : null
@@ -77,6 +96,7 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
 
   languageDayCompleted(fact) { return this.#publish('school.language.day-complete', fact); }
   sessionOutcomeRecorded(fact) { return this.#publish('school.session.outcome-recorded', fact); }
+  assignmentsChanged(fact) { return this.#publish('school.assignments.changed', fact); }
   completionStateObserved(fact) { return this.#publish('school.completion.state-observed', fact); }
   schoolCeremony(announcement) { return this.#broadcast('school', { event: 'piano-lesson-complete', ...announcement }); }
   programDayBypassChanged(announcement) { return this.#broadcast('school', { event: 'program-day-bypass-changed', ...announcement }); }

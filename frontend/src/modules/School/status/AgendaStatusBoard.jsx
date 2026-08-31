@@ -18,11 +18,10 @@
  * it does not need. Colour alone carries it. Do not re-add motion here.
  *
  * RINGS ARE A SECOND, INDEPENDENT READ (2026-08-26). The discs say what school
- * work is planned and done; the ring count says how much the child has MOVED
- * this week (Sunday 04:00 → Saturday 04:00). It is deliberately additive: the
- * measures request is fired alongside the per-learner plans and a failure
- * costs the number, never the card. v1 displays the figure only — no target,
- * no progress bar, no gate.
+ * work is planned and done; the ring count comes from the active
+ * `fitness.weekly-rings` State Gate progress projection. The request is fired
+ * alongside the per-learner plans and a failure costs the number, never the
+ * card.
  *
  * The ring is STATIC here, for the same reason the cleared card is: nothing on
  * this panel moves. `RingIcon` spins only where motion is already the idiom —
@@ -78,7 +77,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
   const [nonce, setNonce] = useState(0);
   // Kept out of `rows` on purpose: the plan reads settle per-card and this one
   // covers the whole roster, so folding it in would mean re-settling every
-  // card when it lands — and a slow measures read would hold the plans back.
+  // card when it lands — and a slow State Gates read would hold the plans back.
   const [rings, setRings] = useState({});
   const rosterIds = useMemo(() => new Set(kids.map((kid) => kid.id)), [kids]);
 
@@ -122,12 +121,16 @@ export default function AgendaStatusBoard({ kids = [], day }) {
       });
 
     // Fired alongside the plans, never awaited by them. A failed or slow
-    // measures read costs the ring numbers and nothing else.
-    if (schoolApi.measuresWeekly) {
-      schoolApi.measuresWeekly(day)
-        .then((res) => { if (alive && res?.ok) setRings(ringsByLearner(res.data)); })
+    // State Gates read costs the ring numbers and nothing else.
+    if (schoolApi.stateGates) {
+      schoolApi.stateGates({ gateId: 'fitness.weekly-rings', periodKind: 'interval' })
+        .then((res) => {
+          if (!alive) return;
+          setRings(res?.ok ? ringsByLearner(res.data) : {});
+        })
         .catch((error) => {
-          schoolLog.selfServiceError?.('status-board.measures-failed', { error: error?.message });
+          if (alive) setRings({});
+          schoolLog.selfServiceError?.('status-board.state-gates-failed', { error: error?.message });
         });
     }
 
@@ -201,6 +204,19 @@ export default function AgendaStatusBoard({ kids = [], day }) {
     setNonce((n) => n + 1);
   }, [day, rosterIds]);
   useWebSocketSubscription('school', onSchool, [onSchool]);
+
+  const onStateGates = useCallback((event) => {
+    const current = event?.payload?.current;
+    const gateId = current?.gateId ?? event?.payload?.gateId ?? null;
+    if (gateId !== 'fitness.weekly-rings') return;
+    const learnerId = current?.subject?.id ?? event?.payload?.subject?.id ?? null;
+    if (learnerId && !rosterIds.has(learnerId)) return;
+    schoolLog.selfService('status-board.refresh', {
+      source: 'state-gates', event: event?.kind ?? null, learnerId,
+    });
+    setNonce((n) => n + 1);
+  }, [rosterIds]);
+  useWebSocketSubscription('state-gates', onStateGates, [onStateGates]);
 
   const visible = useMemo(() => rows ?? [], [rows]);
   // Once EVERY card has settled with nothing to show, the board is not a

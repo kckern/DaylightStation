@@ -51,6 +51,14 @@ function filters(query) {
   };
 }
 
+function gateFilters(query) {
+  const gateId = scalarQuery(query, 'gateId');
+  return {
+    ...filters(query),
+    gateId: gateId == null ? undefined : namespacedId(gateId, 'gateId'),
+  };
+}
+
 function replayInteger(query, field, fallback, { allowZero, code }) {
   const value = scalarQuery(query, field, code);
   if (value == null) return fallback;
@@ -116,7 +124,7 @@ export function createStateGatesRouter({ operations, actorFromRequest }) {
   }));
 
   router.get('/', asyncHandler(async (req, res) => {
-    res.json(await operations.getCurrentGates(req.householdId, filters(req.query)));
+    res.json(await operations.getCurrentGates(req.householdId, gateFilters(req.query)));
   }));
 
   router.get('/:gateId', asyncHandler(async (req, res) => {
