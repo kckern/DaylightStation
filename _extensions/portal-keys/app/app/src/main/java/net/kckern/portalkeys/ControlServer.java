@@ -3,6 +3,7 @@ package net.kckern.portalkeys;
 import android.util.Log;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
@@ -10,6 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.json.JSONObject;
 
 import fi.iki.elonen.NanoWSD;
 import fi.iki.elonen.NanoHTTPD.Method;
@@ -60,6 +62,9 @@ public class ControlServer extends NanoWSD {
         String fkbLastError();
         String installUpdate(String url);
         String readLogcat(int lines);
+        boolean startQrScanner();
+        void cancelQrScanner();
+        boolean isQrScannerActive();
     }
 
     public BtDiag btDiag;
@@ -76,9 +81,22 @@ public class ControlServer extends NanoWSD {
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
-        KeySocket ws = new KeySocket(handshake);
+        KeySocket ws = new KeySocket(handshake, isLoopback(handshake.getRemoteIpAddress()));
         sockets.add(ws);
         return ws;
+    }
+
+    private static boolean isLoopback(String address) {
+        if (address == null) return false;
+        String normalized = address.trim();
+        if (normalized.startsWith("/")) normalized = normalized.substring(1);
+        int zone = normalized.indexOf('%');
+        if (zone >= 0) normalized = normalized.substring(0, zone);
+        try {
+            return InetAddress.getByName(normalized).isLoopbackAddress();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     /**
@@ -107,6 +125,39 @@ public class ControlServer extends NanoWSD {
         });
     }
 
+    /** Scanner control and credentials never leave the device's loopback interface. */
+    public void broadcastQrStatus(String status, String reason) {
+        final String msg = "{\"type\":\"qr-status\",\"status\":\""
+                + Json.escape(status) + "\",\"reason\":"
+                + (reason == null ? "null" : "\"" + Json.escape(reason) + "\"") + "}";
+        broadcastToLoopback(msg);
+    }
+
+    /** The token is intentionally absent from logs and unavailable to LAN clients. */
+    public void broadcastQrCapture(String token) {
+        if (token == null || !token.trim().startsWith("sch:")) return;
+        final String msg = "{\"type\":\"qr-captured\",\"token\":\""
+                + Json.escape(token) + "\"}";
+        broadcastToLoopback(msg);
+    }
+
+    private void broadcastToLoopback(final String msg) {
+        sendExecutor.execute(new Runnable() {
+            @Override public void run() {
+                for (KeySocket s : sockets) {
+                    if (!s.loopback) continue;
+                    try {
+                        if (s.isOpen()) s.send(msg);
+                        else sockets.remove(s);
+                    } catch (IOException e) {
+                        Log.w(TAG, "ws-local-send-failed; dropping client: " + e.getMessage());
+                        sockets.remove(s);
+                    }
+                }
+            }
+        });
+    }
+
     @Override
     public void stop() {
         sendExecutor.shutdownNow();
@@ -114,12 +165,18 @@ public class ControlServer extends NanoWSD {
     }
 
     private class KeySocket extends WebSocket {
-        KeySocket(IHTTPSession handshake) { super(handshake); }
+        final boolean loopback;
+
+        KeySocket(IHTTPSession handshake, boolean loopback) {
+            super(handshake);
+            this.loopback = loopback;
+        }
 
         @Override protected void onOpen() {
-            eventLog.add("ws-open");
+            eventLog.add("ws-open scope=" + (loopback ? "local" : "lan"));
             try {
-                send("{\"type\":\"ready\",\"port\":" + PORT + "}");
+                send("{\"type\":\"ready\",\"port\":" + PORT
+                        + ",\"qrScanner\":" + loopback + "}");
             } catch (IOException ignored) {}
         }
 
@@ -129,9 +186,30 @@ public class ControlServer extends NanoWSD {
         }
 
         @Override protected void onMessage(WebSocketFrame message) {
-            // Only ping is understood; config changes go over HTTP where pkctl lives.
-            if ("ping".equals(message.getTextPayload())) {
+            String payload = message.getTextPayload();
+            if ("ping".equals(payload)) {
                 try { send("{\"type\":\"pong\"}"); } catch (IOException ignored) {}
+                return;
+            }
+
+            // LAN sockets remain read-only. In particular, neither camera control nor
+            // decoded credentials can be exercised by another machine on the network.
+            if (!loopback) return;
+            try {
+                JSONObject command = new JSONObject(payload);
+                if (!"qr".equals(command.optString("type"))) return;
+                String action = command.optString("action");
+                if ("start".equals(action)) {
+                    eventLog.add("qr-start requested");
+                    if (!statusProvider.startQrScanner()) {
+                        broadcastQrStatus("failed", "launch-failed");
+                    }
+                } else if ("cancel".equals(action)) {
+                    eventLog.add("qr-cancel requested");
+                    statusProvider.cancelQrScanner();
+                }
+            } catch (Exception ignored) {
+                // Ignore malformed and unknown commands; never echo their payload.
             }
         }
 
@@ -209,6 +287,8 @@ public class ControlServer extends NanoWSD {
                 + "\"keysSeen\":" + statusProvider.keysSeen() + ","
                 + "\"displayOn\":" + statusProvider.isDisplayOn() + ","
                 + "\"wsClients\":" + wsCount + ","
+                + "\"qrScanner\":true,"
+                + "\"qrScannerActive\":" + statusProvider.isQrScannerActive() + ","
                 + "\"fkbLastError\":" + (statusProvider.fkbLastError() == null
                         ? "null" : "\"" + Json.escape(statusProvider.fkbLastError()) + "\"") + ","
                 + "\"config\":" + config.toJsonRedacted()

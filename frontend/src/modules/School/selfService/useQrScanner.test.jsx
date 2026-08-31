@@ -2,8 +2,13 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import useQrScanner, { QR_SCAN_TIMEOUT_MS } from './useQrScanner.js';
 
+const { selfService, selfServiceError } = vi.hoisted(() => ({
+  selfService: vi.fn(),
+  selfServiceError: vi.fn(),
+}));
+
 vi.mock('../schoolLog.js', () => ({
-  schoolLog: { selfService: vi.fn(), selfServiceError: vi.fn() },
+  schoolLog: { selfService, selfServiceError },
 }));
 
 const TOKEN = 'sch:ABCDEFGHJKLMNPQR';
@@ -77,7 +82,7 @@ function camera({ muted = false, width = 640, height = 480 } = {}) {
   return { track, stream, video };
 }
 
-function mountScanner(onToken, setup = camera()) {
+function mountBrowserScanner(onToken, setup = camera()) {
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getUserMedia: vi.fn(async () => setup.stream) },
@@ -87,7 +92,7 @@ function mountScanner(onToken, setup = camera()) {
   return { ...hook, ...setup };
 }
 
-describe('useQrScanner', () => {
+describe('useQrScanner browser provider', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     decoded = undefined;
@@ -115,11 +120,11 @@ describe('useQrScanner', () => {
     decoded = rawPayload;
     let stoppedAtResolve = false;
     const setup = camera();
-    const onToken = vi.fn(async (_token) => {
+    const onToken = vi.fn(async () => {
       stoppedAtResolve = setup.track.stop.mock.calls.length === 1;
       return { resolved: false, degraded: false, sentence: 'Try another QR.' };
     });
-    const { result, track, video } = mountScanner(onToken, setup);
+    const { result, track, video } = mountBrowserScanner(onToken, setup);
 
     await act(async () => {
       await result.current.start();
@@ -132,13 +137,15 @@ describe('useQrScanner', () => {
     expect(video.pause).toHaveBeenCalled();
     expect(video.srcObject).toBeNull();
     expect(oscillatorStart).toHaveBeenCalledTimes(1);
-    expect(result.current).toMatchObject({ phase: 'refused', cameraOn: false, retryLabel: 'Scan another' });
+    expect(result.current).toMatchObject({
+      phase: 'refused', cameraOn: false, retryLabel: 'Scan another',
+    });
   });
 
   it('does not beep or submit a non-school QR and keeps scanning', async () => {
     decoded = 'https://example.com/not-school';
     const onToken = vi.fn();
-    const { result, track } = mountScanner(onToken);
+    const { result, track } = mountBrowserScanner(onToken);
 
     await act(async () => { await result.current.start(); });
 
@@ -151,7 +158,7 @@ describe('useQrScanner', () => {
 
   it('recognises the Portal privacy-off 2×2 muted stream as camera off', async () => {
     const setup = camera({ muted: true, width: 2, height: 2 });
-    const { result, track } = mountScanner(vi.fn(), setup);
+    const { result, track } = mountBrowserScanner(vi.fn(), setup);
 
     let starting;
     await act(async () => {
@@ -166,13 +173,137 @@ describe('useQrScanner', () => {
   });
 
   it('stops scanning after the 20-second active window', async () => {
-    const { result, track } = mountScanner(vi.fn());
+    const { result, track } = mountBrowserScanner(vi.fn());
     await act(async () => { await result.current.start(); });
-    expect(result.current).toMatchObject({ phase: 'scanning', cameraOn: true, message: 'Camera on' });
+    expect(result.current).toMatchObject({
+      phase: 'scanning', cameraOn: true, message: 'Camera on',
+    });
 
     await act(async () => { await vi.advanceTimersByTimeAsync(QR_SCAN_TIMEOUT_MS); });
 
     expect(track.stop).toHaveBeenCalledTimes(1);
-    expect(result.current).toMatchObject({ phase: 'timeout', cameraOn: false, retryLabel: 'Try again' });
+    expect(result.current).toMatchObject({
+      phase: 'timeout', cameraOn: false, retryLabel: 'Try again',
+    });
+  });
+});
+
+let sockets;
+
+class FakeWebSocket {
+  constructor(url) {
+    this.url = url;
+    this.readyState = 0;
+    this.sent = [];
+    sockets.push(this);
+  }
+
+  open() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+
+  emit(message) {
+    this.onmessage?.({ data: JSON.stringify(message) });
+  }
+
+  send(payload) {
+    this.sent.push(JSON.parse(payload));
+  }
+
+  close() {
+    this.readyState = 3;
+  }
+}
+
+describe('useQrScanner portal-keys provider', () => {
+  beforeEach(() => {
+    sockets = [];
+    selfService.mockClear();
+    selfServiceError.mockClear();
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('starts the native scanner only after the APK advertises support', () => {
+    const { result } = renderHook(() => useQrScanner({
+      provider: 'portal-keys', onToken: vi.fn(),
+    }));
+
+    act(() => result.current.start());
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].url).toBe('ws://localhost:8771/');
+    expect(sockets[0].sent).toEqual([]);
+
+    act(() => {
+      sockets[0].open();
+      sockets[0].emit({ type: 'ready', port: 8771, qrScanner: true });
+    });
+
+    expect(sockets[0].sent).toEqual([{ type: 'qr', action: 'start' }]);
+    expect(selfService).toHaveBeenCalledWith('qr.camera-started', {
+      provider: 'portal-keys',
+    });
+  });
+
+  it('reflects native camera state and submits a captured school token', async () => {
+    const onToken = vi.fn().mockResolvedValue({ resolved: true });
+    const { result } = renderHook(() => useQrScanner({
+      provider: 'portal-keys', onToken,
+    }));
+
+    act(() => result.current.start());
+    act(() => sockets[0].emit({ type: 'ready', qrScanner: true }));
+    act(() => sockets[0].emit({ type: 'qr-status', status: 'camera-on' }));
+    expect(result.current).toMatchObject({ phase: 'scanning', cameraOn: true });
+
+    await act(async () => {
+      sockets[0].emit({ type: 'qr-captured', token: 'sch:opaque-test-token' });
+      await Promise.resolve();
+    });
+
+    expect(onToken).toHaveBeenCalledWith('sch:opaque-test-token');
+    expect(selfService).toHaveBeenCalledWith('qr.captured', {
+      provider: 'portal-keys',
+    });
+    expect(JSON.stringify([...selfService.mock.calls, ...selfServiceError.mock.calls]))
+      .not.toContain('opaque-test-token');
+  });
+
+  it('cancels the native activity before closing the socket', () => {
+    const { result } = renderHook(() => useQrScanner({
+      provider: 'portal-keys', onToken: vi.fn(),
+    }));
+    act(() => result.current.start());
+    act(() => {
+      sockets[0].open();
+      sockets[0].emit({ type: 'ready', qrScanner: true });
+    });
+
+    act(() => result.current.cancel());
+
+    expect(sockets[0].sent).toEqual([
+      { type: 'qr', action: 'start' },
+      { type: 'qr', action: 'cancel' },
+    ]);
+    expect(result.current).toMatchObject({ phase: 'idle', active: false });
+  });
+
+  it('reports an old APK as an actionable bridge-version failure', () => {
+    const { result } = renderHook(() => useQrScanner({
+      provider: 'portal-keys', onToken: vi.fn(),
+    }));
+    act(() => result.current.start());
+    act(() => sockets[0].emit({ type: 'ready', port: 8771 }));
+
+    expect(result.current).toMatchObject({ phase: 'unavailable', retryLabel: 'Try again' });
+    expect(selfServiceError).toHaveBeenCalledWith('qr.camera-failed', {
+      phase: 'unavailable', provider: 'portal-keys', reason: 'bridge-version',
+    });
   });
 });

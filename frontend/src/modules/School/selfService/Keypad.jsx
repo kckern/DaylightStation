@@ -197,7 +197,10 @@ export default function Keypad({
   const [reject, setReject] = useState(null);
   const timersRef = useRef([]);
   const tap = useTapFire();
-  const qr = useQrScanner({ onToken: onScan });
+  const qr = useQrScanner({
+    onToken: onScan,
+    provider: screenId === 'portal' ? 'portal-keys' : 'browser',
+  });
   const qrActive = qr.active;
   const cancelQr = qr.cancel;
 

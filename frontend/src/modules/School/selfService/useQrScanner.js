@@ -3,6 +3,8 @@ import { schoolLog } from '../schoolLog.js';
 
 export const QR_SCAN_TIMEOUT_MS = 20_000;
 export const QR_CAMERA_START_TIMEOUT_MS = 15_000;
+export const PORTAL_QR_CONNECT_TIMEOUT_MS = 4_000;
+const PORTAL_QR_URL = 'ws://localhost:8771/';
 const FRAME_INTERVAL_MS = 125;
 const CAMERA_WARMUP_MS = 2_000;
 const MAX_FRAME_WIDTH = 640;
@@ -72,13 +74,14 @@ function beep(context) {
  * the wire, stores one, or exposes one to React state; the only value leaving
  * this hook is the decoded opaque school token.
  */
-export default function useQrScanner({ onToken } = {}) {
+export default function useQrScanner({ onToken, provider = 'browser' } = {}) {
   const [state, setState] = useState(IDLE);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const workerRef = useRef(null);
   const canvasRef = useRef(null);
   const audioRef = useRef(null);
+  const portalSocketRef = useRef(null);
   const lastTokenRef = useRef(null);
   const generationRef = useRef(0);
   const frameIdRef = useRef(0);
@@ -97,8 +100,20 @@ export default function useQrScanner({ onToken } = {}) {
     });
   }, []);
 
-  const stopCapture = useCallback(({ keepAudio = false } = {}) => {
+  const stopCapture = useCallback(({ keepAudio = false, cancelPortal = false } = {}) => {
     clearTimers();
+    const portalSocket = portalSocketRef.current;
+    portalSocketRef.current = null;
+    if (portalSocket) {
+      if (cancelPortal && portalSocket.readyState === 1) {
+        try { portalSocket.send(JSON.stringify({ type: 'qr', action: 'cancel' })); } catch { /* closing */ }
+      }
+      portalSocket.onopen = null;
+      portalSocket.onmessage = null;
+      portalSocket.onerror = null;
+      portalSocket.onclose = null;
+      try { portalSocket.close(); } catch { /* already closed */ }
+    }
     workerRef.current?.terminate?.();
     workerRef.current = null;
     streamRef.current?.getTracks?.().forEach((track) => track.stop());
@@ -117,7 +132,7 @@ export default function useQrScanner({ onToken } = {}) {
 
   const cancel = useCallback(() => {
     generationRef.current += 1;
-    stopCapture();
+    stopCapture({ cancelPortal: true });
     lastTokenRef.current = null;
     capturedRef.current = false;
     setState(IDLE);
@@ -140,7 +155,7 @@ export default function useQrScanner({ onToken } = {}) {
     });
   }, []);
 
-  const start = useCallback(async () => {
+  const startBrowser = useCallback(async () => {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     stopCapture();
@@ -155,7 +170,9 @@ export default function useQrScanner({ onToken } = {}) {
       generationRef.current += 1;
       stopCapture();
       setState(next);
-      schoolLog.selfServiceError('qr.camera-failed', { phase: next.phase, detail });
+      schoolLog.selfServiceError('qr.camera-failed', {
+        phase: next.phase, provider: 'browser', reason: detail,
+      });
     };
 
     startTimerRef.current = window.setTimeout(() => fail({
@@ -327,6 +344,159 @@ export default function useQrScanner({ onToken } = {}) {
     }
   }, [stopCapture, submitToken]);
 
+  const startPortal = useCallback(() => {
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    stopCapture({ cancelPortal: true });
+    capturedRef.current = false;
+    lastTokenRef.current = null;
+    setState({ phase: 'starting', message: 'Starting camera…', cameraOn: false, retryLabel: null });
+    schoolLog.selfService('qr.camera-started', { provider: 'portal-keys' });
+
+    const fail = (next, reason) => {
+      if (generationRef.current !== generation) return;
+      generationRef.current += 1;
+      stopCapture();
+      setState(next);
+      schoolLog.selfServiceError('qr.camera-failed', {
+        phase: next.phase, provider: 'portal-keys', reason,
+      });
+    };
+
+    if (typeof WebSocket === 'undefined') {
+      fail({
+        phase: 'unavailable', cameraOn: false, retryLabel: 'Try again',
+        message: 'The QR reader is unavailable. You can use the six-digit code instead.',
+      }, 'websocket-unavailable');
+      return;
+    }
+
+    let started = false;
+    let socket;
+    try {
+      socket = new WebSocket(PORTAL_QR_URL);
+      portalSocketRef.current = socket;
+    } catch {
+      fail({
+        phase: 'unavailable', cameraOn: false, retryLabel: 'Try again',
+        message: 'The QR reader is unavailable. You can use the six-digit code instead.',
+      }, 'bridge-connect-threw');
+      return;
+    }
+
+    startTimerRef.current = window.setTimeout(() => fail({
+      phase: 'unavailable', cameraOn: false, retryLabel: 'Try again',
+      message: 'The QR reader did not respond. You can use the six-digit code instead.',
+    }, 'bridge-connect-timeout'), PORTAL_QR_CONNECT_TIMEOUT_MS);
+
+    socket.onmessage = (event) => {
+      if (generationRef.current !== generation) return;
+      let message;
+      try { message = JSON.parse(event.data); } catch { return; }
+
+      if (message.type === 'ready') {
+        if (message.qrScanner !== true) {
+          fail({
+            phase: 'unavailable', cameraOn: false, retryLabel: 'Try again',
+            message: 'The QR reader needs an update. You can use the six-digit code instead.',
+          }, 'bridge-version');
+          return;
+        }
+        if (startTimerRef.current !== null) window.clearTimeout(startTimerRef.current);
+        startTimerRef.current = null;
+        if (!started) {
+          started = true;
+          socket.send(JSON.stringify({ type: 'qr', action: 'start' }));
+          scanTimerRef.current = window.setTimeout(() => fail({
+            phase: 'timeout', cameraOn: false, retryLabel: 'Try again',
+            message: 'No QR code found. You can try again or use the six-digit code.',
+          }, 'scan-timeout'), QR_SCAN_TIMEOUT_MS + 5_000);
+        }
+        return;
+      }
+
+      if (message.type === 'qr-status') {
+        switch (message.status) {
+          case 'opened':
+            setState({ phase: 'starting', message: 'Starting camera…', cameraOn: false, retryLabel: null });
+            break;
+          case 'permission-needed':
+            setState({
+              phase: 'starting', message: 'Allow camera access to scan.',
+              cameraOn: false, retryLabel: null,
+            });
+            break;
+          case 'camera-on':
+            setState({ phase: 'scanning', message: 'Camera on', cameraOn: true, retryLabel: null });
+            schoolLog.selfService('qr.camera-on', { provider: 'portal-keys' });
+            break;
+          case 'frames-live':
+            schoolLog.selfService('qr.frames-live', { provider: 'portal-keys' });
+            break;
+          case 'foreign':
+            setState({
+              phase: 'scanning', message: 'That is not a school QR code. Keep looking…',
+              cameraOn: true, retryLabel: null,
+            });
+            break;
+          case 'timeout':
+            fail({
+              phase: 'timeout', cameraOn: false, retryLabel: 'Try again',
+              message: 'No QR code found. You can try again or use the six-digit code.',
+            }, 'native-timeout');
+            break;
+          case 'cancelled':
+            if (generationRef.current !== generation) return;
+            generationRef.current += 1;
+            stopCapture();
+            setState(IDLE);
+            break;
+          case 'failed':
+            fail(cameraError({
+              name: message.reason === 'permission-denied' ? 'NotAllowedError' : 'NotReadableError',
+            }), message.reason || 'native-failed');
+            break;
+          default:
+            break;
+        }
+        return;
+      }
+
+      if (message.type !== 'qr-captured' || capturedRef.current) return;
+      const token = typeof message.token === 'string' ? message.token : '';
+      if (!token.trim().startsWith('sch:')) {
+        fail({
+          phase: 'unavailable', cameraOn: false, retryLabel: 'Try again',
+          message: 'The QR reader returned an invalid code. Try again.',
+        }, 'invalid-token');
+        return;
+      }
+      capturedRef.current = true;
+      stopCapture();
+      schoolLog.selfService('qr.captured', { provider: 'portal-keys' });
+      void submitToken(token, generation);
+    };
+
+    socket.onerror = () => {
+      // onclose is the single failure path so one disconnect emits one event.
+    };
+    socket.onclose = () => {
+      if (generationRef.current !== generation || capturedRef.current) return;
+      fail({
+        phase: 'unavailable', cameraOn: false, retryLabel: 'Try again',
+        message: 'The QR reader disconnected. You can use the six-digit code instead.',
+      }, started ? 'bridge-disconnected' : 'bridge-connect-failed');
+    };
+  }, [stopCapture, submitToken]);
+
+  const start = useCallback(() => {
+    if (provider === 'portal-keys') {
+      startPortal();
+      return;
+    }
+    void startBrowser();
+  }, [provider, startBrowser, startPortal]);
+
   const retry = useCallback(() => {
     if (state.phase === 'degraded' && lastTokenRef.current) {
       const generation = generationRef.current;
@@ -334,12 +504,12 @@ export default function useQrScanner({ onToken } = {}) {
       void submitToken(lastTokenRef.current, generation);
       return;
     }
-    void start();
+    start();
   }, [start, state.phase, submitToken]);
 
   useEffect(() => () => {
     generationRef.current += 1;
-    stopCapture();
+    stopCapture({ cancelPortal: true });
   }, [stopCapture]);
 
   return {
