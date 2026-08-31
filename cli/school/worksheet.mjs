@@ -43,6 +43,7 @@ import {
   composedWorksheetDocument,
 } from '#domains/school/questionBankV2.mjs';
 import { validateQuestionBank } from '#domains/school/questionBankValidation.mjs';
+import { worksheetPresentation } from '#domains/school/curriculum/worksheetPresentation.mjs';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
@@ -353,14 +354,16 @@ async function composePreview({ argv, flags, dataDir }) {
       bank, learnerId: learner, enrollmentId: 'cli-preview', lessonId, profile, seed: `${seed}:${index + 1}`,
     });
     const provenance = lessonProvenance(file);
+    const presentation = worksheetPresentation({ unit: bank.lesson });
     sections.push({
       id: `section-${index + 1}`, instance,
       subject: subject.replaceAll('-', ' '), subjectId: subject,
       course: courseLabel(subject, course, dataDir), courseId: course,
       breadcrumb: [subject, ...(bank.topics ?? []).slice(0, 2)].map((part) => String(part).replaceAll('-', ' ').toUpperCase()).join(' › '),
-      title: bank.title || lessonId, sourceTitle: provenance.sourceTitle,
-      printedPages: provenance.printedPages,
-      reading: lessonReading(bank, provenance),
+      title: bank.title || lessonId,
+      sourceTitle: presentation.sourceTitle ?? provenance.sourceTitle,
+      printedPages: presentation.printedPages.length ? presentation.printedPages : provenance.printedPages,
+      reading: presentation.reading ?? lessonReading(bank, provenance),
       passPercent: bank.lesson?.passing?.percent ?? null,
     });
   }
@@ -519,10 +522,12 @@ export async function main(argv = process.argv.slice(2)) {
     seed,
   });
   const provenance = lessonProvenance(file);
+  const presentation = worksheetPresentation({ unit: bank.lesson });
   const source = worksheetInstanceDocument(instance, {
     title: bank.title || lessonId,
-    sourceTitle: provenance.sourceTitle,
-    printedPages: provenance.printedPages,
+    sourceTitle: presentation.sourceTitle ?? provenance.sourceTitle,
+    printedPages: presentation.printedPages.length ? presentation.printedPages : provenance.printedPages,
+    reading: presentation.reading,
     subjectIcon: bank.subject ?? target.split('/').filter(Boolean)[0] ?? 'school',
     subjectName: bank.subject ? bank.subject[0].toUpperCase() + bank.subject.slice(1) : null,
   });

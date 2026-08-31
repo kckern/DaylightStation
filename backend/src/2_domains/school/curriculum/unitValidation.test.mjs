@@ -36,6 +36,36 @@ describe('unit learner-facing reading metadata', () => {
     }, sets);
     expect(errors).toEqual([]);
   });
+
+  it('normalizes one primary and bounded alternate physical-book references', () => {
+    const { errors, unit } = validateUnit({
+      ...base,
+      studyReferences: [
+        { role: 'primary', title: 'Beast Academy 2A Guide', pages: [27, 24, 25, 26], section: 'Ones, Tens, Hundreds' },
+        { role: 'alternate', title: 'Beast Academy 2A Practice', pages: [14, 15], section: 'Place Value Practice' },
+      ],
+    }, sets);
+    expect(errors).toEqual([]);
+    expect(unit.studyReferences).toEqual([
+      { role: 'primary', title: 'Beast Academy 2A Guide', pages: [24, 25, 26, 27], section: 'Ones, Tens, Hundreds' },
+      { role: 'alternate', title: 'Beast Academy 2A Practice', pages: [14, 15], section: 'Place Value Practice' },
+    ]);
+  });
+
+  it('refuses malformed or ambiguous study references', () => {
+    const malformed = validateUnit({
+      ...base,
+      studyReferences: [
+        { role: 'alternate', title: 'Workbook PDF', pages: [0, 2], section: '' },
+        { role: 'alternate', title: 'Other book', pages: [3], section: 'A section' },
+      ],
+    }, sets).errors;
+    expect(malformed).toEqual(expect.arrayContaining([
+      expect.stringMatching(/physical book/), expect.stringMatching(/positive integers/),
+      expect.stringMatching(/section/), expect.stringMatching(/exactly one primary/),
+      expect.stringMatching(/\[0\] must be the primary/),
+    ]));
+  });
 });
 
 // A gated media lesson: the video is the content, the bank holds the

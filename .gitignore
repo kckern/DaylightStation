@@ -61,6 +61,7 @@ config.app-local.yml
 !scripts/generate-elementary-math-course.test.mjs
 !scripts/school/
 !scripts/school/build-course-posters.mjs
+!scripts/school/elementary-math-source-map.yml
 !scripts/camera-archive/
 !scripts/port-manager.mjs
 !scripts/dev-server.sh

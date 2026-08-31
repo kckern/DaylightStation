@@ -9,11 +9,12 @@ import { renderMathAsset } from '../cli/school/math-assets.mjs';
 
 const COURSE = 'elementary-math-2-3';
 const COURSE_TITLE = 'Elementary Mathematics: Grade 2–3 Bridge';
+const SOURCE_MAP_PATH = fileURLToPath(new URL('./school/elementary-math-source-map.yml', import.meta.url));
 const SOURCE = Object.freeze({
-  beast: { name: 'Beast Academy 2A Guide and Practice', page: 'pp. 14–93', zone: 'beast-academy-2a' },
-  boosters: { name: 'Math Boosters: Addition and Subtraction', page: 'pp. 4–129', zone: 'math-boosters' },
-  ultimate: { name: 'The Ultimate Grade 3 Math Workbook', page: 'pp. 2–209', zone: 'ultimate-grade-3' },
-  authored: { name: 'Original bridge-course synthesis', page: 'course-authored', zone: 'original' },
+  beast: { name: 'Beast Academy 2A Guide and Practice' },
+  boosters: { name: 'Math Boosters: Addition and Subtraction' },
+  ultimate: { name: 'The Ultimate Grade 3 Math Workbook' },
+  authored: { name: 'Original bridge-course synthesis' },
 });
 const pick = (values, index) => values[index % values.length];
 const slug = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-|-$/gu, '');
@@ -57,11 +58,12 @@ function properFractionDecoys(numerator, denominator) {
 }
 
 function item(def, index, { prompt, answer, decoys = [], stimulus = null, feedback = null, source = def.source ?? 'authored' }) {
-  const cited = SOURCE[source];
+  if (!SOURCE[source]) throw new Error(`unknown source family ${source} for ${def.id}`);
+  const { role: _role, ...reviewReference } = def.studyReferences[0];
   return {
     id: `${slug(def.id)}-q${String(index + 1).padStart(2, '0')}`,
     type: 'multiple_choice', prompt, answer: String(answer), decoys: decoysFor(answer, decoys), levels: ['lower'],
-    source: { page: cited.page, zone: `${cited.zone}:${slug(def.id)}` },
+    reviewReference,
     feedback: { incorrect: feedback ?? `Try the ${def.title.toLowerCase()} strategy again, then check your work.` },
     ...(stimulus ? { stimulus: { type: 'asset', ref: stimulus.ref, alt: stimulus.alt } } : {}),
   };
@@ -339,6 +341,52 @@ function lessonDefinitions() {
   return result;
 }
 
+function studyReferenceDefinitions(definitions, sourceMapPath = SOURCE_MAP_PATH) {
+  const raw = yaml.load(fs.readFileSync(sourceMapPath, 'utf8'));
+  if (raw?.schema !== 'school.study-reference-map/v1') throw new Error('source map schema must be school.study-reference-map/v1');
+  if (raw?.course !== COURSE) throw new Error(`source map course must be ${COURSE}`);
+  if (!raw.materials || typeof raw.materials !== 'object' || Array.isArray(raw.materials)) throw new Error('source map materials must be a mapping');
+  if (!raw.lessons || typeof raw.lessons !== 'object' || Array.isArray(raw.lessons)) throw new Error('source map lessons must be a mapping');
+
+  const expected = new Set(definitions.map((definition) => definition.id));
+  const actual = new Set(Object.keys(raw.lessons));
+  const missing = [...expected].filter((id) => !actual.has(id));
+  const extra = [...actual].filter((id) => !expected.has(id));
+  if (missing.length || extra.length) throw new Error(`source map lesson mismatch; missing=${missing.join(',') || 'none'}; extra=${extra.join(',') || 'none'}`);
+
+  const referencesByLesson = new Map();
+  const usedMaterials = new Set();
+  definitions.forEach((definition) => {
+    const materialIds = raw.lessons[definition.id];
+    if (!Array.isArray(materialIds) || materialIds.length < 1 || materialIds.length > 3) {
+      throw new Error(`${definition.id} must name 1..3 study materials`);
+    }
+    if (definition.kind === 'mastery' && materialIds.length < 2) throw new Error(`${definition.id} mastery must name 2..3 study materials`);
+    const references = materialIds.map((materialId, index) => {
+      const material = raw.materials[materialId];
+      if (!material) throw new Error(`${definition.id} references unknown material ${materialId}`);
+      usedMaterials.add(materialId);
+      const unknown = Object.keys(material).filter((field) => !['title', 'pages', 'section'].includes(field));
+      if (unknown.length) throw new Error(`${materialId} has unknown fields: ${unknown.join(', ')}`);
+      if (typeof material.title !== 'string' || !material.title.trim()) throw new Error(`${materialId}.title is required`);
+      if (typeof material.section !== 'string' || !material.section.trim()) throw new Error(`${materialId}.section is required`);
+      if (!Array.isArray(material.pages) || material.pages.length < 1 || material.pages.length > 12
+          || material.pages.some((page) => !Number.isInteger(page) || page < 1)
+          || new Set(material.pages).size !== material.pages.length) {
+        throw new Error(`${materialId}.pages must contain 1..12 unique positive printed page numbers`);
+      }
+      return {
+        role: index === 0 ? 'primary' : 'alternate', title: material.title.trim(),
+        pages: [...material.pages].sort((left, right) => left - right), section: material.section.trim(),
+      };
+    });
+    referencesByLesson.set(definition.id, references);
+  });
+  const unused = Object.keys(raw.materials).filter((materialId) => !usedMaterials.has(materialId));
+  if (unused.length) throw new Error(`source map has unused materials: ${unused.join(', ')}`);
+  return referencesByLesson;
+}
+
 function courseIndex() {
   return {
     schema: 'school.course/v2', poster: 'poster.jpg', work: COURSE, title: COURSE_TITLE, short_title: 'Elementary Math 2–3',
@@ -372,6 +420,7 @@ function bankFor(def, items) {
       subject: 'math', courseId: COURSE, sequence: def.sequence, module: def.module, moduleRole: def.moduleRole, required: def.required,
       grades: ['lower'], objectives: [`Solve grade 2–3 bridge problems involving ${def.title.toLowerCase()}.`],
       bank: `math/${COURSE}/${def.id}/worksheet`, passing: { percent: 80 }, retry: { variants: 12 },
+      studyReferences: def.studyReferences,
       provenance: { source: sourceName, reviewState: 'approved' },
     },
   };
@@ -396,14 +445,17 @@ function posterSvg() {
 }
 
 const dump = (value) => yaml.dump(value, { noRefs: true, lineWidth: 110, sortKeys: false });
-export function generateElementaryMathCourse({ dataDir, requireAbsent = true } = {}) {
+export function generateElementaryMathCourse({ dataDir, requireAbsent = true, sourceMapPath = SOURCE_MAP_PATH } = {}) {
   if (!dataDir) throw new Error('dataDir is required');
   const courseRoot = path.join(dataDir, 'content', 'school', 'math', COURSE);
   const assetRoot = path.join(dataDir, 'content', 'assets', 'school', 'math', COURSE);
   if (requireAbsent && (fs.existsSync(courseRoot) || fs.existsSync(assetRoot))) throw new Error('course or asset target already exists; refuse to overwrite');
   fs.mkdirSync(courseRoot, { recursive: true }); fs.mkdirSync(path.join(assetRoot, 'specs'), { recursive: true });
   fs.writeFileSync(path.join(courseRoot, '_index.yml'), dump(courseIndex()));
-  const definitions = lessonDefinitions(); const ctx = { specs: new Map() }; const built = new Map();
+  const definitions = lessonDefinitions();
+  const referencesByLesson = studyReferenceDefinitions(definitions, sourceMapPath);
+  definitions.forEach((definition) => { definition.studyReferences = referencesByLesson.get(definition.id); });
+  const ctx = { specs: new Map() }; const built = new Map();
   definitions.forEach((def) => {
     let items;
     if (def.kind === 'mastery') {
@@ -428,6 +480,11 @@ export function generateElementaryMathCourse({ dataDir, requireAbsent = true } =
     fs.writeFileSync(path.join(dataDir, 'content', 'assets', `${spec.ref}.svg`), renderMathAsset(spec));
   });
   fs.writeFileSync(path.join(courseRoot, 'CURRICULUM.md'), curriculumMarkdown(definitions));
+  fs.writeFileSync(path.join(courseRoot, '_study-references.yml'), dump({
+    schema: 'school.study-reference-map/v1', course: COURSE,
+    note: 'These printed-page references support original parallel practice; they are not question provenance.',
+    lessons: Object.fromEntries(definitions.map((definition) => [definition.id, definition.studyReferences])),
+  }));
   fs.writeFileSync(path.join(courseRoot, 'poster.svg'), posterSvg());
   return { courseRoot, assetRoot, definitions, bankCount: definitions.length, itemCount: [...built.values()].reduce((sum, items) => sum + items.length, 0), assetCount: ctx.specs.size };
 }

@@ -18,6 +18,29 @@ describe('validateQuestionBank region_click', () => {
   });
 });
 
+describe('validateQuestionBank review references', () => {
+  const item = {
+    id: 'i1', type: 'multiple_choice', prompt: 'What is 8 + 7?',
+    choices: ['13', '14', '15'], answer: '15',
+  };
+
+  it('accepts an exact physical-book remediation locator', () => {
+    const result = validateQuestionBank({ ...base, items: [{ ...item,
+      reviewReference: { title: 'Math Boosters', pages: [30, 31], section: 'Adding Sums up to 18' },
+    }] });
+    expect(result.ok).toBe(true);
+  });
+
+  it('refuses digital, empty, or non-page locators', () => {
+    const result = validateQuestionBank({ ...base, items: [{ ...item,
+      reviewReference: { title: 'Workbook PDF', pages: ['30-31'], section: '' },
+    }] });
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.stringMatching(/physical book/), expect.stringMatching(/positive integers/), expect.stringMatching(/section/),
+    ]));
+  });
+});
+
 describe('validateQuestionBank asset_choice', () => {
   const good = { id: 'i1', type: 'asset_choice', prompt: 'Whose flag?', answer: 'FR',
     choices: [{ value: 'FR', label: 'France' }, { value: 'DE', image: { kind: 'flag', iso: 'DE' } }] };

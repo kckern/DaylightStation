@@ -5,6 +5,7 @@ import yaml from 'js-yaml';
 import { afterEach, describe, expect, it } from 'vitest';
 import { validateQuestionBank } from '#domains/school/questionBankValidation.mjs';
 import { issueWorksheet } from '#domains/school/questionBankV2.mjs';
+import { validateUnit } from '#domains/school/curriculum/unitValidation.mjs';
 import { generateElementaryMathCourse } from './generate-elementary-math-course.mjs';
 
 const roots = [];
@@ -25,10 +26,23 @@ describe('elementary math course generator', () => {
     expect(banks).toHaveLength(84);
     banks.forEach((bank) => {
       expect(validateQuestionBank(bank).ok).toBe(true);
+      expect(validateUnit(bank.lesson, { bankIds: new Set([bank.id]) }).errors).toEqual([]);
       expect(bank.items).toHaveLength(12);
-      expect(issueWorksheet({ bank, learnerId: 'proof', enrollmentId: 'proof', lessonId: bank.unit, profile: 'lower', seed: 'proof' }).items).toHaveLength(6);
+      expect(bank.lesson.studyReferences.length).toBeGreaterThanOrEqual(1);
+      expect(bank.lesson.studyReferences.length).toBeLessThanOrEqual(3);
+      expect(bank.lesson.studyReferences[0].role).toBe('primary');
+      expect(bank.items.every((item) => item.source === undefined && item.reviewReference)).toBe(true);
+      const issued = issueWorksheet({ bank, learnerId: 'proof', enrollmentId: 'proof', lessonId: bank.unit, profile: 'lower', seed: 'proof' });
+      expect(issued.items).toHaveLength(6);
+      expect(issued.items.every((item) => item.reviewReference?.pages.length)).toBe(true);
+    });
+    banks.filter((bank) => bank.unit.endsWith('-99-mastery')).forEach((bank) => {
+      expect(bank.lesson.studyReferences.length).toBeGreaterThanOrEqual(2);
+      expect(bank.lesson.studyReferences.length).toBeLessThanOrEqual(3);
     });
     expect(banks.filter((bank) => bank.lesson.required === false)).toHaveLength(14);
+    const expandedMap = yaml.load(fs.readFileSync(path.join(result.courseRoot, '_study-references.yml'), 'utf8'));
+    expect(Object.keys(expandedMap.lessons)).toHaveLength(84);
     const refs = banks.flatMap((bank) => bank.items.map((item) => item.stimulus?.ref).filter(Boolean));
     refs.forEach((ref) => expect(fs.existsSync(path.join(root, 'content', 'assets', `${ref}.svg`))).toBe(true));
     const fractionChoices = banks.flatMap((bank) => bank.items.flatMap((item) => [item.answer, ...item.decoys]))

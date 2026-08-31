@@ -6,6 +6,7 @@
  * collapsed: `work.source.title` is not a worksheet reading source.
  */
 import { compactCourseModuleLabel } from './display.mjs';
+import { formatPageSpans } from '../questionBankV2.mjs';
 
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
@@ -24,6 +25,16 @@ function explicitReading(value) {
   return /^read\s*:/iu.test(reading) ? reading : `Read: ${reading}`;
 }
 
+function referenceLine(references) {
+  if (!Array.isArray(references) || !references.length) return null;
+  return references.map((reference, index) => {
+    const label = index === 0 ? 'Reference if needed:' : 'Also:';
+    const pages = formatPageSpans(reference.pages);
+    const pageLabel = reference.pages.length === 1 ? 'p.' : 'pp.';
+    return `${label} ${reference.title}, ${pageLabel} ${pages} — ${reference.section}.`;
+  }).join(' ');
+}
+
 export function worksheetPresentation({ unit = null, work = null, enrollment = null } = {}) {
   const printedPages = Array.isArray(unit?.provenance?.printed_pages)
     ? [...unit.provenance.printed_pages]
@@ -33,6 +44,7 @@ export function worksheetPresentation({ unit = null, work = null, enrollment = n
   const sourceTitle = printableSource(unit?.sourceTitle)
     ?? printableSource(work?.source?.reader?.title)
     ?? printableSource(unit?.provenance?.source);
+  const studyReferenceLine = referenceLine(unit?.studyReferences);
   return {
     breadcrumb: compactCourseModuleLabel({
       work, enrollment, moduleId: unit?.module,
@@ -43,7 +55,7 @@ export function worksheetPresentation({ unit = null, work = null, enrollment = n
     // When page locators exist, the document builder combines them with the
     // resolved printed source. An explicit prose instruction is only the
     // fallback for lessons with no page-locator contract.
-    reading: printedPages.length ? null : explicitReading(unit?.reading),
+    reading: studyReferenceLine ?? (printedPages.length ? null : explicitReading(unit?.reading)),
     printedPages,
     citation: text(unit?.description),
   };

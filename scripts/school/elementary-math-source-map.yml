@@ -1,0 +1,388 @@
+schema: school.study-reference-map/v1
+course: elementary-math-2-3
+note: >-
+  Printed-page study references for original parallel-practice worksheets. The first material listed for a
+  lesson is primary; later materials are useful alternates. These are not claims that questions were copied.
+
+materials:
+  ba-place-guide:
+    title: Beast Academy 2A Guide
+    pages: [24, 25, 26, 27, 28, 29]
+    section: Ones, Tens, Hundreds
+  ba-place-practice:
+    title: Beast Academy 2A Practice
+    pages: [14, 15, 16, 17]
+    section: Place-value practice
+  ba-number-line:
+    title: Beast Academy 2A Guide
+    pages: [42, 43, 44, 45, 46, 47]
+    section: The Number Line
+  ba-comparing:
+    title: Beast Academy 2A Guide
+    pages: [56, 57, 58, 59]
+    section: Comparing
+  ba-ordering:
+    title: Beast Academy 2A Guide
+    pages: [60, 61, 62, 63, 64, 65, 66, 67]
+    section: Ordering
+  ba-comparing-practice:
+    title: Beast Academy 2A Practice
+    pages: [54, 55, 56, 57]
+    section: Comparing and ordering practice
+  ba-sums:
+    title: Beast Academy 2A Guide
+    pages: [70, 71, 72, 73, 74, 75]
+    section: Sums
+  ba-strategies:
+    title: Beast Academy 2A Guide
+    pages: [76, 77, 78, 79, 80, 81]
+    section: Addition strategies
+  ba-rearranging:
+    title: Beast Academy 2A Guide
+    pages: [88, 89, 90, 91, 92, 93]
+    section: Rearranging
+
+  boosters-addition-facts:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [24, 25, 26, 27, 28, 29]
+    section: Adding sums up to 12, 15, and 18
+  boosters-mental-addition:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [36, 37]
+    section: Mental Math Addition
+  boosters-two-digit-addition:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [62, 63, 64, 65, 66, 67]
+    section: Two digits plus two digits
+  boosters-addition-regrouping:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [68, 69, 70, 71, 72, 73, 74, 75, 76, 77]
+    section: Two-digit addition progression
+  boosters-two-digit-addition-test:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [78, 79]
+    section: 2-Digit Addition test
+  boosters-three-digit-addition:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91]
+    section: Three digits plus three digits
+  boosters-four-digit-addition:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [94, 95, 96, 97, 98, 99]
+    section: Four-digit addition and review
+  boosters-subtraction-facts:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55]
+    section: Subtraction facts through 18
+  boosters-mental-subtraction:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [56, 57]
+    section: Mental Math Subtraction
+  boosters-two-digit-subtraction:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [100, 101, 102, 103, 104, 105, 106, 107]
+    section: Two-digit subtraction and vertical form
+  boosters-three-digit-subtraction:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119]
+    section: Three-digit subtraction
+  boosters-four-digit-subtraction:
+    title: "Math Boosters: Addition and Subtraction"
+    pages: [122, 123, 124, 125, 126, 127]
+    section: Four-digit subtraction and review
+
+  ultimate-place-value:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [2]
+    section: Place Value
+  ultimate-number-order-round:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [3, 4, 5]
+    section: Comparing, ordering, and rounding numbers
+  ultimate-skip-counting:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [48]
+    section: Skip Counting
+  ultimate-addition-facts:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [6, 7]
+    section: Addition Facts Review and Sums to 20
+  ultimate-two-digit-addition:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [8, 9]
+    section: Two-Digit Addition
+  ultimate-add-three:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [10, 18]
+    section: Adding Three or More Numbers
+  ultimate-three-digit-addition:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [12, 13, 15]
+    section: Three-Digit and Multi-Digit Addition
+  ultimate-four-digit-addition:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [14, 15]
+    section: Four-Digit and Multi-Digit Addition
+  ultimate-subtraction-facts:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [20, 21]
+    section: Subtraction Within 20
+  ultimate-two-digit-subtraction:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [22, 23, 24, 25]
+    section: Two-Digit Subtraction
+  ultimate-three-digit-subtraction:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [26, 27, 28, 30, 31, 32]
+    section: Three-Digit and Multi-Digit Subtraction
+  ultimate-four-digit-subtraction:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [29, 31, 32]
+    section: Four-Digit and Multi-Digit Subtraction
+  ultimate-add-subtract-review:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [34, 39]
+    section: Addition and Subtraction Review
+  ultimate-one-step-problems:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [16, 17, 33, 40, 41]
+    section: Addition and Subtraction Word Problems
+  ultimate-mixed-problems:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [40, 41, 146, 148, 149, 150, 151]
+    section: Mixed Operations and Word Problems
+  ultimate-two-step-problems:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [150, 151, 206, 209]
+    section: Mixed-Operation and Cumulative Word Problems
+  ultimate-pictographs:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [42, 43]
+    section: Pictographs
+  ultimate-bar-graphs:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [44, 45]
+    section: Bar Graphs
+  ultimate-line-plots:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [46, 47]
+    section: Line Plots
+  ultimate-graphs:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [42, 43, 44, 45, 46, 47]
+    section: Pictographs, bar graphs, and line plots
+  ultimate-multiplication-models:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [49, 50, 51, 52]
+    section: Modeling Multiplication
+  ultimate-multiplication-low-facts:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [54, 55, 56, 57, 58, 59, 60, 61]
+    section: Multiplying by 2, 3, 4, and 5
+  ultimate-multiplication-properties:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [64, 94, 95]
+    section: Multiplying in Any Order and Properties
+  ultimate-multiplication-ten:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [72, 73]
+    section: Multiplying by 10
+  ultimate-multiplication-review:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [78, 79, 80, 81, 82]
+    section: Multiplying by 2 through 10
+  ultimate-multiplication-edge-facts:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [84, 85, 86, 87, 88, 89, 90]
+    section: Multiplying by 0, 1, 11, and 12
+  ultimate-division-models:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [108, 109, 110, 111]
+    section: Modeling Division
+  ultimate-fact-families:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [112, 113]
+    section: Multiplication and Division Fact Families
+  ultimate-division-low-facts:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [114, 115, 116, 117, 118, 119, 120, 121]
+    section: Division facts and problems through 5
+  ultimate-division-high-facts:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [122, 123, 124, 125, 126, 127, 128, 129, 130]
+    section: Division vocabulary and facts through 9
+  ultimate-division-through-12:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [131, 133, 134, 135, 136, 137, 138, 139]
+    section: Division by 10, 11, 12, and mixed review
+  ultimate-division-stories:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [120, 121, 130, 141]
+    section: Division Word Problems
+  ultimate-fractions-whole:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [152, 153, 154, 155]
+    section: Equal Parts and Parts of a Whole
+  ultimate-fractions-set:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [156]
+    section: Parts of a Set
+  ultimate-fractions-line:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [157]
+    section: Fractions on Number Lines
+  ultimate-fractions-understanding:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [158, 159, 160, 161, 162, 163, 164]
+    section: Understanding Fractions
+  ultimate-fractions-compare:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [165, 166, 167, 168, 169, 170, 171]
+    section: Comparing and Equivalent Fractions
+  ultimate-money:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [174, 175]
+    section: Counting Coins and Money
+  ultimate-money-problems:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [176, 177, 178, 179]
+    section: Money Word Problems
+  ultimate-time:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [180, 181]
+    section: Telling Time
+  ultimate-measurement:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [182, 183, 184, 185]
+    section: Length, Mass, and Capacity
+  ultimate-measurement-problems:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [186, 187]
+    section: Measurement Word Problems
+  ultimate-polygons:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [188, 189]
+    section: Polygons
+  ultimate-quadrilaterals:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [190, 191, 192, 193]
+    section: Classifying, Drawing, and Sorting Quadrilaterals
+  ultimate-area:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [194, 198, 202]
+    section: Area of Rectangles
+  ultimate-perimeter:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [199, 200, 201, 202]
+    section: Perimeter and Area of Rectangles
+  ultimate-geometry-problems:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [203, 204, 205]
+    section: Geometry Word Problems
+  ultimate-cumulative:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [206, 209]
+    section: Cumulative Word Problems
+  ultimate-final-mixed:
+    title: The Ultimate Grade 3 Math Workbook
+    pages: [158, 159, 160, 161, 180, 181]
+    section: Fractions and time review
+
+lessons:
+  em23-01-01-place-value-to-1-000: [ba-place-guide, ba-place-practice]
+  em23-01-02-base-ten-models: [ba-place-practice, ba-place-guide]
+  em23-01-03-number-forms: [ba-place-practice, ultimate-place-value]
+  em23-01-04-skip-counting-patterns: [ultimate-skip-counting]
+  em23-01-90-four-digit-place-value: [ultimate-place-value]
+  em23-01-99-mastery: [ba-place-guide, ba-place-practice, ultimate-place-value]
+
+  em23-02-01-greatest-numbers: [ba-comparing, ba-comparing-practice]
+  em23-02-02-least-numbers: [ba-ordering, ba-comparing-practice]
+  em23-02-03-read-a-number-line: [ba-number-line]
+  em23-02-04-round-numbers: [ultimate-number-order-round]
+  em23-02-90-round-to-hundreds: [ultimate-number-order-round]
+  em23-02-99-mastery: [ba-number-line, ba-comparing-practice, ultimate-number-order-round]
+
+  em23-03-01-addition-facts-through-20: [boosters-addition-facts, ultimate-addition-facts]
+  em23-03-02-ten-frame-addition: [ba-sums, ultimate-addition-facts]
+  em23-03-03-missing-addends: [ultimate-addition-facts, ba-strategies]
+  em23-03-04-mental-addition: [boosters-mental-addition, ba-strategies]
+  em23-03-90-addition-fluency-challenge: [boosters-addition-facts, ultimate-addition-facts]
+  em23-03-99-mastery: [boosters-addition-facts, ba-strategies, ultimate-addition-facts]
+
+  em23-04-01-two-digit-addition: [boosters-two-digit-addition, ultimate-two-digit-addition]
+  em23-04-02-addition-with-regrouping: [boosters-addition-regrouping, ultimate-two-digit-addition]
+  em23-04-03-add-three-numbers: [ultimate-add-three, ba-rearranging]
+  em23-04-04-three-digit-addition: [boosters-three-digit-addition, ultimate-three-digit-addition]
+  em23-04-90-four-digit-addition: [ultimate-four-digit-addition, boosters-four-digit-addition]
+  em23-04-99-mastery: [boosters-two-digit-addition-test, boosters-three-digit-addition, ultimate-three-digit-addition]
+
+  em23-05-01-subtraction-facts-through-20: [boosters-subtraction-facts, ultimate-subtraction-facts]
+  em23-05-02-addition-and-subtraction-families: [ultimate-add-subtract-review, ultimate-addition-facts]
+  em23-05-03-missing-subtrahends: [ultimate-subtraction-facts, boosters-subtraction-facts]
+  em23-05-04-mental-subtraction: [boosters-mental-subtraction, ultimate-subtraction-facts]
+  em23-05-90-subtraction-fluency-challenge: [boosters-subtraction-facts, ultimate-subtraction-facts]
+  em23-05-99-mastery: [boosters-subtraction-facts, boosters-mental-subtraction, ultimate-subtraction-facts]
+
+  em23-06-01-two-digit-subtraction: [boosters-two-digit-subtraction, ultimate-two-digit-subtraction]
+  em23-06-02-subtraction-with-regrouping: [boosters-two-digit-subtraction, ultimate-two-digit-subtraction]
+  em23-06-03-three-digit-subtraction: [boosters-three-digit-subtraction, ultimate-three-digit-subtraction]
+  em23-06-04-check-subtraction-with-addition: [ultimate-three-digit-subtraction, ultimate-add-subtract-review]
+  em23-06-90-four-digit-subtraction: [boosters-four-digit-subtraction, ultimate-four-digit-subtraction]
+  em23-06-99-mastery: [boosters-two-digit-subtraction, boosters-three-digit-subtraction, ultimate-three-digit-subtraction]
+
+  em23-07-01-choose-the-operation: [ultimate-mixed-problems]
+  em23-07-02-one-step-word-problems: [ultimate-one-step-problems]
+  em23-07-03-two-step-word-problems: [ultimate-two-step-problems]
+  em23-07-04-mixed-missing-numbers: [ultimate-mixed-problems, ultimate-add-subtract-review]
+  em23-07-90-problem-solving-challenge: [ultimate-two-step-problems]
+  em23-07-99-mastery: [ultimate-one-step-problems, ultimate-mixed-problems, ultimate-two-step-problems]
+
+  em23-08-01-read-pictographs: [ultimate-pictographs]
+  em23-08-02-read-bar-graphs: [ultimate-bar-graphs]
+  em23-08-03-read-line-plots: [ultimate-line-plots]
+  em23-08-04-compare-graph-data: [ultimate-graphs]
+  em23-08-90-data-detective-challenge: [ultimate-graphs]
+  em23-08-99-mastery: [ultimate-pictographs, ultimate-bar-graphs, ultimate-line-plots]
+
+  em23-09-01-equal-groups: [ultimate-multiplication-models]
+  em23-09-02-arrays: [ultimate-multiplication-models]
+  em23-09-03-turn-around-facts: [ultimate-multiplication-properties]
+  em23-09-04-facts-for-0-5-and-10: [ultimate-multiplication-low-facts, ultimate-multiplication-ten, ultimate-multiplication-edge-facts]
+  em23-09-90-facts-through-12: [ultimate-multiplication-edge-facts, ultimate-multiplication-review]
+  em23-09-99-mastery: [ultimate-multiplication-models, ultimate-multiplication-low-facts, ultimate-multiplication-review]
+
+  em23-10-01-share-equally: [ultimate-division-models]
+  em23-10-02-multiplication-and-division-families: [ultimate-fact-families]
+  em23-10-03-division-facts: [ultimate-division-low-facts, ultimate-division-through-12]
+  em23-10-04-division-stories: [ultimate-division-stories, ultimate-division-models]
+  em23-10-90-division-facts-through-12: [ultimate-division-through-12, ultimate-division-high-facts]
+  em23-10-99-mastery: [ultimate-division-models, ultimate-division-low-facts, ultimate-division-through-12]
+
+  em23-11-01-fractions-of-a-whole: [ultimate-fractions-whole, ultimate-fractions-understanding]
+  em23-11-02-fractions-of-a-set: [ultimate-fractions-set, ultimate-fractions-whole]
+  em23-11-03-fractions-on-number-lines: [ultimate-fractions-line]
+  em23-11-04-compare-and-equivalent-fractions: [ultimate-fractions-compare, ultimate-fractions-understanding]
+  em23-11-90-fraction-challenge: [ultimate-fractions-compare]
+  em23-11-99-mastery: [ultimate-fractions-whole, ultimate-fractions-understanding, ultimate-fractions-compare]
+
+  em23-12-01-count-money: [ultimate-money, ultimate-money-problems]
+  em23-12-02-tell-time: [ultimate-time]
+  em23-12-03-choose-measurement-units: [ultimate-measurement]
+  em23-12-04-measurement-applications: [ultimate-measurement-problems, ultimate-measurement]
+  em23-12-90-money-challenge: [ultimate-money-problems, ultimate-money]
+  em23-12-99-mastery: [ultimate-money, ultimate-time, ultimate-measurement]
+
+  em23-13-01-name-shapes: [ultimate-polygons]
+  em23-13-02-classify-quadrilaterals: [ultimate-quadrilaterals]
+  em23-13-03-area-with-arrays: [ultimate-area, ultimate-multiplication-models]
+  em23-13-04-perimeter: [ultimate-perimeter]
+  em23-13-90-geometry-challenge: [ultimate-geometry-problems, ultimate-area, ultimate-perimeter]
+  em23-13-99-mastery: [ultimate-polygons, ultimate-quadrilaterals, ultimate-perimeter]
+
+  em23-14-01-cumulative-arithmetic: [ultimate-cumulative, ultimate-add-subtract-review, boosters-two-digit-addition-test]
+  em23-14-02-cumulative-data: [ultimate-graphs, ultimate-cumulative]
+  em23-14-03-cumulative-fractions-and-geometry: [ultimate-fractions-understanding, ultimate-quadrilaterals]
+  em23-14-04-cumulative-measurement: [ultimate-time, ultimate-measurement-problems]
+  em23-14-90-final-multi-step-challenge: [ba-rearranging, ultimate-cumulative]
+  em23-14-99-mastery: [ultimate-cumulative, ultimate-graphs, ultimate-final-mixed]

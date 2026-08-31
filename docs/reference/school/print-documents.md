@@ -119,6 +119,15 @@ blocks:
   and worksheet construction emits prompt, asset, then OMR response inside one
   question fragment. Answer choices remain ordinary text/inline math, so the
   physical row mapping is unchanged.
+- **Physical-book help is distinct from question provenance.** A unit may carry
+  `studyReferences: [{role, title, pages, section}]` with one primary physical
+  book range and up to two useful alternates. The lesson card renders these as
+  “Reference if needed”; it does not claim that the original parallel-practice
+  questions were copied from those pages. A v2 item may carry the corresponding
+  `{title, pages, section}` as `reviewReference`. Issuance freezes it without
+  printing it beside the question, and a missed-question receipt repeats it as
+  the learner's targeted review location. Existing `source` remains audit
+  provenance and the legacy receipt fallback.
 - **Fit** is decided by measurement, never streaming. Four policies:
   `flow` paginates at normal density with no shrinking; `one-page` must fit —
   density falls back to compact, and a document still overset at compact is
@@ -854,12 +863,13 @@ own location hint (`ON THE PORTAL`, `IN THE GARAGE`). It is never hardcoded to
 machine. Descriptions use compact leading so the QR and hierarchy, rather than
 wrapped supporting copy, determine card height.
 
-The Letter worksheet lesson card deliberately uses compact course/module
-titles (`COME FOLLOW ME › UNIT 35 · PSALMS 49–86`), while its lesson title
-remains full. Its reading line names the printed text the learner actually
-opens: explicit unit `sourceTitle`, then the course's `source.reader` display
-title, then `provenance.source` as a bibliographic
-fallback. The course's pacing `source.title` is never a worksheet
+The worksheet lesson card deliberately uses compact course/module titles while
+its lesson title remains full. When `studyReferences` exist, its reading line
+begins “Reference if needed” and prints the primary physical book, exact printed
+pages, and section, followed by any useful alternates. Otherwise it names the
+printed text the learner actually opens: explicit unit `sourceTitle`, then the
+course's `source.reader` display title, then `provenance.source` as a
+bibliographic fallback. The course's pacing `source.title` is never a worksheet
 reading source. Single and composed worksheets share that rule. Already-issued
 artifacts remain immutable and exact reprints retain their original wording.
 

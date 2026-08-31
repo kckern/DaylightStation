@@ -123,6 +123,9 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
     return {
       itemId: item.id, type: item.type, prompt: curlyQuotes(promptForProfile(item, profile)),
       source: item.source ? { ...item.source } : null,
+      ...(item.reviewReference ? { reviewReference: {
+        ...item.reviewReference, pages: [...item.reviewReference.pages],
+      } } : {}),
       ...(item.stimulus ? { stimulus: { type: 'asset', ref: item.stimulus.ref, alt: curlyQuotes(item.stimulus.alt) } } : {}),
       options: visible.map((choice, index) => ({
         id: choice.id, label: curlyQuotes(choice.label), letter: LETTERS[index], correct: choice.correct,
