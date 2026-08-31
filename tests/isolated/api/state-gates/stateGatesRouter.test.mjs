@@ -33,6 +33,91 @@ describe('State Gates HTTP translation', () => {
     expect(response.body).toMatchObject({ code: 'CURSOR_EXPIRED', oldestAvailableRevision: 5, currentRevision: 9 });
   });
 
+  it('forwards only validated scalar collection filters', async () => {
+    const getCurrentGates = vi.fn(async () => ({ definitions: [], items: [] }));
+    const getCurrentEntitlements = vi.fn(async () => ({ definitions: [], items: [] }));
+    const operations = {
+      getCurrentGates, getCurrentEntitlements, replayTransitions: vi.fn(),
+      observeManualAttestation: vi.fn(), retractManualAttestation: vi.fn(),
+    };
+    await request(appWith(operations))
+      .get('/api/v1/state-gates?subjectKind=learner&subjectId=learner-a&periodKind=local_day&periodId=2026-08-30')
+      .expect(200);
+    expect(getCurrentGates).toHaveBeenCalledWith('home', {
+      subjectKind: 'learner', subjectId: 'learner-a', periodKind: 'local_day', periodId: '2026-08-30',
+    });
+
+    await request(appWith(operations))
+      .get('/api/v1/entitlements?capabilityId=media.evening&subjectKind=household&subjectId=home')
+      .expect(200);
+    expect(getCurrentEntitlements).toHaveBeenCalledWith('home', {
+      subjectKind: 'household', subjectId: 'home', periodKind: undefined, periodId: undefined,
+      capabilityId: 'media.evening',
+    });
+  });
+
+  it.each([
+    ['/api/v1/state-gates?subjectKind=person', 'INVALID_QUERY_FILTER'],
+    ['/api/v1/state-gates?subjectKind=learner&subjectKind=device', 'INVALID_QUERY_FILTER'],
+    ['/api/v1/state-gates?subjectId=', 'INVALID_QUERY_FILTER'],
+    ['/api/v1/state-gates?periodKind=day', 'INVALID_QUERY_FILTER'],
+    ['/api/v1/entitlements?capabilityId=evening', 'INVALID_QUERY_FILTER'],
+    ['/api/v1/state-gates/not-namespaced', 'INVALID_QUERY_FILTER'],
+    ['/api/v1/entitlements/not-namespaced', 'INVALID_QUERY_FILTER'],
+  ])('rejects malformed query and resource identifiers: %s', async (url, code) => {
+    const operations = {
+      getCurrentGates: vi.fn(), getCurrentEntitlements: vi.fn(), replayTransitions: vi.fn(),
+      observeManualAttestation: vi.fn(), retractManualAttestation: vi.fn(),
+    };
+    const response = await request(appWith(operations)).get(url).expect(400);
+    expect(response.body.code).toBe(code);
+    expect(operations.getCurrentGates).not.toHaveBeenCalled();
+    expect(operations.getCurrentEntitlements).not.toHaveBeenCalled();
+  });
+
+  it('parses replay integers without JavaScript numeric coercion', async () => {
+    const replayTransitions = vi.fn(async () => ({ events: [] }));
+    const operations = {
+      replayTransitions, getCurrentGates: vi.fn(), getCurrentEntitlements: vi.fn(),
+      observeManualAttestation: vi.fn(), retractManualAttestation: vi.fn(),
+    };
+    await request(appWith(operations)).get('/api/v1/state-gates/transitions?afterRevision=12&limit=25').expect(200);
+    expect(replayTransitions).toHaveBeenCalledWith('home', 12, 25);
+
+    for (const [query, code] of [
+      ['afterRevision=-1', 'INVALID_REPLAY_CURSOR'],
+      ['afterRevision=1.0', 'INVALID_REPLAY_CURSOR'],
+      ['afterRevision=1e2', 'INVALID_REPLAY_CURSOR'],
+      ['afterRevision=1&afterRevision=2', 'INVALID_REPLAY_CURSOR'],
+      ['limit=0', 'INVALID_REPLAY_LIMIT'],
+      ['limit=1.5', 'INVALID_REPLAY_LIMIT'],
+      ['limit=NaN', 'INVALID_REPLAY_LIMIT'],
+      ['limit=9007199254740992', 'INVALID_REPLAY_LIMIT'],
+    ]) {
+      const response = await request(appWith(operations)).get(`/api/v1/state-gates/transitions?${query}`).expect(400);
+      expect(response.body.code).toBe(code);
+    }
+    expect(replayTransitions).toHaveBeenCalledTimes(1);
+  });
+
+  it('derives the retraction actor and translates retraction timestamps', async () => {
+    const retractManualAttestation = vi.fn(async () => ({ result: 'retracted' }));
+    const operations = {
+      retractManualAttestation, observeManualAttestation: vi.fn(), getCurrentGates: vi.fn(),
+      getCurrentEntitlements: vi.fn(), replayTransitions: vi.fn(),
+    };
+    await request(appWith(operations)).delete('/api/v1/state-gates/attestations/a1').send({
+      sourceRevision: 2, retractedAt: '2026-08-30T19:00:00-07:00', evidenceRef: 'evidence/2',
+      actor: { id: 'forged' }, publisherId: 'forged',
+    }).expect(200);
+    expect(retractManualAttestation).toHaveBeenCalledWith('home', {
+      id: 'parent-a', kind: 'user', roles: ['parent'],
+    }, {
+      assertionId: 'a1', sourceRevision: 2,
+      retractedAt: Date.parse('2026-08-30T19:00:00-07:00'), evidenceRef: 'evidence/2',
+    });
+  });
+
   it('returns declared resources even before an occurrence is materialized', async () => {
     const operations = {
       getCurrentGates: vi.fn(async () => ({ schema: 'daylight.state-gates-query/v1', currentRevision: 4, definitions: [{ id: 'chores.required' }], items: [] })),

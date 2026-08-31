@@ -10,7 +10,8 @@ evaluates named gates, and publishes both four-state gate evaluations and binary
 entitlement decisions. It does not execute the gated action or decide how a denied
 capability looks in a UI.
 
-**Implementation status:** the backend foundation is complete. No School, Piano,
+**Implementation status:** the core backend is complete and covered across the domain,
+application, adapter, API, persistence, and composition lifecycle. No School, Piano,
 Fitness, chore, or screen producer/consumer migration is included yet. With no valid
 household policy, the rest of DaylightStation starts normally and State Gates reports
 `POLICY_UNAVAILABLE`.
@@ -154,6 +155,8 @@ language through application ports; State Gates must not import their private mo
 - Current state is authoritative; the event bus is not persistence or truth ingress.
 - Every entitlement declares a failure posture. No consumer invents one locally.
 - Domain evaluation receives `now` and household timezone explicitly.
+- Retry jitter is deterministic per household and channel, so recovery avoids synchronized
+  retries without making behavior dependent on ambient randomness.
 
 ## Current access model
 

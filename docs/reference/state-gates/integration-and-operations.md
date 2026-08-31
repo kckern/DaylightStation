@@ -164,8 +164,12 @@ Publication failure does not roll back the committed state; the command response
 up and startup reconciliation provides an additional recovery pass after restart.
 
 Delivery and boundary failures use independent per-household exponential backoff:
-1 second initially, doubled after each failure, capped at 60 seconds. The composition
-module accepts `retryPolicy` overrides for deterministic testing or deployment tuning.
+1 second initially, doubled after each failure, capped at 60 seconds. Each delay receives
+deterministic per-household/channel jitter of up to ±20%, so simultaneous failures do
+not create a retry herd and a restart computes the same schedule. The composition module
+accepts `retryPolicy` overrides (`initialDelayMs`, `multiplier`, `maxDelayMs`, and
+`jitterRatio`). `jitterRatio: 0` provides exact timing for deterministic tests; accepted
+ratios are from 0 through 1.
 
 ### Journal retention
 
@@ -286,9 +290,15 @@ actor provenance, or evidence.
 
 ### Verification
 
-- [ ] Domain truth tables and typed policy semantics covered.
-- [ ] Producer retry/correction/retraction scenarios covered.
-- [ ] Consumer bootstrap, disconnect, replay, and resync covered.
-- [ ] Invalid policy retains the prior graph.
-- [ ] Missing and stale evidence exercise the chosen failure posture.
-- [ ] Household timezone and DST boundary behavior covered where relevant.
+- [x] Domain truth tables and typed policy semantics covered.
+- [x] Assertion retry/correction/retraction scenarios covered with fake authenticated producers.
+- [x] Snapshot, ordered replay, cursor expiry, and outbox recovery covered with isolated consumers/adapters.
+- [x] Invalid policy retains the prior graph.
+- [x] Missing and stale evidence exercise both failure postures.
+- [x] Household timezone, overnight schedule, and DST gap/fold behavior covered.
+- [x] CAS exhaustion, interrupted writes, whole-batch compaction, startup ordering,
+  refresh failure, disposal, jitter, and multi-household isolation covered.
+
+These checks exercise the State Gates published language with isolated principals and
+fakes. They do not import a real School, Fitness, Piano, chore, or screen domain; those
+producer/consumer migrations remain separate work.

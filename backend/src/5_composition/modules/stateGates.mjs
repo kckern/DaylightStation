@@ -17,13 +17,33 @@ function normalizeRetryPolicy(value = {}) {
     initialDelayMs: value.initialDelayMs ?? 1_000,
     multiplier: value.multiplier ?? 2,
     maxDelayMs: value.maxDelayMs ?? 60_000,
+    jitterRatio: value.jitterRatio ?? 0.2,
   };
   if (!Number.isFinite(policy.initialDelayMs) || policy.initialDelayMs < 1
     || !Number.isFinite(policy.multiplier) || policy.multiplier < 1
-    || !Number.isFinite(policy.maxDelayMs) || policy.maxDelayMs < policy.initialDelayMs) {
+    || !Number.isFinite(policy.maxDelayMs) || policy.maxDelayMs < policy.initialDelayMs
+    || !Number.isFinite(policy.jitterRatio) || policy.jitterRatio < 0 || policy.jitterRatio > 1) {
     throw new Error('State Gates retry policy is invalid');
   }
   return Object.freeze(policy);
+}
+
+function deterministicUnit(seed) {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0) / 4_294_967_296;
+}
+
+export function stateGatesRetryDelay(policy, channel, householdId, attempt) {
+  const base = Math.min(
+    policy.maxDelayMs,
+    policy.initialDelayMs * (policy.multiplier ** attempt),
+  );
+  const jitter = policy.jitterRatio * ((2 * deterministicUnit(`${channel}:${householdId}:${attempt}`)) - 1);
+  return Math.min(policy.maxDelayMs, Math.max(1, Math.round(base * (1 + jitter))));
 }
 
 export async function createStateGatesModule({
@@ -67,10 +87,7 @@ export async function createStateGatesModule({
   const deliveryTimers = new Map();
   let disposed = false;
 
-  const retryDelay = attempt => Math.min(
-    retryPolicy.maxDelayMs,
-    retryPolicy.initialDelayMs * (retryPolicy.multiplier ** attempt),
-  );
+  const retryDelay = (channel, id, attempt) => stateGatesRetryDelay(retryPolicy, channel, id, attempt);
   const clearScheduled = (timers, id) => {
     const timer = timers.get(id);
     if (timer) clearTimeout(timer);
@@ -95,7 +112,7 @@ export async function createStateGatesModule({
         armBoundary(id, container.engine.nextBoundary(snapshot));
       } catch (error) {
         moduleLogger.error?.('state-gates.boundary.failed', {
-          householdId: id, error: error.message, retryInMs: retryDelay(0),
+          householdId: id, error: error.message, retryInMs: retryDelay('boundary', id, 0),
         });
         scheduleBoundaryRetry(id, 'evaluate', 0);
       }
@@ -112,7 +129,7 @@ export async function createStateGatesModule({
   const scheduleBoundaryRetry = (id, mode, attempt) => {
     clearScheduled(boundaryTimers, id);
     if (disposed) return;
-    const delay = retryDelay(attempt);
+    const delay = retryDelay('boundary', id, attempt);
     const timer = setTimeout(async () => {
       boundaryTimers.delete(id);
       if (disposed) return;
@@ -128,7 +145,7 @@ export async function createStateGatesModule({
         const nextAttempt = attempt + 1;
         moduleLogger.error?.('state-gates.boundary.retry_failed', {
           householdId: id, mode: retryMode, attempt: nextAttempt,
-          error: error.message, retryInMs: retryDelay(nextAttempt),
+          error: error.message, retryInMs: retryDelay('boundary', id, nextAttempt),
         });
         scheduleBoundaryRetry(id, retryMode, nextAttempt);
       }
@@ -140,7 +157,7 @@ export async function createStateGatesModule({
   const scheduleDeliveryRetry = (id, attempt) => {
     clearScheduled(deliveryTimers, id);
     if (disposed) return;
-    const delay = retryDelay(attempt);
+    const delay = retryDelay('delivery', id, attempt);
     const timer = setTimeout(async () => {
       deliveryTimers.delete(id);
       if (disposed) return;
@@ -151,7 +168,7 @@ export async function createStateGatesModule({
         const nextAttempt = attempt + 1;
         moduleLogger.error?.('state-gates.delivery.retry_failed', {
           householdId: id, attempt: nextAttempt,
-          error: error.message, retryInMs: retryDelay(nextAttempt),
+          error: error.message, retryInMs: retryDelay('delivery', id, nextAttempt),
         });
         scheduleDeliveryRetry(id, nextAttempt);
       }
@@ -174,7 +191,7 @@ export async function createStateGatesModule({
       // retry an operation that actually succeeded.
       moduleLogger.error?.('state-gates.boundary.refresh_failed', {
         householdId: args[0],
-        error: error.message, retryInMs: retryDelay(0),
+        error: error.message, retryInMs: retryDelay('boundary', args[0], 0),
       });
       scheduleBoundaryRetry(args[0], 'refresh', 0);
     }

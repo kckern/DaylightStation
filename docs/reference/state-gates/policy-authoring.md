@@ -140,8 +140,8 @@ claim_types:
 | `period_kinds` | Non-empty supported period kinds. |
 | `accepted_publishers` | Non-empty publisher IDs authorized for this claim type. |
 | `visibility` | `subscriber` or `administrative`. Controls raw diagnostic visibility, not endpoint authentication. |
-| `validity.max_age` | ISO-8601 duration or finite milliseconds after observation. |
-| `validity.max_future_skew` | Maximum accepted future offset for `observedAt`; defaults to zero. |
+| `validity.max_age` | Non-negative finite milliseconds or a non-negative ISO-8601 duration after observation. |
+| `validity.max_future_skew` | Non-negative finite milliseconds or a non-negative ISO-8601 duration; defaults to zero. |
 | `validity.must_fit_period` | Requires assertion validity to fit the period. |
 | `validity.actor_required` | Requires authenticated actor provenance. |
 | `validity.accepted_actor_roles` | Roles accepted for actor-sensitive claims; every role must exist in auth configuration. |
@@ -159,6 +159,11 @@ Value schemas support these constraints:
 
 There is no arbitrary JSON value, JavaScript, function, I/O, or implicit
 string-to-number coercion.
+
+Duration decoding is lexical and strict. Values such as `PT5M`, `P2D`, and numeric
+`300000` are accepted; human phrases, numeric strings, signs, mixed week/date forms,
+`NaN`, and infinity are rejected with `INVALID_DURATION`. Diagnostics retain the YAML
+field path, for example `claim_types.fitness.exercise.minutes.validity.max_age`.
 
 Declaring a publisher in YAML is not enough. A producer such as `school` or `fitness`
 must first be registered by composition with an authenticated fixed principal. Until

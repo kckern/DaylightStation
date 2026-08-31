@@ -14,11 +14,27 @@ function freeze(value) {
   return Object.freeze(value);
 }
 
-function durationMs(value) {
+const ISO_DURATION = /^P(?:(?:\d+(?:[.,]\d+)?W)|(?:(?:\d+(?:[.,]\d+)?Y)?(?:\d+(?:[.,]\d+)?M)?(?:\d+(?:[.,]\d+)?D)?(?:T(?=\d)(?:\d+(?:[.,]\d+)?H)?(?:\d+(?:[.,]\d+)?M)?(?:\d+(?:[.,]\d+)?S)?)?))$/i;
+
+function invalidDuration(field) {
+  return Object.assign(new Error(`${field} must be finite non-negative milliseconds or an ISO-8601 duration`), {
+    name: 'ValidationError', code: 'INVALID_DURATION', field,
+  });
+}
+
+function durationMs(value, field) {
   if (value == null) return null;
-  if (Number.isFinite(value)) return value;
-  const parsed = moment.duration(value);
-  return parsed.isValid() ? parsed.asMilliseconds() : NaN;
+  if (typeof value === 'number') {
+    if (Number.isFinite(value) && value >= 0) return value;
+    throw invalidDuration(field);
+  }
+  if (typeof value !== 'string' || !/[0-9]/.test(value) || !ISO_DURATION.test(value)) {
+    throw invalidDuration(field);
+  }
+  const parsed = moment.duration(value.replaceAll(',', '.'));
+  const milliseconds = parsed.asMilliseconds();
+  if (!parsed.isValid() || !Number.isFinite(milliseconds) || milliseconds < 0) throw invalidDuration(field);
+  return milliseconds;
 }
 
 function binding(value, fallback) {
@@ -94,8 +110,8 @@ function claimType(id, raw) {
     acceptedPublishers: raw.accepted_publishers,
     visibility: raw.visibility,
     validity: {
-      maxAgeMs: durationMs(raw.validity?.max_age),
-      maxFutureSkewMs: durationMs(raw.validity?.max_future_skew) ?? 0,
+      maxAgeMs: durationMs(raw.validity?.max_age, `claim_types.${id}.validity.max_age`),
+      maxFutureSkewMs: durationMs(raw.validity?.max_future_skew, `claim_types.${id}.validity.max_future_skew`) ?? 0,
       mustFitPeriod: raw.validity?.must_fit_period,
       actorRequired: raw.validity?.actor_required,
       acceptedActorRoles: raw.validity?.accepted_actor_roles,
