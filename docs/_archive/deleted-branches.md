@@ -337,3 +337,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-08-30 | codex/remove-keypad-qr | f72f26121 | Removed browser and Portal-native QR scanning from the School keypad, restored code-only self-service, and shipped scanner-free Portal Keys v26 after restoring the vendor AI camera service to its disabled state. |
 | 2026-08-31 | feature/answer-sheet-identity | e72e0d485 | Answer-sheet identity protections and append-only recovery for misattributed worksheet evidence; merged directly to main. |
 | 2026-09-01 | fix/school-parked-2026-09-01 | a3d2cfea6 | Six parked fixes: card-lineage corruption, agenda preview fidelity, IPP job-id, OMR decode confidence, reachability false-warn, bus topics. Merged to main. |
+| 2026-09-01 | feat/printer-job-tracking | 5407afe45 | IPP job-state observability: Get-Job-Attributes, job-state classifier, getJobState, detached awaitJobOutcome poll, real-hardware probe. Merged to main. |
