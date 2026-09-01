@@ -438,7 +438,7 @@ describe('dated_modules gating', () => {
 describe('the enrollment school-day calendar', () => {
   const SCHEDULE = { daysOfWeek: [1, 2, 3, 4, 5], except: [{ from: '2026-12-21', to: '2027-01-01' }] };
   const enrolled = (now) => planLearnerWork({
-    learnerId: 'learner-a',
+    learnerId: 'user_4',
     assignment: { courses: [{ courseId: 'math-fractions', enrollment: { schedule: SCHEDULE } }] },
     units: course(), sessions: [], now,
   });

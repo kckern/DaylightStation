@@ -49,7 +49,7 @@ and a learner card tapped there would produce the same, because `school_learner`
 
 ## Learner names in these plans
 
-This repo is public and a commit hook refuses real household first names (`.claude/secret-patterns.local.txt`). Throughout this plan set the four kids are `learner-a` and `learner-b` (grade school) and `learner-c` and `learner-d` (preschool). **Substitute the real roster ids when you touch config under `$DAYLIGHT_BASE_PATH`, which is outside the repo — never when you write code, tests, or docs.** The real ids are in `data/household/school/school.yml` `students:`.
+This repo is public and a commit hook refuses real household first names (`.claude/secret-patterns.local.txt`). Throughout this plan set the four kids are `user_4` and `user_2` (grade school) and `user_5` and `user_3` (preschool). **Substitute the real roster ids when you touch config under `$DAYLIGHT_BASE_PATH`, which is outside the repo — never when you write code, tests, or docs.** The real ids are in `data/household/school/school.yml` `students:`.
 
 ---
 

@@ -25,7 +25,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
 import { useReadingSession } from './useReadingSession.js';
 
 const SUMMARY = {
-  learnerId: 'learner-c', displayName: 'Learner C', enrolled: true, error: false,
+  learnerId: 'user_5', displayName: 'User_5', enrolled: true, error: false,
   count: 1, target: 2, progressLabel: '1 of 2 stories', doneToday: false, yesterday: [],
 };
 
@@ -59,7 +59,7 @@ function stubFetch({ summary = SUMMARY, readOk = true, session = null } = {}) {
 
 const posted = (path) => calls.filter((c) => c.url.includes(path));
 
-async function mountAndPick({ learnerId = 'learner-c', contentId = 'plex:620681' } = {}) {
+async function mountAndPick({ learnerId = 'user_5', contentId = 'plex:620681' } = {}) {
   const played = [];
   const hook = renderHook(() => useReadingSession({
     location: 'livingroom', confirmMs: 1000, onPlay: (pick) => played.push(pick),
@@ -88,7 +88,7 @@ describe('useReadingSession — playback', () => {
   it('commits the pick exactly once, with a pickId, and hands it to the player', async () => {
     const { played, result } = await mountAndPick();
     expect(played).toHaveLength(1);
-    expect(played[0]).toMatchObject({ learnerId: 'learner-c', contentId: 'plex:620681', location: 'livingroom' });
+    expect(played[0]).toMatchObject({ learnerId: 'user_5', contentId: 'plex:620681', location: 'livingroom' });
     expect(played[0].pickId).toMatch(/^pick_/);
     expect(result.current.view).toBe('playing');
   });
@@ -98,7 +98,7 @@ describe('useReadingSession — playback', () => {
       session: {
         sessionId: 'rs-cold-resume',
         location: 'livingroom',
-        learnerId: 'learner-c',
+        learnerId: 'user_5',
         state: 'prompt',
       },
     });
@@ -111,7 +111,7 @@ describe('useReadingSession — playback', () => {
     });
 
     expect(result.current.view).toBe('open');
-    expect(result.current.learner).toMatchObject({ id: 'learner-c' });
+    expect(result.current.learner).toMatchObject({ id: 'user_5' });
     expect(posted('/reading/session/ack')).toHaveLength(1);
     expect(posted('/reading/session/ack')[0].body).toEqual({
       location: 'livingroom',
@@ -124,7 +124,7 @@ describe('useReadingSession — playback', () => {
       session: {
         sessionId: 'rs-still-waking',
         location: 'livingroom',
-        learnerId: 'learner-c',
+        learnerId: 'user_5',
         state: 'starting',
       },
     });
@@ -144,11 +144,11 @@ describe('useReadingSession — playback', () => {
       session: (read) => read === 0
         ? {
             sessionId: 'rs-slow-wake', location: 'livingroom',
-            learnerId: 'learner-c', state: 'starting',
+            learnerId: 'user_5', state: 'starting',
           }
         : {
             sessionId: 'rs-slow-wake', location: 'livingroom',
-            learnerId: 'learner-c', state: 'prompt',
+            learnerId: 'user_5', state: 'prompt',
           },
     });
 
@@ -160,7 +160,7 @@ describe('useReadingSession — playback', () => {
     });
 
     expect(result.current.view).toBe('open');
-    expect(result.current.learner).toMatchObject({ id: 'learner-c' });
+    expect(result.current.learner).toMatchObject({ id: 'user_5' });
     expect(posted('/reading/session?')).toHaveLength(2);
     expect(posted('/reading/session/ack')).toHaveLength(1);
   });
@@ -172,7 +172,7 @@ describe('useReadingSession — playback', () => {
 
     expect(posted('/reading/playing')).toHaveLength(1);
     expect(posted('/reading/playing')[0].body).toMatchObject({
-      location: 'livingroom', learnerId: 'learner-c', contentId: 'plex:620681', pickId: played[0].pickId,
+      location: 'livingroom', learnerId: 'user_5', contentId: 'plex:620681', pickId: played[0].pickId,
     });
   });
 
@@ -183,7 +183,7 @@ describe('useReadingSession — playback', () => {
 
     expect(posted('/reading/read')).toHaveLength(1);
     expect(posted('/reading/read')[0].body).toMatchObject({
-      learnerId: 'learner-c', contentId: 'plex:620681', pickId: played[0].pickId, location: 'livingroom',
+      learnerId: 'user_5', contentId: 'plex:620681', pickId: played[0].pickId, location: 'livingroom',
     });
   });
 
@@ -198,11 +198,11 @@ describe('useReadingSession — playback', () => {
   // credit it was picked with. Re-reading the learner at completion is the one
   // mistake here that nobody would ever notice.
   it('credits the child who PICKED, even after another card swapped the screen mid-story', async () => {
-    const { result } = await mountAndPick({ learnerId: 'learner-c' });
-    await act(async () => { h.handler({ event: 'session-open', learnerId: 'learner-d', location: 'livingroom' }); });
+    const { result } = await mountAndPick({ learnerId: 'user_5' });
+    await act(async () => { h.handler({ event: 'session-open', learnerId: 'user_3', location: 'livingroom' }); });
     expect(result.current.view).toBe('playing');          // the story is not interrupted
     await act(async () => { await result.current.notePlaybackCompleted(); });
-    expect(posted('/reading/read')[0].body.learnerId).toBe('learner-c');
+    expect(posted('/reading/read')[0].body.learnerId).toBe('user_5');
   });
 
   it('records NOTHING when the player goes away without the story ending', async () => {
@@ -245,11 +245,11 @@ describe('useReadingSession — playback', () => {
     const { result } = renderHook(() => useReadingSession({
       location: 'livingroom', confirmMs: 1000, onPlay: (p) => played.push(p),
     }));
-    await act(async () => { h.handler({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' }); });
+    await act(async () => { h.handler({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' }); });
     expect(result.current.confirmRemainingMs).toBeNull();
     expect(result.current.confirmTotalMs).toBeNull();
 
-    await act(async () => { h.handler({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:1' }); });
+    await act(async () => { h.handler({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:1' }); });
     expect(result.current.confirmTotalMs).toBe(1000);
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     expect(result.current.confirmRemainingMs).toBeLessThan(1000);

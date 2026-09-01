@@ -110,7 +110,7 @@ Subject sets use one kind and must resolve against the catalog:
 subject_sets:
   learners:
     kind: learner
-    members: [learner-a, learner-b]
+    members: [user_4, user_2]
 ```
 
 Empty, mixed-kind, duplicate, or unknown-member sets fail whole-graph activation.

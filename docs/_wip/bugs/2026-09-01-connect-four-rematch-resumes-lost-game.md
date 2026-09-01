@@ -1,9 +1,9 @@
 # Connect Four hands the child back the game they just lost, forever
 
 **Date:** 2026-09-01
-**Reported by:** Learner A — "I kept trying to play but it just kept saying you lose"
+**Reported by:** User_4 — "I kept trying to play but it just kept saying you lose"
 **Surface:** Piano kiosk (yellow-room tablet), Games → Connect Four
-**Affected:** `learner-a` (2026-09-01, 10 phantom losses), `learner-b` (2026-08-31, 7 phantom losses)
+**Affected:** `user_4` (2026-09-01, 10 phantom losses), `user_2` (2026-08-31, 7 phantom losses)
 **Status:** root cause found, fixed, regression test added, phantom records scrubbed.
 
 ---
@@ -28,7 +28,7 @@ Two episodes, 2h20m apart, on one stale board:
 | 18:08:11 | Gives up, exits to Side Scroller |
 | 20:21–20:25 | Comes back. Same ply-32 ghost. Four more times. Gives up. |
 
-Learner C played a clean Connect Four game at 19:42 in between, because the stale
+User_5 played a clean Connect Four game at 19:42 in between, because the stale
 state is keyed per user.
 
 ## Root cause
@@ -100,8 +100,8 @@ session id was minted`, all `level: 1, ranked: true`, all Connect Four:
 
 | User | Date | Records | Transcript |
 |---|---|---|---|
-| `learner-a` | 2026-09-01 | 10 | the same 32-move loss |
-| `learner-b` | 2026-08-31 | 7 | the same 16-move loss |
+| `user_4` | 2026-09-01 | 10 | the same 32-move loss |
+| `user_2` | 2026-08-31 | 7 | the same 16-move loss |
 
 Each has a matching entry in `household/gaming/log/connect-four/<day>/`.
 
@@ -110,15 +110,15 @@ real records only yields five losses either way — both genuinely have a losing
 streak in their recent honest history. Removing the phantoms changes the record
 count and the archive, not either child's ladder position.
 
-Separately worth noting: `learner-b` sits at `unlocked_through: 1` with five real
+Separately worth noting: `user_2` sits at `unlocked_through: 1` with five real
 losses. That is difficulty tuning, not this bug.
 
 ### Scrub, 2026-09-01
 
-All 17 records and their 17 archive entries deleted on prod. `learner-a`'s Sept 1
+All 17 records and their 17 archive entries deleted on prod. `user_4`'s Sept 1
 now holds exactly one Connect Four game — the real 18:03:29 loss — and the
 2026-08-31 archive day is empty, correct, because every entry in it was a
-phantom (`learner-b`'s real 16-move game was 2026-08-29). Ladders untouched.
+phantom (`user_2`'s real 16-move game was 2026-08-29). Ladders untouched.
 Copies of all 34 files are in `/tmp/c4-phantom-backup` on the homeserver until
 its next reboot.
 

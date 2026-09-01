@@ -41,10 +41,10 @@ describe('State Gates HTTP translation', () => {
       observeManualAttestation: vi.fn(), retractManualAttestation: vi.fn(),
     };
     await request(appWith(operations))
-      .get('/api/v1/state-gates?gateId=fitness.weekly-rings&subjectKind=learner&subjectId=learner-a&periodKind=local_day&periodId=2026-08-30')
+      .get('/api/v1/state-gates?gateId=fitness.weekly-rings&subjectKind=learner&subjectId=user_4&periodKind=local_day&periodId=2026-08-30')
       .expect(200);
     expect(getCurrentGates).toHaveBeenCalledWith('home', {
-      subjectKind: 'learner', subjectId: 'learner-a', periodKind: 'local_day', periodId: '2026-08-30',
+      subjectKind: 'learner', subjectId: 'user_4', periodKind: 'local_day', periodId: '2026-08-30',
       gateId: 'fitness.weekly-rings',
     });
 

@@ -33,7 +33,7 @@ vi.mock('../TeacherProfileContext.jsx', () => ({
 }));
 import { schoolApi } from '../../schoolApi.js';
 
-const KIDS = [{ id: 'learner-a', name: 'Learner A' }, { id: 'learner-b', name: 'Learner B' }];
+const KIDS = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
 const ok = (data) => ({ ok: true, status: 200, data });
 
 /** A quiz with recorded answers, and a program lesson with none. */
@@ -59,7 +59,7 @@ const seed = ({ sessions = null } = {}) => {
     { sessionId: 'ses_program', unitId: 'korean.day-12', state: 'rewarded', day: '2026-08-27', studyDay: '2026-08-26' },
     { sessionId: 'ses_other_day', unitId: 'korean.day-11', state: 'rewarded', day: '2026-08-25', studyDay: '2026-08-25' },
   ] }));
-  schoolApi.reassignSession.mockResolvedValue(ok({ sessionId: 'ses_program', toLearnerId: 'learner-b' }));
+  schoolApi.reassignSession.mockResolvedValue(ok({ sessionId: 'ses_program', toLearnerId: 'user_2' }));
 };
 
 const loadTheDay = async (d = '2026-08-26') => {
@@ -73,7 +73,7 @@ describe('ReassignPanel — work with no machine attempts', () => {
 
   it('lists a lesson with no recorded answers and moves it, with a reason, to the sibling', async () => {
     seed();
-    render(<ReassignPanel learnerId="learner-a" learnerName="Learner A" kids={KIDS} />);
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
     await loadTheDay();
 
     // The quiz stays in the attempts list; the program lesson appears in its
@@ -94,16 +94,16 @@ describe('ReassignPanel — work with no machine attempts', () => {
     const recredit = within(row).getByText('Re-credit');
     // No target and no reason: the verb is not offerable yet.
     expect(recredit.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Move to'), { target: { value: 'learner-b' } });
+    fireEvent.change(screen.getByLabelText('Move to'), { target: { value: 'user_2' } });
     expect(recredit.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Learner B sat at the wrong station' } });
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'User_2 sat at the wrong station' } });
     expect(recredit.disabled).toBe(false);
 
     fireEvent.click(recredit);
     await waitFor(() => expect(schoolApi.reassignSession).toHaveBeenCalledWith({
       sessionId: 'ses_program',
-      toLearnerId: 'learner-b',
-      reason: 'Learner B sat at the wrong station',
+      toLearnerId: 'user_2',
+      reason: 'User_2 sat at the wrong station',
       reassignedBy: 'kckern',
       pin: null,
     }));
@@ -119,7 +119,7 @@ describe('ReassignPanel — work with no machine attempts', () => {
     schoolApi.learnerSessions.mockResolvedValue(ok({ sessions: [
       { sessionId: 'ses_program', unitId: 'korean.day-12', state: 'rewarded', day: '2026-08-26' },
     ] }));
-    render(<ReassignPanel learnerId="learner-a" learnerName="Learner A" kids={KIDS} />);
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
     await loadTheDay();
     await waitFor(() => expect(screen.getByText('Korean — day 12')).toBeTruthy());
     expect(screen.queryByText('No recorded work that day.')).toBeNull();
@@ -128,7 +128,7 @@ describe('ReassignPanel — work with no machine attempts', () => {
   it('says so when the day’s lessons could not be read, instead of showing an empty list', async () => {
     seed();
     schoolApi.learnerSessions.mockResolvedValue({ ok: false, status: 500, data: null });
-    render(<ReassignPanel learnerId="learner-a" learnerName="Learner A" kids={KIDS} />);
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
     await loadTheDay();
     await waitFor(() => expect(screen.getByText(/only recorded answers are listed/)).toBeTruthy());
     // The half that DID load is still usable.
@@ -137,9 +137,9 @@ describe('ReassignPanel — work with no machine attempts', () => {
 
   it('keeps the recent-days picker — typing dates blind was a fixed defect', async () => {
     seed();
-    render(<ReassignPanel learnerId="learner-a" learnerName="Learner A" kids={KIDS} />);
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('2026-08-26')).toBeTruthy());
-    expect(schoolApi.attemptDays).toHaveBeenCalledWith('learner-a');
+    expect(schoolApi.attemptDays).toHaveBeenCalledWith('user_4');
     expect(screen.getByText('2026-08-25')).toBeTruthy();
   });
 
@@ -149,7 +149,7 @@ describe('ReassignPanel — work with no machine attempts', () => {
     // from the 26th — the day the child actually did it, and the day the child
     // is told about in their own note.
     seed();
-    render(<ReassignPanel learnerId="learner-a" learnerName="Learner A" kids={KIDS} />);
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('2026-08-26')).toBeTruthy());
     expect(screen.queryByText('2026-08-27')).toBeNull();
     await loadTheDay('2026-08-26');
@@ -161,7 +161,7 @@ describe('ReassignPanel — work with no machine attempts', () => {
     // button is how a grown-up moves the wrong lesson.
     seed();
     schoolApi.curriculumUnits.mockResolvedValue({ ok: false, status: 500, data: null });
-    render(<ReassignPanel learnerId="learner-a" learnerName="Learner A" kids={KIDS} />);
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
     await loadTheDay();
     await waitFor(() => expect(screen.getByText('korean.day-12')).toBeTruthy());
     expect(screen.getByText(/Lesson names couldn’t be loaded/)).toBeTruthy();

@@ -38,7 +38,7 @@ function offered() {
     responses: [{ itemId: 'q1', given: '3' }, { itemId: 'q2', given: '3' }],
   }).evaluation;
   return createAdaptiveRemediationSession({
-    sessionId: 'rem-1', learnerId: 'learner-a',
+    sessionId: 'rem-1', learnerId: 'user_4',
     source: { kind: 'assessment', externalId: 'DEVICE01:9' },
     tutorContext: { lesson: { title: 'Rates' } },
     policy: policy(), evaluation, createdAt: at(0),

@@ -105,7 +105,7 @@ const SNAPSHOT = {
   contentId: 'plex:4242',
   title: 'How the Solar System Works',
   resumePosition: 0,
-  learner: { id: 'learner-a', name: 'Learner A' },
+  learner: { id: 'user_4', name: 'User_4' },
   checkpoints: [
     { id: 'cp-100', at: 100, items: [MC] },
     { id: 'cp-300', at: 300, items: [MC] },
@@ -197,7 +197,7 @@ describe('MediaLessonScreen', () => {
     await deliver({ type: 'lesson.open', sessionId: 'sess-1' });
     expect(screen.getByTestId('media-lesson')).toHaveAttribute('data-view', 'open');
     await waitFor(() => expect(screen.getByTestId('media-lesson-curtain')).toHaveTextContent('How the Solar System Works'));
-    expect(screen.getByTestId('media-lesson-curtain')).toHaveTextContent('Learner A');
+    expect(screen.getByTestId('media-lesson-curtain')).toHaveTextContent('User_4');
     // TWO dismisses before the Player is ever mounted: one on the way OUT OF
     // IDLE (the screensaver, which suppresses for content and for an overlay —
     // and a curtain is neither), one immediately before `showOverlay` claims
@@ -251,7 +251,7 @@ describe('MediaLessonScreen', () => {
     await openLesson({ tag: 'video' });
     await waitFor(() => expect(document.querySelector('.surround-frame')).toBeTruthy());
     expect(screen.getByTestId('lesson-checkpoint-map')).toBeInTheDocument();
-    expect(screen.getByTestId('lesson-score-name')).toHaveTextContent('Learner A');
+    expect(screen.getByTestId('lesson-score-name')).toHaveTextContent('User_4');
   });
 
   it('does NOT frame an AUDIO lesson — there is no media box to letterbox', async () => {

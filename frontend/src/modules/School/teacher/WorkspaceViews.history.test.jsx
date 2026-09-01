@@ -48,7 +48,7 @@ describe('HistoryView', () => {
       { sessionId: 'ses_2', studyDay: '2026-08-25', lessonTitle: 'Psalms 49–51', subject: 'scripture' },
       { sessionId: 'ses_3', studyDay: '2026-08-23', lessonTitle: 'The Midwestern States', subject: 'civilization' },
     ] } });
-    render(<HistoryView learnerId="learner-a" learnerName="Learner A" onOpenSession={vi.fn()} />);
+    render(<HistoryView learnerId="user_4" learnerName="User_4" onOpenSession={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Tuesday, Aug 25')).toBeInTheDocument());
     expect(screen.getByText('Sunday, Aug 23')).toBeInTheDocument();
     expect(screen.getAllByText('Tuesday, Aug 25')).toHaveLength(1);
@@ -58,16 +58,16 @@ describe('HistoryView', () => {
     teacherWorkspaceApi.timeline.mockResolvedValue({ ok: true, status: 200, data: { items: [
       { sessionId: 'ses_1', studyDay: '2026-08-25', lessonTitle: 'Psalms 62–66', subject: 'scripture' },
     ] } });
-    render(<HistoryView learnerId="learner-a" learnerName="Learner A" onOpenSession={vi.fn()} />);
+    render(<HistoryView learnerId="user_4" learnerName="User_4" onOpenSession={vi.fn()} />);
     const link = await screen.findByRole('link', { name: /Tuesday, Aug 25/ });
-    expect(link).toHaveAttribute('href', '/school/teacher/students/learner-a/day/2026-08-25');
+    expect(link).toHaveAttribute('href', '/school/teacher/students/user_4/day/2026-08-25');
   });
 
   it('shows a score for timeline rows, which carry only gradedPercent', async () => {
     teacherWorkspaceApi.timeline.mockResolvedValue({ ok: true, status: 200, data: { items: [
       { sessionId: 'ses_1', day: '2026-08-25', lessonTitle: 'Psalms 62–66', subject: 'scripture', gradedPercent: 80 },
     ] } });
-    render(<HistoryView learnerId="learner-a" learnerName="Learner A" onOpenSession={vi.fn()} />);
+    render(<HistoryView learnerId="user_4" learnerName="User_4" onOpenSession={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('80%')).toBeInTheDocument());
   });
 
@@ -75,7 +75,7 @@ describe('HistoryView', () => {
     teacherWorkspaceApi.timeline.mockResolvedValue({ ok: true, status: 200, data: { items: [
       { sessionId: 'ses_1', day: '2026-08-24', updatedAt: '2026-08-28T10:00:00Z', lessonTitle: 'Psalms 49–51', subject: 'scripture' },
     ] } });
-    render(<HistoryView learnerId="learner-a" learnerName="Learner A" onOpenSession={vi.fn()} />);
+    render(<HistoryView learnerId="user_4" learnerName="User_4" onOpenSession={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Monday, Aug 24')).toBeInTheDocument());
     expect(screen.queryByText('Friday, Aug 28')).not.toBeInTheDocument();
   });

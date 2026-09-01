@@ -31,7 +31,7 @@ const { teacherWorkspaceApi } = await import('../teacherWorkspaceApi.js');
 const { TeacherProfileProvider } = await import('../TeacherProfileContext.jsx');
 const PinPrompt = (await import('../panels/PinPrompt.jsx')).default;
 
-const KIDS = [{ id: 'learner-a', name: 'Learner A' }];
+const KIDS = [{ id: 'user_4', name: 'User_4' }];
 const ok = (data) => ({ ok: true, status: 200, data });
 
 beforeEach(() => {
@@ -43,7 +43,7 @@ beforeEach(() => {
   ]));
   schoolApi.reportCard.mockResolvedValue(ok({
     schema: 'school.report-card/v1',
-    learnerId: 'learner-a',
+    learnerId: 'user_4',
     period: { periodId: '2026-fall', label: 'Fall 2026' },
     generatedAt: '2026-08-06T12:00:00Z',
     courses: [{ courseId: 'math-fractions', policy: 'best-of-unit-mean-v1', coursePercent: 88, unitGrades: [] }],
@@ -63,7 +63,7 @@ beforeEach(() => {
   sessionStorage.setItem('school-teacher-claim', 'kckern');
   schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] }));
   schoolApi.progressReport.mockResolvedValue(ok({
-    schema: 'school.progress-report/v1', learnerId: 'learner-a',
+    schema: 'school.progress-report/v1', learnerId: 'user_4',
     period: { periodId: '2026-fall', label: 'Fall 2026' },
     courses: [], activeDays: { bySubject: [{ subjectId: 'math', days: 3 }], total: 3 },
     milestones: [{ id: 'm1', unitId: 'math-fractions.02', dueBy: '2026-08-01', status: 'behind', overdueDays: 4, excusedDays: 4, effectiveStatus: 'excused' }],
@@ -84,8 +84,8 @@ const mount = (ui) => render(<TeacherProfileProvider>{ui}<PinPrompt /></TeacherP
 
 describe('RecordsTab', () => {
   it('defaults the period selector to the current period and renders the DRAFT card', async () => {
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
-    await waitFor(() => expect(schoolApi.reportCard).toHaveBeenCalledWith({ learnerId: 'learner-a', periodId: '2026-fall' }));
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
+    await waitFor(() => expect(schoolApi.reportCard).toHaveBeenCalledWith({ learnerId: 'user_4', periodId: '2026-fall' }));
     await waitFor(() => expect(screen.getByText('DRAFT')).toBeTruthy());
     expect(screen.getAllByText('Fractions').length).toBeGreaterThan(0);
     expect(screen.getByText(/88%/)).toBeTruthy();
@@ -97,7 +97,7 @@ describe('RecordsTab', () => {
 
   it('a failed periods read surfaces a named error with retry, never a silently missing selector', async () => {
     schoolApi.periods.mockResolvedValue({ ok: false, status: 500, data: null });
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Couldn.t load the academic periods/)).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
   });
@@ -107,30 +107,30 @@ describe('RecordsTab', () => {
     schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
       ? Promise.resolve(ok({ courses: [{ courseId: 'math-fractions', coursePercent: 91 }], activeDays: { bySubject: [], total: 40 }, pendingReview: 0 }))
       : Promise.resolve(ok([{ periodId: '2026-spring', closedBy: 'kckern', closedAt: '2026-06-13T00:00:00Z' }]))));
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Closed by kckern/)).toBeTruthy());
     act(() => { fireEvent.click(screen.getByText(/Closed by kckern/)); });
     await waitFor(() => expect(screen.getByText('FROZEN')).toBeTruthy());
     expect(screen.getByText(/91%/)).toBeTruthy();
-    expect(schoolApi.reportCardFrozen).toHaveBeenCalledWith({ learnerId: 'learner-a', periodId: '2026-spring' });
+    expect(schoolApi.reportCardFrozen).toHaveBeenCalledWith({ learnerId: 'user_4', periodId: '2026-spring' });
   });
 
   it('a null report card is UNAVAILABLE, never a quiet empty (unwired tell)', async () => {
     schoolApi.reportCard.mockResolvedValue(ok(null));
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/report card isn.t available on this install/i)).toBeTruthy());
   });
 
   it('lists frozen closes with who and when', async () => {
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Closed by kckern/)).toBeTruthy());
   });
 
   it('links the report-card PDF for the selected period', async () => {
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('link', { name: 'PDF · Report card' })).toBeTruthy());
     expect(screen.getByRole('link', { name: 'PDF · Report card' }).getAttribute('href'))
-      .toBe('/api/v1/school/report-card?learnerId=learner-a&periodId=2026-fall&format=pdf');
+      .toBe('/api/v1/school/report-card?learnerId=user_4&periodId=2026-fall&format=pdf');
   });
 
   it('no learner selected prompts instead of fetching', async () => {
@@ -140,13 +140,13 @@ describe('RecordsTab', () => {
   });
 
   it('carries no stubs — every records use case is live', async () => {
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('DRAFT')).toBeTruthy());
     expect(document.querySelectorAll('[data-todo]').length).toBe(0);
   });
 
   it('pacing shows the excused vocabulary and the enrichment credit', async () => {
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/excused — 4 enrichment days/)).toBeTruthy());
     expect(screen.getByText('Yellowstone trip')).toBeTruthy();
     expect(screen.getByRole('link', { name: /PDF · Progress report/ })).toBeTruthy();
@@ -156,7 +156,7 @@ describe('RecordsTab', () => {
     schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
       ? Promise.resolve({ ok: false, status: 404, data: null })
       : Promise.resolve(ok([]))));
-    const { container } = mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    const { container } = mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Close this period' })).toBeTruthy());
     const admin = container.querySelector('.teacher-period-admin');
     expect(admin).toBeTruthy();
@@ -169,20 +169,20 @@ describe('RecordsTab', () => {
     schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
       ? Promise.resolve({ ok: false, status: 404, data: null })
       : Promise.resolve(ok([]))));
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Close this period' })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Close this period' })); });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })); });
     await waitFor(() => expect(schoolApi.closePeriod).toHaveBeenCalledWith(
-      { learnerId: 'learner-a', periodId: '2026-fall', closedBy: 'kckern', pin: null, supersede: false }, null));
+      { learnerId: 'user_4', periodId: '2026-fall', closedBy: 'kckern', pin: null, supersede: false }, null));
   });
 
   it('an already-frozen period offers supersede instead', async () => {
     schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
       ? Promise.resolve(ok({ courses: [], activeDays: { bySubject: [], total: 1 }, pendingReview: 0 }))
       : Promise.resolve(ok([{ periodId: '2026-fall', closedBy: 'kckern', closedAt: 't' }]))));
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('button', { name: /Supersede & re-close/ })).toBeTruthy());
   });
 
@@ -191,7 +191,7 @@ describe('RecordsTab', () => {
     schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
       ? Promise.resolve(ok({ courses: [], activeDays: { bySubject: [], total: 1 }, pendingReview: 0 }))
       : Promise.resolve(ok([{ periodId: '2026-fall', closedBy: 'kckern', closedAt: 't' }]))));
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('button', { name: /Supersede & re-close/ })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Supersede & re-close/ })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })); });
@@ -199,16 +199,16 @@ describe('RecordsTab', () => {
     act(() => { fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } }); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
     await waitFor(() => expect(schoolApi.closePeriod).toHaveBeenCalledWith(
-      { learnerId: 'learner-a', periodId: '2026-fall', closedBy: 'kckern', pin: null, supersede: true }, 'grant'));
+      { learnerId: 'user_4', periodId: '2026-fall', closedBy: 'kckern', pin: null, supersede: true }, 'grant'));
     expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({
-      pin: '4321', action: 'report-card.close', resource: 'learner-a/2026-fall',
+      pin: '4321', action: 'report-card.close', resource: 'user_4/2026-fall',
     });
   });
 
   it('certificate links render only for graded courses', async () => {
-    mount(<RecordsTab learnerId="learner-a" kids={KIDS} />);
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('link', { name: 'Certificate' })).toBeTruthy());
     expect(screen.getByRole('link', { name: 'Certificate' }).getAttribute('href'))
-      .toContain('/api/v1/school/certificate?learnerId=learner-a&periodId=2026-fall&courseId=math-fractions');
+      .toContain('/api/v1/school/certificate?learnerId=user_4&periodId=2026-fall&courseId=math-fractions');
   });
 });

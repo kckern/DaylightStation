@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SchoolCalcDevice } from '#domains/school/schoolcalc/index.mjs';
 import { RequestSchoolCalcDelivery } from './RequestSchoolCalcDelivery.mjs';
 
-function observedDevice({ learners = [{ id: 'learner-a', name: 'Alpha' }] } = {}) {
+function observedDevice({ learners = [{ id: 'user_4', name: 'Alpha' }] } = {}) {
   const observed = SchoolCalcDevice.enroll({ deviceId: 'DEV001', label: 'D', platformId: 'future', catalogId: 'main', createdAt: 'created' })
     .observe({
       capabilityReport: { platformId: 'future', deviceId: 'DEV001', installedArtifactIds: ['sc:future:OLD'] },

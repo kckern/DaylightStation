@@ -208,12 +208,12 @@ describe('PianoLessonCeremonyBridge', () => {
     const info = [];
     const c = build({ logger: { warn() {}, info: (event, data) => info.push({ event, data }) } });
     await c.bus.emit('piano.lesson.completed', {
-      userId: 'learner-c', plexId: 'plex:694782', title: 'Lesson 9 | Hot Cross Buns: Part 2',
+      userId: 'user_5', plexId: 'plex:694782', title: 'Lesson 9 | Hot Cross Buns: Part 2',
     });
     expect(info).toContainEqual({
       event: 'school.piano-ceremony.ignored',
       data: {
-        learnerId: 'learner-c',
+        learnerId: 'user_5',
         plexId: 'plex:694782',
         title: 'Lesson 9 | Hot Cross Buns: Part 2',
         reason: 'not-in-enrolled-course',

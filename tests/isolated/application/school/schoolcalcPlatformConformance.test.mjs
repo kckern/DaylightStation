@@ -62,7 +62,7 @@ describe.each([
     expect(enrolled.device).toMatchObject({
       deviceId: DEVICE_ID,
       platformId: fixture.platformId,
-      learnerBindings: [expect.objectContaining({ learnerKey: 1, learnerId: 'learner-a', active: true })],
+      learnerBindings: [expect.objectContaining({ learnerKey: 1, learnerId: 'user_4', active: true })],
     });
 
     await expect(harness.container.identifyDevice.execute({ record: enrolled.identityRecord }))
@@ -150,7 +150,7 @@ describe.each([
 
     expect(harness.grader.importSchoolCalcAssessment).toHaveBeenCalledTimes(1);
     expect(harness.grader.importSchoolCalcAssessment).toHaveBeenCalledWith(expect.objectContaining({
-      learnerId: 'learner-a',
+      learnerId: 'user_4',
       receivedAt: '2026-08-01T12:00:00.000Z',
       submission: expect.objectContaining({
         deviceId: DEVICE_ID,
@@ -175,7 +175,7 @@ describe.each([
   it('isolates three calculators sharing one relay and deduplicates QR-first cable uploads', async () => {
     const fixture = platformFixtures()[fixtureIndex];
     const deviceIds = ['SCAABBCCDDEE', 'SCBBCCDDEEFF', 'SCCCDDEEFFAA'];
-    const learnerIds = ['learner-a', 'learner-b', 'learner-c'];
+    const learnerIds = ['user_4', 'user_2', 'user_5'];
     const harness = createHarness(fixture, { deviceIds, learnerIds });
     const fleet = [];
 
@@ -363,7 +363,7 @@ class Ti86ConformanceCodec extends Ti86SchoolCalcCodec {
 
 function createHarness(fixture, {
   deviceIds = [DEVICE_ID],
-  learnerIds = ['learner-a'],
+  learnerIds = ['user_4'],
 } = {}) {
   const devices = new MemoryDevices();
   const artifacts = new MemoryArtifacts();

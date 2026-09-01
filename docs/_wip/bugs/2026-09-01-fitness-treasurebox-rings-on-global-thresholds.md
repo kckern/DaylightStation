@@ -10,9 +10,9 @@
 
 ## The evidence — one session file, three series
 
-Session `fs_20260901100054` (Insanity Max:30 · Modified—Cardio Challenge), learner `learner-a`, 5 s ticks. From `household/fitness/log/2026-09-01/20260901100054.yml`, RLE-decoded:
+Session `fs_20260901100054` (Insanity Max:30 · Modified—Cardio Challenge), learner `user_4`, 5 s ticks. From `household/fitness/log/2026-09-01/20260901100054.yml`, RLE-decoded:
 
-| tick | HR | `learner-a:zone` | `learner-a:rings` | note |
+| tick | HR | `user_4:zone` | `user_4:rings` | note |
 |---|---|---|---|---|
 | 0–1 | 90, 90 | c | 0, 0 | |
 | 2 | 101 | c | 0 | interval not yet complete |
@@ -21,11 +21,11 @@ Session `fs_20260901100054` (Insanity Max:30 · Modified—Cardio Challenge), le
 | 17–20 | 105, 110, 112, 118 | c | 6, 7, 8, 9 | paying again |
 | 21 → | 120, 122, 126 … | a | 11, 13, 15 … | 2/tick — personal *warm* is 140, so this is still wrong, just less visibly |
 
-The ring series switches on and off at **100 bpm** to the tick. That is the global `active.min` (`household/fitness/config.yml:669`). Learner A's personal zones — the ones the zone series, the roster tile, the LED scene (`fitness.zone_led.activated zoneIds=["cool"]` until 17:02:36) and `ZoneProfileStore` (`build_profile userId=learner-a hasCustomZones=true warmThreshold=140`) all used — are `active: 120, warm: 140, hot: 160`.
+The ring series switches on and off at **100 bpm** to the tick. That is the global `active.min` (`household/fitness/config.yml:669`). User_4's personal zones — the ones the zone series, the roster tile, the LED scene (`fitness.zone_led.activated zoneIds=["cool"]` until 17:02:36) and `ZoneProfileStore` (`build_profile userId=user_4 hasCustomZones=true warmThreshold=140`) all used — are `active: 120, warm: 140, hot: 160`.
 
 Two zone tables were live in one session. The one that pays used the wrong one.
 
-Downstream: `WeeklyMeasuresStateGatesProducer` publishes only when the ring value **changes** (`WeeklyMeasuresStateGatesProducer.mjs:103-104`), and it published `fitness:weekly-rings:learner-a:…` every 15 s from 17:01:51 (`state-gates.assertion.corrected`, householdRevision 1237 → 1264+). Each one repainted the agenda board (`school.selfservice.status-board.refresh source=state-gates`). That climbing number, ninety seconds before the tile turned green, is what was observed.
+Downstream: `WeeklyMeasuresStateGatesProducer` publishes only when the ring value **changes** (`WeeklyMeasuresStateGatesProducer.mjs:103-104`), and it published `fitness:weekly-rings:user_4:…` every 15 s from 17:01:51 (`state-gates.assertion.corrected`, householdRevision 1237 → 1264+). Each one repainted the agenda board (`school.selfservice.status-board.refresh source=state-gates`). That climbing number, ninety seconds before the tile turned green, is what was observed.
 
 ---
 
@@ -49,8 +49,8 @@ priority is usersConfigOverrides > ZoneProfileStore > global
    }
    if (!overrides) overrides = {};                            // → global thresholds
    ```
-   A `null` is cached and `.has()` returns true for it. Nothing clears the cache when the profile store learns about the user: only `setZoneProfileStore()` (session start, line 70) and `reset()` (line 182). `ZoneProfileStore.syncFromUsers()` — which rebuilds profiles ~4×/s all session (`build_profile.aggregated … learner-a=233 … window=60s`) — has no way to tell the box.
-3. ~~**The race was lost by one millisecond.**~~ **RETRACTED — see below.** Learner A's first `treasurebox.record_heart_rate` is at 17:00:54.**915**; the store's first `zoneprofilestore.build_profile userId=learner-a` is at 17:00:54.**916**. `getProfile('learner-a')` returned null, `null` went into the cache, and the box used `{}` — global thresholds — for the remaining 3 000+ HR samples.
+   A `null` is cached and `.has()` returns true for it. Nothing clears the cache when the profile store learns about the user: only `setZoneProfileStore()` (session start, line 70) and `reset()` (line 182). `ZoneProfileStore.syncFromUsers()` — which rebuilds profiles ~4×/s all session (`build_profile.aggregated … user_4=233 … window=60s`) — has no way to tell the box.
+3. ~~**The race was lost by one millisecond.**~~ **RETRACTED — see below.** User_4's first `treasurebox.record_heart_rate` is at 17:00:54.**915**; the store's first `zoneprofilestore.build_profile userId=user_4` is at 17:00:54.**916**. `getProfile('user_4')` returned null, `null` went into the cache, and the box used `{}` — global thresholds — for the remaining 3 000+ HR samples.
 
 The two timestamps are real; the *reading* of them was wrong. Review traced the call order in `FitnessSession.recordDeviceActivity`: the `recordHeartRateForDevice` feed and the `_syncZoneProfiles` block sat in the same function behind the **same** `startupDiscarded` flag, so both opened on the same packet — and the box ran first, **unconditionally**. There was no race to lose. What varied per session was only whether a 5 s tick happened to land inside the ~3 s window before the first scored packet, i.e. whether the store had been populated by some *other* path in time: a coin flip per session, not a millisecond.
 

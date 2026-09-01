@@ -21,9 +21,9 @@ beforeEach(async () => {
 
 describe('teacherLog write category', () => {
   it('emits a successful write at info under teacher.write.*', () => {
-    teacherLog.write('saved', { panel: 'enrollment', learnerId: 'learner-b' });
+    teacherLog.write('saved', { panel: 'enrollment', learnerId: 'user_2' });
     expect(info).toHaveBeenCalledWith('teacher.write.saved', {
-      panel: 'enrollment', learnerId: 'learner-b', detail: 'saved',
+      panel: 'enrollment', learnerId: 'user_2', detail: 'saved',
     });
     expect(warn).not.toHaveBeenCalled();
   });
@@ -38,8 +38,8 @@ describe('teacherLog write category', () => {
   });
 
   it('shares one filterable prefix with the refusal path, so a write reads as one story', () => {
-    teacherLog.write('saved', { learnerId: 'learner-b' });
-    teacherLog.writeRefused('refused', { learnerId: 'learner-b' });
+    teacherLog.write('saved', { learnerId: 'user_2' });
+    teacherLog.writeRefused('refused', { learnerId: 'user_2' });
     const events = [...info.mock.calls, ...warn.mock.calls].map(([e]) => e);
     expect(events.every((e) => e.startsWith('teacher.write.'))).toBe(true);
   });

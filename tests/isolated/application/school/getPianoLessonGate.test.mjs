@@ -86,10 +86,10 @@ function build({
 describe('GetPianoLessonGate — verdict', () => {
   it('gates an enrolled learner who still owes today\'s lesson', async () => {
     const { gate } = build();
-    const result = await gate.execute({ learnerId: 'learner-c' });
+    const result = await gate.execute({ learnerId: 'user_5' });
     expect(result).toMatchObject({
       schema: 'school.piano-lesson-gate/v1',
-      learnerId: 'learner-c',
+      learnerId: 'user_5',
       gated: true,
       reason: 'owed',
       lesson: { id: 'plex:695611', title: 'Meet the Eighth Note' },
@@ -98,7 +98,7 @@ describe('GetPianoLessonGate — verdict', () => {
 
   it('does not gate a discharged day', async () => {
     const { gate } = build({ statuses: [DONE] });
-    expect(await gate.execute({ learnerId: 'learner-c' }))
+    expect(await gate.execute({ learnerId: 'user_5' }))
       .toMatchObject({ gated: false, reason: 'done' });
   });
 
@@ -112,7 +112,7 @@ describe('GetPianoLessonGate — verdict', () => {
 
   it('fails OPEN when the launcher throws', async () => {
     const { gate } = build({ statuses: [new Error('plex unreachable')] });
-    expect(await gate.execute({ learnerId: 'learner-c' }))
+    expect(await gate.execute({ learnerId: 'user_5' }))
       .toMatchObject({ gated: false, reason: 'unavailable' });
   });
 });
@@ -139,8 +139,8 @@ describe('GetPianoLessonGate — memo', () => {
 
   it('answers a repeat read from memory instead of re-reading the course', async () => {
     const { gate, status } = build();
-    const first = await gate.execute({ learnerId: 'learner-c' });
-    const second = await gate.execute({ learnerId: 'learner-c' });
+    const first = await gate.execute({ learnerId: 'user_5' });
+    const second = await gate.execute({ learnerId: 'user_5' });
     expect(status).toHaveBeenCalledTimes(1);
     expect(second).toEqual(first);
   });
@@ -150,40 +150,40 @@ describe('GetPianoLessonGate — memo', () => {
     // Both halves matter: the verdict that WRITES the memo and the verdict
     // read back OUT of it are separate code paths, and either one returning
     // the stored object by reference leaks one request's edits into the next.
-    const written = await gate.execute({ learnerId: 'learner-c' });
+    const written = await gate.execute({ learnerId: 'user_5' });
     written.gated = false;
-    const readBack = await gate.execute({ learnerId: 'learner-c' });
+    const readBack = await gate.execute({ learnerId: 'user_5' });
     expect(readBack.gated).toBe(true);
     readBack.gated = false;
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(true);
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(true);
   });
 
   it('re-reads once the memo has aged past its TTL', async () => {
     const { gate, status, now } = build({ statuses: [OWED, DONE] });
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(true);
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(true);
     now.ms += GetPianoLessonGate.MEMO_TTL_MS;
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(false);
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(false);
     expect(status).toHaveBeenCalledTimes(2);
   });
 
   it('keeps one learner\'s verdict out of another\'s', async () => {
     const { gate, status } = build({ statuses: [OWED, DONE] });
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(true);
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(true);
     expect((await gate.execute({ learnerId: 'beth' })).gated).toBe(false);
     expect(status).toHaveBeenCalledTimes(2);
   });
 
   it('NEVER memoises `unavailable` — a cached outage outlives the outage', async () => {
     const { gate, status } = build({ statuses: [new Error('plex unreachable'), OWED] });
-    expect((await gate.execute({ learnerId: 'learner-c' })).reason).toBe('unavailable');
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(true);
+    expect((await gate.execute({ learnerId: 'user_5' })).reason).toBe('unavailable');
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(true);
     expect(status).toHaveBeenCalledTimes(2);
   });
 
   it('memoises the cheap verdicts too — not-enrolled must not re-read every pick', async () => {
     const { gate, assignments } = build({ programs: [{ programId: 'flashcards' }] });
-    await gate.execute({ learnerId: 'learner-c' });
-    await gate.execute({ learnerId: 'learner-c' });
+    await gate.execute({ learnerId: 'user_5' });
+    await gate.execute({ learnerId: 'user_5' });
     expect(assignments.get).toHaveBeenCalledTimes(1);
   });
 
@@ -195,28 +195,28 @@ describe('GetPianoLessonGate — memo', () => {
     // exactly capacity: the refreshed one must survive, because it is now the
     // newest write rather than the oldest.
     const { gate, assignments, now } = build({ programs: [{ programId: 'flashcards' }] });
-    await gate.execute({ learnerId: 'learner-c' });
+    await gate.execute({ learnerId: 'user_5' });
     await gate.execute({ learnerId: 'beth' });
     now.ms += GetPianoLessonGate.MEMO_TTL_MS;
-    await gate.execute({ learnerId: 'learner-c' });
+    await gate.execute({ learnerId: 'user_5' });
     for (let i = 0; i < GetPianoLessonGate.MEMO_MAX_ENTRIES - 1; i += 1) {
       // eslint-disable-next-line no-await-in-loop
       await gate.execute({ learnerId: `fresh-${i}` });
     }
     const before = assignments.get.mock.calls.length;
-    await gate.execute({ learnerId: 'learner-c' });
+    await gate.execute({ learnerId: 'user_5' });
     expect(assignments.get.mock.calls.length).toBe(before);
   });
 
   it('is bounded: a flood of unknown learner ids evicts the oldest entries', async () => {
     const { gate, assignments } = build({ programs: [{ programId: 'flashcards' }] });
-    await gate.execute({ learnerId: 'learner-c' });
+    await gate.execute({ learnerId: 'user_5' });
     for (let i = 0; i < GetPianoLessonGate.MEMO_MAX_ENTRIES; i += 1) {
       // eslint-disable-next-line no-await-in-loop
       await gate.execute({ learnerId: `typo-${i}` });
     }
     const before = assignments.get.mock.calls.length;
-    await gate.execute({ learnerId: 'learner-c' });
+    await gate.execute({ learnerId: 'user_5' });
     expect(assignments.get.mock.calls.length).toBe(before + 1);
   });
 });
@@ -256,45 +256,45 @@ describe('GetPianoLessonGate — invalidation', () => {
 
   it('drops the memo when that learner completes a piano lesson', async () => {
     const { gate, bus, status } = wired({ statuses: [OWED, DONE] });
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(true);
-    await bus.emit('piano.lesson.completed', { userId: 'learner-c', plexId: 'plex:695611' });
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(false);
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(true);
+    await bus.emit('piano.lesson.completed', { userId: 'user_5', plexId: 'plex:695611' });
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(false);
     expect(status).toHaveBeenCalledTimes(2);
   });
 
   it('drops the memo when a grown-up bypasses the day', async () => {
     const { gate, bus, status } = wired({ statuses: [OWED, DONE] });
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(true);
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(true);
     await bus.emit('school', {
-      event: 'program-day-bypass-changed', learnerId: 'learner-c', programId: PROGRAM, active: true,
+      event: 'program-day-bypass-changed', learnerId: 'user_5', programId: PROGRAM, active: true,
     });
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(false);
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(false);
     expect(status).toHaveBeenCalledTimes(2);
   });
 
   it('drops the memo when the learner\'s assignments change', async () => {
     const { gate, bus, status } = wired({ statuses: [OWED, DONE] });
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(true);
-    await bus.emit('school.assignments.changed', { learnerId: 'learner-c', at: '2026-09-01T17:13:00Z' });
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(false);
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(true);
+    await bus.emit('school.assignments.changed', { learnerId: 'user_5', at: '2026-09-01T17:13:00Z' });
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(false);
     expect(status).toHaveBeenCalledTimes(2);
   });
 
   it('invalidates only the learner named by the event', async () => {
     const { gate, bus, status } = wired({ statuses: [OWED] });
-    await gate.execute({ learnerId: 'learner-c' });
+    await gate.execute({ learnerId: 'user_5' });
     await gate.execute({ learnerId: 'beth' });
     expect(status).toHaveBeenCalledTimes(2);
-    await bus.emit('piano.lesson.completed', { userId: 'learner-c', plexId: 'plex:695611' });
+    await bus.emit('piano.lesson.completed', { userId: 'user_5', plexId: 'plex:695611' });
     await gate.execute({ learnerId: 'beth' });
     expect(status).toHaveBeenCalledTimes(2);
-    await gate.execute({ learnerId: 'learner-c' });
+    await gate.execute({ learnerId: 'user_5' });
     expect(status).toHaveBeenCalledTimes(3);
   });
 
   it('ignores a bus event that names no learner rather than throwing', async () => {
     const { gate, bus } = wired();
-    await gate.execute({ learnerId: 'learner-c' });
+    await gate.execute({ learnerId: 'user_5' });
     await expect(bus.emit('piano.lesson.completed', { plexId: 'plex:695611' })).resolves.toBeUndefined();
   });
 
@@ -302,6 +302,6 @@ describe('GetPianoLessonGate — invalidation', () => {
     const { gate } = build({ realtime: null });
     gate.start();
     gate.stop();
-    expect((await gate.execute({ learnerId: 'learner-c' })).gated).toBe(true);
+    expect((await gate.execute({ learnerId: 'user_5' })).gated).toBe(true);
   });
 });

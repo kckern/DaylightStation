@@ -45,13 +45,13 @@ vi.mock('./TeacherProfileContext.jsx', () => ({
 import { schoolApi } from '../schoolApi.js';
 import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 
-const KIDS = [{ id: 'learner-b', name: 'Learner B' }];
+const KIDS = [{ id: 'user_2', name: 'User_2' }];
 
 const sessionAt = (state, extra = {}) => ({
   schema: 'school.teacher-session/v4',
   sessionId: 'ses_1',
   revision: 3,
-  state: { sessionId: 'ses_1', learnerId: 'learner-b', state, terminal: false, ...extra },
+  state: { sessionId: 'ses_1', learnerId: 'user_2', state, terminal: false, ...extra },
   taxonomy: { subject: 'math', lessonTitle: 'Fractions' },
   scores: { machine: null, effective: null },
   artifacts: [],
@@ -62,7 +62,7 @@ const heading = () => screen.queryByText('Settle this by hand');
 
 async function renderAt(state, extra) {
   teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: sessionAt(state, extra) });
-  render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+  render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
   await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
 }
 
@@ -113,7 +113,7 @@ describe('SessionInspector — settle this by hand', () => {
     expect(schoolApi.gradeSession).not.toHaveBeenCalled();
     expect(schoolApi.closeSession).not.toHaveBeenCalled();
     expect(schoolApi.postTeacherNote).not.toHaveBeenCalled();
-    expect(screen.getByText(/Learner B gets your note/)).toBeInTheDocument();
+    expect(screen.getByText(/User_2 gets your note/)).toBeInTheDocument();
   });
 
   it('marks it, tells the child why, then closes it — and refetches', async () => {
@@ -125,7 +125,7 @@ describe('SessionInspector — settle this by hand', () => {
 
     await waitFor(() => expect(schoolApi.closeSession).toHaveBeenCalled());
     expect(schoolApi.postTeacherNote).toHaveBeenCalledWith({
-      learnerId: 'learner-b', note: 'Marked on paper at the table.', from: 'kckern', pin: null,
+      learnerId: 'user_2', note: 'Marked on paper at the table.', from: 'kckern', pin: null,
     });
     expect(schoolApi.gradeSession).toHaveBeenCalledWith('ses_1', {
       gradedBy: 'kckern', pin: null, settle: true, settledBy: 'kckern',

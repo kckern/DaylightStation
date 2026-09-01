@@ -341,8 +341,8 @@ minutes in is not a story read). `school ops read` is the manual-correction
 path — a book read on a lap, a mis-scanned sticker:
 
 ```bash
-node cli/school.mjs ops read learner-c --title="The Jungle Book" --content=plex:620681
-node cli/school.mjs ops read learner-c --title="The Jungle Book" --content=plex:620681 --apply
+node cli/school.mjs ops read user_5 --title="The Jungle Book" --content=plex:620681
+node cli/school.mjs ops read user_5 --title="The Jungle Book" --content=plex:620681 --apply
 ```
 
 The learner id is resolved against `school.yml` `students:` and an unknown one

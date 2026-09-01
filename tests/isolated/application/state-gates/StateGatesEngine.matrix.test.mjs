@@ -56,13 +56,13 @@ function fixture({ policy = candidate(), commitOutcomes = [], authorize = async 
     },
     eventPublisher: { publish: async events => published.push(...structuredClone(events)) },
     administrationAuthorizer: { authorize },
-    loadSubjects: async () => [{ kind: 'household', id: 'home' }, { kind: 'learner', id: 'learner-a' }],
+    loadSubjects: async () => [{ kind: 'household', id: 'home' }, { kind: 'learner', id: 'user_4' }],
     publisherIds: async () => ['source'], roleIds: async () => ['parent', 'admin'],
     now: () => now, timezone: () => 'America/Los_Angeles',
   });
   const command = (value, sourceRevision = 1) => ({
-    assertionId: 'source:done:learner-a:2026-08-30', claimTypeId: 'school.done', publisherId: 'source',
-    subject: { kind: 'learner', id: 'learner-a' },
+    assertionId: 'source:done:user_4:2026-08-30', claimTypeId: 'school.done', publisherId: 'source',
+    subject: { kind: 'learner', id: 'user_4' },
     period: { kind: 'local_day', id: '2026-08-30' },
     value, sourceRevision, observedAt: start, validFrom: start,
   });

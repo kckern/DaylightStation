@@ -50,8 +50,8 @@ function harness() {
     readQuizRequests: () => [],
   };
   const userService = {
-    getProfile: (id) => (id === 'learner-a' ? { id } : null),
-    getHouseholdRoster: () => [{ id: 'learner-a' }],
+    getProfile: (id) => (id === 'user_4' ? { id } : null),
+    getHouseholdRoster: () => [{ id: 'user_4' }],
   };
   const service = new SchoolService({
     datastore,
@@ -66,7 +66,7 @@ describe('SchoolService SchoolCalc import', () => {
   it('grades against the immutable downloaded bank and resumes without duplicate attempts', () => {
     const { service, attempts } = harness();
     const input = {
-      learnerId: 'learner-a',
+      learnerId: 'user_4',
       submission: submission(),
       bankSnapshot: assessmentBank('old-answer'),
       mode: 'quiz',
@@ -95,17 +95,17 @@ describe('SchoolService SchoolCalc import', () => {
   it('rejects a changed digest for the same device-global sequence', () => {
     const { service } = harness();
     service.importSchoolCalcAssessment({
-      learnerId: 'learner-a', submission: submission(), bankSnapshot: assessmentBank(), mode: 'quiz', recordDigest: 'digest-a', receivedAt: RECEIVED_AT,
+      learnerId: 'user_4', submission: submission(), bankSnapshot: assessmentBank(), mode: 'quiz', recordDigest: 'digest-a', receivedAt: RECEIVED_AT,
     });
     expect(() => service.importSchoolCalcAssessment({
-      learnerId: 'learner-a', submission: submission(), bankSnapshot: assessmentBank(), mode: 'quiz', recordDigest: 'digest-b', receivedAt: RECEIVED_AT,
+      learnerId: 'user_4', submission: submission(), bankSnapshot: assessmentBank(), mode: 'quiz', recordDigest: 'digest-b', receivedAt: RECEIVED_AT,
     })).toThrow(/result collision/);
   });
 
   it('records flashcard self-grades without treating revealed answers as submitted answers', () => {
     const { service, attempts } = harness();
     service.importSchoolCalcAssessment({
-      learnerId: 'learner-a',
+      learnerId: 'user_4',
       submission: submission(false),
       bankSnapshot: assessmentBank(),
       mode: 'flashcard',
@@ -118,7 +118,7 @@ describe('SchoolService SchoolCalc import', () => {
   it('rejects missing or non-canonical calculator import receipt time', () => {
     const { service } = harness();
     const input = {
-      learnerId: 'learner-a', submission: submission(), bankSnapshot: assessmentBank(),
+      learnerId: 'user_4', submission: submission(), bankSnapshot: assessmentBank(),
       mode: 'quiz', recordDigest: 'digest-a',
     };
     expect(() => service.importSchoolCalcAssessment(input)).toThrow(/receivedAt/);
