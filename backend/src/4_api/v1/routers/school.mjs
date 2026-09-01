@@ -42,6 +42,7 @@ export function createSchoolRouter({
   getLearnerTimeline = null,
   adjustSessionGrade = null,
   retractSessionGradeAdjustment = null,
+  invalidateSessionEvidence = null,
   teacherAgendaDispatch = null,
   manageCurriculumException = null,
   teacherCapabilitySessions = null,
@@ -1226,6 +1227,19 @@ export function createSchoolRouter({
       adjustmentId: req.params.adjustmentId,
       reason: body.reason,
       retractedBy: body.retractedBy,
+      pin: body.pin,
+      baseSeq: body.baseSeq,
+      apply: body.apply === true,
+    }));
+  }));
+  router.post('/teacher/sessions/:sessionId/evidence-invalidations', wrap(async (req, res) => {
+    if (!invalidateSessionEvidence) throw new EntityNotFoundError('evidence invalidation', 'not configured');
+    const body = req.body || {};
+    res.status(body.apply === true ? 201 : 200).json(await invalidateSessionEvidence.execute({
+      sessionId: req.params.sessionId,
+      invalidationId: body.invalidationId,
+      reason: body.reason,
+      invalidatedBy: body.invalidatedBy,
       pin: body.pin,
       baseSeq: body.baseSeq,
       apply: body.apply === true,

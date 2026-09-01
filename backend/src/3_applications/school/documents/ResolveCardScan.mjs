@@ -613,6 +613,15 @@ export class ResolveCardScan {
     }
 
     const records = await this.#allocationStore.findByCard(cardId);
+    const answeredRows = new Set(Object.keys(answers).map(Number));
+    if (records.some((record) => record.cardRetiredAt) && answeredRows.size > 0) {
+      return {
+        results: [], deadCard: true, retiredCard: true,
+        answeredRowCount: answeredRows.size,
+        recordStatuses: records.map((record) => record.status),
+        ...(cardIdInferred ? { cardIdInferred } : {}),
+      };
+    }
     const preflight = identityReview ? null : await this.#identityPreflight({ cardId, answers, records });
     if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}) };
     const live = records.filter((record) => record.status === 'live');
@@ -624,7 +633,6 @@ export class ResolveCardScan {
     const eligible = identityReview?.targetRecordId
       ? ordinarilyEligible.filter((record) => record.recordId === identityReview.targetRecordId)
       : ordinarilyEligible;
-    const answeredRows = new Set(Object.keys(answers).map(Number));
 
     // A card the store has NEVER seen, with real answers on it, is almost
     // always a mis-bubbled card id (7 student-transcribed digits, no check

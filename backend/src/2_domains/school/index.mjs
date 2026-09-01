@@ -1,6 +1,8 @@
 export { validateQuestionBank, summarizeQuestionBank } from './questionBankValidation.mjs';
 export { gradeAnswer, givenShapeError } from './grading.mjs';
-export { createAttempt, isRegradeCorrection } from './attempt.mjs';
+export {
+  createAttempt, isRegradeCorrection, isAttemptInvalidation, effectiveAttempts,
+} from './attempt.mjs';
 export { bankContentRev } from './bankRev.mjs';
 export { normalizeQuestionBankV2, issueWorksheet } from './questionBankV2.mjs';
 // export { reviewAtlasCurriculum } from './atlasCurriculumReview.mjs';

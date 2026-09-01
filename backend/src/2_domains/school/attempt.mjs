@@ -53,3 +53,23 @@ function isCanonicalTimestamp(value) {
 export function isRegradeCorrection(attempt) {
   return attempt?.provenance?.kind === 'regrade';
 }
+
+/**
+ * An invalidation is an append-only tombstone for evidence that was recorded
+ * against the wrong work.  The original attempt stays in the ledger; readers
+ * remove both it and this administrative row from effective learning history.
+ */
+export function isAttemptInvalidation(attempt) {
+  return attempt?.provenance?.kind === 'invalidation'
+    && typeof attempt.provenance.of === 'string'
+    && attempt.provenance.of.length > 0;
+}
+
+/** Return the learner-work rows that remain effective after tombstones fold. */
+export function effectiveAttempts(attempts) {
+  const rows = Array.isArray(attempts) ? attempts : [];
+  const invalidated = new Set(rows
+    .filter(isAttemptInvalidation)
+    .map((attempt) => attempt.provenance.of));
+  return rows.filter((attempt) => !isAttemptInvalidation(attempt) && !invalidated.has(attempt?.id));
+}

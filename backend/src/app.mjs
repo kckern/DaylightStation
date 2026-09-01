@@ -360,6 +360,7 @@ import { createGamingApiModule } from './5_composition/modules/gamingApi.mjs';
 import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
 import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
+import { effectiveAttempts } from '#domains/school/attempt.mjs';
 import { createSentenceLadderRouter } from './4_api/v1/routers/sentenceLadder.mjs';
 import { SentenceLadderService } from './3_applications/school/SentenceLadderService.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
@@ -3210,7 +3211,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       config: schoolMaterialsConfig,
       progressStore: schoolMaterialProgressStore,
       bankIndex: schoolMaterialBankIndex,
-      attemptsReader: { read: (userId) => schoolDatastore.readAllAttempts(userId) },
+      attemptsReader: { read: (userId) => effectiveAttempts(schoolDatastore.readAllAttempts(userId)) },
       scheduler: new NodeAsyncScheduler(),
       logger: rootLogger.child({ module: 'school-materials' }),
       snapshot: new YamlMaterialSnapshotStore({ configService, logger: rootLogger.child({ module: 'school-materials' }) })
@@ -3831,6 +3832,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       configService,
       householdId,
       schoolService,
+      attemptDatastore: schoolDatastore,
       economyService: economyApi.economyService,
       userService,
       eventBus,
@@ -4326,6 +4328,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         receiptIssuer: schoolLifecycle.useCases?.issueCorrectedResultReceipt ?? null,
         logger: rootLogger.child({ module: 'school-grade-adjustment' }),
       }) : null,
+    invalidateSessionEvidence: schoolLifecycle.useCases?.invalidateSessionEvidence ?? null,
     issuedArtifactStore: schoolLifecycle.stores?.issuedArtifacts ?? null,
     teacherAgendaDispatch: schoolLifecycle.useCases?.teacherAgendaDispatch ?? null,
     reprintIssuedArtifact: schoolLifecycle.useCases?.reprintIssuedArtifact ?? null,

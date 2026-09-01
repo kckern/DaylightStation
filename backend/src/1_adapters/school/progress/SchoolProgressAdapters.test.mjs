@@ -112,6 +112,21 @@ describe('YAML attempt evidence adapter', () => {
     expect(datastore.readAllAttempts).toHaveBeenCalledWith('kid-a');
     expect(datastore.readAttemptsInRange).not.toHaveBeenCalled();
   });
+
+  it('folds append-only invalidations out of learning evidence', () => {
+    const attempt = {
+      id: 'att-wrong-sheet', at: '2026-08-01T12:00:00.000Z', sessionId: 's1',
+      bankId: 'math/work/check', itemId: 'q1', itemType: 'multiple_choice',
+      mode: 'quiz', correct: false, attributedTo: 'kid-a', transport: 'paper',
+    };
+    const datastore = { readAllAttempts: vi.fn(() => [attempt, {
+      ...attempt, id: 'att-invalidation', provenance: {
+        kind: 'invalidation', of: attempt.id, invalidationId: 'inv-1',
+      },
+    }]) };
+    const source = new YamlSchoolAttemptEvidenceSource({ datastore });
+    expect(source.listEvidence({ learnerIds: ['kid-a'] })).toEqual([]);
+  });
 });
 
 describe('generic School learning evidence repository', () => {

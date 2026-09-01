@@ -82,6 +82,18 @@ describe('TeacherCapabilitySessions', () => {
       userId: 'parent', action: 'sessions.grade-adjustment.retract', context: { sessionId: 'ses_1', adjustmentId: 'adj_2' } })).toBe(false);
   });
 
+  it('scopes evidence invalidation to the affected session', () => {
+    expect(teacherResource('sessions.evidence-invalidate', { sessionId: 'ses_1' })).toBe('ses_1');
+    expect(requiresTeacherStepUp('sessions.evidence-invalidate', { sessionId: 'ses_1' })).toBe(true);
+    expect(requiresTeacherStepUp('sessions.evidence-invalidate.preview', { sessionId: 'ses_1' })).toBe(false);
+  });
+
+  it('scopes a worksheet-attribution recovery to its invalidated source session', () => {
+    expect(teacherResource('sessions.attribution-recover', { sourceSessionId: 'ses_math' })).toBe('ses_math');
+    expect(requiresTeacherStepUp('sessions.attribution-recover', { sourceSessionId: 'ses_math' })).toBe(true);
+    expect(requiresTeacherStepUp('sessions.attribution-recover.preview', { sourceSessionId: 'ses_math' })).toBe(false);
+  });
+
   // The Set and `teacherResource` have to AGREE. `requiresTeacherStepUp` is
   // derived from the resource being non-null, so a name in the Set with no
   // resource branch requires nothing — a step-up that silently buys a free

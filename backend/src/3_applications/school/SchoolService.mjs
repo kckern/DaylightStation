@@ -6,7 +6,7 @@
  */
 import {
   validateQuestionBank, summarizeQuestionBank, gradeAnswer, givenShapeError,
-  createAttempt, isRegradeCorrection, GuestForbiddenError, SessionGoneError, normalizeLearningContext, bankContentRev,
+  createAttempt, isRegradeCorrection, effectiveAttempts, GuestForbiddenError, SessionGoneError, normalizeLearningContext, bankContentRev,
 } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { PersistenceError } from '#apps/common/errors/SemanticErrors.mjs';
@@ -518,7 +518,7 @@ export class SchoolService {
     if (session.mode !== 'quiz' || !session.learningContext?.lessonId || !session.learningContext?.moduleId) {
       throw new ValidationError('adaptive tutoring requires a Catalog quiz session');
     }
-    const attempts = this.#ds.readAllAttempts(learnerId)
+    const attempts = effectiveAttempts(this.#ds.readAllAttempts(learnerId))
       .filter((attempt) => attempt.sessionId === session.id
         && attempt.bankId === session.bankId
         && !isRegradeCorrection(attempt));
@@ -754,7 +754,7 @@ export class SchoolService {
   flashcardTestStatus(userId, { deckId, bankId, passingPercent = 80 } = {}) {
     if (!this.#isLearner(userId)) throw new ValidationError(`unknown learner: ${userId}`);
     const grouped = new Map();
-    for (const attempt of this.#ds.readAllAttempts(userId)) {
+    for (const attempt of effectiveAttempts(this.#ds.readAllAttempts(userId))) {
       const test = attempt?.provenance?.flashcardTest;
       if (isRegradeCorrection(attempt) || attempt.mode !== 'quiz' || attempt.bankId !== bankId
           || !test || test.deckId !== deckId || !Number.isInteger(test.itemCount) || test.itemCount < 1) continue;
@@ -776,7 +776,7 @@ export class SchoolService {
 
   getResults(userId, { bankId } = {}) {
     if (!this.#isLearner(userId)) throw new ValidationError(`unknown learner: ${userId}`);
-    const all = this.#ds.readAllAttempts(userId);
+    const all = effectiveAttempts(this.#ds.readAllAttempts(userId));
     const byBank = new Map();
     for (const a of all) {
       if (isRegradeCorrection(a)) continue; // verdict amendments, not new work (M8)
@@ -850,7 +850,8 @@ export class SchoolService {
     // attempts pre-aggregated by `YYYY-MM` so a lifetime summarize stays
     // O(months) instead of O(days) — not built now, since no household is
     // near that scale.
-    const attempts = (this.#ds.readAllAttempts(userId) || []).filter((a) => !isRegradeCorrection(a));
+    const attempts = effectiveAttempts(this.#ds.readAllAttempts(userId))
+      .filter((a) => !isRegradeCorrection(a));
     if (attempts.length === 0) return [];
 
     const graded = attempts.filter((a) => a.mode === 'quiz');

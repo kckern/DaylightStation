@@ -29,6 +29,7 @@
  * used in place of (a) rather than silently reporting zero courses.
  */
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { effectiveAttempts } from '#domains/school/attempt.mjs';
 import { courseGradeFromSessions } from '#domains/school/progress/courseGrade.mjs';
 import { conceptMastery } from '#domains/school/progress/conceptMastery.mjs';
 import { learningEvidenceFromAttempt } from '#domains/school/progress/attemptEvidence.mjs';
@@ -321,7 +322,7 @@ export class GetReportCard {
     // concepts) only ever sees attempts strictly inside
     // `[period.startsAt, period.endsAt)`.
     const dayAttempts = this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay) ?? [];
-    return dayAttempts.filter(
+    return effectiveAttempts(dayAttempts).filter(
       // Regrade corrections excluded (M8 fix 1): their `at` is the regrade
       // instant — counting them would fabricate active days and concept
       // evidence inside whatever period the ADMIN ran the fix in.

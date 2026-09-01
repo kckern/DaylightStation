@@ -8,6 +8,7 @@ export const TEACHER_STEP_UP_MS = 2 * 60_000;
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const STEP_UP_ACTIONS = new Set([
   'agenda.dispatch', 'attempts.regrade', 'sessions.grade-adjust',
+  'sessions.evidence-invalidate', 'sessions.attribution-recover',
   'sessions.grade-adjustment.retract', 'artifact.postview', 'report-card.close',
   'sessions.settle', 'companion.finish-code.reveal',
 ]);
@@ -21,6 +22,8 @@ export function teacherResource(action, context = {}) {
   if (action === 'agenda.dispatch') return text(context.learnerId);
   if (action === 'attempts.regrade') return text(context.bankId);
   if (action === 'sessions.grade-adjust') return text(context.sessionId);
+  if (action === 'sessions.evidence-invalidate') return text(context.sessionId);
+  if (action === 'sessions.attribution-recover') return text(context.sourceSessionId);
   // Settling stuck work by hand writes a grade no machine produced, which is
   // at least as consequential as correcting one — and correcting one is
   // already up there. Scoped to the one session the teacher is looking at.

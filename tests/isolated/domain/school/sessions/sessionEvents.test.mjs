@@ -43,6 +43,17 @@ const PAYLOADS = {
   failed: { stage: 'print', reason: 'printer offline' },
   grade_adjusted: { adjustmentId: 'adj_1', percent: 100, reason: 'OMR erased answer misread', adjustedBy: 'parent1' },
   grade_adjustment_retracted: { adjustmentId: 'adj_1', reason: 'entered against wrong session', retractedBy: 'parent1' },
+  evidence_invalidated: {
+    invalidationId: 'inv_1', attemptIds: ['att_1'],
+    reason: 'wrong worksheet answers were attributed to this session', invalidatedBy: 'parent1',
+  },
+  evidence_attributed: {
+    attributionId: 'attr_1', sourceSessionId: 'ses_source',
+    sourceCardId: '8684155', sourceRows: [22, 23, 24],
+    targetCardId: '8424408', targetRows: [1, 2, 3],
+    itemIds: ['scripture-q1', 'scripture-q2', 'scripture-q3'], marks: ['B', 'B', 'B'],
+    reason: 'the child confirmed these marks belonged to Scripture', attributedBy: 'parent1',
+  },
   abandoned: {},
 };
 
@@ -67,7 +78,8 @@ describe('EVENT_TYPES', () => {
       'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'external_activity_assessed',
       'submitted', 'graded', 'companion_gate_read', 'outcome_recorded', 'rewarded',
       'reward_reconciled', 'reward_reconciliation_failed',
-      'remediation_opened', 'remediation_replaced', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted', 'failed', 'abandoned',
+      'remediation_opened', 'remediation_replaced', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted',
+      'evidence_invalidated', 'evidence_attributed', 'failed', 'abandoned',
     ]);
   });
 
