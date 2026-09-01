@@ -249,7 +249,7 @@ export class LaserPrinterAdapter {
    * @param {string} [opts.jobName='daylight-print'] - job name (also our own logging)
    * @param {string} [opts.user='daylight'] - for our own logging / job-originating-user-name
    * @param {number} [opts.copies=1]
-   * @returns {Promise<{ok:boolean, bytes:number, copies:number, documentFormat:string, transport:'ipp'|'raw9100'}>}
+   * @returns {Promise<{ok:boolean, bytes:number, copies:number, jobId:?number, documentFormat:string, transport:'ipp'|'raw9100'}>}
    * @throws {InfrastructureError} INVALID_DOCUMENT | PRINT_FORMAT_UNSUPPORTED | RASTERIZE_* | PRINT_VALIDATE_FAILED | PRINT_SEND_FAILED
    */
   /**
@@ -499,19 +499,29 @@ export class LaserPrinterAdapter {
 
   /** IPP Print-Job — the default transport. `copies` is a real IPP attribute; no manual concatenation needed. */
   async #sendIpp(document, { jobName, user, copies, documentFormat, jobAttributes = {} }) {
-    const attrs = printJobAttrs(this.printerUri, {
+    // Named `requestAttrs`, not `attrs`, so it doesn't shadow the response's
+    // own `attrs` below — the two are unrelated objects (this method's
+    // outgoing job-attributes vs. the printer's returned attribute set).
+    const requestAttrs = printJobAttrs(this.printerUri, {
       user, jobName, copies, documentFormat, jobAttributes,
     });
-    const { ok, statusCode } = await this.#ipp(OPS.PRINT_JOB, attrs, document, this.#printTimeout);
+    const { ok, statusCode, attrs } = await this.#ipp(OPS.PRINT_JOB, requestAttrs, document, this.#printTimeout);
     if (!ok) {
       throw new InfrastructureError(`print-job failed (ipp status 0x${statusCode.toString(16)})`, {
         code: 'PRINT_SEND_FAILED', host: this.#host, port: this.#port, statusCode, documentFormat,
       });
     }
+    // The printer's own handle for this job. Parsed all along by
+    // `decodeResponse` and dropped here, which is why nothing downstream could
+    // ever ask what became of a job.
+    // `decodeResponse` collects EVERY attribute as an array
+    // (`(attrs[name] ||= []).push(value)`, ipp.mjs:219), so this is `[42]`,
+    // never `42`.
+    const jobId = Number.isInteger(attrs?.['job-id']?.[0]) ? attrs['job-id'][0] : null;
     this.#logger.info?.('laser-printer.job-sent', {
-      host: this.#host, port: this.#port, transport: 'ipp', jobName, user, copies, documentFormat, jobAttributes, bytes: document.length,
+      host: this.#host, port: this.#port, transport: 'ipp', jobName, user, copies, documentFormat, jobAttributes, bytes: document.length, jobId,
     });
-    return { ok: true, bytes: document.length, copies };
+    return { ok: true, bytes: document.length, copies, jobId };
   }
 
   /**
@@ -540,7 +550,9 @@ export class LaserPrinterAdapter {
         this.#logger.info?.('laser-printer.job-sent', {
           host: this.#host, port: this.#rawPort, transport: 'raw9100', jobName, user, copies, bytes: payload.length,
         });
-        resolve({ ok: true, bytes: payload.length, copies });
+        // JetDirect has no job handle — say so explicitly rather than
+        // leaving the key absent, so both transports return the same shape.
+        resolve({ ok: true, bytes: payload.length, copies, jobId: null });
       };
       const fail = (msg) => {
         if (settled) return; settled = true;
