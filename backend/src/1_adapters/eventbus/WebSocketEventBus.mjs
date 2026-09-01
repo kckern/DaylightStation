@@ -24,6 +24,39 @@ import {
 // client-control:<clientId> topic prefix — delivered per connection identity.
 const CLIENT_CONTROL_PREFIX = 'client-control:';
 
+// Topics deliberately broadcast for documented external consumers, whose
+// subscriber is a frontend hook that mounts/unmounts with the page rather
+// than living for the app's lifetime — so at any given broadcast, NO client
+// may currently be connected/subscribed, and NO backend module ever calls
+// `.subscribe()` on them internally either. Without this list, the "legacy
+// topics" branch below reads that as "nobody knows this topic" and logs
+// `bus.topic.unknown` on every publish. These two are known; genuinely
+// unknown topics (typos, orphaned publishes) must still warn.
+const KNOWN_UNCONNECTED_TOPICS = new Set([
+  // StateGatesEventBusPublisher.mjs — state-gates assertion/retraction/
+  // correction events. Consumed by frontend/src/modules/School/status/
+  // AgendaStatusBoard.jsx and frontend/src/modules/Piano/PianoKiosk/
+  // useSchoolGameAccess.js via useWebSocketSubscription('state-gates', ...).
+  'state-gates',
+  // app.mjs's shutdown notifier (`notifier.publishState`) — central kiosk
+  // lock/unlock state. Consumed by frontend/src/hooks/useShutdownLock.js via
+  // wsService.subscribe('shutdown.state', ...).
+  'shutdown.state',
+]);
+
+/**
+ * True if `topic` is a documented topic this bus intentionally broadcasts,
+ * even when no subscriber (internal or WS client) happens to be present at
+ * broadcast time. Used to suppress `bus.topic.unknown` noise for topics that
+ * are real, not vestigial — see KNOWN_UNCONNECTED_TOPICS above for why.
+ *
+ * @param {string} topic
+ * @returns {boolean}
+ */
+export function isKnownTopic(topic) {
+  return KNOWN_UNCONNECTED_TOPICS.has(topic);
+}
+
 // Consecutive missed pongs before a client is terminated. This used to be an
 // implicit 1 — a SINGLE lost ping or pong frame killed the connection. Fine for
 // a browser on good WiFi; brutal for an embedded relay on a marginal link, and
@@ -344,7 +377,10 @@ export class WebSocketEventBus {
    * - Unknown topic prefixes with no internal subscribers: log
    *   `bus.topic.unknown` and drop external delivery. Legacy topics that
    *   already have internal subscribers continue to deliver to wildcard
-   *   subscribers for backward compatibility.
+   *   subscribers for backward compatibility. Topics in
+   *   KNOWN_UNCONNECTED_TOPICS (see `isKnownTopic`) are exempt from the warn
+   *   even with zero current subscribers — their consumer is a frontend hook
+   *   that isn't always mounted, not a missing/typo'd topic.
    *
    * @param {string} topic - Event topic
    * @param {Object} payload - Event payload
@@ -491,7 +527,7 @@ export class WebSocketEventBus {
       }
     }
 
-    if (!hasInternalSubscribers && !hasExternalSubscribers) {
+    if (!hasInternalSubscribers && !hasExternalSubscribers && !isKnownTopic(topic)) {
       this.#logger.warn?.('bus.topic.unknown', { topic });
       return 0;
     }

@@ -7,7 +7,12 @@
  * full per-client send path without a real WebSocket server.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { WebSocketEventBus } from '#system/eventbus/WebSocketEventBus.mjs';
+// NOTE: '#system/eventbus/WebSocketEventBus.mjs' does not exist — the class
+// lives under 1_adapters, not 0_system (see 0_system/eventbus/index.mjs's own
+// doc comment, which points here). Fixed 2026-09-01; this file previously
+// failed to import at all (0 tests collected), silently, alongside its two
+// siblings in this directory.
+import { WebSocketEventBus, isKnownTopic } from '#adapters/eventbus/WebSocketEventBus.mjs';
 import {
   DEVICE_STATE_TOPIC,
   DEVICE_ACK_TOPIC,
@@ -183,6 +188,48 @@ describe('WebSocketEventBus routing — per-device topics', () => {
     bus.broadcast('fitness', { heartRate: 120 });
 
     expect(fitness.ws.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('knows the topics the app actually publishes', () => {
+    expect(isKnownTopic('state-gates')).toBe(true);
+    expect(isKnownTopic('shutdown.state')).toBe(true);
+  });
+
+  it('state-gates and shutdown.state never log bus.topic.unknown, even with zero subscribers', () => {
+    // StateGatesEventBusPublisher.mjs broadcasts 'state-gates' four times per
+    // assertion (retracted/corrected pairs); app.mjs's shutdown notifier
+    // broadcasts 'shutdown.state'. Both are consumed by frontend hooks
+    // (AgendaStatusBoard.jsx, useSchoolGameAccess.js, useShutdownLock.js) that
+    // mount/unmount with the page — a real client is frequently NOT connected
+    // at the moment of publish, but the topic is still documented and known.
+    bus._testSetClientPool(makePool({}));
+
+    bus.broadcast('state-gates', { schema: 'daylight.state-gates-event/v1' });
+    bus.broadcast('shutdown.state', { locked: true });
+
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'bus.topic.unknown',
+      expect.objectContaining({ topic: 'state-gates' }),
+    );
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'bus.topic.unknown',
+      expect.objectContaining({ topic: 'shutdown.state' }),
+    );
+  });
+
+  it('a genuinely unknown topic still warns even after registering known topics', () => {
+    // Regression guard for the fix above: registering state-gates/shutdown.state
+    // must not turn into a blanket allowlist. A typo'd or orphaned topic with
+    // no subscribers must still be caught.
+    bus._testSetClientPool(makePool({}));
+
+    bus.broadcast('weather:tomorrow', { temp: 68 });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'bus.topic.unknown',
+      expect.objectContaining({ topic: 'weather:tomorrow' }),
+    );
+    expect(isKnownTopic('weather:tomorrow')).toBe(false);
   });
 });
 
