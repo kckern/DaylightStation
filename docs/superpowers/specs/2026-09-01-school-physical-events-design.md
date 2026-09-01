@@ -420,3 +420,65 @@ the same change, so the store ends with one path, not three.
   page header while the IPP `sides` attribute is dropped after a `validate-job`
   rejection, against a printer whose own default is two-sided. Suspected
   contributor to sheets not emerging; not diagnosable until Phase 1 lands.
+
+---
+
+## Phase 1 hardware finding (2026-09-01)
+
+Probe run against the real printer, one page, verbatim output:
+
+```
+submitted: jobId=1336
+45ms state=5 (pending) reasons=job-incoming,job-printing
+1231ms state=5 (pending) reasons=job-incoming,job-printing
+2463ms state=5 (pending) reasons=job-incoming,job-printing
+3495ms state=5 (pending) reasons=job-incoming,job-printing
+4915ms state=5 (pending) reasons=job-incoming,job-printing
+6143ms state=5 (pending) reasons=job-incoming,job-printing
+7373ms state=5 (pending) reasons=job-incoming,job-printing
+8604ms state=5 (pending) reasons=job-incoming,job-printing
+9831ms state=5 (pending) reasons=job-incoming,job-printing
+11058ms state=5 (pending) reasons=job-incoming,job-printing
+12288ms state=5 (pending) reasons=job-incoming,job-printing
+13517ms state=5 (pending) reasons=job-incoming,job-printing
+14746ms state=5 (pending) reasons=job-incoming,job-printing
+15999ms state=5 (pending) reasons=job-incoming,job-printing
+17201ms state=9 (completed) reasons=job-completed-successfully
+VERDICT: terminal state observable. Phase 2 may rely on job outcomes.
+```
+
+The detached poll's own production log line, from the same run:
+
+```
+laser-printer.job-outcome { jobId: 1336, outcome: 'completed', state: 9,
+  stateReasons: [ 'job-completed-successfully' ], polls: 15,
+  impressionsCompleted: 1 }
+```
+
+**What this settles.**
+
+1. **A terminal state IS observable on this printer.** The concern that an
+   AirPrint-class device might purge completed jobs before they can be read
+   does not apply here. Phase 2 may rely on job outcomes, and the Portal
+   affordance it plans — telling a child a sheet did not print, and offering a
+   retry — rests on a signal that actually exists.
+2. **`impressionsCompleted: 1` is reported.** Phase 2 can therefore distinguish
+   "printed one page of one" from "printed one page of four", which the
+   combined-sheet work will need.
+3. **Reaching terminal took 17.2 seconds.** This is the number that matters for
+   design. Phase 1 originally awaited the poll inline inside `printPdf`; had
+   that shipped, EVERY print would have blocked ~17s, and a sequential
+   five-sheet bulk print roughly 85 seconds, on a path where a child stands at
+   the printer. The poll is detached for this reason, and this measurement is
+   the evidence — not a precaution.
+4. **The duplex/`sides` negotiation reproduced exactly**, in the same run:
+   `validate-job-rejected` with `statusCode 1285` carrying `sides: 'one-sided'`,
+   then `validate-job-retry` with `dropped: 'sides'` succeeding. The printer
+   rejects the `sides` attribute at a legal value while advertising support for
+   it. That is now a confirmed, reproducible behaviour rather than a hypothesis
+   — and note this single-page job still printed correctly with `sides`
+   dropped, so the attribute is not itself the cause of a missing sheet.
+
+**Consequence for Phase 2:** proceed as designed. Job outcomes are real,
+per-page completion counts are available, and the polling must stay off the
+print path.
