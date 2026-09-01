@@ -1764,6 +1764,17 @@ function cardHeaderFragment(doc, theme, card, { widthPt: widthPtOverride } = {})
 
   const heightPt = cardTheme.bandHeightPt + cardTheme.reuseLabelLeadingPt;
   const identicon = answerSheetIdenticon(cardId, card.identiconVersion);
+  const identiconWidthPt = identicon.size * cardTheme.identiconCellPt;
+  // Keep the human reading order literal: label, visual identity, digits.
+  // These offsets are measured once here so the draw pass cannot silently
+  // rearrange the three cues while centring the group.
+  const identityLayout = {
+    labelOffsetPt: 0,
+    identiconOffsetPt: labelWidthPt + cardTheme.labelGapPt,
+    digitsOffsetPt: labelWidthPt + cardTheme.labelGapPt
+      + identiconWidthPt + cardTheme.identiconGapPt,
+  };
+  identityLayout.widthPt = identityLayout.digitsOffsetPt + digitsWidthPt;
 
   const node = {
     kind: 'cardHeader',
@@ -1774,6 +1785,7 @@ function cardHeaderFragment(doc, theme, card, { widthPt: widthPtOverride } = {})
     labelWidthPt,
     metaText,
     identicon,
+    identityLayout,
     firstUse,
     reuseSheet,
     reuseText,

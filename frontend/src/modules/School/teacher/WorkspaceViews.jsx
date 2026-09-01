@@ -801,7 +801,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
                 key={artifact.artifactId}
                 artifact={artifact}
                 lessonTitle={session.taxonomy?.lessonTitle ?? session.assignment?.title ?? 'Lesson'}
-                action={artifact.availability === 'exact'
+                action={['exact', 'regenerable'].includes(artifact.availability)
                   ? <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />
                   : null}
               />

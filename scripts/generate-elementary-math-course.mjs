@@ -195,10 +195,10 @@ function workedExampleFor(def) {
   }
   if (def.kind === 'calculation') return calculationWorkedExample(def);
   if (def.kind === 'place_value') return solvedExample(def, def.params.fourDigit ? {
-    prompt: 'In 5274, what value does the digit 2 represent?', choices: ['2', '20', '200', '2000'], answer: '200',
+    prompt: 'In 5274, what amount does the digit 2 represent?', choices: ['2', '20', '200', '2000'], answer: '200',
     steps: ['The digit 2 is in the hundreds place.', 'Two hundreds equal 200.'],
   } : {
-    prompt: 'In 364, what value does the digit 6 represent?', choices: ['6', '60', '600'], answer: '60',
+    prompt: 'In 364, what amount does the digit 6 represent?', choices: ['6', '60', '600'], answer: '60',
     steps: ['The digit 6 is in the tens place.', 'Six tens equal 60.'],
   });
   if (def.kind === 'base_ten') return solvedExample(def, {
@@ -400,8 +400,8 @@ function buildItems(def, ctx) {
       });
     }
     const prompt = index % 3 === 0
-      ? `In ${number}, what value does the digit ${digit} represent?`
-      : `In ${number}, the digit ${digit} is in the ${place} place. Which number shows its value?`;
+      ? `In ${number}, what amount does the digit ${digit} represent?`
+      : `In ${number}, the digit ${digit} is in the ${place} place. What amount does it represent?`;
     return item(def, index, {
       prompt, answer: digit * divisor,
       decoys: [digit, digit * 10, digit * 100, digit * 1000, number],
@@ -745,7 +745,7 @@ function bankFor(def, items) {
 }
 
 const AMBIGUOUS_PROMPT_PATTERNS = Object.freeze([
-  /What is the value of the (?:ones|tens|hundreds|thousands) digit/iu,
+  /^(?=.*\bdigit\b)(?=.*\bvalue\b)/iu,
   /Which category has the greatest value/iu,
   /counters are selected\. What fraction of the set is selected/iu,
   /Which multiplication expression has the same product/iu,

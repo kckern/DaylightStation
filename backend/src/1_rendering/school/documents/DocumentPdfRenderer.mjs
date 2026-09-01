@@ -838,8 +838,9 @@ export function createDocumentPdfRenderer({
   }
 
   /**
-   * `cardHeader` — the card ID strip (Task 4, spec §5.2): "Card" label, then
-   * large letter-spaced digits at their pre-measured x offsets (see
+   * `cardHeader` — the card ID strip (Task 4, spec §5.2): "Student No." label,
+   * then its identicon, then large letter-spaced digits at their pre-measured
+   * x offsets (see
    * measure.mjs's `cardHeaderFragment` — the draw pass never re-measures a
    * digit), then the row-range meta text, all vertically centred inside
    * `theme.card.bandHeightPt`. When the card is fresh (`node.firstUse`), a
@@ -848,8 +849,7 @@ export function createDocumentPdfRenderer({
   function drawCardHeader(out, node, { xPt, yPt }) {
     const { card } = theme;
     const iconWidthPt = node.identicon.size * card.identiconCellPt;
-    const groupWidthPt = iconWidthPt + card.identiconGapPt
-      + node.labelWidthPt + card.labelGapPt + node.digitsWidthPt;
+    const groupWidthPt = node.identityLayout.widthPt;
     const { boxPaddingXPt, boxPaddingYPt } = card;
     const boxContentWidthPt = Math.max(groupWidthPt, node.reuseTextWidthPt ?? 0);
     const boxWidthPt = boxContentWidthPt + boxPaddingXPt * 2;
@@ -866,7 +866,11 @@ export function createDocumentPdfRenderer({
     const reuseXPt = xPt + (node.widthPt - node.reuseTextWidthPt) / 2;
     out.text(node.reuseText, reuseXPt, yPt + boxPaddingYPt, { lineBreak: false });
 
-    const iconXPt = groupXPt;
+    setFont(out, 'bold', card.labelSizePt);
+    const labelXPt = groupXPt + node.identityLayout.labelOffsetPt;
+    out.text(node.labelText, labelXPt, bandCentreY - card.labelSizePt / 2, { lineBreak: false });
+
+    const iconXPt = groupXPt + node.identityLayout.identiconOffsetPt;
     const iconYPt = bandCentreY - iconWidthPt / 2;
     out.save().fillColor(theme.ink.text);
     node.identicon.cells.forEach((filled, index) => {
@@ -882,11 +886,7 @@ export function createDocumentPdfRenderer({
     });
     out.restore();
 
-    setFont(out, 'bold', card.labelSizePt);
-    const labelXPt = groupXPt + iconWidthPt + card.identiconGapPt;
-    out.text(node.labelText, labelXPt, bandCentreY - card.labelSizePt / 2, { lineBreak: false });
-
-    const digitsXPt = labelXPt + node.labelWidthPt + card.labelGapPt;
+    const digitsXPt = groupXPt + node.identityLayout.digitsOffsetPt;
     setFont(out, 'bold', card.digitSizePt);
     for (const digit of node.digits) {
       out.text(digit.ch, digitsXPt + digit.xPt, bandCentreY - card.digitSizePt / 2, { lineBreak: false });

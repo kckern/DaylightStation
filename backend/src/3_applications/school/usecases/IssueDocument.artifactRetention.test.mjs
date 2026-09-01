@@ -8,15 +8,15 @@ function renderedPdf(content, pageCount = 1) {
     printWith: (printer, options) => printer.printPdf(payload, options),
     retainWith: async (store, metadata) => {
       if (!store) return artifact(payload);
-      const retained = await store.put({ ...metadata, bytes: payload });
-      return artifact(retained.bytes);
+      await store.put({ ...metadata, bytes: payload });
+      return artifact(payload);
     },
   });
   return { artifact: artifact(bytes), pageCount };
 }
 
-describe('IssueDocument exact artifact retention', () => {
-  it('archives before first print and reprints retained bytes instead of a new render', async () => {
+describe('IssueDocument artifact retention', () => {
+  it('keeps legacy retained-byte artifacts printable as a compatibility fallback', async () => {
     const sessions = new FakeSessionRepository();
     const records = new Map();
     const issuedArtifacts = {
@@ -45,6 +45,39 @@ describe('IssueDocument exact artifact retention', () => {
     await issue.execute({ sessionId: 'ses_1' });
     expect(renders).toBe(1); // reprint never re-renders mutable source data
     expect(printer.jobs.map((bytes) => bytes.toString())).toEqual(['render-1', 'render-1']);
+  });
+
+  it('reprints a YAML-only artifact through the current renderer', async () => {
+    const sessions = new FakeSessionRepository();
+    const records = new Map();
+    const issuedArtifacts = {
+      get: async (id) => records.get(id) ?? null,
+      put: async (value) => {
+        const retained = { manifest: { artifactId: value.artifactId, pageCount: value.pageCount }, bytes: null };
+        records.set(value.artifactId, retained);
+        return retained;
+      },
+    };
+    let initialRenders = 0;
+    const renderer = { render: async () => renderedPdf(`initial-${++initialRenders}`) };
+    const renderIssuedArtifact = { execute: async () => ({ bytes: Buffer.from('current-engine-replay'), duplex: false }) };
+    const printer = { jobs: [], printPdf: async (bytes) => { printer.jobs.push(Buffer.from(bytes)); return { confirmed: false }; } };
+    const issue = new IssueDocument({
+      curriculum: {
+        getUnit: async () => ({ unitId: 'u1', document: 'doc1' }),
+        getDocument: async () => ({ id: 'doc1', blocks: [] }),
+      }, sessions, tokens: new FakeTokenRegistry(), renderer, printer,
+      formMaps: new FakeFormMapStore(), issuedArtifacts, renderIssuedArtifact,
+      clock: () => new Date('2026-08-24T10:00:00.000Z'), newArtifactId: () => 'art_1', logger: silentLogger,
+    });
+    await sessions.appendEvent('ses_1', { type: 'created', at: '2026-08-24T09:00:00.000Z',
+      sessionId: 'ses_1', learnerId: 'kid', unitId: 'u1' });
+
+    await issue.execute({ sessionId: 'ses_1' });
+    await issue.execute({ sessionId: 'ses_1' });
+
+    expect(initialRenders).toBe(1);
+    expect(printer.jobs.map((bytes) => bytes.toString())).toEqual(['initial-1', 'current-engine-replay']);
   });
 
   it('issues a labelled replacement — never a silent substitute — when an older original was not retained', async () => {
@@ -87,8 +120,8 @@ describe('IssueDocument exact artifact retention', () => {
     expect(result.artifactId).toBe('old-artifact');
     expect(retained.get('old-artifact').manifest.captureKind).toBe('replacement');
     // A subsequent print of the SAME session (past the print-debounce
-    // window) now finds retained bytes and takes the plain exact-reprint
-    // path — the gap is healed going forward.
+    // window) now finds the retained artifact record and takes the ordinary
+    // reprint path — the gap is healed going forward.
     now = new Date('2026-08-24T10:15:00.000Z');
     const second = await issue.execute({ sessionId: 'ses_legacy' });
     expect(second.status).not.toBe('unavailable');

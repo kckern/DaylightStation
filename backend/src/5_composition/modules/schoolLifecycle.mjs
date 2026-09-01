@@ -63,6 +63,7 @@ import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrin
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { YamlHeldCardScanStore } from '#adapters/school/documents/YamlHeldCardScanStore.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { RenderIssuedWorksheetArtifact } from '#apps/school/documents/RenderIssuedWorksheetArtifact.mjs';
 import { ResolveCardScan } from '#apps/school/documents/ResolveCardScan.mjs';
 import { ReviewHeldCardScan } from '#apps/school/documents/ReviewHeldCardScan.mjs';
 import { createYamlBankReader } from '#adapters/school/documents/YamlBankReader.mjs';
@@ -911,6 +912,9 @@ export async function createSchoolLifecycle({
     banks: createYamlBankReader({ dataDir }),
     allocationStore,
   });
+  const renderIssuedArtifact = new RenderIssuedWorksheetArtifact({
+    issuedArtifacts, renderPrintDocument, printDocuments, curriculum,
+  });
 
   const issueDocument = new IssueDocument({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
@@ -920,7 +924,7 @@ export async function createSchoolLifecycle({
     // `householdId` is the first third of a finish code's scope — the reason
     // two houses on the same published lesson never share a code.
     companionCodes, householdId,
-    issuedArtifacts,
+    issuedArtifacts, renderIssuedArtifact,
     answerSheetPolicy: cfg.answer_sheets ?? null,
     // Same `printing:` block the laser host/port/path and the page-quota
     // policy keys already live in (see the printer construction above and
@@ -939,7 +943,7 @@ export async function createSchoolLifecycle({
   const { ReprintIssuedArtifact } = await import('#apps/school/usecases/ReprintIssuedArtifact.mjs');
   const reprintIssuedArtifact = new ReprintIssuedArtifact({
     issuedArtifacts, sessions: stores.sessions, printer: laserPrinter, teacherGate,
-    curriculumExceptions: curriculumExceptionStore, clock, logger,
+    renderIssuedArtifact, curriculumExceptions: curriculumExceptionStore, clock, logger,
   });
   const reprintResultReceiptArtifact = receiptArtifactPrinter ? new ReprintResultReceiptArtifact({
     issuedArtifacts, sessions: stores.sessions, teacherGate, receiptArtifactPrinter, clock,
@@ -1389,6 +1393,7 @@ export async function createSchoolLifecycle({
     // renders from a future admin surface) — exposed for the same reuse
     // reason as `stores.printDocuments`/`stores.allocationStore` above.
     renderPrintDocument,
+    renderIssuedArtifact,
     // The program launchers, exposed so a caller can ask each one how it is
     // ENTERED (`entryAction`) without re-deriving the registry. app.mjs uses
     // this for the startup reachability report — the fast signal that pairs

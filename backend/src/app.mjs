@@ -4330,6 +4330,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       }) : null,
     invalidateSessionEvidence: schoolLifecycle.useCases?.invalidateSessionEvidence ?? null,
     issuedArtifactStore: schoolLifecycle.stores?.issuedArtifacts ?? null,
+    renderIssuedArtifact: schoolLifecycle.renderIssuedArtifact ?? null,
     teacherAgendaDispatch: schoolLifecycle.useCases?.teacherAgendaDispatch ?? null,
     reprintIssuedArtifact: schoolLifecycle.useCases?.reprintIssuedArtifact ?? null,
     reprintResultReceiptArtifact: schoolLifecycle.useCases?.reprintResultReceiptArtifact ?? null,

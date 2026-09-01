@@ -77,8 +77,9 @@ function progressLabelFor(list, statuses) {
  * title. The result receipt already proves the better answer for the same data:
  * a bar with a position marker. This is what feeds it.
  *
- * Curriculum (non-program) work has no equivalent per-lesson denominator here,
- * so it keeps its label and gets no bar rather than a fabricated one.
+ * Curriculum (non-program) rows require enrollment and work metadata this
+ * pure sectioning function does not receive. `BuildAgenda` enriches those
+ * sections from the canonical plan after this function returns.
  */
 function progressRowsFor(statuses) {
   const rows = statuses.find((status) => !status.error && Array.isArray(status.progress))?.progress;

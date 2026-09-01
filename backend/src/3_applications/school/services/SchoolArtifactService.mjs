@@ -2,12 +2,13 @@
 export class SchoolArtifactService {
   constructor({
     issuedArtifactStore = null, renderWorksheetThumbnail = null,
+    renderIssuedArtifact = null,
     renderArtifactPostview = null, getTeacherSession = null,
     teacherCapabilitySessions = null, reprintIssuedArtifact = null,
     reprintResultReceiptArtifact = null,
   } = {}) {
     Object.assign(this, {
-      issuedArtifactStore, renderWorksheetThumbnail, renderArtifactPostview,
+      issuedArtifactStore, renderWorksheetThumbnail, renderIssuedArtifact, renderArtifactPostview,
       getTeacherSession, teacherCapabilitySessions, reprintIssuedArtifact,
       reprintResultReceiptArtifact,
     });
@@ -16,13 +17,25 @@ export class SchoolArtifactService {
   isConfigured() { return Boolean(this.issuedArtifactStore); }
   async get(artifactId) { return this.issuedArtifactStore?.get?.(artifactId) ?? null; }
 
-  async thumbnail(artifactId) {
-    if (!this.issuedArtifactStore || !this.renderWorksheetThumbnail) return { kind: 'unconfigured' };
+  async pdf(artifactId) {
+    if (!this.issuedArtifactStore) return { kind: 'unconfigured' };
     const artifact = await this.get(artifactId);
     if (!artifact) return { kind: 'not_found' };
     const mediaType = artifact.manifest.representation?.mediaType ?? 'application/pdf';
     if (mediaType !== 'application/pdf') return { kind: 'wrong_media_type' };
-    try { return { kind: 'rendered', bytes: await this.renderWorksheetThumbnail(artifact.bytes) }; }
+    if (this.renderIssuedArtifact) {
+      const rendered = await this.renderIssuedArtifact.execute({ artifactId, artifact });
+      return { kind: 'rendered', ...rendered };
+    }
+    if (Buffer.isBuffer(artifact.bytes)) return { kind: 'legacy', bytes: artifact.bytes };
+    return { kind: 'unrenderable' };
+  }
+
+  async thumbnail(artifactId) {
+    if (!this.issuedArtifactStore || !this.renderWorksheetThumbnail) return { kind: 'unconfigured' };
+    const pdf = await this.pdf(artifactId);
+    if (!['rendered', 'legacy'].includes(pdf.kind)) return pdf;
+    try { return { kind: 'rendered', bytes: await this.renderWorksheetThumbnail(pdf.bytes) }; }
     catch { return { kind: 'unrenderable' }; }
   }
 
@@ -44,8 +57,10 @@ export class SchoolArtifactService {
     if (!sessionStatus?.active || !this.teacherCapabilitySessions.authorize({
       ...proof, userId: sessionStatus.userId, action: 'artifact.postview', context: { artifactId },
     })) return { kind: 'forbidden' };
+    const pdf = await this.pdf(artifactId);
+    if (!['rendered', 'legacy'].includes(pdf.kind)) return pdf;
     const session = await this.getTeacherSession.execute({ sessionId: artifact.manifest.sessionId });
-    return { kind: 'rendered', ...(await this.renderArtifactPostview({ originalPdf: artifact.bytes, session })) };
+    return { kind: 'rendered', ...(await this.renderArtifactPostview({ originalPdf: pdf.bytes, session })) };
   }
 }
 

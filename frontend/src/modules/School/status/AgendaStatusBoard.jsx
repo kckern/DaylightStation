@@ -270,9 +270,8 @@ export default function AgendaStatusBoard({ kids = [], day }) {
               {/* Rings this week. Rendered only once the number has arrived —
                   a placeholder zero would be a claim we cannot support yet,
                   and "0" and "not loaded" are different facts. Labelled "this
-                  week" because a Sunday workout counts toward the NEXT week,
-                  so this figure and the fitness app's own totals can honestly
-                  differ for one day. */}
+                  week" because the shared weekly projection now has one hard
+                  Monday boundary in School and Fitness alike. */}
               {Number.isFinite(rings[kid.id]) && (
                 <span className="school-status-board__rings" title="Rings this week">
                   <RingIcon size="1.1em" label={`${rings[kid.id]} rings this week`} />

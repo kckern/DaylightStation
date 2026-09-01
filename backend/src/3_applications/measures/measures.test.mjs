@@ -4,8 +4,8 @@ import { createFitnessRingsProvider } from './fitnessRingsProvider.mjs';
 
 const TZ = 'America/Los_Angeles';
 
-// Sun 2026-08-23 .. Sat 2026-08-29
-const WINDOW = { from: '2026-08-23', to: '2026-08-29' };
+// Mon 2026-08-24 .. Sun 2026-08-30
+const WINDOW = { from: '2026-08-24', to: '2026-08-30' };
 
 const session = (isoStart, participants) => ({
   startTime: Date.parse(isoStart),
@@ -28,28 +28,31 @@ describe('fitnessRingsProvider', () => {
     expect(await p.total({ learnerId: 'user_3', ...WINDOW })).toBe(10);
   });
 
-  it('counts Saturday — catch-up work is real work', async () => {
+  it('counts both weekend days in the week that began Monday', async () => {
     const p = createFitnessRingsProvider({
       timezone: TZ,
-      sessions: sourceOf([session('2026-08-29T18:00:00Z', { user_4: { rings: 12 } })]),
+      sessions: sourceOf([
+        session('2026-08-29T18:00:00Z', { user_4: { rings: 12 } }),
+        session('2026-08-30T18:00:00Z', { user_4: { rings: 8 } }),
+      ]),
     });
-    expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(12);
+    expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(20);
   });
 
-  it('does NOT count the next Sunday — it head-starts the following week', async () => {
+  it('does NOT count the next Monday', async () => {
     const p = createFitnessRingsProvider({
       timezone: TZ,
-      sessions: sourceOf([session('2026-08-30T18:00:00Z', { user_4: { rings: 99 } })]),
+      sessions: sourceOf([session('2026-08-31T18:00:00Z', { user_4: { rings: 99 } })]),
     });
     expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(0);
   });
 
   it('dates a session by its START, so a workout past 4am is not split', async () => {
-    // 2026-08-30T10:00Z is 03:00 Sunday local — still Saturday's study day,
+    // 2026-08-31T10:00Z is 03:00 Monday local — still Sunday's study day,
     // so it belongs to the week that is ending.
     const p = createFitnessRingsProvider({
       timezone: TZ,
-      sessions: sourceOf([session('2026-08-30T10:00:00Z', { user_4: { rings: 7 } })]),
+      sessions: sourceOf([session('2026-08-31T10:00:00Z', { user_4: { rings: 7 } })]),
     });
     expect(await p.total({ learnerId: 'user_4', ...WINDOW })).toBe(7);
   });

@@ -1,17 +1,13 @@
 /**
  * The school week, as a measure window.
  *
- * Sunday 04:00 → the following Sunday 04:00 local, on the SAME 4am study-day boundary
+ * Monday 04:00 → the following Monday 04:00 local, on the SAME 4am study-day boundary
  * school already uses (`domains/school/timing.mjs#studyDate`). One definition
  * of "day" in the house, not two.
  *
- *   Sun      rest — rings earned here head-start the coming week
- *   Mon–Fri  the working window; a quota's deadline is end of Friday
- *   Sat      catch-up if short, payoff if met
- *
- * Nothing is discarded. A Sunday walk lands at the FRONT of the next week
- * rather than the back of the last one, so a child is penalised neither for
- * resting nor for moving on a rest day.
+ * Monday is the hard weekly reset. Saturday and Sunday remain in the week that
+ * began six/five days earlier; nothing changes buckets merely because a
+ * rolling seven-day window moved forward by one day.
  *
  * Pure: the caller injects `now`. No clock is read here, so a preview and a
  * printed figure cannot disagree about which week they are describing.
@@ -58,13 +54,13 @@ export function studyDayFor(instant, { timezone = 'UTC', boundaryHour = 4 } = {}
 }
 
 /**
- * The Sunday→Saturday window containing `day`.
+ * The Monday→Sunday window containing `day`.
  *
  * @param {string} day `YYYY-MM-DD`, already a STUDY day (see studyDayFor)
  * @returns {{from: string, to: string}} inclusive study-day bounds
  */
 export function weekWindowFor(day) {
-  const back = weekdayOf(day); // Sunday === 0, so this is already the offset
+  const back = (weekdayOf(day) + 6) % 7; // Monday 0 … Sunday 6
   const from = addDays(day, -back);
   return { from, to: addDays(from, 6) };
 }
@@ -86,9 +82,9 @@ export function isInWindow(day, { from, to }) {
 export function weekState({ value = 0, target = null, day, window: win } = {}) {
   if (target == null) return 'untargeted';
   if (value >= target) return 'met';
-  // Friday is the deadline; Saturday is the last chance. Before Friday closes,
-  // being short is not yet "behind".
-  const friday = addDays(win.from, 5);
+  // Friday is the deadline. Saturday and Sunday are catch-up days; before
+  // Friday closes, being short is not yet "behind".
+  const friday = addDays(win.from, 4);
   return day > friday ? 'behind' : 'on_track';
 }
 

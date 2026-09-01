@@ -1,14 +1,22 @@
 import { IDocumentRenderer } from '#apps/school/ports/IDocumentRenderer.mjs';
 
-function documentArtifact(bytes) {
+function documentArtifact(bytes, replay = {}) {
   return Object.freeze({
     printWith(printer, options) {
       return printer.printPdf(bytes, options);
     },
     async retainWith(store, metadata) {
       if (!store) return this;
-      const retained = await store.put({ ...metadata, bytes });
-      return documentArtifact(retained.bytes);
+      await store.put({
+        ...metadata,
+        bytes,
+        sourceDocument: metadata.sourceDocument ?? replay.sourceDocument ?? null,
+        renderContext: metadata.renderContext ?? replay.renderContext ?? null,
+      });
+      // Retention records the recipe. This in-memory render is still the one
+      // dispatched by the current issue call; the store does not need to hand
+      // the disposable PDF bytes back.
+      return documentArtifact(bytes, replay);
     },
   });
 }
@@ -28,7 +36,7 @@ export class DocumentRendererAdapter extends IDocumentRenderer {
   async render(document, opts) {
     const rendered = await this.#renderer.render(document, opts);
     return {
-      artifact: documentArtifact(rendered.pdf),
+      artifact: documentArtifact(rendered.pdf, { sourceDocument: document, renderContext: opts ?? {} }),
       pageCount: rendered.pageCount,
       formMap: rendered.formMap ?? null,
     };

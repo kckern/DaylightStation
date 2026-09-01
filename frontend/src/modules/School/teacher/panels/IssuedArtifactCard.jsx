@@ -11,7 +11,8 @@ function isReceipt(artifact) {
 
 function availabilityLabel(artifact) {
   if (artifact.availability === 'exact') return 'Exact issued file';
-  return 'Original print was not archived — only prints issued after artifact retention began are kept';
+  if (artifact.availability === 'regenerable') return 'Generated from the saved worksheet using the current print layout';
+  return 'No reproducible worksheet source is available for this historical record';
 }
 
 export default function IssuedArtifactCard({ artifact, lessonTitle = 'Lesson', action = null }) {

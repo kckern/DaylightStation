@@ -7,11 +7,15 @@ import {
 } from '#system/utils/FileIO.mjs';
 
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const WORKSHEET_KINDS = new Set(['worksheet', 'worksheet-composition']);
+const renderInputDigest = (value) => digest(Buffer.from(yaml.dump(value, {
+  sortKeys: true, lineWidth: -1, noRefs: true,
+})));
 const validId = (id) => typeof id === 'string' && id.trim() && id.length <= 240
   && !id.includes('\0') && !id.includes('\\') && !id.startsWith('/')
   && id.split('/').every((segment) => segment && segment !== '.' && segment !== '..');
 
-/** Immutable exact-byte archive for School PDFs that were actually issued. */
+/** Durable YAML records for issued work; worksheet PDFs are runtime projections. */
 export class YamlIssuedArtifactStore {
   #configService; #writeChain = Promise.resolve();
   constructor({ configService } = {}) {
@@ -74,14 +78,44 @@ export class YamlIssuedArtifactStore {
         this.#manifest(artifactId), this.#legacyManifest(artifactId), 'utf8',
       );
       const manifest = yaml.load(raw);
+      if (manifest?.representation?.generated === true) {
+        const expected = renderInputDigest({
+          sourceDocument: manifest.sourceDocument,
+          renderContext: manifest.renderContext ?? null,
+          allocation: manifest.allocation ?? null,
+          worksheetInstanceId: manifest.worksheetInstanceId ?? null,
+        });
+        if (manifest.renderInputSha256 !== expected) {
+          throw new DomainInvariantError(`issued artifact ${artifactId} failed input integrity verification`, { code: 'ARTIFACT_CORRUPT' });
+        }
+        return { manifest, bytes: null };
+      }
       // v1/v2 worksheet archives predate typed representations and are always
       // PDFs. v3 makes the retained original explicit so receipts can retain
       // their original raster without pretending to be Letter documents.
       const extension = manifest?.representation?.extension ?? 'pdf';
-      const bytes = await this.#readEither(
-        this.#payload(artifactId, extension), this.#legacyPayload(artifactId, extension), null,
-      );
-      if (manifest?.artifactId !== artifactId || manifest?.sha256 !== digest(bytes) || manifest?.byteLength !== bytes.length) {
+      let bytes;
+      try {
+        bytes = await this.#readEither(
+          this.#payload(artifactId, extension), this.#legacyPayload(artifactId, extension), null,
+        );
+      } catch (error) {
+        // Worksheet YAML is sufficient for current-engine regeneration. Old
+        // manifests did not mark the representation as generated, so missing
+        // redundant PDF bytes must not make their recipe disappear.
+        if (error?.code === 'ENOENT' && WORKSHEET_KINDS.has(manifest?.kind ?? 'worksheet')) {
+          return { manifest, bytes: null };
+        }
+        throw error;
+      }
+      if (manifest?.artifactId !== artifactId) {
+        throw new DomainInvariantError(`issued artifact ${artifactId} failed integrity verification`, { code: 'ARTIFACT_CORRUPT' });
+      }
+      if (manifest?.sha256 !== digest(bytes) || manifest?.byteLength !== bytes.length) {
+        // Old worksheet PDFs are disposable compatibility data now. A bad or
+        // partial payload must not prevent the intact YAML recipe from being
+        // rendered; retained receipt rasters still enforce byte integrity.
+        if (WORKSHEET_KINDS.has(manifest?.kind ?? 'worksheet')) return { manifest, bytes: null };
         throw new DomainInvariantError(`issued artifact ${artifactId} failed integrity verification`, { code: 'ARTIFACT_CORRUPT' });
       }
       return { manifest, bytes };
@@ -95,12 +129,31 @@ export class YamlIssuedArtifactStore {
     unitId = null, captureKind = 'original', worksheetInstanceId = null, allocation = null,
     kind = 'worksheet', document = null, renderContext = null, parentArtifactIds = [],
     representation = null, sourceDocument = null } = {}) {
-    if (!validId(artifactId) || !Buffer.isBuffer(bytes)) throw new Error('issued artifact requires artifactId and Buffer bytes');
+    const mediaType = representation?.mediaType ?? 'application/pdf';
+    const generatedPdf = WORKSHEET_KINDS.has(kind) && mediaType === 'application/pdf';
+    if (!validId(artifactId) || (!generatedPdf && !Buffer.isBuffer(bytes))) {
+      throw new Error('issued artifact requires artifactId and bytes for a retained representation');
+    }
+    if (generatedPdf && (!sourceDocument || typeof sourceDocument !== 'object')) {
+      throw new Error('generated worksheet artifact requires sourceDocument');
+    }
     const run = async () => {
       const existing = await this.get(artifactId);
-      const sha256 = digest(bytes);
+      const sha256 = Buffer.isBuffer(bytes) ? digest(bytes) : null;
+      const renderInputSha256 = generatedPdf ? renderInputDigest({
+        sourceDocument, renderContext: renderContext ?? null, allocation: allocation ?? null,
+        worksheetInstanceId: worksheetInstanceId ?? null,
+      }) : null;
       if (existing) {
-        if (existing.manifest.sha256 !== sha256) {
+        const same = generatedPdf
+          ? existing.manifest.renderInputSha256 === renderInputSha256
+          : existing.manifest.sha256 === sha256;
+        // Legacy byte archives remain readable and are never overwritten in
+        // place. A later migration can promote their YAML after verification.
+        if (generatedPdf && existing.manifest.renderInputSha256 == null && Buffer.isBuffer(existing.bytes)) {
+          return existing;
+        }
+        if (!same) {
           throw new DomainInvariantError(`issued artifact ${artifactId} is immutable`, { code: 'ARTIFACT_IMMUTABLE' });
         }
         return existing;
@@ -110,22 +163,24 @@ export class YamlIssuedArtifactStore {
       // percent-encoded filename.
       ensureDir(path.dirname(this.#manifest(artifactId)));
       const linkedSessionIds = [...new Set([sessionId, ...(Array.isArray(sessionIds) ? sessionIds : [])].filter(Boolean))];
-      const typedRepresentation = representation ? {
-        mediaType: representation.mediaType ?? 'application/pdf',
-        extension: representation.extension ?? 'pdf',
-        width: representation.width ?? null,
-        height: representation.height ?? null,
+      const typedRepresentation = representation || generatedPdf ? {
+        mediaType,
+        extension: representation?.extension ?? 'pdf',
+        width: representation?.width ?? null,
+        height: representation?.height ?? null,
+        ...(generatedPdf ? { generated: true } : {}),
       } : null;
       if (typedRepresentation && !/^[a-z0-9]+$/i.test(typedRepresentation.extension)) {
         throw new Error('issued artifact representation extension must be alphanumeric');
       }
       const manifest = {
-        // v2 is the durable session-artifact contract. v1 manifests remain
-        // readable above, but every newly captured print has enough lineage
-        // to be shown honestly in teacher history without rediscovering it
-        // from mutable curriculum data.
-        schema: typedRepresentation || sourceDocument ? 'school.session-artifact/v3' : 'school.session-artifact/v2', artifactId, kind, captureKind, sha256,
-        byteLength: bytes.length, pageCount, issuedAt,
+        // v4 is the YAML-only worksheet contract. Older byte-backed manifests
+        // remain readable above; non-PDF receipt representations stay v3.
+        schema: generatedPdf ? 'school.session-artifact/v4'
+          : (typedRepresentation || sourceDocument ? 'school.session-artifact/v3' : 'school.session-artifact/v2'),
+        artifactId, kind, captureKind,
+        ...(generatedPdf ? { renderInputSha256 } : { sha256, byteLength: bytes.length }),
+        pageCount, issuedAt,
         sessionId: linkedSessionIds[0] ?? null, sessionIds: linkedSessionIds,
         learnerId, unitId,
         worksheetInstanceId, allocation: allocation ? {
@@ -136,25 +191,28 @@ export class YamlIssuedArtifactStore {
           id: document.id ?? null, revision: document.rev ?? document.revision ?? null,
           title: document.title ?? null,
         } : null,
-        // This is input provenance, not a live render request. It lets a
-        // future compatible renderer prove that a replay is possible while
-        // making an unavailable legacy render explicit rather than fictional.
+        // This is a recorded render request. Runtime views replace allocation
+        // commands with historicalCard before invoking the current engine.
         renderContext: renderContext ? structuredClone(renderContext) : null,
         ...(typedRepresentation ? { representation: typedRepresentation } : {}),
-        // A receipt's document is the frozen semantic record from which a
-        // compatible renderer may produce a separately labelled replay. It is
-        // never reconstructed from current curriculum, review, or clock data.
+        // For worksheets this is the durable PDF input; for receipts it is the
+        // frozen semantic record used by their separately labelled replay.
         ...(sourceDocument ? { sourceDocument: structuredClone(sourceDocument) } : {}),
         parentArtifactIds: [...new Set(parentArtifactIds.filter(Boolean))],
       };
       const nonce = `${process.pid}-${Date.now()}`;
+      const manifestTmp = `${this.#manifest(artifactId)}.${nonce}.tmp`;
+      if (generatedPdf) {
+        writeFileExclusive(manifestTmp, yaml.dump(manifest, { lineWidth: -1, noRefs: true }));
+        renameFile(manifestTmp, this.#manifest(artifactId));
+        return { manifest, bytes: null };
+      }
       const extension = typedRepresentation?.extension ?? 'pdf';
       const payload = this.#payload(artifactId, extension);
-      const pdfTmp = `${payload}.${nonce}.tmp`;
-      const manifestTmp = `${this.#manifest(artifactId)}.${nonce}.tmp`;
-      writeBinaryExclusive(pdfTmp, bytes);
+      const payloadTmp = `${payload}.${nonce}.tmp`;
+      writeBinaryExclusive(payloadTmp, bytes);
       writeFileExclusive(manifestTmp, yaml.dump(manifest, { lineWidth: -1, noRefs: true }));
-      renameFile(pdfTmp, payload);
+      renameFile(payloadTmp, payload);
       renameFile(manifestTmp, this.#manifest(artifactId));
       return { manifest, bytes };
     };

@@ -1145,19 +1145,19 @@ export function createSchoolRouter({
     res.set('Cache-Control', 'no-store').json(artifact.manifest);
   }));
   router.get('/teacher/artifacts/:artifactId/original.pdf', wrap(async (req, res) => {
-    if (!schoolArtifactService?.isConfigured?.()) throw new EntityNotFoundError('issued artifact store', 'not configured');
-    const artifact = await schoolArtifactService.get(req.params.artifactId);
-    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
-    const mediaType = artifact.manifest.representation?.mediaType ?? 'application/pdf';
-    if (mediaType !== 'application/pdf') throw new ValidationError('artifact is not a PDF');
+    const pdf = await schoolArtifactService?.pdf?.(req.params.artifactId) ?? { kind: 'unconfigured' };
+    if (pdf.kind === 'unconfigured') throw new EntityNotFoundError('issued artifact store', 'not configured');
+    if (pdf.kind === 'not_found') throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    if (pdf.kind === 'wrong_media_type') throw new ValidationError('artifact is not a PDF');
+    if (!Buffer.isBuffer(pdf.bytes)) throw new ValidationError('artifact PDF cannot be regenerated');
     res.set('Cache-Control', 'private, no-store')
-      .set('Content-Type', mediaType)
+      .set('X-School-Artifact', pdf.kind === 'rendered' ? 'current-render' : 'legacy-retained')
+      .set('Content-Type', 'application/pdf')
       .set('Content-Disposition', `inline; filename="issued-${slugify(req.params.artifactId)}.pdf"`)
-      .send(artifact.bytes);
+      .send(pdf.bytes);
   }));
-  // A thumbnail is a view of retained bytes, never a fresh worksheet render.
-  // It gives the history card the visual affordance of paper without making a
-  // historical reconstruction look like an original artifact.
+  // A thumbnail is the first page of the same current-engine projection the
+  // PDF route serves; neither representation is durable artifact state.
   router.get('/teacher/artifacts/:artifactId/thumbnail.png', wrap(async (req, res) => {
     const result = await schoolArtifactService?.thumbnail?.(req.params.artifactId) ?? { kind: 'unconfigured' };
     if (result.kind === 'unconfigured') throw new EntityNotFoundError('artifact thumbnail', 'not configured');
@@ -1165,7 +1165,7 @@ export function createSchoolRouter({
     if (result.kind === 'wrong_media_type') throw new ValidationError('artifact is not a PDF');
     if (result.kind === 'unrenderable') return res.status(404).json({ error: 'thumbnail-unrenderable' });
     res.set('Cache-Control', 'private, no-store')
-      .set('X-School-Artifact', 'exact-thumbnail')
+      .set('X-School-Artifact', 'current-render-thumbnail')
       .type('image/png').send(result.bytes);
   }));
   router.get('/teacher/artifacts/:artifactId/original', wrap(async (req, res) => {
@@ -1173,10 +1173,14 @@ export function createSchoolRouter({
     const artifact = await schoolArtifactService.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     const representation = artifact.manifest.representation ?? { mediaType: 'application/pdf', extension: 'pdf' };
+    const original = representation.mediaType === 'application/pdf'
+      ? await schoolArtifactService.pdf(req.params.artifactId)
+      : { kind: 'retained', bytes: artifact.bytes };
+    if (!Buffer.isBuffer(original.bytes)) throw new ValidationError('artifact representation is unavailable');
     res.set('Cache-Control', 'private, no-store')
       .set('Content-Type', representation.mediaType)
       .set('Content-Disposition', `inline; filename="issued-${slugify(req.params.artifactId)}.${representation.extension}"`)
-      .send(artifact.bytes);
+      .send(original.bytes);
   }));
   router.post('/teacher/artifacts/:artifactId/reprint', wrap(async (req, res) => {
     const body = req.body || {};
@@ -1195,6 +1199,9 @@ export function createSchoolRouter({
     if (result.kind === 'not_found') throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     if (result.kind === 'forbidden') {
       return res.status(403).json({ error: 'A fresh teacher confirmation is required to view this postview.' });
+    }
+    if (result.kind === 'wrong_media_type' || result.kind === 'unrenderable') {
+      throw new ValidationError('artifact PDF cannot be regenerated');
     }
     return res.set('Cache-Control', 'private, no-store')
       .set('Content-Type', 'application/pdf')

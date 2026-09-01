@@ -1,12 +1,12 @@
-// FitnessMomentum.jsx — one flat glass panel: a household momentum headline plus
-// a per-person row. "Effort" is HR-zone-weighted (cool omitted). Under each
-// person sit `compareWeeks` same-scale bars (one per 7-day window, oldest→newest)
-// so this week visibly stacks up against recent weeks. Names resolve through
-// DisplayNameResolver (group label → "Dad").
+// FitnessMomentum.jsx — one flat glass panel: a household weekly-ring headline
+// plus one row per person. Bars are fixed Monday weeks, not rolling windows;
+// their height and labels are rings while their bands retain the familiar
+// green/yellow/orange/red contribution breakdown.
 import React, { useMemo } from 'react';
 import { useScreenData } from '@/screen-framework/data/useScreenData.js';
 import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import { resolveUserDisplayName } from '@/hooks/fitness/DisplayNameResolver.js';
+import RingIcon from '@/lib/icons/RingIcon.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import { computeMomentum } from './momentum.js';
 import './FitnessMomentum.scss';
@@ -30,11 +30,11 @@ function mdLabel(ms) {
 }
 
 /**
- * Log-scaled segment heights within a bar. Active minutes usually dwarf the
- * higher zones; a ln(1+m) weighting compresses the big chunks so a little hot/
+ * Log-scaled segment heights within a bar. Active-zone rings usually dwarf the
+ * higher zones; a ln(1+r) weighting compresses the big chunks so a little hot/
  * fire still earns a visible band. Heights are fractions of the bar fill, so
- * they always sum to the full fill (the fill height itself stays linear in
- * effort for honest week-over-week comparison).
+ * they always sum to the full fill (which stays linear in rings for an honest
+ * week-over-week comparison).
  */
 function zoneFractions(zones) {
   const weights = ZONE_STACK.map((z) => ({ z, w: zones[z] > 0 ? Math.log1p(zones[z]) : 0 }));
@@ -46,21 +46,21 @@ function zoneFractions(zones) {
 // Stable per-bar skeleton heights (deterministic so it doesn't twitch each frame).
 const SKELETON_HEIGHTS = [42, 64, 38, 72, 50, 60, 46, 68];
 
-/** One vertical, log-stacked weekly bar with an M/d label. Height = effort vs `maxMinutes`. */
-function WeekBar({ week, maxMinutes, index, loading }) {
+/** One vertical, log-stacked weekly bar with an M/d label. Height = rings vs max. */
+function WeekBar({ week, maxRings, index, loading }) {
   const fillPct = loading
     ? SKELETON_HEIGHTS[index % SKELETON_HEIGHTS.length]
-    : (maxMinutes > 0 ? (week.effortMinutes / maxMinutes) * 100 : 0);
+    : (maxRings > 0 ? (week.rings / maxRings) * 100 : 0);
   const fracs = loading ? [] : zoneFractions(week.zones);
   return (
     <span className="fitness-momentum__weekcol">
       {/* reserve the top-axis height during load so nothing reflows on hydrate */}
       <span className={`fitness-momentum__weektop${week.current ? ' is-current' : ''}`}>
-        {loading ? ' ' : week.effortMinutes}
+        {loading ? ' ' : week.rings.toLocaleString()}
       </span>
       <span
         className={`fitness-momentum__weekbar${week.current && !loading ? ' is-current' : ''}`}
-        title={loading ? '' : `${week.effortMinutes} min`}
+        title={loading ? '' : `${week.rings.toLocaleString()} rings`}
       >
         <span
           className={`fitness-momentum__weekfill${loading ? ' skeleton shimmer' : ''}`}
@@ -82,10 +82,10 @@ function WeekBar({ week, maxMinutes, index, loading }) {
 
 /** A person's (or the household's) same-scale weekly bar chart. */
 function WeekBars({ weeks, loading }) {
-  const maxMinutes = Math.max(1, ...weeks.map((w) => w.effortMinutes));
+  const maxRings = Math.max(1, ...weeks.map((w) => w.rings));
   return (
     <span className="fitness-momentum__weeks">
-      {weeks.map((w, i) => <WeekBar key={i} week={w} index={i} maxMinutes={maxMinutes} loading={loading} />)}
+      {weeks.map((w, i) => <WeekBar key={w.startMs ?? i} week={w} index={i} maxRings={maxRings} loading={loading} />)}
     </span>
   );
 }
@@ -104,7 +104,7 @@ export default function FitnessMomentum() {
   // skeleton (same layout as loaded) so hydration doesn't reflow the cards.
   const rawSessions = useScreenData('sessions');
   const loading = rawSessions == null;
-  const { roster, householdLabel, windowDays, compareWeeks } = useFitnessScreen();
+  const { roster, householdLabel, compareWeeks, zoneRingRates } = useFitnessScreen();
 
   // Short, family-friendly names via the device-agnostic resolver ("Dad" etc.).
   const nameById = useMemo(() => {
@@ -119,31 +119,40 @@ export default function FitnessMomentum() {
     () => computeMomentum(
       Array.isArray(rawSessions) ? rawSessions : (rawSessions?.sessions || []),
       roster,
-      { householdLabel, windowDays, compareWeeks },
+      { householdLabel, compareWeeks, zoneRingRates },
     ),
-    [rawSessions, roster, householdLabel, windowDays, compareWeeks],
+    [rawSessions, roster, householdLabel, compareWeeks, zoneRingRates],
   );
 
-  logger.sampled('momentum.render', { members: data.members.length, householdMin: data.household.effortMinutes },
+  logger.sampled('momentum.render', {
+    members: data.members.length,
+    householdRings: data.household.rings,
+    weekStartMs: data.household.weekStartMs,
+  },
     { maxPerMinute: 12, aggregate: true });
 
   const { household, members } = data;
-  const anyActive = household.weeks.some((w) => w.effortMinutes > 0);
+  const anyActive = household.weeks.some((w) => w.rings > 0);
 
   return (
     <div className="fitness-momentum">
       <div className="fitness-momentum__headline">
         <span className="fitness-momentum__flame">🔥</span>
         <span className="fitness-momentum__house">{household.label}</span>
-        <span className="fitness-momentum__window">· last {household.windowDays} days</span>
+        <span className="fitness-momentum__window">· Monday–today</span>
         {loading
-          ? <span className="fitness-momentum__house-min fitness-momentum__house-min--skel skeleton shimmer" aria-hidden="true" />
-          : <span className="fitness-momentum__house-min">{household.effortMinutes} min this week</span>}
+          ? <span className="fitness-momentum__house-rings fitness-momentum__house-rings--skel skeleton shimmer" aria-hidden="true" />
+          : (
+            <span className="fitness-momentum__house-rings" title="Household rings this week">
+              <RingIcon size="1.35em" spin="once" label={`${household.rings} household rings this week`} />
+              <span>{household.rings.toLocaleString()}</span>
+            </span>
+          )}
       </div>
 
       {/* Only show the empty-state once we KNOW there's no data — never during load. */}
       {!loading && !anyActive && (
-        <div className="fitness-momentum__zero">Let’s get moving — no credited minutes yet.</div>
+        <div className="fitness-momentum__zero">Let’s get moving — no rings yet this week.</div>
       )}
 
       <div className="fitness-momentum__cards">

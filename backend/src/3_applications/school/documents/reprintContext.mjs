@@ -24,7 +24,7 @@ export function deriveLearnerName(learnerId) {
  * `'en-GB'` here is a FORMAT choice, not a locale preference: it is what gives
  * the day-month-year ordering the sheets print ("14 Aug 2026"). Switching it
  * to `'en-US'` would silently reorder EVERY printed date (and break the
- * byte-for-byte reprint contract against every sheet already in a binder), so
+ * printed date contract against every sheet already in a binder), so
  * leave it alone.
  */
 export function deriveIssueDate(isoTimestamp, timeZone = DEFAULT_TIMEZONE) {
@@ -34,11 +34,9 @@ export function deriveIssueDate(isoTimestamp, timeZone = DEFAULT_TIMEZONE) {
 }
 
 /**
- * The exact render context a card-attached worksheet instance needs to
- * reproduce its print byte-for-byte: same cardId/row range (so
- * `RenderPrintDocument`'s allocation-store idempotent-reprint path returns
- * the SAME live record unchanged, never mutating it), same learner identity,
- * same printed name/date.
+ * The render context a card-attached worksheet instance needs to reproduce its
+ * semantic paper through the current engine: same cardId/row range, learner
+ * identity, printed name, and date.
  */
 export function buildReprintContext(instance) {
   if (!instance?.omr?.cardId || !instance?.omr?.rowRange) {

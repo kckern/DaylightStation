@@ -203,14 +203,15 @@ export class IssueComposedWorksheet {
     const document = await this.#printDocuments.getPublished(published.id, published.rev);
     const learnerName = deriveLearnerName(learnerId);
     const issueDate = deriveIssueDate(nowIso);
+    const renderContext = {
+      automaticCard: true, answerSheetPolicy: this.#policy, learnerId, learnerName, date: issueDate,
+      sectionAttribution: composition.sections,
+    };
     let rendered;
     try {
       rendered = await this.#render.execute({
         document,
-        context: {
-          automaticCard: true, answerSheetPolicy: this.#policy, learnerId, learnerName, date: issueDate,
-          sectionAttribution: composition.sections,
-        },
+        context: renderContext,
       });
     } catch (err) {
       if (err.details?.allocation?.cardId) {
@@ -247,9 +248,10 @@ export class IssueComposedWorksheet {
         kind: 'worksheet-composition',
         captureKind: 'original',
         document: { id: published.id, rev: published.rev, title: document.title ?? composition.source.title },
+        sourceDocument: document,
         allocation: rendered.allocation,
         renderContext: {
-          learnerId, learnerName, date: issueDate, duplex: rendered.duplex ?? null,
+          ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null,
           compositionId, part, parts,
           sections: sections.map((section) => ({
             sessionId: section.state.sessionId, worksheetInstanceId: section.instance.id,

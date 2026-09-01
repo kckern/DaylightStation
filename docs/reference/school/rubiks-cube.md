@@ -25,7 +25,7 @@ The temporary route generator is `RubiksPacketPlanner`. It is engine-verified, b
 
 ## Intended paper and companion contract
 
-Packets must be rendered through the normal `school.document-source/v1 → publish → issue → retained artifact → exact reprint` lifecycle, never a Rubik-specific PDF renderer. Cube SVGs use a colour letter plus only 5/10/15/20/25% grayscale fills—no hatching or texture.
+Packets must be rendered through the normal `school.document-source/v1 → publish → issue → YAML artifact → current-engine replay` lifecycle, never a Rubik-specific PDF renderer. Cube SVGs use a colour letter plus only 5/10/15/20/25% grayscale fills—no hatching or texture.
 
 A worksheet companion is **one issued opaque token with two entry paths**: the normal School action card carries its QR payload and, immediately below it, the same token’s six-digit panel alias. Scanning the QR or typing the digits must resolve the identical token and emit the identical `school.rubiks.packet-companion.open` event. A worksheet may not invent either value.
 

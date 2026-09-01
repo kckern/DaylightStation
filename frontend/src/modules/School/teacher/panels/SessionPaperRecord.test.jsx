@@ -10,7 +10,7 @@ const SessionPaperRecord = (await import('./SessionPaperRecord.jsx')).default;
 const DOC = {
   taxonomy: { lessonTitle: 'Illinois' },
   artifacts: [
-    { artifactId: 'w1', kind: 'assignment', availability: 'exact', originalPdfUrl: '/w1.pdf', thumbnailUrl: '/w1.png' },
+    { artifactId: 'w1', kind: 'assignment', availability: 'regenerable', originalPdfUrl: '/w1.pdf', thumbnailUrl: '/w1.png' },
     { artifactId: 'r1', kind: 'result-receipt', availability: 'exact', originalUrl: '/r1.png' },
   ],
 };
@@ -34,6 +34,7 @@ describe('SessionPaperRecord', () => {
     // issued-file card moved off TodayTab into this fold.
     expect(screen.queryByRole('link', { name: /^Download/ })).toBeNull();
     expect(screen.getByRole('link', { name: 'Open receipt' })).toBeInTheDocument();
+    expect(screen.getByText(/current print layout/i)).toBeInTheDocument();
     expect(teacherWorkspaceApi.session).toHaveBeenCalledTimes(1);
   });
 
