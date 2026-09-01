@@ -6,7 +6,7 @@
  * ranked loss on every mount, ten times, silently.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 // Same seam the sibling game-platform tests use (see GameBoundary.test.jsx):
 // the hook takes a `.child()` of the default export, so one object answers both.
@@ -118,10 +118,50 @@ describe('useAddressedBoardGame — filing a result', () => {
     const view = renderGame(client, { moves: [], result: null });
     await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
 
-    view.rerender({ moves: FINISHED, result: 'loss' });
-    view.rerender({ moves: FINISHED, result: 'loss' });
-    view.rerender({ moves: FINISHED, result: 'loss' });
+    // A FRESH ARRAY each time. Passing the same `moves` reference leaves every
+    // dep of the save effect stable, so the effect never re-runs and the
+    // repetition this test exists for is never actually exercised.
+    view.rerender({ moves: [...FINISHED], result: 'loss' });
+    view.rerender({ moves: [...FINISHED], result: 'loss' });
+    view.rerender({ moves: [...FINISHED], result: 'loss' });
 
     expect(client.saveGame).not.toHaveBeenCalled();
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
+  });
+
+  it('logs the ordinary rematch at DEBUG — the alarm is not for routine play', async () => {
+    const client = makeClient();
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
+
+    // "Play again" on the non-gated path: restart mints a session id while the
+    // finished board is still mounted, so the next commit carries the new
+    // session and the old terminal transcript. Real, routine, and refused — but
+    // an alarm that fires on every rematch is one nobody reads.
+    act(() => { view.result.current.restart(); });
+
+    const debugs = h.logger.debug.mock.calls.filter(([event]) => event === 'game.result-refused');
+    expect(debugs).toHaveLength(1);
+    expect(debugs[0][1]).toMatchObject({ reason: 'restart-stale-render', plies: FINISHED.length });
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+  });
+
+  it('KNOWN LIMITATION: refuses a real match that commits two plies in one render', async () => {
+    // The guard assumes ONE PLY PER COMMIT — see the contract at the refusal
+    // site. Both current consumers hold to it, so this is unreachable today.
+    // If you are here because your new game's results vanished: this is why.
+    // The match is lost whole, since the abandon archive is refused too.
+    const client = makeClient();
+    const view = renderGame(client, { moves: [0, 1, 0, 1], result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+
+    // A player move and a terminal engine reply landing in the same commit.
+    view.rerender({ moves: [0, 1, 0, 1, 0, 1], result: 'loss' });
+
+    expect(client.saveGame).not.toHaveBeenCalled();
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
   });
 });
