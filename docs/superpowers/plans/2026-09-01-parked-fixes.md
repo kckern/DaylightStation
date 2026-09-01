@@ -453,7 +453,10 @@ In `#sendIpp`, change the destructure and the return:
     // The printer's own handle for this job. Parsed all along by
     // `decodeResponse` and dropped here, which is why nothing downstream could
     // ever ask what became of a job.
-    const jobId = Number.isInteger(attrs?.['job-id']) ? attrs['job-id'] : null;
+    // `decodeResponse` collects EVERY attribute as an array
+    // (`(attrs[name] ||= []).push(value)`, ipp.mjs:219), so this is `[42]`,
+    // never `42`.
+    const jobId = Number.isInteger(attrs?.['job-id']?.[0]) ? attrs['job-id'][0] : null;
     this.#logger.info?.('laser-printer.job-sent', {
       host: this.#host, port: this.#port, transport: 'ipp', jobName, user, copies,
       documentFormat, jobAttributes, bytes: document.length, jobId,
@@ -462,8 +465,8 @@ In `#sendIpp`, change the destructure and the return:
 ```
 
 Rename the local attribute variable if `attrs` already shadows the request
-attributes — read the method before editing. `decodeResponse` may return
-`job-id` as an array; if so, take its first element.
+attributes — the existing method builds its request attrs into a local called
+`attrs`, so one of the two must be renamed (`requestAttrs` is fine).
 
 Add `jobId: null` to `#sendRaw9100`'s resolved object so both transports return
 the same shape — JetDirect has no job handle, and saying so explicitly beats an
