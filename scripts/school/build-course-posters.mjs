@@ -67,15 +67,19 @@ function addPosterField(text) {
 
 const courses = await courseIndexes(contentRoot);
 for (const course of courses) {
+  // The media tree is where a poster LIVES, and where runtime reads it from
+  // (`YamlCurriculumDatastore#getCoursePoster`). This script normalizes it in
+  // place; it does not copy it into the content tree, which holds authored
+  // YAML only. Earlier it wrote both, which left every course carrying two
+  // copies of its cover that drifted apart.
   const mediaPoster = path.join(mediaRoot, course.subject, course.raw.work, 'poster.jpg');
-  let bytes;
-  try { bytes = await fs.readFile(mediaPoster); } catch (error) {
+  try { await fs.access(mediaPoster); } catch (error) {
     if (error.code !== 'ENOENT') throw error;
     const background = fallbackByCourse.get(course.raw.work);
     if (!background) throw new Error(`no source poster or fallback for ${course.subject}/${course.raw.work}`);
-    bytes = await brandedPoster(background, course.raw.title, course.subject);
+    await fs.mkdir(path.dirname(mediaPoster), { recursive: true });
+    await fs.writeFile(mediaPoster, await brandedPoster(background, course.raw.title, course.subject));
   }
-  await fs.writeFile(path.join(course.dir, 'poster.jpg'), bytes);
   const updated = addPosterField(course.text);
   if (updated === course.text && course.raw.poster !== 'poster.jpg') throw new Error(`could not insert poster field in ${course.file}`);
   if (updated !== course.text) await fs.writeFile(course.file, updated, 'utf8');
