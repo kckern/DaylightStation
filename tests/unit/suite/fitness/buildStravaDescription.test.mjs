@@ -208,13 +208,12 @@ describe('buildStravaDescription — title generation', () => {
     expect(result.name).toBe('Long Show\u2014Long Ep');
   });
 
-  test('uses first episode when all durations are equal', () => {
-    // fad43d25b added a positional-bias tier ahead of the plain reduce: when
-    // >=2 survivors are each >=10 min, the LAST (chronologically latest) one
-    // wins, not the longest-reduce tie-break this test exercises. Durations
-    // here are kept under the 10-min bias threshold (>= 5 min T1 floor) so the
-    // cascade falls through to the reduce fallback, where a strict `>`
-    // comparison keeps the first candidate on an exact tie.
+  test('uses the LATER episode when all durations are equal', () => {
+    // T1 is longest-wins with a near-tie recency tiebreak: a later candidate
+    // within NEAR_TIE_RATIO of the longest takes primary. Two identical
+    // durations are the limiting case of a near-tie, so the later one wins —
+    // the same reading that keeps Lower Body primary over a marginally longer
+    // Upper Body.
     const now = Date.now();
     const ep1 = createEpisodeEvent({
       grandparentTitle: 'First Show',
@@ -232,8 +231,7 @@ describe('buildStravaDescription — title generation', () => {
     });
     const session = createSession({ events: [ep1, ep2] });
     const result = buildStravaDescription(session);
-    // reduce keeps best when equal, so first wins
-    expect(result.name).toBe('First Show\u2014First Ep');
+    expect(result.name).toBe('Second Show\u2014Second Ep');
   });
 });
 

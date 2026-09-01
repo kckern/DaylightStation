@@ -422,7 +422,8 @@
   // Center gutter: marker icons + labels live here; the chart (above) and the
   // HR-area lanes (below) draw the vertical indicators that emanate up and down.
   &__gutter {
-    flex: 0 0 66px;
+    // 44px poster strip + a two-line caption; captions wrap before they truncate.
+    flex: 0 0 72px;
     overflow: visible;
     position: relative;
     z-index: 2; // chips sit above the adjacent charts' indicator lines

@@ -8,8 +8,8 @@
  * that has any video event ends up with a primary:
  *
  *   T1: Real events (non-warmup, non-deprioritized) ≥ MIN_PRIMARY_SEC (5 min).
- *       When ≥2 are also ≥10 min, picks the LAST one (chronologically latest);
- *       otherwise picks the longest by data.durationSeconds. Main success path.
+ *       Longest by data.durationSeconds wins, except that a chronologically
+ *       later event within NEAR_TIE_RATIO of it takes it. Main success path.
  *   T2: Real candidates ≥ MIN_T2_T3_SEC (3 min). Longest. Drops the T1 floor
  *       but keeps a sub-floor — filters out brief demos that aren't real
  *       workouts (e.g. a 48-second strength demo).
@@ -30,6 +30,13 @@
  * }
  * @returns {Object|null} The selected event object (not just .data)
  */
+
+/**
+ * How close a later workout must be to the longest one to take primary from it.
+ * 0.85 keeps a back-to-back pair of ~10-minute videos on the later one while
+ * leaving a materially longer workout untouchable.
+ */
+export const NEAR_TIE_RATIO = 0.85;
 
 const BUILTIN_TITLE_PATTERNS = [
   /warm[\s-]?up/i,
@@ -131,21 +138,22 @@ export function selectPrimaryMedia(mediaEvents, config) {
   const isDeprioritized = buildDeprioritizedChecker(config);
   const MIN_PRIMARY_SEC = 5 * 60;
   const MIN_T2_T3_SEC = 3 * 60;  // 3-min floor for fallback tiers — keeps brief demos out of primary
-  const TEN_MIN_SEC = 10 * 60;
 
-  // Step 3: Tier 1 — Eligible real workouts.
+  // Step 3: Tier 1 — Eligible real workouts. Longest wins, except that a
+  // chronologically later event within NEAR_TIE_RATIO of the longest takes it —
+  // back-to-back near-equal workouts read as "the later one was the main event",
+  // but a materially longer workout can never be displaced.
   const realCandidates = episodes.filter(e => !isWarmup(e) && !isDeprioritized(e));
   const eligible = realCandidates.filter(e => (e.data?.durationSeconds || 0) >= MIN_PRIMARY_SEC);
   if (eligible.length > 0) {
-    const longSurvivors = eligible.filter(e => (e.data?.durationSeconds || 0) >= TEN_MIN_SEC);
-    if (longSurvivors.length >= 2) {
-      return longSurvivors[longSurvivors.length - 1];
-    }
-    return eligible.reduce((best, event) => {
+    const longest = eligible.reduce((best, event) => {
       const bestSec = best.data?.durationSeconds || 0;
       const evSec = event.data?.durationSeconds || 0;
       return evSec > bestSec ? event : best;
     });
+    const nearTieFloor = (longest.data?.durationSeconds || 0) * NEAR_TIE_RATIO;
+    const nearTies = eligible.filter(e => (e.data?.durationSeconds || 0) >= nearTieFloor);
+    return nearTies[nearTies.length - 1];
   }
 
   // Step 4: Tier 2 — real candidates ≥ MIN_T2_T3_SEC (drops T1 floor, keeps demo filter).
