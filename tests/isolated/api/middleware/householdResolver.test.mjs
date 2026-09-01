@@ -12,6 +12,10 @@ describe('householdResolver middleware', () => {
     householdContext = {
       exists: vi.fn().mockReturnValue(true),
       household: vi.fn().mockReturnValue({ name: 'Test Household' }),
+      // The middleware's no-match fallback. Part of HouseholdContextService's
+      // contract; the mock had simply never grown it, so the one test that
+      // reaches the fallback threw instead of asserting.
+      resolve: vi.fn().mockReturnValue('default'),
     };
     mockReq = { headers: {} };
     mockRes = {
