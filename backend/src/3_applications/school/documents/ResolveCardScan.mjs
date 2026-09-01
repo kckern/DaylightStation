@@ -582,6 +582,15 @@ export class ResolveCardScan {
       return { error: { code: 'CARD_ID_UNREADABLE' } };
     }
 
+    // MEASUREMENT, NOT POLICY (computed up front, before resolution is even
+    // attempted, so it is available on EVERY path below including a total
+    // resolution failure — see the `decode` build just below the ambiguous
+    // return). "How often does the reader produce a partial read?" must be
+    // answerable from `?`-count alone, independent of whether resolution
+    // later succeeds.
+    const decodePattern = String(testId);
+    const decodeMissingDigits = (decodePattern.match(/\?/g) ?? []).length;
+
     // Best-effort resolution (household direction, real incident: a
     // double-marked test-id digit decoded `?`, matched no allocation, and a
     // fully-answered sheet silently vanished). Only reached when `testId`
@@ -595,9 +604,19 @@ export class ResolveCardScan {
         this.#logger.warn?.('school.scan.card-id-unresolved', {
           pattern: testId, candidateCardIds: resolved.candidates,
         });
+        // TOTAL DECODE FAILURE — the highest-value case this measurement
+        // exists to count (review fix, 2026-09-01): `cardId: null` records
+        // "no card resolved" honestly rather than fabricating one. Omitting
+        // `decode` here would make a future decode-gate policy systematically
+        // undercount exactly the reads it most needs to see.
+        const decode = {
+          pattern: decodePattern, cardId: null, inferred: false, missingDigits: decodeMissingDigits,
+        };
+        this.#logger.info?.('school.scan.decode', decode);
         return {
           error: { code: 'CARD_ID_UNREADABLE' },
           ambiguous: { pattern: testId, candidateCardIds: resolved.candidates },
+          decode,
         };
       }
       cardId = resolved.cardId;
@@ -616,10 +635,10 @@ export class ResolveCardScan {
     // "how often does the reader produce a partial read?" is answerable. No
     // decode policy should be tuned from anecdote, and two scans is anecdote.
     const decode = {
-      pattern: String(testId),
+      pattern: decodePattern,
       cardId,
       inferred: cardIdInferred !== null,
-      missingDigits: (String(testId).match(/\?/g) ?? []).length,
+      missingDigits: decodeMissingDigits,
     };
     this.#logger.info?.('school.scan.decode', decode);
 
