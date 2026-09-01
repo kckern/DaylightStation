@@ -22,15 +22,28 @@ function logger() {
 export default function usePlayerFrameCapture({ sessionId, intervalMs = 1000, enabled = true }) {
   const inFlight = useRef(false);
   const indexRef = useRef(0);
+  const indexOwnerRef = useRef(null);
 
   useEffect(() => {
     if (!enabled || !sessionId) return undefined;
-    indexRef.current = 0;
+    // Reset ONLY when the session actually changes. This effect also re-runs when
+    // `enabled`/`intervalMs` toggle mid-session; resetting there replayed index 0..N
+    // and overwrote the earlier frames server-side, silently destroying footage.
+    if (indexOwnerRef.current !== sessionId) {
+      indexOwnerRef.current = sessionId;
+      indexRef.current = 0;
+    }
     const canvas = document.createElement('canvas');
 
     const tick = async () => {
       if (inFlight.current) return;
-      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        // A backgrounded tab captures nothing. Left unlogged this reads as a clean
+        // run with an unexplained hole in the recap, so say it out loud.
+        logger().sampled('player_frame.skip_hidden', { sessionId },
+          { maxPerMinute: 2, aggregate: true });
+        return;
+      }
       const video = typeof window !== 'undefined' ? window.__fitnessVideoElement : null;
       if (!video || !video.videoWidth || !video.videoHeight || video.readyState < 2) {
         // Surface WHY no player frames are being captured (→ missing PiP in the recap),

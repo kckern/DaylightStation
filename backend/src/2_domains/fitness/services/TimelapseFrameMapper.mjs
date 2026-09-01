@@ -222,6 +222,75 @@ function ringsAt(curve, tick, totalRings, frameIndex, frameCount) {
   return Math.round(totalRings * (curve.cum[idx] / curve.total));
 }
 
+/**
+ * How well the stored captures actually cover the output timeline, per role.
+ *
+ * `nearestByTimestamp` has no maximum distance, so a hole in the manifest renders as
+ * the same still image held across every frame in it — a silently frozen pane rather
+ * than a visible fault. This measures that: how many distinct captures the render
+ * will really use, the longest run of frames served by one capture, and how many
+ * frames sit further than `toleranceSec` from any capture.
+ *
+ * @param {object} session
+ * @param {{speedup:number, outputFps:number, toleranceSec?:number}} spec
+ * @returns {{frameCount:number, camera:object, player:object}}
+ */
+TimelapseFrameMapper.prototype.describeCoverage = function describeCoverage(
+  session, { speedup, outputFps, toleranceSec = 30 }
+) {
+  const captures = session?.snapshots?.captures || [];
+  const startMs = toMs(session.startTime);
+  const endMs = toMs(session.endTime);
+  const durationSec = Math.max(0, (endMs - startMs) / 1000);
+  const frameCount = durationSec > 0 ? Math.ceil((durationSec / speedup) * outputFps) : 0;
+
+  const roleStats = (role) => {
+    const sorted = captures
+      .filter(c => (c.role || 'camera') === role)
+      .sort((a, b) => toMs(a.timestamp) - toMs(b.timestamp));
+    const stats = {
+      captures: sorted.length, framesUsingCapture: 0, distinctCapturesUsed: 0,
+      staleFrames: 0, longestHeldFrames: 0, longestHeldSeconds: 0,
+      largestGapSeconds: 0, coverageRatio: 0,
+    };
+    if (!sorted.length || !frameCount) return stats;
+
+    const used = new Set();
+    let heldRun = 0, prevRef = null, fresh = 0;
+    for (let i = 0; i < frameCount; i++) {
+      const wallClockMs = startMs + (i / outputFps) * speedup * 1000;
+      const pick = nearestByTimestamp(sorted, wallClockMs);
+      const ref = pick?.filename || pick?.path || null;
+      const distSec = pick ? Math.abs(toMs(pick.timestamp) - wallClockMs) / 1000 : Infinity;
+      if (distSec > toleranceSec) stats.staleFrames++; else fresh++;
+      if (ref) used.add(ref);
+      if (ref !== null && ref === prevRef) heldRun++;
+      else heldRun = 1;
+      prevRef = ref;
+      if (heldRun > stats.longestHeldFrames) stats.longestHeldFrames = heldRun;
+    }
+    stats.distinctCapturesUsed = used.size;
+    stats.framesUsingCapture = frameCount;
+    stats.longestHeldSeconds = round1((stats.longestHeldFrames / outputFps) * speedup);
+    stats.coverageRatio = round3(fresh / frameCount);
+
+    let largestGapMs = Math.max(
+      toMs(sorted[0].timestamp) - startMs,
+      endMs - toMs(sorted[sorted.length - 1].timestamp)
+    );
+    for (let k = 1; k < sorted.length; k++) {
+      largestGapMs = Math.max(largestGapMs, toMs(sorted[k].timestamp) - toMs(sorted[k - 1].timestamp));
+    }
+    stats.largestGapSeconds = round1(Math.max(0, largestGapMs) / 1000);
+    return stats;
+  };
+
+  return { frameCount, camera: roleStats('camera'), player: roleStats('player') };
+};
+
+function round1(n) { return Math.round(n * 10) / 10; }
+function round3(n) { return Math.round(n * 1000) / 1000; }
+
 function toMs(t) {
   if (Number.isFinite(t)) return t;
   const n = Date.parse(t);

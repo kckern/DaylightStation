@@ -24,14 +24,21 @@ export default function SessionCameraCapture({ sessionId, intervalMs = 1000, ena
   const indexRef = useRef(0);
   const inFlightRef = useRef(false);
   const uploadedRef = useRef(0);
+  const indexOwnerRef = useRef(null);
 
   const period = Math.max(1000, Number.isFinite(intervalMs) ? intervalMs : 1000);
   const active = Boolean(enabled && sessionId);
 
   useEffect(() => {
     if (!active) return undefined;
-    indexRef.current = 0;
-    uploadedRef.current = 0;
+    // Reset ONLY when the session actually changes. This effect also re-runs when
+    // `enabled`/`intervalMs` toggle mid-session; resetting there replayed index 0..N
+    // and overwrote the earlier frames server-side, silently destroying footage.
+    if (indexOwnerRef.current !== sessionId) {
+      indexOwnerRef.current = sessionId;
+      indexRef.current = 0;
+      uploadedRef.current = 0;
+    }
     logger.info('camera_frame.capture_started', { sessionId, intervalMs: period });
     return () => {
       logger.info('camera_frame.capture_stopped', { sessionId, frames: uploadedRef.current });
@@ -51,7 +58,12 @@ export default function SessionCameraCapture({ sessionId, intervalMs = 1000, ena
 
   const handleSnapshot = useCallback(async (meta, blob) => {
     if (!active || !blob) return;
-    if (typeof document !== 'undefined' && document.hidden) return;
+    if (typeof document !== 'undefined' && document.hidden) {
+      // A backgrounded tab captures nothing. Left unlogged this reads as a clean
+      // run with an unexplained hole in the recap, so say it out loud.
+      logger.sampled('camera_frame.skip_hidden', { sessionId }, { maxPerMinute: 2, aggregate: true });
+      return;
+    }
     if (inFlightRef.current) return;
     try {
       inFlightRef.current = true;

@@ -21,7 +21,7 @@ function setup() {
   return { root, screenshotsDir, datastore };
 }
 
-const silent = { debug() {}, warn() {} };
+const silent = { debug() {}, info() {}, warn() {} };
 
 test('listCaptures returns captures in timestamp order with opaque ids', async () => {
   const { datastore } = setup();
@@ -43,11 +43,26 @@ test('readCapture returns the file buffer', async () => {
   assert.equal(buf[1], 0xd8);
 });
 
-test('cleanup deletes the screenshots dir when not archiving', async () => {
+// Regression: cleanup(archive:false) used to hard-`rm` the frames even though the
+// documented lifecycle is capture -> confirmed recap -> `_trash` -> (7 days) delete.
+// moveToTrash existed but nothing called it, so every non-archived recap destroyed
+// its source frames immediately and irrecoverably (session 20260831132151 among them).
+test('cleanup soft-deletes into _trash when not archiving — never a hard rm', async () => {
+  const { datastore, screenshotsDir, trashDir } = setupTrash();
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, logger: silent });
+  await store.cleanup('S1', 'h', { archive: false });
+  assert.equal(fs.existsSync(screenshotsDir), false, 'source dir is moved away');
+  assert.equal(fs.existsSync(path.join(trashDir, 'screenshots', '2026-06-12_0000.jpg')), true,
+    'frames remain recoverable in _trash');
+});
+
+// Without a trashDir there is nowhere safe to put the frames. Leave them in place
+// rather than falling back to the destructive path.
+test('cleanup leaves frames untouched when no trashDir is configured', async () => {
   const { datastore, screenshotsDir } = setup();
   const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, logger: silent });
   await store.cleanup('S1', 'h', { archive: false });
-  assert.equal(fs.existsSync(screenshotsDir), false);
+  assert.equal(fs.existsSync(screenshotsDir), true);
 });
 
 test('cleanup archives instead of deletes when archive:true', async () => {
