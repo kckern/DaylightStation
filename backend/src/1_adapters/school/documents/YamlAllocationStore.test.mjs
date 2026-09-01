@@ -307,6 +307,58 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
     expect(retry.record.predecessorCardId).toBe(first.record.cardId);
     expect(retry.record.generation).toBe(2);
   });
+
+  it('does not rewrite predecessor lineage when a delivery is a plain reuse', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({
+      directory: '/docs',
+      io,
+      rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5], [9, 4, 2, 7, 6, 0, 8]]),
+      now: () => '2026-08-31T10:00:00.000Z',
+    });
+
+    // Card A, first use of a fresh chain.
+    const a = await store.allocateNext({
+      request: request({ documentId: 'math', learnerId: 'user_4', rowRange: { start: 1, end: 6 } }),
+      policy: { reuse: 'after_scan' },
+    });
+    expect(a.firstUse).toBe(true);
+    expect(a.record.cardOrigin).toBe('first');
+    await store.markDelivered({ cardId: a.record.cardId, recordId: a.record.recordId });
+
+    // A still holds live work, so `after_scan` correctly mints card B.
+    const b = await store.allocateNext({
+      request: request({ documentId: 'scripture', learnerId: 'user_4', rowRange: { start: 1, end: 3 } }),
+      policy: { reuse: 'after_scan' },
+    });
+    expect(b.firstUse).toBe(true);
+    expect(b.record.cardOrigin).toBe('rollover');
+    await store.markDelivered({ cardId: b.record.cardId, recordId: b.record.recordId });
+
+    // The genuine rollover DOES retire A's tail. This part is correct today.
+    const afterRollover = await store.findByCard(a.record.cardId);
+    expect(afterRollover[0].successorCardId).toBe(b.record.cardId);
+    const tailAfterRollover = afterRollover[0].tailSkipped;
+
+    // Now an ordinary reuse of B under `until_full`.
+    const c = await store.allocateNext({
+      request: request({ documentId: 'science', learnerId: 'user_4', rowRange: { start: 1, end: 2 } }),
+      policy: { reuse: 'until_full' },
+    });
+    expect(c.firstUse).toBe(false);
+    expect(c.record.cardId).toBe(b.record.cardId);
+    expect(c.record.cardOrigin).toBe('reuse');
+    // It inherits the predecessor pointer -- which is exactly why the old
+    // condition misfired.
+    expect(c.record.predecessorCardId).toBe(a.record.cardId);
+    await store.markDelivered({ cardId: c.record.cardId, recordId: c.record.recordId });
+
+    // THE ASSERTION: card A is untouched by a delivery that was not its rollover.
+    const afterReuse = await store.findByCard(a.record.cardId);
+    expect(afterReuse[0].tailSkipped).toEqual(tailAfterRollover);
+    expect(afterReuse.map((r) => r.successorCardId))
+      .toEqual(afterRollover.map((r) => r.successorCardId));
+  });
 });
 
 describe('allocate — collision refusal (spec §5.4)', () => {

@@ -308,6 +308,11 @@ export class YamlAllocationStore {
         renderedAt: this.#now(),
         generation,
         predecessorCardId,
+        // WHICH DECISION PRODUCED THIS ROW, recorded when it is made.
+        // `predecessorCardId` cannot answer this: the reuse branch inherits it
+        // from the card's first record, so a truthy value means "this card was
+        // once rolled over to", not "this delivery is that rollover".
+        cardOrigin: firstUse ? (predecessorCardId ? 'rollover' : 'first') : 'reuse',
         identiconVersion: ANSWER_SHEET_IDENTICON_VERSION,
         cardCapacity: capacity,
       });
@@ -349,7 +354,13 @@ export class YamlAllocationStore {
       // The predecessor's unused tail becomes permanently unavailable only
       // once the successor is actually delivered, not while a render or print
       // job can still roll back.
-      if (delivered.predecessorCardId) {
+      //
+      // ONLY A GENUINE ROLLOVER retires the predecessor's tail. This used to
+      // test `delivered.predecessorCardId`, which every reuse on the card also
+      // carries — so each ordinary delivery re-stamped the predecessor and
+      // re-logged the rollover, forever. It also made card history untrustworthy
+      // after the fact: fields written days later read as contemporaneous.
+      if (delivered.cardOrigin === 'rollover' && delivered.predecessorCardId) {
         const predecessor = this.#load(delivered.predecessorCardId);
         if (predecessor.length) {
           const occupiedThrough = Math.max(...predecessor.map((entry) => entry.rowRange.end));
@@ -847,7 +858,7 @@ function shiftRequestRows(request, offset) {
 }
 
 function allocationRecord({
-  cardId, request, renderedAt, generation, predecessorCardId, identiconVersion, cardCapacity,
+  cardId, request, renderedAt, generation, predecessorCardId, cardOrigin, identiconVersion, cardCapacity,
 }) {
   return {
     recordId: buildRecordId(request),
@@ -864,6 +875,12 @@ function allocationRecord({
     renderedAt,
     generation,
     predecessorCardId,
+    // WHICH DECISION PRODUCED THIS RECORD ('first' | 'rollover' | 'reuse'),
+    // persisted so `markDelivered` can gate predecessor lineage writes on the
+    // decision as it was actually made, not re-infer it later from
+    // `predecessorCardId` (which every reuse on a once-rolled-over card also
+    // carries).
+    cardOrigin,
     identiconVersion,
     cardCapacity,
     deliveryState: 'pending',
