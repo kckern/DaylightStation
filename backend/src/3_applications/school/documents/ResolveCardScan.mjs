@@ -612,6 +612,17 @@ export class ResolveCardScan {
       this.#logger.warn?.('school.scan.card-id-inferred', { pattern: testId, cardId });
     }
 
+    // MEASUREMENT, NOT POLICY. Recorded on every scan, clean or inferred, so
+    // "how often does the reader produce a partial read?" is answerable. No
+    // decode policy should be tuned from anecdote, and two scans is anecdote.
+    const decode = {
+      pattern: String(testId),
+      cardId,
+      inferred: cardIdInferred !== null,
+      missingDigits: (String(testId).match(/\?/g) ?? []).length,
+    };
+    this.#logger.info?.('school.scan.decode', decode);
+
     const records = await this.#allocationStore.findByCard(cardId);
     const answeredRows = new Set(Object.keys(answers).map(Number));
     if (records.some((record) => record.cardRetiredAt) && answeredRows.size > 0) {
@@ -620,10 +631,11 @@ export class ResolveCardScan {
         answeredRowCount: answeredRows.size,
         recordStatuses: records.map((record) => record.status),
         ...(cardIdInferred ? { cardIdInferred } : {}),
+        decode,
       };
     }
     const preflight = identityReview ? null : await this.#identityPreflight({ cardId, answers, records });
-    if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}) };
+    if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}), decode };
     const live = records.filter((record) => record.status === 'live');
     // A reused card retains old marks in satisfied rows. While a new worksheet
     // is live, grade only that live allocation and ignore the settled rows.
@@ -647,6 +659,7 @@ export class ResolveCardScan {
         unknownCard: true,
         answeredRowCount: answeredRows.size,
         nearMissCardIds: await this.#nearMissLiveCards(cardId),
+        decode,
       };
     }
 
@@ -663,6 +676,7 @@ export class ResolveCardScan {
         answeredRowCount: answeredRows.size,
         recordStatuses: records.map((record) => record.status),
         ...(cardIdInferred ? { cardIdInferred } : {}),
+        decode,
       };
     }
 
@@ -763,6 +777,7 @@ export class ResolveCardScan {
       ...(unallocatedRows.length ? { unallocatedRows } : {}),
       ...(silentLiveRecords.length ? { silentLiveRecords } : {}),
       ...(cardIdInferred ? { cardIdInferred } : {}),
+      decode,
     };
     if (!identityReview) await this.#rememberProcessedScan({ cardId, answers, records, outcome });
     return outcome;
