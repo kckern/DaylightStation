@@ -1553,7 +1553,9 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
     const text = pdfText(result.bytes);
     for (let page = 1; page <= result.pageCount; page += 1) {
-      expect(text, `page ${page} footer`).toContain(`Page ${page} of ${result.pageCount} · ${cardId}`);
+      expect(text, `page ${page} footer`).toContain(
+        `Student No. ${cardId} · Rows 1–20 · Page ${page} of ${result.pageCount}`,
+      );
     }
     // The blank continuation-strip name line it replaced is gone for good:
     // "Name:" now appears exactly once, in page 1's real header, not once

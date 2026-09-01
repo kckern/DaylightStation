@@ -7,7 +7,7 @@ exports[`furniture — drawFurniture > snapshot: a furnished 3-page document's f
       {
         "align": "center",
         "op": "text",
-        "str": "Page 1 of 3 · 5922785",
+        "str": "Student No. 5922785 · Rows 7–12 · Page 1 of 3",
         "width": 486,
         "xPt": 72,
         "yPt": 769,
@@ -20,7 +20,7 @@ exports[`furniture — drawFurniture > snapshot: a furnished 3-page document's f
       {
         "align": "center",
         "op": "text",
-        "str": "Page 2 of 3 · 5922785",
+        "str": "Student No. 5922785 · Rows 7–12 · Page 2 of 3",
         "width": 486,
         "xPt": 54,
         "yPt": 769,
@@ -33,7 +33,7 @@ exports[`furniture — drawFurniture > snapshot: a furnished 3-page document's f
       {
         "align": "center",
         "op": "text",
-        "str": "Page 3 of 3 · 5922785",
+        "str": "Student No. 5922785 · Rows 7–12 · Page 3 of 3",
         "width": 486,
         "xPt": 72,
         "yPt": 769,

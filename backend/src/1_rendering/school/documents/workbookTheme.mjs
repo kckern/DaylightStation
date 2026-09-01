@@ -205,6 +205,10 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       metaSizePt: styles.label.sizePt,
       metaLeadingPt: styles.label.leadingPt,
       metaTitleGapPt: density === 'compact' ? 6 : 9,
+      // Card identity is wider than the ordinary centered title furniture.
+      // Keep Name/Date on their own row above it instead of flanking it: the
+      // longer KEEP banner must never run underneath the Date field.
+      metaCardGapPt: density === 'compact' ? 3 : 4,
       ruleGapPt: density === 'compact' ? 5 : 7,
       ruleWidthPt: 0.8,
       gapBelowPt: density === 'compact' ? 7 : 10,
@@ -407,6 +411,8 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       labelGapPt: density === 'compact' ? 8 : 10,
       boxPaddingXPt: 9,
       boxPaddingYPt: 4,
+      identiconCellPt: typeScale === 'young' ? 3.2 : 2.7,
+      identiconGapPt: density === 'compact' ? 7 : 9,
       reuseLabelSizePt: styles.caption.sizePt,
       reuseLabelLeadingPt: styles.caption.leadingPt,
       metaSizePt: styles.caption.sizePt,

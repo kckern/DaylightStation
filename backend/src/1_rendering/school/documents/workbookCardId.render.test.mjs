@@ -77,6 +77,9 @@ function summarizeCardFragment(fragment) {
       labelText: node.labelText,
       metaText: node.metaText,
       firstUse: node.firstUse,
+      reuseText: node.reuseText,
+      identiconVersion: node.identicon.version,
+      identiconCells: node.identicon.cells.map((cell) => (cell ? 1 : 0)).join(''),
       // Every card fragment carries exactly one instruction line (spec
       // §5.2) — its TEXT is the thing that varies with `firstUse`, not its
       // presence.
@@ -95,7 +98,7 @@ describe('card header strip — measure (spec §5.2/§5.3)', () => {
     expect(withoutCard).toEqual(withNullCard);
   });
 
-  it('a supplied card embeds one measured card header in the identity row above the title', () => {
+  it('a supplied card embeds one measured card header in the identity block above the title', () => {
     const fragments = measureDoc(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30 } });
     expect(fragments.map((f) => f.id)).toEqual(['header', 'blocks[0]#p0']);
     const cardFragment = embeddedCardFragment(fragments);
@@ -112,9 +115,34 @@ describe('card header strip — measure (spec §5.2/§5.3)', () => {
     expect(node.instruction).toBeNull();
   });
 
+  it('stacks Name/Date above the card so the long KEEP banner cannot overlap either field', () => {
+    const [headerFragment] = measureDoc(bareDoc, {
+      card: { cardId: '4829306', startRow: 18, endRow: 30, firstUse: false },
+      studentName: 'Workbook Learner',
+    });
+    const [header] = headerFragment.nodes;
+    expect(header.metaRowHeightPt).toBeCloseTo(
+      theme.header.metaLeadingPt + theme.header.metaCardGapPt + header.embeddedCard.heightPt,
+      5,
+    );
+  });
+
   it('firstUse: false (the default) prints no redundant instruction', () => {
     const cardFragment = embeddedCardFragment(measureDoc(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30, firstUse: false } }));
     expect(cardFragment.nodes[0].instruction).toBeNull();
+    expect(cardFragment.nodes[0].reuseText).toBe('KEEP USING THE SAME ANSWER SHEET · ROWS 18–30');
+  });
+
+  it('uses firstUse rather than startRow so a row-1 reprint says KEEP', () => {
+    const reprint = embeddedCardFragment(measureDoc(bareDoc, {
+      card: { cardId: '4829306', startRow: 1, endRow: 12, firstUse: false },
+    }));
+    const fresh = embeddedCardFragment(measureDoc(bareDoc, {
+      card: { cardId: '4829306', startRow: 1, endRow: 12, firstUse: true },
+    }));
+    expect(reprint.nodes[0].reuseText).toBe('KEEP USING THE SAME ANSWER SHEET · ROWS 1–12');
+    expect(fresh.nodes[0].reuseText).toBe('START A NEW ANSWER SHEET · ROWS 1–12');
+    expect(reprint.nodes[0].identicon).toEqual(fresh.nodes[0].identicon);
   });
 
   it('digit x-offsets strictly increase left to right, each spaced by real glyph width + theme.card.trackingPt', () => {

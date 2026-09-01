@@ -388,6 +388,9 @@ export class RecordCardScanOutcome {
           scanKey: key,
           ...(card.sectionId ? { sectionId: card.sectionId } : {}),
           ...(card.reScored ? { reScored: true } : {}),
+          ...(card.manualReviewProvenance ? {
+            manualReview: structuredClone(card.manualReviewProvenance),
+          } : {}),
           // The card id this row's allocation was resolved against was
           // INFERRED (best-effort match against a `?`-bearing scan), not
           // cleanly read off the sheet — see this method's own doc comment.

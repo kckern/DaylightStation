@@ -54,6 +54,8 @@ import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
 import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
+import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
+import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import { requirePdftoppm as requirePoppler, rasterizePdfPages } from '#testlib/school/rasterize.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -94,6 +96,31 @@ const resolveAsset = (ref) => (ref === 'school/math/fraction-strips'
 
 const omrBank = () => readYaml(path.join(FIXTURE_DIR, 'banks', 'math-fractions-03-bank.yml'));
 
+const answerSheetQuestion = (number) => ({
+  type: 'question',
+  itemId: `answer-sheet-q${number}`,
+  number,
+  blocks: [
+    { type: 'rich_text', md: `Solve practice problem ${number} and show your work.` },
+    { type: 'answer_space', minPt: 30, maxPt: 30 },
+  ],
+});
+
+const answerSheetDocument = ({ id, count = 3 }) => ({
+  id,
+  title: 'Answer Sheet Identity Practice',
+  seed: 8684155,
+  variant: 0,
+  target: ['letter'],
+  archetype: 'worksheet',
+  blocks: Array.from({ length: count }, (_, index) => answerSheetQuestion(index + 1)),
+});
+
+const answerSheetOptions = (card) => ({
+  card,
+  furniture: { gutter: false, duplex: false },
+});
+
 /**
  * The corpus: the spike's math stress cases, the three real curriculum
  * worksheets, and two documents built to break pages in specific ways.
@@ -126,15 +153,55 @@ export const GOLDEN_CASES = [
     document: () => readYaml(path.join(FIXTURE_DIR, 'documents', 'math-fractions-02-worksheet.yml')),
     options: () => ({ variant: 1 }),
   },
+  {
+    // These four workbook-theme cases are the visual contract for the
+    // child-facing answer-sheet identity cues. They intentionally use one
+    // card number for new/reused/reprinted so a reviewer can see that the
+    // identicon stays constant while the instruction and row ownership
+    // change. The row-1 reprint is distinct from first use: it must say KEEP.
+    name: 'answer-sheet-new',
+    workbook: true,
+    document: () => answerSheetDocument({ id: 'answer-sheet-new' }),
+    options: () => answerSheetOptions({
+      cardId: '8684155', startRow: 1, endRow: 3, firstUse: true, identiconVersion: 'v1',
+    }),
+  },
+  {
+    name: 'answer-sheet-reused',
+    workbook: true,
+    document: () => answerSheetDocument({ id: 'answer-sheet-reused' }),
+    options: () => answerSheetOptions({
+      cardId: '8684155', startRow: 22, endRow: 24, firstUse: false, identiconVersion: 'v1',
+    }),
+  },
+  {
+    name: 'answer-sheet-row-1-reprint',
+    workbook: true,
+    document: () => answerSheetDocument({ id: 'answer-sheet-row-1-reprint' }),
+    options: () => answerSheetOptions({
+      cardId: '8684155', startRow: 1, endRow: 3, firstUse: false, identiconVersion: 'v1',
+    }),
+  },
+  {
+    name: 'answer-sheet-multi-page',
+    workbook: true,
+    document: () => answerSheetDocument({ id: 'answer-sheet-multi-page', count: 20 }),
+    options: () => answerSheetOptions({
+      cardId: '8424408', startRow: 1, endRow: 20, firstUse: true, identiconVersion: 'v1',
+    }),
+    minimumPages: 2,
+  },
 ];
 
 /** Every case renders with the same injected deps, so a diff means a code change. */
-export function createGoldenRenderer() {
-  return createDocumentPdfRenderer({ resolveAsset });
+export function createGoldenRenderer(testCase = {}) {
+  return testCase.workbook
+    ? createDocumentPdfRenderer({ resolveAsset, theme: createWorkbookTheme(), texToSvg })
+    : createDocumentPdfRenderer({ resolveAsset });
 }
 
 export async function renderCase(testCase) {
-  const renderer = createGoldenRenderer();
+  const renderer = createGoldenRenderer(testCase);
   const options = { studentName: 'Test Learner', ...(testCase.options?.() ?? {}) };
   return renderer.render(testCase.document(), options);
 }

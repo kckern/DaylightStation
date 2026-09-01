@@ -19,6 +19,7 @@ import SystemHealthPanel from './panels/SystemHealthPanel.jsx';
 import PeriodsTimeline from './panels/PeriodsTimeline.jsx';
 import EnrichmentPanel from './panels/EnrichmentPanel.jsx';
 import ReviewQueueView from './panels/ReviewQueueView.jsx';
+import AnswerSheetPairingQueue from './panels/AnswerSheetPairingQueue.jsx';
 import PrintPendingView from './panels/PrintPendingView.jsx';
 import QuizRequestBacklog from './panels/QuizRequestBacklog.jsx';
 import FeedbackNotes, { NoteComposer } from './panels/FeedbackNotes.jsx';
@@ -172,6 +173,9 @@ export function QueueView({ kids }) {
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Action queue</p><h2>Needs a grown-up</h2><p>Review, print, and learner requests in one interruption-friendly list.</p></div></div>
       <PanelFrame title="Grading & review" state={review.state} retry={review.retry} emptyCopy="Nothing is waiting for a mark." unavailableCopy="The review queue is unavailable.">
         <ReviewQueueView items={review.data?.items ?? []} kids={kids} onResolved={review.retry} />
+      </PanelFrame>
+      <PanelFrame title="Answer-sheet pairing" state="ok">
+        <AnswerSheetPairingQueue />
       </PanelFrame>
       <PrintPendingView kids={kids} />
       <QuizRequestBacklog kids={kids} />

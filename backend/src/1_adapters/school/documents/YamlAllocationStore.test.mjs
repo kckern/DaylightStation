@@ -71,6 +71,12 @@ describe('allocate — explicit cardId', () => {
       variant: 0,
       learnerId: 'kid-1',
       renderedAt: '2026-08-04T00:00:00.000Z',
+      generation: 1,
+      predecessorCardId: null,
+      identiconVersion: 'v1',
+      deliveryState: 'pending',
+      deliveredAt: null,
+      cardCapacity: 50,
       status: 'live',
     });
     expect(await store.findByCard('1234567')).toEqual([record]);
@@ -178,6 +184,128 @@ describe('allocate — fresh cardId generation (spec §5.2)', () => {
 
     await expect(store.allocate({ request: request({ documentId: 'other-doc' }) }))
       .rejects.toMatchObject({ code: 'ALLOCATION_CARD_ID_EXHAUSTED' });
+  });
+});
+
+describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
+  it('serializes racing selections into non-overlapping ranges on one card', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({
+      directory: '/docs', io, rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5]]), now: () => '2026-08-31T10:00:00.000Z',
+    });
+    const [first, second] = await Promise.all([
+      store.allocateNext({ request: request({ documentId: 'math', learnerId: 'milo', rowRange: { start: 1, end: 6 } }) }),
+      store.allocateNext({ request: request({ documentId: 'scripture', learnerId: 'milo', rowRange: { start: 1, end: 3 } }) }),
+    ]);
+    expect(first.record.cardId).toBe('8684155');
+    expect(second.record.cardId).toBe('8684155');
+    expect(first.record.rowRange).toEqual({ start: 1, end: 6 });
+    expect(second.record.rowRange).toEqual({ start: 7, end: 9 });
+  });
+
+  it('preserves explicit after_scan behavior inside the atomic allocator', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({
+      directory: '/docs', io,
+      rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5], [9, 4, 2, 7, 6, 0, 8]]),
+      now: () => '2026-08-31T10:00:00.000Z',
+    });
+    const first = await store.allocateNext({
+      request: request({ documentId: 'math', learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+      policy: { reuse: 'after_scan' },
+    });
+    // Still-live work blocks reuse under the conservative legacy policy.
+    const concurrent = await store.allocateNext({
+      request: request({ documentId: 'scripture', learnerId: 'milo', rowRange: { start: 1, end: 3 } }),
+      policy: { reuse: 'after_scan' },
+    });
+    expect(concurrent.record.cardId).toBe('9427608');
+
+    await store.updateStatus({
+      cardId: concurrent.record.cardId, recordId: concurrent.record.recordId, status: 'satisfied',
+    });
+    const settledReuse = await store.allocateNext({
+      request: request({ documentId: 'science', learnerId: 'milo', rowRange: { start: 1, end: 2 } }),
+      policy: { reuse: 'after_scan' },
+    });
+    expect(settledReuse.record.cardId).toBe(concurrent.record.cardId);
+    expect(settledReuse.record.rowRange).toEqual({ start: 4, end: 5 });
+    expect(first.record.cardId).toBe('8684155');
+  });
+
+  it('preserves explicit school_day reuse but rolls forward on a new local date', async () => {
+    const { io } = fakeIo();
+    let now = '2026-08-31T10:00:00.000Z';
+    const store = new YamlAllocationStore({
+      directory: '/docs', io,
+      rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5], [9, 4, 2, 7, 6, 0, 8]]),
+      now: () => now,
+    });
+    const first = await store.allocateNext({
+      request: request({ documentId: 'math', learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+      policy: { reuse: 'school_day' },
+    });
+    const sameDay = await store.allocateNext({
+      request: request({ documentId: 'scripture', learnerId: 'milo', rowRange: { start: 1, end: 3 } }),
+      policy: { reuse: 'school_day' },
+    });
+    expect(sameDay.record.cardId).toBe(first.record.cardId);
+    expect(sameDay.record.rowRange).toEqual({ start: 7, end: 9 });
+
+    now = '2026-09-01T10:00:00.000Z';
+    const nextDay = await store.allocateNext({
+      request: request({ documentId: 'science', learnerId: 'milo', rowRange: { start: 1, end: 2 } }),
+      policy: { reuse: 'school_day' },
+    });
+    expect(nextDay.record.cardId).toBe('9427608');
+    expect(nextDay.record.rowRange).toEqual({ start: 1, end: 2 });
+  });
+
+  it('rolls the whole worksheet to a distinct successor, seals the tail on delivery, and never returns', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({
+      directory: '/docs',
+      io,
+      rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5], [9, 4, 2, 7, 6, 0, 8]]),
+      now: () => '2026-08-31T10:00:00.000Z',
+    });
+    const first = await store.allocateNext({
+      request: request({ documentId: 'math', learnerId: 'milo', rowRange: { start: 1, end: 45 } }),
+    });
+    await store.markDelivered({ cardId: first.record.cardId, recordId: first.record.recordId });
+    const successor = await store.allocateNext({
+      request: request({ documentId: 'scripture', learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+    });
+    expect(successor.record).toMatchObject({
+      cardId: '9427608', rowRange: { start: 1, end: 6 }, generation: 2,
+      predecessorCardId: '8684155', identiconVersion: 'v1', deliveryState: 'pending',
+    });
+    await store.markDelivered({ cardId: successor.record.cardId, recordId: successor.record.recordId });
+    expect((await store.findByCard('8684155'))[0]).toMatchObject({
+      successorCardId: '9427608', tailSkipped: { start: 46, end: 50 },
+    });
+    const next = await store.allocateNext({
+      request: request({ documentId: 'science', learnerId: 'milo', rowRange: { start: 1, end: 5 } }),
+    });
+    expect(next.record.cardId).toBe('9427608');
+    expect(next.record.rowRange).toEqual({ start: 7, end: 11 });
+  });
+
+  it('cancels an unconfirmed successor without permanently sealing its predecessor', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({
+      directory: '/docs', io,
+      rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5], [9, 4, 2, 7, 6, 0, 8], [3, 1, 7, 9, 0, 2, 4]]),
+      now: () => '2026-08-31T10:00:00.000Z',
+    });
+    const first = await store.allocateNext({ request: request({ documentId: 'a', learnerId: 'milo', rowRange: { start: 1, end: 48 } }) });
+    await store.markDelivered({ cardId: first.record.cardId, recordId: first.record.recordId });
+    const failed = await store.allocateNext({ request: request({ documentId: 'b', learnerId: 'milo', rowRange: { start: 1, end: 3 } }) });
+    await store.release({ cardId: failed.record.cardId, rows: failed.record.rowRange });
+    expect((await store.findByCard(first.record.cardId))[0].successorCardId).toBeUndefined();
+    const retry = await store.allocateNext({ request: request({ documentId: 'b-retry', learnerId: 'milo', rowRange: { start: 1, end: 3 } }) });
+    expect(retry.record.predecessorCardId).toBe(first.record.cardId);
+    expect(retry.record.generation).toBe(2);
   });
 });
 

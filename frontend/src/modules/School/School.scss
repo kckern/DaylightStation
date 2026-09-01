@@ -2603,3 +2603,48 @@
 .school-selfservice-card__item-title {
   font-weight: 600;
 }
+// Grouped answer-sheet identity review (separate from item grading).
+.answer-sheet-pairing {
+  display: grid;
+  gap: 1rem;
+
+  &__case,
+  &__candidate {
+    border: 1px solid var(--teacher-border, #c8c3b8);
+    border-radius: 0.65rem;
+    padding: 0.85rem;
+  }
+
+  &__candidates {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+  }
+
+  &__candidate {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.75rem;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    grid-column: 1 / -1;
+    gap: 0.5rem;
+  }
+}
+
+.answer-sheet-identicon {
+  display: grid;
+  grid-template-columns: repeat(5, 0.34rem);
+  grid-template-rows: repeat(5, 0.34rem);
+  gap: 1px;
+  padding: 0.2rem;
+  border: 1px solid currentColor;
+  width: max-content;
+  height: max-content;
+
+  &__cell { background: transparent; }
+  &__cell--on { background: currentColor; }
+}

@@ -94,7 +94,7 @@ function normalizePrintCooldownMinutes(raw) {
 }
 
 function normalizeAnswerSheetPolicy(raw) {
-  const reuse = raw?.reuse ?? 'after_scan';
+  const reuse = raw?.reuse ?? 'until_full';
   const capacity = raw?.capacity ?? 50;
   if (!['never', 'after_scan', 'school_day', 'until_full'].includes(reuse)) {
     throw new Error(`IssueDocument: unknown answer-sheet reuse policy "${reuse}"`);
@@ -616,6 +616,21 @@ export class IssueDocument {
   async #reprintExact({ sessionId, nowIso, state }) {
     const artifactId = state.issuedArtifacts.at(-1);
     const retained = await this.#issuedArtifacts?.get?.(artifactId) ?? null;
+    // A capture-only/unconfirmed dispatch rolls its reservation back. Its
+    // retained bytes therefore MUST NOT be sent later as an "exact" reprint:
+    // the Student No./rows drawn in that PDF no longer name a live allocation.
+    // Regenerate under the same artifact id so the retry receives a fresh,
+    // atomically reserved identity and the manifest heals to that identity.
+    if (retained && await this.#allocationWasCancelled(retained.manifest?.allocation)) {
+      this.#logger.warn?.('school.issue.cancelled-allocation-regenerated', {
+        sessionId,
+        unitId: state.unitId,
+        artifactId,
+        cardId: retained.manifest?.allocation?.cardId,
+        recordId: retained.manifest?.allocation?.recordId,
+      });
+      return this.#issueNew({ sessionId, nowIso, state, replacementArtifactId: artifactId });
+    }
     if (!retained) {
       // The `issued` event is real — the child DID receive a sheet — but the
       // bytes are gone: retention predates this session (2026-08-25 incident:
@@ -699,10 +714,11 @@ export class IssueDocument {
 
     let instance = await this.#worksheetInstances.findBySession(sessionId);
     const existingInstance = Boolean(instance);
+    const existingAllocationCancelled = existingInstance
+      && await this.#allocationWasCancelled(instance.omr);
     // Whether THIS render's document carries a companion gate row (Task 8).
     // It costs a card row of its own, so `rowsNeeded` below has to know — an
     // undercount by one runs the last question off the end of the card.
-    let gateRows = 0;
     if (!instance) {
       const id = `${slugify(unit.subject ?? 'school')}/${slugify(course.courseId)}/ws-${slugify(sessionId)}`;
       const bank = this.#bankReader?.getBank(unit.bank);
@@ -721,7 +737,6 @@ export class IssueDocument {
       if (companion?.refusal) {
         return this.#unavailable(sessionId, companion.refusal.reason, companion.refusal.message);
       }
-      gateRows = companion?.finishCode ? 1 : 0;
       const published = await this.#publishPrintDocument.execute({
         source: worksheetInstanceDocument(instance, {
           title: unit.title,
@@ -756,16 +771,6 @@ export class IssueDocument {
     const publishedDocument = await this.#printDocuments.getPublished(instance.documentId, instance.documentRevision);
     const learnerName = deriveLearnerName(instance.learnerId);
     const issueDate = deriveIssueDate(instance.issuedAt);
-    const reusableCard = !existingInstance && typeof this.#allocationStore.findReusableCard === 'function'
-      ? await this.#allocationStore.findReusableCard({
-        learnerId: instance.learnerId,
-        // The gate row is a printed row like any other and consumes one of the
-        // card's fifty; `instance.questions` does not know about it.
-        rowsNeeded: instance.questions.length + gateRows,
-        capacity: this.#answerSheetPolicy.capacity,
-        reuse: this.#answerSheetPolicy.reuse,
-      })
-      : null;
     // Header manifest (Task 2, RenderPrintDocument's `context.passPercent`):
     // `unit.passing.percent` is the SAME field `GradeSubmission`/
     // `CloseSessionOutcome` already read as the authoritative pass bar for
@@ -779,17 +784,19 @@ export class IssueDocument {
     try {
       const result = await this.#renderPrintDocument.execute({
         document: publishedDocument,
-        context: existingInstance && instance.omr?.cardId
+        context: existingInstance && instance.omr?.cardId && !existingAllocationCancelled
           ? {
             cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
           }
-          : reusableCard
-            ? {
-              ...reusableCard, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
-            }
-            : {
-              freshCard: true, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
-            },
+          : {
+            automaticCard: true,
+            answerSheetPolicy: this.#answerSheetPolicy,
+            learnerId: state.learnerId,
+            learnerName,
+            date: issueDate,
+            sessionId,
+            passPercent,
+          },
       });
       rendered = {
         pdf: result.bytes, pageCount: result.pageCount, allocation: result.allocation,
@@ -802,7 +809,8 @@ export class IssueDocument {
       return this.#recordFailure({ sessionId, stage: 'render', reason: err.message, nowIso, state, cause: 'render' });
     }
 
-    if (!existingInstance) {
+    const mustPersistOmrBinding = !existingInstance || existingAllocationCancelled;
+    if (mustPersistOmrBinding) {
       // Card identity only. The answer key — every question's visible options,
       // their printed A–E letters, and which are `correct` — already lives once
       // on `instance.questions[].options` (minted by `issueWorksheet`), and that
@@ -819,7 +827,6 @@ export class IssueDocument {
           rowRange: rendered.allocation.rowRange,
         },
       };
-      await this.#worksheetInstances.put(instance);
     }
 
     // `instance.id` is derived purely from `sessionId`/course/subject
@@ -852,12 +859,40 @@ export class IssueDocument {
       await this.#orphanAllocation(rendered.allocation, { sessionId, unitId: state.unitId, stage: 'print' });
       return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
     }
+    const printConfirmed = this.#printConfirmed(printResult);
+    if (mustPersistOmrBinding) {
+      if (printConfirmed) {
+        try {
+          // Do not leave a durable worksheet instance pointing at a reservation
+          // that never reached paper. Once the printer confirms delivery, bind
+          // the immutable questions to exactly that delivered card window.
+          await this.#worksheetInstances.put(instance);
+          if (typeof this.#allocationStore.markDelivered === 'function') {
+            await this.#allocationStore.markDelivered({
+              cardId: rendered.allocation.cardId,
+              recordId: rendered.allocation.recordId,
+              at: nowIso,
+            });
+          }
+        } catch (err) {
+          this.#logger.error?.('school.issue.allocation-delivery-failed', {
+            sessionId, cardId: rendered.allocation.cardId, recordId: rendered.allocation.recordId,
+            error: err.message,
+          });
+          return this.#recordFailure({ sessionId, stage: 'delivery', reason: err.message, nowIso, state, cause: 'allocation' });
+        }
+      } else {
+        await this.#orphanAllocation(rendered.allocation, {
+          sessionId, unitId: state.unitId, stage: 'print-unconfirmed',
+        });
+      }
+    }
     // `reprinted` (not `issued`) for a replacement — see `#issueNew`'s doc
     // comment: it is the only event legal from a session already in
     // `issued`/`reprinted` state.
     const type = replacementArtifactId ? 'reprinted' : 'issued';
     const { errors, event } = createEvent({
-      type, at: nowIso, sessionId, artifactId, confirmed: this.#printConfirmed(printResult),
+      type, at: nowIso, sessionId, artifactId, confirmed: printConfirmed,
     });
     if (errors.length) throw new Error(`IssueDocument: could not record worksheet instance: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
@@ -1363,6 +1398,25 @@ export class IssueDocument {
       this.#logger.warn?.('school.issue.allocation-release-failed', {
         sessionId, cardId: allocation.cardId, recordId: allocation.recordId, error: err.message,
       });
+    }
+  }
+
+  /** Whether an unconfirmed dispatch rolled this exact physical identity back. */
+  async #allocationWasCancelled(allocation) {
+    if (!allocation?.cardId || !allocation?.recordId
+        || typeof this.#allocationStore?.findByCard !== 'function') return false;
+    try {
+      const records = await this.#allocationStore.findByCard(allocation.cardId);
+      const record = records.find((entry) => entry.recordId === allocation.recordId);
+      return record?.deliveryState === 'cancelled';
+    } catch (err) {
+      // Inspection failure must not silently authorize a replacement or mutate
+      // history. Preserve the established exact-reprint path and leave an
+      // explicit diagnostic for the operator.
+      this.#logger.warn?.('school.issue.allocation-delivery-inspection-failed', {
+        cardId: allocation.cardId, recordId: allocation.recordId, error: err.message,
+      });
+      return false;
     }
   }
 

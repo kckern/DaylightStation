@@ -85,6 +85,46 @@ function build({ closeSessionOutcome = null } = {}) {
 }
 
 describe('createSchoolPrintScanConsumer: scan-graded carries the print outcome', () => {
+  it('an identity hold stops before attempts, settlement/remediation, or grading hooks', async () => {
+    const bus = makeBus();
+    const recordCardScanOutcome = { execute: vi.fn() };
+    const closeSessionOutcome = { execute: vi.fn() };
+    const gradingHook = { fire: vi.fn() };
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: {
+        execute: vi.fn(async () => ({
+          held: true,
+          heldScanId: 'held-milo-1',
+          learnerId: 'milo',
+          reason: 'multiple-delivered-live-answer-sheets',
+          activeCardIds: ['8424408', '8684155'],
+          message: 'Two answer sheets are active. Ask a grown-up to check this scan.',
+          results: [],
+        })),
+      },
+      recordCardScanOutcome,
+      closeSessionOutcome,
+      gradingHook,
+      logger: silentLogger(),
+    });
+
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(recordCardScanOutcome.execute).not.toHaveBeenCalled();
+    expect(closeSessionOutcome.execute).not.toHaveBeenCalled();
+    expect(gradingHook.fire).not.toHaveBeenCalled();
+    expect(bus.broadcast.mock.calls.map(([, payload]) => payload)
+      .filter((payload) => payload?.event === 'scan-answer-sheet-held')).toEqual([
+      expect.objectContaining({
+        heldScanId: 'held-milo-1',
+        learnerId: 'milo',
+        message: 'Two answer sheets are active. Ask a grown-up to check this scan.',
+      }),
+    ]);
+  });
+
   it('reports printed:true when the result receipt reached the roll', async () => {
     const bus = build({
       closeSessionOutcome: {

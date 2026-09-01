@@ -143,6 +143,14 @@ function buildCeremony(payload) {
         at,
         code: payload.code ?? null,
       };
+    case 'scan-answer-sheet-held':
+      return {
+        tone: 'warn',
+        title: 'Ask a grown-up',
+        detail: 'Two answer sheets are active. Ask a grown-up to check this scan.',
+        at,
+        code: payload.reason ?? null,
+      };
     case 'scan-not-recorded':
       // The sheet read fine and the child did nothing wrong — it had simply
       // already been marked, so there was no new work to bank and no score to

@@ -172,6 +172,15 @@ export const schoolApi = {
     `/report-card/frozen/versions?${new URLSearchParams({ learnerId, periodId })}`,
   ),
   lifecycleReview: () => req('/lifecycle/review'),
+  answerSheetReviews: ({ reviewerId }) => req(
+    `/lifecycle/answer-sheet-reviews?${new URLSearchParams({ reviewerId })}`,
+  ),
+  resolveAnswerSheetReview: (heldScanId, body) => req(
+    `/lifecycle/answer-sheet-reviews/${encodeURIComponent(heldScanId)}/resolve`, body,
+  ),
+  clearAnswerSheetQuarantine: (cardId, quarantineId, body) => req(
+    `/lifecycle/answer-sheets/${encodeURIComponent(cardId)}/quarantines/${encodeURIComponent(quarantineId)}/clear`, body,
+  ),
   // The HOUSEHOLD-WIDE review queue is `lifecycleReview` above. This is the
   // per-session read a stuck-session row needs before it can say why a
   // `submitted` session is still open: usually a mark nobody has made yet.

@@ -33,6 +33,65 @@ and original-PDF reads identify the exact issued bytes.
 
 Use `--base-url URL` or `SCHOOL_BASE_URL` to target another lifecycle API.
 
+## Answer-sheet identity rollout and incident recovery
+
+Audit the production allocation directory before enabling holds:
+
+```bash
+node cli/school/answer-sheet-audit.mjs audit \
+  --directory /path/to/household/school/artifacts/print/cards
+```
+
+`readyForEnforcement` must be true before changing `scan_protection.mode` to
+`enforce`. The report names missing lineage, stale pending deliveries,
+multiple-live-card learners, missing sessions, failed/unconfirmed prints, and
+ambiguous successors. Failed-print history is informative; lineage,
+multi-card, stale-live, and ambiguity findings block enforcement.
+
+Legacy lineage can be planned without writing:
+
+```bash
+node cli/school/answer-sheet-audit.mjs backfill \
+  --directory /path/to/household/school/artifacts/print/cards
+```
+
+Review the `manual` list. Only a one-learner, strictly ordered chronology is
+eligible. Apply that exact plan with `--apply`; delivery state is never inferred
+by this migration. Re-run `audit` afterward.
+
+Ancient or ambiguous records require an explicit, attributed reconciliation;
+the CLI never guesses delivery:
+
+```bash
+node cli/school/answer-sheet-audit.mjs reconcile \
+  --directory /path/to/cards \
+  --card 8684155 --record 'document@rev:v0:22-27' \
+  --delivery-state delivered --generation 3 --predecessor 4071314 \
+  --reviewer parent --reason 'verified against issued worksheet history'
+```
+
+That command is a dry run until `--apply`. Applied reconciliation appends its
+reviewer, reason, timestamp, and exact patch to the allocation record.
+
+Rollout order:
+
+1. Set `answer_sheets.reuse: until_full` explicitly and leave protection `off`.
+2. Run the audit and reconcile every blocking legacy record.
+3. Set protection to `shadow`; watch
+   `school.scan.identity-shadow-match` with candidate record IDs.
+4. Investigate every unexplained shadow match, then re-run the audit.
+5. Set protection to `enforce` only when both evidence sources are clean.
+
+An enforced hold emits `school.scan.identity-held` and
+`school.print.scan-answer-sheet-held`; no grade, attempt, session transition,
+or remediation has happened. Open Teacher workspace → Action queue →
+**Answer-sheet pairing**. Confirm only when the scanned worksheet is known;
+reassign only when the displayed ordinal map is compatible; otherwise choose
+redo. Reassigned or redone source rows remain quarantined. Clear a quarantine
+only after visually verifying erasure, or after superseding the source and
+printing it on clean rows. Review actions are append-only and require an
+idempotency key, so retrying a timed-out request cannot create a second grade.
+
 ## Preview a launch card
 
 A launch card is what the school-room panel puts on screen after a child types

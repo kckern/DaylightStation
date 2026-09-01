@@ -185,6 +185,31 @@ export function createSchoolPrintScanConsumer({
         });
         return false;
       }
+      if (outcome?.held) {
+        logger.warn?.('school.print.scan-answer-sheet-held', {
+          testId,
+          heldScanId: outcome.heldScanId,
+          learnerId: outcome.learnerId ?? null,
+          reason: outcome.reason,
+          activeCardIds: outcome.activeCardIds ?? [],
+          duplicate: outcome.duplicate === true,
+        });
+        speak({
+          event: 'scan-answer-sheet-held',
+          testId,
+          heldScanId: outcome.heldScanId,
+          learnerId: outcome.learnerId ?? null,
+          reason: outcome.reason,
+          activeCardIds: outcome.activeCardIds ?? [],
+          message: outcome.message ?? 'Two answer sheets are active. Ask a grown-up to check this scan.',
+        });
+        return false;
+      }
+      if (outcome?.duplicate) {
+        logger.info?.('school.print.scan-duplicate', { testId, fingerprint: outcome.fingerprint });
+        speak({ event: 'scan-not-recorded', testId, duplicate: true });
+        return false;
+      }
       if (outcome?.unknownCard) {
         // A card the store has never seen, with real answers on it: almost
         // always a mis-transcribed card id (no check digit). The child did

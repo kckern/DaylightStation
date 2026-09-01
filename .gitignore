@@ -180,6 +180,7 @@ docs/_moveme/
 /.agents
 !scripts/migrate-household-config.mjs
 *.png
+!tests/isolated/rendering/school/golden/snapshots/answer-sheet-*.png
 
 # TI-86 install images are BUILD OUTPUT, regenerable by tools/build-*-install.mjs.
 # 31MB of binaries, and the .86s payloads carry learner identities baked in at

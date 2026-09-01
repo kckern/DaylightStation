@@ -86,6 +86,17 @@ describe('useScanCeremony', () => {
     expect(result.current.current.detail).not.toMatch(/8|10|80/);
   });
 
+  it('tells the learner exactly what to do when answer-sheet identity is held', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-answer-sheet-held', reason: 'multiple-delivered-live-answer-sheets' });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'warn', title: 'Ask a grown-up',
+      detail: 'Two answer sheets are active. Ask a grown-up to check this scan.',
+    });
+  });
+
   it('shows the ceremony when the wire says nothing about printing at all', () => {
     // An older backend (or any payload missing `printed`) must fail toward
     // SPEAKING: silence is only ever correct when paper is known to have
@@ -329,6 +340,7 @@ describe('useScanCeremony', () => {
     ['scan-review', { pendingReview: 1 }, 'Needs a grown-up'],
     ['scan-unresolved', { code: 'CARD_ID_UNREADABLE' }, "Couldn't read that sheet"],
     ['scan-refused', { code: 'unknown_card' }, "That sheet doesn't match"],
+    ['scan-answer-sheet-held', {}, 'Ask a grown-up'],
     ['reader-error', {}, 'Scanner hiccup'],
   ])('still shows %s even when the payload claims printed:true', (event, extra, title) => {
     const { result } = mount();

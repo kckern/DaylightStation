@@ -3,7 +3,7 @@
 exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot — first-use instruction present 1`] = `
 {
   "atomic": true,
-  "heightPt": 24,
+  "heightPt": 36,
   "id": "cardHeader",
   "node": {
     "cardId": "4829306",
@@ -27,10 +27,13 @@ exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot 
       82.48,
     ],
     "firstUse": true,
+    "identiconCells": "0110011110000111100111011",
+    "identiconVersion": "v1",
     "instructionText": null,
     "kind": "cardHeader",
     "labelText": "Student No.",
     "metaText": "",
+    "reuseText": "START A NEW ANSWER SHEET · ROWS 1–12",
   },
   "spacingClass": "heading",
 }
@@ -63,10 +66,13 @@ exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot 
       82.48,
     ],
     "firstUse": false,
+    "identiconCells": "0110011110000111100111011",
+    "identiconVersion": "v1",
     "instructionText": null,
     "kind": "cardHeader",
     "labelText": "Student No.",
     "metaText": "",
+    "reuseText": "KEEP USING THE SAME ANSWER SHEET · ROWS 18–30",
   },
   "spacingClass": "heading",
 }

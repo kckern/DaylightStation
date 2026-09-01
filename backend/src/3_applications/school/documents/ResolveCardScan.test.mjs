@@ -13,6 +13,7 @@ import { RenderPrintDocument } from './RenderPrintDocument.mjs';
 import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { ResolveCardScan } from './ResolveCardScan.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
+import { YamlHeldCardScanStore } from '#adapters/school/documents/YamlHeldCardScanStore.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
 import { deriveShuffle, applyShuffle } from '#domains/school/documents/shuffle.mjs';
 
@@ -125,6 +126,215 @@ describe('constructor', () => {
   it('requires allocationStore and repository', () => {
     expect(() => new ResolveCardScan({})).toThrow(/allocationStore/);
     expect(() => new ResolveCardScan({ allocationStore: {} })).toThrow(/repository/);
+  });
+});
+
+describe('answer-sheet identity preflight — Milo regression', () => {
+  it('holds B/B/B scanned on Math 8684155 while Scripture 8424408 is also live, before Math can score 1/6', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const math = sourceDoc('math-worksheet', Array.from({ length: 6 }, (_, index) => mcQuestion(
+      `math-${index + 1}`, index + 1,
+      { choices: ['A', 'B', 'C'], answer: index === 1 ? 'B' : 'A' },
+    )));
+    const scripture = sourceDoc('scripture-worksheet', Array.from({ length: 3 }, (_, index) => mcQuestion(
+      `scripture-${index + 1}`, index + 1, { choices: ['A', 'B', 'C'], answer: 'B' },
+    )));
+    const mathIssued = await publishAndAllocate({
+      repository, allocationStore, source: math,
+      context: { cardId: '8684155', startRow: 22, learnerId: 'milo', sessionId: 'math-session' },
+    });
+    const scriptureIssued = await publishAndAllocate({
+      repository, allocationStore, source: scripture,
+      context: { cardId: '8424408', startRow: 1, learnerId: 'milo', sessionId: 'scripture-session' },
+    });
+    await allocationStore.markDelivered({ cardId: '8684155', recordId: mathIssued.allocation.recordId });
+    await allocationStore.markDelivered({ cardId: '8424408', recordId: scriptureIssued.allocation.recordId });
+
+    const persisted = new Map();
+    const heldScanStore = new YamlHeldCardScanStore({
+      directory: '/docs',
+      now: () => '2026-08-31T12:00:00.000Z',
+      io: {
+        load: (file) => structuredClone(persisted.get(file) ?? null),
+        save: (file, value) => persisted.set(file, structuredClone(value)),
+      },
+    });
+    const resolver = new ResolveCardScan({
+      allocationStore, repository, heldScanStore, protectionMode: 'enforce',
+    });
+    const result = await resolver.execute({
+      testId: '8684155', answers: { 22: 'B', 23: 'B', 24: 'B' },
+    });
+
+    expect(result).toMatchObject({
+      held: true,
+      reason: 'multiple-delivered-live-answer-sheets',
+      learnerId: 'milo',
+      activeCardIds: expect.arrayContaining(['8684155', '8424408']),
+      results: [],
+    });
+    expect(result.message).toBe('Two answer sheets are active. Ask a grown-up to check this scan.');
+    expect((await allocationStore.findByCard('8684155'))[0].status).toBe('live');
+    const saved = await heldScanStore.get(result.heldScanId);
+    expect(saved.evidence).toMatchObject({
+      rawCardId: '8684155',
+      decodedAnswers: { 22: 'B', 23: 'B', 24: 'B' },
+      candidateWorksheets: expect.arrayContaining([
+        expect.objectContaining({ cardId: '8684155', rowRange: { start: 22, end: 27 } }),
+        expect.objectContaining({ cardId: '8424408', rowRange: { start: 1, end: 3 } }),
+      ]),
+    });
+
+    const duplicate = await resolver.execute({ testId: '8684155', answers: { 22: 'B', 23: 'B', 24: 'B' } });
+    expect(duplicate).toMatchObject({ held: true, duplicate: true, heldScanId: result.heldScanId });
+
+    // Correctness is never identity. Even a perfect worksheet scanned from
+    // either active card remains held during rollover.
+    expect(await resolver.execute({ testId: '8424408', answers: { 1: 'B', 2: 'B', 3: 'B' } }))
+      .toMatchObject({ held: true, results: [] });
+    expect(await resolver.execute({
+      testId: '8684155', answers: { 22: 'A', 23: 'B', 24: 'A', 25: 'A', 26: 'A', 27: 'A' },
+    })).toMatchObject({ held: true, results: [] });
+  });
+
+  it('does not hold several delivered live worksheets that share one Student No. and de-duplicates a re-feed', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const first = await publishAndAllocate({
+      repository, allocationStore,
+      source: sourceDoc('same-card-a', [mcQuestion('a1', 1, { choices: ['A', 'B'], answer: 'A' })]),
+      context: { cardId: '1234567', startRow: 1, learnerId: 'milo', sessionId: 'a-session' },
+    });
+    const second = await publishAndAllocate({
+      repository, allocationStore,
+      source: sourceDoc('same-card-b', [mcQuestion('b1', 1, { choices: ['A', 'B'], answer: 'B' })]),
+      context: { cardId: '1234567', startRow: 2, learnerId: 'milo', sessionId: 'b-session' },
+    });
+    await allocationStore.markDelivered({ cardId: '1234567', recordId: first.allocation.recordId });
+    await allocationStore.markDelivered({ cardId: '1234567', recordId: second.allocation.recordId });
+    const memory = new Map();
+    const heldScanStore = new YamlHeldCardScanStore({
+      directory: '/docs', io: {
+        load: (file) => structuredClone(memory.get(file) ?? null),
+        save: (file, value) => memory.set(file, structuredClone(value)),
+      },
+    });
+    const resolver = new ResolveCardScan({ allocationStore, repository, heldScanStore, protectionMode: 'enforce' });
+    const firstScan = await resolver.execute({ testId: '1234567', answers: { 1: 'A', 2: 'B' } });
+    expect(firstScan.held).toBeUndefined();
+    expect(firstScan.results).toHaveLength(2);
+    const refeed = await resolver.execute({ testId: '1234567', answers: { 2: 'B', 1: 'A' } });
+    expect(refeed).toMatchObject({ duplicate: true, results: [] });
+  });
+
+  it('holds activity on a historical sheet and retains both the scanned worksheet and its live successor as ranked evidence', async () => {
+    const oldRecord = {
+      cardId: '8424408', recordId: 'old-scripture', learnerId: 'milo',
+      documentId: 'scripture', rev: 'r1', sessionId: 'scripture-session',
+      rowRange: { start: 1, end: 3 }, status: 'satisfied', deliveryState: 'delivered',
+      deliveredAt: '2026-08-30T09:00:00.000Z', renderedAt: '2026-08-30T08:59:00.000Z',
+      generation: 1, successorCardId: '8684155', identiconVersion: 'v1',
+      rowItems: [1, 2, 3].map((row) => ({ row, itemId: `s${row}`, itemType: 'multiple_choice' })),
+    };
+    const successor = {
+      cardId: '8684155', recordId: 'new-math', learnerId: 'milo',
+      documentId: 'math', rev: 'r1', sessionId: 'math-session',
+      rowRange: { start: 1, end: 6 }, status: 'live', deliveryState: 'delivered',
+      deliveredAt: '2026-08-31T09:00:00.000Z', renderedAt: '2026-08-31T08:59:00.000Z',
+      generation: 2, predecessorCardId: '8424408', identiconVersion: 'v1',
+      rowItems: Array.from({ length: 6 }, (_, index) => ({
+        row: index + 1, itemId: `m${index + 1}`, itemType: 'multiple_choice',
+      })),
+    };
+    const allocationStore = {
+      findByCard: async (cardId) => (cardId === oldRecord.cardId ? [oldRecord] : [successor]),
+      findDeliveredLiveByLearner: async () => [successor],
+    };
+    const memory = new Map();
+    const heldScanStore = new YamlHeldCardScanStore({
+      directory: '/docs', io: {
+        load: (file) => structuredClone(memory.get(file) ?? null),
+        save: (file, value) => memory.set(file, structuredClone(value)),
+      },
+    });
+    const resolver = new ResolveCardScan({
+      allocationStore, repository: fakeRepository(), heldScanStore, protectionMode: 'enforce',
+    });
+
+    const result = await resolver.execute({ testId: '8424408', answers: { 1: 'B', 2: 'B', 3: 'B' } });
+    expect(result).toMatchObject({ held: true, reason: 'activity-on-historical-answer-sheet', results: [] });
+    const evidence = (await heldScanStore.get(result.heldScanId)).evidence.candidateWorksheets;
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        cardId: '8424408', recordId: 'old-scripture', rank: 1, markedRowOverlap: 3,
+        deliveryState: 'delivered', successorCardId: '8684155',
+      }),
+      expect.objectContaining({
+        cardId: '8684155', recordId: 'new-math', rank: 2,
+        predecessorCardId: '8424408',
+      }),
+    ]);
+  });
+
+  it('does not count failed, released, or lost cards as delivered-live conflicts', async () => {
+    const allocationStore = fakeAllocationStore();
+    const request = (documentId) => ({
+      documentId, rev: 'r1', seed: 1, variant: 0, learnerId: 'milo',
+      rowRange: { start: 1, end: 1 },
+      rowItems: [{ row: 1, itemId: `${documentId}-q1`, itemType: 'multiple_choice' }],
+    });
+    const current = await allocationStore.allocate({ cardId: '1234567', request: request('current') });
+    await allocationStore.markDelivered({ cardId: current.cardId, recordId: current.recordId });
+    const failed = await allocationStore.allocate({ cardId: '2345678', request: request('failed') });
+    await allocationStore.release({ cardId: failed.cardId, rows: failed.rowRange });
+    const released = await allocationStore.allocate({ cardId: '3456789', request: request('released') });
+    await allocationStore.markDelivered({ cardId: released.cardId, recordId: released.recordId });
+    await allocationStore.updateStatus({ cardId: released.cardId, recordId: released.recordId, status: 'released' });
+    const lost = await allocationStore.allocate({ cardId: '4567890', request: request('lost') });
+    await allocationStore.markDelivered({ cardId: lost.cardId, recordId: lost.recordId });
+    await allocationStore.markCardLost({ cardId: lost.cardId, replacementCardId: '5678901', reportedBy: 'parent' });
+    const memory = new Map();
+    const heldScanStore = new YamlHeldCardScanStore({
+      directory: '/docs', io: {
+        load: (file) => structuredClone(memory.get(file) ?? null),
+        save: (file, value) => memory.set(file, structuredClone(value)),
+      },
+    });
+    const resolver = new ResolveCardScan({
+      allocationStore, repository: fakeRepository(), heldScanStore, protectionMode: 'enforce',
+    });
+
+    const result = await resolver.execute({ testId: current.cardId, answers: {} });
+    expect(result.held).toBeUndefined();
+    expect((await allocationStore.findDeliveredLiveByLearner('milo')).map((record) => record.cardId))
+      .toEqual(['1234567']);
+  });
+
+  it('does not invent learner identity or a multi-card hold for an anonymous allocation', async () => {
+    let queriedDeliveredCards = false;
+    const allocationStore = {
+      findByCard: async () => [{
+        cardId: '1234567', recordId: 'anonymous', documentId: 'anonymous', rev: 'r1',
+        rowRange: { start: 1, end: 1 }, status: 'live', deliveryState: 'delivered',
+      }],
+      findDeliveredLiveByLearner: async () => { queriedDeliveredCards = true; return []; },
+      updateStatus: async () => {},
+    };
+    const memory = new Map();
+    const heldScanStore = new YamlHeldCardScanStore({
+      directory: '/docs', io: {
+        load: (file) => structuredClone(memory.get(file) ?? null),
+        save: (file, value) => memory.set(file, structuredClone(value)),
+      },
+    });
+    const resolver = new ResolveCardScan({
+      allocationStore, repository: fakeRepository(), heldScanStore, protectionMode: 'enforce',
+    });
+    const result = await resolver.execute({ testId: '1234567', answers: {} });
+    expect(result.held).toBeUndefined();
+    expect(queriedDeliveredCards).toBe(false);
+    expect(result.silentLiveRecords).toHaveLength(1);
   });
 });
 

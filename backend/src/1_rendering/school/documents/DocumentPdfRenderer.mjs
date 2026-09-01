@@ -753,9 +753,16 @@ export function createDocumentPdfRenderer({
 
     if (node.metaFirst || node.embeddedCard) {
       if (node.embeddedCard) {
+        // Card identity gets its own full-width row. The KEEP banner is
+        // intentionally verbose and otherwise overlaps the right-aligned
+        // Date field; stacking these two measured rows is both clearer to a
+        // child and keeps the draw cursor identical to headerFragment's plan.
+        if (node.showName || node.showDate) {
+          drawMetaAt(cursorY);
+          cursorY += metaLeadingPt + (theme.header.metaCardGapPt ?? 0);
+        }
         drawCardHeader(out, node.embeddedCard, { xPt, yPt: cursorY });
-        drawMetaAt(cursorY + Math.max((node.metaRowHeightPt - metaLeadingPt) / 2, 0));
-        cursorY += node.metaRowHeightPt;
+        cursorY += node.embeddedCard.heightPt;
       } else {
         drawMeta();
       }
@@ -840,29 +847,46 @@ export function createDocumentPdfRenderer({
    */
   function drawCardHeader(out, node, { xPt, yPt }) {
     const { card } = theme;
-    const groupWidthPt = node.labelWidthPt + card.labelGapPt + node.digitsWidthPt;
+    const iconWidthPt = node.identicon.size * card.identiconCellPt;
+    const groupWidthPt = iconWidthPt + card.identiconGapPt
+      + node.labelWidthPt + card.labelGapPt + node.digitsWidthPt;
     const { boxPaddingXPt, boxPaddingYPt } = card;
     const boxContentWidthPt = Math.max(groupWidthPt, node.reuseTextWidthPt ?? 0);
     const boxWidthPt = boxContentWidthPt + boxPaddingXPt * 2;
     const boxXPt = xPt + (node.widthPt - boxWidthPt) / 2;
     const groupXPt = xPt + (node.widthPt - groupWidthPt) / 2;
     const boxHeightPt = node.heightPt;
-    const bandCentreY = yPt + (node.reuseSheet ? card.reuseLabelLeadingPt : 0) + card.bandHeightPt / 2;
+    const bandCentreY = yPt + card.reuseLabelLeadingPt + card.bandHeightPt / 2;
 
     out.save().lineWidth(0.65).strokeColor(theme.ink.rule)
       .rect(boxXPt, yPt, boxWidthPt, boxHeightPt)
       .stroke().restore();
 
-    if (node.reuseText) {
-      setFont(out, 'bold', card.reuseLabelSizePt, 'muted');
-      const reuseXPt = xPt + (node.widthPt - node.reuseTextWidthPt) / 2;
-      out.text(node.reuseText, reuseXPt, yPt + boxPaddingYPt, { lineBreak: false });
-    }
+    setFont(out, 'bold', card.reuseLabelSizePt, 'muted');
+    const reuseXPt = xPt + (node.widthPt - node.reuseTextWidthPt) / 2;
+    out.text(node.reuseText, reuseXPt, yPt + boxPaddingYPt, { lineBreak: false });
+
+    const iconXPt = groupXPt;
+    const iconYPt = bandCentreY - iconWidthPt / 2;
+    out.save().fillColor(theme.ink.text);
+    node.identicon.cells.forEach((filled, index) => {
+      if (!filled) return;
+      const column = index % node.identicon.size;
+      const row = Math.floor(index / node.identicon.size);
+      out.rect(
+        iconXPt + column * card.identiconCellPt,
+        iconYPt + row * card.identiconCellPt,
+        card.identiconCellPt,
+        card.identiconCellPt,
+      ).fill();
+    });
+    out.restore();
 
     setFont(out, 'bold', card.labelSizePt);
-    out.text(node.labelText, groupXPt, bandCentreY - card.labelSizePt / 2, { lineBreak: false });
+    const labelXPt = groupXPt + iconWidthPt + card.identiconGapPt;
+    out.text(node.labelText, labelXPt, bandCentreY - card.labelSizePt / 2, { lineBreak: false });
 
-    const digitsXPt = groupXPt + node.labelWidthPt + card.labelGapPt;
+    const digitsXPt = labelXPt + node.labelWidthPt + card.labelGapPt;
     setFont(out, 'bold', card.digitSizePt);
     for (const digit of node.digits) {
       out.text(digit.ch, digitsXPt + digit.xPt, bandCentreY - card.digitSizePt / 2, { lineBreak: false });
@@ -1201,7 +1225,7 @@ export function createDocumentPdfRenderer({
             theme,
             page: index + 1,
             pageCount: pages.length,
-            cardId: card?.cardId ?? null,
+            card,
             duplex: furniture.duplex,
             gutter: furniture.gutter,
           });

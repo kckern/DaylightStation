@@ -41,7 +41,7 @@ function composedEventTypeFor(state) {
 }
 
 function answerSheetPolicy(raw) {
-  const reuse = raw?.reuse ?? 'after_scan';
+  const reuse = raw?.reuse ?? 'until_full';
   const capacity = raw?.capacity ?? 50;
   if (!['never', 'after_scan', 'school_day', 'until_full'].includes(reuse)) throw new Error(`unknown answer-sheet reuse policy '${reuse}'`);
   if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) throw new Error('answer-sheet capacity must be 1..50');
@@ -203,21 +203,21 @@ export class IssueComposedWorksheet {
     const document = await this.#printDocuments.getPublished(published.id, published.rev);
     const learnerName = deriveLearnerName(learnerId);
     const issueDate = deriveIssueDate(nowIso);
-    const rowsNeeded = sections.reduce((sum, section) => sum + section.instance.questions.length, 0);
-    const reusable = parts === 1 && typeof this.#allocations.findReusableCard === 'function'
-      ? await this.#allocations.findReusableCard({ learnerId, rowsNeeded, capacity: this.#policy.capacity, reuse: this.#policy.reuse })
-      : null;
     let rendered;
     try {
       rendered = await this.#render.execute({
         document,
         context: {
-          ...(reusable ?? { freshCard: true }), learnerId, learnerName, date: issueDate,
+          automaticCard: true, answerSheetPolicy: this.#policy, learnerId, learnerName, date: issueDate,
           sectionAttribution: composition.sections,
         },
       });
     } catch (err) {
-      if (err.details?.allocation?.cardId) await this.#allocations.release({ cardId: err.details.allocation.cardId });
+      if (err.details?.allocation?.cardId) {
+        await this.#allocations.release({
+          cardId: err.details.allocation.cardId, rows: err.details.allocation.rowRange,
+        });
+      }
       throw err;
     }
     const records = await this.#allocations.findByCard(rendered.allocation.cardId);
@@ -231,8 +231,6 @@ export class IssueComposedWorksheet {
         ...section.instance,
         omr: { cardId: rendered.allocation.cardId, recordId: rendered.allocation.recordId, rowRange: owned.rowRange },
       };
-      // eslint-disable-next-line no-await-in-loop
-      await this.#worksheetInstances.put(instance);
       section.instance = instance;
     }
     // A composition is one physical paper artifact shared by all of its
@@ -279,7 +277,7 @@ export class IssueComposedWorksheet {
       .filter((row) => row.reason);
     if (illegal.length) {
       this.#logger.warn?.('school.composed-worksheet.refused', { compositionId, learnerId, illegal });
-      await this.#allocations.release({ cardId: rendered.allocation.cardId });
+      await this.#allocations.release({ cardId: rendered.allocation.cardId, rows: rendered.allocation.rowRange });
       throw new DomainInvariantError(
         `composed worksheet cannot be recorded for ${illegal.map((row) => row.sessionId).join(', ')}`,
         { code: 'COMPOSED_ISSUE_NOT_RECORDABLE', details: { compositionId, sessions: illegal } },
@@ -291,8 +289,26 @@ export class IssueComposedWorksheet {
         jobName: `school-${compositionId}`, user: learnerId, duplex: rendered.duplex ?? undefined,
       });
     } catch (err) {
-      await this.#allocations.release({ cardId: rendered.allocation.cardId });
+      await this.#allocations.release({ cardId: rendered.allocation.cardId, rows: rendered.allocation.rowRange });
       throw err;
+    }
+    const confirmed = printResult?.confirmed !== false;
+    if (confirmed) {
+      // A worksheet instance must never retain an OMR binding for a preview,
+      // capture-only run, or jammed print. Persist the binding only after the
+      // physical dispatch is confirmed; an unconfirmed retry then starts with
+      // a clean automatic allocation.
+      for (const section of newlyCreated) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.#worksheetInstances.put(section.instance);
+      }
+      if (typeof this.#allocations.markDelivered === 'function') {
+        await this.#allocations.markDelivered({
+          cardId: rendered.allocation.cardId, recordId: rendered.allocation.recordId, at: nowIso,
+        });
+      }
+    } else {
+      await this.#allocations.release({ cardId: rendered.allocation.cardId, rows: rendered.allocation.rowRange });
     }
     for (const section of sections) {
       const { errors, event } = createEvent({
@@ -300,7 +316,7 @@ export class IssueComposedWorksheet {
         // Preview/capture printers can explicitly say no physical paper was
         // dispatched.  Preserve the issue lineage but do not arm the real
         // print cooldown from a sheet that never reached the tray.
-        confirmed: printResult?.confirmed !== false,
+        confirmed,
       });
       if (errors.length) throw new Error(`could not record composed issue: ${errors.join('; ')}`);
       // eslint-disable-next-line no-await-in-loop

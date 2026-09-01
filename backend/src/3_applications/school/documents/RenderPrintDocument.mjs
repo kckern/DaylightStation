@@ -915,6 +915,7 @@ export class RenderPrintDocument {
     const cardContext = this.#resolveCardContext(context);
     let document = dropRedundantTitleHeading(prepared);
     let allocationRecord = null;
+    let allocationFirstUse = false;
     if (cardContext) {
       // Teacher history may replay a frozen card mapping, but it must never
       // call the allocation store. The historical record is deliberately a
@@ -924,6 +925,7 @@ export class RenderPrintDocument {
         ? this.#historicalCard(prepared, bank, cardContext)
         : await this.#allocateCard(prepared, bank, cardContext);
       allocationRecord = allocation.record;
+      allocationFirstUse = allocation.firstUse === true;
       document = dropRedundantTitleHeading(this.#renumberQuestions(prepared, allocation.rows));
     } else if (prepared.archetype === 'quiz') {
       warnings.push(`quiz '${prepared.id}' rendered without card allocation`);
@@ -943,7 +945,7 @@ export class RenderPrintDocument {
     // than silently burning a physical card per retry.
     try {
       return await this.#renderV2Body({
-        document, bank, cardContext, allocationRecord, context, warnings, gutter,
+        document, bank, cardContext, allocationRecord, allocationFirstUse, context, warnings, gutter,
       });
     } catch (err) {
       if (allocationRecord && err && typeof err === 'object') {
@@ -959,7 +961,7 @@ export class RenderPrintDocument {
    * (Finding 2 above); no behavior change from the original inline body.
    */
   async #renderV2Body({
-    document, bank, cardContext, allocationRecord, context, warnings, gutter,
+    document, bank, cardContext, allocationRecord, allocationFirstUse, context, warnings, gutter,
   }) {
     const totalPoints = sumScoredPoints(document.blocks, document.defaultPoints);
 
@@ -1086,7 +1088,11 @@ export class RenderPrintDocument {
       cardId: allocationRecord.cardId,
       startRow: allocationRecord.rowRange.start,
       endRow: allocationRecord.rowRange.end,
-      firstUse: cardContext.freshCard === true,
+      // This is the result of allocation, not a row-number heuristic. A
+      // row-1 reprint is therefore KEEP, while a newly minted successor is
+      // START even when the caller did not know its id in advance.
+      firstUse: allocationFirstUse,
+      identiconVersion: allocationRecord.identiconVersion,
     } : (context.previewCard ?? null);
 
     const result = await renderer.render(document, {
@@ -1199,9 +1205,10 @@ export class RenderPrintDocument {
    */
   #resolveCardContext(context) {
     const {
-      cardId, freshCard, startRow, learnerId, sessionId, sectionAttribution, historicalCard,
+      cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId,
+      sectionAttribution, historicalCard,
     } = context;
-    if (cardId === undefined && freshCard !== true) return null;
+    if (cardId === undefined && freshCard !== true && automaticCard !== true) return null;
     if (historicalCard === true && (typeof cardId !== 'string' || freshCard === true)) {
       throw new ValidationError('historical card replay requires an existing cardId and may not request a fresh card', {
         code: 'HISTORICAL_CARD_CONTEXT_INVALID',
@@ -1210,6 +1217,8 @@ export class RenderPrintDocument {
     return {
       cardId,
       freshCard: freshCard === true,
+      automaticCard: automaticCard === true,
+      answerSheetPolicy: answerSheetPolicy ?? null,
       historical: historicalCard === true,
       startRow: startRow ?? 1,
       learnerId: learnerId ?? null,
@@ -1243,7 +1252,7 @@ export class RenderPrintDocument {
    * even for a worksheet with gaps between row-consuming questions.
    */
   async #allocateCard(document, bank, {
-    cardId, freshCard, startRow, learnerId, sessionId, sectionAttribution,
+    cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId, sectionAttribution,
   }) {
     if (!this.#allocationStore) {
       throw new ValidationError(
@@ -1259,7 +1268,7 @@ export class RenderPrintDocument {
       );
     }
 
-    const plan = planRows({ document, bank, startRow });
+    const plan = planRows({ document, bank, startRow: automaticCard ? 1 : startRow });
     if (plan.errors) {
       throw new ValidationError(
         `document '${document.id}' failed card row planning: ${plan.errors.join('; ')}`,
@@ -1316,8 +1325,23 @@ export class RenderPrintDocument {
       // corrupt.
       rowItems: plan.rows.map(({ row, itemId, itemType }) => ({ row, itemId, itemType })),
     };
+    if (automaticCard) {
+      if (typeof this.#allocationStore.allocateNext !== 'function') {
+        throw new ValidationError('automatic card allocation requires allocationStore.allocateNext', {
+          code: 'ALLOCATION_STORE_ATOMIC_REQUIRED', details: { documentId: document.id },
+        });
+      }
+      const allocated = await this.#allocationStore.allocateNext({ request, policy: answerSheetPolicy ?? {} });
+      const shiftedPlan = planRows({ document, bank, startRow: allocated.record.rowRange.start });
+      if (shiftedPlan.errors) {
+        throw new ValidationError(`document '${document.id}' failed shifted card row planning`, {
+          code: 'ALLOCATION_ROW_PLAN_INVALID', details: { documentId: document.id, errors: shiftedPlan.errors },
+        });
+      }
+      return { record: allocated.record, rows: shiftedPlan.rows, firstUse: allocated.firstUse };
+    }
     const record = await this.#allocationStore.allocate({ cardId: freshCard ? undefined : cardId, request });
-    return { record, rows: plan.rows };
+    return { record, rows: plan.rows, firstUse: freshCard === true };
   }
 
   /** Build the card geometry for a historical replay without touching storage. */
@@ -1337,6 +1361,7 @@ export class RenderPrintDocument {
         rowRange: { start: plan.rows[0].row, end: plan.rows.at(-1).row },
       },
       rows: plan.rows,
+      firstUse: false,
     };
   }
 

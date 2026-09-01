@@ -558,9 +558,9 @@ Rules the record system holds to:
   The persisted mapping is authoritative; disagreement refuses the record
   (`ALLOCATION_ROW_MAPPING_DRIFT`) rather than grading wrong answers
   confidently.
-- **Released records recycle rows but never reproduce.** `release-card` frees
-  a card's rows; the released record's exact context can never be
-  re-allocated on that card (recovery is a fresh card).
+- **Released records never recycle physical rows.** Release cancels the live
+  claim, but marks may remain on paper; later allocation starts after every
+  historically occupied or quarantined row.
 - A tracked-quiz issue that fails after allocating (fit rejection, printer
   jam) logs the orphaned card loudly and best-effort releases it, so retries
   land on a clean slate instead of burning cards forever.
@@ -604,16 +604,18 @@ Supported policy values:
 | Policy | Behavior |
 |---|---|
 | `never` | Mint a new answer sheet for every worksheet. |
-| `after_scan` | Reuse only after the previous allocation settles. This is the default, conservative behavior. |
+| `after_scan` | Reuse only after the previous allocation settles. Retained for explicit legacy configurations. |
 | `school_day` | Reserve all of a learner's worksheets issued during the local school day on one answer sheet when they fit. |
-| `until_full` | Keep one active answer sheet across subjects, courses, and days until the next whole worksheet would exceed its capacity. This is the recommended default because it conserves the most physical cards. |
+| `until_full` | Keep one active answer sheet across subjects, courses, and days until the next whole worksheet would exceed its capacity. This is the production default. |
 
 Allocation invariants apply in every mode:
 
 - Reserve each row range atomically; concurrent issue requests cannot claim the
   same rows.
 - Never split one worksheet across answer sheets. If the next worksheet does
-  not fit in the remaining rows, mint a new sheet before allocating it.
+  not fit in the remaining rows, atomically mint a successor before allocating
+  it. Once that successor is delivered, the predecessor's unused tail is
+  permanently skipped and allocation never returns to it.
 - Never overwrite, reclaim, or renumber a range that reached the learner.
   Remediation uses the next untouched rows when they fit.
 - A reprint reproduces the original answer-sheet number and row range exactly.
@@ -628,10 +630,60 @@ Allocation invariants apply in every mode:
 The learner-facing language must make physical-sheet reuse explicit without
 using the implementation term OMR:
 
-- First allocation: **NEW ANSWER SHEET · ROWS 1–6**
+- First allocation: **START A NEW ANSWER SHEET · ROWS 1–6**
 - Later allocation: **KEEP USING THE SAME ANSWER SHEET · ROWS 7–14**
 - Agenda summary: **TODAY'S ANSWER SHEET · Student No. 7651208 · Use rows
   7–20 today**
+
+Every learner-facing page repeats three redundant identity cues: the
+deterministic versioned 5×5 monochrome identicon, `Student No.`, and the row
+range. The same physical answer sheet always has the same icon. A successor has
+a different icon as well as a deliberately distant number. The icon is a
+human continuity/change cue only; it is not scanned and nothing is added to or
+marked on the purchased OMR card.
+
+New seven-digit numbers remain globally unique and must differ from their
+predecessor at both ends, differ in at least four digit positions from every
+concurrently active number, and differ in at least 8 of 25 identicon cells from
+the preceding icon. Generation is bounded and fails the issue loudly rather
+than weakening those rules.
+
+### 5.1.1 Answer-sheet identity scan protection
+
+Identity protection runs before document resolution, grading, attempt writes,
+session transitions, or remediation. It queries delivered live worksheets for
+the learner:
+
+- one physical Student No. across all live worksheets proceeds normally;
+- two or more physical Student Nos. holds every new scan from either sheet;
+- changed activity on a historical sheet with a delivered successor is held;
+- an identical re-feed is an idempotent no-op.
+
+Each hold preserves the canonical SHA-256 fingerprint, decoded marks including
+multi-marks, raw card and rows, candidate worksheet records, row-overlap rank,
+and reason. Similarity can explain candidate order; it never selects a
+worksheet or releases a grade.
+
+Roll out explicitly in household `school.yml`:
+
+```yaml
+answer_sheets:
+  reuse: until_full
+  capacity: 50
+  scan_protection:
+    mode: shadow # off | shadow | enforce
+```
+
+Use `shadow` until the legacy audit is clean and shadow logs have no unexplained
+matches. In `enforce`, the School panel says: **Two answer sheets are active.
+Ask a grown-up to check this scan.** The teacher console shows a separate
+answer-sheet pairing queue (not the item grading queue) with both icons,
+numbers, worksheet titles, ranges, timestamps, and original marks. A grown-up
+may confirm the scanned allocation, ordinally reassign a compatible contiguous
+window, or request a redo without a grade. Reassignment preserves blanks and
+multi-marks, records `manual-wrong-card-reassignment` with the exact row map,
+and quarantines the accidentally marked source rows until verified erased or
+superseded by a clean reprint.
 
 For `school_day`, reuse is compared in the household's local timezone. A future
 agenda-batch reservation may reserve all advertised ranges together so print

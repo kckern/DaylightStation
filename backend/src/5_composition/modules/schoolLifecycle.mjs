@@ -61,7 +61,10 @@ import { YamlReadingLogStore } from '#adapters/persistence/yaml/YamlReadingLogSt
 import { YamlTeacherActionReceiptStore } from '#adapters/persistence/yaml/YamlTeacherActionReceiptStore.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
+import { YamlHeldCardScanStore } from '#adapters/school/documents/YamlHeldCardScanStore.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { ResolveCardScan } from '#apps/school/documents/ResolveCardScan.mjs';
+import { ReviewHeldCardScan } from '#apps/school/documents/ReviewHeldCardScan.mjs';
 import { createYamlBankReader } from '#adapters/school/documents/YamlBankReader.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { PlanProjection } from '#apps/school/PlanProjection.mjs';
@@ -853,7 +856,25 @@ export async function createSchoolLifecycle({
     directory: printDocumentsRoot,
     sourceDirectory: printSourceRoot,
   });
-  const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
+  const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone, logger });
+  const heldCardScans = new YamlHeldCardScanStore({ directory: printDocumentsRoot });
+  const resolveCardScan = new ResolveCardScan({
+    allocationStore,
+    repository: printDocuments,
+    banks: createYamlBankReader({ dataDir }),
+    heldScanStore: heldCardScans,
+    protectionMode: cfg.answer_sheets?.scan_protection?.mode ?? 'off',
+    logger,
+  });
+  const reviewHeldCardScan = new ReviewHeldCardScan({
+    heldScanStore: heldCardScans,
+    allocationStore,
+    repository: printDocuments,
+    resolveCardScan,
+    teacherGate,
+    clock,
+    logger,
+  });
   const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
   const companions = new YamlLessonCompanionStore({ configService, logger });
   // One finish code per (household, lesson, lessonDay), shared across the
@@ -1232,7 +1253,8 @@ export async function createSchoolLifecycle({
   const useCases = {
     buildAgenda, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation, replaceRemediation,
-    resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments, closeLanguageDay,
+    resolvePersonalCard, resolveScanAction, resolveReviewItem, resolveCardScan, reviewHeldCardScan,
+    setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
@@ -1329,7 +1351,7 @@ export async function createSchoolLifecycle({
     // wiring (`ResolveCardScan`) reads/writes the identical allocation records
     // rather than a second store pointed at a directory that could drift.
     stores: {
-      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances, companions, issuedArtifacts, curriculumExceptionStore,
+      ...stores, curriculum, printDocuments, allocationStore, heldCardScans, worksheetInstances, companions, issuedArtifacts, curriculumExceptionStore,
       programDayBypassStore,
     },
     // The `RenderPrintDocument` instance the print-document pipeline shares
