@@ -65,6 +65,12 @@ export function isProxyAdapter(obj) {
  *   If defined, ProxyService returns a placeholder SVG instead of JSON errors
  *   on upstream failure. Use for image-serving proxies (Reddit, Komga, Immich).
  *   Return 'svg' to opt in. Omit to get default JSON error behavior.
+ *
+ * getFallbackPath(path: string, statusCode: number): string | null
+ *   On a 4xx, return an alternate upstream path to try instead, for upstreams
+ *   that advertise an asset at one path and serve it at another. Retried once,
+ *   with auth re-applied; a fallback never gets its own fallback. Return null
+ *   (the default) to let the error stand.
  */
 
 export const IProxyAdapter = {
@@ -79,7 +85,8 @@ export const IProxyAdapter = {
   transformPath(path) { return path; },
   getRetryConfig() { return { maxRetries: 3, delayMs: 500 }; },
   shouldRetry(statusCode, attempt) { return statusCode >= 500 || statusCode === 429; },
-  getTimeout() { return 30000; }
+  getTimeout() { return 30000; },
+  getFallbackPath(path, statusCode) { return null; }
 };
 
 export default { IProxyAdapter, isProxyAdapter };
