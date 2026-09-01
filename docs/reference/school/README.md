@@ -209,6 +209,12 @@ the question body; only a missed-question receipt reveals it. The enclosing
 unit's `studyReferences` supplies the lesson-card version, with one `primary`
 reference first and at most two `alternate` references.
 
+A unit whose course runs on a weekly rhythm names its day in `weekday:` —
+one of `monday`…`sunday`, case-folded, optional. It is metadata, never
+ordering: `sequence` orders a module, and a course not built around named days
+omits the field entirely. A lesson `title` is therefore what the lesson is
+about (`Psalms 49, 50, 51, 61`), not where it falls in the week.
+
 An item may add profile wording when the assessed fact and option pool are the
 same but the learner needs different scaffolding. The base `prompt` remains the
 required default. The author may use any compatible combination of:
@@ -867,6 +873,13 @@ Published `school.course/v2` packages require `poster: poster.jpg`. The asset
 must be a contained JPEG; runtime never reads the source PDF/EPUB. Use
 `node scripts/school/build-course-posters.mjs` to normalize the published
 catalog to 1200×1800 sRGB artwork.
+
+The poster BYTES live in the media tree, at
+`<mediaDir>/school/{subject}/{work}/poster.jpg` — the same shelf/work path as
+the content tree, beside the work's source PDF. `poster: poster.jpg` in the
+course index names the file, not its tree. The split is deliberate: the content
+tree holds what an author writes and reviews, and a megabyte of cover scan is
+neither, so keeping it out leaves a course's authored YAML diffable.
 
 Curriculum exceptions are append-only `school.curriculum-exception/v1`
 records. `excused` and `replaced` satisfy a learner's planner gate without a
