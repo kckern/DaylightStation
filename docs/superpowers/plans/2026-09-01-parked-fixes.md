@@ -418,7 +418,12 @@ describe('IPP job id retention', () => {
 The adapter posts over HTTP. Stub `globalThis.fetch` for the duration of the
 test rather than opening a socket:
 
+These are ESM modules — `require` is unavailable. Import at the top of the file:
+
 ```javascript
+import { afterEach, describe, expect, it } from 'vitest';
+import { LaserPrinterAdapter } from './LaserPrinterAdapter.mjs';
+
 function makeAdapterWithFakeTransport(responseBody) {
   globalThis.fetch = async () => ({
     ok: true, status: 200,
@@ -426,14 +431,15 @@ function makeAdapterWithFakeTransport(responseBody) {
       responseBody.byteOffset, responseBody.byteOffset + responseBody.byteLength,
     ),
   });
-  const { LaserPrinterAdapter } = require('./LaserPrinterAdapter.mjs');
+  // `host` is the only required constructor argument (LaserPrinterAdapter.mjs:157-165).
   return new LaserPrinterAdapter({ host: '127.0.0.1', port: 631 });
 }
+
+afterEach(() => { delete globalThis.fetch; });
 ```
 
-Read the adapter's constructor and its actual transport call first; if it uses
-`http.request` rather than `fetch`, stub that instead. Restore whatever you stub
-in an `afterEach`.
+The adapter posts through `fetch` (`LaserPrinterAdapter.mjs:187`), so stubbing
+the global is sufficient — no socket is opened.
 
 - [ ] **Step 3: Run the test to verify it fails**
 
