@@ -58,8 +58,8 @@ export function useAddressedBoardGame({
   // The session whose phantom result we have already complained about, so a
   // terminal transcript sitting across many renders is one warning, not a storm.
   const refusedRef = useRef(null);
-  // Set by a local restart, consumed by the next refusal: it tells the two
-  // cases apart. See the refusal site.
+  // Set by a local restart and held until a playable render arrives: it tells
+  // the ordinary rematch apart from a transcript that should not exist.
   const justRestartedRef = useRef(false);
   const archiveContextRef = useRef({});
   const movesRef = useRef(moves);
@@ -102,7 +102,13 @@ export function useAddressedBoardGame({
   // render by the time a terminal one is being filed.
   const playedThroughRef = useRef(-1);
   useEffect(() => {
-    if (!result) playedThroughRef.current = Math.max(playedThroughRef.current, moves.length);
+    if (result) return;
+    playedThroughRef.current = Math.max(playedThroughRef.current, moves.length);
+    // A restart's stale window closes HERE — the moment a playable render
+    // actually arrives — rather than after one refusal. Counting refusals would
+    // be assuming the window is exactly one commit, which is the same kind of
+    // silent arithmetic assumption as the ply contract below.
+    justRestartedRef.current = false;
   }, [moves.length, result]);
 
   // Persist the finished game once. `savedRef` rather than a state flag: this
@@ -128,8 +134,7 @@ export function useAddressedBoardGame({
         // new session and the old terminal transcript. Routine, and it must not
         // spend the warning below: an alarm that fires on every "Play again" is
         // one everybody learns to scroll past, which is how the original bug
-        // stayed invisible for weeks.
-        justRestartedRef.current = false;
+        // stayed invisible for weeks. Cleared by the tracker above, not here.
         logger.debug('game.result-refused', {
           gameId, gameSessionId, result, plies: moves.length,
           playedThrough: playedThroughRef.current, reason: 'restart-stale-render',
