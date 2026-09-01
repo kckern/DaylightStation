@@ -111,4 +111,23 @@ describe('awaitJobOutcome', () => {
     expect(result.outcome).toBe('indeterminate');
     expect(result.polls).toBe(0);
   });
+
+  it('warns on the FIRST poll error for a job, then only debugs on later errors for that same job', async () => {
+    const warn = vi.fn();
+    const debug = vi.fn();
+    const adapter = new LaserPrinterAdapter({ host: '127.0.0.1', port: 631, logger: { warn, debug } });
+    adapter.getJobState = vi.fn(async () => { throw new Error('ECONNREFUSED'); });
+    let now = 0;
+    // Four poll ticks before the deadline — enough to see error #1 (warn)
+    // followed by errors #2-4 (debug only, no additional warn).
+    const result = await adapter.awaitJobOutcome(42, {
+      deadlineMs: 35, intervalMs: 10, sleep: noSleep, clock: () => { now += 10; return now; },
+    });
+    expect(result.outcome).toBe('indeterminate');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toBe('laser-printer.job-outcome-poll-error');
+    expect(warn.mock.calls[0][1]).toMatchObject({ jobId: 42, poll: 1, error: 'ECONNREFUSED' });
+    expect(debug.mock.calls.length).toBeGreaterThan(0);
+    expect(debug.mock.calls.every(([, data]) => data.poll > 1)).toBe(true);
+  });
 });
