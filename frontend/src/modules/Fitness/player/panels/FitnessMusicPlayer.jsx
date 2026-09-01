@@ -7,7 +7,7 @@ import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume, logVolu
 import FitnessPlaylistSelector from './FitnessPlaylistSelector.jsx';
 import '../FitnessSidebar.scss';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
-import { normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
+import { durationFromSeconds } from '@/modules/Player/utils/mediaIdentity.js';
 import { guid } from '@/modules/Player/lib/helpers.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { useMusicRecovery } from './useMusicRecovery.js';
@@ -316,7 +316,8 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       return;
     }
     loggedTrackRef.current = currentTrackIdentity;
-    const durationSeconds = normalizeDuration(
+    // Seconds, same PlayableItem contract as the video path.
+    const durationSeconds = durationFromSeconds(
       currentTrack?.duration,
       currentTrack?.length,
       currentTrack?.Duration
