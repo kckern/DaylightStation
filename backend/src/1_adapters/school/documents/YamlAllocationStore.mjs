@@ -187,6 +187,17 @@ export class YamlAllocationStore {
         renderedAt: this.#now(),
         generation: request.generation ?? cardMetadata(existing).generation ?? 1,
         predecessorCardId: request.predecessorCardId ?? cardMetadata(existing).predecessorCardId ?? null,
+        // NOTE: `cardOrigin` (see `allocateNext`'s `markDelivered` gate) is
+        // deliberately NOT set on this path -- `allocate` is an explicit-cardId
+        // call site (reprints, admin recovery, tests), not the monotonic
+        // rollover/reuse chain, so it has no "which decision produced this
+        // row" to record. This is currently safe by omission, not by design:
+        // a record built here reads `cardOrigin: undefined`, which fails
+        // CLOSED against the `cardOrigin === 'rollover'` gate in
+        // `markDelivered`/`confirmHistoricalDelivery` -- it simply never
+        // retires a predecessor's tail, never the wrong bug. If this path is
+        // ever wired into the rollover chain, it will need its own
+        // `cardOrigin` too.
         identiconVersion: request.identiconVersion ?? cardMetadata(existing).identiconVersion
           ?? ANSWER_SHEET_IDENTICON_VERSION,
         deliveryState: request.deliveryState ?? 'pending',
@@ -421,7 +432,11 @@ export class YamlAllocationStore {
         cardCapacity: record.cardCapacity ?? 50,
       };
       this.#save(cardId, records.map((entry) => (entry.recordId === recordId ? delivered : entry)));
-      if (delivered.predecessorCardId) {
+      // Same guard as `markDelivered`, same reason: a backfilled reuse
+      // delivery also carries a truthy `predecessorCardId` (inherited, not
+      // its own rollover), and without `cardOrigin === 'rollover'` this
+      // recovery path recurs the identical lineage-corruption bug.
+      if (delivered.cardOrigin === 'rollover' && delivered.predecessorCardId) {
         const predecessor = this.#load(delivered.predecessorCardId);
         if (predecessor.length) {
           const occupiedThrough = Math.max(...predecessor.map((entry) => entry.rowRange.end));
