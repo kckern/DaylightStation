@@ -15,6 +15,10 @@
 export const OPS = {
   PRINT_JOB: 0x0002,
   VALIDATE_JOB: 0x0004,
+  // RFC 8011 §4.3.4. Without this there is no operation with which to ask what
+  // became of a job, so `job-sent` (spooler acceptance) was the last thing
+  // anyone could observe.
+  GET_JOB_ATTRIBUTES: 0x0009,
   GET_PRINTER_ATTRIBUTES: 0x000b,
 };
 
@@ -176,6 +180,28 @@ export function printJobAttrs(printerUri, { user, jobName, copies, documentForma
     attrs.push({ tag: TAGS.KEYWORD, name: 'media', value: jobAttributes.media });
   }
   return attrs;
+}
+
+/**
+ * Operation attributes for Get-Job-Attributes: the standard preamble plus the
+ * job handle the printer assigned at Print-Job time.
+ *
+ * `job-id` is an INTEGER, so it must carry `TAGS.INTEGER` — `encodeRequest`
+ * routes that tag to the int32 encoder and would otherwise write the number as
+ * UTF-8 text and the printer would reject the request.
+ *
+ * @param {string} printerUri
+ * @param {{user: string, jobId: number}} params
+ * @returns {Array<{tag:number, name:string, value:*}>}
+ */
+export function jobAttrsRequest(printerUri, { user, jobId }) {
+  if (!Number.isInteger(jobId)) {
+    throw new Error(`jobAttrsRequest requires an integer job-id, got: ${jobId}`);
+  }
+  return [
+    ...baseAttrs(printerUri, user),
+    { tag: TAGS.INTEGER, name: 'job-id', value: jobId },
+  ];
 }
 
 /**
