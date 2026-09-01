@@ -127,18 +127,37 @@ test('mp4 not written (0 bytes) -> failed, frames NOT cleaned (kept for retry)',
   assert.equal(f.calls.cleaned, undefined);            // source captures preserved
 });
 
-test('archives frames by default when archive_frames is unset', async () => {
+// The default sends frames to `_trash`, where the retention sweep reclaims them
+// after 7 days. `screenshots_archive` has NO sweep — anything archived sits there
+// forever, and since the media tree is inside Dropbox it consumes quota too. The
+// permanent copy is therefore opt-in, not the default.
+test('soft-deletes frames to _trash by default when archive_frames is unset', async () => {
   const f = fakes(); delete f.config.archive_frames;
+  const uc = new GenerateSessionTimelapse(f);
+  await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.deepEqual(f.calls.cleaned[2], { archive: false });
+});
+
+test('keeps a permanent archive only when archive_frames is explicitly true', async () => {
+  const f = fakes(); f.config.archive_frames = true;
   const uc = new GenerateSessionTimelapse(f);
   await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.deepEqual(f.calls.cleaned[2], { archive: true });
 });
 
-test('hard-deletes frames only when archive_frames is explicitly false', async () => {
-  const f = fakes(); f.config.archive_frames = false;
+// Degraded coverage means the recap is partly frozen and worth re-rendering, so the
+// frames outlive the 7-day trash window regardless of what the config asked for.
+test('degraded coverage forces an archive even under the trash default', async () => {
+  const f = fakes();
+  delete f.config.archive_frames;
+  f.frameMapper.describeCoverage = () => ({
+    frameCount: 100,
+    camera: { captures: 3, coverageRatio: 0.2, longestHeldSeconds: 600, largestGapSeconds: 600 },
+    player: { captures: 3, coverageRatio: 0.2, longestHeldSeconds: 600, largestGapSeconds: 600 }
+  });
   const uc = new GenerateSessionTimelapse(f);
   await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
-  assert.deepEqual(f.calls.cleaned[2], { archive: false });
+  assert.deepEqual(f.calls.cleaned[2], { archive: true });
 });
 
 test('disabled config -> no work', async () => {

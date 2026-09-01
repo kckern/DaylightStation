@@ -163,12 +163,17 @@ the render will use, the longest run of output frames served by a single capture
 gap between captures, and the share of frames sitting near a real capture. That measurement is
 logged every run (at warn when it comes out degraded), because a recap can otherwise encode
 "successfully" with a pane frozen on one held image for most of its length — the render itself
-cannot tell the difference. When coverage is degraded the recap is worth re-rendering, so the
-raw frames are kept regardless of configuration: a hard-delete request is downgraded to an
-archive and the downgrade is logged.
+cannot tell the difference. When coverage is degraded the recap is worth re-rendering, so its
+frames are promoted to a permanent archive regardless of configuration, and the promotion is
+logged.
 
-Neither cleanup branch hard-deletes. If no trash root is configured there is nowhere safe to
-put the frames, so they are left in place rather than destroyed.
+Cleanup has two destinations and **neither hard-deletes**. The default is the `_trash`
+lifecycle below, which bounds the footprint at seven days while leaving time to re-render.
+Opting in to a permanent archive instead keeps the frames beside the session indefinitely —
+nothing sweeps that copy, and the media tree syncs to Dropbox, so an unconditional archive is
+a slow storage leak of roughly 300 MB per session. That is why the permanent copy is opt-in
+and reserved for recaps that actually need it. If no trash root is configured there is nowhere
+safe to put the frames, so they are left in place rather than destroyed.
 
 Cleanup is a **soft delete**: the session's `screenshots/` dir is **moved into a sibling
 `_trash` root** (`media/apps/fitness/_trash/<date>/<id>/`), never hard-deleted inline. The MP4
