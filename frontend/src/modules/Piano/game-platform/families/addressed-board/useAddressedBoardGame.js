@@ -146,13 +146,33 @@ export function useAddressedBoardGame({
     watchedPliesRef.current = Math.max(watchedPliesRef.current, moves.length);
   }, [moves.length, result]);
 
+  // A result the rung gate below deferred, held as the whole judgement-and-
+  // filing of the render that produced it, so that whoever makes it
+  // unreachable can still carry it out.
+  const pendingFileRef = useRef(null);
+
   // Persist the finished game once. `savedRef` rather than a state flag: this
   // has to be closed the instant it fires, and a re-render is too late.
   useEffect(() => {
+    // A DEFERRAL MEANS WAIT, NEVER LOSE. Two things can put a deferred result
+    // beyond this effect's reach: a restart, handled here, and an unmount,
+    // handled in the abandon cleanup below. Either way it is filed against the
+    // rung we have — the fallback is the answer we would have written before
+    // this gate existed, and it beats no record at all.
+    const deferred = pendingFileRef.current;
+    pendingFileRef.current = null;
+    if (deferred && !result) {
+      deferred();
+      // The flush belonged to the match that just ENDED. `savedRef` is the
+      // one-shot of the match now taking the seat, and that one has filed
+      // nothing — leaving it closed would swallow the next real result.
+      savedRef.current = false;
+    }
+
     // WAIT FOR THE RUNG. Not a refusal and not a filing — the same result is
     // judged again the moment the ladder answers, so this must come before the
     // refusal branch and before the one-shot is spent.
-    if (!result || savedRef.current || !ladderSettled) return;
+    if (!result || savedRef.current) return;
     // CONTRACT: ONE PLY PER COMMIT. A match played here is committed a ply at a
     // time, so the render before its last leaves `watchedPlies` exactly one
     // short — that is the whole meaning of the `- 1`. Both current consumers
@@ -162,54 +182,85 @@ export function useAddressedBoardGame({
     // render breaks the assumption, and its legitimately-played results will be
     // refused — and then its abandon archive refused too, so the match vanishes
     // whole. See the KNOWN LIMITATION test before writing such a game.
+    //
+    // SNAPSHOTTED, not read when the filing happens: a flush can run after a
+    // restart has already re-pointed the ref at the NEW match, and the
+    // judgement has to stay the one this render deserved.
     const watchedPlies = watchedPliesRef.current;
-    if (watchedPlies < 0 || watchedPlies < moves.length - 1) {
-      // A refusal is a judgement about the TRANSCRIPT in front of us on this
-      // render, never about the session. `savedRef` means "this session's
-      // result has been FILED", and a refusal files nothing, so it has no
-      // business closing the one-shot: leave it open and a game that really is
-      // played afterwards can still file.
-      const phantom = `${gameSessionId}:${moves.length}`;
-      if (warnedPhantomRef.current !== phantom) {
-        warnedPhantomRef.current = phantom;
-        logger.warn('game.result-refused', {
-          gameId, gameSessionId, result, plies: moves.length,
-          watchedPlies, reason: 'not-played-here',
+
+    // The judgement and the filing of THIS render's result — the same code
+    // whether the ladder answers or the child walks off, so there is one rule
+    // and not two.
+    const fileResult = (flushed = false) => {
+      if (savedRef.current) return;
+      if (watchedPlies < 0 || watchedPlies < moves.length - 1) {
+        // A refusal is a judgement about the TRANSCRIPT in front of us on this
+        // render, never about the session. `savedRef` means "this session's
+        // result has been FILED", and a refusal files nothing, so it has no
+        // business closing the one-shot: leave it open and a game that really is
+        // played afterwards can still file.
+        const phantom = `${gameSessionId}:${moves.length}`;
+        if (warnedPhantomRef.current !== phantom) {
+          warnedPhantomRef.current = phantom;
+          logger.warn('game.result-refused', {
+            gameId, gameSessionId, result, plies: moves.length,
+            watchedPlies, reason: 'not-played-here',
+          });
+        }
+        return;
+      }
+      savedRef.current = true;
+      if (flushed) {
+        // Filed by the way out rather than the front door: the ladder read was
+        // still hanging when this match lost its screen, so the rung below is
+        // the fallback and not the child's.
+        logger.warn('game.result-flushed', {
+          gameId, gameSessionId, result, level, plies: moves.length,
         });
       }
+      const { prepareTerminal, ...baseContext } = archiveContextRef.current;
+      // This runs before persistence so the result card, archive, and rivalry
+      // memory all receive the same final displayed line.
+      const preparedContext = prepareTerminal?.() || {};
+      const record = {
+        game_id: gameSessionId, moves, result, level, ranked: rankedRef.current, completed: true,
+        played_on: new Date().toISOString().slice(0, 10),
+        ...baseContext,
+        ...preparedContext,
+      };
+      logger.info('game.over', {
+        gameId, result, level, ranked: rankedRef.current, plies: moves.length,
+      });
+      if (userId) {
+        const request = client.saveGame(userId, record);
+        matchGateRef.current?.registerCompletion?.(request);
+        request.then((response) => {
+          if (!response?.ladder) return;
+          setLadder(response.ladder);
+          logger.info('game.ladder-advanced', {
+            gameId, level: response.ladder.unlocked_through ?? null,
+          });
+        });
+      }
+      client.archiveGame({ ...record, user_id: userId });
+    };
+
+    if (!ladderSettled) {
+      pendingFileRef.current = () => fileResult(true);
       return;
     }
-    savedRef.current = true;
-    const { prepareTerminal, ...baseContext } = archiveContextRef.current;
-    // This runs before persistence so the result card, archive, and rivalry
-    // memory all receive the same final displayed line.
-    const preparedContext = prepareTerminal?.() || {};
-    const record = {
-      game_id: gameSessionId, moves, result, level, ranked: rankedRef.current, completed: true,
-      played_on: new Date().toISOString().slice(0, 10),
-      ...baseContext,
-      ...preparedContext,
-    };
-    logger.info('game.over', {
-      gameId, result, level, ranked: rankedRef.current, plies: moves.length,
-    });
-    if (userId) {
-      const request = client.saveGame(userId, record);
-      matchGateRef.current?.registerCompletion?.(request);
-      request.then((response) => {
-        if (!response?.ladder) return;
-        setLadder(response.ladder);
-        logger.info('game.ladder-advanced', {
-          gameId, level: response.ladder.unlocked_through ?? null,
-        });
-      });
-    }
-    client.archiveGame({ ...record, user_id: userId });
+    fileResult();
   }, [client, gameId, gameSessionId, ladderSettled, level, logger, moves, result, userId]);
 
   // A game walked away from is still a game that happened. Mount-scoped so a
   // profile change cannot trip it — see userRef above.
   useEffect(() => () => {
+    // A result still waiting on the ladder when the screen goes away. The match
+    // gate unmounts this game on "play again", so this is an ordinary path and
+    // not a curiosity, and filing it here is what keeps the premise below true:
+    // a finished game has set `savedRef` by the time we reach the guard.
+    pendingFileRef.current?.();
+    pendingFileRef.current = null;
     if (savedRef.current || !movesRef.current.length) return;
     // ...but only a game this component actually played. A transcript it never
     // played is not a game it can report on, finished OR abandoned — refusing
@@ -217,7 +268,8 @@ export function useAddressedBoardGame({
     // way out just trades a duplicate for a junk row.
     // (Strict, not `- 1`: no terminal ply is landing here. A component that
     // unmounted in the same commit as its final ply would be refused, but a
-    // finished game sets `savedRef` and returns above before reaching this.)
+    // finished game sets `savedRef` — when it filed, or in the flush just
+    // above — and returns before reaching this.)
     if (watchedPliesRef.current < movesRef.current.length) {
       logger.warn('game.abandon-refused', {
         gameId, plies: movesRef.current.length,
