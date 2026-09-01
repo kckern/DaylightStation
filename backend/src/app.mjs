@@ -3687,6 +3687,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Transcode pre-warming for device loads
   const { prewarmService } = createTranscodePrewarmService({
     contentIdResolver: contentServices.contentIdResolver,
+    contentCatalog: contentServices.contentCatalog,
     mediaProgressMemory: mediaProgressMemory,
     appBaseUrl: `http://localhost:${appPort}`,
     logger: rootLogger.child({ module: 'prewarm' })
