@@ -2,6 +2,10 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 import getLogger from '../../../../../lib/logging/Logger.js';
 import MatchGateContext from '../../../PianoKiosk/modes/Games/MatchGateContext.js';
 
+// How long a result waits for the ladder before being filed against the
+// fallback rung. A slow network must not cost a child their record.
+const LADDER_SETTLE_TIMEOUT_MS = 5000;
+
 let localSessionSequence = 0;
 
 function createLocalSessionId(gameId) {
@@ -46,6 +50,11 @@ export function useAddressedBoardGame({
 
   const [config, setConfig] = useState(defaultConfig);
   const [ladder, setLadder] = useState(null);
+  // Whether the ladder read has ANSWERED — not whether it produced a ladder.
+  // `level` falls back to 1 until it does, and a result filed in that window
+  // is filed against a rung nobody is on. See the level:1 fingerprint in
+  // docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+  const [ladderSettled, setLadderSettled] = useState(false);
   const [localPractice, setLocalPractice] = useState(false);
   const [seed, setSeed] = useState(() => Date.now() >>> 0);
   const [gameSessionId, setGameSessionId] = useState(() => createLocalSessionId(gameId));
@@ -82,14 +91,29 @@ export function useAddressedBoardGame({
       setConfig((old) => ({ ...old, ...value }));
       logger.debug('game.config-loaded', { gameId });
     });
-    client.readLadder(userId).then((value) => {
-      if (cancelled || !value) return;
-      setLadder(value);
-      logger.info('game.ladder-loaded', {
-        gameId, level: value.unlocked_through ?? null, opponent: value.current?.name ?? null,
+    setLadderSettled(false);
+    // FAIL OPEN. A read that never answers must cost a level, never a record —
+    // so the wait is bounded and the result files against the fallback rung.
+    const settle = setTimeout(() => {
+      if (cancelled) return;
+      logger.warn('game.ladder-read-slow', { gameId, timeoutMs: LADDER_SETTLE_TIMEOUT_MS });
+      setLadderSettled(true);
+    }, LADDER_SETTLE_TIMEOUT_MS);
+    Promise.resolve(client.readLadder(userId))
+      .then((value) => {
+        if (cancelled || !value) return;
+        setLadder(value);
+        logger.info('game.ladder-loaded', {
+          gameId, level: value.unlocked_through ?? null, opponent: value.current?.name ?? null,
+        });
+      })
+      .catch((error) => logger.warn('game.ladder-read-failed', { gameId, error: error?.message }))
+      .finally(() => {
+        if (cancelled) return;
+        clearTimeout(settle);
+        setLadderSettled(true);
       });
-    });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(settle); };
   }, [client, gameId, logger, userId]);
 
   // HOW FAR THIS COMPONENT ACTUALLY WATCHED THE GAME GET, while it was still
@@ -125,7 +149,10 @@ export function useAddressedBoardGame({
   // Persist the finished game once. `savedRef` rather than a state flag: this
   // has to be closed the instant it fires, and a re-render is too late.
   useEffect(() => {
-    if (!result || savedRef.current) return;
+    // WAIT FOR THE RUNG. Not a refusal and not a filing — the same result is
+    // judged again the moment the ladder answers, so this must come before the
+    // refusal branch and before the one-shot is spent.
+    if (!result || savedRef.current || !ladderSettled) return;
     // CONTRACT: ONE PLY PER COMMIT. A match played here is committed a ply at a
     // time, so the render before its last leaves `watchedPlies` exactly one
     // short — that is the whole meaning of the `- 1`. Both current consumers
@@ -178,7 +205,7 @@ export function useAddressedBoardGame({
       });
     }
     client.archiveGame({ ...record, user_id: userId });
-  }, [client, gameId, gameSessionId, level, logger, moves, result, userId]);
+  }, [client, gameId, gameSessionId, ladderSettled, level, logger, moves, result, userId]);
 
   // A game walked away from is still a game that happened. Mount-scoped so a
   // profile change cannot trip it — see userRef above.
