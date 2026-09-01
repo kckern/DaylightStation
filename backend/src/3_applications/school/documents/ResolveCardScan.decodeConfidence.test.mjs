@@ -2,14 +2,18 @@
  * ResolveCardScan — decode confidence measurement (Task 4, 2026-09-01).
  *
  * MEASUREMENT ONLY. `execute()`'s resolved object gains a `decode` record
- * (`{pattern, cardId, inferred, missingDigits}`) on every scan, clean or
- * inferred, so "how often does the reader produce a partial read?" becomes
- * answerable. This suite changes no grading/decision behavior — it only
- * asserts the new field's shape. Fixtures mirror `ResolveCardScan.test.mjs`
- * (`sourceDoc`/`mcQuestion`/`fakeRepository`/`fakeAllocationStore`/
- * `publishAndAllocate`, same `context: { cardId }` explicit-card-id pattern
- * used by that file's own User_4-regression fixtures for these exact two card
- * ids, '8424408' and '8684155').
+ * (`{pattern, cardId, inferred, missingDigits, replay}`) on every scan, clean
+ * or inferred, so "how often does the reader produce a partial read?" becomes
+ * answerable. `replay` (review fix, 2026-09-01) is true only when the call
+ * carries `identityReview` -- a held-scan re-grade re-entering `execute()`
+ * with a clean, teacher-selected cardId, not a fresh physical scan -- so that
+ * rate can be computed excluding replays. This suite changes no
+ * grading/decision behavior — it only asserts the new field's shape.
+ * Fixtures mirror `ResolveCardScan.test.mjs` (`sourceDoc`/`mcQuestion`/
+ * `fakeRepository`/`fakeAllocationStore`/`publishAndAllocate`, same
+ * `context: { cardId }` explicit-card-id pattern used by that file's own
+ * User_4-regression fixtures for these exact two card ids, '8424408' and
+ * '8684155').
  */
 import { describe, it, expect } from 'vitest';
 import { PublishPrintDocument } from './PublishPrintDocument.mjs';
@@ -126,7 +130,7 @@ describe('decode confidence', () => {
     const resolver = await makeResolver({ cards: ['8424408'] });
     const result = await resolver.execute({ testId: '8424408', answers: { 1: 'A' } });
     expect(result.decode).toEqual({
-      pattern: '8424408', cardId: '8424408', inferred: false, missingDigits: 0,
+      pattern: '8424408', cardId: '8424408', inferred: false, missingDigits: 0, replay: false,
     });
   });
 
@@ -134,7 +138,7 @@ describe('decode confidence', () => {
     const resolver = await makeResolver({ cards: ['8424408', '8684155'] });
     const result = await resolver.execute({ testId: '84?????', answers: { 1: 'A' } });
     expect(result.decode).toEqual({
-      pattern: '84?????', cardId: '8424408', inferred: true, missingDigits: 5,
+      pattern: '84?????', cardId: '8424408', inferred: true, missingDigits: 5, replay: false,
     });
   });
 
@@ -147,7 +151,25 @@ describe('decode confidence', () => {
     const result = await resolver.execute({ testId: '9?????9', answers: { 1: 'A' } });
     expect(result.error).toEqual({ code: 'CARD_ID_UNREADABLE' });
     expect(result.decode).toEqual({
-      pattern: '9?????9', cardId: null, inferred: false, missingDigits: 5,
+      pattern: '9?????9', cardId: null, inferred: false, missingDigits: 5, replay: false,
+    });
+  });
+
+  // REPLAY TAGGING (review fix, 2026-09-01): `ReviewHeldCardScan.#resolve`
+  // re-enters `execute()` with `identityReview` set and a clean, teacher-
+  // selected cardId to re-grade a held scan. Held scans skew heavily toward
+  // problem reads, so a second, always-clean decode record for the same
+  // physical scan would bias the partial-read rate to look cleaner than the
+  // reader actually is unless it is distinguishable from a fresh scan.
+  it('tags a decode record as a replay when identityReview is set, even though the id is clean', async () => {
+    const resolver = await makeResolver({ cards: ['8424408'] });
+    const result = await resolver.execute({
+      testId: '8424408',
+      answers: { 1: 'A' },
+      identityReview: { heldScanId: 'hs-1', action: 'confirm', targetRecordId: 'doc-8424408@1:v0:1-1' },
+    });
+    expect(result.decode).toEqual({
+      pattern: '8424408', cardId: '8424408', inferred: false, missingDigits: 0, replay: true,
     });
   });
 });

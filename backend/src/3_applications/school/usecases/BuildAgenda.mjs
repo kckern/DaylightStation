@@ -347,10 +347,12 @@ export class BuildAgenda {
         // reproduced through the preview endpoint at all.)
         //
         // The placeholders are deliberately INERT and self-describing: the
-        // token resolves to nothing, the code is not a mintable value, and the
-        // action label on the card still says "Preview only". Nothing here
-        // touches the token store or the code registry, so a preview still
-        // opens no session and burns no code.
+        // token resolves to nothing and the code (`PREVIEW_ACCESS_CODE`,
+        // '000000') is not a mintable value. The action label itself is the
+        // real one -- `suffix`, set above -- so the preview shows the exact
+        // instruction the printed card will carry. Nothing here touches the
+        // token store or the code registry, so a preview still opens no
+        // session and burns no code.
         tokensBySubject[section.subject] = PREVIEW_TOKEN;
         accessCodesByToken[PREVIEW_TOKEN] = PREVIEW_ACCESS_CODE;
         offers.push({

@@ -719,6 +719,50 @@ describe('confirmHistoricalDelivery', () => {
     expect(repeated).toEqual(delivered);
   });
 
+  it('retires a legacy predecessor’s tail on a genuine rollover confirmed via confirmHistoricalDelivery '
+    + '(no cardOrigin on either record -- rollover inferred from predecessorCardId, same as pre-cardOrigin behaviour)', async () => {
+    // Regression test for a review finding: the `cardOrigin === 'rollover'`
+    // guard added on this branch fails CLOSED for every record that predates
+    // `cardOrigin` -- including every record `allocate()` ever builds (it
+    // never stamps `cardOrigin`), which is exactly the shape
+    // `RecoverMisattributedWorksheet` -- `confirmHistoricalDelivery`'s only
+    // caller -- produces. Both records below are built via `allocate()` with
+    // an explicit cardId, so neither carries `cardOrigin`, mirroring a
+    // genuine legacy/recovered rollover pair. Without the legacy fallback in
+    // `isRolloverDelivery`, this predecessor is NEVER retired: no
+    // `successorCardId`, no `tailSkipped` -- which is also why
+    // `ResolveCardScan`'s `historical` gate (keyed off `successorCardId`)
+    // would silently grade a scan of this superseded card instead of holding
+    // it for an adult.
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-31T18:00:00.000Z' });
+
+    const predecessor = await store.allocate({
+      cardId: '1111111',
+      request: request({ documentId: 'math', learnerId: 'user_4', rowRange: { start: 1, end: 45 } }),
+    });
+    expect(predecessor.cardOrigin).toBeUndefined();
+
+    const successor = await store.allocate({
+      cardId: '2222222',
+      request: request({
+        documentId: 'scripture', learnerId: 'user_4', rowRange: { start: 1, end: 6 },
+        predecessorCardId: '1111111',
+      }),
+    });
+    expect(successor.cardOrigin).toBeUndefined();
+    expect(successor.predecessorCardId).toBe('1111111');
+
+    await store.confirmHistoricalDelivery({
+      cardId: '2222222', recordId: successor.recordId,
+      deliveredAt: '2026-08-31T15:00:00.000Z', confirmedBy: 'parent',
+    });
+
+    const [predecessorAfter] = await store.findByCard('1111111');
+    expect(predecessorAfter.successorCardId).toBe('2222222');
+    expect(predecessorAfter.tailSkipped).toEqual({ start: 46, end: 50 });
+  });
+
   it('does not rewrite predecessor lineage when backfilling a plain-reuse delivery', async () => {
     // Same lineage-corruption bug as `markDelivered`, reached via the
     // recovery/backfill path instead (RecoverMisattributedWorksheet.mjs):

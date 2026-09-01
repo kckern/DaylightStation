@@ -390,7 +390,7 @@ describe('execute — CARD_ID_UNREADABLE (spec §5.4)', () => {
       error: { code: 'CARD_ID_UNREADABLE' },
       ambiguous: { pattern: '482?306', candidateCardIds: [] },
       decode: {
-        pattern: '482?306', cardId: null, inferred: false, missingDigits: 1,
+        pattern: '482?306', cardId: null, inferred: false, missingDigits: 1, replay: false,
       },
     });
   });
@@ -406,7 +406,7 @@ describe('execute — CARD_ID_UNREADABLE (spec §5.4)', () => {
       error: { code: 'CARD_ID_UNREADABLE' },
       ambiguous: { pattern: '???????', candidateCardIds: [] },
       decode: {
-        pattern: '???????', cardId: null, inferred: false, missingDigits: 7,
+        pattern: '???????', cardId: null, inferred: false, missingDigits: 7, replay: false,
       },
     });
   });
@@ -487,7 +487,7 @@ describe('execute — best-effort ambiguous card-id resolution (household direct
       error: { code: 'CARD_ID_UNREADABLE' },
       ambiguous: { pattern: '444?444', candidateCardIds: ['4444444', '4447444'] },
       decode: {
-        pattern: '444?444', cardId: null, inferred: false, missingDigits: 1,
+        pattern: '444?444', cardId: null, inferred: false, missingDigits: 1, replay: false,
       },
     });
     expect(logger.calls.some((call) => call[0] === 'school.scan.card-id-unresolved')).toBe(true);
@@ -516,7 +516,7 @@ describe('execute — best-effort ambiguous card-id resolution (household direct
       error: { code: 'CARD_ID_UNREADABLE' },
       ambiguous: { pattern: '444?444', candidateCardIds: [] },
       decode: {
-        pattern: '444?444', cardId: null, inferred: false, missingDigits: 1,
+        pattern: '444?444', cardId: null, inferred: false, missingDigits: 1, replay: false,
       },
     });
   });
@@ -801,7 +801,7 @@ describe('execute — unallocated rows (spec §5.4: "never guessed")', () => {
       results: [],
       cardRecordCount: 0,
       decode: {
-        pattern: '9999999', cardId: '9999999', inferred: false, missingDigits: 0,
+        pattern: '9999999', cardId: '9999999', inferred: false, missingDigits: 0, replay: false,
       },
     });
   });

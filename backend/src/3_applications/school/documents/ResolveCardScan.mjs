@@ -611,6 +611,7 @@ export class ResolveCardScan {
         // undercount exactly the reads it most needs to see.
         const decode = {
           pattern: decodePattern, cardId: null, inferred: false, missingDigits: decodeMissingDigits,
+          replay: identityReview != null,
         };
         this.#logger.info?.('school.scan.decode', decode);
         return {
@@ -634,11 +635,23 @@ export class ResolveCardScan {
     // MEASUREMENT, NOT POLICY. Recorded on every scan, clean or inferred, so
     // "how often does the reader produce a partial read?" is answerable. No
     // decode policy should be tuned from anecdote, and two scans is anecdote.
+    //
+    // `replay: true` marks a REPLAY, not a fresh physical scan: held-scan
+    // recovery (`ReviewHeldCardScan.#resolve`) re-enters `execute()` with the
+    // teacher-selected `targetRecord.cardId` — always a clean 7-digit id, so
+    // it always decodes with zero missing digits — to re-run resolution
+    // against the same evidence. Held scans skew heavily toward problem
+    // reads, so without this tag every review would silently inject an extra
+    // clean sample for a card that was ALREADY counted once as the read that
+    // got it held in the first place, biasing this metric's whole purpose
+    // (the real partial-read rate) to read cleaner than the reader actually
+    // is. Consumers computing that rate must exclude `replay: true` records.
     const decode = {
       pattern: decodePattern,
       cardId,
       inferred: cardIdInferred !== null,
       missingDigits: decodeMissingDigits,
+      replay: identityReview != null,
     };
     this.#logger.info?.('school.scan.decode', decode);
 
