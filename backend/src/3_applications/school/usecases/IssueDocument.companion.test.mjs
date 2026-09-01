@@ -96,13 +96,15 @@ function unitFor({
 function issuer({
   companionCodes, units, rng = seededRng(1), now = '2026-08-26T17:00:00.000Z',
   householdId = HOUSEHOLD, sessions = new FakeSessionRepository(),
-  cardRequests = [],
+  cardRequests = [], printer: suppliedPrinter = null, allocationStore: suppliedAllocationStore = null,
+  issuedArtifacts = null, renderAllocation = null,
 }) {
   const unitsById = new Map(units.map((unit) => [unit.unitId, unit]));
   const instances = new Map();
   const published = new Map();
   const companions = { records: [], async put(record) { this.records.push(record); return record; } };
-  const printer = { jobs: [], async printPdf(bytes, options) { this.jobs.push({ bytes, options }); return { ok: true }; } };
+  const printer = suppliedPrinter
+    ?? { jobs: [], async printPdf(bytes, options) { this.jobs.push({ bytes, options }); return { ok: true }; } };
   const tokens = new FakeTokenRegistry({ now: () => now });
 
   const issueDocument = new IssueDocument({
@@ -141,15 +143,19 @@ function issuer({
     },
     printDocuments: { async getPublished(id, rev) { return published.get(`${id}@${rev}`) ?? null; } },
     renderPrintDocument: {
-      async execute() {
+      async execute({ document, context }) {
+        cardRequests.push({
+          ...context,
+          rowsNeeded: document.blocks.filter((block) => block.type === 'question' && block.omr === true).length,
+        });
         return {
           bytes: Buffer.from('%PDF sheet'), pageCount: 1, duplex: true,
-          allocation: { cardId: '1234567', recordId: 'rec-1', rowRange: { start: 1, end: 4 } },
+          allocation: renderAllocation?.(cardRequests.length)
+            ?? { cardId: '1234567', recordId: 'rec-1', rowRange: { start: 1, end: 4 } },
         };
       },
     },
-    allocationStore: {
-      async findReusableCard(request) { cardRequests.push(request); return null; },
+    allocationStore: suppliedAllocationStore ?? {
       async release() { return []; },
     },
     companions,
@@ -157,10 +163,11 @@ function issuer({
     householdId,
     clock: () => new Date(now),
     rng,
+    issuedArtifacts,
     logger: silentLogger,
   });
 
-  return { issueDocument, sessions, companions, printer, tokens, published, cardRequests };
+  return { issueDocument, sessions, companions, printer, tokens, published, cardRequests, instances };
 }
 
 async function seedSession(sessions, { sessionId, learnerId, unitId, at = '2026-08-26T17:00:00.000Z' }) {
@@ -169,6 +176,77 @@ async function seedSession(sessions, { sessionId, learnerId, unitId, at = '2026-
 }
 
 describe('IssueDocument — a required companion binds its finish code before the paper prints', () => {
+  it('replaces a cancelled OMR identity after an unconfirmed dispatch and binds only the delivered retry', async () => {
+    const companionCodes = codeStore();
+    const unit = unitFor({ participation: 'optional' });
+    const cards = new Map();
+    const allocationStore = {
+      async findByCard(cardId) { return structuredClone(cards.get(cardId) ?? []); },
+      async release({ cardId, rows }) {
+        const changed = (cards.get(cardId) ?? []).map((record) => (
+          record.rowRange.start <= rows.end && rows.start <= record.rowRange.end
+            ? { ...record, status: 'released', deliveryState: 'cancelled' }
+            : record
+        ));
+        cards.set(cardId, changed);
+        return structuredClone(changed.filter((record) => record.deliveryState === 'cancelled'));
+      },
+      async markDelivered({ cardId, recordId, at }) {
+        const changed = (cards.get(cardId) ?? []).map((record) => (
+          record.recordId === recordId
+            ? { ...record, deliveryState: 'delivered', deliveredAt: at }
+            : record
+        ));
+        cards.set(cardId, changed);
+        return structuredClone(changed.find((record) => record.recordId === recordId));
+      },
+    };
+    const retained = new Map();
+    const issuedArtifacts = {
+      async get(artifactId) { return retained.get(artifactId) ?? null; },
+      async put(artifact) {
+        const { bytes, ...manifest } = artifact;
+        const stored = { manifest: structuredClone(manifest), bytes: Buffer.from(bytes) };
+        retained.set(artifact.artifactId, stored);
+        return stored;
+      },
+    };
+    let dispatch = 0;
+    const printer = {
+      jobs: [],
+      async printPdf(bytes, options) {
+        this.jobs.push({ bytes, options });
+        dispatch += 1;
+        return { confirmed: dispatch > 1 };
+      },
+    };
+    const renderAllocation = (attempt) => {
+      const cardId = attempt === 1 ? '1234567' : '7654321';
+      const record = {
+        cardId, recordId: `rec-${attempt}`, rowRange: { start: 1, end: 8 },
+        status: 'live', deliveryState: 'pending', learnerId: 'kid1',
+      };
+      cards.set(cardId, [record]);
+      return structuredClone(record);
+    };
+    const { issueDocument, sessions, instances, cardRequests } = issuer({
+      companionCodes, units: [unit], printer, allocationStore, issuedArtifacts, renderAllocation,
+    });
+    await seedSession(sessions, { sessionId: 'ses-unconfirmed', learnerId: 'kid1', unitId: unit.unitId });
+
+    await expect(issueDocument.execute({ sessionId: 'ses-unconfirmed' }))
+      .resolves.toMatchObject({ status: 'issued', allocation: { cardId: '1234567' } });
+    expect(instances.size).toBe(0);
+    expect(cards.get('1234567')[0]).toMatchObject({ status: 'released', deliveryState: 'cancelled' });
+
+    await expect(issueDocument.execute({ sessionId: 'ses-unconfirmed' }))
+      .resolves.toMatchObject({ status: 'reprinted', allocation: { cardId: '7654321' } });
+    expect(cardRequests).toHaveLength(2);
+    expect(cardRequests.every((request) => request.automaticCard === true)).toBe(true);
+    expect([...instances.values()][0].omr).toMatchObject({ cardId: '7654321', recordId: 'rec-2' });
+    expect(cards.get('7654321')[0]).toMatchObject({ deliveryState: 'delivered' });
+  });
+
   it('leaves an OPTIONAL companion exactly as it was: no finish code, no codeRef, no record', async () => {
     // The regression that would break every worksheet already in a folder.
     const companionCodes = codeStore();
@@ -458,6 +536,8 @@ describe('IssueDocument — the finish code reaches the printed sheet and nothin
       .blocks.filter((block) => block.type === 'question' && !block.companionGate).length;
 
     expect(cardRequests).toHaveLength(2);
+    expect(cardRequests.every((entry) => entry.automaticCard === true)).toBe(true);
+    expect(cardRequests.every((entry) => entry.answerSheetPolicy.reuse === 'until_full')).toBe(true);
     expect(cardRequests[0].rowsNeeded).toBe(questionCount + 1);
     expect(cardRequests[1].rowsNeeded).toBe(questionCount);
   });

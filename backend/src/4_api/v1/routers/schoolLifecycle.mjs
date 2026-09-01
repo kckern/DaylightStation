@@ -102,6 +102,28 @@ function reply(res, result) {
   return res.status(status).json(result);
 }
 
+const cookieValue = (req, name) => {
+  const raw = req.get('cookie') ?? '';
+  for (const part of raw.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
+    try { return decodeURIComponent(part.slice(separator + 1).trim()); } catch { return null; }
+  }
+  return null;
+};
+
+// Lifecycle GETs do not pass through the body-based capability substitution
+// used by ordinary School writes. Read the same HttpOnly teacher-session
+// cookie here so opening a held-scan queue is genuinely teacher-gated without
+// putting a PIN or bearer token in the URL.
+const capabilityProof = (req) => {
+  const capabilityToken = cookieValue(req, 'daylight_teacher_session');
+  return capabilityToken ? {
+    capabilityToken,
+    stepUpToken: req.get('X-Teacher-Step-Up') ?? null,
+  } : null;
+};
+
 /**
  * @param {object} deps - each use case is optional and gates its own routes
  * @param {object} [deps.resolveScanAction]
@@ -151,6 +173,7 @@ export function createSchoolLifecycleRouter({
   openRemediation = null,
   replaceRemediation = null,
   resolveReviewItem = null,
+  reviewHeldCardScan = null,
   setAssignments = null,
   enrollLearner = null,
   unenrollLearner = null,
@@ -174,7 +197,7 @@ export function createSchoolLifecycleRouter({
     lifecycleSyllabusService,
     getLearnerDayCompletion, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation, replaceRemediation,
-    resolveReviewItem, setAssignments, enrollLearner, unenrollLearner, markSessionAbandoned,
+    resolveReviewItem, reviewHeldCardScan, setAssignments, enrollLearner, unenrollLearner, markSessionAbandoned,
     replaceLostAnswerSheet, createLostAnswerSheetTicket,
   }).filter(([, v]) => v).map(([k]) => k);
   if (!wired.length) {
@@ -506,6 +529,40 @@ export function createSchoolLifecycleRouter({
       const { verdict, gradedBy = null, note = null, pin = null } = req.body || {};
       res.json(await resolveReviewItem.execute({
         sessionId: req.params.sessionId, itemId: req.params.itemId, verdict, gradedBy, note, pin,
+      }));
+    }));
+  }
+
+  // Answer-sheet identity holds are grouped scan reviews, deliberately
+  // separate from the per-question verdict queue above.
+  if (reviewHeldCardScan) {
+    router.get('/answer-sheet-reviews', guarded(async (req, res) => {
+      res.json({ items: await reviewHeldCardScan.list({
+        reviewerId: req.query.reviewerId ?? null,
+        pin: capabilityProof(req),
+      }) });
+    }));
+    router.get('/answer-sheet-reviews/:heldScanId', guarded(async (req, res) => {
+      res.json(await reviewHeldCardScan.inspect({
+        heldScanId: req.params.heldScanId,
+        reviewerId: req.query.reviewerId ?? null,
+        pin: capabilityProof(req),
+      }));
+    }));
+    router.post('/answer-sheet-reviews/:heldScanId/resolve', guarded(async (req, res) => {
+      const {
+        action, targetRecordId = null, reviewerId = null, pin = null, idempotencyKey = null,
+      } = req.body || {};
+      res.json(await reviewHeldCardScan.resolve({
+        heldScanId: req.params.heldScanId, action, targetRecordId,
+        reviewerId, pin: pin ?? capabilityProof(req), idempotencyKey,
+      }));
+    }));
+    router.post('/answer-sheets/:cardId/quarantines/:quarantineId/clear', guarded(async (req, res) => {
+      const { method, reviewerId = null, pin = null } = req.body || {};
+      res.json(await reviewHeldCardScan.clearQuarantine({
+        cardId: req.params.cardId, quarantineId: req.params.quarantineId,
+        method, reviewerId, pin: pin ?? capabilityProof(req),
       }));
     }));
   }

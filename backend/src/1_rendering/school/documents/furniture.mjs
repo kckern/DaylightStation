@@ -31,10 +31,10 @@
  * ## Re-identifying a stray page
  *
  * A page that falls out of its stack is matched back by the physical OMR
- * answer-card number ("student number") the render is attached to: when a
- * `cardId` is supplied, the footer prints `Page X of Y · <cardId>` on EVERY
- * page, page 1 included. With no card attached the footer stays a plain
- * `Page X of Y`. (An earlier design printed a blank `Name: ____` continuation
+ * answer-card identity the render is attached to: when a card is supplied,
+ * the footer repeats its identicon, Student No., owned row range, and page
+ * position on EVERY page, page 1 included. With no card attached the footer
+ * stays a plain `Page X of Y`. (An earlier design printed a blank `Name: ____` continuation
  * strip on pages 2+ instead; nobody ever wrote a name on it, and the card
  * number is what the grading pipeline actually keys on.)
  *
@@ -50,6 +50,7 @@
  *
  * @module rendering/school/documents/furniture
  */
+import { answerSheetIdenticon } from '#domains/school/documents/answerSheetIdentity.mjs';
 
 /**
  * Resolve the gutter's left/right widths for one page.
@@ -119,25 +120,43 @@ function setFont(doc, theme, fontKey, sizePt, inkKey = 'text') {
 }
 
 /**
- * The "page x of y" band — drawn on every page. Appends " · <cardId>" when the
- * render is card-attached, so a stray page can be matched back to its physical
- * answer card by number alone.
+ * The answer-sheet identity/page-position band drawn on every page.
  */
 function drawFooterBand(doc, theme, {
-  xPt, widthPt, page, pageCount, cardId,
+  xPt, widthPt, page, pageCount, card,
 }) {
   const { footer } = theme;
   setFont(doc, theme, 'regular', footer.sizePt, 'muted');
   const textYPt = theme.page.heightPt - footer.bottomInsetPt - footer.sizePt;
-  const text = cardId ? `Page ${page} of ${pageCount} · ${cardId}` : `Page ${page} of ${pageCount}`;
+  const text = card
+    ? `Student No. ${card.cardId} · Rows ${card.startRow}–${card.endRow} · Page ${page} of ${pageCount}`
+    : `Page ${page} of ${pageCount}`;
+  if (card) {
+    const identicon = answerSheetIdenticon(String(card.cardId), card.identiconVersion);
+    const cellPt = 2.2;
+    const iconPt = identicon.size * cellPt;
+    const iconXPt = xPt + 2;
+    const iconYPt = textYPt - Math.max(0, (iconPt - footer.sizePt) / 2);
+    doc.save().fillColor(theme.ink.text);
+    identicon.cells.forEach((filled, index) => {
+      if (!filled) return;
+      doc.rect(
+        iconXPt + (index % identicon.size) * cellPt,
+        iconYPt + Math.floor(index / identicon.size) * cellPt,
+        cellPt,
+        cellPt,
+      ).fill();
+    });
+    doc.restore();
+  }
   doc.text(text, xPt, textYPt, {
     width: widthPt, align: 'center', lineBreak: false,
   });
 }
 
 /**
- * Draw one page's footer — "Page X of Y", plus the card number when this
- * render is card-attached — gutter-adjusted horizontally.
+ * Draw one page's footer — page position plus complete answer-sheet identity
+ * when this render is card-attached — gutter-adjusted horizontally.
  *
  * Called once per page, after that page's own fragments are drawn — furniture
  * never participates in fragment placement, it paints the band `contentBox`
@@ -157,7 +176,7 @@ function drawFooterBand(doc, theme, {
  * @param {boolean|number} [opts.gutter=false] - gutter width; see `contentBox`
  */
 export function drawFurniture(doc, {
-  theme, page, pageCount, cardId = null, duplex = false, gutter = false,
+  theme, page, pageCount, card = null, cardId = null, duplex = false, gutter = false,
 }) {
   if (!theme?.page || !theme?.furniture) {
     throw new Error('drawFurniture: theme must carry page + furniture tokens');
@@ -173,7 +192,11 @@ export function drawFurniture(doc, {
   const { xPt: contentLeftPt, widthPt: contentWidthPt } = contentBox(theme, { gutter, duplex, pageIndex });
 
   drawFooterBand(doc, theme, {
-    xPt: contentLeftPt, widthPt: contentWidthPt, page, pageCount, cardId,
+    xPt: contentLeftPt,
+    widthPt: contentWidthPt,
+    page,
+    pageCount,
+    card: card ?? (cardId == null ? null : { cardId, startRow: '?', endRow: '?' }),
   });
 }
 

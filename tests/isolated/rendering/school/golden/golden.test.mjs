@@ -40,7 +40,7 @@ describe('school document golden pages', () => {
 
       it('rasterizes exactly the pages the renderer reported', () => {
         expect(pages.length).toBe(rendered.pageCount);
-        expect(pages.length).toBeGreaterThan(0);
+        expect(pages.length).toBeGreaterThanOrEqual(testCase.minimumPages ?? 1);
       });
 
       it('matches its committed page snapshots', async () => {

@@ -61,6 +61,9 @@ import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/
 import {
   generateCardId, checkCollision, supersedes, rangesOverlap, ALLOCATION_STATUSES,
 } from '#domains/school/documents/allocation.mjs';
+import {
+  ANSWER_SHEET_IDENTICON_VERSION, mintDistinctCardId,
+} from '#domains/school/documents/answerSheetIdentity.mjs';
 
 const CARD_ID_RE = /^\d{7}$/;
 const MAX_CARD_ID_ATTEMPTS = 20;
@@ -68,10 +71,10 @@ const MAX_CARD_ID_ATTEMPTS = 20;
 const TERMINAL_STATUSES = new Set(['satisfied', 'released', 'superseded']);
 
 export class YamlAllocationStore {
-  #directory; #rng; #now; #io; #timeZone; #writeChain = Promise.resolve();
+  #directory; #rng; #now; #io; #timeZone; #logger; #writeChain = Promise.resolve();
 
   constructor({
-    directory, rng = Math.random, now = () => new Date().toISOString(), io = {}, timeZone = 'UTC',
+    directory, rng = Math.random, now = () => new Date().toISOString(), io = {}, timeZone = 'UTC', logger = null,
   } = {}) {
     if (typeof directory !== 'string' || directory.trim().length === 0) {
       throw new Error('YamlAllocationStore requires a non-empty directory');
@@ -80,6 +83,7 @@ export class YamlAllocationStore {
     this.#rng = rng;
     this.#now = now;
     this.#timeZone = timeZone;
+    this.#logger = logger;
     this.#io = {
       load: io.load ?? loadYamlFromPath,
       save: io.save ?? saveYamlToPathAtomic,
@@ -181,6 +185,13 @@ export class YamlAllocationStore {
         // the lesson sessions that were actually printed on it.
         ...(Array.isArray(request.sections) ? { sections: request.sections } : {}),
         renderedAt: this.#now(),
+        generation: request.generation ?? cardMetadata(existing).generation ?? 1,
+        predecessorCardId: request.predecessorCardId ?? cardMetadata(existing).predecessorCardId ?? null,
+        identiconVersion: request.identiconVersion ?? cardMetadata(existing).identiconVersion
+          ?? ANSWER_SHEET_IDENTICON_VERSION,
+        deliveryState: request.deliveryState ?? 'pending',
+        deliveredAt: request.deliveredAt ?? null,
+        cardCapacity: request.cardCapacity ?? cardMetadata(existing).cardCapacity ?? 50,
         status: 'live',
       };
 
@@ -190,6 +201,227 @@ export class YamlAllocationStore {
       updated.push(record);
       this.#save(resolvedCardId, updated);
       return structuredClone(record);
+    });
+  }
+
+  /**
+   * Atomically chooses the learner's current monotonic answer sheet and
+   * reserves a whole worksheet on it. `request` is expressed at rows 1..N;
+   * this operation shifts its row-bearing fields to the selected tail while
+   * it still owns the store's single mutation queue.
+   */
+  async allocateNext({ request, policy = {} } = {}) {
+    assertRequest(request);
+    if (request.rowRange.start !== 1) {
+      throw new Error('YamlAllocationStore.allocateNext request must be planned from row 1');
+    }
+    const learnerId = request.learnerId;
+    if (typeof learnerId !== 'string' || !learnerId.trim()) {
+      throw new Error('YamlAllocationStore.allocateNext requires request.learnerId');
+    }
+    const capacity = policy.capacity ?? 50;
+    const reuse = policy.reuse ?? 'until_full';
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
+      throw new Error('YamlAllocationStore.allocateNext capacity must be 1..50');
+    }
+    if (!['never', 'after_scan', 'school_day', 'until_full'].includes(reuse)) {
+      throw new Error(`YamlAllocationStore.allocateNext: unknown reuse policy "${reuse}"`);
+    }
+    const rowsNeeded = request.rowRange.end;
+    if (rowsNeeded > capacity) {
+      throw new DomainInvariantError(
+        `worksheet requires ${rowsNeeded} rows but answer sheets hold ${capacity}`,
+        { code: 'ALLOCATION_WORKSHEET_TOO_LARGE', details: { rowsNeeded, capacity } },
+      );
+    }
+
+    return this.#enqueue(async () => {
+      const cardIds = [...this.#io.list(path.join(this.#directory, 'cards'))];
+      const cards = cardIds.map((cardId) => ({ cardId, records: this.#load(cardId) }));
+      const learnerCards = cards.filter(({ records }) => records.some((record) => (
+        record.learnerId === learnerId && record.deliveryState !== 'cancelled'
+      )));
+      const head = monotonicHead(learnerCards);
+
+      // A racing duplicate issue of the same immutable render context must
+      // converge on the already-reserved record rather than consume a second
+      // row window.
+      const duplicate = cards.flatMap(({ records }) => records).find((record) => (
+        record.status === 'live'
+        && record.learnerId === learnerId
+        && record.documentId === request.documentId
+        && record.rev === request.rev
+        && record.seed === request.seed
+        && record.variant === (request.variant ?? 0)
+      ));
+      if (duplicate) return { record: structuredClone(duplicate), firstUse: false, duplicate: true };
+
+      const headLearnerRecords = head?.records.filter((record) => (
+        record.learnerId === learnerId && record.deliveryState !== 'cancelled'
+      )) ?? [];
+      const policyAllowsReuse = reuse === 'until_full'
+        || (reuse === 'after_scan'
+          && !headLearnerRecords.some((record) => record.status === 'live'))
+        || (reuse === 'school_day'
+          && headLearnerRecords.some((record) => (
+            localDateKey(record.renderedAt, this.#timeZone)
+              === localDateKey(this.#now(), this.#timeZone)
+          )));
+      const canReuse = policyAllowsReuse && head && !cardHasIssuedSuccessor(head)
+        && head.occupiedThrough + rowsNeeded <= capacity;
+      let cardId;
+      let existing;
+      let startRow;
+      let generation;
+      let predecessorCardId = null;
+      let firstUse = false;
+
+      if (canReuse) {
+        ({ cardId, records: existing } = head);
+        startRow = head.occupiedThrough + 1;
+        generation = Math.max(1, head.generation);
+      } else {
+        predecessorCardId = head?.cardId ?? null;
+        const activeCardIds = cards
+          .filter(({ records }) => records.some((record) => (
+            record.status === 'live' && record.deliveryState !== 'cancelled'
+          )))
+          .map(({ cardId: activeCardId }) => activeCardId);
+        cardId = mintDistinctCardId({
+          rng: this.#rng,
+          predecessorCardId,
+          activeCardIds,
+          usedCardIds: cardIds,
+        });
+        existing = [];
+        startRow = 1;
+        generation = (head?.generation ?? 0) + 1;
+        firstUse = true;
+      }
+
+      const shifted = shiftRequestRows(request, startRow - 1);
+      const record = allocationRecord({
+        cardId,
+        request: shifted,
+        renderedAt: this.#now(),
+        generation,
+        predecessorCardId,
+        identiconVersion: ANSWER_SHEET_IDENTICON_VERSION,
+        cardCapacity: capacity,
+      });
+      existing.push(record);
+      this.#save(cardId, existing);
+      if (firstUse) {
+        this.#logger?.info?.('school.answer-sheet.rollover', {
+          learnerId,
+          predecessorCardId,
+          successorCardId: cardId,
+          generation,
+          predecessorOccupiedThrough: head?.occupiedThrough ?? 0,
+          skippedTail: head && head.occupiedThrough < capacity
+            ? { start: head.occupiedThrough + 1, end: capacity }
+            : null,
+          rows: record.rowRange,
+        });
+      }
+      return { record: structuredClone(record), firstUse, duplicate: false };
+    });
+  }
+
+  /** Confirm that a pending reservation really reached physical paper. */
+  async markDelivered({ cardId, recordId, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const record = records.find((entry) => entry.recordId === recordId);
+      if (!record) throw new EntityNotFoundError('AllocationRecord', recordId, { details: { cardId } });
+      if (record.deliveryState === 'delivered') return structuredClone(record);
+      if (record.status !== 'live' || record.deliveryState === 'cancelled') {
+        throw new DomainInvariantError(`cannot deliver ${record.status}/${record.deliveryState} allocation ${recordId}`, {
+          code: 'ALLOCATION_DELIVERY_ILLEGAL_TRANSITION',
+        });
+      }
+      const delivered = { ...record, deliveryState: 'delivered', deliveredAt: at };
+      this.#save(cardId, records.map((entry) => (entry.recordId === recordId ? delivered : entry)));
+
+      // The predecessor's unused tail becomes permanently unavailable only
+      // once the successor is actually delivered, not while a render or print
+      // job can still roll back.
+      if (delivered.predecessorCardId) {
+        const predecessor = this.#load(delivered.predecessorCardId);
+        if (predecessor.length) {
+          const occupiedThrough = Math.max(...predecessor.map((entry) => entry.rowRange.end));
+          this.#save(delivered.predecessorCardId, predecessor.map((entry) => ({
+            ...entry,
+            successorCardId: cardId,
+            tailSkipped: occupiedThrough < (delivered.cardCapacity ?? 50)
+              ? { start: occupiedThrough + 1, end: delivered.cardCapacity ?? 50 }
+              : null,
+          })));
+        }
+        this.#logger?.info?.('school.answer-sheet.rollover-delivered', {
+          learnerId: delivered.learnerId,
+          predecessorCardId: delivered.predecessorCardId,
+          successorCardId: cardId,
+          generation: delivered.generation,
+        });
+      }
+      return structuredClone(delivered);
+    });
+  }
+
+  /** Delivered live records for the identity preflight gate. */
+  async findDeliveredLiveByLearner(learnerId) {
+    if (typeof learnerId !== 'string' || !learnerId.trim()) return [];
+    const out = [];
+    for (const cardId of this.#io.list(path.join(this.#directory, 'cards'))) {
+      for (const record of this.#load(cardId)) {
+        if (record.learnerId === learnerId && record.status === 'live'
+            && record.deliveryState === 'delivered') out.push(structuredClone(record));
+      }
+    }
+    return out;
+  }
+
+  async quarantineRows({ cardId, rows, heldScanId, reason, reviewerId, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    assertRowRange(rows, 'rows');
+    if (typeof heldScanId !== 'string' || !heldScanId) throw new Error('quarantineRows requires heldScanId');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      if (!records.length) throw new EntityNotFoundError('AnswerCard', cardId);
+      const quarantines = records[0].rowQuarantines ?? [];
+      const quarantineId = `${heldScanId}:${rows.start}-${rows.end}`;
+      const existing = quarantines.find((entry) => entry.quarantineId === quarantineId);
+      if (existing) return structuredClone(existing);
+      const quarantine = {
+        quarantineId, rows: { ...rows }, heldScanId, reason, reviewerId, at, clearances: [],
+      };
+      const [first, ...rest] = records;
+      this.#save(cardId, [{ ...first, rowQuarantines: [...quarantines, quarantine] }, ...rest]);
+      return structuredClone(quarantine);
+    });
+  }
+
+  async clearQuarantine({ cardId, quarantineId, reviewerId, method, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    if (!['verified-erased', 'source-superseded-clean-reprint'].includes(method)) {
+      throw new Error('clearQuarantine method must be verified-erased|source-superseded-clean-reprint');
+    }
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const quarantines = records[0]?.rowQuarantines ?? [];
+      const target = quarantines.find((entry) => entry.quarantineId === quarantineId);
+      if (!target) throw new EntityNotFoundError('AnswerCardQuarantine', quarantineId);
+      const prior = target.clearances?.find((entry) => entry.method === method && entry.reviewerId === reviewerId);
+      if (prior) return structuredClone(prior);
+      const clearance = { method, reviewerId, at };
+      const updated = quarantines.map((entry) => (entry.quarantineId === quarantineId
+        ? { ...entry, clearances: [...(entry.clearances ?? []), clearance] }
+        : entry));
+      const [first, ...rest] = records;
+      this.#save(cardId, [{ ...first, rowQuarantines: updated }, ...rest]);
+      return structuredClone(clearance);
     });
   }
 
@@ -395,7 +627,11 @@ export class YamlAllocationStore {
         if (record.status !== 'live') return record;
         if (rows && !rangesOverlap(record.rowRange, rows)) return record;
         releasedIds.add(record.recordId);
-        return { ...record, status: 'released' };
+        return {
+          ...record,
+          status: 'released',
+          ...(record.deliveryState === 'pending' ? { deliveryState: 'cancelled' } : {}),
+        };
       });
       if (releasedIds.size > 0) this.#save(cardId, updated);
       return structuredClone(updated.filter((record) => releasedIds.has(record.recordId)));
@@ -454,6 +690,89 @@ function localDateKey(value, timeZone) {
   } catch {
     return date.toISOString().slice(0, 10);
   }
+}
+
+function cardMetadata(records) {
+  const first = records?.[0] ?? {};
+  return {
+    generation: Number.isInteger(first.generation) ? first.generation : null,
+    predecessorCardId: first.predecessorCardId ?? null,
+    identiconVersion: first.identiconVersion ?? null,
+    cardCapacity: Number.isInteger(first.cardCapacity) ? first.cardCapacity : null,
+  };
+}
+
+function monotonicHead(cards) {
+  if (!cards.length) return null;
+  const enriched = cards.map(({ cardId, records }) => {
+    const learnerRecords = records.filter((record) => record.deliveryState !== 'cancelled');
+    const generation = Math.max(0, ...learnerRecords.map((record) => (
+      Number.isInteger(record.generation) ? record.generation : 0
+    )));
+    const occupiedThrough = cardOccupiedThrough(records);
+    const lastUsedAt = learnerRecords.reduce((latest, record) => (
+      String(record.renderedAt ?? '') > latest ? String(record.renderedAt) : latest
+    ), '');
+    return { cardId, records, generation, occupiedThrough, lastUsedAt };
+  });
+  enriched.sort((left, right) => (
+    right.generation - left.generation
+      || right.lastUsedAt.localeCompare(left.lastUsedAt)
+      || right.cardId.localeCompare(left.cardId)
+  ));
+  return enriched[0];
+}
+
+function cardOccupiedThrough(records) {
+  const allocated = Math.max(0, ...records.map((record) => record.rowRange?.end ?? 0));
+  const quarantined = Math.max(0, ...(records[0]?.rowQuarantines ?? [])
+    .filter((entry) => !(entry.clearances?.length > 0))
+    .map((entry) => entry.rows?.end ?? 0));
+  return Math.max(allocated, quarantined);
+}
+
+function cardHasIssuedSuccessor(card) {
+  return card.records.some((record) => typeof record.successorCardId === 'string');
+}
+
+function shiftRequestRows(request, offset) {
+  const shiftRange = (range) => ({ start: range.start + offset, end: range.end + offset });
+  return {
+    ...request,
+    rowRange: shiftRange(request.rowRange),
+    ...(Array.isArray(request.rowItems) ? {
+      rowItems: request.rowItems.map((entry) => ({ ...entry, row: entry.row + offset })),
+    } : {}),
+    ...(Array.isArray(request.sections) ? {
+      sections: request.sections.map((section) => ({ ...section, rowRange: shiftRange(section.rowRange) })),
+    } : {}),
+  };
+}
+
+function allocationRecord({
+  cardId, request, renderedAt, generation, predecessorCardId, identiconVersion, cardCapacity,
+}) {
+  return {
+    recordId: buildRecordId(request),
+    cardId,
+    rowRange: { ...request.rowRange },
+    documentId: request.documentId,
+    rev: request.rev,
+    seed: request.seed,
+    variant: request.variant ?? 0,
+    learnerId: request.learnerId,
+    ...(request.sessionId != null ? { sessionId: request.sessionId } : {}),
+    ...(Array.isArray(request.rowItems) ? { rowItems: structuredClone(request.rowItems) } : {}),
+    ...(Array.isArray(request.sections) ? { sections: structuredClone(request.sections) } : {}),
+    renderedAt,
+    generation,
+    predecessorCardId,
+    identiconVersion,
+    cardCapacity,
+    deliveryState: 'pending',
+    deliveredAt: null,
+    status: 'live',
+  };
 }
 
 /** `<documentId>@<rev>:v<variant>:<start>-<end>` (spec §5.4 / task brief). */

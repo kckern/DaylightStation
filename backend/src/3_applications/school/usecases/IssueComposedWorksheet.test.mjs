@@ -261,9 +261,10 @@ describe('IssueComposedWorksheet against the real work-session datastore', () =>
         return { ok: true };
       },
     };
-    const { useCase } = build({ sessions, printer });
+    const { useCase, instances } = build({ sessions, printer });
 
     await expect(useCase.execute({ sessionIds: ['s-one', 's-two'] })).rejects.toThrow(/printer jammed/);
+    expect(instances.size).toBe(0);
     expect(await typesOf(sessions, 's-one')).toEqual(['created']);
     expect(await typesOf(sessions, 's-two')).toEqual(['created']);
 

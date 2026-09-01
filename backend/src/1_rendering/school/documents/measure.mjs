@@ -26,6 +26,7 @@
 
 import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
+import { answerSheetIdenticon } from '#domains/school/documents/answerSheetIdentity.mjs';
 
 import { placeFragments } from './layout.mjs';
 import { documentPdfTheme } from './documentPdfTheme.mjs';
@@ -1637,9 +1638,15 @@ function headerFragment(document, {
   // legacy constant exactly for any theme that predates this field.
   const framePaddingPt = frame === 'double' ? (header.framePaddingPt ?? 7) : 0;
   const gapBelowPt = metaFirst && frame === 'double' ? 0 : header.gapBelowPt;
-  const metaRowHeightPt = showMetaLine || embeddedCard
-    ? Math.max(showMetaLine ? header.metaLeadingPt : 0, embeddedCard?.heightPt ?? 0)
-    : 0;
+  // A card banner cannot safely share the horizontal row with Name/Date: the
+  // deliberately explicit KEEP instruction is wide enough to collide with
+  // the right-hand Date field. Measure the meta and card rows as a vertical
+  // stack whenever a card is present. Non-card headers keep their historical
+  // single-row height byte-for-byte.
+  const metaRowHeightPt = embeddedCard
+    ? (showMetaLine ? header.metaLeadingPt + (header.metaCardGapPt ?? 0) : 0)
+      + embeddedCard.heightPt
+    : showMetaLine ? header.metaLeadingPt : 0;
   const heightPt = (showTitle ? header.titleLeadingPt : 0)
     + (instructions ? header.metaLeadingPt : 0)
     + (subtitle ? theme.styles.body.leadingPt : 0)
@@ -1748,14 +1755,15 @@ function cardHeaderFragment(doc, theme, card, { widthPt: widthPtOverride } = {})
   const metaText = '';
 
   const firstUse = card.firstUse === true;
-  const reuseSheet = card.startRow > 1;
-  const reuseText = reuseSheet ? `REUSE THE SAME ANSWER SHEET · ROWS ${card.startRow}–${card.endRow}` : null;
+  const reuseSheet = !firstUse;
+  const reuseText = `${firstUse ? 'START A NEW ANSWER SHEET' : 'KEEP USING THE SAME ANSWER SHEET'} · ROWS ${card.startRow}–${card.endRow}`;
   const reuseTextWidthPt = reuseText
     ? stringWidth(doc, theme, 'bold', cardTheme.reuseLabelSizePt, reuseText)
     : 0;
   const instruction = null;
 
-  const heightPt = cardTheme.bandHeightPt + (reuseSheet ? cardTheme.reuseLabelLeadingPt : 0);
+  const heightPt = cardTheme.bandHeightPt + cardTheme.reuseLabelLeadingPt;
+  const identicon = answerSheetIdenticon(cardId, card.identiconVersion);
 
   const node = {
     kind: 'cardHeader',
@@ -1765,6 +1773,7 @@ function cardHeaderFragment(doc, theme, card, { widthPt: widthPtOverride } = {})
     labelText,
     labelWidthPt,
     metaText,
+    identicon,
     firstUse,
     reuseSheet,
     reuseText,

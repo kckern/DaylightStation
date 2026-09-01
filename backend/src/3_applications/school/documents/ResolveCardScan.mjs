@@ -34,6 +34,7 @@
  * Task 7's job.
  */
 import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { sha256Text } from '#system/utils/CanonicalFingerprint.mjs';
 import { planRows, resolveAmbiguousCardId } from '#domains/school/documents/allocation.mjs';
 import { gradeAnswer } from '#domains/school/grading.mjs';
 import { creditsAsEraser, leniencyCap } from '#domains/school/documents/ambiguityLeniency.mjs';
@@ -53,6 +54,20 @@ import { prepareV2Document, mergeBank } from './RenderPrintDocument.mjs';
  * `quizScanRecorder.mjs`'s copy is a local, unexported constant.
  */
 const LETTERS = ['A', 'B', 'C', 'D', 'E'];
+
+function canonicalAnswerRows(answers) {
+  return Object.entries(answers ?? {})
+    .map(([row, marks]) => ({
+      row: Number(row),
+      marks: (Array.isArray(marks) ? marks : [marks]).map(String).sort(),
+    }))
+    .filter((entry) => Number.isInteger(entry.row))
+    .sort((left, right) => left.row - right.row);
+}
+
+function scanFingerprint(cardId, answers) {
+  return sha256Text(JSON.stringify({ cardId: String(cardId), rows: canonicalAnswerRows(answers) }));
+}
 
 const isLiveOrSatisfied = (status) => status === 'live' || status === 'satisfied';
 
@@ -459,7 +474,7 @@ function gradeRow(item, given, points) {
 }
 
 export class ResolveCardScan {
-  #allocationStore; #repository; #banks; #logger;
+  #allocationStore; #repository; #banks; #logger; #heldScanStore; #protectionMode;
 
   /**
    * @param {object} deps
@@ -482,13 +497,19 @@ export class ResolveCardScan {
    *   now needs somewhere to say so even when no caller wires one explicitly.
    */
   constructor({
-    allocationStore, repository, banks = null, logger = console,
+    allocationStore, repository, banks = null, heldScanStore = null,
+    protectionMode = 'off', logger = console,
   } = {}) {
     if (!allocationStore) throw new Error('ResolveCardScan requires allocationStore');
     if (!repository) throw new Error('ResolveCardScan requires repository');
     this.#allocationStore = allocationStore;
     this.#repository = repository;
     this.#banks = banks;
+    if (!['off', 'shadow', 'enforce'].includes(protectionMode)) {
+      throw new Error(`ResolveCardScan: unknown protectionMode '${protectionMode}'`);
+    }
+    this.#heldScanStore = heldScanStore;
+    this.#protectionMode = protectionMode;
     this.#logger = logger;
   }
 
@@ -556,7 +577,7 @@ export class ResolveCardScan {
    *   same "never guess, always explain" reason `unknownCard`'s
    *   `nearMissCardIds` already exists.
    */
-  async execute({ testId, testIdCandidates = null, answers = {} } = {}) {
+  async execute({ testId, testIdCandidates = null, answers = {}, identityReview = null } = {}) {
     if (testId == null) {
       return { error: { code: 'CARD_ID_UNREADABLE' } };
     }
@@ -592,12 +613,17 @@ export class ResolveCardScan {
     }
 
     const records = await this.#allocationStore.findByCard(cardId);
+    const preflight = identityReview ? null : await this.#identityPreflight({ cardId, answers, records });
+    if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}) };
     const live = records.filter((record) => record.status === 'live');
     // A reused card retains old marks in satisfied rows. While a new worksheet
     // is live, grade only that live allocation and ignore the settled rows.
-    const eligible = live.length > 0
+    const ordinarilyEligible = live.length > 0
       ? live
       : records.filter((record) => isLiveOrSatisfied(record.status));
+    const eligible = identityReview?.targetRecordId
+      ? ordinarilyEligible.filter((record) => record.recordId === identityReview.targetRecordId)
+      : ordinarilyEligible;
     const answeredRows = new Set(Object.keys(answers).map(Number));
 
     // A card the store has NEVER seen, with real answers on it, is almost
@@ -715,7 +741,7 @@ export class ResolveCardScan {
     // covered it — includes a `released`/`superseded` record's now-stale
     // rows, spec §5.4 review fix, Important) is unallocated, never guessed.
     const unallocatedRows = [...answeredRows].filter((row) => !rowOwners.has(row)).sort((a, b) => a - b);
-    return {
+    const outcome = {
       results,
       // IS THIS CARD ONE OF OURS? (2026-08-26) An empty `results` means two
       // completely different things, and the consumer cannot tell them apart
@@ -730,6 +756,123 @@ export class ResolveCardScan {
       ...(silentLiveRecords.length ? { silentLiveRecords } : {}),
       ...(cardIdInferred ? { cardIdInferred } : {}),
     };
+    if (!identityReview) await this.#rememberProcessedScan({ cardId, answers, records, outcome });
+    return outcome;
+  }
+
+  async #identityPreflight({ cardId, answers, records }) {
+    if (this.#protectionMode === 'off' || !this.#heldScanStore) return null;
+    const fingerprint = scanFingerprint(cardId, answers);
+    const prior = await this.#heldScanStore.findByFingerprint(fingerprint);
+    if (this.#protectionMode === 'enforce' && prior
+        && (prior.state === 'held' || prior.state === 'seen')) {
+      this.#logger.info?.('school.scan.identity-duplicate', {
+        cardId, fingerprint, priorState: prior.state, heldScanId: prior.heldScanId,
+      });
+      return {
+        results: [], duplicate: true, fingerprint,
+        ...(prior.state === 'held' ? { held: true, heldScanId: prior.heldScanId, reason: prior.evidence.reason } : {}),
+      };
+    }
+
+    const learnerIds = [...new Set(records.map((record) => record.learnerId).filter(Boolean))];
+    if (learnerIds.length !== 1
+        || typeof this.#allocationStore.findDeliveredLiveByLearner !== 'function') return null;
+    const learnerId = learnerIds[0];
+    const deliveredLive = await this.#allocationStore.findDeliveredLiveByLearner(learnerId);
+    const activeCardIds = [...new Set(deliveredLive.map((record) => record.cardId))];
+    const historical = records.some((record) => typeof record.successorCardId === 'string')
+      || deliveredLive.some((record) => record.predecessorCardId === cardId);
+    const reason = activeCardIds.length > 1
+      ? 'multiple-delivered-live-answer-sheets'
+      : historical ? 'activity-on-historical-answer-sheet' : null;
+    if (!reason) return null;
+
+    // Include the scanned card's own still-gradeable historical allocations
+    // alongside every delivered live allocation. A historical-card hold must
+    // show the adult what was actually on that card, not only its successor.
+    const candidateRecords = new Map();
+    for (const record of [
+      ...records.filter((entry) => entry.learnerId === learnerId && isLiveOrSatisfied(entry.status)),
+      ...deliveredLive,
+    ]) {
+      candidateRecords.set(`${record.cardId}:${record.recordId}`, record);
+    }
+    const candidates = [...candidateRecords.values()].map((record) => ({
+      cardId: record.cardId,
+      recordId: record.recordId,
+      documentId: record.documentId,
+      rev: record.rev,
+      sessionId: record.sessionId ?? null,
+      rowRange: { ...record.rowRange },
+      renderedAt: record.renderedAt,
+      deliveryState: record.deliveryState ?? null,
+      deliveredAt: record.deliveredAt ?? null,
+      generation: record.generation ?? null,
+      predecessorCardId: record.predecessorCardId ?? null,
+      successorCardId: record.successorCardId ?? null,
+      identiconVersion: record.identiconVersion ?? null,
+      scannedCardMatch: record.cardId === cardId,
+      itemTypes: Array.isArray(record.rowItems) ? rowsInRange(record.rowRange).map((row) => (
+        record.rowItems.find((item) => item.row === row)?.itemType ?? null
+      )) : null,
+      markedRowOverlap: Object.keys(answers).map(Number).filter((row) => (
+        row >= record.rowRange.start && row <= record.rowRange.end
+      )).length,
+    })).sort((left, right) => (
+      Number(right.scannedCardMatch) - Number(left.scannedCardMatch)
+        || right.markedRowOverlap - left.markedRowOverlap
+        || String(right.renderedAt).localeCompare(String(left.renderedAt))
+    )).map((candidate, index) => ({ ...candidate, rank: index + 1 }));
+    const evidence = {
+      reason,
+      learnerId,
+      rawCardId: cardId,
+      rawRows: canonicalAnswerRows(answers),
+      decodedAnswers: structuredClone(answers),
+      candidateWorksheets: candidates,
+      activeCardIds,
+    };
+    const state = this.#protectionMode === 'enforce' ? 'held' : 'shadow';
+    const persisted = await this.#heldScanStore.record({ fingerprint, state, evidence });
+    this.#logger.warn?.(state === 'held' ? 'school.scan.identity-held' : 'school.scan.identity-shadow-match', {
+      heldScanId: persisted.record.heldScanId,
+      fingerprint,
+      learnerId,
+      cardId,
+      activeCardIds,
+      reason,
+      candidateRecordIds: candidates.map((candidate) => candidate.recordId),
+    });
+    if (state === 'shadow') return null;
+    return {
+      results: [],
+      held: true,
+      heldScanId: persisted.record.heldScanId,
+      fingerprint,
+      reason,
+      learnerId,
+      activeCardIds,
+      candidateWorksheets: candidates,
+      message: 'Two answer sheets are active. Ask a grown-up to check this scan.',
+    };
+  }
+
+  async #rememberProcessedScan({ cardId, answers, records, outcome }) {
+    if (this.#protectionMode !== 'enforce' || !this.#heldScanStore) return;
+    const fingerprint = scanFingerprint(cardId, answers);
+    await this.#heldScanStore.record({
+      fingerprint,
+      state: 'seen',
+      evidence: {
+        reason: 'processed',
+        rawCardId: cardId,
+        rawRows: canonicalAnswerRows(answers),
+        decodedAnswers: structuredClone(answers),
+        learnerIds: [...new Set(records.map((record) => record.learnerId).filter(Boolean))],
+        resultRecordIds: (outcome.results ?? []).map((result) => result.recordId),
+      },
+    });
   }
 
   /**

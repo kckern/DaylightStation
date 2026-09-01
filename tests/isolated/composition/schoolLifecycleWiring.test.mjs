@@ -123,9 +123,9 @@ describe('fail closed', () => {
       'enrollLearner', 'getCompanionFinishCode', 'getLearnerDayCompletion', 'getPianoLessonGate', 'gradeSubmission',
       'issueComposedWorksheet', 'issueCorrectedResultReceipt', 'issueDocument', 'manageCurriculumException',
       'manageProgramDayBypass', 'markSessionAbandoned', 'openRemediation', 'previewAgenda',
-      'recordLessonCompanionProgress', 'recordMediaCompletion', 'replaceLostAnswerSheet',
-      'reprintIssuedArtifact', 'reprintResultReceiptArtifact', 'resolveAccessCode', 'resolvePersonalCard',
-      'resolveReviewItem', 'resolveScanAction', 'runSelfServiceAction', 'setAssignments',
+      'recordLessonCompanionProgress', 'recordMediaCompletion', 'replaceLostAnswerSheet', 'replaceRemediation',
+      'reprintIssuedArtifact', 'reprintResultReceiptArtifact', 'resolveAccessCode', 'resolveCardScan', 'resolvePersonalCard',
+      'resolveReviewItem', 'resolveScanAction', 'reviewHeldCardScan', 'runSelfServiceAction', 'setAssignments',
       'submitPaperWork', 'teacherAgendaDispatch', 'unenrollLearner',
     ]);
   });

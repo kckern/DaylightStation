@@ -222,6 +222,12 @@ this event, what does it mean."
 | `school.print.scan-live-record-unmarked` / `scan-rows-unmarked` | warn | The wrong-rows signature — live rows blank while other rows on the card have marks (cumulative-card gotcha) |
 | `school.print.scan-rescored` | warn | A settled record graded again — re-fed or borrowed card |
 | `school.print.scan-awaiting-review` | info | Machine can't honestly grade everything; parked for a person, names `reasons`/`items` |
+| `school.scan.identity-shadow-match` | warn | Shadow policy would hold; inspect active card IDs and candidates before enforcement |
+| `school.scan.identity-held` / `school.print.scan-answer-sheet-held` | warn | Preflight stopped the scan before grading because answer-sheet identity needs an adult |
+| `school.scan.identity-duplicate` | info | Canonically identical re-feed; no second grade or review action |
+| `school.scan.identity-confirm` / `identity-reassign` / `identity-redo` | info | Teacher resolution with reviewer and review latency |
+| `school.answer-sheet.rollover` | info | A constrained successor identity and whole-worksheet reservation were minted; includes predecessor occupancy and any proposed skipped tail |
+| `school.answer-sheet.rollover-delivered` | info | The successor reached physical paper, making the predecessor tail skip permanent |
 | `school.print.scan-not-recorded` | warn | Backstop: nothing else spoke for this scan, so this one did |
 
 ### Home Assistant grading hook

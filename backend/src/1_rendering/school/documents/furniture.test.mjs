@@ -27,6 +27,13 @@ function createRecorder() {
     font(name) { calls.push({ op: 'font', name }); return chain; },
     fontSize(n) { calls.push({ op: 'fontSize', sizePt: round(n) }); return chain; },
     fillColor(c) { calls.push({ op: 'fillColor', color: c }); return chain; },
+    save() { calls.push({ op: 'save' }); return chain; },
+    restore() { calls.push({ op: 'restore' }); return chain; },
+    rect(x, y, width, height) {
+      calls.push({ op: 'rect', xPt: round(x), yPt: round(y), width: round(width), height: round(height) });
+      return chain;
+    },
+    fill() { calls.push({ op: 'fill' }); return chain; },
     text(str, x, y, opts) {
       calls.push({
         op: 'text', str, xPt: round(x), yPt: round(y), width: round(opts?.width), align: opts?.align,
@@ -100,24 +107,26 @@ describe('furniture — drawFurniture', () => {
     expect(textCalls(calls).map((c) => c.str)).toEqual(['Page 2 of 3']);
   });
 
-  it('appends the card number, delimited, when cardId is given — on every page, page 1 included', () => {
+  it('prints the complete card identity on every page, page 1 included', () => {
     for (const page of [1, 2]) {
       const { chain, calls } = createRecorder();
       drawFurniture(chain, {
-        theme, page, pageCount: 2, cardId: '5922785',
+        theme, page, pageCount: 2, card: { cardId: '5922785', startRow: 7, endRow: 12 },
       });
-      expect(textCalls(calls).map((c) => c.str), `page ${page}`).toEqual([`Page ${page} of 2 · 5922785`]);
+      expect(textCalls(calls).map((c) => c.str), `page ${page}`).toEqual([
+        `Student No. 5922785 · Rows 7–12 · Page ${page} of 2`,
+      ]);
     }
   });
 
   it('never draws a title or a "Name:" line — the continuation strip is gone', () => {
     const { chain, calls } = createRecorder();
     drawFurniture(chain, {
-      theme, page: 2, pageCount: 2, cardId: '5922785',
+      theme, page: 2, pageCount: 2, card: { cardId: '5922785', startRow: 7, endRow: 12 },
     });
     const texts = textCalls(calls).map((c) => c.str);
     expect(texts.some((t) => t.includes('Name:'))).toBe(false);
-    expect(texts).toEqual(['Page 2 of 2 · 5922785']);
+    expect(texts).toEqual(['Student No. 5922785 · Rows 7–12 · Page 2 of 2']);
   });
 
   it('footer sits at the configured printer-safe inset near the page edge', () => {
@@ -167,7 +176,9 @@ describe('furniture — drawFurniture', () => {
     const trace = [1, 2, 3].map((page) => {
       const rec = createRecorder();
       drawFurniture(rec.chain, {
-        theme, page, pageCount: 3, cardId: '5922785', duplex: true, gutter: true,
+        theme, page, pageCount: 3,
+        card: { cardId: '5922785', startRow: 7, endRow: 12 },
+        duplex: true, gutter: true,
       });
       return { page, calls: textCalls(rec.calls) };
     });
