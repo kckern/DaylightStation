@@ -1,0 +1,114 @@
+#!/bin/sh
+# Refuse to publish household secrets or PII.
+#
+# THIS REPO IS PUBLIC. The Claude Code PreToolUse guard
+# (.claude/hooks/secret-guard.sh) enforces the same rules, but only for commands
+# Claude runs — a push from a terminal, a GUI, CI, or the homeserver deploy tree
+# bypasses it entirely. That gap is how a year of real first names reached the
+# public remote, and how one such commit was pushed on 2026-09-01. This hook is
+# the copy that runs no matter who pushes.
+#
+# No secrets live in this file. Both pattern sources are read at runtime:
+#   1. The FKB password, from $DAYLIGHT_BASE_PATH/data/household/auth/fullykiosk.yml
+#      (plus its URL-encoded form, since docs embed it in curl URLs).
+#   2. Extra ERE patterns, one per line (# comments allowed), from the gitignored
+#      .claude/secret-patterns.local.txt
+#
+# Scans only ADDED lines (^+) across the commits actually being pushed, so
+# context lines around pre-existing identifiers do not false-positive.
+#
+# Bypass is `git push --no-verify`, and it is the wrong answer: scrub the hunk
+# instead. Real values belong in the gitignored data tree, aliases in the repo
+# (see .pii-scrub/pii-scrub.mjs and docs/_wip/plans/2026-07-08-pii-externalization-handoff.md).
+
+set -u
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$repo_root" || exit 0
+
+ZERO=0000000000000000000000000000000000000000
+
+# ---------------------------------------------------------------- collect ----
+# stdin gives one line per ref being pushed:  <local ref> <local sha> <remote ref> <remote sha>
+SCAN=""
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ -z "${local_sha:-}" ] && continue
+  [ "$local_sha" = "$ZERO" ] && continue          # branch deletion — nothing to scan
+
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # New branch: scan only what this branch adds beyond anything already published,
+    # not its entire ancestry.
+    range=$(git rev-list "$local_sha" --not --remotes 2>/dev/null | tail -1)
+    [ -z "$range" ] && continue
+    range="${range}^!..${local_sha}"
+    added=$(git log -p "$local_sha" --not --remotes 2>/dev/null | head -c 4000000)
+  else
+    added=$(git log -p "${remote_sha}..${local_sha}" 2>/dev/null | head -c 4000000)
+  fi
+
+  SCAN="$SCAN
+$(printf '%s' "$added" | grep '^+' | grep -v '^+++')"
+done
+
+[ -z "$(printf '%s' "$SCAN" | tr -d '[:space:]')" ] && exit 0
+
+deny() {
+  printf '\n\033[1;31mPUSH BLOCKED\033[0m — %s\n\n' "$1" >&2
+  printf 'This repo is public. Scrub the hunk before pushing; real values belong in the\n' >&2
+  printf 'gitignored data tree. `node .pii-scrub/pii-scrub.mjs` applies the project alias\n' >&2
+  printf 'scheme, and `--no-verify` is not the fix.\n\n' >&2
+  exit 1
+}
+
+# ------------------------------------------------------- 1) FKB password ----
+BASE=$(grep -E '^DAYLIGHT_BASE_PATH=' "$repo_root/.env" 2>/dev/null | cut -d= -f2- | tr -d '"')
+AUTH="${SECRET_GUARD_AUTH_FILE:-$BASE/data/household/auth/fullykiosk.yml}"
+if [ -f "$AUTH" ]; then
+  PW=$(grep -E '^password:' "$AUTH" | sed 's/^password:[[:space:]]*//; s/^"//; s/"$//; s/^'"'"'//; s/'"'"'$//')
+  if [ -n "$PW" ]; then
+    if printf '%s' "$SCAN" | grep -qF -- "$PW"; then
+      deny "the commits being pushed contain the FKB password (source: data/household/auth/fullykiosk.yml). Tracked docs must keep the placeholder."
+    fi
+    if command -v jq >/dev/null 2>&1; then
+      PW_URI=$(jq -rn --arg v "$PW" '$v|@uri' 2>/dev/null)
+      if [ -n "${PW_URI:-}" ] && printf '%s' "$SCAN" | grep -qF -- "$PW_URI"; then
+        deny "the commits being pushed contain the URL-encoded FKB password."
+      fi
+    fi
+  fi
+fi
+
+# --------------------------------------------- 2) household PII patterns ----
+PAT_FILE="$repo_root/.claude/secret-patterns.local.txt"
+if [ ! -f "$PAT_FILE" ]; then
+  # Fail OPEN, loudly. Blocking every push on a machine that has never had the
+  # (gitignored) pattern file would make the hook the first thing anyone removes.
+  # A visible warning is worth more than a guard nobody keeps.
+  printf '\n\033[1;33mWARNING\033[0m — %s not found; household PII patterns were NOT checked.\n' "$PAT_FILE" >&2
+  printf 'Copy it from a machine that has it before pushing from here.\n\n' >&2
+  exit 0
+fi
+
+# Known-safe phrases are removed before matching. "Felix Lullabye" is a Plex
+# media title, not a person; an optional gitignored allowlist can add more.
+ALLOW_FILE="$repo_root/.claude/secret-allowlist.local.txt"
+FILTERED=$(printf '%s' "$SCAN" | grep -v 'Felix Lullabye')
+if [ -f "$ALLOW_FILE" ]; then
+  while IFS= read -r phrase; do
+    phrase="${phrase%%$'\r'}"
+    [ -z "$phrase" ] && continue
+    case "$phrase" in \#*) continue ;; esac
+    FILTERED=$(printf '%s' "$FILTERED" | grep -vF -- "$phrase")
+  done < "$ALLOW_FILE"
+fi
+
+while IFS= read -r pat; do
+  pat="${pat%%$'\r'}"
+  [ -z "$pat" ] && continue
+  case "$pat" in \#*) continue ;; esac
+  if printf '%s' "$FILTERED" | grep -qiwE -- "$pat"; then
+    deny "added lines match household PII/secret pattern '$pat' (.claude/secret-patterns.local.txt)."
+  fi
+done < "$PAT_FILE"
+
+exit 0
