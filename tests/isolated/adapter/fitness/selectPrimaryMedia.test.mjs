@@ -28,6 +28,20 @@ function audioEvent(title, durationSeconds) {
   };
 }
 
+/**
+ * An event carrying a real played span (start/end), the signal the selector
+ * ranks on. `durationSeconds` is the item's NOMINAL length and is passed
+ * separately so a test can make the two disagree.
+ */
+function playedEvent(title, playedSeconds, nominalSeconds, dataOverrides = {}) {
+  const start = 1_700_000_000_000;
+  return videoEvent(title, nominalSeconds, {
+    start,
+    end: start + playedSeconds * 1000,
+    ...dataOverrides,
+  });
+}
+
 const defaultConfig = {
   warmup_labels: ['Warmup', 'Cooldown'],
   warmup_description_tags: ['[Warmup]', '[Cooldown]', '[Stretch]'],
@@ -295,5 +309,57 @@ describe('selectPrimaryMediaSummary (flat summary.media shape)', () => {
   test('returns null / handles empty input', () => {
     expect(selectPrimaryMediaSummary([])).toBeNull();
     expect(selectPrimaryMediaSummary(null)).toBeNull();
+  });
+});
+
+
+// Regression: media events written since ~2026-03 store a `durationSeconds`
+// that has been divided by 1000 twice (a 32-minute workout records `2`), so
+// ranking on that field drops real workouts out of the cascade entirely.
+// The played span (end - start) is on every event and cannot be corrupted the
+// same way — it is what the summary path has always used.
+// See docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
+describe('ranks on the played span, not the stored nominal duration', () => {
+  test('picks the longer PLAYED item when both nominal durations are corrupt', () => {
+    const events = [
+      playedEvent('Modified—Cardio Challenge', 1941, 2),  // 32m21s played, stored as 2
+      playedEvent('Mixed Terrain', 626, 1),               // 10m26s played, stored as 1
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Modified—Cardio Challenge');
+  });
+
+  test('a corrupt nominal duration no longer drops an item out of Tier 1', () => {
+    // Nominal 2s is under every floor in the cascade; the 33-minute played span
+    // must carry it into T1 regardless.
+    const events = [
+      playedEvent('Real Workout', 1980, 2),
+      playedEvent('Brief Demo', 45, 45),
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Real Workout');
+  });
+
+  test('still honours the warmup filter when ranking on played span', () => {
+    const events = [
+      playedEvent('Ten minute warm-up', 2400, 2),  // longest played, but a warmup
+      playedEvent('Real Workout', 1200, 2),
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Real Workout');
+  });
+
+  test('falls back to durationSeconds when an event carries no span', () => {
+    // selectPrimaryMediaSummary builds synthetic events with no start/end, so
+    // the fallback is a live path, not a legacy one.
+    const events = [videoEvent('Short', 400), videoEvent('Long', 900)];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Long');
+  });
+
+  test('prefers the span even when the nominal duration is larger', () => {
+    // A 90-minute game abandoned after 6 minutes must not outrank a full
+    // 20-minute workout.
+    const events = [
+      playedEvent('Abandoned Game', 360, 5400),
+      playedEvent('Full Workout', 1200, 1200),
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Full Workout');
   });
 });

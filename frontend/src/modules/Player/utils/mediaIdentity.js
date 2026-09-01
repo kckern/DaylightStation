@@ -33,30 +33,47 @@ export const resolveContentId = (metadata) => {
   return `${source}:${bareId}`;
 };
 
-const MIN_PLAUSIBLE_DURATION_SEC = 10;
-
-export const normalizeDuration = (...candidates) => {
-  const toSeconds = (v) => {
-    if (v == null) return null;
-    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    return n > 1000 ? Math.round(n / 1000) : Math.round(n);
-  };
-
-  // First pass: prefer candidates that look like real media durations (≥ 10s).
-  // This skips Plex metadata placeholders (e.g. season number "2") that can
-  // appear in media.duration before the HTML5 player reports the real value.
+/** First candidate that parses to a positive finite number, else null. */
+const firstPositive = (candidates) => {
   for (const candidate of candidates) {
-    const sec = toSeconds(candidate);
-    if (sec != null && sec >= MIN_PLAUSIBLE_DURATION_SEC) return sec;
-  }
-
-  // Fallback: accept any positive value (for genuinely short media)
-  for (const candidate of candidates) {
-    const sec = toSeconds(candidate);
-    if (sec != null) return sec;
+    if (candidate == null) continue;
+    const n = typeof candidate === 'string' ? parseFloat(candidate) : Number(candidate);
+    if (Number.isFinite(n) && n > 0) return n;
   }
   return null;
+};
+
+/**
+ * Duration in whole seconds, from candidates the caller declares to be SECONDS.
+ *
+ * The unit is the caller's to state, never ours to infer. A predecessor
+ * (`normalizeDuration`) guessed it from magnitude — treating anything over 1000
+ * as milliseconds — which was right while its inputs were Plex's native
+ * milliseconds and silently wrong from the moment they became seconds: every
+ * video longer than 16m40s was divided by 1000 a second time and stored as a
+ * 1-11 second duration. No threshold can separate "1941 seconds" from "1941
+ * milliseconds", so the guess is removed rather than retuned.
+ *
+ * See docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
+ *
+ * @param {...(number|string|null|undefined)} candidates - seconds, in preference order
+ * @returns {number|null}
+ */
+export const durationFromSeconds = (...candidates) => {
+  const n = firstPositive(candidates);
+  return n == null ? null : Math.round(n);
+};
+
+/**
+ * Duration in whole seconds, from candidates the caller declares to be
+ * MILLISECONDS (e.g. Plex's raw `Metadata.duration`).
+ *
+ * @param {...(number|string|null|undefined)} candidates - milliseconds, in preference order
+ * @returns {number|null}
+ */
+export const durationFromMs = (...candidates) => {
+  const n = firstPositive(candidates);
+  return n == null ? null : Math.round(n / 1000);
 };
 
 /**

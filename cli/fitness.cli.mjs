@@ -32,6 +32,7 @@ import * as dropParticipant from './lib/fitness/dropParticipant.mjs';
 import * as enrichPlex from './lib/fitness/enrichPlex.mjs';
 import * as backfillMediaMemory from './lib/fitness/backfillMediaMemory.mjs';
 import * as backfillPrimaryMedia from './lib/fitness/backfillPrimaryMedia.mjs';
+import * as repairMediaDuration from './lib/fitness/repairMediaDuration.mjs';
 
 import * as stravaCrud from './lib/fitness/stravaCrud.mjs';
 import * as matchHome from './lib/fitness/matchHome.mjs';
@@ -65,6 +66,7 @@ const GROUPS = {
       'enrich-plex': cmd(enrichPlex),
       'backfill-memory': cmd(backfillMediaMemory),
       'backfill-primary': cmd(backfillPrimaryMedia),
+      'repair-duration': cmd(repairMediaDuration),
     },
     aliases: new Set(),
   },
