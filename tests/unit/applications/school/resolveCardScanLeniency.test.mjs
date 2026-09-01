@@ -14,6 +14,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
 import { ResolveCardScan } from '#apps/school/documents/ResolveCardScan.mjs';
 import { RecordCardScanOutcome } from '#apps/school/documents/RecordCardScanOutcome.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
@@ -125,7 +126,10 @@ async function publishAndAllocate({
   const publisher = new PublishPrintDocument({ repository });
   const { id, rev } = await publisher.execute({ source });
   const published = await repository.getPublished(id, rev);
-  const renderer = new RenderPrintDocument({ repository, allocationStore });
+  // RenderPrintDocument requires the rendering collaborator now. These cases
+  // only need the ALLOCATION it produces, but the real factory is what the
+  // sibling suites use and it keeps the fake from drifting from the port.
+  const renderer = new RenderPrintDocument({ repository, allocationStore, rendering: createPrintDocumentRendering() });
   const result = await renderer.execute({ document: published, context });
   return { allocation: result.allocation };
 }
