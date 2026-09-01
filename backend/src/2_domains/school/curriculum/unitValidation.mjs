@@ -29,6 +29,15 @@ const REVIEW_STATES = ['draft', 'approved'];
 const DEFAULT_PASSING_PERCENT = 80;
 
 /**
+ * The named school day a lesson is meant for, when the course is built around
+ * one. This is metadata, never ordering — `sequence` orders a module, and a
+ * course whose lessons are not tied to weekdays simply omits it. It exists so a
+ * title can read as what it actually is (`Psalms 49, 50, 51, 61`) without
+ * losing the day the author wrote into the title alongside it.
+ */
+export const WEEKDAYS = Object.freeze(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+
+/**
  * How often a program unit is handed out. `once` is a standard standalone
  * unit that happens to draw its content from a program instead of a
  * bank/document/media reference; `daily` is re-offered every study day (see
@@ -312,6 +321,13 @@ export function validateUnit(raw, sets = {}) {
   if (isPresent(raw.description)) {
     if (!isNonEmptyString(raw.description)) errors.push('description must be a non-empty string when present');
     else description = raw.description;
+  }
+
+  let weekday;
+  if (isPresent(raw.weekday)) {
+    const named = typeof raw.weekday === 'string' ? raw.weekday.trim().toLowerCase() : null;
+    if (!named || !WEEKDAYS.includes(named)) errors.push(`weekday must be one of ${WEEKDAYS.join('|')}, got: ${raw.weekday}`);
+    else weekday = named;
   }
 
   // These values can be printed verbatim on a learner's worksheet card.
@@ -657,6 +673,7 @@ export function validateUnit(raw, sets = {}) {
       unitId: raw.unitId,
       title: raw.title,
       description,
+      ...(weekday ? { weekday } : {}),
       ...(reading ? { reading } : {}),
       ...(sourceTitle ? { sourceTitle } : {}),
       ...(studyResult.references ? { studyReferences: studyResult.references } : {}),
