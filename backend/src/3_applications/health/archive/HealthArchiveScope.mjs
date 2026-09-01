@@ -62,7 +62,7 @@ import {
   matchesExclusion,
 } from '#domains/health/policies/PrivacyExclusions.mjs';
 import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
-import { assertValidHealthUserId } from '#domains/health/policies/HealthUserId.mjs';
+import { assertValidHealthUserId, HEALTH_USER_ID_PATTERN } from '#domains/health/policies/HealthUserId.mjs';
 
 // Workout-source segments must look like a path-safe identifier — no slashes,
 // no regex metacharacters, no traversal sequences.
@@ -229,7 +229,7 @@ export class HealthArchiveScope {
   isReadable(absPath, userId) {
     // Soft validation — invalid input returns false rather than throwing.
     if (!absPath || typeof absPath !== 'string') return false;
-    if (!userId || typeof userId !== 'string' || !USER_ID_PATTERN.test(userId)) {
+    if (!userId || typeof userId !== 'string' || !HEALTH_USER_ID_PATTERN.test(userId)) {
       return false;
     }
 
