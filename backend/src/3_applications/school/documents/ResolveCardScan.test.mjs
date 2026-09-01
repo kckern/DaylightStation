@@ -389,6 +389,9 @@ describe('execute — CARD_ID_UNREADABLE (spec §5.4)', () => {
     expect(result).toEqual({
       error: { code: 'CARD_ID_UNREADABLE' },
       ambiguous: { pattern: '482?306', candidateCardIds: [] },
+      decode: {
+        pattern: '482?306', cardId: null, inferred: false, missingDigits: 1,
+      },
     });
   });
 
@@ -402,6 +405,9 @@ describe('execute — CARD_ID_UNREADABLE (spec §5.4)', () => {
     await expect(useCase.execute({ testId: '???????', answers: {} })).resolves.toEqual({
       error: { code: 'CARD_ID_UNREADABLE' },
       ambiguous: { pattern: '???????', candidateCardIds: [] },
+      decode: {
+        pattern: '???????', cardId: null, inferred: false, missingDigits: 7,
+      },
     });
   });
 });
@@ -480,6 +486,9 @@ describe('execute — best-effort ambiguous card-id resolution (household direct
     expect(result).toEqual({
       error: { code: 'CARD_ID_UNREADABLE' },
       ambiguous: { pattern: '444?444', candidateCardIds: ['4444444', '4447444'] },
+      decode: {
+        pattern: '444?444', cardId: null, inferred: false, missingDigits: 1,
+      },
     });
     expect(logger.calls.some((call) => call[0] === 'school.scan.card-id-unresolved')).toBe(true);
     // Never the "resolved" log — nothing was actually inferred.
@@ -506,6 +515,9 @@ describe('execute — best-effort ambiguous card-id resolution (household direct
     expect(result).toEqual({
       error: { code: 'CARD_ID_UNREADABLE' },
       ambiguous: { pattern: '444?444', candidateCardIds: [] },
+      decode: {
+        pattern: '444?444', cardId: null, inferred: false, missingDigits: 1,
+      },
     });
   });
 

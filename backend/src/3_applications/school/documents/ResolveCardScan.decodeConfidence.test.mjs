@@ -137,4 +137,17 @@ describe('decode confidence', () => {
       pattern: '84?????', cardId: '8424408', inferred: true, missingDigits: 5,
     });
   });
+
+  // TOTAL DECODE FAILURE (review fix, 2026-09-01) — the highest-value case
+  // this measurement exists to count: a `?`-bearing pattern that resolves to
+  // ZERO consistent known cards still carries a `decode` record. `cardId:
+  // null` records "no card resolved" honestly rather than inventing one.
+  it('records a failed decode (cardId: null) when no known card is consistent with the pattern', async () => {
+    const resolver = await makeResolver({ cards: ['8424408'] });
+    const result = await resolver.execute({ testId: '9?????9', answers: { 1: 'A' } });
+    expect(result.error).toEqual({ code: 'CARD_ID_UNREADABLE' });
+    expect(result.decode).toEqual({
+      pattern: '9?????9', cardId: null, inferred: false, missingDigits: 5,
+    });
+  });
 });
