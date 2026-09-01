@@ -149,6 +149,31 @@ describe('useAddressedBoardGame — filing a result', () => {
     expect(client.saveGame).toHaveBeenCalledTimes(1);
   });
 
+  it('holds the rematch grace until a playable render, then re-arms the alarm', async () => {
+    const client = makeClient();
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
+
+    act(() => { view.result.current.restart(); });
+
+    // The stale window is closed by a PLAYABLE RENDER, not by one refusal. A
+    // second commit that still carries the finished board is the same rematch,
+    // so it must stay at debug — counting refusals would assume the window is
+    // exactly one commit, which is only true of today's consumers.
+    view.rerender({ moves: [...FINISHED], result: 'win' });
+    expect(h.logger.debug.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(2);
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+
+    // Board cleared: the rematch is over, and a phantom arriving now in the
+    // SAME session is once again worth waking up for.
+    view.rerender({ moves: [], result: null });
+    view.rerender({ moves: [...FINISHED], result: 'loss' });
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+  });
+
   it('KNOWN LIMITATION: refuses a real match that commits two plies in one render', async () => {
     // The guard assumes ONE PLY PER COMMIT — see the contract at the refusal
     // site. Both current consumers hold to it, so this is unreachable today.
