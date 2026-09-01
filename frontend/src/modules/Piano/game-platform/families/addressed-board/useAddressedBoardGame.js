@@ -58,6 +58,9 @@ export function useAddressedBoardGame({
   // The session whose phantom result we have already complained about, so a
   // terminal transcript sitting across many renders is one warning, not a storm.
   const refusedRef = useRef(null);
+  // Set by a local restart, consumed by the next refusal: it tells the two
+  // cases apart. See the refusal site.
+  const justRestartedRef = useRef(false);
   const archiveContextRef = useRef({});
   const movesRef = useRef(moves);
   movesRef.current = moves;
@@ -106,7 +109,36 @@ export function useAddressedBoardGame({
   // has to be closed the instant it fires, and a re-render is too late.
   useEffect(() => {
     if (!result || savedRef.current) return;
+    // CONTRACT: ONE PLY PER COMMIT. A match played here is committed a ply at a
+    // time, so the render before its last leaves `playedThrough` exactly one
+    // short — that is the whole meaning of the `- 1`. Both current consumers
+    // hold to it: the engine's reply is dispatched from an effect keyed on
+    // committed state (`useOpponentReply`), so it lands in its own render. A
+    // game that ever commits a player move AND an engine reply in the same
+    // render breaks the assumption, and its legitimately-played results will be
+    // refused — and then its abandon archive refused too, so the match vanishes
+    // whole. There is a named test pinning that case in
+    // useAddressedBoardGame.result.test.jsx; read it before writing such a game.
+    // (A zero-ply terminal files rather than refuses: -1 < -1 is false. No
+    // consumer can reach it, and refusing an empty transcript buys nothing.)
     if (playedThroughRef.current < moves.length - 1) {
+      if (justRestartedRef.current) {
+        // THE ORDINARY REMATCH, not an incident. `restart()` mints a session id
+        // while the finished board is still mounted, so one commit carries the
+        // new session and the old terminal transcript. Routine, and it must not
+        // spend the warning below: an alarm that fires on every "Play again" is
+        // one everybody learns to scroll past, which is how the original bug
+        // stayed invisible for weeks.
+        justRestartedRef.current = false;
+        logger.debug('game.result-refused', {
+          gameId, gameSessionId, result, plies: moves.length,
+          playedThrough: playedThroughRef.current, reason: 'restart-stale-render',
+        });
+        return;
+      }
+      // Anything else means a transcript arrived from somewhere it should not
+      // have. That is the one worth waking up for.
+      //
       // A refusal is a judgement about the TRANSCRIPT in front of us on this
       // render, never about the session. `savedRef` means "this session's
       // result has been FILED", and a refusal files nothing, so it has no
@@ -160,6 +192,9 @@ export function useAddressedBoardGame({
     // played is not a game it can report on, finished OR abandoned — refusing
     // the result and then filing the same phantom as `completed: false` on the
     // way out just trades a duplicate for a junk row.
+    // (Strict, not `- 1`: no terminal ply is landing here. A component that
+    // unmounted in the same commit as its final ply would be refused, but a
+    // finished game sets `savedRef` and returns above before reaching this.)
     if (playedThroughRef.current < movesRef.current.length) {
       logger.warn('game.abandon-refused', {
         gameId, plies: movesRef.current.length,
@@ -217,6 +252,7 @@ export function useAddressedBoardGame({
     rankedRef.current = true;
     savedRef.current = false;
     playedThroughRef.current = -1;
+    justRestartedRef.current = true;
     setSeed((value) => (value + 1) >>> 0);
     const next = createLocalSessionId(gameId);
     setGameSessionId(next);
