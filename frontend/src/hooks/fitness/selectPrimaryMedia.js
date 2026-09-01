@@ -5,8 +5,8 @@
  * has any video item ends up with a primary:
  *
  *   T1: Real workouts (non-warmup, non-deprioritized) ≥ MIN_PRIMARY_MS (5 min).
- *       When ≥2 are also ≥10 min, picks the LAST one (chronologically latest);
- *       otherwise picks the longest. This is the main success path.
+ *       Longest wins, except that a chronologically later item within
+ *       NEAR_TIE_RATIO of the longest takes it. This is the main success path.
  *   T2: Real candidates ≥ MIN_T2_T3_MS (3 min). Longest. Drops the T1 floor
  *       but keeps a sub-floor — filters out brief demos that aren't real
  *       workouts (e.g. a 48-second strength demo).
@@ -27,6 +27,13 @@
  * }
  * @returns {Object|null} The selected primary media item
  */
+
+/**
+ * How close a later workout must be to the longest one to take primary from it.
+ * 0.85 keeps a back-to-back pair of ~10-minute videos on the later one while
+ * leaving a materially longer workout untouchable.
+ */
+export const NEAR_TIE_RATIO = 0.85;
 
 const BUILTIN_TITLE_PATTERNS = [
   /warm[\s-]?up/i,
@@ -105,21 +112,22 @@ export function selectPrimaryMedia(mediaItems, config) {
   // Step 3: Constants for the cascade.
   const MIN_PRIMARY_MS = 5 * 60 * 1000;
   const MIN_T2_T3_MS = 3 * 60 * 1000;  // 3-min floor for fallback tiers — keeps brief demos out of primary
-  const TEN_MIN_MS = 10 * 60 * 1000;
 
   // Step 4: Tier 1 — Eligible real workouts (≥ MIN_PRIMARY_MS, non-warmup, non-deprio).
-  // Positional bias when ≥2 are also ≥10 min — events are chronological so the LAST
-  // one is almost always the actual main workout, not a warmup that survived filtering.
+  // Longest wins. The one caveat is a bounded recency tiebreak: items are chronological,
+  // and when two workouts ran effectively the same length the later one is the main event
+  // (e.g. Upper Body 11m07s then Lower Body 10m14s). Bounded so it can never override a
+  // materially longer workout — the unbounded version used to title a 32-minute Insanity
+  // session after the 10-minute ride that followed it.
   const realCandidates = videos.filter(v => !isWarmup(v) && !isDeprioritized(v));
   const eligible = realCandidates.filter(v => (v.durationMs || 0) >= MIN_PRIMARY_MS);
   if (eligible.length > 0) {
-    const longSurvivors = eligible.filter(v => (v.durationMs || 0) >= TEN_MIN_MS);
-    if (longSurvivors.length >= 2) {
-      return longSurvivors[longSurvivors.length - 1];
-    }
-    return eligible.reduce((best, item) =>
+    const longest = eligible.reduce((best, item) =>
       (item.durationMs || 0) > (best.durationMs || 0) ? item : best
     );
+    const nearTieFloor = (longest.durationMs || 0) * NEAR_TIE_RATIO;
+    const nearTies = eligible.filter(v => (v.durationMs || 0) >= nearTieFloor);
+    return nearTies[nearTies.length - 1];
   }
 
   // Step 5: Tier 2 — real candidates ≥ MIN_T2_T3_MS (drops the T1 floor but keeps a
