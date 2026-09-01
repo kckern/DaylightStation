@@ -129,7 +129,7 @@ export function createFitnessApiRouter(config) {
 
   // Create ScreenshotService for session screenshot handling
   const screenshotService = new ScreenshotService({
-    screenshotStore: new FilesystemScreenshotStore({ sessionService: fitnessServices.sessionService }),
+    screenshotStore: new FilesystemScreenshotStore({ sessionService: fitnessServices.sessionService, logger }),
     logger
   });
 

@@ -104,6 +104,19 @@ export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
     }
   }
 
+  /**
+   * Post-recap cleanup. NEITHER branch hard-deletes: `archive` keeps the frames beside
+   * the session as `screenshots_archive`, and the default routes them through
+   * `moveToTrash` so the retention sweep is the only thing that ever hard-deletes.
+   *
+   * This used to `rm` the frames outright, which contradicted the documented
+   * capture -> recap -> `_trash` -> (7 days) delete lifecycle and made a partly-frozen
+   * recap impossible to re-render. If no trash root is configured there is nowhere
+   * safe to put them, so the frames are LEFT IN PLACE rather than destroyed.
+   *
+   * Logged at info, not debug — debug never reaches the log store, and the one step
+   * that moves the only copy of the raw frames must be visible after the fact.
+   */
   async cleanup(sessionId, householdId, { archive = false } = {}) {
     const paths = this.#datastore.getStoragePaths(sessionId, householdId);
     const screenshotsDir = paths?.screenshotsDir;
@@ -113,11 +126,17 @@ export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
         const dest = path.join(path.dirname(screenshotsDir), 'screenshots_archive');
         await this.#removeDir(dest);
         await this.#rename(screenshotsDir, dest);
-        this.#logger.debug?.('recap.snapshots.archived', { sessionId, dest });
-      } else {
-        await this.#removeDir(screenshotsDir);
-        this.#logger.debug?.('recap.snapshots.deleted', { sessionId, screenshotsDir });
+        this.#logger.info?.('recap.snapshots.archived', { sessionId, dest });
+        return;
       }
+      if (!paths?.trashDir) {
+        this.#logger.warn?.('recap.snapshots.cleanup_skipped', {
+          sessionId, reason: 'no-trash-dir', screenshotsDir
+        });
+        return;
+      }
+      const dest = await this.moveToTrash(sessionId, householdId);
+      this.#logger.info?.('recap.snapshots.trashed', { sessionId, dest });
     } catch (err) {
       throw new InfrastructureError(`recap snapshot cleanup failed: ${err.message}`, { code: 'CLEANUP_FAILED' });
     }

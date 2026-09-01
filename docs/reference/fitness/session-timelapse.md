@@ -48,6 +48,18 @@ Each upload is recorded against the session as a capture record carrying its rol
 timestamp, and filename. The raw image files land under the session's screenshots folder in
 the media tree; the capture records live in the session's persisted document.
 
+**A frame is never overwritten by a later one.** The frame index is a per-role counter that
+resets only when the session itself changes — pausing and resuming capture mid-session
+continues the count rather than replaying it. As a second guard, the store refuses to
+overwrite an existing frame with different image bytes: a colliding index is relocated to the
+next free slot and the collision is logged. Only a byte-identical re-send of the same frame
+overwrites in place, which keeps retries idempotent. Both guards matter because the manifest
+dedupes by filename, so a replayed index would otherwise evict the earlier frame's record as
+well as its file.
+
+Capture pauses while the tab is hidden, and each pause is logged — an unexplained hole in a
+recap is otherwise indistinguishable from a clean run.
+
 ---
 
 ## Capture → store → settle → recap → encode
@@ -144,6 +156,19 @@ trigger.
 Raw frames are only ever cleaned up **after the recap MP4 is confirmed on disk** (encoded and
 non-empty). If encoding produced nothing, the render fails and the frames are left untouched
 for a retry — the frames are never removed on the strength of an unconfirmed video.
+
+**Coverage has the final say over cleanup.** Before rendering, the mapper measures how well
+the stored captures actually cover the output timeline per role: how many distinct captures
+the render will use, the longest run of output frames served by a single capture, the largest
+gap between captures, and the share of frames sitting near a real capture. That measurement is
+logged every run (at warn when it comes out degraded), because a recap can otherwise encode
+"successfully" with a pane frozen on one held image for most of its length — the render itself
+cannot tell the difference. When coverage is degraded the recap is worth re-rendering, so the
+raw frames are kept regardless of configuration: a hard-delete request is downgraded to an
+archive and the downgrade is logged.
+
+Neither cleanup branch hard-deletes. If no trash root is configured there is nowhere safe to
+put the frames, so they are left in place rather than destroyed.
 
 Cleanup is a **soft delete**: the session's `screenshots/` dir is **moved into a sibling
 `_trash` root** (`media/apps/fitness/_trash/<date>/<id>/`), never hard-deleted inline. The MP4

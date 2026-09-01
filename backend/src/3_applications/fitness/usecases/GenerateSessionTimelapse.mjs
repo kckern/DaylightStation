@@ -13,6 +13,13 @@ export { buildSlug, participantSlug, durationMinutes };
 const STALE_PROCESSING_MS = 30 * 60 * 1000;
 
 /**
+ * Fraction of output frames that must sit near a real capture for the recap to count
+ * as cleanly covered. Below this, a pane is visibly frozen for long stretches, the
+ * recap is worth re-rendering, and the raw frames must survive cleanup.
+ */
+const MIN_CLEAN_COVERAGE = 0.8;
+
+/**
  * Use case: render a session's silent time-lapse recap.
  *
  * Orchestrates pure domain mapping + rendering with adapter-backed I/O (snapshot
@@ -106,6 +113,22 @@ export class GenerateSessionTimelapse {
       return { status: 'skipped' };
     }
 
+    // How much of the output timeline the captures actually cover. A recap can render
+    // "successfully" while a pane sits frozen on one held frame for most of its length
+    // (session 20260831132151 did exactly that for ~57% of a 62-minute recap), so
+    // measure it up front and let it gate the destructive cleanup below.
+    const coverage = frameMapper.describeCoverage?.(data, { speedup, outputFps: fps }) || null;
+    const worstCoverage = coverage
+      ? Math.min(coverage.camera.coverageRatio, coverage.player.captures ? coverage.player.coverageRatio : 1)
+      : null;
+    if (coverage) {
+      const degraded = worstCoverage < MIN_CLEAN_COVERAGE;
+      logger[degraded ? 'warn' : 'info']?.('fitness.timelapse.coverage', {
+        sessionId, frames: coverage.frameCount, degraded,
+        camera: coverage.camera, player: coverage.player
+      });
+    }
+
     session.markTimelapseProcessing(Date.now());
     await sessionDatastore.save(session, householdId);
     logger.info?.('fitness.timelapse.started', {
@@ -196,13 +219,25 @@ export class GenerateSessionTimelapse {
       // Default to ARCHIVING the source frames (screenshots -> screenshots_archive)
       // so a recap can always be regenerated later; set `archive_frames: false` to
       // hard-delete (saves disk, but the recap can never be re-rendered).
-      const archiveFrames = config.archive_frames !== false;
+      //
+      // The manifest gets the final say: when coverage came out degraded, the recap we
+      // just wrote is partly frozen and someone will want to re-render it from the raw
+      // frames. Never hard-delete those — fall back to archiving regardless of config.
+      const coverageDegraded = worstCoverage != null && worstCoverage < MIN_CLEAN_COVERAGE;
+      const archiveFrames = config.archive_frames !== false || coverageDegraded;
+      if (coverageDegraded && config.archive_frames === false) {
+        logger.warn?.('fitness.timelapse.cleanup_downgraded', {
+          sessionId, reason: 'degraded-coverage', coverage: worstCoverage,
+          cameraLongestHeldSeconds: coverage?.camera?.longestHeldSeconds ?? null
+        });
+      }
       await snapshotStore.cleanup(sessionId, householdId, { archive: archiveFrames });
       await artifactStore.discardWorkspace(workspace);
       logger.info?.('fitness.timelapse.ready', {
         sessionId, videoPath: session.timelapse.videoPath, frames: written,
         durationSeconds, fps, sizeBytes, encodeMs, totalMs: Date.now() - startedAt,
-        archivedFrames: archiveFrames
+        archivedFrames: archiveFrames,
+        coverage: worstCoverage, coverageDegraded
       });
       return { status: 'ready', ...session.timelapse };
     } catch (err) {

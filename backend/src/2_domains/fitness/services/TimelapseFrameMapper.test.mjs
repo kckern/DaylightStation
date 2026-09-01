@@ -145,3 +145,42 @@ test('unresolved media -> playerContentId null but frames still built', () => {
   assert.equal(frames[5].playerContentId, null);
   assert.equal(frames.length, 60);
 });
+
+// Session 20260831132151 rendered a 62-minute recap whose camera pane was frozen for
+// ~57% of its length: the manifest held 1365 frames for 3741s, with an 828s hole at
+// the start and a 955s hole mid-session. nearestByTimestamp has no maximum distance,
+// so every frame in a hole snapped to the same capture and the freeze was invisible.
+// describeCoverage is what makes it visible.
+test('describeCoverage reports held frames and gaps per role', () => {
+  const mapper = new TimelapseFrameMapper();
+  // fakeSession: 60s, camera captures at +0s and +40s, one player capture at +48s.
+  // At 10x/10fps each output frame is one real second apart -> 60 frames.
+  const cov = mapper.describeCoverage(fakeSession(), { speedup: 10, outputFps: 10, toleranceSec: 10 });
+
+  assert.equal(cov.frameCount, 60);
+  assert.equal(cov.camera.captures, 2);
+  // Frames 21..59 all resolve to the +40s capture: a 39-frame held run.
+  assert.equal(cov.camera.longestHeldFrames, 39);
+  assert.ok(cov.camera.staleFrames > 0, 'frames beyond tolerance are counted');
+  assert.ok(cov.camera.coverageRatio < 1, 'coverage is not clean');
+  // The single player capture serves every frame — a fully frozen pane. Only the
+  // frames within tolerance of its +48s timestamp count as covered.
+  assert.equal(cov.player.captures, 1);
+  assert.equal(cov.player.longestHeldFrames, 60);
+  assert.equal(cov.player.distinctCapturesUsed, 1);
+  assert.ok(cov.player.coverageRatio < 0.5, 'a single held capture cannot cover the run');
+});
+
+test('describeCoverage reports clean coverage when captures track the timeline', () => {
+  const mapper = new TimelapseFrameMapper();
+  const s = fakeSession();
+  // One capture per real second for the whole 60s session.
+  s.snapshots.captures = Array.from({ length: 61 }, (_, i) => ({
+    index: i, timestamp: 1000_000 + i * 1000,
+    path: `a/${i}.jpg`, filename: `${i}.jpg`, role: 'camera'
+  }));
+  const cov = mapper.describeCoverage(s, { speedup: 10, outputFps: 10, toleranceSec: 10 });
+  assert.equal(cov.camera.staleFrames, 0);
+  assert.equal(cov.camera.longestHeldFrames, 1);
+  assert.equal(cov.camera.coverageRatio, 1);
+});
