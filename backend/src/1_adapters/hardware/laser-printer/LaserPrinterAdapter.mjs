@@ -129,11 +129,14 @@
  */
 import { createConnection } from 'net';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { OPS, encodeRequest, baseAttrs, printJobAttrs, decodeResponse } from './ipp.mjs';
+import {
+  OPS, encodeRequest, baseAttrs, printJobAttrs, jobAttrsRequest, decodeResponse,
+} from './ipp.mjs';
 import {
   negotiatePrintPlan, chooseJobAttributes, DEFAULT_MEDIA, JOB_ATTRIBUTE_TRIM_ORDER,
 } from './negotiate.mjs';
 import { rasterizePdf } from './rasterize.mjs';
+import { classifyJobState } from './jobState.mjs';
 
 /** IPP printer-state enum (RFC 8011 §5.4.11). */
 const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
@@ -584,6 +587,34 @@ export class LaserPrinterAdapter {
       name: attrs['printer-name']?.[0] ?? null,
       model: attrs['printer-make-and-model']?.[0] ?? null,
       accepting: attrs['printer-is-accepting-jobs']?.[0] ?? null,
+    };
+  }
+
+  /**
+   * What the printer says about one job. Read-only; never throws into a print
+   * path — an unreadable answer is `classification: 'unknown'`, because "the
+   * printer stopped answering" is not "the sheet failed to print".
+   *
+   * @param {number} jobId
+   */
+  async getJobState(jobId) {
+    const { ok, attrs } = await this.#ipp(
+      OPS.GET_JOB_ATTRIBUTES,
+      jobAttrsRequest(this.printerUri, { user: 'daylight', jobId }),
+      null,
+      this.#timeout,
+    );
+    // Every attribute decodes as an array (ipp.mjs:219).
+    const state = ok && Number.isInteger(attrs?.['job-state']?.[0])
+      ? attrs['job-state'][0]
+      : null;
+    return {
+      state,
+      classification: classifyJobState(state),
+      stateReasons: attrs?.['job-state-reasons'] ?? [],
+      impressionsCompleted: Number.isInteger(attrs?.['job-impressions-completed']?.[0])
+        ? attrs['job-impressions-completed'][0]
+        : null,
     };
   }
 
