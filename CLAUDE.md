@@ -401,9 +401,19 @@ curl -s https://logs.kckern.net/select/logsql/query \
 curl -s https://logs.kckern.net/select/logsql/query \
   -d 'query=_time:24h | stats by ("context.app") count() as n | sort by (n desc)'
 
+# Backend event-loop stalls — is the process blocking, or is it the network?
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query="system.event-loop.lag" AND _time:24h' -d 'limit=100'
+
 # Live tail (like tail -f)
 curl -sN https://logs.kckern.net/select/logsql/tail -d 'query=level:error'
 ```
+
+`system.event-loop.lag` is emitted once per 60s window (info; warn at/above 1s)
+with `maxMs`/`p99Ms`/`p50Ms`/`windowMs`. Quiet windows are logged too, so a gap
+means the process was down. The idle floor is the histogram resolution — a
+healthy row reads ~21ms, not 0. It answers backend-stall vs network-stall; it
+cannot say what blocked the loop.
 
 If the hostname is unreachable (off-network), go in over SSH instead:
 `ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query -d 'query=...'"`

@@ -317,7 +317,13 @@ export function useMediaResilience({
       // A user-initiated exhaustion retry must escalate to a real React remount,
       // which mints a fresh transcode session (plexClientSession bumps with the
       // remount nonce). refreshUrl stays true so any in-place fallback still refreshes.
-      onReload({ reason: 'user-retry-exhausted', meta, waitKey, refreshUrl: true, forceRemount: true, seekToIntentMs: seekMs });
+      // userInitiated: a HUMAN asked for this. Distinct from forceRemount, which
+      // only says "an in-place hardReset won't do". The stall-jolt ladder sets
+      // forceRemount automatically (STALL_JOLT_LADDER rung 1), so consumers must
+      // not read it as consent — this is the only path a viewer drives, and it is
+      // what tells the Player not to second-guess the request when playback looks
+      // healthy mid-backoff.
+      onReload({ reason: 'user-retry-exhausted', meta, waitKey, refreshUrl: true, forceRemount: true, userInitiated: true, seekToIntentMs: seekMs });
     }
   }, [actions, consumeTargetTimeSeconds, waitKeyFields, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart]);
 

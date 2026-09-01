@@ -449,6 +449,32 @@ export class FitnessSession {
           }
         }
 
+        // ORDER MATTERS — sync the zone store BEFORE feeding TreasureBox.
+        // Both blocks open on the same packet (the first one past the startup
+        // discard window), so whichever runs first defines which zone table
+        // scores that packet. With the box first, resolveZone found no profile
+        // and fell back to GLOBAL thresholds for a rider whose personal ones
+        // are higher — a spurious ring on the first interval (2026-09-01).
+        //
+        // Sync also feeds governance: getPresentParticipantIds() reads only
+        // DeviceManager/UserManager (no TreasureBox), user.updateFromDevice()
+        // has already run above, and notifyZoneChange only arms a 100ms
+        // debounce — so nothing here depends on the box having run.
+        if (!startupDiscarded && this.zoneProfileStore && deviceData.type === 'heart_rate') {
+          const allUsers = this.userManager.getAllUsers();
+          // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
+          const presentIds = this._participantRoster?.getPresentParticipantIds();
+          const usersForZones = presentIds
+            ? allUsers.filter(u => presentIds.has(u.id))
+            : allUsers;
+          const changed = this._syncZoneProfiles(usersForZones);
+          // No cache invalidation to push here: TreasureBox polls the store's
+          // zone-config revision on read (ZoneProfileStore.getZoneConfigRevision).
+          if (changed && this.governanceEngine) {
+            this.governanceEngine.notifyZoneChange(resolvedSlug, {});
+          }
+        }
+
         // Feed TreasureBox if HR - Phase 2: Use entity-based routing
         if (!startupDiscarded && this.treasureBox && deviceData.type === 'heart_rate') {
           // Check ledger for current occupant (guest may have taken over)
@@ -460,25 +486,6 @@ export class FitnessSession {
             profileId: currentOccupantId,
             fallbackUserId: currentOccupantId
           });
-        }
-
-        // Sync ZoneProfileStore immediately so governance sees fresh zone data.
-        // Use device-present presence (getPresentParticipantIds) not getActive()
-        // (ActivityMonitor-verified): ActivityMonitor is tick-driven (5s intervals), so between
-        // ticks getActive() returns empty, causing ZoneProfileStore to have zero profiles and
-        // governance to ghost-filter all participants. Presence reflects DeviceManager state,
-        // which is updated immediately.
-        if (!startupDiscarded && this.zoneProfileStore && deviceData.type === 'heart_rate') {
-          const allUsers = this.userManager.getAllUsers();
-          // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
-          const presentIds = this._participantRoster?.getPresentParticipantIds();
-          const usersForZones = presentIds
-            ? allUsers.filter(u => presentIds.has(u.id))
-            : allUsers;
-          const changed = this._syncZoneProfiles(usersForZones);
-          if (changed && this.governanceEngine) {
-            this.governanceEngine.notifyZoneChange(resolvedSlug, {});
-          }
         }
       }
       const ledger = this.userManager?.assignmentLedger;

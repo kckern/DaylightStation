@@ -16,6 +16,14 @@ export class FitnessTreasureBox {
     this.sessionRef = sessionRef; // reference to owning FitnessSession
     this._log('constructor', { hasSessionRef: !!sessionRef });
     this._zoneProfileStore = null; // ZoneProfileStore reference for committed zone lookup
+    this._zoneProfileOverrideCache = new Map(); // userId -> threshold map (never caches a miss)
+    this._zoneOverrideCacheRev = null; // ZoneProfileStore zone-config revision the cache was built at
+    // userIds already warned about a missing profile. Deliberately NOT cleared
+    // when the threshold cache is dropped — that happens on any zone-config
+    // change, so clearing this alongside it would restore the per-sample warn
+    // flood the guard exists to prevent. Cleared only at session boundaries
+    // (setZoneProfileStore / reset).
+    this._zoneOverrideMissLogged = new Set();
     this.activityMonitor = null;  // ActivityMonitor for checking if user is active
     this.ringTimeUnitMs = 5000; // default; will be overridden by configuration injection
     this.globalZones = []; // array of {id,name,min,color,rings}
@@ -68,6 +76,8 @@ export class FitnessTreasureBox {
   setZoneProfileStore(store) {
     this._zoneProfileStore = store;
     this._zoneProfileOverrideCache = new Map();
+    this._zoneOverrideCacheRev = null;
+    this._zoneOverrideMissLogged = new Set();
   }
 
   setMutationCallback(cb) { this._mutationCb = typeof cb === 'function' ? cb : null; }
@@ -180,6 +190,8 @@ export class FitnessTreasureBox {
     this._deviceEntityMap.clear();
     this.usersConfigOverrides.clear();
     this._zoneProfileOverrideCache = new Map();
+    this._zoneOverrideCacheRev = null;
+    this._zoneOverrideMissLogged = new Set();
     this._globalZonesDescending = [];
 
     // Note: Keep globalZones, ringTimeUnitMs, callbacks - these are configuration, not session state
@@ -473,10 +485,22 @@ export class FitnessTreasureBox {
     // Build effective thresholds: priority is usersConfigOverrides > ZoneProfileStore > global
     let overrides = this.usersConfigOverrides.get(userId);
 
-    // If no manual overrides, pull from ZoneProfileStore (per-user custom zones)
-    // Cache the converted override map to avoid deep-cloning the profile on every HR sample
+    // If no manual overrides, pull from ZoneProfileStore (per-user custom zones).
+    // Cache the converted map to avoid deep-cloning the profile on every HR
+    // sample — but NEVER cache a miss. The store builds profiles lazily, so a
+    // read can precede the sync that would have populated it (2026-09-01: the
+    // caller's own ordering did exactly that, see FitnessSession's ORDER
+    // MATTERS note); a cached null meant global thresholds for the rest of the
+    // session.
     if (!overrides && this._zoneProfileStore) {
-      if (!this._zoneProfileOverrideCache) this._zoneProfileOverrideCache = new Map();
+      // Pull the store's threshold revision rather than waiting to be told:
+      // it moves only when some user's zoneConfig actually changes, and no
+      // call site can forget to invalidate.
+      const rev = this._zoneProfileStore.getZoneConfigRevision?.() ?? 0;
+      if (rev !== this._zoneOverrideCacheRev) {
+        this._zoneProfileOverrideCache.clear();
+        this._zoneOverrideCacheRev = rev;
+      }
       if (this._zoneProfileOverrideCache.has(userId)) {
         overrides = this._zoneProfileOverrideCache.get(userId);
       } else {
@@ -490,8 +514,19 @@ export class FitnessTreasureBox {
               overrides[key] = z.min;
             }
           }
+          this._zoneProfileOverrideCache.set(userId, overrides);
+        } else if (!this._zoneOverrideMissLogged.has(userId)) {
+          // A miss means the store has no profile for this user AT ALL — i.e.
+          // they never reached syncFromUsers. It is not the guest case: a
+          // present, synced guest gets a profile carrying the base zone config
+          // and resolves normally. FitnessSession syncs before it feeds us, so
+          // on a healthy session this never fires; if it does, that user is
+          // being scored on global thresholds and someone should know.
+          // Warned ONCE per user — a miss recurs on every HR sample (~1/s),
+          // which would flood the log store and bury the signal.
+          this._zoneOverrideMissLogged.add(userId);
+          this._log('zone_override_miss', { userId }, 'warn');
         }
-        this._zoneProfileOverrideCache.set(userId, overrides || null);
       }
     }
 

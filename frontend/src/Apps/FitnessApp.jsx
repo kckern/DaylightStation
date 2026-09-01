@@ -27,6 +27,7 @@ import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/player/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
 import { useFitnessLaunch } from '../hooks/fitness/useFitnessLaunch.js';
+import { computeVideoFpsSample } from '../hooks/fitness/videoFpsSample.js';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ScreenDataProvider } from '../screen-framework/data/ScreenDataProvider.jsx';
 import { ScreenProvider } from '../screen-framework/providers/ScreenProvider.jsx';
@@ -164,7 +165,7 @@ const FitnessApp = () => {
     let sampleCount = 0;
     let baselineMemory = null;
     let baselineTimers = null;
-    let lastFpsCheck = { timestamp: 0, totalFrames: 0, droppedFrames: 0 };
+    let lastFpsCheck = null; // previous {totalFrames, droppedFrames, currentTime, timestamp}, null until the first sample
     let currentIntervalId = null;
     let heapSamples = []; // For growth rate calculation
 
@@ -203,36 +204,21 @@ const FitnessApp = () => {
       const quality = video.getVideoPlaybackQuality?.();
       if (!quality) return null;
 
-      const now = performance.now();
-      const elapsed = (now - lastFpsCheck.timestamp) / 1000;
-      const framesDelta = quality.totalVideoFrames - lastFpsCheck.totalFrames;
-      const droppedDelta = quality.droppedVideoFrames - lastFpsCheck.droppedFrames;
-
-      // Guard: video element was reloaded/reset — frame counter went backwards
-      // Reset tracking and skip this sample
-      if (framesDelta < 0) {
-        lastFpsCheck = {
-          timestamp: now,
-          totalFrames: quality.totalVideoFrames,
-          droppedFrames: quality.droppedVideoFrames
-        };
-        return null;
-      }
-
-      // Calculate FPS only if we have a previous sample
-      let fps = null;
-      let dropRate = null;
-      if (lastFpsCheck.timestamp > 0 && elapsed > 0) {
-        fps = Math.round(framesDelta / elapsed * 10) / 10;
-        dropRate = framesDelta > 0 ? Math.round(droppedDelta / framesDelta * 1000) / 10 : 0;
-      }
-
-      // Update last check
-      lastFpsCheck = {
-        timestamp: now,
+      // fps is frames / MEDIA seconds, not frames / wall clock: a video that
+      // started mid-window would otherwise read low once and trip a false
+      // fitness.video_fps_degraded (2026-09-01, fps=14.5 dropRate=0). A forward
+      // seek is the one case media time gets wrong, and is screened separately.
+      const nowSample = {
         totalFrames: quality.totalVideoFrames,
-        droppedFrames: quality.droppedVideoFrames
+        droppedFrames: quality.droppedVideoFrames,
+        currentTime: Number(video.currentTime) || 0,
+        timestamp: performance.now(),
+        // Lets the seek guard tell "media time legitimately ran fast because we
+        // are playing at 2x" from "the user skipped forward".
+        playbackRate: Number(video.playbackRate) || 1
       };
+      const { fps, dropRate } = computeVideoFpsSample(lastFpsCheck, nowSample);
+      lastFpsCheck = nowSample;
 
       return {
         fps,

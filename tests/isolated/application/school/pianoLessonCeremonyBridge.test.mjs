@@ -43,6 +43,7 @@ function build({
     completedLessons: [completion(), completion('plex:9002', 'Unit 3 Lesson 8')],
   },
   hookResult = { ok: true },
+  logger = { warn() {}, info() {} },
 } = {}) {
   const bus = fakeBus();
   const fired = [];
@@ -57,10 +58,10 @@ function build({
     resolveStudent: async (id) => `${id.toUpperCase()}!`,
     timezone: 'America/Los_Angeles',
     clock: () => new Date('2026-08-25T20:00:00Z'),
-    logger: { warn() {}, info() {} },
+    logger,
   });
   bridge.start();
-  return { bus, bridge, fired, evidence };
+  return { bus, bridge, fired, evidence, logger };
 }
 
 describe('PianoLessonCeremonyBridge', () => {
@@ -197,6 +198,44 @@ describe('PianoLessonCeremonyBridge', () => {
     await c.bus.emit('piano.lesson.completed', { userId: 'kckern', title: 'noodling' });
     expect(c.fired).toHaveLength(0);
     expect(c.bus.sent).toHaveLength(0);
+  });
+
+  it('LOGS the enrolled learner whose completion belonged to no assigned course', async () => {
+    // 2026-09-01: a learner enrolled in Reading Music played a Hot Cross Buns
+    // lesson from a course he was not enrolled in. Ignoring it is correct — it
+    // discharges nothing — but the bridge returned in silence, so the only
+    // trace anywhere was a `completed=true` row identical to a satisfying one.
+    const info = [];
+    const c = build({ logger: { warn() {}, info: (event, data) => info.push({ event, data }) } });
+    await c.bus.emit('piano.lesson.completed', {
+      userId: 'learner-c', plexId: 'plex:694782', title: 'Lesson 9 | Hot Cross Buns: Part 2',
+    });
+    expect(info).toContainEqual({
+      event: 'school.piano-ceremony.ignored',
+      data: {
+        learnerId: 'learner-c',
+        plexId: 'plex:694782',
+        title: 'Lesson 9 | Hot Cross Buns: Part 2',
+        reason: 'not-in-enrolled-course',
+        // Derived from the enrollment fixture, never retyped: the whole point
+        // of the line is naming which courses COULD have been discharged.
+        enrolledCourseIds: ENROLLED.map((row) => row.courseId ?? row.corpusId ?? null),
+      },
+    });
+    // Still ignored: nothing announced, no hook, no evidence written.
+    expect(c.bus.sent).toHaveLength(0);
+    expect(c.fired).toHaveLength(0);
+    expect(c.evidence).toHaveLength(0);
+  });
+
+  it('says nothing at all for a player with no piano enrollment — most piano is not schoolwork', async () => {
+    const info = [];
+    const c = build({
+      programs: [{ programId: 'flashcards', deckId: 'x' }],
+      logger: { warn() {}, info: (event, data) => info.push({ event, data }) },
+    });
+    await c.bus.emit('piano.lesson.completed', { userId: 'kckern', plexId: 'plex:694782' });
+    expect(info).toHaveLength(0);
   });
 
   it('stays silent when the completion did not satisfy the day', async () => {
