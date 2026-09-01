@@ -32,15 +32,20 @@ const int32Value = (n) => {
  * group naming `document-format-supported: application/pdf` (so printPdf's
  * capability negotiation picks the direct-PDF container and never needs to
  * rasterize — no ghostscript in this test), followed by a job-attributes
- * group carrying `job-id: 42`. This same response body is returned for
- * every #ipp() round trip printPdf makes (Get-Printer-Attributes,
- * Validate-Job, Print-Job) — all three read out fine from it: capabilities
- * negotiation reads document-format-supported, Validate-Job only cares
- * about the status code (ok), and Print-Job reads job-id.
+ * group carrying `job-id: 42` and a terminal `job-state: 9` (completed). This
+ * same response body is returned for every #ipp() round trip printPdf makes
+ * (Get-Printer-Attributes, Validate-Job, Print-Job, and now the
+ * Get-Job-Attributes poll `printPdf` runs via `awaitJobOutcome` after
+ * Print-Job) — all of them read out fine from it: capabilities negotiation
+ * reads document-format-supported, Validate-Job only cares about the status
+ * code (ok), Print-Job reads job-id, and the outcome poll reads job-id 42
+ * back with job-state 9 so it resolves `completed` on its very first poll —
+ * without the terminal state here, that poll would retry for real wall-clock
+ * time up to its default 30s deadline in this test.
  *
  * Group tag 0x04 = printer-attributes, 0x02 = job-attributes, 0x49 =
- * mime-type value tag, 0x21 = integer value tag, 0x03 = end-of-attributes
- * (RFC 8010 §3.5).
+ * mime-type value tag, 0x21 = integer value tag, 0x23 = enum value tag,
+ * 0x03 = end-of-attributes (RFC 8010 §3.5).
  */
 function fakeIppResponseBody() {
   return Buffer.concat([
@@ -49,6 +54,7 @@ function fakeIppResponseBody() {
     attr(0x49, 'document-format-supported', Buffer.from('application/pdf', 'utf8')),
     Buffer.from([0x02]), // job-attributes group
     attr(0x21, 'job-id', int32Value(42)),
+    attr(0x23, 'job-state', int32Value(9)), // completed — see comment above
     Buffer.from([0x03]), // end-of-attributes
   ]);
 }
