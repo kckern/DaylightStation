@@ -66,7 +66,6 @@ describe('useAddressedBoardGame — filing a result', () => {
 
     view.rerender({ moves: FINISHED, result: 'loss' });
 
-    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
     expect(client.saveGame).not.toHaveBeenCalled();
     expect(client.archiveGame).not.toHaveBeenCalled();
   });
@@ -89,7 +88,7 @@ describe('useAddressedBoardGame — filing a result', () => {
       gameId: 'connect-four',
       result: 'loss',
       plies: FINISHED.length,
-      playedThrough: 0,
+      watchedPlies: 0,
       reason: 'not-played-here',
     });
     // The session it refused is named, so the log can be tied to a real match.
@@ -127,58 +126,77 @@ describe('useAddressedBoardGame — filing a result', () => {
 
     expect(client.saveGame).not.toHaveBeenCalled();
     expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
+
+    // ...but a genuinely DIFFERENT phantom is not the same render storm.
+    view.rerender({ moves: FINISHED.slice(0, 5), result: 'loss' });
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(2);
   });
 
-  it('logs the ordinary rematch at DEBUG — the alarm is not for routine play', async () => {
+  it('says NOTHING about an ordinary rematch — every refusal is an incident', async () => {
     const client = makeClient();
     const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
     await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
     view.rerender({ moves: FINISHED, result: 'win' });
     await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
 
-    // "Play again" on the non-gated path: restart mints a session id while the
-    // finished board is still mounted, so the next commit carries the new
-    // session and the old terminal transcript. Real, routine, and refused — but
-    // an alarm that fires on every rematch is one nobody reads.
+    // "Play again" leaves the finished board mounted for however many commits
+    // the authority reset takes. A restart only takes effect at the new match's
+    // first playable render, so those are ordinary already-filed repeats and
+    // never reach the refusal — an alarm that fires on every rematch is one
+    // everybody learns to scroll past.
     act(() => { view.result.current.restart(); });
-
-    const debugs = h.logger.debug.mock.calls.filter(([event]) => event === 'game.result-refused');
-    expect(debugs).toHaveLength(1);
-    expect(debugs[0][1]).toMatchObject({ reason: 'restart-stale-render', plies: FINISHED.length });
-    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
-    expect(client.saveGame).toHaveBeenCalledTimes(1);
-  });
-
-  it('holds the rematch grace until a playable render, then re-arms the alarm', async () => {
-    const client = makeClient();
-    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
-    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
-    view.rerender({ moves: FINISHED, result: 'win' });
-    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
-
-    act(() => { view.result.current.restart(); });
-
-    // The stale window is closed by a PLAYABLE RENDER, not by one refusal. A
-    // second commit that still carries the finished board is the same rematch,
-    // so it must stay at debug — counting refusals would assume the window is
-    // exactly one commit, which is only true of today's consumers.
     view.rerender({ moves: [...FINISHED], result: 'win' });
-    expect(h.logger.debug.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(2);
-    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+    view.rerender({ moves: [...FINISHED], result: 'win' });
 
-    // Board cleared: the rematch is over, and a phantom arriving now in the
-    // SAME session is once again worth waking up for.
-    view.rerender({ moves: [], result: null });
-    view.rerender({ moves: [...FINISHED], result: 'loss' });
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+    expect(h.logger.debug.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+
+    // And walking out mid-window does not re-file the match it already filed.
+    view.unmount();
+    expect(client.archiveGame).toHaveBeenCalledTimes(1);
+    expect(h.logger.warn.mock.calls.map(([event]) => event)).not.toContain('game.abandon-refused');
+  });
+
+  it('a refusal does not spend the one-shot — a game played after it still files', async () => {
+    // The exact regression that shipped and was reverted: a refusal files
+    // nothing, so it must not close the door on the next real game.
+    const client = makeClient();
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
+
+    act(() => { view.result.current.restart(); });
+    view.rerender({ moves: [], result: null });              // the restart lands
+    view.rerender({ moves: [...FINISHED], result: 'loss' }); // a phantom
     expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
     expect(client.saveGame).toHaveBeenCalledTimes(1);
+
+    view.rerender({ moves: [], result: null });
+    view.rerender({ moves: [0, 1], result: null });
+    view.rerender({ moves: [0, 1, 0], result: 'win' });
+
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(2));
+    expect(client.saveGame.mock.calls[1][1]).toMatchObject({ result: 'win', moves: [0, 1, 0] });
+  });
+
+  it('refuses a terminal transcript it never once saw playable', async () => {
+    // Mounted already finished, with nothing to have watched. Said literally
+    // rather than left to fall out of the arithmetic, so the save path and the
+    // abandon guard agree about junk.
+    const client = makeClient();
+    renderGame(client, { moves: [], result: 'loss' });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+
+    expect(client.saveGame).not.toHaveBeenCalled();
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
   });
 
   it('KNOWN LIMITATION: refuses a real match that commits two plies in one render', async () => {
-    // The guard assumes ONE PLY PER COMMIT — see the contract at the refusal
-    // site. Both current consumers hold to it, so this is unreachable today.
-    // If you are here because your new game's results vanished: this is why.
-    // The match is lost whole, since the abandon archive is refused too.
+    // If you are here because your new game's results vanished, this is why:
+    // the guard assumes one ply per commit, and the match is lost whole,
+    // because the abandon archive is refused too.
     const client = makeClient();
     const view = renderGame(client, { moves: [0, 1, 0, 1], result: null });
     await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
