@@ -7,6 +7,18 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
+
+// Same seam the sibling game-platform tests use (see GameBoundary.test.jsx):
+// the hook takes a `.child()` of the default export, so one object answers both.
+const h = vi.hoisted(() => {
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  logger.child = () => logger;
+  return { logger };
+});
+vi.mock('../../../../../lib/logging/Logger.js', () => ({
+  default: () => h.logger, getLogger: () => h.logger,
+}));
+
 import { useAddressedBoardGame } from './useAddressedBoardGame.js';
 
 function makeClient() {
@@ -57,6 +69,32 @@ describe('useAddressedBoardGame — filing a result', () => {
     await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
     expect(client.saveGame).not.toHaveBeenCalled();
     expect(client.archiveGame).not.toHaveBeenCalled();
+  });
+
+  it('SAYS SO when it refuses — a phantom result must never be silent', async () => {
+    // The incident was not that a bad result got filed; it was that nobody
+    // could tell. A guard that refuses without a word only half-fixes it.
+    const client = makeClient();
+    const view = renderGame(client, { moves: [], result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+
+    view.rerender({ moves: FINISHED, result: 'loss' });
+
+    const refusal = await waitFor(() => {
+      const call = h.logger.warn.mock.calls.find(([event]) => event === 'game.result-refused');
+      expect(call).toBeTruthy();
+      return call;
+    });
+    expect(refusal[1]).toMatchObject({
+      gameId: 'connect-four',
+      result: 'loss',
+      plies: FINISHED.length,
+      playedThrough: 0,
+      reason: 'not-played-here',
+    });
+    // The session it refused is named, so the log can be tied to a real match.
+    expect(refusal[1].gameSessionId).toMatch(/^connect-four-/);
+    expect(client.saveGame).not.toHaveBeenCalled();
   });
 
   it('still refuses once, not on every render', async () => {
