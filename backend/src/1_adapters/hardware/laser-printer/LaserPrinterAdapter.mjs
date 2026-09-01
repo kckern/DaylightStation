@@ -419,9 +419,9 @@ export class LaserPrinterAdapter {
 
     // DETACHED, DELIBERATELY. printPdf must resolve on SEND — the same
     // contract it always had — not on the printer's eventual terminal
-    // answer. `awaitJobOutcome`'s own default deadline is 30s; awaiting it
+    // answer. `awaitJobOutcome`'s own default deadline is 60s; awaiting it
     // here would hold open whatever HTTP request/loop called printPdf (e.g.
-    // a sequential bulk-print loop, one POST per subject) for up to 30s per
+    // a sequential bulk-print loop, one POST per subject) for up to 60s per
     // print, well past any UI's own "don't wait forever" timeout. So: start
     // the poll, do not await it, and log the outcome when it lands. The
     // point of Phase 1 — knowing what actually happened — is served by the
@@ -670,12 +670,21 @@ export class LaserPrinterAdapter {
    * Never throws. A print that succeeded must not be reported as failed
    * because a status query did.
    *
+   * DEFAULT DEADLINE IS 60s, NOT 30s. Measured against the real printer: a
+   * BLANK SINGLE PAGE took 17.2s to reach a terminal state. A real rasterized
+   * worksheet — and the multi-page combined sheets a later phase plans — will
+   * plausibly exceed 30s, which would log a true `completed` print as
+   * `indeterminate` and weaken the very record this feature exists to
+   * produce. This poll runs fully detached from `printPdf`'s own resolution
+   * (see the "DETACHED, DELIBERATELY" comment above), so a caller pays
+   * nothing extra for a longer deadline here.
+   *
    * @param {number|null} jobId
    * @param {{deadlineMs?: number, intervalMs?: number, sleep?: Function, clock?: Function}} [options]
    */
   async awaitJobOutcome(jobId, options = {}) {
     const {
-      deadlineMs = 30000,
+      deadlineMs = 60000,
       intervalMs = 1000,
       sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
       clock = () => Date.now(),
@@ -691,6 +700,7 @@ export class LaserPrinterAdapter {
     const started = clock();
     let polls = 0;
     let last = base;
+    let loggedFirstError = false;
     while (clock() - started < deadlineMs) {
       polls += 1;
       try {
@@ -703,13 +713,26 @@ export class LaserPrinterAdapter {
       } catch (err) {
         // Swallowed on purpose: an unreachable printer is an unknown outcome,
         // not a failed print. Keep the last state we DID observe (if any) and
-        // keep trying to the deadline. Still logged at debug — silently
-        // swallowing means a TypeError here reads identically to "the
-        // printer went offline" in every log query, which defeats exactly
-        // the postmortem capability this feature exists to provide.
-        this.#logger.debug?.('laser-printer.job-outcome-poll-error', {
-          host: this.#host, jobId, poll: polls, error: err?.message ?? String(err),
-        });
+        // keep trying to the deadline. The FIRST error for this job logs at
+        // `warn` — production runs at `info` and the dispatcher drops
+        // below-level events before any transport, so a `debug`-only line
+        // here NEVER reaches the log store, and a TypeError in our own code
+        // would then read identically to "the printer went offline" in every
+        // query, defeating exactly the postmortem capability this feature
+        // exists to provide. Every subsequent error for the SAME job still
+        // logs at `debug` (as before) — one visible signal per failing job,
+        // not a flood: an offline printer produces at most one `warn` across
+        // its whole poll.
+        if (!loggedFirstError) {
+          loggedFirstError = true;
+          this.#logger.warn?.('laser-printer.job-outcome-poll-error', {
+            host: this.#host, jobId, poll: polls, error: err?.message ?? String(err),
+          });
+        } else {
+          this.#logger.debug?.('laser-printer.job-outcome-poll-error', {
+            host: this.#host, jobId, poll: polls, error: err?.message ?? String(err),
+          });
+        }
         last = { ...last, polls };
       }
       // eslint-disable-next-line no-await-in-loop -- deliberate poll cadence, not a parallelizable batch

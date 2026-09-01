@@ -136,16 +136,21 @@ function ippServer({
           res.end(encodeRequest(0x0000, [
             { tag: 0x47, name: 'attributes-charset', value: 'utf-8' },
             { tag: 0x48, name: 'attributes-natural-language', value: 'en' },
+            { tag: 0x21, name: 'job-id', value: 4242 },
           ], null, 1));
           return;
         }
         if (operation === OPS.GET_JOB_ATTRIBUTES) {
           // `printPdf` polls this via `awaitJobOutcome` right after Print-Job
-          // resolves. Answer with a terminal `job-state: 9` (completed) so
+          // resolves — but only when Print-Job's response carried a job-id
+          // (see the `job-id` attribute added above); without one, `#sendIpp`
+          // sets `jobId = null` and `printPdf`'s `Number.isInteger(sent.jobId)`
+          // guard never starts the poll at all, so this handler goes
+          // uncalled. Answer with a terminal `job-state: 9` (completed) so
           // every printPdf test in this file resolves its poll on the FIRST
           // attempt — without this, an unhandled operation here falls to the
           // generic HTTP 500 below, which `awaitJobOutcome` swallows and
-          // retries for real wall-clock time up to its (default 30s)
+          // retries for real wall-clock time up to its (default 60s)
           // deadline, turning every ipp-transport test in this file into a
           // multi-second-plus hang instead of a fast unit test.
           res.writeHead(200, { 'Content-Type': 'application/ipp' });
@@ -330,7 +335,7 @@ describe('LaserPrinterAdapter.printPdf — job-outcome polling is detached from 
     // The bug this test guards: printPdf used to `await` the outcome poll
     // inline, so a printer that never answers with a terminal state (here,
     // GET_JOB_ATTRIBUTES always answers job-state 5 = processing) would hold
-    // printPdf's own promise open for up to the poll's 30s default deadline.
+    // printPdf's own promise open for up to the poll's 60s default deadline.
     // A caller doing five sequential prints (the self-service bulk-print
     // loop) would then hold one HTTP request open for minutes with a child
     // standing at the printer. printPdf must resolve promptly regardless of
@@ -348,7 +353,7 @@ describe('LaserPrinterAdapter.printPdf — job-outcome polling is detached from 
     httpServer.close();
 
     expect(result.ok).toBe(true);
-    // Generous but far short of the poll's 30s default deadline — a hang
+    // Generous but far short of the poll's 60s default deadline — a hang
     // regression here would blow well past this, not brush up against it.
     expect(elapsedMs).toBeLessThan(2000);
   });
