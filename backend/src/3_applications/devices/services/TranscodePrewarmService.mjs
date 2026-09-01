@@ -13,6 +13,10 @@ export class TranscodePrewarmService {
   #cache = new Map();
 
   constructor({ contentIdResolver, contentCatalog, queueService, httpClient, clock, createToken, scheduler, logger = console }) {
+    if (!contentIdResolver?.resolve || !contentCatalog?.resolvePlayables
+      || !contentCatalog?.preparePlayback || !queueService?.resolveQueue || !httpClient?.get) {
+      throw new Error('TranscodePrewarmService requires contentIdResolver, contentCatalog, queueService, and httpClient');
+    }
     if (!clock?.now || typeof createToken !== 'function' || !scheduler?.after) {
       throw new Error('TranscodePrewarmService requires clock, createToken, and scheduler');
     }

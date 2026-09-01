@@ -1767,6 +1767,7 @@ export function createDispatchIdempotencyService(config = {}) {
  * Create TranscodePrewarmService
  * @param {Object} config
  * @param {Object} config.contentIdResolver - ContentIdResolver for queue resolution
+ * @param {Object} config.contentCatalog - Content catalog for playable resolution and playback preparation
  * @param {Object} config.mediaProgressMemory - For QueueService watch-state enrichment
  * @param {string} config.appBaseUrl - Local app URL for MPD fetch (e.g., "http://localhost:3111")
  * @param {Object} [config.logger]
