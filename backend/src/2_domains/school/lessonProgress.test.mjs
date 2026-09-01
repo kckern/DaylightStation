@@ -70,7 +70,7 @@ describe('lessonProgressRowsFromPlan', () => {
     ];
 
     expect(lessonProgressRows({
-      learnerId: 'user_3',
+      learnerId: 'user_4',
       unit: units[2],
       assignment,
       units,
