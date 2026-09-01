@@ -785,7 +785,13 @@ describe('execute — unallocated rows (spec §5.4: "never guessed")', () => {
     // signal `schoolPrintScanConsumer` reads to tell a legacy sheet this system
     // never issued (stay silent) from a card we did issue whose rows did not
     // match the marks (never stay silent).
-    expect(result).toEqual({ results: [], cardRecordCount: 0 });
+    expect(result).toEqual({
+      results: [],
+      cardRecordCount: 0,
+      decode: {
+        pattern: '9999999', cardId: '9999999', inferred: false, missingDigits: 0,
+      },
+    });
   });
 
   it('reports how many records the card carries, so an empty result can be told from a foreign sheet', async () => {
