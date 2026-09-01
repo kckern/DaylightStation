@@ -97,6 +97,22 @@ describe('useAddressedBoardGame — filing a result', () => {
     expect(client.saveGame).not.toHaveBeenCalled();
   });
 
+  it('does not file a refused transcript as ABANDONED on the way out', async () => {
+    // Refusing the result and then archiving the same phantom as
+    // `completed: false` would just trade a duplicate ranked loss for a junk
+    // abandoned row. A transcript this component never played is not a game it
+    // can report on either way.
+    const client = makeClient();
+    const view = renderGame(client, { moves: [], result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'loss' });
+
+    view.unmount();
+
+    expect(client.archiveGame).not.toHaveBeenCalled();
+    expect(h.logger.warn.mock.calls.map(([event]) => event)).toContain('game.abandon-refused');
+  });
+
   it('still refuses once, not on every render', async () => {
     const client = makeClient();
     const view = renderGame(client, { moves: [], result: null });

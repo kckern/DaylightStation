@@ -203,7 +203,12 @@ describe('useAddressedBoardGame', () => {
     await act(async () => { rerender({ moves: [1, 2], result: null }); });
     await act(async () => { rerender({ moves: [1, 2, 3], result: 'win' }); });
     expect(client.saveGame).toHaveBeenCalledTimes(2);
-    expect(client.saveGame.mock.calls[1][1]).toMatchObject({ ranked: true });
+    // Named exactly, because what used to sit in this slot was a DUPLICATE of
+    // the loss above, filed under the fresh session id by restart's own
+    // re-render. The second save must be the second GAME.
+    expect(client.saveGame.mock.calls[1][1]).toMatchObject({
+      result: 'win', moves: [1, 2, 3], ranked: true,
+    });
   });
 
   it('hands an ARMED match gate the rematch instead of restarting itself', async () => {
