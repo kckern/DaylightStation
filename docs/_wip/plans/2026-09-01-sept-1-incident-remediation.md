@@ -14,6 +14,48 @@
 - `docs/_wip/bugs/2026-09-01-piano-lesson-gate-escapes-via-course-grid.md`
 - `docs/_wip/bugs/2026-09-01-fitness-crt-frame-drops-unmeasured.md`
 
+---
+
+## AS BUILT (added 2026-09-01, after implementation)
+
+> **Read this before the task steps below.** Every task went through spec and
+> code-quality review, and several reviews changed the design. The task bodies
+> are the *plan as written*, kept for the reasoning trail; where they disagree
+> with this table, **this table is what shipped**. Sections that were superseded
+> outright are marked `SUPERSEDED` in place.
+>
+> Nothing here has been merged or deployed. Branch: `fix/sept1-incident-remediation`.
+
+| Task | Shipped | Differs from the plan? |
+|---|---|---|
+| 1 — Player scheduled remount | `8c31c3640`, `65699f3e5`, `39280d071`, `a1a7be1fc` | **Yes.** Helper renamed `remountGuard.js` → **`scheduledRemountGuard.js`** (too close to `remountStormGuard.js`). Guard also takes **`isSeeking`** — a forward seek past the transcoder's head advances the clock while wedged, the one stall class that looks like progress. Consent for the brake bypass comes from an explicit **`userInitiated`** the hook sends from `retryFromExhausted` only, **not** from `forceRemount` (which has three sources, two of them automatic). |
+| 2 — TreasureBox thresholds | `b9b255bd9`, `2f2b91937`, `a79b5f965` | **Yes, substantially.** See `SUPERSEDED` on Task 2. Never-cache-a-miss shipped; **`invalidateZoneOverrideCache()` and its call site were then deleted** in favour of a store-owned `getZoneConfigRevision()` the box pulls; and the actual repair was **hoisting `_syncZoneProfiles` above the TreasureBox feed**, which the plan did not propose. |
+| 3 — Piano gate pending | `08ad3e34c`, `9b72f8a6a`, `d23571360` | **Yes.** The ceiling is armed **per learner**, not per request (the plan's literal snippet never fires — the 15 s poll bumps the generation first). `LOADING_CEILING_MS = REFRESH_MS + 5000`. A **failed** read is pending too (5xx holds, 4xx opens). `pending` and the caption live in the hook, read by both the menu and the Videos grid. |
+| 4 — Gate memo | `d1e8b321a`, `3c0f1c0ce` | **Yes.** Invalidation hangs off the single **`onCompletionInputChanged`** seam, not two separate subscriptions. Memo bounded at 64 entries; verdicts handed out as copies; `unavailable` never memoised. **Does not close the incident's headline 11.1 s** — see the note below. |
+| 5 — Videos grid | `3c51a9211` | Mostly as planned. Redirect logged from an **effect** (render stays pure); pending renders the shared caption rather than `null`. **Closes the grid only** — residual vectors below. |
+| 6 — Ceremony bridge log | `197cb07ae` | As planned. |
+| 7 — Profiler fps | `7634d9e17`, `c698a5ffa` | **Yes.** Media-time division introduced a *new* false positive on forward seeks; `timestamp` (already carried, never read) became the seek discriminator, with `playbackRate` folded in so 2× playback is not misread as a seek. |
+| 8 — CRT frame counter | `041a5eedc`, `a75237a8b` | **Yes.** Payload keys are `skipped` / `skippedTotal` (a snapshot spread would have overwritten the gap with the total). `drawn` counts **real paints**, not pump invocations. Counters are **per renderer instance**. The plan's tests all took the `unsupported` branch under happy-dom, so a stand-in GL context was added to reach the pump at all. |
+| 9 — Event-loop monitor | `2bba98bb8` | **Yes.** 60 s windows, not 5 s; logs **every** window at info and escalates to warn, rather than staying silent below threshold; adds `p50Ms` and `windowMs` (a second witness that does not use the histogram). Started at the end of `serverMain`'s `main()`, not beside `installCrashHandlers()`. |
+| 10 — Docs | this pass | — |
+
+**Task 4's memo does not close the incident's headline number.** `FitnessPlayableService`
+already has a `#structureCache` with a 5-minute TTL that *deliberately* excludes
+watch-state enrichment (its docblock: serving that stale "would tell a child they
+still owe work they have done"). The measured 11.1 s cold / 0.352 s warm split is
+a cold miss on **that** cache. The memo turns the 0.352 s into ~0 and collapses
+concurrent picks, but **cannot help a cold miss**: the first pick after a
+container restart, or after five idle minutes, still pays ~11 s. Two nuances:
+the memo's 60 s TTL is *shorter* than the structure cache's 5 minutes, so it can
+never extend structure staleness; and the "11.1 s = cold structure miss"
+attribution is a **well-grounded inference, not a measurement** — nobody
+instrumented which layer spent the time. What closes the incident's *danger* is
+the pending-state fix (Task 3), not the memo: an 11 s cold read now shows a
+disabled menu rather than an open one.
+
+
+---
+
 **Ground rules for every task**
 - Run tests with `npx vitest run <path>` from the repo root. The root `vitest.config.mjs` serves both `frontend/src/**` and `tests/isolated/**`. Do not use `npm test` per task (it is the full multi-runner sweep).
 - Logging: frontend uses `getLogger().child({ component })` (`frontend/src/lib/logging/Logger.js`); never `console.*`. Backend classes take a `logger` and call `this.#logger.info?.(event, data)`.
@@ -70,6 +112,12 @@ Expected: `1 passed`.
 ---
 
 ### Task 1: Player — a scheduled remount must not fire after playback has recovered
+
+> **PARTLY SUPERSEDED.** The helper below shipped as **`scheduledRemountGuard.js`**
+> (renamed) and takes an extra `isSeeking` input. The `compositeAwareOnState`
+> snippet shipped with `RESILIENCE_STATUS.playing` instead of the `'playing'`
+> literal and with a `userInitiated` bypass that comes from the hook, not from
+> `forceRemount`. See the AS BUILT table and `a1a7be1fc`.
 
 Report: story-time, Incident B. `Player.jsx:301` `clearRemountTimer` is only called on media-guid change, re-schedule, and unmount. A remount armed with backoff (attempt ≥ 2) fires even if playback started in the meantime, tearing down a playing element.
 
@@ -342,6 +390,27 @@ git commit -m "fix(player): cancel backoff remount on playback success; skip at 
 
 ### Task 2: TreasureBox — never cache a missing zone profile; invalidate on profile sync
 
+> **SUPERSEDED in its second half.** The premise below — "First HR sample beat
+> the profile store by 1 ms" — is **wrong**. `recordHeartRateForDevice` and the
+> `_syncZoneProfiles` block sat in the same function behind the **same**
+> `startupDiscarded` flag, so the box always read before the store synced,
+> *unconditionally*. There was no race. What shipped:
+>
+> 1. **never cache a miss** — as written below (`b9b255bd9`);
+> 2. **hoist the sync above the read** in `recordDeviceActivity` (`2f2b91937`) —
+>    the actual repair, not proposed here at all;
+> 3. **a store-owned `getZoneConfigRevision()` the box pulls** (`a79b5f965`),
+>    which **deletes `invalidateZoneOverrideCache()` and its `FitnessSession`
+>    call site entirely**.
+>
+> **Everything below that prescribes `invalidateZoneOverrideCache()` — the Step-1
+> test that calls it, the Step-3 method, the `FitnessSession.js:478` wiring — is
+> describing an API that no longer exists.** Do not restore it: the push model
+> needed every call site to remember to invalidate (one already did not), and
+> `syncFromUsers` reports `changed` when heart rate moves, i.e. on nearly every
+> packet, so the cache was being dropped constantly while claiming to avoid
+> per-sample clones.
+
 Report: treasure box. `resolveZone` caches `overrides || null` once per user (`TreasureBox.js:494`) and `.has()` treats the null as an answer. First HR sample beat the profile store by 1 ms → global thresholds all session.
 
 **Files:**
@@ -353,7 +422,7 @@ Report: treasure box. `resolveZone` caches `overrides || null` once per user (`T
 
 Append to `frontend/src/hooks/fitness/TreasureBox.test.js`:
 ```js
-// 2026-09-01: milo's first HR sample reached the box 1ms before ZoneProfileStore
+// 2026-09-01: learner-a's first HR sample reached the box 1ms before ZoneProfileStore
 // had built his profile. The box cached the miss and scored him on GLOBAL
 // thresholds (active=100) for the whole session while the roster, LED and
 // zone series used his personal ones (active=120).
@@ -364,7 +433,7 @@ const GLOBAL_ZONES = [
   { id: 'hot', name: 'Hot', min: 140, color: 'orange', rings: 3 },
   { id: 'fire', name: 'Fire', min: 160, color: 'red', rings: 5 },
 ];
-const MILO_PROFILE = { id: 'milo', zoneConfig: [
+const MILO_PROFILE = { id: 'learner-a', zoneConfig: [
   { id: 'cool', min: 0 }, { id: 'active', min: 120 }, { id: 'warm', min: 140 }, { id: 'hot', min: 160 }, { id: 'fire', min: 180 },
 ] };
 
@@ -380,19 +449,19 @@ describe('FitnessTreasureBox.resolveZone with a late ZoneProfileStore profile', 
   it('does not cache a missing profile — the next sample uses the personal thresholds', () => {
     const profiles = new Map();
     const { box } = boxWithStore(profiles);
-    expect(box.resolveZone('milo', 105).id).toBe('active');   // no profile yet: global
-    profiles.set('milo', MILO_PROFILE);                        // store catches up
-    expect(box.resolveZone('milo', 105).id).toBe('cool');      // personal active=120
+    expect(box.resolveZone('learner-a', 105).id).toBe('active');   // no profile yet: global
+    profiles.set('learner-a', MILO_PROFILE);                        // store catches up
+    expect(box.resolveZone('learner-a', 105).id).toBe('cool');      // personal active=120
   });
 
   it('invalidateZoneOverrideCache() re-reads a profile that changed after it was cached', () => {
-    const profiles = new Map([['milo', { id: 'milo', zoneConfig: [{ id: 'cool', min: 0 }, { id: 'active', min: 100 }] }]]);
+    const profiles = new Map([['learner-a', { id: 'learner-a', zoneConfig: [{ id: 'cool', min: 0 }, { id: 'active', min: 100 }] }]]);
     const { box } = boxWithStore(profiles);
-    expect(box.resolveZone('milo', 105).id).toBe('active');
-    profiles.set('milo', MILO_PROFILE);
-    expect(box.resolveZone('milo', 105).id).toBe('active');    // still cached — by design, until told
+    expect(box.resolveZone('learner-a', 105).id).toBe('active');
+    profiles.set('learner-a', MILO_PROFILE);
+    expect(box.resolveZone('learner-a', 105).id).toBe('active');    // still cached — by design, until told
     box.invalidateZoneOverrideCache();
-    expect(box.resolveZone('milo', 105).id).toBe('cool');
+    expect(box.resolveZone('learner-a', 105).id).toBe('cool');
   });
 });
 ```
@@ -459,6 +528,17 @@ git commit -m "fix(fitness): treasure box never caches a missing zone profile; i
 
 ### Task 3: Piano lesson gate — "loading" is pending, not open
 
+> **PARTLY SUPERSEDED.** The Step-3 ceiling snippet below does not work as
+> written: with the request-generation guard inside the ceiling callback, the
+> 15 s poll bumps the generation 5 s before each ceiling is due and the callback
+> returns early — the ceiling **never fires**, failing this task's own Step-1
+> test. Measured across all three readings of the snippet (`9b72f8a6a`). What
+> shipped arms the ceiling **once per learner**, uses
+> `LOADING_CEILING_MS = REFRESH_MS + 5000`, treats a **failed** read as pending
+> too (5xx holds and lets the poll retry; 4xx opens at once, for the
+> School-less install), and puts `pending` + the caption in the hook so the menu
+> and the Videos grid cannot drift (`d23571360`).
+
 Report: piano gate, Gap 0. `usePianoLessonGate` reports `status: 'loading'` but `PianoMenu` reads only `gated`. The cold read is 11 s; the menu is fully open for all of it.
 
 **Files:**
@@ -476,7 +556,7 @@ Append to `usePianoLessonGate.test.js` inside `describe('usePianoLessonGate')`:
     vi.useFakeTimers();
     let resolve;
     h.response = new Promise((r) => { resolve = r; });
-    const { result } = renderHook(() => usePianoLessonGate('alan'));
+    const { result } = renderHook(() => usePianoLessonGate('learner-c'));
     expect(result.current.status).toBe('loading');
     expect(result.current.gated).toBe(false);
     await act(async () => { await vi.advanceTimersByTimeAsync(LOADING_CEILING_MS + 10); });
@@ -585,6 +665,11 @@ git commit -m "fix(piano): lesson gate treats an in-flight read as pending, not 
 
 ### Task 4: GetPianoLessonGate — memoise the verdict per learner, invalidate on School events
 
+> **PARTLY SUPERSEDED.** Invalidation hangs off the single
+> `onCompletionInputChanged` gateway seam, not the two separate subscriptions
+> sketched below. See also the AS BUILT note: **this memo does not close the
+> 11.1 s cold read.**
+
 Report: piano gate, Gap 0 (server half). Cold read = Plex course fetch via `GetPlayableUnits`. The verdict changes only on lesson completion, bypass, or day rollover.
 
 **Files:**
@@ -617,16 +702,16 @@ function build({ status = OWED, realtime = null, now = () => 1_000 } = {}) {
 describe('GetPianoLessonGate memo', () => {
   it('answers the second read for the same learner from memory', async () => {
     const { uc, statusFn } = build();
-    await uc.execute({ learnerId: 'alan' });
-    await uc.execute({ learnerId: 'alan' });
+    await uc.execute({ learnerId: 'learner-c' });
+    await uc.execute({ learnerId: 'learner-c' });
     expect(statusFn).toHaveBeenCalledTimes(1);
   });
   it('expires after the TTL', async () => {
     let t = 1_000;
     const { uc, statusFn } = build({ now: () => t });
-    await uc.execute({ learnerId: 'alan' });
+    await uc.execute({ learnerId: 'learner-c' });
     t += GetPianoLessonGate.MEMO_TTL_MS + 1;
-    await uc.execute({ learnerId: 'alan' });
+    await uc.execute({ learnerId: 'learner-c' });
     expect(statusFn).toHaveBeenCalledTimes(2);
   });
   it('is invalidated for that learner by a lesson-completed event', async () => {
@@ -637,15 +722,15 @@ describe('GetPianoLessonGate memo', () => {
     };
     const { uc, statusFn } = build({ realtime });
     uc.start();
-    await uc.execute({ learnerId: 'alan' });
-    await handlers.completed({ userId: 'alan' });
-    await uc.execute({ learnerId: 'alan' });
+    await uc.execute({ learnerId: 'learner-c' });
+    await handlers.completed({ userId: 'learner-c' });
+    await uc.execute({ learnerId: 'learner-c' });
     expect(statusFn).toHaveBeenCalledTimes(2);
   });
   it('never memoises an unavailable verdict', async () => {
     const { uc, statusFn } = build({ status: { error: true } });
-    await uc.execute({ learnerId: 'alan' });
-    await uc.execute({ learnerId: 'alan' });
+    await uc.execute({ learnerId: 'learner-c' });
+    await uc.execute({ learnerId: 'learner-c' });
     expect(statusFn).toHaveBeenCalledTimes(2);
   });
 });
@@ -703,7 +788,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { CourseGridRoute } from './Videos.jsx';
 
-const state = { gate: { status: 'ready', gated: false, course: null }, user: 'alan' };
+const state = { gate: { status: 'ready', gated: false, course: null }, user: 'learner-c' };
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ basePath: '/piano', config: { videos: {} } }) }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: state.user }) }));
 vi.mock('../../usePianoLessonGate.js', () => ({ default: () => state.gate }));
@@ -721,7 +806,7 @@ const renderAt = () => render(
   </MemoryRouter>,
 );
 
-beforeEach(() => { state.gate = { status: 'ready', gated: false, course: null }; state.user = 'alan'; });
+beforeEach(() => { state.gate = { status: 'ready', gated: false, course: null }; state.user = 'learner-c'; });
 
 describe('CourseGridRoute under the lesson gate', () => {
   it('renders the grid when not gated', () => {
@@ -822,9 +907,9 @@ it('logs, at info, a completion that belongs to no enrolled course (2026-09-01: 
     status: { doneToday: false, completedLessonsToday: [], completedLessons: [] },
     logger: { warn() {}, info },
   });
-  await bus.emit('piano.lesson.completed', { userId: 'alan', plexId: 'plex:694782', title: 'Lesson 9 | Hot Cross Buns: Part 2' });
+  await bus.emit('piano.lesson.completed', { userId: 'learner-c', plexId: 'plex:694782', title: 'Lesson 9 | Hot Cross Buns: Part 2' });
   expect(info).toHaveBeenCalledWith('school.piano-ceremony.ignored', expect.objectContaining({
-    learnerId: 'alan', plexId: 'plex:694782', reason: 'not-in-enrolled-course', enrolledCourseIds: [COURSE],
+    learnerId: 'learner-c', plexId: 'plex:694782', reason: 'not-in-enrolled-course', enrolledCourseIds: [COURSE],
   }));
   expect(bus.sent).toHaveLength(0);
 });
@@ -972,6 +1057,15 @@ git commit -m "fix(fitness): profiler fps uses media time, not wall clock (false
 
 ### Task 8: CRT renderer — count the frames the canvas actually missed
 
+> **PARTLY SUPERSEDED.** The Step-5 `pump` snippet below spreads
+> `frameStats.snapshot()` over a payload that already has a `skipped` key — the
+> total silently overwrites the gap, so a single missed frame logs as the
+> session total. Shipped with distinct `skipped` / `skippedTotal` /`drawnTotal`
+> keys, and with `drawn` counting **real paints** (`drawFrame()` returns whether
+> it painted) rather than pump invocations. Every test in the plan took the
+> `unsupported` branch under happy-dom, so a stand-in GL context was added to
+> reach `pump` at all (`a75237a8b`).
+
 Report: CRT. The canvas draws on `requestVideoFrameCallback`; a late callback is a skipped frame that `getVideoPlaybackQuality` never counts. rVFC hands the callback `metadata.presentedFrames`; the gap between consecutive callbacks is the miss count.
 
 **Files:**
@@ -1079,6 +1173,15 @@ git commit -m "feat(player): count and log frames the CRT canvas skipped (rVFC p
 ---
 
 ### Task 9: Backend — event-loop lag monitor (classifies the next 45 s hang)
+
+> **PARTLY SUPERSEDED.** Shipped with 60 s windows (not 5 s), logging **every**
+> window at info and escalating to warn at threshold rather than staying silent
+> below it, and carrying `p50Ms` + `windowMs` as well as `maxMs`/`p99Ms`.
+> Started at the end of `serverMain`'s `main()` — it needs the logger that only
+> exists once every transport is registered, and starting it earlier would
+> measure the deliberately synchronous config load and warn on every restart.
+> **This task produced the most consequential result on the branch**; see the
+> findings note below and the story-time report's Incident A.
 
 Report: story-time, Incident A. Six `POST /log` calls took 8–43 s and released in the same instant as the stalled media request. A backend stall and a network stall look identical from outside; from inside they do not.
 
@@ -1213,3 +1316,61 @@ Report to the user: the branch name, the commit list (`git log --oneline main..H
 - **FitnessChart re-rendering 13–14×/s** during `pending` governance. Real, flagged in three reports, but its cause has not been located and this plan does not guess. Once Task 8 ships, one garage session will show whether the skips track the thrash; that decides whether the chart is next.
 - **The 45 s backend/network hang itself.** Task 9 classifies the next occurrence; it does not fix this one.
 - **Season switching inside `SubcourseNavigator`.** Only shows labelled `subcourses` use it, and every season there belongs to the same enrolled course; any lesson counts.
+
+---
+
+## Event-loop findings (Task 9) — the most consequential result on this branch
+
+Task 9 mined the existing 5-minute `server.memory` watchdog as a crude lag probe:
+the overshoot of each of its gaps beyond 300 s samples how late the loop was. Over
+**2026-09-01 12:08–20:04 UTC**, 90 same-container intervals (three container
+restarts excluded as artifacts):
+
+```
+p50 = +0.030 s    p90 = +0.310 s    max = +15.13 s
+late by >1 s: 5      >5 s: 2      >10 s: 2
+```
+
+**This process really does stall for 10+ seconds, repeatedly.** A 300 s timer only
+catches a stall spanning its due instant — roughly `D/300` of them — so the true
+rate is far higher. The order-of-magnitude estimate from that extrapolation is
+**~2% of life with the loop blocked >10 s**; treat it as an estimate, not a
+measurement (8 hours, two container lifetimes).
+
+**The trap worth recording.** The watchdog fired at **16:53:46, only +0.03 s
+late**, spanning the story-time incident — which *looks* like it exonerates the
+event loop. It does not. The stall **ended at 16:50:09**, three and a half minutes
+before that timer was due, so an on-time fire is exactly what a 45 s stall would
+also produce. **Hypothesis 1 (backend event-loop stall) therefore remains alive,
+and is arguably now favoured**, for the 45 s story-time hang. The story-time
+report's Incident A has been updated accordingly.
+
+**What the monitor can and cannot do.**
+
+- It **distinguishes backend-stall from network-stall cleanly.** Verified against
+  a deliberate 900 ms block: `maxMs=916, p50Ms=21, windowMs=1052` on a nominal
+  300 ms window, reported by a `sample()` that ran 2 ms *after* the block ended.
+  The histogram is a libuv-level timer, so a stall is always reported in the
+  window it **finishes** in — never lost.
+- It **cannot attribute.** It cannot separate our JS blocking from GC pausing us
+  from the OS descheduling us. All three are the process failing to run, which is
+  enough to settle backend-vs-network and nothing finer.
+- **The idle floor equals the histogram resolution** (20 ms), so a healthy row
+  reads `maxMs`/`p99Ms`/`p50Ms` ≈ 21, **not 0**.
+
+---
+
+## Follow-ups (deliberately deferred, with the real reason)
+
+| # | Follow-up | Why it was not taken now |
+|---|---|---|
+| 1 | **Task 5b — close `CourseDetailRoute` / `LecturePlayerRoute` for gated learners.** | Gated on an **owed-*set*** comparison, which needs the gate API to return the set rather than one course: `GetPianoLessonGate.mjs:153` documents *"More than one piano course is unusual but legal: gated while ANY is owed, showing the first owed lesson found"*, so strict equality against the single shown course would evict a learner legitimately working a second owed course. **Not**, as originally stated, gated on pinning a `course.id` contract — that shape is already pinned (`TodaysLessonGate.test.jsx:85`, `pianoContentOpen.test.js:102-103`). Residual vectors are enumerated in the piano-gate report; the strongest is the exercise-checkpoint `return` param, a live in-app deep link into an arbitrary course. |
+| 2 | **Player M1 — scale the remount progress threshold to the backoff.** | Declined. After a 45 s backoff it would demand ~22 s of playback before a skip, which defeats the guard on exactly the long backoffs it matters for. |
+| 3 | **Player M4 — reset the nonce ladder on recovery.** | Needs its own design: `nonce` feeds `singlePlayerKey`, so a naive reset would itself trigger the remount it is meant to avoid. |
+| 4 | **A discriminated `verdict` union for the lesson gate**, replacing the flat `{status, gated}` shape. | The flat shape still permits reading one boolean and acting on it — the 2026-09-01 failure mode exactly. `pending` in the hook papers over it for the two current consumers. Take the union when a third consumer appears. |
+| 5 | **Boot-time warm (or a longer TTL) for `FitnessPlayableService`'s structure cache.** | The only thing that would remove the ~11 s cold read. Task 4's memo cannot: the structure cache's 5-minute TTL is the layer the time is spent in, and the memo sits above it with a shorter TTL. |
+| 6 | **A `drawFrame`-vs-inter-callback timing instrument.** | The step that would actually *attribute* CRT frame skips to main-thread starvation rather than merely detecting them. `crt.frames-skipped` detects; it cannot separate starvation from legitimate rate capping. |
+| 7 | **`FitnessChart` re-rendering 13–14×/s** during `pending` governance, sustained 2+ minutes. | Flagged in three separate reports now; cause not located, and this branch does not guess. The new CRT counter is what will tell you whether the skips track the thrash. |
+| 8 | **The participant-id divergence** (pre-existing, out of scope). | Presence uses `resolveUserForDevice(...)?.id` (falling back to `ledger.occupantId \|\| ledger.metadata.profileId`) while the treasure box is fed `metadata.profileId \|\| occupantId \|\| user.id` — the ledger fallbacks in opposite precedence. An id the box scores under that never reaches `syncFromUsers` is scored on global thresholds all session, which is precisely what the new `treasurebox.zone_override_miss` warn now surfaces. |
+| 9 | **Asymmetric SIGTERM shutdown hooks across the School lifecycle's subscribers.** | Counted in the tree on 2026-09-01: `app.mjs` registers a `SIGTERM` → `.stop()` for `donowSchoolBridge`, `schoolCompletionBridge` and `fitnessSchoolAssessmentBridge`, but **not** for `pianoLessonCeremonyBridge` (pre-existing) and **not** for the new `getPianoLessonGate` (which gained a `start()`/`stop()` pair in `d1e8b321a`). So it is **three with, two without**, not the two-and-two originally noted. Worth doing every subscriber at once or not at all; a partial pass leaves the same inconsistency with more code. Neither omission leaks anything a redeploy notices today — the process exits — but the asymmetry is what makes the next one easy to miss. |
+

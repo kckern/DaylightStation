@@ -151,6 +151,43 @@ operator retry from the exhausted overlay. Each step is more disruptive than
 the last, the ledger paces every climb, and real progress (`recordSuccess`)
 resets the whole budget.
 
+### A scheduled remount must not fire after playback recovered
+
+`scheduleSinglePlayerRemount` arms a timer with a backoff that grows with the
+attempt (0 ms, 1 000 ms, 1 500 ms, …). The window between arming and firing is
+exactly the window in which a slow stream can finally release — and a timer that
+fires then tears down a **playing** element and restarts it from its effective
+start. Two independent brakes close that, and both leave a log line:
+
+| Brake | Where | Event |
+|---|---|---|
+| **Cancel on success** | `compositeAwareOnState` clears the pending timer on the resilience hook's transition to `RESILIENCE_STATUS.playing` — the thing that armed the timer is told the reason for it is gone | `player-remount-cancelled`, carrying the pending `attempt` / `backoffMs` so it joins to the `player-remount-scheduled` line it cancelled |
+| **Fire-time guard** | `lib/scheduledRemountGuard.js` compares the playhead against the position captured at arm time; defence in depth for any other path that arms the timer | `player-remount-skipped`, carrying `armedAtSeconds` + `playbackSeconds` + `advancedSeconds` |
+
+Three things the guard has to know, all of them paid for:
+
+- **`isSeeking` is an input, not just `stalled`.** A forward seek past the
+  transcoder's head jumps `currentTime` instantly and then wedges with
+  `el.seeking` true — the one stall class that *advances* the clock. Reading
+  that as progress would make the guard cause a stall.
+- **`stalled` / `isSeeking` are best-effort.** Only `SinglePlayer` forwards
+  them, and it coerces `isSeeking` with `?? false`, so that field never latches
+  there; `RemuxPlayer` and `ImageFrame` omit both. Sub-100 ms movement is
+  treated as timer jitter, not playback.
+- **Consent comes from the hook's `userInitiated`, never from `forceRemount`.**
+  A user-initiated retry bypasses *both* brakes deliberately — the exhaustion
+  nonce can make the backoff window up to 45 s, long enough for either brake to
+  swallow an explicit retry and the `seekToIntentMs` position with it. But
+  `forceRemount` is **not** that signal: it is a statement about *mechanism*
+  ("an in-place `hardReset` won't do"), and it reaches Player from three places,
+  two of them automatic — `retryFromExhausted` (a human), the **stall-jolt
+  ladder's rung 1** (fires ~9.5 s into any mid-playback stall), and
+  `requestRecovery` (host app, unknown). Inferring consent from it flagged the
+  automatic ladder as a human and re-opened this bug on exactly the path where
+  it is most likely. `useMediaResilience` now sends an explicit
+  `userInitiated: true` from `retryFromExhausted` only, and `Player.jsx` reads
+  it rather than deriving it.
+
 ---
 
 ## Diagnostics
@@ -169,6 +206,44 @@ framework — they are the primary tool for diagnosing a stall. Key events:
 | `playback.fps_stats` | Periodic dropped-frame / fps snapshot |
 | `playback.stale-session-detected` | Stale-session watchdog tripped |
 | `playback.stream-url-refreshed` | `src` cache-busted, fresh session requested |
+| `player-remount-cancelled` / `player-remount-skipped` | A backoff-scheduled remount was called off because playback recovered first (see the resilience section) |
+| `crt.frames-skipped` | Frames the CRT canvas never painted (see below) |
+| `crt.renderer-created` / `crt.stopped` | CRT renderer instance lifecycle; `crt.stopped` carries that instance's `drawn` / `skipped` totals |
+
+### `crt.frames-skipped` — presentation drops the decoder cannot see
+
+Under the CRT shader the `<video>` is hidden and what the eye sees is a WebGL
+canvas repainted once per `requestVideoFrameCallback`, on the main thread. A late
+or coalesced callback is a frame the viewer never sees, and
+`getVideoPlaybackQuality` cannot report it — that API counts **decoder** drops
+only. `lib/crtFrameStats.js` keeps the previous `metadata.presentedFrames` (the
+spec's monotonic count of frames submitted for composition); a gap of N means N
+frames were composited that the canvas never drew.
+
+Four caveats, all of which will mislead a reader who does not know them:
+
+1. **It detects, it does not attribute.** A gap cannot be separated into
+   main-thread starvation versus legitimate rate capping. Attribution needs a
+   `drawFrame`-vs-inter-callback timing instrument, which does not exist yet.
+2. **Firefox's fidelity in populating `presentedFrames` is UNVERIFIED.** The
+   first read of these logs must sanity-check that values are non-null and
+   monotonic before anyone concludes anything. A browser that omits the field
+   yields `skipped: 0` forever, which reads exactly like a healthy session.
+3. **`drawn` counts real paints.** `drawFrame()` bails out on a lost context, a
+   failed upload and `readyState < 2`, and the pump keeps re-arming through all
+   three; only a pass that actually painted is counted. A pass that failed is
+   not observed at all, so its frames surface as skips on the next real paint.
+4. **The counters are per RENDERER INSTANCE, not per session.** The hook remounts
+   the renderer on a context restore, a source change or a resolution change, and
+   each instance starts from zero — one observed session logged
+   `crt.renderer-created` twice, 2.25 s apart. **Summing a session means summing
+   every instance's `crt.stopped`, or you will undercount.** Check the
+   `crt.renderer-created` count before reading any total.
+
+Payload keys are deliberately distinct: `skipped` is *this* gap, `skippedTotal`
+and `drawnTotal` the running totals. The event is rate-limited (6/min,
+aggregating), and the rAF fallback passes no metadata at all, so no phantom skip
+is ever reported there.
 
 A buffer that drains to zero on **both** audio and video together, with
 ~one-segment depth and ~1.5s segment fetches, is the encode-bound signature — see
