@@ -23,6 +23,7 @@ CONNECT_ESCALATE_MISSES=3  # consecutive failed reconnects before escalating to 
 CONNECT_ESCALATE_MAX=12    # stop power-cycling the adapter past this many misses — a wedged controller clears within the first few resets; beyond that it's the headset (off / out of range), so keep retrying Connect + alert but stop churning the adapter
 BT_WAKE_TIMEOUT=60         # max seconds to wait for BT after HA turn_on
 BT_SETTLE_SEC=4            # seconds a freshly-connected link must stay up before we commit to the (expensive) start_playback — absorbs A2DP flapping at connect so we don't spawn/teardown mpv per blip
+OVERRIDE_TTL_MIN=120       # default lifetime of a manual override (.armed.json) when the caller gives no --duration. An override is temporary but TIME-bounded: it ends when it EXPIRES, never because the headset happened to be disconnected at the moment a loop looked.
 DUPE_FIRE_WINDOW=60        # window in which a scheduled time matches "now"
 LAZY_PRIME_COUNT=5         # tracks to download synchronously before starting mpv
 MIN_AUDIO_BYTES=2048
@@ -328,24 +329,72 @@ scheduled_fired_today() {
     [[ "$expected" == "$today" ]]
 }
 
+# Every slot number the config declares, ascending. The selfcheck loops used a
+# literal `1 2 3 4 5`, so a sixth device would have played normally while being
+# invisible to the override reaper — its expired overrides never cleared and a
+# failed wake never alerted. Slot count is config-driven everywhere else; this
+# makes the housekeeping match.
+configured_slots() {
+    jq -r '.devices[].slot | select(. != null)' "$CONFIG_FILE" 2>/dev/null | sort -n
+}
+
 # Write the armed.json sentinel for a slot. start_playback reads this
 # instead of the device's static `queue` when armed.
+#
+# An override is TEMPORARY BUT TIME-BOUNDED. It carries an explicit
+# expires_at, and that clock is the only thing that ends it. A flapping
+# headset is not evidence the override failed — a link that drops for 30s
+# takes mpv down with it, and reading that as "the override is stuck" is
+# what used to revert a slot to its scheduled queue mid-song.
+# `played` records whether the override ever actually reached mpv, which is
+# what separates a live override riding out a flap from a wake that never
+# landed at all.
 arm_slot() {
     local slot="$1" queue="$2" volume="$3" duration_min="$4" source="$5"
-    local dir armed_path payload
+    local dir armed_path payload ttl_sec
     dir=$(slot_dir "$slot")
     mkdir -p "$dir"
     armed_path="$dir/.armed.json"
+    # An explicit --duration wins; otherwise the override lives OVERRIDE_TTL_MIN.
+    if [[ "$duration_min" =~ ^[0-9]+$ ]] && (( duration_min > 0 )); then
+        ttl_sec=$(( duration_min * 60 ))
+    else
+        ttl_sec=$(( OVERRIDE_TTL_MIN * 60 ))
+    fi
     payload=$(jq -n \
         --arg queue "$queue" \
         --arg vol "$volume" \
         --arg dur "$duration_min" \
         --arg src "$source" \
         --arg t "$(date +%s)" \
+        --arg ttl "$ttl_sec" \
         '{queue:$queue, volume:($vol|tonumber? // null),
           duration_min:($dur|tonumber? // null), source:$src,
-          armed_at: ($t|tonumber)}')
+          armed_at: ($t|tonumber),
+          expires_at: (($t|tonumber) + ($ttl|tonumber)),
+          played: false}')
     atomic_write_json "$armed_path" "$payload"
+}
+
+# Mark an override as having actually reached mpv at least once. After this,
+# only expiry (or an explicit stop/new command) may clear it — never the mere
+# absence of a live mpv, which is the normal state during a BT flap.
+mark_armed_played() {
+    local slot="$1" path payload
+    path=$(slot_dir "$slot")/.armed.json
+    [[ -f "$path" ]] || return 0
+    [[ "$(jq -r '.played // false' "$path" 2>/dev/null)" == "true" ]] && return 0
+    payload=$(jq '.played = true' "$path" 2>/dev/null) || return 0
+    [[ -n "$payload" ]] && atomic_write_json "$path" "$payload"
+}
+
+# True when an override exists and its expires_at has passed.
+armed_expired() {
+    local slot="$1" exp now
+    exp=$(armed_field "$slot" "expires_at")
+    [[ -z "$exp" ]] && return 1          # legacy file with no TTL — never expire on age alone
+    now=$(date +%s)
+    (( now > exp ))
 }
 
 disarm_slot() {
@@ -497,7 +546,7 @@ selfcheck_loop() {
         # 2) Override orphans (>1 hour old)
         local now_epoch slot age path
         now_epoch=$(date +%s)
-        for slot in 1 2 3 4 5; do
+        for slot in $(configured_slots); do
             path=$(slot_dir "$slot")/.override.json
             [[ -f "$path" ]] || continue
             age=$((now_epoch - $(stat -c %Y "$path" 2>/dev/null || echo "$now_epoch")))
@@ -507,24 +556,42 @@ selfcheck_loop() {
             fi
         done
 
-        # 3) Stuck armed flags
-        for slot in 1 2 3 4 5; do
+        # 3) Expired overrides, and arms that never landed.
+        #
+        # An override ends when its clock runs out — NOT because mpv happens to
+        # be down when this loop looks. A flapping headset takes mpv with it
+        # every few seconds; the old rule ("armed >5 min && no mpv → disarm")
+        # read that as a stuck flag and reverted the slot to its scheduled
+        # queue, so a 30-second flap silently cancelled an explicit request.
+        # Once an override has actually played, only expiry clears it.
+        for slot in $(configured_slots); do
             path=$(slot_dir "$slot")/.armed.json
             [[ -f "$path" ]] || continue
             age=$((now_epoch - $(stat -c %Y "$path" 2>/dev/null || echo "$now_epoch")))
-            (( age <= 300 )) && continue  # younger than 5 min, give it time
-            # Is mpv playing for this slot?
-            local mpv_alive=false
-            if [[ -f "$(slot_dir "$slot")/mpv.pid" ]]; then
-                local p
-                p=$(cat "$(slot_dir "$slot")/mpv.pid" 2>/dev/null)
-                [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null && mpv_alive=true
-            fi
-            if ! $mpv_alive; then
-                dispatch_alert warning scheduled_fail \
-                    "slot $slot armed for $((age/60)) min but no mpv — clearing stuck flag"
+
+            if armed_expired "$slot"; then
+                logev "$slot" override.expired age_min="$((age/60))"
                 disarm_slot "$slot"
+                continue
             fi
+
+            # Not expired. The only other reason to clear is an arm that never
+            # reached mpv at all — a failed wake, not a live override.
+            [[ "$(armed_field "$slot" "played")" == "true" ]] && continue
+            (( age <= 300 )) && continue  # younger than 5 min, give it time
+
+            # Never played. If the headset is connected, playback is still
+            # plausibly coming — leave it alone and let the watchdog work.
+            local mac
+            mac=$(jq -r --argjson s "$slot" '.devices[] | select(.slot == $s) | .mac // empty' \
+                    "$CONFIG_FILE" 2>/dev/null)
+            if [[ -n "$mac" ]] && bt_connected "$mac"; then
+                continue
+            fi
+
+            dispatch_alert warning scheduled_fail \
+                "slot $slot armed for $((age/60)) min, never played, headset not connected — clearing failed wake"
+            disarm_slot "$slot"
         done
     done
 }
@@ -2023,6 +2090,9 @@ start_playback() {
     echo $! > "$dir/mpv.pid"
     log "$name" "mpv started (pid $!)"
     logev "$name" mpv.start pid=$! resume_track="$start_track" resume_pos="$start_pos"
+    # An override that has reached mpv is live: from here only its own clock
+    # may end it, so a later BT flap can't be mistaken for a stuck arm.
+    mark_armed_played "$slot"
 
     sleep 2
     if ! kill -0 "$!" 2>/dev/null; then
@@ -3092,6 +3162,34 @@ handle_cmd() {
                 log "cmd" "stop target=$color slot=$slot"
                 end_session "$slot" "$tag"
                 applied=$((applied+1))
+                ;;
+            disconnect)
+                # Hand the speaker back. `stop` only kills mpv — the daemon has
+                # no other Disconnect anywhere, so the A2DP link stays ours and
+                # a phone (or any other source) is locked out until the device
+                # itself drops. That is right for the single-purpose headbands
+                # and wrong for a speaker we share, so releasing is explicit.
+                log "cmd" "disconnect target=$color slot=$slot"
+                end_session "$slot" "$tag"
+                # Drop the override too: a released device is not "still owed"
+                # an override, and leaving one armed would re-grab the speaker
+                # the moment it reconnects.
+                disarm_slot "$slot"
+                if device_path=$(device_path_for_mac "$mac" 2>/dev/null); then
+                    if timeout 25 busctl --system call org.bluez "$device_path" \
+                        org.bluez.Device1 Disconnect >/dev/null 2>&1; then
+                        logev "$tag" bt.released mac="$mac"
+                        applied=$((applied+1))
+                    else
+                        log "cmd" "$color: Disconnect call failed"
+                        logev "$tag" bt.release_failed mac="$mac"
+                        skipped=$((skipped+1))
+                    fi
+                else
+                    # Nothing bonded to release: already handed back.
+                    log "cmd" "$color: no BlueZ device object — already released"
+                    applied=$((applied+1))
+                fi
                 ;;
             pause)
                 mpv_ipc "$(slot_dir "$slot")/mpv-socket" '{"command":["cycle","pause"]}' >/dev/null && \

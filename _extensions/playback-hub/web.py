@@ -1470,7 +1470,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         """POST /api/play — remote command endpoint.
 
         Body: {
-          "action": "play" | "stop" | "pause" | "next" | "prev" | "volume",
+          "action": "play" | "stop" | "pause" | "next" | "prev" | "volume"
+                    | "disconnect",   # disconnect = stop + release the BT link
+                                      # so a phone can take the speaker back;
+                                      # stop alone keeps the link held.
           "target": "red" | "white,blue" | "all" | "all-private" | "all-public",
           "content_id": "670208",        # required for play
           "volume": 50,                  # optional for play; required for volume action
