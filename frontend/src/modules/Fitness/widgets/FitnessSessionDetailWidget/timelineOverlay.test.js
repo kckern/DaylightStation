@@ -120,13 +120,25 @@ describe('computeVideoMarkers', () => {
     expect(markers.map(m => m.episodeName)).toEqual(['B', 'A again']);
   });
 
-  it('omits the primary video, not the first, when the primary plays second', () => {
+  it('omits the primary video when it opens the session — the header already shows it', () => {
+    const events = [
+      videoEvent(0, { title: 'Hero', contentId: 'plex:1' }),
+      videoEvent(300, { title: 'Cooldown', contentId: 'plex:2' })
+    ];
+    const markers = computeVideoMarkers(events, { ...MARKER_OPTS, primaryMediaKey: 'plex:1' });
+    expect(markers.map(m => m.episodeName)).toEqual(['Cooldown']);
+  });
+
+  // Regression: session-20260901140036 — Lower Body was the primary at index 2 and
+  // vanished from the gutter, though its mid-session start is a real transition.
+  it('keeps the primary video when it does NOT open the session', () => {
     const events = [
       videoEvent(0, { title: 'Warmup' }),
-      videoEvent(300, { title: 'Hero', contentId: 'plex:2' })
+      videoEvent(300, { title: 'Upper Body', contentId: 'plex:2' }),
+      videoEvent(600, { title: 'Lower Body', contentId: 'plex:3' })
     ];
-    const markers = computeVideoMarkers(events, { ...MARKER_OPTS, primaryMediaKey: 'plex:2' });
-    expect(markers.map(m => m.episodeName)).toEqual(['Warmup']);
+    const markers = computeVideoMarkers(events, { ...MARKER_OPTS, primaryMediaKey: 'plex:3' });
+    expect(markers.map(m => m.episodeName)).toEqual(['Warmup', 'Upper Body', 'Lower Body']);
   });
 
   it('keeps every video when the primary is not among them', () => {
