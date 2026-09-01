@@ -148,6 +148,8 @@ const capabilityProof = (req) => {
  * @param {object} [deps.openRemediation]
  * @param {object} [deps.replaceRemediation] - guarded replacement of an
  *   already-issued retry that has no learner evidence
+ * @param {object} [deps.recoverMisattributedWorksheet] - guarded, preview-first
+ *   recovery of answers marked in another worksheet's row window
  * @param {object} [deps.resolveReviewItem] - guarded sign-off; without it the
  *   sign-off route does not exist. The store is never written to directly.
  * @param {object} [deps.setAssignments] - guarded planning write; likewise
@@ -178,6 +180,7 @@ export function createSchoolLifecycleRouter({
   enrollLearner = null,
   unenrollLearner = null,
   markSessionAbandoned = null,
+  recoverMisattributedWorksheet = null,
   replaceLostAnswerSheet = null,
   createLostAnswerSheetTicket = null,
   // Study-day-windowed sessions read (`?window=today`) — a use case, not an
@@ -198,6 +201,7 @@ export function createSchoolLifecycleRouter({
     getLearnerDayCompletion, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation, replaceRemediation,
     resolveReviewItem, reviewHeldCardScan, setAssignments, enrollLearner, unenrollLearner, markSessionAbandoned,
+    recoverMisattributedWorksheet,
     replaceLostAnswerSheet, createLostAnswerSheetTicket,
   }).filter(([, v]) => v).map(([k]) => k);
   if (!wired.length) {
@@ -479,6 +483,29 @@ export function createSchoolLifecycleRouter({
         pin,
         idempotencyKey,
       }));
+    }));
+  }
+
+  if (recoverMisattributedWorksheet) {
+    router.post('/recoveries/worksheet-attribution', guarded(async (req, res) => {
+      const body = req.body || {};
+      const result = await recoverMisattributedWorksheet.execute({
+        sourceSessionId: body.sourceSessionId,
+        creditedSessionId: body.creditedSessionId,
+        remediationSessionId: body.remediationSessionId,
+        sourceCardId: body.sourceCardId,
+        currentCardId: body.currentCardId,
+        sourceRows: body.sourceRows,
+        targetRows: body.targetRows,
+        marks: body.marks,
+        reason: body.reason,
+        recoveredBy: body.recoveredBy,
+        pin: body.pin ?? capabilityProof(req),
+        idempotencyKey: body.idempotencyKey,
+        expectedReplacementRows: body.expectedReplacementRows,
+        apply: body.apply === true,
+      });
+      res.status(body.apply === true ? 201 : 200).json(result);
     }));
   }
 

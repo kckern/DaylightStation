@@ -19,7 +19,7 @@
  * names the affected sessions so the teacher can supersede deliberately.
  */
 import { sha256Text } from '#system/utils/sha256.mjs';
-import { gradeAnswer, bankContentRev } from '#domains/school/index.mjs';
+import { gradeAnswer, bankContentRev, effectiveAttempts } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 
@@ -64,7 +64,9 @@ export class RegradeBankAttempts {
     const today = this.#clock().toISOString().slice(0, 10);
     const learners = await this.#learnerDirectory.listLearners();
     for (const learner of learners) {
-      const attempts = this.#datastore.readAttemptsInRange(learner.id, fromDay, throughDay) ?? [];
+      const attempts = effectiveAttempts(
+        this.#datastore.readAttemptsInRange(learner.id, fromDay, throughDay) ?? [],
+      );
       // Idempotency (M8 fix 3): corrective rows carry `at` = APPLY time, which
       // lands outside the scanned window — so re-running used to re-append
       // every correction. Scan forward to today for existing corrections and

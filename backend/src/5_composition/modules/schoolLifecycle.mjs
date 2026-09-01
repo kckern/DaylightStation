@@ -112,6 +112,8 @@ import { ReprintResultReceiptArtifact } from '#apps/school/usecases/ReprintResul
 import { IssueCorrectedResultReceipt } from '#apps/school/usecases/IssueCorrectedResultReceipt.mjs';
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { ReplaceRemediation } from '#apps/school/usecases/ReplaceRemediation.mjs';
+import { InvalidateSessionEvidence } from '#apps/school/usecases/InvalidateSessionEvidence.mjs';
+import { RecoverMisattributedWorksheet } from '#apps/school/usecases/RecoverMisattributedWorksheet.mjs';
 import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
@@ -216,6 +218,7 @@ function cryptoRng(crypto) {
  */
 export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
+  attemptDatastore = null,
   economyService = null, userService = null, eventBus = null, realtime = null,
   thermalPrinterRegistry = null, playbackAdapter = null, wakeScreen = null,
   startReadingSession = null,
@@ -1140,6 +1143,32 @@ export async function createSchoolLifecycle({
   const markSessionAbandoned = new MarkSessionAbandoned({
     sessions: stores.sessions, teacherGate, learnerDirectory, clock, logger,
   });
+  const worksheetRecoveryAuthority = Object.freeze({ kind: 'worksheet-attribution-recovery' });
+  const invalidateSessionEvidence = attemptDatastore ? new InvalidateSessionEvidence({
+    sessions: stores.sessions,
+    datastore: attemptDatastore,
+    teacherGate,
+    trustedAuthority: worksheetRecoveryAuthority,
+    clock,
+    logger,
+  }) : null;
+  const recoverMisattributedWorksheet = invalidateSessionEvidence
+    ? new RecoverMisattributedWorksheet({
+      sessions: stores.sessions,
+      allocationStore,
+      teacherGate,
+      invalidateSessionEvidence,
+      submitPaperWork,
+      gradeSubmission,
+      closeSessionOutcome,
+      markSessionAbandoned,
+      issueDocument,
+      invalidationAuthority: worksheetRecoveryAuthority,
+      clock,
+      newSessionId,
+      logger,
+    })
+    : null;
   const setAssignments = new SetAssignments({
     assignments: stores.assignments, grownUps, teacherGate, curriculum,
     programValidators: createSchoolProgramEnrollmentValidators({
@@ -1256,6 +1285,7 @@ export async function createSchoolLifecycle({
     resolvePersonalCard, resolveScanAction, resolveReviewItem, resolveCardScan, reviewHeldCardScan,
     setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
+    invalidateSessionEvidence, recoverMisattributedWorksheet,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
     getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode,

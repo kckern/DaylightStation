@@ -53,6 +53,23 @@ describe('teacher workspace routes', () => {
       .expect({ applied: true, sessionId: 'ses_1' });
   });
 
+  it('keeps evidence invalidation preview-first and forwards explicit apply', async () => {
+    const invalidateSessionEvidence = {
+      execute: vi.fn(async (args) => ({ applied: args.apply, sessionId: args.sessionId })),
+    };
+    await request(app({ invalidateSessionEvidence }))
+      .post('/api/v1/school/teacher/sessions/ses_1/evidence-invalidations')
+      .send({ reason: 'wrong worksheet', invalidatedBy: 'parent' }).expect(200)
+      .expect({ applied: false, sessionId: 'ses_1' });
+    await request(app({ invalidateSessionEvidence }))
+      .post('/api/v1/school/teacher/sessions/ses_1/evidence-invalidations')
+      .send({ reason: 'wrong worksheet', invalidatedBy: 'parent', baseSeq: 7, apply: true }).expect(201)
+      .expect({ applied: true, sessionId: 'ses_1' });
+    expect(invalidateSessionEvidence.execute).toHaveBeenLastCalledWith(expect.objectContaining({
+      sessionId: 'ses_1', reason: 'wrong worksheet', invalidatedBy: 'parent', baseSeq: 7, apply: true,
+    }));
+  });
+
   it('forwards the Idempotency-Key on a real agenda dispatch', async () => {
     const teacherAgendaDispatch = { execute: vi.fn(async (args) => ({ printed: true, idempotencyKey: args.idempotencyKey })) };
     await request(app({ teacherAgendaDispatch })).post('/api/v1/school/teacher/learners/kid/agenda/dispatch')

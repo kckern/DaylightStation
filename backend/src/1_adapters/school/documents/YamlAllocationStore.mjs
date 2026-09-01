@@ -238,9 +238,10 @@ export class YamlAllocationStore {
     return this.#enqueue(async () => {
       const cardIds = [...this.#io.list(path.join(this.#directory, 'cards'))];
       const cards = cardIds.map((cardId) => ({ cardId, records: this.#load(cardId) }));
-      const learnerCards = cards.filter(({ records }) => records.some((record) => (
-        record.learnerId === learnerId && record.deliveryState !== 'cancelled'
-      )));
+      const learnerCards = cards.filter(({ records }) => !cardRetired(records)
+        && records.some((record) => (
+          record.learnerId === learnerId && record.deliveryState !== 'cancelled'
+        )));
       const head = monotonicHead(learnerCards);
 
       // A racing duplicate issue of the same immutable render context must
@@ -280,6 +281,7 @@ export class YamlAllocationStore {
         ({ cardId, records: existing } = head);
         startRow = head.occupiedThrough + 1;
         generation = Math.max(1, head.generation);
+        predecessorCardId = cardMetadata(existing).predecessorCardId ?? null;
       } else {
         predecessorCardId = head?.cardId ?? null;
         const activeCardIds = cards
@@ -370,12 +372,73 @@ export class YamlAllocationStore {
     });
   }
 
+  /**
+   * Backfill a printer-confirmed historical delivery whose allocation predates
+   * the delivery fields. Unlike `markDelivered`, this deliberately permits a
+   * settled/released record: its authority is the immutable confirmed `issued`
+   * event supplied by the recovery caller, not the allocation's current state.
+   */
+  async confirmHistoricalDelivery({
+    cardId, recordId, deliveredAt, confirmedBy, at = this.#now(),
+  } = {}) {
+    assertCardId(cardId);
+    if (typeof recordId !== 'string' || !recordId.trim()) {
+      throw new Error('confirmHistoricalDelivery requires recordId');
+    }
+    if (typeof deliveredAt !== 'string' || !deliveredAt.trim()) {
+      throw new Error('confirmHistoricalDelivery requires deliveredAt');
+    }
+    if (typeof confirmedBy !== 'string' || !confirmedBy.trim()) {
+      throw new Error('confirmHistoricalDelivery requires confirmedBy');
+    }
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const record = records.find((entry) => entry.recordId === recordId);
+      if (!record) throw new EntityNotFoundError('AllocationRecord', recordId, { details: { cardId } });
+      if (record.deliveryState === 'cancelled') {
+        throw new DomainInvariantError(`cannot confirm cancelled allocation ${recordId} as delivered`, {
+          code: 'ALLOCATION_DELIVERY_ILLEGAL_TRANSITION',
+        });
+      }
+      if (record.deliveryState === 'delivered') return structuredClone(record);
+      const delivered = {
+        ...record,
+        deliveryState: 'delivered',
+        deliveredAt: deliveredAt.trim(),
+        deliveryBackfilledAt: at,
+        deliveryConfirmedBy: confirmedBy.trim(),
+        cardCapacity: record.cardCapacity ?? 50,
+      };
+      this.#save(cardId, records.map((entry) => (entry.recordId === recordId ? delivered : entry)));
+      if (delivered.predecessorCardId) {
+        const predecessor = this.#load(delivered.predecessorCardId);
+        if (predecessor.length) {
+          const occupiedThrough = Math.max(...predecessor.map((entry) => entry.rowRange.end));
+          this.#save(delivered.predecessorCardId, predecessor.map((entry) => ({
+            ...entry,
+            successorCardId: cardId,
+            tailSkipped: occupiedThrough < (delivered.cardCapacity ?? 50)
+              ? { start: occupiedThrough + 1, end: delivered.cardCapacity ?? 50 }
+              : null,
+          })));
+        }
+      }
+      this.#logger?.info?.('school.answer-sheet.delivery-backfilled', {
+        cardId, recordId, learnerId: delivered.learnerId,
+        deliveredAt: delivered.deliveredAt, confirmedBy: delivered.deliveryConfirmedBy,
+      });
+      return structuredClone(delivered);
+    });
+  }
+
   /** Delivered live records for the identity preflight gate. */
   async findDeliveredLiveByLearner(learnerId) {
     if (typeof learnerId !== 'string' || !learnerId.trim()) return [];
     const out = [];
     for (const cardId of this.#io.list(path.join(this.#directory, 'cards'))) {
-      for (const record of this.#load(cardId)) {
+      const records = this.#load(cardId);
+      if (cardRetired(records)) continue;
+      for (const record of records) {
         if (record.learnerId === learnerId && record.status === 'live'
             && record.deliveryState === 'delivered') out.push(structuredClone(record));
       }
@@ -499,6 +562,7 @@ export class YamlAllocationStore {
     const candidates = [];
     for (const cardId of this.#io.list(path.join(this.#directory, 'cards'))) {
       const records = this.#load(cardId);
+      if (cardRetired(records)) continue;
       const learnerRecords = records.filter((record) => record.learnerId === learnerId);
       if (learnerRecords.length === 0) continue;
       // Conservative mode preserves the original behavior. Shared-card modes
@@ -638,6 +702,35 @@ export class YamlAllocationStore {
     });
   }
 
+  /** Permanently remove a no-longer-physical card from reuse and scan resolution. */
+  async retireCard({ cardId, reason, retiredBy, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    if (typeof reason !== 'string' || !reason.trim()) throw new Error('retireCard requires reason');
+    if (typeof retiredBy !== 'string' || !retiredBy.trim()) throw new Error('retireCard requires retiredBy');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      if (!records.length) throw new EntityNotFoundError('AnswerCard', cardId);
+      if (records.some((record) => record.status === 'live')) {
+        throw new DomainInvariantError(`cannot retire answer card ${cardId} while it has live allocations`, {
+          code: 'ALLOCATION_CARD_STILL_LIVE',
+        });
+      }
+      if (cardRetired(records)) return structuredClone(records);
+      const retired = records.map((record) => ({
+        ...record,
+        cardRetiredAt: at,
+        cardRetiredReason: reason.trim(),
+        cardRetiredBy: retiredBy.trim(),
+      }));
+      this.#save(cardId, retired);
+      this.#logger?.info?.('school.answer-sheet.retired', {
+        cardId, learnerIds: [...new Set(retired.map((record) => record.learnerId).filter(Boolean))],
+        retiredBy: retiredBy.trim(), reason: reason.trim(),
+      });
+      return structuredClone(retired);
+    });
+  }
+
   /** Draws random cardIds (domain `generateCardId`) until one has no records in the store yet. */
   #generateFreshCardId() {
     for (let attempt = 0; attempt < MAX_CARD_ID_ATTEMPTS; attempt += 1) {
@@ -700,6 +793,10 @@ function cardMetadata(records) {
     identiconVersion: first.identiconVersion ?? null,
     cardCapacity: Number.isInteger(first.cardCapacity) ? first.cardCapacity : null,
   };
+}
+
+function cardRetired(records) {
+  return records.some((record) => typeof record.cardRetiredAt === 'string' && record.cardRetiredAt.length > 0);
 }
 
 function monotonicHead(cards) {

@@ -560,6 +560,92 @@ describe('release', () => {
   });
 });
 
+describe('retireCard', () => {
+  it('refuses retirement while any allocation is still live', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-31T18:00:00.000Z' });
+    await store.allocate({
+      cardId: '1234567',
+      request: request({ learnerId: 'learner3', rowRange: { start: 1, end: 6 } }),
+    });
+
+    await expect(store.retireCard({
+      cardId: '1234567', reason: 'physical card destroyed', retiredBy: 'parent',
+    })).rejects.toMatchObject({ code: 'ALLOCATION_CARD_STILL_LIVE' });
+  });
+
+  it('stamps every settled record once and permanently excludes the card from reuse', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-31T18:00:00.000Z' });
+    const first = await store.allocate({
+      cardId: '1234567',
+      request: request({ learnerId: 'learner3', documentId: 'doc-a', rowRange: { start: 1, end: 6 } }),
+    });
+    const second = await store.allocate({
+      cardId: '1234567',
+      request: request({ learnerId: 'learner3', documentId: 'doc-b', rowRange: { start: 7, end: 12 } }),
+    });
+    await store.updateStatus({ cardId: '1234567', recordId: first.recordId, status: 'satisfied' });
+    await store.release({ cardId: '1234567', rows: second.rowRange });
+
+    const retired = await store.retireCard({
+      cardId: '1234567', reason: 'wrong worksheet used on this physical card', retiredBy: 'parent',
+    });
+    expect(retired).toHaveLength(2);
+    expect(retired).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        recordId: first.recordId,
+        cardRetiredAt: '2026-08-31T18:00:00.000Z',
+        cardRetiredReason: 'wrong worksheet used on this physical card',
+        cardRetiredBy: 'parent',
+      }),
+      expect.objectContaining({ recordId: second.recordId, status: 'released' }),
+    ]));
+    expect(await store.findReusableCard({ learnerId: 'learner3', rowsNeeded: 6 })).toBeNull();
+
+    const repeated = await store.retireCard({
+      cardId: '1234567', reason: 'a later explanation must not rewrite the audit', retiredBy: 'someone-else',
+      at: '2026-09-01T00:00:00.000Z',
+    });
+    expect(repeated).toEqual(retired);
+  });
+});
+
+describe('confirmHistoricalDelivery', () => {
+  it('backfills confirmed delivery on a settled legacy allocation without reopening it', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-31T18:00:00.000Z' });
+    const record = await store.allocate({
+      cardId: '1234567', request: request({ learnerId: 'learner3', rowRange: { start: 1, end: 6 } }),
+    });
+    await store.updateStatus({ cardId: '1234567', recordId: record.recordId, status: 'satisfied' });
+    // Simulate the deployed pre-delivery-metadata record this backfill exists for.
+    const file = '/docs/cards/1234567.yml';
+    const [legacy] = io.load(file);
+    delete legacy.deliveryState;
+    delete legacy.deliveredAt;
+    delete legacy.cardCapacity;
+    io.save(file, [legacy]);
+
+    const delivered = await store.confirmHistoricalDelivery({
+      cardId: '1234567', recordId: record.recordId,
+      deliveredAt: '2026-08-31T15:30:09.071Z', confirmedBy: 'parent',
+    });
+    expect(delivered).toMatchObject({
+      status: 'satisfied', deliveryState: 'delivered',
+      deliveredAt: '2026-08-31T15:30:09.071Z',
+      deliveryBackfilledAt: '2026-08-31T18:00:00.000Z',
+      deliveryConfirmedBy: 'parent', cardCapacity: 50,
+    });
+
+    const repeated = await store.confirmHistoricalDelivery({
+      cardId: '1234567', recordId: record.recordId,
+      deliveredAt: '2099-01-01T00:00:00.000Z', confirmedBy: 'someone-else',
+    });
+    expect(repeated).toEqual(delivered);
+  });
+});
+
 describe('describeCard', () => {
   it('never reclaims physical rows when reporting contiguous capacity', async () => {
     const { io } = fakeIo();

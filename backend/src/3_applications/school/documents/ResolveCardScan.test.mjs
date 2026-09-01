@@ -1256,6 +1256,30 @@ describe('execute — resilience + review signals (re-review wave 2)', () => {
     expect(result.recordStatuses).toEqual(['released']);
   });
 
+  it('a retired physical card can never produce new grading evidence', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const source = sourceDoc('retired-quiz', [
+      mcQuestion('retired-q1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    await allocationStore.release({ cardId: allocation.cardId });
+    await allocationStore.retireCard({
+      cardId: allocation.cardId, reason: 'physical card retired after attribution incident', retiredBy: 'parent',
+    });
+
+    const result = await new ResolveCardScan({ allocationStore, repository }).execute({
+      testId: allocation.cardId, answers: { 1: 'A' },
+    });
+
+    expect(result).toMatchObject({
+      results: [], deadCard: true, retiredCard: true, answeredRowCount: 1,
+      recordStatuses: ['released'],
+    });
+  });
+
   it('write-on questions (no card row) surface as unscannedItems with prompts; row results carry prompts', async () => {
     const repository = fakeRepository();
     const allocationStore = fakeAllocationStore();

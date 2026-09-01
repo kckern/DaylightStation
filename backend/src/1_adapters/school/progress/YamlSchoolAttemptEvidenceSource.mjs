@@ -1,5 +1,6 @@
 import { ILearningEvidenceSource } from '#apps/school/ports/ILearningEvidenceSource.mjs';
 import { learningEvidenceFromAttempt } from '#domains/school/progress/index.mjs';
+import { effectiveAttempts } from '#domains/school/attempt.mjs';
 
 /** `YYYY-MM-DDTHH:mm:ss...` -> `YYYY-MM-DD`, or null for anything else. */
 function dayOf(iso) {
@@ -34,7 +35,7 @@ export class YamlSchoolAttemptEvidenceSource extends ILearningEvidenceSource {
       const attempts = windowed
         ? this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay)
         : this.#datastore.readAllAttempts(learnerId);
-      return (attempts ?? [])
+      return effectiveAttempts(attempts)
         .filter((attempt) => (from === null || attempt.at >= from) && (to === null || attempt.at < to)
           // Regrade corrections are verdict amendments, not learning
           // evidence rows of their own (M8 fix 1).
@@ -45,4 +46,3 @@ export class YamlSchoolAttemptEvidenceSource extends ILearningEvidenceSource {
 }
 
 export default YamlSchoolAttemptEvidenceSource;
-

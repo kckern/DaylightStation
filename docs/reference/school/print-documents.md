@@ -693,6 +693,50 @@ may therefore point several course worksheets at one answer sheet while every
 worksheet and result receipt still carries enough identity and row information
 to be understood if separated from the agenda.
 
+### 5.1.2 Wrong-worksheet attribution recovery
+
+When a learner marks one worksheet's answers in another worksheet's row
+window, the repair is not a grade adjustment. None of the accidentally graded
+worksheet's answers are trustworthy, including any answer that happened to be
+correct. Recovery therefore preserves the machine scan as incident evidence
+while removing every one of its attempts from effective progress:
+
+- an `evidence_invalidated` session annotation names all affected attempt ids;
+- append-only invalidation attempts point back to each original attempt, so
+  report cards and progress projections omit the originals without deleting
+  them;
+- the intended worksheet is credited only from a grown-up-confirmed mark
+  sequence, through ordinary human verdicts—not by inventing answer values;
+- an `evidence_attributed` annotation records source and target session, card,
+  rows, item ids, marks, actor, and reason;
+- an unworked remediation is abandoned and its allocation released;
+- the obsolete physical card is retired only after it has no live allocations.
+
+Retirement stamps every allocation record with `cardRetiredAt`,
+`cardRetiredReason`, and `cardRetiredBy`. A retired Student No. is excluded from
+reuse and every later marked scan reports a dead/retired card before document
+resolution or grading. Printer-confirmed historical issues may be backfilled
+with `deliveryState: delivered`, the original confirmed issue timestamp, and
+the actor who confirmed it; this does not reopen or rewrite settled work.
+
+The guarded recovery route is preview-first:
+
+```text
+POST /api/v1/school/lifecycle/recoveries/worksheet-attribution
+```
+
+The request names the source, intended, and remediation sessions; old and
+current Student Nos.; source and target rows; human-confirmed A–E marks;
+reason, actor, idempotency key, and optionally the expected replacement range.
+Omit `apply` (or set it false) to verify the entire plan without a write. An
+apply invalidates the source, credits and settles the intended worksheet,
+abandons the retry, retires the old card, then creates a normal full-size
+replacement session for the source unit. It deliberately carries no
+`remediationOf` or `remediationItemIds`, so issuance selects the full worksheet
+instead of only previously missed questions. The idempotency key binds all
+annotations and the replacement session, allowing a retry to finish an
+interrupted recovery without printing or crediting twice.
+
 ### 5.2 Lost answer sheets
 
 A lost answer sheet is **superseded, never deleted or reset in place**. Settled

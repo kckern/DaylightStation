@@ -447,6 +447,57 @@ const SCHEMA = {
       if (raw.baseSeq !== undefined && !isSeq(raw.baseSeq)) push('baseSeq: must be an integer >= 1 when present');
     }),
   },
+  // The scan remains machine evidence, but none of its answers may be used as
+  // learner evidence. This is deliberately distinct from a grade adjustment:
+  // when the wrong worksheet was bubbled there is no honest replacement score.
+  evidence_invalidated: {
+    fields: ['invalidationId', 'attemptIds', 'reason', 'invalidatedBy', 'baseSeq'],
+    validate: allOf(stringField('invalidationId'), stringField('reason'), stringField('invalidatedBy'), (raw, push) => {
+      if (!Array.isArray(raw.attemptIds) || raw.attemptIds.length === 0
+          || !raw.attemptIds.every(isNonEmptyString)) {
+        push('attemptIds: must be a non-empty array of attempt ids');
+      }
+      if (Array.isArray(raw.attemptIds) && new Set(raw.attemptIds).size !== raw.attemptIds.length) {
+        push('attemptIds: must not contain duplicates');
+      }
+      if (raw.baseSeq !== undefined && !isSeq(raw.baseSeq)) push('baseSeq: must be an integer >= 1 when present');
+    }),
+  },
+  // Human-confirmed lineage for answers that were physically marked against
+  // another worksheet's row window. This says where the credit came from; it
+  // does not invent machine-readable answer values or replace grading.
+  evidence_attributed: {
+    fields: [
+      'attributionId', 'sourceSessionId', 'sourceCardId', 'sourceRows',
+      'targetCardId', 'targetRows', 'itemIds', 'marks',
+      'reason', 'attributedBy', 'baseSeq',
+    ],
+    validate: allOf(
+      stringField('attributionId'), stringField('sourceSessionId'),
+      stringField('sourceCardId'), stringField('targetCardId'),
+      stringField('reason'), stringField('attributedBy'),
+      (raw, push) => {
+        const integerRows = (rows) => Array.isArray(rows) && rows.length > 0
+          && rows.every((row) => Number.isInteger(row) && row >= 1 && row <= 50)
+          && new Set(rows).size === rows.length;
+        if (!integerRows(raw.sourceRows)) push('sourceRows: must be unique integers from 1 to 50');
+        if (!integerRows(raw.targetRows)) push('targetRows: must be unique integers from 1 to 50');
+        if (!Array.isArray(raw.itemIds) || raw.itemIds.length === 0
+            || !raw.itemIds.every(isNonEmptyString)) {
+          push('itemIds: must be a non-empty array of item ids');
+        }
+        if (!Array.isArray(raw.marks) || raw.marks.length === 0
+            || !raw.marks.every(isNonEmptyString)) {
+          push('marks: must be a non-empty array of human-confirmed marks');
+        }
+        const lengths = [raw.sourceRows?.length, raw.targetRows?.length, raw.itemIds?.length, raw.marks?.length];
+        if (lengths.some((length) => length !== lengths[0])) {
+          push('sourceRows, targetRows, itemIds, and marks must have equal lengths');
+        }
+        if (raw.baseSeq !== undefined && !isSeq(raw.baseSeq)) push('baseSeq: must be an integer >= 1 when present');
+      },
+    ),
+  },
   failed: { fields: ['stage', 'reason'], validate: allOf(stringField('stage'), stringField('reason')) },
   abandoned: { fields: ['reason', 'decidedBy'], validate: () => {} },
 };
@@ -503,6 +554,7 @@ export const TRANSITIONS = Object.freeze({
  */
 export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'failed', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted',
+  'evidence_invalidated', 'evidence_attributed',
   'reward_reconciled', 'reward_reconciliation_failed',
   'result_receipt_captured', 'result_receipt_reprinted', 'checkpoint_cleared',
   'companion_gate_read', 'remediation_replaced',
@@ -573,7 +625,8 @@ const ANNOTATION_STATES = new Map([
  *   coins is a household-economy decision nobody has taken.
  */
 const TERMINAL_ANNOTATIONS = new Set([
-  'grade_adjusted', 'grade_adjustment_retracted', 'reward_reconciled', 'reward_reconciliation_failed',
+  'grade_adjusted', 'grade_adjustment_retracted', 'evidence_invalidated', 'evidence_attributed',
+  'reward_reconciled', 'reward_reconciliation_failed',
   'result_receipt_captured', 'result_receipt_reprinted',
   'reassigned',
 ]);
@@ -724,6 +777,9 @@ const emptyState = () => ({
   gradedPercent: null,
   machineGrade: null,
   gradeAdjustments: [],
+  evidenceInvalidations: [],
+  evidenceInvalidated: false,
+  evidenceAttributions: [],
   gradedPassingPercent: null,
   gradedCorrectCount: null,
   gradedTotalCount: null,
@@ -1007,6 +1063,45 @@ const APPLY = {
     target.retractedBy = e.retractedBy;
     target.retractionReason = e.reason;
   },
+  evidence_invalidated(s, e, push) {
+    if (!s.machineGrade) {
+      push('cannot invalidate a session with no machine grade');
+      return;
+    }
+    if (s.evidenceInvalidations.some((row) => row.invalidationId === e.invalidationId)) {
+      push(`duplicate invalidationId "${e.invalidationId}"`);
+      return;
+    }
+    s.evidenceInvalidations.push({
+      invalidationId: e.invalidationId,
+      attemptIds: [...e.attemptIds],
+      reason: e.reason,
+      invalidatedBy: e.invalidatedBy,
+      at: e.at,
+      seq: e.seq,
+    });
+    s.evidenceInvalidated = true;
+  },
+  evidence_attributed(s, e, push) {
+    if (s.evidenceAttributions.some((row) => row.attributionId === e.attributionId)) {
+      push(`duplicate attributionId "${e.attributionId}"`);
+      return;
+    }
+    s.evidenceAttributions.push({
+      attributionId: e.attributionId,
+      sourceSessionId: e.sourceSessionId,
+      sourceCardId: e.sourceCardId,
+      sourceRows: [...e.sourceRows],
+      targetCardId: e.targetCardId,
+      targetRows: [...e.targetRows],
+      itemIds: [...e.itemIds],
+      marks: [...e.marks],
+      reason: e.reason,
+      attributedBy: e.attributedBy,
+      at: e.at,
+      seq: e.seq,
+    });
+  },
   failed(s, e) { s.lastFailure = { stage: e.stage ?? null, reason: e.reason ?? null, at: e.at }; },
   abandoned() {},
 };
@@ -1204,6 +1299,22 @@ export function reduceSession(events) {
         adjustmentId: effective.adjustmentId,
       };
     }
+  }
+  // An attribution failure has no honest numerator or denominator. Preserve
+  // machineGrade/machineOutcome above as the immutable incident record, while
+  // every effective consumer sees a voided session with no score.
+  if (s.evidenceInvalidated) {
+    const invalidation = s.evidenceInvalidations.at(-1);
+    s.gradedPercent = null;
+    s.gradedPassingPercent = null;
+    s.gradedCorrectCount = null;
+    s.gradedTotalCount = null;
+    s.missedItemIds = [];
+    s.voidedItemIds = [];
+    s.outcome = {
+      result: 'voided', reason: 'evidence_invalidated', at: invalidation.at,
+      invalidationId: invalidation.invalidationId,
+    };
   }
   s.nextAction = computeNextAction(s);
   return s;
