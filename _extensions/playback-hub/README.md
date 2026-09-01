@@ -96,7 +96,7 @@ The central cache (`cache/<plex_id>.mp3`, single-writer via `cache_manager.sh`) 
 
 ## Configuration
 
-Production config lives at `data/household/config/playback-hub.yml` in the DaylightStation Dropbox SSOT; `sync_config.sh` rsyncs it to the box every 60s. The committed `devices.yml` here is a documentation reference, not a deployment artifact.
+Production config lives at `data/household/playback-hub/config.yml` in the DaylightStation Dropbox SSOT — the path the household config registry (`shared/contracts/householdConfig.mjs`) declares for this app. `sync_config.sh` rsyncs it to the box every 60s via a systemd timer. The committed `devices.yml` here is a documentation reference, not a deployment artifact.
 
 ### Device schema (per slot)
 

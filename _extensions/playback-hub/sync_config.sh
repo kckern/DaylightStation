@@ -13,7 +13,10 @@
 #     malformed config that would break headsets for kids.
 set -euo pipefail
 
-SRC="user_1@10.0.0.10:/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/household/config/playback-hub.yml"
+# Path per the household config registry (shared/contracts/householdConfig.mjs):
+# 'playback-hub' -> 'playback-hub/config'. The old household/config/ directory
+# was retired 2026-08, which silently broke this sync until 2026-08-31.
+SRC="user_1@10.0.0.10:/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/household/playback-hub/config.yml"
 DEST="/home/kckern/playback-hub/devices.yml"
 STAGING="${DEST}.staging"
 
