@@ -409,6 +409,268 @@ If 1–7 look good and you still hear nothing, check the headset's hardware volu
 
 ---
 
+## Playbook
+
+Symptom → what it actually is → what to do. Every entry below was a real
+misdiagnosis at least once; the "looks like" column is what it wastes your time
+pretending to be.
+
+| Symptom | Looks like | Actually is |
+|---|---|---|
+| Plays, position advances, no sound | dead headset | stale PipeWire bluez node (§1) |
+| Explicit request reverts to the scheduled queue | override ignored | reaper cleared it, or an arm race (§2) |
+| A slot never reconnects for days | lost pairing | its dongle is unplugged (§3) |
+| A speaker won't take a phone | hub is greedy | hub never disconnects (§4) |
+| `/api/status` returns nothing | web service down | one bad ledger line (§6) |
+
+### §1 — "Playing" with position advancing, but silence
+
+The single most misleading failure on this rig. mpv is healthy, `time-pos`
+climbs, `ao-mute` is false, `audio-device` is right, the file is fine — and the
+speaker is silent. **This is a stale PipeWire node, not hardware.**
+
+**The authoritative signal is the peak meter**, sampled more than once —
+`audio_flowing: false` pinned at a floor value like `-80.8` that barely moves
+between samples, while `time-pos` keeps climbing:
+
+```bash
+for i in 1 2 3; do curl -s localhost:8080/api/verify/<color>; echo; done
+```
+
+A healthy slot reads roughly −15 to −35 dBFS and **varies with the music**. One
+sample is not enough: a single low reading can just be a quiet passage.
+
+Corroborate against the two layers underneath, and mind the path shape:
+
+```bash
+# PipeWire node — exists and mpv is feeding it:
+XDG_RUNTIME_DIR=/run/user/1000 pw-dump | \
+  python3 -c 'import json,sys;[print((o.get("info") or {}).get("props",{}).get("node.name"),(o.get("info") or {}).get("state")) for o in json.load(sys.stdin) if o.get("type","").endswith("Node") and ((o.get("info") or {}).get("props") or {}).get("media.class")=="Audio/Sink"]'
+
+# BlueZ transport — note the sepN component, it is NOT dev_<MAC>/fdN:
+for p in $(busctl --system tree org.bluez |
+           grep -oE "/org/bluez/hci[0-9]+/dev_<MAC>/sep[0-9]+/fd[0-9]+"); do
+  busctl --system get-property org.bluez "$p" org.bluez.MediaTransport1 State
+done
+# healthy: s "active"
+```
+
+> **Do not grep `dev_<MAC>/fd[0-9]+`.** The transport lives one level deeper, at
+> `dev_<MAC>/sep1/fd7`. That pattern matches nothing even on a perfectly healthy
+> slot, and the empty result reads as "the transport is gone" — it cost a wrong
+> diagnosis of failing hardware on 2026-08-31. A missing transport is only
+> meaningful when you looked for it at the right path.
+
+**Fix — release and reconnect.** The `disconnect` action tears the stale node
+down (a plain `stop` will not: it kills mpv and keeps the link, so the dead node
+survives):
+
+```bash
+curl -s -X POST localhost:8080/api/play -H 'Content-Type: application/json' \
+  -d '{"action":"disconnect","target":"<color>"}'
+# confirm the node is gone — sinks should drop to just auto_null
+busctl --system call org.bluez /org/bluez/hci<X>/dev_<MAC> org.bluez.Device1 Connect
+curl -s -X POST localhost:8080/api/play -H 'Content-Type: application/json' \
+  -d '{"action":"play","target":"<color>","content_id":"<id>"}'
+```
+
+Recovery is seconds, and the peak meter should jump to roughly −15 to −20 dBFS
+with `audio_flowing: true`.
+
+**Constant flapping is a symptom, not a second fault.** The same slot logged 28
+connect/disconnect cycles in 10 minutes, with `bt.connect_unstable` →
+`bt.connect_aborted` inside a second, which looks exactly like a dying headset.
+After the release-and-reconnect it ran **150 s with zero flaps**. Fix the audio
+path before concluding anything about the hardware.
+
+**Two dead ends to skip.** `ConnectProfile` on the A2DP sink UUID returns
+`br-connection-unknown` in this state — that is the profile being half-attached,
+**not** proof the headset stopped offering A2DP, and it tempts you into
+condemning good hardware. And ruling out the audio file is cheap, so do it
+before blaming the device:
+
+```bash
+ffmpeg -hide_banner -nostats -i ~/playback-hub/cache/<id>.mp3 -af volumedetect -f null - 2>&1 | grep mean_volume
+# healthy content is around -15 dB; compare against a track you know plays
+```
+
+### §2 — An explicit request reverts to the scheduled queue
+
+Two distinct causes; check which one applies before changing anything.
+
+**Cause A — the reaper cleared the override.** Historic: `selfcheck_loop` deleted
+any `.armed.json` older than 5 min whose mpv wasn't running. During a BT flap mpv
+is *always* momentarily gone, so a 30-second dropout cancelled the request and the
+next reconnect fell back to the schedule. Fixed — an override is now temporary but
+**time**-bounded:
+
+```jsonc
+{ "queue": "675431", "armed_at": …, "expires_at": …, "played": true }
+```
+
+`expires_at` comes from `--duration`, else `OVERRIDE_TTL_MIN` (120 min). Once
+`played` is true, **only expiry** ends it. The never-played sweep additionally
+requires the headset to be disconnected, so a genuinely failed wake is still
+cleaned up. Files with no `expires_at` (legacy) never expire on age alone.
+
+**Cause B — an arm/reconnect race.** If the slot reconnects and starts mpv
+*before* your arm lands, it comes up on the scheduled queue and the membership
+reconcile pins it there. Seen live: connect at `21:33:00`, `mpv.start` at
+`21:33:09`, arm at `21:33:21` → ambient queue won.
+
+**Tell them apart, then fix:**
+
+```bash
+cat ~/playback-hub/slots/<N>/.armed.json     # empty => Cause A; right queue => Cause B
+grep -E "mpv.start|bt.connect" ~/playback-hub/slots/<N>/events.jsonl | tail -5
+```
+
+For Cause B just re-issue the play against the now-live mpv — it takes the
+`loadlist` override path and applies instantly. Confirm by the playlist, never by
+the API's `applied:1`, which only means the command dispatched:
+
+```bash
+grep '^#EXTINF' ~/playback-hub/slots/<N>/playlist.m3u | head -3
+```
+
+### §3 — A slot that never reconnects (check the dongle before re-pairing)
+
+**One BT controller per slot.** A slot that has failed to reconnect for days is
+usually an **unplugged dongle**, not a lost bond. Slot 2 sat dark for 35 days and
+17,280 `bt.reconnect_fail` events with its pairing perfectly intact — its adapter
+simply wasn't attached. It resumed playing the instant the dongle enumerated, with
+no pairing step. **Count adapters against slots first:**
+
+```bash
+lsusb | grep -c 7392:c611          # Edimax dongles present
+hciconfig | grep -cE '^hci[0-9]+'  # controllers the kernel sees
+```
+
+**`bluetoothctl select` does not persist across invocations.** Each run is a fresh
+session, so `bluetoothctl -- select X` followed by a separate `bluetoothctl devices`
+reports the **default** controller every time — which makes four paired headsets
+look like one. Use the per-adapter check instead:
+
+```bash
+for h in $(hciconfig | grep -oE '^hci[0-9]+'); do
+  printf '%-6s ' $h; hcitool -i $h con | tail -n +2; echo
+done
+```
+
+Depth in the USB tree is not the problem — a dongle two hubs deep runs as reliably
+as one on a root port.
+
+### §4 — Handing a shared speaker back (`stop` ≠ `disconnect`)
+
+The daemon has **no** `Device1 Disconnect` anywhere except the `disconnect` action.
+`stop` kills mpv and **keeps the A2DP link**, so any speaker the hub has played to
+stays locked to the hub until the device itself drops — a phone can't take it.
+That's right for single-purpose headbands and wrong for a shared speaker.
+
+`disconnect` = stop + **disarm** + release. Disarming matters: an override left
+armed would re-grab the speaker the moment it reconnects.
+
+**Is the hub greedy about *taking* a device?** Only if it has `schedules`. Both
+outbound `Connect()` sites are gated on `active_schedule_json`, which is false for
+any device with no `schedules` array (a bare `queue` does not count). So a device
+configured `class: private` with `queue: ''` and no schedules is **adhoc-only** —
+the hub touches it exclusively on an explicit `/play`.
+
+Prefer that shape over `class: public` for a share-with-a-phone speaker: public is
+validator-required to carry an `ha_entity_id`, and the daemon calls it as
+`ha_call_service switch turn_on`, hardcoded to the `switch` domain. A device with
+no HA power switch cannot satisfy it.
+
+### §5 — Pairing a new device
+
+```bash
+# 1. Pick a FREE adapter (one device per adapter — cycle_adapter assumes it)
+for h in $(hciconfig | grep -oE '^hci[0-9]+'); do
+  n=$(hcitool -i $h con | tail -n +2 | grep -c ACL); [ "$n" -eq 0 ] && echo "FREE $h"
+done
+
+# 2. Discover on THAT adapter
+hcitool -i hci<X> scan --flush
+
+# 3. Bond — use busctl, not piped bluetoothctl
+busctl --system call org.bluez /org/bluez/hci<X>/dev_<MAC_UNDERSCORED> org.bluez.Device1 Pair
+
+# 4. Verify — Paired must be true; Trusted alone is NOT a bond
+for p in Paired Trusted Connected; do
+  busctl --system get-property org.bluez /org/bluez/hci<X>/dev_<MAC_UNDERSCORED> org.bluez.Device1 $p
+done
+```
+
+**Piped `bluetoothctl pair` silently fails**: it exits when stdin closes, before the
+exchange finishes, leaving `Trusted: true` and `Paired: false` — which reads like
+success. `busctl … Device1 Pair` blocks until the bond completes and returns a real
+error otherwise. If you must use `bluetoothctl`, hold stdin open with a trailing
+`sleep`.
+
+Some devices (the Yoto) **drop the bond when powered off** and need re-pairing each
+time. `Trusted` survives; the link key doesn't.
+
+### §6 — `/api/status` returns nothing (connection reset)
+
+One malformed line in a slot's `events.jsonl` used to take the whole endpoint down,
+blanking the dashboard while playback continued fine. A value containing a newline
+split one record across physical lines, and an orphaned fragment that happened to be
+a bare `0` parsed as valid JSON — so `ev.get(...)` was called on an int.
+
+Both halves are fixed (`kv_to_json` flattens CR/LF/TAB; `_tail_events` returns only
+dicts), but the shape generalizes: **"it parsed" is not "it's a mapping."** Check
+ledger integrity with:
+
+```bash
+python3 - <<'EOF'
+import json
+for s in (1,2,3,4,5,6):
+    bad=0
+    for L in open(f"/home/kckern/playback-hub/slots/{s}/events.jsonl",errors="replace").read().splitlines()[-400:]:
+        if not L.strip(): continue
+        try: bad += not isinstance(json.loads(L), dict)
+        except Exception: bad += 1
+    print(s, "malformed:", bad)
+EOF
+```
+
+The daemon's stderr goes to the journal, which is where a handler traceback shows up:
+`journalctl --user -u playback-hub-web -n 40`.
+
+### §7 — Config edits that silently vanish
+
+The hub's `devices.yml` is **overwritten from the SSOT every 60 s**. Editing it on the
+box — or via `POST /api/devices`, which writes the same file — survives at most one
+sync tick. The SSOT is `data/household/playback-hub/config.yml` in the data volume
+(the registry path; the retired `household/config/` location broke this sync silently
+for two weeks). Edit there, then confirm it landed:
+
+```bash
+systemctl --user start playback-hub-config-sync.service
+md5sum ~/playback-hub/devices.yml     # must equal the SSOT's
+```
+
+`sync_config.sh` validates before swapping, so a malformed config is refused rather
+than deployed — a failed unit means the hub is still running the last good file.
+Slot count is config-driven throughout (`configured_slots()`), so adding a slot needs
+no code change.
+
+### §8 — Tooling notes
+
+- **`pactl` is not installed.** It returns "command not found", whose empty output
+  reads exactly like "zero sinks" and invents an audio outage that isn't there. Use
+  `pw-dump`, `pw-cli`, `wpctl`, and always with `XDG_RUNTIME_DIR=/run/user/1000`.
+- **`resolve_queue_url` does not strip a `plex:` prefix.** Pass **bare** ids to
+  `/api/play` (`675431`), or you get `…/queue/plex/plex:675431`. The `plex:` form in
+  `schedules` is handled on a different path.
+- **Check the Plex item `Type` before playing.** `Mario Kart Double Dash!!` matches
+  both a 33-track **album** and a video **episode** in Game Cycling; the episode
+  loads as a single 54-minute item on an audio rig.
+- **`/api/play` returning `applied: 1` only means the command dispatched.** Confirm
+  real audio with `/api/verify/<color>` (`audio_flowing`), not with the HTTP status.
+
+---
+
 ## Dependencies
 
 System packages:
