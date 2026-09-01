@@ -27,7 +27,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import yaml from 'js-yaml';
 
-import { decodeSeries, encodeSeries } from '#domains/fitness/services/TimelineService.mjs';
+import { decodeStoredSeries, encodeStoredSeries } from './seriesWire.mjs';
 import { planHeal } from '#domains/fitness/services/SessionIdentityHealer.mjs';
 import { buildSummary, isCumulativeSeriesKey, getLastNonNull } from '../fitnessSessionSummary.mjs';
 import { parseArgs, bool, str } from './argv.mjs';
@@ -102,7 +102,7 @@ function addCumulativeCells(fromArr, toArr, len) {
  * Fold occupant `fromId`'s decoded series into `toId`'s, cell-by-cell, then
  * delete `fromId`'s now-redundant series keys. Mutates `decoded` in place.
  *
- * @param {Object} decoded - decodeSeries() output (mutated)
+ * @param {Object} decoded - decodeStoredSeries() output (mutated)
  * @param {string} fromId
  * @param {string} toId
  * @param {Object} [opts]
@@ -384,7 +384,7 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
   const intervalSeconds = Number.isFinite(obj.timeline?.interval_seconds)
     ? obj.timeline.interval_seconds
     : 5;
-  const decoded = decodeSeries(obj.timeline?.series || {});
+  const decoded = decodeStoredSeries(obj.timeline?.series || {});
 
   for (const { from, to } of plan.transfers) {
     foldOccupantSeries(decoded, from, to, { cumulativeStrategy: 'max' });
@@ -432,7 +432,7 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
     entities,
     timeline: {
       ...obj.timeline,
-      series: encodeSeries(decoded)
+      series: encodeStoredSeries(decoded)
     },
     summary
   };
