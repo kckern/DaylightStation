@@ -59,6 +59,7 @@ const BOUNDARY_HOUR = 4;
  * the registry: one that was never minted simply matches nothing.
  */
 const PREVIEW_TOKEN = 'preview:not-a-ticket';
+const PREVIEW_BULK_TOKEN = 'preview:not-a-bulk-ticket';
 const PREVIEW_ACCESS_CODE = '000000';
 
 
@@ -330,7 +331,13 @@ export class BuildAgenda {
       }
 
       if (this.#previewOnly) {
-        actionLabelBySubject.set(section.subject, 'Preview only — ask a grown-up to start this lesson.');
+        // THE FOOTER SAYS WHAT THE PRINT WILL SAY. It used to read "Preview
+        // only — ask a grown-up to start this lesson", which is the one line
+        // on the card a printed agenda never carries — so the preview
+        // announced itself in the exact slot a reader consults to find out
+        // what the child will be told to do. `suffix` is the real label the
+        // mint sets, already computed above by `#offerFor`.
+        actionLabelBySubject.set(section.subject, suffix);
         // A PREVIEW HAS TO LOOK LIKE THE PRINT. Without a token in
         // `tokensBySubject`, `agendaDocument` falls through to its plain
         // "## SUBJECT / label" text branch — so the preview rendered no card,
@@ -349,7 +356,11 @@ export class BuildAgenda {
         offers.push({
           subject: section.subject, unitId: entry.unitId, sessionId,
           token: null, tokenClass: 'preview',
-          label: `${entry.title} — ${actionLabelBySubject.get(section.subject)}`,
+          label: `${entry.title} — ${suffix}`,
+          // Carried in preview too, or the bulk-print card below cannot count
+          // printable subjects and the preview silently drops a whole card
+          // that the printed agenda has.
+          printable,
         });
         continue;
       }
@@ -401,7 +412,17 @@ export class BuildAgenda {
     let bulkAccessCode = null;
     if (this.#selfService) {
       const printableOffers = offers.filter((offer) => offer.printable);
-      if (printableOffers.length >= 2) {
+      if (this.#previewOnly) {
+        // The bulk card is a WHOLE CARD on the printed page, gated on the same
+        // ">= 2 printable subjects" rule as the mint below. A preview that
+        // left it out was not showing what comes out of the printer — the
+        // reason this branch exists at all. Inert placeholders, exactly like
+        // the per-subject ones above: nothing is minted, nothing is stored.
+        if (printableOffers.length >= 2) {
+          bulkToken = PREVIEW_BULK_TOKEN;
+          bulkAccessCode = PREVIEW_ACCESS_CODE;
+        }
+      } else if (printableOffers.length >= 2) {
         bulkAccessCode = mintAccessCode({
           rng: this.#rng,
           taken: (code) => liveCodes.has(code) || mintedCodes.has(code),
