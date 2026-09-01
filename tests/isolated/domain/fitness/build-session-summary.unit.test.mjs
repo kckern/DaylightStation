@@ -166,7 +166,7 @@ describe('buildSessionSummary', () => {
   // Media events with primary flag
   // ========================================================
   describe('media events', () => {
-    it('extracts media events and marks the LAST ≥10-min survivor as primary (positional bias)', () => {
+    it('extracts media events and marks the LONGEST survivor as primary', () => {
       // NOT "longest wins" — fad43d25b "fix(fitness): prefer last ≥10-min
       // video when multiple survive warmup filter" (2026-05-01) deliberately
       // changed selectPrimaryMedia's tier-1 tie-break: when ≥2 candidates are
@@ -215,8 +215,10 @@ describe('buildSessionSummary', () => {
       const vid1 = result.media.find(m => m.contentId === 'vid1');
       const vid2 = result.media.find(m => m.contentId === 'vid2');
 
-      expect(vid2.primary).toBe(true);
-      expect(vid1.primary).toBeUndefined();
+      // vid1 ran 2799s vs vid2's 1000s — far outside the near-tie band, so the
+      // longer one stays primary regardless of which played last.
+      expect(vid1.primary).toBe(true);
+      expect(vid2.primary).toBeUndefined();
 
       expect(vid1.title).toBe('Episode One');
       expect(vid1.showTitle).toBe('The Show');

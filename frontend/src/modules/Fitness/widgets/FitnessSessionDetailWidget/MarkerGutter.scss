@@ -45,17 +45,23 @@
       .thumb  { height: 44px; width: auto; object-fit: cover; }
     }
 
+    // Width is budgeted per card in videoCardLayout.js (inline max-width) so a
+    // caption never runs under its neighbour. Within that budget it wraps to two
+    // lines, then truncates — captions must never overlap each other.
     .caption {
       margin-top: 2px;
-      max-width: 140px;
+      max-width: 140px; // fallback; the inline budget is the real bound
       font-size: 10px;
       line-height: 1.1;
       text-align: center;
       color: rgba(255, 255, 255, 0.9);
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
       overflow: hidden;
-      text-overflow: ellipsis;
+      overflow-wrap: anywhere; // a single long word truncates instead of spilling
     }
   }
 }
