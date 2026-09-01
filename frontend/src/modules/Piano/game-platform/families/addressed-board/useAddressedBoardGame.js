@@ -55,6 +55,9 @@ export function useAddressedBoardGame({
 
   const rankedRef = useRef(true);
   const savedRef = useRef(false);
+  // The session whose phantom result we have already complained about, so a
+  // terminal transcript sitting across many renders is one warning, not a storm.
+  const refusedRef = useRef(null);
   const archiveContextRef = useRef({});
   const movesRef = useRef(moves);
   movesRef.current = moves;
@@ -103,16 +106,25 @@ export function useAddressedBoardGame({
   // has to be closed the instant it fires, and a re-render is too late.
   useEffect(() => {
     if (!result || savedRef.current) return;
-    // Closed either way: a refusal is final for this session, not retried on
-    // the next render.
-    savedRef.current = true;
     if (playedThroughRef.current < moves.length - 1) {
-      logger.warn('game.result-refused', {
-        gameId, gameSessionId, result, plies: moves.length,
-        playedThrough: playedThroughRef.current, reason: 'not-played-here',
-      });
+      // A refusal is a judgement about the TRANSCRIPT in front of us on this
+      // render, never about the session. `savedRef` means "this session's
+      // result has been FILED", and a refusal files nothing, so it has no
+      // business closing the one-shot: leave it open and a game that really is
+      // played afterwards can still file. Closing it here is what left the
+      // non-gated "Play again" path unable to record its next game at all —
+      // restart mints a session id, this effect re-runs on the still-terminal
+      // props, and the one shot was spent before a single new ply was played.
+      if (refusedRef.current !== gameSessionId) {
+        refusedRef.current = gameSessionId;
+        logger.warn('game.result-refused', {
+          gameId, gameSessionId, result, plies: moves.length,
+          playedThrough: playedThroughRef.current, reason: 'not-played-here',
+        });
+      }
       return;
     }
+    savedRef.current = true;
     const { prepareTerminal, ...baseContext } = archiveContextRef.current;
     // This runs before persistence so the result card, archive, and rivalry
     // memory all receive the same final displayed line.
@@ -144,6 +156,17 @@ export function useAddressedBoardGame({
   // profile change cannot trip it — see userRef above.
   useEffect(() => () => {
     if (savedRef.current || !movesRef.current.length) return;
+    // ...but only a game this component actually played. A transcript it never
+    // played is not a game it can report on, finished OR abandoned — refusing
+    // the result and then filing the same phantom as `completed: false` on the
+    // way out just trades a duplicate for a junk row.
+    if (playedThroughRef.current < movesRef.current.length) {
+      logger.warn('game.abandon-refused', {
+        gameId, plies: movesRef.current.length,
+        playedThrough: playedThroughRef.current, reason: 'not-played-here',
+      });
+      return;
+    }
     logger.info('game.abandoned', { gameId, plies: movesRef.current.length });
     client.archiveGame({
       moves: movesRef.current, completed: false, user_id: userRef.current, ended_by: 'exit',
