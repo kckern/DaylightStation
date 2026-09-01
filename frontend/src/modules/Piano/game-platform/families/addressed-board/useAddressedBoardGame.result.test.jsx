@@ -207,4 +207,52 @@ describe('useAddressedBoardGame — filing a result', () => {
     expect(client.saveGame).not.toHaveBeenCalled();
     expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
   });
+
+  it('waits for the ladder before filing, so the rung is the real one', async () => {
+    // `level` reads 1 until the ladder answers, and on 2026-09-01 every phantom
+    // record carried that 1 while the child's real rung was 7. A game finished
+    // in that window is a REAL result filed against a rung nobody is on.
+    const client = makeClient();
+    let releaseLadder;
+    client.readLadder = vi.fn(() => new Promise((resolve) => { releaseLadder = resolve; }));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+
+    // The game is over and the ladder has not answered: nothing is filed yet.
+    expect(client.saveGame).not.toHaveBeenCalled();
+    // ...and waiting is not refusing. A deferred result must not trip the alarm.
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+
+    await act(async () => { releaseLadder({ unlocked_through: 7 }); });
+
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', level: 7 });
+    expect(client.archiveGame.mock.calls[0][0]).toMatchObject({ level: 7 });
+  });
+
+  it('files anyway when the ladder read never answers', async () => {
+    // FAIL OPEN. Losing a played game is worse than filing it against the
+    // fallback rung, so a hung read costs a level, never a record.
+    vi.useFakeTimers();
+    try {
+      const client = makeClient();
+      client.readLadder = vi.fn(() => new Promise(() => {}));
+
+      const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+      view.rerender({ moves: FINISHED, result: 'win' });
+      expect(client.saveGame).not.toHaveBeenCalled();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+
+      expect(client.saveGame).toHaveBeenCalledTimes(1);
+      expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', level: 1 });
+      // It went through the timeout, and said so — a record filed against the
+      // fallback rung is only forgivable if it is visible.
+      expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.ladder-read-slow')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
