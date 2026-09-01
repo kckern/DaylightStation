@@ -538,10 +538,10 @@ minted, for today or any day. Dispatch requires an `Idempotency-Key`; reusing
 one with a different payload is an `IDEMPOTENCY_CONFLICT`, not a second print.
 
 **A reprint reuses the original `artifactId`.** Reprinting under a fresh id
-would make one worksheet look like two pieces of work. Only artifacts whose
-`availability` is `exact` — the retained bytes, not a reconstruction — offer a
-reprint; a thumbnail is a view of those bytes, and a corrupt retained PDF
-degrades the card to its no-thumbnail state rather than surfacing a 500.
+would make one worksheet look like two pieces of work. Worksheet availability
+is `regenerable`: PDF, thumbnail, postview, and reprint are generated from the
+artifact YAML by the current renderer while preserving the recorded Student
+No. and rows. Historical replay never calls the allocation store.
 
 **The print cooldown arms from confirmed prints only.** A `failed` annotation
 never touches it, and an `issued` event carrying `confirmed: false` — a

@@ -1,131 +1,185 @@
-// frontend/src/modules/Fitness/widgets/FitnessMomentum/momentum.js
-//
-// Pure momentum computation for the fitness home Momentum widget. No DOM, no
-// fetch — a function of (sessions, roster, opts).
-//
-// "Effort" is HR-zone-weighted: only minutes in active/warm/hot/fire count;
-// COOL gets no credit and is omitted. For each person we bucket effort into the
-// last `compareWeeks` consecutive windows (default 4 × 7 days), oldest → newest,
-// so the UI can draw same-scale weekly bars and read "how does this week stack
-// up against the past few weeks." The window length (default 7 days) and the
-// number of compared weeks are caller-configurable.
+// Pure weekly-ring projection for the fitness home Momentum widget. No DOM and
+// no fetch: the same persisted `participants[id].rings` value consumed by the
+// backend fitness.rings provider is the authority here.
 
-const DAY_MS = 86_400_000;
-const CREDITED_ZONES = ['active', 'warm', 'hot', 'fire']; // cool omitted — no credit
-const DEFAULT_WINDOW_DAYS = 7;
+const CREDITED_ZONES = ['active', 'warm', 'hot', 'fire']; // cool earns no rings
 const DEFAULT_COMPARE_WEEKS = 4;
-
-/** Shift a 'YYYY-MM-DD' day string by `delta` days (UTC-safe date arithmetic). */
-export function addDays(dateStr, delta) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + delta);
-  return dt.toISOString().slice(0, 10);
-}
+const DEFAULT_BOUNDARY_HOUR = 4; // same study-day boundary as weekly measures
+const DEFAULT_ZONE_RING_RATES = Object.freeze({ active: 1, warm: 2, hot: 3, fire: 5 });
 
 const blankZones = () => ({ active: 0, warm: 0, hot: 0, fire: 0 });
 
-/** Add a participant's credited zone minutes into an accumulator bucket. */
-function addCredited(bucket, zoneMinutes, fallbackMin) {
-  if (zoneMinutes && typeof zoneMinutes === 'object') {
-    for (const z of CREDITED_ZONES) bucket.zones[z] += Number(zoneMinutes[z]) || 0;
-  } else {
-    // No breakdown — attribute the whole duration to 'active' so it still shows.
-    bucket.zones.active += fallbackMin;
-  }
+/** Monday 04:00 local for the fitness week containing `now`. */
+export function mondayWeekStart(now = Date.now(), boundaryHour = DEFAULT_BOUNDARY_HOUR) {
+  const at = new Date(now);
+  if (Number.isNaN(at.getTime())) return null;
+  // Before the household's 04:00 day boundary it is still the previous study
+  // day. Work from that calendar day, then anchor its containing Monday.
+  if (at.getHours() < boundaryHour) at.setDate(at.getDate() - 1);
+  const daysSinceMonday = (at.getDay() + 6) % 7;
+  at.setDate(at.getDate() - daysSinceMonday);
+  at.setHours(boundaryHour, 0, 0, 0);
+  return at.getTime();
+}
+
+/** Shift a local week boundary without introducing a DST-sized drift. */
+function shiftWeeks(startMs, count) {
+  const at = new Date(startMs);
+  at.setDate(at.getDate() + count * 7);
+  return at.getTime();
+}
+
+function sessionStartMs(session) {
+  const raw = session?.startTime ?? session?.start ?? null;
+  if (raw == null) return null;
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /**
- * Total a zones accumulator into a week. Zone minutes are kept RAW (unrounded) so
- * the renderer can give small high-intensity zones (a fraction of a minute of
- * hot/fire) a fair, log-scaled shake; only the displayed total is rounded.
+ * Read the exact stored per-person total. Sessions written before that summary
+ * field was surfaced can still be recovered when they have exactly one person,
+ * because the session total then belongs unambiguously to that person.
  */
+function participantRings(session, info) {
+  const direct = info?.rings ?? info?.coins;
+  if (direct != null && Number.isFinite(Number(direct))) return Math.max(0, Number(direct));
+  if (Object.keys(session?.participants || {}).length !== 1) return 0;
+  const total = session?.totalRings ?? session?.totalCoins ?? session?.rings;
+  return total != null && Number.isFinite(Number(total)) ? Math.max(0, Number(total)) : 0;
+}
+
+function normalizedRates(zoneRingRates) {
+  return Object.fromEntries(CREDITED_ZONES.map((zone) => {
+    const configured = Number(zoneRingRates?.[zone]);
+    return [zone, Number.isFinite(configured) && configured >= 0
+      ? configured
+      : DEFAULT_ZONE_RING_RATES[zone]];
+  }));
+}
+
+/**
+ * Add exact rings plus their colored contribution to a bucket. Session
+ * summaries keep exact total rings and zone minutes, but not per-zone rings.
+ * Weighting the minutes by the configured award rate preserves the exact total
+ * while making the green/yellow/orange/red bands describe ring contribution.
+ */
+function addSession(bucket, session, info, rates) {
+  const rings = participantRings(session, info);
+  bucket.rings += rings;
+  if (rings <= 0) return;
+
+  const zoneMinutes = info?.zoneMinutes ?? info?.zone_minutes;
+  if (!zoneMinutes || typeof zoneMinutes !== 'object') {
+    bucket.zones.active += rings;
+    return;
+  }
+
+  const weights = CREDITED_ZONES.map((zone) => ({
+    zone,
+    value: Math.max(0, Number(zoneMinutes[zone]) || 0) * rates[zone],
+  }));
+  const totalWeight = weights.reduce((sum, row) => sum + row.value, 0);
+  if (totalWeight <= 0) {
+    bucket.zones.active += rings;
+    return;
+  }
+  for (const { zone, value } of weights) bucket.zones[zone] += rings * (value / totalWeight);
+}
+
 function finalizeWeek(bucket, current, startMs) {
-  const zones = { ...bucket.zones };
   return {
-    effortMinutes: Math.round(zones.active + zones.warm + zones.hot + zones.fire),
-    zones,
+    rings: Math.round(bucket.rings),
+    zones: { ...bucket.zones },
     current,
     startMs,
   };
 }
 
 /**
- * @param {Array} sessions - fitness sessions ({ startTime, durationMs, participants: { id: { zoneMinutes } } })
- * @param {Array} roster   - [{ id, name, avatarId }] family members (display order preserved)
+ * @param {Array} sessions - summaries containing participants[id].rings + zoneMinutes
+ * @param {Array} roster   - [{ id, name, avatarId }] in display order
  * @param {object} [opts]
- * @param {number} [opts.now=Date.now()]    - rolling-window anchor (epoch ms)
- * @param {number} [opts.windowDays=7]      - measurement window length in days
- * @param {number} [opts.compareWeeks=4]    - how many consecutive windows to bucket (bars per person)
- * @param {string} [opts.householdLabel]    - team headline label
+ * @param {number} [opts.now=Date.now()] - clock anchor
+ * @param {number} [opts.compareWeeks=4] - Monday-aligned bars, oldest to current
+ * @param {number} [opts.boundaryHour=4] - household study-day boundary
+ * @param {object} [opts.zoneRingRates]  - ring award rate by zone id
+ * @param {string} [opts.householdLabel]
  * @returns {{ household: object, members: object[] }}
  */
 export function computeMomentum(sessions, roster, opts = {}) {
-  const now = opts.now ?? Date.now();
-  const windowDays = opts.windowDays ?? DEFAULT_WINDOW_DAYS;
+  const now = Number(opts.now ?? Date.now());
   const compareWeeks = Math.max(1, opts.compareWeeks ?? DEFAULT_COMPARE_WEEKS);
   const householdLabel = opts.householdLabel || 'Your household';
   const list = Array.isArray(sessions) ? sessions : [];
   const members = Array.isArray(roster) ? roster : [];
+  const rates = normalizedRates(opts.zoneRingRates);
+  const currentStart = mondayWeekStart(now, opts.boundaryHour ?? DEFAULT_BOUNDARY_HOUR);
+  const starts = Array.from(
+    { length: compareWeeks },
+    (_, i) => shiftWeeks(currentStart, i - (compareWeeks - 1)),
+  );
+  const nextStart = shiftWeeks(currentStart, 1);
 
-  const windowMs = windowDays * DAY_MS;
-  const spanStart = now - compareWeeks * windowMs;
-
-  // id -> array of `compareWeeks` zone accumulators, oldest (index 0) → newest (last).
+  // id -> Monday-aligned buckets, oldest first.
   const bucketsByUser = new Map();
-  const emptyBuckets = () => Array.from({ length: compareWeeks }, () => ({ zones: blankZones() }));
+  const emptyBuckets = () => Array.from(
+    { length: compareWeeks },
+    () => ({ rings: 0, zones: blankZones() }),
+  );
 
-  for (const s of list) {
-    const t = s.startTime ?? 0;
-    if (t < spanStart || t > now) continue;
-    const fromNewest = Math.floor((now - t) / windowMs); // 0 = current window
-    if (fromNewest < 0 || fromNewest >= compareWeeks) continue;
-    const idx = (compareWeeks - 1) - fromNewest; // oldest-first array index
-    const fallbackMin = (s.durationMs || 0) / 60000;
-    for (const [uid, info] of Object.entries(s.participants || {})) {
+  for (const session of list) {
+    const startedAt = sessionStartMs(session);
+    if (!Number.isFinite(startedAt) || startedAt > now || startedAt < starts[0] || startedAt >= nextStart) continue;
+    const idx = starts.findIndex((start, i) => (
+      startedAt >= start && startedAt < (starts[i + 1] ?? nextStart)
+    ));
+    if (idx < 0) continue;
+    for (const [uid, info] of Object.entries(session.participants || {})) {
       if (!bucketsByUser.has(uid)) bucketsByUser.set(uid, emptyBuckets());
-      addCredited(bucketsByUser.get(uid)[idx], info && info.zoneMinutes, fallbackMin);
+      addSession(bucketsByUser.get(uid)[idx], session, info, rates);
     }
   }
 
-  // Window start for the oldest-first bucket at array index `i`.
-  const weekStartMs = (i) => now - ((compareWeeks - 1) - i + 1) * windowMs;
-
-  const memberRows = members.map((m) => {
-    const buckets = bucketsByUser.get(m.id) || emptyBuckets();
-    const weeks = buckets.map((b, i) => finalizeWeek(b, i === compareWeeks - 1, weekStartMs(i)));
+  const memberRows = members.map((member) => {
+    const buckets = bucketsByUser.get(member.id) || emptyBuckets();
+    const weeks = buckets.map((bucket, i) => finalizeWeek(
+      bucket,
+      i === compareWeeks - 1,
+      starts[i],
+    ));
     return {
-      id: m.id,
-      name: m.name || m.id,
-      avatarId: m.avatarId || m.id,
+      id: member.id,
+      name: member.name || member.id,
+      avatarId: member.avatarId || member.id,
       weeks,
-      effortMinutes: weeks[weeks.length - 1].effortMinutes, // current week
+      rings: weeks[weeks.length - 1].rings,
     };
   });
 
-  // Household: sum each member's weekly buckets position-by-position.
-  const hWeeks = Array.from({ length: compareWeeks }, (_, i) => ({
-    effortMinutes: 0,
+  const householdWeeks = starts.map((startMs, i) => ({
+    rings: 0,
     zones: blankZones(),
     current: i === compareWeeks - 1,
-    startMs: weekStartMs(i),
+    startMs,
   }));
-  for (const r of memberRows) {
-    r.weeks.forEach((w, i) => {
-      hWeeks[i].effortMinutes += w.effortMinutes;
-      hWeeks[i].zones.active += w.zones.active;
-      hWeeks[i].zones.warm += w.zones.warm;
-      hWeeks[i].zones.hot += w.zones.hot;
-      hWeeks[i].zones.fire += w.zones.fire;
+  for (const row of memberRows) {
+    row.weeks.forEach((week, i) => {
+      householdWeeks[i].rings += week.rings;
+      for (const zone of CREDITED_ZONES) householdWeeks[i].zones[zone] += week.zones[zone];
     });
   }
-  const household = {
-    label: householdLabel,
-    windowDays,
-    compareWeeks,
-    weeks: hWeeks,
-    effortMinutes: hWeeks[hWeeks.length - 1].effortMinutes, // current week
-  };
 
-  return { household, members: memberRows };
+  return {
+    household: {
+      label: householdLabel,
+      compareWeeks,
+      weeks: householdWeeks,
+      rings: householdWeeks[householdWeeks.length - 1].rings,
+      weekStartMs: currentStart,
+    },
+    members: memberRows,
+  };
 }

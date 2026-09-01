@@ -19,8 +19,8 @@ export function FitnessScreenProvider({
   onSelectedSessionConsumed,
   roster = [],
   householdLabel = '',
-  windowDays = 7,
   compareWeeks = 4,
+  zoneRingRates = null,
   children,
 }) {
   const [scrollToDate, setScrollToDate] = useState(null);
@@ -45,8 +45,8 @@ export function FitnessScreenProvider({
     selectedSessionId, setSelectedSessionId,
     longitudinalSelection, setLongitudinalSelection,
     lastPlayedContentId, setLastPlayedContentId,
-    roster, householdLabel, windowDays, compareWeeks,
-  }), [onPlay, onNavigate, onCtaAction, scrollToDate, selectedSessionId, longitudinalSelection, lastPlayedContentId, roster, householdLabel, windowDays, compareWeeks]);
+    roster, householdLabel, compareWeeks, zoneRingRates,
+  }), [onPlay, onNavigate, onCtaAction, scrollToDate, selectedSessionId, longitudinalSelection, lastPlayedContentId, roster, householdLabel, compareWeeks, zoneRingRates]);
 
   return (
     <FitnessScreenContext.Provider value={value}>

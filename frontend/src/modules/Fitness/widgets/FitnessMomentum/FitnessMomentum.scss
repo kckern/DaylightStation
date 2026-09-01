@@ -24,10 +24,18 @@
   &__flame { font-size: 1.6rem; }
   &__house { letter-spacing: 0.01em; }
   &__window { color: #ffb44c; font-weight: 700; font-size: 1.15rem; }
-  &__house-min { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.92; font-size: 1.15rem; }
-  // Right-sized placeholder matching the "NNN min this week" footprint, so the
+  &__house-rings {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.96;
+    font-size: 1.25rem;
+  }
+  // Right-sized placeholder matching the ring + total footprint, so the
   // headline doesn't reflow when the real total hydrates in.
-  &__house-min--skel { align-self: center; width: 9rem; height: 1.1rem; border-radius: 5px; }
+  &__house-rings--skel { align-self: center; width: 5rem; height: 1.35rem; border-radius: 5px; }
 
   &__zero { opacity: 0.75; font-size: 1.1rem; }
 
@@ -62,9 +70,8 @@
   }
   &__name { font-weight: 700; font-size: 1.1rem; }
 
-  // Weekly bar chart: same-scale vertical bars, oldest → newest, each with an
-  // M/d x-axis label. The newest (current) bar is highlighted; earlier weeks
-  // are muted for contrast.
+  // Monday-aligned weekly ring chart: same-scale vertical bars, oldest →
+  // newest, each with an M/d x-axis label. The current week is highlighted.
   &__weeks {
     flex: 1 1 auto;
     width: 100%;
@@ -82,7 +89,7 @@
     gap: 0.2rem;
     height: 100%;
   }
-  // Minute-count top axis: one number above each bar, aligned along the top.
+  // Ring-count top axis: one number above each bar, aligned along the top.
   &__weektop {
     font-size: 0.72rem;
     line-height: 1;

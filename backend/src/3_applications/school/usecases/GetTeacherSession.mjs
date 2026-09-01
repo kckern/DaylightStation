@@ -33,7 +33,8 @@ export class GetTeacherSession {
       this.#reviews?.listForSession?.(sessionId) ?? [],
       Promise.all(state.issuedArtifacts.map(async (artifactId) => {
         const artifact = await this.#artifacts?.get?.(artifactId);
-        return artifact ? { ...artifact.manifest, availability: 'exact', exactBytesRetained: true,
+        return artifact ? { ...artifact.manifest, availability: 'regenerable', exactBytesRetained: false,
+          generatedAtRequest: true,
           originalPdfUrl: schoolArtifactRef(artifactId, 'original.pdf'),
           thumbnailUrl: (artifact.manifest.representation?.mediaType ?? 'application/pdf') === 'application/pdf'
             ? schoolArtifactRef(artifactId, 'thumbnail.png') : null }
@@ -50,11 +51,9 @@ export class GetTeacherSession {
       this.#sessions.listForLearner(state.learnerId),
       this.#exceptions?.active?.() ?? [],
     ]);
-    // The published revision remains useful for question/evidence context,
-    // but it is not a substitute for what was physically issued. History
-    // may only call a worksheet an artifact when its immutable bytes were
-    // captured. Re-rendering a current/published document here used to create
-    // a convincing but false "original" for legacy sessions.
+    // The published revision and worksheet instance are durable semantic
+    // inputs. The PDF is deliberately regenerated from them with the current
+    // renderer instead of being treated as historical state of its own.
     const publishedWorksheet = worksheet?.documentId && worksheet?.documentRevision
       ? await this.#printDocuments?.getPublished?.(worksheet.documentId, worksheet.documentRevision)
       : null;

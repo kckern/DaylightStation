@@ -12,6 +12,7 @@ import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.m
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import { UnsupportedBlockError, MissingChoicesError, UnresolvedAssetError } from '#rendering/school/documents/measure.mjs';
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
+import { pdfText } from '#testlib/school/pdfText.mjs';
 
 const renderer = createDocumentPdfRenderer({ theme, texToSvg });
 // `italic` (v2's *italic* grammar) needs a theme carrying an italic face —
@@ -503,10 +504,12 @@ describe('card option (options.card, spec §5.2)', () => {
     expect(withCard.pageCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('firstUse: true no longer changes the bytes — 0e1a19ab0 replaced the first-use instruction line with the reuse banner (driven by startRow > 1, not firstUse); workbookCardId.render.test.mjs pins node.instruction as null in both cases', async () => {
+  it('firstUse changes the START/KEEP banner without adding a second instruction line', async () => {
     const withoutFirstUse = await workbookRenderer.render(sheet, { card });
     const withFirstUse = await workbookRenderer.render(sheet, { card: { ...card, firstUse: true } });
-    expect(withoutFirstUse.pdf.equals(withFirstUse.pdf)).toBe(true);
+    expect(withoutFirstUse.pdf.equals(withFirstUse.pdf)).toBe(false);
+    expect(pdfText(withoutFirstUse.pdf)).toContain('KEEP USING THE SAME ANSWER SHEET');
+    expect(pdfText(withFirstUse.pdf)).toContain('START A NEW ANSWER SHEET');
   });
 
   it('is deterministic, like every other draw input', async () => {

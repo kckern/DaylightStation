@@ -28,6 +28,7 @@ export function createSchoolApiServices(legacy = {}) {
     renderTranscriptPdf = null, renderSyllabusPdf = null,
     getHouseholdOffsetMinutes = null, curriculumForSyllabus = null,
     issuedArtifactStore = null, renderWorksheetThumbnail = null,
+    renderIssuedArtifact = null,
     renderArtifactPostview = null, reprintIssuedArtifact = null,
     reprintResultReceiptArtifact = null,
     schoolResourceService = null, schoolPrintAccess = null,
@@ -68,7 +69,7 @@ export function createSchoolApiServices(legacy = {}) {
     }),
     schoolCurriculumQuery: curriculumQuery,
     schoolArtifactService: schoolArtifactService ?? new SchoolArtifactService({
-      issuedArtifactStore, renderWorksheetThumbnail, renderArtifactPostview,
+      issuedArtifactStore, renderWorksheetThumbnail, renderIssuedArtifact, renderArtifactPostview,
       getTeacherSession: options.getTeacherSession ?? null,
       teacherCapabilitySessions: options.teacherCapabilitySessions ?? null,
       reprintIssuedArtifact, reprintResultReceiptArtifact,

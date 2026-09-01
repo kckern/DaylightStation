@@ -758,17 +758,20 @@ const FitnessApp = () => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
     return root?.household_label || '';
   }, [fitnessConfiguration]);
-  // Momentum measurement window (days). Config-driven; defaults to 7.
-  const momentumWindowDays = useMemo(() => {
-    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
-    const n = Number(root?.momentum?.window_days);
-    return Number.isFinite(n) && n > 0 ? n : 7;
-  }, [fitnessConfiguration]);
-  // Number of weekly bars to compare (one per window). Config-driven; defaults to 4.
+  // Number of Monday-aligned weekly bars to compare. Config-driven; defaults to 4.
   const momentumCompareWeeks = useMemo(() => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
     const n = Number(root?.momentum?.compare_weeks);
     return Number.isFinite(n) && n > 0 ? n : 4;
+  }, [fitnessConfiguration]);
+  // The colored bands use the same relative ring award rates as TreasureBox.
+  // `coins` is the still-supported pre-rename config field.
+  const momentumZoneRingRates = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    const zones = Array.isArray(root?.zones) ? root.zones : [];
+    return Object.fromEntries(zones
+      .filter((zone) => zone?.id)
+      .map((zone) => [zone.id, Number(zone.rings ?? zone.coins)]));
   }, [fitnessConfiguration]);
   // Fullscreen modules (e.g. the Game Boy emulator) render as a full app-viewport
   // overlay — like the player — instead of inside the frame.
@@ -1651,8 +1654,8 @@ const FitnessApp = () => {
                       onSelectedSessionConsumed={() => setPendingSelectedSessionId(null)}
                       roster={momentumRoster}
                       householdLabel={householdLabel}
-                      windowDays={momentumWindowDays}
                       compareWeeks={momentumCompareWeeks}
+                      zoneRingRates={momentumZoneRingRates}
                     >
                       <ScreenDataProvider sources={screenSources}>
                         <ScreenProvider config={{ ...screensConfig[activeScreen].layout, theme: screensConfig[activeScreen].theme }}>

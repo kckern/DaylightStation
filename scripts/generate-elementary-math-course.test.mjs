@@ -74,16 +74,16 @@ describe('elementary math course generator', () => {
 
     const allItems = banks.flatMap((bank) => bank.items);
     const allCopy = allItems.flatMap((item) => [item.prompt, item.feedback.incorrect]).join('\n');
-    expect(allCopy).not.toMatch(/What is the value of the (?:ones|tens|hundreds|thousands) digit/iu);
+    expect(allItems.map((item) => item.prompt).filter((prompt) => /\bdigit\b/iu.test(prompt)).join('\n')).not.toMatch(/\bvalue\b/iu);
     expect(allCopy).not.toMatch(/Try the .+ strategy again/iu);
     expect(allCopy).not.toMatch(/(^|[^\\])\bBox\b/mu);
     expect(allCopy).not.toMatch(/\b1 (?:quarters|dimes|nickels|pennies)\b/iu);
     expect(allCopy).not.toMatch(/\b(?:0|[2-9]|1\d+) (?:quarter|dime|nickel|penny)\b/iu);
     expect(allCopy).not.toMatch(/\b0 (?:quarters|dimes|nickels|pennies)\b/iu);
     const placeValue = banks.find((bank) => bank.unit === 'em23-01-01-place-value-to-1-000');
-    expect(placeValue.items.some((entry) => /what value does the digit/iu.test(entry.prompt))).toBe(true);
+    expect(placeValue.items.some((entry) => /what amount does the digit/iu.test(entry.prompt))).toBe(true);
     expect(placeValue.items.some((entry) => /Which digit is in the/iu.test(entry.prompt))).toBe(true);
-    expect(placeValue.items.some((entry) => /Which number shows its value/iu.test(entry.prompt))).toBe(true);
+    expect(placeValue.items.some((entry) => /What amount does it represent/iu.test(entry.prompt))).toBe(true);
     const graphBanks = banks.filter((bank) => ['graph', 'graph-difference'].some((concept) => bank.concepts.some((entry) => entry.conceptId === concept)));
     graphBanks.filter((bank) => bank.concepts.some((entry) => entry.conceptId === 'graph')).forEach((bank) => {
       bank.items.forEach((entry) => {

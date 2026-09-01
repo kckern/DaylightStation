@@ -78,29 +78,33 @@ describe('teacher workspace routes', () => {
     expect(teacherAgendaDispatch.execute).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid', idempotencyKey: 'agenda-123' }));
   });
 
-  it('serves retained original PDF bytes', async () => {
-    const issuedArtifactStore = { get: vi.fn(async () => ({ manifest: { artifactId: 'art_1' }, bytes: Buffer.from('%PDF exact') })) };
-    await teacherCookie(request(app({ issuedArtifactStore, teacherCapabilitySessions: activeCapability() })).get('/api/v1/school/teacher/artifacts/art_1/original.pdf'))
-      .expect(200).expect('Content-Type', /application\/pdf/).expect((response) => {
-        expect(Buffer.compare(response.body, Buffer.from('%PDF exact'))).toBe(0);
+  it('serves a current-engine PDF regenerated from the artifact YAML', async () => {
+    const artifact = { manifest: { artifactId: 'art_1', kind: 'worksheet' }, bytes: null };
+    const issuedArtifactStore = { get: vi.fn(async () => artifact) };
+    const renderIssuedArtifact = { execute: vi.fn(async () => ({ bytes: Buffer.from('%PDF current') })) };
+    await teacherCookie(request(app({ issuedArtifactStore, renderIssuedArtifact, teacherCapabilitySessions: activeCapability() })).get('/api/v1/school/teacher/artifacts/art_1/original.pdf'))
+      .expect(200).expect('Content-Type', /application\/pdf/).expect('X-School-Artifact', 'current-render').expect((response) => {
+        expect(Buffer.compare(response.body, Buffer.from('%PDF current'))).toBe(0);
       });
+    expect(renderIssuedArtifact.execute).toHaveBeenCalledWith({ artifactId: 'art_1', artifact });
   });
 
-  it('renders a thumbnail only from retained original worksheet bytes', async () => {
-    const renderPrintDocument = { execute: vi.fn(async () => ({ bytes: Buffer.from('%PDF frozen worksheet') })) };
-    const issuedArtifactStore = { get: vi.fn(async () => ({
+  it('renders a thumbnail from the same current-engine worksheet projection', async () => {
+    const artifact = {
       manifest: { artifactId: 'worksheet_1', representation: { mediaType: 'application/pdf', extension: 'pdf' } },
-      bytes: Buffer.from('%PDF exact worksheet'),
-    })) };
+      bytes: null,
+    };
+    const issuedArtifactStore = { get: vi.fn(async () => artifact) };
+    const renderIssuedArtifact = { execute: vi.fn(async () => ({ bytes: Buffer.from('%PDF current worksheet') })) };
     const renderWorksheetThumbnail = vi.fn(async (pdf) => {
-      expect(Buffer.compare(pdf, Buffer.from('%PDF exact worksheet'))).toBe(0);
-      return Buffer.from('exact first page png');
+      expect(Buffer.compare(pdf, Buffer.from('%PDF current worksheet'))).toBe(0);
+      return Buffer.from('current first page png');
     });
-    await request(app({ issuedArtifactStore, renderPrintDocument, renderWorksheetThumbnail }))
+    await request(app({ issuedArtifactStore, renderIssuedArtifact, renderWorksheetThumbnail }))
       .get('/api/v1/school/teacher/artifacts/worksheet_1/thumbnail.png')
-      .expect(200).expect('Content-Type', /image\/png/).expect('X-School-Artifact', 'exact-thumbnail')
-      .expect((response) => expect(Buffer.compare(response.body, Buffer.from('exact first page png'))).toBe(0));
-    expect(renderPrintDocument.execute).not.toHaveBeenCalled();
+      .expect(200).expect('Content-Type', /image\/png/).expect('X-School-Artifact', 'current-render-thumbnail')
+      .expect((response) => expect(Buffer.compare(response.body, Buffer.from('current first page png'))).toBe(0));
+    expect(renderIssuedArtifact.execute).toHaveBeenCalledWith({ artifactId: 'worksheet_1', artifact });
     expect(renderWorksheetThumbnail).toHaveBeenCalledTimes(1);
   });
 
@@ -148,17 +152,19 @@ describe('teacher workspace routes', () => {
     expect(openRemediation.execute).toHaveBeenCalledWith({ sessionId: 'ses_1', openedBy: 'parent' });
   });
 
-  it('renders a postview from retained bytes plus the linked session evidence', async () => {
-    const issuedArtifactStore = { get: vi.fn(async () => ({ manifest: { artifactId: 'art_1', sessionId: 'ses_1' }, bytes: Buffer.from('%PDF original') })) };
+  it('renders a postview from a current-engine worksheet plus the linked session evidence', async () => {
+    const artifact = { manifest: { artifactId: 'art_1', sessionId: 'ses_1' }, bytes: null };
+    const issuedArtifactStore = { get: vi.fn(async () => artifact) };
+    const renderIssuedArtifact = { execute: vi.fn(async () => ({ bytes: Buffer.from('%PDF current') })) };
     const getTeacherSession = { execute: vi.fn(async () => ({ sessionId: 'ses_1', state: { gradedPercent: 90 } })) };
     const renderArtifactPostview = vi.fn(async () => ({ pdf: Buffer.from('%PDF postview') }));
     const teacherCapabilitySessions = { status: vi.fn(() => ({ active: true, userId: 'parent' })), authorize: vi.fn(() => true) };
-    await request(app({ issuedArtifactStore, getTeacherSession, renderArtifactPostview, teacherCapabilitySessions }))
+    await request(app({ issuedArtifactStore, renderIssuedArtifact, getTeacherSession, renderArtifactPostview, teacherCapabilitySessions }))
       .get('/api/v1/school/teacher/artifacts/art_1/postview.pdf')
       .set('Cookie', 'daylight_teacher_session=session-1').set('X-Teacher-Step-Up', 'grant-1')
       .expect(200).expect('Content-Type', /application\/pdf/);
     expect(renderArtifactPostview).toHaveBeenCalledWith(expect.objectContaining({
-      originalPdf: Buffer.from('%PDF original'), session: expect.objectContaining({ sessionId: 'ses_1' }),
+      originalPdf: Buffer.from('%PDF current'), session: expect.objectContaining({ sessionId: 'ses_1' }),
     }));
   });
 

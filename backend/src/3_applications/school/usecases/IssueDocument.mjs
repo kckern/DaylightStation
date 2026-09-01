@@ -261,7 +261,7 @@ export class IssueDocument {
   #printDocuments; #renderPrintDocument; #allocationStore;
   #assignments; #worksheetInstances; #publishPrintDocument; #companions;
   #companionCodes; #householdId;
-  #issuedArtifacts; #curriculumExceptions;
+  #issuedArtifacts; #renderIssuedArtifact; #curriculumExceptions;
   #answerSheetPolicy; #printCooldownMinutes;
   #clock; #rng; #newArtifactId; #timezone; #logger;
 
@@ -312,7 +312,7 @@ export class IssueDocument {
     printDocuments = null, renderPrintDocument = null, allocationStore = null,
     assignments = null, worksheetInstances = null, publishPrintDocument = null, companions = null,
     companionCodes = null, householdId = null,
-    issuedArtifacts = null, curriculumExceptions = null,
+    issuedArtifacts = null, renderIssuedArtifact = null, curriculumExceptions = null,
     answerSheetPolicy = null, printCooldownMinutes = null,
     clock = () => new Date(), rng = Math.random, timezone = null,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
@@ -336,6 +336,7 @@ export class IssueDocument {
     this.#companionCodes = companionCodes;
     this.#householdId = householdId;
     this.#issuedArtifacts = issuedArtifacts;
+    this.#renderIssuedArtifact = renderIssuedArtifact;
     this.#curriculumExceptions = curriculumExceptions;
     this.#answerSheetPolicy = normalizeAnswerSheetPolicy(answerSheetPolicy);
     this.#printCooldownMinutes = normalizePrintCooldownMinutes(printCooldownMinutes);
@@ -430,13 +431,10 @@ export class IssueDocument {
       };
     }
 
-    // An issued artifact is the physical record, not a recipe to be rendered
-    // again.  In particular, an older session may predate byte retention.  A
-    // later scan must not manufacture a current rendering and file it under
-    // the original artifact id: that would make teacher history lie about
-    // what the learner received.  Reprint exact retained bytes — or, if the
-    // bytes are gone, `#reprintExact` itself falls through to a labelled
-    // replacement (see that method).
+    // An issued worksheet artifact is the durable render recipe. Reprinting
+    // preserves its artifact id, source revision, Student No., and rows while
+    // projecting those inputs through the current renderer. If even the YAML
+    // record is gone, `#reprintExact` falls through to a labelled replacement.
     if (state.issuedArtifacts.length > 0) {
       return this.#reprintExact({ sessionId, nowIso, state });
     }
@@ -568,6 +566,8 @@ export class IssueDocument {
 
     rendered.artifact = await this.#retainIssuedArtifact({
       artifactId, rendered, nowIso, sessionId, state,
+      document: state.variant === (document.variant ?? 0)
+        ? document : { ...document, variant: state.variant },
       captureKind: replacementArtifactId ? 'replacement' : 'original',
     });
     let printResult;
@@ -617,7 +617,7 @@ export class IssueDocument {
     const artifactId = state.issuedArtifacts.at(-1);
     const retained = await this.#issuedArtifacts?.get?.(artifactId) ?? null;
     // A capture-only/unconfirmed dispatch rolls its reservation back. Its
-    // retained bytes therefore MUST NOT be sent later as an "exact" reprint:
+    // retained recipe therefore MUST NOT be replayed later:
     // the Student No./rows drawn in that PDF no longer name a live allocation.
     // Regenerate under the same artifact id so the retry receives a fresh,
     // atomically reserved identity and the manifest heals to that identity.
@@ -668,11 +668,17 @@ export class IssueDocument {
       return result;
     }
     let printResult;
+    let replayedPageCount = retained.manifest?.pageCount ?? null;
     try {
-      printResult = await this.#printer.printPdf(retained.bytes, {
+      const replay = this.#renderIssuedArtifact
+        ? await this.#renderIssuedArtifact.execute({ artifactId, artifact: retained })
+        : { bytes: retained.bytes, duplex: retained.manifest?.renderContext?.duplex ?? null };
+      if (!Buffer.isBuffer(replay.bytes)) throw new Error(`issued artifact '${artifactId}' cannot be rendered`);
+      replayedPageCount = replay.pageCount ?? replayedPageCount;
+      printResult = await this.#printer.printPdf(replay.bytes, {
         jobName: `school-${state.unitId}-${artifactId}`,
         user: state.learnerId ?? 'daylight',
-        duplex: retained.manifest?.renderContext?.duplex ?? undefined,
+        duplex: replay.duplex ?? retained.manifest?.renderContext?.duplex ?? undefined,
       });
     } catch (err) {
       return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
@@ -683,12 +689,12 @@ export class IssueDocument {
     if (errors.length) throw new Error(`IssueDocument: could not record exact reprint: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
     this.#logger.info?.('school.issue.exact-reprinted', {
-      sessionId, unitId: state.unitId, artifactId, pages: retained.manifest?.pageCount ?? null,
+      sessionId, unitId: state.unitId, artifactId, pages: replayedPageCount,
     });
     return {
       status: 'reprinted', sessionId, artifactId,
-      pageCount: retained.manifest?.pageCount ?? null, tokens: {}, allocation: retained.manifest?.allocation ?? null,
-      document: null, message: 'Printing that exact worksheet again.',
+      pageCount: replayedPageCount, tokens: {}, allocation: retained.manifest?.allocation ?? null,
+      document: null, message: 'Regenerating that worksheet with the current print layout.',
     };
   }
 
@@ -780,26 +786,29 @@ export class IssueDocument {
     // `passing` authored for this unit) prints the question count alone —
     // see `RenderPrintDocument`'s `buildManifestText`.
     const passPercent = unit.passing?.percent ?? null;
+    const renderContext = existingInstance && instance.omr?.cardId && !existingAllocationCancelled
+      ? {
+        cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start,
+        learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
+      }
+      : {
+        automaticCard: true,
+        answerSheetPolicy: this.#answerSheetPolicy,
+        learnerId: state.learnerId,
+        learnerName,
+        date: issueDate,
+        sessionId,
+        passPercent,
+      };
     let rendered;
     try {
       const result = await this.#renderPrintDocument.execute({
         document: publishedDocument,
-        context: existingInstance && instance.omr?.cardId && !existingAllocationCancelled
-          ? {
-            cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
-          }
-          : {
-            automaticCard: true,
-            answerSheetPolicy: this.#answerSheetPolicy,
-            learnerId: state.learnerId,
-            learnerName,
-            date: issueDate,
-            sessionId,
-            passPercent,
-          },
+        context: renderContext,
       });
       rendered = {
         pdf: result.bytes, pageCount: result.pageCount, allocation: result.allocation,
+        cardFirstUse: result.cardFirstUse,
         // Carried so the print job matches the geometry that was drawn — see
         // the `printPdf` call below.
         duplex: result.duplex,
@@ -840,6 +849,7 @@ export class IssueDocument {
       artifactId, rendered, nowIso, sessionId, state,
       worksheetInstanceId: instance.id, allocation: rendered.allocation,
       document: publishedDocument,
+      renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
       captureKind: replacementArtifactId ? 'replacement' : 'original',
     });
     let printResult;
@@ -912,7 +922,7 @@ export class IssueDocument {
       artifactId, pageCount: rendered.pageCount ?? null,
       issuedAt: nowIso, sessionId, learnerId: state.learnerId, unitId: state.unitId,
       captureKind, worksheetInstanceId, allocation,
-      kind: 'worksheet', document,
+      kind: 'worksheet', document, sourceDocument: document,
       renderContext: {
         learnerId: state.learnerId ?? null, sessionId,
         variant: state.variant ?? 0, passPercent: state.passingPercent ?? null,
@@ -922,13 +932,13 @@ export class IssueDocument {
   }
 
   /**
-   * Create the offer before rendering, so the retained PDF owns its code.
+   * Create the offer before rendering, so the retained recipe owns its code.
    *
    * TWO CODES, TWO MEANINGS, ONE PLACE (Task 7). The six-digit `accessCode`
    * OPENS the companion; the A–E `finishCode` is what finishing it RELEASES,
    * and Task 8 prints it as the worksheet's gate row. Both are resolved HERE,
    * before a single byte is rendered, for the reason this method already
-   * existed: the retained PDF must own what is printed on it. A finish code
+   * existed: the retained recipe must own what is printed on it. A finish code
    * settled any later could disagree with the paper in a child's hand, and the
    * paper is the thing that cannot be edited.
    *
@@ -1175,8 +1185,8 @@ export class IssueDocument {
    * therefore a log line, not a write — the persistence already happened, in
    * the same role, before the sheet could physically reach a scanner.
    *
-   * Exact reprints never reach this method: `execute()` reads retained bytes
-   * before it selects an issuing branch. This branch exists only for an
+   * Artifact replays never reach this method: `execute()` reads the retained
+   * recipe before it selects an issuing branch. This branch exists only for an
    * initial print (including retry after a failure before an issue event), so
    * a fresh card is the only honest allocation.
    *
@@ -1218,6 +1228,14 @@ export class IssueDocument {
 
     const artifactId = replacementArtifactId ?? this.#newArtifactId();
     const tokens = await this.#mintSheetTokens(published, sessionId, nowIso);
+    const renderedDocument = state.variant === (published.variant ?? 0)
+      ? published : { ...published, variant: state.variant };
+    const renderContext = {
+      freshCard: true,
+      learnerId: state.learnerId ?? null,
+      sessionId,
+      tokens,
+    };
 
     let rendered;
     try {
@@ -1227,26 +1245,12 @@ export class IssueDocument {
         // ?? 0) ? document : {...}`) — a retry sheet must be the shuffle the
         // session actually asked for, not whatever the document was published
         // carrying.
-        document: state.variant === (published.variant ?? 0)
-          ? published : { ...published, variant: state.variant },
-        context: {
-          freshCard: true,
-          learnerId: state.learnerId ?? null,
-          // Session lineage (review wave B1): the allocation record is the
-          // one durable artifact a card scan resolves — carrying the
-          // sessionId here is what lets a graded scan advance THIS session
-          // (submitted → graded) instead of dead-ending in a log line.
-          sessionId,
-          // F3 review fix (Medium/blocker): the tokens minted just above
-          // (`#mintSheetTokens`) must reach `RenderPrintDocument`'s measure
-          // + final render, or a scan_action/media_action block's barcode
-          // prints its own `.action` literal — a dead code with no matching
-          // registry entry — while the REAL minted token sits unused.
-          tokens,
-        },
+        document: renderedDocument,
+        context: renderContext,
       });
       rendered = {
         pdf: result.bytes, pageCount: result.pageCount, formMap: null, allocation: result.allocation,
+        cardFirstUse: result.cardFirstUse,
         // Carried so the print job matches the geometry that was drawn — see
         // the `printPdf` call below.
         duplex: result.duplex,
@@ -1268,7 +1272,8 @@ export class IssueDocument {
 
     rendered.pdf = await this.#retainIssuedPdf({
       artifactId, rendered, nowIso, sessionId, state, allocation: rendered.allocation,
-      document: published,
+      document: renderedDocument,
+      renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
       captureKind: replacementArtifactId ? 'replacement' : 'original',
     });
     let printResult;
@@ -1339,33 +1344,24 @@ export class IssueDocument {
     };
   }
 
-  /**
-   * Persist original bytes before physical dispatch.
-   *
-   * `captureKind` defaults to `'original'` — the first, byte-for-byte
-   * retention of what actually went to the printer. A replacement fall-through
-   * (`#issueNew`'s `replacementArtifactId` path, reached from `#reprintExact`
-   * when the true original's bytes are gone) passes `'replacement'` instead:
-   * this IS a fresh rendering, filed under the same artifactId to heal the
-   * gap, and the manifest must say so rather than silently reading as if it
-   * always was the original — that honesty is the whole point of the fix.
-   */
+  /** Persist the semantic render recipe before dispatch; keep PDF bytes in memory only. */
   async #retainIssuedPdf({ artifactId, rendered, nowIso, sessionId, state,
-    worksheetInstanceId = null, allocation = null, document = null, captureKind = 'original' }) {
+    worksheetInstanceId = null, allocation = null, document = null,
+    renderContext = null, captureKind = 'original' }) {
     const renderedBytes = Buffer.isBuffer(rendered.pdf) ? rendered.pdf : Buffer.from(rendered.pdf);
     if (!this.#issuedArtifacts) return renderedBytes;
-    const retained = await this.#issuedArtifacts.put({
+    await this.#issuedArtifacts.put({
       artifactId, bytes: renderedBytes, pageCount: rendered.pageCount ?? null,
       issuedAt: nowIso, sessionId, learnerId: state.learnerId, unitId: state.unitId,
       captureKind, worksheetInstanceId, allocation,
-      kind: 'worksheet', document,
-      renderContext: {
+      kind: 'worksheet', document, sourceDocument: document,
+      renderContext: renderContext ?? {
         learnerId: state.learnerId ?? null, sessionId,
         variant: state.variant ?? 0, passPercent: state.passingPercent ?? null,
         duplex: rendered.duplex ?? null,
       },
     });
-    return retained.bytes;
+    return renderedBytes;
   }
 
   /**

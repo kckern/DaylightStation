@@ -4,14 +4,11 @@ import { courseDisplay, moduleDisplay } from './curriculum/display.mjs';
 
 /**
  * The learner-facing course and current-unit progress rows used on paper.
- * Both the result receipt and an issued lesson card consume this exact shape,
- * so a tick always means the same real module or lesson in either place.
+ * Agenda cards, result receipts and issued lesson cards consume this exact
+ * shape, so a tick always means the same real module or lesson everywhere.
  */
-export function lessonProgressRows({ learnerId, unit, assignment, units, sessions, works, now, timezone } = {}) {
-  if (!learnerId || !unit?.courseId) return null;
-  const coursePolicies = Object.fromEntries((works ?? [])
-    .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
-  const plan = planLearnerWork({ learnerId, assignment, units, sessions, now, timezone, coursePolicies });
+export function lessonProgressRowsFromPlan({ plan, unit, assignment, works } = {}) {
+  if (!unit?.courseId || !Array.isArray(plan?.entries)) return null;
   const course = assignment?.courses?.find((entry) => entry.courseId === unit.courseId);
   const enrollment = course?.enrollment;
   const work = (works ?? []).find((candidate) => candidate?.work === unit.courseId) ?? null;
@@ -43,6 +40,20 @@ export function lessonProgressRows({ learnerId, unit, assignment, units, session
       ...(moduleInProgress ? { inProgress: moduleInProgress } : {}) },
   ].filter((row) => row.total > 0);
   return rows.length ? rows : null;
+}
+
+/**
+ * Compatibility wrapper for callers that do not already hold the canonical
+ * learner plan. Agenda construction does, so it calls
+ * `lessonProgressRowsFromPlan` directly rather than re-planning and risking a
+ * different answer after attestations or curriculum exceptions are applied.
+ */
+export function lessonProgressRows({ learnerId, unit, assignment, units, sessions, works, now, timezone } = {}) {
+  if (!learnerId || !unit?.courseId) return null;
+  const coursePolicies = Object.fromEntries((works ?? [])
+    .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
+  const plan = planLearnerWork({ learnerId, assignment, units, sessions, now, timezone, coursePolicies });
+  return lessonProgressRowsFromPlan({ plan, unit, assignment, works });
 }
 
 export default lessonProgressRows;

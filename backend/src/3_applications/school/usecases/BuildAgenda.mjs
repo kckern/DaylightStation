@@ -38,6 +38,7 @@ import { shortId } from '#system/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { lessonProgressRowsFromPlan } from '#domains/school/lessonProgress.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
 const HOUR_MS = 3_600_000;
@@ -229,6 +230,21 @@ export class BuildAgenda {
     const { assignment, units, works } = projection;
 
     const unitsById = new Map(units.map((u) => [u.unitId, u]));
+    // Program launchers already own their progress semantics and provide the
+    // structured rows on `section.progressRows` (piano is the canonical
+    // example). Ordinary curriculum has the same display shape available from
+    // its canonical plan; enrich only the empty side so launcher data can
+    // never be overwritten and the agenda never re-plans independently.
+    const sectionsWithProgress = sections.map((section) => {
+      if (section.next?.program || section.progressRows?.length) return section;
+      const progressRows = lessonProgressRowsFromPlan({
+        plan,
+        unit: unitsById.get(section.next?.unitId),
+        assignment,
+        works,
+      });
+      return progressRows?.length ? { ...section, progressRows } : section;
+    });
     const offers = [];
     const createdSessions = [];
     const tokensBySubject = {};
@@ -270,7 +286,7 @@ export class BuildAgenda {
     // `const` past the loop's closing brace.
     const expiresAt = new Date(Date.parse(nowIso) + this.#ttlMs).toISOString();
 
-    for (const section of sections) {
+    for (const section of sectionsWithProgress) {
       const entry = section.next;
       if (!entry) continue; // served today, locked-with-no-offer, or unavailable
 
@@ -481,7 +497,7 @@ export class BuildAgenda {
     // `agendaDocument` composes its own "{title} — {actionLabel}" line, so the
     // document sees only the SUFFIX here — the offer above carries the full
     // label, which is a different consumer's concern (Task 11's resolver).
-    const sectionsForDocument = sections.map((section) => (actionLabelBySubject.has(section.subject)
+    const sectionsForDocument = sectionsWithProgress.map((section) => (actionLabelBySubject.has(section.subject)
       ? { ...section, next: {
         ...section.next,
         ...(({ posterUrl, ...printed }) => printed)(offerPresentation(section) ?? {}),
@@ -492,7 +508,7 @@ export class BuildAgenda {
       } }
       : section));
 
-    const enrichedSections = sections.map((section) => {
+    const enrichedSections = sectionsWithProgress.map((section) => {
       const presentation = offerPresentation(section);
       if (!presentation && !calculatorBySubject.has(section.subject)) return section;
       return { ...section, next: {

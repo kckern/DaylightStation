@@ -1,114 +1,133 @@
-// frontend/src/modules/Fitness/widgets/FitnessMomentum/momentum.test.js
 import { describe, it, expect } from 'vitest';
-import { computeMomentum, addDays } from './momentum.js';
+import { computeMomentum, mondayWeekStart } from './momentum.js';
 
 const roster = [
   { id: 'user_2', name: 'User_2' },
   { id: 'user_1', name: 'User_1' },
 ];
-const NOW = Date.UTC(2026, 5, 24, 18, 0, 0); // 2026-06-24T18:00Z
 
-// Session with per-zone minutes. Default window 7d, default 4 compared weeks.
-const zsess = (date, zoneMinutes, users = ['user_2'], durationMs = 0) => ({
-  startTime: Date.parse(`${date}T12:00:00Z`),
-  durationMs,
-  participants: Object.fromEntries(users.map((u) => [u, { displayName: u, zoneMinutes }])),
+const localMs = (date, hour = 12) => {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day, hour, 0, 0, 0).getTime();
+};
+const NOW = localMs('2026-06-24', 18); // Wednesday
+
+const session = (date, rings, zoneMinutes, users = ['user_2'], extras = {}) => ({
+  startTime: localMs(date),
+  totalRings: rings * users.length,
+  participants: Object.fromEntries(users.map((id) => [id, {
+    displayName: id,
+    rings,
+    zoneMinutes,
+  }])),
+  ...extras,
 });
 
-describe('addDays', () => {
-  it('subtracts/adds days across month boundaries', () => {
-    expect(addDays('2026-06-01', -1)).toBe('2026-05-31');
-    expect(addDays('2026-06-24', 1)).toBe('2026-06-25');
-  });
-});
-
-describe('computeMomentum — zone-weighted effort', () => {
-  it('credits active/warm/hot/fire and OMITS cool in the current week', () => {
-    const { members } = computeMomentum([zsess('2026-06-24', { active: 16, warm: 8, cool: 9, hot: 1, fire: 0 })], roster, { now: NOW });
-    const user_2 = members.find((m) => m.id === 'user_2');
-    const cur = user_2.weeks[user_2.weeks.length - 1];
-    expect(cur.zones).toEqual({ active: 16, warm: 8, hot: 1, fire: 0 });
-    expect(cur.effortMinutes).toBe(25); // the 9 cool minutes earn no credit
-    expect(user_2.effortMinutes).toBe(25); // convenience: current-week total
+describe('mondayWeekStart', () => {
+  it('anchors an ordinary day to Monday at the 04:00 study-day boundary', () => {
+    expect(mondayWeekStart(NOW)).toBe(localMs('2026-06-22', 4));
   });
 
-  it('falls back to raw duration when a session has no zone breakdown', () => {
-    const user_2 = computeMomentum([zsess('2026-06-24', null, ['user_2'], 30 * 60000)], roster, { now: NOW })
-      .members.find((m) => m.id === 'user_2');
-    expect(user_2.effortMinutes).toBe(30);
-    expect(user_2.weeks[user_2.weeks.length - 1].zones.active).toBe(30);
+  it('keeps early Monday in the week that ended Sunday', () => {
+    expect(mondayWeekStart(localMs('2026-08-31', 3))).toBe(localMs('2026-08-24', 4));
+    expect(mondayWeekStart(localMs('2026-08-31', 5))).toBe(localMs('2026-08-31', 4));
   });
 });
 
-describe('computeMomentum — weekly buckets', () => {
-  it('returns compareWeeks buckets oldest→newest, current flagged last', () => {
-    const { members } = computeMomentum([], roster, { now: NOW, compareWeeks: 4 });
-    const user_2 = members.find((m) => m.id === 'user_2');
-    expect(user_2.weeks.length).toBe(4);
-    expect(user_2.weeks[3].current).toBe(true);
-    expect(user_2.weeks[0].current).toBe(false);
-    expect(user_2.weeks.every((w) => w.effortMinutes === 0)).toBe(true);
+describe('computeMomentum — rings and zone contribution', () => {
+  it('uses exact persisted rings and omits cool from the colored contribution', () => {
+    const row = computeMomentum([
+      session('2026-06-24', 100, { active: 16, warm: 8, cool: 9, hot: 1, fire: 0 }),
+    ], roster, { now: NOW }).members.find((member) => member.id === 'user_2');
+    const current = row.weeks.at(-1);
+    expect(current.rings).toBe(100);
+    expect(row.rings).toBe(100);
+    expect(current.zones.active + current.zones.warm + current.zones.hot + current.zones.fire)
+      .toBeCloseTo(100, 5);
   });
 
-  it('stamps each week with its window start (for M/d x-axis labels)', () => {
-    const WEEK = 7 * 86_400_000;
-    const user_2 = computeMomentum([], roster, { now: NOW, compareWeeks: 4 }).members.find((m) => m.id === 'user_2');
-    expect(user_2.weeks[3].startMs).toBe(NOW - WEEK);      // current window starts 7d ago
-    expect(user_2.weeks[0].startMs).toBe(NOW - 4 * WEEK);  // oldest of 4 windows
+  it('uses configured relative award rates for the color bands', () => {
+    const row = computeMomentum([
+      session('2026-06-24', 90, { active: 10, warm: 10 }),
+    ], roster, { now: NOW, zoneRingRates: { active: 1, warm: 2, hot: 3, fire: 5 } })
+      .members.find((member) => member.id === 'user_2');
+    expect(row.weeks.at(-1).zones.active).toBeCloseTo(30, 5);
+    expect(row.weeks.at(-1).zones.warm).toBeCloseTo(60, 5);
   });
 
-  it('buckets effort into the correct week by age', () => {
+  it('recovers a legacy single-person session from its unambiguous session total', () => {
+    const legacy = session('2026-06-24', 75, { active: 10 });
+    delete legacy.participants.user_2.rings;
+    const row = computeMomentum([legacy], roster, { now: NOW }).members[0];
+    expect(row.rings).toBe(75);
+  });
+});
+
+describe('computeMomentum — fixed calendar weeks', () => {
+  it('returns Monday-aligned buckets oldest→newest, current flagged last', () => {
+    const row = computeMomentum([], roster, { now: NOW, compareWeeks: 4 }).members[0];
+    expect(row.weeks).toHaveLength(4);
+    expect(row.weeks.map((week) => week.startMs)).toEqual([
+      localMs('2026-06-01', 4),
+      localMs('2026-06-08', 4),
+      localMs('2026-06-15', 4),
+      localMs('2026-06-22', 4),
+    ]);
+    expect(row.weeks[3].current).toBe(true);
+    expect(row.weeks.every((week) => week.rings === 0)).toBe(true);
+  });
+
+  it('buckets rings into calendar weeks instead of rolling seven-day windows', () => {
     const sessions = [
-      zsess('2026-06-24', { active: 20 }), // 0 days ago  → current week (idx 3)
-      zsess('2026-06-19', { active: 30 }), // ~5 days ago → current week too (idx 3)
-      zsess('2026-06-15', { active: 40 }), // ~9 days ago → 1 week back (idx 2)
-      zsess('2026-06-05', { active: 50 }), // ~19 days ago → 2 weeks back (idx 1)
-      zsess('2026-05-29', { active: 60 }), // ~26 days ago → 3 weeks back (idx 0)
-      zsess('2026-05-20', { active: 99 }), // ~35 days ago → OUTSIDE 4-week span
+      session('2026-06-24', 20, { active: 10 }), // current week
+      session('2026-06-23', 30, { active: 10 }), // current week
+      session('2026-06-19', 40, { warm: 10 }),   // previous week
+      session('2026-06-12', 50, { hot: 10 }),    // two weeks back
+      session('2026-06-05', 60, { fire: 10 }),   // three weeks back
+      session('2026-05-29', 99, { active: 10 }), // outside four weeks
     ];
-    const user_2 = computeMomentum(sessions, roster, { now: NOW, compareWeeks: 4 }).members.find((m) => m.id === 'user_2');
-    expect(user_2.weeks.map((w) => w.effortMinutes)).toEqual([60, 50, 40, 50]); // oldest→newest; current = 20+30
+    const row = computeMomentum(sessions, roster, { now: NOW, compareWeeks: 4 }).members[0];
+    expect(row.weeks.map((week) => week.rings)).toEqual([60, 50, 40, 50]);
   });
 
-  it('honors a configurable window length when bucketing', () => {
-    const sessions = [zsess('2026-06-12', { active: 30 })]; // 12 days ago
-    // default 7d window → 12 days ago lands in an older bucket, not current
-    const def = computeMomentum(sessions, roster, { now: NOW }).members[0].weeks;
-    expect(def[def.length - 1].effortMinutes).toBe(0); // not current week
-    // 14d window → 12 days ago is the current window
-    const wide = computeMomentum(sessions, roster, { now: NOW, windowDays: 14 }).members[0].weeks;
-    expect(wide[wide.length - 1].effortMinutes).toBe(30);
+  it('resets on Monday even when Sunday is less than 24 hours old', () => {
+    const mondayNow = localMs('2026-08-31', 12);
+    const row = computeMomentum([
+      session('2026-08-30', 99, { active: 10 }),
+      session('2026-08-31', 7, { active: 10 }),
+    ], roster, { now: mondayNow, compareWeeks: 2 }).members[0];
+    expect(row.weeks.map((week) => week.rings)).toEqual([99, 7]);
   });
 });
 
 describe('computeMomentum — household + edges', () => {
-  it('sums member weekly buckets position-by-position', () => {
+  it('sums member weekly rings and zone bands position-by-position', () => {
     const sessions = [
-      zsess('2026-06-24', { active: 30 }, ['user_2']),       // current week
-      zsess('2026-06-23', { active: 40, warm: 10 }, ['user_1']), // current week
-      zsess('2026-06-15', { active: 25 }, ['user_2']),       // 1 week back
+      session('2026-06-24', 30, { active: 10 }, ['user_2']),
+      session('2026-06-23', 50, { warm: 10 }, ['user_1']),
+      session('2026-06-19', 25, { hot: 10 }, ['user_2']),
     ];
-    const { household } = computeMomentum(sessions, roster, { now: NOW, householdLabel: 'Kern Family' });
+    const { household } = computeMomentum(sessions, roster, {
+      now: NOW,
+      householdLabel: 'Kern Family',
+    });
     expect(household.label).toBe('Kern Family');
-    expect(household.weeks.length).toBe(4);
-    expect(household.weeks[3].effortMinutes).toBe(80);  // current: 30 + 50
-    expect(household.weeks[3].zones).toEqual({ active: 70, warm: 10, hot: 0, fire: 0 });
-    expect(household.weeks[2].effortMinutes).toBe(25);  // one week back: user_2 25
-    expect(household.effortMinutes).toBe(80);
-    expect(household.windowDays).toBe(7);
+    expect(household.weeks).toHaveLength(4);
+    expect(household.weeks[3].rings).toBe(80);
+    expect(household.weeks[2].rings).toBe(25);
+    expect(household.rings).toBe(80);
     expect(household.compareWeeks).toBe(4);
   });
 
   it('lists roster members in order even with no sessions', () => {
     const { members } = computeMomentum([], roster, { now: NOW });
-    expect(members.map((m) => m.id)).toEqual(['user_2', 'user_1']);
-    expect(members[0].weeks.length).toBe(4);
+    expect(members.map((member) => member.id)).toEqual(['user_2', 'user_1']);
   });
 
   it('falls back to a generic household label and empty roster safely', () => {
     const { household, members } = computeMomentum([], [], { now: NOW });
     expect(household.label).toBe('Your household');
     expect(members).toEqual([]);
-    expect(household.effortMinutes).toBe(0);
+    expect(household.rings).toBe(0);
   });
 });

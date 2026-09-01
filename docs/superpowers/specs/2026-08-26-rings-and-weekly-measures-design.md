@@ -1,6 +1,6 @@
 # Rings, and weekly measures on the school board
 
-Status: design, 2026-08-26.
+Status: implemented; weekly boundary amended 2026-08-31.
 
 Three independent projects. **A** renames a concept, **B** migrates the data
 that concept is stored in, **C** wires the number onto the school status board.
@@ -169,7 +169,7 @@ fitness provider.
 ```
 GET /api/v1/measures/weekly?week=YYYY-MM-DD
 
-{ "window": { "from": "2026-08-23", "to": "2026-08-29" },
+{ "window": { "from": "2026-08-24", "to": "2026-08-30" },
   "learners": [ { "learnerId": "user_4",
                   "measures": [ { "id": "fitness.rings", "label": "Rings",
                                   "unit": "rings", "value": 40 } ] } ] }
@@ -182,29 +182,25 @@ There is no `target` key in v1, and the shape has an obvious place for one.
 
 ## 12. The week
 
-**Sunday 04:00 → Saturday 04:00**, using the same 4am study-day boundary school
-already applies, so the house has one definition of "day".
+**Monday 04:00 → the following Monday 04:00**, using the same 4am study-day
+boundary school already applies, so the house has one definition of "day" and
+one hard weekly reset instead of a rolling seven-day window.
 
 | Day | Role |
 | --- | --- |
-| Sun | Rest. Rings earned are a head start on the coming week. |
 | Mon–Fri | The working window. A quota's deadline is end of Friday. |
-| Sat | Catch-up if short; **payoff** if met. |
+| Sat–Sun | Catch-up if short; **payoff** if met. |
 
-Nothing is discarded. A Sunday walk lands at the front of the next week rather
-than the back of the last one, so a child is penalised neither for resting nor
-for moving on a rest day.
-
-Saturday carries both jobs, which is better than a pure deadline: Friday is not
-a wall, it is the line that decides what Saturday *is*.
+Nothing is discarded. Saturday and Sunday stay in the week that began the
+previous Monday. Monday is the only weekly rollover.
 
 ## 13. Compute the week's state from day one
 
 The model derives one of three states even though v1 renders none of them:
 
 - **on track**
-- **behind** — Saturday will be catch-up
-- **met** — Saturday is payoff
+- **behind** — the weekend will be catch-up
+- **met** — the weekend is payoff
 
 This is the vocabulary the eventual gate needs. Deriving it later would mean
 revisiting every layer; deriving it now costs a function and no UI.
@@ -321,10 +317,9 @@ Project B:
 
 Project C:
 - the measure provider totals a known week from fixture sessions
-- the Sunday 04:00 boundary: a 03:00 Sunday session lands in the *previous*
-  week; 05:00 Sunday lands in the next
-- Saturday counts toward the week; a Sunday session does not count toward the
-  week that just ended
+- the Monday 04:00 boundary: a 03:00 Monday session lands in the *previous*
+  week; 05:00 Monday lands in the next
+- Saturday and Sunday count toward the week; the following Monday does not
 - the endpoint returns one row per rostered learner, including learners with
   zero rings
 - `RingIcon` renders static by default
@@ -333,13 +328,8 @@ Project C:
 - no `<animateTransform>` survives in the component — if one does, reduced
   motion is silently broken again and only this test would notice
 
-## 18. Known discrepancy, stated on purpose
+## 18. Shared weekly projection
 
-The fitness app's own session totals and the school board's weekly number will
-disagree for a Sunday workout: fitness counts it in that session, the school
-week counts it toward the following week.
-
-That is correct — they answer different questions ("how much did you move" and
-"did you meet the week's expectation") — but it reads as a bug when a child
-notices it. The board labels its number **"this week"**, and when quotas arrive
-the Sunday carry-forward is shown rather than silently applied.
+The Fitness home screen and the school board use the same Monday boundary and
+the same persisted per-participant ring totals. State Gates remains the
+external projection; Fitness reads the internal session summaries directly.

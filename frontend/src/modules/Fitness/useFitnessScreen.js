@@ -15,7 +15,7 @@ export function useFitnessScreen() {
       selectedSessionId: null, setSelectedSessionId: () => {},
       longitudinalSelection: null, setLongitudinalSelection: () => {},
       lastPlayedContentId: null, setLastPlayedContentId: () => {},
-      roster: [], householdLabel: '', windowDays: 7, compareWeeks: 4,
+      roster: [], householdLabel: '', compareWeeks: 4, zoneRingRates: null,
     };
   }
   return ctx;

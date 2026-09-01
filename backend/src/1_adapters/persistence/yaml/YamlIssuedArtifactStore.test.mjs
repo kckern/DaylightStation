@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, stat, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, readFile, writeFile, stat, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import yaml from 'js-yaml';
 import path from 'node:path';
@@ -15,21 +15,42 @@ beforeEach(async () => {
 afterEach(async () => rm(root, { recursive: true, force: true }));
 
 describe('YamlIssuedArtifactStore', () => {
-  it('round-trips exact bytes and a digest-verifiable manifest for ids containing slashes', async () => {
+  it('stores a digest-verifiable worksheet recipe without a PDF payload', async () => {
     const bytes = Buffer.from('%PDF-1.4\nexact issued bytes\n');
+    const sourceDocument = { schema: 'school.document/v2', id: 'math/course/ws', rev: 'rev1', blocks: [] };
     const saved = await store.put({ artifactId: 'math/course/ws-ses_1', bytes, pageCount: 2,
-      issuedAt: '2026-08-24T10:00:00.000Z', sessionId: 'ses_1', learnerId: 'kid', unitId: 'u1' });
-    expect(saved.manifest).toMatchObject({ schema: 'school.session-artifact/v2', byteLength: bytes.length,
-      artifactId: 'math/course/ws-ses_1', captureKind: 'original' });
-    expect((await store.get('math/course/ws-ses_1')).bytes.equals(bytes)).toBe(true);
+      issuedAt: '2026-08-24T10:00:00.000Z', sessionId: 'ses_1', learnerId: 'kid', unitId: 'u1',
+      sourceDocument, renderContext: { learnerId: 'kid' } });
+    expect(saved.manifest).toMatchObject({ schema: 'school.session-artifact/v4',
+      artifactId: 'math/course/ws-ses_1', captureKind: 'original', sourceDocument,
+      representation: { mediaType: 'application/pdf', generated: true } });
+    expect(saved.manifest.renderInputSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect((await store.get('math/course/ws-ses_1')).bytes).toBeNull();
+    await expect(stat(path.join(root, 'school/artifacts/issued/math/course/ws-ses_1.pdf'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('is first-wins: same bytes are idempotent and different bytes are refused', async () => {
-    const base = { artifactId: 'art_1', bytes: Buffer.from('one'), issuedAt: '2026-08-24T10:00:00.000Z', sessionId: 'ses_1' };
+  it('is first-wins by semantic render input, not disposable PDF bytes', async () => {
+    const base = { artifactId: 'art_1', bytes: Buffer.from('one'), issuedAt: '2026-08-24T10:00:00.000Z', sessionId: 'ses_1',
+      sourceDocument: { schema: 'school.document/v2', id: 'doc', rev: 'one', blocks: [] }, renderContext: { learnerId: 'kid' } };
     await store.put(base);
-    await expect(store.put(base)).resolves.toMatchObject({ manifest: { artifactId: 'art_1' } });
-    await expect(store.put({ ...base, bytes: Buffer.from('two') })).rejects.toMatchObject({ code: 'ARTIFACT_IMMUTABLE' });
-    expect((await store.get('art_1')).bytes.toString()).toBe('one');
+    await expect(store.put({ ...base, bytes: Buffer.from('different renderer output') }))
+      .resolves.toMatchObject({ manifest: { artifactId: 'art_1' } });
+    await expect(store.put({ ...base, sourceDocument: { ...base.sourceDocument, rev: 'two' } }))
+      .rejects.toMatchObject({ code: 'ARTIFACT_IMMUTABLE' });
+    expect((await store.get('art_1')).bytes).toBeNull();
+  });
+
+  it('detects a modified generated-PDF recipe by its input digest', async () => {
+    const artifactId = 'math/course/ws-tampered';
+    await store.put({ artifactId, bytes: Buffer.from('%PDF disposable'),
+      sourceDocument: { schema: 'school.document/v2', id: 'doc', rev: 'one', blocks: [] },
+      renderContext: { learnerId: 'kid' } });
+    const manifestPath = path.join(root, 'school/artifacts/issued/math/course/ws-tampered.yml');
+    const manifest = yaml.load(await readFile(manifestPath, 'utf8'));
+    manifest.sourceDocument.rev = 'tampered';
+    await writeFile(manifestPath, yaml.dump(manifest));
+
+    await expect(store.get(artifactId)).rejects.toMatchObject({ code: 'ARTIFACT_CORRUPT' });
   });
 
   it('retains a receipt PNG with its frozen source document and typed representation', async () => {
@@ -65,6 +86,7 @@ describe('YamlIssuedArtifactStore path mapping', () => {
   it('writes a hierarchical path with no percent-encoded separators', async () => {
     await store.put({
       artifactId: 'receipt/ses_abc/original',
+      kind: 'result-receipt',
       bytes: Buffer.from('%PDF-1.4\nnew\n'),
       issuedAt: '2026-08-26T00:00:00.000Z',
     });
@@ -90,9 +112,25 @@ describe('YamlIssuedArtifactStore path mapping', () => {
     expect(got.bytes.equals(bytes)).toBe(true);
   });
 
+  it('keeps legacy worksheet YAML readable when its redundant PDF is absent', async () => {
+    const id = 'math/course/ws-yaml-only-legacy';
+    const manifestPath = path.join(issuedRoot(), 'math', 'course', 'ws-yaml-only-legacy.yml');
+    await mkdir(path.dirname(manifestPath), { recursive: true });
+    await writeFile(manifestPath, yaml.dump({
+      schema: 'school.session-artifact/v2', artifactId: id, kind: 'worksheet',
+      document: { id: 'math/course/ws', revision: 'rev1' },
+      allocation: { cardId: '8684155', rowRange: { start: 28, end: 32 } },
+    }));
+
+    await expect(store.get(id)).resolves.toMatchObject({
+      manifest: { artifactId: id, kind: 'worksheet' }, bytes: null,
+    });
+  });
+
   it('keeps a colon inside its own segment rather than splitting the path', async () => {
     await store.put({
       artifactId: 'receipt/ses_x/out:ses_x',
+      kind: 'result-receipt',
       bytes: Buffer.from('%PDF-1.4\ncolon\n'),
       issuedAt: '2026-08-26T00:00:00.000Z',
     });

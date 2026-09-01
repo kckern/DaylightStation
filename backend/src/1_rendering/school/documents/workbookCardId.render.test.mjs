@@ -75,6 +75,8 @@ function summarizeCardFragment(fragment) {
       // snapshot diff rather than silent drift.
       digitXOffsets: node.digits.map((d) => round(d.xPt)),
       labelText: node.labelText,
+      identityLayout: Object.fromEntries(Object.entries(node.identityLayout)
+        .map(([key, value]) => [key, round(value)])),
       metaText: node.metaText,
       firstUse: node.firstUse,
       reuseText: node.reuseText,
@@ -108,6 +110,20 @@ describe('card header strip — measure (spec §5.2/§5.3)', () => {
     expect(node.cardId).toBe('4829306');
     expect(node.digits).toHaveLength(7);
     expect(node.digits.map((d) => d.ch)).toEqual(['4', '8', '2', '9', '3', '0', '6']);
+    expect(node.identityLayout.labelOffsetPt).toBe(0);
+    expect(node.identityLayout.identiconOffsetPt).toBeCloseTo(
+      node.labelWidthPt + theme.card.labelGapPt,
+      5,
+    );
+    expect(node.identityLayout.digitsOffsetPt).toBeCloseTo(
+      node.identityLayout.identiconOffsetPt
+        + node.identicon.size * theme.card.identiconCellPt + theme.card.identiconGapPt,
+      5,
+    );
+    expect(node.identityLayout.widthPt).toBeCloseTo(
+      node.identityLayout.digitsOffsetPt + node.digitsWidthPt,
+      5,
+    );
     expect(node.metaText).toBe('');
     expect(node.firstUse).toBe(false);
     // spec §5.2's non-first-use reminder: same cardId, but un-spaced (a

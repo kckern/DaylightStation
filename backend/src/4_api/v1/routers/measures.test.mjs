@@ -29,15 +29,15 @@ const session = (isoStart, participants) => ({
 });
 
 describe('GET /measures/weekly', () => {
-  it('returns the Sunday→Saturday window containing today', async () => {
+  it('returns the Monday→Sunday window containing today', async () => {
     const res = await request(app()).get('/measures/weekly');
     expect(res.status).toBe(200);
-    expect(res.body.window).toEqual({ from: '2026-08-23', to: '2026-08-29' });
+    expect(res.body.window).toEqual({ from: '2026-08-24', to: '2026-08-30' });
   });
 
   it('honours an explicit week, given any day inside it', async () => {
     const res = await request(app()).get('/measures/weekly?week=2026-08-31');
-    expect(res.body.window).toEqual({ from: '2026-08-30', to: '2026-09-05' });
+    expect(res.body.window).toEqual({ from: '2026-08-31', to: '2026-09-06' });
   });
 
   it('returns one row per rostered learner, INCLUDING one with no rings', async () => {

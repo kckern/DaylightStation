@@ -751,6 +751,7 @@ export class RenderPrintDocument {
    * @param {string} [args.id] - looked up via `repository` when `document` is not given
    * @param {{learnerName?: string, date?: string, gutter?: boolean|number, teacher?: boolean,
    *   cardId?: string, startRow?: number, freshCard?: boolean, learnerId?: string,
+   *   historicalCard?: boolean, historicalFirstUse?: boolean,
    *   tokens?: Object<string,string>, passPercent?: number}} [args.context] -
    *   `learnerName`/`date` prefill the header's Name/Date lines (blank ruled lines
    *   when absent); `gutter` overrides the default 3-hole-punch reservation
@@ -878,6 +879,7 @@ export class RenderPrintDocument {
       density: null,
       warnings: [],
       allocation: null,
+      cardFirstUse: null,
       // v1 draws no page furniture at all (no gutter is reserved, on either
       // side), so it has no duplex decision to express — null, and the caller
       // leaves the printer on its configured default rather than inventing one
@@ -1181,6 +1183,7 @@ export class RenderPrintDocument {
       density: chosen.density,
       warnings,
       allocation: allocationSnapshot(allocationRecord),
+      cardFirstUse: allocationRecord ? allocationFirstUse : null,
       // The document's OWN duplex decision, surfaced so the print job can
       // match the geometry that was just drawn. `furnitureOpts.duplex` is what
       // decided whether the 3-hole-punch gutter alternates by page parity
@@ -1206,7 +1209,7 @@ export class RenderPrintDocument {
   #resolveCardContext(context) {
     const {
       cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId,
-      sectionAttribution, historicalCard,
+      sectionAttribution, historicalCard, historicalFirstUse,
     } = context;
     if (cardId === undefined && freshCard !== true && automaticCard !== true) return null;
     if (historicalCard === true && (typeof cardId !== 'string' || freshCard === true)) {
@@ -1220,6 +1223,7 @@ export class RenderPrintDocument {
       automaticCard: automaticCard === true,
       answerSheetPolicy: answerSheetPolicy ?? null,
       historical: historicalCard === true,
+      historicalFirstUse: historicalFirstUse === true,
       startRow: startRow ?? 1,
       learnerId: learnerId ?? null,
       // Work-session lineage (review wave B1): IssueDocument's tracked-quiz
@@ -1345,7 +1349,7 @@ export class RenderPrintDocument {
   }
 
   /** Build the card geometry for a historical replay without touching storage. */
-  #historicalCard(document, bank, { cardId, startRow }) {
+  #historicalCard(document, bank, { cardId, startRow, historicalFirstUse }) {
     const plan = planRows({ document, bank, startRow });
     if (plan.errors || plan.rows.length === 0) {
       throw new ValidationError(
@@ -1361,7 +1365,7 @@ export class RenderPrintDocument {
         rowRange: { start: plan.rows[0].row, end: plan.rows.at(-1).row },
       },
       rows: plan.rows,
-      firstUse: false,
+      firstUse: historicalFirstUse === true,
     };
   }
 

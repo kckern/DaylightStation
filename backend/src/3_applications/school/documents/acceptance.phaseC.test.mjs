@@ -828,7 +828,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
       expect(continuationText).toContain(cardId);
     });
 
-    it('page 1 of the card-continuation sheet matches the committed visual snapshot — it shows the "Student No." label, seven tracked digits, no redundant instruction, and offset question numbers 3/4 (never 1/2)', async () => {
+    it('page 1 matches the committed visual snapshot — Student No. is followed by its identicon and seven digits, with no redundant instruction and offset question numbers 3/4 (never 1/2)', async () => {
       const snapshotPath = path.join(EVIDENCE_DIR, 'card-continuation-student-p01.png');
       const rendered = continuationPages[0];
 

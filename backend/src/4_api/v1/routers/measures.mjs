@@ -27,7 +27,7 @@ export function createMeasuresRouter({ weeklyMeasures } = {}) {
   /**
    * GET /weekly?week=YYYY-MM-DD
    *
-   * `week` is any day inside the wanted week; the Sunday-to-Saturday window
+   * `week` is any day inside the wanted week; the Monday-to-Sunday window
    * containing it is returned. Omitted means the current week.
    */
   router.get('/weekly', asyncHandler(async (req, res) => {

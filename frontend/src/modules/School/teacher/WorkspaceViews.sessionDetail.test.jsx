@@ -61,7 +61,7 @@ const SESSION = {
       { itemId: 'q-year', questionNumber: 20, prompt: 'Statehood year?', given: '1808', expected: ['1818'], verdict: 'incorrect' },
     ],
   },
-  artifacts: [{ artifactId: 'art_1', kind: 'worksheet', availability: 'exact', originalPdfUrl: '/worksheet.pdf', thumbnailUrl: '/worksheet.png' }],
+  artifacts: [{ artifactId: 'art_1', kind: 'worksheet', availability: 'regenerable', originalPdfUrl: '/worksheet.pdf', thumbnailUrl: '/worksheet.png' }],
   events: [],
 };
 

@@ -250,7 +250,7 @@ path.
 A teacher history view is a **read-only projection of one work session**, not
 a new print request. The projection joins the append-only session events with
 the issued worksheet instance, its exact published document revision, answer
-evidence, assessment revisions, and any retained rendered bytes. It must not
+evidence, assessment revisions, and artifact recipe. It must not
 allocate an OMR card, republish a document, alter a grade, or create an
 artifact merely because someone opened the record.
 
@@ -260,11 +260,12 @@ with the frozen questions, item-level assessment evidence, and an artifact
 lineage. Internal ids remain links between records; they are never the title
 shown to a teacher.
 
-Every newly issued worksheet artifact uses `school.session-artifact/v2`. Its
-manifest records the linked session or sessions, document revision, frozen
-render context, OMR mapping, parent lineage, and an integrity hash over retained
-bytes. A composed worksheet is one shared artifact linked to every included
-session; it is never reconstructed as several individual worksheets.
+Every newly issued worksheet artifact uses `school.session-artifact/v4`. Its
+YAML records the linked session or sessions, complete source document, frozen
+render context, OMR mapping, parent lineage, and an integrity hash over those
+semantic inputs. No PDF is retained. A composed worksheet is one shared recipe
+linked to every included session; it is never reconstructed as several
+individual worksheets.
 
 Settlement result receipts use `school.session-artifact/v3`. Before the
 thermal job is sent, the rendered PNG and the complete result-document input
@@ -291,23 +292,19 @@ the normal reward-aware adjustment path, which captures a parented corrected
 receipt. Sessions with a later manual adjustment or incomplete evidence are
 reported as skipped rather than guessed at.
 
-There are four honest artifact representations during the incremental rollout:
+Worksheet availability is `regenerable`: opening, thumbnailing, postviewing,
+or reprinting projects the recorded YAML through the current rendering engine.
+The replay supplies `historicalCard: true`, the recorded Student No., and the
+recorded starting row, so a GET cannot allocate or reuse an answer card. A
+legacy v1–v3 manifest falls back to its retained PDF only when its referenced
+source can no longer be resolved; new worksheet writes never create PDF files.
 
-- An `school.issued-artifact/v1` has retained PDF bytes. Its **issued PDF** is
-  the exact object sent to the printer and may be explicitly reprinted.
-- `exact` means retained bytes are available and are the only bytes a reprint
-  may dispatch.
-- `deterministic-replay` means a compatible renderer can reproduce a frozen
-  document revision and complete issue context, including the original card
-  rows, without calling the allocation store.
-- `semantic-reconstruction` and `unavailable` are explicit historical states;
-  neither may be presented as the paper a learner received.
-
-Viewing any of these records is pure and does not backfill a new artifact.
+Viewing a worksheet record is pure and does not backfill or mutate its YAML.
+The worksheet's semantic identity is stable while typography and safety cues
+such as the identicon may improve with the renderer.
 
 Every future assignment and feedback/result rendering should bind an immutable
-render specification (document or feedback inputs, creation time, medium, and
-renderer revision); retain bytes whenever they were actually issued. A grade
+render specification (document or feedback inputs, creation time, and medium). A grade
 correction appends a new assessment/feedback artifact and leaves the original
 assignment artifact untouched. Printing that feedback remains a separate,
 explicit action.
@@ -378,26 +375,21 @@ rendered, and a scan later resolves that exact rev: a source that drifted
 from its published artifact would otherwise mint a "phantom" rev no scan
 could ever serve.
 
-**Issued bytes are retained, not reconstructed.** Before a tracked PDF is sent
-to the printer, School archives the exact PDF plus a compact manifest containing
-the artifact id, capture kind, exact byte and page counts, SHA-256 digest,
-issuance time, session/learner/unit lineage, and worksheet/card allocation
-identifiers when present. The retained bytes—not a later render—are what the
-teacher downloads as the issued original. Pre-retention legacy sessions may
-have lifecycle metadata without a retained PDF; the UI says so instead of
-implying byte identity. The teacher session inspector exposes:
+**Worksheet YAML is retained; PDF bytes are not.** Before dispatch, School
+archives the render recipe containing the artifact id, capture kind, source
+document, issue context, session/learner/unit lineage, and worksheet/card
+allocation. The current renderer produces the PDF on demand for printing,
+download, thumbnails, and postviews. Its output digest is response metadata,
+not durable artifact identity.
 
-- the manifest and immutable original PDF;
-- a separately labeled postview PDF that overlays later grades/corrections.
+The teacher session inspector exposes the manifest and a current-render PDF,
+plus a separately labeled postview that overlays later grades/corrections.
+Server-side reprint uses the same runtime projection and records its dispatch
+receipt under the original artifact id.
 
-The original-PDF link supports browser/manual reprinting of the retained bytes.
-There is not yet a separate server-side “send this artifact to the printer
-again” teacher operation, so the console does not claim a dispatch receipt for
-that manual reprint.
-
-Postview is a derived view, not the original artifact, and requires a one-use
+Postview is a derived view and requires a one-use
 teacher grant scoped to `artifact.postview` plus that artifact id. Its presence
-cannot mutate the archived original or the session evidence.
+cannot mutate the artifact recipe or the session evidence.
 
 ## 4. Rendering: varieties, keys, variants
 
@@ -641,6 +633,11 @@ range. The same physical answer sheet always has the same icon. A successor has
 a different icon as well as a deliberately distant number. The icon is a
 human continuity/change cue only; it is not scanned and nothing is added to or
 marked on the purchased OMR card.
+
+In the worksheet header, those cues read left to right as `Student No.`, the
+identicon, then the seven digits. Keeping the icon immediately before the
+number makes it read as part of that number's identity rather than as a symbol
+for the label.
 
 New seven-digit numbers remain globally unique and must differ from their
 predecessor at both ends, differ in at least four digit positions from every
@@ -1403,13 +1400,13 @@ row-capacity arithmetic.
 
 ## 9. Trust model and known limits
 
-### Teacher retained-artifact workflow
+### Teacher worksheet-artifact workflow
 
-Every issued worksheet retained by `YamlIssuedArtifactStore` is immutable.
-Teacher Open PDF reads those exact bytes; teacher Reprint sends those same
-bytes and preserves the artifact id, Student No., allocation, and row range.
+Every issued worksheet recipe retained by `YamlIssuedArtifactStore` is
+immutable. Teacher Open PDF and Reprint render that recipe with the current
+engine while preserving the artifact id, Student No., allocation, and row range.
 Direct printing requires a fresh teacher confirmation plus an idempotency key,
-and appends `reprinted` only after the printer confirms. It never allocates a
+and appends `reprinted` only after the printer confirms. Historical replay never allocates a
 new answer card. A lost card must use the replacement flow, which commits the
 new identity only after successful printing.
 

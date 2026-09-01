@@ -668,22 +668,22 @@ occurrence as a sort-correctness bug, not as noise.
 
 ---
 
-## Coin System (TreasureBox)
+## Ring System (TreasureBox)
 
-Coins are awarded per-user based on their current zone at each tick:
+Rings are awarded per user based on their current zone at each tick:
 
 ```
 Every 5-second tick:
   For each active user:
     1. Get their current HR zone (from ZoneProfileStore)
-    2. Look up coin rate for that zone
-    3. Award coins: user.totalCoins += zone.coinRate
-    4. Update cumulative series: series["userId:coins"][tick] = user.totalCoins
-    5. Update zone bucket: buckets[zone.color] += zone.coinRate
+    2. Look up the ring rate for that zone
+    3. Award rings: user.totalRings += zone.ringRate
+    4. Update cumulative series: series["userId:rings"][tick] = user.totalRings
+    5. Update zone bucket: buckets[zone.color] += zone.ringRate
 
-The race chart visualizes cumulative coins per user over time.
-Flat segments = rest/cool zone (no coins).
-Steep segments = hot/fire zone (high coin rate).
+The race chart visualizes cumulative rings per user over time.
+Flat segments = rest/cool zone (no rings).
+Steep segments = hot/fire zone (high ring rate).
 ```
 
 ### Ring celebrations
@@ -726,6 +726,22 @@ events accumulate and display as one card once that notice clears. The card uses
 the supplied spinning ring image, configured profile avatars with initials
 fallback, and a dedicated one-shot sound that does not duck video or interrupt
 governance audio cues.
+
+### Weekly rings on the Fitness home screen
+
+`FitnessMomentum` uses the exact persisted `participants[id].rings` session
+summary consumed by `fitnessRingsProvider`; it does not translate minutes into a
+second score. The household and per-person bars are fixed calendar weeks from
+Monday 04:00 local through the next Monday 04:00, matching
+`weeklyWindow.mjs` and the State Gates producer. Monday therefore resets the
+current bar even though Sunday is less than seven days old.
+
+Bar height and the number above it are rings. Green, yellow, orange, and red
+remain as the composition bands: session zone minutes are weighted by the
+configured per-zone ring rates and normalized back to the exact stored ring
+total. The top-right household total uses the canonical `RingIcon`. The sampled
+`momentum.render` event includes `householdRings` and `weekStartMs` so a stale or
+mis-bucketed home screen can be reconstructed from production logs.
 
 ---
 

@@ -29,7 +29,8 @@ with `--teacher ID --pin-env NAME`; only postview additionally requires a
 one-use scoped step-up. `gates` joins the
 current completion, assignment, milestone, and pass-override projections.
 `agenda-preview` renders without minting sessions or tokens. Artifact manifest
-and original-PDF reads identify the exact issued bytes.
+reads identify the durable worksheet recipe; PDF reads project that recipe
+through the current rendering engine.
 
 Use `--base-url URL` or `SCHOOL_BASE_URL` to target another lifecycle API.
 

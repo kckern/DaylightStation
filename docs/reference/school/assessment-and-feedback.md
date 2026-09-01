@@ -80,10 +80,11 @@ confirmation to append the corrections. The original attempts remain intact
 and each corrective row names its source attempt, teacher, and reason.
 
 Teacher session inspection shows machine grade, effective grade, the complete
-correction/retraction ledger, session events, and retained print-artifact
+correction/retraction ledger, session events, and durable print-artifact
 lineage together. Grade adjustments and retractions are both preview-first.
-Issued PDF opens the exact retained bytes; **Prepare postview PDF** requires a
-fresh artifact-scoped confirmation, renders those bytes against the linked
+Issued PDF regenerates the recorded worksheet through the current rendering
+engine; **Prepare postview PDF** requires a fresh artifact-scoped confirmation,
+renders that projection against the linked
 session evidence, and exposes only a temporary browser blob URL. This is the
 preferred repair surface because the operator can see the evidence being
 preserved before applying a change.
