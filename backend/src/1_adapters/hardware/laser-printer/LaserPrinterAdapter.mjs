@@ -252,8 +252,11 @@ export class LaserPrinterAdapter {
    * @param {string} [opts.jobName='daylight-print'] - job name (also our own logging)
    * @param {string} [opts.user='daylight'] - for our own logging / job-originating-user-name
    * @param {number} [opts.copies=1]
-   * @returns {Promise<{ok:boolean, bytes:number, copies:number, jobId:?number, documentFormat:string, transport:'ipp'|'raw9100', outcome:?('completed'|'failed'|'indeterminate'), jobState:?number}>}
-   *   `outcome`/`jobState` are only populated on the IPP transport (raw9100 has no job handle to poll); see `awaitJobOutcome`.
+   * @returns {Promise<{ok:boolean, bytes:number, copies:number, jobId:?number, documentFormat:string, transport:'ipp'|'raw9100'}>}
+   *   Resolves on SEND, same as before this file grew job-outcome polling —
+   *   see `awaitJobOutcome`, which this method now kicks off in the
+   *   background (not awaited) and which reports via the
+   *   `laser-printer.job-outcome` log event, not through this return value.
    * @throws {InfrastructureError} INVALID_DOCUMENT | PRINT_FORMAT_UNSUPPORTED | RASTERIZE_* | PRINT_VALIDATE_FAILED | PRINT_SEND_FAILED
    */
   /**
@@ -414,20 +417,38 @@ export class LaserPrinterAdapter {
       jobName, user, copies: nCopies, documentFormat: plan.format, jobAttributes: validatedJobAttributes,
     });
 
-    // The point of Phase 1: say what the printer did, not merely that it took
-    // the bytes. `job-sent` remains the acceptance record; this is the
-    // outcome. `awaitJobOutcome` never throws, so this cannot turn a
-    // successful send into a rejected printPdf().
-    const outcome = await this.awaitJobOutcome(sent.jobId);
-    this.#logger.info?.('laser-printer.job-outcome', {
-      host: this.#host, jobName, jobId: sent.jobId,
-      outcome: outcome.outcome, state: outcome.state,
-      stateReasons: outcome.stateReasons, polls: outcome.polls,
-      impressionsCompleted: outcome.impressionsCompleted,
-    });
-    return {
-      ...sent, documentFormat: plan.format, transport: 'ipp', outcome: outcome.outcome, jobState: outcome.state,
-    };
+    // DETACHED, DELIBERATELY. printPdf must resolve on SEND — the same
+    // contract it always had — not on the printer's eventual terminal
+    // answer. `awaitJobOutcome`'s own default deadline is 30s; awaiting it
+    // here would hold open whatever HTTP request/loop called printPdf (e.g.
+    // a sequential bulk-print loop, one POST per subject) for up to 30s per
+    // print, well past any UI's own "don't wait forever" timeout. So: start
+    // the poll, do not await it, and log the outcome when it lands. The
+    // point of Phase 1 — knowing what actually happened — is served by the
+    // log record, not by a slower return value.
+    if (Number.isInteger(sent.jobId)) {
+      this.awaitJobOutcome(sent.jobId)
+        .then((outcome) => {
+          this.#logger.info?.('laser-printer.job-outcome', {
+            host: this.#host, jobName, jobId: sent.jobId,
+            outcome: outcome.outcome, state: outcome.state,
+            stateReasons: outcome.stateReasons, polls: outcome.polls,
+            impressionsCompleted: outcome.impressionsCompleted,
+          });
+        })
+        // `awaitJobOutcome` itself never rejects, but a detached promise
+        // chain with no rejection handler can still crash the process on an
+        // unhandled rejection if something upstream ever does — a status
+        // query failing must never be able to do that, so this is a
+        // deliberate backstop, not defensive filler.
+        .catch((err) => {
+          this.#logger.warn?.('laser-printer.job-outcome-poll-failed', {
+            host: this.#host, jobName, jobId: sent.jobId, error: err?.message ?? String(err),
+          });
+        });
+    }
+
+    return { ...sent, documentFormat: plan.format, transport: 'ipp' };
   }
 
   /**
@@ -679,10 +700,16 @@ export class LaserPrinterAdapter {
         if (isTerminal(observed.state)) {
           return { ...last, outcome: observed.classification };
         }
-      } catch {
+      } catch (err) {
         // Swallowed on purpose: an unreachable printer is an unknown outcome,
         // not a failed print. Keep the last state we DID observe (if any) and
-        // keep trying to the deadline.
+        // keep trying to the deadline. Still logged at debug — silently
+        // swallowing means a TypeError here reads identically to "the
+        // printer went offline" in every log query, which defeats exactly
+        // the postmortem capability this feature exists to provide.
+        this.#logger.debug?.('laser-printer.job-outcome-poll-error', {
+          host: this.#host, jobId, poll: polls, error: err?.message ?? String(err),
+        });
         last = { ...last, polls };
       }
       // eslint-disable-next-line no-await-in-loop -- deliberate poll cadence, not a parallelizable batch
