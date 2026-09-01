@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { chessRuleModule } from '@shared-gaming/rulesets/chess/ruleModule.mjs';
-import { createCheckpointedLocalAuthority } from '../../Gaming/platform/authority/createCheckpointedLocalAuthority.js';
+import { createCheckpointedLocalAuthority, isResumableSession } from '../../Gaming/platform/authority/createCheckpointedLocalAuthority.js';
 
 const ACTOR = 'piano-player';
 
@@ -22,9 +22,14 @@ export function useChessAuthority({ userId = 'household', initialFen, seed } = {
     authorityRef.current = authority;
     let resumed = null;
     const prior = fresh ? null : localStorage.getItem(indexKey);
+    // A FINISHED GAME IS NOT A GAME IN PROGRESS — see `isResumableSession` and
+    // the identical guard in the other two board games.
     if (prior) {
-      try { resumed = await authority.resume(prior, { participant_id: ACTOR }); }
-      catch { localStorage.removeItem(indexKey); }
+      try {
+        const priorSession = await authority.resume(prior, { participant_id: ACTOR });
+        if (isResumableSession(priorSession)) resumed = priorSession;
+      } catch { /* unreadable — start fresh */ }
+      if (!resumed) localStorage.removeItem(indexKey);
     }
     if (!resumed) {
       resumed = await authority.create({

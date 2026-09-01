@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectFourDefinition, connectFourRuleModule } from '@shared-gaming/rulesets/connect-four/index.mjs';
-import { createCheckpointedLocalAuthority } from '../../Gaming/platform/authority/createCheckpointedLocalAuthority.js';
+import { createCheckpointedLocalAuthority, isResumableSession } from '../../Gaming/platform/authority/createCheckpointedLocalAuthority.js';
 
 const ACTOR = 'piano-player';
 
@@ -9,7 +9,14 @@ export function useConnectFourAuthority({ userId = 'household' } = {}) {
   const start = useCallback(async ({ fresh = false } = {}) => {
     const authority = createCheckpointedLocalAuthority({ ruleset: connectFourRuleModule, definition: connectFourDefinition, namespace: 'gaming:piano-connect-four' }); authorityRef.current = authority;
     let session = null; const prior = fresh ? null : localStorage.getItem(indexKey);
-    if (prior) { try { session = await authority.resume(prior, { participant_id: ACTOR }); } catch { localStorage.removeItem(indexKey); } }
+    // A FINISHED GAME IS NOT A GAME IN PROGRESS. The index is here so a reload
+    // mid-match returns the board the player was on; a terminal session
+    // resumed instead hands them back the game they just lost, and the host's
+    // archive refiles that loss on every mount. See `isResumableSession`.
+    if (prior) {
+      try { const resumed = await authority.resume(prior, { participant_id: ACTOR }); if (isResumableSession(resumed)) session = resumed; } catch { /* unreadable — start fresh */ }
+      if (!session) localStorage.removeItem(indexKey);
+    }
     if (!session) { session = await authority.create({ ruleset: { id: 'connect-four', version: 1 }, definitionId: 'connect-four-standard', participants: [{ id: ACTOR }], viewer: { participant_id: ACTOR } }); localStorage.setItem(indexKey, session.header.session_id); }
     sessionRef.current = session; setState(session.state); return session;
   }, [indexKey]);
