@@ -85,11 +85,34 @@ export function useAddressedBoardGame({
     return () => { cancelled = true; };
   }, [client, gameId, logger, userId]);
 
+  // HOW FAR THIS COMPONENT ACTUALLY WATCHED THE GAME GET, while it was still
+  // playable. A match played out here passes through every ply but its last;
+  // a transcript that arrived already finished never does. That difference is
+  // the only thing that separates a real result from a phantom, and on
+  // 2026-09-01 nothing was checking it — see
+  // docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+  //
+  // Declared before the save effect so it has already run for every earlier
+  // render by the time a terminal one is being filed.
+  const playedThroughRef = useRef(-1);
+  useEffect(() => {
+    if (!result) playedThroughRef.current = Math.max(playedThroughRef.current, moves.length);
+  }, [moves.length, result]);
+
   // Persist the finished game once. `savedRef` rather than a state flag: this
   // has to be closed the instant it fires, and a re-render is too late.
   useEffect(() => {
     if (!result || savedRef.current) return;
+    // Closed either way: a refusal is final for this session, not retried on
+    // the next render.
     savedRef.current = true;
+    if (playedThroughRef.current < moves.length - 1) {
+      logger.warn('game.result-refused', {
+        gameId, gameSessionId, result, plies: moves.length,
+        playedThrough: playedThroughRef.current, reason: 'not-played-here',
+      });
+      return;
+    }
     const { prepareTerminal, ...baseContext } = archiveContextRef.current;
     // This runs before persistence so the result card, archive, and rivalry
     // memory all receive the same final displayed line.
@@ -170,6 +193,7 @@ export function useAddressedBoardGame({
     setLocalPractice(false);
     rankedRef.current = true;
     savedRef.current = false;
+    playedThroughRef.current = -1;
     setSeed((value) => (value + 1) >>> 0);
     const next = createLocalSessionId(gameId);
     setGameSessionId(next);
