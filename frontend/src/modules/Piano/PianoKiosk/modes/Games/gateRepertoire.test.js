@@ -27,7 +27,7 @@ describe('resolveRepertoire', () => {
     const [floor, explicit] = resolveRepertoire([
       { id: 'floor', tier: 0, material: [{ kind: 'keys', notes: 1 }] },
       {
-        id: 'alan-c-major', tier: 1,
+        id: 'user_5-c-major', tier: 1,
         presentation: { prompt: 'recall', secondary: 'none', timing: 'free', hints: 'after-stall' },
         grading: { pitchClass: true }, material: [{ kind: 'keys', root: 'C', quality: 'major' }],
       },

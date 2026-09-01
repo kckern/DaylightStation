@@ -11,7 +11,7 @@ describe('buildBeatsSeries exempt participant score', () => {
 
   it('does not relabel cumulative heartbeats as rings when rings are intentionally absent', () => {
     const result = buildBeatsSeries(
-      { profileId: 'soren', name: 'Soren' },
+      { profileId: 'user_2', name: 'User_2' },
       getSeries,
       { intervalMs: 5000 },
       { requireRingSeries: true },
@@ -22,6 +22,6 @@ describe('buildBeatsSeries exempt participant score', () => {
   });
 
   it('retains the legacy heartbeat fallback for old non-exempt sessions', () => {
-    expect(buildBeatsSeries({ profileId: 'milo' }, getSeries).beats).toEqual([0, 16, 24, 32]);
+    expect(buildBeatsSeries({ profileId: 'user_4' }, getSeries).beats).toEqual([0, 16, 24, 32]);
   });
 });

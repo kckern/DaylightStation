@@ -705,7 +705,7 @@ publishers:
 subject_sets:
   learners:
     kind: learner
-    members: [learner-a, learner-b, learner-c]
+    members: [user_4, user_2, user_5]
 
 claim_types:
   school.day.complete:
@@ -1074,14 +1074,14 @@ These route names and access boundaries are the implemented contract.
 
 ```json
 {
-  "assertionId": "chores:learner-a:2026-08-30",
+  "assertionId": "chores:user_4:2026-08-30",
   "claimTypeId": "chores.daily.attested",
-  "subject": { "kind": "learner", "id": "learner-a" },
+  "subject": { "kind": "learner", "id": "user_4" },
   "period": { "kind": "local_day", "id": "2026-08-30" },
   "value": true,
   "sourceRevision": 1,
   "observedAt": "2026-08-30T18:00:00-07:00",
-  "evidenceRef": "chores/checklist/2026-08-30/learner-a"
+  "evidenceRef": "chores/checklist/2026-08-30/user_4"
 }
 ```
 
@@ -1202,7 +1202,7 @@ decides the learner's local day is complete, its producer-owned translator publi
 ```text
 claimTypeId: school.day.complete
 publisherId: school                 # fixed by authenticated composition binding
-subject: learner-a
+subject: user_4
 period: interval/school-day:2026-08-30 # 04:00 local to next 04:00 local
 value: true
 sourceRevision: 7

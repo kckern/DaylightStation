@@ -21,7 +21,7 @@ All times UTC on 2026-09-01. Log store query used:
 | 16:37:49 | **Book 1 tag scanned** → `trigger.content.claimed by=reading-session contentId=plex:620707` (*The Three Little Pigs*, a Plex **track**) | ✅ |
 | 16:37:54 | Countdown expired, `pick_mtiw4zgi_1` attributable; audio attached; `playback-started` at 16:37:55 | ✅ |
 | 16:47:34 | `playback-completed` at 579.4 / 579.7 s (`playback.at-duration-stuck` warn fired first, then completion) | ✅ |
-| 16:47:35 | `school.story-time.read-recorded learnerId=learner-c studyDay=2026-09-01 title=The Three Little Pigs` → portal toast "Story read!" | ✅ credited |
+| 16:47:35 | `school.story-time.read-recorded learnerId=user_5 studyDay=2026-09-01 title=The Three Little Pigs` → portal toast "Story read!" | ✅ credited |
 | 16:49:17 | **Book 2 tag scanned** → `trigger.content.claimed contentId=plex:620561` (*Counting Fun*, a Plex **album** with one track, `plex:620562`) | ✅ album→track resolution worked |
 | 16:49:22 | Countdown expired, `pick_mtiwjqna_2` attributable; `fetch-media-succeeded` in 150 ms; `AudioPlayer mounted mediaKey=plex:620562` | ✅ |
 | **16:49:26** | `playback.playback-health event=media-stalled currentTime=0` | ⚠ stall at 0:00 |

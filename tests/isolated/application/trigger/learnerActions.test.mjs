@@ -13,10 +13,10 @@ describe('createLearnerActions', () => {
       return { status: 'agenda_printed' };
     });
     const result = await responseHandlers.learner(
-      { kind: 'learner', op: 'print-agenda', learnerId: 'learner-a', location: 'study' },
+      { kind: 'learner', op: 'print-agenda', learnerId: 'user_4', location: 'study' },
       { learnerActions, logger: silent },
     );
-    expect(seen).toEqual([{ learnerId: 'learner-a', location: 'study' }]);
+    expect(seen).toEqual([{ learnerId: 'user_4', location: 'study' }]);
     expect(result.status).toBe('agenda_printed');
   });
 
@@ -24,7 +24,7 @@ describe('createLearnerActions', () => {
     const learnerActions = createLearnerActions({ logger: silent });
     learnerActions.register('print-agenda', async () => ({ status: 'agenda_printed' }));
     const result = await responseHandlers.learner(
-      { kind: 'learner', op: 'reading-session', learnerId: 'learner-c', location: 'livingroom' },
+      { kind: 'learner', op: 'reading-session', learnerId: 'user_5', location: 'livingroom' },
       { learnerActions, logger: silent },
     );
     expect(result).toMatchObject({ status: 'no_handler', op: 'reading-session' });
@@ -35,11 +35,11 @@ describe('createLearnerActions', () => {
     const logger = { ...silent, warn: (event, data) => warns.push([event, data]) };
     const learnerActions = createLearnerActions({ logger: silent });
     await responseHandlers.learner(
-      { kind: 'learner', op: 'reading-session', learnerId: 'learner-c', location: 'livingroom' },
+      { kind: 'learner', op: 'reading-session', learnerId: 'user_5', location: 'livingroom' },
       { learnerActions, logger },
     );
     expect(warns).toEqual([['trigger.learner.no_handler', expect.objectContaining({
-      op: 'reading-session', learnerId: 'learner-c', location: 'livingroom',
+      op: 'reading-session', learnerId: 'user_5', location: 'livingroom',
     })]]);
   });
 
@@ -47,7 +47,7 @@ describe('createLearnerActions', () => {
     // An unwired composition must degrade to the same named refusal, not to a
     // TypeError that reads as a dispatch failure of the tap itself.
     const result = await responseHandlers.learner(
-      { kind: 'learner', op: 'print-agenda', learnerId: 'learner-a', location: 'study' },
+      { kind: 'learner', op: 'print-agenda', learnerId: 'user_4', location: 'study' },
       { logger: silent },
     );
     expect(result).toMatchObject({ status: 'no_handler', op: 'print-agenda' });
@@ -57,7 +57,7 @@ describe('createLearnerActions', () => {
     const learnerActions = createLearnerActions({ logger: silent });
     learnerActions.register('boom', async () => { throw new Error('printer on fire'); });
     const result = await responseHandlers.learner(
-      { kind: 'learner', op: 'boom', learnerId: 'learner-b', location: 'study' },
+      { kind: 'learner', op: 'boom', learnerId: 'user_2', location: 'study' },
       { learnerActions, logger: silent },
     );
     expect(result).toMatchObject({ status: 'failed' });
@@ -69,11 +69,11 @@ describe('createLearnerActions', () => {
     learnerActions.register('sync-throw', () => { throw new Error('nope'); });
     learnerActions.register('void', async () => undefined);
     await expect(responseHandlers.learner(
-      { kind: 'learner', op: 'sync-throw', learnerId: 'learner-a', location: 'study' },
+      { kind: 'learner', op: 'sync-throw', learnerId: 'user_4', location: 'study' },
       { learnerActions, logger: silent },
     )).resolves.toMatchObject({ status: 'failed' });
     await expect(responseHandlers.learner(
-      { kind: 'learner', op: 'void', learnerId: 'learner-a', location: 'study' },
+      { kind: 'learner', op: 'void', learnerId: 'user_4', location: 'study' },
       { learnerActions, logger: silent },
     )).resolves.toMatchObject({ status: 'ok' });
   });
@@ -105,7 +105,7 @@ describe('createLearnerActions', () => {
 // and at a lookup sitting above the guarded block. Each of these was a real
 // rejection, and a rejection here is a child getting silence.
 describe('responseHandlers.learner — the never-reject contract, at its edges', () => {
-  const learnerResponse = (op) => ({ kind: 'learner', op, learnerId: 'learner-a', location: 'study' });
+  const learnerResponse = (op) => ({ kind: 'learner', op, learnerId: 'user_4', location: 'study' });
 
   it('survives a handler that throws something with no .message', async () => {
     const learnerActions = createLearnerActions({ logger: silent });
@@ -159,7 +159,7 @@ describe('responseHandlers.learner — declaring retryability', () => {
     const learnerActions = createLearnerActions({ logger: silent });
     learnerActions.register('boom', async () => { throw new Error('printer on fire'); });
     const result = await responseHandlers.learner(
-      { kind: 'learner', op: 'boom', learnerId: 'learner-b', location: 'study' },
+      { kind: 'learner', op: 'boom', learnerId: 'user_2', location: 'study' },
       { learnerActions, logger: silent },
     );
     expect(result).toMatchObject({ status: 'failed', retryable: true });
@@ -168,7 +168,7 @@ describe('responseHandlers.learner — declaring retryability', () => {
   it('does NOT mark a named refusal retryable — retrying it changes nothing', async () => {
     const learnerActions = createLearnerActions({ logger: silent });
     const result = await responseHandlers.learner(
-      { kind: 'learner', op: 'reading-session', learnerId: 'learner-c', location: 'livingroom' },
+      { kind: 'learner', op: 'reading-session', learnerId: 'user_5', location: 'livingroom' },
       { learnerActions, logger: silent },
     );
     expect(result.retryable).toBeUndefined();

@@ -17,7 +17,7 @@ The latest garage session exposed four independent faults:
   loading now accepts the canonical system `api_key`. The overlay also no longer
   mistakes the normal microphone-request state for stale state and starts only
   one recorder.
-- Soren's persisted score was 0 rings, while his cumulative heartbeat series
+- User_2's persisted score was 0 rings, while his cumulative heartbeat series
   crossed 1,400. Because exempt riders have no ring series, the live chart used
   its legacy heartbeat fallback and mislabeled that value as rings. Exempt
   entries now remain at zero when `rings_total` is intentionally absent.

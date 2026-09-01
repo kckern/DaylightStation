@@ -18,7 +18,7 @@ import { FitnessSession } from './FitnessSession.js';
 // FitnessSession.recordDeviceActivity — first N HR packets per device are dropped.
 const STARTUP_DISCARD_COUNT = 3;
 
-// Hand-written to pin the HISTORICAL incident (global active=100 vs learner-a's
+// Hand-written to pin the HISTORICAL incident (global active=100 vs user_4's
 // personal 120), not the current data/household/fitness/config.yml.
 const GLOBAL_ZONES = [
   { id: 'cool', name: 'Cool', min: 0, color: 'blue', rings: 0 },
@@ -46,7 +46,7 @@ function hrPacket(deviceId, bpm) {
 function startedSession() {
   const session = new FitnessSession();
   session.userManager.configure(
-    { primary: [{ id: 'learner-a', name: 'Learner A', hr_device_id: 'hr-learner-a', zones: MILO_ZONE_OVERRIDES }] },
+    { primary: [{ id: 'user_4', name: 'User_4', hr_device_id: 'hr-user_4', zones: MILO_ZONE_OVERRIDES }] },
     GLOBAL_ZONES
   );
   session.ensureStarted({ force: true, reason: 'zoneSyncOrder-test' });
@@ -62,19 +62,19 @@ describe('FitnessSession — the zone store is synced before TreasureBox scores 
     const session = startedSession();
 
     // Scenario fidelity: the rider really does carry personal thresholds.
-    const learnerA = session.userManager.getAllUsers().find((u) => u.id === 'learner-a');
-    expect(minOf(learnerA.zoneConfig, 'active')).toBe(120);
+    const user_4 = session.userManager.getAllUsers().find((u) => u.id === 'user_4');
+    expect(minOf(user_4.zoneConfig, 'active')).toBe(120);
 
     for (let i = 0; i < STARTUP_DISCARD_COUNT; i += 1) {
-      session.ingestData(hrPacket('hr-learner-a', BETWEEN_BPM));
+      session.ingestData(hrPacket('hr-user_4', BETWEEN_BPM));
     }
-    expect(session.treasureBox.perUser.has('learner-a')).toBe(false); // nothing scored during the discard window
+    expect(session.treasureBox.perUser.has('user_4')).toBe(false); // nothing scored during the discard window
 
-    session.ingestData(hrPacket('hr-learner-a', BETWEEN_BPM)); // the first sample that counts
+    session.ingestData(hrPacket('hr-user_4', BETWEEN_BPM)); // the first sample that counts
 
-    const acc = session.treasureBox.perUser.get('learner-a');
+    const acc = session.treasureBox.perUser.get('user_4');
     expect(acc).toBeTruthy();
-    // 105 is under learner-a's active=120 → cool, worth no rings.
+    // 105 is under user_4's active=120 → cool, worth no rings.
     // Before the reorder this was 'active' (global 100) and paid a ring.
     expect(acc.highestZone.id).toBe('cool');
   });
@@ -84,7 +84,7 @@ describe('FitnessSession — the zone store is synced before TreasureBox scores 
     const logSpy = vi.spyOn(session.treasureBox, '_log');
 
     for (let i = 0; i < STARTUP_DISCARD_COUNT + 3; i += 1) {
-      session.ingestData(hrPacket('hr-learner-a', BETWEEN_BPM));
+      session.ingestData(hrPacket('hr-user_4', BETWEEN_BPM));
     }
 
     // The warn exists to surface a rider the store never learns about. If a

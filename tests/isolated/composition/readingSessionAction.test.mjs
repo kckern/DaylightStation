@@ -55,14 +55,14 @@ function build({
   return { handler, sessions: store, sent, woke };
 }
 
-const tap = (over = {}) => ({ learnerId: 'learner-c', location: 'livingroom', target: 'livingroom-tv', ...over });
+const tap = (over = {}) => ({ learnerId: 'user_5', location: 'livingroom', target: 'livingroom-tv', ...over });
 
 describe('reading-session — an ordinary card tap opens a session', () => {
   it('opens a session for the learner at that reader', async () => {
     const { handler, sessions } = build();
     const result = await handler(tap());
-    expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'learner-c', state: 'prompt' });
-    expect(result).toMatchObject({ status: 'reading_session_open', learnerId: 'learner-c' });
+    expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'user_5', state: 'prompt' });
+    expect(result).toMatchObject({ status: 'reading_session_open', learnerId: 'user_5' });
   });
 
   it('wakes the reader s screen, naming the target the reader declared', async () => {
@@ -76,15 +76,15 @@ describe('reading-session — an ordinary card tap opens a session', () => {
     await handler(tap());
     expect(sent.find((entry) => entry.payload?.event === 'session-open')).toMatchObject({
       topic: 'reading:livingroom',
-      payload: { event: 'session-open', learnerId: 'learner-c' },
+      payload: { event: 'session-open', learnerId: 'user_5' },
     });
   });
 
   it('a second card at the same reader swaps the learner — last tap wins', async () => {
     const { handler, sessions } = build();
     await handler(tap());
-    await handler(tap({ learnerId: 'learner-d' }));
-    expect(sessions.current('livingroom').learnerId).toBe('learner-d');
+    await handler(tap({ learnerId: 'user_3' }));
+    expect(sessions.current('livingroom').learnerId).toBe('user_3');
   });
 
   // §9: a card tap must always answer. A TV that will not wake is worth saying
@@ -209,14 +209,14 @@ describe('reading-session — a card tapped while unrelated content plays (D2)',
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
       topic: 'reading:livingroom',
-      payload: { event: 'session-refused', reason: 'content-playing', learnerId: 'learner-c' },
+      payload: { event: 'session-refused', reason: 'content-playing', learnerId: 'user_5' },
     });
   });
 
   it('reports the refusal by name rather than pretending it opened', async () => {
     const { handler } = build({ playing: true });
     expect(await handler(tap())).toMatchObject({
-      status: 'reading_session_refused', reason: 'content-playing', learnerId: 'learner-c',
+      status: 'reading_session_refused', reason: 'content-playing', learnerId: 'user_5',
     });
   });
 
@@ -235,13 +235,13 @@ describe('reading-session — a card tapped while unrelated content plays (D2)',
    */
   it('a session s OWN story is not foreign play — a mid-story card still swaps the context', async () => {
     const { handler, sessions } = build({ playing: true });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
-    sessions.update('livingroom', { state: 'reading', playing: { learnerId: 'learner-c', pickId: 'pick_1' } });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.update('livingroom', { state: 'reading', playing: { learnerId: 'user_5', pickId: 'pick_1' } });
 
-    const result = await handler(tap({ learnerId: 'learner-d' }));
+    const result = await handler(tap({ learnerId: 'user_3' }));
 
     expect(result.status).toBe('reading_session_open');
-    expect(sessions.current('livingroom').learnerId).toBe('learner-d');
+    expect(sessions.current('livingroom').learnerId).toBe('user_3');
   });
 
   it('and that swap leaves the state mid-story, so the next book is still refused (D5)', async () => {
@@ -249,16 +249,16 @@ describe('reading-session — a card tapped while unrelated content plays (D2)',
     // session sitting at `prompt` while a story plays would hand the next book
     // tap a countdown on top of the running story, in assignment mode too.
     const { handler, sessions } = build({ playing: true });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
-    sessions.update('livingroom', { state: 'reading', playing: { learnerId: 'learner-c', pickId: 'pick_1' } });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.update('livingroom', { state: 'reading', playing: { learnerId: 'user_5', pickId: 'pick_1' } });
 
-    await handler(tap({ learnerId: 'learner-d' }));
+    await handler(tap({ learnerId: 'user_3' }));
 
     const now = sessions.current('livingroom');
     expect(now.state).toBe('reading');
     // Attribution is decided at PICK time and never re-read: the running story
     // still belongs to the child who chose it.
-    expect(now.playing).toMatchObject({ learnerId: 'learner-c', pickId: 'pick_1' });
+    expect(now.playing).toMatchObject({ learnerId: 'user_5', pickId: 'pick_1' });
   });
 
   it('with no isPlaying source wired, a tap opens a session rather than being refused on a guess', async () => {

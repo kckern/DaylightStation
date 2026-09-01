@@ -212,7 +212,7 @@ records/
       lesson: cfm-ot-2026-08-26
       requireParts: 1
       satisfiedAt: 2026-08-26T18:40:12-07:00
-      satisfiedBy: learner-a
+      satisfiedBy: user_4
       satisfiedVia: readalong:scripture/ot/nirv/14712
       coverage: { ... }
 ```

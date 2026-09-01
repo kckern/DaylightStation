@@ -422,7 +422,7 @@ Report: treasure box. `resolveZone` caches `overrides || null` once per user (`T
 
 Append to `frontend/src/hooks/fitness/TreasureBox.test.js`:
 ```js
-// 2026-09-01: learner-a's first HR sample reached the box 1ms before ZoneProfileStore
+// 2026-09-01: user_4's first HR sample reached the box 1ms before ZoneProfileStore
 // had built his profile. The box cached the miss and scored him on GLOBAL
 // thresholds (active=100) for the whole session while the roster, LED and
 // zone series used his personal ones (active=120).
@@ -433,7 +433,7 @@ const GLOBAL_ZONES = [
   { id: 'hot', name: 'Hot', min: 140, color: 'orange', rings: 3 },
   { id: 'fire', name: 'Fire', min: 160, color: 'red', rings: 5 },
 ];
-const MILO_PROFILE = { id: 'learner-a', zoneConfig: [
+const MILO_PROFILE = { id: 'user_4', zoneConfig: [
   { id: 'cool', min: 0 }, { id: 'active', min: 120 }, { id: 'warm', min: 140 }, { id: 'hot', min: 160 }, { id: 'fire', min: 180 },
 ] };
 
@@ -449,19 +449,19 @@ describe('FitnessTreasureBox.resolveZone with a late ZoneProfileStore profile', 
   it('does not cache a missing profile — the next sample uses the personal thresholds', () => {
     const profiles = new Map();
     const { box } = boxWithStore(profiles);
-    expect(box.resolveZone('learner-a', 105).id).toBe('active');   // no profile yet: global
-    profiles.set('learner-a', MILO_PROFILE);                        // store catches up
-    expect(box.resolveZone('learner-a', 105).id).toBe('cool');      // personal active=120
+    expect(box.resolveZone('user_4', 105).id).toBe('active');   // no profile yet: global
+    profiles.set('user_4', MILO_PROFILE);                        // store catches up
+    expect(box.resolveZone('user_4', 105).id).toBe('cool');      // personal active=120
   });
 
   it('invalidateZoneOverrideCache() re-reads a profile that changed after it was cached', () => {
-    const profiles = new Map([['learner-a', { id: 'learner-a', zoneConfig: [{ id: 'cool', min: 0 }, { id: 'active', min: 100 }] }]]);
+    const profiles = new Map([['user_4', { id: 'user_4', zoneConfig: [{ id: 'cool', min: 0 }, { id: 'active', min: 100 }] }]]);
     const { box } = boxWithStore(profiles);
-    expect(box.resolveZone('learner-a', 105).id).toBe('active');
-    profiles.set('learner-a', MILO_PROFILE);
-    expect(box.resolveZone('learner-a', 105).id).toBe('active');    // still cached — by design, until told
+    expect(box.resolveZone('user_4', 105).id).toBe('active');
+    profiles.set('user_4', MILO_PROFILE);
+    expect(box.resolveZone('user_4', 105).id).toBe('active');    // still cached — by design, until told
     box.invalidateZoneOverrideCache();
-    expect(box.resolveZone('learner-a', 105).id).toBe('cool');
+    expect(box.resolveZone('user_4', 105).id).toBe('cool');
   });
 });
 ```
@@ -556,7 +556,7 @@ Append to `usePianoLessonGate.test.js` inside `describe('usePianoLessonGate')`:
     vi.useFakeTimers();
     let resolve;
     h.response = new Promise((r) => { resolve = r; });
-    const { result } = renderHook(() => usePianoLessonGate('learner-c'));
+    const { result } = renderHook(() => usePianoLessonGate('user_5'));
     expect(result.current.status).toBe('loading');
     expect(result.current.gated).toBe(false);
     await act(async () => { await vi.advanceTimersByTimeAsync(LOADING_CEILING_MS + 10); });
@@ -702,16 +702,16 @@ function build({ status = OWED, realtime = null, now = () => 1_000 } = {}) {
 describe('GetPianoLessonGate memo', () => {
   it('answers the second read for the same learner from memory', async () => {
     const { uc, statusFn } = build();
-    await uc.execute({ learnerId: 'learner-c' });
-    await uc.execute({ learnerId: 'learner-c' });
+    await uc.execute({ learnerId: 'user_5' });
+    await uc.execute({ learnerId: 'user_5' });
     expect(statusFn).toHaveBeenCalledTimes(1);
   });
   it('expires after the TTL', async () => {
     let t = 1_000;
     const { uc, statusFn } = build({ now: () => t });
-    await uc.execute({ learnerId: 'learner-c' });
+    await uc.execute({ learnerId: 'user_5' });
     t += GetPianoLessonGate.MEMO_TTL_MS + 1;
-    await uc.execute({ learnerId: 'learner-c' });
+    await uc.execute({ learnerId: 'user_5' });
     expect(statusFn).toHaveBeenCalledTimes(2);
   });
   it('is invalidated for that learner by a lesson-completed event', async () => {
@@ -722,15 +722,15 @@ describe('GetPianoLessonGate memo', () => {
     };
     const { uc, statusFn } = build({ realtime });
     uc.start();
-    await uc.execute({ learnerId: 'learner-c' });
-    await handlers.completed({ userId: 'learner-c' });
-    await uc.execute({ learnerId: 'learner-c' });
+    await uc.execute({ learnerId: 'user_5' });
+    await handlers.completed({ userId: 'user_5' });
+    await uc.execute({ learnerId: 'user_5' });
     expect(statusFn).toHaveBeenCalledTimes(2);
   });
   it('never memoises an unavailable verdict', async () => {
     const { uc, statusFn } = build({ status: { error: true } });
-    await uc.execute({ learnerId: 'learner-c' });
-    await uc.execute({ learnerId: 'learner-c' });
+    await uc.execute({ learnerId: 'user_5' });
+    await uc.execute({ learnerId: 'user_5' });
     expect(statusFn).toHaveBeenCalledTimes(2);
   });
 });
@@ -788,7 +788,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { CourseGridRoute } from './Videos.jsx';
 
-const state = { gate: { status: 'ready', gated: false, course: null }, user: 'learner-c' };
+const state = { gate: { status: 'ready', gated: false, course: null }, user: 'user_5' };
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ basePath: '/piano', config: { videos: {} } }) }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: state.user }) }));
 vi.mock('../../usePianoLessonGate.js', () => ({ default: () => state.gate }));
@@ -806,7 +806,7 @@ const renderAt = () => render(
   </MemoryRouter>,
 );
 
-beforeEach(() => { state.gate = { status: 'ready', gated: false, course: null }; state.user = 'learner-c'; });
+beforeEach(() => { state.gate = { status: 'ready', gated: false, course: null }; state.user = 'user_5'; });
 
 describe('CourseGridRoute under the lesson gate', () => {
   it('renders the grid when not gated', () => {
@@ -907,9 +907,9 @@ it('logs, at info, a completion that belongs to no enrolled course (2026-09-01: 
     status: { doneToday: false, completedLessonsToday: [], completedLessons: [] },
     logger: { warn() {}, info },
   });
-  await bus.emit('piano.lesson.completed', { userId: 'learner-c', plexId: 'plex:694782', title: 'Lesson 9 | Hot Cross Buns: Part 2' });
+  await bus.emit('piano.lesson.completed', { userId: 'user_5', plexId: 'plex:694782', title: 'Lesson 9 | Hot Cross Buns: Part 2' });
   expect(info).toHaveBeenCalledWith('school.piano-ceremony.ignored', expect.objectContaining({
-    learnerId: 'learner-c', plexId: 'plex:694782', reason: 'not-in-enrolled-course', enrolledCourseIds: [COURSE],
+    learnerId: 'user_5', plexId: 'plex:694782', reason: 'not-in-enrolled-course', enrolledCourseIds: [COURSE],
   }));
   expect(bus.sent).toHaveLength(0);
 });

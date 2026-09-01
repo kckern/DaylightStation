@@ -32,7 +32,7 @@ const ENROLLED = {
   profile: 'upper',
   enrollment: {
     schema: 'school.course-enrollment/v1',
-    enrollmentId: 'enr-learner-a-young-peoples-atlas-us',
+    enrollmentId: 'enr-user_4-young-peoples-atlas-us',
     courseId: 'young-peoples-atlas-us',
     profile: 'upper',
     moduleOrder: ['united-states', 'midwest'],
@@ -90,7 +90,7 @@ describe('AssignmentsView — the enrolled note points at its actual source', ()
     });
     schoolApi.curriculumUnits.mockResolvedValue(CATALOG);
 
-    render(<AssignmentsView learnerId="learner-a" learnerName="Learner A" />);
+    render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
     fireEvent.click(await screen.findByRole('button', { name: /Edit assignments/i }));
 
     const note = await screen.findByText(/has an enrollment — order, profile, and pass bar come from its syllabus/);
@@ -109,7 +109,7 @@ describe('AssignmentsView — the enrolled note points at its actual source', ()
     });
     schoolApi.curriculumUnits.mockResolvedValue(CATALOG);
 
-    render(<AssignmentsView learnerId="learner-a" learnerName="Learner A" />);
+    render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
     fireEvent.click(await screen.findByRole('button', { name: /Edit assignments/i }));
 
     expect(await screen.findByText(/has a hand-authored enrollment — order, profile, and pass bar were set directly on the record/)).toBeInTheDocument();
@@ -128,7 +128,7 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
       data: { courses: [ENROLLED], units: [], assignedBy: 'kckern', updatedAt: '2026-08-13T00:00:00Z' },
     });
     schoolApi.curriculumUnits.mockResolvedValue({ ok: true, status: 200, data: { units: [] } });
-    render(<AssignmentsView learnerId="learner-a" learnerName="Learner A" />);
+    render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
     await waitFor(() => expect(screen.getByText('Assigned by KC')).toBeTruthy());
     expect(screen.queryByText('Assigned by kckern')).toBeNull();
   });
@@ -162,7 +162,7 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
       data: null,
     });
 
-    render(<AssignmentsView learnerId="learner-a" learnerName="Learner A" />);
+    render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
 
     // Wait for data to load
     await waitFor(() => {

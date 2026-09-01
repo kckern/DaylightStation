@@ -77,7 +77,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(2026, 8, 1, 14, 0, 0));
   navigate.mockClear();
   gateDeferred = defer();
-  currentUser = 'learner-c';
+  currentUser = 'user_5';
   __clearPianoListCache();
   localStorage.clear();
 });

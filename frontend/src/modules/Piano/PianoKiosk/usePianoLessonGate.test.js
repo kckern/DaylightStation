@@ -226,7 +226,7 @@ describe('usePianoLessonGate', () => {
     vi.useFakeTimers();
     let resolve;
     h.response = new Promise((r) => { resolve = r; });
-    const { result } = renderHook(() => usePianoLessonGate('learner-c'));
+    const { result } = renderHook(() => usePianoLessonGate('user_5'));
     expect(result.current.status).toBe('loading');
     expect(result.current.gated).toBe(false);
 

@@ -34,41 +34,41 @@ describe('SchoolCalcDevice aggregate', () => {
 
   it('assigns stable non-recycled learner keys and retains retired bindings for old queues', () => {
     const first = enrolled().synchronizeLearners({
-      learners: [{ id: 'learner-a', name: 'Alpha' }, { id: 'learner-b', name: 'Beta' }],
+      learners: [{ id: 'user_4', name: 'Alpha' }, { id: 'user_2', name: 'Beta' }],
       synchronizedAt: '2026-08-01T12:01:00.000Z',
     });
     expect(first.changed).toBe(true);
     expect(first.device.activeLearnerBindings).toEqual([
-      expect.objectContaining({ learnerKey: 1, learnerId: 'learner-a', position: 0, active: true }),
-      expect.objectContaining({ learnerKey: 2, learnerId: 'learner-b', position: 1, active: true }),
+      expect.objectContaining({ learnerKey: 1, learnerId: 'user_4', position: 0, active: true }),
+      expect.objectContaining({ learnerKey: 2, learnerId: 'user_2', position: 1, active: true }),
     ]);
 
     const second = first.device.synchronizeLearners({
-      learners: [{ id: 'learner-b', name: 'Beta B' }, { id: 'learner-c', name: 'Gamma' }],
+      learners: [{ id: 'user_2', name: 'Beta B' }, { id: 'user_5', name: 'Gamma' }],
       synchronizedAt: '2026-08-02T12:01:00.000Z',
     });
     expect(second.device.activeLearnerBindings).toEqual([
-      expect.objectContaining({ learnerKey: 2, learnerId: 'learner-b', label: 'Beta B', position: 0 }),
-      expect.objectContaining({ learnerKey: 3, learnerId: 'learner-c', position: 1 }),
+      expect.objectContaining({ learnerKey: 2, learnerId: 'user_2', label: 'Beta B', position: 0 }),
+      expect.objectContaining({ learnerKey: 3, learnerId: 'user_5', position: 1 }),
     ]);
-    expect(second.device.resolveLearnerKey(1)).toMatchObject({ learnerId: 'learner-a', active: false });
+    expect(second.device.resolveLearnerKey(1)).toMatchObject({ learnerId: 'user_4', active: false });
     expect(second.device.resolveLearnerKey(1, { activeOnly: true })).toBeNull();
 
     const third = second.device.synchronizeLearners({
-      learners: [{ id: 'learner-a', name: 'Alpha' }, { id: 'learner-b', name: 'Beta B' }],
+      learners: [{ id: 'user_4', name: 'Alpha' }, { id: 'user_2', name: 'Beta B' }],
       synchronizedAt: '2026-08-03T12:01:00.000Z',
     });
     expect(third.device.activeLearnerBindings.map(({ learnerKey }) => learnerKey)).toEqual([1, 2]);
-    expect(third.device.resolveLearnerKey(3)).toMatchObject({ learnerId: 'learner-c', active: false });
+    expect(third.device.resolveLearnerKey(3)).toMatchObject({ learnerId: 'user_5', active: false });
     expect(third.device.synchronizeLearners({
-      learners: [{ id: 'learner-a', name: 'Alpha' }, { id: 'learner-b', name: 'Beta B' }],
+      learners: [{ id: 'user_4', name: 'Alpha' }, { id: 'user_2', name: 'Beta B' }],
       synchronizedAt: '2026-08-04T12:01:00.000Z',
     })).toMatchObject({ changed: false, device: third.device });
   });
 
   it('rejects duplicate configured learners instead of creating ambiguous attribution', () => {
     expect(() => enrolled().synchronizeLearners({
-      learners: [{ id: 'learner-a', name: 'Alpha' }, { id: 'learner-a', name: 'Again' }],
+      learners: [{ id: 'user_4', name: 'Alpha' }, { id: 'user_4', name: 'Again' }],
       synchronizedAt: '2026-08-01T12:01:00.000Z',
     })).toThrow(/repeats/);
   });

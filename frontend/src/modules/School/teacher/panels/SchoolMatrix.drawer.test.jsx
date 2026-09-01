@@ -36,7 +36,7 @@ vi.mock('../TeacherProfileContext.jsx', () => ({
   }),
 }));
 
-const KIDS = [{ id: 'learner-a', name: 'Learner A' }];
+const KIDS = [{ id: 'user_4', name: 'User_4' }];
 
 describe('SchoolMatrix — switching the open cell without a key remount (regression)', () => {
   beforeEach(() => {
@@ -72,13 +72,13 @@ describe('SchoolMatrix — switching the open cell without a key remount (regres
     await waitFor(() => expect(screen.getByTestId('school-matrix')).toBeInTheDocument());
 
     // Open the drawer on course-x.
-    fireEvent.click(screen.getByRole('button', { name: 'Learner A, Course X' }));
+    fireEvent.click(screen.getByRole('button', { name: 'User_4, Course X' }));
     await waitFor(() => expect(screen.getByTestId('enrollment-drawer')).toBeInTheDocument());
     expect(screen.getByRole('option', { name: 'Syllabus X' })).toBeInTheDocument();
 
     // Without touching the select, click a DIFFERENT cell — the matrix table
     // has no backdrop, so this is reachable while the drawer is still open.
-    fireEvent.click(screen.getByRole('button', { name: 'Learner A, Course Y' }));
+    fireEvent.click(screen.getByRole('button', { name: 'User_4, Course Y' }));
     await waitFor(() => expect(screen.getByRole('option', { name: 'Syllabus Y' })).toBeInTheDocument());
 
     // Submit immediately (through the arm→confirm added by the UX wave).

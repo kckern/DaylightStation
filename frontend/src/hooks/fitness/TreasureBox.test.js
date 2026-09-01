@@ -5,29 +5,29 @@ import { ZoneProfileStore } from './ZoneProfileStore.js';
 describe('FitnessTreasureBox ring award callback', () => {
   it('publishes a canonical completed award after totals have been updated', () => {
     const box = new FitnessTreasureBox({ startTime: Date.now(), timebase: {} });
-    box.perUser.set('learner-a', { profileId: 'learner-a', totalRings: 100 });
+    box.perUser.set('user_4', { profileId: 'user_4', totalRings: 100 });
     box.totalRings = 300;
     const onAward = vi.fn();
     box.setRingAwardCallback(onAward);
 
-    box._awardRings('learner-a', { id: 'hot', name: 'Hot', rings: 5, color: 'orange' });
+    box._awardRings('user_4', { id: 'hot', name: 'Hot', rings: 5, color: 'orange' });
 
     expect(onAward).toHaveBeenCalledOnce();
     expect(onAward).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'learner-a', zone: 'hot', color: 'orange', rings: 5,
+      userId: 'user_4', zone: 'hot', color: 'orange', rings: 5,
       userTotal: 105, totalRings: 305,
     }));
   });
 });
 
 // ---------------------------------------------------------------------------
-// 2026-09-01: learner-a's first HR sample reached the box 1ms before ZoneProfileStore
+// 2026-09-01: user_4's first HR sample reached the box 1ms before ZoneProfileStore
 // had built his profile. The box cached the miss and scored him on GLOBAL
 // thresholds (active=100) for the whole session while the roster, LED and zone
 // series used his personal ones (active=120).
 //
 // The two zone tables below are deliberately hand-written: they pin that
-// HISTORICAL incident (global active=100 vs learner-a's personal active=120), not
+// HISTORICAL incident (global active=100 vs user_4's personal active=120), not
 // the current contents of data/household/fitness/config.yml. Everything else
 // here comes from the real ZoneProfileStore and the real configure() call shape
 // used by FitnessSession, so the profile shape cannot drift from production.
@@ -39,7 +39,7 @@ const GLOBAL_ZONES = [
   { id: 'hot', name: 'Hot', min: 140, color: 'orange', rings: 3 },
   { id: 'fire', name: 'Fire', min: 160, color: 'red', rings: 5 },
 ];
-// learner-a's personal table from the incident: active 120 / warm 140 / hot 160.
+// user_4's personal table from the incident: active 120 / warm 140 / hot 160.
 const MILO_ZONES = [
   { id: 'cool', name: 'Cool', min: 0, color: 'blue', rings: 0 },
   { id: 'active', name: 'Active', min: 120, color: 'green', rings: 1 },
@@ -48,7 +48,7 @@ const MILO_ZONES = [
 ];
 
 const miloUser = (zoneConfig, heartRate) => ({
-  id: 'learner-a', name: 'Learner A', zoneConfig, currentData: { heartRate }
+  id: 'user_4', name: 'User_4', zoneConfig, currentData: { heartRate }
 });
 
 function boxWithStore() {
@@ -68,29 +68,29 @@ describe('FitnessTreasureBox.resolveZone with a late ZoneProfileStore profile', 
   it('does not cache a missing profile — the next sample uses the personal thresholds', () => {
     const { box, store } = boxWithStore();
 
-    expect(store.getProfile('learner-a')).toBeNull();              // the 1ms race
-    expect(box.resolveZone('learner-a', 105).id).toBe('active');   // no profile yet: global
+    expect(store.getProfile('user_4')).toBeNull();              // the 1ms race
+    expect(box.resolveZone('user_4', 105).id).toBe('active');   // no profile yet: global
 
     store.syncFromUsers([miloUser(MILO_ZONES, 105)]);         // store catches up
-    expect(box.resolveZone('learner-a', 105).id).toBe('cool');     // personal active=120
+    expect(box.resolveZone('user_4', 105).id).toBe('cool');     // personal active=120
   });
 
   it('re-reads a profile whose thresholds changed, and only then', () => {
     const { box, store } = boxWithStore();
 
     store.syncFromUsers([miloUser(GLOBAL_ZONES, 105)]);
-    expect(box.resolveZone('learner-a', 105).id).toBe('active');
+    expect(box.resolveZone('user_4', 105).id).toBe('active');
 
     // HR churn — what nearly every packet produces — must not drop the cache.
     const getProfileSpy = vi.spyOn(store, 'getProfile');
     store.syncFromUsers([miloUser(GLOBAL_ZONES, 106)]);
-    expect(box.resolveZone('learner-a', 106).id).toBe('active');
+    expect(box.resolveZone('user_4', 106).id).toBe('active');
     expect(getProfileSpy).not.toHaveBeenCalled();
 
     // A real threshold change is picked up on the next read, with nothing
     // having to remember to tell the box.
     store.syncFromUsers([miloUser(MILO_ZONES, 106)]);
-    expect(box.resolveZone('learner-a', 106).id).toBe('cool');
+    expect(box.resolveZone('user_4', 106).id).toBe('cool');
     expect(getProfileSpy).toHaveBeenCalled();
   });
 

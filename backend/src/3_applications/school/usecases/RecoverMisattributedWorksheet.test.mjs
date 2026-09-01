@@ -28,7 +28,7 @@ const allocationRequest = ({ documentId, sessionId, start, end, itemPrefix, ...e
   rev: `${documentId}-rev`,
   seed: start * 1000 + end,
   variant: 0,
-  learnerId: 'milo',
+  learnerId: 'user_4',
   sessionId,
   rowRange: { start, end },
   rowItems: Array.from({ length: end - start + 1 }, (_, index) => ({
@@ -53,7 +53,7 @@ async function harness() {
   });
 
   await append(sessions, SOURCE, 'created', '2026-08-31T01:26:54.276Z', {
-    learnerId: 'milo', unitId: 'math-place-value', studyDay: '2026-08-30',
+    learnerId: 'user_4', unitId: 'math-place-value', studyDay: '2026-08-30',
   });
   await append(sessions, SOURCE, 'issued', '2026-08-31T01:28:24.563Z', {
     artifactId: 'math/original', confirmed: true,
@@ -70,14 +70,14 @@ async function harness() {
     newSessionId: REMEDIATION, variant: 1,
   });
   await append(sessions, REMEDIATION, 'created', '2026-08-31T15:56:18.320Z', {
-    learnerId: 'milo', unitId: 'math-place-value', remediationOf: SOURCE,
+    learnerId: 'user_4', unitId: 'math-place-value', remediationOf: SOURCE,
     remediationItemIds: ['math-q1', 'math-q2', 'math-q3', 'math-q5', 'math-q6'], variant: 1,
   });
   await append(sessions, REMEDIATION, 'issued', '2026-08-31T15:56:18.325Z', {
     artifactId: 'math/retry', confirmed: true,
   });
   await append(sessions, CREDIT, 'created', '2026-08-31T14:43:23.028Z', {
-    learnerId: 'milo', unitId: 'scripture-psalms', studyDay: '2026-08-31',
+    learnerId: 'user_4', unitId: 'scripture-psalms', studyDay: '2026-08-31',
   });
   await append(sessions, CREDIT, 'issued', '2026-08-31T15:30:09.071Z', {
     artifactId: 'scripture/worksheet', confirmed: true,
@@ -119,7 +119,7 @@ async function harness() {
     mode: 'quiz',
     given: String(index + 1),
     correct: index === 3,
-    attributedTo: 'milo',
+    attributedTo: 'user_4',
     transport: 'paper',
     learning: {},
   }));
@@ -193,7 +193,7 @@ const request = (apply = false) => ({
   reason: 'scripture bubbles were entered in the math row window',
   recoveredBy: 'parent',
   pin: '7410',
-  idempotencyKey: 'milo-2026-08-31-wrong-worksheet',
+  idempotencyKey: 'user_4-2026-08-31-wrong-worksheet',
   expectedReplacementRows: { start: 4, end: 9 },
   apply,
 });

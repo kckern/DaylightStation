@@ -47,7 +47,7 @@ const SNAPSHOT = {
   checkpoints: [CP_A, CP_B],
   cleared: [],
   resumePosition: 0,
-  learner: { id: 'learner-c', name: 'Learner C' },
+  learner: { id: 'user_5', name: 'User_5' },
 };
 
 const ok = (data, status = 200) => Promise.resolve({ ok: true, status, data });
@@ -71,7 +71,7 @@ async function mountOpen(opts = {}) {
   const hook = renderHook(() => useMediaLessonSession({
     location: 'livingroom', onRewind: (s, meta) => rewinds.push([s, meta]), ...opts,
   }));
-  await act(async () => { h.handler({ type: 'lesson.open', sessionId: 'sess-1', learnerId: 'learner-c' }); });
+  await act(async () => { h.handler({ type: 'lesson.open', sessionId: 'sess-1', learnerId: 'user_5' }); });
   return { ...hook, rewinds };
 }
 
@@ -105,7 +105,7 @@ describe('useMediaLessonSession', () => {
     expect(h.api.lessonSession).toHaveBeenCalledWith('sess-1');
     expect(result.current.view).toBe('open');
     expect(result.current.lesson).toMatchObject({ sessionId: 'sess-1', contentId: 'plex:99', resumePosition: 0 });
-    expect(result.current.learner).toMatchObject({ id: 'learner-c', name: 'Learner C' });
+    expect(result.current.learner).toMatchObject({ id: 'user_5', name: 'User_5' });
     expect(result.current.checkpoints).toEqual([CP_A, CP_B]);
     expect(result.current.clearedIds).toEqual([]);
   });
@@ -433,13 +433,13 @@ describe('useMediaLessonSession', () => {
     expect(result.current.view).toBe('checkpoint');
 
     h.api.lessonSession.mockImplementation(() => ok({
-      ...SNAPSHOT, sessionId: 'sess-2', contentId: 'plex:100', learner: { id: 'learner-d', name: 'Learner D' },
+      ...SNAPSHOT, sessionId: 'sess-2', contentId: 'plex:100', learner: { id: 'user_3', name: 'User_3' },
     }));
-    await act(async () => { h.handler({ type: 'lesson.open', sessionId: 'sess-2', learnerId: 'learner-d' }); });
+    await act(async () => { h.handler({ type: 'lesson.open', sessionId: 'sess-2', learnerId: 'user_3' }); });
 
     expect(result.current.view).toBe('open');
     expect(result.current.lesson).toMatchObject({ sessionId: 'sess-2' });
-    expect(result.current.learner).toMatchObject({ id: 'learner-d' });
+    expect(result.current.learner).toMatchObject({ id: 'user_3' });
     expect(result.current.dueCheckpoint).toBeNull();
   });
 
@@ -471,6 +471,6 @@ describe('useMediaLessonSession', () => {
 
     expect(h.api.lessonSession.mock.calls.length).toBe(fetches);
     expect(result.current.view).toBe('playing');
-    expect(result.current.learner).toMatchObject({ id: 'learner-c' });
+    expect(result.current.learner).toMatchObject({ id: 'user_5' });
   });
 });

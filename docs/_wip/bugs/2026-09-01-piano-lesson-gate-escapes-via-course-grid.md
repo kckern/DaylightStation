@@ -10,24 +10,24 @@
 
 ## What happened, from the log store
 
-Learner `learner-c`. Plan (`household/school/plans/learners/learner-c.yml`) enrolls `piano-course` → **`plex:695598` Reading Music** (a season of *My Music Workshop*, 53 lessons; 10 done, last on 2026-08-29).
+Learner `user_5`. Plan (`household/school/plans/learners/user_5.yml`) enrolls `piano-course` → **`plex:695598` Reading Music** (a season of *My Music Workshop*, 53 lessons; 10 done, last on 2026-08-29).
 
 | Time (UTC) | Event | Meaning |
 |---|---|---|
-| 15:20:22 → 15:21:00 | `piano.lesson-gate.change gated=true learnerId=learner-c reason=owed`, `piano.lesson-gate.launch courseId=plex:695598 lessonId=plex:695611` ×3 | earlier visit: the gate **did** show for Learner C (lesson *Meet the Eighth Note*) and he launched it — the endpoint and the card work |
-| 17:00:59 | `piano.user.select id=learner-c` | picked himself on the kiosk; `usePianoLessonGate` starts a fresh read — status `loading`, which the hook reports as **not gated** |
-| 17:01:03 | **`piano.menu-activity.open-course courseId=plex:695598 userId=learner-c`** | this event is logged only by `PianoMenuActivity` — the "recent courses" strip in the **not-gated** branch of `PianoMenu.jsx:70-79`. The full menu was on screen. He tapped his own Reading Music chip, 3.5 s after picking his name |
-| — | *no* `piano.lesson-gate.change` for learner-c until **17:16:03** | the verdict from the 17:00:59 read never rendered: by the time it arrived the menu had unmounted (navigated to `/videos`) and the hook's generation guard discarded it |
+| 15:20:22 → 15:21:00 | `piano.lesson-gate.change gated=true learnerId=user_5 reason=owed`, `piano.lesson-gate.launch courseId=plex:695598 lessonId=plex:695611` ×3 | earlier visit: the gate **did** show for User_5 (lesson *Meet the Eighth Note*) and he launched it — the endpoint and the card work |
+| 17:00:59 | `piano.user.select id=user_5` | picked himself on the kiosk; `usePianoLessonGate` starts a fresh read — status `loading`, which the hook reports as **not gated** |
+| 17:01:03 | **`piano.menu-activity.open-course courseId=plex:695598 userId=user_5`** | this event is logged only by `PianoMenuActivity` — the "recent courses" strip in the **not-gated** branch of `PianoMenu.jsx:70-79`. The full menu was on screen. He tapped his own Reading Music chip, 3.5 s after picking his name |
+| — | *no* `piano.lesson-gate.change` for user_5 until **17:16:03** | the verdict from the 17:00:59 read never rendered: by the time it arrived the menu had unmounted (navigated to `/videos`) and the hook's generation guard discarded it |
 | 17:01:18 | **`piano.course-open id=plex:694771`** | this event is emitted only by `CourseGridRoute` (`Videos.jsx:69`) — he was on the **course grid** and opened *Piano* (the sibling season of the same show) |
 | 17:01:35–36 | `piano.courses.progress courses=10` ×2 | grid re-fetched progress for all ten courses |
 | 17:01:50 | `piano.course-open id=plex:694771` | grid again → *Piano* again |
 | 17:01:58 | `piano.video-play contentId=plex:694782` | *Lesson 9 · Hot Cross Buns: Part 2* |
-| 17:05:41 | `piano.video-progress.record completed=true percent=90 userId=learner-c` | first completion; `completedAt: '2026-09-01T17:05:41.532Z'` stamped in his `video-progress.yml` |
+| 17:05:41 | `piano.video-progress.record completed=true percent=90 userId=user_5` | first completion; `completedAt: '2026-09-01T17:05:41.532Z'` stamped in his `video-progress.yml` |
 | 17:06:04 | `… percent=100` | finished |
 | 17:06:03 | `playback.completion-dispatch assetId=plex:694782 consumerRegistered=false` | no frontend consumer (normal for the piano player) |
 | — | *no* `school.piano-ceremony.satisfied`, *no* `school.selfservice.status-board.refresh event=piano-lesson-complete`, *no* evidence row | |
 
-Compare the working case earlier the same morning: learner-a's completion at 16:15:50 was followed within 350 ms by `school.scan.piano-lesson-complete` ("Piano done!") and a board refresh.
+Compare the working case earlier the same morning: user_4's completion at 16:15:50 was followed within 350 ms by `school.scan.piano-lesson-complete` ("Piano done!") and a board refresh.
 
 ---
 
@@ -38,12 +38,12 @@ Compare the working case earlier the same morning: learner-a's completion at 16:
 How long is the window? Measured from this machine against prod at 17:12 UTC:
 
 ```
-GET /api/v1/school/lifecycle/learners/learner-c/piano-lesson-gate   → 200 in 11.145 s   (cold)
+GET /api/v1/school/lifecycle/learners/user_5/piano-lesson-gate   → 200 in 11.145 s   (cold)
 GET …/piano-lesson-gate                                          → 200 in  0.352 s   (warm)
 {"gated":true,"reason":"owed","course":"plex:695598","lesson":"plex:695611","lessonTitle":"Meet the Eighth Note"}
 ```
 
-`GetPianoLessonGate` → `PianoCourseProgramLauncher.status()` → `GetPlayableUnits` → `fitnessPlayableService.getPlayableEpisodes(courseId)`, a Plex read of the whole course. Warm it is fine; cold it is eleven seconds of open menu. The hook then polls every 15 s, and a learner switch discards the in-flight answer (generation guard), so a child who taps anything within those seconds is through before the gate exists. The 15:20 visit worked because the kiosk had been sitting on Learner C's name long enough for a warm answer.
+`GetPianoLessonGate` → `PianoCourseProgramLauncher.status()` → `GetPlayableUnits` → `fitnessPlayableService.getPlayableEpisodes(courseId)`, a Plex read of the whole course. Warm it is fine; cold it is eleven seconds of open menu. The hook then polls every 15 s, and a learner switch discards the in-flight answer (generation guard), so a child who taps anything within those seconds is through before the gate exists. The 15:20 visit worked because the kiosk had been sitting on User_5's name long enough for a warm answer.
 
 Two fixes, both needed: treat non-guest `loading` as **pending** on the menu (tiles and strip disabled, "Checking today's lesson…", the same treatment curfew already uses), with a client-side ceiling after which it fails open with a warn; and make the cold read fast (memoise the gate verdict per learner on the server, invalidated by the same two School events the hook already listens for: `piano-lesson-complete`, `program-day-bypass-changed`).
 
@@ -68,7 +68,7 @@ index                → course grid   (CourseGridRoute — every course in ever
 
 with all navigation relative and Back = `navigate('..')` = "up". From the assigned course's detail page, one Back is the grid. Nothing under `/videos` — not `CourseGrid`, not `CourseDetail`, not `SubcourseNavigator` — reads the gate. `grep -n "gated\|lessonGate" modes/Videos/*.jsx` returns nothing.
 
-So even when the gate *does* show, it says "you may only do Reading Music" and then hands the child a door into a room where Reading Music is one tile among ten. Today Learner C reached the grid without the card; on the 15:20 visit he had the card and the same grid was one Back away.
+So even when the gate *does* show, it says "you may only do Reading Music" and then hands the child a door into a room where Reading Music is one tile among ten. Today User_5 reached the grid without the card; on the 15:20 visit he had the card and the same grid was one Back away.
 
 (*Reading Music* and *Piano* are two seasons of one show, `My Music Workshop`, but the grid lists **seasons as course tiles** — `plex:694771` and `plex:695598` are both season ids — so `CourseDetail` for one season does not expose the other. The sibling escape is the grid, not season switching; `SubcourseNavigator`'s `SeasonList` only applies to shows labelled `subcourses`, where every season belongs to the same enrolled course and any lesson counts.)
 
@@ -143,7 +143,7 @@ Optional, worth discussing: should a completed lesson from a *non-enrolled* cour
 ## Non-findings
 
 - The gate's API read did not *fail* (no `piano.lesson-gate.read-failed` at 17:01) — it was slow, and slow reads open the menu. Earlier in the day there were two runs of `read-failed … HTTP 502` (12:16–12:27, 16:07–16:08) while the container was restarting; those also open the menu, by design.
-- `piano.school-access.verdict … learnerId=learner-c unlocked=false` is the separate **games** reward gate (`useSchoolGameAccess`); it was correctly closed and is unrelated.
+- `piano.school-access.verdict … learnerId=user_5 unlocked=false` is the separate **games** reward gate (`useSchoolGameAccess`); it was correctly closed and is unrelated.
 - The completion pipeline itself is healthy: `completedAt` was stamped today, `newlyCompleted` was true, the bus event reached the bridge. It was rejected on policy, not lost.
 - Refreshing the agenda can't help: Reading Music is still `pending` because it is still owed.
 - The `piano.lesson-gate.read-failed … HTTP 502` runs at 12:16–12:27 and 16:07–16:08 opened the menu **by design at the time**. As of `d23571360` a 5xx no longer opens it — it holds the learner pending and lets the poll retry. A 404 still opens immediately.

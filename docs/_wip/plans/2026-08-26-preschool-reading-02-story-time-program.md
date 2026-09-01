@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node ESM (`.mjs`), vitest, js-yaml.
 
-**Learner ids:** use `learner-c` / `learner-d` in all code, tests and docs. Substitute the real roster ids ONLY in config under `$DAYLIGHT_BASE_PATH`, which is outside the repo. A commit hook refuses real household first names.
+**Learner ids:** use `user_5` / `user_3` in all code, tests and docs. Substitute the real roster ids ONLY in config under `$DAYLIGHT_BASE_PATH`, which is outside the repo. A commit hook refuses real household first names.
 
 **Read first — in this order:**
 1. `backend/src/3_applications/school/assignedProgramPlan.mjs` — the whole program lane is 90 lines
@@ -111,27 +111,27 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
 it('appends a read and reads it back for that study day', async () => {
   const store = makeStore();
-  await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T18:04:00.000Z', contentId: 'plex:620681', title: 'The Jungle Book', tagUid: '04215172cc2a81', location: 'livingroom' });
-  const rows = await store.listForDay('learner-c', '2026-08-26');
+  await store.append({ learnerId: 'user_5', studyDay: '2026-08-26', at: '2026-08-26T18:04:00.000Z', contentId: 'plex:620681', title: 'The Jungle Book', tagUid: '04215172cc2a81', location: 'livingroom' });
+  const rows = await store.listForDay('user_5', '2026-08-26');
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ contentId: 'plex:620681', title: 'The Jungle Book' });
 });
 
 it('keeps two reads on the same day in append order', async () => {
   const store = makeStore();
-  await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T18:00:00.000Z', contentId: 'plex:1', title: 'One' });
-  await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T19:00:00.000Z', contentId: 'plex:2', title: 'Two' });
-  expect((await store.listForDay('learner-c', '2026-08-26')).map((r) => r.title)).toEqual(['One', 'Two']);
+  await store.append({ learnerId: 'user_5', studyDay: '2026-08-26', at: '2026-08-26T18:00:00.000Z', contentId: 'plex:1', title: 'One' });
+  await store.append({ learnerId: 'user_5', studyDay: '2026-08-26', at: '2026-08-26T19:00:00.000Z', contentId: 'plex:2', title: 'Two' });
+  expect((await store.listForDay('user_5', '2026-08-26')).map((r) => r.title)).toEqual(['One', 'Two']);
 });
 
 it('scopes reads per learner', async () => {
   const store = makeStore();
-  await store.append({ learnerId: 'learner-c', studyDay: '2026-08-26', at: '2026-08-26T18:00:00.000Z', contentId: 'plex:1' });
-  expect(await store.listForDay('learner-d', '2026-08-26')).toEqual([]);
+  await store.append({ learnerId: 'user_5', studyDay: '2026-08-26', at: '2026-08-26T18:00:00.000Z', contentId: 'plex:1' });
+  expect(await store.listForDay('user_3', '2026-08-26')).toEqual([]);
 });
 
 it('answers an empty list for a day with no file, and never throws', async () => {
-  expect(await makeStore().listForDay('learner-c', '2026-01-01')).toEqual([]);
+  expect(await makeStore().listForDay('user_5', '2026-01-01')).toEqual([]);
 });
 
 it('refuses a path-traversing learner id', async () => {
@@ -139,7 +139,7 @@ it('refuses a path-traversing learner id', async () => {
 });
 
 it('refuses a malformed study day', async () => {
-  await expect(makeStore().append({ learnerId: 'learner-c', studyDay: 'not-a-day', at: 'x' })).rejects.toThrow();
+  await expect(makeStore().append({ learnerId: 'user_5', studyDay: 'not-a-day', at: 'x' })).rejects.toThrow();
 });
 ```
 
@@ -191,31 +191,31 @@ function makeLauncher({ rows = [], target = 2, now = '2026-08-26T18:00:00.000Z' 
 }
 
 it('is not done with no reads', async () => {
-  const s = await makeLauncher({ rows: [] }).status({ userId: 'learner-c' });
+  const s = await makeLauncher({ rows: [] }).status({ userId: 'user_5' });
   expect(s.doneToday).toBe(false);
   expect(s.progressLabel).toBe('0 of 2 stories');
 });
 
 it('is not done partway', async () => {
-  const s = await makeLauncher({ rows: [{ title: 'One' }] }).status({ userId: 'learner-c' });
+  const s = await makeLauncher({ rows: [{ title: 'One' }] }).status({ userId: 'user_5' });
   expect(s.doneToday).toBe(false);
   expect(s.progressLabel).toBe('1 of 2 stories');
 });
 
 it('is done at the target', async () => {
-  const s = await makeLauncher({ rows: [{ title: 'One' }, { title: 'Two' }] }).status({ userId: 'learner-c' });
+  const s = await makeLauncher({ rows: [{ title: 'One' }, { title: 'Two' }] }).status({ userId: 'user_5' });
   expect(s.doneToday).toBe(true);
   expect(s.progressLabel).toBe('2 of 2 stories');
 });
 
 it('stays done past the target — extra stories are never a penalty', async () => {
-  const s = await makeLauncher({ rows: [{}, {}, {}] }).status({ userId: 'learner-c' });
+  const s = await makeLauncher({ rows: [{}, {}, {}] }).status({ userId: 'user_5' });
   expect(s.doneToday).toBe(true);
   expect(s.progressLabel).toBe('3 of 2 stories');
 });
 
 it('is never terminal — a daily obligation does not complete', async () => {
-  const s = await makeLauncher({ rows: [{}, {}] }).status({ userId: 'learner-c' });
+  const s = await makeLauncher({ rows: [{}, {}] }).status({ userId: 'user_5' });
   expect(s.terminal).toBe(false);
 });
 
@@ -228,8 +228,8 @@ it('asks the reading log for the STUDY day, not the UTC date', async () => {
     // day does not roll until 4am — so this is still the 26th.
     timezone: 'America/Los_Angeles', clock: at('2026-08-27T01:30:00.000Z'), logger: silent,
   });
-  await launcher.status({ userId: 'learner-c' });
-  expect(asked).toEqual([['learner-c', '2026-08-26']]);
+  await launcher.status({ userId: 'user_5' });
+  expect(asked).toEqual([['user_5', '2026-08-26']]);
 });
 
 it('reports an error rather than a false zero when the log is unreadable', async () => {
@@ -238,7 +238,7 @@ it('reports an error rather than a false zero when the log is unreadable', async
     assignments: { get: async () => ({ programs: [{ programId: 'story-time', target: 2 }] }) },
     timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
   });
-  const s = await launcher.status({ userId: 'learner-c' });
+  const s = await launcher.status({ userId: 'user_5' });
   expect(s.error).toBe(true);
   expect(s.doneToday).toBe(false);
 });
@@ -577,8 +577,8 @@ it('appends a read stamped with the current study day', async () => {
     clock: () => new Date('2026-08-27T01:30:00.000Z'),
     logger: silent,
   });
-  await useCase.execute({ learnerId: 'learner-c', title: 'The Jungle Book', contentId: 'plex:620681', tagUid: '04215172cc2a81', location: 'livingroom' });
-  expect(appended[0]).toMatchObject({ learnerId: 'learner-c', studyDay: '2026-08-26', title: 'The Jungle Book' });
+  await useCase.execute({ learnerId: 'user_5', title: 'The Jungle Book', contentId: 'plex:620681', tagUid: '04215172cc2a81', location: 'livingroom' });
+  expect(appended[0]).toMatchObject({ learnerId: 'user_5', studyDay: '2026-08-26', title: 'The Jungle Book' });
 });
 
 it('refuses a read with no learner', async () => {
@@ -593,9 +593,9 @@ it('broadcasts a story-read acknowledgement when a bus is wired', async () => {
     eventBus: { broadcast: (topic, payload) => sent.push({ topic, payload }) },
     timezone: 'America/Los_Angeles', clock: () => new Date('2026-08-26T18:00:00.000Z'), logger: silent,
   });
-  await useCase.execute({ learnerId: 'learner-c', title: 'The Jungle Book' });
+  await useCase.execute({ learnerId: 'user_5', title: 'The Jungle Book' });
   expect(sent[0].topic).toBe('school');
-  expect(sent[0].payload).toMatchObject({ event: 'story-read', learnerId: 'learner-c', title: 'The Jungle Book' });
+  expect(sent[0].payload).toMatchObject({ event: 'story-read', learnerId: 'user_5', title: 'The Jungle Book' });
 });
 
 it('still records the read when the broadcast throws', async () => {
@@ -604,7 +604,7 @@ it('still records the read when the broadcast throws', async () => {
     eventBus: { broadcast: () => { throw new Error('bus down'); } },
     timezone: 'America/Los_Angeles', clock: () => new Date('2026-08-26T18:00:00.000Z'), logger: silent,
   });
-  await expect(useCase.execute({ learnerId: 'learner-c', title: 'x' })).resolves.toMatchObject({ learnerId: 'learner-c' });
+  await expect(useCase.execute({ learnerId: 'user_5', title: 'x' })).resolves.toMatchObject({ learnerId: 'user_5' });
 });
 ```
 
@@ -661,8 +661,8 @@ copy between files:
 
 | Learner | `target` |
 |---|---|
-| the older preschooler (`learner-c` in tests/docs) | **2** |
-| the younger preschooler (`learner-d` in tests/docs) | **1** |
+| the older preschooler (`user_5` in tests/docs) | **2** |
+| the younger preschooler (`user_3` in tests/docs) | **1** |
 
 ```yaml
 learnerId: <preschooler-1>

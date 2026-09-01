@@ -344,11 +344,11 @@ describe('GameGate — contract 1: the level persists per learner', () => {
 
   it('resets a saved rung when the household changes stateVersion', () => {
     const config = { repertoire: REPERTOIRE, startLevel: 'L1', stateVersion: 'piano-challenge-sp4' };
-    seedGateState('milo', {
+    seedGateState('user_4', {
       levelId: 'L3', failuresAtLevel: 2, cleanPasses: 1, lastMaterialId: null, pickIndex: 4,
     });
 
-    expect(stateFor('milo', config)).toEqual({
+    expect(stateFor('user_4', config)).toEqual({
       levelId: 'L1', failuresAtLevel: 0, cleanPasses: 0, lastMaterialId: null, pickIndex: 0,
       stateVersion: 'piano-challenge-sp4',
     });

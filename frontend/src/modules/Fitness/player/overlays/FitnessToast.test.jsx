@@ -44,13 +44,13 @@ describe('FitnessToast', () => {
       revision: 0,
       kind: 'ring-celebration',
       durationMs: 3500,
-      ringCelebration: { entries: [{ scope: 'individual', userId: 'milo', name: 'Milo', threshold: 100 }], contributors: [], maxVisibleContributors: 3 },
+      ringCelebration: { entries: [{ scope: 'individual', userId: 'user_4', name: 'User_4', threshold: 100 }], contributors: [], maxVisibleContributors: 3 },
     };
     const { rerender } = render(<FitnessToast toast={first} onDone={onDone} />);
     act(() => { vi.advanceTimersByTime(3000); });
     rerender(<FitnessToast toast={{ ...first, revision: 1, ringCelebration: { ...first.ringCelebration, entries: [
       ...first.ringCelebration.entries,
-      { scope: 'individual', userId: 'felix', name: 'Felix', threshold: 100 },
+      { scope: 'individual', userId: 'user_3', name: 'User_3', threshold: 100 },
     ] } }} onDone={onDone} />);
     expect(screen.getByText('100 RINGS EACH')).toBeTruthy();
     act(() => { vi.advanceTimersByTime(3499 + TOAST_EXIT_MS); });
@@ -66,15 +66,15 @@ describe('FitnessToast', () => {
       variant: 'rings',
       ringCelebration: {
         iconUrl: '/media/fitness/ux/spinning-ring.svg',
-        entries: [{ scope: 'individual', userId: 'milo', name: 'Milo', threshold: 500 }],
-        contributors: [{ id: 'milo', name: 'Milo', avatarUrl: '/api/v1/static/img/users/milo' }],
+        entries: [{ scope: 'individual', userId: 'user_4', name: 'User_4', threshold: 500 }],
+        contributors: [{ id: 'user_4', name: 'User_4', avatarUrl: '/api/v1/static/img/users/user_4' }],
         maxVisibleContributors: 3,
       },
     }} onDone={() => {}} />);
     expect(document.querySelector('.fitness-toast--ring-celebration')).toBeTruthy();
     expect(document.querySelector('.fitness-toast__ring-icon')?.getAttribute('src')).toBe('/media/fitness/ux/spinning-ring.svg');
     expect(screen.getByText('500 RINGS')).toBeTruthy();
-    expect(screen.getByText('Milo has 500 rings!')).toBeTruthy();
+    expect(screen.getByText('User_4 has 500 rings!')).toBeTruthy();
   });
 
   it('falls back to the code-owned spinning ring when the configured asset is broken', () => {

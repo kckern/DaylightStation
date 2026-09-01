@@ -480,23 +480,23 @@ Append to `frontend/src/modules/School/teacher/teacherUrl.test.js`:
 ```js
 describe('learner day route', () => {
   it('parses a dated day route', () => {
-    expect(parseTeacherPath('/school/teacher/students/learner-a/day/2026-08-25')).toMatchObject({
-      kind: 'learner', section: 'day', learnerId: 'learner-a', studyDay: '2026-08-25',
+    expect(parseTeacherPath('/school/teacher/students/user_4/day/2026-08-25')).toMatchObject({
+      kind: 'learner', section: 'day', learnerId: 'user_4', studyDay: '2026-08-25',
     });
   });
   it('parses an undated day route as today-by-default', () => {
-    expect(parseTeacherPath('/school/teacher/students/learner-a/day')).toMatchObject({
-      kind: 'learner', section: 'day', learnerId: 'learner-a', studyDay: null,
+    expect(parseTeacherPath('/school/teacher/students/user_4/day')).toMatchObject({
+      kind: 'learner', section: 'day', learnerId: 'user_4', studyDay: null,
     });
   });
   it('rejects a malformed study day', () => {
-    expect(parseTeacherPath('/school/teacher/students/learner-a/day/lastweek').kind).toBe('not-found');
+    expect(parseTeacherPath('/school/teacher/students/user_4/day/lastweek').kind).toBe('not-found');
   });
   it('builds a dated day path', () => {
-    expect(teacherDayPath('learner-a', '2026-08-25')).toBe('/school/teacher/students/learner-a/day/2026-08-25');
+    expect(teacherDayPath('user_4', '2026-08-25')).toBe('/school/teacher/students/user_4/day/2026-08-25');
   });
   it('builds an undated day path', () => {
-    expect(teacherDayPath('learner-a')).toBe('/school/teacher/students/learner-a/day');
+    expect(teacherDayPath('user_4')).toBe('/school/teacher/students/user_4/day');
   });
   it('falls back to the dashboard without a learner', () => {
     expect(teacherDayPath(null, '2026-08-25')).toBe('/school/teacher/dashboard');
@@ -735,7 +735,7 @@ beforeEach(() => {
     { subject: 'art', suppressed: { bySubject: 'math' } },
   ], errors: [] }));
   schoolApi.teacherDay.mockResolvedValue(ok({ learners: [{
-    learnerId: 'learner-a',
+    learnerId: 'user_4',
     sessions: [{ sessionId: 'ses_1', subject: 'scripture', lessonTitle: 'Monday · Psalms 49, 50, 51, 61',
       courseTitle: 'Come Follow Me', effectiveScore: { correctCount: 5, totalCount: 5, percent: 100 } }],
     processedToday: [],
@@ -743,7 +743,7 @@ beforeEach(() => {
 });
 
 const mount = (props = {}) => render(
-  <LearnerDayView learnerId="learner-a" learnerName="Learner A" studyDay="2026-08-25"
+  <LearnerDayView learnerId="user_4" learnerName="User_4" studyDay="2026-08-25"
     onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} {...props} />,
 );
 
@@ -792,7 +792,7 @@ describe('LearnerDayView', () => {
 
   it('shows work graded today that belongs to another study day, labelled as such', async () => {
     schoolApi.teacherDay.mockResolvedValue(ok({ learners: [{
-      learnerId: 'learner-a', sessions: [],
+      learnerId: 'user_4', sessions: [],
       processedToday: [{ sessionId: 'ses_old', subject: 'civilization', lessonTitle: 'The Midwestern States',
         studyDay: '2026-08-23', processedAt: '2026-08-25T14:03:00Z' }],
     }] }));
@@ -824,13 +824,13 @@ describe('LearnerDayView', () => {
 
   it('re-points the printer image when the day changes', async () => {
     const { rerender } = render(
-      <LearnerDayView learnerId="learner-a" learnerName="A" studyDay="2026-08-25"
+      <LearnerDayView learnerId="user_4" learnerName="A" studyDay="2026-08-25"
         onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
     );
     fireEvent.click(await screen.findByRole('button', { name: /show the printed agenda/i }));
     expect(await screen.findByAltText(/printed agenda/i)).toHaveAttribute('src', expect.stringContaining('2026-08-25'));
     rerender(
-      <LearnerDayView learnerId="learner-a" learnerName="A" studyDay="2026-08-24"
+      <LearnerDayView learnerId="user_4" learnerName="A" studyDay="2026-08-24"
         onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
     );
     await waitFor(() => expect(screen.getByAltText(/printed agenda/i))
@@ -844,7 +844,7 @@ describe('LearnerDayView', () => {
     await screen.findByAltText(/printed agenda/i);
     expect(schoolApi.agendaDispatch).not.toBeDefined();
     // The only agenda call the view makes is the read-only JSON preview.
-    expect(schoolApi.agendaPreview).toHaveBeenCalledWith('learner-a', '2026-08-25');
+    expect(schoolApi.agendaPreview).toHaveBeenCalledWith('user_4', '2026-08-25');
   });
 });
 ```
@@ -1188,15 +1188,15 @@ Append to `TeacherConsole.test.jsx` (match the file's existing mount/mocking hel
 
 ```jsx
 it('lands a learner on their day record and keeps the URL in step with the day', async () => {
-  window.history.pushState({}, '', '/school/teacher/students/learner-a/day/2026-08-25');
+  window.history.pushState({}, '', '/school/teacher/students/user_4/day/2026-08-25');
   mountConsole();
   await waitFor(() => expect(screen.getByText('Tuesday, Aug 25')).toBeInTheDocument());
   fireEvent.click(screen.getByRole('button', { name: /previous day/i }));
-  await waitFor(() => expect(window.location.pathname).toBe('/school/teacher/students/learner-a/day/2026-08-24'));
+  await waitFor(() => expect(window.location.pathname).toBe('/school/teacher/students/user_4/day/2026-08-24'));
 });
 
 it('shows Day first in the learner tab strip', async () => {
-  window.history.pushState({}, '', '/school/teacher/students/learner-a/day');
+  window.history.pushState({}, '', '/school/teacher/students/user_4/day');
   mountConsole();
   const tabs = await screen.findAllByRole('button', { name: /^(Day|Courses|History|Reports|Operations)$/ });
   expect(tabs[0]).toHaveTextContent('Day');
@@ -1369,9 +1369,9 @@ it('offers one route into the full day record instead of re-rendering it', async
   // (set up schoolApi.teacherDay to answer one learner with one session —
   // copy the existing helper in this file)
   mount(<TodayTab kids={KIDS} />);
-  fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
   expect(await screen.findByRole('link', { name: /Open the full day record/i }))
-    .toHaveAttribute('href', expect.stringContaining('/students/learner-a/day/'));
+    .toHaveAttribute('href', expect.stringContaining('/students/user_4/day/'));
   expect(screen.queryByText('Today’s paper and results')).not.toBeInTheDocument();
   expect(screen.queryByText('Processed today')).not.toBeInTheDocument();
 });
@@ -1450,7 +1450,7 @@ Expected: no output.
 
 - click the roster card,
 - assert the lesson identity still renders in the drill-in (`Illinois`, `Civilization`, the poster),
-- assert `Open the full day record →` is present and points at `/students/learner-b/day`,
+- assert `Open the full day record →` is present and points at `/students/user_2/day`,
 - navigate to that href,
 - open the row's `Paper record` disclosure,
 - assert `Open worksheet` and `Open receipt` there,
@@ -1498,7 +1498,7 @@ describe('HistoryView', () => {
       { sessionId: 'ses_2', studyDay: '2026-08-25', lessonTitle: 'Psalms 49–51', subject: 'scripture' },
       { sessionId: 'ses_3', studyDay: '2026-08-23', lessonTitle: 'The Midwestern States', subject: 'civilization' },
     ] } });
-    render(<HistoryView learnerId="learner-a" learnerName="Learner A" onOpenSession={vi.fn()} />);
+    render(<HistoryView learnerId="user_4" learnerName="User_4" onOpenSession={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Tuesday, Aug 25')).toBeInTheDocument());
     expect(screen.getByText('Sunday, Aug 23')).toBeInTheDocument();
     // Two sessions on Aug 25 sit under ONE date heading, not two dated rows.
@@ -1507,9 +1507,9 @@ describe('HistoryView', () => {
 
   it('links each day heading to that day’s record', async () => {
     // …same timeline mock…
-    render(<HistoryView learnerId="learner-a" learnerName="Learner A" onOpenSession={vi.fn()} />);
+    render(<HistoryView learnerId="user_4" learnerName="User_4" onOpenSession={vi.fn()} />);
     const link = await screen.findByRole('link', { name: /Tuesday, Aug 25/ });
-    expect(link).toHaveAttribute('href', '/school/teacher/students/learner-a/day/2026-08-25');
+    expect(link).toHaveAttribute('href', '/school/teacher/students/user_4/day/2026-08-25');
   });
 });
 ```
@@ -1561,7 +1561,7 @@ it('shows a score for timeline rows, which carry only gradedPercent', async () =
   teacherWorkspaceApi.timeline.mockResolvedValue({ ok: true, status: 200, data: { items: [
     { sessionId: 'ses_1', day: '2026-08-25', lessonTitle: 'Psalms 62–66', subject: 'scripture', gradedPercent: 80 },
   ] } });
-  render(<HistoryView learnerId="learner-a" learnerName="Learner A" onOpenSession={vi.fn()} />);
+  render(<HistoryView learnerId="user_4" learnerName="User_4" onOpenSession={vi.fn()} />);
   await waitFor(() => expect(screen.getByText('80%')).toBeInTheDocument());
 });
 
@@ -1569,7 +1569,7 @@ it('files a row under its study day, not the day it was last touched', async () 
   teacherWorkspaceApi.timeline.mockResolvedValue({ ok: true, status: 200, data: { items: [
     { sessionId: 'ses_1', day: '2026-08-24', updatedAt: '2026-08-28T10:00:00Z', lessonTitle: 'Psalms 49–51', subject: 'scripture' },
   ] } });
-  render(<HistoryView learnerId="learner-a" learnerName="Learner A" onOpenSession={vi.fn()} />);
+  render(<HistoryView learnerId="user_4" learnerName="User_4" onOpenSession={vi.fn()} />);
   await waitFor(() => expect(screen.getByText('Monday, Aug 24')).toBeInTheDocument());
   expect(screen.queryByText('Friday, Aug 28')).not.toBeInTheDocument();
 });
@@ -1903,7 +1903,7 @@ Append to `WorkspaceViews.sessionDetail.test.jsx`:
 ```jsx
 it('states one score when the machine and the teacher agree', async () => {
   teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
-  render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+  render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByText('Score')).toBeInTheDocument());
   expect(screen.queryByText('Marked score')).not.toBeInTheDocument();
   expect(screen.queryByText('Current score')).not.toBeInTheDocument();
@@ -1914,13 +1914,13 @@ it('shows the correction provenance only when the scores differ', async () => {
   teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
     ...SESSION, scores: { machine: { percent: 80 }, effective: { percent: 100 } },
   } });
-  render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+  render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByText(/corrected from 80%/i)).toBeInTheDocument());
 });
 
 it('prints the questions once, under one heading', async () => {
   teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
-  render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+  render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByText('Questions and answers')).toBeInTheDocument());
   expect(screen.queryByText('Worksheet and questions')).not.toBeInTheDocument();
   expect(screen.queryByText('Answers and result')).not.toBeInTheDocument();
@@ -1931,7 +1931,7 @@ it('folds the answer card and the event log away by default', async () => {
   teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
     ...SESSION, answerSheets: [{ cardId: 'c1', studentNumber: '2487270', usedRows: 16, capacity: 50, remainingContiguousSlots: 34, nextRow: 17 }],
   } });
-  render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+  render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByText('Answer card')).toBeInTheDocument());
   expect(screen.getByText('Answer card').closest('details')).not.toHaveAttribute('open');
   expect(screen.getByText('Event history').closest('details')).not.toHaveAttribute('open');
@@ -1939,7 +1939,7 @@ it('folds the answer card and the event log away by default', async () => {
 
 it('puts the reprint control inside the card it reprints', async () => {
   teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
-  render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+  render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
   const reprint = await screen.findByRole('button', { name: /Print another copy/i });
   expect(reprint.closest('.teacher-issued-artifact')).not.toBeNull();
 });
@@ -2102,7 +2102,7 @@ describe('interventions registry', () => {
 
   it('builds learner-scoped hrefs', () => {
     const credit = INTERVENTIONS.find((item) => item.id === 'completion-credit');
-    expect(credit.href('learner-a')).toBe('/school/teacher/students/learner-a/operations');
+    expect(credit.href('user_4')).toBe('/school/teacher/students/user_4/operations');
   });
 });
 ```
@@ -2208,26 +2208,26 @@ import InterventionsIndex from './InterventionsIndex.jsx';
 
 describe('InterventionsIndex', () => {
   it('lists every tool with its situation', () => {
-    render(<InterventionsIndex learnerId="learner-a" />);
+    render(<InterventionsIndex learnerId="user_4" />);
     expect(screen.getByText('Give credit for work you saw')).toBeInTheDocument();
     expect(screen.getByText(/the tech lost it/i)).toBeInTheDocument();
   });
 
   it('links learner-scoped tools at the learner', () => {
-    render(<InterventionsIndex learnerId="learner-a" />);
+    render(<InterventionsIndex learnerId="user_4" />);
     expect(screen.getByRole('link', { name: /Give credit for work you saw/ }))
-      .toHaveAttribute('href', '/school/teacher/students/learner-a/operations');
+      .toHaveAttribute('href', '/school/teacher/students/user_4/operations');
   });
 
   it('renders session-scoped tools as guidance, not dead links', () => {
-    render(<InterventionsIndex learnerId="learner-a" />);
+    render(<InterventionsIndex learnerId="user_4" />);
     const row = screen.getByText('Fix a marked answer').closest('li');
     expect(row.querySelector('a')).toBeNull();
     expect(row).toHaveTextContent(/Open the lesson from the day record/);
   });
 
   it('can narrow to one scope', () => {
-    render(<InterventionsIndex learnerId="learner-a" scopes={['learner']} />);
+    render(<InterventionsIndex learnerId="user_4" scopes={['learner']} />);
     expect(screen.getByText('Give credit for work you saw')).toBeInTheDocument();
     expect(screen.queryByText('Re-mark a whole batch')).not.toBeInTheDocument();
   });
@@ -2329,7 +2329,7 @@ it('renders the curriculum-change form in exactly one place — School Operation
 });
 
 it('keeps stuck-session clearing on School Operations only', async () => {
-  const { unmount } = render(<LearnerOperationsView learnerId="learner-a" learnerName="Learner A" kids={KIDS} />);
+  const { unmount } = render(<LearnerOperationsView learnerId="user_4" learnerName="User_4" kids={KIDS} />);
   await waitFor(() => expect(screen.queryByText(/Stale sessions/i)).not.toBeInTheDocument());
   unmount();
   render(<OperationsView kids={KIDS} />);
@@ -2439,11 +2439,11 @@ git commit -m "refactor(school/teacher): one home per repair panel; links replac
 ```jsx
 it('offers repair options in the teacher’s words, weighted by importance', async () => {
   teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
-  render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+  render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
   const fix = await screen.findByRole('button', { name: 'Fix a marked answer' });
   expect(fix).toHaveClass('teacher-btn--primary');
   const credit = screen.getByRole('link', { name: /Give credit for work you saw/ });
-  expect(credit).toHaveAttribute('href', '/school/teacher/students/learner-b/operations');
+  expect(credit).toHaveAttribute('href', '/school/teacher/students/user_2/operations');
   expect(credit).not.toHaveClass('teacher-back');
 });
 ```
@@ -2640,7 +2640,7 @@ git commit -m "fix(school/teacher): a missing thumbnail reads as a quiet state, 
 test('retraces any study day in one place — plan, record, and paper', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1100 });
   await installTeacherReadModel(page);
-  await page.goto('/school/teacher/students/learner-b/day/2026-08-24');
+  await page.goto('/school/teacher/students/user_2/day/2026-08-24');
 
   await expect(page.getByText('Monday, Aug 24')).toBeVisible();
   await expect(page.getByTestId('day-summary')).toBeVisible();
@@ -2653,7 +2653,7 @@ test('retraces any study day in one place — plan, record, and paper', async ({
     .toHaveAttribute('href', /artifacts\/worksheet-illinois\/original\.pdf$/);
 
   await page.getByRole('button', { name: /previous day/i }).click();
-  await expect(page).toHaveURL(/\/students\/learner-b\/day\/2026-08-23$/);
+  await expect(page).toHaveURL(/\/students\/user_2\/day\/2026-08-23$/);
 
   await page.screenshot({ path: path.join(OUT_DIR, 'learner-day.png'), fullPage: true });
 });
@@ -2668,7 +2668,7 @@ test('dry-runs the printed agenda without minting a session, ticket, or code', a
   });
   await page.setViewportSize({ width: 1440, height: 1100 });
   await installTeacherReadModel(page);
-  await page.goto('/school/teacher/students/learner-b/day/2026-08-24');
+  await page.goto('/school/teacher/students/user_2/day/2026-08-24');
 
   await page.getByRole('button', { name: /show the printed agenda/i }).click();
   const printed = page.getByAltText(/printed agenda/i);

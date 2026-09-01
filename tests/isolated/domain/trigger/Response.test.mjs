@@ -50,8 +50,8 @@ describe('Response', () => {
 // learner-action registry's business.
 describe('Response.learner', () => {
   it('freezes a learner response carrying op, learner and location', () => {
-    const r = Response.learner({ op: 'print-agenda', learnerId: 'learner-a', location: 'study', target: 'portal' });
-    expect(r).toMatchObject({ kind: 'learner', op: 'print-agenda', learnerId: 'learner-a', location: 'study' });
+    const r = Response.learner({ op: 'print-agenda', learnerId: 'user_4', location: 'study', target: 'portal' });
+    expect(r).toMatchObject({ kind: 'learner', op: 'print-agenda', learnerId: 'user_4', location: 'study' });
     expect(Object.isFrozen(r)).toBe(true);
   });
 
@@ -60,18 +60,18 @@ describe('Response.learner', () => {
   });
 
   it('refuses a learner response with no op', () => {
-    expect(() => Response.learner({ learnerId: 'learner-a' })).toThrow(ValidationError);
+    expect(() => Response.learner({ learnerId: 'user_4' })).toThrow(ValidationError);
   });
 
   it('refuses a non-string op or learnerId rather than stringifying it', () => {
     // Both fields reach a log line and a registry lookup, and both originate in
     // a Dropbox-shared YAML tree. `[object Object]` as an op is a refusal that
     // names nothing; refuse at the boundary instead.
-    expect(() => Response.learner({ op: { a: 1 }, learnerId: 'learner-a' })).toThrow(ValidationError);
-    expect(() => Response.learner({ op: 'print-agenda', learnerId: ['learner-a', 'learner-b'] })).toThrow(ValidationError);
+    expect(() => Response.learner({ op: { a: 1 }, learnerId: 'user_4' })).toThrow(ValidationError);
+    expect(() => Response.learner({ op: 'print-agenda', learnerId: ['user_4', 'user_2'] })).toThrow(ValidationError);
   });
 
   it('refuses a whitespace-only op', () => {
-    expect(() => Response.learner({ op: '   ', learnerId: 'learner-a' })).toThrow(ValidationError);
+    expect(() => Response.learner({ op: '   ', learnerId: 'user_4' })).toThrow(ValidationError);
   });
 });

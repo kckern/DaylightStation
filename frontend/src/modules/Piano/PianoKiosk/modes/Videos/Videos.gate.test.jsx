@@ -9,7 +9,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { CourseGridRoute } from './Videos.jsx';
 import { PENDING_CAPTION } from '../../usePianoLessonGate.js';
 
-const state = { gate: { status: 'ready', pending: false, gated: false, course: null }, user: 'learner-c' };
+const state = { gate: { status: 'ready', pending: false, gated: false, course: null }, user: 'user_5' };
 const info = vi.hoisted(() => vi.fn());
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ basePath: '/piano', config: { videos: {} } }) }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: state.user }) }));
@@ -33,7 +33,7 @@ const renderAt = () => render(
 
 beforeEach(() => {
   state.gate = { status: 'ready', pending: false, gated: false, course: null };
-  state.user = 'learner-c';
+  state.user = 'user_5';
   info.mockClear();
 });
 
@@ -54,7 +54,7 @@ describe('CourseGridRoute under the lesson gate', () => {
     state.gate = { status: 'ready', pending: false, gated: true, course: { id: 'plex:695598' } };
     renderAt();
     expect(info).toHaveBeenCalledWith('piano.videos.grid-redirected', {
-      learnerId: 'learner-c', courseId: 'plex:695598',
+      learnerId: 'user_5', courseId: 'plex:695598',
     });
   });
 

@@ -283,7 +283,7 @@ describe('school learner cards', () => {
       office: { target: 'office-tv', action: 'play-next', learner_action: null, defaults: {} },
     },
     tags: {
-      '048ba600cc2a81': { global: { note: 'learner-a personal card', school_learner: 'learner-a' }, overrides: {} },
+      '048ba600cc2a81': { global: { note: 'user_4 personal card', school_learner: 'user_4' }, overrides: {} },
     },
   };
 
@@ -292,7 +292,7 @@ describe('school learner cards', () => {
       location: 'study', value: '04:8B:A6:00:CC:2A:81', registry,
       contentIdResolver: makeContentIdResolver(),
     });
-    expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'learner-a' });
+    expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'user_4' });
   });
 
   it('carries the reader it was tapped at, since the reader is part of the answer', () => {
@@ -309,7 +309,7 @@ describe('school learner cards', () => {
       contentIdResolver: makeContentIdResolver(),
     });
     expect(intent.action).toBe('reading-session');
-    expect(intent.learnerId).toBe('learner-a');
+    expect(intent.learnerId).toBe('user_4');
   });
 
   it('resolves to null at a reader that declares no learner_action', () => {
@@ -343,7 +343,7 @@ describe('school learner cards — config-surface guards', () => {
       locations: {
         study: {
           target: 'portal', action: 'play-next', learner_action: 'print-agenda',
-          defaults: { school_learner: 'learner-b' },
+          defaults: { school_learner: 'user_2' },
         },
       },
       tags: { 'b00c': { global: { plex: 999 }, overrides: {} } },
@@ -362,8 +362,8 @@ describe('school learner cards — config-surface guards', () => {
       locations: { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
       tags: {
         '048ba600cc2a81': {
-          global: { school_learner: 'learner-a' },
-          overrides: { study: { school_learner: 'learner-c' } },
+          global: { school_learner: 'user_4' },
+          overrides: { study: { school_learner: 'user_5' } },
         },
       },
     };
@@ -371,7 +371,7 @@ describe('school learner cards — config-surface guards', () => {
       location: 'study', value: '048ba600cc2a81', registry,
       contentIdResolver: makeContentIdResolver(),
     });
-    expect(intent.learnerId).toBe('learner-c');
+    expect(intent.learnerId).toBe('user_5');
   });
 
   it('accepts an unquoted numeric learner id as a string', () => {
@@ -390,8 +390,8 @@ describe('school learner cards — config-surface guards', () => {
   // way into a personal-card URL, where the 404 says nothing about the YAML
   // line that caused it. Refuse at the boundary instead.
   it.each([
-    ['an array', ['learner-a', 'learner-b']],
-    ['an object', { id: 'learner-a' }],
+    ['an array', ['user_4', 'user_2']],
+    ['an object', { id: 'user_4' }],
     ['a boolean', true],
     ['an empty string', ''],
     ['whitespace only', '   '],
@@ -411,11 +411,11 @@ describe('school learner cards — config-surface guards', () => {
       location: 'study', value: '048ba600cc2a81',
       registry: learnerRegistry(
         { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
-        { school_learner: '  learner-a  ' }
+        { school_learner: '  user_4  ' }
       ),
       contentIdResolver: makeContentIdResolver(),
     });
-    expect(intent.learnerId).toBe('learner-a');
+    expect(intent.learnerId).toBe('user_4');
   });
 
   // INVARIANT, and the reason these defaults are deliberately non-empty: the
@@ -431,14 +431,14 @@ describe('school learner cards — config-surface guards', () => {
           defaults: { plex: 620707, files: 'chime.mp3' },
         },
       },
-      tags: { '048ba600cc2a81': { global: { school_learner: 'learner-a' }, overrides: {} } },
+      tags: { '048ba600cc2a81': { global: { school_learner: 'user_4' }, overrides: {} } },
     };
     const bothResolve = { resolve: (c) => /^(plex|files):/.test(c) ? c : null };
     const intent = NfcResolver.resolve({
       location: 'study', value: '048ba600cc2a81', registry,
       contentIdResolver: bothResolve,
     });
-    expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'learner-a' });
+    expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'user_4' });
     expect(intent).not.toHaveProperty('content');
   });
 });

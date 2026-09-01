@@ -17,33 +17,33 @@ function thrown(action) { try { action(); } catch (error) { return error; } thro
 describe('SchoolPianoChallengeCompletionService', () => {
   it('exposes only a complete descriptor matching the owed course lesson', () => {
     const { service } = subject({}, { schoolChallenges: [{
-      id: 'alan-c-major', courseId: 'plex:100', lessonId: 'plex:10',
+      id: 'user_5-c-major', courseId: 'plex:100', lessonId: 'plex:10',
       ask: { tier: 1 }, materialSpec: { kind: 'keys', notes: 3 }, framing: 'Play C major.',
     }] });
     expect(service.descriptorFor({ courseId: 'plex:100', lessonId: 'plex:10' }))
-      .toMatchObject({ id: 'alan-c-major', framing: 'Play C major.' });
+      .toMatchObject({ id: 'user_5-c-major', framing: 'Play C major.' });
     expect(service.descriptorFor({ courseId: 'plex:100', lessonId: 'plex:11' })).toBeNull();
   });
 
   it('records configured School challenge evidence without overwriting unrelated piano preferences', () => {
     const config = { schoolChallenges: [{ id: 'school-c-major', courseId: 'plex:100', lessonId: 'plex:10', ask: { tier: 1 }, materialSpec: { kind: 'keys', notes: 3 } }] };
-    const { service, records } = subject({ alan: { topPaneLayout: 'triptych' } }, config);
-    const result = service.recordPassed({ learnerId: 'alan', descriptorId: 'school-c-major', assessmentId: 'attempt-1', score: 0.9 });
+    const { service, records } = subject({ user_5: { topPaneLayout: 'triptych' } }, config);
+    const result = service.recordPassed({ learnerId: 'user_5', descriptorId: 'school-c-major', assessmentId: 'attempt-1', score: 0.9 });
     expect(result).toMatchObject({ descriptorId: 'school-c-major', duplicate: false, studyDay: '2026-08-28' });
-    expect(records.get('alan')).toMatchObject({ topPaneLayout: 'triptych', pianoChallenge: { schoolCompletions: { '2026-08-28': { 'school-c-major': { assessmentId: 'attempt-1', score: 0.9 } } } } });
-    expect(service.completed({ learnerId: 'alan', descriptorId: 'school-c-major' })).toBe(true);
+    expect(records.get('user_5')).toMatchObject({ topPaneLayout: 'triptych', pianoChallenge: { schoolCompletions: { '2026-08-28': { 'school-c-major': { assessmentId: 'attempt-1', score: 0.9 } } } } });
+    expect(service.completed({ learnerId: 'user_5', descriptorId: 'school-c-major' })).toBe(true);
   });
 
   it('is idempotent for the same assessment and refuses a competing completion', () => {
     const config = { schoolChallenges: [{ id: 'school-c-major', courseId: 'plex:100', lessonId: 'plex:10', ask: { tier: 1 }, materialSpec: { kind: 'keys', notes: 3 } }] };
-    const { service } = subject({ alan: {} }, config);
-    service.recordPassed({ learnerId: 'alan', descriptorId: 'school-c-major', assessmentId: 'attempt-1', score: 1 });
-    expect(service.recordPassed({ learnerId: 'alan', descriptorId: 'school-c-major', assessmentId: 'attempt-1', score: 1 })).toMatchObject({ duplicate: true });
-    expect(thrown(() => service.recordPassed({ learnerId: 'alan', descriptorId: 'school-c-major', assessmentId: 'attempt-2', score: 1 }))).toMatchObject({ name: 'ConflictError' });
+    const { service } = subject({ user_5: {} }, config);
+    service.recordPassed({ learnerId: 'user_5', descriptorId: 'school-c-major', assessmentId: 'attempt-1', score: 1 });
+    expect(service.recordPassed({ learnerId: 'user_5', descriptorId: 'school-c-major', assessmentId: 'attempt-1', score: 1 })).toMatchObject({ duplicate: true });
+    expect(thrown(() => service.recordPassed({ learnerId: 'user_5', descriptorId: 'school-c-major', assessmentId: 'attempt-2', score: 1 }))).toMatchObject({ name: 'ConflictError' });
   });
 
   it('refuses a descriptor that is no longer configured', () => {
-    const { service } = subject({ alan: {} });
-    expect(thrown(() => service.recordPassed({ learnerId: 'alan', descriptorId: 'removed', assessmentId: 'attempt-1', score: 1 }))).toMatchObject({ name: 'NotFoundError' });
+    const { service } = subject({ user_5: {} });
+    expect(thrown(() => service.recordPassed({ learnerId: 'user_5', descriptorId: 'removed', assessmentId: 'attempt-1', score: 1 }))).toMatchObject({ name: 'NotFoundError' });
   });
 });

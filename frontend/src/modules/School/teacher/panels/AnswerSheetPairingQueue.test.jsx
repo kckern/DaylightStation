@@ -32,7 +32,7 @@ describe('AnswerSheetPairingQueue', () => {
       data: { items: [{
         heldScanId: 'held-1', createdAt: '2026-08-31T12:00:00.000Z',
         evidence: {
-          learnerId: 'milo', reason: 'multiple-delivered-live-answer-sheets', rawCardId: '8684155',
+          learnerId: 'user_4', reason: 'multiple-delivered-live-answer-sheets', rawCardId: '8684155',
           rawRows: [{ row: 22, marks: ['B'] }, { row: 24, marks: ['B', 'C'] }],
           candidateWorksheets: [
             {

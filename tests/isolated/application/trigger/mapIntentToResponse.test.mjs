@@ -56,19 +56,19 @@ describe('mapIntentToResponse', () => {
 // behaviour has to pass through.
 describe('mapIntentToResponse — learner cards', () => {
   it('maps any intent carrying a learnerId to a learner Response', () => {
-    const r = mapIntentToResponse({ action: 'print-agenda', learnerId: 'learner-b', target: 'portal', location: 'study', params: {} });
-    expect(r).toMatchObject({ kind: 'learner', op: 'print-agenda', learnerId: 'learner-b', location: 'study', target: 'portal' });
+    const r = mapIntentToResponse({ action: 'print-agenda', learnerId: 'user_2', target: 'portal', location: 'study', params: {} });
+    expect(r).toMatchObject({ kind: 'learner', op: 'print-agenda', learnerId: 'user_2', location: 'study', target: 'portal' });
   });
 
   it('maps a reading-session intent the same way — the op is not enumerated here', () => {
-    const r = mapIntentToResponse({ action: 'reading-session', learnerId: 'learner-c', target: 'livingroom-tv', location: 'livingroom', params: {} });
-    expect(r).toMatchObject({ kind: 'learner', op: 'reading-session', learnerId: 'learner-c' });
+    const r = mapIntentToResponse({ action: 'reading-session', learnerId: 'user_5', target: 'livingroom-tv', location: 'livingroom', params: {} });
+    expect(r).toMatchObject({ kind: 'learner', op: 'reading-session', learnerId: 'user_5' });
   });
 
   it('maps an op nobody has ever registered, rather than throwing UNKNOWN_ACTION', () => {
     // The refusal for an unhandled op belongs to the handler, by name, at
     // dispatch — not here as an error that names the tap and nothing else.
-    expect(mapIntentToResponse({ action: 'nothing-implements-this', learnerId: 'learner-d', params: {} }))
+    expect(mapIntentToResponse({ action: 'nothing-implements-this', learnerId: 'user_3', params: {} }))
       .toMatchObject({ kind: 'learner', op: 'nothing-implements-this' });
   });
 
@@ -87,14 +87,14 @@ describe('mapIntentToResponse — learner cards', () => {
   it('maps the resolver\'s real learner intent, reader and all', () => {
     const registry = {
       locations: { study: { target: 'portal', action: 'play-next', learner_action: 'print-agenda', defaults: {} } },
-      tags: { '048ba600cc2a81': { global: { note: 'Learner A personal card', school_learner: 'learner-a' }, overrides: {} } },
+      tags: { '048ba600cc2a81': { global: { note: 'User_4 personal card', school_learner: 'user_4' }, overrides: {} } },
     };
     const intent = NfcResolver.resolve({
       location: 'study', value: '04:8B:A6:00:CC:2A:81', registry,
       contentIdResolver: { resolve: (c) => c.startsWith('plex:') ? c : null },
     });
     expect(mapIntentToResponse(intent)).toMatchObject({
-      kind: 'learner', op: 'print-agenda', learnerId: 'learner-a', location: 'study', target: 'portal',
+      kind: 'learner', op: 'print-agenda', learnerId: 'user_4', location: 'study', target: 'portal',
     });
   });
 });
