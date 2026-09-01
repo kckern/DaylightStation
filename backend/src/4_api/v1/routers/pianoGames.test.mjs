@@ -39,9 +39,9 @@ test('mounts Piano-native family routers before the generic route', async () => 
 
 test('serves the learner board-game count for the current study day', async () => {
   const app = appFor({
-    boardGameDay: (userId) => ({ studyDate: '2026-08-28', completedGames: userId === 'Milo' ? 4 : 0 }),
+    boardGameDay: (userId) => ({ studyDate: '2026-08-28', completedGames: userId === 'User_4' ? 4 : 0 }),
   });
-  const response = await request(app).get('/api/v1/piano-games/day/current?user=Milo');
+  const response = await request(app).get('/api/v1/piano-games/day/current?user=User_4');
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, { studyDate: '2026-08-28', completedGames: 4 });
 });

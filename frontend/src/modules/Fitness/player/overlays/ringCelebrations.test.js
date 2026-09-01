@@ -34,37 +34,37 @@ describe('ring celebrations', () => {
 
   it('fires individual thresholds once, including a multi-threshold jump', () => {
     const first = ringCelebrationsForAward(createRingCelebrationTracker(), {
-      userId: 'milo', userTotal: 250, totalRings: 250,
+      userId: 'user_4', userTotal: 250, totalRings: 250,
     }, config);
     expect(first.entries.map((entry) => entry.threshold)).toEqual([100, 200]);
 
     const second = ringCelebrationsForAward(first.tracker, {
-      userId: 'milo', userTotal: 250, totalRings: 250,
+      userId: 'user_4', userTotal: 250, totalRings: 250,
     }, config);
     expect(second.entries).toEqual([]);
   });
 
   it('requires two actual ring earners before celebrating a group total', () => {
     const first = ringCelebrationsForAward(createRingCelebrationTracker(), {
-      userId: 'milo', userTotal: 500, totalRings: 500,
+      userId: 'user_4', userTotal: 500, totalRings: 500,
     }, config);
     expect(first.entries.filter((entry) => entry.scope === 'group')).toEqual([]);
 
     const second = ringCelebrationsForAward(first.tracker, {
-      userId: 'felix', userTotal: 1, totalRings: 501,
+      userId: 'user_3', userTotal: 1, totalRings: 501,
     }, config);
     expect(second.entries.filter((entry) => entry.scope === 'group')).toMatchObject([
-      { threshold: 500, contributorIds: ['milo', 'felix'] },
+      { threshold: 500, contributorIds: ['user_4', 'user_3'] },
     ]);
   });
 
   it('seeding a resumed session suppresses thresholds already earned', () => {
     const seeded = seedRingCelebrationTracker(createRingCelebrationTracker(), {
-      userTotals: new Map([['milo', 200], ['felix', 400]]),
+      userTotals: new Map([['user_4', 200], ['user_3', 400]]),
       totalRings: 600,
     }, config);
     const result = ringCelebrationsForAward(seeded, {
-      userId: 'milo', userTotal: 201, totalRings: 601,
+      userId: 'user_4', userTotal: 201, totalRings: 601,
     }, config);
     expect(result.entries).toEqual([]);
   });

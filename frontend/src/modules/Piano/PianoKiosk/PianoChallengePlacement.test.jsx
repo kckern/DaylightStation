@@ -31,7 +31,7 @@ const config = {
   },
 };
 
-function renderPlacement(currentUser = 'alan') {
+function renderPlacement(currentUser = 'user_5') {
   return render(
     <MemoryRouter>
       <ActivePianoProvider pianoId="test" basePath="/piano" config={config}>
@@ -59,7 +59,7 @@ describe('PianoChallengePlacement', () => {
 
     fireEvent.click(screen.getByText('pass'));
     expect(await screen.findByText('You’re ready to begin')).toBeTruthy();
-    expect(api).toHaveBeenCalledWith('api/v1/piano/users/alan/piano-challenge-profile', { startLevel: 'L2' }, 'PUT');
+    expect(api).toHaveBeenCalledWith('api/v1/piano/users/user_5/piano-challenge-profile', { startLevel: 'L2' }, 'PUT');
   });
 
   it('moves one rung down after a judged failure without doing presentation or grading itself', () => {

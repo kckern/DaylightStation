@@ -33,7 +33,7 @@ Worth settling first, because it was the initial suspicion. The full chain is in
 the log store at 17:41:42, every link present:
 
 ```
-17:41:42.487  evidence written    piano-lesson:alan:plex:695607, verified, completions: 1
+17:41:42.487  evidence written    piano-lesson:user_5:plex:695607, verified, completions: 1
 17:41:42.662  school.piano-ceremony.satisfied    [backend]  courseId plex:695598, "Meet the Quarter Note"
 17:41:42.854  school.scan.piano-lesson-complete  [FRONTEND, Portal UA]  "Piano done!"  tone: success
 17:41:42.883  school.piano_lesson_hook.fired     [backend]  result: satisfied
@@ -43,7 +43,7 @@ That third line is `SchoolApp` on the Portal receiving the broadcast and
 rendering the ceremony. The evidence file on disk confirms the write landed:
 
 ```yaml
-evidenceId: piano-lesson:alan:plex:695607
+evidenceId: piano-lesson:user_5:plex:695607
 verification: verified
 learning: { subjectId: arts, courseId: plex:695598, unitId: '695598' }
 measures: { engagements: 1, completions: 1 }
@@ -68,7 +68,7 @@ learner's programs contribute nothing.
 Two of the four learners have plans that are *entirely* programs:
 
 ```yaml
-# school/plans/learners/alan.yml
+# school/plans/learners/user_5.yml
 enrollments: []          # ← no courses at all
 programs:
   - programId: story-time     target: 2   subject: english
@@ -87,10 +87,10 @@ Measured on prod before the fix:
 
 | learner | plan shape | completion state | games |
 |---|---|---|---|
-| alan | programs only | `no_work_today` | **always unlocked** |
-| soren | programs only | `no_work_today` | **always unlocked** |
-| milo | course enrollments | `complete` | correctly gated |
-| felix | course enrollments | `complete` | correctly gated |
+| user_5 | programs only | `no_work_today` | **always unlocked** |
+| user_2 | programs only | `no_work_today` | **always unlocked** |
+| user_4 | course enrollments | `complete` | correctly gated |
+| user_3 | course enrollments | `complete` | correctly gated |
 
 Both observations follow directly:
 
@@ -100,7 +100,7 @@ Both observations follow directly:
   the piano lesson, because the section that evidence would have served did not
   exist. Finishing the work had no observable effect anywhere.
 
-The gate worked for Milo and Felix, which is why this survived to the field: the
+The gate worked for User_4 and User_3, which is why this survived to the field: the
 two learners it was broken for are the two whose curriculum has no courses in it.
 
 ---
@@ -185,8 +185,8 @@ at its `#projectPlan` now says so rather than asserting a parity that has lapsed
    these two learners could never reach the locked state at all.
 
 2. **`school.piano-progress.record-failed` storms on every backend boot.**
-   ~35 error-level lines per learner (milo, felix), all of the form
-   `School learning evidence 'piano-lesson:milo:plex:676039' conflicts with its
+   ~35 error-level lines per learner (user_4, user_3), all of the form
+   `School learning evidence 'piano-lesson:user_4:plex:676039' conflicts with its
    first write`. A boot-time backfill re-writing evidence that already exists
    and losing an idempotency check — ~70 error lines per restart, drowning the
    log store. Pre-existing and unrelated to this defect, but it should not stay.

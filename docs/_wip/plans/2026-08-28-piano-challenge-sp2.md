@@ -9,7 +9,7 @@ it does not add hosts, alter household YAML, or deploy.
 
 ## Outcomes
 
-- Alan can be assigned a named chord such as “Play a C major chord,” with no
+- User_5 can be assigned a named chord such as “Play a C major chord,” with no
   lit-key answer, accepting any octave/voicing and optionally requiring the
   named bass for inversions.
 - A free-timed line can use properly duration-aware engraved notation instead
@@ -136,8 +136,8 @@ the event-to-notation adapter, `ExerciseRun.jsx`, SCSS, and tests.
 
 ### 6. Content, documentation, and verification
 
-- Add no household YAML in this SP. Instead add fixture levels proving Alan’s
-  C-major recall chord and Felix’s free engraved scale can be expressed by the
+- Add no household YAML in this SP. Instead add fixture levels proving User_5’s
+  C-major recall chord and User_3’s free engraved scale can be expressed by the
   schema without special code.
 - Update the roadmap/handoff and piano reference documentation to distinguish
   the product name `PianoChallenge` from retained implementation names.
@@ -150,7 +150,7 @@ the event-to-notation adapter, `ExerciseRun.jsx`, SCSS, and tests.
 
 SP2 is complete only when its four Chromium scenarios are green, all legacy
 Piano/MusicNotation tests remain green, and fixture configuration expresses the
-Alan/Felix cases without a host-specific branch. A full repository gate is
+User_5/User_3 cases without a host-specific branch. A full repository gate is
 reported separately because it currently has unstable unrelated failures.
 
 ## Implementation checkpoint — 2026-08-28
@@ -160,7 +160,7 @@ Implemented locally, not committed or deployed:
 - `recall` and hint policies are accepted by the schema and carry through
   `AskSession` as a stable tuple.
 - Named synthesized chords (`root` + `quality`) and pitch-class/bass held
-  matching support the Alan configuration shape.
+  matching support the User_5 configuration shape.
 - Recall is a no-lights stage; `always` reveals within that stage and
   `after-stall` reveals at 12 seconds, resets on a new note, and remains before
   the existing 20-second timeout.

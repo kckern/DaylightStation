@@ -61,7 +61,7 @@ function fixture() {
   const sessions = {
     readEvents: vi.fn(async () => [{
       type: 'created', at: NOW, sessionId: 'ses-math', seq: 1,
-      learnerId: 'milo', unitId: 'number-forms', studyDay: '2026-09-01',
+      learnerId: 'user_4', unitId: 'number-forms', studyDay: '2026-09-01',
     }]),
     appendEvent: vi.fn(),
   };
@@ -76,7 +76,7 @@ function fixture() {
 describe('BuildAgenda curriculum progress', () => {
   it('adds canonical-plan rows to curriculum cards and preserves program-owned rows', async () => {
     const { useCase } = fixture();
-    const result = await useCase.execute({ learnerId: 'milo', learnerName: 'Milo' });
+    const result = await useCase.execute({ learnerId: 'user_4', learnerName: 'User_4' });
 
     expect(result.sections.find((section) => section.subject === 'math').progressRows).toEqual(MATH_ROWS);
     expect(result.sections.find((section) => section.subject === 'arts').progressRows).toBe(PIANO_ROWS);

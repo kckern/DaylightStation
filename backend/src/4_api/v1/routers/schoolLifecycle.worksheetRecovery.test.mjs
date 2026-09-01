@@ -24,7 +24,7 @@ const body = (apply) => ({
   marks: ['B', 'B', 'B'],
   reason: 'scripture answers were bubbled in the math row window',
   recoveredBy: 'parent',
-  idempotencyKey: 'milo-2026-08-31',
+  idempotencyKey: 'user_4-2026-08-31',
   expectedReplacementRows: { start: 4, end: 9 },
   apply,
 });

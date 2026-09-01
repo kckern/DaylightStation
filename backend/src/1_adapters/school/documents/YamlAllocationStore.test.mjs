@@ -194,8 +194,8 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
       directory: '/docs', io, rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5]]), now: () => '2026-08-31T10:00:00.000Z',
     });
     const [first, second] = await Promise.all([
-      store.allocateNext({ request: request({ documentId: 'math', learnerId: 'milo', rowRange: { start: 1, end: 6 } }) }),
-      store.allocateNext({ request: request({ documentId: 'scripture', learnerId: 'milo', rowRange: { start: 1, end: 3 } }) }),
+      store.allocateNext({ request: request({ documentId: 'math', learnerId: 'user_4', rowRange: { start: 1, end: 6 } }) }),
+      store.allocateNext({ request: request({ documentId: 'scripture', learnerId: 'user_4', rowRange: { start: 1, end: 3 } }) }),
     ]);
     expect(first.record.cardId).toBe('8684155');
     expect(second.record.cardId).toBe('8684155');
@@ -211,12 +211,12 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
       now: () => '2026-08-31T10:00:00.000Z',
     });
     const first = await store.allocateNext({
-      request: request({ documentId: 'math', learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+      request: request({ documentId: 'math', learnerId: 'user_4', rowRange: { start: 1, end: 6 } }),
       policy: { reuse: 'after_scan' },
     });
     // Still-live work blocks reuse under the conservative legacy policy.
     const concurrent = await store.allocateNext({
-      request: request({ documentId: 'scripture', learnerId: 'milo', rowRange: { start: 1, end: 3 } }),
+      request: request({ documentId: 'scripture', learnerId: 'user_4', rowRange: { start: 1, end: 3 } }),
       policy: { reuse: 'after_scan' },
     });
     expect(concurrent.record.cardId).toBe('9427608');
@@ -225,7 +225,7 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
       cardId: concurrent.record.cardId, recordId: concurrent.record.recordId, status: 'satisfied',
     });
     const settledReuse = await store.allocateNext({
-      request: request({ documentId: 'science', learnerId: 'milo', rowRange: { start: 1, end: 2 } }),
+      request: request({ documentId: 'science', learnerId: 'user_4', rowRange: { start: 1, end: 2 } }),
       policy: { reuse: 'after_scan' },
     });
     expect(settledReuse.record.cardId).toBe(concurrent.record.cardId);
@@ -242,11 +242,11 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
       now: () => now,
     });
     const first = await store.allocateNext({
-      request: request({ documentId: 'math', learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+      request: request({ documentId: 'math', learnerId: 'user_4', rowRange: { start: 1, end: 6 } }),
       policy: { reuse: 'school_day' },
     });
     const sameDay = await store.allocateNext({
-      request: request({ documentId: 'scripture', learnerId: 'milo', rowRange: { start: 1, end: 3 } }),
+      request: request({ documentId: 'scripture', learnerId: 'user_4', rowRange: { start: 1, end: 3 } }),
       policy: { reuse: 'school_day' },
     });
     expect(sameDay.record.cardId).toBe(first.record.cardId);
@@ -254,7 +254,7 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
 
     now = '2026-09-01T10:00:00.000Z';
     const nextDay = await store.allocateNext({
-      request: request({ documentId: 'science', learnerId: 'milo', rowRange: { start: 1, end: 2 } }),
+      request: request({ documentId: 'science', learnerId: 'user_4', rowRange: { start: 1, end: 2 } }),
       policy: { reuse: 'school_day' },
     });
     expect(nextDay.record.cardId).toBe('9427608');
@@ -270,11 +270,11 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
       now: () => '2026-08-31T10:00:00.000Z',
     });
     const first = await store.allocateNext({
-      request: request({ documentId: 'math', learnerId: 'milo', rowRange: { start: 1, end: 45 } }),
+      request: request({ documentId: 'math', learnerId: 'user_4', rowRange: { start: 1, end: 45 } }),
     });
     await store.markDelivered({ cardId: first.record.cardId, recordId: first.record.recordId });
     const successor = await store.allocateNext({
-      request: request({ documentId: 'scripture', learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+      request: request({ documentId: 'scripture', learnerId: 'user_4', rowRange: { start: 1, end: 6 } }),
     });
     expect(successor.record).toMatchObject({
       cardId: '9427608', rowRange: { start: 1, end: 6 }, generation: 2,
@@ -285,7 +285,7 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
       successorCardId: '9427608', tailSkipped: { start: 46, end: 50 },
     });
     const next = await store.allocateNext({
-      request: request({ documentId: 'science', learnerId: 'milo', rowRange: { start: 1, end: 5 } }),
+      request: request({ documentId: 'science', learnerId: 'user_4', rowRange: { start: 1, end: 5 } }),
     });
     expect(next.record.cardId).toBe('9427608');
     expect(next.record.rowRange).toEqual({ start: 7, end: 11 });
@@ -298,12 +298,12 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
       rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5], [9, 4, 2, 7, 6, 0, 8], [3, 1, 7, 9, 0, 2, 4]]),
       now: () => '2026-08-31T10:00:00.000Z',
     });
-    const first = await store.allocateNext({ request: request({ documentId: 'a', learnerId: 'milo', rowRange: { start: 1, end: 48 } }) });
+    const first = await store.allocateNext({ request: request({ documentId: 'a', learnerId: 'user_4', rowRange: { start: 1, end: 48 } }) });
     await store.markDelivered({ cardId: first.record.cardId, recordId: first.record.recordId });
-    const failed = await store.allocateNext({ request: request({ documentId: 'b', learnerId: 'milo', rowRange: { start: 1, end: 3 } }) });
+    const failed = await store.allocateNext({ request: request({ documentId: 'b', learnerId: 'user_4', rowRange: { start: 1, end: 3 } }) });
     await store.release({ cardId: failed.record.cardId, rows: failed.record.rowRange });
     expect((await store.findByCard(first.record.cardId))[0].successorCardId).toBeUndefined();
-    const retry = await store.allocateNext({ request: request({ documentId: 'b-retry', learnerId: 'milo', rowRange: { start: 1, end: 3 } }) });
+    const retry = await store.allocateNext({ request: request({ documentId: 'b-retry', learnerId: 'user_4', rowRange: { start: 1, end: 3 } }) });
     expect(retry.record.predecessorCardId).toBe(first.record.cardId);
     expect(retry.record.generation).toBe(2);
   });

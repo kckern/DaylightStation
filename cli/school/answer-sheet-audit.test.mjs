@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { auditAnswerSheets, planUnambiguousBackfill } from './answer-sheet-audit.mjs';
 
 const record = (over = {}) => ({
-  cardId: '1111111', recordId: 'r1', learnerId: 'milo', sessionId: 's1',
+  cardId: '1111111', recordId: 'r1', learnerId: 'user_4', sessionId: 's1',
   rowRange: { start: 1, end: 3 }, renderedAt: '2026-08-31T10:00:00.000Z',
   status: 'live', deliveryState: 'delivered', generation: 1,
   predecessorCardId: null, identiconVersion: 'v1', ...over,
@@ -17,7 +17,7 @@ describe('answer-sheet production audit', () => {
     const report = auditAnswerSheets(cards, { now: new Date('2026-08-31T12:00:00.000Z') });
     expect(report.readyForEnforcement).toBe(false);
     expect(report.issues).toContainEqual(expect.objectContaining({
-      type: 'multiple-live-cards', learnerId: 'milo', cardIds: ['1111111', '2222222'],
+      type: 'multiple-live-cards', learnerId: 'user_4', cardIds: ['1111111', '2222222'],
     }));
   });
 

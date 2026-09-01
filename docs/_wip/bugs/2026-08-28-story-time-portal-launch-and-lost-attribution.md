@@ -14,7 +14,7 @@ does the work; the obligation never moves.
 
 ## 2026-08-30 recurrence — intent survived in memory but recovery never ran
 
-Alan's study card and Story Time code both resolved correctly. The backend
+User_5's study card and Story Time code both resolved correctly. The backend
 reserved reading session `rs_mtg6bp0d_2` for `livingroom` at 11:59:39 PDT, then
 the living-room wake took **35.7 seconds**. Fully Kiosk spent 10.0 seconds on a
 timed-out `getDeviceInfo` read, confirmed foreground on attempt 2 after 24.3
@@ -98,15 +98,15 @@ backend's events for the same moments correctly say the learner's id:
 
 | Time (UTC) | Event | Source | `learnerId` |
 |---|---|---|---|
-| 17:11:40.031 | `school.reading.session-open` | backend | `alan` |
-| 17:11:59.634 | `school.reading.session-opened` | backend | `alan` |
+| 17:11:40.031 | `school.reading.session-open` | backend | `user_5` |
+| 17:11:59.634 | `school.reading.session-opened` | backend | `user_5` |
 | 17:12:46.090 | `school.reading.pick` `book-selected` | **screen** | **absent** |
-| 17:12:47.175 | `school.reading.book-selected` | backend | `alan` |
+| 17:12:47.175 | `school.reading.book-selected` | backend | `user_5` |
 | 17:12:52.187 | `school.reading.pick` `countdown-expired` | **screen** | **absent** |
 | 17:12:52.859 | `school.reading.playback` `playback-started` | **screen** | **absent** |
 | 17:12:53.964 | `school.reading.playback-started` | backend | **absent** |
 
-The backend knew it was Alan the whole time. The screen never did.
+The backend knew it was User_5 the whole time. The screen never did.
 
 ---
 
@@ -501,16 +501,16 @@ The instrumentation shipped today is what makes 7 answerable at all.
 Log store, `context.app:api` and `context.component:school-reading`, all times UTC.
 
 ```
-17:09:41  nfc.tap.school_card / school.card.agenda-printed   alan, 2 offers, 0 sessions created
-17:10:45  school.selfservice.code.resolved                   alan, story-time:daily, offered [program, exit]
+17:09:41  nfc.tap.school_card / school.card.agenda-printed   user_5, 2 offers, 0 sessions created
+17:10:45  school.selfservice.code.resolved                   user_5, story-time:daily, offered [program, exit]
 17:10:55  school.selfservice.action.run                      kind=program  outcome=FAILED
 17:10:55  school.selfservice.program.not-dispatched          "Story time happens on the living room TV…"
-17:11:40  school.reading.session-open                        alan  ← broadcast to a TV that is off
-17:11:59  school.reading.session-opened                      alan  ← wake returns, 19s later
+17:11:40  school.reading.session-open                        user_5  ← broadcast to a TV that is off
+17:11:59  school.reading.session-opened                      user_5  ← wake returns, 19s later
           (no school.reading.session / session-open from the screen — ever)
           (no school.reading.screen / screensaver-cleared    — ever)
 17:12:46  school.reading.pick  book-selected     [screen]    learnerId ABSENT
-17:12:47  school.reading.book-selected           [backend]   learnerId alan
+17:12:47  school.reading.book-selected           [backend]   learnerId user_5
 17:12:52  school.reading.pick  countdown-expired [screen]    learnerId ABSENT  ← attribution frozen null
 17:12:53  school.reading.playback-started                    learnerId ABSENT
 ```

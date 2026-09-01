@@ -78,8 +78,8 @@ visible delta is the two framing lines C1 was about.
 policy flag on the held matcher** (user ruling: engine flag, not target expansion, not
 a second grader) with optional bass-note check for inversions — landing with recall,
 its first consumer. `engraved` notation style for free timing. Single-note staff card.
-One Chromium scenario per new cell. Exit: Alan's named-chord flashcard level and
-Felix's engraved scales are YAML edits.
+One Chromium scenario per new cell. Exit: User_5's named-chord flashcard level and
+User_3's engraved scales are YAML edits.
 
 ### SP3 — the four new hosts
 
@@ -92,14 +92,14 @@ minutes scaled by score into the budget service; the reserved `earned` source).
 ### SP4 — configuration and content
 
 The household YAML speaks the full grammar (presets as sugar); the kids' assignments
-expressed exactly as spoken (Soren: single lit note; Alan: named chords, any voicing;
-Milo: C major on a staff; Felix: engraved G/D/F). Bank content: chromatic scale,
+expressed exactly as spoken (User_2: single lit note; User_5: named chords, any voicing;
+User_4: C major on a staff; User_3: engraved G/D/F). Bank content: chromatic scale,
 harmonic/melodic minor, warm-up figures. Reference docs generate their tables from
 `askSchema.js` so they cannot drift.
 
 ## Current live state this roadmap starts from
 
-Gate live for all five users (kckern L2/chess-only, felix L2, alan keys-2 interim,
-soren keys-1, milo L1); household default off; ladder self-correcting (20s stall eases,
+Gate live for all five users (kckern L2/chess-only, user_3 L2, user_5 keys-2 interim,
+user_2 keys-1, user_4 L1); household default off; ladder self-correcting (20s stall eases,
 3 clean passes climb); the deferred-minor backlogs of the two shipped branches are
 triaged in their SDD ledgers.

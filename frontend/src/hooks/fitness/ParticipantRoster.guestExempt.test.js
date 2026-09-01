@@ -38,17 +38,17 @@ describe('getActiveParticipantState — guests included + flagged', () => {
   it('keeps a broadcasting ledger guest active while its synthetic user is rebuilding', () => {
     const { roster, deviceManager, userManager } = build();
     deviceManager.registerDevice({ id: '11521', type: 'heart_rate', heartRate: 142, lastSeen: Date.now() });
-    userManager.assignGuest('11521', 'Finn', { profileId: 'finn', occupantType: 'guest' });
+    userManager.assignGuest('11521', 'User_8', { profileId: 'user_8', occupantType: 'guest' });
 
     // Reproduce the session-boundary window from the Mario session: the ledger
     // remains authoritative, but resolveUserForDevice has not caught up yet.
     userManager.resolveUserForDevice = () => null;
 
     const [entry] = roster.getRoster();
-    expect(entry).toMatchObject({ id: 'finn', name: 'Finn', heartRate: 142, hrInactive: false });
+    expect(entry).toMatchObject({ id: 'user_8', name: 'User_8', heartRate: 142, hrInactive: false });
     expect(roster.getActiveParticipantState()).toMatchObject({
-      participants: ['finn'],
-      guestIds: ['finn'],
+      participants: ['user_8'],
+      guestIds: ['user_8'],
     });
   });
 });

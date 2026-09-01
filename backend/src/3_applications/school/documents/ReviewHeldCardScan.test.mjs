@@ -12,7 +12,7 @@ function harness() {
     },
   });
   const source = {
-    cardId: '8684155', recordId: 'math-record', learnerId: 'milo', documentId: 'math', rev: 'r1',
+    cardId: '8684155', recordId: 'math-record', learnerId: 'user_4', documentId: 'math', rev: 'r1',
     rowRange: { start: 1, end: 3 }, rowItems: [
       { row: 1, itemId: 'm1', itemType: 'multiple_choice' },
       { row: 2, itemId: 'm2', itemType: 'multiple_choice' },
@@ -20,7 +20,7 @@ function harness() {
     ],
   };
   const target = {
-    cardId: '9427608', recordId: 'scripture-record', learnerId: 'milo', documentId: 'scripture', rev: 'r1',
+    cardId: '9427608', recordId: 'scripture-record', learnerId: 'user_4', documentId: 'scripture', rev: 'r1',
     rowRange: { start: 10, end: 12 }, rowItems: [
       { row: 10, itemId: 's1', itemType: 'multiple_choice' },
       { row: 11, itemId: 's2', itemType: 'multiple_choice' },
@@ -55,7 +55,7 @@ function harness() {
 async function seed(h) {
   const saved = await h.heldScanStore.record({
     fingerprint: 'a'.repeat(64), state: 'held', evidence: {
-      reason: 'multiple-delivered-live-answer-sheets', learnerId: 'milo', rawCardId: '8684155',
+      reason: 'multiple-delivered-live-answer-sheets', learnerId: 'user_4', rawCardId: '8684155',
       rawRows: [{ row: 1, marks: ['A'] }, { row: 3, marks: ['B', 'C'] }],
       decodedAnswers: { 1: 'A', 3: ['B', 'C'] }, activeCardIds: ['8684155', '9427608'],
       candidateWorksheets: [

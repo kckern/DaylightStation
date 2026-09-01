@@ -56,7 +56,7 @@ describe('requirementForLevel', () => {
 
   it('an explicit free recall level preserves its pitch-class policy without becoming cued', () => {
     const level = {
-      id: 'alan-c-major',
+      id: 'user_5-c-major',
       material: [{ kind: 'keys', notes: 3, arrangement: 'together' }],
       presentation: { prompt: 'recall', timing: 'free' },
       grading: { pitchClass: true, bassPitchClass: 0 },

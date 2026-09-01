@@ -5,7 +5,7 @@ import { InvalidateSessionEvidence } from './InvalidateSessionEvidence.mjs';
 
 const SESSION = 'ses_wrong_sheet';
 const events = () => [
-  { type: 'created', at: '2026-08-31T10:00:00.000Z', sessionId: SESSION, learnerId: 'milo', unitId: 'math-1', seq: 1 },
+  { type: 'created', at: '2026-08-31T10:00:00.000Z', sessionId: SESSION, learnerId: 'user_4', unitId: 'math-1', seq: 1 },
   { type: 'issued', at: '2026-08-31T10:01:00.000Z', sessionId: SESSION, artifactId: 'math/ws', confirmed: true, seq: 2 },
   { type: 'submitted', at: '2026-08-31T10:10:00.000Z', sessionId: SESSION, transport: 'paper', seq: 3 },
   { type: 'graded', at: '2026-08-31T10:10:00.000Z', sessionId: SESSION,
@@ -22,7 +22,7 @@ function fixture() {
   const attempts = ['att_1', 'att_2'].map((id, index) => ({
     id, at: '2026-08-31T10:10:00.000Z', sessionId: SESSION, bankId: 'math/ws@rev',
     itemId: `q${index + 1}`, itemType: 'multiple_choice', mode: 'quiz', given: 'B',
-    correct: index === 0, attributedTo: 'milo', transport: 'paper', learning: {},
+    correct: index === 0, attributedTo: 'user_4', transport: 'paper', learning: {},
   }));
   return {
     log,

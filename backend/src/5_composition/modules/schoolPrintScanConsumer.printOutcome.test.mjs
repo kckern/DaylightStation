@@ -95,8 +95,8 @@ describe('createSchoolPrintScanConsumer: scan-graded carries the print outcome',
       resolveCardScan: {
         execute: vi.fn(async () => ({
           held: true,
-          heldScanId: 'held-milo-1',
-          learnerId: 'milo',
+          heldScanId: 'held-user_4-1',
+          learnerId: 'user_4',
           reason: 'multiple-delivered-live-answer-sheets',
           activeCardIds: ['8424408', '8684155'],
           message: 'Two answer sheets are active. Ask a grown-up to check this scan.',
@@ -118,8 +118,8 @@ describe('createSchoolPrintScanConsumer: scan-graded carries the print outcome',
     expect(bus.broadcast.mock.calls.map(([, payload]) => payload)
       .filter((payload) => payload?.event === 'scan-answer-sheet-held')).toEqual([
       expect.objectContaining({
-        heldScanId: 'held-milo-1',
-        learnerId: 'milo',
+        heldScanId: 'held-user_4-1',
+        learnerId: 'user_4',
         message: 'Two answer sheets are active. Ask a grown-up to check this scan.',
       }),
     ]);

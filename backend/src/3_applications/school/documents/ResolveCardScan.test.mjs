@@ -129,7 +129,7 @@ describe('constructor', () => {
   });
 });
 
-describe('answer-sheet identity preflight — Milo regression', () => {
+describe('answer-sheet identity preflight — User_4 regression', () => {
   it('holds B/B/B scanned on Math 8684155 while Scripture 8424408 is also live, before Math can score 1/6', async () => {
     const repository = fakeRepository();
     const allocationStore = fakeAllocationStore();
@@ -142,11 +142,11 @@ describe('answer-sheet identity preflight — Milo regression', () => {
     )));
     const mathIssued = await publishAndAllocate({
       repository, allocationStore, source: math,
-      context: { cardId: '8684155', startRow: 22, learnerId: 'milo', sessionId: 'math-session' },
+      context: { cardId: '8684155', startRow: 22, learnerId: 'user_4', sessionId: 'math-session' },
     });
     const scriptureIssued = await publishAndAllocate({
       repository, allocationStore, source: scripture,
-      context: { cardId: '8424408', startRow: 1, learnerId: 'milo', sessionId: 'scripture-session' },
+      context: { cardId: '8424408', startRow: 1, learnerId: 'user_4', sessionId: 'scripture-session' },
     });
     await allocationStore.markDelivered({ cardId: '8684155', recordId: mathIssued.allocation.recordId });
     await allocationStore.markDelivered({ cardId: '8424408', recordId: scriptureIssued.allocation.recordId });
@@ -170,7 +170,7 @@ describe('answer-sheet identity preflight — Milo regression', () => {
     expect(result).toMatchObject({
       held: true,
       reason: 'multiple-delivered-live-answer-sheets',
-      learnerId: 'milo',
+      learnerId: 'user_4',
       activeCardIds: expect.arrayContaining(['8684155', '8424408']),
       results: [],
     });
@@ -204,12 +204,12 @@ describe('answer-sheet identity preflight — Milo regression', () => {
     const first = await publishAndAllocate({
       repository, allocationStore,
       source: sourceDoc('same-card-a', [mcQuestion('a1', 1, { choices: ['A', 'B'], answer: 'A' })]),
-      context: { cardId: '1234567', startRow: 1, learnerId: 'milo', sessionId: 'a-session' },
+      context: { cardId: '1234567', startRow: 1, learnerId: 'user_4', sessionId: 'a-session' },
     });
     const second = await publishAndAllocate({
       repository, allocationStore,
       source: sourceDoc('same-card-b', [mcQuestion('b1', 1, { choices: ['A', 'B'], answer: 'B' })]),
-      context: { cardId: '1234567', startRow: 2, learnerId: 'milo', sessionId: 'b-session' },
+      context: { cardId: '1234567', startRow: 2, learnerId: 'user_4', sessionId: 'b-session' },
     });
     await allocationStore.markDelivered({ cardId: '1234567', recordId: first.allocation.recordId });
     await allocationStore.markDelivered({ cardId: '1234567', recordId: second.allocation.recordId });
@@ -230,7 +230,7 @@ describe('answer-sheet identity preflight — Milo regression', () => {
 
   it('holds activity on a historical sheet and retains both the scanned worksheet and its live successor as ranked evidence', async () => {
     const oldRecord = {
-      cardId: '8424408', recordId: 'old-scripture', learnerId: 'milo',
+      cardId: '8424408', recordId: 'old-scripture', learnerId: 'user_4',
       documentId: 'scripture', rev: 'r1', sessionId: 'scripture-session',
       rowRange: { start: 1, end: 3 }, status: 'satisfied', deliveryState: 'delivered',
       deliveredAt: '2026-08-30T09:00:00.000Z', renderedAt: '2026-08-30T08:59:00.000Z',
@@ -238,7 +238,7 @@ describe('answer-sheet identity preflight — Milo regression', () => {
       rowItems: [1, 2, 3].map((row) => ({ row, itemId: `s${row}`, itemType: 'multiple_choice' })),
     };
     const successor = {
-      cardId: '8684155', recordId: 'new-math', learnerId: 'milo',
+      cardId: '8684155', recordId: 'new-math', learnerId: 'user_4',
       documentId: 'math', rev: 'r1', sessionId: 'math-session',
       rowRange: { start: 1, end: 6 }, status: 'live', deliveryState: 'delivered',
       deliveredAt: '2026-08-31T09:00:00.000Z', renderedAt: '2026-08-31T08:59:00.000Z',
@@ -280,7 +280,7 @@ describe('answer-sheet identity preflight — Milo regression', () => {
   it('does not count failed, released, or lost cards as delivered-live conflicts', async () => {
     const allocationStore = fakeAllocationStore();
     const request = (documentId) => ({
-      documentId, rev: 'r1', seed: 1, variant: 0, learnerId: 'milo',
+      documentId, rev: 'r1', seed: 1, variant: 0, learnerId: 'user_4',
       rowRange: { start: 1, end: 1 },
       rowItems: [{ row: 1, itemId: `${documentId}-q1`, itemType: 'multiple_choice' }],
     });
@@ -307,7 +307,7 @@ describe('answer-sheet identity preflight — Milo regression', () => {
 
     const result = await resolver.execute({ testId: current.cardId, answers: {} });
     expect(result.held).toBeUndefined();
-    expect((await allocationStore.findDeliveredLiveByLearner('milo')).map((record) => record.cardId))
+    expect((await allocationStore.findDeliveredLiveByLearner('user_4')).map((record) => record.cardId))
       .toEqual(['1234567']);
   });
 

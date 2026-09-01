@@ -54,7 +54,7 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidiNotes: () => ({ activeNotes: h.activeNotes }),
 }));
 vi.mock('../../PianoUserContext.jsx', () => ({
-  usePianoUser: () => ({ currentUser: 'learner4', currentProfile: { id: 'learner4', name: 'Milo' } }),
+  usePianoUser: () => ({ currentUser: 'learner4', currentProfile: { id: 'learner4', name: 'User_4' } }),
 }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({ PianoKeyboard: () => <div data-testid="keyboard" /> }));
 vi.mock('./ExerciseNotation.jsx', () => ({

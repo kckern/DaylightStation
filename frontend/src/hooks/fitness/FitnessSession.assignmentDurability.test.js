@@ -79,13 +79,13 @@ describe('FitnessSession — guest assignment durability', () => {
 
   it('creates a fresh active entity for a guest assigned before the session starts', () => {
     const session = makeSession();
-    session.userManager.assignGuest('10266', 'Finn', { profileId: 'finn', occupantType: 'guest' });
+    session.userManager.assignGuest('10266', 'User_8', { profileId: 'user_8', occupantType: 'guest' });
 
     session.ensureStarted({ reason: 'test', force: true });
 
     const assignment = session.userManager.assignmentLedger.get('10266');
     expect(assignment?.entityId).toBeTruthy();
-    expect(session.entityRegistry.get(assignment.entityId)?.profileId).toBe('finn');
+    expect(session.entityRegistry.get(assignment.entityId)?.profileId).toBe('user_8');
     expect(session.treasureBox.getActiveEntity('10266')).toBe(assignment.entityId);
     session.reset();
   });

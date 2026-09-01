@@ -12,9 +12,9 @@ instead of logic wired into the games gate specifically. Four sub-projects:
   re-seat all existing hosts on it. No visible change except closing bug-report C1
   (program/video steps get real framing copy).
 - **SP2** — new presentations: `recall` prompt (named asks, e.g. "Play a C major chord"
-  for Alan), `pitchClass` grading policy flag (octave/voicing-agnostic), `engraved`
-  notation for free timing (Felix's scales as real quarter notes), single-note reading
-  card. **Alan and Felix are waiting on this.**
+  for User_5), `pitchClass` grading policy flag (octave/voicing-agnostic), `engraved`
+  notation for free timing (User_3's scales as real quarter notes), single-note reading
+  card. **User_5 and User_3 are waiting on this.**
 - **SP3** — four new hosts: placement test, kiosk-home lesson gate, school piano lesson
   (feeds Games gate 1), earned game time (D14, mints minutes on pass).
 - **SP4** — config grammar rollout + bank content (chromatic, harmonic/melodic minor,
@@ -87,7 +87,7 @@ Critical/Important/Minor → Verdict).
 
 ## After Task 6 closes: SP1 is done
 
-Then: SP2 next (recall + engraved presentations — what Alan/Felix are waiting on),
+Then: SP2 next (recall + engraved presentations — what User_5/User_3 are waiting on),
 following the same SDD pattern (`/superpowers:writing-plans` off the roadmap spec's SP2
 section → `subagent-driven-development` execution).
 
@@ -118,8 +118,8 @@ section → `subagent-driven-development` execution).
 ## Live production state (unaffected by any of this)
 
 Five users on the OLD gate (`feat/exercise-run-ux`, merged + deployed earlier today):
-`kckern` (L2, chess only), `felix` (L2), `alan` (keys-2, interim until SP2's recall
-ships), `soren` (keys-1), `milo` (L1). Household default off. Zero gate events observed
+`kckern` (L2, chess only), `user_3` (L2), `user_5` (keys-2, interim until SP2's recall
+ships), `user_2` (keys-1), `user_4` (L1). Household default off. Zero gate events observed
 in the log store since that config landed — no kid has met their gate yet as of the last
 check.
 

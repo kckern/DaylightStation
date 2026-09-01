@@ -13,14 +13,14 @@ async function failedWithRetry(sessions, clock, { retryState = 'issued' } = {}) 
   const append = (sessionId, type, payload = {}) => sessions.appendEvent(sessionId, {
     type, at: clock.iso(), sessionId, ...payload,
   });
-  await append(PARENT, 'created', { learnerId: 'milo', unitId: 'place-value' });
+  await append(PARENT, 'created', { learnerId: 'user_4', unitId: 'place-value' });
   await append(PARENT, 'issued', { artifactId: 'art_failed' });
   await append(PARENT, 'submitted', { transport: 'paper' });
   await append(PARENT, 'graded', { attemptIds: ['att_1'], percent: 50, missedItemIds: ['q2', 'q4', 'q6'] });
   await append(PARENT, 'outcome_recorded', { outcomeId: `out:${PARENT}`, result: 'needs_remediation' });
   await append(PARENT, 'remediation_opened', { newSessionId: RETRY, variant: 1 });
   await append(RETRY, 'created', {
-    learnerId: 'milo', unitId: 'place-value', remediationOf: PARENT,
+    learnerId: 'user_4', unitId: 'place-value', remediationOf: PARENT,
     remediationItemIds: ['q2', 'q4', 'q6'], variant: 1,
   });
   if (retryState !== 'created') await append(RETRY, 'issued', { artifactId: 'art_retry' });
@@ -48,7 +48,7 @@ describe('ReplaceRemediation', () => {
     const result = await h.useCase.execute({
       sessionId: PARENT, currentSessionId: RETRY,
       reason: 'the worksheet wording and worked example were corrected',
-      replacedBy: 'parent', pin: '7410', idempotencyKey: 'repair-milo-place-value-v2',
+      replacedBy: 'parent', pin: '7410', idempotencyKey: 'repair-user_4-place-value-v2',
     });
 
     expect(result).toMatchObject({
@@ -59,9 +59,9 @@ describe('ReplaceRemediation', () => {
       userId: 'parent', pin: '7410', action: 'sessions.remediation.replace',
     }));
     expect(h.sessions.derive('ses_replacement_1')).toMatchObject({
-      state: 'created', terminal: false, learnerId: 'milo', unitId: 'place-value',
+      state: 'created', terminal: false, learnerId: 'user_4', unitId: 'place-value',
       remediationOf: PARENT, replacesSessionId: RETRY,
-      replacementKey: 'repair-milo-place-value-v2', variant: 2,
+      replacementKey: 'repair-user_4-place-value-v2', variant: 2,
       remediationItemIds: ['q2', 'q4', 'q6'],
     });
     expect(h.sessions.derive(RETRY)).toMatchObject({ state: 'abandoned', terminal: true });

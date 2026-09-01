@@ -28,7 +28,7 @@ function replayContext(manifest) {
     stored.historicalCard = true;
     // New manifests preserve this explicitly. For legacy manifests, row 1 on
     // an original is the best available description of a freshly minted card;
-    // continuation sheets (including Milo's rows 28–32) remain KEEP sheets.
+    // continuation sheets (including User_4's rows 28–32) remain KEEP sheets.
     stored.historicalFirstUse = manifest.renderContext?.cardFirstUse
       ?? (manifest.captureKind === 'original' && allocation.rowRange.start === 1);
   }

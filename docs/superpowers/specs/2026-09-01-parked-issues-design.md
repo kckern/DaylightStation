@@ -44,7 +44,7 @@ All from 2026-09-01 unless noted.
 | What does a rejected code give the child? | A way forward first, reason second — and escalation after repeated failures. |
 | What does an already-printed lesson offer? | Its state, with reprint demoted behind a confirm. |
 | What happens on a partial card-id decode? | Accept only an unambiguous match; otherwise ask for a rescan. |
-| Revive `records/print/jobs.yml`? | No — delete it. |
+| Revive `records/print/jobs.yml`? | Neither — it belongs to another subsystem. Leave it. |
 
 ---
 
@@ -78,14 +78,21 @@ contemporaneous evidence and were not.
 precondition for job-state tracking, and it belongs here rather than waiting on
 the larger spec.
 
-### 1.3 `records/print/jobs.yml` is dead
+### 1.3 `records/print/jobs.yml` — not ours, leave it alone
 
-One entry, written 2026-07-22; no current path writes it.
+An earlier draft of this spec called this a dead worksheet ledger and proposed
+deleting it. **That was wrong.**
 
-**Decision: delete it, do not revive it.** The impression record in the
-companion spec supersedes it, and a second half-written ledger is worse than
-none — someone will eventually trust it. Removing it now makes the absence
-honest.
+It belongs to `PrintService` — the household **printables** subsystem, with
+per-user quota and approval — which reads and appends it at
+`PrintService.mjs:125, 163, 185, 209`. It is quiet since 2026-07-22 because
+nobody has printed a printable, not because it is abandoned. Deleting it would
+break that feature's quota accounting.
+
+Worksheet issuance was never meant to write here. The honest finding is
+**worksheet printing has no ledger**, not that this one is dead. The companion
+spec's impression record is that missing ledger; this file is a different
+subsystem's and stays untouched.
 
 ### 1.4 story-time reports a false error
 
@@ -150,11 +157,16 @@ Primary action is done/exit. Reprint is secondary, behind a confirm, labelled
 with when and how many times it printed. Re-entering a code stops presenting
 itself as a print button, which is what produced six identical taps.
 
-### Known dependency
+### Known dependency — confirmed unmet
 
-Escalation requires a name picker on that surface. If one does not already
-exist, it is the largest single piece of work in this spec and should be
-confirmed before estimating.
+Escalation requires a learner name picker on the Portal. **There is not one.**
+That surface is `Keypad`, `LaunchCard` and `ScanCeremony` only
+(`frontend/src/modules/School/selfService/`), so the picker is new UI and is the
+largest single piece of work in this spec.
+
+This is why Part 2 and Part 3's gate are deferred out of the first
+implementation plan: everything else here is mechanical, and none of it should
+wait behind a new component.
 
 ---
 
@@ -242,7 +254,7 @@ vacuously-true returns. Gate is `npm run test:unit:vitest` against its baseline.
 
 1. `markDelivered` — live corruption, small and self-contained.
 2. Verify and ship the three written fixes (Part 4), with the preview test.
-3. story-time declaration; `job-id` retention; delete `jobs.yml`.
+3. story-time declaration; `job-id` retention.
 4. Decode confidence recording (measurement only).
 5. Portal feedback — taxonomy, way-forward, escalation, already-printed state.
 6. Decode gate, once the measurement says what the real rate is.

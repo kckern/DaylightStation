@@ -7,11 +7,11 @@ describe('RenderIssuedWorksheetArtifact', () => {
     const artifact = {
       manifest: {
         artifactId: 'math/place-value/ws-1', kind: 'worksheet', captureKind: 'original',
-        issuedAt: '2026-08-31T18:00:00.000Z', learnerId: 'milo', sourceDocument,
+        issuedAt: '2026-08-31T18:00:00.000Z', learnerId: 'user_4', sourceDocument,
         allocation: { cardId: '8424408', rowRange: { start: 28, end: 32 } },
         renderContext: {
           automaticCard: true, answerSheetPolicy: { reuse: 'until_full' },
-          learnerId: 'milo', learnerName: 'Milo', date: '31 Aug 2026', cardFirstUse: false,
+          learnerId: 'user_4', learnerName: 'User_4', date: '31 Aug 2026', cardFirstUse: false,
         },
       },
       bytes: null,
@@ -29,7 +29,7 @@ describe('RenderIssuedWorksheetArtifact', () => {
     expect(renderPrintDocument.execute).toHaveBeenCalledWith({
       document: sourceDocument,
       context: {
-        learnerId: 'milo', learnerName: 'Milo', date: '31 Aug 2026',
+        learnerId: 'user_4', learnerName: 'User_4', date: '31 Aug 2026',
         cardId: '8424408', startRow: 28, historicalCard: true, historicalFirstUse: false,
       },
     });

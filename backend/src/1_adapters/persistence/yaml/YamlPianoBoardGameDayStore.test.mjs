@@ -27,7 +27,7 @@ describe('YamlPianoBoardGameDayStore', () => {
     const day = {
       schema: BOARD_GAME_DAY_SCHEMA,
       studyDate: '2026-08-28',
-      learners: { Milo: { completedGames: 2, gameSessionIds: ['a', 'b'] } },
+      learners: { User_4: { completedGames: 2, gameSessionIds: ['a', 'b'] } },
     };
     store.saveDay(day);
     assert.deepEqual(store.loadDay('2026-08-28'), day);

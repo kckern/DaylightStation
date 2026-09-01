@@ -12,10 +12,10 @@ describe('gateConfigForLearner / gateAppliesTo — default plus per-user overrid
   };
 
   it('a child with no entry gets the household default, and the users map never leaks through', () => {
-    const forKid = gateConfigForLearner(household, 'soren');
+    const forKid = gateConfigForLearner(household, 'user_2');
     expect(forKid).toEqual({ enabled: false, passScore: 0.8 });
     expect(forKid.users).toBeUndefined();
-    expect(gateAppliesTo(household, { learnerId: 'soren', gameId: 'chess' })).toBe(false);
+    expect(gateAppliesTo(household, { learnerId: 'user_2', gameId: 'chess' })).toBe(false);
   });
 
   it('a named child gets their override merged over the default', () => {

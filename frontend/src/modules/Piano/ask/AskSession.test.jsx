@@ -125,7 +125,7 @@ describe('AskSession — the gate shape (an ask level plus a picked material)', 
 
   it('hands an explicit recall presentation to the run as the resolved tuple', async () => {
     const recall = {
-      id: 'alan-c-major',
+      id: 'user_5-c-major',
       material: [spec],
       presentation: { prompt: 'recall', timing: 'free', hints: 'after-stall' },
       grading: { pitchClass: true, bassPitchClass: 0 },
