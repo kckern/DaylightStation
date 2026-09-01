@@ -285,7 +285,12 @@ def file_playlist_count(playlist_path):
 def _tail_events(events_path, max_bytes=256 * 1024):
     """Yield parsed JSON event dicts from the tail of events.jsonl (cheap —
     only the last max_bytes are read). Silently skips unparseable lines and
-    returns nothing if the file is missing."""
+    returns nothing if the file is missing.
+
+    Only dicts are returned. A record split across physical lines (an emitter
+    that let a newline into a value) leaves fragments behind, and a fragment
+    that is a bare number parses as valid JSON — so "parsed OK" is not enough
+    to assume a mapping. Callers do ev.get(...) and would crash on an int."""
     try:
         size = os.path.getsize(events_path)
         with open(events_path, "rb") as f:
@@ -301,9 +306,11 @@ def _tail_events(events_path, max_bytes=256 * 1024):
         if not line:
             continue
         try:
-            out.append(json.loads(line))
+            ev = json.loads(line)
         except Exception:
             continue
+        if isinstance(ev, dict):
+            out.append(ev)
     return out
 
 def last_reconcile(events_path):

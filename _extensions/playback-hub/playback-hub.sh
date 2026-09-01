@@ -124,6 +124,10 @@ logev() {
 # may contain spaces — track titles/albums do. Backslash + double-quote are
 # JSON-escaped. Callers MUST quote a spaced value as a single arg:
 #   logev tag evt "title=La maja y el ruiseñor"   (NOT title=La maja ...)
+# Newlines and tabs are flattened to spaces: a value captured from a command
+# substitution can be multi-line (mpv_count did exactly this), and a raw newline
+# splits one record across physical lines, breaking the JSONL contract every
+# reader depends on. Fragments left behind can even parse as valid JSON scalars.
 kv_to_json() { # key=val [key=val ...] -> "\"k\":\"v\",..." (values quoted as strings)
     local out="" tok k v
     for tok in "$@"; do
@@ -131,6 +135,9 @@ kv_to_json() { # key=val [key=val ...] -> "\"k\":\"v\",..." (values quoted as st
         k="${tok%%=*}"; v="${tok#*=}"
         v="${v//\\/\\\\}"   # escape backslashes first
         v="${v//\"/\\\"}"   # then double-quotes
+        v="${v//$'\r'/ }"   # then flatten anything that would end the line
+        v="${v//$'\n'/ }"
+        v="${v//$'\t'/ }"
         out+="\"$k\":\"$v\","
     done
     echo "${out%,}"
