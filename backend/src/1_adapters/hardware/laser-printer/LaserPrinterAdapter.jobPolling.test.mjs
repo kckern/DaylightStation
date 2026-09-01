@@ -52,3 +52,63 @@ describe('getJobState', () => {
     expect(result.state).toBe(5);
   });
 });
+
+describe('awaitJobOutcome', () => {
+  const noSleep = async () => {};
+
+  it('returns completed once the printer reports a terminal success', async () => {
+    const adapter = new LaserPrinterAdapter({ host: '127.0.0.1', port: 631 });
+    const states = [5, 5, 9];
+    adapter.getJobState = vi.fn(async () => {
+      const state = states.shift();
+      return {
+        state,
+        classification: state === 9 ? 'completed' : 'pending',
+        stateReasons: [], impressionsCompleted: state === 9 ? 1 : 0,
+      };
+    });
+    const result = await adapter.awaitJobOutcome(42, { deadlineMs: 10000, intervalMs: 1, sleep: noSleep });
+    expect(result.outcome).toBe('completed');
+    expect(result.polls).toBe(3);
+  });
+
+  it('returns failed on an aborted job', async () => {
+    const adapter = new LaserPrinterAdapter({ host: '127.0.0.1', port: 631 });
+    adapter.getJobState = vi.fn(async () => ({
+      state: 8, classification: 'failed', stateReasons: ['job-canceled-by-system'], impressionsCompleted: 0,
+    }));
+    const result = await adapter.awaitJobOutcome(42, { deadlineMs: 10000, intervalMs: 1, sleep: noSleep });
+    expect(result.outcome).toBe('failed');
+    expect(result.stateReasons).toEqual(['job-canceled-by-system']);
+  });
+
+  it('returns INDETERMINATE, not failed, when the deadline passes without a terminal state', async () => {
+    const adapter = new LaserPrinterAdapter({ host: '127.0.0.1', port: 631 });
+    adapter.getJobState = vi.fn(async () => ({
+      state: 5, classification: 'pending', stateReasons: ['job-printing'], impressionsCompleted: 0,
+    }));
+    let now = 0;
+    const result = await adapter.awaitJobOutcome(42, {
+      deadlineMs: 50, intervalMs: 10, sleep: noSleep, clock: () => { now += 10; return now; },
+    });
+    expect(result.outcome).toBe('indeterminate');
+    expect(result.state).toBe(5);
+  });
+
+  it('returns INDETERMINATE, not failed, when the printer stops answering', async () => {
+    const adapter = new LaserPrinterAdapter({ host: '127.0.0.1', port: 631 });
+    adapter.getJobState = vi.fn(async () => { throw new Error('ECONNREFUSED'); });
+    let now = 0;
+    const result = await adapter.awaitJobOutcome(42, {
+      deadlineMs: 30, intervalMs: 10, sleep: noSleep, clock: () => { now += 10; return now; },
+    });
+    expect(result.outcome).toBe('indeterminate');
+  });
+
+  it('is indeterminate for a null job id rather than pretending to poll', async () => {
+    const adapter = new LaserPrinterAdapter({ host: '127.0.0.1', port: 631 });
+    const result = await adapter.awaitJobOutcome(null, { sleep: noSleep });
+    expect(result.outcome).toBe('indeterminate');
+    expect(result.polls).toBe(0);
+  });
+});

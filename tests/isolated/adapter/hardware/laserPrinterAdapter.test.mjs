@@ -131,6 +131,23 @@ function ippServer({
           ], null, 1));
           return;
         }
+        if (operation === OPS.GET_JOB_ATTRIBUTES) {
+          // `printPdf` polls this via `awaitJobOutcome` right after Print-Job
+          // resolves. Answer with a terminal `job-state: 9` (completed) so
+          // every printPdf test in this file resolves its poll on the FIRST
+          // attempt — without this, an unhandled operation here falls to the
+          // generic HTTP 500 below, which `awaitJobOutcome` swallows and
+          // retries for real wall-clock time up to its (default 30s)
+          // deadline, turning every ipp-transport test in this file into a
+          // multi-second-plus hang instead of a fast unit test.
+          res.writeHead(200, { 'Content-Type': 'application/ipp' });
+          res.end(encodeRequest(0x0000, [
+            { tag: 0x47, name: 'attributes-charset', value: 'utf-8' },
+            { tag: 0x48, name: 'attributes-natural-language', value: 'en' },
+            { tag: 0x23, name: 'job-state', value: (() => { const b = Buffer.alloc(4); b.writeInt32BE(9); return b; })() },
+          ], null, 1));
+          return;
+        }
         if (operation === OPS.VALIDATE_JOB) {
           // Real Validate-Job (RFC 8011 §3.2.3) carries no document body —
           // `body` here is operation-attributes only, same shape as a

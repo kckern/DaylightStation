@@ -136,7 +136,7 @@ import {
   negotiatePrintPlan, chooseJobAttributes, DEFAULT_MEDIA, JOB_ATTRIBUTE_TRIM_ORDER,
 } from './negotiate.mjs';
 import { rasterizePdf } from './rasterize.mjs';
-import { classifyJobState } from './jobState.mjs';
+import { classifyJobState, isTerminal } from './jobState.mjs';
 
 /** IPP printer-state enum (RFC 8011 §5.4.11). */
 const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
@@ -252,7 +252,8 @@ export class LaserPrinterAdapter {
    * @param {string} [opts.jobName='daylight-print'] - job name (also our own logging)
    * @param {string} [opts.user='daylight'] - for our own logging / job-originating-user-name
    * @param {number} [opts.copies=1]
-   * @returns {Promise<{ok:boolean, bytes:number, copies:number, jobId:?number, documentFormat:string, transport:'ipp'|'raw9100'}>}
+   * @returns {Promise<{ok:boolean, bytes:number, copies:number, jobId:?number, documentFormat:string, transport:'ipp'|'raw9100', outcome:?('completed'|'failed'|'indeterminate'), jobState:?number}>}
+   *   `outcome`/`jobState` are only populated on the IPP transport (raw9100 has no job handle to poll); see `awaitJobOutcome`.
    * @throws {InfrastructureError} INVALID_DOCUMENT | PRINT_FORMAT_UNSUPPORTED | RASTERIZE_* | PRINT_VALIDATE_FAILED | PRINT_SEND_FAILED
    */
   /**
@@ -412,7 +413,21 @@ export class LaserPrinterAdapter {
     const sent = await this.#sendIpp(bytes, {
       jobName, user, copies: nCopies, documentFormat: plan.format, jobAttributes: validatedJobAttributes,
     });
-    return { ...sent, documentFormat: plan.format, transport: 'ipp' };
+
+    // The point of Phase 1: say what the printer did, not merely that it took
+    // the bytes. `job-sent` remains the acceptance record; this is the
+    // outcome. `awaitJobOutcome` never throws, so this cannot turn a
+    // successful send into a rejected printPdf().
+    const outcome = await this.awaitJobOutcome(sent.jobId);
+    this.#logger.info?.('laser-printer.job-outcome', {
+      host: this.#host, jobName, jobId: sent.jobId,
+      outcome: outcome.outcome, state: outcome.state,
+      stateReasons: outcome.stateReasons, polls: outcome.polls,
+      impressionsCompleted: outcome.impressionsCompleted,
+    });
+    return {
+      ...sent, documentFormat: plan.format, transport: 'ipp', outcome: outcome.outcome, jobState: outcome.state,
+    };
   }
 
   /**
@@ -591,9 +606,12 @@ export class LaserPrinterAdapter {
   }
 
   /**
-   * What the printer says about one job. Read-only; never throws into a print
-   * path — an unreadable answer is `classification: 'unknown'`, because "the
-   * printer stopped answering" is not "the sheet failed to print".
+   * What the printer says about one job. Never throws on an unparseable IPP
+   * answer — that comes back as `classification: 'unknown'`, because "the
+   * printer stopped answering" is not "the sheet failed to print". It CAN
+   * still throw on a transport failure (HTTP error, network error): callers
+   * polling for an outcome must catch it themselves (see `awaitJobOutcome`,
+   * which does).
    *
    * @param {number} jobId
    */
@@ -616,6 +634,61 @@ export class LaserPrinterAdapter {
         ? attrs['job-impressions-completed'][0]
         : null,
     };
+  }
+
+  /**
+   * Poll one job until the printer gives a terminal answer, or the deadline
+   * passes.
+   *
+   * THREE OUTCOMES, DELIBERATELY. `indeterminate` is not `failed`: it means we
+   * stopped asking, or the printer stopped answering, and we do not know
+   * whether paper came out. Collapsing it into `failed` would prompt a reprint
+   * of a sheet that printed — duplicate worksheets bound to different
+   * answer-card rows, which is a worse mess than a missing sheet.
+   *
+   * Never throws. A print that succeeded must not be reported as failed
+   * because a status query did.
+   *
+   * @param {number|null} jobId
+   * @param {{deadlineMs?: number, intervalMs?: number, sleep?: Function, clock?: Function}} [options]
+   */
+  async awaitJobOutcome(jobId, options = {}) {
+    const {
+      deadlineMs = 30000,
+      intervalMs = 1000,
+      sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
+      clock = () => Date.now(),
+    } = options;
+
+    const base = {
+      state: null, stateReasons: [], impressionsCompleted: null, polls: 0,
+    };
+    // JetDirect has no job handle, and a dropped id is a bug elsewhere. Either
+    // way, say we do not know rather than poll something meaningless.
+    if (!Number.isInteger(jobId)) return { ...base, outcome: 'indeterminate' };
+
+    const started = clock();
+    let polls = 0;
+    let last = base;
+    while (clock() - started < deadlineMs) {
+      polls += 1;
+      try {
+        // eslint-disable-next-line no-await-in-loop -- each poll depends on the previous one's outcome; nothing here can run in parallel
+        const observed = await this.getJobState(jobId);
+        last = { ...observed, polls };
+        if (isTerminal(observed.state)) {
+          return { ...last, outcome: observed.classification };
+        }
+      } catch {
+        // Swallowed on purpose: an unreachable printer is an unknown outcome,
+        // not a failed print. Keep the last state we DID observe (if any) and
+        // keep trying to the deadline.
+        last = { ...last, polls };
+      }
+      // eslint-disable-next-line no-await-in-loop -- deliberate poll cadence, not a parallelizable batch
+      await sleep(intervalMs);
+    }
+    return { ...last, polls, outcome: 'indeterminate' };
   }
 
   /** TCP reachability probe (no IPP round-trip). */
