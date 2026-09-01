@@ -57,20 +57,32 @@ export async function collectProgramStatuses({
       // line from congratulating a child who was never able to start.
       //
       // "CANNOT TELL YET" IS NOT "UNREACHABLE" (2026-09-01). `declaredEntryActions
-      // === null` means the trigger config has not been read AT THIS INSTANT —
-      // in production this is exclusively a boot-ordering artifact: School's own
-      // completion recompute can run (via an eagerly-fired `school.assignments.
-      // changed` -> SchoolCompletionBridge -> this collector) before app.mjs
-      // composes the Trigger API a few lines later, which is the thing that
-      // populates the declared set. It self-resolves within the same boot and
-      // never recurs for the rest of the process's life — verified against
-      // production logs, exactly two warns at startup, none in the following six
-      // hours, real card taps opening real sessions moments later on the same
-      // process. Asserting `no_entry_point` here stated a program was unreachable
-      // when the honest fact was "not yet checked", which is the false-alarm
-      // pattern that trains everyone to ignore this exact warn. A debug
-      // breadcrumb only; no error, no warn, and — critically — still asks
-      // `status()` below rather than skipping the program.
+      // === null` means the trigger config could not be read AT THIS INSTANT, from
+      // either of two sources (`PlanProjection#resolveDeclaredEntryActions`):
+      //
+      //   1. A BOOT-ORDERING ARTIFACT, the common case in production: School's
+      //      own completion recompute can run (via an eagerly-fired
+      //      `school.assignments.changed` -> SchoolCompletionBridge -> this
+      //      collector) before app.mjs composes the Trigger API a few lines
+      //      later, which is the thing that populates the declared set. It
+      //      self-resolves within the same boot and never recurs for the rest
+      //      of the process's life — verified against production logs, exactly
+      //      two warns at startup, none in the following six hours, real card
+      //      taps opening real sessions moments later on the same process.
+      //   2. A GENUINE READ FAILURE: the declared-entry-actions thunk itself
+      //      throws (malformed trigger config, etc.), caught and logged as
+      //      `school.plan.entry-actions-unreadable` in `PlanProjection`, then
+      //      mapped to the same `null`. That case does NOT self-resolve on its
+      //      own the way boot ordering does.
+      //
+      // Either way, asserting `no_entry_point` here would state a program is
+      // unreachable when the honest fact is "not yet checked (or not
+      // currently checkable)" — the false-alarm pattern that trains everyone
+      // to ignore this exact warn. A debug breadcrumb only; no error, no warn,
+      // and — critically — still asks `status()` below rather than skipping
+      // the program. A `school.plan.entry-actions-unreadable` warn recurring
+      // past the same boot's startup window is the tell that this is case 2,
+      // not case 1.
       if (needsEntryAction && declaredEntryActions === null) {
         logger.debug?.('school.program-status.entry-actions-unknown', {
           learnerId, program: programId, programInstance, entryAction,

@@ -191,13 +191,18 @@ export class YamlAllocationStore {
         // deliberately NOT set on this path -- `allocate` is an explicit-cardId
         // call site (reprints, admin recovery, tests), not the monotonic
         // rollover/reuse chain, so it has no "which decision produced this
-        // row" to record. This is currently safe by omission, not by design:
-        // a record built here reads `cardOrigin: undefined`, which fails
-        // CLOSED against the `cardOrigin === 'rollover'` gate in
-        // `markDelivered`/`confirmHistoricalDelivery` -- it simply never
-        // retires a predecessor's tail, never the wrong bug. If this path is
-        // ever wired into the rollover chain, it will need its own
-        // `cardOrigin` too.
+        // row" to record. A record built here reads `cardOrigin: undefined`,
+        // which `isRolloverDelivery` (used by `markDelivered` and
+        // `confirmHistoricalDelivery`) treats as a LEGACY record and falls
+        // back to inferring rollover from a truthy `predecessorCardId` --
+        // NOT a fail-closed no-op. That fallback is required, not incidental:
+        // `confirmHistoricalDelivery` exists specifically to backfill
+        // deliveries whose allocation predates the delivery fields, and its
+        // only caller (`RecoverMisattributedWorksheet`) shapes records via
+        // this exact `allocate()` path, which never stamps `cardOrigin`. If
+        // this path is ever wired into the rollover chain with an explicit,
+        // non-legacy caller, it should stamp its own `cardOrigin` so the
+        // strict signal (not the coarser legacy inference) governs it.
         identiconVersion: request.identiconVersion ?? cardMetadata(existing).identiconVersion
           ?? ANSWER_SHEET_IDENTICON_VERSION,
         deliveryState: request.deliveryState ?? 'pending',
@@ -371,7 +376,8 @@ export class YamlAllocationStore {
       // carries — so each ordinary delivery re-stamped the predecessor and
       // re-logged the rollover, forever. It also made card history untrustworthy
       // after the fact: fields written days later read as contemporaneous.
-      if (delivered.cardOrigin === 'rollover' && delivered.predecessorCardId) {
+      // See `isRolloverDelivery` for the legacy (no-`cardOrigin`) fallback.
+      if (isRolloverDelivery(delivered)) {
         const predecessor = this.#load(delivered.predecessorCardId);
         if (predecessor.length) {
           const occupiedThrough = Math.max(...predecessor.map((entry) => entry.rowRange.end));
@@ -435,8 +441,13 @@ export class YamlAllocationStore {
       // Same guard as `markDelivered`, same reason: a backfilled reuse
       // delivery also carries a truthy `predecessorCardId` (inherited, not
       // its own rollover), and without `cardOrigin === 'rollover'` this
-      // recovery path recurs the identical lineage-corruption bug.
-      if (delivered.cardOrigin === 'rollover' && delivered.predecessorCardId) {
+      // recovery path recurs the identical lineage-corruption bug. This path
+      // exists specifically to backfill records that PREDATE delivery
+      // fields -- exactly the records most likely to have no `cardOrigin`
+      // at all -- so `isRolloverDelivery`'s legacy fallback (infer rollover
+      // from a truthy `predecessorCardId` when `cardOrigin` is absent) is
+      // load-bearing here, not incidental.
+      if (isRolloverDelivery(delivered)) {
         const predecessor = this.#load(delivered.predecessorCardId);
         if (predecessor.length) {
           const occupiedThrough = Math.max(...predecessor.map((entry) => entry.rowRange.end));
@@ -856,6 +867,34 @@ function cardOccupiedThrough(records) {
 
 function cardHasIssuedSuccessor(card) {
   return card.records.some((record) => typeof record.successorCardId === 'string');
+}
+
+/**
+ * Whether a just-delivered record is a GENUINE rollover -- the delivery that
+ * should retire its predecessor's tail -- used by both `markDelivered` and
+ * `confirmHistoricalDelivery`.
+ *
+ * `cardOrigin` is the authoritative signal when present: only `'rollover'`
+ * qualifies, never `'reuse'` or `'first'` (a reuse also carries a truthy
+ * `predecessorCardId`, inherited from the card's first record, which is why
+ * `predecessorCardId` alone can't answer this for `cardOrigin`-bearing
+ * records).
+ *
+ * A record with NO `cardOrigin` at all is a LEGACY record -- either
+ * persisted before this field existed, or produced by `allocate()`'s
+ * explicit-cardId path (reprints, admin recovery, historical-backfill
+ * recovery), which still doesn't stamp it. For those, `cardOrigin` cannot be
+ * consulted, so this falls back to the pre-`cardOrigin` inference: a truthy
+ * `predecessorCardId` means rollover. That inference is coarser -- it can't
+ * distinguish "this delivery IS the rollover" from "this card was ONCE
+ * rolled over to" -- but it is strictly better than treating every legacy
+ * record as never a rollover, which silently drops predecessor-lineage
+ * writeback for every allocation that predates `cardOrigin`.
+ */
+function isRolloverDelivery(delivered) {
+  if (!delivered.predecessorCardId) return false;
+  if (delivered.cardOrigin === undefined) return true;
+  return delivered.cardOrigin === 'rollover';
 }
 
 function shiftRequestRows(request, offset) {
