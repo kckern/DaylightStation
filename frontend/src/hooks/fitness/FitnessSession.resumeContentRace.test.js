@@ -12,6 +12,12 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// The live-session claim on the start path calls DaylightAPI. Unmocked it
+// reaches for the fictional test-page origin, and the rejection adds an
+// unpredictable number of async turns before the session id appears. `{}` is
+// the "no authority answer" shape, which falls through to a normal fresh start.
+vi.mock('../../lib/api.mjs', () => ({ DaylightAPI: vi.fn().mockResolvedValue({}) }));
+
 import { FitnessSession } from './FitnessSession.js';
 
 function hrPacket(deviceId, bpm) {
@@ -67,7 +73,7 @@ describe('FitnessSession — resume check defers when content is not registered 
     expect(resumableSpy).toHaveBeenCalledWith('plex:598547');
   });
 
-  it('falls back to a fresh session if content never registers within the budget', () => {
+  it('falls back to a fresh session if content never registers within the budget', async () => {
     const session = makeSession();
     feedUntilThreshold(session, 'hr-1');
     expect(session.sessionId).toBeFalsy();
@@ -75,6 +81,11 @@ describe('FitnessSession — resume check defers when content is not registered 
     // Content never arrives; wait past the budget, then more HR data.
     vi.advanceTimersByTime(6500); // > resumeContentWait (6000)
     feedUntilThreshold(session, 'hr-1');
+
+    // The start path awaits the resume check and the live-session claim, so the
+    // id lands a few async turns after the packets — wait on the condition
+    // rather than a fixed flush count that goes stale as hops are added.
+    for (let i = 0; i < 50 && session.sessionId == null; i++) await Promise.resolve();
 
     expect(session.sessionId).toBeTruthy();        // fresh session started
     expect(resumableSpy).not.toHaveBeenCalled();   // never had content to check
