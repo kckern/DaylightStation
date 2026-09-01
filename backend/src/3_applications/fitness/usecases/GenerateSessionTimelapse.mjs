@@ -216,16 +216,20 @@ export class GenerateSessionTimelapse {
       }
 
       stage = 'cleanup';
-      // Default to ARCHIVING the source frames (screenshots -> screenshots_archive)
-      // so a recap can always be regenerated later; set `archive_frames: false` to
-      // hard-delete (saves disk, but the recap can never be re-rendered).
+      // Default to the `_trash` lifecycle (screenshots -> _trash -> hard-deleted by the
+      // retention sweep after 7 days). That leaves a week to re-render while keeping the
+      // footprint bounded. `archive_frames: true` opts into a PERMANENT copy beside the
+      // session (screenshots_archive) — nothing ever sweeps that, and the media tree
+      // syncs to Dropbox, so an unconditional archive is a slow storage leak (~300MB
+      // per session).
       //
       // The manifest gets the final say: when coverage came out degraded, the recap we
       // just wrote is partly frozen and someone will want to re-render it from the raw
-      // frames. Never hard-delete those — fall back to archiving regardless of config.
+      // frames. Those must outlive the 7-day trash window, so degraded coverage is
+      // promoted to a permanent archive regardless of config.
       const coverageDegraded = worstCoverage != null && worstCoverage < MIN_CLEAN_COVERAGE;
-      const archiveFrames = config.archive_frames !== false || coverageDegraded;
-      if (coverageDegraded && config.archive_frames === false) {
+      const archiveFrames = config.archive_frames === true || coverageDegraded;
+      if (coverageDegraded && config.archive_frames !== true) {
         logger.warn?.('fitness.timelapse.cleanup_downgraded', {
           sessionId, reason: 'degraded-coverage', coverage: worstCoverage,
           cameraLongestHeldSeconds: coverage?.camera?.longestHeldSeconds ?? null
