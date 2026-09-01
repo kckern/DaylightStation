@@ -6,6 +6,12 @@
  *   units      <dataDir>/content/school/{subject}/{work}/units/{unitId}.yml
  *   documents  <dataDir>/content/school/{subject}/{work}/documents/{id}.yml
  *   manifests  <dataDir>/content/school/{subject}/{work}/manifests/{id}.yml
+ *   poster     <mediaDir>/school/{subject}/{work}/poster.jpg
+ *
+ * The poster sits in the MEDIA tree beside the work's source PDF, on the same
+ * shelf/work path. The content tree holds what an author writes and reviews;
+ * a megabyte of cover scan is not that, and keeping the two apart means a
+ * course's authored YAML stays diffable.
  *
  * Filed under the nine subject shelves so the tree reads the way the School home
  * does. The shelf is a DIRECTORY here, but it is not the address: ids stay flat
@@ -74,6 +80,16 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
 
   #workDir(subject, work) {
     return path.join(this.#schoolDir(), subject, work);
+  }
+
+  /**
+   * Where a work's BYTES live — cover scan, source PDF — as opposed to the
+   * authored YAML above. Same shelf/work shape, different tree, because the
+   * content tree is the thing an author edits and reviews and a 1MB cover scan
+   * is neither.
+   */
+  #workMediaDir(subject, work) {
+    return path.join(this.#configService.getMediaDir(), 'school', subject, work);
   }
 
   #courseConfig(subject, work) {
@@ -339,7 +355,7 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
       const course = this.#courseConfig(subject, id);
       if (course?.schema !== COURSE_V2 || course?.poster !== 'poster.jpg') continue;
       try {
-        const bytes = await readBinaryFromPathAsync(path.join(this.#workDir(subject, id), 'poster.jpg'));
+        const bytes = await readBinaryFromPathAsync(path.join(this.#workMediaDir(subject, id), 'poster.jpg'));
         // JPEG SOI + marker. Serving a renamed SVG/HTML file as an image from a
         // teacher-authenticated route would still be content-sniffing trouble.
         if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return null;

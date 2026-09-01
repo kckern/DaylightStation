@@ -26,6 +26,25 @@ describe('unit learner-facing reading metadata', () => {
       .toContainEqual(expect.stringMatching(/digital sidecar/));
   });
 
+  it('carries the named school day through as metadata, case-folded', () => {
+    const { errors, unit } = validateUnit({ ...base, weekday: 'Monday' }, sets);
+    expect(errors).toEqual([]);
+    expect(unit.weekday).toBe('monday');
+  });
+
+  it('omits weekday entirely when a course is not built around named days', () => {
+    const { errors, unit } = validateUnit(base, sets);
+    expect(errors).toEqual([]);
+    expect(unit).not.toHaveProperty('weekday');
+  });
+
+  it('refuses a weekday that is not a day, rather than dropping it silently', () => {
+    expect(validateUnit({ ...base, weekday: 'day 1' }, sets).errors)
+      .toContainEqual(expect.stringMatching(/weekday must be one of/));
+    expect(validateUnit({ ...base, weekday: 3 }, sets).errors)
+      .toContainEqual(expect.stringMatching(/weekday must be one of/));
+  });
+
   it('accepts a non-empty companion-source bibliography', () => {
     const { errors } = validateUnit({
       ...base,
