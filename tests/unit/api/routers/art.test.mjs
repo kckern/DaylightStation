@@ -6,7 +6,15 @@ const noopLogger = { debug: () => {}, warn: () => {}, error: () => {}, info: () 
 
 const makeApp = (artAdapter) => {
   const app = express();
-  app.use('/art', createArtRouter({ artService: { selectFeatured: artAdapter.selectFeatured.bind(artAdapter) }, logger: noopLogger }));
+  // The router refuses to construct without getPreset; these cases only
+  // exercise /featured, so a stub keeps the mock honest about what it is.
+  app.use('/art', createArtRouter({
+    artService: {
+      selectFeatured: artAdapter.selectFeatured.bind(artAdapter),
+      getPreset: artAdapter.getPreset?.bind(artAdapter) ?? (async () => null),
+    },
+    logger: noopLogger,
+  }));
   return app;
 };
 

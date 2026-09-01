@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { createDisplayRouter } from '../../../../backend/src/4_api/v1/routers/display.mjs';
+import { ContentAccessService } from '../../../../backend/src/3_applications/content/ContentAccessService.mjs';
 
 describe('GET /display/:source/*', () => {
   const mockRegistry = {
@@ -30,9 +31,24 @@ describe('GET /display/:source/*', () => {
     }
   };
 
+  // The router takes a ContentAccessService now, not the registry/resolver pair
+  // it used to. The REAL service is used here with the existing mocks behind it,
+  // so these cases still exercise the resolution and fallback logic rather than
+  // a second copy of it written in the test.
+  const contentCatalog = {
+    getThumbnailUrl: (resolved) => resolved.adapter.getThumbnailUrl?.(resolved.localId),
+    getItem: (resolved) => resolved.adapter.getItem?.(resolved.localId),
+  };
+
   function createApp() {
     const app = express();
-    app.use('/display', createDisplayRouter({ registry: mockRegistry, contentIdResolver: mockContentIdResolver }));
+    app.use('/display', createDisplayRouter({
+      contentAccessService: new ContentAccessService({
+        contentIdResolver: mockContentIdResolver,
+        contentCatalog,
+      }),
+      logger: { error: () => {} },
+    }));
     return app;
   }
 
