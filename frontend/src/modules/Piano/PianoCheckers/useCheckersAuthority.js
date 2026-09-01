@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { checkersDefinition, checkersRuleModule } from '@shared-gaming/rulesets/checkers/index.mjs';
-import { createCheckpointedLocalAuthority } from '../../Gaming/platform/authority/createCheckpointedLocalAuthority.js';
+import { createCheckpointedLocalAuthority, isResumableSession } from '../../Gaming/platform/authority/createCheckpointedLocalAuthority.js';
 
 const ACTOR = 'piano-player';
 
@@ -9,7 +9,12 @@ export function useCheckersAuthority({ userId = 'household' } = {}) {
   const start = useCallback(async ({ fresh = false } = {}) => {
     const authority = createCheckpointedLocalAuthority({ ruleset: checkersRuleModule, definition: checkersDefinition, namespace: 'gaming:piano-checkers' }); authorityRef.current = authority;
     let session = null; const prior = fresh ? null : localStorage.getItem(indexKey);
-    if (prior) { try { session = await authority.resume(prior, { participant_id: ACTOR }); } catch { localStorage.removeItem(indexKey); } }
+    // A FINISHED GAME IS NOT A GAME IN PROGRESS — see `isResumableSession` and
+    // the identical guard in the other two board games.
+    if (prior) {
+      try { const resumed = await authority.resume(prior, { participant_id: ACTOR }); if (isResumableSession(resumed)) session = resumed; } catch { /* unreadable — start fresh */ }
+      if (!session) localStorage.removeItem(indexKey);
+    }
     if (!session) { session = await authority.create({ ruleset: { id: 'checkers', version: 1 }, definitionId: 'checkers-standard', participants: [{ id: ACTOR }], viewer: { participant_id: ACTOR } }); localStorage.setItem(indexKey, session.header.session_id); }
     sessionRef.current = session; setState(session.state); return session;
   }, [indexKey]);
