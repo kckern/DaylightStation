@@ -36,7 +36,9 @@ import { hydrateTimeline, dehydrateTimeline } from './SessionTimelineCodec.mjs';
 const INDEX_DIR_NAME = '_index';
 // Bump when the cached summary shape changes — a mismatch is treated as empty
 // (rebuilt on demand), so old shards never serve stale-shaped data.
-const INDEX_VERSION = 3; // v3: list summary carries hasVideo (recap badge)
+// v4: primary-media selection became longest-wins (near-tie recency tiebreak),
+//     so every cached list summary's title had to be re-derived.
+const INDEX_VERSION = 4;
 
 /**
  * Derive session date from sessionId

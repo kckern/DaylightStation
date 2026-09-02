@@ -71,14 +71,55 @@ describe('collectProgramStatuses reachability', () => {
     expect(row.status).toMatchObject({ doneToday: false });
   });
 
-  it('fails toward reporting when the trigger config could not be read', async () => {
+  // 2026-09-01: `declaredEntryActions: null` used to fail closed here exactly
+  // like an empty/known-missing set — "could not be read" and "not read YET"
+  // were the same code path. In production `null` is exclusively a boot
+  // ordering artifact (School's completion recompute can run before app.mjs
+  // finishes composing the Trigger API that supplies this set), never a
+  // genuine misconfiguration, so asserting `no_entry_point` here was a FALSE
+  // ALARM: it claimed a program was unreachable at a moment the system had
+  // simply not checked yet. A warn that states something false is exactly
+  // what trains everyone to ignore the warns that are true.
+  it('does not report unreachable when the declared set is not known YET — it asks the launcher instead', async () => {
+    const launcher = storyLauncher();
+    const logger = silentLogger();
     const [row] = await collectProgramStatuses({
       plan, learnerId: 'user_2',
-      launchers: new Map([['story-time', storyLauncher()]]),
+      launchers: new Map([['story-time', launcher]]),
       declaredEntryActions: null,
-      logger: silentLogger(),
+      logger,
     });
+    // Treated as "not asserted": the launcher is asked normally, exactly as
+    // if reachability had never been checked.
+    expect(launcher.status).toHaveBeenCalled();
+    expect(row.status).toEqual({ doneToday: false, progressLabel: '0 of 2 read today', score: null });
+    // No false claim of unreachability, in any form.
+    expect(logger.warn).not.toHaveBeenCalledWith('school.program-status.no-entry-point', expect.anything());
+    expect(row.status.error).toBeUndefined();
+    // A breadcrumb is fine — a warn asserting something false is not.
+    expect(logger.debug).toHaveBeenCalledWith('school.program-status.entry-actions-unknown', expect.objectContaining({
+      learnerId: 'user_2', program: 'story-time', entryAction: 'reading-session',
+    }));
+  });
+
+  // The genuine case must still work: once the declared set IS known (even if
+  // it's a known-empty set, i.e. "read, and nothing is declared"), a program
+  // whose entry action is absent from it still warns and still faults.
+  // Otherwise this fix would simply have silenced the alarm.
+  it('still reports unreachable — warn AND error — once the declared set is genuinely known and missing the action', async () => {
+    const launcher = storyLauncher();
+    const logger = silentLogger();
+    const [row] = await collectProgramStatuses({
+      plan, learnerId: 'user_2',
+      launchers: new Map([['story-time', launcher]]),
+      declaredEntryActions: new Set(['print-agenda']),
+      logger,
+    });
+    expect(launcher.status).not.toHaveBeenCalled();
     expect(row.status).toEqual({ error: true, reason: 'no_entry_point' });
+    expect(logger.warn).toHaveBeenCalledWith('school.program-status.no-entry-point', expect.objectContaining({
+      learnerId: 'user_2', program: 'story-time', entryAction: 'reading-session',
+    }));
   });
 
   it('leaves a launcher with no entryAction alone', async () => {

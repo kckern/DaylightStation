@@ -15,12 +15,23 @@ const hrSample = (deviceId, hr) => ({
 // deferring (the content-race deferral is covered separately in
 // FitnessSession.resumeContentRace.test.js); we flush the async resume check
 // (DaylightAPI mocked → not resumable → fresh start).
+// Starting is asynchronous and the chain has grown — the resume check and the
+// live-session claim are each an awaited round trip. Counting microtask flushes
+// meant the count silently went stale every time a hop was added, so wait on the
+// CONDITION (a session id exists) with a bounded number of turns instead.
+async function flushUntil(predicate, turns = 50) {
+  for (let i = 0; i < turns; i++) {
+    if (predicate()) return true;
+    await Promise.resolve();
+  }
+  return predicate();
+}
+
 async function startSession(session, deviceId = '1001') {
   session.setKioskMode(true);
   session.setPendingContentId('plex:demo');
   for (let i = 0; i < 4; i++) session.ingestData(hrSample(deviceId, 120));
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushUntil(() => session.sessionId != null);
   return session.sessionId;
 }
 

@@ -384,6 +384,7 @@ export async function getHealthAnalytics() {
     const { HealthAnalyticsService } = await import('#apps/health/analytics/HealthAnalyticsService.mjs');
     const { PeriodResolver }         = await import('#apps/health/analytics/PeriodResolver.mjs');
     const { PersonalContextLoader }  = await import('#apps/health/PersonalContextLoader.mjs');
+    const { YamlPersonalPlaybookStore } = await import('#adapters/health/YamlPersonalPlaybookStore.mjs');
     const { YamlWorkingMemoryAdapter } = await import('#adapters/agents/YamlWorkingMemoryAdapter.mjs');
     const { readFile }               = await import('node:fs/promises');
     const { default: yaml }          = await import('js-yaml');
@@ -392,22 +393,15 @@ export async function getHealthAnalytics() {
     const healthService  = new AggregateHealthUseCase({ healthStore });
     const periodResolver = new PeriodResolver();
 
-    // PersonalContextLoader needs a dataService with readYaml(absPath).
-    // Build the same shim used in the backend bootstrap.
     const dataDir    = cfg.getDataDir?.() || path.join(process.env.DAYLIGHT_BASE_PATH || '.', 'data');
     const archiveRoot = path.join(dataDir, 'users');
-    const yamlReader = {
-      readYaml: async (absPath) => {
-        try {
-          const content = await readFile(absPath, 'utf8');
-          return yaml.load(content) || null;
-        } catch (err) {
-          if (err.code === 'ENOENT') return null;
-          return null;
-        }
-      },
-    };
-    const playbookLoader       = new PersonalContextLoader({ dataService: yamlReader, archiveRoot });
+    // The loader reads playbooks through a store now, not a raw yaml reader —
+    // the same YamlPersonalPlaybookStore the composition root uses (healthApi.mjs).
+    // Left on the old `{ dataService, archiveRoot }` shape it threw on
+    // construction, so every CLI reaching getHealthAnalytics() was dead.
+    const playbookLoader       = new PersonalContextLoader({
+      playbookStore: new YamlPersonalPlaybookStore({ usersRoot: archiveRoot }),
+    });
     const workingMemoryAdapter = new YamlWorkingMemoryAdapter({ dataService });
 
     _healthAnalytics = new HealthAnalyticsService({

@@ -9,7 +9,7 @@ import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
 import { useFitnessVolumeControls } from '@/modules/Fitness/nav/useFitnessVolumeControls.js';
-import { resolveContentId, normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
+import { resolveContentId, durationFromSeconds } from '@/modules/Player/utils/mediaIdentity.js';
 import { resolvePause, PAUSE_REASON } from '@/lib/Player/gate/pauseArbiter.js';
 import { GATE_ID } from '@/lib/Player/gate/gateIds.js';
 import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
@@ -1496,7 +1496,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       const media = currentMediaRef.current;
       if (!media) return;
 
-      const durationSeconds = normalizeDuration(
+      // All three are SECONDS — `PlayableItem.duration` is documented so
+      // (Playable.mjs) and PlexAdapter divides Plex's native ms before it ever
+      // reaches the frontend. Declaring the unit is what keeps a 32-minute
+      // workout from being stored as `2`.
+      const durationSeconds = durationFromSeconds(
         media.duration,
         media.length,
         media.metadata?.duration

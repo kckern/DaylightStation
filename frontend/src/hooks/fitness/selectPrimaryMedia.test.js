@@ -4,8 +4,8 @@ import { selectPrimaryMedia } from './selectPrimaryMedia.js';
 const MIN_LONG_MS = 10 * 60 * 1000; // 10 minutes
 
 describe('selectPrimaryMedia', () => {
-  describe('positional bias for multiple ≥10-min survivors', () => {
-    it('prefers the LAST ≥10-min video when two or more survive warmup filtering', () => {
+  describe('longest wins, with a near-tie recency tiebreak', () => {
+    it('prefers the LATER of two near-equal workouts', () => {
       const media = [
         { contentId: 'a', mediaType: 'video', title: 'First Workout',  durationMs: MIN_LONG_MS + 60000 },
         { contentId: 'b', mediaType: 'video', title: 'Second Workout', durationMs: MIN_LONG_MS + 30000 },
@@ -14,13 +14,40 @@ describe('selectPrimaryMedia', () => {
       expect(primary.contentId).toBe('b');
     });
 
-    it('prefers the LAST ≥10-min video even when an earlier one is longer', () => {
+    // Regression: session-20260901100054 titled itself "10 Minute Cycle" because a
+    // 10m26s ride followed a 32m22s Insanity workout and recency beat duration.
+    it('keeps the materially longer workout when a shorter one follows it', () => {
+      const media = [
+        { contentId: 'cardio', mediaType: 'video', title: 'Modified—Cardio Challenge', durationMs: 1_941_509 },
+        { contentId: 'cycle',  mediaType: 'video', title: 'Mixed Terrain',             durationMs: 626_121 },
+      ];
+      expect(selectPrimaryMedia(media, {}).contentId).toBe('cardio');
+    });
+
+    it('does not let recency override a longer earlier workout past the near-tie band', () => {
       const media = [
         { contentId: 'a', mediaType: 'video', title: 'First',  durationMs: MIN_LONG_MS + 5 * 60_000 }, // 15 min
         { contentId: 'b', mediaType: 'video', title: 'Second', durationMs: MIN_LONG_MS + 30_000 },     // 10.5 min
       ];
-      const primary = selectPrimaryMedia(media, {});
-      expect(primary.contentId).toBe('b');
+      expect(selectPrimaryMedia(media, {}).contentId).toBe('a');
+    });
+
+    // Regression: session-20260901140036 — Upper Body 11m07s then Lower Body 10m14s
+    // (92% of it). Near enough to a tie that the later one stays representative.
+    it('keeps the later of two workouts within the near-tie band', () => {
+      const media = [
+        { contentId: 'upper', mediaType: 'video', title: 'Upper Body', durationMs: 666_670 },
+        { contentId: 'lower', mediaType: 'video', title: 'Lower Body', durationMs: 614_332 },
+      ];
+      expect(selectPrimaryMedia(media, {}).contentId).toBe('lower');
+    });
+
+    it('never lets a warmup win on length, however long it ran', () => {
+      const media = [
+        { contentId: 'wu', mediaType: 'video', title: 'Warm Up Ride', durationMs: 40 * 60_000 },
+        { contentId: 'wo', mediaType: 'video', title: 'Real Workout', durationMs: 11 * 60_000 },
+      ];
+      expect(selectPrimaryMedia(media, {}).contentId).toBe('wo');
     });
   });
 

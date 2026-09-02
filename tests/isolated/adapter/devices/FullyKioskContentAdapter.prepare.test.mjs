@@ -73,7 +73,10 @@ describe('FullyKioskContentAdapter response-shape classification', () => {
     expect(result.error).toMatch(/login/i);
     // Must not have hammered the device: the old code sent 15 toForeground +
     // 15 getDeviceInfo before failing.
-    expect(logger.warn).toHaveBeenCalledWith('fullykiosk.sendCommand.rejected', expect.objectContaining({ authError: true }));
+    expect(logger.warn).toHaveBeenCalledWith(
+      'fullykiosk.rest.response',
+      expect.objectContaining({ code: 'AUTH_REJECTED', command: 'screenOn' })
+    );
   });
 
   test('non-auth Error envelope fails the command that received it', async () => {
@@ -96,9 +99,16 @@ describe('FullyKioskContentAdapter response-shape classification', () => {
     const result = await adapter.prepareForContent({ skipCameraCheck: true });
     expect(result.ok).toBe(false);
     expect(result.step).toBe('screenOn');
+    // The body is the only thing that identifies this as "FKB served its admin
+    // dashboard because type=json was missing" rather than a generic failure,
+    // so it must reach the log.
     expect(logger.warn).toHaveBeenCalledWith(
-      'fullykiosk.sendCommand.nonJsonResponse',
-      expect.objectContaining({ cmd: 'screenOn', snippet: expect.stringContaining('DOCTYPE') })
+      'fullykiosk.rest.response',
+      expect.objectContaining({
+        command: 'screenOn',
+        code: 'INVALID_RESPONSE',
+        detail: expect.stringContaining('DOCTYPE'),
+      })
     );
   });
 
