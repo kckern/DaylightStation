@@ -335,4 +335,114 @@ describe('useAddressedBoardGame — filing a result', () => {
     expect(client.saveGame).toHaveBeenCalledTimes(2);
     expect(client.saveGame.mock.calls[1][1]).toMatchObject({ result: 'win', moves: [0, 1, 0] });
   });
+
+  it('a flushed PRACTICE game is still filed as practice, never as ranked', async () => {
+    // The invariant this hook states in its own words: a dropped kiosk WiFi
+    // must never turn offline engine help into ladder advancement. The dead
+    // network that forced local practice is the same one hanging the ladder
+    // read, so these two conditions arrive together — and `restart()` sets
+    // ranked-ness back to true synchronously, one render BEFORE the flush.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    act(() => { view.result.current.noteLocalPractice(); });
+    view.rerender({ moves: FINISHED, result: 'win' });
+    expect(client.saveGame).not.toHaveBeenCalled();
+
+    act(() => { view.result.current.restart(); });
+    view.rerender({ moves: [], result: null });
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', ranked: false });
+    expect(client.archiveGame.mock.calls[0][0]).toMatchObject({ ranked: false });
+  });
+
+  it("a flushed record carries the finished match's context, not the next one's", async () => {
+    // The consumers assign `archiveContextRef` in their RENDER BODY, and
+    // `restart()` resets the dialogue — so the render that restart triggers has
+    // already published the next match's empty context by the time the flush
+    // runs in that same commit. Read live, the record would carry it.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+    const prepareTerminal = vi.fn(() => ({ terminal_reaction: 'well played' }));
+    let liveContext = { dialogue: ['good game'], prepareTerminal };
+
+    const view = renderHook(
+      (props) => {
+        const api = useAddressedBoardGame({
+          gameId: 'connect-four', client, currentUser: { id: 'ada' }, ...props,
+        });
+        api.archiveContextRef.current = liveContext; // exactly as a consumer does
+        return api;
+      },
+      { initialProps: { moves: FINISHED.slice(0, 6), result: null } },
+    );
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+
+    act(() => {
+      liveContext = { dialogue: [], prepareTerminal }; // the reset the rematch publishes
+      view.result.current.restart();
+    });
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', dialogue: ['good game'] });
+    // And nothing was asked to put a line on a screen that has already gone.
+    expect(prepareTerminal).not.toHaveBeenCalled();
+    expect(client.saveGame.mock.calls[0][1].terminal_reaction).toBeUndefined();
+  });
+
+  it('a profile switch mid-result files the match under the child who PLAYED it', async () => {
+    // A grown-up switching profiles on the terminal screen. The save effect is
+    // keyed on `userId`, so the deferred filing would otherwise be rebuilt for
+    // the incoming child and file the previous one's match at the wrong rung
+    // under the wrong name. See the `userRef` note above: this file already
+    // knows a mid-game profile switch is a live hazard.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    expect(client.saveGame).not.toHaveBeenCalled();
+
+    view.rerender({ moves: FINISHED, result: 'win', currentUser: { id: 'bo' } });
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][0]).toBe('ada');
+    expect(client.archiveGame.mock.calls[0][0]).toMatchObject({ user_id: 'ada', result: 'win' });
+
+    // ...and the incoming child does not get a copy of it on the way out.
+    view.unmount();
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.archiveGame).toHaveBeenCalledTimes(1);
+  });
+
+  it('a deferred result survives a host that just CLEARS the result', async () => {
+    // `result` is the caller's own reading of its game state, and a caller is
+    // free to clear it without going through `restart()` — in which case the
+    // tracker never learns a new match began. The deferred match still files on
+    // the way past, and the one-shot still reopens for whatever plays next.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    view.rerender({ moves: [], result: null });
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', moves: FINISHED });
+
+    view.rerender({ moves: [0, 1], result: null });
+    view.rerender({ moves: [0, 1, 0], result: 'loss' });
+
+    // The read is still hanging, so this one files on its own way out — which
+    // it can only do if the one-shot was reopened for it.
+    view.unmount();
+    expect(client.saveGame).toHaveBeenCalledTimes(2);
+    expect(client.saveGame.mock.calls[1][1]).toMatchObject({ result: 'loss', moves: [0, 1, 0] });
+  });
 });
