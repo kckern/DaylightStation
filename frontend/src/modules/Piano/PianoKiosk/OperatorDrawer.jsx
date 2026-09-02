@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoConnection } from './usePianoConnection.js';
@@ -15,11 +15,13 @@ import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
 import './SettingsSheets.scss';
 
 // Bridge link → dot tone + words. One place, so the card and the chip agree.
+// `state` is usePianoBridgeNotes' link: idle | connecting | connected | reconnecting | closed.
 const bridgeRow = (bridge) => {
   if (bridge.unavailable) return { tone: 'off', text: 'not running' };
-  if (bridge.state === 'open') return { tone: 'on', text: 'connected' };
-  if (['idle', 'connecting', 'reconnecting'].includes(bridge.state)) return { tone: 'warn', text: `${bridge.state}…` };
-  return { tone: 'off', text: bridge.state || 'not connected' };
+  if (bridge.state === 'connected') return { tone: 'on', text: 'connected' };
+  if (bridge.state === 'reconnecting') return { tone: 'warn', text: 'reconnecting…' };
+  if (bridge.state === 'idle' || bridge.state === 'connecting') return { tone: 'warn', text: 'connecting…' };
+  return { tone: 'off', text: 'not connected' };
 };
 
 function StatusRow({ label, tone, text }) {
@@ -57,19 +59,19 @@ export default function OperatorDrawer({ open, onClose }) {
     report('stop-stuck-notes', sent ? 'success' : 'failed', sent ? 'Stop stuck notes command sent.' : 'Piano not connected.', { sent });
   }, [midi, report]);
 
-  const { armed: screenArmed, trigger: screenOff } = useArmedAction(async () => {
+  const { armed: screenArmed, trigger: screenOff, reset: disarmScreen } = useArmedAction(async () => {
     report('screen-off', 'working', 'Turning off display…');
     const result = await turnOffPianoScreen();
     report('screen-off', result?.ok ? 'success' : 'failed', result?.ok ? 'Display turned off.' : screenOffFailureMessage(result), result);
   }, { armMs: 3000 });
 
-  const { armed: reloadArmed, trigger: reload } = useArmedAction(() => {
+  const { armed: reloadArmed, trigger: reload, reset: disarmReload } = useArmedAction(() => {
     report('restart-app', 'working', 'Restarting piano app…');
     window.location.reload();
   }, { armMs: 3000 });
 
   const deviceId = config?.screensaver?.deviceId || null;
-  const { armed: rebootArmed, trigger: reboot } = useArmedAction(async () => {
+  const { armed: rebootArmed, trigger: reboot, reset: disarmReboot } = useArmedAction(async () => {
     report('reboot-tablet', 'working', 'Requesting tablet reboot…');
     try {
       const result = await DaylightAPI(`api/v1/device/${deviceId}/reboot`, {}, 'POST');
@@ -79,6 +81,16 @@ export default function OperatorDrawer({ open, onClose }) {
       report('reboot-tablet', 'failed', `Couldn’t reboot tablet: ${error?.message || 'request failed'}`);
     }
   }, { armMs: 3000 });
+
+  // PianoChrome keeps the drawer mounted and TransportSheet only hides it, so
+  // an armed tile, an open Diagnostics view or a stale result line would
+  // otherwise greet the next open. Closing forgets all of it.
+  useEffect(() => {
+    if (open) return;
+    disarmScreen(); disarmReload(); disarmReboot();
+    setDiagnostics(false);
+    setAction({ state: 'idle', message: null, name: null });
+  }, [open, disarmScreen, disarmReload, disarmReboot]);
 
   const ready = health.state === 'ready';
   const inputUp = health.input.state !== 'down';
@@ -97,7 +109,7 @@ export default function OperatorDrawer({ open, onClose }) {
 
       <div className="piano-settings__big">
         {config?.bluetooth && <SettingsTile icon="bluetooth-active" label="Bluetooth pairing" emphasis={ready ? 'default' : 'primary'} onPress={() => { logger.info('piano.maintenance.bluetooth', {}); launchAndroidTarget(config.bluetooth); }} />}
-        <SettingsTile icon="connection" label={repairing ? 'Repairing connection…' : 'Repair connection'} emphasis={ready ? 'default' : 'primary'} disabled={repairing} onPress={repairConnection} message={repair.message} tone={repair.state === 'failed' ? 'failed' : repair.state === 'success' ? 'success' : 'idle'} />
+        <SettingsTile icon="connection" label="Repair connection" emphasis={ready ? 'default' : 'primary'} disabled={repairing} onPress={repairConnection} message={repairing ? 'Repairing…' : repair.message} tone={repairing ? 'working' : repair.state === 'failed' ? 'failed' : repair.state === 'success' ? 'success' : 'idle'} />
       </div>
 
       {diagnostics ? <div className="piano-settings__diag">

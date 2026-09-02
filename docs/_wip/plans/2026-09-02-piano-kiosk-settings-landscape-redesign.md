@@ -197,7 +197,7 @@ One card, one source (`usePianoConnection().health`):
 |---|---|---|
 | Keys | `input.state`: up → on, other → off | "Keys: Digital Keyboard" / "Keys: not connected" |
 | Sound | `output.state === 'up'` → on | "Sound: Digital Keyboard" / "Sound: not connected" |
-| Bridge | ready → on, connecting/reconnecting → warn, down/unavailable → off | "Bridge: connected / reconnecting… / not running" |
+| Bridge | `bridge.state` (`usePianoBridgeNotes` link): connected → on, idle/connecting/reconnecting → warn, closed → off, unavailable → off | "Bridge: connected / connecting… / reconnecting… / not connected / not running" |
 
 Card head is `health.copy` (the sentence the chip already uses), so the card can
 never contradict the chip or itself. The July `__hwdot` colours come back for

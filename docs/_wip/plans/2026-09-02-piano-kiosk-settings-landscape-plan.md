@@ -1230,7 +1230,7 @@ describe('Piano maintenance', () => {
     expect(bluetooth).toHaveClass('piano-tbtn--primary');
     fireEvent.click(bluetooth);
     expect(launchAndroidTarget).toHaveBeenCalledWith('pkg/.Bluetooth');
-    Object.assign(connection.health, { state: 'ready', copy: 'connected', input: { state: 'bridge', name: 'Keys' }, output: { state: 'up', name: 'Piano' }, bridge: { state: 'open', unavailable: false } });
+    Object.assign(connection.health, { state: 'ready', copy: 'connected', input: { state: 'bridge', name: 'Keys' }, output: { state: 'up', name: 'Piano' }, bridge: { state: 'connected', unavailable: false } });
     rerender(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} /></>);
     expect(screen.getByRole('button', { name: 'Bluetooth pairing' })).not.toHaveClass('piano-tbtn--primary');
     expect(screen.getByRole('button', { name: 'Repair connection' })).not.toHaveClass('piano-tbtn--primary');
@@ -1339,11 +1339,13 @@ import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
 import './SettingsSheets.scss';
 
 // Bridge link → dot tone + words. One place, so the card and the chip agree.
+// `state` is usePianoBridgeNotes' link: idle | connecting | connected | reconnecting | closed.
 const bridgeRow = (bridge) => {
   if (bridge.unavailable) return { tone: 'off', text: 'not running' };
-  if (bridge.state === 'open') return { tone: 'on', text: 'connected' };
-  if (['idle', 'connecting', 'reconnecting'].includes(bridge.state)) return { tone: 'warn', text: `${bridge.state}…` };
-  return { tone: 'off', text: bridge.state || 'not connected' };
+  if (bridge.state === 'connected') return { tone: 'on', text: 'connected' };
+  if (bridge.state === 'reconnecting') return { tone: 'warn', text: 'reconnecting…' };
+  if (bridge.state === 'idle' || bridge.state === 'connecting') return { tone: 'warn', text: 'connecting…' };
+  return { tone: 'off', text: 'not connected' };
 };
 
 function StatusRow({ label, tone, text }) {
@@ -1421,7 +1423,7 @@ export default function OperatorDrawer({ open, onClose }) {
 
       <div className="piano-settings__big">
         {config?.bluetooth && <SettingsTile icon="bluetooth-active" label="Bluetooth pairing" emphasis={ready ? 'default' : 'primary'} onPress={() => { logger.info('piano.maintenance.bluetooth', {}); launchAndroidTarget(config.bluetooth); }} />}
-        <SettingsTile icon="connection" label={repairing ? 'Repairing connection…' : 'Repair connection'} emphasis={ready ? 'default' : 'primary'} disabled={repairing} onPress={repairConnection} message={repair.message} tone={repair.state === 'failed' ? 'failed' : repair.state === 'success' ? 'success' : 'idle'} />
+        <SettingsTile icon="connection" label="Repair connection" emphasis={ready ? 'default' : 'primary'} disabled={repairing} onPress={repairConnection} message={repairing ? 'Repairing…' : repair.message} tone={repairing ? 'working' : repair.state === 'failed' ? 'failed' : repair.state === 'success' ? 'success' : 'idle'} />
       </div>
 
       {diagnostics ? <div className="piano-settings__diag">
