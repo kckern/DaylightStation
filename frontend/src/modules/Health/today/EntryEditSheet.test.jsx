@@ -32,6 +32,17 @@ describe('EntryEditSheet', () => {
     expect(body.protein).toBe(24);
   });
 
+  it('portion x4 PUTs scaled values', async () => {
+    const onChanged = vi.fn();
+    mount({ onChanged });
+    fireEvent.click(screen.getByRole('button', { name: '×4' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    const [path, body, method] = apiMock.mock.calls[0];
+    expect(path).toContain('nutrilist/r1');
+    expect(method).toBe('PUT');
+    expect(body.calories).toBe(560);
+  });
+
   it('move to Dinner PUTs mealTime evening', async () => {
     const onChanged = vi.fn();
     mount({ onChanged });

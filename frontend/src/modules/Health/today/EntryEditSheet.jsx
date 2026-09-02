@@ -6,7 +6,7 @@ import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { BUCKETS } from './mealBuckets.js';
 
 const logger = createAppLogger('health').child('entry-edit');
-const FACTORS = [0.25, 0.33, 0.5, 0.75, 1.5, 2, 3];
+const FACTORS = [0.25, 0.33, 0.5, 0.75, 1.5, 2, 3, 4];
 const scale = (row, f) => ({
   amount: Math.round((Number(row.amount) || 1) * f * 100) / 100,
   calories: Math.round((Number(row.calories) || 0) * f),
