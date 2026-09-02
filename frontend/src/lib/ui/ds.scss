@@ -136,3 +136,25 @@
   }
   &__tab-icon { display: inline-flex; width: 20px; height: 20px; }
 }
+
+.ds-datestepper {
+  display: flex; align-items: center; justify-content: center; gap: 0.25rem;
+
+  &__arrow, &__label {
+    background: none; border: none; color: var(--ds-text-high); cursor: pointer;
+    padding: 0.4rem 0.6rem; border-radius: 9px; font-size: 0.9rem;
+    &:focus-visible { outline: 2px solid var(--ds-accent, var(--ds-info)); outline-offset: 2px; }
+    &:disabled { color: var(--ds-text-low); cursor: default; }
+  }
+  &__label { font-weight: 600; min-width: 7.5rem; }
+}
+
+.ds-ask {
+  display: flex; align-items: center; gap: 0.5rem; width: 100%;
+  padding: 0.5rem 0.9rem; border-radius: 999px;
+  background: var(--ds-surface); border: 1px solid var(--ds-border);
+  color: var(--ds-text-mid); cursor: pointer; font-size: 0.85rem;
+  &:focus-visible { outline: 2px solid var(--ds-accent, var(--ds-info)); outline-offset: 2px; }
+  &__placeholder { flex: 1; text-align: left; }
+  &__kbd { font-size: 0.7rem; color: var(--ds-text-low); border: 1px solid var(--ds-border); border-radius: 4px; padding: 0 0.3rem; }
+}
