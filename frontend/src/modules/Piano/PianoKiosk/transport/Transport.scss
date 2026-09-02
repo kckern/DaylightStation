@@ -43,6 +43,47 @@
   border-color: transparent;
 }
 
+// Danger — destructive-ish actions (screen off, restart, reboot). At rest a
+// red outline; while ARMED (two-tap confirm, is-on) it fills warn-amber so the
+// state is visible from across the room, not only in the label.
+.piano-tbtn--danger {
+  background: transparent;
+  border-color: var(--piano-danger, #e05a4f);
+  color: var(--piano-danger, #e05a4f);
+  &.is-on {
+    background: var(--piano-warn, #e0a83a);
+    border-color: var(--piano-warn, #e0a83a);
+    color: #1a1206;
+    font-weight: 700;
+  }
+}
+
+// Tile — icon over a wrapping label; the settings-grid primitive. Overrides the
+// inline anti-wrap rule on purpose: a 4-across grid has room for two lines and
+// truncating "Chromatic Percussion" to "Chromatic Per…" is the old bug.
+.piano-tbtn--tile {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 5.5rem;
+  padding: 0.6rem 0.5rem;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.15;
+  .piano-icon { font-size: 1.9em; }
+}
+
+// Rail — full-width icon-left row for the Sound sheet's family rail.
+.piano-tbtn--rail {
+  width: 100%;
+  min-height: 3.5rem;
+  justify-content: flex-start;
+  padding: 0.5rem 0.8rem;
+  white-space: normal;
+  text-align: left;
+}
+
 .piano-tsheet {
   position: fixed;
   inset: 0;
