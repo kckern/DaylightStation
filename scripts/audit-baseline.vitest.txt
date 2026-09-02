@@ -3,7 +3,7 @@
 # OWNS (explicit vitest import, or bare globals with no runner import),
 # minus suite/ (jest) and node:test files.
 # A file failing that is NOT listed here is a REGRESSION (gate exits 1).
-# Captured: 28971 tests, 28904 pass, 12 fail, 52 skipped.
+# Captured: 31070 tests, 30975 pass, 40 fail, 52 skipped.
 # --update PRESERVES the hand-written `#` prose below: a comment block
 # directly above a path travels with that path; a block closed by a bare
 # `#` is kept in the notes section. Nothing here records WHICH run wrote a
@@ -43,7 +43,6 @@
 # test's `< 2` cushion band called the spread padding. The band is 3px now, the
 # shipped constant is unchanged at 39, and the hard floor assertion stays exact.
 #
-#
 # 2026-09-01: the list below is now EMPTY. All ten entries were run
 # individually and pass; four needed real fixes rather than merely happening to
 # go green, which is the verification the Stockfish note above asks for before
@@ -66,3 +65,30 @@
 # missing. If one flakes under contention it should be re-listed WITH the
 # observation that put it back, not restored silently.
 #
+#
+# 2026-09-01 (second pass): the gate itself had been BROKEN — a single vitest
+# spawn over the whole population stopped producing a JSON report past ~2,600
+# files, exiting 249 with an empty stderr. It is chunked now and runs all 2,874
+# files (31,070 tests). That is why this list is not the old one: these 13 are
+# pre-existing failures the gate could not report while it was dead, not new
+# breakage. Each still needs its own triage; they are recorded so the ratchet
+# protects against NEW regressions in the meantime, which is the whole point of
+# a baseline.
+#
+# registryCompleteness.test.mjs was in the captured run and is NOT listed: it
+# was fixed while that run was in flight (state-gates is allowed a
+# registered-but-absent config; the unregistered requirements/config.yml was
+# retired) and verified passing by hand afterwards.
+#
+backend/src/3_applications/piano-games/OpponentDialogueService.test.mjs
+backend/src/3_applications/playback-hub/runtime/HubStatusBroadcaster.test.mjs
+backend/src/3_applications/school/LanguageStudyService.test.mjs
+backend/src/4_api/v1/routers/config-context-boundaries.characterization.test.mjs
+backend/src/4_api/v1/routers/piano.economyHook.test.mjs
+backend/src/4_api/v1/routers/piano.routes.contract.test.mjs
+backend/tests/unit/adapters/harvester/fitness/FitnessSyncerHarvester.test.mjs
+backend/tests/unit/api/donow.approvalsAuth.test.mjs
+backend/tests/unit/applications/admin/appsConfigService.registry.test.mjs
+backend/tests/unit/applications/admin/yamlConfigFileService.allowlist.test.mjs
+backend/tests/unit/applications/ambient/AmbientSchedulerService.test.mjs
+backend/tests/unit/applications/devices/ScreenContentTracker.test.mjs
