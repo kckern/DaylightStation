@@ -120,6 +120,10 @@ export class NutribotInputRouter extends BaseInputRouter {
       conversationId: event.conversationId,
       imageData: {
         fileId: event.payload.fileId,
+        // Web path: a data URL set by WebNutribotAdapter. LogFoodFromImage only
+        // consults `url` when `fileId` is falsy, so Telegram's fileId-driven
+        // resolution is unaffected.
+        url: event.payload.imageUrl,
         caption: event.payload.text,
       },
       messageId: event.messageId,
