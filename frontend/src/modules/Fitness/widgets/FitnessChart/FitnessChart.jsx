@@ -1042,13 +1042,20 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 	}, [chartParticipants, presentEntries, absentEntries, allEntries]);
 	
 	const { width: chartWidth, height: chartHeight } = chartSize;
-	// For a merged "group" detail, floor the axis to the full stitched tick_count so this
-	// chart shares the EXACT x-scale as the HR-lane chart below — keeps bands/seams aligned
-	// across both. (Matches the same floor in FitnessTimeline.) Non-group sessions unaffected.
+	// Floor the axis to the session's own tick_count so this chart shares the
+	// EXACT x-scale as the HR-lane chart and the marker gutter — bands, seams and
+	// video markers all have to land on the same x.
+	//
+	// This used to apply to merged "group" details only, which left a normal
+	// session's axis ending where its last HR sample did rather than where the
+	// session did. A 94-minute workout whose browser stopped logging at minute 42
+	// drew a 42-minute axis under a header reading 94m, and every later media
+	// marker clamped onto the right edge. Where recording covers the session —
+	// the ordinary case — the two agree and nothing changes.
 	const groupTickFloor = (() => {
 		if (!isHistorical) return 0;
 		const src = sessionData?.timeline ? sessionData : (sessionData?.session || sessionData);
-		return src?.isGroup ? (Number(src?.timeline?.tick_count) || 0) : 0;
+		return Number(src?.timeline?.tick_count) || 0;
 	})();
 	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, groupTickFloor, 1);
 	// Ensure paddedMaxValue provides enough range for MIN_GRID_LINES when maxValue is 0 or small
