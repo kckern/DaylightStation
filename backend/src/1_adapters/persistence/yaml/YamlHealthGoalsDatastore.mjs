@@ -17,7 +17,12 @@ export class YamlHealthGoalsDatastore extends IHealthGoalsDatastore {
   }
 
   async save(goals, userId) {
-    this.#dataService.user.write?.(YamlHealthGoalsDatastore.GOALS_PATH, goals, userId);
+    const result = this.#dataService.user.write?.(YamlHealthGoalsDatastore.GOALS_PATH, goals, userId);
+    if (result === false) {
+      const err = new Error(`GOALS_WRITE_FAILED: could not write goals to ${YamlHealthGoalsDatastore.GOALS_PATH} for user ${userId}`);
+      err.code = 'GOALS_WRITE_FAILED';
+      throw err;
+    }
   }
 }
 export default YamlHealthGoalsDatastore;
