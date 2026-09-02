@@ -56,4 +56,21 @@ describe('SavedMealsService', () => {
     expect(rows[0].date).toBe('2026-09-02');
     expect(['morning', 'afternoon', 'evening', 'night']).toContain(rows[0].mealTime);
   });
+
+  it('logToDate defaults to the LOCAL date at evening, not the UTC date (which would be tomorrow)', async () => {
+    // 2026-09-02T20:30:00-07:00 is 2026-09-03T03:30:00Z — a naive
+    // `.toISOString().slice(0, 10)` reads this as tomorrow (2026-09-03).
+    // The local (household, America/Los_Angeles) date is 2026-09-02.
+    const evening = new SavedMealsService({
+      mealsStore: store, nutriListStore: nutriList,
+      clock: { now: () => new Date('2026-09-02T20:30:00-07:00').getTime() },
+      createId: (() => { let n = 0; return () => `evening-${n++}`; })(),
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+    });
+    const meal = await evening.create({ name: 'PB', items: [{ name: 'Eggs', calories: 140 }] }, 'u');
+    await evening.logToDate(meal.id, 'u', {});
+    const rows = nutriList.saveMany.mock.calls.at(-1)[0];
+    expect(rows[0].date).toBe('2026-09-02');
+    expect(rows[0].mealTime).toBe('night');
+  });
 });

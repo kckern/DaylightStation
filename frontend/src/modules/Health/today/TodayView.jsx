@@ -4,8 +4,7 @@ import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
-
-const todayISO = () => new Date().toISOString().slice(0, 10);
+import { localTodayISO as todayISO } from './mealBuckets.js';
 
 export function TodayView({ onSetupGoals, onCoachTap }) {
   const [date, setDate] = useState(todayISO());
