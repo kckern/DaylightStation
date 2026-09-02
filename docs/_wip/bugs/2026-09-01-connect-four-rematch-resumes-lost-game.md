@@ -124,10 +124,8 @@ its next reboot.
 
 ## Follow-ups — all three closed, 2026-09-01
 
-Branch `piano/board-game-result-integrity`. The implementation plan these were
-executed from was never committed and was lost when `main`'s history was
-rewritten concurrently on 2026-09-01; this section is the surviving record of
-what each task did.
+Branch `piano/board-game-result-integrity`, merged to `main` as `bb5738ba3`.
+Plan: `docs/_wip/plans/2026-09-01-board-game-result-integrity.md`.
 
 1. **`game.over` raced `ladder-loaded`.** ~~A result should not be recorded
    before the ladder it is being recorded against is known.~~ Closed by
