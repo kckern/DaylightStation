@@ -157,18 +157,28 @@ describe('Health/LoseIt live API', () => {
       const names = suggested.body.items.map((i) => i.name);
       expect(names).toContain(CUSTOM_NAME);
 
-      const favorited = await sendJson('PUT', '/nutrition/catalog/favorite', {
-        name: CUSTOM_NAME,
-        favorite: true,
-      });
-      expect(favorited.status).toBe(200);
-      expect(favorited.body.entry.favorite).toBe(true);
+      try {
+        const favorited = await sendJson('PUT', '/nutrition/catalog/favorite', {
+          name: CUSTOM_NAME,
+          favorite: true,
+        });
+        expect(favorited.status).toBe(200);
+        expect(favorited.body.entry.favorite).toBe(true);
 
-      const suggestedAfterFavorite = await getJson('/nutrition/catalog/suggest?q=zzz');
-      expect(suggestedAfterFavorite.status).toBe(200);
-      expect(suggestedAfterFavorite.body.items.length).toBeGreaterThan(0);
-      expect(suggestedAfterFavorite.body.items[0].name).toBe(CUSTOM_NAME);
-      expect(suggestedAfterFavorite.body.items[0].favorite).toBe(true);
+        const suggestedAfterFavorite = await getJson('/nutrition/catalog/suggest?q=zzz');
+        expect(suggestedAfterFavorite.status).toBe(200);
+        expect(suggestedAfterFavorite.body.items.length).toBeGreaterThan(0);
+        expect(suggestedAfterFavorite.body.items[0].name).toBe(CUSTOM_NAME);
+        expect(suggestedAfterFavorite.body.items[0].favorite).toBe(true);
+      } finally {
+        // Never leave the test entry favorited — it sorts first in every
+        // real "+ Add food…" suggest list, including the empty-query one
+        // (I-3, final review 2026-09-02).
+        await sendJson('PUT', '/nutrition/catalog/favorite', {
+          name: CUSTOM_NAME,
+          favorite: false,
+        });
+      }
     });
   });
 

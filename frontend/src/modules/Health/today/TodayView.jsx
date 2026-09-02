@@ -8,6 +8,7 @@ import { EquationStrip } from './EquationStrip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
+import { PendingConfirmCard } from './PendingConfirmCard.jsx';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
 import { SavedMealsSheet } from './SavedMealsSheet.jsx';
 import { localTodayISO as todayISO } from './mealBuckets.js';
@@ -40,6 +41,8 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
   const [unknownUpc, setUnknownUpc] = useState(null);
   const [savedMealsFor, setSavedMealsFor] = useState(null); // bucketId | null — F8's saved-meals picker
+  const [pendingCapture, setPendingCapture] = useState(null); // { messages } | null — photo/voice review card (I-4)
+  const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
   const nutrition = useNutritionInput();
   const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard' });
   // dashboard.today.coaching is an array of {type, text, timestamp} — text is
@@ -71,6 +74,22 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     await DaylightAPI('api/v1/health/nutrition/meals', { name, items }, 'POST');
   };
 
+  // Photo/voice submissions can come back either as a pending NutriLog with
+  // Accept/Revise/Discard choices (food detected) or as a plain status
+  // message (e.g. "no food detected") with no choices at all. Either way the
+  // response must be shown — silently discarding it is exactly the "no
+  // visible result" failure the spec forbids (I-4, final review 2026-09-02).
+  const handleCaptureResult = (result) => {
+    const messages = result?.messages || [];
+    const hasChoices = messages.some((m) => (m.choices || []).flat().length > 0);
+    if (hasChoices) {
+      setPendingCapture({ messages });
+    } else {
+      const text = messages[0]?.text;
+      if (text) setCaptureNotice(text);
+    }
+  };
+
   const bucketHeaderAction = (bucketId, rows, label) => {
     if (!rows.length) return null;
     if (date !== todayISO()) {
@@ -85,6 +104,19 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         date={date} today={todayISO()} onDateChange={setDate} onSetupGoals={onSetupGoals} />
       {day.loading ? <LoadingState label="food log" rows={6} /> : null}
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
+      {pendingCapture ? (
+        <PendingConfirmCard messages={pendingCapture.messages}
+          onDone={() => { setPendingCapture(null); day.reload(); }}
+          onDiscard={() => setPendingCapture(null)} />
+      ) : null}
+      {captureNotice ? (
+        <div className="health-pending" role="status">
+          <p className="health-pending__line">{captureNotice}</p>
+          <div className="health-pending__actions">
+            <Button size="xs" variant="subtle" onClick={() => setCaptureNotice(null)}>Dismiss</Button>
+          </div>
+        </div>
+      ) : null}
       {!day.loading && !day.error ? (
         <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
           onAddTo={setAddingTo} onRowTap={setEditingRow} addingTo={addingTo}
@@ -98,10 +130,10 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
       ) : null}
       <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap}>
         <PhotoCapture busy={nutrition.busy}
-          onCapture={async (dataUrl) => { await nutrition.submit('image', dataUrl); day.reload(); }} />
+          onCapture={async (dataUrl) => handleCaptureResult(await nutrition.submit('image', dataUrl))} />
         <BarcodeButton onClick={() => setCaptureMode('barcode')} />
         <VoiceCapture busy={nutrition.busy}
-          onCapture={async (dataUrl) => { await nutrition.submit('voice', dataUrl); day.reload(); }} />
+          onCapture={async (dataUrl) => handleCaptureResult(await nutrition.submit('voice', dataUrl))} />
       </MacroFooter>
       <BarcodeCapture open={captureMode === 'barcode'} busy={nutrition.busy}
         onClose={() => setCaptureMode(null)}

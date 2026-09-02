@@ -78,10 +78,11 @@ export class BudgetService {
     });
 
     const items = await this.#nutriListStore.findByDate(userId, date) || [];
-    const food = items.filter(COUNTED).reduce((sum, i) => {
+    const rawFood = items.filter(COUNTED).reduce((sum, i) => {
       const c = Number(i?.calories);
       return sum + (Number.isFinite(c) ? c : 0);
     }, 0);
+    const food = Math.round(rawFood);
 
     const workouts = await this.#healthStore.getWorkoutsForDate(userId, date);
     const exercise = Math.round(sumExerciseCalories(workouts));
@@ -90,7 +91,7 @@ export class BudgetService {
 
     const remaining = budget - food + exercise;
     return {
-      date, budget, food: Math.round(food), exercise, net: Math.round(food) - exercise,
+      date, budget, food, exercise, net: food - exercise,
       remaining, status: remaining >= 0 ? 'under' : 'over', stale, sessions, goals,
     };
   }
