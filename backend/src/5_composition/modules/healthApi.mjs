@@ -10,6 +10,8 @@ import { PersonalContextLoader } from '#apps/health/PersonalContextLoader.mjs';
 import { YamlPersonalPlaybookStore } from '#adapters/health/YamlPersonalPlaybookStore.mjs';
 import { SetDailyCoachingUseCase } from '#apps/health/SetDailyCoachingUseCase.mjs';
 import { HealthOperations } from '#apps/health/HealthOperations.mjs';
+import { YamlHealthGoalsDatastore } from '#adapters/persistence/yaml/YamlHealthGoalsDatastore.mjs';
+import { BudgetService } from '#apps/health/BudgetService.mjs';
 import { dataService } from '../runtimePersistence.mjs';
 import { nowDate } from '#system/utils/time.mjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -89,12 +91,22 @@ export function createHealthApiRouter(config) {
     newId: uuidv4,
   });
 
+  const goalsStore = new YamlHealthGoalsDatastore({ dataService });
+  const budgetService = new BudgetService({
+    goalsStore,
+    healthStore: healthServices.healthStore,
+    nutriListStore: healthServices.nutriListStore,
+    clock: { now: () => Date.now() },
+    logger,
+  });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthOperations,
     dashboardService,
     longitudinalService,
     catalogService,
+    budgetService,
     logger
   });
 }

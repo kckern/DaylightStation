@@ -57,7 +57,7 @@ function serializeHealthMetric(metric) {
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -554,6 +554,35 @@ export function createHealthRouter(config) {
       return res.json(result);
     }));
 
+  }
+
+  // ==========================================================================
+  // Budget & Goals (BudgetService)
+  // ==========================================================================
+  if (budgetService) {
+    router.get('/budget', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const date = req.query.date || new Date().toISOString().slice(0, 10);
+      try {
+        return res.json(await budgetService.getBudget(userId, date));
+      } catch (err) {
+        if (err.code === 'GOALS_NOT_CONFIGURED' || err.code === 'NO_WEIGHT_DATA') {
+          return res.status(409).json({ error: err.message, code: err.code });
+        }
+        logger.error?.('health.budget.error', { date, error: err.message });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+
+    router.get('/goals', asyncHandler(async (req, res) => {
+      const goals = await budgetService.getGoals(getDefaultUsername());
+      return res.json({ goals });
+    }));
+
+    router.put('/goals', asyncHandler(async (req, res) => {
+      const goals = await budgetService.setGoals(getDefaultUsername(), req.body);
+      return res.json({ goals });
+    }));
   }
 
   // ==========================================================================
