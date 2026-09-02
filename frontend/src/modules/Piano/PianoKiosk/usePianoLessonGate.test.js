@@ -317,3 +317,69 @@ describe('usePianoLessonGate', () => {
     expect(result.current.lesson).toBeNull();
   });
 });
+
+/**
+ * The daily video cap surfaces here as `videosLocked`, kept SEPARATE from
+ * `gated`. `gated` funnels the kiosk into today's lesson video; the cap stops
+ * video altogether. A consumer reading one for the other would launch a lesson
+ * at the learner it is trying to stop.
+ */
+describe('usePianoLessonGate video cap', () => {
+  it('reports a locked learner once School says the cap is reached', async () => {
+    h.response = {
+      gated: false, reason: 'done',
+      videos: { locked: true, reason: 'daily-cap', completedToday: 2, cap: 2 },
+    };
+    const { result } = renderHook(() => usePianoLessonGate('kid1'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.videosLocked).toBe(true);
+    expect(result.current.videos).toMatchObject({ completedToday: 2, cap: 2 });
+  });
+
+  it('leaves an under-cap learner unlocked', async () => {
+    h.response = {
+      gated: false, reason: 'done',
+      videos: { locked: false, reason: 'under-cap', completedToday: 1, cap: 2 },
+    };
+    const { result } = renderHook(() => usePianoLessonGate('kid1'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.videosLocked).toBe(false);
+  });
+
+  // FAILS OPEN at every unknown, exactly as `gated` does in this hook: a
+  // learner whose verdict never arrives, or arrives from a School that has
+  // never heard of this field, keeps their videos.
+  it.each([
+    ['a payload with no videos block', { gated: false, reason: 'done' }],
+    ['an explicitly open block', { gated: false, reason: 'done', videos: { locked: false } }],
+  ])('leaves videos open for %s', async (_label, response) => {
+    h.response = response;
+    const { result } = renderHook(() => usePianoLessonGate('kid1'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.videosLocked).toBe(false);
+  });
+
+  it('never locks a guest', async () => {
+    h.response = { gated: false, reason: 'guest', videos: { locked: true, cap: 2, completedToday: 2 } };
+    const { result } = renderHook(() => usePianoLessonGate('guest'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.videosLocked).toBe(false);
+  });
+
+  // A newly-picked learner must never inherit the previous one's lock for the
+  // frame before their own read lands — the same rule `gated` already follows.
+  it('does not project one learner’s lock onto the next', async () => {
+    h.response = {
+      gated: false, reason: 'done',
+      videos: { locked: true, reason: 'daily-cap', completedToday: 2, cap: 2 },
+    };
+    const { result, rerender } = renderHook(({ id }) => usePianoLessonGate(id), {
+      initialProps: { id: 'kid1' },
+    });
+    await waitFor(() => expect(result.current.videosLocked).toBe(true));
+
+    rerender({ id: 'kid2' });
+
+    expect(result.current.videosLocked).toBe(false);
+  });
+});

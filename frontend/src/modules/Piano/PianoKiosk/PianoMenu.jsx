@@ -63,6 +63,12 @@ export function PianoMenu() {
   // counts as waiting is the HOOK's rule, not re-derived here — this screen
   // only adds that curfew outranks it, having nothing left to wait for.
   const pending = !curfew && lessonGate.pending;
+  // The daily video cap. Enforcement lives in Videos.jsx (all three routes, so
+  // a deep link cannot walk around it); this is the EXPLANATION. A tile left
+  // live that bounced a child straight back here would read as a broken kiosk
+  // — the same failure the school lock had while it declined to say whose day
+  // it was reading.
+  const videosCapped = !curfew && lessonGate.videosLocked === true;
 
   const open = (id) => {
     if (curfew || pending) return; // belt-and-braces: the tiles are already disabled
@@ -101,8 +107,14 @@ export function PianoMenu() {
           <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
             {PIANO_MODES.map((m) => {
               const schoolLocked = m.id === 'games' && !gameAccess.unlocked;
-              const disabled = m.disabled || schoolLocked || curfew || pending;
-              const blurb = m.id !== 'games' || gameAccess.unlocked
+              const videosLocked = m.id === 'videos' && videosCapped;
+              const disabled = m.disabled || schoolLocked || videosLocked || curfew || pending;
+              // The count is the whole message. "Videos are locked" invites an
+              // argument; "2 of 2 lessons today" is a fact the child can check
+              // against the discs on the wall panel, which is the same number.
+              const blurb = videosLocked
+                ? `${lessonGate.videos?.completedToday ?? '?'} of ${lessonGate.videos?.cap ?? '?'} lessons today`
+                : m.id !== 'games' || gameAccess.unlocked
                 ? m.blurb
                 : gameAccess.status === 'error'
                   ? 'School status unavailable'
@@ -113,6 +125,7 @@ export function PianoMenu() {
                       : gameAccess.status === 'loading'
                     ? 'Checking schoolwork…'
                     : 'Finish school to unlock';
+
               return (
                 <li key={m.id}>
                   <PianoTile
