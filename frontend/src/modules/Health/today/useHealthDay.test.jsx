@@ -11,13 +11,14 @@ const ROWS = [
   { uuid: '2', name: 'Sandwich', calories: 400, mealTime: 'afternoon' },
   { uuid: '3', name: 'Mystery', calories: 100 }, // no mealTime → ungrouped
 ];
+const NUTRILIST_ENVELOPE = { message: 'ok', data: ROWS, date: '2026-09-02', count: 3 };
 const BUDGET = { budget: 2100, food: 640, exercise: 0, remaining: 1460, status: 'under', sessions: [] };
 
 describe('useHealthDay', () => {
   beforeEach(() => {
     apiMock.mockReset();
     apiMock.mockImplementation(async (path) =>
-      path.includes('/budget') ? BUDGET : ROWS);
+      path.includes('/budget') ? BUDGET : NUTRILIST_ENVELOPE);
   });
 
   it('groups rows by mealTime with null → ungrouped', async () => {
@@ -32,13 +33,22 @@ describe('useHealthDay', () => {
   it('a failing budget endpoint leaves the log usable', async () => {
     apiMock.mockImplementation(async (path) => {
       if (path.includes('/budget')) { const e = new Error('409'); e.status = 409; throw e; }
-      return ROWS;
+      return NUTRILIST_ENVELOPE;
     });
     const { result } = renderHook(() => useHealthDay('2026-09-02'));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.items).toHaveLength(3);
     expect(result.current.budget).toBeNull();
     expect(result.current.budgetError.status).toBe(409);
+  });
+
+  it('unwraps bare array for backward compatibility', async () => {
+    apiMock.mockImplementation(async (path) =>
+      path.includes('/budget') ? BUDGET : ROWS);
+    const { result } = renderHook(() => useHealthDay('2026-09-02'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.items).toHaveLength(3);
+    expect(result.current.byBucket.get('morning')).toHaveLength(1);
   });
 
   it('mutate runs the action then reloads', async () => {

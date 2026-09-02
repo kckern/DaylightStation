@@ -9,11 +9,11 @@ export function useHealthDay(date) {
   const list = useApiResource(`api/v1/health/nutrilist/${date}`, { deps: [date], label: 'nutrilist', logger });
   const budgetRes = useApiResource(`api/v1/health/budget?date=${date}`, { deps: [date], label: 'budget', logger });
 
-  // The day's rows: the endpoint serves the array directly (Nutrition.jsx
-  // precedent); unwrap an {items} envelope defensively.
+  // The day's rows: the endpoint serves {message, data:[...], date, count};
+  // also tolerate bare array or {items} for backward compatibility.
   const items = useMemo(() => {
     const d = list.data;
-    return Array.isArray(d) ? d : (Array.isArray(d?.items) ? d.items : []);
+    return Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : (Array.isArray(d?.items) ? d.items : []));
   }, [list.data]);
 
   const byBucket = useMemo(() => {
