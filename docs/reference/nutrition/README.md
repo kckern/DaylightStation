@@ -414,6 +414,19 @@ than the grams — see [Known gaps](#known-gaps--deliberate-do-not-silently-fix)
 
 ---
 
+## Web app surface
+
+The Health app (`/health`, `docs/reference/health/README.md`) is a second, independent
+entry point onto the exact same NutriList log this document's fridge/scale pipeline writes
+to. Nothing here changes because of it: a scan-enriched entry from the kitchen and an entry
+typed, spoken, photographed, or barcode-scanned from the web app land in the same per-day
+YAML, are summed by the same `BudgetService`, and show up in the same Today log — a kitchen
+scale entry that completes mid-session appears on the web app's Today view on the next tab
+refocus (`useHealthDay`'s `window.addEventListener('focus', reload)`). The web app owns
+capture UX (combobox, AI-parsed sentences/photos/voice, barcode → custom-food mapping,
+saved meals) and the calorie budget equation; this document's scan grammar, composition
+window, and quiet-commit timing are unaffected and unrelated to it.
+
 ## Related
 
 - [`docs/reference/barcode-scanning/README.md`](../barcode-scanning/README.md) — the scan
