@@ -18,7 +18,7 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 import moment from 'moment-timezone';
 
-import { decodeSeries, encodeSeries } from '#domains/fitness/services/TimelineService.mjs';
+import { decodeStoredSeries, encodeStoredSeries } from './seriesWire.mjs';
 import {
   splitDecodedSeries,
   computeSplitTick,
@@ -120,7 +120,7 @@ export async function run(argv, ctx) {
   const splitTick = computeSplitTick({ splitTs: SPLIT_TS, startAbsMs, intervalMs });
 
   const slugs = Object.keys(doc.participants || {});
-  const decoded = decodeSeries(doc.timeline?.series || {});
+  const decoded = decodeStoredSeries(doc.timeline?.series || {});
   const { part1: s1, part2: s2 } = splitDecodedSeries(decoded, splitTick);
 
   const allEvents = Array.isArray(doc.timeline?.events) ? doc.timeline.events : [];
@@ -242,7 +242,7 @@ export async function run(argv, ctx) {
       timezone: tz,
       participants,
       timeline: {
-        series: encodeSeries(prunedSeries),
+        series: encodeStoredSeries(prunedSeries),
         events,
         tick_count: Math.max(0, ...Object.values(prunedSeries).map(a => a.length)),
       },

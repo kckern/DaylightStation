@@ -24,10 +24,9 @@ import path from 'path';
 import yaml from 'js-yaml';
 
 import {
-  decodeSeries,
-  encodeSeries,
   mergeTimelines
 } from '#domains/fitness/services/TimelineService.mjs';
+import { decodeStoredSeries, encodeStoredSeries } from './seriesWire.mjs';
 import {
   getLastNonNull,
   buildSummary,
@@ -183,7 +182,7 @@ export async function mergeSessions(date, sessionIds, { baseDir, dryRun = false 
       endMs: parseWallClockInTz(obj.session.end, tz),
       intervalSeconds,
       timeline: {
-        series: decodeSeries(obj.timeline?.series || {}),
+        series: decodeStoredSeries(obj.timeline?.series || {}),
         events: Array.isArray(obj.timeline?.events) ? obj.timeline.events : [],
         interval_seconds: intervalSeconds,
         tick_count: obj.timeline?.tick_count || 0
@@ -265,7 +264,7 @@ export async function mergeSessions(date, sessionIds, { baseDir, dryRun = false 
     timezone: tz,
     participants: mergedParticipants,
     timeline: {
-      series: encodeSeries(merged.series),
+      series: encodeStoredSeries(merged.series),
       events: merged.events,
       interval_seconds: merged.interval_seconds,
       tick_count: merged.tick_count,
