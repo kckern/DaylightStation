@@ -28,6 +28,13 @@ import { runSessionBackfill } from './sessionBackfill.js';
 
 const MAX_SERIALIZED_SERIES_POINTS = 200000;
 const MIN_MEDIA_MS = 30 * 1000; // 30s — filter brief browse-past blips
+// A stored media duration is rejected when the item demonstrably played for
+// more than this multiple of it. 3x leaves ample room for the legitimate case
+// (a loop, or a duration rounded down) while catching a unit error, which is
+// off by 1000x. The floor keeps the check away from short clips, where a small
+// absolute error can look like a large ratio.
+const IMPLAUSIBLE_DURATION_RATIO = 3;
+const IMPLAUSIBLE_DURATION_FLOOR_SEC = 300;
 
 const ZONE_SYMBOL_MAP = {
   rest: 'r',
@@ -464,6 +471,36 @@ const _consolidateEvents = (events) => {
   for (const [id, { startEvt, endEvt, pauses }] of mediaMap) {
     const s = startEvt?.data || {};
     const e = endEvt?.data || {};
+
+    // Consolidation is the first point where the item's NOMINAL length and its
+    // PLAYED span are both known, so it is the only place this invariant can be
+    // checked: an item cannot have played for materially longer than it lasts.
+    // A duration far below the span is corrupt, not merely imprecise — a unit
+    // mix-up upstream stored 32-minute workouts as `2` for months without a
+    // single error. Drop the value rather than persist a number that reads as
+    // valid; consumers handle an absent duration, they cannot detect a wrong one.
+    // See docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
+    const nominalSeconds = s.durationSeconds ?? e.durationSeconds ?? null;
+    const startMs = Number(startEvt?.timestamp) || null;
+    const endMs = Number(endEvt?.timestamp) || null;
+    const playedSeconds = (startMs != null && endMs != null && endMs > startMs)
+      ? (endMs - startMs) / 1000
+      : null;
+    let durationSeconds = nominalSeconds;
+    if (
+      Number.isFinite(nominalSeconds) && playedSeconds != null
+      && playedSeconds > IMPLAUSIBLE_DURATION_FLOOR_SEC
+      && nominalSeconds * IMPLAUSIBLE_DURATION_RATIO < playedSeconds
+    ) {
+      getLogger().warn('fitness.persistence.implausible_media_duration', {
+        contentId: id,
+        title: s.title || e.title || null,
+        durationSeconds: nominalSeconds,
+        playedSeconds: Math.round(playedSeconds)
+      });
+      durationSeconds = null;
+    }
+
     mediaEvents.push({
       timestamp: Number(startEvt?.timestamp || endEvt?.timestamp) || 0,
       type: 'media',
@@ -479,9 +516,9 @@ const _consolidateEvents = (events) => {
         artist: s.artist || e.artist || null,
         governed: s.governed ?? e.governed ?? null,
         description: s.description || e.description || null,
-        durationSeconds: s.durationSeconds ?? e.durationSeconds ?? null,
-        start: Number(startEvt?.timestamp) || null,
-        end: Number(endEvt?.timestamp) || null,
+        durationSeconds,
+        start: startMs,
+        end: endMs,
         ...(pauses.length > 0 ? { pauses } : {})
       }
     });

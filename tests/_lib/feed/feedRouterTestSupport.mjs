@@ -13,6 +13,14 @@ export function createFeedTestRouter(legacy = {}) {
     ...options
   } = legacy;
   const reader = feedReaderService ?? adaptReader(freshRSSAdapter, contentPluginRegistry);
+  // The router REQUIRES an assembly service and refuses to construct without
+  // one. This shim exists so a legacy test that only exercises the reader
+  // endpoints does not have to know that; a test that actually asserts on
+  // assembly passes its own mock and this default is never reached.
+  const assembly = feedAssemblyService ?? {
+    getDetail: async () => ({}),
+    getItemWithDetail: async () => null,
+  };
   const content = feedContentService ?? {
     resolveIconPath: () => null,
     resolveIcon: async () => null,
@@ -22,7 +30,7 @@ export function createFeedTestRouter(legacy = {}) {
   return createFeedRouter({
     ...options,
     feedReaderService: reader,
-    feedAssemblyService,
+    feedAssemblyService: assembly,
     feedContentService: content,
     feedStateService,
     feedPrincipalResolver: feedPrincipalResolver ?? new FeedPrincipalResolver({
@@ -31,12 +39,10 @@ export function createFeedTestRouter(legacy = {}) {
     feedReaderTimelineService: feedReaderTimelineService ?? new FeedReaderTimelineService({
       reader, content, state: feedStateService,
     }),
-    feedScrollSessionService: feedScrollSessionService ?? (feedAssemblyService
-      ? new FeedScrollSessionService({
-        assembly: feedAssemblyService, state: feedStateService,
-        persistence: feedSessionPersistence, createId: () => '00000000-0000-4000-8000-000000000001',
-      })
-      : null),
+    feedScrollSessionService: feedScrollSessionService ?? new FeedScrollSessionService({
+      assembly, state: feedStateService,
+      persistence: feedSessionPersistence, createId: () => '00000000-0000-4000-8000-000000000001',
+    }),
   });
 }
 
