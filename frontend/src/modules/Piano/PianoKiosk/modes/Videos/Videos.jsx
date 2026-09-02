@@ -61,6 +61,34 @@ export function Videos({ source, PlayerComponent }) {
 }
 
 /**
+ * The daily video cap's redirect, shared by all three Videos routes.
+ *
+ * THE CAP CLOSES DOORS `gated` LEAVES OPEN, and that is deliberate rather than
+ * belt-and-braces. `CourseGridRoute`'s header lists the routes the lesson gate
+ * does not reach — the exercise checkpoint's `return` deep link, a DoNow push,
+ * history, a reload — and calls them residual, which they are for `gated`:
+ * their cost is starting the wrong lesson.
+ *
+ * For the cap they are the main road. The checkpoint's "Continue" replays a
+ * stored `/videos/<course>/<lecture>` link, which is an ordinary daily path, so
+ * a cap enforced only at the grid would never fire for the child it exists for.
+ *
+ * It returns to the MENU rather than rendering a locked pane: the menu already
+ * carries the caption saying why (PianoMenu's videos tile), and a second copy
+ * of that sentence living here is how one rule becomes two.
+ */
+function useVideoCapRedirect(gate, learnerId, route, logger) {
+  const locked = gate.videosLocked === true;
+  const { completedToday = null, cap = null } = gate.videos ?? {};
+  // From an effect, not from render: render stays pure, and this is the line a
+  // parent asking "why can't he open videos?" will search for.
+  useEffect(() => {
+    if (locked) logger.info('piano.videos.cap-redirected', { learnerId, completedToday, cap, route });
+  }, [locked, learnerId, completedToday, cap, route, logger]);
+  return locked;
+}
+
+/**
  * Course grid → push the selected course id (relative).
  *
  * Under the lesson gate the grid does not exist for that learner: the ONE
@@ -106,6 +134,7 @@ export function CourseGridRoute({ groups }) {
   const { basePath } = usePianoKioskConfig();
   const { currentUser } = usePianoUser();
   const gate = usePianoLessonGate(currentUser);
+  const capped = useVideoCapRedirect(gate, currentUser, 'grid', logger);
   const redirected = gate.gated;
   const courseId = gate.course?.id ?? null;
   // Logged from an effect, not from render: render must stay pure, and this is
@@ -117,7 +146,7 @@ export function CourseGridRoute({ groups }) {
   // `replace` so the grid leaves no history entry to come back to — a pushed
   // one would let Back land here again and bounce straight out a second time.
   // The menu never sends a gated learner to /videos, so this cannot loop.
-  if (redirected) return <Navigate to={basePath} replace />;
+  if (redirected || capped) return <Navigate to={basePath} replace />;
   // The hook owns who is waiting (a guest never is) and owns the wording, so
   // this screen and the menu cannot drift apart on either.
   if (gate.pending) {
@@ -143,6 +172,9 @@ export function CourseDetailRoute() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-videos' }), []);
   const { courseId } = useParams();
   const { currentUser } = usePianoUser();
+  const { basePath } = usePianoKioskConfig();
+  const gate = usePianoLessonGate(currentUser);
+  const capped = useVideoCapRedirect(gate, currentUser, 'course', logger);
   const navigate = useNavigate();
   const { speakerConnected } = usePianoMidi();
   const playable = usePianoCoursePlayable(idOf(courseId), currentUser);
@@ -153,6 +185,7 @@ export function CourseDetailRoute() {
     navigate(`${contentId}`);
   }, [navigate, logger]);
 
+  if (capped) return <Navigate to={basePath} replace />;
   if (isSubcourseShow(playable.info)) {
     return <SubcourseNavigator course={course} playable={playable} onPlay={onPlay} />;
   }
@@ -166,11 +199,14 @@ export function CourseDetailRoute() {
  * match is stable both warm and cold.
  */
 export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
+  const capLogger = useMemo(() => getLogger().child({ component: 'piano-videos' }), []);
   const { courseId, lectureId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { config } = usePianoKioskConfig();
+  const { config, basePath } = usePianoKioskConfig();
   const { currentUser } = usePianoUser();
+  const lessonGate = usePianoLessonGate(currentUser);
+  const capped = useVideoCapRedirect(lessonGate, currentUser, 'lecture', capLogger);
   // Keep the whole response so we can read the show/source title + per-user fields.
   const { items, info, isSequential } = usePianoCoursePlayable(idOf(courseId), currentUser);
   const lectures = items;
@@ -280,6 +316,12 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   const { playing } = usePianoPlayback();
   useKeepScreenAwake('video', playing, VIDEO_WAKE_GRACE_MS);
 
+  // AFTER every hook above, not beside the cap read at the top of this
+  // component: an early return there would skip the rest and break the rules of
+  // hooks on the very first capped render. First branch in the render, though —
+  // ahead of the loading skeleton, so a capped learner never watches a player
+  // spin up before being turned around.
+  if (capped) return <Navigate to={basePath} replace />;
   if (lectures === null) return <section className="piano-mode piano-mode--videos"><SkeletonStage /></section>;
   if (!lecture) {
     return (

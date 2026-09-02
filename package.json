@@ -8,7 +8,6 @@
     "@resvg/resvg-js": "^2.6.2",
     "@tabler/icons-react": "^3.36.1",
     "@tonejs/midi": "^2.0.28",
-    "@zxing/browser": "^0.2.1",
     "adm-zip": "^0.5.16",
     "ajv": "^8.18.0",
     "axios": "^1.7.2",

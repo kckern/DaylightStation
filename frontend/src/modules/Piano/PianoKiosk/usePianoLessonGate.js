@@ -41,8 +41,19 @@ function logger() {
   return _logger;
 }
 
+/**
+ * The open verdict, in every sense: not owed a lesson AND not capped.
+ *
+ * `videos` is kept separate from `gated` on purpose. `gated` funnels the kiosk
+ * INTO today's lesson video; the cap stops video altogether. A consumer that
+ * read one for the other would launch a lesson at the learner it is trying to
+ * stop, so they never collapse into one flag.
+ */
+const OPEN_VIDEOS = Object.freeze({ locked: false, reason: 'no-cap', completedToday: 0, cap: null });
+
 const open = (learnerId, status) => ({
   learnerId, status, gated: false, course: null, unit: null, lesson: null, challenge: null,
+  videos: { ...OPEN_VIDEOS },
 });
 
 /**
@@ -156,14 +167,36 @@ export function usePianoLessonGate(learnerId) {
       if (generation !== requestGeneration.current) return;
       settleCeiling(learnerId);
       const gated = result?.gated === true;
+      // FAILS OPEN, like every other unknown here: a School that has never
+      // heard of this field, or a payload that lost it, must not take Videos
+      // away from a child who has watched nothing. Only an explicit `true`
+      // locks.
+      const videos = result?.videos?.locked === true
+        ? {
+          locked: true,
+          reason: result.videos.reason ?? 'daily-cap',
+          completedToday: result.videos.completedToday ?? null,
+          cap: result.videos.cap ?? null,
+        }
+        : { ...OPEN_VIDEOS, ...(result?.videos ?? {}), locked: false };
       setSnapshot((prev) => {
         if (prev.learnerId === learnerId && prev.gated !== gated) {
           logger().info('piano.lesson-gate.change', { learnerId, gated, reason: result?.reason ?? null });
+        }
+        // Its own line, edge-triggered like the gate's: the cap closing is the
+        // moment a parent will later want to find, and it is invisible in a
+        // `gated` that never moved.
+        if (prev.learnerId === learnerId && prev.videos?.locked !== videos.locked) {
+          logger().info('piano.lesson-gate.videos', {
+            learnerId, locked: videos.locked, reason: videos.reason,
+            completedToday: videos.completedToday, cap: videos.cap,
+          });
         }
         return {
           learnerId,
           status: 'ready',
           gated,
+          videos,
           course: gated ? result.course ?? null : null,
           unit: gated ? result.unit ?? null : null,
           lesson: gated ? result.lesson ?? null : null,
@@ -235,7 +268,11 @@ export function usePianoLessonGate(learnerId) {
   // wait" is a house rule, and a rule that is only emergent from two other
   // lines is the kind of implicit contract this whole gate exists to stop.
   const pending = !guest && current.status === 'loading';
-  return { ...current, pending, refresh };
+  // A guest has no School record to be capped against, and `current` for a
+  // guest is always an `open(...)` — this is the same explicit statement of the
+  // invariant `pending` makes above rather than a derivation.
+  const videosLocked = !guest && current.videos?.locked === true;
+  return { ...current, pending, videosLocked, refresh };
 }
 
 export default usePianoLessonGate;

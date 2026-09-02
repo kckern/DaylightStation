@@ -95,6 +95,12 @@ The client reads the side-effect-free School lifecycle completion endpoint and
 fails closed when identity or backend state is unavailable. Guest is explicitly
 treated as `no_work_today`; it is not sent to a per-learner School endpoint.
 
+Two limits on that rule, both added 2026-09-02: a roster member School does not
+track as a learner is not gated at all (`not_gated`), and on `PianoVisualizer` a
+denial resting on a profile picked on an earlier study day reopens the roster
+rather than locking. Both are covered in
+[games-budget-gate.md](./games-budget-gate.md).
+
 ## Addressed-board layout contract
 
 `InstrumentBoardStage` exposes `leftRail`, `primary`, `secondary`, `rightRail`, and `status` slots. Its supported layout policies are:

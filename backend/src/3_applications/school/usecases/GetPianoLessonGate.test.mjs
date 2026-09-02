@@ -174,3 +174,112 @@ describe('GetPianoLessonGate', () => {
     expect(launcher.status).toHaveBeenCalledWith({ userId: 'kid1', programInstance: 'plex:1' });
   });
 });
+
+/**
+ * The daily video cap.
+ *
+ * `gated` means "you still owe today's lesson" and funnels the kiosk INTO a
+ * lesson video. The cap is the opposite end of the same day — "you have had
+ * enough" — so it cannot ride on `gated` without the menu trying to launch a
+ * lesson at a learner it is trying to stop. It is its own field.
+ *
+ * The counter is `completedLessonsToday`, which is the same array the launcher
+ * maps into `servedWork` and the agenda board draws as discs. Counting anything
+ * else would let the board and the cap disagree about the same day.
+ */
+const cappedAt = (cap, courseId = 'plex:1') => [{ programId: 'piano-course', courseId, videosLockedAfter: cap }];
+const doneToday = (n) => ({
+  doneToday: n > 0,
+  completedLessonsToday: Array.from({ length: n }, (_, i) => ({ lesson: { id: `plex:${i}` } })),
+});
+
+describe('GetPianoLessonGate daily video cap', () => {
+  it('locks videos once the completed-lesson count reaches the cap', async () => {
+    const uc = new GetPianoLessonGate({
+      assignments: fakeAssignments(cappedAt(2)), launcher: fakeLauncher(async () => doneToday(2)), logger: console,
+    });
+    const result = await uc.execute({ learnerId: 'kid1' });
+    expect(result.videos).toEqual({ locked: true, reason: 'daily-cap', completedToday: 2, cap: 2 });
+  });
+
+  it('leaves videos open one lesson short of the cap', async () => {
+    const uc = new GetPianoLessonGate({
+      assignments: fakeAssignments(cappedAt(2)), launcher: fakeLauncher(async () => doneToday(1)), logger: console,
+    });
+    const result = await uc.execute({ learnerId: 'kid1' });
+    expect(result.videos).toEqual({ locked: false, reason: 'under-cap', completedToday: 1, cap: 2 });
+  });
+
+  it('stays locked past the cap, never unlocking on overshoot', async () => {
+    const uc = new GetPianoLessonGate({
+      assignments: fakeAssignments(cappedAt(2)), launcher: fakeLauncher(async () => doneToday(5)), logger: console,
+    });
+    expect((await uc.execute({ learnerId: 'kid1' })).videos.locked).toBe(true);
+  });
+
+  // OPTIONAL, and off is the default. Every other learner in the household has
+  // no such field, and must be untouched by this.
+  it('never locks an enrollment that configures no cap', async () => {
+    const uc = new GetPianoLessonGate({
+      assignments: fakeAssignments(enrolledIn('plex:1')), launcher: fakeLauncher(async () => doneToday(9)), logger: console,
+    });
+    const result = await uc.execute({ learnerId: 'kid1' });
+    expect(result.videos).toEqual({ locked: false, reason: 'no-cap', completedToday: 9, cap: null });
+  });
+
+  it.each([0, -1, null, 'two', 1.5])('ignores a cap of %p rather than guessing at it', async (cap) => {
+    const uc = new GetPianoLessonGate({
+      assignments: fakeAssignments([{ programId: 'piano-course', courseId: 'plex:1', videosLockedAfter: cap }]),
+      launcher: fakeLauncher(async () => doneToday(9)), logger: console,
+    });
+    expect((await uc.execute({ learnerId: 'kid1' })).videos.locked).toBe(false);
+  });
+
+  // The cap does not disturb the verdict it rides alongside: a learner who has
+  // hit the cap has by definition done today's lesson, so they are not gated.
+  it('does not gate a capped learner — the day is discharged, the tap is not', async () => {
+    const uc = new GetPianoLessonGate({
+      assignments: fakeAssignments(cappedAt(2)), launcher: fakeLauncher(async () => doneToday(2)), logger: console,
+    });
+    const result = await uc.execute({ learnerId: 'kid1' });
+    expect(result.gated).toBe(false);
+    expect(result.reason).toBe('done');
+  });
+
+  // FAILS OPEN, like every other unknown in this file. The gate hides kiosk
+  // surfaces, and a transient Plex fault must not take Videos away from a child
+  // who has watched nothing.
+  it('leaves videos open when the launcher read is unavailable', async () => {
+    const uc = new GetPianoLessonGate({
+      assignments: fakeAssignments(cappedAt(2)),
+      launcher: fakeLauncher(async () => { throw new Error('plex is down'); }),
+      logger: { warn: vi.fn(), sampled: vi.fn() },
+    });
+    const result = await uc.execute({ learnerId: 'kid1' });
+    expect(result.reason).toBe('unavailable');
+    expect(result.videos.locked).toBe(false);
+  });
+
+  it('leaves a guest unlocked and unmeasured', async () => {
+    const uc = new GetPianoLessonGate({
+      assignments: fakeAssignments(cappedAt(2)), launcher: fakeLauncher(async () => doneToday(9)), logger: console,
+    });
+    expect((await uc.execute({ learnerId: 'guest' })).videos.locked).toBe(false);
+  });
+
+  // Two piano enrollments is unusual but legal, and the class already gates on
+  // ANY owed one. The cap follows the same shape: the strictest lock wins.
+  it('locks when any capped enrollment has reached its cap', async () => {
+    const uc = new GetPianoLessonGate({
+      assignments: fakeAssignments([
+        { programId: 'piano-course', courseId: 'plex:1' },
+        { programId: 'piano-course', courseId: 'plex:2', videosLockedAfter: 2 },
+      ]),
+      launcher: fakeLauncher(async ({ programInstance }) => (
+        programInstance === 'plex:2' ? doneToday(2) : doneToday(0)
+      )),
+      logger: console,
+    });
+    expect((await uc.execute({ learnerId: 'kid1' })).videos.locked).toBe(true);
+  });
+});

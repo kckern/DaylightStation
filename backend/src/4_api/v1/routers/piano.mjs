@@ -102,7 +102,7 @@ function attemptPolicyErrors(userId, body) {
  *   POST   /users/:userId/game-budget/session/:sessionId/close  → seal a session ({ok:true})
  *   POST   /users/:userId/game-budget/credits                   → idempotently mint earned time for a passed assessment
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, idFactory, producerRecords, logger = console }) {
+export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = null, pianoAttemptStore = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, idFactory, producerRecords, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   if (typeof idFactory !== 'function') throw new Error('createPianoRouter: idFactory required');
   if (!producerRecords) throw new Error('createPianoRouter: producerRecords required');
@@ -197,8 +197,43 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
   });
 
   // ── Roster ────────────────────────────────────────────────────────────────
-  router.get('/users', asyncHandler((req, res) => {
-    res.json({ users: ds.getRoster() });
+  //
+  // `schoolLearner` says whether School tracks a study day for this member, and
+  // the kiosk uses it to decide whether the Games school gate applies to them
+  // at all. It belongs on the SERVER side of that question: who is a learner is
+  // a School fact, and a browser that decided it for itself would be deciding
+  // its own entitlement.
+  //
+  // Before this existed, "School publishes no evidence for you" and "School
+  // cannot judge your day" were the same answer to the kiosk — both arrived as
+  // an absent entitlement, which reads `indeterminate` and fails closed. On
+  // 2026-09-02 that had both grown-ups permanently locked out of Games, under
+  // copy telling them to finish schoolwork they had never been assigned.
+  //
+  // FAIL CLOSED means `true` — gated. The expensive mistake is answering
+  // `false` for a child, because that is a games unlock handed out by a School
+  // outage. A grown-up waiting for School to come back is the cheap one, so an
+  // absent, broken, or throwing directory gates everybody, exactly as today.
+  const schoolLearnerIds = async () => {
+    if (typeof schoolLearnerDirectory?.listLearners !== 'function') return null;
+    try {
+      const learners = await schoolLearnerDirectory.listLearners();
+      if (!Array.isArray(learners)) return null;
+      return new Set(learners.map((l) => l?.id ?? l?.learnerId).filter(Boolean).map(String));
+    } catch (err) {
+      logger.warn?.('piano.roster.school-learners-failed', { error: err?.message ?? String(err) });
+      return null;
+    }
+  };
+
+  router.get('/users', asyncHandler(async (req, res) => {
+    const learnerIds = await schoolLearnerIds();
+    res.json({
+      users: (ds.getRoster() || []).map((user) => ({
+        ...user,
+        schoolLearner: learnerIds ? learnerIds.has(String(user.id)) : true,
+      })),
+    });
   }));
 
   // Challenge-provider attempt ledger. Gaming stores only the returned id and

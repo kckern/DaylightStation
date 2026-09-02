@@ -40,6 +40,8 @@
     "@tensorflow/tfjs-converter": "^4.22.0",
     "@tensorflow/tfjs-core": "^4.22.0",
     "@tonejs/midi": "^2.0.28",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "abcjs": "^6.5.2",
     "camera-controls": "^2.10.1",
     "codemirror": "^6.0.2",
