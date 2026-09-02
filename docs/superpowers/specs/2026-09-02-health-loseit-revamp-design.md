@@ -6,6 +6,11 @@
 log, plus small additive backend pieces. No consumers of the old UI exist; the
 HealthHub card grid, hero cards, `HealthDetail` routing, and `Nutrition.jsx`
 are retired outright.
+**Program context:** This is **Phase 2 of the webapp design system program**
+([2026-09-02-webapp-design-system-unification-design.md](2026-09-02-webapp-design-system-unification-design.md))
+and its first consumer: the shell, header, tabs, sheets, combobox chrome,
+state views, data hooks, and hotkeys described below come from `@/lib/ui` /
+`@/lib/theme`, not app-local implementations.
 
 ## Goal
 
