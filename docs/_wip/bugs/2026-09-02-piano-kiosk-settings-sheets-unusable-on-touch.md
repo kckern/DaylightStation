@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-02
 **Found by:** KC, screenshots of the live kiosk (Sound, Sound → Browse instruments, Piano maintenance, Maintenance → Connection details, Maintenance → Advanced recovery)
-**Status:** open — design agreed in `docs/_wip/plans/2026-09-02-piano-kiosk-settings-landscape-redesign.md`; not implemented
+**Status:** fixed on `piano/settings-landscape` (unmerged); see the plan.
 **Severity:** the two adult/player settings surfaces of the kiosk. Changing an instrument or pairing Bluetooth — the two things a person opens these sheets for — are the two hardest things to do in them.
 **Surfaces:** `frontend/src/modules/Piano/PianoKiosk/SoundPanel.jsx`, `OperatorDrawer.jsx`, `PianoSheet.jsx`; styles in `frontend/src/Apps/PianoApp.scss` (`.piano-sheet` 152–169, `.piano-sound-panel` 2488–2585, `.piano-operator-drawer` 2587–2643)
 **Design that was supposed to govern this:** `docs/_wip/plans/2026-07-11-piano-kiosk-settings-rebuild-design.md` (marked *superseded*; nothing supersedes it — the piano README describes the sheets in three sentences)

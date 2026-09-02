@@ -210,9 +210,15 @@ A few components appear across many modes because they are the kiosk's visual vo
 - **The chord staff** — a live grand staff that shows the peak chord under the hands,
   detects the key signature from a rolling buffer, and decays shortly after release.
 - **The chrome** — a persistent header carrying a breadcrumb trail and a Sound chip. Tap
-  the chip to choose instruments, room sound, saved sounds, and the piano-wide level; hold
-  it for 550ms to open adult-only **Piano maintenance**. There is deliberately no Settings
-  gear. Connection health, the reconnect banner, and Maintenance share one connection model,
+  the chip to open **Sound** — a full-canvas sheet with a family rail (Mine, Pianos,
+  Keys & Organs, Guitars & Bass, Strings, Voices, Winds & Brass, Synths, World, Drums &
+  Fun), a one-tap voice grid, and a tone column of Reverb / Chorus / Piano level ladders
+  with a "Hear it" audition; hold it for 550ms to open adult-only **Piano maintenance** —
+  a status card, Bluetooth pairing and Repair connection up front, everyday tiles, and a
+  danger strip for Restart / Reboot with a visible armed state. Voice tiles carry colour
+  illustrations from `media/img/music/instruments/`, with the family icon as the fallback
+  when a voice has none. Neither sheet scrolls at 1280×800. There is deliberately no
+  Settings gear. Connection health, the reconnect banner, and Maintenance share one connection model,
   so only Maintenance exposes diagnostics, Bluetooth pairing, repair, or recovery actions.
 - **Icons** — inline single-colour SVGs that inherit their button's colour.
 - **Transport primitives** — the touch controls shared by every player-style mode
