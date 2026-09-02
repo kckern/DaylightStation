@@ -6,7 +6,7 @@ import {
 
 const timezone = 'America/Los_Angeles';
 const now = Date.parse('2026-08-29T12:00:00-07:00');
-const learner = new SubjectRef({ kind: 'learner', id: 'learner-a' });
+const learner = new SubjectRef({ kind: 'learner', id: 'user_4' });
 const day = PeriodRef.localDay('2026-08-29', timezone);
 
 function claim(overrides = {}) {

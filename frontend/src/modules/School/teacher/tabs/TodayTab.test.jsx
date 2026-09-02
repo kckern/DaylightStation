@@ -35,7 +35,7 @@ vi.mock('../../schoolApi.js', () => ({
 const { schoolApi } = await import('../../schoolApi.js');
 const { teacherWorkspaceApi } = await import('../teacherWorkspaceApi.js');
 
-const KIDS = [{ id: 'learner-a', name: 'Learner A' }, { id: 'learner-b', name: 'Learner B' }];
+const KIDS = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
 const ok = (data) => ({ ok: true, status: 200, data });
 const fail = (status) => ({ ok: false, status, data: null });
 
@@ -58,14 +58,14 @@ beforeEach(() => {
   schoolApi.printDeny.mockResolvedValue(ok({ decision: 'denied' }));
   schoolApi.quizRequestDismiss.mockResolvedValue(ok({ dismissed: true }));
   schoolApi.teacherDay.mockResolvedValue(ok([
-    { learnerId: 'learner-a', effectiveScoreTotals: { correct: 5, total: 7 }, sessions: [{ sessionId: 'ses_1', unitId: 'unit-illinois', lessonTitle: 'Illinois', subject: 'civilization', courseTitle: 'United States Regions and States', moduleTitle: 'Midwest', posterUrl: '/course-poster.jpg', studyDay: '2026-08-24', effectiveScore: { correctCount: 5, totalCount: 7, percent: 71 }, state: 'graded',
+    { learnerId: 'user_4', effectiveScoreTotals: { correct: 5, total: 7 }, sessions: [{ sessionId: 'ses_1', unitId: 'unit-illinois', lessonTitle: 'Illinois', subject: 'civilization', courseTitle: 'United States Regions and States', moduleTitle: 'Midwest', posterUrl: '/course-poster.jpg', studyDay: '2026-08-24', effectiveScore: { correctCount: 5, totalCount: 7, percent: 71 }, state: 'graded',
       // The digest itself carries the paper-record refs (GetTeacherToday) —
       // this is what lets the grid show them with zero per-session fetches.
       artifacts: {
         worksheet: { artifactId: 'worksheet-1', originalPdfUrl: '/issued/illinois.pdf', thumbnailUrl: '/issued/illinois-thumb.png' },
         receipt: { artifactId: 'receipt-1', originalUrl: '/issued/illinois-receipt.png' },
       } }], pendingReview: 2 },
-    { learnerId: 'learner-b', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 },
+    { learnerId: 'user_2', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 },
   ]));
   // The day's plan, for the "not yet started" cards: Illinois is claimed by
   // the recorded session (unit match); the math offer has no session yet.
@@ -74,7 +74,7 @@ beforeEach(() => {
     { subject: 'math', next: { unitId: 'unit-fractions', title: 'Fractions Intro' } },
   ] }));
   schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [
-    { sessionId: 'ses_1', itemId: 'q3', learnerId: 'learner-a', prompt: 'Explain photosynthesis', given: 'plants eat light', questionNumber: 3 },
+    { sessionId: 'ses_1', itemId: 'q3', learnerId: 'user_4', prompt: 'Explain photosynthesis', given: 'plants eat light', questionNumber: 3 },
   ] }));
   teacherWorkspaceApi.session.mockResolvedValue(ok({
     sessionId: 'ses_1', taxonomy: { subject: 'civilization', courseTitle: 'United States Regions and States', moduleTitle: 'Midwest', lessonTitle: 'Illinois', posterUrl: '/course-poster.jpg' },
@@ -84,18 +84,18 @@ beforeEach(() => {
     ],
   }));
   schoolApi.printPending.mockResolvedValue(ok([
-    { id: 'pr_1', userId: 'learner-a', printableId: 'state-capitals', label: 'US State Capitals', pages: 6, copies: 1 },
+    { id: 'pr_1', userId: 'user_4', printableId: 'state-capitals', label: 'US State Capitals', pages: 6, copies: 1 },
   ]));
   schoolApi.quizRequests.mockResolvedValue(ok([
-    { at: '2026-08-06T10:00:00Z', userId: 'learner-b', unitId: 'plex:123', unitTitle: 'Fractions Ep. 4', materialTitle: 'Math Course' },
+    { at: '2026-08-06T10:00:00Z', userId: 'user_2', unitId: 'plex:123', unitTitle: 'Fractions Ep. 4', materialTitle: 'Math Course' },
   ]));
 });
 
 describe('TodayTab', () => {
   it('joins digest rows with roster names and counts the day, not one lesson', async () => {
     mount(<TodayTab kids={KIDS} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
-    expect(screen.getByRole('button', { name: /Learner B/ })).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ })).toBeTruthy());
+    expect(screen.getByRole('button', { name: /User_2/ })).toBeTruthy();
     // "5 / 7 correct" was one worksheet's marks standing for a whole
     // student-day. The row is scoped to a day, so it counts lessons.
     await waitFor(() => expect(screen.getByText('1 of 2 lessons done')).toBeInTheDocument());
@@ -124,10 +124,10 @@ describe('TodayTab', () => {
     // shape — which is the whole bug. The entry resolved it correctly and then
     // passed the raw row value down anyway.
     schoolApi.teacherDay.mockResolvedValue(ok({ studyDay: '2026-08-26', learners: [
-      { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [] },
+      { learnerId: 'user_4', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [] },
     ] }));
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     const link = await screen.findByRole('link', { name: /Open the full day record/ });
     expect(link.getAttribute('href')).toContain('2026-08-26');
   });
@@ -136,9 +136,9 @@ describe('TodayTab', () => {
   // 20px apart, over a button whose whole surface is the toggle.
   it('keeps the agenda link outside the row toggle', async () => {
     mount(<TodayTab kids={KIDS} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ })).toBeTruthy());
     const agenda = screen.getAllByRole('link', { name: /printed agenda/i })[0];
-    const toggle = screen.getByRole('button', { name: /Learner A/ });
+    const toggle = screen.getByRole('button', { name: /User_4/ });
     expect(toggle.contains(agenda)).toBe(false);
     // The chevron, by contrast, belongs to the surface it describes.
     expect(toggle.querySelector('.teacher-roster__disclosure')).not.toBeNull();
@@ -152,8 +152,8 @@ describe('TodayTab', () => {
     // the plan whether or not anyone expands it. Two learners, two reads —
     // never one per session, which is the N+1 that stays dead.
     mount(<TodayTab kids={KIDS} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /Learner A/ })); });
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ })).toBeTruthy());
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /User_4/ })); });
     expect(await screen.findByRole('link', { name: /Open the full day record/i })).toBeInTheDocument();
     expect(screen.getByText('Illinois')).toBeTruthy();
     // The course and unit ride the card's header band as one breadcrumb.
@@ -169,7 +169,7 @@ describe('TodayTab', () => {
 
   it('shows the day as a grid: done work beside planned-but-unstarted lessons', async () => {
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     const grid = await screen.findByTestId('lesson-grid');
     await waitFor(() => expect(within(grid).getAllByTestId('lesson-card').length).toBe(2));
     // Done: the recorded Illinois session claims its planned section (unit
@@ -189,7 +189,7 @@ describe('TodayTab', () => {
     // the receipt icon opens the PNG. Neither costs a session fetch.
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     expect(await screen.findByRole('link', { name: /Open the worksheet/i }))
       .toHaveAttribute('href', '/issued/illinois.pdf');
     expect(screen.getByRole('link', { name: /Open the worksheet/i })).toHaveAttribute('target', '_blank');
@@ -205,7 +205,7 @@ describe('TodayTab', () => {
       { subject: 'math', servedToday: false, next: { unitId: 'place-value', title: 'Place Value Retry', sessionId: 'ses_retry' } },
     ] }));
     schoolApi.teacherDay.mockResolvedValue(ok({ studyDay: '2026-08-31', learners: [{
-      learnerId: 'learner-a', pendingReview: 0,
+      learnerId: 'user_4', pendingReview: 0,
       sessions: [{ sessionId: 'ses_retry', unitId: 'place-value', lessonTitle: 'Place Value Retry',
         subject: 'math', state: 'issued', studyDay: '2026-08-31', artifacts: { worksheet: null, receipt: null },
         remediation: { ofSessionId: 'ses_original', activeSessionId: null, variant: 1 } }],
@@ -217,7 +217,7 @@ describe('TodayTab', () => {
     }] }));
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     expect(await screen.findByRole('heading', { name: 'Marked today' })).toBeInTheDocument();
     expect(screen.getAllByTestId('lesson-card')).toHaveLength(2);
     expect(screen.getByRole('link', { name: /Open active retry/ })).toHaveAttribute('href', expect.stringContaining('ses_retry'));
@@ -230,15 +230,15 @@ describe('TodayTab', () => {
   it('the agenda is one tap from the roster card, outside the accordion', async () => {
     mount(<TodayTab kids={KIDS} />);
     const open = vi.spyOn(window, 'open').mockImplementation(() => ({}));
-    const link = await screen.findByRole('link', { name: /Open Learner A's printed agenda/i });
-    expect(link.getAttribute('href')).toContain('/learners/learner-a/agenda/preview');
+    const link = await screen.findByRole('link', { name: /Open User_4's printed agenda/i });
+    expect(link.getAttribute('href')).toContain('/learners/user_4/agenda/preview');
     // Not behind the disclosure: it is there before anything is expanded.
     expect(screen.queryByTestId('lesson-grid')).not.toBeInTheDocument();
     // A window sized to the sheet, not a whole tab for a 580px column.
     fireEvent.click(link);
     expect(open).toHaveBeenCalledWith(
       expect.stringContaining('/agenda/preview'),
-      'agenda-learner-a',
+      'agenda-user_4',
       expect.stringContaining('width=620'),
     );
     open.mockRestore();
@@ -247,7 +247,7 @@ describe('TodayTab', () => {
   it('a failed agenda read degrades to recorded work, never a dead drill-in', async () => {
     schoolApi.agendaPreview.mockResolvedValue(fail(500));
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     const grid = await screen.findByTestId('lesson-grid');
     expect(within(grid).getByText('Illinois')).toBeInTheDocument();
     expect(await screen.findByText(/Couldn’t load the day’s plan/)).toBeInTheDocument();
@@ -255,7 +255,7 @@ describe('TodayTab', () => {
 
   it('offers one route into the full day record instead of re-rendering it', async () => {
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     expect(await screen.findByRole('link', { name: /Open the full day record/i }))
       .toHaveAttribute('href', expect.stringContaining('/day'));
     expect(screen.queryByText('Today’s paper and results')).not.toBeInTheDocument();
@@ -273,12 +273,12 @@ describe('TodayTab', () => {
   // made this label look permanently dead.
   it('says a session is awaiting review once it has been submitted', async () => {
     schoolApi.teacherDay.mockResolvedValue(ok([
-      { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 1 }, pendingReview: 1, sessions: [
+      { learnerId: 'user_4', effectiveScoreTotals: { correct: 0, total: 1 }, pendingReview: 1, sessions: [
         { sessionId: 'ses_2', lessonTitle: 'Photosynthesis', subject: 'science', state: 'submitted', reviewStatus: 'pending' },
       ] },
     ]));
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     expect(await screen.findByText(/Awaiting review/)).toBeInTheDocument();
     expect(screen.queryByText(/Not graded/)).not.toBeInTheDocument();
   });
@@ -296,10 +296,10 @@ describe('TodayTab', () => {
         progressRows: [{ scope: 'module', label: 'Unit 2 · Chords & the Grand Staff' }] },
     ] }));
     schoolApi.teacherDay.mockResolvedValue(ok([
-      { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [] },
+      { learnerId: 'user_4', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [] },
     ]));
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     expect(await screen.findByText('Rhythm Improvisation with Chords')).toBeInTheDocument();
     expect(screen.queryByText('No work offered')).toBeNull();
     // The title is the lesson's name, not the sentence about it.
@@ -314,7 +314,7 @@ describe('TodayTab', () => {
   // sat in the header band and out-weighed the title it was there to locate.
   it('keeps the breadcrumb out of the header band, under the lesson name', async () => {
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     const crumb = await screen.findByText('United States Regions and States › Midwest');
     expect(crumb.closest('.teacher-lesson-card__header')).toBeNull();
     expect(crumb.closest('.teacher-lesson-card__copy')).not.toBeNull();
@@ -329,10 +329,10 @@ describe('TodayTab', () => {
         servedWork: [{ unitId: 'atlas-p088', title: 'Ohio' }] },
     ] }));
     schoolApi.teacherDay.mockResolvedValue(ok([
-      { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [] },
+      { learnerId: 'user_4', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [] },
     ]));
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     expect(await screen.findByText('Ohio')).toBeInTheDocument();
     expect(screen.queryByText('No work offered')).toBeNull();
   });
@@ -348,14 +348,14 @@ describe('TodayTab', () => {
         next: { unitId: 'unit-psalms', title: 'Psalms 62–66', sessionId: 'ses_3', status: 'in_progress' } },
     ] }));
     schoolApi.teacherDay.mockResolvedValue(ok([
-      { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [
+      { learnerId: 'user_4', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [
         { sessionId: 'ses_3', unitId: 'unit-psalms', lessonTitle: 'Psalms 62–66', subject: 'scripture',
           state: 'created', reviewStatus: 'complete', effectiveScore: null,
           artifacts: { worksheet: null, receipt: null } },
       ] },
     ]));
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     expect(await screen.findByText('Psalms 62–66')).toBeInTheDocument();
     expect(screen.getByText('Not started')).toBeInTheDocument();
     expect(screen.queryByText(/Not graded/)).toBeNull();
@@ -368,7 +368,7 @@ describe('TodayTab', () => {
 
   it('scores render as marks plus a percent, stating the count only once (as the marks’ label)', async () => {
     mount(<TodayTab kids={KIDS} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     const marks = await screen.findByTestId('score-marks');
     // 5 green checks + 2 red crosses — the count lives in the marks and their
     // accessible name; percent appears once as text, never "5 of 7 · 71%".
@@ -397,7 +397,7 @@ describe('TodayTab', () => {
   it('mixed availability -> no banner; the healthy panel still renders', async () => {
     schoolApi.lifecycleReview.mockResolvedValue(fail(404));
     mount(<TodayTab kids={KIDS} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ })).toBeTruthy());
     expect(screen.queryByText(/lifecycle is not enabled/i)).toBe(null);
   });
 
@@ -436,13 +436,13 @@ describe('TodayTab', () => {
       // The default beforeEach fixture carries no `obligation` on either
       // section — the ordinary, healthy-day shape.
       mount(<TodayTab kids={KIDS} />);
-      await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
+      await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ })).toBeTruthy());
       await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalledTimes(KIDS.length));
       expect(screen.queryByTestId('grownup-strip')).not.toBeInTheDocument();
     });
 
     it('counts a fault and an actionable excuse across BOTH learners, and links to the first', async () => {
-      schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'learner-a'
+      schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'user_4'
         ? [
           { subject: 'civilization', next: { unitId: 'unit-illinois', title: 'Illinois' } },
           { subject: 'science', next: null, obligation: { state: 'faulted', reason: 'program_unavailable' } },
@@ -451,8 +451,8 @@ describe('TodayTab', () => {
       mount(<TodayTab kids={KIDS} />);
       const strip = await screen.findByTestId('grownup-strip');
       expect(strip).toHaveTextContent('2 subjects need a grown-up');
-      // learner-a's own fault is first in roster order, so the strip lands
-      // on School Operations, not learner-b's Courses page.
+      // user_4's own fault is first in roster order, so the strip lands
+      // on School Operations, not user_2's Courses page.
       expect(strip).toHaveAttribute('href', '/school/teacher/operations');
     });
 
@@ -473,7 +473,7 @@ describe('TodayTab', () => {
     });
 
     it('shows the tally AND the caution when one learner reads and another does not', async () => {
-      schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'learner-a'
+      schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'user_4'
         ? ok({ sections: [{ subject: 'science', next: null, obligation: { state: 'faulted', reason: 'program_unavailable' } }] })
         : fail(500)));
       mount(<TodayTab kids={KIDS} />);
@@ -483,7 +483,7 @@ describe('TodayTab', () => {
     });
 
     it('uses singular copy for exactly one subject', async () => {
-      schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'learner-a'
+      schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'user_4'
         ? [
           { subject: 'civilization', next: { unitId: 'unit-illinois', title: 'Illinois' } },
           { subject: 'math', next: null, obligation: { state: 'excused', reason: 'awaiting_grown_up' } },
@@ -565,7 +565,7 @@ describe('wave-2 mutations', () => {
   it('dismissing a quiz request demands a reason and sends it (advocacy A5)', async () => {
     await claim();
     schoolApi.quizRequests.mockResolvedValue(ok([
-      { at: 't', userId: 'learner-b', unitId: 'plex:123', unitTitle: 'Fractions Ep. 4', materialTitle: 'Math Course', fulfilled: true },
+      { at: 't', userId: 'user_2', unitId: 'plex:123', unitTitle: 'Fractions Ep. 4', materialTitle: 'Math Course', fulfilled: true },
     ]));
     mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/bank authored/)).toBeTruthy());
@@ -579,18 +579,18 @@ describe('wave-2 mutations', () => {
     });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Dismiss & tell them/ })); });
     await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(
-      { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'learner-b', dismissedBy: 'kckern', pin: null, reason: 'We will do this one together' }));
+      { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'user_2', dismissedBy: 'kckern', pin: null, reason: 'We will do this one together' }));
   });
 
   it('a kid-filed retake ask renders with its badge and want-another-try copy', async () => {
     await claim();
     schoolApi.quizRequests.mockResolvedValue(ok([
-      { at: 't', kind: 'retake', userId: 'learner-b', bankId: 'science/creature-basics/01-quiz', title: 'Creature Basics Quiz' },
+      { at: 't', kind: 'retake', userId: 'user_2', bankId: 'science/creature-basics/01-quiz', title: 'Creature Basics Quiz' },
     ]));
     mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('retake')).toBeTruthy());
     expect(screen.getByText('Creature Basics Quiz')).toBeTruthy();
-    expect(screen.getByText(/wants another try — asked by Learner B/)).toBeTruthy();
+    expect(screen.getByText(/wants another try — asked by User_2/)).toBeTruthy();
   });
 });
 
@@ -599,7 +599,7 @@ describe('advocacy wave 6A', () => {
   it('review items show rubric, reason, and wait-age', async () => {
     sessionStorage.setItem('school-teacher-claim', 'kckern');
     schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [{
-      sessionId: 'ses_1', itemId: 'q3', learnerId: 'learner-a', prompt: 'Explain photosynthesis',
+      sessionId: 'ses_1', itemId: 'q3', learnerId: 'user_4', prompt: 'Explain photosynthesis',
       given: 'plants eat light', questionNumber: 3, reason: 'free_response',
       rubric: 'Full credit for light + chlorophyll + sugar', enqueuedAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
     }] }));

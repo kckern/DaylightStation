@@ -188,3 +188,14 @@ docs/_moveme/
 # build time — neither belongs in a public repo.
 _extensions/ti86-app/dist/
 /tmp
+
+# Screenshots and scratch captures. This repo is public and screenshots of a
+# running household kiosk show real names, schedules and telemetry as PIXELS —
+# which no text scrub or push guard can see. 88 such files (19MB of audit and
+# extension-doc captures) were removed on 2026-09-01.
+#
+# Deliberately NOT a blanket *.png ban: it would silently stop `git add` on
+# regenerated golden snapshots (tests/isolated/rendering/school/golden/) and on
+# the favicon set, both of which are functional. Keep bitmaps to those two
+# places and to tests/_fixtures/; put anything else here.
+.playwright-mcp/

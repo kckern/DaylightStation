@@ -51,8 +51,8 @@ async function harness({ enabled = true, ingress = true, auth = true, actionKey 
   };
   const schoolService = { importSchoolCalcAssessment: vi.fn(async () => ({ score: 1 })) };
   const learnerDirectory = {
-    listLearners: vi.fn(() => [{ id: 'learner-a', name: 'Alpha' }]),
-    hasLearner: vi.fn((id) => id === 'learner-a'),
+    listLearners: vi.fn(() => [{ id: 'user_4', name: 'Alpha' }]),
+    hasLearner: vi.fn((id) => id === 'user_4'),
   };
   const learningProgress = {
     execute: vi.fn(async ({ scopeId }) => ({
@@ -129,7 +129,7 @@ describe('SchoolCalc composition', () => {
     });
     expect(enrolled.device).toMatchObject({
       deviceId: 'SCA1B2C3D4E5F6', platformId: 'ti86',
-      learnerBindings: [expect.objectContaining({ learnerKey: 1, learnerId: 'learner-a' })],
+      learnerBindings: [expect.objectContaining({ learnerKey: 1, learnerId: 'user_4' })],
     });
     expect(decodeTi86Envelope(enrolled.identityRecord, 'SCI1')).toEqual({
       deviceId: 'SCA1B2C3D4E5F6', schema: 'school.calc.device-identity/v1',

@@ -56,6 +56,22 @@ export class ZoneProfileStore {
     // Per-user hysteresis state: Map<userId, { committedZoneId, lastCommitTs, rawZoneId, rawZoneStableSince }>
     this._hysteresis = new Map();
     this._profileCache = new Map();
+    // Bumped only when the per-user zone THRESHOLDS change. Consumers that
+    // cache anything derived from zoneConfig (TreasureBox's override maps) poll
+    // this instead of being told to invalidate — a push model needs every call
+    // site to remember, and one that forgets scores rings on stale thresholds.
+    this._zoneConfigRevision = 0;
+    this._zoneConfigSignature = null;
+  }
+
+  /**
+   * Revision of the per-user zone thresholds. Changes ONLY when some user's
+   * zoneConfig id:min set changes — not when heart rate or committed zone move,
+   * which is most of what syncFromUsers() reports as "changed".
+   * @returns {number}
+   */
+  getZoneConfigRevision() {
+    return this._zoneConfigRevision;
   }
 
   setBaseZoneConfig(zoneConfig) {
@@ -81,6 +97,7 @@ export class ZoneProfileStore {
     this._signature = null;
     this._hysteresis.clear();
     this._profileCache.clear();
+    this.#bumpZoneConfigRevisionIfChanged(this._profiles);
   }
 
   syncFromUsers(usersIterable) {
@@ -107,6 +124,7 @@ export class ZoneProfileStore {
     }
     this._profiles = nextMap;
     this._signature = signature;
+    this.#bumpZoneConfigRevisionIfChanged(nextMap);
     return true;
   }
 
@@ -361,6 +379,22 @@ export class ZoneProfileStore {
     }));
     fingerprint.sort((a, b) => String(a.slug || '').localeCompare(String(b.slug || '')));
     return JSON.stringify(fingerprint);
+  }
+
+  #bumpZoneConfigRevisionIfChanged(map) {
+    // Thresholds only. Deliberately narrower than #computeSignature, whose
+    // volatile hr/zone/progress fields are what governance's change
+    // notification needs and must not be narrowed.
+    const parts = Array.from(map.values()).map((profile) => {
+      const config = (profile.zoneConfig || []).map((zone) => `${zone.id}:${zone.min ?? ''}`).join('|');
+      return `${profile.slug || profile.id}=${config}`;
+    });
+    parts.sort();
+    const signature = parts.join(';');
+    if (signature !== this._zoneConfigSignature) {
+      this._zoneConfigSignature = signature;
+      this._zoneConfigRevision += 1;
+    }
   }
 
   #userInputSignature(user) {

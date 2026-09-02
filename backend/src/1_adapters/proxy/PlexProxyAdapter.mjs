@@ -193,6 +193,30 @@ export class PlexProxyAdapter {
   }
 
   /**
+   * Where a missing playlist poster actually lives.
+   *
+   * Plex gives a playlist two art fields — `thumb` (a custom uploaded poster)
+   * and `composite` (the auto-generated 2x2 mosaic) — stamped with the same
+   * key. Content URLs prefer `thumb` so custom art is reachable at all, but a
+   * few playlists advertise a thumb whose image file is gone upstream. Deriving
+   * the composite from the 404 recovers those without a metadata round-trip per
+   * request, and without having to know up front which playlists have real art.
+   *
+   * Only digits are carried across, so nothing from the request shapes the
+   * fallback path beyond a rating key and a version key.
+   *
+   * @param {string} path - Upstream path that was requested
+   * @param {number} statusCode - Upstream status code
+   * @returns {string|null} Path to try instead, or null for none
+   */
+  getFallbackPath(path, statusCode) {
+    if (statusCode !== 404) return null;
+    const pathname = String(path || '').split('?')[0];
+    const match = /\/library\/metadata\/(\d+)\/thumb\/(\d+)$/.exec(pathname);
+    return match ? `/playlists/${match[1]}/composite/${match[2]}` : null;
+  }
+
+  /**
    * Longer timeout for media operations
    * @returns {number}
    */

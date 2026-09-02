@@ -539,8 +539,8 @@ Result: two discrete ≥44px targets (row toggle, agenda) with real separation, 
 
 `tabs/TodayTab.test.jsx`:
 
-- `joins digest rows… shows the day numbers` (`:92-97`): the `5 / 7` assertion inverts — assert `queryByText(/\d+\s*\/\s*\d+\s*correct/)` is null; assert the lesson summary ("1 of 2 lessons done" for the learner-a fixture) appears after the agenda settles.
-- `points an idle learner at their plan…` (`:189`): keeps passing — learner-b joins to zero done rows; amend to also assert learner-a (who has a done row) does NOT get the link.
+- `joins digest rows… shows the day numbers` (`:92-97`): the `5 / 7` assertion inverts — assert `queryByText(/\d+\s*\/\s*\d+\s*correct/)` is null; assert the lesson summary ("1 of 2 lessons done" for the user_4 fixture) appears after the agenda settles.
+- `points an idle learner at their plan…` (`:189`): keeps passing — user_2 joins to zero done rows; amend to also assert user_4 (who has a done row) does NOT get the link.
 - **New (issue 11):** assert `Open the full day record` href ends with `/day/2026-08-26`-style segment when the fixture digest row carries `studyDay` on sessions but not on the row — mock `localDay` or inject `studyDay` via the `RosterStrip` prop path (`TodayTab` passes `studyDay={…today.data?.studyDay…}`; the array-shaped fixture passes null, exercising the `localDay()` fallback — pin the date with `vi.setSystemTime`).
 - **New (issue 12):** agenda link and roster button are separate accessibility-tree targets and the link is not a descendant of the button (it never was in markup; the regression this guards is someone "simplifying" the layout by nesting it).
 

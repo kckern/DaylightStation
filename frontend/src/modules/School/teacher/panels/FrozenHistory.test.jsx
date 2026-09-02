@@ -22,7 +22,7 @@ describe('FrozenHistory', () => {
         { periodId: 'fall-2026', period: { label: 'Fall 2026' }, closedBy: 'kckern', closedAt: '2026-12-20T00:00:00Z' },
       ],
     });
-    render(<FrozenHistory learnerId="learner-a" />);
+    render(<FrozenHistory learnerId="user_4" />);
     expect(await screen.findByText('Fall 2026')).toBeInTheDocument();
     expect(screen.getByText(/Closed by kckern/)).toBeInTheDocument();
   });
@@ -32,14 +32,14 @@ describe('FrozenHistory', () => {
   // health panel — this list links there instead of duplicating it.
   it('links to System health for a period\'s preserved (superseded) versions', async () => {
     schoolApi.reportCardFrozen.mockResolvedValue({ ok: true, status: 200, data: [] });
-    render(<FrozenHistory learnerId="learner-a" />);
+    render(<FrozenHistory learnerId="user_4" />);
     const link = await screen.findByRole('link', { name: /System health/ });
     expect(link).toHaveAttribute('href', '/school/teacher/operations');
   });
 
   it('renders the link even while the closed-periods read is still loading', () => {
     schoolApi.reportCardFrozen.mockReturnValue(new Promise(() => {})); // never resolves
-    render(<FrozenHistory learnerId="learner-a" />);
+    render(<FrozenHistory learnerId="user_4" />);
     expect(screen.getByRole('link', { name: /System health/ })).toBeInTheDocument();
   });
 });

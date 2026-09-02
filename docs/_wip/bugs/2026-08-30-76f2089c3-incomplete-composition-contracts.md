@@ -6,7 +6,7 @@
 **Introduced by:** `76f2089c37e1aac702033e312aa364eeb80c26cd`
 **Migration title:** `refactor(backend): complete DDD boundary remediation`
 **Migration size:** 2,103 files, 46,519 insertions, 34,947 deletions
-**Author and committer recorded by Git:** KC Kern `<kc@kckern.com>`
+**Author and committer recorded by Git:** User_1 `<user_1@example.com>`
 **Production revision inspected:** `ca72bbc8d417e432b533ccb8b896489c93568e02`
 **Primary evidence:** deployed scheduler state, VictoriaLogs, exact-revision Git comparison, source-contract audit, and focused composition tests
 

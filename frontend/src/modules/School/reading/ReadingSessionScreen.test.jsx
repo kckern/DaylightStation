@@ -38,7 +38,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
 import { ReadingSessionScreen } from './ReadingSessionScreen.jsx';
 
 const SUMMARY = {
-  learnerId: 'learner-c', displayName: 'Learner C', enrolled: true, error: false,
+  learnerId: 'user_5', displayName: 'User_5', enrolled: true, error: false,
   count: 1, target: 2, progressLabel: '1 of 2 stories', doneToday: false,
   yesterday: [{ title: 'Corduroy', contentId: 'plex:1' }],
 };
@@ -76,19 +76,19 @@ describe('ReadingSessionScreen', () => {
 
   it('open: the child sees themselves, the question, the count and yesterday', async () => {
     render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
 
     expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'open');
     expect(screen.getByText('What do you want to read today?')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('Learner C')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('User_5')).toBeInTheDocument());
     expect(screen.getByTestId('reading-count')).toHaveTextContent('1 of 2 stories');
     expect(screen.getByTestId('reading-yesterday')).toHaveTextContent('Corduroy');
   });
 
   it('picking: the cover, the title, a visible countdown and how to change your mind', async () => {
     render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-    await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:620681' });
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681' });
 
     expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'picking');
     expect(screen.getByTestId('reading-countdown')).toBeInTheDocument();
@@ -101,9 +101,9 @@ describe('ReadingSessionScreen', () => {
   // wrong child, so a different card drops it and goes back to the prompt.
   it('a different card during the countdown swaps the learner and DROPS the pick', async () => {
     render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-    await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:620681' });
-    await deliver({ event: 'session-open', learnerId: 'learner-d', location: 'livingroom' });
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681' });
+    await deliver({ event: 'session-open', learnerId: 'user_3', location: 'livingroom' });
 
     expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'open');
     expect(screen.queryByTestId('reading-pick')).toBeNull();
@@ -113,8 +113,8 @@ describe('ReadingSessionScreen', () => {
   // nothing queues — the child's half of that is being told why.
   it('a refused mid-story tap says so on screen', async () => {
     render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-    await deliver({ event: 'book-refused', learnerId: 'learner-c', contentId: 'plex:999', reason: 'finish-this-one' });
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({ event: 'book-refused', learnerId: 'user_5', contentId: 'plex:999', reason: 'finish-this-one' });
 
     expect(screen.getByTestId('reading-notice')).toHaveTextContent('Finish this one first');
     expect(h.cues).toContain('warn');
@@ -124,8 +124,8 @@ describe('ReadingSessionScreen', () => {
   // and it must not stop a four-year-old picking a book.
   it('an unreadable obligation is said out loud, and the prompt stays usable', async () => {
     render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-    await deliver({ event: 'session-error', learnerId: 'learner-c', reason: 'obligation-unreadable' });
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({ event: 'session-error', learnerId: 'user_5', reason: 'obligation-unreadable' });
 
     expect(screen.getByTestId('reading-notice')).toHaveTextContent("I can't check your reading list");
     expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'open');
@@ -142,15 +142,15 @@ describe('ReadingSessionScreen', () => {
   it('clears the screensaver when a session opens, so the prompt is actually visible', async () => {
     render(<ReadingSessionScreen />);
     expect(h.overlay.dismissed).toBe(0);
-    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
     expect(h.overlay.dismissed).toBe(1);
   });
 
   it('and does not keep clearing it for every event inside the session', async () => {
     render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-    await deliver({ event: 'session-open', learnerId: 'learner-d', location: 'livingroom' });
-    await deliver({ event: 'session-error', learnerId: 'learner-d', reason: 'obligation-unreadable' });
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({ event: 'session-open', learnerId: 'user_3', location: 'livingroom' });
+    await deliver({ event: 'session-error', learnerId: 'user_3', reason: 'obligation-unreadable' });
     expect(h.overlay.dismissed).toBe(1);
   });
 
@@ -163,7 +163,7 @@ describe('ReadingSessionScreen', () => {
    */
   it('a refused card acknowledges the tap even with no session open', async () => {
     render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-refused', learnerId: 'learner-c', location: 'livingroom', reason: 'content-playing' });
+    await deliver({ event: 'session-refused', learnerId: 'user_5', location: 'livingroom', reason: 'content-playing' });
 
     expect(screen.getByTestId('reading-notice')).toHaveTextContent('Something else is playing');
     expect(h.cues).toContain('warn');
@@ -171,7 +171,7 @@ describe('ReadingSessionScreen', () => {
 
   it('and the refusal does not open a prompt, or otherwise take the screen', async () => {
     render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-refused', learnerId: 'learner-c', location: 'livingroom', reason: 'content-playing' });
+    await deliver({ event: 'session-refused', learnerId: 'user_5', location: 'livingroom', reason: 'content-playing' });
 
     expect(screen.queryByTestId('reading-prompt')).toBeNull();
     expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'idle');
@@ -184,7 +184,7 @@ describe('ReadingSessionScreen', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     try {
       const { container } = render(<ReadingSessionScreen />);
-      await deliver({ event: 'session-refused', learnerId: 'learner-c', location: 'livingroom', reason: 'content-playing' });
+      await deliver({ event: 'session-refused', learnerId: 'user_5', location: 'livingroom', reason: 'content-playing' });
       expect(screen.getByTestId('reading-notice')).toBeTruthy();
       await act(async () => { vi.advanceTimersByTime(8000); });
       expect(container).toBeEmptyDOMElement();
@@ -195,8 +195,8 @@ describe('ReadingSessionScreen', () => {
 
   it('a closed session takes the widget back to rendering nothing', async () => {
     const { container } = render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-    await deliver({ event: 'session-close', learnerId: 'learner-c' });
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({ event: 'session-close', learnerId: 'user_5' });
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -213,8 +213,8 @@ describe('ReadingSessionScreen', () => {
 
     it('mounts the player with the picked book once the countdown expires', async () => {
       render(<ReadingSessionScreen confirmMs={2000} />);
-      await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-      await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:620681' });
+      await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+      await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681' });
       expect(h.overlay.shown).toHaveLength(0);
 
       await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
@@ -227,8 +227,8 @@ describe('ReadingSessionScreen', () => {
 
     it('records semantic Player completion once before cleanup, but not a genuine dismissal', async () => {
       render(<ReadingSessionScreen confirmMs={100} />);
-      await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-      await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:620681', pickId: 'pick-1' });
+      await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+      await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681', pickId: 'pick-1' });
       await act(async () => { await vi.advanceTimersByTimeAsync(150); });
       const mounted = h.overlay.shown[0].props;
 
@@ -244,7 +244,7 @@ describe('ReadingSessionScreen', () => {
       expect(readPosts).toHaveLength(1);
 
       // A new story that is merely dismissed must not create another read.
-      await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:999', pickId: 'pick-2' });
+      await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:999', pickId: 'pick-2' });
       await act(async () => { await vi.advanceTimersByTimeAsync(150); });
       h.overlay.shown.at(-1).props.clear();
       expect(fetch.mock.calls.filter(([url]) => String(url).includes('/reading/read'))).toHaveLength(1);
@@ -254,19 +254,19 @@ describe('ReadingSessionScreen', () => {
     // media dedup window would otherwise swallow the second tap entirely.
     it('the SAME book tapped again confirms immediately', async () => {
       render(<ReadingSessionScreen confirmMs={20000} />);
-      await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-      await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:620681' });
-      await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:620681' });
+      await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+      await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681' });
+      await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681' });
 
       expect(h.overlay.shown).toHaveLength(1);
     });
 
     it('a DIFFERENT book restarts the countdown rather than committing', async () => {
       render(<ReadingSessionScreen confirmMs={2000} />);
-      await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
-      await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:620681' });
+      await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+      await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681' });
       await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
-      await deliver({ event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:999' });
+      await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:999' });
       await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
 
       expect(h.overlay.shown).toHaveLength(0);      // the first pick's clock is gone

@@ -25,34 +25,34 @@ describe('ReadingSessionService', () => {
 
   it('opens a session for a learner at a location', () => {
     const s = new ReadingSessionService({ clock: () => new Date('2026-08-26T18:00:00Z'), logger: silent });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
-    expect(s.current('livingroom')).toMatchObject({ learnerId: 'learner-c', location: 'livingroom' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
+    expect(s.current('livingroom')).toMatchObject({ learnerId: 'user_5', location: 'livingroom' });
     expect(s.current('livingroom').openedAt).toBe('2026-08-26T18:00:00.000Z');
   });
 
   it('a second card REPLACES the first — last tap wins', () => {
     const s = new ReadingSessionService({ logger: silent });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
-    s.open({ location: 'livingroom', learnerId: 'learner-d' });
-    expect(s.current('livingroom').learnerId).toBe('learner-d');
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
+    s.open({ location: 'livingroom', learnerId: 'user_3' });
+    expect(s.current('livingroom').learnerId).toBe('user_3');
   });
 
   it('scopes sessions per location', () => {
     const s = new ReadingSessionService({ logger: silent });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(s.current('study')).toBeNull();
   });
 
   it('closes a session', () => {
     const s = new ReadingSessionService({ logger: silent });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
     s.close('livingroom');
     expect(s.current('livingroom')).toBeNull();
   });
 
   it('keeps a bounded, timestamped transition timeline for diagnosis', () => {
     const s = new ReadingSessionService({ clock: () => new Date('2026-08-28T19:00:00Z'), logger: silent });
-    const opened = s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    const opened = s.open({ location: 'livingroom', learnerId: 'user_5' });
     s.activate('livingroom', opened.sessionId);
     s.acknowledge('livingroom', opened.sessionId);
     s.update('livingroom', { state: 'confirm' });
@@ -75,7 +75,7 @@ describe('ReadingSessionService', () => {
       wait: async () => {},
     };
     const s = new ProductionReadingSessionService({ scheduler, logger: silent });
-    const opened = s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    const opened = s.open({ location: 'livingroom', learnerId: 'user_5' });
 
     await expect(s.waitForAcknowledgement(opened.sessionId, 321)).resolves.toBe(false);
     expect(deadline).toMatchObject({ milliseconds: 321 });
@@ -83,7 +83,7 @@ describe('ReadingSessionService', () => {
 
   it('resolves a pending delivery wait when the mounted screen acknowledges it', async () => {
     const s = new ReadingSessionService({ logger: silent });
-    const opened = s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    const opened = s.open({ location: 'livingroom', learnerId: 'user_5' });
     const acknowledgement = s.waitForAcknowledgement(opened.sessionId, 8_000);
 
     s.acknowledge('livingroom', opened.sessionId);
@@ -96,10 +96,10 @@ describe('ReadingSessionService', () => {
     const s = new ReadingSessionService({
       realtime: realtimeFor(sent), logger: silent,
     });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(sent[0]).toMatchObject({
       topic: 'reading:livingroom',
-      payload: { event: 'session-open', learnerId: 'learner-c' },
+      payload: { event: 'session-open', learnerId: 'user_5' },
     });
   });
 
@@ -108,11 +108,11 @@ describe('ReadingSessionService', () => {
     const s = new ReadingSessionService({
       realtime: realtimeFor(sent), logger: silent,
     });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
     s.close('livingroom');
     expect(sent[1]).toMatchObject({
       topic: 'reading:livingroom',
-      payload: { event: 'session-close', learnerId: 'learner-c' },
+      payload: { event: 'session-close', learnerId: 'user_5' },
     });
   });
 
@@ -131,22 +131,22 @@ describe('ReadingSessionService', () => {
     const s = new ReadingSessionService({
       realtime: { readingRoomChanged: () => { throw new Error('bus down'); } }, logger: silent,
     });
-    expect(() => s.open({ location: 'livingroom', learnerId: 'learner-c' })).not.toThrow();
-    expect(s.current('livingroom').learnerId).toBe('learner-c');
+    expect(() => s.open({ location: 'livingroom', learnerId: 'user_5' })).not.toThrow();
+    expect(s.current('livingroom').learnerId).toBe('user_5');
   });
 
   it('closes even when the event bus throws', () => {
     const s = new ReadingSessionService({
       realtime: { readingRoomChanged: () => { throw new Error('bus down'); } }, logger: silent,
     });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(() => s.close('livingroom')).not.toThrow();
     expect(s.current('livingroom')).toBeNull();
   });
 
   it('refuses an open with no location or no learner', () => {
     const s = new ReadingSessionService({ logger: silent });
-    expect(() => s.open({ learnerId: 'learner-c' })).toThrow();
+    expect(() => s.open({ learnerId: 'user_5' })).toThrow();
     expect(() => s.open({ location: 'livingroom' })).toThrow();
   });
 
@@ -155,7 +155,7 @@ describe('ReadingSessionService', () => {
   // MODE (assignment/browsing) never is — that is derived on every evaluation.
   it('opens at the prompt state', () => {
     const s = new ReadingSessionService({ logger: silent });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(s.current('livingroom').state).toBe('prompt');
   });
 
@@ -164,13 +164,13 @@ describe('ReadingSessionService', () => {
     const s = new ReadingSessionService({
       realtime: realtimeFor(sent), logger: silent,
     });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
     const updated = s.update('livingroom', { state: 'reading' });
-    expect(updated).toMatchObject({ learnerId: 'learner-c', state: 'reading' });
+    expect(updated).toMatchObject({ learnerId: 'user_5', state: 'reading' });
     expect(s.current('livingroom').state).toBe('reading');
     expect(sent[1]).toMatchObject({
       topic: 'reading:livingroom',
-      payload: { event: 'session-update', learnerId: 'learner-c', state: 'reading' },
+      payload: { event: 'session-update', learnerId: 'user_5', state: 'reading' },
     });
   });
 
@@ -182,16 +182,16 @@ describe('ReadingSessionService', () => {
 
   it('an update cannot reassign the learner — a swap is a new open', () => {
     const s = new ReadingSessionService({ logger: silent });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
-    s.update('livingroom', { learnerId: 'learner-d', location: 'study', state: 'reading' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
+    s.update('livingroom', { learnerId: 'user_3', location: 'study', state: 'reading' });
     expect(s.current('livingroom')).toMatchObject({
-      learnerId: 'learner-c', location: 'livingroom', state: 'reading',
+      learnerId: 'user_5', location: 'livingroom', state: 'reading',
     });
   });
 
   it('a session is frozen — nobody mutates it through the handle they were given', () => {
     const s = new ReadingSessionService({ logger: silent });
-    s.open({ location: 'livingroom', learnerId: 'learner-c' });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(Object.isFrozen(s.current('livingroom'))).toBe(true);
   });
 });
@@ -237,7 +237,7 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
 
   it('leaves a session alone while the clock is still inside the window', async () => {
     const r = rig();
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.advance(119_000);
     await r.service.sweep();
     expect(r.service.current('livingroom')).not.toBeNull();
@@ -246,17 +246,17 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
 
   it('tears the session down once the room has been quiet long enough', async () => {
     const r = rig();
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.advance(120_001);
     await r.service.sweep();
     expect(r.service.current('livingroom')).toBeNull();
     expect(r.torn).toHaveLength(1);
-    expect(r.torn[0]).toMatchObject({ location: 'livingroom', learnerId: 'learner-c' });
+    expect(r.torn[0]).toMatchObject({ location: 'livingroom', learnerId: 'user_5' });
   });
 
   it('tells the screen the session closed, and says why', async () => {
     const r = rig();
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.advance(200_000);
     await r.service.sweep();
     const close = r.sent.filter((m) => m.payload.event === 'session-close');
@@ -266,7 +266,7 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
 
   it('every tap resets the clock — a child picking a book is not idle', async () => {
     const r = rig();
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.advance(119_000);
     r.service.update('livingroom', { state: 'confirm', pick: { contentId: 'plex:1' } });
     r.advance(119_000);
@@ -276,7 +276,7 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
 
   it('times out at CONFIRM too — a pick nobody confirmed is still an empty room', async () => {
     const r = rig();
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.service.update('livingroom', { state: 'confirm', pick: { contentId: 'plex:1' } });
     r.advance(200_000);
     await r.service.sweep();
@@ -285,7 +285,7 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
 
   it('NEVER times out mid-story — a long book is not an idle room', async () => {
     const r = rig();
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.service.update('livingroom', { state: 'reading' });
     r.advance(45 * 60_000);
     await r.service.sweep();
@@ -295,8 +295,8 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
 
   it('sweeps every reader, not just the first one it finds', async () => {
     const r = rig();
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
-    r.service.open({ location: 'study', learnerId: 'learner-d' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
+    r.service.open({ location: 'study', learnerId: 'user_3' });
     r.advance(200_000);
     await r.service.sweep();
     expect(r.service.list()).toEqual([]);
@@ -305,7 +305,7 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
 
   it('a teardown that THROWS still closes the session — a stuck TV must not strand it', async () => {
     const r = rig({ onTimeout: async () => { throw new Error('tv unreachable'); } });
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.advance(200_000);
     await expect(r.service.sweep()).resolves.toBeDefined();
     expect(r.service.current('livingroom')).toBeNull();
@@ -313,7 +313,7 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
 
   it('tears down only once, however many sweeps run', async () => {
     const r = rig();
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.advance(200_000);
     await r.service.sweep();
     await r.service.sweep();
@@ -324,7 +324,7 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
     const r = rig();
     r.service.start();
     expect(r.ticks).toHaveLength(1);
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.advance(200_000);
     await r.tick();
     expect(r.service.current('livingroom')).toBeNull();
@@ -341,7 +341,7 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
 
   it('idleTimeoutMs 0 disables the timeout rather than expiring everything instantly', async () => {
     const r = rig({ idleTimeoutMs: 0 });
-    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'livingroom', learnerId: 'user_5' });
     r.advance(10 * 60_000);
     await r.service.sweep();
     expect(r.service.current('livingroom')).not.toBeNull();
@@ -351,7 +351,7 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
     const service = new ReadingSessionService({
       clock: () => new Date(Date.now() - 0), idleTimeoutMs: 1, logger: silent,
     });
-    service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    service.open({ location: 'livingroom', learnerId: 'user_5' });
     await new Promise((r) => { setTimeout(r, 5); });
     await service.sweep();
     expect(service.current('livingroom')).toBeNull();

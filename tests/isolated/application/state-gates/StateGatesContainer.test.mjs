@@ -36,7 +36,7 @@ function fixture({ logger = null } = {}) {
     } }, projectionRepository, transitionRepository,
     eventPublisher: { publish: async events => published.push(...events) },
     administrationAuthorizer: { authorize: async () => ({ allowed: true }) },
-    loadSubjects: async () => [{ kind: 'household', id: 'home' }, { kind: 'learner', id: 'learner-a' }],
+    loadSubjects: async () => [{ kind: 'household', id: 'home' }, { kind: 'learner', id: 'user_4' }],
     publisherIds: async () => ['school'], now: () => now, timezone: () => 'America/Los_Angeles', logger,
   });
   return {
@@ -53,7 +53,7 @@ describe('StateGatesContainer', () => {
     expect(f.journal.filter(event => event.householdRevision === 1 && event.kind === 'StateObservation').every(event => event.payload.initial)).toBe(true);
     const command = {
       assertionId: 'school:a:day', claimTypeId: 'school.done', publisherId: 'school',
-      subject: { kind: 'learner', id: 'learner-a' },
+      subject: { kind: 'learner', id: 'user_4' },
       period: { kind: 'local_day', id: '2026-08-30', startsAt: Date.parse('2026-08-30T00:00:00-07:00'), endsAt: Date.parse('2026-08-31T00:00:00-07:00') },
       value: true, sourceRevision: 1, observedAt: f.now, validFrom: f.now,
     };
@@ -71,7 +71,7 @@ describe('StateGatesContainer', () => {
       assertionId: 'a1',
       claimTypeId: 'school.done',
       publisherId: 'school',
-      subject: { kind: 'learner', id: 'learner-a' },
+      subject: { kind: 'learner', id: 'user_4' },
       period: {
         kind: 'local_day',
         id: '2026-08-30',
@@ -148,7 +148,7 @@ describe('StateGatesContainer', () => {
     await f.container.activatePolicyGraph('home');
     const command = {
       assertionId: 'a1', claimTypeId: 'school.done', publisherId: 'school',
-      subject: { kind: 'learner', id: 'learner-a' },
+      subject: { kind: 'learner', id: 'user_4' },
       period: {
         kind: 'local_day', id: '2026-08-30',
         startsAt: Date.parse('2026-08-30T00:00:00-07:00'),

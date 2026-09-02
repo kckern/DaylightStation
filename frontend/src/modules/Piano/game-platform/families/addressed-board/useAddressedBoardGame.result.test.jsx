@@ -1,0 +1,448 @@
+/**
+ * A RESULT THIS COMPONENT NEVER PLAYED IS NOT A RESULT.
+ *
+ * See docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md — a
+ * resurrected transcript arrived already finished and this hook filed it as a
+ * ranked loss on every mount, ten times, silently.
+ */
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+
+// Same seam the sibling game-platform tests use (see GameBoundary.test.jsx):
+// the hook takes a `.child()` of the default export, so one object answers both.
+const h = vi.hoisted(() => {
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  logger.child = () => logger;
+  return { logger };
+});
+vi.mock('../../../../../lib/logging/Logger.js', () => ({
+  default: () => h.logger, getLogger: () => h.logger,
+}));
+
+import { useAddressedBoardGame } from './useAddressedBoardGame.js';
+
+function makeClient() {
+  return {
+    readConfig: vi.fn(async () => null),
+    readLadder: vi.fn(async () => ({ unlocked_through: 7 })),
+    writeConfig: vi.fn(async () => null),
+    saveGame: vi.fn(async () => null),
+    archiveGame: vi.fn(async () => null),
+  };
+}
+
+const FINISHED = [0, 1, 0, 1, 0, 1, 0];
+
+function renderGame(client, { moves, result }) {
+  return renderHook(
+    (props) => useAddressedBoardGame({
+      gameId: 'connect-four', client, currentUser: { id: 'ada' }, ...props,
+    }),
+    { initialProps: { moves, result } },
+  );
+}
+
+beforeEach(() => { vi.clearAllMocks(); });
+
+describe('useAddressedBoardGame — filing a result', () => {
+  it('files a result the component watched play out', async () => {
+    const client = makeClient();
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+
+    view.rerender({ moves: FINISHED, result: 'win' });
+
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', completed: true });
+    expect(client.archiveGame).toHaveBeenCalledTimes(1);
+  });
+
+  it('REFUSES a transcript that arrived already finished', async () => {
+    const client = makeClient();
+    // Exactly the shape a resurrected session produces: an empty first render
+    // while the authority loads, then a full finished transcript.
+    const view = renderGame(client, { moves: [], result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+
+    view.rerender({ moves: FINISHED, result: 'loss' });
+
+    expect(client.saveGame).not.toHaveBeenCalled();
+    expect(client.archiveGame).not.toHaveBeenCalled();
+  });
+
+  it('SAYS SO when it refuses — a phantom result must never be silent', async () => {
+    // The incident was not that a bad result got filed; it was that nobody
+    // could tell. A guard that refuses without a word only half-fixes it.
+    const client = makeClient();
+    const view = renderGame(client, { moves: [], result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+
+    view.rerender({ moves: FINISHED, result: 'loss' });
+
+    const refusal = await waitFor(() => {
+      const call = h.logger.warn.mock.calls.find(([event]) => event === 'game.result-refused');
+      expect(call).toBeTruthy();
+      return call;
+    });
+    expect(refusal[1]).toMatchObject({
+      gameId: 'connect-four',
+      result: 'loss',
+      plies: FINISHED.length,
+      watchedPlies: 0,
+      reason: 'not-played-here',
+    });
+    // The session it refused is named, so the log can be tied to a real match.
+    expect(refusal[1].gameSessionId).toMatch(/^connect-four-/);
+    expect(client.saveGame).not.toHaveBeenCalled();
+  });
+
+  it('does not file a refused transcript as ABANDONED on the way out', async () => {
+    // Refusing the result and then archiving the same phantom as
+    // `completed: false` would just trade a duplicate ranked loss for a junk
+    // abandoned row. A transcript this component never played is not a game it
+    // can report on either way.
+    const client = makeClient();
+    const view = renderGame(client, { moves: [], result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'loss' });
+
+    view.unmount();
+
+    expect(client.archiveGame).not.toHaveBeenCalled();
+    expect(h.logger.warn.mock.calls.map(([event]) => event)).toContain('game.abandon-refused');
+  });
+
+  it('still refuses once, not on every render', async () => {
+    const client = makeClient();
+    const view = renderGame(client, { moves: [], result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+
+    // A FRESH ARRAY each time. Passing the same `moves` reference leaves every
+    // dep of the save effect stable, so the effect never re-runs and the
+    // repetition this test exists for is never actually exercised.
+    view.rerender({ moves: [...FINISHED], result: 'loss' });
+    view.rerender({ moves: [...FINISHED], result: 'loss' });
+    view.rerender({ moves: [...FINISHED], result: 'loss' });
+
+    expect(client.saveGame).not.toHaveBeenCalled();
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
+
+    // ...but a genuinely DIFFERENT phantom is not the same render storm.
+    view.rerender({ moves: FINISHED.slice(0, 5), result: 'loss' });
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(2);
+  });
+
+  it('says NOTHING about an ordinary rematch — every refusal is an incident', async () => {
+    const client = makeClient();
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
+
+    // "Play again" leaves the finished board mounted for however many commits
+    // the authority reset takes. A restart only takes effect at the new match's
+    // first playable render, so those are ordinary already-filed repeats and
+    // never reach the refusal — an alarm that fires on every rematch is one
+    // everybody learns to scroll past.
+    act(() => { view.result.current.restart(); });
+    view.rerender({ moves: [...FINISHED], result: 'win' });
+    view.rerender({ moves: [...FINISHED], result: 'win' });
+
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+    expect(h.logger.debug.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+
+    // And walking out mid-window does not re-file the match it already filed.
+    view.unmount();
+    expect(client.archiveGame).toHaveBeenCalledTimes(1);
+    expect(h.logger.warn.mock.calls.map(([event]) => event)).not.toContain('game.abandon-refused');
+  });
+
+  it('a refusal does not spend the one-shot — a game played after it still files', async () => {
+    // The exact regression that shipped and was reverted: a refusal files
+    // nothing, so it must not close the door on the next real game.
+    const client = makeClient();
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
+
+    act(() => { view.result.current.restart(); });
+    view.rerender({ moves: [], result: null });              // the restart lands
+    view.rerender({ moves: [...FINISHED], result: 'loss' }); // a phantom
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+
+    view.rerender({ moves: [], result: null });
+    view.rerender({ moves: [0, 1], result: null });
+    view.rerender({ moves: [0, 1, 0], result: 'win' });
+
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(2));
+    expect(client.saveGame.mock.calls[1][1]).toMatchObject({ result: 'win', moves: [0, 1, 0] });
+  });
+
+  it('refuses a terminal transcript it never once saw playable', async () => {
+    // Mounted already finished, with nothing to have watched. Said literally
+    // rather than left to fall out of the arithmetic, so the save path and the
+    // abandon guard agree about junk.
+    const client = makeClient();
+    renderGame(client, { moves: [], result: 'loss' });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+
+    expect(client.saveGame).not.toHaveBeenCalled();
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
+  });
+
+  it('KNOWN LIMITATION: refuses a real match that commits two plies in one render', async () => {
+    // If you are here because your new game's results vanished, this is why:
+    // the guard assumes one ply per commit, and the match is lost whole,
+    // because the abandon archive is refused too.
+    const client = makeClient();
+    const view = renderGame(client, { moves: [0, 1, 0, 1], result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+
+    // A player move and a terminal engine reply landing in the same commit.
+    view.rerender({ moves: [0, 1, 0, 1, 0, 1], result: 'loss' });
+
+    expect(client.saveGame).not.toHaveBeenCalled();
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(1);
+  });
+
+  it('waits for the ladder before filing, so the rung is the real one', async () => {
+    // `level` reads 1 until the ladder answers, and on 2026-09-01 every phantom
+    // record carried that 1 while the child's real rung was 7. A game finished
+    // in that window is a REAL result filed against a rung nobody is on.
+    const client = makeClient();
+    let releaseLadder;
+    client.readLadder = vi.fn(() => new Promise((resolve) => { releaseLadder = resolve; }));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+
+    // The game is over and the ladder has not answered: nothing is filed yet.
+    expect(client.saveGame).not.toHaveBeenCalled();
+    // ...and waiting is not refusing. A deferred result must not trip the alarm.
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+
+    await act(async () => { releaseLadder({ unlocked_through: 7 }); });
+
+    await waitFor(() => expect(client.saveGame).toHaveBeenCalledTimes(1));
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', level: 7 });
+    expect(client.archiveGame.mock.calls[0][0]).toMatchObject({ level: 7 });
+  });
+
+  it('files anyway when the ladder read never answers', async () => {
+    // FAIL OPEN. Losing a played game is worse than filing it against the
+    // fallback rung, so a hung read costs a level, never a record.
+    vi.useFakeTimers();
+    try {
+      const client = makeClient();
+      client.readLadder = vi.fn(() => new Promise(() => {}));
+
+      const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+      view.rerender({ moves: FINISHED, result: 'win' });
+      expect(client.saveGame).not.toHaveBeenCalled();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+
+      expect(client.saveGame).toHaveBeenCalledTimes(1);
+      expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', level: 1 });
+      // It went through the timeout, and said so — a record filed against the
+      // fallback rung is only forgivable if it is visible.
+      expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.ladder-read-slow')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('files a deferred result on the way OUT rather than losing the match', async () => {
+    // The match gate unmounts this game on "play again", so a hung ladder read
+    // plus a quick rematch used to lose a played match whole: the result was
+    // still deferred, so nothing filed, and the abandon guard then refused the
+    // same transcript as "not-played-here". A deferral means wait, never lose.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    expect(client.saveGame).not.toHaveBeenCalled();
+
+    view.unmount();
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({
+      result: 'win', level: 1, completed: true, moves: FINISHED,
+    });
+    // Filed as the completed game it was — not as an abandoned one, and not
+    // refused by either guard.
+    expect(client.archiveGame).toHaveBeenCalledTimes(1);
+    expect(client.archiveGame.mock.calls[0][0]).toMatchObject({ completed: true });
+    const events = h.logger.warn.mock.calls.map(([event]) => event);
+    expect(events).not.toContain('game.abandon-refused');
+    expect(events).not.toContain('game.result-refused');
+    // And it says which door it came in by, because the rung is the fallback.
+    const flushed = h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-flushed');
+    expect(flushed).toHaveLength(1);
+    expect(flushed[0][1]).toMatchObject({ gameId: 'connect-four', result: 'win', level: 1 });
+  });
+
+  it('does not let the flush launder a phantom into the record', async () => {
+    // The way out is not a side door. A transcript this component never played
+    // is refused there on the same terms as anywhere else.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+
+    const view = renderGame(client, { moves: [], result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'loss' });
+
+    view.unmount();
+
+    expect(client.saveGame).not.toHaveBeenCalled();
+    expect(client.archiveGame).not.toHaveBeenCalled();
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-flushed')).toHaveLength(0);
+    const events = h.logger.warn.mock.calls.map(([event]) => event);
+    expect(events).toContain('game.result-refused');
+    expect(events).toContain('game.abandon-refused');
+  });
+
+  it('files a deferred result when a RESTART takes the screen, and still files the next match', async () => {
+    // The other way a deferred result goes out of reach. The flush belongs to
+    // the match that ended, so it must not spend the incoming match's one-shot.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    expect(client.saveGame).not.toHaveBeenCalled();
+
+    act(() => { view.result.current.restart(); });
+    view.rerender({ moves: [], result: null }); // the restart lands
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', level: 1, moves: FINISHED });
+    expect(h.logger.warn.mock.calls.filter(([event]) => event === 'game.result-refused')).toHaveLength(0);
+
+    view.rerender({ moves: [0, 1], result: null });
+    view.rerender({ moves: [0, 1, 0], result: 'win' });
+
+    // Still deferred — the read is still hanging — so the new match files on
+    // its own way out, and files at all.
+    view.unmount();
+    expect(client.saveGame).toHaveBeenCalledTimes(2);
+    expect(client.saveGame.mock.calls[1][1]).toMatchObject({ result: 'win', moves: [0, 1, 0] });
+  });
+
+  it('a flushed PRACTICE game is still filed as practice, never as ranked', async () => {
+    // The invariant this hook states in its own words: a dropped kiosk WiFi
+    // must never turn offline engine help into ladder advancement. The dead
+    // network that forced local practice is the same one hanging the ladder
+    // read, so these two conditions arrive together — and `restart()` sets
+    // ranked-ness back to true synchronously, one render BEFORE the flush.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    act(() => { view.result.current.noteLocalPractice(); });
+    view.rerender({ moves: FINISHED, result: 'win' });
+    expect(client.saveGame).not.toHaveBeenCalled();
+
+    act(() => { view.result.current.restart(); });
+    view.rerender({ moves: [], result: null });
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', ranked: false });
+    expect(client.archiveGame.mock.calls[0][0]).toMatchObject({ ranked: false });
+  });
+
+  it("a flushed record carries the finished match's context, not the next one's", async () => {
+    // The consumers assign `archiveContextRef` in their RENDER BODY, and
+    // `restart()` resets the dialogue — so the render that restart triggers has
+    // already published the next match's empty context by the time the flush
+    // runs in that same commit. Read live, the record would carry it.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+    const prepareTerminal = vi.fn(() => ({ terminal_reaction: 'well played' }));
+    let liveContext = { dialogue: ['good game'], prepareTerminal };
+
+    const view = renderHook(
+      (props) => {
+        const api = useAddressedBoardGame({
+          gameId: 'connect-four', client, currentUser: { id: 'ada' }, ...props,
+        });
+        api.archiveContextRef.current = liveContext; // exactly as a consumer does
+        return api;
+      },
+      { initialProps: { moves: FINISHED.slice(0, 6), result: null } },
+    );
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+
+    act(() => {
+      liveContext = { dialogue: [], prepareTerminal }; // the reset the rematch publishes
+      view.result.current.restart();
+    });
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', dialogue: ['good game'] });
+    // And nothing was asked to put a line on a screen that has already gone.
+    expect(prepareTerminal).not.toHaveBeenCalled();
+    expect(client.saveGame.mock.calls[0][1].terminal_reaction).toBeUndefined();
+  });
+
+  it('a profile switch mid-result files the match under the child who PLAYED it', async () => {
+    // A grown-up switching profiles on the terminal screen. The save effect is
+    // keyed on `userId`, so the deferred filing would otherwise be rebuilt for
+    // the incoming child and file the previous one's match at the wrong rung
+    // under the wrong name. See the `userRef` note above: this file already
+    // knows a mid-game profile switch is a live hazard.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    expect(client.saveGame).not.toHaveBeenCalled();
+
+    view.rerender({ moves: FINISHED, result: 'win', currentUser: { id: 'bo' } });
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][0]).toBe('ada');
+    expect(client.archiveGame.mock.calls[0][0]).toMatchObject({ user_id: 'ada', result: 'win' });
+
+    // ...and the incoming child does not get a copy of it on the way out.
+    view.unmount();
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.archiveGame).toHaveBeenCalledTimes(1);
+  });
+
+  it('a deferred result survives a host that just CLEARS the result', async () => {
+    // `result` is the caller's own reading of its game state, and a caller is
+    // free to clear it without going through `restart()` — in which case the
+    // tracker never learns a new match began. The deferred match still files on
+    // the way past, and the one-shot still reopens for whatever plays next.
+    const client = makeClient();
+    client.readLadder = vi.fn(() => new Promise(() => {}));
+
+    const view = renderGame(client, { moves: FINISHED.slice(0, 6), result: null });
+    await waitFor(() => expect(client.readLadder).toHaveBeenCalled());
+    view.rerender({ moves: FINISHED, result: 'win' });
+    view.rerender({ moves: [], result: null });
+
+    expect(client.saveGame).toHaveBeenCalledTimes(1);
+    expect(client.saveGame.mock.calls[0][1]).toMatchObject({ result: 'win', moves: FINISHED });
+
+    view.rerender({ moves: [0, 1], result: null });
+    view.rerender({ moves: [0, 1, 0], result: 'loss' });
+
+    // The read is still hanging, so this one files on its own way out — which
+    // it can only do if the one-shot was reopened for it.
+    view.unmount();
+    expect(client.saveGame).toHaveBeenCalledTimes(2);
+    expect(client.saveGame.mock.calls[1][1]).toMatchObject({ result: 'loss', moves: [0, 1, 0] });
+  });
+});

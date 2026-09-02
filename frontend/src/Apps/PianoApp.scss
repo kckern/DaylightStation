@@ -449,7 +449,10 @@
   // Curfew line under the greyed tile wall: the kiosk's answer to "why is
   // nothing tappable?". Muted — the dark tiles are the message, this is the
   // caption. The live keyboard below it stays at full strength on purpose.
-  &__curfew {
+  // …and the same caption slot for "your lesson verdict has not landed yet",
+  // which greys the menu for the same reason: nothing here is tappable *yet*.
+  &__curfew,
+  &__pending {
     margin: 0;
     padding-top: var(--sp-3);
     font-size: 1.1rem;

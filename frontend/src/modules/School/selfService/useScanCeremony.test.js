@@ -413,7 +413,7 @@ describe('useScanCeremony', () => {
     const { result } = mount();
     act(() => {
       deliver({
-        topic: 'school', event: 'story-read', learnerId: 'learner-c',
+        topic: 'school', event: 'story-read', learnerId: 'user_5',
         title: 'Frog and Toad', contentId: 'plex:620681', studyDay: '2026-08-26', pickId: 'pick_1',
       });
     });
@@ -424,7 +424,7 @@ describe('useScanCeremony', () => {
   it('shows a story read with no title at all rather than nothing', () => {
     const { result } = mount();
     act(() => {
-      deliver({ topic: 'school', event: 'story-read', learnerId: 'learner-c', title: null });
+      deliver({ topic: 'school', event: 'story-read', learnerId: 'user_5', title: null });
     });
     expect(result.current.current).toMatchObject({ tone: 'success', title: 'Story read!' });
   });

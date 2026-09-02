@@ -39,13 +39,13 @@ vi.mock('./TeacherProfileContext.jsx', () => ({
 }));
 import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 
-const KIDS = [{ id: 'learner-b', name: 'Learner B' }];
+const KIDS = [{ id: 'user_2', name: 'User_2' }];
 
 const SESSION = {
   schema: 'school.teacher-session/v4',
   sessionId: 'ses_1',
   revision: 4,
-  state: { learnerId: 'learner-b', state: 'closed', outcome: { result: 'passed' } },
+  state: { learnerId: 'user_2', state: 'closed', outcome: { result: 'passed' } },
   taxonomy: { subject: 'civilization', courseTitle: 'United States Regions and States', lessonTitle: 'Illinois', posterUrl: null },
   scores: { machine: { percent: 100 }, effective: { percent: 100 } },
   assignment: {
@@ -72,20 +72,20 @@ describe('SessionInspector detail coherence', () => {
   });
 
   it('numbers answers with worksheet-local numbers, not bank-global ones', async () => {
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('1.')).toBeTruthy());
     expect(screen.queryByText('19.')).toBeNull();
     expect(screen.queryByText('20.')).toBeNull();
   });
 
   it('letters worksheet choices', async () => {
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText(/A\. Hotels/)).toBeTruthy());
     expect(screen.getByText(/C\. Factories and stockyards/)).toBeTruthy();
   });
 
   it('states the recorded answer as words, and the right answer only when wrong', async () => {
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('Factories and stockyards', { selector: '.teacher-graded-q__given' })).toBeTruthy());
     // The right answer is repeated only for the question the child got wrong.
     const corrections = screen.getAllByText(/Correct answer:/);
@@ -95,7 +95,7 @@ describe('SessionInspector detail coherence', () => {
 
   it('states one score when the machine and the teacher agree', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Score')).toBeInTheDocument());
     expect(screen.queryByText('Marked score')).not.toBeInTheDocument();
     expect(screen.queryByText('Current score')).not.toBeInTheDocument();
@@ -106,13 +106,13 @@ describe('SessionInspector detail coherence', () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
       ...SESSION, scores: { machine: { percent: 80 }, effective: { percent: 100 } },
     } });
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/corrected from 80%/i)).toBeInTheDocument());
   });
 
   it('prints the questions once, under one heading', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Questions and answers')).toBeInTheDocument());
     expect(screen.queryByText('Worksheet and questions')).not.toBeInTheDocument();
     expect(screen.queryByText('Answers and result')).not.toBeInTheDocument();
@@ -123,7 +123,7 @@ describe('SessionInspector detail coherence', () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
       ...SESSION, answerSheets: [{ cardId: 'c1', studentNumber: '2487270', usedRows: 16, capacity: 50, remainingContiguousSlots: 34, nextRow: 17 }],
     } });
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Answer card')).toBeInTheDocument());
     expect(screen.getByText('Answer card').closest('details')).not.toHaveAttribute('open');
     expect(screen.getByText('Event history').closest('details')).not.toHaveAttribute('open');
@@ -131,17 +131,17 @@ describe('SessionInspector detail coherence', () => {
 
   it('offers repair options in the teacher’s words, weighted by importance', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     const fix = await screen.findByRole('button', { name: 'Fix a marked answer' });
     expect(fix).toHaveClass('teacher-btn--primary');
     const credit = screen.getByRole('link', { name: /Give credit for work you saw/ });
-    expect(credit).toHaveAttribute('href', '/school/teacher/students/learner-b/operations');
+    expect(credit).toHaveAttribute('href', '/school/teacher/students/user_2/operations');
     expect(credit).not.toHaveClass('teacher-back');
   });
 
   it('puts the reprint control inside the card it reprints', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     const reprint = await screen.findByRole('button', { name: /Print another copy/i });
     expect(reprint.closest('.teacher-issued-artifact')).not.toBeNull();
   });
@@ -155,7 +155,7 @@ describe('SessionInspector detail coherence', () => {
     teacherWorkspaceApi.reprintArtifact
       .mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, artifactId: 'art_1' } })
       .mockResolvedValueOnce({ ok: true, status: 201, data: { applied: true, artifactId: 'art_1' } });
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     (await screen.findByRole('button', { name: /Print another copy/i })).click();
     const now = await screen.findByRole('button', { name: 'Print now' });
     now.click();
@@ -185,7 +185,7 @@ describe('SessionInspector — offering a retake', () => {
     schema: 'school.teacher-session/v4',
     sessionId: 'ses_1',
     revision: 1,
-    state: { learnerId: 'learner-b', state: 'outcome_recorded', outcome: { result: 'needs_remediation' }, ...extra },
+    state: { learnerId: 'user_2', state: 'outcome_recorded', outcome: { result: 'needs_remediation' }, ...extra },
     taxonomy: { subject: 'math', lessonTitle: 'Fractions' },
     scores: { machine: null, effective: null },
     artifacts: [],
@@ -199,7 +199,7 @@ describe('SessionInspector — offering a retake', () => {
 
   it('offers the retake when no remediation has ever been opened', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: needsRemediation() });
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     expect(await screen.findByRole('button', { name: 'Offer another try' })).toBeInTheDocument();
   });
 
@@ -207,7 +207,7 @@ describe('SessionInspector — offering a retake', () => {
     teacherWorkspaceApi.session.mockImplementation(async (id) => (id === 'ses_1'
       ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_2', variant: 'retry' } }) }
       : { ok: true, status: 200, data: remediationChild('ses_2', true) }));
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
     // A terminal retake is exactly the abandoned case, and it is exactly the
     // case the server refuses. Offering it here is the defect.
@@ -218,7 +218,7 @@ describe('SessionInspector — offering a retake', () => {
     teacherWorkspaceApi.session.mockImplementation(async (id) => (id === 'ses_1'
       ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_3', variant: 'retry' } }) }
       : { ok: true, status: 200, data: remediationChild('ses_3', false) }));
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Offer another try' })).not.toBeInTheDocument();
   });
@@ -227,7 +227,7 @@ describe('SessionInspector — offering a retake', () => {
     teacherWorkspaceApi.session.mockImplementation(async (id) => (id === 'ses_1'
       ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_4', variant: 'retry' } }) }
       : { ok: true, status: 200, data: remediationChild('ses_4', true) }));
-    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
     expect(teacherWorkspaceApi.session).not.toHaveBeenCalledWith('ses_4');
   });
@@ -240,7 +240,7 @@ describe('LearnerDayScreen study day', () => {
     vi.useFakeTimers();
     // 9:30pm PDT on Aug 24 is already Aug 25 UTC — the input must say Aug 24.
     vi.setSystemTime(new Date('2026-08-24T21:30:00-07:00'));
-    render(<LearnerDayScreen learnerId="learner-b" learnerName="Learner B" onOpenSession={() => {}} />);
+    render(<LearnerDayScreen learnerId="user_2" learnerName="User_2" onOpenSession={() => {}} />);
     const input = screen.getByLabelText('Jump to');
     const expected = (() => {
       const now = new Date();

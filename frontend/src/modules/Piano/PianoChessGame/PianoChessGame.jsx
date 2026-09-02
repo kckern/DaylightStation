@@ -529,6 +529,11 @@ export function PianoChessGame({
     userId: lockedUser,
     rungId,
     ladderLevel,
+    // The rung this game is being filed against, and whether it is known yet.
+    // A result filed before the read answers carries `level: null`, which the
+    // ladder declines to count — so a genuinely played win would quietly not
+    // advance anyone. The lifecycle waits for this rather than guessing.
+    ladderReady,
     addressing: reading ? 'staff' : 'chords',
     opponentRef: effectiveOpponentRef,
     helpUsed,

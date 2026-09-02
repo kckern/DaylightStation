@@ -9,7 +9,7 @@ function harness() {
   const bytes = Buffer.from('artifact-bytes');
   const learnerRoster = {
     schema: 'school.calc.learner-roster/v1', deviceId: '86A001', generation: 'sha256:profiles',
-    profiles: [{ learnerKey: 1, learnerId: 'learner-a', label: 'Alpha' }],
+    profiles: [{ learnerKey: 1, learnerId: 'user_4', label: 'Alpha' }],
     guest: { learnerKey: 0, label: 'Guest', persistent: false },
     deviceRevision: 1, record: Buffer.from('profiles'),
   };
@@ -96,7 +96,7 @@ describe('SchoolCalc HTTP API', () => {
       identity: { encoding: 'base64url', data: Buffer.from('identity').toString('base64url') },
       learnerRoster: {
         schema: 'school.calc.learner-roster/v1', deviceId: '86A001', generation: 'sha256:profiles',
-        profiles: [{ learnerKey: 1, learnerId: 'learner-a', label: 'Alpha' }],
+        profiles: [{ learnerKey: 1, learnerId: 'user_4', label: 'Alpha' }],
         guest: { learnerKey: 0, label: 'Guest', persistent: false }, deviceRevision: 1,
         record: { encoding: 'base64url', data: Buffer.from('profiles').toString('base64url') },
       },
@@ -108,7 +108,7 @@ describe('SchoolCalc HTTP API', () => {
       .get('/api/v1/school/calc/devices/86A001/learners')).expect(200);
     expect(container.getLearnerRoster.execute).toHaveBeenCalledWith({ deviceId: '86A001' });
     expect(response.body).toMatchObject({
-      profiles: [{ learnerKey: 1, learnerId: 'learner-a', label: 'Alpha' }],
+      profiles: [{ learnerKey: 1, learnerId: 'user_4', label: 'Alpha' }],
       guest: { learnerKey: 0, persistent: false },
       record: { encoding: 'base64url' },
     });

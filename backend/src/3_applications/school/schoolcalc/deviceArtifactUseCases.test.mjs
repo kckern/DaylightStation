@@ -43,15 +43,15 @@ describe('SchoolCalc device and artifact use cases', () => {
     const enroll = new EnrollSchoolCalcDevice({
       devices, codecs, deviceIdFactory: async () => 'DEV001',
       learners: {
-        listLearners: async () => [{ id: 'learner-a', name: 'Alpha' }],
-        hasLearner: async (id) => id === 'learner-a',
+        listLearners: async () => [{ id: 'user_4', name: 'Alpha' }],
+        hasLearner: async (id) => id === 'user_4',
       },
       clock: () => new Date('2026-08-01T12:00:00.000Z'),
     });
     const created = await enroll.execute({ platformId: 'future', label: 'Future A', catalogId: 'main' });
     expect(created.device).toMatchObject({
       deviceId: 'DEV001', platformId: 'future', catalogId: 'main',
-      learnerBindings: [expect.objectContaining({ learnerKey: 1, learnerId: 'learner-a' })],
+      learnerBindings: [expect.objectContaining({ learnerKey: 1, learnerId: 'user_4' })],
     });
     expect(created.identityRecord.toString()).toBe('ID:DEV001');
     expect(created.learnerRoster.record.toString()).toBe('USERS');

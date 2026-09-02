@@ -181,7 +181,7 @@ describe('State Gates adapters', () => {
   it('builds a deduplicated household subject catalog from configuration', async () => {
     const catalog = new ConfigStateGatesSubjectCatalog({
       configService: {
-        getHouseholdUsers: () => ['learner-a', { id: 'learner-b' }, { username: 'learner-c' }],
+        getHouseholdUsers: () => ['user_4', { id: 'user_2' }, { username: 'user_5' }],
         getHouseholdDevices: () => ({
           devices: {
             tablet: { room: 'yellow-room' }, television: { location: 'yellow-room' }, speaker: { room: 'kitchen' },
@@ -191,9 +191,9 @@ describe('State Gates adapters', () => {
     });
     expect(await catalog.load('home')).toEqual([
       { kind: 'household', id: 'home' },
-      { kind: 'learner', id: 'learner-a' },
-      { kind: 'learner', id: 'learner-b' },
-      { kind: 'learner', id: 'learner-c' },
+      { kind: 'learner', id: 'user_4' },
+      { kind: 'learner', id: 'user_2' },
+      { kind: 'learner', id: 'user_5' },
       { kind: 'device', id: 'tablet' },
       { kind: 'device', id: 'television' },
       { kind: 'device', id: 'speaker' },
@@ -229,7 +229,7 @@ describe('State Gates adapters', () => {
       kind: 'StateRetired',
       payload: {
         observationKind: 'gate', key: 'gate-key', gateId: 'school.required',
-        subject: { kind: 'learner', id: 'learner-a' },
+        subject: { kind: 'learner', id: 'user_4' },
         period: { kind: 'local_day', id: '2026-08-30' },
         cause: 'policy_activated', policyRevision: 3,
       },

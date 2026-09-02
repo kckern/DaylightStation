@@ -215,7 +215,7 @@ describe('school ops', () => {
   // double.
 
   const readingTree = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ops-read-'));
-  const fakeConfig = (dir, students = ['learner-c']) => ({
+  const fakeConfig = (dir, students = ['user_5']) => ({
     getHouseholdPath: (rel) => path.join(dir, rel),
     getTimezone: () => 'America/Los_Angeles',
     getHouseholdAppConfig: () => ({ students }),
@@ -229,30 +229,30 @@ describe('school ops', () => {
   it('records a read against the study day and reports whether the day is done', async () => {
     const dir = readingTree();
     fs.mkdirSync(path.join(dir, 'school/plans/learners'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'school/plans/learners/learner-c.yml'),
-      'learnerId: learner-c\nprograms:\n  - programId: story-time\n    target: 2\n');
+    fs.writeFileSync(path.join(dir, 'school/plans/learners/user_5.yml'),
+      'learnerId: user_5\nprograms:\n  - programId: story-time\n    target: 2\n');
     const config = fakeConfig(dir);
 
-    const first = await runRead(['read', 'learner-c', '--title', 'One', '--apply'], config);
+    const first = await runRead(['read', 'user_5', '--title', 'One', '--apply'], config);
     expect(first.status).toMatchObject({ count: 1, target: 2, doneToday: false });
-    const second = await runRead(['read', 'learner-c', '--title', 'Two', '--apply'], config);
+    const second = await runRead(['read', 'user_5', '--title', 'Two', '--apply'], config);
     expect(second.status).toMatchObject({ count: 2, target: 2, doneToday: true });
     // The shard is the household's own 4am-boundary day, not a UTC date.
     expect(second.studyDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(fs.existsSync(path.join(dir, `school/records/reading/learner-c/${second.studyDay}.yml`))).toBe(true);
+    expect(fs.existsSync(path.join(dir, `school/records/reading/user_5/${second.studyDay}.yml`))).toBe(true);
   });
 
   it('reads --flag=value, the form the runbooks are written in', async () => {
     const dir = readingTree();
-    const row = (await runRead(['read', 'learner-c', '--title=The Jungle Book', '--content=plex:620681'], fakeConfig(dir))).write.row;
+    const row = (await runRead(['read', 'user_5', '--title=The Jungle Book', '--content=plex:620681'], fakeConfig(dir))).write.row;
     expect(row).toMatchObject({ title: 'The Jungle Book', contentId: 'plex:620681' });
   });
 
   it('writes nothing without --apply', async () => {
     const dir = readingTree();
-    const out = await runRead(['read', 'learner-c', '--title', 'One'], fakeConfig(dir));
+    const out = await runRead(['read', 'user_5', '--title', 'One'], fakeConfig(dir));
     expect(out.dryRun).toBe(true);
-    expect(out.write.row).toMatchObject({ learnerId: 'learner-c', title: 'One' });
+    expect(out.write.row).toMatchObject({ learnerId: 'user_5', title: 'One' });
     expect(fs.existsSync(path.join(dir, 'school/records/reading'))).toBe(false);
   });
 
@@ -267,7 +267,7 @@ describe('school ops', () => {
 
   it('fails closed when the roster itself cannot be read', async () => {
     const dir = readingTree();
-    await expect(runRead(['read', 'learner-c', '--apply'], fakeConfig(dir, [])))
+    await expect(runRead(['read', 'user_5', '--apply'], fakeConfig(dir, [])))
       .rejects.toThrow(/no students/);
   });
 
@@ -277,7 +277,7 @@ describe('school ops', () => {
 
   it('carries --pick through to the row so a retry can be recognised', async () => {
     const dir = readingTree();
-    const out = await runRead(['read', 'learner-c', '--title', 'One', '--pick=pick_abc'], fakeConfig(dir));
+    const out = await runRead(['read', 'user_5', '--title', 'One', '--pick=pick_abc'], fakeConfig(dir));
     expect(out.write.row.pickId).toBe('pick_abc');
   });
 });

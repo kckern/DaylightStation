@@ -9,8 +9,8 @@ vi.mock('../../schoolApi.js', () => ({ schoolApi: { agendaPreview: vi.fn() } }))
 const { schoolApi } = await import('../../schoolApi.js');
 
 const ok = (data) => ({ ok: true, status: 200, data });
-const KIDS = [{ id: 'learner-a', name: 'Learner A' }];
-const ROW = { learnerId: 'learner-a', sessions: [], pendingReview: 0 };
+const KIDS = [{ id: 'user_4', name: 'User_4' }];
+const ROW = { learnerId: 'user_4', sessions: [], pendingReview: 0 };
 
 // A minimal section: no session claims it (no `next`/`lockedRemedy`/
 // `suppressed`/`servedToday`), so it lands on the join's terminal `planned`
@@ -21,7 +21,7 @@ const section = (obligation) => ({ subject: 'math', next: null, obligation });
 async function mountExpanded(sectionFixture) {
   schoolApi.agendaPreview.mockResolvedValue(ok({ sections: sectionFixture ? [sectionFixture] : [] }));
   render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" />);
-  fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
   return within(await screen.findByTestId('lesson-grid'));
 }
 
@@ -48,7 +48,7 @@ describe('RosterStrip — actionable excuses say so (plan 3.3)', () => {
     expect(card.className).not.toMatch(/--faulted/);
     expect(grid.getByText('This course has no more lessons')).toBeInTheDocument();
     const link = grid.getByRole('link', { name: 'Open Courses' });
-    expect(link).toHaveAttribute('href', '/school/teacher/students/learner-a/courses');
+    expect(link).toHaveAttribute('href', '/school/teacher/students/user_4/courses');
   });
 
   it('awaiting_grown_up links to School → Operations, using the dormant-unit sentence', async () => {
@@ -113,17 +113,17 @@ describe('RosterStrip — the collapsed roster row (DayDots)', () => {
 
 describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (plan 3.4)', () => {
   it('counts faults and actionable excuses across every learner, and links to the first in roster order', async () => {
-    const kids = [{ id: 'learner-a', name: 'Learner A' }, { id: 'learner-b', name: 'Learner B' }];
-    const rows = [{ learnerId: 'learner-a', sessions: [] }, { learnerId: 'learner-b', sessions: [] }];
-    schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'learner-a'
+    const kids = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
+    const rows = [{ learnerId: 'user_4', sessions: [] }, { learnerId: 'user_2', sessions: [] }];
+    schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'user_4'
       ? ok({ sections: [section({ state: 'excused', reason: 'not_due_yet' })] }) // no grown-up needed
       : ok({ sections: [section({ state: 'faulted', reason: 'program_unavailable' })] })));
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={rows} kids={kids} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
-    await screen.findByRole('button', { name: /Learner A/ });
-    await screen.findByRole('button', { name: /Learner B/ });
+    await screen.findByRole('button', { name: /User_4/ });
+    await screen.findByRole('button', { name: /User_2/ });
     // Both learners' agenda reads settle asynchronously; the LAST report,
-    // once both have landed, must count only learner-b's fault and link to
+    // once both have landed, must count only user_2's fault and link to
     // the first (in roster order) learner who has one.
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
       count: 1, unknown: 0, href: '/school/teacher/operations',
@@ -134,7 +134,7 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [section({ state: 'excused', reason: 'not_due_yet' })] }));
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
-    await screen.findByRole('button', { name: /Learner A/ });
+    await screen.findByRole('button', { name: /User_4/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 0, href: null }));
   });
 
@@ -152,19 +152,19 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     schoolApi.agendaPreview.mockResolvedValue({ ok: false, status, data: null });
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
-    await screen.findByRole('button', { name: /Learner A/ });
+    await screen.findByRole('button', { name: /User_4/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 1, href: null }));
   });
 
   it('counts a readable learner and an unreadable one separately', async () => {
-    const kids = [{ id: 'learner-a', name: 'Learner A' }, { id: 'learner-b', name: 'Learner B' }];
-    const rows = [{ learnerId: 'learner-a', sessions: [] }, { learnerId: 'learner-b', sessions: [] }];
-    schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'learner-a'
+    const kids = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
+    const rows = [{ learnerId: 'user_4', sessions: [] }, { learnerId: 'user_2', sessions: [] }];
+    schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'user_4'
       ? ok({ sections: [section({ state: 'faulted', reason: 'program_unavailable' })] })
       : { ok: false, status: 500, data: null }));
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={rows} kids={kids} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
-    await screen.findByRole('button', { name: /Learner B/ });
+    await screen.findByRole('button', { name: /User_2/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
       count: 1, unknown: 1, href: '/school/teacher/operations',
     }));
@@ -172,10 +172,10 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
 
   it('suppresses the collapsed card summary and dots when the plan could not be read', async () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: false, status: 500, data: null });
-    render(<RosterStrip rows={[{ learnerId: 'learner-a', sessions: [
+    render(<RosterStrip rows={[{ learnerId: 'user_4', sessions: [
       { subject: 'math', sessionId: 'ses_1', unitId: 'm1', lessonTitle: 'Math A', state: 'graded' },
     ] }]} kids={KIDS} studyDay="2026-08-26" />);
-    const card = await screen.findByRole('button', { name: /Learner A/ });
+    const card = await screen.findByRole('button', { name: /User_4/ });
     // With no sections every session falls to `unplanned`, so the summary
     // would read "1 extra" for an ordinary day and the dots would show a
     // one-lesson day. Both are guesses dressed as facts.
@@ -197,7 +197,7 @@ describe('RosterStrip — a section\'s obligation is stated once, not once per r
   // today. No `next.unitId` on the section, so both sessions claim it by
   // SUBJECT match (`claimFor`), producing two rows sharing one obligation.
   const rowWithTwoSessions = {
-    learnerId: 'learner-a',
+    learnerId: 'user_4',
     sessions: [
       { subject: 'math', sessionId: 'ses_1', unitId: 'm1', lessonTitle: 'Math A', state: 'graded' },
       { subject: 'math', sessionId: 'ses_2', unitId: 'm2', lessonTitle: 'Math B', state: 'graded' },
@@ -209,16 +209,16 @@ describe('RosterStrip — a section\'s obligation is stated once, not once per r
     schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [twoSessionSection] }));
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={[rowWithTwoSessions]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
-    await screen.findByRole('button', { name: /Learner A/ });
+    await screen.findByRole('button', { name: /User_4/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
-      count: 1, unknown: 0, href: '/school/teacher/students/learner-a/courses',
+      count: 1, unknown: 0, href: '/school/teacher/students/user_4/courses',
     }));
   });
 
   it('prints the notice on only the FIRST of the two cards, never duplicated on the second', async () => {
     schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [twoSessionSection] }));
     render(<RosterStrip rows={[rowWithTwoSessions]} kids={KIDS} studyDay="2026-08-26" />);
-    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     const grid = within(await screen.findByTestId('lesson-grid'));
     const cards = grid.getAllByTestId('lesson-card');
     expect(cards).toHaveLength(2);

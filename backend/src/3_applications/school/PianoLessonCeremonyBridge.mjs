@@ -182,8 +182,23 @@ export class PianoLessonCeremonyBridge {
       completion = candidateCompletion;
       break;
     }
-    // The completed episode was not part of an enrolled Hoffman course.
-    if (!enrollment || !completion) return;
+    // The completed episode was not part of an enrolled Hoffman course — a
+    // Hot Cross Buns lesson cannot discharge a Reading Music obligation.
+    // Ignored, but NOT in silence: an enrolled learner has already got past
+    // the cheap "not schoolwork" exit above, so this is rare enough to log and
+    // it is the branch that leaves no other trace. On 2026-09-01 the only
+    // evidence a completion had been dropped here was a `completed=true` row
+    // indistinguishable from a satisfying one.
+    if (!enrollment || !completion) {
+      this.#logger.info?.('school.piano-ceremony.ignored', {
+        learnerId,
+        plexId: payload?.plexId ?? null,
+        title: payload?.title ?? null,
+        reason: 'not-in-enrolled-course',
+        enrolledCourseIds: enrollments.map((row) => row.courseId ?? row.corpusId ?? null),
+      });
+      return;
+    }
     // `status.error` (course unreadable) and a not-yet-done day both mean
     // "no requirement was discharged by this event".
     if (status?.error === true || status?.doneToday !== true) return;

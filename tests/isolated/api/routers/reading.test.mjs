@@ -56,7 +56,7 @@ function build({
     studyDay: () => '2026-08-26',
     status: async () => ({ error: false, enrolled: true, count: 1, target: 2, progressLabel: '1 of 2 stories' }),
   },
-  resolveLearner = (id) => ({ id, name: 'Learner C' }),
+  resolveLearner = (id) => ({ id, name: 'User_5' }),
   observationStore = null,
 } = {}) {
   const broadcasts = [];
@@ -79,11 +79,11 @@ function build({
 describe('GET /events — live reading-session observability', () => {
   it('reports the open session, its ages, and its bounded transition timeline', async () => {
     const { app, sessions } = build();
-    const session = sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    const session = sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.acknowledge('livingroom', session.sessionId);
     const res = await request(app).get('/api/v1/school/reading/events?location=livingroom&limit=2');
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ location: 'livingroom', session: { sessionId: session.sessionId, learnerId: 'learner-c' } });
+    expect(res.body).toMatchObject({ location: 'livingroom', session: { sessionId: session.sessionId, learnerId: 'user_5' } });
     expect(res.body.ageMs).toEqual(expect.any(Number));
     expect(res.body.ackAgeMs).toEqual(expect.any(Number));
     expect(res.body.events).toHaveLength(2);
@@ -95,7 +95,7 @@ describe('GET /events — live reading-session observability', () => {
       list: async () => [{ type: 'opened', state: 'prompt', at: '2026-08-26T17:59:59.000Z' }],
     };
     const { app, sessions } = build({ observationStore });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     const res = await request(app).get('/api/v1/school/reading/events?location=livingroom&limit=1');
     expect(res.body).toMatchObject({ visibleState: 'prompt', displayedSince: '2026-08-26T17:59:59.000Z' });
     expect(res.body).toHaveProperty('ageMs');
@@ -107,7 +107,7 @@ describe('GET /events — live reading-session observability', () => {
 describe('session, acknowledgement, progress, and read-status routes', () => {
   it('returns and acknowledges the authoritative location snapshot', async () => {
     const { app, sessions } = build();
-    const opened = sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    const opened = sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     const snapshot = await request(app).get('/api/v1/school/reading/session?location=livingroom');
     expect(snapshot.body).toMatchObject({ location: 'livingroom', session: { sessionId: opened.sessionId } });
     const ack = await request(app).post('/api/v1/school/reading/session/ack')
@@ -117,8 +117,8 @@ describe('session, acknowledgement, progress, and read-status routes', () => {
 
   it('updates progress and preserves numeric coercion and timestamp fields', async () => {
     const { app, sessions } = build();
-    const opened = sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
-    sessions.update('livingroom', { pick: { pickId: 'pick-1', learnerId: 'learner-c', contentId: 'plex:1' } });
+    const opened = sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.update('livingroom', { pick: { pickId: 'pick-1', learnerId: 'user_5', contentId: 'plex:1' } });
     const res = await request(app).post('/api/v1/school/reading/progress').send({
       location: 'livingroom', sessionId: opened.sessionId, pickId: 'pick-1',
       positionSec: '12.5', durationSec: '90', paused: true,
@@ -131,13 +131,13 @@ describe('session, acknowledgement, progress, and read-status routes', () => {
 
   it('returns the established conflict and read-status envelopes', async () => {
     const readingLog = memoryReadingLog({
-      'learner-c 2026-08-26': [{ learnerId: 'learner-c', studyDay: '2026-08-26', pickId: 'pick-1' }],
+      'user_5 2026-08-26': [{ learnerId: 'user_5', studyDay: '2026-08-26', pickId: 'pick-1' }],
     });
     const { app } = build({ readingLog });
     expect((await request(app).post('/api/v1/school/reading/progress').send({})).body)
       .toEqual({ ok: false, reason: 'session-or-pick-mismatch' });
-    expect((await request(app).get('/api/v1/school/reading/read-status?learnerId=learner-c&studyDay=2026-08-26&pickId=pick-1')).body)
-      .toEqual({ recorded: true, read: { learnerId: 'learner-c', studyDay: '2026-08-26', pickId: 'pick-1' } });
+    expect((await request(app).get('/api/v1/school/reading/read-status?learnerId=user_5&studyDay=2026-08-26&pickId=pick-1')).body)
+      .toEqual({ recorded: true, read: { learnerId: 'user_5', studyDay: '2026-08-26', pickId: 'pick-1' } });
   });
 });
 
@@ -145,29 +145,29 @@ describe('POST /read — the read is recorded on completion', () => {
   it('writes one row and answers with it', async () => {
     const { app, readingLog } = build();
     const res = await request(app).post('/api/v1/school/reading/read').send({
-      learnerId: 'learner-c', contentId: 'plex:620681', title: 'Frog and Toad',
+      learnerId: 'user_5', contentId: 'plex:620681', title: 'Frog and Toad',
       location: 'livingroom', pickId: 'pick-1',
     });
     expect(res.status).toBe(200);
-    expect(res.body.read).toMatchObject({ learnerId: 'learner-c', title: 'Frog and Toad', pickId: 'pick-1' });
-    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
+    expect(res.body.read).toMatchObject({ learnerId: 'user_5', title: 'Frog and Toad', pickId: 'pick-1' });
+    expect(await readingLog.listForDay('user_5', '2026-08-26')).toHaveLength(1);
   });
 
   it('the SAME pickId twice is one read — a player that fires ended twice does not credit two books', async () => {
     const { app, readingLog } = build();
-    const body = { learnerId: 'learner-c', contentId: 'plex:620681', title: 'Frog and Toad', pickId: 'pick-1' };
+    const body = { learnerId: 'user_5', contentId: 'plex:620681', title: 'Frog and Toad', pickId: 'pick-1' };
     await request(app).post('/api/v1/school/reading/read').send(body).expect(200);
     await request(app).post('/api/v1/school/reading/read').send(body).expect(200);
-    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
+    expect(await readingLog.listForDay('user_5', '2026-08-26')).toHaveLength(1);
   });
 
   it('a DIFFERENT pickId for the same book is a second read — repeats count', async () => {
     const { app, readingLog } = build();
     await request(app).post('/api/v1/school/reading/read')
-      .send({ learnerId: 'learner-c', contentId: 'plex:620681', pickId: 'pick-1' }).expect(200);
+      .send({ learnerId: 'user_5', contentId: 'plex:620681', pickId: 'pick-1' }).expect(200);
     await request(app).post('/api/v1/school/reading/read')
-      .send({ learnerId: 'learner-c', contentId: 'plex:620681', pickId: 'pick-2' }).expect(200);
-    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(2);
+      .send({ learnerId: 'user_5', contentId: 'plex:620681', pickId: 'pick-2' }).expect(200);
+    expect(await readingLog.listForDay('user_5', '2026-08-26')).toHaveLength(2);
   });
 
   it('credits the learner the CALLER names, not whoever is at the reader now', async () => {
@@ -175,19 +175,19 @@ describe('POST /read — the read is recorded on completion', () => {
     // it was picked with. The screen carries that attribution, so the route must
     // take it from the body and never re-read the session.
     const { app, readingLog, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-d' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_3' });
     await request(app).post('/api/v1/school/reading/read')
-      .send({ learnerId: 'learner-c', contentId: 'plex:620681', location: 'livingroom', pickId: 'p' }).expect(200);
-    expect(await readingLog.listForDay('learner-d', '2026-08-26')).toHaveLength(0);
-    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
+      .send({ learnerId: 'user_5', contentId: 'plex:620681', location: 'livingroom', pickId: 'p' }).expect(200);
+    expect(await readingLog.listForDay('user_3', '2026-08-26')).toHaveLength(0);
+    expect(await readingLog.listForDay('user_5', '2026-08-26')).toHaveLength(1);
   });
 
   it('broadcasts story-read so the ceremony can fire', async () => {
     const { app, broadcasts } = build();
     await request(app).post('/api/v1/school/reading/read')
-      .send({ learnerId: 'learner-c', contentId: 'plex:620681', title: 'Frog and Toad', pickId: 'p' }).expect(200);
+      .send({ learnerId: 'user_5', contentId: 'plex:620681', title: 'Frog and Toad', pickId: 'p' }).expect(200);
     expect(broadcasts.find((b) => b.payload.event === 'story-read')).toMatchObject({
-      topic: 'school', payload: { learnerId: 'learner-c', title: 'Frog and Toad' },
+      topic: 'school', payload: { learnerId: 'user_5', title: 'Frog and Toad' },
     });
   });
 
@@ -201,41 +201,41 @@ describe('POST /read — the read is recorded on completion', () => {
 describe('POST /playing — nothing else moves a session to READING', () => {
   it('moves the open session to reading', async () => {
     const { app, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     const res = await request(app).post('/api/v1/school/reading/playing').send({
-      location: 'livingroom', learnerId: 'learner-c', contentId: 'plex:620681', pickId: 'p',
+      location: 'livingroom', learnerId: 'user_5', contentId: 'plex:620681', pickId: 'p',
     });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, state: 'reading' });
     expect(sessions.current('livingroom')).toMatchObject({
-      state: 'reading', playing: { learnerId: 'learner-c', contentId: 'plex:620681', pickId: 'p' },
+      state: 'reading', playing: { learnerId: 'user_5', contentId: 'plex:620681', pickId: 'p' },
     });
   });
 
   it('does NOT rewrite who the session belongs to — attribution was settled at pick time', async () => {
     const { app, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     // A sibling wandered past between the pick and the first frame (D4).
-    sessions.open({ location: 'livingroom', learnerId: 'learner-d' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_3' });
     await request(app).post('/api/v1/school/reading/playing').send({
-      location: 'livingroom', learnerId: 'learner-c', contentId: 'plex:620681', pickId: 'p',
+      location: 'livingroom', learnerId: 'user_5', contentId: 'plex:620681', pickId: 'p',
     }).expect(200);
     const session = sessions.current('livingroom');
-    expect(session.learnerId).toBe('learner-d');          // the screen belongs to whoever is there
-    expect(session.playing.learnerId).toBe('learner-c');  // the story keeps its credit
+    expect(session.learnerId).toBe('user_3');          // the screen belongs to whoever is there
+    expect(session.playing.learnerId).toBe('user_5');  // the story keeps its credit
   });
 
   it('answers plainly when the session is already gone rather than erroring at a child', async () => {
     const { app } = build();
     const res = await request(app).post('/api/v1/school/reading/playing')
-      .send({ location: 'livingroom', learnerId: 'learner-c', contentId: 'plex:1', pickId: 'p' });
+      .send({ location: 'livingroom', learnerId: 'user_5', contentId: 'plex:1', pickId: 'p' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: false, reason: 'no-session' });
   });
 
   it('refuses a report that names no reader', async () => {
     const { app } = build();
-    const res = await request(app).post('/api/v1/school/reading/playing').send({ learnerId: 'learner-c' });
+    const res = await request(app).post('/api/v1/school/reading/playing').send({ learnerId: 'user_5' });
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
 });
@@ -243,16 +243,16 @@ describe('POST /playing — nothing else moves a session to READING', () => {
 describe('GET /summary — what the screen puts in front of the child', () => {
   it('answers the count and target for today, and what they read yesterday', async () => {
     const readingLog = memoryReadingLog({
-      'learner-c 2026-08-25': [
-        { learnerId: 'learner-c', studyDay: '2026-08-25', title: 'Corduroy', contentId: 'plex:1', at: 'x' },
-        { learnerId: 'learner-c', studyDay: '2026-08-25', title: 'Blueberries', contentId: 'plex:2', at: 'y' },
+      'user_5 2026-08-25': [
+        { learnerId: 'user_5', studyDay: '2026-08-25', title: 'Corduroy', contentId: 'plex:1', at: 'x' },
+        { learnerId: 'user_5', studyDay: '2026-08-25', title: 'Blueberries', contentId: 'plex:2', at: 'y' },
       ],
     });
     const { app } = build({ readingLog });
-    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=learner-c');
+    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      learnerId: 'learner-c', displayName: 'Learner C',
+      learnerId: 'user_5', displayName: 'User_5',
       enrolled: true, error: false, count: 1, target: 2, progressLabel: '1 of 2 stories',
     });
     expect(res.body.yesterday.map((r) => r.title)).toEqual(['Corduroy', 'Blueberries']);
@@ -265,7 +265,7 @@ describe('GET /summary — what the screen puts in front of the child', () => {
         status: async () => ({ error: true, enrolled: null, count: null, target: null }),
       },
     });
-    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=learner-c');
+    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ error: true, count: null, target: null });
   });
@@ -277,7 +277,7 @@ describe('GET /summary — what the screen puts in front of the child', () => {
         status: async () => ({ error: false, enrolled: false, count: null, target: null }),
       },
     });
-    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=learner-d');
+    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_3');
     expect(res.body).toMatchObject({ error: false, enrolled: false, target: null });
   });
 
@@ -285,7 +285,7 @@ describe('GET /summary — what the screen puts in front of the child', () => {
     const readingLog = memoryReadingLog();
     readingLog.listForDay = async () => { throw new Error('disk gone'); };
     const { app } = build({ readingLog });
-    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=learner-c');
+    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
     expect(res.status).toBe(200);
     expect(res.body.yesterday).toEqual([]);
   });
@@ -311,14 +311,14 @@ describe('GET /summary — what the screen puts in front of the child', () => {
  */
 describe('POST /read — and the session it leaves behind', () => {
   const finish = (app, over = {}) => request(app).post('/api/v1/school/reading/read').send({
-    learnerId: 'learner-c', contentId: 'plex:1', title: 'Corduroy',
+    learnerId: 'user_5', contentId: 'plex:1', title: 'Corduroy',
     location: 'livingroom', pickId: 'pick_1', ...over,
   });
 
   it('takes the session back to the prompt, so the next book gets a countdown', async () => {
     const { app, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
-    sessions.update('livingroom', { state: 'reading', playing: { learnerId: 'learner-c', pickId: 'pick_1' } });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.update('livingroom', { state: 'reading', playing: { learnerId: 'user_5', pickId: 'pick_1' } });
 
     await finish(app).expect(200);
 
@@ -327,7 +327,7 @@ describe('POST /read — and the session it leaves behind', () => {
 
   it('and that is what lets an abandoned session time out at all (D6)', async () => {
     const { app, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     await finish(app).expect(200);
     // `sweep` exempts `reading`; only a session back at `prompt` can expire.
@@ -335,29 +335,29 @@ describe('POST /read — and the session it leaves behind', () => {
   });
 
   it('does NOT re-credit the read to whoever the session belongs to now (D4)', async () => {
-    // The story was picked by learner-c; a sibling tapped in mid-story, so the
-    // session belongs to learner-d. The read is the SCREEN's pick-time
+    // The story was picked by user_5; a sibling tapped in mid-story, so the
+    // session belongs to user_3. The read is the SCREEN's pick-time
     // snapshot and nothing here may second-guess it.
     const { app, sessions, readingLog } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-d' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_3' });
     sessions.update('livingroom', { state: 'reading' });
 
-    await finish(app, { learnerId: 'learner-c' }).expect(200);
+    await finish(app, { learnerId: 'user_5' }).expect(200);
 
-    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
-    expect(await readingLog.listForDay('learner-d', '2026-08-26')).toHaveLength(0);
-    expect(sessions.current('livingroom').learnerId).toBe('learner-d');
+    expect(await readingLog.listForDay('user_5', '2026-08-26')).toHaveLength(1);
+    expect(await readingLog.listForDay('user_3', '2026-08-26')).toHaveLength(0);
+    expect(sessions.current('livingroom').learnerId).toBe('user_3');
   });
 
   it('records the read even with no session open — the story still happened', async () => {
     const { app, readingLog } = build();
     await finish(app).expect(200);
-    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
+    expect(await readingLog.listForDay('user_5', '2026-08-26')).toHaveLength(1);
   });
 
   it('records the read even when the body names no location', async () => {
     const { app, readingLog } = build();
     await finish(app, { location: undefined }).expect(200);
-    expect(await readingLog.listForDay('learner-c', '2026-08-26')).toHaveLength(1);
+    expect(await readingLog.listForDay('user_5', '2026-08-26')).toHaveLength(1);
   });
 });

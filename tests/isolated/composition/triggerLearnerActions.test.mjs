@@ -25,7 +25,7 @@ const registry = {
       livingroom: { target: 'livingroom-tv', action: 'play-next', learner_action: 'reading-session', auth_token: null, notify_unknown: null, defaults: {} },
     },
     tags: {
-      '048ba600cc2a81': { global: { note: 'learner-b personal card', school_learner: 'learner-b' }, overrides: {} },
+      '048ba600cc2a81': { global: { note: 'user_2 personal card', school_learner: 'user_2' }, overrides: {} },
     },
   },
 };
@@ -54,8 +54,8 @@ describe('trigger learner actions — composition contract', () => {
     const learnerActions = createLearnerActions({ logger: silent });
     learnerActions.register('print-agenda', ({ learnerId }) => resolvePersonalCard.execute({ learnerId }));
 
-    const result = await learnerActions.get('print-agenda')({ learnerId: 'learner-b', location: 'study' });
-    expect(calls).toEqual(['learner-b']);
+    const result = await learnerActions.get('print-agenda')({ learnerId: 'user_2', location: 'study' });
+    expect(calls).toEqual(['user_2']);
     expect(result.status).toBe('agenda_printed');
   });
 
@@ -68,7 +68,7 @@ describe('trigger learner actions — composition contract', () => {
 
     expect(result.ok).toBe(true);
     expect(result.action).toBe('print-agenda');
-    expect(seen).toEqual([{ learnerId: 'learner-b', location: 'study', target: 'portal' }]);
+    expect(seen).toEqual([{ learnerId: 'user_2', location: 'study', target: 'portal' }]);
     expect(result.dispatch.status).toBe('agenda_printed');
   });
 
@@ -92,8 +92,8 @@ describe('trigger learner actions — composition contract', () => {
 
     const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
 
-    expect(result.dispatch).toMatchObject({ status: 'reading_session_open', learnerId: 'learner-b' });
-    expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'learner-b', state: 'prompt' });
+    expect(result.dispatch).toMatchObject({ status: 'reading_session_open', learnerId: 'user_2' });
+    expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'user_2', state: 'prompt' });
     expect(printed).toEqual([]);
   });
 
@@ -247,7 +247,7 @@ describe('trigger learner actions — a failed action must be retryable', () => 
         eventBus: { broadcast() {} },
         logger: silent,
       });
-      results.push(await handler({ learnerId: 'learner-d', location: 'study' }));
+      results.push(await handler({ learnerId: 'user_3', location: 'study' }));
     }
     expect(results[0]).toMatchObject({ status: 'print_failed', retryable: true });
     expect(results[1].retryable).toBeUndefined();
@@ -276,12 +276,12 @@ describe('print-agenda — the cooldown acknowledgement', () => {
       logger: silent,
     });
 
-    await handler({ learnerId: 'learner-d', location: 'study' });
+    await handler({ learnerId: 'user_3', location: 'study' });
 
     expect(broadcasts).toEqual([{
       topic: 'omr',
       payload: expect.objectContaining({
-        event: 'agenda-suppressed', learnerId: 'learner-d', sinceMinutes: 3, cooldownMinutes: 15,
+        event: 'agenda-suppressed', learnerId: 'user_3', sinceMinutes: 3, cooldownMinutes: 15,
       }),
     }]);
   });
@@ -293,7 +293,7 @@ describe('print-agenda — the cooldown acknowledgement', () => {
       eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
       logger: silent,
     });
-    await handler({ learnerId: 'learner-d', location: 'study' });
+    await handler({ learnerId: 'user_3', location: 'study' });
     expect(broadcasts).toEqual([]);
   });
 
@@ -319,7 +319,7 @@ describe('print-agenda — the cooldown acknowledgement', () => {
       eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
       logger: silent,
     });
-    await handler({ learnerId: 'learner-d', location: 'study' });
+    await handler({ learnerId: 'user_3', location: 'study' });
     expect(broadcasts[0].payload).toMatchObject({ sinceMinutes: null, cooldownMinutes: null });
   });
 
@@ -334,7 +334,7 @@ describe('print-agenda — the cooldown acknowledgement', () => {
         eventBus,
         logger: silent,
       });
-      await expect(handler({ learnerId: 'learner-d', location: 'study' }))
+      await expect(handler({ learnerId: 'user_3', location: 'study' }))
         .resolves.toMatchObject({ status: 'agenda_suppressed' });
     }
   });
@@ -345,7 +345,7 @@ describe('print-agenda — the cooldown acknowledgement', () => {
       eventBus: { broadcast() {} },
       logger: { info() { throw new Error('log transport down'); } },
     });
-    await expect(handler({ learnerId: 'learner-d', location: 'study' }))
+    await expect(handler({ learnerId: 'user_3', location: 'study' }))
       .resolves.toMatchObject({ status: 'agenda_suppressed' });
   });
 
@@ -355,6 +355,6 @@ describe('print-agenda — the cooldown acknowledgement', () => {
       eventBus: { broadcast() {} },
       logger: silent,
     });
-    expect(await handler({ learnerId: 'learner-d', location: 'study' })).toEqual({ status: 'unknown' });
+    expect(await handler({ learnerId: 'user_3', location: 'study' })).toEqual({ status: 'unknown' });
   });
 });

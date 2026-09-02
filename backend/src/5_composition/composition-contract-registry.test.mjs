@@ -75,7 +75,7 @@ const contracts = [
           getHouseholdPath: () => path.join(directory, 'state-gates/current'),
           reloadHouseholdAppConfig: () => policy,
           getHouseholdAppConfig: () => policy,
-          getHouseholdUsers: () => ['learner-a'],
+          getHouseholdUsers: () => ['user_4'],
           getHouseholdDevices: () => ({ devices: {} }),
           getHouseholdTimezone: () => 'America/Los_Angeles',
           getAllHouseholdIds: () => [],
@@ -108,7 +108,7 @@ const contracts = [
           getHouseholdPath: () => path.join(directory, 'state-gates/current'),
           reloadHouseholdAppConfig: () => null,
           getHouseholdAppConfig: () => null,
-          getHouseholdUsers: () => ['learner-a'],
+          getHouseholdUsers: () => ['user_4'],
           getHouseholdDevices: () => ({ devices: {} }),
           getHouseholdTimezone: () => 'America/Los_Angeles',
           getAllHouseholdIds: () => [],
@@ -122,32 +122,32 @@ const contracts = [
           endsAt: Date.parse('2026-08-31T04:00:00-07:00'),
         };
         await module.ingress.observe('home', schoolPrincipal, {
-          assertionId: 'school:day-complete:learner-a:2026-08-30',
-          claimTypeId: 'school.day.complete', subject: { kind: 'learner', id: 'learner-a' },
+          assertionId: 'school:day-complete:user_4:2026-08-30',
+          claimTypeId: 'school.day.complete', subject: { kind: 'learner', id: 'user_4' },
           period: schoolPeriod, value: true, sourceRevision: 1,
           observedAt: now, validFrom: now, validUntil: schoolPeriod.endsAt,
         });
         const entitlement = await module.container.getCurrentEntitlements('home', {
-          capabilityId: 'piano.games', subjectId: 'learner-a', periodId: schoolPeriod.id,
+          capabilityId: 'piano.games', subjectId: 'user_4', periodId: schoolPeriod.id,
         });
         expect(entitlement.items).toEqual([
           expect.objectContaining({ capabilityId: 'piano.games', decision: 'granted' }),
         ]);
         await module.ingress.observe('home', schoolPrincipal, {
-          assertionId: 'school:day-complete:learner-a:2026-08-30',
-          claimTypeId: 'school.day.complete', subject: { kind: 'learner', id: 'learner-a' },
+          assertionId: 'school:day-complete:user_4:2026-08-30',
+          claimTypeId: 'school.day.complete', subject: { kind: 'learner', id: 'user_4' },
           period: schoolPeriod, value: false, sourceRevision: 2,
           observedAt: now, validFrom: now, validUntil: schoolPeriod.endsAt,
         });
         expect((await module.container.getCurrentEntitlements('home', {
-          capabilityId: 'piano.games', subjectId: 'learner-a', periodId: schoolPeriod.id,
+          capabilityId: 'piano.games', subjectId: 'user_4', periodId: schoolPeriod.id,
         })).items[0]).toMatchObject({ decision: 'denied', degraded: false });
         await module.ingress.retract('home', schoolPrincipal, {
-          assertionId: 'school:day-complete:learner-a:2026-08-30',
+          assertionId: 'school:day-complete:user_4:2026-08-30',
           sourceRevision: 3, retractedAt: now,
         });
         expect((await module.container.getCurrentEntitlements('home', {
-          capabilityId: 'piano.games', subjectId: 'learner-a', periodId: schoolPeriod.id,
+          capabilityId: 'piano.games', subjectId: 'user_4', periodId: schoolPeriod.id,
         })).items[0]).toMatchObject({ decision: 'denied', degraded: true });
 
         const fitnessPeriod = {
@@ -156,13 +156,13 @@ const contracts = [
           endsAt: Date.parse('2026-09-06T04:00:00-07:00'),
         };
         await module.ingress.observe('home', fitnessPrincipal, {
-          assertionId: 'fitness:weekly-rings:learner-a:2026-08-30:2026-09-05',
-          claimTypeId: 'fitness.weekly.rings', subject: { kind: 'learner', id: 'learner-a' },
+          assertionId: 'fitness:weekly-rings:user_4:2026-08-30:2026-09-05',
+          claimTypeId: 'fitness.weekly.rings', subject: { kind: 'learner', id: 'user_4' },
           period: fitnessPeriod, value: 42, sourceRevision: 1,
           observedAt: now, validFrom: now, validUntil: fitnessPeriod.endsAt,
         });
         const gates = await module.container.getCurrentGates('home', {
-          gateId: 'fitness.weekly-rings', subjectId: 'learner-a', periodId: fitnessPeriod.id,
+          gateId: 'fitness.weekly-rings', subjectId: 'user_4', periodId: fitnessPeriod.id,
         });
         expect(gates.items[0].evaluation.progress).toMatchObject({ current: 42, target: 1, unit: 'rings' });
       } finally {

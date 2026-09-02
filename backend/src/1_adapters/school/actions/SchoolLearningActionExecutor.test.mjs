@@ -9,9 +9,9 @@ describe('School learning-action side-effect adapter', () => {
     expect(adapter).toBeInstanceOf(ISchoolLearningActionExecutor);
     const result = await adapter.execute({
       action: { kind: 'print_document', target: { printableId: 'motion', copies: 2 } },
-      learnerId: 'learner-a',
+      learnerId: 'user_4',
     });
-    expect(requestPrint).toHaveBeenCalledWith({ userId: 'learner-a', printableId: 'motion', copies: 2 });
+    expect(requestPrint).toHaveBeenCalledWith({ userId: 'user_4', printableId: 'motion', copies: 2 });
     expect(result).toMatchObject({ status: 'pending_approval', printed: false, effect: { requestId: 'pr_1' } });
   });
 

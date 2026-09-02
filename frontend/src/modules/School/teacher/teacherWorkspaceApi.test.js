@@ -12,8 +12,8 @@ describe('teacherWorkspaceApi', () => {
   });
 
   it('sends agenda idempotency in both header and body for compatibility', async () => {
-    await teacherWorkspaceApi.agendaDispatch('learner-a', { dispatchedBy: 'teacher', pin: '1234' }, 'agenda-1');
-    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/learners/learner-a/agenda/dispatch', expect.objectContaining({
+    await teacherWorkspaceApi.agendaDispatch('user_4', { dispatchedBy: 'teacher', pin: '1234' }, 'agenda-1');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/learners/user_4/agenda/dispatch', expect.objectContaining({
       method: 'POST', headers: expect.objectContaining({ 'Idempotency-Key': 'agenda-1' }),
       body: JSON.stringify({ dispatchedBy: 'teacher', pin: '1234', idempotencyKey: 'agenda-1' }),
     }));
