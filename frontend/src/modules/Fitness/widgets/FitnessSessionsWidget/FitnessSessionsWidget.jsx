@@ -12,14 +12,7 @@ import RecapChip from './RecapChip.jsx';
 import './FitnessSessionsWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { resolveSessionTitle, resolveSessionActivity } from './sessionDisplay.js';
-
-const RingIcon = ({ size = 12 }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-    <circle cx="8" cy="8" r="7" fill="#f5c542" stroke="#c9a020" strokeWidth="1" />
-    <circle cx="8" cy="8" r="5" fill="none" stroke="#c9a020" strokeWidth="0.5" opacity="0.5" />
-    <text x="8" y="11.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="#8a6d10" fontFamily="sans-serif">$</text>
-  </svg>
-);
+import RingIcon from '@/lib/icons/RingIcon.jsx';
 
 const StravaIcon = ({ size = 12, color = '#fff' }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill={color} style={{ flexShrink: 0 }}>
