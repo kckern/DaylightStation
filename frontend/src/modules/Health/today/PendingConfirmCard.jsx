@@ -48,9 +48,9 @@ export function PendingConfirmCard({ messages, onDone, onDiscard }) {
         </div>
       ) : (
         <div className="health-pending__actions">
-          <Button size="xs" color="green" loading={busy} onClick={() => act('Accept', onDone)}>Accept</Button>
-          <Button size="xs" variant="light" onClick={() => setRevising(true)}>Revise</Button>
-          <Button size="xs" variant="subtle" color="red" onClick={() => act('Discard', onDiscard)}>Discard</Button>
+          <Button size="xs" color="green" loading={busy} disabled={busy} onClick={() => act('Accept', onDone)}>Accept</Button>
+          <Button size="xs" variant="light" disabled={busy} onClick={() => setRevising(true)}>Revise</Button>
+          <Button size="xs" variant="subtle" color="red" loading={busy} disabled={busy} onClick={() => act('Discard', onDiscard)}>Discard</Button>
         </div>
       )}
     </div>
