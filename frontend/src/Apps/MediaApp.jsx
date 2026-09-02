@@ -2,12 +2,13 @@
 // The household's universal content front door + universal remote.
 // Design source-of-truth: docs/reference/media/media-app.md
 import React, { useEffect } from 'react';
-import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
+import { AppThemeProvider } from '@/lib/ui';
+import { configure as configureLogger } from '../lib/logging/Logger.js';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
-import { mediaTheme } from '../modules/Media/theme/mediaTheme.js';
+import { MEDIA_PACK } from '../modules/Media/theme/mediaTheme.js';
 import { MediaAppShell } from '../modules/Media/shell/MediaAppShell.jsx';
 import { ClientIdentityProvider } from '../modules/Media/identity/ClientIdentityProvider.jsx';
 import { LocalSessionProvider } from '../modules/Media/session/LocalSessionProvider.jsx';
@@ -24,6 +25,11 @@ export default function MediaApp() {
   useDocumentTitle('Media');
 
   useEffect(() => {
+    // `sessionLog` on the root logger is what makes mediaLog's events DURABLE
+    // (the backend session-file transport gates on context.app +
+    // context.sessionLog — see mediaLog.js). Same pattern as the other
+    // DS-migrated apps (LifeApp, FitnessApp, PianoApp).
+    configureLogger({ context: { app: 'media', sessionLog: true } });
     // Device shape belongs on the FIRST event of the session. A 2026-08-16
     // report of "couldn't search on mobile, in portrait" had to be sized from a
     // viewport that only appeared incidentally inside an audio-shader warning —
@@ -45,11 +51,12 @@ export default function MediaApp() {
     return () => {
       wsService.setAutoReloadEnabled(true);
       mediaLog.unmounted({});
+      configureLogger({ context: { sessionLog: false } });
     };
   }, []);
 
   return (
-    <MantineProvider theme={mediaTheme} defaultColorScheme="dark" forceColorScheme="dark">
+    <AppThemeProvider pack={MEDIA_PACK} forceColorScheme="dark">
       <Notifications position="bottom-center" autoClose={3000} />
       <ClientIdentityProvider>
         <LocalSessionProvider>
@@ -68,6 +75,6 @@ export default function MediaApp() {
           </FleetProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
-    </MantineProvider>
+    </AppThemeProvider>
   );
 }
