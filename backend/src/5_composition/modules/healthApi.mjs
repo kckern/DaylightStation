@@ -10,6 +10,12 @@ import { PersonalContextLoader } from '#apps/health/PersonalContextLoader.mjs';
 import { YamlPersonalPlaybookStore } from '#adapters/health/YamlPersonalPlaybookStore.mjs';
 import { SetDailyCoachingUseCase } from '#apps/health/SetDailyCoachingUseCase.mjs';
 import { HealthOperations } from '#apps/health/HealthOperations.mjs';
+import { YamlHealthGoalsDatastore } from '#adapters/persistence/yaml/YamlHealthGoalsDatastore.mjs';
+import { BudgetService } from '#apps/health/BudgetService.mjs';
+import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMealsDatastore.mjs';
+import { SavedMealsService } from '#apps/health/SavedMealsService.mjs';
+import { YamlMedicalReadingsDatastore } from '#adapters/persistence/yaml/YamlMedicalReadingsDatastore.mjs';
+import { MedicalReadingsService } from '#apps/health/MedicalReadingsService.mjs';
 import { dataService } from '../runtimePersistence.mjs';
 import { nowDate } from '#system/utils/time.mjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -89,12 +95,38 @@ export function createHealthApiRouter(config) {
     newId: uuidv4,
   });
 
+  const goalsStore = new YamlHealthGoalsDatastore({ dataService });
+  const budgetService = new BudgetService({
+    goalsStore,
+    healthStore: healthServices.healthStore,
+    nutriListStore: healthServices.nutriListStore,
+    clock: { now: () => Date.now() },
+    logger,
+  });
+
+  const savedMealsService = new SavedMealsService({
+    mealsStore: new YamlSavedMealsDatastore({ dataService }),
+    nutriListStore: healthServices.nutriListStore,
+    clock: { now: () => Date.now() },
+    createId: uuidv4,
+    logger,
+  });
+
+  const medicalService = new MedicalReadingsService({
+    store: new YamlMedicalReadingsDatastore({ dataService }),
+    createId: uuidv4,
+    logger,
+  });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthOperations,
     dashboardService,
     longitudinalService,
     catalogService,
+    budgetService,
+    savedMealsService,
+    medicalService,
     logger
   });
 }

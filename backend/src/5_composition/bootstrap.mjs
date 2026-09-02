@@ -2470,6 +2470,7 @@ export async function createAgentsServices(config) {
     nutriListStore = null,
     foodLogStore = null,
     nutribotConfig: rawNutribotConfig = null,
+    webNutribotAdapter = null,
   } = config;
 
   // The coaching orchestrator consumes the NutriBot runtime contract rather
@@ -2709,6 +2710,9 @@ export async function createAgentsServices(config) {
         eventQueryService,
         baselineService,
         userModelService,
+        // NutritionActionToolFactory's log_food tool — same WebNutribotAdapter
+        // instance the health router uses (see healthApi.mjs / app.mjs proxy).
+        nutritionInput: webNutribotAdapter,
       });
     }
   }

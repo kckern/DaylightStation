@@ -5294,6 +5294,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     // Real notification delivery for agent tools (was a no-op stub fallback)
     notificationService: notificationStack.notificationService,
+    // Same instance the health router uses (already delegated to the real
+    // WebNutribotAdapter by this point — nutribotApiResult ran above).
+    webNutribotAdapter: webNutribotAdapterProxy,
   });
 
   // Lifeplan ceremony reminders — hourly check for due ceremonies across all

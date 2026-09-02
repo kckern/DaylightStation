@@ -69,7 +69,8 @@ export class IMessagingGateway {
 
   /**
    * Transcribe a voice message
-   * @param {string} fileId - Voice file ID
+   * @param {string|{buffer: Buffer, mimeType: string}} fileId - Voice file ID,
+   *   or (web transport) a decoded audio buffer to transcribe directly.
    * @returns {Promise<string>} Transcribed text
    */
   async transcribeVoice(_fileId) { throw new Error('IMessagingGateway.transcribeVoice not implemented'); }

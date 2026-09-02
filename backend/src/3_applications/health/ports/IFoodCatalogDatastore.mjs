@@ -8,4 +8,5 @@ export class IFoodCatalogDatastore {
   async save(entry, userId) { throw new Error('Not implemented'); }
   async getById(id, userId) { throw new Error('Not implemented'); }
   async getAll(userId) { throw new Error('Not implemented'); }
+  async findByUpc(upc, userId) { throw new Error('Not implemented'); }
 }

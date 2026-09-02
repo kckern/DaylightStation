@@ -10,6 +10,7 @@ import { PeriodToolFactory } from './tools/PeriodToolFactory.mjs';
 import { HealthQueryToolFactory } from './tools/HealthQueryToolFactory.mjs';
 import { PlaybookToolFactory }    from './tools/PlaybookToolFactory.mjs';
 import { PersonalBaselineToolFactory } from './tools/PersonalBaselineToolFactory.mjs';
+import { NutritionActionToolFactory } from './tools/NutritionActionToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { chatPrompt } from './prompts/chat.mjs';
 import { dashboardPrompt } from './prompts/dashboard.mjs';
@@ -309,6 +310,11 @@ export class HealthCoachAgent extends BaseAgent {
     const { baselineService } = this.deps;
     if (baselineService) {
       this.addToolFactory(new PersonalBaselineToolFactory({ baselineService }));
+    }
+
+    // NutritionActionToolFactory: the coach's write path into food logging.
+    if (this.deps.nutritionInput) {
+      this.addToolFactory(new NutritionActionToolFactory({ nutritionInput: this.deps.nutritionInput }));
     }
 
     // Existing assignment

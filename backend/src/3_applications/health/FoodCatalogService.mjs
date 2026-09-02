@@ -6,6 +6,14 @@
 
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 
+/** Local (not UTC) YYYY-MM-DD from a Date instance. */
+function localDateISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export class FoodCatalogService {
   #catalogStore;
   #nutriListStore;
@@ -88,7 +96,11 @@ export class FoodCatalogService {
 
     if (!this.#nutriListStore) throw new Error('NutriListStore not configured for quick-add');
 
-    const today = new Date(this.#clock.now()).toISOString().split('T')[0];
+    const now = new Date(this.#clock.now());
+    // LOCAL date, not UTC — new Date().toISOString() reads as tomorrow every
+    // evening after ~5pm in this household's timezone (UTC-7/8), which
+    // silently misfiles the quick-add onto the wrong day.
+    const today = localDateISO(now);
     const item = {
       uuid: this.#createId(),
       userId,
@@ -103,6 +115,7 @@ export class FoodCatalogService {
       amount: 1,
       color: 'yellow',
       date: today,
+      mealTime: (() => { const h = now.getHours(); return h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night'; })(),
       log_uuid: 'QUICKADD',
     };
 
@@ -181,5 +194,68 @@ export class FoodCatalogService {
 
     this.#logger.info?.('health.catalog.backfill', { userId, daysBack, processed, created, updated });
     return { processed, created, updated };
+  }
+
+  /**
+   * One ranked suggestion list for the add-combobox: favorites first, then
+   * recency-weighted frequency, then name matches. Empty query = favorites
+   * plus recent/frequent entries.
+   */
+  async suggest(query, userId, limit = 12) {
+    const all = await this.#catalogStore.getAll(userId);
+    const q = (query || '').toLowerCase().trim();
+    const nowDay = new Date(this.#clock.now());
+    const score = (e) => {
+      const daysSince = Math.max(0, (nowDay - new Date(`${e.lastUsed}T12:00:00Z`)) / 86400000);
+      return e.useCount / (1 + daysSince / 30);
+    };
+    return all
+      .filter((e) => (q ? e.matchesSearch(q) : true))
+      .sort((a, b) =>
+        (b.favorite === true) - (a.favorite === true)
+        || score(b) - score(a)
+        || a.normalizedName.localeCompare(b.normalizedName))
+      .slice(0, limit);
+  }
+
+  async setFavorite(id, userId, favorite) {
+    const entry = await this.#catalogStore.getById(id, userId);
+    if (!entry) throw new Error(`Catalog entry not found: ${id}`);
+    entry.favorite = favorite === true;
+    await this.#catalogStore.save(entry, userId);
+    this.#logger.info?.('health.catalog.favorite', { id, favorite: entry.favorite });
+    return entry;
+  }
+
+  async setFavoriteByName(name, userId, favorite) {
+    const existing = await this.#catalogStore.findByNormalizedName(name, userId);
+    if (!existing) throw new Error(`Catalog entry not found by name: ${name}`);
+    return this.setFavorite(existing.id, userId, favorite);
+  }
+
+  async getByUpc(upc, userId) {
+    return this.#catalogStore.findByUpc(upc, userId);
+  }
+
+  /** Create a user-authored food, optionally mapped to a barcode. */
+  async createCustom({ name, calories, protein, carbs, fat, barcodeUpc = null }, userId) {
+    if (!name) throw new Error('createCustom requires name');
+    const entry = new FoodCatalogEntry({
+      id: this.#createId(),
+      name,
+      nutrients: {
+        calories: Number(calories) || 0,
+        protein: Number(protein) || 0,
+        carbs: Number(carbs) || 0,
+        fat: Number(fat) || 0,
+      },
+      source: 'custom',
+      barcodeUpc,
+      lastUsed: new Date(this.#clock.now()).toISOString().slice(0, 10),
+      createdAt: new Date(this.#clock.now()).toISOString(),
+    });
+    await this.#catalogStore.save(entry, userId);
+    this.#logger.info?.('health.catalog.custom_created', { name, barcodeUpc });
+    return entry;
   }
 }
