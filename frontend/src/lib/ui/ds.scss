@@ -1,0 +1,19 @@
+// frontend/src/lib/ui/ds.scss
+// Design-system stylesheet entry. Colors ONLY via --ds-* custom properties
+// (set by AppThemeProvider); breakpoints ONLY via the shared mixins.
+@use '../../styles/breakpoints' as bp;
+
+.ds-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-radius: 9px;
+  background: var(--ds-surface);
+  color: var(--ds-text-mid);
+
+  &__title { margin: 0; color: var(--ds-text-high); font-weight: 600; }
+  &__detail { margin: 0; font-size: 0.85rem; color: var(--ds-text-mid); }
+
+  &--error &__title { color: var(--ds-danger); }
+}
