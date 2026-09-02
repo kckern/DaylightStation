@@ -8,7 +8,7 @@
 // schema and is deliberately not on this form until it would do something.
 
 import { useState } from 'react';
-import { Loading, Failed, Empty } from './AutoStates.jsx';
+import { LoadingState, ErrorState, EmptyState, Sheet } from '@/lib/ui';
 import { formatDay, formatMoney, formatDistance } from './format.js';
 import { autoApi } from './useAutoApi.js';
 import autoLog from './autoLog.js';
@@ -29,8 +29,8 @@ export default function ServicePanel({
   const [adding, setAdding] = useState(false);
   const types = serviceTypes?.length ? serviceTypes : FALLBACK_TYPES;
 
-  if (loading) return <Loading label="Loading service history" />;
-  if (error) return <Failed error={error} onRetry={onReload} />;
+  if (loading) return <LoadingState label="service history" />;
+  if (error) return <ErrorState error={error} onRetry={onReload} label="Service history" />;
 
   const records = service?.records || [];
   const due = (reminders || []).filter((r) => r.kind === 'service');
@@ -60,9 +60,9 @@ export default function ServicePanel({
       )}
 
       {records.length === 0 ? (
-        <Empty
+        <EmptyState
           title="No service records"
-          detail="Log what's been done and the app can tell you when the next one is due."
+          hint="Log what's been done and the app can tell you when the next one is due."
         />
       ) : (
         <ul className="auto-list">
@@ -158,10 +158,8 @@ function ServiceSheet({ vehicleId, types, onClose, onSaved }) {
   };
 
   return (
-    <div className="auto-sheet-backdrop" onClick={onClose} role="presentation">
-      <form className="auto-sheet" onClick={(e) => e.stopPropagation()} onSubmit={submit} aria-label="Log service">
-        <h2 className="auto-sheet__title">Log service</h2>
-
+    <Sheet open onClose={onClose} title="Log service">
+      <form onSubmit={submit} aria-label="Log service">
         <label className="auto-field">
           <span>What was done</span>
           <select className="auto-input" value={form.type} onChange={setType}>
@@ -219,6 +217,6 @@ function ServiceSheet({ vehicleId, types, onClose, onSaved }) {
           </button>
         </div>
       </form>
-    </div>
+    </Sheet>
   );
 }

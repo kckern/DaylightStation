@@ -10,7 +10,7 @@ const ramp = (hex) => Array(10).fill(hex);
  */
 export function createAppTheme(pack) {
   const colors = { ...DS_TOKENS.colors, ...(pack?.colors || {}) };
-  return createTheme({
+  const base = {
     primaryColor: pack?.primaryColor || 'blue',
     colors: {
       background: ramp(colors.background),
@@ -28,7 +28,16 @@ export function createAppTheme(pack) {
       Modal: { defaultProps: { centered: true, radius: 'md' } },
       Drawer: { defaultProps: { radius: 'md' } },
     },
-  });
+  };
+  // A pack may fully own its Mantine-native theme beyond the base contract's
+  // 7 semantic roles — its own component defaults, font, breakpoints, extra
+  // color ramps — for art direction that predates (or exceeds) the shared
+  // contract. `themeExtras` is a top-level, NOT deep-merged, override: keys
+  // it sets (colors/other/components/...) fully replace the base's, so an
+  // app's own component defaults are never silently blended with the base's
+  // generic ones. Additive: no existing pack sets this, so every other app's
+  // theme is unchanged. See modules/Media/theme/mediaTheme.js (Phase 6).
+  return createTheme(pack?.themeExtras ? { ...base, ...pack.themeExtras } : base);
 }
 
 export default createAppTheme;

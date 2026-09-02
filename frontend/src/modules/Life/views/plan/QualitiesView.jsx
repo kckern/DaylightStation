@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Stack, Paper, Text, Group, Badge, Button, Accordion, ThemeIcon } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Accordion, ThemeIcon } from '@mantine/core';
 import { IconShield, IconAlertTriangle } from '@tabler/icons-react';
 import { useLifePlan } from '../../hooks/useLifePlan.js';
 import { LifePage, LoadingState, EmptyState } from '../../components/index.js';
@@ -44,9 +44,9 @@ export function QualitiesView({ username }) {
     return (
       <LifePage title="Qualities">
         <EmptyState
-          icon={IconShield}
-          message="Qualities are the character traits you want to embody. Your coach can help you name your first few."
-          cta={<Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>}
+          title="Qualities"
+          hint="Qualities are the character traits you want to embody. Your coach can help you name your first few."
+          action={{ label: 'Talk to your coach', onClick: () => navigate('/life/coach') }}
         />
       </LifePage>
     );

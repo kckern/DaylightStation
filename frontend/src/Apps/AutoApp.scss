@@ -2,45 +2,45 @@
 //
 // Mobile-first. The base rules ARE the phone layout; media queries only widen.
 // Roboto Condensed throughout (house typeface) — emphasis comes from colour and
-// weight, never from introducing a second family.
+// weight, never from introducing a second family. Kept as an app-level rule
+// (no raw colors) rather than a pack `font` field — see AutoApp.jsx header
+// comment for why.
+//
+// Colors are var(--ds-*) tokens only (AppThemeProvider pack 'auto' sets them),
+// per the audit:ui gate. Chrome (header/tabs), the Loading/Error/Empty triad,
+// and the fill-up/service/place-naming sheets all come from @/lib/ui now —
+// this file keeps only what's genuinely app-specific: the dense card/list/
+// form layouts a garage screen actually needs.
 
-$auto-bg:        #12151a;
-$auto-surface:   #1b1f27;
-$auto-surface-2: #232936;
-$auto-line:      #2e3542;
-$auto-text:      #eef1f6;
-$auto-text-dim:  #9aa4b5;
-$auto-accent:    #4da3ff;
-$auto-warn:      #ffb545;
-$auto-danger:    #ff6b5e;
-$auto-ok:        #57d9a3;
-
-// Bottom bar height, reused as the main region's padding so the last row is
-// never trapped underneath it.
-$tabbar-h: 3.5rem;
-
+// Four branches (vehicles.loading / vehicles.error / no-vehicles / the
+// multi-vehicle Garage picker) render OUTSIDE AppChrome — this wrapper is
+// their only source of DS background/text tokens, so it still needs to look
+// like a real page root, not just carry the typeface. AppChrome-wrapped
+// branches get the identical tokens from .ds-chrome, so this is idempotent
+// where the two are nested. .auto-main (flex: 1) also relies on this being
+// a flex column, same as before the migration.
 .auto-app {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh; // dvh: mobile browser chrome shrinks/grows as you scroll
-  background: $auto-bg;
-  color: $auto-text;
+  background: var(--ds-background);
+  color: var(--ds-text-high);
   font-family: 'Roboto Condensed', system-ui, sans-serif;
   font-size: 16px; // never below 16px on inputs — iOS zooms the viewport otherwise
 }
 
+// Garage (vehicle picker) header — the only screen still using a hand-rolled
+// header; the vehicle-selected view's header/tabs come from AppChrome.
 .auto-header {
   position: sticky;
   top: 0;
   z-index: 5;
   padding: 0.85rem 1rem;
   padding-top: max(0.85rem, env(safe-area-inset-top));
-  background: rgba(18, 21, 26, 0.92);
+  background: color-mix(in srgb, var(--ds-background) 92%, transparent);
   backdrop-filter: blur(8px);
-  border-bottom: 1px solid $auto-line;
-
-  &__identity { display: flex; align-items: baseline; gap: 0.75rem; }
+  border-bottom: 1px solid var(--ds-border);
 
   &__title {
     margin: 0;
@@ -48,27 +48,13 @@ $tabbar-h: 3.5rem;
     font-weight: 700;
     letter-spacing: 0.01em;
   }
-
-  // Back-to-garage chevron. Sized as a real touch target rather than a glyph —
-  // it sits top-left, the hardest corner to reach one-handed.
-  &__back {
-    min-width: 2.25rem;
-    min-height: 2.25rem;
-    margin-left: -0.4rem;
-    border: 0;
-    background: none;
-    color: $auto-accent;
-    font: inherit;
-    font-size: 1.9rem;
-    line-height: 1;
-    cursor: pointer;
-  }
 }
 
 .auto-garage__pick {
   width: 100%;
   border: 0;
   background: none;
+  color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -80,8 +66,6 @@ $tabbar-h: 3.5rem;
 .auto-main {
   flex: 1;
   padding: 1rem;
-  // Clear the fixed tab bar plus the home indicator on gesture-nav phones.
-  padding-bottom: calc(#{$tabbar-h} + env(safe-area-inset-bottom) + 1rem);
 }
 
 .auto-panel { display: flex; flex-direction: column; gap: 0.85rem; }
@@ -89,8 +73,8 @@ $tabbar-h: 3.5rem;
 /* ---- cards ---------------------------------------------------------- */
 
 .auto-card {
-  background: $auto-surface;
-  border: 1px solid $auto-line;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
   border-radius: 0.85rem;
   padding: 1rem;
 
@@ -100,20 +84,20 @@ $tabbar-h: 3.5rem;
     font-weight: 600;
     letter-spacing: 0.09em;
     text-transform: uppercase;
-    color: $auto-text-dim;
+    color: var(--ds-text-mid);
   }
 
   &__value { margin: 0; font-size: 1.15rem; font-weight: 600; }
-  &__value--muted { color: $auto-text-dim; font-weight: 500; }
+  &__value--muted { color: var(--ds-text-mid); font-weight: 500; }
 
   &__note {
     margin: 0.5rem 0 0;
     font-size: 0.85rem;
     line-height: 1.4;
-    color: $auto-text-dim;
+    color: var(--ds-text-mid);
   }
 
-  &--attention { border-color: rgba($auto-warn, 0.45); }
+  &--attention { border-color: color-mix(in srgb, var(--ds-warning) 45%, transparent); }
 }
 
 .auto-bignum {
@@ -123,8 +107,8 @@ $tabbar-h: 3.5rem;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 
-  &--muted { color: $auto-text-dim; font-size: 1.75rem; }
-  &__unit { font-size: 1.1rem; font-weight: 500; color: $auto-text-dim; }
+  &--muted { color: var(--ds-text-mid); font-size: 1.75rem; }
+  &__unit { font-size: 1.1rem; font-weight: 500; color: var(--ds-text-mid); }
 }
 
 .auto-stats {
@@ -139,7 +123,7 @@ $tabbar-h: 3.5rem;
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    color: $auto-text-dim;
+    color: var(--ds-text-mid);
   }
   dd { margin: 0.15rem 0 0; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 }
@@ -151,8 +135,8 @@ $tabbar-h: 3.5rem;
 .auto-journey,
 .auto-record,
 .auto-doc {
-  background: $auto-surface;
-  border: 1px solid $auto-line;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
   border-radius: 0.85rem;
   padding: 0.85rem 1rem;
 }
@@ -166,7 +150,7 @@ $tabbar-h: 3.5rem;
     font-size: 0.78rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: $auto-text-dim;
+    color: var(--ds-text-mid);
   }
 
   &__title { margin: 0.3rem 0 0; font-size: 1.1rem; font-weight: 600; }
@@ -177,11 +161,11 @@ $tabbar-h: 3.5rem;
     gap: 0.85rem;
     margin-top: 0.45rem;
     font-size: 0.9rem;
-    color: $auto-text-dim;
+    color: var(--ds-text-mid);
     font-variant-numeric: tabular-nums;
   }
 
-  &__note { margin: 0.5rem 0 0; font-size: 0.82rem; color: $auto-text-dim; font-style: italic; }
+  &__note { margin: 0.5rem 0 0; font-size: 0.82rem; color: var(--ds-text-mid); font-style: italic; }
   &__name { margin-top: 0; }
 
   // Wraps so a row offering both "Log the fill-up" and "Name this place" stacks
@@ -201,20 +185,20 @@ $tabbar-h: 3.5rem;
   &__amount { font-weight: 600; font-variant-numeric: tabular-nums; }
   &__stats {
     display: flex; flex-wrap: wrap; gap: 0.75rem;
-    margin-top: 0.35rem; font-size: 0.88rem; color: $auto-text-dim;
+    margin-top: 0.35rem; font-size: 0.88rem; color: var(--ds-text-mid);
   }
-  &__notes { margin: 0.5rem 0 0; font-size: 0.88rem; color: $auto-text-dim; }
+  &__notes { margin: 0.5rem 0 0; font-size: 0.88rem; color: var(--ds-text-mid); }
 }
 
 .auto-tag {
   padding: 0.1rem 0.45rem;
   border-radius: 0.4rem;
-  background: $auto-surface-2;
+  background: var(--ds-surface-alt);
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 
-  &--warn { background: rgba($auto-warn, 0.18); color: $auto-warn; }
+  &--warn { background: color-mix(in srgb, var(--ds-warning) 18%, transparent); color: var(--ds-warning); }
 }
 
 .auto-reminder {
@@ -223,13 +207,13 @@ $tabbar-h: 3.5rem;
   gap: 0.75rem;
   padding: 0.6rem 0.75rem;
   border-radius: 0.6rem;
-  background: $auto-surface-2;
+  background: var(--ds-surface-alt);
 
   &__label { font-weight: 600; }
-  &__when { font-variant-numeric: tabular-nums; color: $auto-text-dim; }
+  &__when { font-variant-numeric: tabular-nums; color: var(--ds-text-mid); }
 
-  &--overdue  { background: rgba($auto-danger, 0.16); .auto-reminder__when { color: $auto-danger; } }
-  &--due-soon { background: rgba($auto-warn, 0.14);   .auto-reminder__when { color: $auto-warn; } }
+  &--overdue  { background: color-mix(in srgb, var(--ds-danger) 16%, transparent); .auto-reminder__when { color: var(--ds-danger); } }
+  &--due-soon { background: color-mix(in srgb, var(--ds-warning) 14%, transparent); .auto-reminder__when { color: var(--ds-warning); } }
 }
 
 .auto-doc {
@@ -247,12 +231,12 @@ $tabbar-h: 3.5rem;
 
   &__kind {
     font-size: 0.72rem; text-transform: uppercase;
-    letter-spacing: 0.08em; color: $auto-text-dim;
+    letter-spacing: 0.08em; color: var(--ds-text-mid);
   }
   &__label { font-size: 1.1rem; font-weight: 600; }
-  &__expiry { font-size: 0.85rem; color: $auto-text-dim; }
-  &__expiry--overdue  { color: $auto-danger; font-weight: 600; }
-  &__expiry--due-soon { color: $auto-warn; }
+  &__expiry { font-size: 0.85rem; color: var(--ds-text-mid); }
+  &__expiry--overdue  { color: var(--ds-danger); font-weight: 600; }
+  &__expiry--due-soon { color: var(--ds-warning); }
 }
 
 /* ---- buttons & forms ------------------------------------------------ */
@@ -261,14 +245,14 @@ $tabbar-h: 3.5rem;
   min-height: 2.75rem; // ~44px, the smallest comfortable touch target
   padding: 0 1rem;
   border-radius: 0.6rem;
-  border: 1px solid $auto-line;
-  background: $auto-surface-2;
-  color: $auto-text;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface-alt);
+  color: var(--ds-text-high);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 
-  &--primary { background: $auto-accent; border-color: $auto-accent; color: #05121f; }
+  &--primary { background: var(--ds-accent); border-color: var(--ds-accent); color: var(--ds-background); }
   &--ghost   { background: transparent; }
   &--block   { width: 100%; }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -286,13 +270,13 @@ $tabbar-h: 3.5rem;
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    color: $auto-text-dim;
+    color: var(--ds-text-mid);
   }
 
   &--check { flex-direction: row; align-items: center; gap: 0.6rem; }
 
-  &__note  { margin: 0.15rem 0 0; font-size: 0.8rem; color: $auto-text-dim; }
-  &__error { margin: 0; font-size: 0.88rem; color: $auto-danger; }
+  &__note  { margin: 0.15rem 0 0; font-size: 0.8rem; color: var(--ds-text-mid); }
+  &__error { margin: 0; font-size: 0.88rem; color: var(--ds-danger); }
 }
 
 .auto-field-row { display: flex; gap: 0.75rem; }
@@ -302,107 +286,21 @@ $tabbar-h: 3.5rem;
   min-height: 2.75rem;
   padding: 0.5rem 0.7rem;
   border-radius: 0.55rem;
-  border: 1px solid $auto-line;
-  background: $auto-surface-2;
-  color: $auto-text;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface-alt);
+  color: var(--ds-text-high);
   font: inherit;
   font-size: 16px; // hold at 16px so iOS doesn't zoom on focus
 
-  &:focus-visible { outline: 2px solid $auto-accent; outline-offset: 1px; }
+  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 1px; }
 }
 
-/* ---- bottom sheet --------------------------------------------------- */
-
-.auto-sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: flex-end; // rises from the bottom, where the thumb already is
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.auto-sheet {
-  width: 100%;
-  max-height: 88vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  padding: 1.1rem 1rem calc(1.1rem + env(safe-area-inset-bottom));
-  background: $auto-surface;
-  border-radius: 1.1rem 1.1rem 0 0;
-  border-top: 1px solid $auto-line;
-
-  &__title { margin: 0; font-size: 1.25rem; font-weight: 700; }
-  &__actions { display: flex; gap: 0.75rem; margin-top: 0.35rem; > * { flex: 1; } }
-}
-
-/* ---- states --------------------------------------------------------- */
-
-.auto-state {
-  padding: 2rem 1rem;
-  text-align: center;
-  color: $auto-text-dim;
-
-  &__title  { margin: 0 0 0.4rem; font-size: 1.05rem; font-weight: 600; color: $auto-text; }
-  &__detail { margin: 0 0 0.9rem; font-size: 0.9rem; line-height: 1.5; }
-
-  &__spinner {
-    display: inline-block;
-    width: 1rem; height: 1rem;
-    margin-right: 0.5rem;
-    vertical-align: -2px;
-    border: 2px solid $auto-line;
-    border-top-color: $auto-accent;
-    border-radius: 50%;
-    animation: auto-spin 0.8s linear infinite;
-  }
-
-  &--error .auto-state__title { color: $auto-danger; }
-}
-
-@keyframes auto-spin { to { transform: rotate(360deg); } }
-
-@media (prefers-reduced-motion: reduce) {
-  .auto-state__spinner { animation: none; }
-}
-
-/* ---- tab bar -------------------------------------------------------- */
-
-.auto-tabs {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  z-index: 10;
-  display: flex;
-  height: calc(#{$tabbar-h} + env(safe-area-inset-bottom));
-  padding-bottom: env(safe-area-inset-bottom);
-  background: rgba(18, 21, 26, 0.95);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid $auto-line;
-
-  &__tab {
-    flex: 1;
-    border: 0;
-    background: none;
-    color: $auto-text-dim;
-    font: inherit;
-    font-size: 0.85rem;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    cursor: pointer;
-
-    &--active {
-      color: $auto-accent;
-      box-shadow: inset 0 2px 0 $auto-accent;
-    }
-  }
-}
+// Action row inside a DS Sheet's form body (Cancel/Save, side by side).
+.auto-sheet__actions { display: flex; gap: 0.75rem; margin-top: 0.35rem; > * { flex: 1; } }
 
 /* ---- widening ------------------------------------------------------- */
 
-// Tablet and up: the tab bar leaves the thumb zone and becomes a top row, and
-// content stops running full-bleed.
+// Tablet and up: content stops running full-bleed.
 @media (min-width: 48rem) {
   .auto-main {
     max-width: 46rem;
@@ -411,32 +309,17 @@ $tabbar-h: 3.5rem;
     padding-bottom: 2rem;
   }
 
-  .auto-tabs {
-    position: sticky;
-    top: 3.4rem;
-    height: 3rem;
-    padding-bottom: 0;
+  .auto-app .ds-chrome__main {
     max-width: 46rem;
     margin: 0 auto;
-    border-top: 0;
-    border-bottom: 1px solid $auto-line;
-    order: -1; // above the main region rather than below it
+    width: 100%;
   }
-
-  .auto-app { display: flex; flex-direction: column; }
-
-  .auto-sheet {
-    max-width: 32rem;
-    margin: auto;
-    border-radius: 1.1rem;
-  }
-  .auto-sheet-backdrop { align-items: center; justify-content: center; padding: 1rem; }
 }
 
 // Desktop: two columns, so the overview stops being a long scroll.
 @media (min-width: 72rem) {
   .auto-main { max-width: 64rem; }
-  .auto-tabs { max-width: 64rem; }
+  .auto-app .ds-chrome__main { max-width: 64rem; }
 
   .auto-panel {
     display: grid;
@@ -453,7 +336,7 @@ $tabbar-h: 3.5rem;
 .auto-detected {
   padding: 0.75rem;
   border-radius: 0.6rem;
-  background: $auto-surface-2;
+  background: var(--ds-surface-alt);
 
   &__head {
     display: flex;
@@ -465,7 +348,7 @@ $tabbar-h: 3.5rem;
   &__day  { font-weight: 600; }
   &__rise {
     font-variant-numeric: tabular-nums;
-    color: $auto-ok;
+    color: var(--ds-success);
     font-weight: 600;
   }
 
@@ -478,10 +361,10 @@ $tabbar-h: 3.5rem;
   margin: -0.25rem 0 0;
   font-size: 0.85rem;
   letter-spacing: 0.03em;
-  color: $auto-text-dim;
+  color: var(--ds-text-mid);
 }
 
 // Harsh-motion count on a journey row. Amber rather than red: it is an
 // observation about the drive, not a fault, and the app has no basis to
 // judge it — dongle orientation is unknown, so it cannot even say braking.
-.auto-journey__harsh { color: $auto-warn; }
+.auto-journey__harsh { color: var(--ds-warning); }

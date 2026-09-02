@@ -7,17 +7,25 @@
 //
 // Every other DaylightStation app is a kiosk surface — a wall display, a TV, a
 // tablet bolted to a piano. This one gets used in a driveway, at a shop
-// counter, or in a parts aisle, one-handed, on a phone. So the base layout is a
-// single column with a bottom tab bar (thumb reach), and the desktop layout is
-// what widens out of it, rather than a TV layout squeezed down.
+// counter, or in a parts aisle, one-handed, on a phone. So AppChrome's bottom
+// tab bar (thumb reach) IS the mobile layout, and the desktop rail is what it
+// becomes CSS-side, rather than a TV layout squeezed down.
 //
 // Design: docs/_wip/plans/2026-08-12-auto-app-design.md
+// DS migration (Task M2): docs/superpowers/... — pack 'auto' (teal), Roboto
+// Condensed kept via an app-level font-family rule (no raw colors) rather
+// than a pack `font` field, since AppThemeProvider/createAppTheme don't yet
+// read one and a single scoped rule is the smaller, reversible change.
 
 import { useEffect, useMemo, useState } from 'react';
+import '@mantine/core/styles.css';
+import { ActionIcon } from '@mantine/core';
+import {
+  AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState, EmptyState,
+} from '@/lib/ui';
 import {
   useVehicles, useOverview, useJourneys, useFuel, useService, useDocuments, useServiceTypes,
 } from '../modules/Auto/useAutoApi.js';
-import { Loading, Failed, Empty } from '../modules/Auto/AutoStates.jsx';
 import OverviewPanel from '../modules/Auto/OverviewPanel.jsx';
 import DrivesPanel from '../modules/Auto/DrivesPanel.jsx';
 import FuelPanel from '../modules/Auto/FuelPanel.jsx';
@@ -27,15 +35,73 @@ import autoLog from '../modules/Auto/autoLog.js';
 import { describeVehicle } from './autoAppVehicleLabel.js';
 import './AutoApp.scss';
 
+const TabIcon = ({ children }) => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    {children}
+  </svg>
+);
+
+const BackIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 const TABS = [
-  { id: 'overview', label: 'Car' },
-  { id: 'drives', label: 'Drives' },
-  { id: 'fuel', label: 'Fuel' },
-  { id: 'service', label: 'Service' },
-  { id: 'glove', label: 'Docs' },
+  {
+    id: 'overview',
+    label: 'Car',
+    icon: (
+      <TabIcon>
+        <path d="M3 12l1.3-4.2a2 2 0 011.9-1.4h7.6a2 2 0 011.9 1.4L17 12" />
+        <path d="M2.5 12h15v2.5a1 1 0 01-1 1h-1a1 1 0 01-1-1V14h-8v.5a1 1 0 01-1 1h-1a1 1 0 01-1-1V12z" />
+        <circle cx="6" cy="14.5" r="1" fill="currentColor" stroke="none" />
+        <circle cx="14" cy="14.5" r="1" fill="currentColor" stroke="none" />
+      </TabIcon>
+    ),
+  },
+  {
+    id: 'drives',
+    label: 'Drives',
+    icon: (
+      <TabIcon>
+        <path d="M10 17.5s5.2-5.7 5.2-9.5a5.2 5.2 0 10-10.4 0c0 3.8 5.2 9.5 5.2 9.5z" />
+        <circle cx="10" cy="8" r="1.8" />
+      </TabIcon>
+    ),
+  },
+  {
+    id: 'fuel',
+    label: 'Fuel',
+    icon: (
+      <TabIcon>
+        <path d="M4.5 17V4.5a1 1 0 011-1h4a1 1 0 011 1V17" />
+        <path d="M3.5 17h8" />
+        <path d="M10.5 8h1.3a1.5 1.5 0 011.5 1.5V14a1 1 0 001 1v0a1 1 0 001-1V8.8l-2-2" />
+      </TabIcon>
+    ),
+  },
+  {
+    id: 'service',
+    label: 'Service',
+    icon: (
+      <TabIcon>
+        <path d="M13.4 6.6a2.7 2.7 0 10-3.8 3.8L4 16l1 1 5.6-5.6a2.7 2.7 0 003.8-3.8l-1.7 1.7-1.4-1.4z" />
+      </TabIcon>
+    ),
+  },
+  {
+    id: 'glove',
+    label: 'Docs',
+    icon: (
+      <TabIcon>
+        <path d="M3 6.5a1 1 0 011-1h4l1.5 2H16a1 1 0 011 1v7a1 1 0 01-1 1H4a1 1 0 01-1-1v-9z" />
+      </TabIcon>
+    ),
+  },
 ];
 
-export default function AutoApp() {
+function AutoAppShell() {
   const [tab, setTab] = useState('overview');
   const [vehicleId, setVehicleId] = useState(null);
   const [includeShuffles, setIncludeShuffles] = useState(false);
@@ -80,14 +146,18 @@ export default function AutoApp() {
     service.reload();
   };
 
-  if (vehicles.loading) return <Loading label="Loading garage" />;
-  if (vehicles.error) return <Failed error={vehicles.error} onRetry={vehicles.reload} />;
+  if (vehicles.loading) {
+    return <div className="auto-app"><LoadingState label="garage" /></div>;
+  }
+  if (vehicles.error) {
+    return <div className="auto-app"><ErrorState error={vehicles.error} onRetry={vehicles.reload} label="Garage" /></div>;
+  }
   if (!vehicles.data?.vehicles?.length) {
     return (
       <div className="auto-app">
-        <Empty
+        <EmptyState
           title="No vehicles yet"
-          detail="A vehicle appears here once the in-car device uploads a trip, or once records are added under household/automotive/."
+          hint="A vehicle appears here once the in-car device uploads a trip, or once records are added under household/automotive/."
         />
       </div>
     );
@@ -102,25 +172,23 @@ export default function AutoApp() {
     );
   }
 
+  const headerActions = vehicles.data.vehicles.length > 1
+    ? [(
+      <ActionIcon key="back" aria-label="Back to garage" variant="subtle" onClick={() => setVehicleId(null)}>
+        <BackIcon />
+      </ActionIcon>
+    )]
+    : undefined;
+
   return (
     <div className="auto-app">
-      <header className="auto-header">
-        <div className="auto-header__identity">
-          {vehicles.data.vehicles.length > 1 && (
-            <button
-              type="button"
-              className="auto-header__back"
-              onClick={() => setVehicleId(null)}
-              aria-label="Back to garage"
-            >
-              ‹
-            </button>
-          )}
-          <h1 className="auto-header__title">{vehicleLabel}</h1>
-        </div>
-      </header>
-
-      <main className="auto-main">
+      <AppChrome
+        title={vehicleLabel}
+        tabs={TABS}
+        activeTab={tab}
+        onTabChange={(id) => { setTab(id); autoLog.debug('tab.changed', { tab: id }); }}
+        headerActions={headerActions}
+      >
         {tab === 'overview' && (
           <OverviewPanel
             overview={overview.data}
@@ -174,22 +242,18 @@ export default function AutoApp() {
             onReload={documents.reload}
           />
         )}
-      </main>
-
-      <nav className="auto-tabs" aria-label="Sections">
-        {TABS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className={`auto-tabs__tab${tab === entry.id ? ' auto-tabs__tab--active' : ''}`}
-            aria-current={tab === entry.id ? 'page' : undefined}
-            onClick={() => { setTab(entry.id); autoLog.debug('tab.changed', { tab: entry.id }); }}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </nav>
+      </AppChrome>
     </div>
+  );
+}
+
+export default function AutoApp() {
+  return (
+    <AppThemeProvider pack="auto">
+      <DismissStackProvider>
+        <AutoAppShell />
+      </DismissStackProvider>
+    </AppThemeProvider>
   );
 }
 
@@ -204,9 +268,7 @@ function Garage({ vehicles, onPick }) {
   return (
     <div className="auto-app">
       <header className="auto-header">
-        <div className="auto-header__identity">
-          <h1 className="auto-header__title">Garage</h1>
-        </div>
+        <h1 className="auto-header__title">Garage</h1>
       </header>
       <main className="auto-main">
         <ul className="auto-list">

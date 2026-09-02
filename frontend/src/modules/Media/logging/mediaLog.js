@@ -1,5 +1,5 @@
 // frontend/src/modules/Media/logging/mediaLog.js
-import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 
 // `sessionLog` is what makes these events DURABLE. The backend session-file
 // transport gates on `context.app && context.sessionLog`
@@ -9,10 +9,16 @@ import { getChildLogger } from '../../../lib/logging/singleton.js';
 // (which sets its own sessionLog); the entire §10.1 taxonomy — playback,
 // stalls, dispatch, errors — was missing, and the diagnosis survived only
 // because `docker logs` happened not to have rolled.
-let _logger;
+//
+// Re-parented (Phase 6, DS migration) onto lib/ui's createAppLogger — the
+// same facade every other DS-migrated app uses. `sessionLog: true` now comes
+// from MediaApp.jsx's mount effect calling `configure({ context: { app:
+// 'media', sessionLog: true } })` on the shared root logger (Logger.js),
+// same pattern as LifeApp/FitnessApp/PianoApp, rather than being set
+// per-child here.
+const logger = createAppLogger('media');
 function base() {
-  if (!_logger) _logger = getChildLogger({ app: 'media', sessionLog: true });
-  return _logger;
+  return logger;
 }
 
 const SAMPLED = { maxPerMinute: 20, aggregate: true };

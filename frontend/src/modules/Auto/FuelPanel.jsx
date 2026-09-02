@@ -8,15 +8,15 @@
 // at a station you'll never visit again. A known place only labels the result.
 
 import { useState } from 'react';
-import { Loading, Failed, Empty } from './AutoStates.jsx';
+import { LoadingState, ErrorState, EmptyState } from '@/lib/ui';
 import { formatVolume, formatMoney, formatDistance, formatDay, litresToGallons } from './format.js';
 import FuelSheet from './FuelSheet.jsx';
 
 export default function FuelPanel({ vehicleId, fuel, loading, error, onReload }) {
   const [sheet, setSheet] = useState(null);
 
-  if (loading) return <Loading label="Loading fill-ups" />;
-  if (error) return <Failed error={error} onRetry={onReload} />;
+  if (loading) return <LoadingState label="fill-ups" />;
+  if (error) return <ErrorState error={error} onRetry={onReload} label="Fill-ups" />;
 
   const logs = fuel?.logs || [];
   const summary = fuel?.summary;
@@ -79,9 +79,9 @@ export default function FuelPanel({ vehicleId, fuel, loading, error, onReload })
       )}
 
       {logs.length === 0 ? (
-        <Empty
+        <EmptyState
           title="No fill-ups logged"
-          detail="Log one with the dash odometer and the app can start tracking mileage and mpg."
+          hint="Log one with the dash odometer and the app can start tracking mileage and mpg."
         />
       ) : (
         <ul className="auto-list">

@@ -3,14 +3,14 @@
 // The vehicle's home screen. Everything here is a number the app is willing to
 // stand behind, or an explicit statement that it doesn't have one.
 
-import { Loading, Failed } from './AutoStates.jsx';
+import { LoadingState, ErrorState } from '@/lib/ui';
 import {
   formatDistance, formatDay, formatTime, formatMoney, describeOdometerSource,
 } from './format.js';
 
 export default function OverviewPanel({ overview, loading, error, onReload, onGoTo, vehicleDescription }) {
-  if (loading) return <Loading label="Loading vehicle" />;
-  if (error) return <Failed error={error} onRetry={onReload} />;
+  if (loading) return <LoadingState label="vehicle" />;
+  if (error) return <ErrorState error={error} onRetry={onReload} label="Vehicle" />;
   if (!overview) return null;
 
   const { odometer, last_snapshot: snap, fuel, reminders, recorded_distance_km: recorded } = overview;

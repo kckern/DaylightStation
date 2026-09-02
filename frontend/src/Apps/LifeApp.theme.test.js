@@ -1,15 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { lifeTheme } from './LifeApp.theme.js';
+import { PACKS } from '../lib/theme/packs.mjs';
+import { createAppTheme } from '../lib/theme/createAppTheme.js';
 
-describe('lifeTheme', () => {
-  it('is a dark, deliberate theme with card defaults', () => {
-    expect(lifeTheme.primaryColor).toBe('violet');
-    expect(lifeTheme.defaultRadius).toBe('md');
-    // Surface/border token scales exist (10 shades each) for card layering.
-    expect(lifeTheme.colors.surface).toHaveLength(10);
-    expect(lifeTheme.colors.border).toHaveLength(10);
-    // Paper defaults normalize the ~30 ad-hoc cards.
-    expect(lifeTheme.components.Paper.defaultProps.radius).toBe('md');
-    expect(lifeTheme.components.Paper.defaultProps.withBorder).toBe(true);
+// LifeApp no longer owns a bespoke theme file — it consumes the shared
+// `life` pack via AppThemeProvider (see LifeApp.jsx). This pins the pack's
+// own identity (violet, per the DS migration) plus the Mantine theme it
+// produces, which is what the old LifeApp.theme.js test actually cared
+// about. The pack-machinery mechanics themselves (every pack has a name/
+// character/primaryColor/accent, createAppTheme yields 10-shade ramps) are
+// covered generically by lib/theme/tokens.test.mjs.
+describe('life theme pack', () => {
+  it('is violet, per the DS migration (hex ramps identical to the base)', () => {
+    expect(PACKS.life.primaryColor).toBe('violet');
+    expect(PACKS.life.accent).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  it('createAppTheme(PACKS.life) produces the semantic ramps LifeApp renders against', () => {
+    const theme = createAppTheme(PACKS.life);
+    expect(theme.primaryColor).toBe('violet');
+    expect(theme.colors.surface).toHaveLength(10);
+    expect(theme.colors.border).toHaveLength(10);
+    expect(theme.other.accent).toBe(PACKS.life.accent);
   });
 });
