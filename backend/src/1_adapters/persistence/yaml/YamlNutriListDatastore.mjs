@@ -169,6 +169,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
         logId,
         log_uuid: item.log_uuid || logUuid,
         date: nutriLog.meal?.date,
+        mealTime: nutriLog.meal?.time ?? null,
       }));
       items.push(...newItems);
     }
@@ -245,8 +246,10 @@ export class YamlNutriListDatastore extends INutriListDatastore {
         sodium: item.sodium ?? 0,
         cholesterol: item.cholesterol ?? 0,
         date: item.date,
+        mealTime: item.mealTime ?? null,
         logId: item.logId || item.log_uuid || item.logUuid,
         log_uuid: item.log_uuid || item.logUuid,
+        userId: item.userId,
       };
     });
 

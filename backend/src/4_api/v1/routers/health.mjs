@@ -12,6 +12,14 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { presentFoodCatalogEntry } from '../presenters/FoodCatalogPresenter.mjs';
 
+/** Local (not UTC) YYYY-MM-DD from a Date instance. */
+function localDateISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function serializeWorkout(workout) {
   const record = {
     source: workout.source,
@@ -57,7 +65,7 @@ function serializeHealthMetric(metric) {
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -554,6 +562,169 @@ export function createHealthRouter(config) {
       return res.json(result);
     }));
 
+    /**
+     * GET /api/v1/health/nutrition/catalog/suggest - Ranked suggestions for add-combobox
+     * Query: q (search string), limit (default 12)
+     */
+    router.get('/nutrition/catalog/suggest', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { q = '', limit } = req.query;
+      const items = await catalogService.suggest(q, userId, parseInt(limit) || 12);
+      return res.json({ items });
+    }));
+
+    /**
+     * PUT /api/v1/health/nutrition/catalog/favorite - Toggle favorite by id or name
+     * Body: { id?, name?, favorite }
+     */
+    router.put('/nutrition/catalog/favorite', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { id, name, favorite } = req.body;
+      if (!id && !name) return res.status(400).json({ error: 'id or name is required' });
+      try {
+        const entry = id
+          ? await catalogService.setFavorite(id, userId, favorite)
+          : await catalogService.setFavoriteByName(name, userId, favorite);
+        return res.json({ entry });
+      } catch (err) {
+        return res.status(404).json({ error: err.message });
+      }
+    }));
+
+    /**
+     * POST /api/v1/health/nutrition/catalog - Create a custom food, optionally mapped to a barcode
+     * Body: { name, calories, protein, carbs, fat, barcodeUpc? }
+     */
+    router.post('/nutrition/catalog', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { name, calories, protein, carbs, fat, barcodeUpc } = req.body;
+      if (!name) return res.status(400).json({ error: 'name is required' });
+      const entry = await catalogService.createCustom({ name, calories, protein, carbs, fat, barcodeUpc }, userId);
+      return res.json({ entry });
+    }));
+
+  }
+
+  // ==========================================================================
+  // Budget & Goals (BudgetService)
+  // ==========================================================================
+  if (budgetService) {
+    router.get('/budget', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      // LOCAL date, not UTC — new Date().toISOString() reads as tomorrow
+      // every evening in this household's timezone (UTC-7/8).
+      const date = req.query.date || localDateISO(new Date());
+      try {
+        return res.json(await budgetService.getBudget(userId, date));
+      } catch (err) {
+        if (err.code === 'GOALS_NOT_CONFIGURED' || err.code === 'NO_WEIGHT_DATA') {
+          return res.status(409).json({ error: err.message, code: err.code });
+        }
+        logger.error?.('health.budget.error', { date, error: err.message });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+
+    router.get('/goals', asyncHandler(async (req, res) => {
+      const goals = await budgetService.getGoals(getDefaultUsername());
+      return res.json({ goals });
+    }));
+
+    router.put('/goals', asyncHandler(async (req, res) => {
+      try {
+        const goals = await budgetService.setGoals(getDefaultUsername(), req.body);
+        return res.json({ goals });
+      } catch (err) {
+        if (err.code === 'GOALS_WRITE_FAILED') {
+          logger.error?.('health.goals.put.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        logger.error?.('health.goals.put.error', { error: err.message });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+  }
+
+  // ==========================================================================
+  // Saved Meals (SavedMealsService)
+  // ==========================================================================
+  if (savedMealsService) {
+    router.get('/nutrition/meals', asyncHandler(async (req, res) =>
+      res.json({ meals: await savedMealsService.list(getDefaultUsername()) })));
+
+    router.post('/nutrition/meals', asyncHandler(async (req, res) => {
+      const { name, items } = req.body;
+      try {
+        return res.json({ meal: await savedMealsService.create({ name, items }, getDefaultUsername()) });
+      } catch (err) {
+        if (err.code === 'MEALS_WRITE_FAILED') {
+          logger.error?.('health.meals.create.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        return res.status(400).json({ error: err.message });
+      }
+    }));
+
+    router.post('/nutrition/meals/:id/log', asyncHandler(async (req, res) => {
+      const { date, mealTime } = req.body || {};
+      try {
+        return res.json(await savedMealsService.logToDate(req.params.id, getDefaultUsername(), { date, mealTime }));
+      } catch (err) {
+        if (err.code === 'MEALS_WRITE_FAILED') {
+          logger.error?.('health.meals.log.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        return res.status(404).json({ error: err.message });
+      }
+    }));
+
+    router.delete('/nutrition/meals/:id', asyncHandler(async (req, res) => {
+      try {
+        await savedMealsService.remove(req.params.id, getDefaultUsername());
+        return res.json({ ok: true });
+      } catch (err) {
+        if (err.code === 'MEALS_WRITE_FAILED') {
+          logger.error?.('health.meals.remove.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+  }
+
+  // ==========================================================================
+  // Medical Readings Endpoints
+  // ==========================================================================
+
+  if (medicalService) {
+    router.get('/medical', asyncHandler(async (req, res) =>
+      res.json(await medicalService.listGrouped(getDefaultUsername()))));
+
+    router.post('/medical', asyncHandler(async (req, res) => {
+      try {
+        return res.json({ reading: await medicalService.add(req.body, getDefaultUsername()) });
+      } catch (err) {
+        if (err.code === 'INVALID_READING') return res.status(400).json({ error: err.message });
+        if (err.code === 'MEDICAL_WRITE_FAILED') {
+          logger.error?.('health.medical.add.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
+    router.delete('/medical/:id', asyncHandler(async (req, res) => {
+      try {
+        await medicalService.remove(req.params.id, getDefaultUsername());
+        return res.json({ ok: true });
+      } catch (err) {
+        if (err.code === 'MEDICAL_WRITE_FAILED') {
+          logger.error?.('health.medical.remove.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
   }
 
   // ==========================================================================

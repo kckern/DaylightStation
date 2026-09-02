@@ -1,6 +1,10 @@
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
   'calories', 'fat', 'carbs', 'protein', 'fiber', 'sugar', 'sodium', 'cholesterol', 'date',
+  // mealTime is how a quick-added / edited row gets stamped into a bucket
+  // (Breakfast/Lunch/Dinner/Snacks) — the today-view combobox (F5) and edit
+  // sheet (F6) both PUT this field expecting it to persist.
+  'mealTime',
 ]);
 
 /**

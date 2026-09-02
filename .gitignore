@@ -82,6 +82,9 @@ config.app-local.yml
 !scripts/audit-household-paths.mjs
 !scripts/check-parse.mjs
 !scripts/probe-printer-jobstate.mjs
+!scripts/audit-ui-tokens.mjs
+!scripts/audit-ui-tokens.baseline.json
+!scripts/audit-ui-tokens.test.mjs
 *.log
 .github/copilot-instructions.md
 # Skill local configs

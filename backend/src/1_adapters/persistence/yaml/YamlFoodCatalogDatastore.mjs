@@ -44,6 +44,7 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
       source: entry.source,
       barcodeUpc: entry.barcodeUpc,
       useCount: entry.useCount,
+      favorite: entry.favorite === true,
       lastUsed: entry.lastUsed,
       createdAt: entry.createdAt,
     };
@@ -99,5 +100,11 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
 
   async getAll(userId) {
     return this.#loadCatalog(userId);
+  }
+
+  async findByUpc(upc, userId) {
+    if (!upc) return null;
+    const catalog = await this.#loadCatalog(userId);
+    return catalog.find(e => e.barcodeUpc === upc) || null;
   }
 }

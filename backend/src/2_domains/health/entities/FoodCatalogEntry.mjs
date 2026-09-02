@@ -14,6 +14,7 @@ export class FoodCatalogEntry {
     this.source = data.source || 'manual';
     this.barcodeUpc = data.barcodeUpc || null;
     this.useCount = data.useCount || 1;
+    this.favorite = data.favorite === true;
     this.lastUsed = data.lastUsed;
     this.createdAt = data.createdAt;
   }
