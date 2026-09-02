@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { ElapsedTimer } from '@/modules/Fitness/shared';
 import { ZONE_COLORS, getRingColorRank } from '@/modules/Fitness/shared/constants/fitness';
 import '../FitnessSidebar.scss';
+import RingIcon from '@/lib/icons/RingIcon.jsx';
 
 /**
  * FitnessTreasureBox - Gamification rewards display panel
@@ -38,7 +39,9 @@ const FitnessTreasureBox = ({ box, session }) => {
       </div>
       <div className="tb-row tb-row-body">
         <div className="tb-total">
-          <span className="tb-icon" role="img" aria-label="rings">💰</span>
+          {/* RingIcon defaults to 1em, so the existing .tb-icon font-size rules
+              (including the two responsive overrides) still size it. */}
+          <span className="tb-icon"><RingIcon label="rings" /></span>
           {totalRings}
         </div>
         {hasRings && (
