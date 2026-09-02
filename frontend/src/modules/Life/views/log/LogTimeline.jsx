@@ -10,7 +10,7 @@ import { EmptyState } from '../../components/index.js';
  */
 export function LogTimeline({ summaries = [] }) {
   if (summaries.length === 0) {
-    return <EmptyState message="No activity recorded." />;
+    return <EmptyState title="No activity recorded." />;
   }
 
   return (

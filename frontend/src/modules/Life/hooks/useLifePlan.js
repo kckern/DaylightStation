@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
 import { useLifeUsername } from './useLifeUser.js';
 
 let _logger;
@@ -22,16 +23,15 @@ export function planIsEmpty(plan) {
     && !plan.purpose;
 }
 
+// Transport for every hook in this file, over DaylightAPI (auth token +
+// X-Daylight-Device header) instead of a bare fetch. `options.body` keeps
+// arriving pre-stringified from call sites below (JSON.stringify(data)) so
+// none of them need to change — this just parses it back out, since
+// DaylightAPI does its own stringification.
 async function api(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `HTTP ${res.status}`);
-  }
-  return res.json();
+  const { method = 'GET', body } = options;
+  const data = body ? JSON.parse(body) : {};
+  return DaylightAPI(`${API_BASE}${path}`, data, method);
 }
 
 /**

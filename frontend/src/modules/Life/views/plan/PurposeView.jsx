@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Stack, Paper, Text, Group, Badge, Button, Textarea, ActionIcon, Alert } from '@mantine/core';
-import { IconEdit, IconCheck, IconX, IconCompass } from '@tabler/icons-react';
+import { IconEdit, IconCheck, IconX } from '@tabler/icons-react';
 import { useLifePlan } from '../../hooks/useLifePlan.js';
 import { LifePage, LoadingState, EmptyState } from '../../components/index.js';
 import { formatDate, humanize } from '../../lib/format.js';
@@ -49,9 +49,9 @@ export function PurposeView({ username }) {
     return (
       <LifePage title="Purpose" actions={actions}>
         <EmptyState
-          icon={IconCompass}
-          message="Your purpose statement is the 'why' behind everything else. Your coach can help you draft your first one."
-          cta={<Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>}
+          title="Purpose"
+          hint="Your purpose statement is the 'why' behind everything else. Your coach can help you draft your first one."
+          action={{ label: 'Talk to your coach', onClick: () => navigate('/life/coach') }}
         />
       </LifePage>
     );

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
 
 let _logger;
 function logger() {
@@ -59,9 +60,7 @@ export function useLifeUser() {
       setError(null);
       try {
         const qs = selected ? `?username=${encodeURIComponent(selected)}` : '';
-        const res = await fetch(`/api/v1/life/user${qs}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
+        const json = await DaylightAPI(`api/v1/life/user${qs}`);
         if (!cancelled) {
           setUser(json);
           logger().info('life.user.resolved', { username: json.username, selected: !!selected });
@@ -83,9 +82,7 @@ export function useLifeUser() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/v1/life/users');
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
+        const json = await DaylightAPI('api/v1/life/users');
         if (!cancelled) {
           const list = Array.isArray(json.users) ? json.users : [];
           setUsers(list);
