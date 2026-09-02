@@ -12,6 +12,14 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { presentFoodCatalogEntry } from '../presenters/FoodCatalogPresenter.mjs';
 
+/** Local (not UTC) YYYY-MM-DD from a Date instance. */
+function localDateISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function serializeWorkout(workout) {
   const record = {
     source: workout.source,
@@ -603,7 +611,9 @@ export function createHealthRouter(config) {
   if (budgetService) {
     router.get('/budget', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
-      const date = req.query.date || new Date().toISOString().slice(0, 10);
+      // LOCAL date, not UTC — new Date().toISOString() reads as tomorrow
+      // every evening in this household's timezone (UTC-7/8).
+      const date = req.query.date || localDateISO(new Date());
       try {
         return res.json(await budgetService.getBudget(userId, date));
       } catch (err) {

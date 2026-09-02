@@ -6,6 +6,14 @@
 
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 
+/** Local (not UTC) YYYY-MM-DD from a Date instance. */
+function localDateISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export class FoodCatalogService {
   #catalogStore;
   #nutriListStore;
@@ -89,7 +97,10 @@ export class FoodCatalogService {
     if (!this.#nutriListStore) throw new Error('NutriListStore not configured for quick-add');
 
     const now = new Date(this.#clock.now());
-    const today = now.toISOString().split('T')[0];
+    // LOCAL date, not UTC — new Date().toISOString() reads as tomorrow every
+    // evening after ~5pm in this household's timezone (UTC-7/8), which
+    // silently misfiles the quick-add onto the wrong day.
+    const today = localDateISO(now);
     const item = {
       uuid: this.#createId(),
       userId,

@@ -5,6 +5,14 @@
 
 const mealTimeFromHour = (h) => (h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night');
 
+/** Local (not UTC) YYYY-MM-DD from a Date instance. */
+const localDateISO = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 const snapshotItem = (item) => ({
   name: String(item.name),
   calories: Number(item.calories) || 0,
@@ -54,7 +62,10 @@ export class SavedMealsService {
     if (!meal) throw new Error(`Saved meal not found: ${mealId}`);
 
     const now = new Date(this.#clock.now());
-    const targetDate = date || now.toISOString().slice(0, 10);
+    // LOCAL date, not UTC — see localDateISO comment on FoodCatalogService's
+    // twin fix; the UTC form reads as tomorrow every evening in this
+    // household's timezone (UTC-7/8).
+    const targetDate = date || localDateISO(now);
     const targetMealTime = mealTime || mealTimeFromHour(now.getHours());
 
     const rows = meal.items.map((item) => ({
