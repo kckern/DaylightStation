@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, configure } from '@testing-library/react';
+
+// Testing Library's 1s default is a wall-clock budget, and this file's finds
+// race it when the suite runs at full width — the gate runs 2,874 files, and
+// this test passed alone and failed in the batch on 2026-09-01. A flaky test is
+// one people learn to re-run, which is the same as not having it. The assertions
+// are unchanged; they simply get room to be true under contention.
+configure({ asyncUtilTimeout: 5000 });
 import RubiksCubeProgram from './RubiksCubeProgram.jsx';
 import { COLORS, FACES } from '@shared-gaming/rulesets/rubiks-cube/index.mjs';
 import { schoolApi } from '../../schoolApi.js';
