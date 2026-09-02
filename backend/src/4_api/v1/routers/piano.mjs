@@ -523,8 +523,20 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
   // harmonic timelines (root-0, canonical-C), cache by folder mtime. This is the
   // ONE index fetch useLoopLibrary makes; individual bricks stream + parse lazily.
   router.get('/loop-manifest', asyncHandler((req, res) => {
+    // The manifest BUILDER was never implemented on the datastore — no
+    // `getLoopManifest` exists, so this route answered 500 to every request,
+    // including the one `useLoopLibrary` makes on the kiosk. Answer the
+    // documented shape with an empty library instead: the hook already handles
+    // an empty manifest, whereas a 500 put an error banner in front of a
+    // feature that simply has no data yet.
+    if (typeof ds.getLoopManifest !== 'function') {
+      logger?.warn?.('piano.loop_manifest.unimplemented', {
+        message: 'studio datastore has no getLoopManifest; serving an empty loop library',
+      });
+      return res.json({ bricks: [], count: 0 });
+    }
     const bricks = ds.getLoopManifest({ refresh: req.query.refresh === 'true' });
-    res.json({ bricks, count: bricks.length });
+    return res.json({ bricks, count: bricks.length });
   }));
 
   // ── Studio takes (per-user) ─────────────────────────────────────────────────

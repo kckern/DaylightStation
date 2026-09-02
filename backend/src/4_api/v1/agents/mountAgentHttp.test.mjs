@@ -75,7 +75,13 @@ describe('mountAgentHttp(native)', () => {
       const r = await postJson(port, '/api/v1/agents/echo/run', { input: 'hi', context: { userId: 'kc' } });
       expect(r.status).toBe(200);
       expect(r.body).toEqual({ agentId: 'echo', output: 'echo: hi', toolCalls: [] });
-      expect(orchestrator.run).toHaveBeenCalledWith('echo', 'hi', { userId: 'kc' });
+      // parseRequest normalises a bare `input` into a messages array and
+      // resolves a threadId; both travel with the context to the orchestrator.
+      expect(orchestrator.run).toHaveBeenCalledWith('echo', 'hi', {
+        userId: 'kc',
+        messages: [{ role: 'user', content: 'hi' }],
+        threadId: null,
+      });
     } finally { server.close(); }
   });
 
@@ -147,7 +153,12 @@ describe('mountAgentHttp(native)', () => {
     const { server, port } = await startServer(app);
     try {
       await postJson(port, '/api/v1/agents/echo/run', { input: 'hi', context: { userId: 'kc' } });
-      expect(orchestrator.run).toHaveBeenCalledWith('echo', 'hi', { userId: 'kc', injectedFlag: true });
+      expect(orchestrator.run).toHaveBeenCalledWith('echo', 'hi', {
+        userId: 'kc',
+        injectedFlag: true,
+        messages: [{ role: 'user', content: 'hi' }],
+        threadId: null,
+      });
     } finally { server.close(); }
   });
 

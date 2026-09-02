@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { WebSocketEventBus } from '#system/eventbus/WebSocketEventBus.mjs';
+import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
 
 describe('WebSocketEventBus.waitForMessage', () => {
   let bus;

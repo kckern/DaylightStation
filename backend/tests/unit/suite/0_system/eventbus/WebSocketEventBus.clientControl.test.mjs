@@ -7,7 +7,7 @@
  * payloads are validated against the command contract before delivery.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { WebSocketEventBus } from '#system/eventbus/WebSocketEventBus.mjs';
+import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
 import { CLIENT_CONTROL_TOPIC } from '#shared-contracts/media/topics.mjs';
 
 const OPEN = 1;

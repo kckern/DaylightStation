@@ -7,7 +7,7 @@
  * full per-client send path without a real WebSocket server.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-// NOTE: '#system/eventbus/WebSocketEventBus.mjs' does not exist — the class
+// NOTE: '#adapters/eventbus/WebSocketEventBus.mjs' does not exist — the class
 // lives under 1_adapters, not 0_system (see 0_system/eventbus/index.mjs's own
 // doc comment, which points here). Fixed 2026-09-01; this file previously
 // failed to import at all (0 tests collected), silently, alongside its two
