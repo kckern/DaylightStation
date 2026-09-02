@@ -1637,6 +1637,10 @@ git commit -m "test(piano): screenshot gate — the settings sheets never scroll
 
 ---
 
+**As run (2026-09-02).** The committed gate (`8d5f68468`) differs from the sketch above: seven states (Pianos, Winds & Brass, Synths, Mine, Maintenance idle, danger tile armed — Restart when the piano has no `screensaver.deviceId` and Reboot is absent — and Diagnostics); the inner-scroll assertion exempts `[role="log"]` (the MIDI monitor scrolls by design, Task 9 review); and it polls `/api/v1/static/img/music/instruments/violin-1.svg` to 200 before navigating, which both waits for the backend behind Vite's proxy and proves the illustrations are served rather than icon-fallbacked.
+
+Laptop prerequisite: the backend reads household/system config YAML at boot, and Dropbox keeps much of the data tree online-only ("dataless"). A dataless read blocks until Dropbox hydrates it — minutes, sometimes never within Playwright's window — so the backend never listens and every proxied request is a 500. Hydrate the boot-time set first (`stat -f %Sf` shows `dataless`; `cat` each to `/dev/null`), or run the gate on a machine whose data tree is local.
+
 ### Task 13: Full verification before hand-off
 
 ```bash
