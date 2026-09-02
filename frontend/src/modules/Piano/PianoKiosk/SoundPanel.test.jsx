@@ -1,3 +1,4 @@
+import { Profiler } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -259,5 +260,43 @@ describe('SoundPanel', () => {
     fireEvent.click(within(rail()).getByRole('button', { name: 'Strings' }));
     fireEvent.click(within(grid()).getByRole('button', { name: 'Cello' }));
     expect(log.info).toHaveBeenLastCalledWith('piano.sound.pick', { pc: 42, bank: 0, name: 'Cello', from: 'strings' });
+  });
+  it('keeps the favourite result when the write flips persistence in the same batch, and never offers Retry for a favourite failure', async () => {
+    // saveFavorite and the last-sound write share enqueueWrite, so persistence
+    // moves saving -> failed inside the same React batch as the result message.
+    presetState.persistenceState = 'saving';
+    saveFavorite.mockImplementationOnce(async () => { await Promise.resolve(); presetState.persistenceState = 'failed'; return { ok: false, reason: 'io' }; });
+    render(<SoundPanel open onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save sound' }));
+    expect(await screen.findByText('Couldn’t save sound.')).toBeInTheDocument();
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.queryByText(/Couldn’t save$/)).toBeNull();
+  });
+
+  it('keeps "Sound saved." over "Remembered for" when the write lands in the same batch', async () => {
+    presetState.persistenceState = 'saving';
+    saveFavorite.mockImplementationOnce(async () => { await Promise.resolve(); presetState.persistenceState = 'remembered'; return { ok: true }; });
+    render(<SoundPanel open onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save sound' }));
+    expect(await screen.findByText('Sound saved.')).toBeInTheDocument();
+    expect(screen.queryByText('Remembered for Alex')).toBeNull();
+  });
+
+  it('drops the latched family while closed, so the first frame on reopen already shows the new voice', () => {
+    // Profiler onRender fires per commit, so the first snapshot after reopen is
+    // the frame painted before the open effect re-latches.
+    const frames = [];
+    const probe = () => frames.push(screen.queryByRole('button', { name: 'Mine' })?.getAttribute('aria-pressed') ?? 'closed');
+    const view = (open) => <Profiler id="sheet" onRender={probe}><SoundPanel open={open} onClose={vi.fn()} /></Profiler>;
+    currentBundle = { ...currentBundle, voice: { pc: 56, bank: 0, name: 'Trumpet' } };
+    const { rerender } = render(view(true));
+    expect(within(rail()).getByRole('button', { name: 'Winds & Brass' })).toHaveAttribute('aria-pressed', 'true');
+    rerender(view(false));
+    currentBundle = { ...currentBundle, voice: { pc: 0, bank: 0, name: 'Grand' } };
+    frames.length = 0;
+    rerender(view(true));
+    expect(frames[0]).toBe('true');
+    expect(within(rail()).getByRole('button', { name: 'Mine' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
