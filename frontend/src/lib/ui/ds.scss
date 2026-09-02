@@ -17,3 +17,31 @@
 
   &--error &__title { color: var(--ds-danger); }
 }
+
+.ds-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: 9px;
+  padding: 0.75rem 1rem;
+
+  &__header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+  &__title { margin: 0; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-text-mid); }
+}
+
+.ds-stat {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  padding: 0.75rem 1rem;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: 9px;
+
+  &--emphasis { border-left: 3px solid var(--ds-accent, var(--ds-info)); }
+  &__label { font-size: 0.75rem; color: var(--ds-text-mid); }
+  &__value { display: flex; align-items: baseline; gap: 0.3rem; }
+  &__number { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
+  &__unit { font-size: 0.8rem; color: var(--ds-text-low); }
+  &__trend { font-size: 0.8rem; color: var(--ds-text-mid); }
+}
