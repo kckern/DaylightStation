@@ -64,6 +64,19 @@ describe('BudgetService.getBudget', () => {
     expect(b.status).toBe('over');
     expect(b.remaining).toBeLessThan(0);
   });
+
+  it('rounds food once so remaining === budget - food + exercise exactly, even with fractional-calorie rows', async () => {
+    const svc = makeService({
+      nutriListStore: { findByDate: async () => ([
+        { calories: 100.4, status: 'accepted' },
+        { calories: 100.4, status: 'accepted' },
+      ]) },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.food).toBe(201); // Math.round(100.4 + 100.4) = Math.round(200.8) = 201
+    expect(b.remaining).toBe(b.budget - b.food + b.exercise);
+    expect(b.net).toBe(b.food - b.exercise);
+  });
 });
 
 describe('BudgetService.setGoals', () => {

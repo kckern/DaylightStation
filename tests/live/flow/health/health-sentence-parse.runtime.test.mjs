@@ -4,12 +4,24 @@
 // is down this test correctly FAILS; do not weaken it to a skip.
 import { test, expect } from '@playwright/test';
 
+// Cleanup must never key off generic food names — a real day's log can
+// legitimately contain eggs/toast, and matching by name would delete the
+// user's actual data (I-2, final review 2026-09-02). Instead we snapshot
+// today's row uuids before the test runs and only delete uuids that are
+// new afterward — rows this test itself created.
+let preExistingUuids;
+
+test.beforeEach(async ({ request }) => {
+  const res = await request.get('/api/v1/health/nutrilist');
+  const body = await res.json().catch(() => ({}));
+  preExistingUuids = new Set((body?.data || []).map((row) => row.uuid));
+});
+
 test.afterEach(async ({ request }) => {
   const res = await request.get('/api/v1/health/nutrilist');
   const body = await res.json().catch(() => ({}));
   for (const row of body?.data || []) {
-    const name = (row.name || row.item || '').toLowerCase();
-    if (name.includes('egg') || name.includes('toast') || name.includes('sourdough')) {
+    if (!preExistingUuids.has(row.uuid)) {
       await request.delete(`/api/v1/health/nutrilist/${row.uuid}`).catch(() => {});
     }
   }
@@ -34,12 +46,6 @@ test('free sentence → pending card → accept → totals move', async ({ page 
   // Accepted entries land in the log
   await expect(page.locator('.health-row', { hasText: /egg/i }).first()).toBeVisible({ timeout: 15_000 });
 
-  // Cleanup: delete what we logged
-  for (const pattern of [/egg/i, /toast|sourdough/i]) {
-    const row = page.locator('.health-row', { hasText: pattern }).first();
-    if (await row.isVisible().catch(() => false)) {
-      await row.click();
-      await page.getByRole('button', { name: /^Delete$/ }).click();
-    }
-  }
+  // Cleanup happens in afterEach via uuid diff — never delete by name here,
+  // since the first name match on the page could be a pre-existing real row.
 });
