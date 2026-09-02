@@ -1,11 +1,21 @@
 import { deepClone } from './types.js';
+import getLogger from '../../lib/logging/Logger.js';
 
 const DEFAULT_INTERVAL_MS = 5000;
 
-// MEMORY LEAK FIX: Limit timeline history to prevent unbounded growth
-// At 5-second intervals: 2000 points = ~2.7 hours of data
-// This provides sufficient history for chart visualization while preventing memory exhaustion
-const MAX_SERIES_LENGTH = 2000;
+// A bound on timeline history, so a browser left open for a day cannot grow an
+// unbounded array.
+//
+// It was 2000 ticks — 2h47m at 5s — which a real session can exceed: session
+// 20260725132556 ran 195 minutes and lost its first 346 ticks (29 minutes) off
+// the front. The head simply stopped existing, while `tickCount` kept counting,
+// so the file claimed 2346 ticks over a 2000-tick series and every reader that
+// assumed index 0 was the session start mis-dated the lot.
+//
+// 12 hours is past any workout while still bounding the array (~8.6k numbers
+// per series). Crossing it is now RECORDED rather than silent — see
+// _pruneSeriesWindow.
+const MAX_SERIES_LENGTH = 8640;
 
 const isPlainObject = (value) => value != null && typeof value === 'object' && !Array.isArray(value);
 
@@ -387,6 +397,16 @@ export class FitnessTimeline {
       arr.splice(0, Math.min(removeCount, arr.length));
     });
     this.timebase.prunedTickCount = this._getPrunedTickCount() + removeCount;
+    // Say so. Dropping the oldest data with no record is how a 195-minute
+    // session came to have a 166-minute series that nothing could identify as
+    // a window rather than the whole thing.
+    getLogger().warn('fitness.timeline.series_pruned', {
+      removedTicks: removeCount,
+      prunedTickCount: this.timebase.prunedTickCount,
+      tickCount: this.timebase.tickCount,
+      cap: MAX_SERIES_LENGTH,
+      message: 'timeline history exceeded the cap; the OLDEST ticks were dropped',
+    });
     return removeCount;
   }
 

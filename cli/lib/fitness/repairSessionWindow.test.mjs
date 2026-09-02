@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { realignSeries, planWindow, idToMs, parseClock } from './repairSessionWindow.mjs';
+import { realignSeries, planWindow, idToMs, parseClock, recordPrunedHead } from './repairSessionWindow.mjs';
 
 describe('realignSeries', () => {
   const session = () => ({
@@ -56,5 +56,32 @@ describe('planWindow guards', () => {
     const id = '20260617103706';
     const plan = planWindow(build(id, '2026-06-17 10:52:00.000', '2026-06-17 11:07:00.000', idToMs(id) - 917 * 60_000));
     expect(plan).toBeNull();
+  });
+});
+
+describe('recordPrunedHead', () => {
+
+  test('writes down how many ticks the cap took off the front', () => {
+    // The shape of session 20260725132556: the counter kept going, the series
+    // did not, and nothing said which end was missing.
+    const s = { timeline: { tick_count: 2346, series: { 'a:hr': JSON.stringify([[1, 2000]]) } } };
+    expect(recordPrunedHead(s)).toBe(346);
+    expect(s.timeline.pruned_ticks).toBe(346);
+  });
+
+  test('leaves an intact series alone', () => {
+    const s = { timeline: { tick_count: 100, series: { 'a:hr': JSON.stringify([[1, 100]]) } } };
+    expect(recordPrunedHead(s)).toBe(0);
+    expect(s.timeline.pruned_ticks).toBeUndefined();
+  });
+
+  test('ignores a couple of ticks of ordinary slack', () => {
+    const s = { timeline: { tick_count: 103, series: { 'a:hr': JSON.stringify([[1, 100]]) } } };
+    expect(recordPrunedHead(s)).toBe(0);
+  });
+
+  test('does not overwrite a count already recorded', () => {
+    const s = { timeline: { tick_count: 2346, pruned_ticks: 346, series: { 'a:hr': JSON.stringify([[1, 2000]]) } } };
+    expect(recordPrunedHead(s)).toBe(0);
   });
 });

@@ -1169,6 +1169,10 @@ export class PersistenceManager {
       const tickCount = Number(persistSessionData.timeline?.timebase?.tickCount);
       persistSessionData.timeline.interval_seconds = Number.isFinite(intervalMs) ? Math.round(intervalMs / 1000) : null;
       persistSessionData.timeline.tick_count = Number.isFinite(tickCount) ? tickCount : null;
+      // See SessionSerializerV3: a non-zero value means the series starts partway
+      // through the session, which every reader of index 0 needs to know.
+      const prunedTicks = Number(persistSessionData.timeline?.timebase?.prunedTickCount);
+      persistSessionData.timeline.pruned_ticks = Number.isFinite(prunedTicks) ? prunedTicks : 0;
       persistSessionData.timeline.encoding = 'rle';
 
       // Keep timeline.events for backend persistence (backend uses timeline.events as canonical source)

@@ -146,6 +146,42 @@ export function realignSeries(session, leadTicks, totalTicks) {
   return keys.length;
 }
 
+
+/**
+ * Record a series that the history cap truncated.
+ *
+ * `_pruneSeriesWindow` used to drop the oldest ticks silently while `tickCount`
+ * kept advancing, so a file could claim 2346 ticks over a 2000-tick series and
+ * nothing said which end was missing. Session 20260725132556 lost its first 29
+ * minutes that way.
+ *
+ * The loss is not recoverable, but it IS describable: the gap between the tick
+ * counter and the series length is exactly how many ticks came off the front.
+ * Writing it down lets a reader realign index 0 to its true tick instead of
+ * reading a windowed series as a whole one.
+ *
+ * @param {Object} session - mutated in place
+ * @returns {number} ticks recorded as pruned, 0 if none
+ */
+export function recordPrunedHead(session) {
+  const timeline = session?.timeline;
+  if (!timeline) return 0;
+  const tickCount = Number(timeline.tick_count) || 0;
+  if (!tickCount) return 0;
+  if (Number(timeline.pruned_ticks) > 0) return 0;
+
+  const decoded = decodeStoredSeries(timeline.series || {});
+  const lengths = Object.values(decoded).map(v => v.length).filter(n => n > 0);
+  if (!lengths.length) return 0;
+  const longest = Math.max(...lengths);
+
+  // A couple of ticks of slack is ordinary; a real prune is hundreds.
+  const lost = tickCount - longest;
+  if (lost <= 5) return 0;
+  timeline.pruned_ticks = lost;
+  return lost;
+}
+
 function getSessionFiles(historyDir, since) {
   const dates = readdirSync(historyDir)
     .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
@@ -181,6 +217,14 @@ export async function run(argv, ctx) {
     const session = ctx.loadYamlSafe(entry.filePath);
     if (!session?.session) continue;
     scanned++;
+
+    // Independent of the window repair: a truncated series must at least say so.
+    const prunedHead = recordPrunedHead(session);
+    if (prunedHead) {
+      console.log(`  ${entry.date} ${entry.sessionId} | series head pruned: recorded ${prunedHead} lost tick(s)`);
+      repaired++;
+      if (APPLY) ctx.saveYaml(entry.filePath, session);
+    }
 
     const plan = planWindow(session);
     if (!plan) continue;
