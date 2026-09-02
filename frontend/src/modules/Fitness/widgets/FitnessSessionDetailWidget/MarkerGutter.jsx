@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTimelineMarkers } from './useTimelineMarkers.js';
+import { layoutVideoCards } from './videoCardLayout.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { MARKER_FILL_OPACITY } from '@/modules/Fitness/lib/chartConstants.js';
 import './MarkerGutter.scss';
@@ -15,6 +16,7 @@ import './MarkerGutter.scss';
  */
 export default function MarkerGutter({ sessionData, primaryMediaKey }) {
   const { ref, width, height, challengeMarkers, videoMarkers } = useTimelineMarkers(sessionData, primaryMediaKey);
+  const cardLayout = layoutVideoCards(videoMarkers, width);
 
   return (
     <div ref={ref} className="marker-gutter">
@@ -37,18 +39,20 @@ export default function MarkerGutter({ sessionData, primaryMediaKey }) {
         ))}
       </svg>
       {videoMarkers.map((m, i) => {
-        const flip = width > 0 && m.x > width - 170; // card ≈160px wide; flip near the right edge
+        const { flip, captionWidth, zIndex } = cardLayout[i];
         return (
           <div
             key={`vid-${i}`}
             className={`marker-gutter__chip marker-gutter__chip--video${flip ? ' marker-gutter__chip--flip' : ''}`}
-            style={{ left: `${m.x}px` }}
+            style={{ left: `${m.x}px`, zIndex }}
           >
             <div className="imgs">
               {m.posterUrl && <img className="poster" src={m.posterUrl} alt="" />}
               {m.thumbUrl && <img className="thumb" src={m.thumbUrl} alt="" />}
             </div>
-            {m.episodeName && <div className="caption">{m.episodeName}</div>}
+            {m.episodeName && captionWidth != null && (
+              <div className="caption" style={{ maxWidth: `${captionWidth}px` }}>{m.episodeName}</div>
+            )}
           </div>
         );
       })}

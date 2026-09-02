@@ -129,11 +129,14 @@
  */
 import { createConnection } from 'net';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { OPS, encodeRequest, baseAttrs, printJobAttrs, decodeResponse } from './ipp.mjs';
+import {
+  OPS, encodeRequest, baseAttrs, printJobAttrs, jobAttrsRequest, decodeResponse,
+} from './ipp.mjs';
 import {
   negotiatePrintPlan, chooseJobAttributes, DEFAULT_MEDIA, JOB_ATTRIBUTE_TRIM_ORDER,
 } from './negotiate.mjs';
 import { rasterizePdf } from './rasterize.mjs';
+import { classifyJobState, isTerminal } from './jobState.mjs';
 
 /** IPP printer-state enum (RFC 8011 §5.4.11). */
 const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
@@ -249,7 +252,11 @@ export class LaserPrinterAdapter {
    * @param {string} [opts.jobName='daylight-print'] - job name (also our own logging)
    * @param {string} [opts.user='daylight'] - for our own logging / job-originating-user-name
    * @param {number} [opts.copies=1]
-   * @returns {Promise<{ok:boolean, bytes:number, copies:number, documentFormat:string, transport:'ipp'|'raw9100'}>}
+   * @returns {Promise<{ok:boolean, bytes:number, copies:number, jobId:?number, documentFormat:string, transport:'ipp'|'raw9100'}>}
+   *   Resolves on SEND, same as before this file grew job-outcome polling —
+   *   see `awaitJobOutcome`, which this method now kicks off in the
+   *   background (not awaited) and which reports via the
+   *   `laser-printer.job-outcome` log event, not through this return value.
    * @throws {InfrastructureError} INVALID_DOCUMENT | PRINT_FORMAT_UNSUPPORTED | RASTERIZE_* | PRINT_VALIDATE_FAILED | PRINT_SEND_FAILED
    */
   /**
@@ -409,6 +416,38 @@ export class LaserPrinterAdapter {
     const sent = await this.#sendIpp(bytes, {
       jobName, user, copies: nCopies, documentFormat: plan.format, jobAttributes: validatedJobAttributes,
     });
+
+    // DETACHED, DELIBERATELY. printPdf must resolve on SEND — the same
+    // contract it always had — not on the printer's eventual terminal
+    // answer. `awaitJobOutcome`'s own default deadline is 60s; awaiting it
+    // here would hold open whatever HTTP request/loop called printPdf (e.g.
+    // a sequential bulk-print loop, one POST per subject) for up to 60s per
+    // print, well past any UI's own "don't wait forever" timeout. So: start
+    // the poll, do not await it, and log the outcome when it lands. The
+    // point of Phase 1 — knowing what actually happened — is served by the
+    // log record, not by a slower return value.
+    if (Number.isInteger(sent.jobId)) {
+      this.awaitJobOutcome(sent.jobId)
+        .then((outcome) => {
+          this.#logger.info?.('laser-printer.job-outcome', {
+            host: this.#host, jobName, jobId: sent.jobId,
+            outcome: outcome.outcome, state: outcome.state,
+            stateReasons: outcome.stateReasons, polls: outcome.polls,
+            impressionsCompleted: outcome.impressionsCompleted,
+          });
+        })
+        // `awaitJobOutcome` itself never rejects, but a detached promise
+        // chain with no rejection handler can still crash the process on an
+        // unhandled rejection if something upstream ever does — a status
+        // query failing must never be able to do that, so this is a
+        // deliberate backstop, not defensive filler.
+        .catch((err) => {
+          this.#logger.warn?.('laser-printer.job-outcome-poll-failed', {
+            host: this.#host, jobName, jobId: sent.jobId, error: err?.message ?? String(err),
+          });
+        });
+    }
+
     return { ...sent, documentFormat: plan.format, transport: 'ipp' };
   }
 
@@ -499,19 +538,29 @@ export class LaserPrinterAdapter {
 
   /** IPP Print-Job — the default transport. `copies` is a real IPP attribute; no manual concatenation needed. */
   async #sendIpp(document, { jobName, user, copies, documentFormat, jobAttributes = {} }) {
-    const attrs = printJobAttrs(this.printerUri, {
+    // Named `requestAttrs`, not `attrs`, so it doesn't shadow the response's
+    // own `attrs` below — the two are unrelated objects (this method's
+    // outgoing job-attributes vs. the printer's returned attribute set).
+    const requestAttrs = printJobAttrs(this.printerUri, {
       user, jobName, copies, documentFormat, jobAttributes,
     });
-    const { ok, statusCode } = await this.#ipp(OPS.PRINT_JOB, attrs, document, this.#printTimeout);
+    const { ok, statusCode, attrs } = await this.#ipp(OPS.PRINT_JOB, requestAttrs, document, this.#printTimeout);
     if (!ok) {
       throw new InfrastructureError(`print-job failed (ipp status 0x${statusCode.toString(16)})`, {
         code: 'PRINT_SEND_FAILED', host: this.#host, port: this.#port, statusCode, documentFormat,
       });
     }
+    // The printer's own handle for this job. Parsed all along by
+    // `decodeResponse` and dropped here, which is why nothing downstream could
+    // ever ask what became of a job.
+    // `decodeResponse` collects EVERY attribute as an array
+    // (`(attrs[name] ||= []).push(value)`, ipp.mjs:219), so this is `[42]`,
+    // never `42`.
+    const jobId = Number.isInteger(attrs?.['job-id']?.[0]) ? attrs['job-id'][0] : null;
     this.#logger.info?.('laser-printer.job-sent', {
-      host: this.#host, port: this.#port, transport: 'ipp', jobName, user, copies, documentFormat, jobAttributes, bytes: document.length,
+      host: this.#host, port: this.#port, transport: 'ipp', jobName, user, copies, documentFormat, jobAttributes, bytes: document.length, jobId,
     });
-    return { ok: true, bytes: document.length, copies };
+    return { ok: true, bytes: document.length, copies, jobId };
   }
 
   /**
@@ -540,7 +589,9 @@ export class LaserPrinterAdapter {
         this.#logger.info?.('laser-printer.job-sent', {
           host: this.#host, port: this.#rawPort, transport: 'raw9100', jobName, user, copies, bytes: payload.length,
         });
-        resolve({ ok: true, bytes: payload.length, copies });
+        // JetDirect has no job handle — say so explicitly rather than
+        // leaving the key absent, so both transports return the same shape.
+        resolve({ ok: true, bytes: payload.length, copies, jobId: null });
       };
       const fail = (msg) => {
         if (settled) return; settled = true;
@@ -573,6 +624,121 @@ export class LaserPrinterAdapter {
       model: attrs['printer-make-and-model']?.[0] ?? null,
       accepting: attrs['printer-is-accepting-jobs']?.[0] ?? null,
     };
+  }
+
+  /**
+   * What the printer says about one job. Never throws on an unparseable IPP
+   * answer — that comes back as `classification: 'unknown'`, because "the
+   * printer stopped answering" is not "the sheet failed to print". It CAN
+   * still throw on a transport failure (HTTP error, network error): callers
+   * polling for an outcome must catch it themselves (see `awaitJobOutcome`,
+   * which does).
+   *
+   * @param {number} jobId
+   */
+  async getJobState(jobId) {
+    const { ok, attrs } = await this.#ipp(
+      OPS.GET_JOB_ATTRIBUTES,
+      jobAttrsRequest(this.printerUri, { user: 'daylight', jobId }),
+      null,
+      this.#timeout,
+    );
+    // Every attribute decodes as an array (ipp.mjs:219).
+    const state = ok && Number.isInteger(attrs?.['job-state']?.[0])
+      ? attrs['job-state'][0]
+      : null;
+    return {
+      state,
+      classification: classifyJobState(state),
+      stateReasons: attrs?.['job-state-reasons'] ?? [],
+      impressionsCompleted: Number.isInteger(attrs?.['job-impressions-completed']?.[0])
+        ? attrs['job-impressions-completed'][0]
+        : null,
+    };
+  }
+
+  /**
+   * Poll one job until the printer gives a terminal answer, or the deadline
+   * passes.
+   *
+   * THREE OUTCOMES, DELIBERATELY. `indeterminate` is not `failed`: it means we
+   * stopped asking, or the printer stopped answering, and we do not know
+   * whether paper came out. Collapsing it into `failed` would prompt a reprint
+   * of a sheet that printed — duplicate worksheets bound to different
+   * answer-card rows, which is a worse mess than a missing sheet.
+   *
+   * Never throws. A print that succeeded must not be reported as failed
+   * because a status query did.
+   *
+   * DEFAULT DEADLINE IS 60s, NOT 30s. Measured against the real printer: a
+   * BLANK SINGLE PAGE took 17.2s to reach a terminal state. A real rasterized
+   * worksheet — and the multi-page combined sheets a later phase plans — will
+   * plausibly exceed 30s, which would log a true `completed` print as
+   * `indeterminate` and weaken the very record this feature exists to
+   * produce. This poll runs fully detached from `printPdf`'s own resolution
+   * (see the "DETACHED, DELIBERATELY" comment above), so a caller pays
+   * nothing extra for a longer deadline here.
+   *
+   * @param {number|null} jobId
+   * @param {{deadlineMs?: number, intervalMs?: number, sleep?: Function, clock?: Function}} [options]
+   */
+  async awaitJobOutcome(jobId, options = {}) {
+    const {
+      deadlineMs = 60000,
+      intervalMs = 1000,
+      sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
+      clock = () => Date.now(),
+    } = options;
+
+    const base = {
+      state: null, stateReasons: [], impressionsCompleted: null, polls: 0,
+    };
+    // JetDirect has no job handle, and a dropped id is a bug elsewhere. Either
+    // way, say we do not know rather than poll something meaningless.
+    if (!Number.isInteger(jobId)) return { ...base, outcome: 'indeterminate' };
+
+    const started = clock();
+    let polls = 0;
+    let last = base;
+    let loggedFirstError = false;
+    while (clock() - started < deadlineMs) {
+      polls += 1;
+      try {
+        // eslint-disable-next-line no-await-in-loop -- each poll depends on the previous one's outcome; nothing here can run in parallel
+        const observed = await this.getJobState(jobId);
+        last = { ...observed, polls };
+        if (isTerminal(observed.state)) {
+          return { ...last, outcome: observed.classification };
+        }
+      } catch (err) {
+        // Swallowed on purpose: an unreachable printer is an unknown outcome,
+        // not a failed print. Keep the last state we DID observe (if any) and
+        // keep trying to the deadline. The FIRST error for this job logs at
+        // `warn` — production runs at `info` and the dispatcher drops
+        // below-level events before any transport, so a `debug`-only line
+        // here NEVER reaches the log store, and a TypeError in our own code
+        // would then read identically to "the printer went offline" in every
+        // query, defeating exactly the postmortem capability this feature
+        // exists to provide. Every subsequent error for the SAME job still
+        // logs at `debug` (as before) — one visible signal per failing job,
+        // not a flood: an offline printer produces at most one `warn` across
+        // its whole poll.
+        if (!loggedFirstError) {
+          loggedFirstError = true;
+          this.#logger.warn?.('laser-printer.job-outcome-poll-error', {
+            host: this.#host, jobId, poll: polls, error: err?.message ?? String(err),
+          });
+        } else {
+          this.#logger.debug?.('laser-printer.job-outcome-poll-error', {
+            host: this.#host, jobId, poll: polls, error: err?.message ?? String(err),
+          });
+        }
+        last = { ...last, polls };
+      }
+      // eslint-disable-next-line no-await-in-loop -- deliberate poll cadence, not a parallelizable batch
+      await sleep(intervalMs);
+    }
+    return { ...last, polls, outcome: 'indeterminate' };
   }
 
   /** TCP reachability probe (no IPP round-trip). */

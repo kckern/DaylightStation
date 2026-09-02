@@ -76,6 +76,14 @@ function ippServer({
   // incident-#3-shaped quirk. Tests below override this to reproduce the
   // real Brother's exact behavior: refuse whenever `sides` is present.
   validateJob = () => true,
+  // job-state the fake printer answers on GET_JOB_ATTRIBUTES (the poll
+  // `printPdf` kicks off, detached, right after Print-Job). Defaults to 9
+  // (completed/terminal) so every existing test in this file resolves its
+  // poll on the first attempt. A test proving the poll is detached from
+  // printPdf's own resolution overrides this to a non-terminal state (e.g.
+  // 5, processing) — printPdf must still resolve promptly even though that
+  // poll would then run to its own deadline in the background.
+  jobStateOnPoll = 9,
 } = {}) {
   const printJobs = [];
   const validateJobs = [];
@@ -128,6 +136,28 @@ function ippServer({
           res.end(encodeRequest(0x0000, [
             { tag: 0x47, name: 'attributes-charset', value: 'utf-8' },
             { tag: 0x48, name: 'attributes-natural-language', value: 'en' },
+            { tag: 0x21, name: 'job-id', value: 4242 },
+          ], null, 1));
+          return;
+        }
+        if (operation === OPS.GET_JOB_ATTRIBUTES) {
+          // `printPdf` polls this via `awaitJobOutcome` right after Print-Job
+          // resolves — but only when Print-Job's response carried a job-id
+          // (see the `job-id` attribute added above); without one, `#sendIpp`
+          // sets `jobId = null` and `printPdf`'s `Number.isInteger(sent.jobId)`
+          // guard never starts the poll at all, so this handler goes
+          // uncalled. Answer with a terminal `job-state: 9` (completed) so
+          // every printPdf test in this file resolves its poll on the FIRST
+          // attempt — without this, an unhandled operation here falls to the
+          // generic HTTP 500 below, which `awaitJobOutcome` swallows and
+          // retries for real wall-clock time up to its (default 60s)
+          // deadline, turning every ipp-transport test in this file into a
+          // multi-second-plus hang instead of a fast unit test.
+          res.writeHead(200, { 'Content-Type': 'application/ipp' });
+          res.end(encodeRequest(0x0000, [
+            { tag: 0x47, name: 'attributes-charset', value: 'utf-8' },
+            { tag: 0x48, name: 'attributes-natural-language', value: 'en' },
+            { tag: 0x23, name: 'job-state', value: (() => { const b = Buffer.alloc(4); b.writeInt32BE(jobStateOnPoll); return b; })() },
           ], null, 1));
           return;
         }
@@ -297,6 +327,53 @@ describe('LaserPrinterAdapter.printPdf — capability negotiation (the fix)', ()
     await expect(p.printPdf(PDF)).rejects.toMatchObject({ code: 'PRINT_FORMAT_UNSUPPORTED' });
     httpServer.close();
     expect(printJobs).toHaveLength(0);
+  });
+});
+
+describe('LaserPrinterAdapter.printPdf — job-outcome polling is detached from the resolution', () => {
+  it('resolves on SEND even when the printer never reports a terminal job state', async () => {
+    // The bug this test guards: printPdf used to `await` the outcome poll
+    // inline, so a printer that never answers with a terminal state (here,
+    // GET_JOB_ATTRIBUTES always answers job-state 5 = processing) would hold
+    // printPdf's own promise open for up to the poll's 60s default deadline.
+    // A caller doing five sequential prints (the self-service bulk-print
+    // loop) would then hold one HTTP request open for minutes with a child
+    // standing at the printer. printPdf must resolve promptly regardless of
+    // what the background poll is doing.
+    const { httpServer, port } = await ippServer({
+      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
+      documentFormatPreferred: 'application/pdf',
+      jobStateOnPoll: 5, // processing — never terminal, so the background poll never stops on its own
+    });
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
+
+    const startedAt = Date.now();
+    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner2' });
+    const elapsedMs = Date.now() - startedAt;
+    httpServer.close();
+
+    expect(result.ok).toBe(true);
+    // Generous but far short of the poll's 60s default deadline — a hang
+    // regression here would blow well past this, not brush up against it.
+    expect(elapsedMs).toBeLessThan(2000);
+  });
+
+  it("printPdf's return value has no outcome/jobState keys — those cannot be known by the time it resolves", async () => {
+    const { httpServer, port } = await ippServer({
+      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
+      documentFormatPreferred: 'application/pdf',
+    });
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
+    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner2' });
+    httpServer.close();
+
+    expect(result).not.toHaveProperty('outcome');
+    expect(result).not.toHaveProperty('jobState');
+    expect(result).toMatchObject({
+      ok: true, transport: 'ipp', documentFormat: 'application/pdf',
+    });
+    expect(typeof result.bytes).toBe('number');
+    expect(typeof result.copies).toBe('number');
   });
 });
 

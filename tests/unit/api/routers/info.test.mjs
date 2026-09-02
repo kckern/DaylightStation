@@ -6,6 +6,8 @@ import express from 'express';
 // Must import from the future file path
 import { createInfoRouter } from '#api/v1/routers/info.mjs';
 import { resolveFormat } from '#domains/content/utils/resolveFormat.mjs';
+import { ContentAccessService } from '#apps/content/ContentAccessService.mjs';
+import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 
 describe('Info Router', () => {
   let app;
@@ -46,10 +48,14 @@ describe('Info Router', () => {
 
     // Create Express app with the router
     app = express();
+    // The router takes a ContentAccessService now. Both real collaborators are
+    // used with the existing registry/resolver mocks behind them, so format and
+    // capability derivation stay the production ones rather than a test copy.
     app.use('/info', createInfoRouter({
-      resolveFormat,
-      registry: mockRegistry,
-      contentIdResolver: mockContentIdResolver,
+      contentAccessService: new ContentAccessService({
+        contentIdResolver: mockContentIdResolver,
+        contentCatalog: new RegistryContentCatalogGateway({ registry: mockRegistry, logger: mockLogger }),
+      }),
       logger: mockLogger
     }));
   });
@@ -391,7 +397,10 @@ describe('Info Router', () => {
   describe('Router factory', () => {
     it('should create a router with required dependencies', () => {
       const router = createInfoRouter({
-        registry: mockRegistry,
+        contentAccessService: new ContentAccessService({
+          contentIdResolver: { resolve: () => null },
+          contentCatalog: new RegistryContentCatalogGateway({ registry: mockRegistry, logger: mockLogger }),
+        }),
         logger: mockLogger
       });
 

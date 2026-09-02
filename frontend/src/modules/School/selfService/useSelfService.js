@@ -55,7 +55,12 @@ import { schoolLog } from '../schoolLog.js';
 // This has to fit in the keypad's one-line outage band above its retry
 // control. A wrapped warning reaches into the keys on the Portal, where it
 // reads as a broken button rather than an explanation.
-export const DEGRADED_SENTENCE = 'Computer unavailable. Ask a grown-up.';
+// Matched WORD FOR WORD to the backend's `not_answering` copy
+// (ResolveAccessCode.mjs). The same condition — the school computer is not
+// answering — reaches a child either as that backend card or, when the request
+// never completed, as this local fallback. Two sentences for one situation
+// would read as two different faults at a wall panel a child cannot debug.
+export const DEGRADED_SENTENCE = "The school computer isn't answering. Tell a grown-up.";
 /** The whole failure path for a code (D1). */
 export const TRY_AGAIN_SENTENCE = 'Try again.';
 

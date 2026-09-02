@@ -55,10 +55,11 @@ const isVideoMedia = (evt) => {
  * Two omissions, both to keep the gutter one card per distinct video:
  *  - consecutive events for the SAME video collapse (a resume/re-log of the
  *    already-playing item isn't a change);
- *  - the primary video (primaryMediaKey) is dropped, since the header owns it.
- *    When the primary isn't the opening slot, the opening video is a real second
- *    item and DOES get a card. Without a primaryMediaKey the first video is
- *    assumed to be the header's.
+ *  - the OPENING video is dropped when it's the primary (primaryMediaKey), since
+ *    a card at x≈0 would only restate the header. A primary that starts
+ *    mid-session is a real transition and keeps its card — as does the opening
+ *    video in that case. Without a primaryMediaKey the first video is assumed to
+ *    be the header's.
  */
 export function selectVideoMarkerEvents(events, primaryMediaKey) {
   if (!Array.isArray(events)) return [];
@@ -67,11 +68,10 @@ export function selectVideoMarkerEvents(events, primaryMediaKey) {
     .filter((e) => Number.isFinite(e.data?.start))
     .sort((a, b) => a.data.start - b.data.start)
     .filter((e, i, arr) => i === 0 || mediaIdentityKey(e) !== mediaIdentityKey(arr[i - 1]));
+  if (!videos.length) return [];
   const primaryKey = primaryMediaKey ? String(primaryMediaKey) : null;
-  const headerIndex = primaryKey
-    ? videos.findIndex((e) => mediaIdentityKey(e) === primaryKey)
-    : 0;
-  return videos.filter((_, i) => i !== headerIndex);
+  const opensWithPrimary = !primaryKey || mediaIdentityKey(videos[0]) === primaryKey;
+  return opensWithPrimary ? videos.slice(1) : videos;
 }
 
 /**

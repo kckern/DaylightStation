@@ -582,6 +582,15 @@ export class ResolveCardScan {
       return { error: { code: 'CARD_ID_UNREADABLE' } };
     }
 
+    // MEASUREMENT, NOT POLICY (computed up front, before resolution is even
+    // attempted, so it is available on EVERY path below including a total
+    // resolution failure — see the `decode` build just below the ambiguous
+    // return). "How often does the reader produce a partial read?" must be
+    // answerable from `?`-count alone, independent of whether resolution
+    // later succeeds.
+    const decodePattern = String(testId);
+    const decodeMissingDigits = (decodePattern.match(/\?/g) ?? []).length;
+
     // Best-effort resolution (household direction, real incident: a
     // double-marked test-id digit decoded `?`, matched no allocation, and a
     // fully-answered sheet silently vanished). Only reached when `testId`
@@ -595,9 +604,20 @@ export class ResolveCardScan {
         this.#logger.warn?.('school.scan.card-id-unresolved', {
           pattern: testId, candidateCardIds: resolved.candidates,
         });
+        // TOTAL DECODE FAILURE — the highest-value case this measurement
+        // exists to count (review fix, 2026-09-01): `cardId: null` records
+        // "no card resolved" honestly rather than fabricating one. Omitting
+        // `decode` here would make a future decode-gate policy systematically
+        // undercount exactly the reads it most needs to see.
+        const decode = {
+          pattern: decodePattern, cardId: null, inferred: false, missingDigits: decodeMissingDigits,
+          replay: identityReview != null,
+        };
+        this.#logger.info?.('school.scan.decode', decode);
         return {
           error: { code: 'CARD_ID_UNREADABLE' },
           ambiguous: { pattern: testId, candidateCardIds: resolved.candidates },
+          decode,
         };
       }
       cardId = resolved.cardId;
@@ -612,6 +632,29 @@ export class ResolveCardScan {
       this.#logger.warn?.('school.scan.card-id-inferred', { pattern: testId, cardId });
     }
 
+    // MEASUREMENT, NOT POLICY. Recorded on every scan, clean or inferred, so
+    // "how often does the reader produce a partial read?" is answerable. No
+    // decode policy should be tuned from anecdote, and two scans is anecdote.
+    //
+    // `replay: true` marks a REPLAY, not a fresh physical scan: held-scan
+    // recovery (`ReviewHeldCardScan.#resolve`) re-enters `execute()` with the
+    // teacher-selected `targetRecord.cardId` — always a clean 7-digit id, so
+    // it always decodes with zero missing digits — to re-run resolution
+    // against the same evidence. Held scans skew heavily toward problem
+    // reads, so without this tag every review would silently inject an extra
+    // clean sample for a card that was ALREADY counted once as the read that
+    // got it held in the first place, biasing this metric's whole purpose
+    // (the real partial-read rate) to read cleaner than the reader actually
+    // is. Consumers computing that rate must exclude `replay: true` records.
+    const decode = {
+      pattern: decodePattern,
+      cardId,
+      inferred: cardIdInferred !== null,
+      missingDigits: decodeMissingDigits,
+      replay: identityReview != null,
+    };
+    this.#logger.info?.('school.scan.decode', decode);
+
     const records = await this.#allocationStore.findByCard(cardId);
     const answeredRows = new Set(Object.keys(answers).map(Number));
     if (records.some((record) => record.cardRetiredAt) && answeredRows.size > 0) {
@@ -620,10 +663,11 @@ export class ResolveCardScan {
         answeredRowCount: answeredRows.size,
         recordStatuses: records.map((record) => record.status),
         ...(cardIdInferred ? { cardIdInferred } : {}),
+        decode,
       };
     }
     const preflight = identityReview ? null : await this.#identityPreflight({ cardId, answers, records });
-    if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}) };
+    if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}), decode };
     const live = records.filter((record) => record.status === 'live');
     // A reused card retains old marks in satisfied rows. While a new worksheet
     // is live, grade only that live allocation and ignore the settled rows.
@@ -647,6 +691,7 @@ export class ResolveCardScan {
         unknownCard: true,
         answeredRowCount: answeredRows.size,
         nearMissCardIds: await this.#nearMissLiveCards(cardId),
+        decode,
       };
     }
 
@@ -663,6 +708,7 @@ export class ResolveCardScan {
         answeredRowCount: answeredRows.size,
         recordStatuses: records.map((record) => record.status),
         ...(cardIdInferred ? { cardIdInferred } : {}),
+        decode,
       };
     }
 
@@ -763,6 +809,7 @@ export class ResolveCardScan {
       ...(unallocatedRows.length ? { unallocatedRows } : {}),
       ...(silentLiveRecords.length ? { silentLiveRecords } : {}),
       ...(cardIdInferred ? { cardIdInferred } : {}),
+      decode,
     };
     if (!identityReview) await this.#rememberProcessedScan({ cardId, answers, records, outcome });
     return outcome;

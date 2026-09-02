@@ -218,22 +218,30 @@ export function createDocumentReceiptRenderer({
   }
 
   /**
-   * The bulk-print action card: a full-width "print every sheet" prompt
-   * rather than the single-lesson box. No side-by-side label/code layout —
-   * the subject list needs the full column width, so the code area sits
-   * below it instead of beside it (contrast the `lesson` layout, which keeps
-   * the code area beside a single title because there's no list to make room
-   * for). Returned as its own `kind: 'action'` shape (parallel to `lesson`)
-   * so it still flows through the shared codes-ledger bookkeeping in
-   * `planBlock`.
+   * The bulk-print action card, in the SAME shape as a lesson card: the QR and
+   * the six digits under it in the left column, the words beside them on the
+   * right.
+   *
+   * It used to stack heading, subject list and code area full-width, one under
+   * the other. That was justified on the grounds that "the subject list needs
+   * the full column width" — it does not. The list is a handful of one-word
+   * subjects, so the wide half of the card sat empty while the card grew as
+   * tall as a real lesson, for what is one button. Side by side, the card is
+   * as tall as its TALLER column instead of the sum of three.
+   *
+   * The code column is drawn by the same `drawCodeColumn` the lesson cards
+   * use, so "the same format" is one code path rather than two that agree.
    */
   function bulkPrintActionOp(ctx, block, tokens) {
     const code = tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
+    // The right-hand column: everything left after the code column and its gap.
+    const textWidth = contentWidth - 2 * theme.action.padding
+      - theme.action.codeAreaPx - theme.action.lessonTextGap;
     ctx.font = theme.fonts.eyebrow;
-    const headingLines = wrapTight(ctx, 'PRINT ALL SHEETS', contentWidth - 2 * theme.action.padding);
+    const headingLines = wrapTight(ctx, 'PRINT ALL SHEETS', textWidth);
     ctx.font = theme.fonts.body;
     const subjectLines = (block.subjects ?? []).flatMap(
-      (subject) => wrapTight(ctx, `• ${subject}`, contentWidth - 2 * theme.action.padding - 8),
+      (subject) => wrapTight(ctx, `• ${subject}`, textWidth - 8),
     );
     ctx.font = theme.fonts.code;
     // Same rule as `actionOp`: a `panelCode` on the block IS what goes under
@@ -249,8 +257,13 @@ export function createDocumentReceiptRenderer({
       : (block.hideCode ? [] : wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx));
     const headingHeight = headingLines.length * theme.action.eyebrowLineHeight;
     const subjectsHeight = subjectLines.length * theme.text.bodyLineHeight;
-    const codeBlockHeight = theme.action.codeAreaPx + (codeLines.length ? theme.action.codeGap : 0)
-      + codeLines.length * theme.text.codeLineHeight;
+    // Identical to `actionOp`'s: a panel code is a CELL hung off the QR box
+    // (shared border, no gap); a raw token is loose lines under it.
+    const codeBlockHeight = theme.action.codeAreaPx + (panelCode
+      ? theme.action.codeCellHeight
+      : (codeLines.length ? theme.action.codeGap + codeLines.length * theme.text.codeLineHeight : 0));
+    const textHeight = headingHeight
+      + (subjectLines.length ? theme.action.rowGap + subjectsHeight : 0);
     return {
       kind: 'action',
       blockType: block.type,
@@ -262,11 +275,9 @@ export function createDocumentReceiptRenderer({
       headingLines,
       subjectLines,
       codeLines,
-      // top padding + extra separator gap + a rowGap before each of the three
-      // stacked groups (heading, subjects, code area) + bottom padding —
-      // mirrors exactly what the draw loop below advances `by` through.
-      heightPx: 2 * theme.action.padding + theme.layout.blockGap + 3 * theme.action.rowGap
-        + headingHeight + subjectsHeight + codeBlockHeight,
+      panelCode,
+      // Two columns side by side: the taller one sets the height.
+      heightPx: 2 * theme.action.padding + Math.max(codeBlockHeight, textHeight),
     };
   }
 
@@ -855,6 +866,44 @@ export function createDocumentReceiptRenderer({
       }
     }
 
+    /**
+     * The whole left-hand control: the QR box, and under it the six digits a
+     * child types when scanning is not an option. Every action card draws it
+     * through here — lesson and bulk-print alike — so "the same format" is one
+     * code path rather than two that happen to agree today.
+     */
+    function drawCodeColumn(codeX, codeY, op) {
+      drawCodeArea(codeX, codeY, op.code);
+      if (op.panelCode) {
+        // The code is the QR's FALLBACK, so it is drawn as the QR's second
+        // row: a cell hung directly off the box, sharing its bottom border, so
+        // the pair reads as one stacked control. It used to float in open space
+        // below the box, which on a multi-offer agenda made it a bare number
+        // with no visible referent — a child could not tell which card's code
+        // it was.
+        const cellY = codeY + theme.action.codeAreaPx;
+        ctx.lineWidth = theme.action.borderWidth;
+        ctx.strokeStyle = theme.colors.border;
+        ctx.strokeRect(codeX, cellY, theme.action.codeAreaPx, theme.action.codeCellHeight);
+        ctx.fillStyle = theme.colors.text;
+        ctx.font = theme.fonts.panelCode;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(op.panelCode, codeX + theme.action.codeAreaPx / 2, cellY + theme.action.codeCellHeight / 2);
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+      } else {
+        // A chunked raw token is not a thing anyone types — it is there so a
+        // grown-up can read the ticket off the tape. Small and left-aligned,
+        // exactly as before.
+        ctx.font = theme.fonts.code;
+        ctx.textAlign = 'left';
+        op.codeLines.forEach((line, index) => ctx.fillText(
+          line, codeX, codeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,
+        ));
+      }
+    }
+
     for (const op of ops) {
       if (op.kind === 'header') {
         ctx.fillStyle = theme.colors.text;
@@ -1143,41 +1192,33 @@ export function createDocumentReceiptRenderer({
       ctx.strokeRect(x, boxTop, contentWidth, boxHeight);
 
       if (op.bulkPrint) {
-        // Separator, extra gap above it, then heading -> subject list -> code
-        // area, all full-width and stacked — see bulkPrintActionOp for why
-        // this doesn't share the lesson/plain side-by-side layout below.
-        let by = boxTop + theme.action.padding + theme.layout.blockGap;
-        ctx.save();
-        ctx.strokeStyle = '#CCCCCC';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x + theme.action.padding, by);
-        ctx.lineTo(x + contentWidth - theme.action.padding, by);
-        ctx.stroke();
-        ctx.restore();
-        by += theme.action.rowGap;
+        // Same two-column control as a lesson card: code column left, words
+        // right. The internal separator rule and its `blockGap` are gone with
+        // the stacked layout — the card's own border already separates it from
+        // the lesson above, and the rule was buying nothing for the vertical
+        // space it took.
+        const bulkCodeX = x + theme.action.padding;
+        const bulkTop = boxTop + theme.action.padding;
+        ctx.fillStyle = theme.colors.text;
+        drawCodeColumn(bulkCodeX, bulkTop, op);
 
+        const textX = bulkCodeX + theme.action.codeAreaPx + theme.action.lessonTextGap;
+        let by = bulkTop;
         ctx.textAlign = 'left';
         ctx.font = theme.fonts.eyebrow;
         op.headingLines.forEach((line, index) => ctx.fillText(
-          line, x + theme.action.padding, by + index * theme.action.eyebrowLineHeight,
+          line, textX, by + index * theme.action.eyebrowLineHeight,
         ));
-        by += op.headingLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap;
+        by += op.headingLines.length * theme.action.eyebrowLineHeight;
 
-        ctx.font = theme.fonts.body;
-        op.subjectLines.forEach((line) => {
-          ctx.fillText(line, x + theme.action.padding + 8, by);
-          by += theme.text.bodyLineHeight;
-        });
-        by += theme.action.rowGap;
-
-        const bulkCodeX = x + theme.action.padding;
-        const bulkCodeY = by;
-        drawCodeArea(bulkCodeX, bulkCodeY, op.code);
-        ctx.font = theme.fonts.code;
-        op.codeLines.forEach((line, index) => ctx.fillText(
-          line, bulkCodeX, bulkCodeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,
-        ));
+        if (op.subjectLines.length) {
+          by += theme.action.rowGap;
+          ctx.font = theme.fonts.body;
+          op.subjectLines.forEach((line) => {
+            ctx.fillText(line, textX, by);
+            by += theme.text.bodyLineHeight;
+          });
+        }
         continue;
       }
 
@@ -1312,36 +1353,7 @@ export function createDocumentReceiptRenderer({
         }
       }
 
-      drawCodeArea(codeX, codeY, op.code);
-
-      if (op.panelCode) {
-        // The code is the QR's FALLBACK, so it is drawn as the QR's second
-        // row: a cell hung directly off the box, sharing its bottom border, so
-        // the pair reads as one stacked control. It used to float in open space
-        // below the box, which on a multi-offer agenda made it a bare number
-        // with no visible referent — a child could not tell which card's code
-        // it was.
-        const cellY = codeY + theme.action.codeAreaPx;
-        ctx.lineWidth = theme.action.borderWidth;
-        ctx.strokeStyle = theme.colors.border;
-        ctx.strokeRect(codeX, cellY, theme.action.codeAreaPx, theme.action.codeCellHeight);
-        ctx.fillStyle = theme.colors.text;
-        ctx.font = theme.fonts.panelCode;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(op.panelCode, codeX + theme.action.codeAreaPx / 2, cellY + theme.action.codeCellHeight / 2);
-        ctx.textBaseline = 'top';
-        ctx.textAlign = 'left';
-      } else {
-        // A chunked raw token is not a thing anyone types — it is there so a
-        // grown-up can read the ticket off the tape. Small and left-aligned,
-        // exactly as before.
-        ctx.font = theme.fonts.code;
-        ctx.textAlign = 'left';
-        op.codeLines.forEach((line, index) => ctx.fillText(
-          line, codeX, codeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,
-        ));
-      }
+      drawCodeColumn(codeX, codeY, op);
     }
 
     return { canvas, width: theme.canvas.width, height, cutPoints, codes, drawnMath };

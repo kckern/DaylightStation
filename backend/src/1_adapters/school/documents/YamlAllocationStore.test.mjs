@@ -307,6 +307,80 @@ describe('allocateNext — atomic monotonic whole-worksheet allocation', () => {
     expect(retry.record.predecessorCardId).toBe(first.record.cardId);
     expect(retry.record.generation).toBe(2);
   });
+
+  it('does not rewrite predecessor lineage when a delivery is a plain reuse', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({
+      directory: '/docs',
+      io,
+      rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5], [9, 4, 2, 7, 6, 0, 8]]),
+      now: () => '2026-08-31T10:00:00.000Z',
+    });
+
+    // Card A, first use of a fresh chain.
+    const a = await store.allocateNext({
+      request: request({ documentId: 'math', learnerId: 'user_4', rowRange: { start: 1, end: 6 } }),
+      policy: { reuse: 'after_scan' },
+    });
+    expect(a.firstUse).toBe(true);
+    expect(a.record.cardOrigin).toBe('first');
+    await store.markDelivered({ cardId: a.record.cardId, recordId: a.record.recordId });
+
+    // A still holds live work, so `after_scan` correctly mints card B.
+    const b = await store.allocateNext({
+      request: request({ documentId: 'scripture', learnerId: 'user_4', rowRange: { start: 1, end: 3 } }),
+      policy: { reuse: 'after_scan' },
+    });
+    expect(b.firstUse).toBe(true);
+    expect(b.record.cardOrigin).toBe('rollover');
+    await store.markDelivered({ cardId: b.record.cardId, recordId: b.record.recordId });
+
+    // The genuine rollover DOES retire A's tail. This part is correct today.
+    const afterRollover = await store.findByCard(a.record.cardId);
+    expect(afterRollover[0].successorCardId).toBe(b.record.cardId);
+
+    // Card A gains a further live record AFTER the genuine rollover already
+    // retired its tail (e.g. a historical backfill correction landing on the
+    // old card). This is load-bearing for the test, not incidental: without
+    // it, a WRONGLY re-triggered predecessor writeback on the next delivery
+    // would recompute occupiedThrough/tailSkipped from the exact same set of
+    // rows as the genuine rollover did, and re-stamp successorCardId with the
+    // same cardId (card B, both times) -- producing a byte-identical no-op
+    // that a `toEqual` against the pre-bug snapshot cannot distinguish from
+    // "nothing happened". Adding a row here changes what a buggy recompute
+    // WOULD produce (a later occupiedThrough, and a fresh successorCardId
+    // stamp onto this second record, which never had one), so a regression
+    // of the `markDelivered` guard is observable.
+    await store.allocate({
+      cardId: a.record.cardId,
+      request: request({ documentId: 'art', learnerId: 'user_4', rowRange: { start: 7, end: 8 } }),
+    });
+    const beforeReuseDelivery = await store.findByCard(a.record.cardId);
+    const tailBeforeReuseDelivery = beforeReuseDelivery[0].tailSkipped;
+    const successorsBeforeReuseDelivery = beforeReuseDelivery.map((r) => r.successorCardId);
+
+    // Now an ordinary reuse of B under `until_full`.
+    const c = await store.allocateNext({
+      request: request({ documentId: 'science', learnerId: 'user_4', rowRange: { start: 1, end: 2 } }),
+      policy: { reuse: 'until_full' },
+    });
+    expect(c.firstUse).toBe(false);
+    expect(c.record.cardId).toBe(b.record.cardId);
+    expect(c.record.cardOrigin).toBe('reuse');
+    // It inherits the predecessor pointer -- which is exactly why the old
+    // condition misfired.
+    expect(c.record.predecessorCardId).toBe(a.record.cardId);
+    await store.markDelivered({ cardId: c.record.cardId, recordId: c.record.recordId });
+
+    // THE ASSERTION: card A is untouched by a delivery that was not its rollover.
+    // Compared against the snapshot taken immediately before this delivery
+    // (not the earlier `afterRollover` snapshot), so this fails if EITHER
+    // the tail gets recomputed OR the second record's successorCardId gets
+    // wrongly (re)stamped.
+    const afterReuse = await store.findByCard(a.record.cardId);
+    expect(afterReuse[0].tailSkipped).toEqual(tailBeforeReuseDelivery);
+    expect(afterReuse.map((r) => r.successorCardId)).toEqual(successorsBeforeReuseDelivery);
+  });
 });
 
 describe('allocate — collision refusal (spec §5.4)', () => {
@@ -643,6 +717,113 @@ describe('confirmHistoricalDelivery', () => {
       deliveredAt: '2099-01-01T00:00:00.000Z', confirmedBy: 'someone-else',
     });
     expect(repeated).toEqual(delivered);
+  });
+
+  it('retires a legacy predecessor’s tail on a genuine rollover confirmed via confirmHistoricalDelivery '
+    + '(no cardOrigin on either record -- rollover inferred from predecessorCardId, same as pre-cardOrigin behaviour)', async () => {
+    // Regression test for a review finding: the `cardOrigin === 'rollover'`
+    // guard added on this branch fails CLOSED for every record that predates
+    // `cardOrigin` -- including every record `allocate()` ever builds (it
+    // never stamps `cardOrigin`), which is exactly the shape
+    // `RecoverMisattributedWorksheet` -- `confirmHistoricalDelivery`'s only
+    // caller -- produces. Both records below are built via `allocate()` with
+    // an explicit cardId, so neither carries `cardOrigin`, mirroring a
+    // genuine legacy/recovered rollover pair. Without the legacy fallback in
+    // `isRolloverDelivery`, this predecessor is NEVER retired: no
+    // `successorCardId`, no `tailSkipped` -- which is also why
+    // `ResolveCardScan`'s `historical` gate (keyed off `successorCardId`)
+    // would silently grade a scan of this superseded card instead of holding
+    // it for an adult.
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-31T18:00:00.000Z' });
+
+    const predecessor = await store.allocate({
+      cardId: '1111111',
+      request: request({ documentId: 'math', learnerId: 'user_4', rowRange: { start: 1, end: 45 } }),
+    });
+    expect(predecessor.cardOrigin).toBeUndefined();
+
+    const successor = await store.allocate({
+      cardId: '2222222',
+      request: request({
+        documentId: 'scripture', learnerId: 'user_4', rowRange: { start: 1, end: 6 },
+        predecessorCardId: '1111111',
+      }),
+    });
+    expect(successor.cardOrigin).toBeUndefined();
+    expect(successor.predecessorCardId).toBe('1111111');
+
+    await store.confirmHistoricalDelivery({
+      cardId: '2222222', recordId: successor.recordId,
+      deliveredAt: '2026-08-31T15:00:00.000Z', confirmedBy: 'parent',
+    });
+
+    const [predecessorAfter] = await store.findByCard('1111111');
+    expect(predecessorAfter.successorCardId).toBe('2222222');
+    expect(predecessorAfter.tailSkipped).toEqual({ start: 46, end: 50 });
+  });
+
+  it('does not rewrite predecessor lineage when backfilling a plain-reuse delivery', async () => {
+    // Same lineage-corruption bug as `markDelivered`, reached via the
+    // recovery/backfill path instead (RecoverMisattributedWorksheet.mjs):
+    // a record allocated by the reuse branch legitimately carries a truthy
+    // `predecessorCardId` inherited from the card's first record, so without
+    // the `cardOrigin === 'rollover'` gate this path also re-stamps the
+    // predecessor on every ordinary reuse.
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({
+      directory: '/docs',
+      io,
+      rng: scriptedRng([[8, 6, 8, 4, 1, 5, 5], [9, 4, 2, 7, 6, 0, 8]]),
+      now: () => '2026-08-31T10:00:00.000Z',
+    });
+
+    // Card A, first use of a fresh chain.
+    const a = await store.allocateNext({
+      request: request({ documentId: 'math', learnerId: 'user_4', rowRange: { start: 1, end: 6 } }),
+      policy: { reuse: 'after_scan' },
+    });
+    await store.markDelivered({ cardId: a.record.cardId, recordId: a.record.recordId });
+
+    // A still holds live work, so `after_scan` correctly mints card B --
+    // the genuine rollover.
+    const b = await store.allocateNext({
+      request: request({ documentId: 'scripture', learnerId: 'user_4', rowRange: { start: 1, end: 3 } }),
+      policy: { reuse: 'after_scan' },
+    });
+    await store.markDelivered({ cardId: b.record.cardId, recordId: b.record.recordId });
+
+    // Card A gains a further live record after the genuine rollover already
+    // retired its tail, so a wrongly re-triggered writeback recomputes a
+    // DIFFERENT occupiedThrough/tailSkipped than the genuine rollover did --
+    // see the `markDelivered` test above for why this is load-bearing, not
+    // incidental.
+    await store.allocate({
+      cardId: a.record.cardId,
+      request: request({ documentId: 'art', learnerId: 'user_4', rowRange: { start: 7, end: 8 } }),
+    });
+    const beforeBackfill = await store.findByCard(a.record.cardId);
+    const tailBeforeBackfill = beforeBackfill[0].tailSkipped;
+    const successorsBeforeBackfill = beforeBackfill.map((r) => r.successorCardId);
+
+    // An ordinary reuse of B under `until_full`, this time delivered via the
+    // historical-backfill path rather than `markDelivered`.
+    const c = await store.allocateNext({
+      request: request({ documentId: 'science', learnerId: 'user_4', rowRange: { start: 1, end: 2 } }),
+      policy: { reuse: 'until_full' },
+    });
+    expect(c.record.cardOrigin).toBe('reuse');
+    expect(c.record.predecessorCardId).toBe(a.record.cardId);
+    await store.confirmHistoricalDelivery({
+      cardId: c.record.cardId,
+      recordId: c.record.recordId,
+      deliveredAt: '2026-08-31T09:00:00.000Z',
+      confirmedBy: 'parent',
+    });
+
+    const afterBackfill = await store.findByCard(a.record.cardId);
+    expect(afterBackfill[0].tailSkipped).toEqual(tailBeforeBackfill);
+    expect(afterBackfill.map((r) => r.successorCardId)).toEqual(successorsBeforeBackfill);
   });
 });
 

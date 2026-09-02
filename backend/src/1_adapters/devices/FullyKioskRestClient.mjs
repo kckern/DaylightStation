@@ -66,7 +66,7 @@ export class FullyKioskRestClient {
           return this.#failure(
             authError ? 'AUTH_REJECTED' : 'INVALID_RESPONSE',
             authError ? 'Configured credentials were rejected' : 'Device returned an unexpected response',
-            { command, startedAt },
+            { command, startedAt, detail: textPrefix.slice(0, 200) },
           );
         }
         if (textPrefix.startsWith('{')) {
@@ -77,7 +77,7 @@ export class FullyKioskRestClient {
               return this.#failure(
                 authError ? 'AUTH_REJECTED' : 'COMMAND_REJECTED',
                 authError ? 'Configured credentials were rejected' : 'Command was rejected',
-                { command, startedAt },
+                { command, startedAt, detail: payload.statustext || null },
               );
             }
           } catch { /* Non-JSON binary continues to the caller for format validation. */ }
@@ -95,7 +95,7 @@ export class FullyKioskRestClient {
         return this.#failure(
           authError ? 'AUTH_REJECTED' : 'COMMAND_REJECTED',
           authError ? 'Configured credentials were rejected' : 'Command was rejected',
-          { command, startedAt },
+          { command, startedAt, detail: data.statustext || null },
         );
       }
       if (typeof data === 'string' && /^\s*</.test(data)) {
@@ -103,7 +103,7 @@ export class FullyKioskRestClient {
         return this.#failure(
           authError ? 'AUTH_REJECTED' : 'INVALID_RESPONSE',
           authError ? 'Configured credentials were rejected' : 'Device returned an unexpected response',
-          { command, startedAt },
+          { command, startedAt, detail: data.trim().slice(0, 200) },
         );
       }
 
@@ -128,15 +128,24 @@ export class FullyKioskRestClient {
     });
   }
 
-  #failure(code, error, { command, status, startedAt }) {
+  /**
+   * `detail` is what the DEVICE said — its `statustext`, or the first bytes of
+   * an unexpected body. It is appended to the message and logged, because the
+   * generic code alone ("Command was rejected") cannot tell a caller which of
+   * FKB's many rejections happened, and the HTML case is only recognisable as
+   * "the kiosk served its admin dashboard because type=json was missing" if
+   * you can see the body.
+   */
+  #failure(code, error, { command, status, startedAt, detail } = {}) {
     this.#logger.warn?.('fullykiosk.rest.response', {
       command,
       ok: false,
       code,
       status,
       durationMs: Date.now() - startedAt,
+      ...(detail ? { detail } : {}),
     });
-    return { ok: false, code, error };
+    return { ok: false, code, error: detail ? `${error}: ${detail}` : error };
   }
 }
 
