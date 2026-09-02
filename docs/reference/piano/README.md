@@ -187,7 +187,10 @@ Games deserve their own note: they plug in through a registry and can be launche
 by tapping a tile or by playing a configured chord combination on the keys. Both entrances
 share the School completion gate: the active player unlocks Games after `complete` or
 `no_work_today`; `incomplete`, a missing identity, or an unavailable completion read stays
-locked with an explanation. The kiosk refreshes the derived state while mounted and when
+locked with an explanation that names whose day it is reading. A household member School
+does not track as a learner is not gated at all — see
+[games-budget-gate.md](./games-budget-gate.md) for why "not a learner" and "a learner
+whose day cannot be judged" must not collapse into one answer. The kiosk refreshes the derived state while mounted and when
 the tab becomes visible, so finishing work unlocks the tile without a reload. Guest has no
 School identity and follows the `no_work_today` branch. Their engines and rules are
 documented separately in [piano-games.md](./piano-games.md). Two further gates sit below

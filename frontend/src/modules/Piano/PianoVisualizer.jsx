@@ -74,8 +74,14 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
   // Who is playing. The kiosk knows from its roster context; this screen has to
   // be told, so it remembers the last answer and the top key changes it.
-  const { users, currentUser, pickerOpen, openPicker, pickUser } = useLauncherUser();
-  const schoolGameAccess = useSchoolGameAccess(currentUser ?? null);
+  const { users, currentUser, identityStale, pickerOpen, openPicker, pickUser } = useLauncherUser();
+  // `schoolLearner` comes from the roster the server just served, so the gate
+  // is skipped for a household member School does not track — and skipped on
+  // the SERVER's say-so, not the browser's. Undefined until the roster lands,
+  // which keeps the gate shut in the meantime.
+  const schoolGameAccess = useSchoolGameAccess(currentUser ?? null, {
+    schoolLearner: (users || []).find((u) => u.id === currentUser)?.schoolLearner,
+  });
 
   // The roster, laid out as the same row of keys the games use. It was a
   // tap-only modal — dark-on-dark and unselectable on a screen with no touch,
@@ -102,7 +108,22 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // this value is passed into, and the cycle would not resolve. "Does the roster
   // still owe an answer" is true or false on its own terms; whether it is on
   // screen is a rendering question, below.
-  const rosterNeeded = pickerOpen || (!currentUser && users.length > 0);
+  //
+  // The THIRD clause is the 2026-09-02 fix. A remembered profile is a fine
+  // default for filing a chess record; it is not a good enough answer to a
+  // question scoped to one study day. On that morning this screen still held a
+  // pick from 08-28, read that child's school day, and told the adult in front
+  // of it to finish schoolwork that was not his.
+  //
+  // Only on a DENIAL, and only on a SETTLED one. An unlocked verdict against a
+  // stale pick costs a misfiled game; a denial costs someone their access, and
+  // that asymmetry is the whole reason to interrupt. `loading` has not decided
+  // yet and `error` is not a verdict about this person at all — asking who they
+  // are answers neither.
+  const staleDenial = identityStale
+    && schoolGameAccess.status === 'ready'
+    && !schoolGameAccess.unlocked;
+  const rosterNeeded = pickerOpen || (!currentUser && users.length > 0) || staleDenial;
 
   // Picking is one key press against a row of six faces, and the row vanishes
   // the instant it lands — so nothing said WHO had been chosen. On a shared
@@ -140,6 +161,17 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     activeNotes, slots: userSlots, enabled: rosterVisible,
     onSelect: (item, slot) => {
       const id = slot.userId ?? item.id;
+      // Switching profiles after a "no" stays one key press away: the games
+      // keep per-player history and levels, so there is a real pull toward
+      // your own lane and no case for adding a wall. It is still the switch
+      // worth being able to find afterwards, and an ordinary
+      // `launcher.user-selected` line cannot be told apart from a normal pick.
+      if (!schoolGameAccess.unlocked && schoolGameAccess.status === 'ready' && currentUser && id !== currentUser) {
+        getLogger().child({ component: 'piano-launcher' }).info(
+          'launcher.user-switched-after-deny',
+          { from: currentUser, to: id, deniedState: schoolGameAccess.state },
+        );
+      }
       pickUser(id);
       setConfirming({ id, name: item.group_label || item.name });
     },
@@ -306,11 +338,17 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         <div className="note-launcher note-launcher--school-locked" role="status">
           <h2>Games are locked</h2>
           <p>
+            {/* NAMED. The old copy said "finish today's schoolwork" to whoever
+                was standing there, which is how five days of one child's lock
+                read as a broken piano rather than as his lock. Who the verdict
+                belongs to is the first thing the reader needs. */}
             {schoolGameAccess.status === 'error'
               ? 'School status is unavailable. Games stay locked until it can be checked.'
               : schoolGameAccess.status === 'loading'
                 ? 'Checking today’s schoolwork…'
-                : 'Finish today’s schoolwork to unlock Games.'}
+                : schoolGameAccess.state === 'indeterminate'
+                  ? `${currentUserName ?? 'This player'}’s school plan needs a grown-up.`
+                  : `${currentUserName ?? 'This player'} still has schoolwork to finish today.`}
           </p>
         </div>
       )}
