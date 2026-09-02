@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActionIcon, Button } from '@mantine/core';
 import { LoadingState, ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
@@ -40,6 +41,17 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   const [unknownUpc, setUnknownUpc] = useState(null);
   const [savedMealsFor, setSavedMealsFor] = useState(null); // bucketId | null — F8's saved-meals picker
   const nutrition = useNutritionInput();
+  const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard' });
+  // dashboard.today.coaching is an array of {type, text, timestamp} — text is
+  // multi-line HTML-flavored copy (a full "morning brief"), not a one-liner.
+  // Take the first line of the most recent entry and strip markup for the
+  // footer's single-line affordance; real payload only, nothing fabricated.
+  const coachLine = useMemo(() => {
+    const text = dash.data?.today?.coaching?.[0]?.text;
+    if (!text) return null;
+    const firstLine = text.split('\n')[0].replace(/<[^>]+>/g, '').trim();
+    return firstLine || null;
+  }, [dash.data]);
 
   // Past-day bucket → today, via a saved-meal template used purely as
   // transport (created, immediately logged to today, then discarded).
@@ -84,7 +96,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
               onSavedMeals={() => setSavedMealsFor(addingTo)} />
           ) : null} />
       ) : null}
-      <MacroFooter items={day.items} coachLine={null} onCoachTap={onCoachTap}>
+      <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap}>
         <PhotoCapture busy={nutrition.busy}
           onCapture={async (dataUrl) => { await nutrition.submit('image', dataUrl); day.reload(); }} />
         <BarcodeButton onClick={() => setCaptureMode('barcode')} />

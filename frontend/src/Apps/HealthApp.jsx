@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import '@mantine/core/styles.css';
 import {
-  AppThemeProvider, AppChrome, DismissStackProvider, EmptyState,
+  AppThemeProvider, AppChrome, DismissStackProvider,
 } from '@/lib/ui';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import CoachChat from '../modules/Health/CoachChat';
 import { ChatOverlay } from '../modules/Health/ChatOverlay/index.jsx';
 import { TodayView } from '../modules/Health/today/TodayView.jsx';
+import { ProgressView } from '../modules/Health/progress/ProgressView.jsx';
+import { MedicalView } from '../modules/Health/medical/MedicalView.jsx';
 import '../modules/Health/health.scss';
 
 const Icon = ({ d }) => (
@@ -35,8 +37,8 @@ const HealthApp = () => {
       <DismissStackProvider>
         <AppChrome title="Health" tabs={TABS} activeTab={tab} onTabChange={setTab}>
           {tab === 'today' && <TodayView onSetupGoals={() => setTab('progress')} onCoachTap={() => setOverlayOpen(true)} />}
-          {tab === 'progress' && <EmptyState title="Progress" hint="Lands in Task F9" />}
-          {tab === 'health' && <EmptyState title="Health" hint="Lands in Task F9" />}
+          {tab === 'progress' && <ProgressView />}
+          {tab === 'health' && <MedicalView />}
           {/* CoachChat only supports variant 'light'|'overlay' (see AgentChatSurface) —
               'full' isn't a real variant. The default 'light' variant is already the
               full-height flex-column layout (`.coach-chat { height: 100% }`), which is
