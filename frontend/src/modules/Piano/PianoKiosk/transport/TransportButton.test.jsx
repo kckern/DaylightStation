@@ -49,4 +49,25 @@ describe('TransportButton', () => {
     rerender(<TransportButton icon="close" label="Pianos" layout="rail" onPress={() => {}} />);
     expect(screen.getByRole('button', { name: 'Pianos' })).toHaveClass('piano-tbtn--rail');
   });
+  it('renders illustration art in place of the icon when art is given', () => {
+    const { rerender } = render(<TransportButton icon="piano" label="Grand" art="/x/upright-piano.svg" layout="tile" onPress={() => {}} />);
+    const btn = screen.getByRole('button', { name: 'Grand' });
+    const img = btn.querySelector('img.piano-tbtn__art');
+    expect(img).not.toBeNull();
+    expect(img).toHaveAttribute('src', '/x/upright-piano.svg');
+    expect(img).toHaveAttribute('alt', '');
+    expect(img).toHaveAttribute('draggable', 'false');
+    expect(btn.querySelector('.piano-icon')).toBeNull();
+    rerender(<TransportButton icon="piano" label="Grand" layout="tile" onPress={() => {}} />);
+    expect(btn.querySelector('.piano-tbtn__art')).toBeNull();
+    expect(btn.querySelector('.piano-icon')).not.toBeNull();
+  });
+
+  it('SCSS sizes the art per layout', () => {
+    const scss = readFileSync(fileURLToPath(new URL('./Transport.scss', import.meta.url)), 'utf8');
+    expect(scss).toMatch(/\.piano-tbtn__art\s*\{[^}]*object-fit:\s*contain/s);
+    // Nested blocks sit inside the modifier, so reach past the first `}` non-greedily.
+    expect(scss).toMatch(/\.piano-tbtn--tile\s*\{.*?\.piano-tbtn__art\s*\{[^}]*3\.2em/s);
+    expect(scss).toMatch(/\.piano-tbtn--rail\s*\{.*?\.piano-tbtn__art\s*\{[^}]*\b2em/s);
+  });
 });

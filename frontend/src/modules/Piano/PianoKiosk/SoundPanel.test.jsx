@@ -26,7 +26,8 @@ const midi = vi.hoisted(() => ({ sendNote: vi.fn(() => true) }));
 vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
 const connection = vi.hoisted(() => ({ health: { state: 'ready', output: { state: 'up' } } }));
 vi.mock('./usePianoConnection.js', () => ({ usePianoConnection: () => connection }));
-vi.mock('../ui/icons/Icon.jsx', () => ({ default: () => <span aria-hidden /> }));
+vi.mock('../ui/icons/Icon.jsx', () => ({ default: () => <span className="piano-icon" aria-hidden /> }));
+vi.mock('../../../lib/api.mjs', () => ({ DaylightMediaPath: (path) => path }));
 
 import SoundPanel from './SoundPanel.jsx';
 
@@ -165,5 +166,27 @@ describe('SoundPanel', () => {
     render(<SoundPanel open onClose={vi.fn()} />);
     fireEvent.click(within(rail()).getByRole('button', { name: 'Mine' }));
     expect(screen.getByText('Save a sound and it will show up here.')).toBeInTheDocument();
+  });
+  it('shows illustration art on tiles the pack can picture and the icon on the rest', () => {
+    render(<SoundPanel open onClose={vi.fn()} />);
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Voices' }));
+    expect(within(rail()).getByRole('button', { name: 'Pianos' }).querySelector('img.piano-tbtn__art')).toHaveAttribute('src', '/static/img/music/instruments/upright-piano.svg');
+    expect(within(rail()).getByRole('button', { name: 'Voices' }).querySelector('.piano-tbtn__art')).toBeNull();
+    expect(within(rail()).getByRole('button', { name: 'Voices' }).querySelector('.piano-icon')).not.toBeNull();
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Mine' }));
+    expect(within(grid()).getByRole('button', { name: 'Grand' }).querySelector('img.piano-tbtn__art')).toHaveAttribute('src', '/static/img/music/instruments/upright-piano.svg');
+    expect(within(grid()).getByRole('button', { name: 'Grand' }).querySelector('.piano-icon')).toBeNull();
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Strings' }));
+    expect(within(grid()).getByRole('button', { name: 'Violin' }).querySelector('img.piano-tbtn__art')).toHaveAttribute('src', '/static/img/music/instruments/violin-1.svg');
+  });
+
+  it('keeps the icon, not art, on tiles for voices without an illustration', () => {
+    currentBundle = { ...currentBundle, voice: { pc: 52, bank: 0, name: 'Choir Aahs' } };
+    shortlist = [{ pc: 52, bank: 0, name: 'Choir Aahs' }];
+    render(<SoundPanel open onClose={vi.fn()} />);
+    const tile = within(grid()).getByRole('button', { name: 'Choir Aahs' });
+    expect(tile.querySelector('.piano-tbtn__art')).toBeNull();
+    expect(tile.querySelector('.piano-icon')).not.toBeNull();
+    expect(screen.getByText('Choir Aahs', { selector: 'strong' }).parentElement.querySelector('.piano-icon')).not.toBeNull();
   });
 });
