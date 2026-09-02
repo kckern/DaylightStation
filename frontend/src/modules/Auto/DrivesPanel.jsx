@@ -9,7 +9,7 @@
 // beside it is worth tapping.
 
 import { useState } from 'react';
-import { Loading, Failed, Empty } from './AutoStates.jsx';
+import { LoadingState, ErrorState, EmptyState, Sheet } from '@/lib/ui';
 import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } from './format.js';
 import { autoApi } from './useAutoApi.js';
 import FuelSheet from './FuelSheet.jsx';
@@ -24,17 +24,17 @@ export default function DrivesPanel({
   const [naming, setNaming] = useState(null);
   const [fueling, setFueling] = useState(null);
 
-  if (loading) return <Loading label="Loading drives" />;
-  if (error) return <Failed error={error} onRetry={onReload} />;
+  if (loading) return <LoadingState label="drives" />;
+  if (error) return <ErrorState error={error} onRetry={onReload} label="Drives" />;
 
   const rows = journeys || [];
 
   return (
     <div className="auto-panel">
       {rows.length === 0 ? (
-        <Empty
+        <EmptyState
           title="No drives yet"
-          detail={
+          hint={
             hidden > 0
               ? `${hidden} very short recording${hidden === 1 ? '' : 's'} hidden — the car moving in the garage, or the ignition blipping.`
               : 'Trips upload when the car gets home and joins WiFi.'
@@ -228,14 +228,8 @@ function NamePlaceSheet({ point, onClose, onSaved }) {
   };
 
   return (
-    <div className="auto-sheet-backdrop" onClick={onClose} role="presentation">
-      <form
-        className="auto-sheet"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={submit}
-        aria-label="Name this place"
-      >
-        <h2 className="auto-sheet__title">Name this place</h2>
+    <Sheet open onClose={onClose} title="Name this place">
+      <form onSubmit={submit} aria-label="Name this place">
         <label className="auto-field">
           <span>What is it?</span>
           <input
@@ -265,6 +259,6 @@ function NamePlaceSheet({ point, onClose, onSaved }) {
           </button>
         </div>
       </form>
-    </div>
+    </Sheet>
   );
 }

@@ -2,65 +2,24 @@
 //
 // Data access for the Auto app. One hook per resource, each returning the same
 // { data, loading, error, reload } shape so the panels stay uniform.
+//
+// The fetch primitive itself is the house `useApiResource` (lib/hooks) — this
+// module was its donor (same discard-stale-request-on-unmount semantics), so
+// promoting to the shared import changes nothing behaviorally; each resource
+// hook just passes `logger: autoLog` to keep the app.auto tag on its events.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useApiResource } from '@/lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../lib/api.mjs';
 import autoLog from './autoLog.js';
 
-/**
- * Fetch a path, re-fetching when `deps` change.
- *
- * A request whose component unmounted mid-flight is DISCARDED rather than
- * written to state — on a phone, tab switches while a request is in the air are
- * the normal case, not an edge case, and a late response landing in a stale
- * panel shows the previous vehicle's numbers under the current one's heading.
- */
-function useApiResource(path, { deps = [], enabled = true, label } = {}) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(Boolean(enabled));
-  const [error, setError] = useState(null);
-  const [nonce, setNonce] = useState(0);
-
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
-
-  useEffect(() => {
-    if (!enabled || !path) { setLoading(false); return undefined; }
-    let live = true;
-    setLoading(true);
-    setError(null);
-
-    const startedAt = performance.now();
-    DaylightAPI(path)
-      .then((result) => {
-        if (!live) return;
-        setData(result);
-        setLoading(false);
-        autoLog.debug('api.loaded', {
-          resource: label || path, ms: Math.round(performance.now() - startedAt),
-        });
-      })
-      .catch((err) => {
-        if (!live) return;
-        setError(err);
-        setLoading(false);
-        autoLog.warn('api.failed', { resource: label || path, error: err?.message });
-      });
-
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, enabled, nonce, ...deps]);
-
-  return { data, loading, error, reload };
-}
-
 export function useVehicles() {
-  return useApiResource('api/v1/automotive/vehicles', { label: 'vehicles' });
+  return useApiResource('api/v1/automotive/vehicles', { label: 'vehicles', logger: autoLog });
 }
 
 export function useOverview(vehicleId) {
   return useApiResource(
     vehicleId ? `api/v1/automotive/vehicles/${vehicleId}` : null,
-    { enabled: Boolean(vehicleId), label: 'overview' },
+    { enabled: Boolean(vehicleId), label: 'overview', logger: autoLog },
   );
 }
 
@@ -68,21 +27,21 @@ export function useJourneys(vehicleId, { includeShuffles = false } = {}) {
   const query = includeShuffles ? '?shuffles=1' : '';
   return useApiResource(
     vehicleId ? `api/v1/automotive/vehicles/${vehicleId}/journeys${query}` : null,
-    { enabled: Boolean(vehicleId), deps: [includeShuffles], label: 'journeys' },
+    { enabled: Boolean(vehicleId), deps: [includeShuffles], label: 'journeys', logger: autoLog },
   );
 }
 
 export function useFuel(vehicleId) {
   return useApiResource(
     vehicleId ? `api/v1/automotive/vehicles/${vehicleId}/fuel` : null,
-    { enabled: Boolean(vehicleId), label: 'fuel' },
+    { enabled: Boolean(vehicleId), label: 'fuel', logger: autoLog },
   );
 }
 
 export function useService(vehicleId) {
   return useApiResource(
     vehicleId ? `api/v1/automotive/vehicles/${vehicleId}/service` : null,
-    { enabled: Boolean(vehicleId), label: 'service' },
+    { enabled: Boolean(vehicleId), label: 'service', logger: autoLog },
   );
 }
 
@@ -91,13 +50,13 @@ export function useService(vehicleId) {
  * options can be extended in vehicles.yml without a frontend deploy.
  */
 export function useServiceTypes() {
-  return useApiResource('api/v1/automotive/service-types', { label: 'service-types' });
+  return useApiResource('api/v1/automotive/service-types', { label: 'service-types', logger: autoLog });
 }
 
 export function useDocuments(vehicleId) {
   return useApiResource(
     vehicleId ? `api/v1/automotive/vehicles/${vehicleId}/documents` : null,
-    { enabled: Boolean(vehicleId), label: 'documents' },
+    { enabled: Boolean(vehicleId), label: 'documents', logger: autoLog },
   );
 }
 
