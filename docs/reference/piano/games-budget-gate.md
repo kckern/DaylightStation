@@ -26,7 +26,7 @@ that blocks wins, and each carries its own copy.
 
 | # | Gate | Opens on | Fails |
 |---|---|---|---|
-| 1 | School completion | today's schoolwork is `complete` or `no_work_today` | closed |
+| 1 | School completion | today's schoolwork is `complete` or `no_work_today`, **or the player is not a learner School tracks** | closed |
 | 2 | Match gate | a played challenge scores at or above the bar | open on infrastructure; the ladder floor cannot fail on verdict |
 | 3 | Budget | minutes remain in the learner's allowance *and* the device's | open |
 
@@ -44,6 +44,47 @@ before the day's balance is read. It is worth knowing when reading a log where
 
 The curfew window and the Games tile's own school lock are documented in
 [README.md](./README.md); neither is part of this feature.
+
+### Gate 1 covers learners, and only learners
+
+`GET /api/v1/piano/users` marks each roster member `schoolLearner`, sourced from
+School's learner directory. A member it does not list is **not gated** — the
+kiosk reports `not_gated` and never queries the entitlement at all.
+
+This distinction is not cosmetic. State Gates enumerates gate instances from
+published evidence, so a household member School has no plan for produces no
+`piano.games` decision. An absent decision reads `indeterminate`, and
+`indeterminate` fails closed — which is right for a learner whose day cannot be
+judged and a category error for someone who was never assigned a day. Until
+2026-09-02 both grown-ups were therefore permanently locked out of Games, under
+copy telling them to finish schoolwork they had never had.
+
+`schoolLearner` is decided on the server because who is a learner is a School
+fact; a browser deciding it would be deciding its own entitlement. It fails
+closed as `true` (gated): the expensive mistake is answering `false` for a
+child, since that is a games unlock handed out by a School outage. An absent,
+broken, or throwing directory gates everybody.
+
+### A denial needs an identity confirmed today
+
+The office screen (`PianoVisualizer`) has no roster context, so it remembers the
+last player picked. The pick now carries the study day it was made on, and
+`useLauncherUser` reports `identityStale` when that day is not today's.
+
+A **settled denial against a stale identity shows the roster instead of the
+lock.** The asymmetry is deliberate: an unlocked verdict against a stale pick
+costs a misfiled game record, while a denial costs someone their access, and
+only the second is worth interrupting for. A `loading` or `error` status is not
+a verdict about the person in front of the screen, so neither re-asks.
+
+On 2026-09-02 that screen still held a profile picked five days earlier, read
+that child's school day, and told the adult standing at the keyboard to finish
+schoolwork that was not his. The lock copy now names whose day it is reading.
+
+Switching profiles after a denial stays one key press away — the games keep
+per-player history and levels, so there is a real pull toward your own lane.
+The switch is recorded as `launcher.user-switched-after-deny`, which an ordinary
+`launcher.user-selected` line cannot be told apart from.
 
 ---
 

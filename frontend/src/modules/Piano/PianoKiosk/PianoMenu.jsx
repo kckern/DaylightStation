@@ -45,8 +45,10 @@ export function PianoMenu() {
   const navigate = useNavigate();
   const { pianoId, basePath, config } = usePianoKioskConfig();
   const { pressNote, releaseNote } = usePianoMidi();
-  const { currentUser, setCurrentUser } = usePianoUser();
-  const gameAccess = useSchoolGameAccess(currentUser);
+  const { users, currentUser, setCurrentUser } = usePianoUser();
+  const gameAccess = useSchoolGameAccess(currentUser, {
+    schoolLearner: (users || []).find((u) => u.id === currentUser)?.schoolLearner,
+  });
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
   const cols = balancedColumns(PIANO_MODES.length); // 10 → 5

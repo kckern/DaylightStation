@@ -30,6 +30,14 @@ vi.mock('./game-platform/launcher/useLauncherUser.js', () => ({
   useLauncherUser: () => launcherUserState,
 }));
 
+// The roster's note-to-player binding has its own suite; here the pick is
+// driven directly so the wiring around it can be asked about on its own.
+let selectionArgs = null;
+vi.mock('./game-platform/input/useNoteSelection.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, useNoteSelection: (args) => { selectionArgs = args; } };
+});
+
 const schoolGate = { status: 'ready', state: 'complete', unlocked: true };
 vi.mock('./PianoKiosk/useSchoolGameAccess.js', () => ({
   default: () => schoolGate,
@@ -128,9 +136,11 @@ beforeEach(() => {
   extraGames = [];
   gamesConfig = {};
   midiSessionInfo = null;
+  selectionArgs = null;
   registerEscapeInterceptor.mockClear();
   unregisterEscapeInterceptor.mockClear();
   stubLogger.warn.mockClear();
+  stubLogger.info.mockClear();
 });
 
 describe('PianoVisualizer MIDI session end', () => {
@@ -199,12 +209,17 @@ describe('PianoVisualizer game launcher', () => {
   });
 
   it('shows the school lock instead of game keys while work is incomplete', () => {
-    launcherUserState = { ...launcherUserState, currentUser: 'kid1' };
+    launcherUserState = {
+      ...launcherUserState,
+      users: [{ id: 'kid1', name: 'Kid One' }], currentUser: 'kid1', identityStale: false,
+    };
     Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
     launcherState = { ...launcherState, isOpen: true };
     const { container } = render(<PianoVisualizer />);
 
-    expect(container.textContent).toContain('Finish today’s schoolwork to unlock Games.');
+    // Named since 2026-09-02: an unattributed "finish today's schoolwork" is
+    // indistinguishable from a broken piano to everyone it is not about.
+    expect(container.textContent).toContain('Kid One still has schoolwork to finish today.');
     expect(container.querySelectorAll('.nl-key')).toHaveLength(0);
     expect(launcherArgs.selectionPaused).toBe(true);
   });
@@ -490,5 +505,113 @@ describe('office game chrome', () => {
     expect(chrome.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // And the game must actually be inside the stage, not beside it.
     expect(stage.childElementCount).toBeGreaterThan(0);
+  });
+});
+
+describe('PianoVisualizer school lock and a stale identity', () => {
+  const rosterOf = (currentUser, identityStale) => ({
+    users: [{ id: 'learner-one', name: 'Learner One' }, { id: 'test-user', name: 'Test User' }],
+    currentUser, identityStale,
+    pickerOpen: false, openPicker: vi.fn(), closePicker: vi.fn(), pickUser: vi.fn(),
+  });
+
+  // THE 2026-09-02 REPORT. The office screen remembered a profile picked five
+  // days earlier, read the school gate against it, and told the person standing
+  // there to finish schoolwork that was not theirs. A denial is the one verdict
+  // that must not rest on an identity nobody confirmed today.
+  it('asks who is playing instead of locking against a stale identity', () => {
+    launcherState = { ...launcherState, isOpen: true };
+    launcherUserState = rosterOf('learner-one', true);
+    Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
+
+    const { container } = render(<PianoVisualizer />);
+
+    expect(container.querySelector('.note-launcher--school-locked')).toBeNull();
+    expect(container.querySelector('.note-launcher--users')).toBeTruthy();
+  });
+
+  // The other half of the same rule: once the person has named themselves
+  // today, the denial is theirs and it stands. Re-asking here would turn the
+  // lock into a menu of profiles to try until one opens.
+  it('keeps the lock when the denied identity was chosen today', () => {
+    launcherState = { ...launcherState, isOpen: true };
+    launcherUserState = rosterOf('learner-one', false);
+    Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
+
+    const { container } = render(<PianoVisualizer />);
+
+    expect(container.querySelector('.note-launcher--school-locked')).toBeTruthy();
+    expect(container.querySelector('.note-launcher--users')).toBeNull();
+  });
+
+  // Staleness only matters where being wrong costs someone access. An unlocked
+  // verdict against a stale profile costs a misfiled chess record, and stopping
+  // to ask would put a prompt in front of every child every morning.
+  it('does not interrupt an unlocked player just because the pick is old', () => {
+    launcherState = { ...launcherState, isOpen: true };
+    launcherUserState = rosterOf('learner-one', true);
+    Object.assign(schoolGate, { status: 'ready', state: 'complete', unlocked: true });
+
+    const { container } = render(<PianoVisualizer />);
+
+    expect(container.querySelector('.note-launcher--games')).toBeTruthy();
+    expect(container.querySelector('.note-launcher--users')).toBeNull();
+  });
+
+  // The lock never said whose day it was reading, which is why five days of it
+  // read as "the piano is broken" rather than "this is Learner One's lock".
+  it('names the learner the lock belongs to', () => {
+    launcherState = { ...launcherState, isOpen: true };
+    launcherUserState = rosterOf('learner-one', false);
+    Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
+
+    const { container } = render(<PianoVisualizer />);
+
+    expect(container.querySelector('.note-launcher--school-locked').textContent)
+      .toContain('Learner One');
+  });
+});
+
+
+describe('PianoVisualizer profile switches', () => {
+  const rosterOf = (currentUser, identityStale) => ({
+    users: [{ id: 'learner-one', name: 'Learner One' }, { id: 'learner-two', name: 'Learner Two' }],
+    currentUser, identityStale,
+    pickerOpen: false, openPicker: vi.fn(), closePicker: vi.fn(), pickUser: vi.fn(),
+  });
+
+  // Switching profiles after a denial stays one key press away — the games keep
+  // per-player history and levels, so there is a real pull toward your own lane
+  // and no reason to add a wall. But a switch that lands immediately after a
+  // "no" is the one worth being able to find later, and the ordinary
+  // `launcher.user-selected` line cannot be told apart from a normal pick.
+  it('records a profile switch made under a school denial', () => {
+    launcherState = { ...launcherState, isOpen: true };
+    launcherUserState = rosterOf('learner-one', false);
+    Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
+    render(<PianoVisualizer />);
+    launcherUserState.openPicker();
+
+    act(() => selectionArgs.onSelect({ id: 'learner-two', name: 'Learner Two' }, { userId: 'learner-two' }));
+
+    expect(launcherUserState.pickUser).toHaveBeenCalledWith('learner-two');
+    expect(stubLogger.info).toHaveBeenCalledWith(
+      'launcher.user-switched-after-deny',
+      expect.objectContaining({ from: 'learner-one', to: 'learner-two', deniedState: 'incomplete' }),
+    );
+  });
+
+  it('does not record an ordinary switch made with games open', () => {
+    launcherState = { ...launcherState, isOpen: true };
+    launcherUserState = rosterOf('learner-one', false);
+    Object.assign(schoolGate, { status: 'ready', state: 'complete', unlocked: true });
+    render(<PianoVisualizer />);
+
+    act(() => selectionArgs.onSelect({ id: 'learner-two', name: 'Learner Two' }, { userId: 'learner-two' }));
+
+    expect(launcherUserState.pickUser).toHaveBeenCalledWith('learner-two');
+    expect(stubLogger.info).not.toHaveBeenCalledWith(
+      'launcher.user-switched-after-deny', expect.anything(),
+    );
   });
 });
