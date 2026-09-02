@@ -8,13 +8,30 @@ import { computeDailyBudget } from '#domains/health/services/BudgetMath.mjs';
 const STALE_WEIGHT_DAYS = 7;
 const COUNTED = (item) => item?.status !== 'pending' && item?.status !== 'rejected' && item?.status !== 'deleted';
 
-// Tolerant session flattener: workouts arrive as an array of session objects,
-// a keyed object (e.g. { activity: [...], fitness: [...] } grouped by source),
-// or any nesting of the two — deep-flatten to a single list of session objects.
-const flattenWorkoutSessions = (workouts) => {
-  const list = Array.isArray(workouts) ? workouts
-    : (workouts && typeof workouts === 'object' ? Object.values(workouts) : []);
+// Tolerant list normalizer: a workout group arrives as an array of session
+// objects (or any nesting thereof) — deep-flatten to a single list, filtering
+// out anything that isn't a plain session object.
+const flattenGroup = (group) => {
+  const list = Array.isArray(group) ? group : [];
   return list.flat(Infinity).filter((w) => w && typeof w === 'object' && !Array.isArray(w));
+};
+
+// YamlHealthDatastore.getWorkoutsForDate returns { activity: [...], fitness: [...] } —
+// TWO VIEWS OF THE SAME WORKOUTS (Strava/Garmin activities vs. the Garmin daily
+// fitness summary), not two independent workout lists. Summing both double-counts
+// every session (verified live: a single 517-kcal run appears as 517 in `activity`
+// AND 518 in `fitness`, under different titles). `activity` is the richer source
+// (stable `id`, `homeSessionId`, precise `calories`/`minutes`) and is present
+// whenever any workout was logged for the date; `fitness` is a plainer rollup that
+// exists even on watchless days, so it's the fallback for when `activity` is empty.
+// Pick ONE source — never both.
+const flattenWorkoutSessions = (workouts) => {
+  if (!workouts || typeof workouts !== 'object' || Array.isArray(workouts)) {
+    return flattenGroup(workouts);
+  }
+  const activity = flattenGroup(workouts.activity);
+  if (activity.length > 0) return activity;
+  return flattenGroup(workouts.fitness);
 };
 
 // Tolerant calorie summer: count numeric `calories` (fallback `total_calories`)

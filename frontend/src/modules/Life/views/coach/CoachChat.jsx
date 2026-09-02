@@ -18,7 +18,17 @@ export default function CoachChat({ userId }) {
     <AgentChatSurface
       agentId="lifeplan-guide"
       userId={userId || 'default'}
-      style={{ height: 'calc(100vh - var(--app-shell-header-height, 48px) - var(--app-shell-padding, 16px) * 2)' }}
+      // Container-relative, not viewport-relative: `--app-shell-*` were
+      // Mantine AppShell vars that no longer exist (AppShell was deleted),
+      // so this used to fall back to bare 100vh — taller than the pinned
+      // .ds-chrome__main box, pushing the composer below the fold and
+      // double-scrolling. `.coach-chat` (AgentChatSurface.scss) is already
+      // `height:100%; display:flex; flex-direction:column` with an
+      // internally-scrolling message viewport, exactly like Health's
+      // CoachChat mount (Apps/HealthApp.jsx `style={{ height: '100%' }}`)
+      // — `.life-app-root` (LifeApp.scss) provides the definite height this
+      // resolves against, same as AppChrome's `__main` does for Health.
+      style={{ height: '100%' }}
     />
   );
 }

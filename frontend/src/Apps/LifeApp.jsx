@@ -66,7 +66,7 @@ function PlanSecondaryNav({ pathname, navigate }) {
           className={`life-plan-subnav__link${link.match(pathname) ? ' life-plan-subnav__link--active' : ''}`}
           aria-current={link.match(pathname) ? 'page' : undefined}
           onClick={() => navigate(link.path)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(link.path); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(link.path); } }}
         >
           {link.icon}
           <span>{link.label}</span>
