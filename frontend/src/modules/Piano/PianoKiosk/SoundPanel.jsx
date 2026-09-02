@@ -158,7 +158,7 @@ export default function SoundPanel({ open, onClose }) {
 
       {/* Rail items and voice tiles are radio-like sets, so each carries an explicit aria-pressed (TransportButton alone omits it when off). */}
       <div className="piano-settings__grid" role="group" aria-label="Instruments">
-        {gridTiles.length === 0 && <p className="piano-settings__empty">Save a sound and it will show up here.</p>}
+        {gridTiles.length === 0 && <p className="piano-settings__empty">{activeFamily === 'mine' ? 'Save a sound and it will show up here.' : 'Waiting for the piano’s instrument list…'}</p>}
         {gridTiles.map((tile) => <TransportButton key={tile.key} layout="tile" icon={instrumentIcon(tile.name)} art={artUrl(voiceArt(tile.name))} label={tile.name} on={tile.voiceKey === currentKey} aria-pressed={tile.voiceKey === currentKey} onPress={() => pick(tile)} />)}
       </div>
 
