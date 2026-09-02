@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
 import { useLifeUsername } from './useLifeUser.js';
 
 let _logger;
@@ -23,9 +24,7 @@ export function useAlignment(mode = 'priorities', username) {
     const start = performance.now();
     try {
       const userQs = user ? `&username=${encodeURIComponent(user)}` : '';
-      const res = await fetch(`/api/v1/life/now?mode=${mode}${userQs}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
+      const json = await DaylightAPI(`api/v1/life/now?mode=${mode}${userQs}`);
       setData(json);
       logger().debug('life.alignment.fetched', { mode, durationMs: Math.round(performance.now() - start) });
     } catch (err) {

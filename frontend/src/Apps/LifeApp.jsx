@@ -1,14 +1,16 @@
-import React, { useMemo, useEffect } from 'react';
-import { MantineProvider, AppShell, NavLink, Title, Group, Select, Burger } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { useEffect } from 'react';
+import { Select } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield, IconCalendarEvent, IconMessageCircle } from '@tabler/icons-react';
+import {
+  IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield,
+  IconCalendarEvent, IconMessageCircle,
+} from '@tabler/icons-react';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import './LifeApp.scss';
+import { AppThemeProvider, AppChrome, createAppLogger } from '@/lib/ui';
 import { configure } from '../lib/logging/Logger.js';
-import { getChildLogger } from '../lib/logging/singleton.js';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import { Dashboard } from '../modules/Life/views/now/Dashboard.jsx';
 import { LogBrowser } from '../modules/Life/views/log/LogBrowser.jsx';
@@ -25,8 +27,54 @@ import { CeremonyFlow } from '../modules/Life/views/ceremony/CeremonyFlow.jsx';
 import CoachChat from '../modules/Life/views/coach/CoachChat.jsx';
 import { LifeUserContext, useLifeUser } from '../modules/Life/hooks/useLifeUser.js';
 import { useAppNotifications } from '../modules/Life/hooks/useAppNotifications.js';
-import { lifeTheme } from './LifeApp.theme.js';
 
+const logger = createAppLogger('life');
+
+// Top-level tabs. Every child that used to live under the navbar's "Plan"
+// disclosure group now lives one level down, inside the Plan tab's own body —
+// see PLAN_LINKS below — so this list matches the four things that used to be
+// directly clickable from the root of the old navbar (Now / Log / Plan / Coach).
+const TABS = [
+  { id: 'now', label: 'Now', icon: <IconDashboard size={20} /> },
+  { id: 'log', label: 'Log', icon: <IconTimeline size={20} /> },
+  { id: 'plan', label: 'Plan', icon: <IconTarget size={20} /> },
+  { id: 'coach', label: 'Coach', icon: <IconMessageCircle size={20} /> },
+];
+
+// The old navbar's nested "Plan" NavLink group, ported to an in-view secondary
+// nav rendered above the routed content whenever a /life/plan* route is active.
+// `match` mirrors the old `isActive()`/exact-path checks so highlighting is
+// identical: Purpose only lights up for the bare /life/plan path (every other
+// child route also starts with /life/plan and would otherwise always match it).
+const PLAN_LINKS = [
+  { path: '/life/plan', label: 'Purpose', icon: <IconHeart size={14} />, match: (p) => p === '/life/plan' },
+  { path: '/life/plan/goals', label: 'Goals', icon: <IconTarget size={14} />, match: (p) => p.startsWith('/life/plan/goals') },
+  { path: '/life/plan/beliefs', label: 'Beliefs', icon: <IconBrain size={14} />, match: (p) => p.startsWith('/life/plan/beliefs') },
+  { path: '/life/plan/values', label: 'Values', icon: <IconDiamond size={14} />, match: (p) => p.startsWith('/life/plan/values') },
+  { path: '/life/plan/qualities', label: 'Qualities', icon: <IconShield size={14} />, match: (p) => p.startsWith('/life/plan/qualities') },
+  { path: '/life/plan/ceremonies', label: 'Ceremonies', icon: <IconCalendarEvent size={14} />, match: (p) => p.startsWith('/life/plan/ceremonies') },
+];
+
+function PlanSecondaryNav({ pathname, navigate }) {
+  return (
+    <nav className="life-plan-subnav" aria-label="Plan sections">
+      {PLAN_LINKS.map((link) => (
+        <a
+          key={link.path}
+          role="link"
+          tabIndex={0}
+          className={`life-plan-subnav__link${link.match(pathname) ? ' life-plan-subnav__link--active' : ''}`}
+          aria-current={link.match(pathname) ? 'page' : undefined}
+          onClick={() => navigate(link.path)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(link.path); }}
+        >
+          {link.icon}
+          <span>{link.label}</span>
+        </a>
+      ))}
+    </nav>
+  );
+}
 
 const LogDayRoute = () => {
   const { date } = useParams();
@@ -49,12 +97,21 @@ const CeremonyRoute = () => {
   return <CeremonyFlow type={type} onComplete={() => navigate('/life/now')} />;
 };
 
-const LifeApp = () => {
+// Which top-level tab a path belongs to. A /life/ceremony/* path (reached
+// from a priority card, not from the navbar) matches none of these — same as
+// the old navbar, where none of its NavLinks lit up during a ceremony either.
+function tabForPath(pathname) {
+  if (pathname.startsWith('/life/now')) return 'now';
+  if (pathname.startsWith('/life/log')) return 'log';
+  if (pathname.startsWith('/life/plan')) return 'plan';
+  if (pathname.startsWith('/life/coach')) return 'coach';
+  return null;
+}
+
+function LifeAppShell() {
   useDocumentTitle('Life');
-  const logger = useMemo(() => getChildLogger({ app: 'life' }), []);
   const navigate = useNavigate();
   const location = useLocation();
-  const [navOpened, { toggle: toggleNav, close: closeNav }] = useDisclosure(false);
   const { user: lifeUser, users: lifeUsers, setUsername } = useLifeUser();
 
   // Render the in-app fallback channel for the notification service. Most
@@ -70,80 +127,40 @@ const LifeApp = () => {
       logger.info('life.app.unmounted');
       configure({ context: { sessionLog: false } });
     };
-  }, [logger]);
+  }, []);
 
   // Log route changes
   useEffect(() => {
     logger.info('life.route.changed', { path: location.pathname });
-  }, [location.pathname, logger]);
+  }, [location.pathname]);
 
-  const isActive = (path) => location.pathname.startsWith(`/life/${path}`);
+  const activeTab = tabForPath(location.pathname);
+
+  const headerActions = lifeUsers.length > 1 ? [(
+    <Select
+      key="user-switch"
+      size="xs"
+      w={150}
+      aria-label="Switch household member"
+      allowDeselect={false}
+      data={lifeUsers.map((u) => ({ value: u.username, label: u.displayName }))}
+      value={lifeUser?.username || null}
+      onChange={(val) => { if (val) setUsername(val); }}
+    />
+  )] : undefined;
 
   return (
-    <MantineProvider theme={lifeTheme} defaultColorScheme="dark">
+    <LifeUserContext.Provider value={lifeUser}>
       <Notifications position="top-right" autoClose={8000} />
-      <LifeUserContext.Provider value={lifeUser}>
-      <AppShell
-        header={{ height: 48 }}
-        navbar={{ width: 200, breakpoint: 'sm', collapsed: { mobile: !navOpened } }}
-        padding="md"
+      <AppChrome
+        title="Life"
+        tabs={TABS}
+        activeTab={activeTab}
+        onTabChange={(id) => navigate(`/life/${id}`)}
+        headerActions={headerActions}
       >
-        <AppShell.Header>
-          <Group h="100%" px="md" justify="space-between">
-            <Group gap="sm">
-              <Burger opened={navOpened} onClick={toggleNav} hiddenFrom="sm" size="sm" />
-              <Title order={4}>Life</Title>
-            </Group>
-            {/* User switcher — only meaningful in a multi-member household. */}
-            {lifeUsers.length > 1 && (
-              <Select
-                size="xs"
-                w={150}
-                aria-label="Switch household member"
-                allowDeselect={false}
-                data={lifeUsers.map((u) => ({ value: u.username, label: u.displayName }))}
-                value={lifeUser?.username || null}
-                onChange={(val) => { if (val) setUsername(val); }}
-              />
-            )}
-          </Group>
-        </AppShell.Header>
-
-        <AppShell.Navbar p="xs">
-          <NavLink
-            label="Now"
-            leftSection={<IconDashboard size={16} />}
-            active={isActive('now')}
-            onClick={() => { navigate('/life/now'); closeNav(); }}
-          />
-          <NavLink
-            label="Log"
-            leftSection={<IconTimeline size={16} />}
-            active={isActive('log')}
-            onClick={() => { navigate('/life/log'); closeNav(); }}
-          />
-          <NavLink
-            label="Plan"
-            leftSection={<IconTarget size={16} />}
-            active={isActive('plan')}
-            defaultOpened={isActive('plan')}
-          >
-            <NavLink label="Purpose" leftSection={<IconHeart size={14} />} active={location.pathname === '/life/plan'} onClick={() => { navigate('/life/plan'); closeNav(); }} />
-            <NavLink label="Goals" leftSection={<IconTarget size={14} />} active={isActive('plan/goals')} onClick={() => { navigate('/life/plan/goals'); closeNav(); }} />
-            <NavLink label="Beliefs" leftSection={<IconBrain size={14} />} active={isActive('plan/beliefs')} onClick={() => { navigate('/life/plan/beliefs'); closeNav(); }} />
-            <NavLink label="Values" leftSection={<IconDiamond size={14} />} active={isActive('plan/values')} onClick={() => { navigate('/life/plan/values'); closeNav(); }} />
-            <NavLink label="Qualities" leftSection={<IconShield size={14} />} active={isActive('plan/qualities')} onClick={() => { navigate('/life/plan/qualities'); closeNav(); }} />
-            <NavLink label="Ceremonies" leftSection={<IconCalendarEvent size={14} />} active={isActive('plan/ceremonies')} onClick={() => { navigate('/life/plan/ceremonies'); closeNav(); }} />
-          </NavLink>
-          <NavLink
-            label="Coach"
-            leftSection={<IconMessageCircle size={16} />}
-            active={isActive('coach')}
-            onClick={() => { navigate('/life/coach'); closeNav(); }}
-          />
-        </AppShell.Navbar>
-
-        <AppShell.Main className="life-app-root">
+        <div className="life-app-root">
+          {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} navigate={navigate} />}
           <Routes>
             <Route index element={<Navigate to="now" />} />
             <Route path="now" element={<Dashboard />} />
@@ -161,11 +178,16 @@ const LifeApp = () => {
             {/* Gate on resolved user so agent memory keys to the right person */}
             <Route path="coach" element={lifeUser ? <CoachChat userId={lifeUser.username} /> : null} />
           </Routes>
-        </AppShell.Main>
-      </AppShell>
-      </LifeUserContext.Provider>
-    </MantineProvider>
+        </div>
+      </AppChrome>
+    </LifeUserContext.Provider>
   );
-};
+}
+
+const LifeApp = () => (
+  <AppThemeProvider pack="life">
+    <LifeAppShell />
+  </AppThemeProvider>
+);
 
 export default LifeApp;

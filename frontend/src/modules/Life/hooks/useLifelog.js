@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
 import { useLifeUsername } from './useLifeUser.js';
 
 let _logger;
@@ -64,9 +65,7 @@ export function useLifelog(params = {}) {
     setError(null);
     logger().debug('fetch-start', { url });
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
+      const json = await DaylightAPI(url);
       setData(json);
       logger().debug('fetch-complete', { url, dayCount: json.days ? Object.keys(json.days).length : 1 });
     } catch (err) {

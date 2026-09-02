@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { DaylightAPI } from '../../../lib/api.mjs';
 import { useLifeUsername } from './useLifeUser.js';
 
 export function useDrift(username) {
@@ -15,9 +16,7 @@ export function useDrift(username) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/life/now/drift${qs}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
+      const json = await DaylightAPI(`api/v1/life/now/drift${qs}`);
       setData(json);
     } catch (err) {
       setError(err.message);
@@ -31,9 +30,7 @@ export function useDrift(username) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/life/now/drift/refresh${qs}`, { method: 'POST' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
+      const json = await DaylightAPI(`api/v1/life/now/drift/refresh${qs}`, {}, 'POST');
       setData(json);
     } catch (err) {
       setError(err.message);
