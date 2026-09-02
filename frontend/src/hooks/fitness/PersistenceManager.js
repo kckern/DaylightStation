@@ -28,12 +28,12 @@ import { runSessionBackfill } from './sessionBackfill.js';
 
 const MAX_SERIALIZED_SERIES_POINTS = 200000;
 const MIN_MEDIA_MS = 30 * 1000; // 30s — filter brief browse-past blips
-// A stored media duration is rejected when the item demonstrably played for
-// more than this multiple of it. 3x leaves ample room for the legitimate case
-// (a loop, or a duration rounded down) while catching a unit error, which is
-// off by 1000x. The floor keeps the check away from short clips, where a small
-// absolute error can look like a large ratio.
-const IMPLAUSIBLE_DURATION_RATIO = 3;
+// A stored media duration is rejected when it is under a minute for an item
+// that played for more than a few. The signature is ABSOLUTE: dividing by 1000
+// puts any real workout under a minute. A ratio ("played more than 3x its
+// length") also describes a LOOP, and would reject a 349-second stretch video
+// legitimately looped to 17 minutes.
+const IMPLAUSIBLE_DURATION_MAX_SEC = 60;
 const IMPLAUSIBLE_DURATION_FLOOR_SEC = 300;
 
 /**
@@ -536,7 +536,7 @@ const _consolidateEvents = (events) => {
     if (
       Number.isFinite(nominalSeconds) && playedSeconds != null
       && playedSeconds > IMPLAUSIBLE_DURATION_FLOOR_SEC
-      && nominalSeconds * IMPLAUSIBLE_DURATION_RATIO < playedSeconds
+      && nominalSeconds < IMPLAUSIBLE_DURATION_MAX_SEC
     ) {
       getLogger().warn('fitness.persistence.implausible_media_duration', {
         contentId: id,

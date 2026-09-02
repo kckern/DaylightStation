@@ -39,11 +39,18 @@ import { CliError } from './context.mjs';
 const DEFAULT_PLEX_URL = 'https://plex.kckern.net';
 
 /**
- * An event's duration is corrupt when the item demonstrably played for more
- * than this multiple of its recorded length. Mirrors the write-time invariant
- * in PersistenceManager so the repair and the guard agree on "implausible".
+ * The corruption signature is ABSOLUTE, not a ratio.
+ *
+ * Dividing by 1000 puts any real workout under a minute — a 32-minute session
+ * records `2`, a 4.6-hour game records `17`. So a sub-minute nominal length on
+ * an item that played for more than a few minutes is never right.
+ *
+ * A ratio cannot express this. "Played more than 3x its length" also describes
+ * a LOOP, and a 349-second stretch video looped to ~17 minutes was flagged by
+ * exactly that rule — then "repaired" by writing 349 back over 349, so the pass
+ * never converged and always reported one outstanding item.
  */
-export const IMPLAUSIBLE_RATIO = 3;
+export const IMPLAUSIBLE_MAX_SEC = 60;
 export const IMPLAUSIBLE_FLOOR_SEC = 300;
 
 export const spec = {
@@ -72,7 +79,7 @@ export function assessDuration(data) {
     ? (d.end - d.start) / 1000
     : null;
   if (!Number.isFinite(ds) || playedSeconds == null) return { corrupt: false, playedSeconds };
-  const corrupt = playedSeconds > IMPLAUSIBLE_FLOOR_SEC && ds * IMPLAUSIBLE_RATIO < playedSeconds;
+  const corrupt = playedSeconds > IMPLAUSIBLE_FLOOR_SEC && ds < IMPLAUSIBLE_MAX_SEC;
   return { corrupt, playedSeconds };
 }
 
