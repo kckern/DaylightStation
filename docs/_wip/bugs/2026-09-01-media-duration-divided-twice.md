@@ -2,8 +2,9 @@
 
 **Date:** 2026-09-01
 **Surface:** Fitness session timeline events → Strava descriptions, primary-media fallbacks
-**Status:** Root cause confirmed, not yet fixed
-**Severity:** 216 of 455 non-audio media events on record (47%) carry a corrupt duration
+**Status:** Fixed — consumer, producer and history repair all applied 2026-09-01
+**Severity:** 180 of 460 non-audio media events on record (39%) carried a corrupt
+duration; all repaired (161 re-fetched from Plex, 19 reconstructed from the played span)
 
 ---
 
