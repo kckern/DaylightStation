@@ -7,6 +7,7 @@ import { useHotkey } from '@/lib/hooks/useHotkey.js';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import CoachChat from '../modules/Health/CoachChat';
 import { ChatOverlay } from '../modules/Health/ChatOverlay/index.jsx';
+import { TodayView } from '../modules/Health/today/TodayView.jsx';
 import '../modules/Health/health.scss';
 
 const Icon = ({ d }) => (
@@ -33,7 +34,7 @@ const HealthApp = () => {
     <AppThemeProvider pack="health">
       <DismissStackProvider>
         <AppChrome title="Health" tabs={TABS} activeTab={tab} onTabChange={setTab}>
-          {tab === 'today' && <EmptyState title="Today" hint="Log view lands in Task F4" />}
+          {tab === 'today' && <TodayView onSetupGoals={() => setTab('progress')} onCoachTap={() => setOverlayOpen(true)} />}
           {tab === 'progress' && <EmptyState title="Progress" hint="Lands in Task F9" />}
           {tab === 'health' && <EmptyState title="Health" hint="Lands in Task F9" />}
           {/* CoachChat only supports variant 'light'|'overlay' (see AgentChatSurface) —
