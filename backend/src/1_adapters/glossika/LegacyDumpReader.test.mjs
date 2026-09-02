@@ -99,7 +99,9 @@ describe('readAttempts', () => {
   it('maps action onto rung and strips the mysqldump _binary marker', () => {
     const sql = dump('user_log', row('ekern', 'dictation', "_binary '오늘 날씨가 좋아요'", '0001', 2));
     const { byUser } = readAttempts(sql, USER_MAP);
-    expect(byUser.parent-two[0]).toMatchObject({
+    // Bracket notation: `byUser.parent-two[0]` parses as a SUBTRACTION
+    // (`byUser.parent` minus `two[0]`), which threw before it could assert.
+    expect(byUser['parent-two'][0]).toMatchObject({
       rung: 'dictation', seq: 1, day: 2, given: '오늘 날씨가 좋아요', attributedTo: 'parent-two',
     });
   });

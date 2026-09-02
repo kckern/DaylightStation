@@ -25,12 +25,25 @@ function fakeRes() {
 describe('nativeWire.parseRequest', () => {
   it('extracts input and context from JSON body', () => {
     const req = { body: { input: 'hello', context: { userId: 'kc' } } };
-    expect(nativeWire.parseRequest(req)).toEqual({ input: 'hello', context: { userId: 'kc' } });
+    // parseRequest also normalises a bare `input` into a messages array and
+    // resolves a threadId; the full shape is pinned here rather than matched
+    // loosely, so a future addition shows up as a failure to consider.
+    expect(nativeWire.parseRequest(req)).toEqual({
+      input: 'hello',
+      context: { userId: 'kc' },
+      messages: [{ role: 'user', content: 'hello' }],
+      threadId: null,
+    });
   });
 
   it('defaults context to {} when missing', () => {
     const req = { body: { input: 'hi' } };
-    expect(nativeWire.parseRequest(req)).toEqual({ input: 'hi', context: {} });
+    expect(nativeWire.parseRequest(req)).toEqual({
+      input: 'hi',
+      context: {},
+      messages: [{ role: 'user', content: 'hi' }],
+      threadId: null,
+    });
   });
 
   it('returns input=null when body is empty', () => {
@@ -124,10 +137,14 @@ describe('nativeWire.respondError', () => {
     expect(jsonBody.error).toMatch(/not found/);
   });
 
-  it('returns 500 for generic errors', () => {
+  it('rethrows a generic error instead of hand-rolling a 500', () => {
+    // Deliberate: errorHandlerMiddleware owns status mapping, and the layer
+    // audit has an `api-handrolled-500` rule to keep it that way. Only the two
+    // cases this wire format can classify itself (400, 404) are answered here.
     const res = fakeRes();
-    nativeWire.respondError(res, new Error('something went wrong'));
-    const { status } = res._state();
-    expect(status).toBe(500);
+    expect(() => nativeWire.respondError(res, new Error('something went wrong')))
+      .toThrow(/something went wrong/);
+    // The fake starts at 200 and respondError never touched it.
+    expect(res._state().status).toBe(200);
   });
 });

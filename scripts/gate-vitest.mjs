@@ -96,7 +96,13 @@ function vitestPopulation() {
       const src = readFileSync(f, 'utf8');
       // tests/unit/suite remains Jest-owned by default. An explicit Vitest
       // import is the migration marker that transfers an individual file.
-      if (rel.startsWith(`tests${path.sep}unit${path.sep}suite${path.sep}`)
+      // Matches the suite tree under EITHER root. The check used to be anchored
+      // at the start of `rel`, so `backend/tests/unit/suite/` never matched it
+      // and that whole tree entered the population unnoticed — 37 stale files
+      // testing contracts the DDD remediation had removed, under the old layer
+      // numbering (`1_domains`, `2_adapters`). They were deleted 2026-09-01.
+      const relPosix = rel.split(path.sep).join('/');
+      if (relPosix.includes('tests/unit/suite/')
         && !/from ['"]vitest['"]/.test(src)) continue;
       if (isVitestOwned(src)) files.push(rel);
     }

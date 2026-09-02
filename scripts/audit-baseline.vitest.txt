@@ -43,13 +43,26 @@
 # test's `< 2` cushion band called the spread padding. The band is 3px now, the
 # shipped constant is unchanged at 39, and the hard floor assertion stays exact.
 #
-backend/src/1_adapters/fitness/YamlWorkoutRepository.test.mjs
-backend/src/1_adapters/glossika/LegacyDumpReader.test.mjs
-backend/src/3_applications/school/documents/RenderPrintDocument.test.mjs
-backend/src/4_api/v1/agents/mountAgentHttp.test.mjs
-backend/src/4_api/v1/agents/wireFormats/native.test.mjs
-backend/src/4_api/v1/routers/piano.courses.test.mjs
-backend/src/4_api/v1/routers/piano.effect-audit.test.mjs
-backend/src/4_api/v1/routers/piano.loop-manifest.test.mjs
-tests/isolated/adapter/content/filesystem/resolvers/scripture.test.mjs
-tests/isolated/assembly/infrastructure/infrastructure-ownership.test.mjs
+#
+# 2026-09-01: the list below is now EMPTY. All ten entries were run
+# individually and pass; four needed real fixes rather than merely happening to
+# go green, which is the verification the Stockfish note above asks for before
+# an entry is removed by hand:
+#   LegacyDumpReader   — `byUser.parent-two[0]` parsed as a SUBTRACTION
+#                        (`byUser.parent` minus `two[0]`) and threw a
+#                        ReferenceError before it could assert.
+#   native / mountAgentHttp — parseRequest grew `messages`/`threadId` and
+#                        respondError now rethrows so errorHandlerMiddleware
+#                        owns the status (the `api-handrolled-500` audit rule).
+#                        The tests still asserted the older shapes.
+#   piano.loop-manifest — the route called `ds.getLoopManifest`, which was never
+#                        implemented, so GET /api/v1/piano/loop-manifest
+#                        answered 500 in production to a live `useLoopLibrary`
+#                        consumer. It now serves an empty library and warns.
+# The other six (YamlWorkoutRepository, RenderPrintDocument, piano.courses,
+# piano.effect-audit, scripture, infrastructure-ownership) pass unmodified.
+# They are the ones the note above flagged as UNVERIFIED under a blanket
+# --update; each was run on its own here, which is the evidence that was
+# missing. If one flakes under contention it should be re-listed WITH the
+# observation that put it back, not restored silently.
+#
