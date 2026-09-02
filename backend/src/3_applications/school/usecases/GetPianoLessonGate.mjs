@@ -50,6 +50,59 @@ function sampledWarning(logger, event, data) {
   } else logger?.warn?.(event, data);
 }
 
+/**
+ * The daily video cap, per enrollment.
+ *
+ * `gated` means "you still owe today's lesson" and funnels the kiosk INTO a
+ * lesson video. This is the opposite end of the same day — "you have had
+ * enough" — so it cannot ride on `gated`: the menu would try to launch a lesson
+ * at the learner it is trying to stop. It is its own field, and the kiosk's
+ * Videos mode is its only subject.
+ *
+ * THE COUNTER IS `completedLessonsToday`, deliberately. That is the same array
+ * the launcher maps into `servedWork`, which the agenda status board draws as
+ * one disc per finished lesson — so what a parent counts on the wall panel and
+ * what the cap counts are the same number by construction. Counting watch
+ * events, sessions, or launches instead would let the board and the cap
+ * disagree about the same day, and the board is the thing the rule was
+ * described in terms of.
+ *
+ * OPTIONAL AND OFF BY DEFAULT: only an enrollment carrying a positive whole
+ * `videosLockedAfter` is capped. A zero, a negative, a fraction or a string is
+ * ignored rather than guessed at — a mistyped cap that silently became 0 would
+ * lock a child out of videos permanently, which is the worst reading of an
+ * ambiguous config.
+ */
+const OPEN = Object.freeze({ locked: false, reason: 'no-cap', completedToday: 0, cap: null });
+
+function videoCapFor(row) {
+  const cap = row?.videosLockedAfter;
+  return Number.isInteger(cap) && cap > 0 ? cap : null;
+}
+
+function videoVerdict(row, status) {
+  const cap = videoCapFor(row);
+  const completedToday = Array.isArray(status?.completedLessonsToday)
+    ? status.completedLessonsToday.length : 0;
+  if (cap === null) return { locked: false, reason: 'no-cap', completedToday, cap: null };
+  return completedToday >= cap
+    ? { locked: true, reason: 'daily-cap', completedToday, cap }
+    : { locked: false, reason: 'under-cap', completedToday, cap };
+}
+
+/**
+ * The strictest lock wins, matching how `gated` already treats multiple piano
+ * enrollments. A capped enrollment outranks an uncapped one even when open, so
+ * the payload carries the cap the learner is actually running against rather
+ * than whichever course happened to be listed first.
+ */
+function strictestVideoVerdict(candidates) {
+  if (!candidates.length) return { ...OPEN };
+  return candidates.find((v) => v.locked)
+    ?? candidates.find((v) => v.cap !== null)
+    ?? candidates.reduce((a, b) => (b.completedToday > a.completedToday ? b : a));
+}
+
 export class GetPianoLessonGate {
   /** Backstop only — see the class doc. Invalidation is what keeps this fresh. */
   static MEMO_TTL_MS = 60_000;
@@ -132,7 +185,9 @@ export class GetPianoLessonGate {
     const base = { schema: SCHEMA, learnerId: learnerId ?? null };
     // Guest is the dismiss-outcome identity and has no roster-backed School
     // record to owe anything against.
-    if (!learnerId || learnerId === 'guest') return { ...base, gated: false, reason: 'guest' };
+    if (!learnerId || learnerId === 'guest') {
+      return { ...base, gated: false, reason: 'guest', videos: { ...OPEN } };
+    }
 
     const hit = this.#memo.get(learnerId);
     if (hit && this.#nowMs() - hit.at < GetPianoLessonGate.MEMO_TTL_MS) return { ...hit.result };
@@ -144,16 +199,25 @@ export class GetPianoLessonGate {
       this.#logger.warn?.('school.piano-gate.assignments-unavailable', {
         learnerId, error: err?.message ?? String(err),
       });
-      return this.#remember(learnerId, { ...base, gated: false, reason: 'unavailable' });
+      return this.#remember(learnerId, { ...base, gated: false, reason: 'unavailable', videos: { ...OPEN } });
     }
 
     const enrollments = programs.filter((row) => row?.programId === this.#launcher.id);
-    if (!enrollments.length) return this.#remember(learnerId, { ...base, gated: false, reason: 'not-enrolled' });
+    if (!enrollments.length) {
+      return this.#remember(learnerId, { ...base, gated: false, reason: 'not-enrolled', videos: { ...OPEN } });
+    }
+
+    // Accumulated across enrollments so every exit below can carry a verdict.
+    // A fail-open exit carries the OPEN default rather than a partial count:
+    // a cap derived from a read that did not resolve is not a measurement.
+    const videoCandidates = [];
 
     // More than one piano course is unusual but legal: gated while ANY is
     // owed, showing the first owed lesson found.
     let reason = 'done';
     for (const row of enrollments) {
+      // eslint-disable-next-line no-loop-func -- reads only this iteration's row
+      const capThis = (status) => videoCandidates.push(videoVerdict(row, status));
       const courseId = row.courseId ?? row.corpusId ?? null;
       if (!courseId) continue;
 
@@ -166,13 +230,15 @@ export class GetPianoLessonGate {
         sampledWarning(this.#logger, 'school.piano-gate.status-failed', {
           learnerId, courseId, error: err?.message ?? String(err),
         });
-        return this.#remember(learnerId, { ...base, gated: false, reason: 'unavailable' });
+        return this.#remember(learnerId, { ...base, gated: false, reason: 'unavailable', videos: { ...OPEN } });
       }
 
       if (status?.error === true) {
         sampledWarning(this.#logger, 'school.piano-gate.status-unavailable', { learnerId, courseId });
-        return this.#remember(learnerId, { ...base, gated: false, reason: 'unavailable' });
+        return this.#remember(learnerId, { ...base, gated: false, reason: 'unavailable', videos: { ...OPEN } });
       }
+
+      capThis(status);
 
       if (status.doneToday === true) {
         reason = status.bypassed ? 'bypassed' : status.excused ? 'excused' : 'done';
@@ -185,6 +251,7 @@ export class GetPianoLessonGate {
           ...base,
           gated: true,
           reason: 'owed',
+          videos: strictestVideoVerdict(videoCandidates),
           ...this.#target(status.nextLesson),
           // This is an already-authorized, narrow descriptor produced by the
           // School launcher.  The kiosk may render it, but it may not infer a
@@ -198,7 +265,9 @@ export class GetPianoLessonGate {
       reason = 'course-complete';
     }
 
-    return this.#remember(learnerId, { ...base, gated: false, reason });
+    return this.#remember(learnerId, {
+      ...base, gated: false, reason, videos: strictestVideoVerdict(videoCandidates),
+    });
   }
 
   /**
