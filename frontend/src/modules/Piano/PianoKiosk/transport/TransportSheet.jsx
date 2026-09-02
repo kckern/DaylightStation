@@ -4,6 +4,10 @@ import './Transport.scss';
 
 const FOCUSABLE = 'button:not([disabled]), [href], select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// Open sheets, oldest first. Only the last entry handles keys, so a sheet
+// opened on top of another sheet owns Escape and the Tab trap until it closes.
+const openSheets = [];
+
 /**
  * TransportSheet — the kiosk's one modal-sheet shell: full-screen scrim that
  * dismisses on tap, a titled panel with a 48px close button, focus trapped
@@ -13,8 +17,13 @@ const FOCUSABLE = 'button:not([disabled]), [href], select:not([disabled]), input
  * loop). `size="canvas"` fills the design canvas minus a margin for the
  * settings sheets, whose bodies lay out in columns and must never scroll.
  *
- * Initial focus goes to the first content control; Close is the fallback only
- * when the body has nothing focusable.
+ * Initial focus goes to `[data-autofocus]` if the body opts in, else the first
+ * content control; Close is the fallback only when the body has nothing
+ * focusable. Controls with `tabindex="-1"` are never trap targets.
+ *
+ * Invariant: only the most recently opened sheet handles keys. Escape is
+ * stopped at the document so the screen framework's window listener never
+ * sees it as its own escape action.
  */
 export default function TransportSheet({ open, title, onClose, children, size = 'auto', className = '' }) {
   const titleId = useId();
@@ -26,11 +35,15 @@ export default function TransportSheet({ open, title, onClose, children, size = 
   useEffect(() => {
     if (!open) return undefined;
     opener.current = document.activeElement;
-    const focusables = () => [...(panel.current?.querySelectorAll(FOCUSABLE) || [])];
+    openSheets.push(panel);
+    const focusables = () => [...(panel.current?.querySelectorAll(FOCUSABLE) || [])].filter((node) => node.tabIndex >= 0);
     const initial = focusables();
-    (initial.find((node) => !node.classList.contains('piano-tsheet__close')) || initial[0])?.focus();
+    (panel.current?.querySelector('[data-autofocus]')
+      || initial.find((node) => !node.classList.contains('piano-tsheet__close'))
+      || initial[0])?.focus();
     const keydown = (event) => {
-      if (event.key === 'Escape') { event.preventDefault(); onCloseRef.current(); return; }
+      if (openSheets[openSheets.length - 1] !== panel) return;
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCloseRef.current(); return; }
       if (event.key !== 'Tab') return;
       const nodes = focusables();
       if (!nodes.length) return;
@@ -41,7 +54,12 @@ export default function TransportSheet({ open, title, onClose, children, size = 
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', keydown);
-    return () => { document.removeEventListener('keydown', keydown); opener.current?.focus?.(); };
+    return () => {
+      document.removeEventListener('keydown', keydown);
+      const at = openSheets.indexOf(panel);
+      if (at !== -1) openSheets.splice(at, 1);
+      opener.current?.focus?.();
+    };
   }, [open]);
 
   if (!open) return null;

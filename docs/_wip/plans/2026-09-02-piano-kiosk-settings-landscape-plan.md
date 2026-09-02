@@ -75,6 +75,54 @@ Claude-Session: https://claude.ai/code/session_013EvwyHPtmJ64zo2KhB9ALr
     const { container } = render(<TransportSheet open title="Sound" size="canvas" onClose={vi.fn()}>x</TransportSheet>);
     expect(container.querySelector('.piano-tsheet')).toHaveClass('piano-tsheet--canvas');
   });
+
+  it('stops Escape before it reaches window listeners (the screen framework maps Escape itself)', () => {
+    const windowSpy = vi.fn();
+    window.addEventListener('keydown', windowSpy);
+    try {
+      render(<TransportSheet open title="Sound" onClose={vi.fn()}><button type="button">A</button></TransportSheet>);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(windowSpy).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', windowSpy);
+    }
+  });
+
+  it('only the most recently opened sheet handles Escape; the one beneath takes over when it closes', () => {
+    const outerClose = vi.fn();
+    const innerClose = vi.fn();
+    const tree = (innerOpen) => (
+      <TransportSheet open title="Outer" onClose={outerClose}>
+        <button type="button">Outer action</button>
+        <TransportSheet open={innerOpen} title="Inner" onClose={innerClose}><button type="button">Inner action</button></TransportSheet>
+      </TransportSheet>
+    );
+    const { rerender } = render(tree(false));
+    rerender(tree(true));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(innerClose).toHaveBeenCalledOnce();
+    expect(outerClose).not.toHaveBeenCalled();
+    rerender(tree(false));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(outerClose).toHaveBeenCalledOnce();
+    expect(innerClose).toHaveBeenCalledOnce();
+  });
+
+  it('honours a data-autofocus opt-in for initial focus even when it is not first', () => {
+    render(<TransportSheet open title="Sound" onClose={vi.fn()}><button type="button">First</button><button type="button" data-autofocus>Chosen</button></TransportSheet>);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Chosen' }));
+  });
+
+  it('never wraps onto a control with tabindex="-1"', () => {
+    render(<TransportSheet open title="Sound" onClose={vi.fn()}><button type="button">First</button><button type="button" tabIndex={-1}>Hidden</button></TransportSheet>);
+    const close = screen.getByRole('button', { name: 'Close Sound' });
+    const first = screen.getByRole('button', { name: 'First' });
+    first.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(close);
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(first);
+  });
 ```
 
 Add `import { vi } from 'vitest';` if the file relies on globals (it currently uses `vi` as a global; keep whatever the existing file does).
@@ -82,7 +130,7 @@ Add `import { vi } from 'vitest';` if the file relies on globals (it currently u
 **Step 2: Run to verify they fail**
 
 Run: `npx vitest run frontend/src/modules/Piano/PianoKiosk/transport/TransportSheet.test.jsx`
-Expected: 5 new tests FAIL (no `aria-labelledby`, focus not moved, no canvas class). The 3 existing tests still pass.
+Expected: 9 new tests FAIL (no `aria-labelledby`, focus not moved, no canvas class, Escape reaches window, no sheet stack, no autofocus opt-in, tabindex=-1 wrapped onto). The 3 existing tests still pass.
 
 **Step 3: Implement** — replace `K/transport/TransportSheet.jsx` with:
 
@@ -93,6 +141,10 @@ import './Transport.scss';
 
 const FOCUSABLE = 'button:not([disabled]), [href], select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// Open sheets, oldest first. Only the last entry handles keys, so a sheet
+// opened on top of another sheet owns Escape and the Tab trap until it closes.
+const openSheets = [];
+
 /**
  * TransportSheet — the kiosk's one modal-sheet shell: full-screen scrim that
  * dismisses on tap, a titled panel with a 48px close button, focus trapped
@@ -102,8 +154,13 @@ const FOCUSABLE = 'button:not([disabled]), [href], select:not([disabled]), input
  * loop). `size="canvas"` fills the design canvas minus a margin for the
  * settings sheets, whose bodies lay out in columns and must never scroll.
  *
- * Initial focus goes to the first content control; Close is the fallback only
- * when the body has nothing focusable.
+ * Initial focus goes to `[data-autofocus]` if the body opts in, else the first
+ * content control; Close is the fallback only when the body has nothing
+ * focusable. Controls with `tabindex="-1"` are never trap targets.
+ *
+ * Invariant: only the most recently opened sheet handles keys. Escape is
+ * stopped at the document so the screen framework's window listener never
+ * sees it as its own escape action.
  */
 export default function TransportSheet({ open, title, onClose, children, size = 'auto', className = '' }) {
   const titleId = useId();
@@ -115,11 +172,15 @@ export default function TransportSheet({ open, title, onClose, children, size = 
   useEffect(() => {
     if (!open) return undefined;
     opener.current = document.activeElement;
-    const focusables = () => [...(panel.current?.querySelectorAll(FOCUSABLE) || [])];
+    openSheets.push(panel);
+    const focusables = () => [...(panel.current?.querySelectorAll(FOCUSABLE) || [])].filter((node) => node.tabIndex >= 0);
     const initial = focusables();
-    (initial.find((node) => !node.classList.contains('piano-tsheet__close')) || initial[0])?.focus();
+    (panel.current?.querySelector('[data-autofocus]')
+      || initial.find((node) => !node.classList.contains('piano-tsheet__close'))
+      || initial[0])?.focus();
     const keydown = (event) => {
-      if (event.key === 'Escape') { event.preventDefault(); onCloseRef.current(); return; }
+      if (openSheets[openSheets.length - 1] !== panel) return;
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCloseRef.current(); return; }
       if (event.key !== 'Tab') return;
       const nodes = focusables();
       if (!nodes.length) return;
@@ -130,7 +191,12 @@ export default function TransportSheet({ open, title, onClose, children, size = 
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', keydown);
-    return () => { document.removeEventListener('keydown', keydown); opener.current?.focus?.(); };
+    return () => {
+      document.removeEventListener('keydown', keydown);
+      const at = openSheets.indexOf(panel);
+      if (at !== -1) openSheets.splice(at, 1);
+      opener.current?.focus?.();
+    };
   }, [open]);
 
   if (!open) return null;
@@ -173,7 +239,7 @@ Append to `K/transport/Transport.scss` (after the `.piano-tsheet` block):
 **Step 4: Run to verify they pass**
 
 Run: `npx vitest run frontend/src/modules/Piano/PianoKiosk/transport/`
-Expected: all pass (TransportSheet 8, plus the other transport suites unchanged).
+Expected: all pass (TransportSheet 12, plus the other transport suites unchanged).
 
 **Step 5: Commit**
 

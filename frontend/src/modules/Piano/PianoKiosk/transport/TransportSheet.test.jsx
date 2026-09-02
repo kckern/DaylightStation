@@ -64,4 +64,52 @@ describe('TransportSheet', () => {
     const { container } = render(<TransportSheet open title="Sound" size="canvas" onClose={vi.fn()}>x</TransportSheet>);
     expect(container.querySelector('.piano-tsheet')).toHaveClass('piano-tsheet--canvas');
   });
+
+  it('stops Escape before it reaches window listeners (the screen framework maps Escape itself)', () => {
+    const windowSpy = vi.fn();
+    window.addEventListener('keydown', windowSpy);
+    try {
+      render(<TransportSheet open title="Sound" onClose={vi.fn()}><button type="button">A</button></TransportSheet>);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(windowSpy).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', windowSpy);
+    }
+  });
+
+  it('only the most recently opened sheet handles Escape; the one beneath takes over when it closes', () => {
+    const outerClose = vi.fn();
+    const innerClose = vi.fn();
+    const tree = (innerOpen) => (
+      <TransportSheet open title="Outer" onClose={outerClose}>
+        <button type="button">Outer action</button>
+        <TransportSheet open={innerOpen} title="Inner" onClose={innerClose}><button type="button">Inner action</button></TransportSheet>
+      </TransportSheet>
+    );
+    const { rerender } = render(tree(false));
+    rerender(tree(true));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(innerClose).toHaveBeenCalledOnce();
+    expect(outerClose).not.toHaveBeenCalled();
+    rerender(tree(false));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(outerClose).toHaveBeenCalledOnce();
+    expect(innerClose).toHaveBeenCalledOnce();
+  });
+
+  it('honours a data-autofocus opt-in for initial focus even when it is not first', () => {
+    render(<TransportSheet open title="Sound" onClose={vi.fn()}><button type="button">First</button><button type="button" data-autofocus>Chosen</button></TransportSheet>);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Chosen' }));
+  });
+
+  it('never wraps onto a control with tabindex="-1"', () => {
+    render(<TransportSheet open title="Sound" onClose={vi.fn()}><button type="button">First</button><button type="button" tabIndex={-1}>Hidden</button></TransportSheet>);
+    const close = screen.getByRole('button', { name: 'Close Sound' });
+    const first = screen.getByRole('button', { name: 'First' });
+    first.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(close);
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(first);
+  });
 });
