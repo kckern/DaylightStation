@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import {
   assessDuration,
-  IMPLAUSIBLE_RATIO,
+  IMPLAUSIBLE_MAX_SEC,
   IMPLAUSIBLE_FLOOR_SEC,
 } from './repairMediaDuration.mjs';
 
@@ -31,9 +31,13 @@ describe('assessDuration', () => {
   });
 
   test('tolerates a duration rounded slightly below the played span', () => {
-    // Overshoot by a few seconds is normal — trailing playback past the last
-    // frame, or a nominal length rounded down.
     expect(assessDuration(span(1210, 1200)).corrupt).toBe(false);
+  });
+
+  test('does not mistake a LOOPED short video for corruption', () => {
+    // A 349s stretch video played on repeat for ~17 minutes. The old ratio rule
+    // flagged it, then "repaired" 349 to 349, so the pass never converged.
+    expect(assessDuration(span(1050, 349)).corrupt).toBe(false);
   });
 
   test('spares short clips, where a small absolute error looks like a big ratio', () => {
@@ -41,11 +45,15 @@ describe('assessDuration', () => {
     expect(assessDuration(span(justUnderFloor, 1)).corrupt).toBe(false);
   });
 
-  test('fires exactly at the ratio boundary and not before', () => {
-    const played = 1200;
-    const atBoundary = played / IMPLAUSIBLE_RATIO;          // ratio * ds === played
-    expect(assessDuration(span(played, atBoundary)).corrupt).toBe(false);
-    expect(assessDuration(span(played, atBoundary - 1)).corrupt).toBe(true);
+  test('fires just under the sub-minute boundary and not at it', () => {
+    expect(assessDuration(span(1200, IMPLAUSIBLE_MAX_SEC)).corrupt).toBe(false);
+    expect(assessDuration(span(1200, IMPLAUSIBLE_MAX_SEC - 1)).corrupt).toBe(true);
+  });
+
+  test('still catches a partially-played item whose nominal was mangled', () => {
+    // Mario Kart: 16,725s nominal stored as 17, played only 347s. A ratio rule
+    // misses this one; the absolute rule does not.
+    expect(assessDuration(span(347, 17)).corrupt).toBe(true);
   });
 
   test('cannot judge an event with no played span', () => {
