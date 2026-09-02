@@ -16,7 +16,12 @@ export class YamlSavedMealsDatastore extends ISavedMealsDatastore {
     return Array.isArray(raw) ? raw : [];
   }
   #write(meals, userId) {
-    this.#dataService.user.write?.(YamlSavedMealsDatastore.MEALS_PATH, meals, userId);
+    const result = this.#dataService.user.write?.(YamlSavedMealsDatastore.MEALS_PATH, meals, userId);
+    if (result === false) {
+      const err = new Error(`MEALS_WRITE_FAILED: could not write meals to ${YamlSavedMealsDatastore.MEALS_PATH} for user ${userId}`);
+      err.code = 'MEALS_WRITE_FAILED';
+      throw err;
+    }
   }
 
   async list(userId) { return this.#load(userId); }
