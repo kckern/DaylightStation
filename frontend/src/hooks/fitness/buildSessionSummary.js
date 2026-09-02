@@ -77,6 +77,22 @@ export function ringsForSpan(cumulative, startMs, endMs, sessionStartMs, interva
   const lastTick = Math.max(firstTick, Math.ceil((endMs - sessionStartMs) / interval) - 1);
   if (lastTick < 0 || firstTick >= cumulative.length) return null;
 
+  // An item that runs past the RECORDED ticks is UNKNOWN, not "whatever the last
+  // value was". Clamping to the end once attributed a whole session's 721 rings
+  // to one workout whose span ran far past the data.
+  //
+  // The bound is where real values STOP, not where the array stops: a session
+  // whose window was repaired has its series null-padded out to the full axis,
+  // so array length would say the data covers 94 minutes when it covers 20.
+  // A few ticks of overhang is ordinary rounding at the session's tail.
+  const OVERHANG_TOLERANCE_TICKS = 3;
+  let lastRealTick = -1;
+  for (let i = cumulative.length - 1; i >= 0; i--) {
+    if (Number.isFinite(cumulative[i])) { lastRealTick = i; break; }
+  }
+  if (lastRealTick < 0) return null;
+  if (lastTick > lastRealTick + OVERHANG_TOLERANCE_TICKS) return null;
+
   const valueAt = (tick) => {
     for (let i = Math.min(tick, cumulative.length - 1); i >= 0; i--) {
       if (Number.isFinite(cumulative[i])) return cumulative[i];

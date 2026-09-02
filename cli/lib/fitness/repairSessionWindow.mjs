@@ -24,6 +24,7 @@
 
 import path from 'path';
 import { existsSync, readdirSync } from 'fs';
+import { decodeStoredSeries, encodeStoredSeries } from './seriesWire.mjs';
 import { parseArgs, bool, str } from './argv.mjs';
 import { CliError } from './context.mjs';
 
@@ -106,6 +107,45 @@ export function planWindow(session) {
   return { startMs, endMs, reason: 'resume rebased the start; id and first event agree' };
 }
 
+
+/**
+ * Re-align the tick series to a window whose start has moved earlier.
+ *
+ * Tick 0 means "the session start". Moving the start WITHOUT moving the data
+ * silently re-dates every sample: session 20260901154746's 235 ticks were
+ * recorded from 16:09:51, and after the window was restored to 15:47:43 the
+ * chart drew them as the session's first 20 minutes and clamped every later
+ * media marker onto the right edge — a header reading 94m above an axis reading
+ * 0:00–19:35.
+ *
+ * Leading nulls put the samples back where they happened. Trailing nulls extend
+ * the axis to the full window, so the stretch the browser was not recording
+ * reads as absent rather than as the whole session.
+ *
+ * @param {Object} session - mutated in place
+ * @param {number} leadTicks - ticks between the new start and the old one
+ * @param {number} totalTicks - ticks spanned by the repaired window
+ * @returns {number} series re-aligned
+ */
+export function realignSeries(session, leadTicks, totalTicks) {
+  const stored = session?.timeline?.series;
+  if (!stored || (leadTicks <= 0 && !(totalTicks > 0))) return 0;
+  const decoded = decodeStoredSeries(stored);
+  const keys = Object.keys(decoded);
+  if (!keys.length) return 0;
+
+  for (const key of keys) {
+    const values = decoded[key];
+    const lead = leadTicks > 0 ? new Array(leadTicks).fill(null) : [];
+    const merged = [...lead, ...values];
+    while (merged.length < totalTicks) merged.push(null);
+    decoded[key] = merged;
+  }
+  session.timeline.series = encodeStoredSeries(decoded);
+  session.timeline.tick_count = Math.max(totalTicks, 0);
+  return keys.length;
+}
+
 function getSessionFiles(historyDir, since) {
   const dates = readdirSync(historyDir)
     .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
@@ -151,7 +191,15 @@ export async function run(argv, ctx) {
       + `| start ${session.session.start} -> ${formatClock(plan.startMs)}`);
     repaired++;
 
+    // The series must move with the window, or the chart re-dates every sample.
+    const intervalMs = (Number(session.timeline?.interval_seconds) || 5) * 1000;
+    const oldStartMs = parseClock(session.session.start);
+    const leadTicks = Math.round((oldStartMs - plan.startMs) / intervalMs);
+    const totalTicks = Math.ceil((plan.endMs - plan.startMs) / intervalMs);
+    console.log(`      series: +${leadTicks} leading tick(s), axis -> ${totalTicks} ticks`);
+
     if (APPLY) {
+      realignSeries(session, leadTicks, totalTicks);
       session.session.start = formatClock(plan.startMs);
       session.session.end = formatClock(plan.endMs);
       session.session.duration_seconds = Math.round((plan.endMs - plan.startMs) / 1000);
