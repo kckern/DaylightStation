@@ -59,11 +59,33 @@ between apps. It owns:
 A pack may **not** remove or weaken anything the base contract guarantees:
 focus rings, contrast ratios, disabled/hover/error state behavior, touch
 target sizing. Those come from `createAppTheme.js` and the shared SCSS and
-apply to every pack unchanged.
+apply to every pack that doesn't set `themeExtras` (see below) unchanged.
 
 **To add a pack:** add one entry to `PACKS` in `packs.mjs` — `name`,
 `character`, `primaryColor`, `accent`, and optional color overrides. Nothing
 else needs to change; `AppThemeProvider` picks up any registered pack by name.
+
+### `themeExtras` — the escape hatch
+
+`themeExtras` is an optional top-level key on a pack, applied by
+`createAppTheme.js` as a **wholesale, non-deep-merged override**: any of
+`colors` / `other` / `components` / etc. it sets fully replaces the base
+contract's version of that section, rather than blending into it. It exists
+for a product that predates the shared contract, or whose art direction goes
+beyond the 7 semantic roles and `accent` — its own component defaults, extra
+color ramps, fonts, breakpoints. `modules/Media/theme/mediaTheme.js` is the
+one pack using it today: `MEDIA_PACK.themeExtras` layers Media's full
+amber/dark Mantine theme (component defaultProps included) on top of the base,
+so Media's own `Button`/`Modal`/`Drawer` defaults are the sole authority,
+never silently blended with the base contract's generic ones.
+
+Setting `themeExtras` moves ownership, not just styling: a pack that replaces
+`components` (or `other`) is no longer covered by the base guarantee above for
+whatever it replaced — that pack is now responsible for its own focus rings,
+contrast, disabled/hover/error states, and touch target sizing wherever
+`themeExtras` takes over. Reach for it only when a pack's identity genuinely
+can't fit inside the base contract's 7 roles + `accent`; most packs never need
+it.
 
 ## Primitives
 

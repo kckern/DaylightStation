@@ -1,5 +1,45 @@
 .life-clickable { cursor: pointer; }
+
+// Definite height, matching AppChrome's `__main` grid-stretch box, so a
+// height:100% child (CoachChat) has something real to size against — an
+// `auto`-height ancestor makes percentage heights resolve to `auto` too.
+// Non-chat routes are unaffected: they render normal-flow content that
+// simply overflows this box (default `overflow: visible`), which `__main`'s
+// own `overflow-y: auto` still scrolls correctly.
+.life-app-root { height: 100%; }
+
 // Kiosk-distance density bump: base text one notch larger on wide displays.
 @media (min-width: 1280px) {
   .life-app-root { font-size: 1.02rem; }
+}
+
+// Secondary nav for the Plan tab's children (Purpose/Goals/Beliefs/Values/
+// Qualities/Ceremonies) — the old navbar's nested "Plan" disclosure group,
+// rendered in-view above the routed content instead. Mirrors AppChrome's own
+// <a role="link"> tab pattern (lib/ui/ds.scss `.ds-chrome__tab`).
+.life-plan-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+
+  &__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--ds-border);
+    background: var(--ds-surface);
+    color: var(--ds-text-mid);
+    font-size: 0.8rem;
+    cursor: pointer;
+
+    &:focus-visible { outline: 2px solid var(--ds-accent, var(--ds-info)); outline-offset: 2px; }
+
+    &--active {
+      color: var(--ds-text-high);
+      border-color: var(--ds-accent, var(--ds-border));
+    }
+  }
 }

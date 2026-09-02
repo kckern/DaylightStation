@@ -59,7 +59,7 @@ export function Dashboard() {
   return (
     <Stack gap="md">
       {planIsEmpty && (
-        <SectionCard p="lg" withBorder radius="md">
+        <SectionCard>
           <Stack gap="sm">
             <Title order={4}>You don&apos;t have a life plan yet</Title>
             <Text c="dimmed">

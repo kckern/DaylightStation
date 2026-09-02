@@ -10,12 +10,12 @@
 // v1 indexes files dropped into the vehicle's files/ directory. Capture-from-
 // camera is the first follow-up (see open question 6).
 
-import { Loading, Failed, Empty } from './AutoStates.jsx';
+import { LoadingState, ErrorState, EmptyState } from '@/lib/ui';
 import { formatDay } from './format.js';
 
 export default function GlovePanel({ documents, reminders, loading, error, onReload }) {
-  if (loading) return <Loading label="Loading documents" />;
-  if (error) return <Failed error={error} onRetry={onReload} />;
+  if (loading) return <LoadingState label="documents" />;
+  if (error) return <ErrorState error={error} onRetry={onReload} label="Documents" />;
 
   const docs = documents?.documents || [];
   const expiryByDoc = new Map(
@@ -24,9 +24,9 @@ export default function GlovePanel({ documents, reminders, loading, error, onRel
 
   if (docs.length === 0) {
     return (
-      <Empty
+      <EmptyState
         title="Glove box is empty"
-        detail="Drop files into the vehicle's files/ folder and list them in documents.yml — insurance, registration, title, the manual."
+        hint="Drop files into the vehicle's files/ folder and list them in documents.yml — insurance, registration, title, the manual."
       />
     );
   }

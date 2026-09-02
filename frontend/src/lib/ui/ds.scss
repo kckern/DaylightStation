@@ -82,7 +82,8 @@
 
 .ds-chrome {
   display: grid;
-  min-height: 100dvh;
+  height: 100vh; // fallback for browsers without dvh support
+  height: 100dvh;
   background: var(--ds-background);
   color: var(--ds-text-high);
   // Mobile: header / main / footer / bottom tabs

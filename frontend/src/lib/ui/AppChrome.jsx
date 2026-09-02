@@ -24,7 +24,7 @@ export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActi
             className={`ds-chrome__tab${tab.id === activeTab ? ' ds-chrome__tab--active' : ''}`}
             aria-current={tab.id === activeTab ? 'page' : undefined}
             onClick={() => onTabChange(tab.id)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onTabChange(tab.id); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTabChange(tab.id); } }}
           >
             <span className="ds-chrome__tab-icon">{tab.icon}</span>
             <span className="ds-chrome__tab-label">{tab.label}</span>
