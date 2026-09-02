@@ -60,8 +60,12 @@ export function createNutribotApiRouter(config) {
       })
     : null;
 
-  // Web adapter — captures responses instead of sending via Telegram
-  const webNutribotAdapter = new WebNutribotAdapter({ inputRouter, logger });
+  // Web adapter — captures responses instead of sending via Telegram.
+  // Uses the unwrapped application router directly: WebNutribotAdapter calls
+  // handleText/handleVoice/handleImage/handleUpc/handleCallback, which only
+  // exist on NutribotInputRouter itself — LegacyNutribotInputRouter exposes
+  // only route() (for the Telegram webhook's NutribotScaleRefusal mapping).
+  const webNutribotAdapter = new WebNutribotAdapter({ inputRouter: applicationInputRouter, logger });
 
   const unavailableAiOperation = {
     execute() {

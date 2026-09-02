@@ -86,6 +86,8 @@ export class WebNutribotAdapter {
 
     this.#getLogger().debug?.('web-nutribot.process', { type, userId, conversationId });
 
+    let routerResult = null;
+
     try {
       switch (routerType) {
         case 'text':
@@ -98,7 +100,7 @@ export class WebNutribotAdapter {
           await this.#inputRouter.handleImage(event, responseContext);
           break;
         case 'upc':
-          await this.#inputRouter.handleUpc(event, responseContext);
+          routerResult = await this.#inputRouter.handleUpc(event, responseContext);
           break;
       }
     } catch (err) {
@@ -110,12 +112,21 @@ export class WebNutribotAdapter {
     const lastMessage = captured.messages[captured.messages.length - 1];
     const responseText = lastMessage?.text || null;
 
-    return {
+    const response = {
       messages: captured.messages,
       photos: captured.photos,
       logged: captured.logged,
       responseText,
     };
+
+    // Barcode lookups surface use-case-level fields (success, unknownUpc, upc,
+    // product, nutrilogUuid) to the HTTP caller — `messages` from the capture
+    // context always wins so the frontend's existing consumption is unaffected.
+    if (routerType === 'upc' && routerResult?.result) {
+      Object.assign(response, routerResult.result, { messages: captured.messages });
+    }
+
+    return response;
   }
 
   /**

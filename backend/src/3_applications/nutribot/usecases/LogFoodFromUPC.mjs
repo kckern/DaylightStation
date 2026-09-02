@@ -106,9 +106,27 @@ export class LogFoodFromUPC {
         }
       }
 
-      // 3. Call UPC gateway
+      // 3. Resolve product: user's catalog first (custom mappings win and can
+      // override bad upstream data — spec Data model §3), then the gateway.
       let product = null;
-      if (this.#upcGateway) {
+      if (this.#catalogService?.getByUpc) {
+        try {
+          const entry = await this.#catalogService.getByUpc(upc, userId);
+          if (entry) {
+            product = {
+              name: entry.name,
+              brand: null,
+              imageUrl: null,
+              serving: { size: 1, unit: 'serving' },
+              nutrition: { ...entry.nutrients },
+            };
+            this.#logger.info?.('logUPC.catalogHit', { upc, name: entry.name });
+          }
+        } catch (e) {
+          this.#logger.warn?.('logUPC.catalogLookupFailed', { upc, error: e.message });
+        }
+      }
+      if (!product && this.#upcGateway) {
         product = await this.#upcGateway.lookup(upc);
       }
 
@@ -120,7 +138,7 @@ export class LogFoodFromUPC {
             text: `❓ Product not found for barcode: ${upc}\n\nYou can describe the food instead.`,
           });
         }
-        return { success: false, error: 'Product not found' };
+        return { success: false, error: 'Product not found', unknownUpc: true, upc };
       }
 
       // 4. Classify product if AI available
