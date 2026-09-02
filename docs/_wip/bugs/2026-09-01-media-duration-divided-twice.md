@@ -237,11 +237,25 @@ of the three produced each value.
 a wholesale replacement that would destroy every challenge, governance and
 voice-memo event in the file. A repair pass must edit media events in place.
 
-## Open question
+## Resolved: is `durationSeconds` worth storing?
 
-Whether `durationSeconds` should be stored at all. Every current consumer wants
-"how long did this play", which `end - start` answers exactly; nominal length is
-re-fetchable from Plex by `contentId` whenever it is genuinely needed, and
-`NextUpStrategy` already gets it live rather than from the stored field. Once
-(1) lands and nothing ranks on it, the field is informational — keep it or drop
-it, but it should not be load-bearing again.
+**Kept, as informational only.** Nothing ranks on it any more — the selectors
+read the played span, and since 2026-09-01 they prefer rings where those are
+attributed. Removing the field would mean a migration and would break exports
+that quote a nominal length, for no correctness gain now that no decision
+depends on it. The write-time invariant keeps a demonstrably wrong value from
+being persisted, and the repair pass fixed the history.
+
+The rule going forward: **nothing may rank on it again.** If a consumer needs
+"how long was this item", it re-fetches from Plex by `contentId`, as
+`NextUpStrategy` already does.
+
+## Resolved: the near-tie band stays at 0.85
+
+Session 20260901154746 cleared it by 3.7 seconds once its data was repaired —
+the ride was 84.8% of the workout against an 85% threshold — which looked like
+an argument for widening the band. It is not, because the knife-edge was an
+artefact of ranking on the clock at all. Ranking on rings puts that session's
+33-minute Insanity workout far ahead of the ride on effort, and the band no
+longer decides it. Widening the band would only make the DURATION fallback
+blunter for exactly the sessions that have no effort data to rank on.
