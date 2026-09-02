@@ -14,6 +14,7 @@
 // inventing a separate chore.
 
 import { useState } from 'react';
+import { Sheet } from '@/lib/ui';
 import { autoApi } from './useAutoApi.js';
 import autoLog from './autoLog.js';
 
@@ -74,9 +75,8 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
   const valid = Number(form.volumeGal) > 0;
 
   return (
-    <div className="auto-sheet-backdrop" onClick={onClose} role="presentation">
-      <form className="auto-sheet" onClick={(e) => e.stopPropagation()} onSubmit={submit} aria-label="Log a fill-up">
-        <h2 className="auto-sheet__title">Log a fill-up</h2>
+    <Sheet open onClose={onClose} title="Log a fill-up">
+      <form onSubmit={submit} aria-label="Log a fill-up">
         {initial.placeLabel && (
           <p className="auto-field__note">At {initial.placeLabel}</p>
         )}
@@ -138,6 +138,6 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
           </button>
         </div>
       </form>
-    </div>
+    </Sheet>
   );
 }
