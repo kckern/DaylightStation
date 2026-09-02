@@ -17,8 +17,8 @@ For local infrastructure details (Docker, secrets, networking, cron jobs, data p
 ```json
 {
   "env": {
-    "prod_host": "homeserver.local",
-    "docker_container": "daylight-station",
+    "prod_host": "<prod-host>",
+    "docker_container": "<container-name>",
     "ports": {
       "app": 3111,
       "backend": 3112
@@ -37,8 +37,8 @@ For local infrastructure details (Docker, secrets, networking, cron jobs, data p
 ### Port Configuration
 
 Dev ports for this environment are in `settings.local.json`:
-- **App port:** `env.ports.app` (3111 on kckern-macbook)
-- **Backend port:** `env.ports.backend` (3112 on kckern-macbook)
+- **App port:** `env.ports.app` (3111 on the laptop)
+- **Backend port:** `env.ports.backend` (3112 on the laptop)
 
 Runtime port config comes from `data/system/config/system.yml` based on `DAYLIGHT_ENV`.
 
@@ -59,15 +59,15 @@ The backend uses hostname-based config to avoid port conflicts with Docker:
 | Environment | App Port | Backend Port | Check with |
 |-------------|----------|--------------|------------|
 | Docker (prod) | 3111 | 3111 | `lsof -i :3111` |
-| kckern-macbook (dev) | 3111 | 3112 | `lsof -i :3111` |
-| kckern-server (dev) | 3112 | 3113 | `lsof -i :3112` |
+| laptop (dev) | 3111 | 3112 | `lsof -i :3111` |
+| server (dev) | 3112 | 3113 | `lsof -i :3112` |
 
 **Before starting dev server**, check if it's already running:
 ```bash
-lsof -i :3111  # on kckern-macbook
+lsof -i :3111  # on the laptop
 ```
 
-**Start dev server** (on kckern-server):
+**Start dev server** (on the server):
 ```bash
 node backend/index.js
 # Or background: nohup node backend/index.js > /tmp/backend-dev.log 2>&1 &
@@ -90,7 +90,7 @@ ssh {env.prod_host}
 
 # View prod logs — see "Reading Logs" below; query the log store first,
 # `docker logs` only for startup/crash output the shipper never saw.
-ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query -d 'query=level:error AND _time:1h'"
+ssh {env.prod_host} "curl -s http://localhost:{env.log_store_port}/select/logsql/query -d 'query=level:error AND _time:1h'"
 ssh {env.prod_host} 'docker logs {env.docker_container}'
 ```
 
@@ -366,47 +366,45 @@ In browser console: `window.DAYLIGHT_LOG_LEVEL = 'debug'` or call `configure({ l
 
 **Query the log store first. `docker logs` is the fallback, not the default.**
 
-Logs ship to the **`victoria-logs`** container on the homeserver
-(`victoriametrics/victoria-logs:latest`, added 2026-08-17), listening on
-**:9428**, `-retentionPeriod=7d` with a 4GB disk cap, storing to
-`/media/kckern/DockerDrive/daylight-victorialogs`. There is **no separate log
-shipper** — the app posts to it directly. It indexes every field of our
-structured events, so it answers "what happened in the piano app at 16:54" —
-which grepping a file or scrolling `docker logs` does not.
+Logs ship to a **VictoriaLogs** container on the prod host
+(`victoriametrics/victoria-logs:latest`, added 2026-08-17), 7-day retention with
+a disk cap. There is **no separate log shipper** — the app posts to it directly.
+It indexes every field of our structured events, so it answers "what happened in
+the piano app at 16:54", which grepping a file or scrolling `docker logs` does
+not.
 
-**`https://logs.kckern.net`** — web UI for a human, HTTP API for an agent.
-**No API key needed.** It has no auth of its own; reachability is the existing
-Cloudflare perimeter (home IP / work VPN), enforced by a `return 444` gate for
-any other source. Query it directly — no SSH required. Results come back as
-**JSON Lines**, one object per line.
+**The store's URL, port, volume path and access posture are instance-specific
+and live in `CLAUDE.local.md`** (gitignored), alongside how to reach it from
+each machine. `{env.log_store_url}` below stands for that value. Results come
+back as **JSON Lines**, one object per line.
 
 ```bash
 # Errors in the last hour
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s {env.log_store_url}/select/logsql/query \
   -d 'query=level:error AND _time:1h' -d 'limit=50'
 
 # One subsystem only — this is the main reason the store exists
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s {env.log_store_url}/select/logsql/query \
   -d 'query=context.app:piano AND _time:24h' -d 'limit=100'
 
 # A specific event name
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s {env.log_store_url}/select/logsql/query \
   -d 'query="plex.stream.mint" AND _time:6h'
 
 # Nested data.* and context.* fields are indexed and directly filterable
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s {env.log_store_url}/select/logsql/query \
   -d 'query=context.module:weekly-review-immich AND _time:2h'
 
 # Count events by subsystem
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s {env.log_store_url}/select/logsql/query \
   -d 'query=_time:24h | stats by ("context.app") count() as n | sort by (n desc)'
 
 # Backend event-loop stalls — is the process blocking, or is it the network?
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s {env.log_store_url}/select/logsql/query \
   -d 'query="system.event-loop.lag" AND _time:24h' -d 'limit=100'
 
 # Live tail (like tail -f)
-curl -sN https://logs.kckern.net/select/logsql/tail -d 'query=level:error'
+curl -sN {env.log_store_url}/select/logsql/tail -d 'query=level:error'
 ```
 
 `system.event-loop.lag` is emitted once per 60s window (info; warn at/above 1s)
@@ -416,7 +414,7 @@ healthy row reads ~21ms, not 0. It answers backend-stall vs network-stall; it
 cannot say what blocked the loop.
 
 If the hostname is unreachable (off-network), go in over SSH instead:
-`ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query -d 'query=...'"`
+`ssh {env.prod_host} "curl -s http://localhost:{env.log_store_port}/select/logsql/query -d 'query=...'"`
 
 **Filter keys** (set by `0_system/logging/logger.mjs`, flattened on ingest):
 
