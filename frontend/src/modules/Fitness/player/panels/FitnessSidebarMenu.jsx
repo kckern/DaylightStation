@@ -8,6 +8,7 @@ import { genericGuestImageId } from '../../lib/guestPlaceholders.js';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
 import hardReload from '../../lib/hardReload.js';
 import '../FitnessSidebar.scss';
+import RingIcon from '@/lib/icons/RingIcon.jsx';
 
 // Auto-close behavior for quick-action settings: flash the selected control
 // briefly so the user sees their tap was registered, then dismiss the menu.
@@ -289,7 +290,7 @@ const FitnessSidebarMenu = ({
           className={`menu-item toggle-item${flashingId === 'treasureBox' ? ' is-ack-flash' : ''}`}
           onPointerDown={() => handleToggle('treasureBox')}
         >
-          <span>💰 Treasure Box</span>
+          <span><RingIcon /> Treasure Box</span>
           <label className="toggle-switch">
             <input
               type="checkbox"
