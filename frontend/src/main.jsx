@@ -23,6 +23,7 @@ import AppContainer from './modules/AppContainer/AppContainer.jsx';
 const TeacherConsole = React.lazy(() => import('./modules/School/teacher/TeacherConsole.jsx'));
 const GamingApp = React.lazy(() => import('./Apps/GamingApp.jsx'));
 const GamePresentationHarness = React.lazy(() => import('./dev/GamePresentationHarness/GamePresentationHarness.jsx'));
+const DsGallery = React.lazy(() => import('./dev/DsGallery/DsGallery.jsx'));
 const TeacherConsoleRoute = () => (
   <React.Suspense fallback={<div />}> <TeacherConsole /> </React.Suspense>
 );
@@ -207,6 +208,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/piano/*" element={<PianoApp />} />
         <Route path="/dev/gaming/*" element={<React.Suspense fallback={null}><GamingApp /></React.Suspense>} />
         <Route path="/dev/game-presentation-harness" element={<React.Suspense fallback={null}><GamePresentationHarness /></React.Suspense>} />
+        <Route path="/dev/ds-gallery" element={<React.Suspense fallback={null}><DsGallery /></React.Suspense>} />
         <Route path="/life/*" element={<LifeApp />} />
         <Route path="/admin/*" element={<AdminApp />} />
         {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
