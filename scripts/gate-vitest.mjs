@@ -141,13 +141,43 @@ function runVitest(files) {
   // the shell each path is its own argv entry, so only the 2 MiB total
   // applies and 2,605 files use ~165 KiB of it. `npx` resolves from PATH, so
   // the shell bought nothing here anyway.
-  const res = spawnSync(
-    'npx',
-    ['vitest', 'run', ...files, '--config', 'vitest.config.mjs',
-     `--max-workers=${workers}`,
-     '--reporter=json', `--outputFile=${outFile}`],
-    { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 }
-  );
+  // CHUNKED. One spawn over the whole population stopped producing a report
+  // once it passed ~2,600 files: vitest exited 249 with an EMPTY stderr and no
+  // JSON, which reads exactly like the E2BIG failure above but is not — the
+  // argv is fine, the single run simply gets too big to finish. Chunking keeps
+  // each run small enough to complete and merge, and it degrades gracefully as
+  // the population keeps growing rather than falling off another cliff.
+  const CHUNK = 600;
+  const chunks = [];
+  for (let i = 0; i < files.length; i += CHUNK) chunks.push(files.slice(i, i + CHUNK));
+
+  const merged = { testResults: [], numTotalTests: 0, numPassedTests: 0, numFailedTests: 0, numPendingTests: 0 };
+  let res = null;
+  for (const [index, chunk] of chunks.entries()) {
+    const chunkOut = `${outFile}.${index}`;
+    res = spawnSync(
+      'npx',
+      ['vitest', 'run', ...chunk, '--config', 'vitest.config.mjs',
+       `--max-workers=${workers}`,
+       '--reporter=json', `--outputFile=${chunkOut}`],
+      { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 }
+    );
+    if (!existsSync(chunkOut)) {
+      console.error(`gate-vitest: chunk ${index + 1}/${chunks.length} produced no JSON report `
+        + `(${chunk.length} files).`);
+      break;
+    }
+    const part = JSON.parse(readFileSync(chunkOut, 'utf8'));
+    merged.testResults.push(...(part.testResults || []));
+    merged.numTotalTests += part.numTotalTests || 0;
+    merged.numPassedTests += part.numPassedTests || 0;
+    merged.numFailedTests += part.numFailedTests || 0;
+    merged.numPendingTests += part.numPendingTests || 0;
+    rmSync(chunkOut, { force: true });
+  }
+  if (merged.testResults.length) {
+    writeFileSync(outFile, JSON.stringify(merged));
+  }
   if (!existsSync(outFile)) {
     // SAY WHY, NOT JUST THAT. The two ways this spawn dies most cheaply both
     // leave stderr EMPTY, so a message built from stderr alone printed one
