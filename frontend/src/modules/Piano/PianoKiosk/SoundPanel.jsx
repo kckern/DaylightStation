@@ -67,6 +67,12 @@ export default function SoundPanel({ open, onClose }) {
   const [family, setFamily] = useState(null);
   const [favoriteMessage, setFavoriteMessage] = useState(null);
   const [heard, setHeard] = useState(null);
+  // A favourite write goes through the same queue as the last-sound write, so
+  // its final persistence transition lands in the same commit as the result
+  // message. This flag lets that one transition through without clearing the
+  // message; it lives for exactly one commit (see the effects below), so a
+  // write that never reached the queue (limit, guest) cannot leave it armed.
+  const skipNextClearRef = useRef(false);
 
   const saved = useMemo(() => preset?.favorites || [], [preset?.favorites]);
   const funnel = useMemo(() => buildFunnel({ favorites: saved, shortlistVoices: config?.shortlist?.voices || [], allGroups: device?.voiceGroups || [] }), [saved, config?.shortlist?.voices, device?.voiceGroups]);
@@ -89,10 +95,11 @@ export default function SoundPanel({ open, onClose }) {
   const autoFamilyRef = useRef(autoFamily);
   autoFamilyRef.current = autoFamily;
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setFamily(null); return; } // drop the latch while closed so reopen paints the new voice first frame
     setFamily(autoFamilyRef.current);
     setFavoriteMessage(null);
     setHeard(null);
+    skipNextClearRef.current = false;
   }, [open]);
   const activeFamily = family ?? autoFamily;
   const gridTiles = activeFamily === 'mine' ? mineTiles
@@ -115,11 +122,13 @@ export default function SoundPanel({ open, onClose }) {
   const save = async () => {
     setFavoriteMessage('Saving sound…');
     const result = await saveFavorite(currentBundle);
+    skipNextClearRef.current = true;
     setFavoriteMessage(result.ok ? 'Sound saved.' : result.reason === 'limit' ? 'Remove a saved sound before adding another.' : 'Couldn’t save sound.');
   };
   const remove = async () => {
     setFavoriteMessage('Removing sound…');
     const result = await removeFavorite(savedInstrument);
+    skipNextClearRef.current = true;
     setFavoriteMessage(result.ok ? 'Saved sound removed.' : 'Couldn’t remove saved sound.');
   };
   const hear = () => {
@@ -130,8 +139,13 @@ export default function SoundPanel({ open, onClose }) {
     : persistenceState === 'remembered' ? `Remembered for ${playerName}`
       : persistenceState === 'failed' ? 'Couldn’t save' : null;
   // One status slot: the newest message wins. A favourite message holds the
-  // slot until persistence moves again, so a change there is never masked.
-  useEffect(() => { setFavoriteMessage(null); }, [persistenceState]);
+  // slot until persistence moves again, so a change there is never masked —
+  // except the transition its own write causes (see skipNextClearRef).
+  useEffect(() => {
+    if (skipNextClearRef.current) { skipNextClearRef.current = false; return; }
+    setFavoriteMessage(null);
+  }, [persistenceState]);
+  useEffect(() => { skipNextClearRef.current = false; }); // runs after the one above in the same commit
   const statusCopy = favoriteMessage ?? persistenceCopy;
   const showRetry = !favoriteMessage && persistenceState === 'failed';
 
