@@ -6,7 +6,7 @@ import { PendingConfirmCard } from './PendingConfirmCard.jsx';
 
 const logger = createAppLogger('health').child('add-combobox');
 
-export function AddCombobox({ bucketId, onDone, onCancel }) {
+export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
   const [text, setText] = useState('');
   const [items, setItems] = useState([]);
   const [highlight, setHighlight] = useState(-1);
@@ -101,6 +101,11 @@ export function AddCombobox({ bucketId, onDone, onCancel }) {
           </li>
         ))}
       </ul>
+      {onSavedMeals ? (
+        <UnstyledButton className="health-suggest__saved-meals" onClick={onSavedMeals}>
+          Saved meals ▸
+        </UnstyledButton>
+      ) : null}
     </div>
   );
 }
