@@ -112,4 +112,21 @@ describe('TransportSheet', () => {
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(first);
   });
+
+  it('picks the innermost sheet as top by document order when both mount open in one commit', () => {
+    // React 18 runs a child's effect before its parent's, so push order alone
+    // would crown the OUTER sheet. Top must be decided by document position.
+    const outerClose = vi.fn();
+    const innerClose = vi.fn();
+    render(
+      <TransportSheet open title="Outer" onClose={outerClose}>
+        <button type="button">Outer action</button>
+        <TransportSheet open title="Inner" onClose={innerClose}><button type="button">Inner action</button></TransportSheet>
+      </TransportSheet>
+    );
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Inner action' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(innerClose).toHaveBeenCalledOnce();
+    expect(outerClose).not.toHaveBeenCalled();
+  });
 });
