@@ -10,7 +10,7 @@ All SVGs use `fill="currentColor"` — set color via CSS `color:`.
 | menu | sheet-music | `menu/sheet-music.svg` | solar:notes-bold |
 | menu | game | `menu/game.svg` | solar:gamepad-bold |
 | menu | lessons | `menu/lessons.svg` | solar:square-academic-cap-2-bold |
-| menu | studio | `menu/studio.svg` | solar:microphone-bold |
+| menu | studio | `studio.svg` | grand-piano glyph — NOT a microphone. Was solar:microphone-bold; swapped for a solid grand piano in an earlier commit. The mic is `singalong`. |
 | menu | instruments | `menu/instruments.svg` | solar:tuning-2-bold (faders) |
 | menu | composers | `menu/composers.svg` | solar:book-2-bold (open book) |
 | menu | singalong | `singalong.svg` | solar:microphone-large-bold (handheld karaoke mic) |
@@ -52,7 +52,7 @@ All SVGs use `fill="currentColor"` — set color via CSS `color:`.
 | family | star | `star.svg` | solar:star-bold |
 
 ## Notes
-- **family-\*** are the Sound sheet rail glyphs (`PianoKiosk/voiceFamilies.js`); `pianos` reuses `piano` and `voices` reuses `studio`. Solar has no guitar/violin/trumpet/drum/accordion, so those four plus the accordion come from SVG Repo, stripped of the XML prolog, fixed 800px size and `#000000` fills, and given `width="1em" height="1em" fill="currentColor"` on the root. `instrumentIcon.js` maps voice names onto the same names.
+- **family-\*** are the Sound sheet rail glyphs (`PianoKiosk/voiceFamilies.js`); `pianos` reuses `piano` and `voices` reuses `singalong` (the mic; `studio` is a grand piano). Solar has no guitar/violin/trumpet/drum/accordion, so those four plus the accordion come from SVG Repo, stripped of the XML prolog, fixed 800px size and `#000000` fills, and given `width="1em" height="1em" fill="currentColor"` on the root. `instrumentIcon.js` maps voice names onto the same names.
 - **skip-back/forward-30** use the DOUBLE-chevron `rewind-back` / `rewind-forward` glyph; **skip-back/forward-15** use a SINGLE chevron (`alt-arrow`, mirrored for forward). The chevron count encodes the step size; the video chrome renders the 15/30 numeral beside it. Do not re-unify these four — identical glyphs is exactly the bug this replaced.
 - **loop-in / loop-out** are the loop's start and end marks. They are the SAME glyph, mirrored — `loop-out.svg` wraps the path in `translate(32 0) scale(-1 1)`. Editing one means editing both. They deliberately do NOT use a circular-arrow glyph: in the video chrome, a circle means "looping", and only the loop toggle (`repeat`) gets one.
 - **loop-toggle / clear-loop** are STROKE icons (`stroke="currentColor"`, `fill="none"`) in an otherwise filled set. The video chrome sizes them to 1.25em so they don't read lighter than the filled brackets beside them — if you swap in a filled glyph, drop that rule.
