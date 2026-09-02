@@ -1212,6 +1212,9 @@ export class PersistenceManager {
       treasureBox: persistSessionData.treasureBox || sessionData.treasureBox,
       intervalSeconds: persistSessionData.timeline.interval_seconds || 5,
       warmupConfig: this._warmupConfig,
+      // Tick 0 is the session start; media events carry absolute ms. The
+      // summary needs both to attribute rings to the item that earned them.
+      startTimeMs: Number(sessionData.startTime) || null,
     } : null;
 
     // Encode series

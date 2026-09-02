@@ -239,3 +239,27 @@ describe('selectPrimaryMedia', () => {
     });
   });
 });
+
+describe('rings rank ahead of duration when every candidate has them', () => {
+  const r = (contentId, title, durationMs, rings) => ({ contentId, title, mediaType: 'video', durationMs, rings });
+
+  it('an intense short workout beats a long gentle cooldown', () => {
+    const media = [r('hiit', 'HIIT Blast', 20 * 60_000, 900), r('spin', 'Recovery Spin', 60 * 60_000, 300)];
+    expect(selectPrimaryMedia(media, {}).contentId).toBe('hiit');
+  });
+
+  it('falls back to duration when a candidate has no ring figure', () => {
+    const media = [r('scored', 'Scored', 20 * 60_000, 900), { contentId: 'plain', title: 'Plain', mediaType: 'video', durationMs: 60 * 60_000 }];
+    expect(selectPrimaryMedia(media, {}).contentId).toBe('plain');
+  });
+
+  it('falls back to duration when every candidate scored zero', () => {
+    const media = [r('a', 'A', 20 * 60_000, 0), r('b', 'B', 60 * 60_000, 0)];
+    expect(selectPrimaryMedia(media, {}).contentId).toBe('b');
+  });
+
+  it('keeps the warmup filter ahead of rings', () => {
+    const media = [r('wu', 'Warm Up Ride', 40 * 60_000, 3000), r('wo', 'Real Workout', 12 * 60_000, 500)];
+    expect(selectPrimaryMedia(media, {}).contentId).toBe('wo');
+  });
+});
