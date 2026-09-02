@@ -580,8 +580,17 @@ export function createHealthRouter(config) {
     }));
 
     router.put('/goals', asyncHandler(async (req, res) => {
-      const goals = await budgetService.setGoals(getDefaultUsername(), req.body);
-      return res.json({ goals });
+      try {
+        const goals = await budgetService.setGoals(getDefaultUsername(), req.body);
+        return res.json({ goals });
+      } catch (err) {
+        if (err.code === 'GOALS_WRITE_FAILED') {
+          logger.error?.('health.goals.put.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        logger.error?.('health.goals.put.error', { error: err.message });
+        return sendInternalError(res, { error: err.message });
+      }
     }));
   }
 

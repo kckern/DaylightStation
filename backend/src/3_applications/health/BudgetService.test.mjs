@@ -65,3 +65,15 @@ describe('BudgetService.getBudget', () => {
     expect(b.remaining).toBeLessThan(0);
   });
 });
+
+describe('BudgetService.setGoals', () => {
+  it('propagates a coded write failure from the goals store', async () => {
+    const err = new Error('GOALS_WRITE_FAILED: could not write goals to apps/health/goals for user kckern');
+    err.code = 'GOALS_WRITE_FAILED';
+    const svc = makeService({
+      goalsStore: { save: async () => { throw err; } },
+    });
+    await expect(svc.setGoals('kckern', GOALS)).rejects.toThrow(/GOALS_WRITE_FAILED/);
+    await expect(svc.setGoals('kckern', GOALS)).rejects.toMatchObject({ code: 'GOALS_WRITE_FAILED' });
+  });
+});
