@@ -65,10 +65,31 @@ describe('BudgetService.getBudget', () => {
     expect(b.remaining).toBeLessThan(0);
   });
 
-  it('flattens grouped-array workout sessions (real getWorkoutsForDate shape) before summing exercise', async () => {
+  it('counts an overlapping workout ONCE — activity and fitness are two views of the same session, not two sessions (real getWorkoutsForDate shape)', async () => {
     const svc = makeService({
       healthStore: {
-        getWorkoutsForDate: async () => ([[{ calories: 320, minutes: 42 }], []]),
+        // Same run, seen from two sources: activity (rich, Strava-style) and
+        // fitness (plain Garmin daily rollup) — this is the real shape that
+        // double-counted in production before the fix.
+        getWorkoutsForDate: async () => ({
+          activity: [{ id: 1, title: 'Lunch Run', calories: 517, minutes: 42.47 }],
+          fitness: [{ title: 'Running', calories: 518, minutes: 87.18 }],
+        }),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.exercise).toBe(517); // activity wins; fitness's 518 is NOT added on top
+    expect(b.sessions).toHaveLength(1);
+    expect(b.sessions[0]).toMatchObject({ id: 1, calories: 517, minutes: 42.47 });
+  });
+
+  it('falls back to the fitness group when activity is empty for the date (watchless / home-workout days)', async () => {
+    const svc = makeService({
+      healthStore: {
+        getWorkoutsForDate: async () => ({
+          activity: [],
+          fitness: [{ title: 'Cycling', calories: 320, minutes: 42 }],
+        }),
       },
     });
     const b = await svc.getBudget('kckern', '2026-09-02');

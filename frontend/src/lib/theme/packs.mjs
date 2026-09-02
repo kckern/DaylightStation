@@ -38,7 +38,7 @@ export const PACKS = Object.freeze({
     character: 'Amber-on-near-black theater chrome (product-owned; extends '
       + 'the base further in modules/Media/theme/mediaTheme.js during Phase 6).',
     primaryColor: 'orange',
-    accent: '#f0a05a',
+    accent: '#e5a00d', // AMBER[5] — was #f0a05a, drifted from the palette
   }),
 });
 

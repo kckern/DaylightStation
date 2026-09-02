@@ -1,4 +1,13 @@
 .life-clickable { cursor: pointer; }
+
+// Definite height, matching AppChrome's `__main` grid-stretch box, so a
+// height:100% child (CoachChat) has something real to size against — an
+// `auto`-height ancestor makes percentage heights resolve to `auto` too.
+// Non-chat routes are unaffected: they render normal-flow content that
+// simply overflows this box (default `overflow: visible`), which `__main`'s
+// own `overflow-y: auto` still scrolls correctly.
+.life-app-root { height: 100%; }
+
 // Kiosk-distance density bump: base text one notch larger on wide displays.
 @media (min-width: 1280px) {
   .life-app-root { font-size: 1.02rem; }
