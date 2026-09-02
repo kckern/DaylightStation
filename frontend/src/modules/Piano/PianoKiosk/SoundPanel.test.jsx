@@ -28,6 +28,8 @@ const connection = vi.hoisted(() => ({ health: { state: 'ready', output: { state
 vi.mock('./usePianoConnection.js', () => ({ usePianoConnection: () => connection }));
 vi.mock('../ui/icons/Icon.jsx', () => ({ default: () => <span className="piano-icon" aria-hidden /> }));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightMediaPath: (path) => path }));
+const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() }));
+vi.mock('../../../lib/logging/Logger.js', () => ({ default: () => ({ child: () => log }), getLogger: () => ({ child: () => log }) }));
 
 import SoundPanel from './SoundPanel.jsx';
 
@@ -35,7 +37,7 @@ const grid = () => screen.getByRole('group', { name: 'Instruments' });
 const rail = () => screen.getByRole('group', { name: 'Instrument families' });
 
 beforeEach(() => {
-  applyBundle.mockReset(); saveFavorite.mockClear(); removeFavorite.mockClear(); setPianoLevel.mockClear(); midi.sendNote.mockReset().mockReturnValue(true);
+  applyBundle.mockReset(); log.info.mockClear(); saveFavorite.mockClear(); removeFavorite.mockClear(); setPianoLevel.mockClear(); midi.sendNote.mockReset().mockReturnValue(true);
   connection.health = { state: 'ready', output: { state: 'up' } };
   shortlist = [{ pc: 0, name: 'Grand' }, { pc: 40, bank: 0, name: 'Violin' }];
   currentBundle = { voice: { pc: 0, bank: 0, name: 'Grand' }, reverb: { type: 4, level: 50, on: true }, chorus: { type: 2, level: 64, on: false } };
@@ -54,6 +56,7 @@ describe('SoundPanel', () => {
   it('opens on Mine when the current voice is a favourite or shortlisted, and lights it', () => {
     render(<SoundPanel open onClose={vi.fn()} />);
     expect(within(rail()).getByRole('button', { name: 'Mine' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(rail()).getByRole('button', { name: 'Pianos' })).toHaveAttribute('aria-pressed', 'false');
     expect(within(grid()).getByRole('button', { name: 'Grand' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(grid()).getByRole('button', { name: 'Violin' })).toHaveAttribute('aria-pressed', 'false');
   });
@@ -188,5 +191,73 @@ describe('SoundPanel', () => {
     expect(tile.querySelector('.piano-tbtn__art')).toBeNull();
     expect(tile.querySelector('.piano-icon')).not.toBeNull();
     expect(screen.getByText('Choir Aahs', { selector: 'strong' }).parentElement.querySelector('.piano-icon')).not.toBeNull();
+  });
+  it('applies a Mine shortlist voice onto the bundle as it is now, not as it was when the tiles were built', () => {
+    const { rerender } = render(<SoundPanel open onClose={vi.fn()} />);
+    currentBundle = { ...currentBundle, reverb: { ...currentBundle.reverb, level: 64 } };
+    rerender(<SoundPanel open onClose={vi.fn()} />);
+    fireEvent.click(within(grid()).getByRole('button', { name: 'Violin' }));
+    expect(applyBundle).toHaveBeenCalledWith(expect.objectContaining({ voice: expect.objectContaining({ pc: 40 }), reverb: { type: 4, level: 64, on: true } }));
+  });
+
+  it('shows one status line, the newest message winning, with Retry only for failed persistence', async () => {
+    presetState.preset.favorites = [{ ...currentBundle, reverb: { ...currentBundle.reverb, level: 64 } }];
+    presetState.persistenceState = 'remembered';
+    const { rerender } = render(<SoundPanel open onClose={vi.fn()} />);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Remembered for Alex');
+    fireEvent.click(screen.getByRole('button', { name: 'Update saved sound' }));
+    expect(await screen.findByText('Sound saved.')).toBeInTheDocument();
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.queryByText('Remembered for Alex')).toBeNull();
+    presetState = { ...presetState, persistenceState: 'failed' };
+    rerender(<SoundPanel open onClose={vi.fn()} />);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Couldn’t save');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(presetState.retryLastSound).toHaveBeenCalled();
+  });
+
+  it('latches the family at open, so saving the current voice does not flip the rail to Mine', async () => {
+    currentBundle = { ...currentBundle, voice: { pc: 56, bank: 0, name: 'Trumpet' } };
+    const { rerender } = render(<SoundPanel open onClose={vi.fn()} />);
+    expect(within(rail()).getByRole('button', { name: 'Winds & Brass' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Save sound' }));
+    expect(await screen.findByText('Sound saved.')).toBeInTheDocument();
+    presetState.preset.favorites = [{ ...currentBundle }];
+    rerender(<SoundPanel open onClose={vi.fn()} />);
+    expect(within(rail()).getByRole('button', { name: 'Winds & Brass' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(rail()).getByRole('button', { name: 'Mine' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(grid()).getByRole('button', { name: 'Trumpet' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+  });
+
+  it('lights Off whenever the effect is off, whatever level it remembers', () => {
+    currentBundle = { ...currentBundle, chorus: { type: 2, level: 64, on: false } };
+    render(<SoundPanel open onClose={vi.fn()} />);
+    expect(within(screen.getByRole('group', { name: 'Chorus' })).getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('now 0%')).toBeNull();
+  });
+
+  it('clears a stale Hear-it failure once the piano output is back', () => {
+    midi.sendNote.mockReturnValue(false);
+    const { rerender } = render(<SoundPanel open onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Hear it' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Piano not connected.');
+    connection.health = { state: 'offline', output: { state: 'down' } };
+    rerender(<SoundPanel open onClose={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Piano not connected.');
+    connection.health = { state: 'ready', output: { state: 'up' } };
+    rerender(<SoundPanel open onClose={vi.fn()} />);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('logs every voice pick with where it came from', () => {
+    render(<SoundPanel open onClose={vi.fn()} />);
+    fireEvent.click(within(grid()).getByRole('button', { name: 'Violin' }));
+    expect(log.info).toHaveBeenCalledWith('piano.sound.pick', { pc: 40, bank: 0, name: 'Violin', from: 'mine' });
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Strings' }));
+    fireEvent.click(within(grid()).getByRole('button', { name: 'Cello' }));
+    expect(log.info).toHaveBeenLastCalledWith('piano.sound.pick', { pc: 42, bank: 0, name: 'Cello', from: 'strings' });
   });
 });

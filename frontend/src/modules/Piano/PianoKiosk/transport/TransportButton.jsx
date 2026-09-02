@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import Icon from '../../ui/icons/Icon.jsx';
 import './Transport.scss';
 
@@ -7,7 +8,7 @@ import './Transport.scss';
  * SVG-icon faces (never Unicode glyphs), `is-on` grammar via aria-pressed.
  *
  * @param {string} [icon] - shared icon name (icons/svg/*.svg)
- * @param {string} [art] - illustration URL; when set it takes the icon's place (the icon is the fallback, so pass both)
+ * @param {string} [art] - illustration URL; when set it takes the icon's place. The icon is the fallback — pass both — and comes back if the art fails to load.
  * @param {string} [label] - ASCII text label; icon and label may combine
  * @param {string} [ariaLabel] - required when icon-only
  * @param {'default'|'primary'|'quiet'|'danger'} [emphasis]
@@ -31,8 +32,11 @@ export default function TransportButton({
     on ? 'is-on' : '',
     className,
   ].filter(Boolean).join(' ');
-  const iconEl = art
-    ? <img key="icon" className="piano-tbtn__art" src={art} alt="" draggable={false} />
+  // A 404 (pack not synced, file renamed) must not leave a broken-image glyph on a kiosk tile.
+  const [artFailed, setArtFailed] = useState(false);
+  useEffect(() => { setArtFailed(false); }, [art]);
+  const iconEl = art && !artFailed
+    ? <img key="icon" className="piano-tbtn__art" src={art} alt="" draggable={false} decoding="async" onError={() => setArtFailed(true)} />
     : icon && <Icon key="icon" name={icon} />;
   const labelEl = label != null && <span key="label" className="piano-tbtn__label">{label}</span>;
   return (

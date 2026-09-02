@@ -70,4 +70,13 @@ describe('TransportButton', () => {
     expect(scss).toMatch(/\.piano-tbtn--tile\s*\{.*?\.piano-tbtn__art\s*\{[^}]*3\.2em/s);
     expect(scss).toMatch(/\.piano-tbtn--rail\s*\{.*?\.piano-tbtn__art\s*\{[^}]*\b2em/s);
   });
+  it('falls back to the icon when the art fails to load', () => {
+    render(<TransportButton icon="piano" label="Grand" art="/x/missing.svg" layout="tile" onPress={() => {}} />);
+    const btn = screen.getByRole('button', { name: 'Grand' });
+    const img = btn.querySelector('img.piano-tbtn__art');
+    expect(img).toHaveAttribute('decoding', 'async');
+    fireEvent.error(img);
+    expect(btn.querySelector('.piano-tbtn__art')).toBeNull();
+    expect(btn.querySelector('.piano-icon')).not.toBeNull();
+  });
 });
