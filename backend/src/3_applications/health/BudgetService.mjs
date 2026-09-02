@@ -8,16 +8,21 @@ import { computeDailyBudget } from '#domains/health/services/BudgetMath.mjs';
 const STALE_WEIGHT_DAYS = 7;
 const COUNTED = (item) => item?.status !== 'pending' && item?.status !== 'rejected' && item?.status !== 'deleted';
 
-// Tolerant calorie summer: workouts arrive as an array of session objects or
-// a keyed object; count numeric `calories` (fallback `total_calories`).
-const sumExerciseCalories = (workouts) => {
+// Tolerant session flattener: workouts arrive as an array of session objects,
+// a keyed object (e.g. { activity: [...], fitness: [...] } grouped by source),
+// or any nesting of the two — deep-flatten to a single list of session objects.
+const flattenWorkoutSessions = (workouts) => {
   const list = Array.isArray(workouts) ? workouts
     : (workouts && typeof workouts === 'object' ? Object.values(workouts) : []);
-  return list.reduce((sum, w) => {
-    const c = Number(w?.calories ?? w?.total_calories);
-    return sum + (Number.isFinite(c) ? c : 0);
-  }, 0);
+  return list.flat(Infinity).filter((w) => w && typeof w === 'object' && !Array.isArray(w));
 };
+
+// Tolerant calorie summer: count numeric `calories` (fallback `total_calories`)
+// off an already-flattened list of session objects.
+const sumExerciseCalories = (sessions) => sessions.reduce((sum, w) => {
+  const c = Number(w?.calories ?? w?.total_calories);
+  return sum + (Number.isFinite(c) ? c : 0);
+}, 0);
 
 export class BudgetService {
   #goalsStore; #healthStore; #nutriListStore; #clock; #logger;
@@ -85,9 +90,8 @@ export class BudgetService {
     const food = Math.round(rawFood);
 
     const workouts = await this.#healthStore.getWorkoutsForDate(userId, date);
-    const exercise = Math.round(sumExerciseCalories(workouts));
-    const sessions = Array.isArray(workouts) ? workouts
-      : (workouts && typeof workouts === 'object' ? Object.values(workouts) : []);
+    const sessions = flattenWorkoutSessions(workouts);
+    const exercise = Math.round(sumExerciseCalories(sessions));
 
     const remaining = budget - food + exercise;
     return {
