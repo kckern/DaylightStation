@@ -4,6 +4,7 @@ import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
+import { AddCombobox } from './AddCombobox.jsx';
 import { localTodayISO as todayISO } from './mealBuckets.js';
 
 export function TodayView({ onSetupGoals, onCoachTap }) {
@@ -20,10 +21,15 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
       {!day.loading && !day.error ? (
         <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
-          onAddTo={setAddingTo} onRowTap={setEditingRow} addingTo={addingTo} addSlot={null} />
+          onAddTo={setAddingTo} onRowTap={setEditingRow} addingTo={addingTo}
+          addSlot={addingTo ? (
+            <AddCombobox bucketId={addingTo}
+              onDone={() => { setAddingTo(null); day.reload(); }}
+              onCancel={() => setAddingTo(null)} />
+          ) : null} />
       ) : null}
       <MacroFooter items={day.items} coachLine={null} onCoachTap={onCoachTap} />
-      {/* F5 mounts the add combobox via addSlot; F6 mounts the edit sheet on editingRow */}
+      {/* F6 mounts the edit sheet on editingRow */}
     </div>
   );
 }
