@@ -29,11 +29,17 @@ services:
       # Fingerprint unlock simulation: ''=real on-box identify (hardware),
       # 'interactive'=hold requests for simulate.mjs, 'auto-match'/'auto-deny'=immediate.
       - FINGERPRINT_SIM=${FINGERPRINT_SIM:-}
+      # CC1101 433MHz sub-GHz transceiver (RM1101-USB-232, CP2102 UART bridge).
+      # by-id path, NOT /dev/ttyUSBn: enumeration order is not stable across
+      # reboots or replugs, and this box already has a second USB serial adapter
+      # (the Prolific TV-control bridge) racing for the same numbers.
+      - RF_DEVICE=${RF_DEVICE:-/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0}
     
     # Device access for ANT+ USB dongle, serial port, and Bluetooth
     devices:
       - /dev/bus/usb:/dev/bus/usb  # ANT+ USB dongle access
       - ${SERIAL_DEVICE:-/dev/ttyUSB0}:${SERIAL_DEVICE:-/dev/ttyUSB0}  # Serial port for TV control
+      - ${RF_DEVICE:-/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0}:${RF_DEVICE:-/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0}  # CC1101 433MHz RF transceiver
     
     # Volume mounts for USB device detection and Bluetooth
     volumes:
