@@ -88,7 +88,8 @@ export class FoodCatalogService {
 
     if (!this.#nutriListStore) throw new Error('NutriListStore not configured for quick-add');
 
-    const today = new Date(this.#clock.now()).toISOString().split('T')[0];
+    const now = new Date(this.#clock.now());
+    const today = now.toISOString().split('T')[0];
     const item = {
       uuid: this.#createId(),
       userId,
@@ -103,6 +104,7 @@ export class FoodCatalogService {
       amount: 1,
       color: 'yellow',
       date: today,
+      mealTime: (() => { const h = now.getHours(); return h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night'; })(),
       log_uuid: 'QUICKADD',
     };
 
