@@ -43,9 +43,6 @@ export function useChessPersistenceLifecycle({
   const matchGateRef = useRef(matchGate);
   matchGateRef.current = matchGate;
   const lifecycleRef = useRef(null);
-  if (!lifecycleRef.current || lifecycleRef.current.gameId !== gameId) {
-    lifecycleRef.current = freshLifecycle(gameId);
-  }
   // HOW FAR THIS COMPONENT ACTUALLY WATCHED THIS GAME GET, while it was still
   // playable. A match played out here passes through every ply but its last; a
   // transcript that arrived already finished never does, and that difference is
@@ -55,12 +52,12 @@ export function useChessPersistenceLifecycle({
   // seconds of "play". See
   // docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
   //
-  // Keyed by game id and reset HERE, in the render body beside the lifecycle
-  // it belongs to: an identity that moves on while the terminal board is still
-  // mounted must not inherit the finished match's high-water mark, or the very
-  // duplicate this guard exists to refuse walks straight through it.
+  // Keyed by game id and reset in the render body beside the lifecycle it
+  // belongs to — see the turnover below: an identity that moves on while the
+  // terminal board is still mounted must not inherit the finished match's
+  // high-water mark, or the very duplicate this guard exists to refuse walks
+  // straight through it.
   const watchedRef = useRef({ gameId: null, plies: -1 });
-  if (watchedRef.current.gameId !== gameId) watchedRef.current = { gameId, plies: -1 };
   const gatewayRef = useRef(gateway);
   gatewayRef.current = gateway;
   const loggerRef = useRef(logger);
@@ -68,6 +65,9 @@ export function useChessPersistenceLifecycle({
   const mountedRef = useRef(false);
   const archiveInputsRef = useRef(null);
   const completionInputsRef = useRef(null);
+  // The game the render below is about to stop being about, kept until the
+  // effect that archives it has run. See the turnover.
+  const pendingAbandonRef = useRef(null);
   const pendingFileRef = useRef(null);
   const endedAtRef = useRef({ gameId: null, at: 0 });
   // The phantom we have already complained about, keyed `game:plies` — hence
@@ -77,6 +77,33 @@ export function useChessPersistenceLifecycle({
   const [finishedState, setFinishedState] = useState({ gameId: null, value: null });
   const [ladderState, setLadderState] = useState({ gameId: null, value: null });
   const [ladderTimedOut, setLadderTimedOut] = useState(false);
+
+  // THE IDENTITY TURNOVER, and the one render on which both games exist: the
+  // outgoing one in the refs, the incoming one in the props. `restart()` mints
+  // the next game id IN PLACE — a fresh board and a new id arrive together, in
+  // one commit — so unless the outgoing game is taken here it is gone by the
+  // next line, and a match a child really played is never filed and never
+  // archived. All three of the things its archive needs are taken: the
+  // lifecycle object (which carries, and keeps carrying, whether it has already
+  // been archived), the inputs it was last rendered with, and how far this
+  // component watched it get.
+  //
+  // NOTHING IS FILED HERE. A render must have no side effects, and this is
+  // bookkeeping only — the same bookkeeping the two resets below have always
+  // been, idempotent under a repeated render. The archive is left to the effect
+  // that drains this, which is the first moment React allows one.
+  if (!lifecycleRef.current || lifecycleRef.current.gameId !== gameId) {
+    const outgoing = lifecycleRef.current;
+    if (outgoing) {
+      pendingAbandonRef.current = {
+        lifecycle: outgoing,
+        inputs: archiveInputsRef.current,
+        watchedPlies: watchedRef.current.gameId === outgoing.gameId ? watchedRef.current.plies : -1,
+      };
+    }
+    lifecycleRef.current = freshLifecycle(gameId);
+  }
+  if (watchedRef.current.gameId !== gameId) watchedRef.current = { gameId, plies: -1 };
 
   const lifecycle = lifecycleRef.current;
   const plies = game.history?.length || 0;
@@ -115,31 +142,49 @@ export function useChessPersistenceLifecycle({
   }, [gameId, ladderReady]);
   const ladderSettled = ladderReady || ladderTimedOut;
 
-  const archiveAbandonedGame = useCallback((useBeacon = false) => {
-    const active = lifecycleRef.current;
-    const inputs = archiveInputsRef.current;
+  // ONE ARCHIVAL, FROM A SNAPSHOT OF ONE GAME — never from the live refs. Both
+  // callers hand over a game entire: its lifecycle, the inputs it was rendered
+  // with, and its own watched mark. The exits differ (walked away, or replaced
+  // by the next game); every judgement about whether to file is the same one,
+  // and lives here once.
+  const archiveOneGame = useCallback(({ lifecycle: active, inputs, watchedPlies, endedBy, useBeacon = false }) => {
     if (!active || active.archived || !inputs || inputs.gameId !== active.gameId) return;
     // ...but only a game this component actually played. Refusing a phantom
     // result and then filing the same transcript as abandoned on the way out
-    // just trades a duplicate for a junk row.
+    // just trades a duplicate for a junk row. A new game starting is no licence
+    // either: the transcript being replaced is judged exactly as the one being
+    // walked away from is.
     //
     // Strict, not `- 1`: no terminal ply lands here. A game that finished has
     // set `archived` — when it filed, or in the flush on the way out — and
     // returned above.
-    const watched = watchedRef.current;
     const played = inputs.game?.history?.length || 0;
-    if (played && (watched.gameId !== active.gameId || watched.plies < played)) {
+    if (played && watchedPlies < played) {
       loggerRef.current.warn?.('game-abandon-refused', {
-        gameId: active.gameId, plies: played, watchedPlies: watched.plies, reason: 'not-played-here',
+        gameId: active.gameId, plies: played, watchedPlies, reason: 'not-played-here',
       });
       return;
     }
-    const archive = buildGameArchive({ ...inputs, endedAt: Date.now(), endedBy: 'left' });
+    // A board with no moves on it is not an abandoned game, and
+    // `buildGameArchive` says so by returning nothing.
+    const archive = buildGameArchive({ ...inputs, endedAt: Date.now(), endedBy });
     if (!archive) return;
     active.archived = true;
     const currentGateway = gatewayRef.current;
     if (!useBeacon || !currentGateway.beaconArchive(archive)) currentGateway.archiveGame(archive);
   }, []);
+
+  const archiveAbandonedGame = useCallback((useBeacon = false) => {
+    const active = lifecycleRef.current;
+    const watched = watchedRef.current;
+    archiveOneGame({
+      lifecycle: active,
+      inputs: archiveInputsRef.current,
+      watchedPlies: active && watched.gameId === active.gameId ? watched.plies : -1,
+      endedBy: 'left',
+      useBeacon,
+    });
+  }, [archiveOneGame]);
 
   // A result parked waiting for its rung, carried out rather than dropped.
   const flushPendingResult = useCallback(() => {
@@ -286,6 +331,34 @@ export function useChessPersistenceLifecycle({
     }
     file();
   }, [gameOver, gameId, ladderSettled, plies, userId]);
+
+  // THE GAME THE LAST RENDER REPLACED, archived on the first commit that knows
+  // it happened.
+  //
+  // The seam is an effect and not the restart path itself: `restart()` is one
+  // of four routes to a new id (the result card, the rail, any-key, the input
+  // gesture) and none of them is where this hook's facts live — the outgoing
+  // transcript is only knowable HERE, from the refs, and only the turnover in
+  // the render body above is guaranteed to see every route. It is not the
+  // render body either, which may not have side effects.
+  //
+  // DECLARED AFTER THE RECORDING EFFECT, and that is load-bearing: a result
+  // parked waiting for its rung is carried out by that effect's own first act
+  // on this very commit, which archives the match as the completed game it was
+  // and sets `archived`. Run before it instead and this would judge a finished
+  // transcript as abandoned — refuse it, strictly and correctly, but complain
+  // about a game that was about to file itself perfectly well.
+  useEffect(() => {
+    // Taken, not read: the outgoing game is let go of here whatever happens to
+    // it below, so nothing holds a whole finished game state alive.
+    const pending = pendingAbandonRef.current;
+    pendingAbandonRef.current = null;
+    if (!pending) return;
+    // `restarted`, not `left`: the child did not walk away from this position,
+    // they started another game on top of it. Both are `completed: false`, and
+    // the archive is the only place that difference survives.
+    archiveOneGame({ ...pending, endedBy: 'restarted' });
+  }, [archiveOneGame, gameId]);
 
   const endTiming = useMemo(() => {
     if (!gameOver || timing.mode === 'off') return null;

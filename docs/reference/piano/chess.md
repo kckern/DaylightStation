@@ -192,7 +192,8 @@ piano's local calendar day. One file is written per game, named
 `{user}_level{opponentLevel}_{duration}_{moveCount}ply_{result}_{outcome}_{timestamp}-{uuid}.yml`.
 The filename makes a directory listing useful without opening YAML; `levelunknown` is
 used honestly for an old/incomplete game where effective-opponent telemetry was never resolved.
-An abandoned game is named `quit_quit`; its YAML retains `ended_by: left` as the event detail.
+An abandoned game is named `quit_quit`; its YAML retains the event detail in `ended_by` — `left`
+for a game the player walked away from, `restarted` for one they started another game on top of.
 This is separate from the player's own scorecard (`apps/chess/games/`), which only exists for games
 that finished, and it answers a different question: *how is this child actually doing, over months?*
 

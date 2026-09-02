@@ -66,7 +66,7 @@ function serializeMove(entry, ply, undone, thinkMs = null) {
  * @param {number} args.takebacks
  * @param {number} args.startedAt
  * @param {number} args.endedAt
- * @param {string} args.endedBy     'game_over' | 'left'
+ * @param {string} args.endedBy     'game_over' | 'left' | 'restarted'
  */
 export function buildGameArchive({
   game, gameId, userId, rungId, opponent = null, addressing = 'chords',
