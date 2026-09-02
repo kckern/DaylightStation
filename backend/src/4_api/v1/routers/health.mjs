@@ -554,6 +554,47 @@ export function createHealthRouter(config) {
       return res.json(result);
     }));
 
+    /**
+     * GET /api/v1/health/nutrition/catalog/suggest - Ranked suggestions for add-combobox
+     * Query: q (search string), limit (default 12)
+     */
+    router.get('/nutrition/catalog/suggest', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { q = '', limit } = req.query;
+      const items = await catalogService.suggest(q, userId, parseInt(limit) || 12);
+      return res.json({ items });
+    }));
+
+    /**
+     * PUT /api/v1/health/nutrition/catalog/favorite - Toggle favorite by id or name
+     * Body: { id?, name?, favorite }
+     */
+    router.put('/nutrition/catalog/favorite', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { id, name, favorite } = req.body;
+      if (!id && !name) return res.status(400).json({ error: 'id or name is required' });
+      try {
+        const entry = id
+          ? await catalogService.setFavorite(id, userId, favorite)
+          : await catalogService.setFavoriteByName(name, userId, favorite);
+        return res.json({ entry });
+      } catch (err) {
+        return res.status(404).json({ error: err.message });
+      }
+    }));
+
+    /**
+     * POST /api/v1/health/nutrition/catalog - Create a custom food, optionally mapped to a barcode
+     * Body: { name, calories, protein, carbs, fat, barcodeUpc? }
+     */
+    router.post('/nutrition/catalog', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { name, calories, protein, carbs, fat, barcodeUpc } = req.body;
+      if (!name) return res.status(400).json({ error: 'name is required' });
+      const entry = await catalogService.createCustom({ name, calories, protein, carbs, fat, barcodeUpc }, userId);
+      return res.json({ entry });
+    }));
+
   }
 
   // ==========================================================================
