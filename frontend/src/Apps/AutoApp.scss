@@ -12,7 +12,20 @@
 // this file keeps only what's genuinely app-specific: the dense card/list/
 // form layouts a garage screen actually needs.
 
+// Four branches (vehicles.loading / vehicles.error / no-vehicles / the
+// multi-vehicle Garage picker) render OUTSIDE AppChrome — this wrapper is
+// their only source of DS background/text tokens, so it still needs to look
+// like a real page root, not just carry the typeface. AppChrome-wrapped
+// branches get the identical tokens from .ds-chrome, so this is idempotent
+// where the two are nested. .auto-main (flex: 1) also relies on this being
+// a flex column, same as before the migration.
 .auto-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh; // dvh: mobile browser chrome shrinks/grows as you scroll
+  background: var(--ds-background);
+  color: var(--ds-text-high);
   font-family: 'Roboto Condensed', system-ui, sans-serif;
   font-size: 16px; // never below 16px on inputs — iOS zooms the viewport otherwise
 }
