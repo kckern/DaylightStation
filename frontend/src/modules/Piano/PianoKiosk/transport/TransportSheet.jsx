@@ -4,9 +4,13 @@ import './Transport.scss';
 
 const FOCUSABLE = 'button:not([disabled]), [href], select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-// Open sheets, oldest first. Only the last entry handles keys, so a sheet
-// opened on top of another sheet owns Escape and the Tab trap until it closes.
+// Open sheets. The top sheet is the one latest in DOCUMENT order, decided at
+// use time — not push order, because React 18 runs a child's effect before
+// its parent's, so a nested pair mounted open in one commit would otherwise
+// crown the outer sheet.
 const openSheets = [];
+const top = () => openSheets.reduce((a, b) =>
+  (a.current && b.current && (a.current.compareDocumentPosition(b.current) & Node.DOCUMENT_POSITION_FOLLOWING)) ? b : a);
 
 /**
  * TransportSheet — the kiosk's one modal-sheet shell: full-screen scrim that
@@ -21,9 +25,10 @@ const openSheets = [];
  * content control; Close is the fallback only when the body has nothing
  * focusable. Controls with `tabindex="-1"` are never trap targets.
  *
- * Invariant: only the most recently opened sheet handles keys. Escape is
- * stopped at the document so the screen framework's window listener never
- * sees it as its own escape action.
+ * Invariant: only the topmost open sheet (latest in document order) handles
+ * keys, captures the opener and takes initial focus. Escape is stopped at the
+ * document so the screen framework's window listener never sees it as its
+ * own escape action.
  */
 export default function TransportSheet({ open, title, onClose, children, size = 'auto', className = '' }) {
   const titleId = useId();
@@ -34,15 +39,17 @@ export default function TransportSheet({ open, title, onClose, children, size = 
 
   useEffect(() => {
     if (!open) return undefined;
-    opener.current = document.activeElement;
     openSheets.push(panel);
     const focusables = () => [...(panel.current?.querySelectorAll(FOCUSABLE) || [])].filter((node) => node.tabIndex >= 0);
-    const initial = focusables();
-    (panel.current?.querySelector('[data-autofocus]')
-      || initial.find((node) => !node.classList.contains('piano-tsheet__close'))
-      || initial[0])?.focus();
+    if (top() === panel) {
+      opener.current = document.activeElement;
+      const initial = focusables();
+      (panel.current?.querySelector('[data-autofocus]')
+        || initial.find((node) => !node.classList.contains('piano-tsheet__close'))
+        || initial[0])?.focus();
+    }
     const keydown = (event) => {
-      if (openSheets[openSheets.length - 1] !== panel) return;
+      if (top() !== panel) return;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCloseRef.current(); return; }
       if (event.key !== 'Tab') return;
       const nodes = focusables();
