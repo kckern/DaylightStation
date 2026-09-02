@@ -36,6 +36,52 @@ const MIN_MEDIA_MS = 30 * 1000; // 30s — filter brief browse-past blips
 const IMPLAUSIBLE_DURATION_RATIO = 3;
 const IMPLAUSIBLE_DURATION_FLOOR_SEC = 300;
 
+/**
+ * Rejoin one play that a mid-workout reload split across two saves.
+ *
+ * On a reload the `media_start` stays in the pre-reload page and the
+ * `media_end` arrives in the post-reload one. The resume path restores the
+ * previously-saved (already consolidated) events, so at THIS point the array
+ * holds both halves under one contentId — a restored one with a `start` and no
+ * `end`, and a freshly consolidated one with an `end` and no `start`.
+ *
+ * Left split, each computes `durationMs = end - start` as 0 and the item drops
+ * out of primary selection entirely: session 20260901154746 titled itself after
+ * a 31-minute ride while the 37-minute workout beside it registered as zero.
+ *
+ * Only an unambiguous 1:1 pairing is joined. Two open starts means these are
+ * separate plays of the same video, and welding them would invent a span longer
+ * than either — worse than the split it fixes.
+ */
+function rejoinSplitMedia(events) {
+  const byId = new Map();
+  for (const event of events) {
+    if (event?.type !== 'media') continue;
+    const d = event.data || {};
+    if (!d.contentId || d.contentType === 'track' || d.artist) continue;
+    if (!byId.has(d.contentId)) byId.set(d.contentId, []);
+    byId.get(d.contentId).push(event);
+  }
+
+  const drop = new Set();
+  for (const list of byId.values()) {
+    const opens = list.filter(e => Number.isFinite(e.data.start) && !Number.isFinite(e.data.end));
+    const closes = list.filter(e => !Number.isFinite(e.data.start) && Number.isFinite(e.data.end));
+    if (opens.length !== 1 || closes.length !== 1) continue;
+    const [open] = opens;
+    const [close] = closes;
+    if (!(close.data.end > open.data.start)) continue;
+    open.data.end = close.data.end;
+    // The closing half can carry fields the opening one never saw.
+    for (const [key, value] of Object.entries(close.data)) {
+      if (value == null || key === 'start' || key === 'end') continue;
+      if (open.data[key] == null) open.data[key] = value;
+    }
+    drop.add(close);
+  }
+  return drop.size ? events.filter(event => !drop.has(event)) : events;
+}
+
 const ZONE_SYMBOL_MAP = {
   rest: 'r',
   cool: 'c',
@@ -571,7 +617,7 @@ const _consolidateEvents = (events) => {
   }
 
   // Merge and sort by timestamp
-  const all = [...challengeEvents, ...filteredMedia, ...consolidatedGov, ...voiceMemoEvents, ...otherEvents];
+  const all = rejoinSplitMedia([...challengeEvents, ...filteredMedia, ...consolidatedGov, ...voiceMemoEvents, ...otherEvents]);
   all.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
   return all;
 };
